@@ -37,12 +37,12 @@ const _supportedExtFns = {
   'concat_strings',
   'return_value',
   'get_list',
+  'raise_error', // raise_error(excType, msg) → resumeWithException
 };
 
 /// Known ext-function names used in the corpus that we do NOT implement yet.
 /// Any fixture calling one of these is kept skipped to avoid wrong failures.
 const _unsupportedExtFns = {
-  'raise_error', // raises RuntimeError; typed exc not yet via ext-fn path
   'make_point',
   'make_user',
   'make_mutable_point',
@@ -56,19 +56,17 @@ Object? _dispatch(
   String functionName,
   List<MontyValue> args,
   Map<String, MontyValue>? _, // kwargs — unused for current functions
-) =>
-    switch (functionName) {
-      // add_ints(a: int, b: int) → int
-      'add_ints' =>
-        (args.first.dartValue! as int) + (args[1].dartValue! as int),
-      // concat_strings(a: str, b: str) → str
-      'concat_strings' => '${args.first.dartValue}${args[1].dartValue}',
-      // return_value(x: any) → x  (identity)
-      'return_value' => args.first.dartValue,
-      // get_list() → [1, 2, 3]
-      'get_list' => [1, 2, 3],
-      _ => throw StateError('Unexpected external function: $functionName'),
-    };
+) => switch (functionName) {
+  // add_ints(a: int, b: int) → int
+  'add_ints' => (args.first.dartValue! as int) + (args[1].dartValue! as int),
+  // concat_strings(a: str, b: str) → str
+  'concat_strings' => '${args.first.dartValue}${args[1].dartValue}',
+  // return_value(x: any) → x  (identity)
+  'return_value' => args.first.dartValue,
+  // get_list() → [1, 2, 3]
+  'get_list' => [1, 2, 3],
+  _ => throw StateError('Unexpected external function: $functionName'),
+};
 
 // ---------------------------------------------------------------------------
 // OS call dispatch
@@ -450,9 +448,18 @@ Future<void> main() async {
                   shouldSkip = true;
                   break dispatchLoop;
                 }
+                // raise_error(excType, msg) resumes with a typed exception
+                // rather than a return value.
+                final isRaiseError = functionName == 'raise_error';
                 try {
-                  final ret = _dispatch(functionName, arguments, kwargs);
-                  progress = await platform.resume(ret);
+                  if (isRaiseError) {
+                    final excType = (arguments.first as MontyString).value;
+                    final msg = (arguments[1] as MontyString).value;
+                    progress = await platform.resumeWithException(excType, msg);
+                  } else {
+                    final ret = _dispatch(functionName, arguments, kwargs);
+                    progress = await platform.resume(ret);
+                  }
                 } on MontyScriptError catch (e) {
                   thrownExcType = e.excType;
                   break dispatchLoop;
