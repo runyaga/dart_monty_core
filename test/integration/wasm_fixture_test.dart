@@ -47,7 +47,7 @@ void main() {
               isNull,
               reason: 'unexpected error in $key',
             );
-          case ExpectReturn(:final value):
+          case ExpectReturn(value: final fixtureValue):
             expect(
               thrownExcType,
               isNull,
@@ -55,7 +55,7 @@ void main() {
             );
             expect(
               result?.value,
-              equals(MontyValue.fromDart(value)),
+              equals(MontyValue.fromDart(fixtureValue)),
               reason: 'value mismatch for $key',
             );
           case ExpectRaise(:final excType):

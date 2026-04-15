@@ -29,7 +29,7 @@ void main() {
         // Run the oracle to get the authoritative expected result.
         final oracleJson = await runOracle(value);
         final oracleResult = MontyResult.fromJson(
-          Map<String, dynamic>.from(oracleJson),
+          Map.from(oracleJson),
         );
 
         // Run the FFI platform.

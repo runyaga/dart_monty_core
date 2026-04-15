@@ -138,8 +138,8 @@ ExpectRaise? _parseTracebackDocstring(String source) {
   final blockLines = block.split('\n');
 
   // Walk from the end, find the last non-empty line
-  for (var i = blockLines.length - 1; i >= 0; i--) {
-    final line = blockLines[i].trim();
+  for (final rawLine in blockLines.reversed) {
+    final line = rawLine.trim();
     if (line.isEmpty) continue;
 
     // Expected format: "ExcType: message" or bare "ExcType" (no message)
@@ -155,6 +155,7 @@ ExpectRaise? _parseTracebackDocstring(String source) {
 
     final message =
         colonIdx < 0 ? '' : line.substring(colonIdx + 1).trim();
+
     return ExpectRaise(excType: excType, message: message);
   }
 
@@ -188,13 +189,11 @@ FixtureExpectation _parseRaise(String raw) {
   final excType = raw.substring(0, parenIdx).trim();
   final msgRaw = raw.substring(parenIdx + 1, raw.length - 1).trim();
 
-  String message;
-  if ((msgRaw.startsWith("'") && msgRaw.endsWith("'")) ||
-      (msgRaw.startsWith('"') && msgRaw.endsWith('"'))) {
-    message = msgRaw.substring(1, msgRaw.length - 1);
-  } else {
-    message = msgRaw;
-  }
+  final message =
+      ((msgRaw.startsWith("'") && msgRaw.endsWith("'")) ||
+              (msgRaw.startsWith('"') && msgRaw.endsWith('"')))
+          ? msgRaw.substring(1, msgRaw.length - 1)
+          : msgRaw;
 
   return ExpectRaise(excType: excType, message: message);
 }
