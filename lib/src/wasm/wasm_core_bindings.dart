@@ -198,6 +198,7 @@ class WasmCoreBindings implements MontyCoreBindings {
     );
   }
 
+  // ignore: cyclomatic-complexity, lines-of-code — exhaustive switch over all progress states; tracks the Rust protocol enum
   CoreProgressResult _translateProgressResult(
     WasmProgressResult progress,
     int elapsedMs,

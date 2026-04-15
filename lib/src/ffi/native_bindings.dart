@@ -75,6 +75,7 @@ final class ProgressResult {
 ///
 /// All memory management (C string allocation/deallocation, pointer
 /// lifecycle) is the responsibility of the concrete implementation.
+// ignore: number-of-methods — one method per Rust FFI symbol; count is bounded by the C ABI
 abstract class NativeBindings {
   /// Creates a [NativeBindings].
   const NativeBindings();

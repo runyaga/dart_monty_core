@@ -47,6 +47,7 @@ final _handleFinalizer = ffi.NativeFinalizer(
 /// final bindings = FfiCoreBindings(bindings: NativeBindingsFfi());
 /// final monty = MontyFfi(bindings: bindings);
 /// ```
+// ignore: number-of-methods — one method per Rust FFI symbol; count is bounded by the C ABI
 class FfiCoreBindings implements MontyCoreBindings {
   /// Creates an [FfiCoreBindings] backed by [bindings].
   FfiCoreBindings({required NativeBindings bindings}) : _bindings = bindings;

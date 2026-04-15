@@ -135,6 +135,7 @@ external JSPromise<JSString> _jsReplResumeWithError(
 ///
 /// Calls static methods on `window.DartMontyBridge`, which manages a
 /// Worker session pool internally. Each session gets its own Worker.
+// ignore: number-of-methods — one method per WASM export; count is bounded by the JS bridge contract
 class WasmBindingsJs extends WasmBindings {
   /// Creates a [WasmBindingsJs].
   WasmBindingsJs();

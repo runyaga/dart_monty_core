@@ -14,6 +14,7 @@ import 'package:ffi/ffi.dart';
 ///
 /// Uses `@Native` annotations via the generated bindings — symbol resolution
 /// is handled automatically by the Dart native assets system.
+// ignore: number-of-methods — one method per Rust FFI symbol; count is bounded by the C ABI
 class NativeBindingsFfi extends NativeBindings {
   /// Creates [NativeBindingsFfi].
   ///
@@ -429,6 +430,7 @@ class NativeBindingsFfi extends NativeBindings {
   // ---------------------------------------------------------------------------
 
   /// Builds a [ProgressResult] from REPL handle state accessors.
+  // ignore: lines-of-code — one branch per field in the Rust ProgressResult struct; cannot be split meaningfully
   ProgressResult _buildReplProgressResult(
     Pointer<ffi_native.MontyReplHandle> ptr,
     ffi_native.MontyProgressTag tag,
@@ -497,6 +499,7 @@ class NativeBindingsFfi extends NativeBindings {
     }
   }
 
+  // ignore: lines-of-code — one branch per field in the Rust ProgressResult struct; cannot be split meaningfully
   ProgressResult _buildProgressResult(
     Pointer<ffi_native.MontyHandle> ptr,
     ffi_native.MontyProgressTag tag,
