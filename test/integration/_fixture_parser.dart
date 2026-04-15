@@ -51,6 +51,22 @@ bool fixtureIsCallExternal(String source) {
   return false;
 }
 
+/// Returns `true` when [source] declares a `# mount-fs` directive,
+/// meaning the fixture expects a `root` Path variable pointing to a
+/// pre-populated virtual filesystem.
+bool fixtureMountsFs(String source) {
+  for (final raw in source.split('\n')) {
+    final line = raw.trim();
+    if (!line.startsWith('#')) continue;
+    final directive = line.substring(1).trim();
+    if (directive == 'mount-fs' || directive.startsWith('mount-fs ')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /// Parses a `.py` fixture and returns the expected outcome.
 ///
 /// Returns `null` when the fixture should be skipped:
@@ -59,13 +75,15 @@ bool fixtureIsCallExternal(String source) {
 /// - `# call-external` — requires external function dispatch (skip unless
 ///   [skipCallExternal] is false)
 /// - `# run-async` — requires async execution mode
-/// - `# mount-fs` — requires filesystem mount
+/// - `# mount-fs` — requires filesystem mount (skip unless
+///   [skipMountFs] is false)
 ///
 /// `# xfail=cpython` is NOT a skip — monty supports these cases.
 FixtureExpectation? parseFixture(
   String source, {
   bool skipWasm = false,
   bool skipCallExternal = true,
+  bool skipMountFs = true,
 }) {
   final lines = source.split('\n');
 
@@ -89,8 +107,8 @@ FixtureExpectation? parseFixture(
                 directive.startsWith('call-external '))) ||
         directive == 'run-async' ||
         directive.startsWith('run-async ') ||
-        directive == 'mount-fs' ||
-        directive.startsWith('mount-fs ')) {
+        (skipMountFs &&
+            (directive == 'mount-fs' || directive.startsWith('mount-fs ')))) {
       return null;
     }
 
