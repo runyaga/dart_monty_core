@@ -413,6 +413,41 @@ jobs:
           WEB_DIR: test/integration/web
 
   # ---------------------------------------------------------------------------
+  # DCM — compute metrics + rules analysis
+  # ---------------------------------------------------------------------------
+  dcm:
+    name: DCM (metrics + analyze)
+    needs: [changes, ffigen]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Download FFI bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ffi-bindings
+          path: lib/src/ffi/generated
+      - run: dart pub get
+      - name: Install DCM
+        run: dart pub global activate dcm
+      - name: Compute metrics
+        run: |
+          dart pub global run dcm:dcm compute-metrics \
+            --ci-key=${{ secrets.DCM_CI_KEY }} \
+            --email=${{ secrets.DCM_EMAIL }} \
+            lib/
+      - name: Analyze (rules)
+        run: |
+          dart pub global run dcm:dcm analyze \
+            --ci-key=${{ secrets.DCM_CI_KEY }} \
+            --email=${{ secrets.DCM_EMAIL }} \
+            lib/
+
+  # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
   # ---------------------------------------------------------------------------
   patch-coverage:
