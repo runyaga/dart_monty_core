@@ -274,6 +274,13 @@ class MontySession {
 
       return await _safeCall(() => _platform.resume(result));
     } on OsCallException catch (e) {
+      final excType = e.pythonExceptionType;
+      if (excType != null) {
+        return _safeCall(
+          () => _platform.resumeWithException(excType, e.message),
+        );
+      }
+
       return _safeCall(() => _platform.resumeWithError(e.message));
     } on Object catch (e) {
       return _safeCall(() => _platform.resumeWithError(e.toString()));

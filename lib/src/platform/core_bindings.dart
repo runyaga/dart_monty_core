@@ -186,6 +186,16 @@ abstract class MontyCoreBindings {
   /// Resumes execution, injecting [errorMessage] as a Python exception.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
 
+  /// Resumes execution, raising a typed Python [excType] exception
+  /// with [errorMessage].
+  ///
+  /// [excType] is the Python exception class name, e.g. `'FileNotFoundError'`.
+  /// Unknown names fall back to RuntimeError.
+  Future<CoreProgressResult> resumeWithException(
+    String excType,
+    String errorMessage,
+  );
+
   /// Resumes execution, converting the pending call into a future.
   Future<CoreProgressResult> resumeAsFuture();
 

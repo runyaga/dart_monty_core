@@ -42,10 +42,12 @@ bool fixtureIsCallExternal(String source) {
     final line = raw.trim();
     if (!line.startsWith('#')) continue;
     final directive = line.substring(1).trim();
-    if (directive == 'call-external' || directive.startsWith('call-external ')) {
+    if (directive == 'call-external' ||
+        directive.startsWith('call-external ')) {
       return true;
     }
   }
+
   return false;
 }
 
@@ -113,7 +115,7 @@ FixtureExpectation? parseFixture(
 }
 
 /// Scans `source` for a docstring block of the form:
-/// ```
+/// ```python
 /// """
 /// TRACEBACK:
 /// ...

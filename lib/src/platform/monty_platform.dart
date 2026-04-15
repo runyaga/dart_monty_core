@@ -60,6 +60,15 @@ abstract class MontyPlatform {
     throw UnimplementedError('resumeWithError() has not been implemented.');
   }
 
+  /// Resumes a paused execution by raising a typed Python [excType] exception
+  /// with [errorMessage]. Unknown [excType] names fall back to RuntimeError.
+  Future<MontyProgress> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) {
+    throw UnimplementedError('resumeWithException() has not been implemented.');
+  }
+
   /// Releases resources held by this interpreter instance.
   Future<void> dispose() {
     throw UnimplementedError('dispose() has not been implemented.');

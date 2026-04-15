@@ -166,6 +166,26 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   }
 
   @override
+  Future<MontyProgress> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) async {
+    assertNotDisposed('resumeWithException');
+    assertActive('resumeWithException');
+    try {
+      final progress = await _bindings.resumeWithException(
+        excType,
+        errorMessage,
+      );
+
+      return translateProgress(progress);
+    } catch (e) {
+      markIdle();
+      rethrow;
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     if (isDisposed) return;
     // Force idle if active — allows dispose during test teardown and

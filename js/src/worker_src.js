@@ -481,6 +481,61 @@ function handleResumeWithError(id, errorMessage) {
   self.postMessage(msg);
 }
 
+function handleResumeWithException(id, excType, errorMessage) {
+  if (!activeHandle) {
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: 'No active handle to resume.',
+      errorType: 'StateError',
+    });
+    return;
+  }
+
+  let cExcType = null;
+  let cErr = null;
+  let outErr = null;
+
+  let tag;
+  try {
+    cExcType = allocCString(excType);
+    cErr = allocCString(errorMessage);
+    outErr = allocOutPtr();
+    tag = wasm.monty_resume_with_exception(activeHandle, cExcType.ptr, cErr.ptr, outErr.ptr);
+  } catch (e) {
+    if (cExcType) wasm.monty_dealloc(cExcType.ptr, cExcType.size);
+    if (cErr) wasm.monty_dealloc(cErr.ptr, cErr.size);
+    if (outErr) outErr.free();
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  }
+  wasm.monty_dealloc(cExcType.ptr, cExcType.size);
+  wasm.monty_dealloc(cErr.ptr, cErr.size);
+
+  const errPtr = outErr.read();
+  const errMsg = readAndFreeCString(errPtr);
+  outErr.free();
+
+  let msg;
+  try {
+    msg = readProgress(id, activeHandle, tag, errMsg);
+  } catch (e) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+    throw e;
+  }
+  if (tag === PROGRESS_COMPLETE || tag === PROGRESS_ERROR) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+  }
+  self.postMessage(msg);
+}
+
 function handleResumeAsFuture(id) {
   if (!activeHandle) {
     self.postMessage({
@@ -704,7 +759,7 @@ function handleDispose(id) {
 // ---------------------------------------------------------------------------
 
 self.onmessage = (e) => {
-  const { type, id, code, extFns, value, errorMessage, limits,
+  const { type, id, code, extFns, value, errorMessage, excType, limits,
     dataBase64, scriptName, resultsJson, errorsJson } = e.data;
   try {
     switch (type) {
@@ -719,6 +774,9 @@ self.onmessage = (e) => {
         break;
       case 'resumeWithError':
         handleResumeWithError(id, errorMessage);
+        break;
+      case 'resumeWithException':
+        handleResumeWithException(id, excType, errorMessage);
         break;
       case 'resumeAsFuture':
         handleResumeAsFuture(id);

@@ -98,6 +98,22 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeWithException(
+      excType,
+      errorMessage,
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
+  }
+
+  @override
   Future<CoreProgressResult> resumeAsFuture() async {
     final sw = Stopwatch()..start();
     final progress = await _bindings.resumeAsFuture(sessionId: _sessionId);

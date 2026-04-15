@@ -47,5 +47,13 @@ class ReplPlatform implements MontyPlatform {
       _repl.resumeWithError(errorMessage);
 
   @override
+  Future<MontyProgress> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) =>
+      // REPL does not yet support typed exceptions — fall back to RuntimeError.
+      _repl.resumeWithError(errorMessage);
+
+  @override
   Future<void> dispose() => _repl.dispose();
 }

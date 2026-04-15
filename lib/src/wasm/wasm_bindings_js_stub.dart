@@ -56,6 +56,13 @@ class WasmBindingsJs extends WasmBindings {
   }) => throw UnimplementedError();
 
   @override
+  Future<WasmProgressResult> resumeWithException(
+    String excType,
+    String errorMessage, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<WasmProgressResult> resumeAsFuture({int? sessionId}) =>
       throw UnimplementedError();
 
