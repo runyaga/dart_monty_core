@@ -8,8 +8,8 @@ build/
 native/target/
 native/Cargo.lock
 
-# DCM key (do not commit secrets — key is in .dcm.yaml, gitignore if preferred)
-# .dcm.yaml
+# DCM local config contains credentials — never commit
+.dcm.yaml
 
 # WASM test runner compiled output (built in CI, not committed)
 test/integration/web/wasm_runner.dart.js
