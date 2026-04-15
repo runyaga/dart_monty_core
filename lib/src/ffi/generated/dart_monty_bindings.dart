@@ -368,6 +368,74 @@ external int monty_complete_is_error(
   ffi.Pointer<MontyHandle> handle,
 );
 
+/// Get the name the engine is looking up.
+/// Only valid after monty_start/monty_resume returned MONTY_PROGRESS_NAME_LOOKUP.
+///
+/// @return  Heap-allocated NUL-terminated name string, or NULL.
+/// Caller frees with monty_string_free().
+@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.Pointer<MontyHandle>)>()
+external ffi.Pointer<ffi.Char> monty_name_lookup_name(
+  ffi.Pointer<MontyHandle> handle,
+);
+
+/// Resume by providing a value for the looked-up name.
+///
+/// @param handle      Handle in NAME_LOOKUP state.
+/// @param value_json  NUL-terminated JSON encoding of the value.
+/// @param out_error   Receives error message on failure. Caller frees.
+/// @return            MONTY_PROGRESS_COMPLETE, _PENDING, _NAME_LOOKUP, or _ERROR.
+@ffi.Native<
+  ffi.UnsignedInt Function(
+    ffi.Pointer<MontyHandle>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>(symbol: 'monty_resume_name_lookup_value')
+external int _monty_resume_name_lookup_value(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Char> value_json,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
+MontyProgressTag monty_resume_name_lookup_value(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Char> value_json,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+) => MontyProgressTag.fromValue(
+  _monty_resume_name_lookup_value(
+    handle,
+    value_json,
+    out_error,
+  ),
+);
+
+/// Resume by indicating the looked-up name is undefined.
+/// The engine will raise NameError.
+///
+/// @param handle     Handle in NAME_LOOKUP state.
+/// @param out_error  Receives error message on failure. Caller frees.
+/// @return           MONTY_PROGRESS_COMPLETE, _ERROR, or _PENDING.
+@ffi.Native<
+  ffi.UnsignedInt Function(
+    ffi.Pointer<MontyHandle>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>(symbol: 'monty_resume_name_lookup_undefined')
+external int _monty_resume_name_lookup_undefined(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
+MontyProgressTag monty_resume_name_lookup_undefined(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+) => MontyProgressTag.fromValue(
+  _monty_resume_name_lookup_undefined(
+    handle,
+    out_error,
+  ),
+);
+
 /// Serialize compiled code to a byte buffer (snapshot).
 /// Only valid in Ready state.
 ///
@@ -738,7 +806,8 @@ enum MontyProgressTag {
   MONTY_PROGRESS_PENDING(1),
   MONTY_PROGRESS_ERROR(2),
   MONTY_PROGRESS_RESOLVE_FUTURES(3),
-  MONTY_PROGRESS_OS_CALL(4)
+  MONTY_PROGRESS_OS_CALL(4),
+  MONTY_PROGRESS_NAME_LOOKUP(5)
   ;
 
   final int value;
@@ -750,6 +819,7 @@ enum MontyProgressTag {
     2 => MONTY_PROGRESS_ERROR,
     3 => MONTY_PROGRESS_RESOLVE_FUTURES,
     4 => MONTY_PROGRESS_OS_CALL,
+    5 => MONTY_PROGRESS_NAME_LOOKUP,
     _ => throw ArgumentError('Unknown value for MontyProgressTag: $value'),
   };
 }

@@ -256,6 +256,11 @@ class FfiCoreBindings implements MontyCoreBindings {
         return _translateResolveFutures(progress, handle);
       case 4:
         return _translateOsCall(progress, handle);
+      case 5:
+        return CoreProgressResult(
+          state: 'name_lookup',
+          variableName: progress.variableName ?? '',
+        );
       default:
         _freeHandle(handle);
         throw StateError('Unknown progress tag: ${progress.tag}');

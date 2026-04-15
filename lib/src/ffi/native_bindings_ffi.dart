@@ -524,6 +524,10 @@ class NativeBindingsFfi extends NativeBindings {
           kwargsJson: kwargsJson,
           callId: callId,
         );
+
+      case ffi_native.MontyProgressTag.MONTY_PROGRESS_NAME_LOOKUP:
+        // REPL NameLookup: no dedicated REPL accessor — name not yet surfaced.
+        return const ProgressResult(tag: 5, variableName: '');
     }
   }
 
@@ -594,6 +598,12 @@ class NativeBindingsFfi extends NativeBindings {
           kwargsJson: kwargsJson,
           callId: callId,
         );
+
+      case ffi_native.MontyProgressTag.MONTY_PROGRESS_NAME_LOOKUP:
+        final namePtr = ffi_native.monty_name_lookup_name(ptr);
+        final name = _readAndFreeString(namePtr);
+
+        return ProgressResult(tag: 5, variableName: name);
     }
   }
 
