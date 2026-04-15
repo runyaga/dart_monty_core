@@ -219,15 +219,15 @@ class MontyRepl {
   /// Returns whether [source] is syntactically complete for execution.
   ///
   /// Useful for building REPL UIs that show `>>>` vs `...` prompts.
-  Future<ReplContinuation> detectContinuation(String source) async {
+  Future<ReplContinuationMode> detectContinuation(String source) async {
     _checkNotDisposed();
     await _ensureCreated();
     final mode = await _bindings.detectContinuation(source);
 
     return switch (mode) {
-      1 => ReplContinuation.incompleteImplicit,
-      2 => ReplContinuation.incompleteBlock,
-      _ => ReplContinuation.complete,
+      1 => ReplContinuationMode.incompleteImplicit,
+      2 => ReplContinuationMode.incompleteBlock,
+      _ => ReplContinuationMode.complete,
     };
   }
 
@@ -352,7 +352,7 @@ class MontyRepl {
 }
 
 /// Whether a source fragment is syntactically complete for REPL execution.
-enum ReplContinuation {
+enum ReplContinuationMode {
   /// The snippet is complete and can be executed.
   complete,
 
