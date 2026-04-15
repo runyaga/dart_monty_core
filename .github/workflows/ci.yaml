@@ -152,7 +152,7 @@ jobs:
         run: echo "AOT kernel test completed via dart test --compiler=kernel"
 
   # ---------------------------------------------------------------------------
-  # Rust: fmt + clippy + tests + tarpaulin coverage
+  # Rust: fmt + clippy + tests + llvm-cov coverage (≥80% line coverage)
   # ---------------------------------------------------------------------------
   rust:
     name: Rust (fmt + clippy + test + coverage)
@@ -164,7 +164,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
@@ -179,20 +179,21 @@ jobs:
       - name: cargo deny check
         working-directory: native
         run: cargo deny check
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@cargo-tarpaulin
-      - name: Run tests with coverage
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run tests with coverage (≥60% line coverage)
         working-directory: native
         run: |
-          OUTPUT=$(cargo tarpaulin --out Xml --output-dir target/tarpaulin 2>&1)
-          echo "$OUTPUT"
-          PCT=$(echo "$OUTPUT" | grep -oP '\d+\.\d+% coverage' | grep -oP '\d+\.\d+' | tail -1 || echo "0")
-          echo "Coverage: ${PCT}%"
-          WHOLE=${PCT%%.*}
-          if [ "${WHOLE:-0}" -lt 55 ]; then
-            echo "FAIL: Coverage ${PCT}% < 55% minimum."
+          cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/' 2>&1 | tee cov.txt
+          # Extract line coverage from the TOTAL row (10th whitespace-separated field)
+          LINE_PCT=$(awk '/^TOTAL/{gsub(/%/,"",$10); print $10}' cov.txt)
+          echo "Line coverage: ${LINE_PCT}%"
+          WHOLE=${LINE_PCT%%.*}
+          if [ "${WHOLE:-0}" -lt 60 ]; then
+            echo "FAIL: Rust line coverage ${LINE_PCT}% is below 60% minimum."
             exit 1
           fi
+          echo "PASS: Rust line coverage ${LINE_PCT}% >= 60%"
 
   # ---------------------------------------------------------------------------
   # Build WASM binary (wasm32-wasip1)

@@ -154,6 +154,7 @@ class WasmReplBindings implements ReplBindings {
         traceback: result.traceback,
       );
     }
+
     return switch (result.state ?? 'complete') {
       'complete' => _buildCompleteResult(result),
       'pending' => _buildPendingResult(result),

@@ -146,6 +146,7 @@ void _isolateEntryPoint(_InitMessage init) {
   unawaited(_isolateMain(init));
 }
 
+// ignore: cyclomatic-complexity, lines-of-code — exhaustive dispatch over all isolate message variants; tracks the sealed message protocol
 Future<void> _isolateMain(_InitMessage init) async {
   final receivePort = ReceivePort();
   init.mainSendPort.send(_ReadyMessage(receivePort.sendPort));
@@ -280,6 +281,7 @@ class _IsolateCleanupToken {
 ///
 /// [terminate] provides a force-kill path with zombie tracking and is used
 /// internally by higher-level APIs that need guaranteed cleanup.
+// ignore: number-of-methods — one method per isolate protocol message; count is bounded by the sealed message enum
 class NativeIsolateBindingsImpl extends NativeIsolateBindings {
   /// Creates a [NativeIsolateBindingsImpl].
   ///
@@ -337,6 +339,7 @@ class NativeIsolateBindingsImpl extends NativeIsolateBindings {
   static int get zombieCount => _zombieCount;
 
   @override
+  // ignore: lines-of-code — isolate spawn + handshake + error recovery; each step is load-bearing
   Future<bool> init() async {
     final receivePort = ReceivePort();
     _receivePort = receivePort;

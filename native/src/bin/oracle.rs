@@ -1,5 +1,7 @@
 //! Oracle binary — runs Python code via the Monty crate and emits JSON.
 //!
+//! Source of truth for the FFI conformance test suite (`oracle_ffi_test.dart`).
+//!
 //! Usage: echo "1 + 1" | oracle
 //!
 //! stdin  → Python code snippet
@@ -28,6 +30,9 @@ use serde_json::{Value, json};
 // Re-use the crate's MontyObject → JSON conversion directly.
 // convert.rs only imports external crates (monty, num_bigint, num_traits, serde_json)
 // so it compiles cleanly as an included path module with no changes.
+// dead_code fires on the items inside convert.rs (not the mod item itself), so
+// #[expect] would always be "unfulfilled"; suppress allow_attributes for this one site.
+#[allow(clippy::allow_attributes)]
 #[allow(dead_code)]
 #[path = "../convert.rs"]
 mod convert;
@@ -47,7 +52,11 @@ fn run_oracle(code: &str) -> Value {
         Ok(r) => r,
         Err(e) => return build_error_json(&e, &print_buf),
     };
-    match runner.run(vec![], NoLimitTracker, PrintWriter::CollectString(&mut print_buf)) {
+    match runner.run(
+        vec![],
+        NoLimitTracker,
+        PrintWriter::CollectString(&mut print_buf),
+    ) {
         Ok(value) => {
             let mut result = json!({
                 "value": convert::monty_object_to_json(&value),

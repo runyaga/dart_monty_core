@@ -136,8 +136,7 @@ final class MontyDateTime extends MontyValue {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is MontyDateTime && _fieldsEqual(other));
+      identical(this, other) || (other is MontyDateTime && _fieldsEqual(other));
 
   bool _fieldsEqual(MontyDateTime o) =>
       o.year == year &&

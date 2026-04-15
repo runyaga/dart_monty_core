@@ -1,3 +1,9 @@
+#![expect(
+    clippy::undocumented_unsafe_blocks,
+    clippy::borrow_as_ptr,
+    reason = "integration tests call into raw FFI; safety is guaranteed by the test harness setup"
+)]
+
 use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
@@ -1412,7 +1418,7 @@ fn async_gather_via_ffi() {
     let ids: Vec<u32> = serde_json::from_str(&ids_str).unwrap();
     assert_eq!(ids.len(), 2);
 
-    let results = CString::new(format!("{{\"{}\":10,\"{}\":32}}", id0, id1)).unwrap();
+    let results = CString::new(format!("{{\"{id0}\":10,\"{id1}\":32}}")).unwrap();
     let errors = c("{}");
     let tag =
         unsafe { monty_resume_futures(handle, results.as_ptr(), errors.as_ptr(), &mut out_error) };

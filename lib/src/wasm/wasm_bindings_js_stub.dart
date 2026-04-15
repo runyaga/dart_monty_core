@@ -8,6 +8,7 @@ import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 /// provides the same class name so that the conditional import in
 /// `monty_wasm.dart` compiles. The constructor throws immediately — tests
 /// always inject a mock, so this path is never reached.
+// ignore: number-of-methods — one method per WASM export; count is bounded by the JS bridge contract
 class WasmBindingsJs extends WasmBindings {
   /// Throws [UnsupportedError] — only available on web.
   WasmBindingsJs() {

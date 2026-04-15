@@ -23,7 +23,7 @@ void main() {
   group('wasm_fixture', () {
     for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
       test(key, () async {
-        final expectation = parseFixture(value);
+        final expectation = parseFixture(value, skipWasm: true);
         if (expectation == null) return; // skipped fixture
 
         final platform = createPlatformMonty();

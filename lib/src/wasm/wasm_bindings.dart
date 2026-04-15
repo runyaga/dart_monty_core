@@ -159,6 +159,7 @@ final class WasmDiscoverResult {
 /// Resource limits are passed inline with `run()` / `start()` calls
 /// rather than via separate `setLimit` calls, avoiding extra Worker
 /// round-trips.
+// ignore: number-of-methods — one method per WASM export; count is bounded by the JS bridge contract
 abstract class WasmBindings {
   /// Creates a [WasmBindings].
   const WasmBindings();

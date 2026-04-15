@@ -75,12 +75,20 @@ sealed class MontyValue {
     ),
   };
 
-  static MontyValue? _parseSpecialFloat(String s) => switch (s) {
-    'NaN' => const MontyFloat(double.nan),
-    'Infinity' => const MontyFloat(double.infinity),
-    '-Infinity' => const MontyFloat(double.negativeInfinity),
-    _ => null,
-  };
+  static final _typeFactories =
+      <String, MontyValue Function(Map<String, dynamic>)>{
+        'bytes': MontyBytes._fromMap,
+        'tuple': MontyTuple._fromMap,
+        'set': MontySet._fromMap,
+        'frozenset': MontyFrozenSet._fromMap,
+        'date': MontyDate._fromMap,
+        'datetime': MontyDateTime._fromMap,
+        'timedelta': MontyTimeDelta._fromMap,
+        'timezone': MontyTimeZone._fromMap,
+        'path': MontyPath._fromMap,
+        'namedtuple': MontyNamedTuple._fromMap,
+        'dataclass': MontyDataclass._fromMap,
+      };
 
   /// Serializes this value back to JSON compatible with the Rust side.
   Object? toJson();
@@ -92,19 +100,11 @@ sealed class MontyValue {
   /// Typed wrappers return their `toJson()` map.
   Object? get dartValue;
 
-  static final _typeFactories =
-      <String, MontyValue Function(Map<String, dynamic>)>{
-    'bytes': MontyBytes._fromMap,
-    'tuple': MontyTuple._fromMap,
-    'set': MontySet._fromMap,
-    'frozenset': MontyFrozenSet._fromMap,
-    'date': MontyDate._fromMap,
-    'datetime': MontyDateTime._fromMap,
-    'timedelta': MontyTimeDelta._fromMap,
-    'timezone': MontyTimeZone._fromMap,
-    'path': MontyPath._fromMap,
-    'namedtuple': MontyNamedTuple._fromMap,
-    'dataclass': MontyDataclass._fromMap,
+  static MontyValue? _parseSpecialFloat(String s) => switch (s) {
+    'NaN' => const MontyFloat(double.nan),
+    'Infinity' => const MontyFloat(double.infinity),
+    '-Infinity' => const MontyFloat(double.negativeInfinity),
+    _ => null,
   };
 
   // Returns different sealed subclasses based on __type, so it
@@ -116,6 +116,7 @@ sealed class MontyValue {
       map.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
     );
     if (type == null) return toDict;
+
     return _typeFactories[type]?.call(map) ?? toDict;
   }
 }

@@ -25,6 +25,7 @@ typedef _ErrorInfo = ({
 
 List<MontyStackFrame> _parseTraceback(List<dynamic>? traceback) {
   if (traceback == null) return const [];
+
   return MontyStackFrame.listFromJson(traceback);
 }
 
@@ -44,6 +45,7 @@ String _encodeLimitsJson(MontyLimits? limits) {
 
 String? _encodeExternalFunctionsJson(List<String>? fns) {
   if (fns == null || fns.isEmpty) return null;
+
   return json.encode(fns);
 }
 
@@ -186,6 +188,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
         return _buildOsCall(p);
       case 'resolve_futures':
         markActive();
+
         return MontyResolveFutures(
           pendingCallIds: p.pendingCallIds ?? const [],
         );
@@ -251,6 +254,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
   MontyComplete _buildComplete(CoreProgressResult p) {
     markIdle();
+
     return MontyComplete(
       result: MontyResult(
         value: MontyValue.fromJson(p.value),
@@ -263,6 +267,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
   MontyPending _buildPending(CoreProgressResult p) {
     markActive();
+
     return MontyPending(
       functionName: p.functionName ?? '',
       arguments: _parseArgList(p.arguments),
@@ -274,6 +279,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
   MontyOsCall _buildOsCall(CoreProgressResult p) {
     markActive();
+
     return MontyOsCall(
       operationName: p.functionName ?? '',
       arguments: _parseArgList(p.arguments),

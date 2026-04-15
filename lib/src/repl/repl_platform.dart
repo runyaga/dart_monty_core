@@ -6,13 +6,17 @@ import 'package:dart_monty_core/src/repl/monty_repl.dart';
 
 /// Adapts [MontyRepl] to the [MontyPlatform] interface.
 ///
-/// This allows `MontyRepl` to be used with `DefaultMontyBridge` and the
-/// full plugin dispatch system. The bridge's dispatch loop calls
-/// [start]/[resume]/[resumeWithError], which delegate to the REPL's
-/// [MontyRepl.feedStart]/[MontyRepl.resume]/[MontyRepl.resumeWithError].
+/// This allows `MontyRepl` to be used anywhere a [MontyPlatform] is
+/// expected — for example with `MontySession` — while keeping REPL heap
+/// state (variables, functions, classes) persistent across calls.
 ///
-/// Unlike one-shot [MontyPlatform] implementations, the REPL persists
-/// heap state (variables, functions, classes) across calls.
+/// ```dart
+/// final repl = MontyRepl();
+/// final platform = ReplPlatform(repl: repl);
+/// final session = MontySession(platform: platform);
+/// await session.run('x = 42');
+/// await repl.dispose();
+/// ```
 class ReplPlatform implements MontyPlatform {
   /// Creates a [ReplPlatform] wrapping [repl].
   const ReplPlatform({required MontyRepl repl}) : _repl = repl;

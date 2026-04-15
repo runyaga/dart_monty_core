@@ -774,10 +774,10 @@ mod tests {
 
     #[test]
     fn test_iterative_execution() {
-        let code = r#"
+        let code = r"
 result = ext_fn(42)
 result + 1
-"#;
+";
         let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
         let (tag, err) = handle.start();
         assert_eq!(tag, MontyProgressTag::Pending);
@@ -798,13 +798,13 @@ result + 1
 
     #[test]
     fn test_resume_with_error() {
-        let code = r#"
+        let code = r"
 try:
     result = ext_fn(1)
 except RuntimeError as e:
     result = str(e)
 result
-"#;
+";
         let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
         let (tag, _) = handle.start();
         assert_eq!(tag, MontyProgressTag::Pending);
@@ -1225,7 +1225,7 @@ result
 
     #[test]
     fn test_error_json_traceback_multi_frame() {
-        let code = r#"
+        let code = r"
 def inner():
     1/0
 
@@ -1233,7 +1233,7 @@ def outer():
     inner()
 
 outer()
-"#;
+";
         let mut handle = MontyHandle::new(code.into(), vec![], None).unwrap();
         let (_, result_json, _) = handle.run();
         let parsed: Value = serde_json::from_str(&result_json).unwrap();
@@ -1319,7 +1319,7 @@ outer()
         let ids: Vec<u32> = serde_json::from_str(call_ids).unwrap();
         assert_eq!(ids.len(), 2);
 
-        let results = format!("{{\"{}\":10,\"{}\":32}}", id0, id1);
+        let results = format!("{{\"{id0}\":10,\"{id1}\":32}}");
         let (tag, _) = handle.resume_futures(&results, "{}");
         assert_eq!(tag, MontyProgressTag::Complete);
 
@@ -1345,8 +1345,8 @@ outer()
         let (tag, _) = handle.resume_as_future();
         assert_eq!(tag, MontyProgressTag::ResolveFutures);
 
-        let results = format!("{{\"{}\":10}}", id0);
-        let errors = format!("{{\"{}\":\"bar failed\"}}", id1);
+        let results = format!("{{\"{id0}\":10}}");
+        let errors = format!("{{\"{id1}\":\"bar failed\"}}");
         let (tag, _) = handle.resume_futures(&results, &errors);
         assert_eq!(tag, MontyProgressTag::Error);
         assert_eq!(handle.complete_is_error(), Some(true));
