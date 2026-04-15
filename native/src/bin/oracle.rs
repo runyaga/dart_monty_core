@@ -1,5 +1,7 @@
 //! Oracle binary — runs Python code via the Monty crate and emits JSON.
 //!
+//! Source of truth for the FFI conformance test suite (`oracle_ffi_test.dart`).
+//!
 //! Usage: echo "1 + 1" | oracle
 //!
 //! stdin  → Python code snippet
