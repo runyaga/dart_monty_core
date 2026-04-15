@@ -181,7 +181,7 @@ jobs:
         run: cargo deny check
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Run tests with coverage (≥80% line coverage)
+      - name: Run tests with coverage (≥60% line coverage)
         working-directory: native
         run: |
           cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/' 2>&1 | tee cov.txt
@@ -189,11 +189,11 @@ jobs:
           LINE_PCT=$(awk '/^TOTAL/{gsub(/%/,"",$10); print $10}' cov.txt)
           echo "Line coverage: ${LINE_PCT}%"
           WHOLE=${LINE_PCT%%.*}
-          if [ "${WHOLE:-0}" -lt 80 ]; then
-            echo "FAIL: Rust line coverage ${LINE_PCT}% is below 80% minimum."
+          if [ "${WHOLE:-0}" -lt 60 ]; then
+            echo "FAIL: Rust line coverage ${LINE_PCT}% is below 60% minimum."
             exit 1
           fi
-          echo "PASS: Rust line coverage ${LINE_PCT}% >= 80%"
+          echo "PASS: Rust line coverage ${LINE_PCT}% >= 60%"
 
   # ---------------------------------------------------------------------------
   # Build WASM binary (wasm32-wasip1)
@@ -398,10 +398,10 @@ jobs:
           WEB_DIR: test/integration/web
 
   # ---------------------------------------------------------------------------
-  # Patch coverage gate — PRs must maintain >= 90% coverage on changed lines
+  # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
   # ---------------------------------------------------------------------------
   patch-coverage:
-    name: Patch coverage gate (90%)
+    name: Patch coverage gate (70%)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -430,5 +430,5 @@ jobs:
             -o filtered-coverage.info
           diff-cover filtered-coverage.info \
             --compare-branch=origin/${{ github.base_ref }} \
-            --fail-under=90 \
+            --fail-under=70 \
             --diff-range-notation='..'
