@@ -1,0 +1,82 @@
+name: Upstream monty check
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Weekly on Monday 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for new monty releases
+        id: check
+        run: |
+          # Latest release tag on pydantic/monty
+          LATEST_TAG=$(gh api repos/pydantic/monty/releases/latest --jq '.tag_name' 2>/dev/null || echo "unknown")
+          LATEST_VERSION="${LATEST_TAG#v}"
+
+          # Current version pinned in Cargo.toml as tag = "vX.Y.Z"
+          CURRENT_TAG=$(grep -oP 'tag = "\K[^"]*' native/Cargo.toml || echo "unknown")
+          CURRENT_VERSION="${CURRENT_TAG#v}"
+
+          echo "latest_tag=$LATEST_TAG"      >> "$GITHUB_OUTPUT"
+          echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "current_tag=$CURRENT_TAG"    >> "$GITHUB_OUTPUT"
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ] && \
+             [ "$LATEST_VERSION" != "unknown" ] && \
+             [ "$CURRENT_VERSION" != "unknown" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::New monty release: $LATEST_TAG (current: $CURRENT_TAG)"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::monty is up to date ($CURRENT_TAG)"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Open issue for new monty release
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          # Avoid duplicate issues
+          EXISTING=$(gh issue list \
+            --search "monty ${{ steps.check.outputs.latest_tag }} in:title" \
+            --state open --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already exists, skipping."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "chore(native): new upstream monty release ${{ steps.check.outputs.latest_tag }}" \
+            --label "chore" \
+            --body "$(cat <<BODY
+          A new upstream monty release has been detected.
+
+          | | Version |
+          |---|---|
+          | **Latest** | ${{ steps.check.outputs.latest_tag }} |
+          | **Current** | ${{ steps.check.outputs.current_tag }} |
+
+          **Release notes:** https://github.com/pydantic/monty/releases/tag/${{ steps.check.outputs.latest_tag }}
+
+          ### Upgrade steps
+          1. Update \`native/Cargo.toml\`: change \`tag = "${{ steps.check.outputs.current_tag }}"\` → \`tag = "${{ steps.check.outputs.latest_tag }}"\`
+          2. \`cd native && cargo update\`
+          3. Rebuild native library and oracle binary
+          4. Run FFI integration tests: \`dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi\`
+          5. Check for new \`MontyObject\` variants in \`convert.rs\`
+          6. Un-xfail any fixtures that now pass
+          7. Regenerate fixture corpus if test_cases changed: \`dart tool/generate_fixture_corpus.dart\`
+          BODY
+          )"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

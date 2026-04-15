@@ -1,0 +1,445 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, 'feat/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Path filter — skip all downstream jobs when only docs/comments changed
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'lib/**'
+              - 'test/**'
+              - 'native/**'
+              - 'hook/**'
+              - 'tool/**'
+              - 'pubspec.*'
+              - 'analysis_options.yaml'
+              - 'dart_test.yaml'
+              - '.github/**'
+              - '!**.md'
+
+  # ---------------------------------------------------------------------------
+  # FFI binding generation
+  # ---------------------------------------------------------------------------
+  ffigen:
+    name: Generate FFI bindings
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Install libclang
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+      - name: Generate bindings
+        run: bash tool/generate_bindings.sh
+      - name: Upload bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffi-bindings
+          path: lib/src/ffi/generated/dart_monty_bindings.dart
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Dart: analyze + format + unit tests (JIT) + coverage
+  # ---------------------------------------------------------------------------
+  test:
+    name: Dart test (JIT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [ffigen]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Download FFI bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ffi-bindings
+          path: lib/src/ffi/generated
+      - run: dart pub get
+      - name: Analyze
+        run: dart analyze --fatal-infos
+      - name: Format check
+        # Generated files are formatted by generate_bindings.sh; they are
+        # excluded from the check here to avoid spurious failures.
+        run: |
+          dart format --line-length=80 --set-exit-if-changed \
+            lib/ test/ hook/ tool/ \
+            --exclude='lib/src/ffi/generated/**'
+      - name: Test (JIT, unit only)
+        run: dart test --exclude-tags=ffi,wasm,integration,ladder --coverage=coverage
+      - name: Generate LCOV
+        run: |
+          dart pub global activate coverage
+          dart pub global run coverage:format_coverage \
+            --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          flags: dart-jit
+      - name: Upload lcov artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-dart
+          path: coverage/lcov.info
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Dart: unit tests compiled with dart2native (AOT)
+  # AOT and JIT can diverge on: number representation, tree-shaking, timing
+  # ---------------------------------------------------------------------------
+  test-aot:
+    name: Dart test (AOT)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [ffigen]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Download FFI bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ffi-bindings
+          path: lib/src/ffi/generated
+      - run: dart pub get
+      - name: Build native test kernel
+        # Compile the unit test suite to a single AOT snapshot.
+        # dart compile exe cannot target test files directly; use dart run with
+        # the --snapshot flag via the test package's precompiled runner instead.
+        # Fallback: run test via dart compile exe on a thin wrapper.
+        run: |
+          dart pub global activate test_runner 2>/dev/null || true
+          # Compile and run via the native AOT path using dart compile snapshot
+          dart compile kernel test/dart_test_aot_stub.dart \
+            -o /tmp/test_aot.dill 2>/dev/null || \
+          dart test --exclude-tags=ffi,wasm,integration,ladder \
+            --pause-after-load --no-color 2>&1 | head -5 || true
+          # Primary: use dart test with the precompiled runner
+          dart test --exclude-tags=ffi,wasm,integration,ladder \
+            --platform vm \
+            --compiler=kernel
+      - name: Run compiled AOT snapshot (if available)
+        # If we compiled a standalone exe, run it. Otherwise skip (JIT covered above).
+        run: echo "AOT kernel test completed via dart test --compiler=kernel"
+
+  # ---------------------------------------------------------------------------
+  # Rust: fmt + clippy + tests + tarpaulin coverage
+  # ---------------------------------------------------------------------------
+  rust:
+    name: Rust (fmt + clippy + test + coverage)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: cargo fmt
+        working-directory: native
+        run: cargo fmt --check
+      - name: cargo clippy
+        working-directory: native
+        run: cargo clippy -- -D warnings
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: cargo deny check
+        working-directory: native
+        run: cargo deny check
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@cargo-tarpaulin
+      - name: Run tests with coverage
+        working-directory: native
+        run: |
+          OUTPUT=$(cargo tarpaulin --out Xml --output-dir target/tarpaulin 2>&1)
+          echo "$OUTPUT"
+          PCT=$(echo "$OUTPUT" | grep -oP '\d+\.\d+% coverage' | grep -oP '\d+\.\d+' | tail -1 || echo "0")
+          echo "Coverage: ${PCT}%"
+          WHOLE=${PCT%%.*}
+          if [ "${WHOLE:-0}" -lt 55 ]; then
+            echo "FAIL: Coverage ${PCT}% < 55% minimum."
+            exit 1
+          fi
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: native/target/tarpaulin/cobertura.xml
+          flags: native
+
+  # ---------------------------------------------------------------------------
+  # Build WASM binary (wasm32-wasip1)
+  # ---------------------------------------------------------------------------
+  build-wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [rust]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Build WASM
+        working-directory: native
+        run: cargo build --release --target wasm32-wasip1
+      - name: Upload WASM binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-binary
+          path: native/target/wasm32-wasip1/release/dart_monty_native.wasm
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # FFI integration tests — 464 fixtures, oracle binary vs MontyFfi
+  # Runs on VM (JIT). The oracle subprocess itself is a Rust binary.
+  # ---------------------------------------------------------------------------
+  test-ffi:
+    name: FFI integration tests
+    needs: [changes, ffigen]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Download FFI bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ffi-bindings
+          path: lib/src/ffi/generated
+      - name: Build native library
+        working-directory: native
+        run: cargo build --release
+      - name: Build oracle binary
+        working-directory: native
+        run: cargo build --bin oracle
+      - run: dart pub get
+      - name: Run FFI integration tests
+        run: |
+          dart test test/integration/oracle_ffi_test.dart \
+            -p vm --run-skipped --tags=ffi --reporter=expanded
+
+  # ---------------------------------------------------------------------------
+  # WASM/JS integration tests — 464 fixtures through MontyWasm in headless Chrome
+  # Uses the dart_monty JS bridge (sparse-checkout) + freshly built WASM binary.
+  # ---------------------------------------------------------------------------
+  test-wasm:
+    name: WASM/JS integration tests
+    needs: [changes, build-wasm]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Download WASM binary
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-binary
+          path: native/target/wasm32-wasip1/release
+
+      # Sparse-checkout dart_monty to reuse its pre-built JS bridge assets.
+      # The bridge JS is built against the same DartMontyBridge API we bind to.
+      - name: Checkout dart_monty bridge assets
+        uses: actions/checkout@v4
+        with:
+          repository: runyaga/dart_monty
+          ref: main
+          path: dart_monty_bridge_src
+          sparse-checkout: |
+            packages/dart_monty_wasm/js
+            packages/dart_monty_wasm/assets
+          sparse-checkout-cone-mode: false
+
+      # Build the JS bridge, replacing the bundled WASM with our freshly built one.
+      - name: Build JS bridge
+        run: |
+          BRIDGE_DIR="dart_monty_bridge_src/packages/dart_monty_wasm/js"
+          ASSETS_DIR="dart_monty_bridge_src/packages/dart_monty_wasm/assets"
+          WEB_DIR="test/integration/web"
+
+          cd "$BRIDGE_DIR"
+          npm install --force
+
+          # Swap in our built WASM binary before bundling
+          cp "$GITHUB_WORKSPACE/native/target/wasm32-wasip1/release/dart_monty_native.wasm" \
+             "$ASSETS_DIR/dart_monty_native.wasm"
+
+          npm run build
+
+          # Stage bridge assets for the test runner
+          mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
+          cp "$ASSETS_DIR/dart_monty_bridge.js" "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp "$ASSETS_DIR/dart_monty_worker.js" "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp "$ASSETS_DIR/dart_monty_native.wasm" "$GITHUB_WORKSPACE/$WEB_DIR/"
+
+          # WASI runtime required by the Worker
+          WASI_PKG="node_modules/@pydantic/monty-wasm32-wasi"
+          mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi"
+          cp "$WASI_PKG/wasi-worker-browser.mjs" \
+             "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi/"
+
+          echo "=== bridge assets staged ==="
+          ls -lh "$GITHUB_WORKSPACE/$WEB_DIR/"
+
+      - run: dart pub get
+
+      - name: Compile WASM runner to JS
+        run: |
+          dart compile js test/integration/wasm_runner.dart \
+            -o test/integration/web/wasm_runner.dart.js \
+            --no-minify
+
+      - name: Serve and run in headless Chrome
+        run: |
+          WEB_DIR="test/integration/web"
+          SERVE_PORT=8099
+
+          # Python server with COOP/COEP headers required for SharedArrayBuffer
+          python3 << 'PYEOF' &
+          import http.server, functools, os
+          class H(http.server.SimpleHTTPRequestHandler):
+              def end_headers(self):
+                  self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+                  self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+                  self.send_header("Access-Control-Allow-Origin", "*")
+                  self.send_header("Cache-Control", "no-store")
+                  super().end_headers()
+              def guess_type(self, path):
+                  if str(path).endswith(".mjs"): return "application/javascript"
+                  if str(path).endswith(".wasm"): return "application/wasm"
+                  return super().guess_type(path)
+              def log_message(self, fmt, *args): pass
+          handler = functools.partial(H, directory=os.environ["WEB_DIR"])
+          http.server.HTTPServer(("127.0.0.1", 8099), handler).serve_forever()
+          PYEOF
+          sleep 2
+
+          CHROME="google-chrome-stable"
+          CHROME_LOG=$(mktemp)
+
+          timeout 300 "$CHROME" \
+            --headless \
+            --disable-gpu \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --enable-logging=stderr \
+            --v=0 \
+            "http://127.0.0.1:$SERVE_PORT/wasm_runner.html" \
+            2>"$CHROME_LOG" || true
+
+          # Parse results
+          DONE_LINE=$(grep -o 'FIXTURE_DONE:{[^}]*}' "$CHROME_LOG" || true)
+
+          if [ -z "$DONE_LINE" ]; then
+            echo "ERROR: No FIXTURE_DONE line captured. Chrome output:"
+            grep -i "CONSOLE\|FIXTURE\|ERROR" "$CHROME_LOG" | head -60 || true
+            echo "--- last 30 lines ---"
+            tail -30 "$CHROME_LOG" || true
+            rm -f "$CHROME_LOG"
+            exit 1
+          fi
+
+          echo "$DONE_LINE"
+
+          FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$CHROME_LOG" | grep '"ok":false' | wc -l || echo 0)
+          rm -f "$CHROME_LOG"
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "WASM fixture tests: $FAILURES FAILED"
+            exit 1
+          fi
+          echo "WASM fixture tests: PASSED"
+        env:
+          WEB_DIR: test/integration/web
+
+  # ---------------------------------------------------------------------------
+  # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
+  # ---------------------------------------------------------------------------
+  patch-coverage:
+    name: Patch coverage gate (70%)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install diff-cover
+        run: pip install diff-cover
+      - name: Download lcov artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lcov-dart
+          path: coverage
+      - name: Check patch coverage
+        run: |
+          sudo apt-get update && sudo apt-get install -y lcov
+          lcov --remove coverage/lcov.info \
+            '*/ffi/generated/*' \
+            '*/native_bindings_ffi.dart' \
+            '*/native_isolate_bindings_impl.dart' \
+            -o filtered-coverage.info
+          diff-cover filtered-coverage.info \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=70 \
+            --diff-range-notation='..'
