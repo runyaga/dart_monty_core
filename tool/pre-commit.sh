@@ -6,7 +6,7 @@
 #   1. cargo fmt --check          (native/)
 #   2. dart analyze --fatal-infos
 #   3. dart format --set-exit-if-changed lib/ test/ hook/ tool/
-#              (excludes lib/src/ffi/generated/**)
+#   4. FFI bindings staleness check (dart_monty.h → dart_monty_bindings.dart)
 #
 # Install once:
 #   bash tool/install-hooks.sh
@@ -72,6 +72,30 @@ if command -v dart &>/dev/null; then
   fi
 else
   echo "  SKIP: dart not found"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# 4. FFI bindings staleness check
+# ---------------------------------------------------------------------------
+echo "--- FFI bindings: staleness check ---"
+# Only relevant when the C header is part of this commit.
+if git diff --cached --name-only | grep -q "native/include/dart_monty.h"; then
+  if command -v dart &>/dev/null; then
+    # Regenerate in-place (ffigen writes to the path in ffigen.yaml).
+    bash "$PKG/tool/generate_bindings.sh" > /dev/null 2>&1
+    # If the bindings changed, they must also be staged.
+    if ! git diff --quiet "$PKG/lib/src/ffi/generated/dart_monty_bindings.dart"; then
+      git add "$PKG/lib/src/ffi/generated/dart_monty_bindings.dart"
+      ok "FFI bindings regenerated and staged automatically"
+    else
+      ok "FFI bindings up-to-date"
+    fi
+  else
+    echo "  SKIP: dart not found"
+  fi
+else
+  echo "  SKIP: dart_monty.h not staged"
 fi
 echo ""
 

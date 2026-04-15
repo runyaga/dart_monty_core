@@ -66,6 +66,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libclang-dev
       - name: Generate bindings
         run: bash tool/generate_bindings.sh
+      - name: Check bindings are up-to-date
+        run: |
+          if ! git diff --quiet lib/src/ffi/generated/dart_monty_bindings.dart; then
+            echo "Committed bindings are stale. Run: bash tool/generate_bindings.sh"
+            git diff lib/src/ffi/generated/dart_monty_bindings.dart
+            exit 1
+          fi
       - name: Upload bindings
         uses: actions/upload-artifact@v4
         with:
