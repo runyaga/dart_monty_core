@@ -182,18 +182,97 @@ await monty.run(
 ## Testing
 
 The package ships 464 Python fixture files from the upstream
-`pydantic/monty` test corpus. Each fixture is run through both the Dart
-binding and a native oracle binary, and the results are compared.
+`pydantic/monty` test corpus. Tests run on two backends: **FFI** (VM, using
+a native oracle binary as source of truth) and **WASM** (headless Chrome).
+
+### Unit tests
 
 ```bash
-# Build the oracle (one-time)
-cd native && cargo build --bin oracle
+dart test --exclude-tags=ffi,wasm,integration
+```
 
-# Run all 464 FFI conformance tests
+### FFI conformance tests (464 fixtures)
+
+```bash
+# 1. Build the Rust oracle + native dylib (one-time, or after Cargo.toml change)
+cd native && cargo build --release && cargo build --bin oracle && cd ..
+
+# 2. Run all 464 oracle conformance tests
+dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi
+```
+
+The oracle binary (`native/src/bin/oracle.rs`) is the source of truth. Each
+fixture runs through both the oracle and the Dart FFI binding and the results
+are compared. All 464 fixtures must pass.
+
+### Rust tests and linting
+
+```bash
+cd native
+cargo test                                       # 291 unit tests
+cargo clippy --all-targets -- -D warnings        # zero warnings
+```
+
+### WASM conformance tests (378 pass, 86 skipped)
+
+The WASM path requires Node.js, npm, and Chrome. The full pipeline is wrapped
+in `tool/test_wasm.sh`:
+
+```bash
+# Full pipeline: compile Rust → WASM, bundle JS bridge, compile Dart runner,
+# serve with COOP/COEP headers, run headless Chrome.
+bash tool/test_wasm.sh
+
+# Skip the cargo + npm build if assets are already built:
+bash tool/test_wasm.sh --skip-build
+```
+
+**What the pipeline does:**
+
+1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_native.wasm`
+2. `cd js && npm install && node build.js` — esbuild bundles `dart_monty_bridge.js` and `dart_monty_worker.js` into `assets/`
+3. `dart compile js test/integration/wasm_runner.dart` — compiles the Dart fixture runner to JS
+4. A Python COOP/COEP HTTP server serves `test/integration/web/fixtures.html`
+5. Headless Chrome loads the page and runs all 378 active WASM fixtures
+
+**Prerequisites:**
+
+```bash
+# Rust wasm32-wasip1 target
+rustup target add wasm32-wasip1
+
+# Node.js (for esbuild)
+npm --version    # >= 18
+
+# Chrome (detected automatically)
+# macOS: /Applications/Google Chrome.app/...
+# Linux: google-chrome or chromium
+```
+
+**Skipped fixtures (86):** Fixtures tagged `# call-external`, `# run-async`,
+`# mount-fs`, or `# xfail=monty` are skipped on both backends.
+An additional 17 fixtures are tagged `# xfail=wasm` for known gaps in the WASM
+JS bridge (parse-time SyntaxErrors, relative/wildcard imports, cycle
+detection). See `tool/` and the maintenance guide at `~/dev/plans/dart_monty_core_maintenance.md`
+for the xfail backlog and fix strategy.
+
+### All checks at once
+
+```bash
+# Rust
+cd native && cargo test && cargo clippy --all-targets -- -D warnings && cd ..
+
+# Dart static analysis
+dart analyze --fatal-infos lib/
+
+# Dart format check
+dart format --set-exit-if-changed lib/ test/ tool/
+
+# FFI conformance
 dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi
 
-# Run WASM fixture tests (requires Chrome)
-dart test test/integration/wasm_fixture_test.dart -p chrome --run-skipped --tags=wasm
+# WASM conformance (requires Chrome + Node.js)
+bash tool/test_wasm.sh --skip-build   # if assets already built
 ```
 
 ---
