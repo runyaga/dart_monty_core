@@ -67,6 +67,24 @@ function adaptResultForDart(cabiResultJson, isError) {
   };
 }
 
+/**
+ * Extract an exception type name from a compile-error message.
+ *
+ * monty_create writes exc.summary() into out_error on failure, which looks
+ * like "SyntaxError: 'break' outside loop". Extract the prefix so Dart can
+ * match on excType the same way it does for runtime errors.
+ *
+ * Returns null when the message has no recognisable "TypeName:" prefix.
+ */
+function excTypeFromMsg(msg) {
+  if (!msg) return null;
+  const colon = msg.indexOf(':');
+  if (colon <= 0) return null;
+  const prefix = msg.substring(0, colon).trim();
+  // Sanity-check: exception type names are PascalCase identifiers.
+  return /^[A-Z][A-Za-z]+$/.test(prefix) ? prefix : null;
+}
+
 // ---------------------------------------------------------------------------
 // Progress reading (shared by start, resume, resumeAsFuture, resumeFutures)
 // ---------------------------------------------------------------------------
@@ -184,6 +202,7 @@ function handleRun(id, code, limits, scriptName) {
       type: 'result', id, ok: false,
       error: errMsg || 'monty_create failed',
       errorType: 'CompileError',
+      excType: excTypeFromMsg(errMsg),
     });
     return;
   }
@@ -278,6 +297,7 @@ function handleStart(id, code, extFns, limits, scriptName) {
       type: 'result', id, ok: false,
       error: errMsg || 'monty_create failed',
       errorType: 'CompileError',
+      excType: excTypeFromMsg(errMsg),
     });
     return;
   }
