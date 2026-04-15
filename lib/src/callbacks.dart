@@ -14,11 +14,12 @@ typedef MontyCallback = Future<Object?> Function(Map<String, Object?> args);
 ///
 /// Throw an [OsCallException] to raise a Python exception from the handler.
 /// Return `null` to return `None` to Python.
-typedef OsCallHandler = Future<Object?> Function(
-  String operation,
-  List<Object?> args,
-  Map<String, Object?>? kwargs,
-);
+typedef OsCallHandler =
+    Future<Object?> Function(
+      String operation,
+      List<Object?> args,
+      Map<String, Object?>? kwargs,
+    );
 
 /// Thrown by an [OsCallHandler] to raise a Python exception.
 final class OsCallException implements Exception {

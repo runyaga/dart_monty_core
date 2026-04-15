@@ -20,6 +20,7 @@ String _buildRestoreCode(Iterable<String> keys) {
   for (final key in keys) {
     buf.write('\n$key = __d["$key"]');
   }
+
   return buf.toString();
 }
 
@@ -41,6 +42,7 @@ String _buildPersistCode(
       ..write('\n    pass');
   }
   buf.write('\n__persist_state__(__d2)');
+
   return buf.toString();
 }
 
@@ -55,6 +57,7 @@ Map<String, Object?> _toArgMap(
   for (var i = 0; i < positional.length; i++) {
     result['_$i'] = positional[i].dartValue;
   }
+
   return result;
 }
 
@@ -71,6 +74,7 @@ String _wrapSessionCode(
     ..write('\n')
     ..write(persist);
   if (hasResult) buf.write('\n__r');
+
   return buf.toString();
 }
 
@@ -106,8 +110,8 @@ class MontySession {
   MontySession({
     required MontyPlatform platform,
     OsCallHandler? osHandler,
-  })  : _platform = platform,
-        _osHandler = osHandler;
+  }) : _platform = platform,
+       _osHandler = osHandler;
 
   final MontyPlatform _platform;
   final OsCallHandler? _osHandler;
@@ -116,6 +120,10 @@ class MontySession {
 
   /// The current persisted state map. Read-only snapshot.
   Map<String, Object?> get state => Map.unmodifiable(_state);
+
+  /// Whether this session has been disposed.
+  @visibleForTesting
+  bool get isDisposed => _isDisposed;
 
   /// Executes [code] with state restored from previous calls.
   ///
@@ -139,7 +147,74 @@ class MontySession {
         scriptName: scriptName,
       ),
     );
+
     return _dispatchLoop(progress, callbacks);
+  }
+
+  /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
+  ///
+  /// Internal state functions are intercepted transparently. Register
+  /// [externalFunctions] names here; handle pauses with [resume] and
+  /// [resumeWithError].
+  Future<MontyProgress> start(
+    String code, {
+    List<String>? externalFunctions,
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    _checkNotDisposed();
+    final wrapped = _wrapSessionCode(code, _state.keys);
+    final allExtFns = [_restoreStateFn, _persistStateFn, ...?externalFunctions];
+    final initial = await _safeCall(
+      () => _platform.start(
+        wrapped,
+        externalFunctions: allExtFns,
+        limits: limits,
+        scriptName: scriptName,
+      ),
+    );
+
+    return _intercept(initial);
+  }
+
+  /// Resumes a paused execution with [returnValue].
+  Future<MontyProgress> resume(Object? returnValue) async {
+    _checkNotDisposed();
+
+    return _intercept(await _safeCall(() => _platform.resume(returnValue)));
+  }
+
+  /// Resumes a paused execution by raising [errorMessage] in Python.
+  Future<MontyProgress> resumeWithError(String errorMessage) async {
+    _checkNotDisposed();
+
+    return _intercept(
+      await _safeCall(() => _platform.resumeWithError(errorMessage)),
+    );
+  }
+
+  /// Clears all persisted state.
+  void clearState() {
+    _checkNotDisposed();
+    _state = {};
+  }
+
+  /// Disposes the session. Does NOT dispose the underlying platform.
+  void dispose() {
+    _isDisposed = true;
+    _state = {};
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private
+  // ---------------------------------------------------------------------------
+
+  void _captureState(List<MontyValue> arguments) {
+    if (arguments.isEmpty) return;
+    final arg = arguments.first;
+    if (arg is MontyDict) {
+      _state = arg.entries.map((k, v) => MapEntry(k, v.dartValue));
+    }
   }
 
   Future<MontyResult> _dispatchLoop(
@@ -183,73 +258,6 @@ class MontySession {
     }
   }
 
-  /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
-  ///
-  /// Internal state functions are intercepted transparently. Register
-  /// [externalFunctions] names here; handle pauses with [resume] and
-  /// [resumeWithError].
-  Future<MontyProgress> start(
-    String code, {
-    List<String>? externalFunctions,
-    MontyLimits? limits,
-    String? scriptName,
-  }) async {
-    _checkNotDisposed();
-    final wrapped = _wrapSessionCode(code, _state.keys);
-    final allExtFns = [_restoreStateFn, _persistStateFn, ...?externalFunctions];
-    final initial = await _safeCall(
-      () => _platform.start(
-        wrapped,
-        externalFunctions: allExtFns,
-        limits: limits,
-        scriptName: scriptName,
-      ),
-    );
-    return _intercept(initial);
-  }
-
-  /// Resumes a paused execution with [returnValue].
-  Future<MontyProgress> resume(Object? returnValue) async {
-    _checkNotDisposed();
-    return _intercept(await _safeCall(() => _platform.resume(returnValue)));
-  }
-
-  /// Resumes a paused execution by raising [errorMessage] in Python.
-  Future<MontyProgress> resumeWithError(String errorMessage) async {
-    _checkNotDisposed();
-    return _intercept(
-      await _safeCall(() => _platform.resumeWithError(errorMessage)),
-    );
-  }
-
-  /// Clears all persisted state.
-  void clearState() {
-    _checkNotDisposed();
-    _state = {};
-  }
-
-  /// Disposes the session. Does NOT dispose the underlying platform.
-  void dispose() {
-    _isDisposed = true;
-    _state = {};
-  }
-
-  /// Whether this session has been disposed.
-  @visibleForTesting
-  bool get isDisposed => _isDisposed;
-
-  // ---------------------------------------------------------------------------
-  // Private
-  // ---------------------------------------------------------------------------
-
-  void _captureState(List<MontyValue> arguments) {
-    if (arguments.isEmpty) return;
-    final arg = arguments.first;
-    if (arg is MontyDict) {
-      _state = arg.entries.map((k, v) => MapEntry(k, v.dartValue));
-    }
-  }
-
   Future<MontyProgress> _handleOsCall(MontyOsCall call) async {
     final handler = _osHandler;
     if (handler == null) {
@@ -263,6 +271,7 @@ class MontySession {
       final args = call.arguments.map((v) => v.dartValue).toList();
       final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
       final result = await handler(call.operationName, args, kwargs);
+
       return await _safeCall(() => _platform.resume(result));
     } on OsCallException catch (e) {
       return _safeCall(() => _platform.resumeWithError(e.message));

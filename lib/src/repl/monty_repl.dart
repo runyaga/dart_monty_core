@@ -48,6 +48,7 @@ MontyException? _buildReplError(
   List<Object?>? traceback,
 ) {
   if (error == null) return null;
+
   return MontyException(
     message: error,
     excType: excType,
@@ -69,10 +70,10 @@ Never _throwReplError({
   throw MontyScriptError(message, excType: excType, exception: exception);
 }
 
-List<MontyValue> _parseReplArgList(List<dynamic>? args) =>
+List<MontyValue> _parseReplArgList(List<Object?>? args) =>
     args != null ? args.map(MontyValue.fromJson).toList() : const [];
 
-Map<String, MontyValue>? _parseReplKwargMap(Map<String, dynamic>? kwargs) =>
+Map<String, MontyValue>? _parseReplKwargMap(Map<String, Object?>? kwargs) =>
     kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v)));
 
 Map<String, Object?> _replArgsToMap(
@@ -86,6 +87,7 @@ Map<String, Object?> _replArgsToMap(
   for (var i = 0; i < positional.length; i++) {
     result['_$i'] = positional[i].dartValue;
   }
+
   return result;
 }
 
@@ -109,25 +111,24 @@ class MontyRepl {
   MontyRepl({
     String? scriptName,
     String? preamble,
-  })  : _bindings = repl_factory.createReplBindings(),
-        _scriptName = scriptName,
-        _preamble = preamble;
+  }) : _bindings = repl_factory.createReplBindings(),
+       _scriptName = scriptName,
+       _preamble = preamble;
 
   /// Creates a [MontyRepl] with explicit [bindings].
   MontyRepl.withBindings({
     required ReplBindings bindings,
     String? scriptName,
     String? preamble,
-  })  : _bindings = bindings,
-        _scriptName = scriptName,
-        _preamble = preamble;
+  }) : _bindings = bindings,
+       _scriptName = scriptName,
+       _preamble = preamble;
 
   final ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;
   bool _created = false;
   bool _disposed = false;
-
 
   // ---------------------------------------------------------------------------
   // Synchronous feed
@@ -170,46 +171,8 @@ class MontyRepl {
     // Iterative path: drive the start/resume loop, dispatching callbacks.
     _bindings.setExtFns(callbacks.keys.toList());
     final initial = _translateProgress(await _bindings.feedStart(code));
-    return _driveLoop(initial, callbacks, osHandler);
-  }
 
-  Future<MontyResult> _driveLoop(
-    MontyProgress initial,
-    Map<String, MontyCallback> callbacks,
-    OsCallHandler? osHandler,
-  ) async {
-    var progress = initial;
-    while (true) {
-      switch (progress) {
-        case MontyComplete(:final result):
-          return result;
-        case MontyPending(:final functionName):
-          final cb = callbacks[functionName];
-          if (cb == null) {
-            progress = _translateProgress(
-              await _bindings.resumeWithError(
-                'No handler registered for: $functionName',
-              ),
-            );
-          } else {
-            try {
-              final args = _replArgsToMap(progress.arguments, progress.kwargs);
-              final result = await cb(args);
-              progress = _translateProgress(
-                await _bindings.resume(jsonEncode(result)),
-              );
-            } on Object catch (e) {
-              progress = _translateProgress(
-                await _bindings.resumeWithError(e.toString()),
-              );
-            }
-          }
-        case MontyOsCall():
-          progress = await _handleOsCall(progress, osHandler);
-        case MontyResolveFutures():
-          progress = _translateProgress(await _bindings.resume('null'));
-      }
-    }
+    return _driveLoop(initial, callbacks, osHandler);
   }
 
   // ---------------------------------------------------------------------------
@@ -282,6 +245,48 @@ class MontyRepl {
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
+
+  Future<MontyResult> _driveLoop(
+    MontyProgress initial,
+    Map<String, MontyCallback> callbacks,
+    OsCallHandler? osHandler,
+  ) async {
+    var progress = initial;
+    while (true) {
+      switch (progress) {
+        case MontyComplete(:final result):
+          return result;
+        case MontyPending(:final functionName):
+          final cb = callbacks[functionName];
+          if (cb == null) {
+            progress = _translateProgress(
+              await _bindings.resumeWithError(
+                'No handler registered for: $functionName',
+              ),
+            );
+          } else {
+            try {
+              final args = _replArgsToMap(
+                progress.arguments,
+                progress.kwargs,
+              );
+              final res = await cb(args);
+              progress = _translateProgress(
+                await _bindings.resume(jsonEncode(res)),
+              );
+            } on Object catch (e) {
+              progress = _translateProgress(
+                await _bindings.resumeWithError(e.toString()),
+              );
+            }
+          }
+        case MontyOsCall():
+          progress = await _handleOsCall(progress, osHandler);
+        case MontyResolveFutures():
+          progress = _translateProgress(await _bindings.resume('null'));
+      }
+    }
+  }
 
   MontyProgress _translateProgress(CoreProgressResult p) {
     switch (p.state) {

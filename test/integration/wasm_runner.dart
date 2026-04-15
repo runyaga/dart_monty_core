@@ -58,8 +58,7 @@ Future<void> main() async {
           final expected = MontyValue.fromDart(value);
           ok = thrownExcType == null && result?.value == expected;
           if (!ok) {
-            reason =
-                'value mismatch: expected $expected, got ${result?.value}';
+            reason = 'value mismatch: expected $expected, got ${result?.value}';
           }
         case ExpectRaise(:final excType):
           ok = thrownExcType == excType;

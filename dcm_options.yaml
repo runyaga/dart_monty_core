@@ -115,6 +115,8 @@ dcm:
           - "lib/src/platform/core_bindings.dart"
           - "lib/src/repl/monty_repl.dart"
           - "lib/src/wasm/wasm_bindings_js_stub.dart"
+          # MockCallHistory helper class defined before MockMontyPlatform
+          - "lib/src/platform/mock_monty_platform.dart"
     - prefer-immediate-return
     - prefer-commenting-analyzer-ignores
     - prefer-conditional-expressions
@@ -233,6 +235,11 @@ dcm:
           - public-methods
           - private-methods
           - overridden-methods
+        exclude:
+          # _fieldsEqual helper placed adjacent to operator== that uses it;
+          # strict re-ordering would harm readability
+          - "lib/src/platform/monty_value_datetime.dart"
+          - "lib/src/platform/monty_stack_frame.dart"
 
     # --- Testing ---
     - prefer-test-matcher

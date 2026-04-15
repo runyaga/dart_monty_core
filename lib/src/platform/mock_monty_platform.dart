@@ -69,8 +69,8 @@ final class MockCallHistory {
   /// The most recent external functions passed to [MockMontyPlatform.start].
   List<String>? get lastStartExternalFunctions =>
       startExternalFunctionsList.isEmpty
-          ? null
-          : startExternalFunctionsList.last;
+      ? null
+      : startExternalFunctionsList.last;
 
   /// The most recent limits passed to [MockMontyPlatform.start], or `null`.
   MontyLimits? get lastStartLimits =>
@@ -90,9 +90,7 @@ final class MockCallHistory {
 
   /// The most recent results map passed to [MockMontyPlatform.resolveFutures].
   Map<int, Object?>? get lastResolveFuturesResults =>
-      resolveFuturesResultsList.isEmpty
-          ? null
-          : resolveFuturesResultsList.last;
+      resolveFuturesResultsList.isEmpty ? null : resolveFuturesResultsList.last;
 
   /// The most recent errors map passed to [MockMontyPlatform.resolveFutures].
   Map<int, String>? get lastResolveFuturesErrors =>

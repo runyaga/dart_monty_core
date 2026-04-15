@@ -101,6 +101,7 @@ String? _assignmentName(String segment) {
   final match = assignmentPattern.firstMatch(segment.trimLeft());
   if (match == null) return null;
   final name = match.group(1)!;
+
   return name.startsWith('_') ? null : name;
 }
 
@@ -118,6 +119,7 @@ Set<String> extractAssignmentTargets(String code) {
       if (name != null) names.add(name);
     }
   }
+
   return names;
 }
 
@@ -126,6 +128,7 @@ Set<String> extractAssignmentTargets(String code) {
 int _bracketDepthDelta(String ch) {
   if (ch == ')' || ch == ']' || ch == '}') return 1;
   if (ch == '(' || ch == '[' || ch == '{') return -1;
+
   return 0;
 }
 
@@ -157,6 +160,7 @@ int _depthAfterLine(String line, int initialDepth) {
     }
     depth += _bracketDepthDelta(ch);
   }
+
   return depth;
 }
 
@@ -172,5 +176,6 @@ int _findExpressionStart(List<String> lines, int lastIdx) {
     depth = _depthAfterLine(lines[i], depth);
     if (depth <= 0) return i;
   }
+
   return 0;
 }
