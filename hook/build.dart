@@ -109,7 +109,7 @@ void _addAsset(BuildOutputBuilder output, String packageName, Uri file) {
   output.assets.code.add(
     CodeAsset(
       package: packageName,
-      name: 'dart_monty_ffi.dart',
+      name: 'dart_monty_core_ffi.dart',
       linkMode: DynamicLoadingBundled(),
       file: file,
     ),
