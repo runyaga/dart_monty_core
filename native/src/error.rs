@@ -241,7 +241,7 @@ mod tests {
         let c = CString::new("hello").unwrap();
         let mut err: *mut c_char = ptr::null_mut();
         // SAFETY: c.as_ptr() is a valid NUL-terminated C string, err is a valid writable pointer
-        let result = unsafe { parse_c_str(c.as_ptr(), "arg", &mut err) };
+        let result = unsafe { parse_c_str(c.as_ptr(), "arg", &raw mut err) };
         assert_eq!(result, Ok("hello"));
         assert!(err.is_null());
     }
@@ -250,7 +250,7 @@ mod tests {
     fn test_parse_c_str_null() {
         let mut err: *mut c_char = ptr::null_mut();
         // SAFETY: passing null ptr intentionally to test error path, err is a valid writable pointer
-        let result = unsafe { parse_c_str(ptr::null(), "arg", &mut err) };
+        let result = unsafe { parse_c_str(ptr::null(), "arg", &raw mut err) };
         assert!(result.is_err());
         assert!(!err.is_null());
         // SAFETY: err was set by parse_c_str to a valid NUL-terminated C string

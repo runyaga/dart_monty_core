@@ -662,6 +662,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::approx_constant,
+        reason = "3.14 is the test value, not a PI approximation"
+    )]
     fn rt_float() {
         match round_trip(&MontyObject::Float(3.14)) {
             MontyObject::Float(f) => assert!((f - 3.14).abs() < f64::EPSILON),
@@ -888,12 +892,12 @@ mod tests {
             hour: 14,
             minute: 30,
             second: 0,
-            microsecond: 123456,
+            microsecond: 123_456,
             offset_seconds: None,
             timezone_name: None,
         });
         match round_trip(&obj) {
-            MontyObject::DateTime(dt) => assert_eq!(dt.microsecond, 123456),
+            MontyObject::DateTime(dt) => assert_eq!(dt.microsecond, 123_456),
             other => panic!("expected DateTime with microseconds, got {other:?}"),
         }
     }
@@ -907,7 +911,7 @@ mod tests {
             hour: 23,
             minute: 59,
             second: 59,
-            microsecond: 999999,
+            microsecond: 999_999,
             offset_seconds: None,
             timezone_name: None,
         });
@@ -916,7 +920,7 @@ mod tests {
                 assert_eq!(dt.hour, 23);
                 assert_eq!(dt.minute, 59);
                 assert_eq!(dt.second, 59);
-                assert_eq!(dt.microsecond, 999999);
+                assert_eq!(dt.microsecond, 999_999);
             }
             other => panic!("expected DateTime end-of-day, got {other:?}"),
         }
@@ -1075,7 +1079,7 @@ mod tests {
 
     #[test]
     fn rt_path_empty() {
-        let obj = MontyObject::Path("".into());
+        let obj = MontyObject::Path(String::new());
         match round_trip(&obj) {
             MontyObject::Path(p) => assert_eq!(p, ""),
             other => panic!("expected empty Path, got {other:?}"),
