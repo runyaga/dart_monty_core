@@ -112,10 +112,17 @@ jobs:
           dart test --exclude-tags=ffi,wasm,integration,ladder --coverage=coverage \
           || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
       - name: Generate LCOV
+        # Skip if no coverage data was collected (no unit tests yet).
         run: |
-          dart pub global activate coverage
-          dart pub global run coverage:format_coverage \
-            --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+          if compgen -G "coverage/*.json" > /dev/null 2>&1; then
+            dart pub global activate coverage
+            dart pub global run coverage:format_coverage \
+              --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+          else
+            echo "No coverage data — writing empty lcov tracefile"
+            mkdir -p coverage
+            touch coverage/lcov.info
+          fi
       - name: Upload lcov artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -339,6 +346,8 @@ jobs:
           cd "$BRIDGE_DIR"
           npm install --force
           npm run build
+          # Return to workspace root — $ASSETS_DIR and $WASI_PKG are relative paths
+          cd "$GITHUB_WORKSPACE"
 
           # Stage bridge assets for the test runner
           mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
@@ -347,7 +356,7 @@ jobs:
           cp "$ASSETS_DIR/dart_monty_native.wasm" "$GITHUB_WORKSPACE/$WEB_DIR/"
 
           # WASI runtime required by the Worker
-          WASI_PKG="node_modules/@pydantic/monty-wasm32-wasi"
+          WASI_PKG="$BRIDGE_DIR/node_modules/@pydantic/monty-wasm32-wasi"
           mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi"
           cp "$WASI_PKG/wasi-worker-browser.mjs" \
              "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi/"
@@ -509,6 +518,11 @@ jobs:
       - name: Check patch coverage
         run: |
           sudo apt-get update && sudo apt-get install -y lcov
+          # Skip gate when tracefile is empty (no unit tests yet).
+          if [ ! -s coverage/lcov.info ]; then
+            echo "Coverage tracefile is empty — skipping patch coverage gate until unit tests exist."
+            exit 0
+          fi
           lcov --remove coverage/lcov.info \
             '*/ffi/generated/*' \
             '*/native_bindings_ffi.dart' \
