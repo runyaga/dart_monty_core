@@ -328,16 +328,16 @@ jobs:
           ASSETS_DIR="dart_monty_bridge_src/packages/dart_monty_wasm/assets"
           WEB_DIR="test/integration/web"
 
+          # build.js resolves the WASM binary relative to the bridge repo root
+          # at native/target/wasm32-wasip1/release/. Plant our pre-built binary
+          # there so it doesn't try to invoke cargo.
+          BRIDGE_WASM_DIR="dart_monty_bridge_src/native/target/wasm32-wasip1/release"
+          mkdir -p "$BRIDGE_WASM_DIR"
+          cp "$GITHUB_WORKSPACE/native/target/wasm32-wasip1/release/dart_monty_native.wasm" \
+             "$BRIDGE_WASM_DIR/dart_monty_native.wasm"
+
           cd "$BRIDGE_DIR"
           npm install --force
-
-          # Ensure assets dir exists (may not be present in sparse-checkout if empty)
-          mkdir -p "$ASSETS_DIR"
-
-          # Swap in our built WASM binary before bundling
-          cp "$GITHUB_WORKSPACE/native/target/wasm32-wasip1/release/dart_monty_native.wasm" \
-             "$ASSETS_DIR/dart_monty_native.wasm"
-
           npm run build
 
           # Stage bridge assets for the test runner
