@@ -1,0 +1,346 @@
+import 'dart:convert';
+
+import 'package:dart_monty_core/src/callbacks.dart';
+import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_error.dart';
+import 'package:dart_monty_core/src/platform/monty_exception.dart';
+import 'package:dart_monty_core/src/platform/monty_progress.dart';
+import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/monty_result.dart';
+import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/repl/repl_bindings.dart';
+import 'package:dart_monty_core/src/repl/repl_factory.dart' as repl_factory;
+
+/// A stateful REPL session backed by the Monty Rust interpreter.
+///
+/// Unlike `MontySession` which fakes state persistence via code generation,
+/// [MontyRepl] uses the native Rust REPL — heap, globals, functions, and
+/// classes all persist across [feed] calls without serialization.
+///
+/// ```dart
+/// final repl = MontyRepl();
+/// await repl.feed('x = 42');
+/// final result = await repl.feed('x + 1');
+/// print(result.value); // MontyInt(43)
+/// await repl.dispose();
+/// ```
+class MontyRepl {
+  /// Creates a [MontyRepl] with auto-detected backend (FFI or WASM).
+  ///
+  /// [preamble] is Python code fed into the REPL before any user calls.
+  MontyRepl({
+    String? scriptName,
+    String? preamble,
+  })  : _bindings = repl_factory.createReplBindings(),
+        _scriptName = scriptName,
+        _preamble = preamble;
+
+  /// Creates a [MontyRepl] with explicit [bindings].
+  MontyRepl.withBindings({
+    required ReplBindings bindings,
+    String? scriptName,
+    String? preamble,
+  })  : _bindings = bindings,
+        _scriptName = scriptName,
+        _preamble = preamble;
+
+  final ReplBindings _bindings;
+  final String? _scriptName;
+  final String? _preamble;
+  bool _created = false;
+  bool _disposed = false;
+
+  static const _zeroUsage = MontyResourceUsage(
+    memoryBytesUsed: 0,
+    timeElapsedMs: 0,
+    stackDepthUsed: 0,
+  );
+
+  // ---------------------------------------------------------------------------
+  // Synchronous feed
+  // ---------------------------------------------------------------------------
+
+  /// Feeds [code] and runs to completion.
+  ///
+  /// State (variables, functions, classes, heap objects) persists across
+  /// calls. If [callbacks] are provided, Python can call registered host
+  /// functions; each call is dispatched and the result resumed automatically.
+  ///
+  /// If [code] raises a Python exception, the REPL survives and the error
+  /// is returned in [MontyResult.error].
+  Future<MontyResult> feed(
+    String code, {
+    Map<String, MontyCallback> callbacks = const {},
+    OsCallHandler? osHandler,
+  }) async {
+    _checkNotDisposed();
+    await _ensureCreated();
+
+    if (callbacks.isEmpty && osHandler == null) {
+      // Fast path: no callbacks, use simple feedRun.
+      final r = await _bindings.feedRun(code);
+      if (r.ok) {
+        return MontyResult(
+          value: MontyValue.fromJson(r.value),
+          error: _buildError(r.error, r.excType, r.traceback),
+          usage: r.usage ?? _zeroUsage,
+          printOutput: r.printOutput,
+        );
+      }
+      _throwError(
+        message: r.error ?? 'Unknown error',
+        excType: r.excType,
+        traceback: r.traceback,
+      );
+    }
+
+    // Iterative path: drive the start/resume loop, dispatching callbacks.
+    _bindings.setExtFns(callbacks.keys.toList());
+    var progress = _translateProgress(await _bindings.feedStart(code));
+    while (true) {
+      switch (progress) {
+        case MontyComplete(:final result):
+          return result;
+
+        case MontyPending(:final functionName):
+          final cb = callbacks[functionName];
+          if (cb == null) {
+            progress = _translateProgress(
+              await _bindings.resumeWithError(
+                'No handler registered for: $functionName',
+              ),
+            );
+          } else {
+            try {
+              final args = _argsToMap(progress.arguments, progress.kwargs);
+              final result = await cb(args);
+              progress = _translateProgress(
+                await _bindings.resume(jsonEncode(result)),
+              );
+            } on Object catch (e) {
+              progress = _translateProgress(
+                await _bindings.resumeWithError(e.toString()),
+              );
+            }
+          }
+
+        case MontyOsCall():
+          progress = await _handleOsCall(progress, osHandler);
+
+        case MontyResolveFutures():
+          progress = _translateProgress(await _bindings.resume('null'));
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Iterative feed (caller drives the loop)
+  // ---------------------------------------------------------------------------
+
+  /// Starts iterative execution of [code], pausing at each registered name.
+  ///
+  /// Register callback names in [externalFunctions]. When Python calls one,
+  /// execution pauses and returns [MontyPending]. Use [resume] or
+  /// [resumeWithError] to continue.
+  Future<MontyProgress> feedStart(
+    String code, {
+    List<String>? externalFunctions,
+  }) async {
+    _checkNotDisposed();
+    await _ensureCreated();
+    if (externalFunctions != null && externalFunctions.isNotEmpty) {
+      _bindings.setExtFns(externalFunctions);
+    }
+
+    return _translateProgress(await _bindings.feedStart(code));
+  }
+
+  /// Resumes a paused execution with [returnValue].
+  Future<MontyProgress> resume(Object? returnValue) async {
+    _checkNotDisposed();
+    final json = returnValue != null ? jsonEncode(returnValue) : 'null';
+
+    return _translateProgress(await _bindings.resume(json));
+  }
+
+  /// Resumes a paused execution by raising [errorMessage] in Python.
+  Future<MontyProgress> resumeWithError(String errorMessage) async {
+    _checkNotDisposed();
+
+    return _translateProgress(await _bindings.resumeWithError(errorMessage));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Continuation detection
+  // ---------------------------------------------------------------------------
+
+  /// Returns whether [source] is syntactically complete for execution.
+  ///
+  /// Useful for building REPL UIs that show `>>>` vs `...` prompts.
+  Future<ReplContinuation> detectContinuation(String source) async {
+    _checkNotDisposed();
+    await _ensureCreated();
+    final mode = await _bindings.detectContinuation(source);
+
+    return switch (mode) {
+      1 => ReplContinuation.incompleteImplicit,
+      2 => ReplContinuation.incompleteBlock,
+      _ => ReplContinuation.complete,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
+  /// Disposes the REPL session and frees native resources.
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await _bindings.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private
+  // ---------------------------------------------------------------------------
+
+  MontyProgress _translateProgress(CoreProgressResult p) {
+    switch (p.state) {
+      case 'complete':
+        return MontyComplete(
+          result: MontyResult(
+            value: MontyValue.fromJson(p.value),
+            error: _buildError(p.error, p.excType, p.traceback),
+            usage: p.usage ?? _zeroUsage,
+            printOutput: p.printOutput,
+          ),
+        );
+      case 'pending':
+        return MontyPending(
+          functionName: p.functionName ?? '',
+          arguments: p.arguments != null
+              ? (p.arguments ?? const []).map(MontyValue.fromJson).toList()
+              : const [],
+          kwargs: p.kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
+          callId: p.callId ?? 0,
+          methodCall: p.methodCall ?? false,
+        );
+      case 'os_call':
+        return MontyOsCall(
+          operationName: p.functionName ?? '',
+          arguments: p.arguments != null
+              ? (p.arguments ?? const []).map(MontyValue.fromJson).toList()
+              : const [],
+          kwargs: p.kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
+          callId: p.callId ?? 0,
+        );
+      case 'error':
+        _throwError(
+          message: p.error ?? 'Unknown error',
+          excType: p.excType,
+          traceback: p.traceback,
+        );
+      default:
+        throw StateError('Unknown progress state: ${p.state}');
+    }
+  }
+
+  Future<MontyProgress> _handleOsCall(
+    MontyOsCall call,
+    OsCallHandler? handler,
+  ) async {
+    if (handler == null) {
+      return _translateProgress(
+        await _bindings.resumeWithError(
+          'OS operations not available — no OsCallHandler configured',
+        ),
+      );
+    }
+    try {
+      final args = call.arguments.map((v) => v.dartValue).toList();
+      final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
+      final result = await handler(call.operationName, args, kwargs);
+
+      return _translateProgress(
+        await _bindings.resume(jsonEncode(result)),
+      );
+    } on OsCallException catch (e) {
+      return _translateProgress(
+        await _bindings.resumeWithError(e.message),
+      );
+    } on Object catch (e) {
+      return _translateProgress(await _bindings.resumeWithError(e.toString()));
+    }
+  }
+
+  Map<String, Object?> _argsToMap(
+    List<MontyValue> positional,
+    Map<String, MontyValue>? kwargs,
+  ) {
+    final result = <String, Object?>{};
+    if (kwargs != null) {
+      result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
+    }
+    for (var i = 0; i < positional.length; i++) {
+      result['_$i'] = positional[i].dartValue;
+    }
+
+    return result;
+  }
+
+  Future<void> _ensureCreated() async {
+    if (!_created) {
+      await _bindings.create(scriptName: _scriptName);
+      _created = true;
+      final preamble = _preamble;
+      if (preamble != null && preamble.isNotEmpty) {
+        await _bindings.feedRun(preamble);
+      }
+    }
+  }
+
+  void _checkNotDisposed() {
+    if (_disposed) throw StateError('MontyRepl has been disposed.');
+  }
+
+  MontyException? _buildError(
+    String? error,
+    String? excType,
+    List<Object?>? traceback,
+  ) {
+    if (error == null) return null;
+
+    return MontyException(
+      message: error,
+      excType: excType,
+      traceback: MontyStackFrame.listFromJson(traceback ?? const []),
+    );
+  }
+
+  Never _throwError({
+    required String message,
+    String? excType,
+    List<Object?>? traceback,
+  }) {
+    if (excType == 'MemoryLimitExceeded') throw MontyResourceError(message);
+    final exception = MontyException(
+      message: message,
+      excType: excType,
+      traceback: MontyStackFrame.listFromJson(traceback ?? const []),
+    );
+    throw MontyScriptError(message, excType: excType, exception: exception);
+  }
+}
+
+/// Whether a source fragment is syntactically complete for REPL execution.
+enum ReplContinuation {
+  /// The snippet is complete and can be executed.
+  complete,
+
+  /// The snippet has unclosed brackets, parentheses, or strings.
+  incompleteImplicit,
+
+  /// The snippet opened an indented block and needs a trailing blank line.
+  incompleteBlock,
+}

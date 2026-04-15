@@ -1,0 +1,239 @@
+# =============================================================================
+# DCM Configuration — dart_monty_core
+# =============================================================================
+
+dcm:
+  metrics:
+    cyclomatic-complexity:
+      threshold: 10
+    lines-of-code:
+      threshold: 50
+    number-of-parameters:
+      threshold: 6
+    maximum-nesting-level:
+      threshold: 4
+    number-of-methods:
+      threshold: 15
+    weight-of-a-class:
+      threshold: 15.0
+
+  exclude:
+    metrics:
+      - "**/*.g.dart"
+      - "**/*.freezed.dart"
+      - "build/**"
+      - "native/**"
+      - "test/**"
+    rules:
+      - "**/*.g.dart"
+      - "**/*.freezed.dart"
+
+  rules:
+    # --- Bug Prevention ---
+    - avoid-throw-in-finally-block
+    - avoid-unsafe-collection-methods:
+        exclude:
+          # Index access guarded by for-loop bounds and prior length checks
+          - "lib/src/platform/code_capture.dart"
+          # Mock tracking lists: only accessed after recording calls
+          - "lib/src/platform/mock_monty_platform.dart"
+          # Guarded by isEmpty/isNotEmpty/length checks before access
+          - "lib/src/monty_session.dart"
+    - avoid-missing-completer-stack-trace
+    - avoid-uncaught-future-errors
+    - avoid-recursive-calls
+    - avoid-contradictory-expressions
+    - avoid-self-assignment
+    - avoid-unused-assignment
+    - avoid-unassigned-late-fields
+    - no-equal-arguments
+    - no-equal-conditions
+
+    # --- Code Quality ---
+    - avoid-collapsible-if
+    - avoid-redundant-else
+    - avoid-unnecessary-conditionals
+    - avoid-unnecessary-overrides
+    - avoid-shadowing
+    - avoid-only-rethrow
+    - avoid-identical-exception-handling-blocks
+    - prefer-early-return
+    - prefer-returning-condition
+    - move-variable-closer-to-its-usage
+
+    # --- Error Handling & Variables ---
+    - avoid-throw-objects-without-tostring
+    - avoid-non-final-exception-class-fields
+    - prefer-correct-error-name
+    - avoid-unnecessary-local-variable
+    - avoid-unnecessary-reassignment
+    - avoid-mutating-parameters
+    - avoid-unused-local-variable
+    - avoid-nested-try-statements
+    - avoid-missing-interpolation
+    - prefer-correct-identifier-length
+
+    # --- Robustness & Correctness ---
+    - avoid-unsafe-reduce
+    - avoid-map-keys-contains
+    - prefer-contains
+    - avoid-duplicate-map-keys
+    - avoid-duplicate-patterns
+    - avoid-equal-expressions
+    - avoid-constant-conditions
+    - no-equal-switch-case
+    - no-equal-switch-expression-cases
+    - no-equal-nested-conditions
+
+    # --- Common Anti-Patterns ---
+    - avoid-unused-parameters
+    - avoid-nested-conditional-expressions
+    - avoid-missing-enum-constant-in-map
+    - avoid-unnecessary-type-assertions
+    - avoid-unnecessary-type-casts
+    - avoid-unrelated-type-assertions
+    - avoid-redundant-async
+    - avoid-duplicate-exports
+    - avoid-collection-methods-with-unrelated-types
+    - avoid-passing-async-when-sync-expected
+
+    # --- Style & Formatting ---
+    - prefer-match-file-name:
+        exclude:
+          - "test/**"
+          # Multiple typedefs + class — no single dominant name
+          - "lib/src/callbacks.dart"
+          # FFI/WASM binding abstractions
+          - "lib/**/native_bindings.dart"
+          - "lib/**/wasm_bindings.dart"
+          # Part files: first type is a sealed subclass, not the file name
+          - "lib/src/platform/monty_value_scalars.dart"
+          - "lib/src/platform/monty_value_collections.dart"
+          - "lib/src/platform/monty_value_datetime.dart"
+          - "lib/src/platform/monty_value_structured.dart"
+          # Helper types/enums declared before the main class
+          - "lib/src/platform/core_bindings.dart"
+          - "lib/src/repl/monty_repl.dart"
+          - "lib/src/wasm/wasm_bindings_js_stub.dart"
+    - prefer-immediate-return
+    - prefer-commenting-analyzer-ignores
+    - prefer-conditional-expressions
+    - prefer-trailing-comma
+    - prefer-moving-to-variable
+    - newline-before-return
+    - no-boolean-literal-compare
+    - no-empty-block:
+        exclude:
+          # Intentional no-op dispose on non-owning wrappers
+          - "lib/src/platform/monty_platform.dart"
+    - no-equal-then-else
+    - prefer-first
+    - prefer-last
+    - binary-expression-operand-order
+    - double-literal-format
+
+    # --- Style Consistency ---
+    - prefer-switch-expression
+    - avoid-unnecessary-parentheses
+    - prefer-async-await:
+        exclude:
+          # Isolate message dispatch and timeout-or-false chain
+          - "lib/src/ffi/native_isolate_bindings_impl.dart"
+    - avoid-adjacent-strings
+    - prefer-declaring-const-constructor:
+        exclude:
+          # Extension types cannot have const constructors
+          - "lib/src/wasm/wasm_bindings_js.dart"
+          # NativeBindingsFfi has non-final fields (handle state)
+          - "lib/src/ffi/native_bindings_ffi.dart"
+    - format-comment
+
+    # --- Immutability ---
+    - prefer-final-fields
+
+    # --- Async & Type Safety ---
+    - avoid-nested-futures
+    - avoid-nested-streams-and-futures
+    - prefer-return-await
+    - avoid-type-casts
+    - avoid-inferrable-type-arguments
+    - avoid-unnecessary-futures
+    - prefer-correct-future-return-type
+    - avoid-future-tostring
+    - avoid-nullable-tostring
+    - dispose-class-fields
+
+    # --- Null Safety & Types ---
+    - avoid-late-keyword:
+        exclude:
+          - "test/**"
+    - avoid-dynamic:
+        exclude:
+          - "test/**"
+          # fromJson factories: Map<String, dynamic> is Dart JSON convention
+          - "lib/src/platform/monty_value.dart"
+          - "lib/src/platform/monty_value_collections.dart"
+          - "lib/src/platform/monty_value_structured.dart"
+          - "lib/src/platform/monty_progress.dart"
+          - "lib/src/platform/monty_exception.dart"
+          # JSON deserialization in SPI/base platform
+          - "lib/src/platform/base_monty_platform.dart"
+          - "lib/src/platform/core_bindings.dart"
+    - avoid-non-null-assertion:
+        exclude:
+          - "test/**"
+          # Isolate message protocol: non-null guaranteed by sealed message types
+          - "lib/src/ffi/native_isolate_bindings_impl.dart"
+          # JSON deserialization: fields guaranteed by Rust FFI contract
+          - "lib/src/platform/base_monty_platform.dart"
+          - "lib/src/platform/monty_progress.dart"
+          # Regex match.group(1) non-null guaranteed by pattern structure
+          - "lib/src/platform/code_capture.dart"
+          # WASM JS interop: non-null guaranteed by JS bridge contract
+          - "lib/src/wasm/wasm_bindings_js.dart"
+          - "lib/src/wasm/wasm_core_bindings.dart"
+
+    # --- Class Design & Architecture ---
+    - avoid-accessing-other-classes-private-members
+    - avoid-default-tostring
+    - prefer-abstract-final-static-class
+    - avoid-suspicious-super-overrides
+    - avoid-unnecessary-constructor
+    - avoid-shadowed-extension-methods
+    - avoid-duplicate-mixins
+    - avoid-referencing-subclasses
+    - match-getter-setter-field-names:
+        exclude:
+          # dartValue getter intentionally wraps value field (sealed MontyValue API)
+          - "lib/src/platform/monty_value_scalars.dart"
+          - "lib/src/platform/monty_value_collections.dart"
+          - "lib/src/platform/monty_value_structured.dart"
+          # coreBindings getter wraps _bindings (protected API for subclasses)
+          - "lib/src/platform/base_monty_platform.dart"
+    - avoid-declaring-call-method
+
+    # --- Import Safety ---
+    - avoid-banned-imports:
+        entries:
+          - paths: ["lib/"]
+            deny:
+              - "package:flutter/material.dart"
+              - "package:flutter/widgets.dart"
+              - "package:flutter/cupertino.dart"
+            message: "dart_monty_core is a pure Dart package — no Flutter imports."
+    - avoid-global-state
+
+    # --- Member Ordering ---
+    - member-ordering:
+        order:
+          - constructors
+          - public-fields
+          - private-fields
+          - get-setters
+          - public-methods
+          - private-methods
+          - overridden-methods
+
+    # --- Testing ---
+    - prefer-test-matcher
+    - prefer-correct-test-file-name

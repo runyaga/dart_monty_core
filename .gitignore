@@ -1,0 +1,15 @@
+# Dart
+.dart_tool/
+.packages
+pubspec.lock
+build/
+
+# Rust
+native/target/
+native/Cargo.lock
+
+# DCM key (do not commit secrets — key is in .dcm.yaml, gitignore if preferred)
+# .dcm.yaml
+
+# macOS
+.DS_Store

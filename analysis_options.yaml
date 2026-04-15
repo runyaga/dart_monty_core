@@ -1,0 +1,31 @@
+formatter:
+  page_width: 80
+
+include:
+  - package:very_good_analysis/analysis_options.10.2.0.yaml
+  - dcm_options.yaml
+
+analyzer:
+  exclude:
+    - '**/*.g.dart'
+    - '**/*.freezed.dart'
+    - 'build/**'
+    - 'native/**'
+    - 'lib/src/ffi/generated/**'
+
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+  errors:
+    invalid_annotation_target: error
+
+linter:
+  rules:
+    public_member_api_docs: true
+    avoid_print: true
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    cancel_subscriptions: false
+    one_member_abstracts: false
