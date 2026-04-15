@@ -18,6 +18,7 @@ import {
   PROGRESS_PENDING,
   PROGRESS_ERROR,
   PROGRESS_RESOLVE_FUTURES,
+  PROGRESS_OS_CALL,
   RESULT_OK,
 } from './wasm_glue.js';
 
@@ -145,14 +146,44 @@ function readProgress(id, handle, tag, errMsg) {
       };
     }
 
-    case PROGRESS_ERROR:
+    case PROGRESS_OS_CALL: {
+      const fnName = readAndFreeCString(wasm.monty_os_call_fn_name(handle));
+      const argsJson = readAndFreeCString(wasm.monty_os_call_args_json(handle));
+      const kwargsJson = readAndFreeCString(wasm.monty_os_call_kwargs_json(handle));
+      const callId = wasm.monty_os_call_id(handle);
+      return {
+        type: 'result',
+        id,
+        ok: true,
+        state: 'os_call',
+        functionName: fnName,
+        args: argsJson ? JSON.parse(argsJson) : [],
+        kwargs: kwargsJson ? JSON.parse(kwargsJson) : {},
+        callId,
+      };
+    }
+
+    case PROGRESS_ERROR: {
+      // Python runtime exceptions: handle_exception() sets state to Complete
+      // (is_error=true) before returning PROGRESS_ERROR. Read the full result
+      // JSON so exc_type, traceback, etc. are available to Dart.
+      const isErrState = wasm.monty_complete_is_error(handle);
+      const errPtr2 = wasm.monty_complete_result_json(handle);
+      const errJson = readAndFreeCString(errPtr2);
+      if (errJson && isErrState === 1) {
+        const adapted = adaptResultForDart(errJson, true);
+        return { type: 'result', id, ...adapted };
+      }
+      // Fallback for internal Rust errors (no complete JSON available).
       return {
         type: 'result',
         id,
         ok: false,
         error: errMsg || 'Unknown error',
         errorType: 'MontyException',
+        excType: excTypeFromMsg(errMsg),
       };
+    }
 
     default:
       return {

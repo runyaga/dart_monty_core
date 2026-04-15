@@ -35,12 +35,27 @@ final class ExpectNoException extends FixtureExpectation {
   const ExpectNoException();
 }
 
+/// Returns `true` when [source] declares a `# call-external` directive,
+/// meaning the fixture requires external function dispatch to run.
+bool fixtureIsCallExternal(String source) {
+  for (final raw in source.split('\n')) {
+    final line = raw.trim();
+    if (!line.startsWith('#')) continue;
+    final directive = line.substring(1).trim();
+    if (directive == 'call-external' || directive.startsWith('call-external ')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Parses a `.py` fixture and returns the expected outcome.
 ///
 /// Returns `null` when the fixture should be skipped:
 /// - `# xfail=monty` or `# xfail=monty,cpython` — not yet supported
 /// - `# xfail=wasm` — expected failure on WASM backend only
-/// - `# call-external` — requires external function dispatch
+/// - `# call-external` — requires external function dispatch (skip unless
+///   [skipCallExternal] is false)
 /// - `# run-async` — requires async execution mode
 /// - `# mount-fs` — requires filesystem mount
 ///
@@ -48,6 +63,7 @@ final class ExpectNoException extends FixtureExpectation {
 FixtureExpectation? parseFixture(
   String source, {
   bool skipWasm = false,
+  bool skipCallExternal = true,
 }) {
   final lines = source.split('\n');
 
@@ -66,8 +82,9 @@ FixtureExpectation? parseFixture(
       continue;
     }
 
-    if (directive == 'call-external' ||
-        directive.startsWith('call-external ') ||
+    if ((skipCallExternal &&
+            (directive == 'call-external' ||
+                directive.startsWith('call-external '))) ||
         directive == 'run-async' ||
         directive.startsWith('run-async ') ||
         directive == 'mount-fs' ||
