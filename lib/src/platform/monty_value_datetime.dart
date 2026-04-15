@@ -137,16 +137,18 @@ final class MontyDateTime extends MontyValue {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyDateTime &&
-          other.year == year &&
-          other.month == month &&
-          other.day == day &&
-          other.hour == hour &&
-          other.minute == minute &&
-          other.second == second &&
-          other.microsecond == microsecond &&
-          other.offsetSeconds == offsetSeconds &&
-          other.timezoneName == timezoneName);
+      (other is MontyDateTime && _fieldsEqual(other));
+
+  bool _fieldsEqual(MontyDateTime o) =>
+      o.year == year &&
+      o.month == month &&
+      o.day == day &&
+      o.hour == hour &&
+      o.minute == minute &&
+      o.second == second &&
+      o.microsecond == microsecond &&
+      o.offsetSeconds == offsetSeconds &&
+      o.timezoneName == timezoneName;
 
   @override
   int get hashCode => Object.hash(

@@ -34,10 +34,7 @@ sealed class MontyValue {
     final bool b => MontyBool(b),
     final int n => MontyInt(n),
     final double d => MontyFloat(d),
-    'NaN' => const MontyFloat(double.nan),
-    'Infinity' => const MontyFloat(double.infinity),
-    '-Infinity' => const MontyFloat(double.negativeInfinity),
-    final String s => MontyString(s),
+    final String s => _parseSpecialFloat(s) ?? MontyString(s),
     final List<dynamic> l => MontyList(l.map(MontyValue.fromJson).toList()),
     final Map<String, dynamic> m => _parseMap(m),
     _ => throw ArgumentError(
@@ -78,6 +75,13 @@ sealed class MontyValue {
     ),
   };
 
+  static MontyValue? _parseSpecialFloat(String s) => switch (s) {
+    'NaN' => const MontyFloat(double.nan),
+    'Infinity' => const MontyFloat(double.infinity),
+    '-Infinity' => const MontyFloat(double.negativeInfinity),
+    _ => null,
+  };
+
   /// Serializes this value back to JSON compatible with the Rust side.
   Object? toJson();
 
@@ -88,28 +92,30 @@ sealed class MontyValue {
   /// Typed wrappers return their `toJson()` map.
   Object? get dartValue;
 
+  static final _typeFactories =
+      <String, MontyValue Function(Map<String, dynamic>)>{
+    'bytes': MontyBytes._fromMap,
+    'tuple': MontyTuple._fromMap,
+    'set': MontySet._fromMap,
+    'frozenset': MontyFrozenSet._fromMap,
+    'date': MontyDate._fromMap,
+    'datetime': MontyDateTime._fromMap,
+    'timedelta': MontyTimeDelta._fromMap,
+    'timezone': MontyTimeZone._fromMap,
+    'path': MontyPath._fromMap,
+    'namedtuple': MontyNamedTuple._fromMap,
+    'dataclass': MontyDataclass._fromMap,
+  };
+
   // Returns different sealed subclasses based on __type, so it
   // cannot be a constructor.
   // ignore: prefer_constructors_over_static_methods
   static MontyValue _parseMap(Map<String, dynamic> map) {
     final type = map['__type'] as String?;
-    if (type == null) {
-      return MontyDict(map.map((k, v) => MapEntry(k, MontyValue.fromJson(v))));
-    }
-
-    return switch (type) {
-      'bytes' => MontyBytes._fromMap(map),
-      'tuple' => MontyTuple._fromMap(map),
-      'set' => MontySet._fromMap(map),
-      'frozenset' => MontyFrozenSet._fromMap(map),
-      'date' => MontyDate._fromMap(map),
-      'datetime' => MontyDateTime._fromMap(map),
-      'timedelta' => MontyTimeDelta._fromMap(map),
-      'timezone' => MontyTimeZone._fromMap(map),
-      'path' => MontyPath._fromMap(map),
-      'namedtuple' => MontyNamedTuple._fromMap(map),
-      'dataclass' => MontyDataclass._fromMap(map),
-      _ => MontyDict(map.map((k, v) => MapEntry(k, MontyValue.fromJson(v)))),
-    };
+    final toDict = MontyDict(
+      map.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
+    );
+    if (type == null) return toDict;
+    return _typeFactories[type]?.call(map) ?? toDict;
   }
 }

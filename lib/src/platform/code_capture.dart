@@ -97,6 +97,13 @@ bool isExpression(String line) {
   return (result.join('\n'), true);
 }
 
+String? _assignmentName(String segment) {
+  final match = assignmentPattern.firstMatch(segment.trimLeft());
+  if (match == null) return null;
+  final name = match.group(1)!;
+  return name.startsWith('_') ? null : name;
+}
+
 /// Extracts top-level assignment target names from [code].
 ///
 /// Only considers lines with no leading whitespace (top-level).
@@ -105,20 +112,52 @@ bool isExpression(String line) {
 Set<String> extractAssignmentTargets(String code) {
   final names = <String>{};
   for (final line in code.split('\n')) {
-    if (line.isNotEmpty && line[0] != ' ' && line[0] != '\t') {
-      for (final segment in line.split(';')) {
-        final match = assignmentPattern.firstMatch(segment.trimLeft());
-        if (match != null) {
-          final name = match.group(1)!;
-          if (!name.startsWith('_')) {
-            names.add(name);
-          }
-        }
-      }
+    if (line.isEmpty || line[0] == ' ' || line[0] == '\t') continue;
+    for (final segment in line.split(';')) {
+      final name = _assignmentName(segment);
+      if (name != null) names.add(name);
     }
   }
-
   return names;
+}
+
+/// Returns the net depth change (positive = more closers) for a bracket char.
+/// Returns 0 for non-bracket characters.
+int _bracketDepthDelta(String ch) {
+  if (ch == ')' || ch == ']' || ch == '}') return 1;
+  if (ch == '(' || ch == '[' || ch == '{') return -1;
+  return 0;
+}
+
+/// Scans [line] and returns the bracket depth after processing it,
+/// starting from [initialDepth]. Ignores characters inside string literals.
+int _depthAfterLine(String line, int initialDepth) {
+  var depth = initialDepth;
+  var inString = false;
+  var stringChar = '';
+  var escaped = false;
+  for (var c = 0; c < line.length; c++) {
+    final ch = line[c];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch == r'\') {
+      escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (ch == stringChar) inString = false;
+      continue;
+    }
+    if (ch == "'" || ch == '"') {
+      inString = true;
+      stringChar = ch;
+      continue;
+    }
+    depth += _bracketDepthDelta(ch);
+  }
+  return depth;
 }
 
 /// Scans backwards from [lastIdx] tracking bracket depth to find where
@@ -129,44 +168,9 @@ Set<String> extractAssignmentTargets(String code) {
 /// the expression spans multiple lines.
 int _findExpressionStart(List<String> lines, int lastIdx) {
   var depth = 0;
-
   for (var i = lastIdx; i >= 0; i--) {
-    final line = lines[i];
-
-    // Scan characters, skipping content inside string literals.
-    var inSingle = false;
-    var inDouble = false;
-    var escaped = false;
-
-    for (var c = 0; c < line.length; c++) {
-      final ch = line[c];
-
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (ch == r'\') {
-        escaped = true;
-        continue;
-      }
-
-      if (!inDouble && ch == "'") {
-        inSingle = !inSingle;
-      } else if (!inSingle && ch == '"') {
-        inDouble = !inDouble;
-      } else if (!inSingle && !inDouble) {
-        if (ch == ')' || ch == ']' || ch == '}') {
-          depth++;
-        } else if (ch == '(' || ch == '[' || ch == '{') {
-          depth--;
-        }
-      }
-    }
-
-    // depth <= 0 means this line has at least as many openers as closers
-    // seen so far — the expression starts here.
+    depth = _depthAfterLine(lines[i], depth);
     if (depth <= 0) return i;
   }
-
   return 0;
 }

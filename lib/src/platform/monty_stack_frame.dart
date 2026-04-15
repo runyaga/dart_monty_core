@@ -88,19 +88,20 @@ final class MontyStackFrame {
   }
 
   @override
-  bool operator ==(Object other) {
-    return identical(this, other) ||
-        (other is MontyStackFrame &&
-            other.filename == filename &&
-            other.startLine == startLine &&
-            other.startColumn == startColumn &&
-            other.endLine == endLine &&
-            other.endColumn == endColumn &&
-            other.frameName == frameName &&
-            other.previewLine == previewLine &&
-            other.hideCaret == hideCaret &&
-            other.hideFrameName == hideFrameName);
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyStackFrame && _fieldsEqual(other));
+
+  bool _fieldsEqual(MontyStackFrame o) =>
+      o.filename == filename &&
+      o.startLine == startLine &&
+      o.startColumn == startColumn &&
+      o.endLine == endLine &&
+      o.endColumn == endColumn &&
+      o.frameName == frameName &&
+      o.previewLine == previewLine &&
+      o.hideCaret == hideCaret &&
+      o.hideFrameName == hideFrameName;
 
   @override
   int get hashCode => Object.hash(

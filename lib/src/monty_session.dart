@@ -15,6 +15,65 @@ import 'package:meta/meta.dart';
 const _restoreStateFn = '__restore_state__';
 const _persistStateFn = '__persist_state__';
 
+String _buildRestoreCode(Iterable<String> keys) {
+  final buf = StringBuffer('__d = __restore_state__()');
+  for (final key in keys) {
+    buf.write('\n$key = __d["$key"]');
+  }
+  return buf.toString();
+}
+
+String _buildPersistCode(
+  String code,
+  Iterable<String> existingKeys,
+) {
+  final names = <String>{
+    ...existingKeys,
+    ...code_capture.extractAssignmentTargets(code),
+  };
+  if (names.isEmpty) return '__persist_state__({})';
+  final buf = StringBuffer('__d2 = {}');
+  for (final name in names) {
+    buf
+      ..write('\ntry:')
+      ..write('\n    __d2["$name"] = $name')
+      ..write('\nexcept Exception:')
+      ..write('\n    pass');
+  }
+  buf.write('\n__persist_state__(__d2)');
+  return buf.toString();
+}
+
+Map<String, Object?> _toArgMap(
+  List<MontyValue> positional,
+  Map<String, MontyValue>? kwargs,
+) {
+  final result = <String, Object?>{};
+  if (kwargs != null) {
+    result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
+  }
+  for (var i = 0; i < positional.length; i++) {
+    result['_$i'] = positional[i].dartValue;
+  }
+  return result;
+}
+
+String _wrapSessionCode(
+  String code,
+  Iterable<String> stateKeys,
+) {
+  final restore = _buildRestoreCode(stateKeys);
+  final persist = _buildPersistCode(code, stateKeys);
+  final (processed, hasResult) = code_capture.captureLastExpression(code);
+  final buf = StringBuffer(restore)
+    ..write('\n')
+    ..write(processed)
+    ..write('\n')
+    ..write(persist);
+  if (hasResult) buf.write('\n__r');
+  return buf.toString();
+}
+
 const _zeroUsage = MontyResourceUsage(
   memoryBytesUsed: 0,
   timeElapsedMs: 0,
@@ -70,54 +129,56 @@ class MontySession {
     Map<String, MontyCallback> callbacks = const {},
   }) async {
     _checkNotDisposed();
-
-    final wrapped = _wrapCode(code);
-    final extFns = [
-      _restoreStateFn,
-      _persistStateFn,
-      ...callbacks.keys,
-    ];
-
-    var progress = await _safeStart(
-      wrapped,
-      externalFunctions: extFns,
-      limits: limits,
-      scriptName: scriptName,
+    final wrapped = _wrapSessionCode(code, _state.keys);
+    final extFns = [_restoreStateFn, _persistStateFn, ...callbacks.keys];
+    final progress = await _safeCall(
+      () => _platform.start(
+        wrapped,
+        externalFunctions: extFns,
+        limits: limits,
+        scriptName: scriptName,
+      ),
     );
+    return _dispatchLoop(progress, callbacks);
+  }
 
+  Future<MontyResult> _dispatchLoop(
+    MontyProgress initial,
+    Map<String, MontyCallback> callbacks,
+  ) async {
+    var progress = initial;
     while (true) {
       switch (progress) {
         case MontyPending(functionName: _restoreStateFn):
-          progress = await _safeResume(_state);
-
+          progress = await _safeCall(() => _platform.resume(_state));
         case MontyPending(functionName: _persistStateFn):
           _captureState(progress.arguments);
-          progress = await _safeResume(null);
-
+          progress = await _safeCall(() => _platform.resume(null));
         case MontyComplete(:final result):
           return result;
-
         case MontyPending(:final functionName):
           final cb = callbacks[functionName];
           if (cb == null) {
-            progress = await _safeResumeWithError(
-              'No handler registered for: $functionName',
+            progress = await _safeCall(
+              () => _platform.resumeWithError(
+                'No handler registered for: $functionName',
+              ),
             );
           } else {
             try {
-              final args = _argsToMap(progress.arguments, progress.kwargs);
+              final args = _toArgMap(progress.arguments, progress.kwargs);
               final result = await cb(args);
-              progress = await _safeResume(result);
+              progress = await _safeCall(() => _platform.resume(result));
             } on Object catch (e) {
-              progress = await _safeResumeWithError(e.toString());
+              progress = await _safeCall(
+                () => _platform.resumeWithError(e.toString()),
+              );
             }
           }
-
         case MontyOsCall():
           progress = await _handleOsCall(progress);
-
         case MontyResolveFutures():
-          progress = await _safeResume(null);
+          progress = await _safeCall(() => _platform.resume(null));
       }
     }
   }
@@ -134,36 +195,31 @@ class MontySession {
     String? scriptName,
   }) async {
     _checkNotDisposed();
-
-    final wrapped = _wrapCode(code);
-    final allExtFns = [
-      _restoreStateFn,
-      _persistStateFn,
-      ...?externalFunctions,
-    ];
-
-    final initial = await _safeStart(
-      wrapped,
-      externalFunctions: allExtFns,
-      limits: limits,
-      scriptName: scriptName,
+    final wrapped = _wrapSessionCode(code, _state.keys);
+    final allExtFns = [_restoreStateFn, _persistStateFn, ...?externalFunctions];
+    final initial = await _safeCall(
+      () => _platform.start(
+        wrapped,
+        externalFunctions: allExtFns,
+        limits: limits,
+        scriptName: scriptName,
+      ),
     );
-
     return _intercept(initial);
   }
 
   /// Resumes a paused execution with [returnValue].
   Future<MontyProgress> resume(Object? returnValue) async {
     _checkNotDisposed();
-
-    return _intercept(await _safeResume(returnValue));
+    return _intercept(await _safeCall(() => _platform.resume(returnValue)));
   }
 
   /// Resumes a paused execution by raising [errorMessage] in Python.
   Future<MontyProgress> resumeWithError(String errorMessage) async {
     _checkNotDisposed();
-
-    return _intercept(await _safeResumeWithError(errorMessage));
+    return _intercept(
+      await _safeCall(() => _platform.resumeWithError(errorMessage)),
+    );
   }
 
   /// Clears all persisted state.
@@ -186,51 +242,6 @@ class MontySession {
   // Private
   // ---------------------------------------------------------------------------
 
-  String _wrapCode(String code) {
-    final restore = _buildRestore();
-    final persist = _buildPersist(code);
-    final (processed, hasResult) = code_capture.captureLastExpression(code);
-
-    final buf = StringBuffer(restore)
-      ..write('\n')
-      ..write(processed)
-      ..write('\n')
-      ..write(persist);
-
-    if (hasResult) buf.write('\n__r');
-
-    return buf.toString();
-  }
-
-  String _buildRestore() {
-    final buf = StringBuffer('__d = __restore_state__()');
-    for (final key in _state.keys) {
-      buf.write('\n$key = __d["$key"]');
-    }
-
-    return buf.toString();
-  }
-
-  String _buildPersist(String code) {
-    final names = <String>{
-      ..._state.keys,
-      ...code_capture.extractAssignmentTargets(code),
-    };
-    if (names.isEmpty) return '__persist_state__({})';
-
-    final buf = StringBuffer('__d2 = {}');
-    for (final name in names) {
-      buf
-        ..write('\ntry:')
-        ..write('\n    __d2["$name"] = $name')
-        ..write('\nexcept Exception:')
-        ..write('\n    pass');
-    }
-    buf.write('\n__persist_state__(__d2)');
-
-    return buf.toString();
-  }
-
   void _captureState(List<MontyValue> arguments) {
     if (arguments.isEmpty) return;
     final arg = arguments.first;
@@ -239,38 +250,24 @@ class MontySession {
     }
   }
 
-  Map<String, Object?> _argsToMap(
-    List<MontyValue> positional,
-    Map<String, MontyValue>? kwargs,
-  ) {
-    final result = <String, Object?>{};
-    if (kwargs != null) {
-      result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
-    }
-    for (var i = 0; i < positional.length; i++) {
-      result['_$i'] = positional[i].dartValue;
-    }
-
-    return result;
-  }
-
   Future<MontyProgress> _handleOsCall(MontyOsCall call) async {
     final handler = _osHandler;
     if (handler == null) {
-      return _safeResumeWithError(
-        'OS operations not available — no OsCallHandler configured',
+      return _safeCall(
+        () => _platform.resumeWithError(
+          'OS operations not available — no OsCallHandler configured',
+        ),
       );
     }
     try {
       final args = call.arguments.map((v) => v.dartValue).toList();
       final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
       final result = await handler(call.operationName, args, kwargs);
-
-      return await _safeResume(result);
+      return await _safeCall(() => _platform.resume(result));
     } on OsCallException catch (e) {
-      return _safeResumeWithError(e.message);
+      return _safeCall(() => _platform.resumeWithError(e.message));
     } on Object catch (e) {
-      return _safeResumeWithError(e.toString());
+      return _safeCall(() => _platform.resumeWithError(e.toString()));
     }
   }
 
@@ -279,10 +276,10 @@ class MontySession {
     while (true) {
       switch (current) {
         case MontyPending(functionName: _restoreStateFn):
-          current = await _safeResume(_state);
+          current = await _safeCall(() => _platform.resume(_state));
         case MontyPending(functionName: _persistStateFn):
           _captureState(current.arguments);
-          current = await _safeResume(null);
+          current = await _safeCall(() => _platform.resume(null));
         case MontyComplete():
         case MontyPending():
         case MontyOsCall():
@@ -292,63 +289,11 @@ class MontySession {
     }
   }
 
-  Future<MontyProgress> _safeStart(
-    String code, {
-    List<String>? externalFunctions,
-    MontyLimits? limits,
-    String? scriptName,
-  }) async {
+  Future<MontyProgress> _safeCall(
+    Future<MontyProgress> Function() fn,
+  ) async {
     try {
-      return await _platform.start(
-        code,
-        externalFunctions: externalFunctions,
-        limits: limits,
-        scriptName: scriptName,
-      );
-    } on MontyScriptError catch (e) {
-      return MontyComplete(
-        result: MontyResult(
-          value: const MontyNull(),
-          error: e.exception,
-          usage: _zeroUsage,
-        ),
-      );
-    } on MontyError catch (e) {
-      return MontyComplete(
-        result: MontyResult(
-          value: const MontyNull(),
-          error: MontyException(message: e.message),
-          usage: _zeroUsage,
-        ),
-      );
-    }
-  }
-
-  Future<MontyProgress> _safeResume(Object? value) async {
-    try {
-      return await _platform.resume(value);
-    } on MontyScriptError catch (e) {
-      return MontyComplete(
-        result: MontyResult(
-          value: const MontyNull(),
-          error: e.exception,
-          usage: _zeroUsage,
-        ),
-      );
-    } on MontyError catch (e) {
-      return MontyComplete(
-        result: MontyResult(
-          value: const MontyNull(),
-          error: MontyException(message: e.message),
-          usage: _zeroUsage,
-        ),
-      );
-    }
-  }
-
-  Future<MontyProgress> _safeResumeWithError(String message) async {
-    try {
-      return await _platform.resumeWithError(message);
+      return await fn();
     } on MontyScriptError catch (e) {
       return MontyComplete(
         result: MontyResult(

@@ -12,6 +12,83 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 import 'package:dart_monty_core/src/repl/repl_factory.dart' as repl_factory;
 
+const _replZeroUsage = MontyResourceUsage(
+  memoryBytesUsed: 0,
+  timeElapsedMs: 0,
+  stackDepthUsed: 0,
+);
+
+MontyComplete _buildCompleteProgress(CoreProgressResult p) => MontyComplete(
+  result: MontyResult(
+    value: MontyValue.fromJson(p.value),
+    error: _buildReplError(p.error, p.excType, p.traceback),
+    usage: p.usage ?? _replZeroUsage,
+    printOutput: p.printOutput,
+  ),
+);
+
+MontyPending _buildPendingProgress(CoreProgressResult p) => MontyPending(
+  functionName: p.functionName ?? '',
+  arguments: _parseReplArgList(p.arguments),
+  kwargs: _parseReplKwargMap(p.kwargs),
+  callId: p.callId ?? 0,
+  methodCall: p.methodCall ?? false,
+);
+
+MontyOsCall _buildOsCallProgress(CoreProgressResult p) => MontyOsCall(
+  operationName: p.functionName ?? '',
+  arguments: _parseReplArgList(p.arguments),
+  kwargs: _parseReplKwargMap(p.kwargs),
+  callId: p.callId ?? 0,
+);
+
+MontyException? _buildReplError(
+  String? error,
+  String? excType,
+  List<Object?>? traceback,
+) {
+  if (error == null) return null;
+  return MontyException(
+    message: error,
+    excType: excType,
+    traceback: MontyStackFrame.listFromJson(traceback ?? const []),
+  );
+}
+
+Never _throwReplError({
+  required String message,
+  String? excType,
+  List<Object?>? traceback,
+}) {
+  if (excType == 'MemoryLimitExceeded') throw MontyResourceError(message);
+  final exception = MontyException(
+    message: message,
+    excType: excType,
+    traceback: MontyStackFrame.listFromJson(traceback ?? const []),
+  );
+  throw MontyScriptError(message, excType: excType, exception: exception);
+}
+
+List<MontyValue> _parseReplArgList(List<dynamic>? args) =>
+    args != null ? args.map(MontyValue.fromJson).toList() : const [];
+
+Map<String, MontyValue>? _parseReplKwargMap(Map<String, dynamic>? kwargs) =>
+    kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v)));
+
+Map<String, Object?> _replArgsToMap(
+  List<MontyValue> positional,
+  Map<String, MontyValue>? kwargs,
+) {
+  final result = <String, Object?>{};
+  if (kwargs != null) {
+    result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
+  }
+  for (var i = 0; i < positional.length; i++) {
+    result['_$i'] = positional[i].dartValue;
+  }
+  return result;
+}
+
 /// A stateful REPL session backed by the Monty Rust interpreter.
 ///
 /// Unlike `MontySession` which fakes state persistence via code generation,
@@ -51,11 +128,6 @@ class MontyRepl {
   bool _created = false;
   bool _disposed = false;
 
-  static const _zeroUsage = MontyResourceUsage(
-    memoryBytesUsed: 0,
-    timeElapsedMs: 0,
-    stackDepthUsed: 0,
-  );
 
   // ---------------------------------------------------------------------------
   // Synchronous feed
@@ -83,12 +155,12 @@ class MontyRepl {
       if (r.ok) {
         return MontyResult(
           value: MontyValue.fromJson(r.value),
-          error: _buildError(r.error, r.excType, r.traceback),
-          usage: r.usage ?? _zeroUsage,
+          error: _buildReplError(r.error, r.excType, r.traceback),
+          usage: r.usage ?? _replZeroUsage,
           printOutput: r.printOutput,
         );
       }
-      _throwError(
+      _throwReplError(
         message: r.error ?? 'Unknown error',
         excType: r.excType,
         traceback: r.traceback,
@@ -97,12 +169,20 @@ class MontyRepl {
 
     // Iterative path: drive the start/resume loop, dispatching callbacks.
     _bindings.setExtFns(callbacks.keys.toList());
-    var progress = _translateProgress(await _bindings.feedStart(code));
+    final initial = _translateProgress(await _bindings.feedStart(code));
+    return _driveLoop(initial, callbacks, osHandler);
+  }
+
+  Future<MontyResult> _driveLoop(
+    MontyProgress initial,
+    Map<String, MontyCallback> callbacks,
+    OsCallHandler? osHandler,
+  ) async {
+    var progress = initial;
     while (true) {
       switch (progress) {
         case MontyComplete(:final result):
           return result;
-
         case MontyPending(:final functionName):
           final cb = callbacks[functionName];
           if (cb == null) {
@@ -113,7 +193,7 @@ class MontyRepl {
             );
           } else {
             try {
-              final args = _argsToMap(progress.arguments, progress.kwargs);
+              final args = _replArgsToMap(progress.arguments, progress.kwargs);
               final result = await cb(args);
               progress = _translateProgress(
                 await _bindings.resume(jsonEncode(result)),
@@ -124,10 +204,8 @@ class MontyRepl {
               );
             }
           }
-
         case MontyOsCall():
           progress = await _handleOsCall(progress, osHandler);
-
         case MontyResolveFutures():
           progress = _translateProgress(await _bindings.resume('null'));
       }
@@ -208,35 +286,13 @@ class MontyRepl {
   MontyProgress _translateProgress(CoreProgressResult p) {
     switch (p.state) {
       case 'complete':
-        return MontyComplete(
-          result: MontyResult(
-            value: MontyValue.fromJson(p.value),
-            error: _buildError(p.error, p.excType, p.traceback),
-            usage: p.usage ?? _zeroUsage,
-            printOutput: p.printOutput,
-          ),
-        );
+        return _buildCompleteProgress(p);
       case 'pending':
-        return MontyPending(
-          functionName: p.functionName ?? '',
-          arguments: p.arguments != null
-              ? (p.arguments ?? const []).map(MontyValue.fromJson).toList()
-              : const [],
-          kwargs: p.kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
-          callId: p.callId ?? 0,
-          methodCall: p.methodCall ?? false,
-        );
+        return _buildPendingProgress(p);
       case 'os_call':
-        return MontyOsCall(
-          operationName: p.functionName ?? '',
-          arguments: p.arguments != null
-              ? (p.arguments ?? const []).map(MontyValue.fromJson).toList()
-              : const [],
-          kwargs: p.kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
-          callId: p.callId ?? 0,
-        );
+        return _buildOsCallProgress(p);
       case 'error':
-        _throwError(
+        _throwReplError(
           message: p.error ?? 'Unknown error',
           excType: p.excType,
           traceback: p.traceback,
@@ -274,21 +330,6 @@ class MontyRepl {
     }
   }
 
-  Map<String, Object?> _argsToMap(
-    List<MontyValue> positional,
-    Map<String, MontyValue>? kwargs,
-  ) {
-    final result = <String, Object?>{};
-    if (kwargs != null) {
-      result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
-    }
-    for (var i = 0; i < positional.length; i++) {
-      result['_$i'] = positional[i].dartValue;
-    }
-
-    return result;
-  }
-
   Future<void> _ensureCreated() async {
     if (!_created) {
       await _bindings.create(scriptName: _scriptName);
@@ -302,34 +343,6 @@ class MontyRepl {
 
   void _checkNotDisposed() {
     if (_disposed) throw StateError('MontyRepl has been disposed.');
-  }
-
-  MontyException? _buildError(
-    String? error,
-    String? excType,
-    List<Object?>? traceback,
-  ) {
-    if (error == null) return null;
-
-    return MontyException(
-      message: error,
-      excType: excType,
-      traceback: MontyStackFrame.listFromJson(traceback ?? const []),
-    );
-  }
-
-  Never _throwError({
-    required String message,
-    String? excType,
-    List<Object?>? traceback,
-  }) {
-    if (excType == 'MemoryLimitExceeded') throw MontyResourceError(message);
-    final exception = MontyException(
-      message: message,
-      excType: excType,
-      traceback: MontyStackFrame.listFromJson(traceback ?? const []),
-    );
-    throw MontyScriptError(message, excType: excType, exception: exception);
   }
 }
 

@@ -112,6 +112,37 @@ class WasmReplBindings implements ReplBindings {
     );
   }
 
+  CoreProgressResult _buildCompleteResult(WasmProgressResult r) =>
+      CoreProgressResult(
+        state: 'complete',
+        value: r.value,
+        usage: const MontyResourceUsage(
+          memoryBytesUsed: 0,
+          timeElapsedMs: 0,
+          stackDepthUsed: 0,
+        ),
+        printOutput: r.printOutput,
+      );
+
+  CoreProgressResult _buildPendingResult(WasmProgressResult r) =>
+      CoreProgressResult(
+        state: 'pending',
+        functionName: r.functionName,
+        arguments: r.arguments,
+        kwargs: r.kwargs,
+        callId: r.callId,
+        methodCall: r.methodCall,
+      );
+
+  CoreProgressResult _buildOsCallResult(WasmProgressResult r) =>
+      CoreProgressResult(
+        state: 'os_call',
+        functionName: r.functionName,
+        arguments: r.arguments,
+        kwargs: r.kwargs,
+        callId: r.callId,
+      );
+
   CoreProgressResult _translateWasmProgressResult(
     WasmProgressResult result,
   ) {
@@ -123,47 +154,18 @@ class WasmReplBindings implements ReplBindings {
         traceback: result.traceback,
       );
     }
-
-    final state = result.state ?? 'complete';
-    switch (state) {
-      case 'complete':
-        return CoreProgressResult(
-          state: 'complete',
-          value: result.value,
-          usage: const MontyResourceUsage(
-            memoryBytesUsed: 0,
-            timeElapsedMs: 0,
-            stackDepthUsed: 0,
-          ),
-          printOutput: result.printOutput,
-        );
-      case 'pending':
-        return CoreProgressResult(
-          state: 'pending',
-          functionName: result.functionName,
-          arguments: result.arguments,
-          kwargs: result.kwargs,
-          callId: result.callId,
-          methodCall: result.methodCall,
-        );
-      case 'os_call':
-        return CoreProgressResult(
-          state: 'os_call',
-          functionName: result.functionName,
-          arguments: result.arguments,
-          kwargs: result.kwargs,
-          callId: result.callId,
-        );
-      case 'resolve_futures':
-        return CoreProgressResult(
-          state: 'resolve_futures',
-          pendingCallIds: result.pendingCallIds,
-        );
-      default:
-        return CoreProgressResult(
-          state: 'error',
-          error: 'Unknown progress state: $state',
-        );
-    }
+    return switch (result.state ?? 'complete') {
+      'complete' => _buildCompleteResult(result),
+      'pending' => _buildPendingResult(result),
+      'os_call' => _buildOsCallResult(result),
+      'resolve_futures' => CoreProgressResult(
+        state: 'resolve_futures',
+        pendingCallIds: result.pendingCallIds,
+      ),
+      final s => CoreProgressResult(
+        state: 'error',
+        error: 'Unknown progress state: $s',
+      ),
+    };
   }
 }

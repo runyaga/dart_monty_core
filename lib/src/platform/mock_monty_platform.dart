@@ -9,6 +9,100 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_snapshot_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 
+/// Captures all arguments passed to [MockMontyPlatform] methods.
+///
+/// Access via [MockMontyPlatform.history].
+final class MockCallHistory {
+  /// Codes passed to [MockMontyPlatform.run], in call order.
+  final List<String> runCodes = [];
+
+  /// Limits passed to [MockMontyPlatform.run], in call order.
+  final List<MontyLimits?> runLimitsList = [];
+
+  /// Script names passed to [MockMontyPlatform.run], in call order.
+  final List<String?> runScriptNamesList = [];
+
+  /// Codes passed to [MockMontyPlatform.start], in call order.
+  final List<String> startCodes = [];
+
+  /// External function lists passed to [MockMontyPlatform.start], in order.
+  final List<List<String>?> startExternalFunctionsList = [];
+
+  /// Limits passed to [MockMontyPlatform.start], in call order.
+  final List<MontyLimits?> startLimitsList = [];
+
+  /// Script names passed to [MockMontyPlatform.start], in call order.
+  final List<String?> startScriptNamesList = [];
+
+  /// Return values passed to [MockMontyPlatform.resume], in call order.
+  final List<Object?> resumeReturnValues = [];
+
+  /// Error messages passed to [MockMontyPlatform.resumeWithError], in order.
+  final List<String> resumeErrorMessages = [];
+
+  /// Number of times [MockMontyPlatform.resumeAsFuture] was called.
+  int resumeAsFutureCount = 0;
+
+  /// Results maps passed to [MockMontyPlatform.resolveFutures], in call order.
+  final List<Map<int, Object?>> resolveFuturesResultsList = [];
+
+  /// Errors maps passed to [MockMontyPlatform.resolveFutures], in call order.
+  final List<Map<int, String>?> resolveFuturesErrorsList = [];
+
+  /// Snapshot data passed to [MockMontyPlatform.restore], in call order.
+  final List<Uint8List> restoreDataList = [];
+
+  /// The most recent code passed to [MockMontyPlatform.run], or `null`.
+  String? get lastRunCode => runCodes.isEmpty ? null : runCodes.last;
+
+  /// The most recent limits passed to [MockMontyPlatform.run], or `null`.
+  MontyLimits? get lastRunLimits =>
+      runLimitsList.isEmpty ? null : runLimitsList.last;
+
+  /// The most recent script name passed to [MockMontyPlatform.run], or `null`.
+  String? get lastRunScriptName =>
+      runScriptNamesList.isEmpty ? null : runScriptNamesList.last;
+
+  /// The most recent code passed to [MockMontyPlatform.start], or `null`.
+  String? get lastStartCode => startCodes.isEmpty ? null : startCodes.last;
+
+  /// The most recent external functions passed to [MockMontyPlatform.start].
+  List<String>? get lastStartExternalFunctions =>
+      startExternalFunctionsList.isEmpty
+          ? null
+          : startExternalFunctionsList.last;
+
+  /// The most recent limits passed to [MockMontyPlatform.start], or `null`.
+  MontyLimits? get lastStartLimits =>
+      startLimitsList.isEmpty ? null : startLimitsList.last;
+
+  /// The most recent script name passed to [MockMontyPlatform.start].
+  String? get lastStartScriptName =>
+      startScriptNamesList.isEmpty ? null : startScriptNamesList.last;
+
+  /// The most recent return value passed to [MockMontyPlatform.resume].
+  Object? get lastResumeReturnValue =>
+      resumeReturnValues.isEmpty ? null : resumeReturnValues.last;
+
+  /// Most recent error message passed to [MockMontyPlatform.resumeWithError].
+  String? get lastResumeErrorMessage =>
+      resumeErrorMessages.isEmpty ? null : resumeErrorMessages.last;
+
+  /// The most recent results map passed to [MockMontyPlatform.resolveFutures].
+  Map<int, Object?>? get lastResolveFuturesResults =>
+      resolveFuturesResultsList.isEmpty
+          ? null
+          : resolveFuturesResultsList.last;
+
+  /// The most recent errors map passed to [MockMontyPlatform.resolveFutures].
+  Map<int, String>? get lastResolveFuturesErrors =>
+      resolveFuturesErrorsList.isEmpty ? null : resolveFuturesErrorsList.last;
+
+  /// The most recent snapshot data passed to [MockMontyPlatform.restore].
+  Uint8List? get lastRestoreData =>
+      restoreDataList.isEmpty ? null : restoreDataList.last;
+}
+
 /// A mock implementation of [MontyPlatform] for testing.
 ///
 /// Configure expected return values before calling methods:
@@ -16,7 +110,7 @@ import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 /// final mock = MockMontyPlatform();
 /// mock.runResult = MontyResult(value: 42, usage: usage);
 /// final result = await mock.run('1 + 1');
-/// expect(mock.lastRunCode, '1 + 1');
+/// expect(mock.history.lastRunCode, '1 + 1');
 /// ```
 ///
 /// For [start], [resume], and [resumeWithError], enqueue progress values
@@ -57,98 +151,10 @@ class MockMontyPlatform extends MontyPlatform
   // Invocation history (what was called)
   // ---------------------------------------------------------------------------
 
-  /// Codes passed to [run], in call order.
-  final List<String> runCodes = [];
-
-  /// Limits passed to [run], in call order.
-  final List<MontyLimits?> runLimitsList = [];
-
-  /// Script names passed to [run], in call order.
-  final List<String?> runScriptNamesList = [];
-
-  /// Codes passed to [start], in call order.
-  final List<String> startCodes = [];
-
-  /// External functions passed to [start], in call order.
-  final List<List<String>?> startExternalFunctionsList = [];
-
-  /// Limits passed to [start], in call order.
-  final List<MontyLimits?> startLimitsList = [];
-
-  /// Script names passed to [start], in call order.
-  final List<String?> startScriptNamesList = [];
-
-  /// Return values passed to [resume], in call order.
-  final List<Object?> resumeReturnValues = [];
-
-  /// Error messages passed to [resumeWithError], in call order.
-  final List<String> resumeErrorMessages = [];
-
-  /// Call count for [resumeAsFuture], in call order.
-  int resumeAsFutureCount = 0;
-
-  /// Results passed to [resolveFutures], in call order.
-  final List<Map<int, Object?>> resolveFuturesResultsList = [];
-
-  /// Errors passed to [resolveFutures], in call order.
-  final List<Map<int, String>?> resolveFuturesErrorsList = [];
-
-  /// Snapshot data passed to [restore], in call order.
-  final List<Uint8List> restoreDataList = [];
+  /// All recorded call arguments. Use this to inspect what was passed.
+  final history = MockCallHistory();
 
   final Queue<MontyProgress> _progressQueue = Queue<MontyProgress>();
-
-  // ---------------------------------------------------------------------------
-  // Convenience getters (most recent call)
-  // ---------------------------------------------------------------------------
-
-  /// The code passed to the most recent [run] call.
-  String? get lastRunCode => runCodes.isEmpty ? null : runCodes.last;
-
-  /// The limits passed to the most recent [run] call.
-  MontyLimits? get lastRunLimits =>
-      runLimitsList.isEmpty ? null : runLimitsList.last;
-
-  /// The script name passed to the most recent [run] call.
-  String? get lastRunScriptName =>
-      runScriptNamesList.isEmpty ? null : runScriptNamesList.last;
-
-  /// The code passed to the most recent [start] call.
-  String? get lastStartCode => startCodes.isEmpty ? null : startCodes.last;
-
-  /// The external functions passed to the most recent [start] call.
-  List<String>? get lastStartExternalFunctions =>
-      startExternalFunctionsList.isEmpty
-      ? null
-      : startExternalFunctionsList.last;
-
-  /// The limits passed to the most recent [start] call.
-  MontyLimits? get lastStartLimits =>
-      startLimitsList.isEmpty ? null : startLimitsList.last;
-
-  /// The script name passed to the most recent [start] call.
-  String? get lastStartScriptName =>
-      startScriptNamesList.isEmpty ? null : startScriptNamesList.last;
-
-  /// The return value passed to the most recent [resume] call.
-  Object? get lastResumeReturnValue =>
-      resumeReturnValues.isEmpty ? null : resumeReturnValues.last;
-
-  /// The error message passed to the most recent [resumeWithError] call.
-  String? get lastResumeErrorMessage =>
-      resumeErrorMessages.isEmpty ? null : resumeErrorMessages.last;
-
-  /// The results passed to the most recent [resolveFutures] call.
-  Map<int, Object?>? get lastResolveFuturesResults =>
-      resolveFuturesResultsList.isEmpty ? null : resolveFuturesResultsList.last;
-
-  /// The errors passed to the most recent [resolveFutures] call.
-  Map<int, String>? get lastResolveFuturesErrors =>
-      resolveFuturesErrorsList.isEmpty ? null : resolveFuturesErrorsList.last;
-
-  /// The snapshot data passed to the most recent [restore] call.
-  Uint8List? get lastRestoreData =>
-      restoreDataList.isEmpty ? null : restoreDataList.last;
 
   /// Adds a [MontyProgress] to the FIFO queue consumed by [start],
   /// [resume], [resumeWithError], [resumeAsFuture], and
@@ -169,9 +175,9 @@ class MockMontyPlatform extends MontyPlatform
         'runResult not set. Assign a MontyResult before calling run().',
       );
     }
-    runCodes.add(code);
-    runLimitsList.add(limits);
-    runScriptNamesList.add(scriptName);
+    history.runCodes.add(code);
+    history.runLimitsList.add(limits);
+    history.runScriptNamesList.add(scriptName);
 
     return result;
   }
@@ -187,10 +193,10 @@ class MockMontyPlatform extends MontyPlatform
     assertIdle('start');
     markActive();
 
-    startCodes.add(code);
-    startExternalFunctionsList.add(externalFunctions);
-    startLimitsList.add(limits);
-    startScriptNamesList.add(scriptName);
+    history.startCodes.add(code);
+    history.startExternalFunctionsList.add(externalFunctions);
+    history.startLimitsList.add(limits);
+    history.startScriptNamesList.add(scriptName);
 
     return _dequeueAndTransition();
   }
@@ -200,7 +206,7 @@ class MockMontyPlatform extends MontyPlatform
     assertNotDisposed('resume');
     assertActive('resume');
 
-    resumeReturnValues.add(returnValue);
+    history.resumeReturnValues.add(returnValue);
 
     return _dequeueAndTransition();
   }
@@ -210,7 +216,7 @@ class MockMontyPlatform extends MontyPlatform
     assertNotDisposed('resumeWithError');
     assertActive('resumeWithError');
 
-    resumeErrorMessages.add(errorMessage);
+    history.resumeErrorMessages.add(errorMessage);
 
     return _dequeueAndTransition();
   }
@@ -220,7 +226,7 @@ class MockMontyPlatform extends MontyPlatform
     assertNotDisposed('resumeAsFuture');
     assertActive('resumeAsFuture');
 
-    resumeAsFutureCount++;
+    history.resumeAsFutureCount++;
 
     return _dequeueAndTransition();
   }
@@ -233,8 +239,8 @@ class MockMontyPlatform extends MontyPlatform
     assertNotDisposed('resolveFutures');
     assertActive('resolveFutures');
 
-    resolveFuturesResultsList.add(results);
-    resolveFuturesErrorsList.add(errors);
+    history.resolveFuturesResultsList.add(results);
+    history.resolveFuturesErrorsList.add(errors);
 
     return _dequeueAndTransition();
   }
@@ -260,7 +266,7 @@ class MockMontyPlatform extends MontyPlatform
         'restore().',
       );
     }
-    restoreDataList.add(data);
+    history.restoreDataList.add(data);
 
     return platform;
   }

@@ -13,6 +13,40 @@ import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:meta/meta.dart';
 
+typedef _ErrorInfo = ({
+  String message,
+  String? excType,
+  List<dynamic>? traceback,
+  String? filename,
+  int? lineNumber,
+  int? columnNumber,
+  String? sourceCode,
+});
+
+List<MontyStackFrame> _parseTraceback(List<dynamic>? traceback) {
+  if (traceback == null) return const [];
+  return MontyStackFrame.listFromJson(traceback);
+}
+
+List<MontyValue> _parseArgList(List<dynamic>? args) =>
+    args != null ? args.map(MontyValue.fromJson).toList() : const [];
+
+Map<String, MontyValue>? _parseKwargMap(Map<String, dynamic>? kwargs) =>
+    kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v)));
+
+String _encodeLimitsJson(MontyLimits? limits) {
+  return json.encode({
+    'memory_bytes': limits?.memoryBytes ?? BaseMontyPlatform.defaultMemoryBytes,
+    'stack_depth': limits?.stackDepth ?? BaseMontyPlatform.defaultStackDepth,
+    if (limits?.timeoutMs != null) 'timeout_ms': limits!.timeoutMs,
+  });
+}
+
+String? _encodeExternalFunctionsJson(List<String>? fns) {
+  if (fns == null || fns.isEmpty) return null;
+  return json.encode(fns);
+}
+
 /// Abstract base that implements [MontyPlatform] by delegating to a
 /// [MontyCoreBindings] and translating intermediate results into
 /// domain types.
@@ -65,7 +99,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final result = await _bindings.run(
         code,
-        limitsJson: _encodeLimits(limits),
+        limitsJson: _encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -89,8 +123,8 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final progress = await _bindings.start(
         code,
-        extFnsJson: _encodeExternalFunctions(externalFunctions),
-        limitsJson: _encodeLimits(limits),
+        extFnsJson: _encodeExternalFunctionsJson(externalFunctions),
+        limitsJson: _encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -145,48 +179,19 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   MontyProgress translateProgress(CoreProgressResult p) {
     switch (p.state) {
       case 'complete':
-        markIdle();
-
-        return MontyComplete(
-          result: MontyResult(
-            value: MontyValue.fromJson(p.value),
-            error: _buildError(p.error, p.excType, p.traceback),
-            usage: p.usage ?? _zeroUsage,
-            printOutput: p.printOutput,
-          ),
-        );
+        return _buildComplete(p);
       case 'pending':
-        markActive();
-
-        return MontyPending(
-          functionName: p.functionName ?? '',
-          arguments: p.arguments != null
-              ? p.arguments!.map(MontyValue.fromJson).toList()
-              : const [],
-          kwargs: p.kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
-          callId: p.callId ?? 0,
-          methodCall: p.methodCall ?? false,
-        );
+        return _buildPending(p);
       case 'os_call':
-        markActive();
-
-        return MontyOsCall(
-          operationName: p.functionName ?? '',
-          arguments: p.arguments != null
-              ? p.arguments!.map(MontyValue.fromJson).toList()
-              : const [],
-          kwargs: p.kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
-          callId: p.callId ?? 0,
-        );
+        return _buildOsCall(p);
       case 'resolve_futures':
         markActive();
-
         return MontyResolveFutures(
           pendingCallIds: p.pendingCallIds ?? const [],
         );
       case 'error':
         markIdle();
-        _throwError(
+        _throwError((
           message: p.error ?? 'Unknown error',
           excType: p.excType,
           traceback: p.traceback,
@@ -194,7 +199,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
           lineNumber: p.lineNumber,
           columnNumber: p.columnNumber,
           sourceCode: p.sourceCode,
-        );
+        ));
       default:
         markIdle();
         throw StateError('Unknown progress state: ${p.state}');
@@ -219,7 +224,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
         printOutput: r.printOutput,
       );
     }
-    _throwError(
+    _throwError((
       message: r.error ?? 'Unknown error',
       excType: r.excType,
       traceback: r.traceback,
@@ -227,25 +232,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       lineNumber: r.lineNumber,
       columnNumber: r.columnNumber,
       sourceCode: r.sourceCode,
-    );
-  }
-
-  /// Encodes [limits] to JSON, applying defaults for unset fields.
-  ///
-  /// Always returns a non-null JSON string so both FFI and WASM backends
-  /// receive explicit limits rather than falling back to Rust-side defaults.
-  String _encodeLimits(MontyLimits? limits) {
-    return json.encode({
-      'memory_bytes': limits?.memoryBytes ?? defaultMemoryBytes,
-      'stack_depth': limits?.stackDepth ?? defaultStackDepth,
-      if (limits?.timeoutMs != null) 'timeout_ms': limits!.timeoutMs,
-    });
-  }
-
-  String? _encodeExternalFunctions(List<String>? fns) {
-    if (fns == null || fns.isEmpty) return null;
-
-    return json.encode(fns);
+    ));
   }
 
   MontyException? _buildError(
@@ -262,10 +249,37 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     );
   }
 
-  List<MontyStackFrame> _parseTraceback(List<dynamic>? traceback) {
-    if (traceback == null) return const [];
+  MontyComplete _buildComplete(CoreProgressResult p) {
+    markIdle();
+    return MontyComplete(
+      result: MontyResult(
+        value: MontyValue.fromJson(p.value),
+        error: _buildError(p.error, p.excType, p.traceback),
+        usage: p.usage ?? _zeroUsage,
+        printOutput: p.printOutput,
+      ),
+    );
+  }
 
-    return MontyStackFrame.listFromJson(traceback);
+  MontyPending _buildPending(CoreProgressResult p) {
+    markActive();
+    return MontyPending(
+      functionName: p.functionName ?? '',
+      arguments: _parseArgList(p.arguments),
+      kwargs: _parseKwargMap(p.kwargs),
+      callId: p.callId ?? 0,
+      methodCall: p.methodCall ?? false,
+    );
+  }
+
+  MontyOsCall _buildOsCall(CoreProgressResult p) {
+    markActive();
+    return MontyOsCall(
+      operationName: p.functionName ?? '',
+      arguments: _parseArgList(p.arguments),
+      kwargs: _parseKwargMap(p.kwargs),
+      callId: p.callId ?? 0,
+    );
   }
 
   /// Throws the appropriate sealed [MontyError] subtype for a failed run.
@@ -273,30 +287,17 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   /// Resource errors (MemoryLimitExceeded) throw [MontyResourceError].
   /// All other Python exceptions throw [MontyScriptError] wrapping a full
   /// [MontyException] with traceback and source location details.
-  Never _throwError({
-    required String message,
-    String? excType,
-    List<dynamic>? traceback,
-    String? filename,
-    int? lineNumber,
-    int? columnNumber,
-    String? sourceCode,
-  }) {
-    // Resource exhaustion — separate sealed type.
-    if (excType == 'MemoryLimitExceeded') {
-      throw MontyResourceError(message);
-    }
-
-    // All other Python exceptions go through MontyScriptError.
+  Never _throwError(_ErrorInfo e) {
+    if (e.excType == 'MemoryLimitExceeded') throw MontyResourceError(e.message);
     final exception = MontyException(
-      message: message,
-      excType: excType,
-      traceback: _parseTraceback(traceback),
-      filename: filename,
-      lineNumber: lineNumber,
-      columnNumber: columnNumber,
-      sourceCode: sourceCode,
+      message: e.message,
+      excType: e.excType,
+      traceback: _parseTraceback(e.traceback),
+      filename: e.filename,
+      lineNumber: e.lineNumber,
+      columnNumber: e.columnNumber,
+      sourceCode: e.sourceCode,
     );
-    throw MontyScriptError(message, excType: excType, exception: exception);
+    throw MontyScriptError(e.message, excType: e.excType, exception: exception);
   }
 }
