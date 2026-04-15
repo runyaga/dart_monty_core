@@ -1080,7 +1080,8 @@ mod tests {
             let results = format!("{{\"{id}\": 42}}");
             let (tag, _) = repl.resume_futures(&results, "{}");
             assert!(
-                tag == MontyProgressTag::Complete || tag == MontyProgressTag::Pending
+                tag == MontyProgressTag::Complete
+                    || tag == MontyProgressTag::Pending
                     || tag == MontyProgressTag::ResolveFutures
             );
         }

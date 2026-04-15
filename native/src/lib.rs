@@ -273,7 +273,8 @@ pub unsafe extern "C" fn monty_resume_with_exception(
     let Ok(msg) = (unsafe { parse_c_str(error_message, "error_message", out_error) }) else {
         return MontyProgressTag::Error;
     };
-    ffi_progress!(handle, out_error, |h| h.resume_with_exception(&exc_type_str, msg))
+    ffi_progress!(handle, out_error, |h| h
+        .resume_with_exception(&exc_type_str, msg))
 }
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,6 @@
 // The CI job greps for FIXTURE_RESULT / FIXTURE_DONE from Chrome stderr.
 
 // Printing is the intended output mechanism for the fixture runner protocol.
-// ignore_for_file: avoid_print
 // DCM: arity is known at call sites — indexed access is safe.
 // ignore_for_file: avoid-unsafe-collection-methods
 // DCM: this is a compiled entry-point, not a test file.
@@ -67,49 +66,47 @@ Object? _dispatch(
   String functionName,
   List<MontyValue> args,
   Map<String, MontyValue>? _, // kwargs — unused for current functions
-) =>
-    switch (functionName) {
-      // add_ints(a: int, b: int) → int
-      'add_ints' =>
-        (args.first.dartValue! as int) + (args[1].dartValue! as int),
-      // concat_strings(a: str, b: str) → str
-      'concat_strings' => '${args.first.dartValue}${args[1].dartValue}',
-      // return_value(x: any) → x  (identity)
-      'return_value' => args.first.dartValue,
-      // get_list() → [1, 2, 3]
-      'get_list' => [1, 2, 3],
-      // make_point() → frozen Point(x=1, y=2)
-      'make_point' => {
-        '__type': 'dataclass',
-        'name': 'Point',
-        'type_id': 0,
-        'field_names': ['x', 'y'],
-        'attrs': {'x': 1, 'y': 2},
-        'frozen': true,
-      },
-      // make_mutable_point() → mutable MutablePoint(x=1, y=2)
-      'make_mutable_point' => {
-        '__type': 'dataclass',
-        'name': 'MutablePoint',
-        'type_id': 0,
-        'field_names': ['x', 'y'],
-        'attrs': {'x': 1, 'y': 2},
-        'frozen': false,
-      },
-      // make_user(name: str) → mutable User(name=name, active=True)
-      'make_user' => {
-        '__type': 'dataclass',
-        'name': 'User',
-        'type_id': 0,
-        'field_names': ['name', 'active'],
-        'attrs': {
-          'name': (args.first as MontyString).value,
-          'active': true,
-        },
-        'frozen': false,
-      },
-      _ => throw StateError('Unexpected external function: $functionName'),
-    };
+) => switch (functionName) {
+  // add_ints(a: int, b: int) → int
+  'add_ints' => (args.first.dartValue! as int) + (args[1].dartValue! as int),
+  // concat_strings(a: str, b: str) → str
+  'concat_strings' => '${args.first.dartValue}${args[1].dartValue}',
+  // return_value(x: any) → x  (identity)
+  'return_value' => args.first.dartValue,
+  // get_list() → [1, 2, 3]
+  'get_list' => [1, 2, 3],
+  // make_point() → frozen Point(x=1, y=2)
+  'make_point' => {
+    '__type': 'dataclass',
+    'name': 'Point',
+    'type_id': 0,
+    'field_names': ['x', 'y'],
+    'attrs': {'x': 1, 'y': 2},
+    'frozen': true,
+  },
+  // make_mutable_point() → mutable MutablePoint(x=1, y=2)
+  'make_mutable_point' => {
+    '__type': 'dataclass',
+    'name': 'MutablePoint',
+    'type_id': 0,
+    'field_names': ['x', 'y'],
+    'attrs': {'x': 1, 'y': 2},
+    'frozen': false,
+  },
+  // make_user(name: str) → mutable User(name=name, active=True)
+  'make_user' => {
+    '__type': 'dataclass',
+    'name': 'User',
+    'type_id': 0,
+    'field_names': ['name', 'active'],
+    'attrs': {
+      'name': (args.first as MontyString).value,
+      'active': true,
+    },
+    'frozen': false,
+  },
+  _ => throw StateError('Unexpected external function: $functionName'),
+};
 
 // ---------------------------------------------------------------------------
 // OS call dispatch
@@ -420,16 +417,16 @@ final class _VirtualFs {
 
 /// Returns the Python type name for [v], used in TypeError messages.
 String _montyTypeName(MontyValue v) => switch (v) {
-      MontyInt() => 'int',
-      MontyFloat() => 'float',
-      MontyBool() => 'bool',
-      MontyString() => 'str',
-      MontyBytes() => 'bytes',
-      MontyList() => 'list',
-      MontyDict() => 'dict',
-      MontyNull() => 'NoneType',
-      _ => 'object',
-    };
+  MontyInt() => 'int',
+  MontyFloat() => 'float',
+  MontyBool() => 'bool',
+  MontyString() => 'str',
+  MontyBytes() => 'bytes',
+  MontyList() => 'list',
+  MontyDict() => 'dict',
+  MontyNull() => 'NoneType',
+  _ => 'object',
+};
 
 /// Throws [_OsError] if any path component exceeds 255 bytes or the total
 /// path exceeds 4096 bytes.
@@ -859,8 +856,12 @@ Future<void> main() async {
       final platform = createPlatformMonty();
       try {
         final vfs = _VirtualFs.mountFs();
-        final (thrownExcType, resultValue, shouldSkip) =
-            await _runDispatchLoop(platform, source, key, vfs);
+        final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
+          platform,
+          source,
+          key,
+          vfs,
+        );
 
         if (shouldSkip) {
           skipped++;
@@ -916,8 +917,7 @@ Future<void> main() async {
       final platform = createPlatformMonty();
       try {
         final vfs = _VirtualFs();
-        final (thrownExcType, resultValue, shouldSkip) =
-            await _runDispatchLoop(
+        final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
           value,
           key,
