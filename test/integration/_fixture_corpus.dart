@@ -1,6 +1,6 @@
 // GENERATED — do not edit.
 // Run: dart tool/generate_fixture_corpus.dart
-// ignore_for_file: lines_longer_than_80_chars, prefer_single_quotes, avoid_escaping_inner_quotes, eol_at_end_of_file
+// ignore_for_file: lines_longer_than_80_chars, prefer_single_quotes, avoid_escaping_inner_quotes
 
 /// Python fixture corpus embedded at compile time.
 ///

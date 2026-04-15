@@ -161,6 +161,42 @@ MontyProgressTag monty_resume_with_error(
   ),
 );
 
+/// Resume execution with a typed Python exception.
+///
+/// @param handle         Handle in PENDING or OS_CALL state.
+/// @param exc_type       NUL-terminated Python exception class name (e.g. "FileNotFoundError").
+/// @param error_message  NUL-terminated error message string.
+/// @param out_error      Receives FFI error message on failure. Caller frees.
+/// @return               MONTY_PROGRESS_COMPLETE, _PENDING, or _ERROR.
+@ffi.Native<
+  ffi.UnsignedInt Function(
+    ffi.Pointer<MontyHandle>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>(symbol: 'monty_resume_with_exception')
+external int _monty_resume_with_exception(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Char> exc_type,
+  ffi.Pointer<ffi.Char> error_message,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
+MontyProgressTag monty_resume_with_exception(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Char> exc_type,
+  ffi.Pointer<ffi.Char> error_message,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+) => MontyProgressTag.fromValue(
+  _monty_resume_with_exception(
+    handle,
+    exc_type,
+    error_message,
+    out_error,
+  ),
+);
+
 /// Resume by creating a future (tells the VM this call returns a future).
 /// Only valid when handle is in PENDING state.
 ///

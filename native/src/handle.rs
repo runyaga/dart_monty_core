@@ -214,6 +214,21 @@ impl MontyHandle {
         self.resume_with_result(result)
     }
 
+    /// Resume with a typed Python exception.
+    ///
+    /// `exc_type` is the Python exception class name (e.g. `"FileNotFoundError"`).
+    /// Unknown names fall back to `RuntimeError`.
+    pub fn resume_with_exception(
+        &mut self,
+        exc_type: &str,
+        error_message: &str,
+    ) -> (MontyProgressTag, Option<String>) {
+        let exc_kind = exc_type.parse::<monty::ExcType>().unwrap_or(monty::ExcType::RuntimeError);
+        let exc = MontyException::new(exc_kind, Some(error_message.to_string()));
+        let result = ExtFunctionResult::Error(exc);
+        self.resume_with_result(result)
+    }
+
     /// Resume by creating a future (tells the VM this call returns a future).
     ///
     /// The VM continues executing until all coroutines are blocked, then

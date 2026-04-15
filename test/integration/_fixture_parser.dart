@@ -42,10 +42,28 @@ bool fixtureIsCallExternal(String source) {
     final line = raw.trim();
     if (!line.startsWith('#')) continue;
     final directive = line.substring(1).trim();
-    if (directive == 'call-external' || directive.startsWith('call-external ')) {
+    if (directive == 'call-external' ||
+        directive.startsWith('call-external ')) {
       return true;
     }
   }
+
+  return false;
+}
+
+/// Returns `true` when [source] declares a `# mount-fs` directive,
+/// meaning the fixture expects a `root` Path variable pointing to a
+/// pre-populated virtual filesystem.
+bool fixtureMountsFs(String source) {
+  for (final raw in source.split('\n')) {
+    final line = raw.trim();
+    if (!line.startsWith('#')) continue;
+    final directive = line.substring(1).trim();
+    if (directive == 'mount-fs' || directive.startsWith('mount-fs ')) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -57,13 +75,15 @@ bool fixtureIsCallExternal(String source) {
 /// - `# call-external` — requires external function dispatch (skip unless
 ///   [skipCallExternal] is false)
 /// - `# run-async` — requires async execution mode
-/// - `# mount-fs` — requires filesystem mount
+/// - `# mount-fs` — requires filesystem mount (skip unless
+///   [skipMountFs] is false)
 ///
 /// `# xfail=cpython` is NOT a skip — monty supports these cases.
 FixtureExpectation? parseFixture(
   String source, {
   bool skipWasm = false,
   bool skipCallExternal = true,
+  bool skipMountFs = true,
 }) {
   final lines = source.split('\n');
 
@@ -87,8 +107,8 @@ FixtureExpectation? parseFixture(
                 directive.startsWith('call-external '))) ||
         directive == 'run-async' ||
         directive.startsWith('run-async ') ||
-        directive == 'mount-fs' ||
-        directive.startsWith('mount-fs ')) {
+        (skipMountFs &&
+            (directive == 'mount-fs' || directive.startsWith('mount-fs ')))) {
       return null;
     }
 
@@ -113,7 +133,7 @@ FixtureExpectation? parseFixture(
 }
 
 /// Scans `source` for a docstring block of the form:
-/// ```
+/// ```python
 /// """
 /// TRACEBACK:
 /// ...
@@ -136,8 +156,8 @@ ExpectRaise? _parseTracebackDocstring(String source) {
   final blockLines = block.split('\n');
 
   // Walk from the end, find the last non-empty line
-  for (var i = blockLines.length - 1; i >= 0; i--) {
-    final line = blockLines[i].trim();
+  for (final rawLine in blockLines.reversed) {
+    final line = rawLine.trim();
     if (line.isEmpty) continue;
 
     // Expected format: "ExcType: message" or bare "ExcType" (no message)
@@ -151,8 +171,8 @@ ExpectRaise? _parseTracebackDocstring(String source) {
       break;
     }
 
-    final message =
-        colonIdx < 0 ? '' : line.substring(colonIdx + 1).trim();
+    final message = colonIdx < 0 ? '' : line.substring(colonIdx + 1).trim();
+
     return ExpectRaise(excType: excType, message: message);
   }
 
@@ -186,13 +206,11 @@ FixtureExpectation _parseRaise(String raw) {
   final excType = raw.substring(0, parenIdx).trim();
   final msgRaw = raw.substring(parenIdx + 1, raw.length - 1).trim();
 
-  String message;
-  if ((msgRaw.startsWith("'") && msgRaw.endsWith("'")) ||
-      (msgRaw.startsWith('"') && msgRaw.endsWith('"'))) {
-    message = msgRaw.substring(1, msgRaw.length - 1);
-  } else {
-    message = msgRaw;
-  }
+  final message =
+      ((msgRaw.startsWith("'") && msgRaw.endsWith("'")) ||
+          (msgRaw.startsWith('"') && msgRaw.endsWith('"')))
+      ? msgRaw.substring(1, msgRaw.length - 1)
+      : msgRaw;
 
   return ExpectRaise(excType: excType, message: message);
 }

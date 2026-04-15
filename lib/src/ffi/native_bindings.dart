@@ -107,6 +107,16 @@ abstract class NativeBindings {
   /// Resumes with an [errorMessage] (raises RuntimeError in Python).
   ProgressResult resumeWithError(int handle, String errorMessage);
 
+  /// Resumes with a typed Python [excType] exception and [errorMessage].
+  ///
+  /// [excType] is the Python exception class name, e.g. `'FileNotFoundError'`.
+  /// Unknown names fall back to RuntimeError.
+  ProgressResult resumeWithException(
+    int handle,
+    String excType,
+    String errorMessage,
+  );
+
   /// Resumes by creating a future for the pending call.
   ProgressResult resumeAsFuture(int handle);
 

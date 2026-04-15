@@ -223,6 +223,17 @@ abstract class WasmBindings {
     int? sessionId,
   });
 
+  /// Resumes a paused execution, raising a typed Python [excType] exception
+  /// with [errorMessage]. Unknown [excType] names fall back to RuntimeError.
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmProgressResult> resumeWithException(
+    String excType,
+    String errorMessage, {
+    int? sessionId,
+  });
+
   /// Resumes by creating a future for the pending call.
   ///
   /// Returns a progress result which may be `pending` (next call),

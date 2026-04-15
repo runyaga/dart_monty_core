@@ -252,6 +252,30 @@ pub unsafe extern "C" fn monty_resume_with_error(
     ffi_progress!(handle, out_error, |h| h.resume_with_error(msg))
 }
 
+/// Resume execution with a typed Python exception.
+///
+/// - `exc_type`: NUL-terminated Python exception class name (e.g. `"FileNotFoundError"`).
+///   Unknown names fall back to RuntimeError.
+/// - `error_message`: NUL-terminated error message.
+/// - `out_error`: receives an error message on FFI failure (caller frees).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_resume_with_exception(
+    handle: *mut MontyHandle,
+    exc_type: *const c_char,
+    error_message: *const c_char,
+    out_error: *mut *mut c_char,
+) -> MontyProgressTag {
+    // SAFETY: exc_type is a NUL-terminated C string from Dart FFI; parse_c_str validates non-null
+    let Ok(exc_type_str) = (unsafe { parse_c_str(exc_type, "exc_type", out_error) }) else {
+        return MontyProgressTag::Error;
+    };
+    // SAFETY: error_message is a NUL-terminated C string from Dart FFI; parse_c_str validates non-null
+    let Ok(msg) = (unsafe { parse_c_str(error_message, "error_message", out_error) }) else {
+        return MontyProgressTag::Error;
+    };
+    ffi_progress!(handle, out_error, |h| h.resume_with_exception(&exc_type_str, msg))
+}
+
 // ---------------------------------------------------------------------------
 // Async / Futures
 // ---------------------------------------------------------------------------

@@ -304,6 +304,28 @@ async function resumeWithError(errorJson) {
 }
 
 /**
+ * Resume a paused execution with a typed Python exception.
+ *
+ * @param {string} excTypeJson JSON-encoded exception class name (e.g. "FileNotFoundError").
+ * @param {string} errorJson   JSON-encoded error message string.
+ * @returns {Promise<string>} JSON result.
+ */
+async function resumeWithException(excTypeJson, errorJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+
+  const session = sessions.get(sid);
+  const excType = JSON.parse(excTypeJson);
+  const errorMessage = JSON.parse(errorJson);
+  const result = await callWorker(
+    sid,
+    { type: 'resumeWithException', excType, errorMessage },
+    session.timeoutMs,
+  );
+  return JSON.stringify(result);
+}
+
+/**
  * Resume by creating a future for the pending external function call.
  *
  * @returns {Promise<string>} JSON result with state: pending, resolve_futures, or complete.
@@ -437,6 +459,7 @@ window.DartMontyBridge = {
   start,
   resume,
   resumeWithError,
+  resumeWithException,
   resumeAsFuture,
   resolveFutures,
   snapshot,

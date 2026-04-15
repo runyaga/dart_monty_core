@@ -58,6 +58,13 @@ external JSPromise<JSString> _jsResumeWithError(
   JSNumber? sessionId,
 ]);
 
+@JS('DartMontyBridge.resumeWithException')
+external JSPromise<JSString> _jsResumeWithException(
+  JSString excTypeJson,
+  JSString errorJson, [
+  JSNumber? sessionId,
+]);
+
 @JS('DartMontyBridge.resumeAsFuture')
 external JSPromise<JSString> _jsResumeAsFuture([JSNumber? sessionId]);
 
@@ -229,6 +236,23 @@ class WasmBindingsJs extends WasmBindings {
   }) async {
     final errorJson = json.encode(errorMessage);
     final resultJson = await _jsResumeWithError(
+      errorJson.toJS,
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
+  }
+
+  @override
+  Future<WasmProgressResult> resumeWithException(
+    String excType,
+    String errorMessage, {
+    int? sessionId,
+  }) async {
+    final excTypeJson = json.encode(excType);
+    final errorJson = json.encode(errorMessage);
+    final resultJson = await _jsResumeWithException(
+      excTypeJson.toJS,
       errorJson.toJS,
       sessionId?.toJS,
     ).toDart;
