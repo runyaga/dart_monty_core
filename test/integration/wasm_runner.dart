@@ -28,7 +28,7 @@ Future<void> main() async {
   var skipped = 0;
 
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
-    final expectation = parseFixture(value);
+    final expectation = parseFixture(value, skipWasm: true);
     if (expectation == null) {
       skipped++;
       continue;
