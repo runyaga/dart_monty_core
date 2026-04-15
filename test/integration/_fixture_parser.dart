@@ -153,8 +153,7 @@ ExpectRaise? _parseTracebackDocstring(String source) {
       break;
     }
 
-    final message =
-        colonIdx < 0 ? '' : line.substring(colonIdx + 1).trim();
+    final message = colonIdx < 0 ? '' : line.substring(colonIdx + 1).trim();
 
     return ExpectRaise(excType: excType, message: message);
   }
@@ -191,9 +190,9 @@ FixtureExpectation _parseRaise(String raw) {
 
   final message =
       ((msgRaw.startsWith("'") && msgRaw.endsWith("'")) ||
-              (msgRaw.startsWith('"') && msgRaw.endsWith('"')))
-          ? msgRaw.substring(1, msgRaw.length - 1)
-          : msgRaw;
+          (msgRaw.startsWith('"') && msgRaw.endsWith('"')))
+      ? msgRaw.substring(1, msgRaw.length - 1)
+      : msgRaw;
 
   return ExpectRaise(excType: excType, message: message);
 }
