@@ -153,6 +153,20 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) {
+    throw UnimplementedError(
+      'resumeNameLookupValue is not supported by the FFI backend',
+    );
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() {
+    throw UnimplementedError(
+      'resumeNameLookupUndefined is not supported by the FFI backend',
+    );
+  }
+
+  @override
   Future<Uint8List> snapshot() async {
     final handle = _requireHandle('snapshot');
 

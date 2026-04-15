@@ -284,6 +284,11 @@ class MontyRepl {
           progress = await _handleOsCall(progress, osHandler);
         case MontyResolveFutures():
           progress = _translateProgress(await _bindings.resume('null'));
+        case MontyNameLookup():
+          // REPL doesn't support NameLookup — signal NameError to Python.
+          progress = _translateProgress(
+            await _bindings.resumeNameLookupUndefined(),
+          );
       }
     }
   }

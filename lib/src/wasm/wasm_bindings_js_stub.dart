@@ -120,4 +120,14 @@ class WasmBindingsJs extends WasmBindings {
     String errorJson, {
     int? sessionId,
   }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupValue(
+    String valueJson, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId}) =>
+      throw UnimplementedError();
 }

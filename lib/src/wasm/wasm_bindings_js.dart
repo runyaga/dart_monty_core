@@ -138,6 +138,17 @@ external JSPromise<JSString> _jsReplResumeWithError(
   JSNumber? sessionId,
 ]);
 
+@JS('DartMontyBridge.resumeNameLookupValue')
+external JSPromise<JSString> _jsResumeNameLookupValue(
+  JSString valueJson, [
+  JSNumber? sessionId,
+]);
+
+@JS('DartMontyBridge.resumeNameLookupUndefined')
+external JSPromise<JSString> _jsResumeNameLookupUndefined([
+  JSNumber? sessionId,
+]);
+
 /// Concrete [WasmBindings] implementation using `dart:js_interop`.
 ///
 /// Calls static methods on `window.DartMontyBridge`, which manages a
@@ -490,6 +501,29 @@ class WasmBindingsJs extends WasmBindings {
       lineNumber: map['line_number'] as int?,
       columnNumber: map['column_number'] as int?,
       sourceCode: map['source_code'] as String?,
+      variableName: map['variableName'] as String?,
     );
+  }
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupValue(
+    String valueJson, {
+    int? sessionId,
+  }) async {
+    final resultJson = await _jsResumeNameLookupValue(
+      valueJson.toJS,
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
+  }
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId}) async {
+    final resultJson = await _jsResumeNameLookupUndefined(
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
   }
 }

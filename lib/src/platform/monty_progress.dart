@@ -8,12 +8,13 @@ const _deepEquality = DeepCollectionEquality();
 
 /// The progress of a multi-step Monty Python execution.
 ///
-/// A sealed class with four subtypes:
+/// A sealed class with five subtypes:
 /// - [MontyComplete] — execution finished with a [MontyResult].
 /// - [MontyPending] — execution paused, awaiting an external function call.
 /// - [MontyOsCall] — execution paused, awaiting an OS/filesystem operation.
 /// - [MontyResolveFutures] — execution paused, awaiting resolution of one
 ///   or more futures created by prior `resumeAsFuture()` calls.
+/// - [MontyNameLookup] — execution paused, awaiting a name resolution.
 ///
 /// Use pattern matching to handle all cases:
 /// ```dart
@@ -26,6 +27,8 @@ const _deepEquality = DeepCollectionEquality();
 ///     print('OS call: $operationName with $arguments');
 ///   case MontyResolveFutures(:final pendingCallIds):
 ///     print('Resolve futures: $pendingCallIds');
+///   case MontyNameLookup(:final variableName):
+///     print('Lookup: $variableName');
 /// }
 /// ```
 sealed class MontyProgress {
@@ -37,6 +40,7 @@ sealed class MontyProgress {
   /// The `type` discriminator selects the subtype:
   /// - `'complete'` → [MontyComplete]
   /// - `'pending'` → [MontyPending]
+  /// - `'name_lookup'` → [MontyNameLookup]
   factory MontyProgress.fromJson(Map<String, dynamic> json) {
     final type = json['type'] as String;
 
@@ -45,6 +49,7 @@ sealed class MontyProgress {
       'pending' => MontyPending.fromJson(json),
       'os_call' => MontyOsCall.fromJson(json),
       'resolve_futures' => MontyResolveFutures.fromJson(json),
+      'name_lookup' => MontyNameLookup.fromJson(json),
       _ => throw ArgumentError.value(type, 'type', 'Unknown progress type'),
     };
   }
@@ -336,4 +341,53 @@ final class MontyResolveFutures extends MontyProgress {
 
   @override
   String toString() => 'MontyResolveFutures($pendingCallIds)';
+}
+
+/// Execution paused, awaiting resolution of an unrecognized variable name.
+///
+/// Returned when the engine encounters a name that is not in the built-in
+/// scope and not registered as an external function. The host must either
+/// supply a value or indicate the name is undefined (raising NameError).
+///
+/// Resolve using `resumeNameLookup()` on the platform:
+/// ```dart
+/// case MontyNameLookup(:final variableName):
+///   final value = constants[variableName];
+///   if (value != null) {
+///     progress = await platform.resumeNameLookup(variableName, value);
+///   } else {
+///     progress = await platform.resumeNameLookupUndefined(variableName);
+///   }
+/// ```
+@immutable
+final class MontyNameLookup extends MontyProgress {
+  /// Creates a [MontyNameLookup].
+  const MontyNameLookup({required this.variableName});
+
+  /// Creates a [MontyNameLookup] from a JSON map.
+  factory MontyNameLookup.fromJson(Map<String, dynamic> json) {
+    return MontyNameLookup(
+      variableName: json['variable_name'] as String? ?? '',
+    );
+  }
+
+  /// The name the engine is trying to resolve.
+  final String variableName;
+
+  @override
+  Map<String, dynamic> toJson() {
+    return {'type': 'name_lookup', 'variable_name': variableName};
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other is MontyNameLookup && other.variableName == variableName);
+  }
+
+  @override
+  int get hashCode => variableName.hashCode;
+
+  @override
+  String toString() => 'MontyNameLookup($variableName)';
 }

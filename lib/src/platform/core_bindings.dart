@@ -95,6 +95,7 @@ final class CoreProgressResult {
     this.lineNumber,
     this.columnNumber,
     this.sourceCode,
+    this.variableName,
   });
 
   /// Progress state: `'complete'`, `'pending'`, or `'resolve_futures'`.
@@ -147,6 +148,9 @@ final class CoreProgressResult {
 
   /// Source code snippet (when execution failed).
   final String? sourceCode;
+
+  /// Variable name being looked up (when [state] is `'name_lookup'`).
+  final String? variableName;
 }
 
 /// Unified bindings contract for Monty backends.
@@ -204,6 +208,14 @@ abstract class MontyCoreBindings {
     String resultsJson,
     String errorsJson,
   );
+
+  /// Resumes a name lookup by providing [valueJson] for the looked-up name.
+  Future<CoreProgressResult> resumeNameLookupValue(String valueJson);
+
+  /// Resumes a name lookup by indicating the name is undefined.
+  ///
+  /// The engine raises NameError.
+  Future<CoreProgressResult> resumeNameLookupUndefined();
 
   /// Captures the current execution state as a snapshot.
   Future<Uint8List> snapshot();

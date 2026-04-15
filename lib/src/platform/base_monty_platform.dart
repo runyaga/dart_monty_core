@@ -212,6 +212,10 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
         return MontyResolveFutures(
           pendingCallIds: p.pendingCallIds ?? const [],
         );
+      case 'name_lookup':
+        markActive();
+
+        return MontyNameLookup(variableName: p.variableName ?? '');
       case 'error':
         markIdle();
         _throwError((
@@ -226,6 +230,41 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       default:
         markIdle();
         throw StateError('Unknown progress state: ${p.state}');
+    }
+  }
+
+  /// Resumes a name lookup by providing [value] for [name].
+  @override
+  Future<MontyProgress> resumeNameLookup(
+    String name,
+    Object? value,
+  ) async {
+    assertNotDisposed('resumeNameLookup');
+    assertActive('resumeNameLookup');
+    try {
+      final progress = await _bindings.resumeNameLookupValue(
+        json.encode(value),
+      );
+
+      return translateProgress(progress);
+    } catch (e) {
+      markIdle();
+      rethrow;
+    }
+  }
+
+  /// Resumes a name lookup indicating [name] is undefined (raises NameError).
+  @override
+  Future<MontyProgress> resumeNameLookupUndefined(String name) async {
+    assertNotDisposed('resumeNameLookupUndefined');
+    assertActive('resumeNameLookupUndefined');
+    try {
+      final progress = await _bindings.resumeNameLookupUndefined();
+
+      return translateProgress(progress);
+    } catch (e) {
+      markIdle();
+      rethrow;
     }
   }
 

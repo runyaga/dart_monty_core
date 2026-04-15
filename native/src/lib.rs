@@ -518,6 +518,54 @@ pub unsafe extern "C" fn monty_complete_is_error(handle: *const MontyHandle) -> 
 }
 
 // ---------------------------------------------------------------------------
+// NameLookup state accessors and resume functions
+// ---------------------------------------------------------------------------
+
+/// Get the variable name being looked up (only valid after a `MONTY_PROGRESS_NAME_LOOKUP`
+/// return from `monty_start` / `monty_resume_*`).
+/// Caller frees with `monty_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_name_lookup_name(handle: *const MontyHandle) -> *mut c_char {
+    if handle.is_null() {
+        return ptr::null_mut();
+    }
+    // SAFETY: handle is non-null (just checked) and was created by monty_create via Box::into_raw
+    let h = unsafe { &*handle };
+    match h.name_lookup_name() {
+        Some(name) => to_c_string(name),
+        None => ptr::null_mut(),
+    }
+}
+
+/// Resume from a NameLookup by supplying the resolved value as JSON.
+///
+/// - `value_json`: NUL-terminated JSON string for the resolved value.
+/// - `out_error`: receives an error message on failure (caller frees).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_resume_name_lookup_value(
+    handle: *mut MontyHandle,
+    value_json: *const c_char,
+    out_error: *mut *mut c_char,
+) -> MontyProgressTag {
+    // SAFETY: value_json is a NUL-terminated C string from Dart FFI; parse_c_str validates non-null
+    let Ok(json_str) = (unsafe { parse_c_str(value_json, "value_json", out_error) }) else {
+        return MontyProgressTag::Error;
+    };
+    ffi_progress!(handle, out_error, |h| h.resume_name_lookup_value(json_str))
+}
+
+/// Resume from a NameLookup with Undefined (will raise NameError in Python).
+///
+/// - `out_error`: receives an error message on failure (caller frees).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_resume_name_lookup_undefined(
+    handle: *mut MontyHandle,
+    out_error: *mut *mut c_char,
+) -> MontyProgressTag {
+    ffi_progress!(handle, out_error, |h| h.resume_name_lookup_undefined())
+}
+
+// ---------------------------------------------------------------------------
 // Snapshots
 // ---------------------------------------------------------------------------
 

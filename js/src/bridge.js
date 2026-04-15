@@ -391,6 +391,39 @@ async function restore(dataBase64) {
 }
 
 /**
+ * Resume a name lookup by providing a value for the looked-up name.
+ *
+ * @param {string} valueJson JSON-encoded value.
+ * @returns {Promise<string>} JSON result.
+ */
+async function resumeNameLookupValue(valueJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+
+  const session = sessions.get(sid);
+  const result = await callWorker(
+    sid, { type: 'resumeNameLookupValue', valueJson }, session.timeoutMs,
+  );
+  return JSON.stringify(result);
+}
+
+/**
+ * Resume a name lookup indicating the name is undefined (raises NameError).
+ *
+ * @returns {Promise<string>} JSON result.
+ */
+async function resumeNameLookupUndefined() {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+
+  const session = sessions.get(sid);
+  const result = await callWorker(
+    sid, { type: 'resumeNameLookupUndefined' }, session.timeoutMs,
+  );
+  return JSON.stringify(result);
+}
+
+/**
  * Discover available API surface.
  *
  * @returns {string} JSON describing bridge state.
@@ -462,6 +495,8 @@ window.DartMontyBridge = {
   resumeWithException,
   resumeAsFuture,
   resolveFutures,
+  resumeNameLookupValue,
+  resumeNameLookupUndefined,
   snapshot,
   restore,
   discover,

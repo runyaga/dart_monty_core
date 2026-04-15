@@ -76,6 +76,17 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() async {
+    if (!_created) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+
+    return _translateWasmProgressResult(
+      await _bindings.resumeNameLookupUndefined(),
+    );
+  }
+
+  @override
   Future<void> dispose() async {
     if (!_created) return;
     await _bindings.replFree();

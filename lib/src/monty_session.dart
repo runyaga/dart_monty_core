@@ -254,6 +254,10 @@ class MontySession {
           progress = await _handleOsCall(progress);
         case MontyResolveFutures():
           progress = await _safeCall(() => _platform.resume(null));
+        case MontyNameLookup(:final variableName):
+          progress = await _safeCall(
+            () => _platform.resumeNameLookupUndefined(variableName),
+          );
       }
     }
   }
@@ -300,6 +304,7 @@ class MontySession {
         case MontyPending():
         case MontyOsCall():
         case MontyResolveFutures():
+        case MontyNameLookup():
           return current;
       }
     }

@@ -44,23 +44,19 @@ const _supportedExtFns = {
   'make_point',
   'make_mutable_point',
   'make_user',
+  'make_empty',
 };
 
 /// Known ext-function names used in the corpus that we do NOT implement yet.
 /// Any fixture calling one of these is kept skipped to avoid wrong failures.
-/// `make_empty` stays here to keep `dataclass__basic.py` skipped (it calls
-/// methods on dataclasses which requires the correct type_id at runtime).
-const _unsupportedExtFns = {
-  'make_empty',
-  // async_call is handled via the futures protocol in _runDispatchLoop.
-};
+const Set<String> _unsupportedExtFns = {};
 
 /// Dispatches a supported [functionName] call to its Dart implementation.
 /// Returns the Dart value to resume with (passed to MontyPlatform.resume).
 Object? _dispatch(
   String functionName,
   List<MontyValue> args,
-  Map<String, MontyValue>? _, // kwargs — unused for current functions
+  Map<String, MontyValue>? kwargs,
 ) => switch (functionName) {
   // add_ints(a: int, b: int) → int
   'add_ints' => (args.first.dartValue! as int) + (args[1].dartValue! as int),
@@ -100,7 +96,31 @@ Object? _dispatch(
     },
     'frozen': false,
   },
+  // make_empty() → mutable Empty() with no fields
+  'make_empty' => {
+    '__type': 'dataclass',
+    'name': 'Empty',
+    'type_id': 0,
+    'field_names': <String>[],
+    'attrs': <String, Object?>{},
+    'frozen': false,
+  },
   _ => throw StateError('Unexpected external function: $functionName'),
+};
+
+// ---------------------------------------------------------------------------
+// Name lookup constants (for ext_call__name_lookup.py and similar fixtures)
+// ---------------------------------------------------------------------------
+
+/// Values supplied for NameLookup progress when the engine encounters an
+/// unregistered global name. Matches the oracle in the monty-datatest crate.
+const _nameConstants = <String, Object?>{
+  'CONST_INT': 42,
+  'CONST_STR': 'hello',
+  'CONST_FLOAT': 3.14,
+  'CONST_BOOL': true,
+  'CONST_LIST': [1, 2, 3],
+  'CONST_NONE': null,
 };
 
 // ---------------------------------------------------------------------------
@@ -813,6 +833,24 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
             progress = await (platform as MontyFutureCapable).resolveFutures(
               results,
             );
+          } on MontyScriptError catch (e) {
+            thrownExcType = e.excType;
+            break dispatchLoop;
+          } on MontyResourceError {
+            thrownExcType = 'MemoryLimitExceeded';
+            break dispatchLoop;
+          }
+
+        case MontyNameLookup(:final variableName):
+          try {
+            if (_nameConstants.containsKey(variableName)) {
+              progress = await platform.resumeNameLookup(
+                variableName,
+                _nameConstants[variableName],
+              );
+            } else {
+              progress = await platform.resumeNameLookupUndefined(variableName);
+            }
           } on MontyScriptError catch (e) {
             thrownExcType = e.excType;
             break dispatchLoop;

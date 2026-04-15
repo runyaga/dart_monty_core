@@ -55,5 +55,13 @@ class ReplPlatform implements MontyPlatform {
       _repl.resumeWithError(errorMessage);
 
   @override
+  Future<MontyProgress> resumeNameLookup(String name, Object? value) =>
+      throw UnsupportedError('NameLookup not supported by ReplPlatform');
+
+  @override
+  Future<MontyProgress> resumeNameLookupUndefined(String name) =>
+      throw UnsupportedError('NameLookup not supported by ReplPlatform');
+
+  @override
   Future<void> dispose() => _repl.dispose();
 }
