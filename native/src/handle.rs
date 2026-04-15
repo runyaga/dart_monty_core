@@ -399,7 +399,10 @@ impl MontyHandle {
     }
 
     /// Resume from NameLookup by supplying a value (JSON string).
-    pub fn resume_name_lookup_value(&mut self, value_json: &str) -> (MontyProgressTag, Option<String>) {
+    pub fn resume_name_lookup_value(
+        &mut self,
+        value_json: &str,
+    ) -> (MontyProgressTag, Option<String>) {
         let val: Value = match serde_json::from_str(value_json) {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
@@ -412,7 +415,10 @@ impl MontyHandle {
             }
             other => {
                 self.state = other;
-                (MontyProgressTag::Error, Some("handle not in NameLookup state".into()))
+                (
+                    MontyProgressTag::Error,
+                    Some("handle not in NameLookup state".into()),
+                )
             }
         }
     }
@@ -426,7 +432,10 @@ impl MontyHandle {
             }
             other => {
                 self.state = other;
-                (MontyProgressTag::Error, Some("handle not in NameLookup state".into()))
+                (
+                    MontyProgressTag::Error,
+                    Some("handle not in NameLookup state".into()),
+                )
             }
         }
     }

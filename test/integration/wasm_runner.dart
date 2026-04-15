@@ -840,8 +840,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
               // Unknown public method on external dataclass — raise
               // AttributeError so Python try/except blocks can catch it.
               final typeName =
-                  (arguments.firstOrNull as MontyDataclass?)?.name ??
-                  'object';
+                  (arguments.firstOrNull as MontyDataclass?)?.name ?? 'object';
               try {
                 progress = await platform.resumeWithException(
                   'AttributeError',
