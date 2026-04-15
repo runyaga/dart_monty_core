@@ -51,6 +51,21 @@ bool fixtureIsCallExternal(String source) {
   return false;
 }
 
+/// Returns `true` when [source] declares a `# run-async` directive,
+/// meaning the fixture uses top-level `await` and requires async dispatch.
+bool fixtureIsRunAsync(String source) {
+  for (final raw in source.split('\n')) {
+    final line = raw.trim();
+    if (!line.startsWith('#')) continue;
+    final directive = line.substring(1).trim();
+    if (directive == 'run-async' || directive.startsWith('run-async ')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /// Returns `true` when [source] declares a `# mount-fs` directive,
 /// meaning the fixture expects a `root` Path variable pointing to a
 /// pre-populated virtual filesystem.
@@ -74,7 +89,8 @@ bool fixtureMountsFs(String source) {
 /// - `# xfail=wasm` — expected failure on WASM backend only
 /// - `# call-external` — requires external function dispatch (skip unless
 ///   [skipCallExternal] is false)
-/// - `# run-async` — requires async execution mode
+/// - `# run-async` — requires async execution mode (skip unless
+///   [skipRunAsync] is false)
 /// - `# mount-fs` — requires filesystem mount (skip unless
 ///   [skipMountFs] is false)
 ///
@@ -84,6 +100,7 @@ FixtureExpectation? parseFixture(
   bool skipWasm = false,
   bool skipCallExternal = true,
   bool skipMountFs = true,
+  bool skipRunAsync = true,
 }) {
   final lines = source.split('\n');
 
@@ -105,8 +122,8 @@ FixtureExpectation? parseFixture(
     if ((skipCallExternal &&
             (directive == 'call-external' ||
                 directive.startsWith('call-external '))) ||
-        directive == 'run-async' ||
-        directive.startsWith('run-async ') ||
+        (skipRunAsync &&
+            (directive == 'run-async' || directive.startsWith('run-async '))) ||
         (skipMountFs &&
             (directive == 'mount-fs' || directive.startsWith('mount-fs ')))) {
       return null;
