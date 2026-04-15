@@ -4,7 +4,11 @@
 // Python code to it via stdin, returning the decoded JSON result map.
 
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show Platform, Process;
+
+import 'package:file/local.dart';
+
+const _fs = LocalFileSystem();
 
 /// Resolves the oracle binary path.
 ///
@@ -17,7 +21,7 @@ String get oracleBinaryPath {
     '$root/native/target/release/oracle',
   ];
   for (final path in candidates) {
-    if (File(path).existsSync()) return path;
+    if (_fs.file(path).existsSync()) return path;
   }
   throw StateError(
     'Oracle binary not found at any of $candidates.\n'
@@ -46,26 +50,22 @@ Future<Map<String, Object?>> runOracle(String code) async {
 
 /// Returns the package root directory.
 ///
-/// `dart test` sets `Directory.current` to the package root, so that is
-/// checked first. Falls back to walking up from `Platform.script` for
-/// direct (non-test-runner) invocations.
+/// `dart test` sets cwd to the package root, so that is checked first.
+/// Falls back to walking up from `Platform.script` for direct invocations.
 String _packageRoot() {
-  // Primary: dart test always runs with cwd = package root.
-  final cwd = Directory.current.path;
-  if (Directory('$cwd/native').existsSync()) return cwd;
+  final cwd = _fs.currentDirectory.path;
+  if (_fs.directory('$cwd/native').existsSync()) return cwd;
 
-  // Fallback: walk up from the script path (for direct `dart run` usage).
   final script = Platform.script.toFilePath();
   final parts = script.split('/');
   for (var i = parts.length - 1; i > 0; i--) {
     final candidate = parts.sublist(0, i).join('/');
-    if (Directory('$candidate/native').existsSync()) {
+    if (_fs.directory('$candidate/native').existsSync()) {
       return candidate;
     }
   }
 
   throw StateError(
-    'Cannot determine package root. '
-    'cwd=$cwd script=$script',
+    'Cannot determine package root. cwd=$cwd script=$script',
   );
 }

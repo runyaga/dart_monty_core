@@ -11,49 +11,23 @@
 @Tags(['integration', 'ffi'])
 library;
 
-import 'dart:io';
-
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/monty_ffi.dart';
 import 'package:test/test.dart';
 
+import '_fixture_corpus.dart';
 import '_fixture_parser.dart';
 import '_oracle_runner.dart';
 
 void main() {
-  final fixtureDir = Directory('test/fixtures/test_cases');
-
-  if (!fixtureDir.existsSync()) {
-    group('oracle_ffi', () {
-      test('fixture directory missing', () {
-        fail(
-          'test/fixtures/test_cases not found. '
-          'Create the symlink: ln -s /path/to/monty/crates/monty/test_cases '
-          'test/fixtures/test_cases',
-        );
-      });
-    });
-
-    return;
-  }
-
-  final fixtures = fixtureDir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.py'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
-
   group('oracle_ffi', () {
-    for (final file in fixtures) {
-      final name = file.path.split('/').last;
-      test(name, () async {
-        final code = file.readAsStringSync();
-        final expectation = parseFixture(code);
+    for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+      test(key, () async {
+        final expectation = parseFixture(value);
         if (expectation == null) return; // skipped fixture
 
         // Run the oracle to get the authoritative expected result.
-        final oracleJson = await runOracle(code);
+        final oracleJson = await runOracle(value);
         final oracleResult = MontyResult.fromJson(
           Map<String, dynamic>.from(oracleJson),
         );
@@ -63,7 +37,7 @@ void main() {
         MontyResult? ffiResult;
         String? ffiExcType;
         try {
-          ffiResult = await platform.run(code, scriptName: name);
+          ffiResult = await platform.run(value, scriptName: key);
           ffiExcType = ffiResult.error?.excType;
         } on MontyScriptError catch (e) {
           ffiExcType = e.excType;
@@ -78,15 +52,15 @@ void main() {
           expect(
             ffiExcType,
             equals(oracleResult.error!.excType),
-            reason: 'excType mismatch for $name',
+            reason: 'excType mismatch for $key',
           );
         } else {
           // Both should succeed with the same value.
-          expect(ffiResult?.error, isNull, reason: 'unexpected error in $name');
+          expect(ffiResult?.error, isNull, reason: 'unexpected error in $key');
           expect(
             ffiResult?.value,
             equals(oracleResult.value),
-            reason: 'value mismatch for $name',
+            reason: 'value mismatch for $key',
           );
         }
       });

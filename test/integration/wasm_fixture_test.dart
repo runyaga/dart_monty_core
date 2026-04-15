@@ -1,60 +1,36 @@
-// Integration tests: verify WASM output matches fixture directives.
+// Integration tests: verify WASM/JS output matches fixture directives.
 //
-// Unlike the FFI test, the WASM test cannot use subprocess oracle binaries.
+// Unlike the FFI test, this test cannot use subprocess oracle binaries.
 // Instead it relies on the `# Return=` and `# Raise=` directives in each
 // fixture file as the source of truth.
 //
-// Run: dart test test/integration/wasm_fixture_test.dart -p chrome --run-skipped
+// Run with dart2js:   dart test -p chrome --run-skipped --tags=wasm
+// Run with dart2wasm: dart test -p chrome --compiler dart2wasm
+//                     --run-skipped --tags=wasm
 //
 // The platform is selected at compile time:
-// MontyWasm on Chrome, MontyFfi on VM.
+// MontyWasm on Chrome (dart2js or dart2wasm), MontyFfi on VM.
 @Tags(['integration', 'wasm'])
 library;
-
-import 'dart:io';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_fixture_corpus.dart';
 import '_fixture_parser.dart';
 
 void main() {
-  final fixtureDir = Directory('test/fixtures/test_cases');
-
-  if (!fixtureDir.existsSync()) {
-    group('wasm_fixture', () {
-      test('fixture directory missing', () {
-        fail(
-          'test/fixtures/test_cases not found. '
-          'Create the symlink: ln -s /path/to/monty/crates/monty/test_cases '
-          'test/fixtures/test_cases',
-        );
-      });
-    });
-
-    return;
-  }
-
-  final fixtures = fixtureDir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.py'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
-
   group('wasm_fixture', () {
-    for (final file in fixtures) {
-      final name = file.path.split('/').last;
-      test(name, () async {
-        final code = file.readAsStringSync();
-        final expectation = parseFixture(code);
+    for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+      test(key, () async {
+        final expectation = parseFixture(value);
         if (expectation == null) return; // skipped fixture
 
         final platform = createPlatformMonty();
         MontyResult? result;
         String? thrownExcType;
         try {
-          result = await platform.run(code, scriptName: name);
+          result = await platform.run(value, scriptName: key);
           thrownExcType = result.error?.excType;
         } on MontyScriptError catch (e) {
           thrownExcType = e.excType;
@@ -69,24 +45,24 @@ void main() {
             expect(
               thrownExcType,
               isNull,
-              reason: 'unexpected error in $name',
+              reason: 'unexpected error in $key',
             );
           case ExpectReturn(:final value):
             expect(
               thrownExcType,
               isNull,
-              reason: 'unexpected error in $name',
+              reason: 'unexpected error in $key',
             );
             expect(
               result?.value,
               equals(MontyValue.fromDart(value)),
-              reason: 'value mismatch for $name',
+              reason: 'value mismatch for $key',
             );
           case ExpectRaise(:final excType):
             expect(
               thrownExcType,
               equals(excType),
-              reason: 'excType mismatch for $name',
+              reason: 'excType mismatch for $key',
             );
         }
       });
