@@ -6,7 +6,7 @@
 // Re-run whenever the pydantic/monty test_cases corpus is updated.
 
 import 'dart:convert';
-import 'dart:io' show stderr, exitCode;
+import 'dart:io' show exitCode, stderr;
 
 import 'package:file/file.dart';
 import 'package:file/local.dart';
@@ -54,7 +54,7 @@ void main() {
     ..writeln('const Map<String, String> fixtureCorpus = {');
 
   for (final file in files) {
-    final name = file.path.split('/').last;
+    final name = file.basename;
     final content = file.readAsStringSync();
     // json.encode produces a valid Dart string literal (double-quoted, with
     // all control characters and backslashes properly escaped).
@@ -67,8 +67,9 @@ void main() {
     ..writeln('};')
     ..writeln();
 
-  final outFile = fs.file('test/integration/_fixture_corpus.dart');
-  outFile.writeAsStringSync(buf.toString());
+  const outPath = 'test/integration/_fixture_corpus.dart';
+  fs.file(outPath).writeAsStringSync(buf.toString());
+  // This is a CLI tool — print is the intended output mechanism.
   // ignore: avoid_print
-  print('Generated ${outFile.path} with ${files.length} fixtures.');
+  print('Generated $outPath with ${files.length} fixtures.');
 }

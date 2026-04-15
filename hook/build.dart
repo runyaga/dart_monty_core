@@ -33,8 +33,9 @@ void main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
 
-    final os = input.config.code.targetOS;
-    final arch = input.config.code.targetArchitecture;
+    final code = input.config.code;
+    final os = code.targetOS;
+    final arch = code.targetArchitecture;
 
     final libName = switch (os) {
       OS.macOS => 'libdart_monty_native.dylib',
@@ -78,6 +79,7 @@ void main(List<String> args) async {
         if (f.existsSync() && f.lengthSync() > 0) {
           f.copySync(outFile.path);
           _addAsset(output, input.packageName, outFile.uri);
+
           return;
         }
       }
@@ -85,20 +87,21 @@ void main(List<String> args) async {
       throw StateError(
         'cargo build succeeded but $libName not found in target directories.',
       );
-    } else {
-      // Consumer path: download pre-built binary from GitHub Releases.
-      final version = _readNativeLibVersion(input.packageRoot);
-      if (await _download(os, arch, libName, outFile, version)) {
-        _addAsset(output, input.packageName, outFile.uri);
-        return;
-      }
-
-      throw StateError(
-        'Cannot obtain dart_monty native library.\n'
-        'Consumers: check your network connection.\n'
-        'Contributors: clone the full monorepo with native/ directory.',
-      );
     }
+
+    // Consumer path: download pre-built binary from GitHub Releases.
+    final version = _readNativeLibVersion(input.packageRoot);
+    if (await _download(os, arch, outFile, version)) {
+      _addAsset(output, input.packageName, outFile.uri);
+
+      return;
+    }
+
+    throw StateError(
+      'Cannot obtain dart_monty native library.\n'
+      'Consumers: check your network connection.\n'
+      'Contributors: clone the full monorepo with native/ directory.',
+    );
   });
 }
 
@@ -115,6 +118,7 @@ void _addAsset(BuildOutputBuilder output, String packageName, Uri file) {
 
 List<String> _cargoPaths(OS os, Architecture? arch, String libName) {
   final triple = _rustTriple(os, arch);
+
   return [
     if (triple != null) 'target/$triple/release/$libName',
     'target/release/$libName',
@@ -124,7 +128,6 @@ List<String> _cargoPaths(OS os, Architecture? arch, String libName) {
 Future<bool> _download(
   OS os,
   Architecture? arch,
-  String libName,
   File outFile,
   String version,
 ) async {
@@ -151,6 +154,7 @@ Future<bool> _download(
       final response = await request.close();
       if (response.statusCode != 200) {
         await response.drain<void>();
+
         return false;
       }
 
@@ -169,6 +173,7 @@ Future<bool> _download(
     if (!Platform.isWindows) {
       await Process.run('chmod', ['+x', outFile.path]);
     }
+
     return true;
   } on Object {
     if (tmpFile.existsSync()) {
@@ -178,12 +183,14 @@ Future<bool> _download(
         // Ignore cleanup failures.
       }
     }
+
     return false;
   }
 }
 
 String? _rustTriple(OS os, Architecture? arch) {
   final a = arch?.toString() ?? 'arm64';
+
   return switch ((os, a)) {
     (OS.macOS, 'arm64') => 'aarch64-apple-darwin',
     (OS.macOS, 'x64') => 'x86_64-apple-darwin',
