@@ -334,6 +334,11 @@ jobs:
             -o test/integration/web/wasm_runner.dart.js \
             --no-minify
 
+      - name: Compile WASM runner to WASM
+        run: |
+          dart compile wasm test/integration/wasm_runner_wasm.dart \
+            -o test/integration/web/wasm_runner.wasm
+
       - name: Serve and run in headless Chrome
         run: |
           WEB_DIR="test/integration/web"
@@ -360,40 +365,50 @@ jobs:
           sleep 2
 
           CHROME="google-chrome-stable"
-          CHROME_LOG=$(mktemp)
+          TOTAL_FAILURES=0
 
-          timeout 300 "$CHROME" \
-            --headless \
-            --disable-gpu \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --enable-logging=stderr \
-            --v=0 \
-            "http://127.0.0.1:$SERVE_PORT/wasm_runner.html" \
-            2>"$CHROME_LOG" || true
+          run_test() {
+            local url=$1
+            local label=$2
+            local log=$(mktemp)
+            echo "--- Running $label test ---"
+            
+            timeout 300 "$CHROME" \
+              --headless \
+              --disable-gpu \
+              --no-sandbox \
+              --disable-dev-shm-usage \
+              --enable-logging=stderr \
+              --v=0 \
+              "$url" \
+              2>"$log" || true
 
-          # Parse results
-          DONE_LINE=$(grep -o 'FIXTURE_DONE:{[^}]*}' "$CHROME_LOG" || true)
+            DONE_LINE=$(grep -o 'FIXTURE_DONE:{[^}]*}' "$log" || true)
+            if [ -z "$DONE_LINE" ]; then
+              echo "ERROR ($label): No FIXTURE_DONE line captured. Chrome output:"
+              grep -i "CONSOLE\|FIXTURE\|ERROR" "$log" | head -60 || true
+              rm -f "$log"
+              TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
+              return
+            fi
 
-          if [ -z "$DONE_LINE" ]; then
-            echo "ERROR: No FIXTURE_DONE line captured. Chrome output:"
-            grep -i "CONSOLE\|FIXTURE\|ERROR" "$CHROME_LOG" | head -60 || true
-            echo "--- last 30 lines ---"
-            tail -30 "$CHROME_LOG" || true
-            rm -f "$CHROME_LOG"
+            echo "$label: $DONE_LINE"
+            FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | wc -l || echo 0)
+            if [ "$FAILURES" -gt 0 ]; then
+              echo "ERROR ($label): $FAILURES fixtures failed"
+              TOTAL_FAILURES=$((TOTAL_FAILURES + FAILURES))
+            fi
+            rm -f "$log"
+          }
+
+          run_test "http://127.0.0.1:$SERVE_PORT/wasm_runner.html" "dart2js"
+          run_test "http://127.0.0.1:$SERVE_PORT/wasm_runner_wasm.html" "dart2wasm"
+
+          if [ "$TOTAL_FAILURES" -gt 0 ]; then
+            echo "WASM integration tests: $TOTAL_FAILURES TOTAL FAILURES"
             exit 1
           fi
-
-          echo "$DONE_LINE"
-
-          FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$CHROME_LOG" | grep '"ok":false' | wc -l || echo 0)
-          rm -f "$CHROME_LOG"
-
-          if [ "$FAILURES" -gt 0 ]; then
-            echo "WASM fixture tests: $FAILURES FAILED"
-            exit 1
-          fi
-          echo "WASM fixture tests: PASSED"
+          echo "WASM integration tests: ALL PASSED"
         env:
           WEB_DIR: test/integration/web
 

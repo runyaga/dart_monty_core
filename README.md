@@ -275,6 +275,37 @@ dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi
 bash tool/test_wasm.sh --skip-build   # if assets already built
 ```
 
+### dart2wasm Support & Benchmarks
+
+The WASM backend supports both **dart2js** and **dart2wasm**. While `dart2js` is
+currently the default, the project is fully compatible with `dart2wasm` via
+`package:js_interop`.
+
+The CI pipeline validates both compilers. Compilation commands:
+
+```bash
+# dart2js
+dart compile js test/integration/wasm_runner.dart -o test/integration/web/wasm_runner.dart.js
+
+# dart2wasm
+dart compile wasm test/integration/wasm_runner_wasm.dart -o test/integration/web/wasm_runner.wasm
+```
+
+#### Performance Benchmark (464 Fixtures)
+
+Benchmark conducted on an Apple M5 Max (April 2026) using headless Chrome 147.
+Execution time includes the full integration suite (440 passing fixtures).
+
+| Compiler | Passed | Skipped | Failed | Time (ms) |
+| :--- | :--- | :--- | :--- | :--- |
+| **dart2js** | 440 | 24 | 0 | **3002** |
+| **dart2wasm** | 440 | 24 | 0 | **2991** |
+
+Performance is nearly identical across compilers because execution is bound by
+the underlying Rust-WASM engine and JS Worker round-trips rather than the Dart
+harness logic. `dart2wasm` provides stricter numeric type distinction (e.g.
+correctly identifying `MontyFloat(2.0)` vs `MontyInt(2)`).
+
 ---
 
 ## Native layer
