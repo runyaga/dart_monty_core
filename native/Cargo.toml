@@ -1,6 +1,6 @@
 [package]
 name = "dart_monty_native"
-version = "0.1.0"
+version = "0.0.12"
 edition = "2024"
 license = "MIT"
 publish = false

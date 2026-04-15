@@ -223,7 +223,9 @@ impl MontyHandle {
         exc_type: &str,
         error_message: &str,
     ) -> (MontyProgressTag, Option<String>) {
-        let exc_kind = exc_type.parse::<monty::ExcType>().unwrap_or(monty::ExcType::RuntimeError);
+        let exc_kind = exc_type
+            .parse::<monty::ExcType>()
+            .unwrap_or(monty::ExcType::RuntimeError);
         let exc = MontyException::new(exc_kind, Some(error_message.to_string()));
         let result = ExtFunctionResult::Error(exc);
         self.resume_with_result(result)

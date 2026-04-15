@@ -123,6 +123,22 @@ MontyProgressTag monty_resume_with_error(MontyHandle *handle,
                                           const char *error_message,
                                           char **out_error);
 
+/**
+ * Resume execution with a typed Python exception.
+ *
+ * @param handle         Handle in PENDING state.
+ * @param exc_type       NUL-terminated Python exception class name
+ *                       (e.g. "FileNotFoundError"). Unknown names fall back
+ *                       to RuntimeError.
+ * @param error_message  NUL-terminated error message string.
+ * @param out_error      Receives FFI error message on failure. Caller frees.
+ * @return               MONTY_PROGRESS_COMPLETE, _PENDING, or _ERROR.
+ */
+MontyProgressTag monty_resume_with_exception(MontyHandle *handle,
+                                             const char *exc_type,
+                                             const char *error_message,
+                                             char **out_error);
+
 /* ------------------------------------------------------------------ */
 /* Async / Futures                                                    */
 /* ------------------------------------------------------------------ */
