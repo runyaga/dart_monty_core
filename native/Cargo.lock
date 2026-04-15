@@ -589,7 +589,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "monty"
 version = "0.0.12"
-source = "git+https://github.com/runyaga/monty.git?branch=runyaga%2F0.0.12#9473d87807f17eb93d0b635c7e0e64d04a79ef6e"
+source = "git+https://github.com/pydantic/monty.git?tag=v0.0.12#dc44b92bbfffbf2b5cbeb6dc88116938a276d7e8"
 dependencies = [
  "ahash",
  "bytemuck",
