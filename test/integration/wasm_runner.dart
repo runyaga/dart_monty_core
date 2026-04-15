@@ -45,6 +45,12 @@ const _supportedExtFns = {
   'make_mutable_point',
   'make_user',
   'make_empty',
+  // Dataclass method calls (self is arguments[0])
+  'sum', // Point/MutablePoint.sum() → x + y
+  'add', // Point.add(dx, dy) → new Point(x=x+dx, y=y+dy)
+  'scale', // Point.scale(factor) → new Point(x=x*factor, y=y*factor)
+  'describe', // Point.describe(label) → '{label}({x}, {y})'
+  'greeting', // User.greeting() → 'Hello, {name}!'
 };
 
 /// Known ext-function names used in the corpus that we do NOT implement yet.
@@ -84,7 +90,8 @@ Object? _dispatch(
     'attrs': {'x': 1, 'y': 2},
     'frozen': false,
   },
-  // make_user(name: str) → mutable User(name=name, active=True)
+  // make_user(name: str) → frozen User(name=name, active=True)
+  // Frozen so that hash(user) works (the fixture asserts hashability).
   'make_user' => {
     '__type': 'dataclass',
     'name': 'User',
@@ -94,7 +101,7 @@ Object? _dispatch(
       'name': (args.first as MontyString).value,
       'active': true,
     },
-    'frozen': false,
+    'frozen': true,
   },
   // make_empty() → mutable Empty() with no fields
   'make_empty' => {
@@ -105,6 +112,69 @@ Object? _dispatch(
     'attrs': <String, Object?>{},
     'frozen': false,
   },
+  // --- dataclass method calls (arguments[0] is self) ---
+
+  // sum(self) → self.x + self.y
+  'sum' => () {
+    final self = args.first as MontyDataclass;
+    return (self.attrs['x']! as MontyInt).value +
+        (self.attrs['y']! as MontyInt).value;
+  }(),
+
+  // add(self, dx, dy) → new dataclass(x=self.x+dx, y=self.y+dy)
+  'add' => () {
+    final self = args.first as MontyDataclass;
+    final dx = (args[1] as MontyInt).value;
+    final dy = (args[2] as MontyInt).value;
+    return {
+      '__type': 'dataclass',
+      'name': self.name,
+      'type_id': self.typeId,
+      'field_names': ['x', 'y'],
+      'attrs': {
+        'x': (self.attrs['x']! as MontyInt).value + dx,
+        'y': (self.attrs['y']! as MontyInt).value + dy,
+      },
+      'frozen': self.frozen,
+    };
+  }(),
+
+  // scale(self, factor) → new dataclass(x=self.x*factor, y=self.y*factor)
+  'scale' => () {
+    final self = args.first as MontyDataclass;
+    final factor = (args[1] as MontyInt).value;
+    return {
+      '__type': 'dataclass',
+      'name': self.name,
+      'type_id': self.typeId,
+      'field_names': ['x', 'y'],
+      'attrs': {
+        'x': (self.attrs['x']! as MontyInt).value * factor,
+        'y': (self.attrs['y']! as MontyInt).value * factor,
+      },
+      'frozen': self.frozen,
+    };
+  }(),
+
+  // describe(self, label) or describe(self, label=label)
+  // → '{label}({self.x}, {self.y})'
+  'describe' => () {
+    final self = args.first as MontyDataclass;
+    final labelValue =
+        (args.length > 1 ? args[1] : kwargs?['label'])! as MontyString;
+    final label = labelValue.value;
+    final x = (self.attrs['x']! as MontyInt).value;
+    final y = (self.attrs['y']! as MontyInt).value;
+    return '$label($x, $y)';
+  }(),
+
+  // greeting(self: User) → 'Hello, {name}!'
+  'greeting' => () {
+    final self = args.first as MontyDataclass;
+    final name = (self.attrs['name']! as MontyString).value;
+    return 'Hello, $name!';
+  }(),
+
   _ => throw StateError('Unexpected external function: $functionName'),
 };
 
@@ -749,6 +819,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
           :final arguments,
           :final callId,
           :final kwargs,
+          :final methodCall,
         ):
           if (functionName == 'async_call') {
             // Echo function: store the result and convert to a future so the
@@ -765,8 +836,25 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
               break dispatchLoop;
             }
           } else if (!_supportedExtFns.contains(functionName)) {
-            shouldSkip = true;
-            break dispatchLoop;
+            if (methodCall) {
+              // Unknown public method on external dataclass — raise
+              // AttributeError so Python try/except blocks can catch it.
+              final typeName =
+                  (arguments.firstOrNull as MontyDataclass?)?.name ??
+                  'object';
+              try {
+                progress = await platform.resumeWithException(
+                  'AttributeError',
+                  "'$typeName' object has no attribute '$functionName'",
+                );
+              } on MontyScriptError catch (e) {
+                thrownExcType = e.excType;
+                break dispatchLoop;
+              }
+            } else {
+              shouldSkip = true;
+              break dispatchLoop;
+            }
           } else {
             final isRaiseError = functionName == 'raise_error';
             try {
