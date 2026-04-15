@@ -274,7 +274,7 @@ pub unsafe extern "C" fn monty_resume_with_exception(
         return MontyProgressTag::Error;
     };
     ffi_progress!(handle, out_error, |h| h
-        .resume_with_exception(&exc_type_str, msg))
+        .resume_with_exception(exc_type_str, msg))
 }
 
 // ---------------------------------------------------------------------------
