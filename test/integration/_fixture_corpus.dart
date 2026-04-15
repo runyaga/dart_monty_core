@@ -326,11 +326,11 @@ const Map<String, String> fixtureCorpus = {
   'fstring__error_int_d_on_str.py':
       "# integer format specifier ':d' on string raises ValueError\nf'{\"hello\":d}'\n# Raise=ValueError(\"Unknown format code 'd' for object of type 'str'\")\n",
   'fstring__error_invalid_spec.py':
-      "# xfail=cpython\n# xfail=wasm\n# invalid format specifier with trailing characters (detected at parse time)\nf'{1:10xyz}'\n# Raise=SyntaxError(\"Invalid format specifier '10xyz'\")\n",
+      "# xfail=cpython\n# invalid format specifier with trailing characters (detected at parse time)\nf'{1:10xyz}'\n# Raise=SyntaxError(\"Invalid format specifier '10xyz'\")\n",
   'fstring__error_invalid_spec_dynamic.py':
       "# invalid format specifier with dynamic spec\nspec = 'xyz'\nf'{1:{spec}}'\n# Raise=ValueError(\"Invalid format specifier 'xyz' for object of type 'int'\")\n",
   'fstring__error_invalid_spec_str.py':
-      "# xfail=cpython\n# xfail=wasm\n# invalid format specifier for string (detected at parse time)\nf'{\"hello\":abc}'\n# Raise=SyntaxError(\"Invalid format specifier 'abc'\")\n",
+      "# xfail=cpython\n# invalid format specifier for string (detected at parse time)\nf'{\"hello\":abc}'\n# Raise=SyntaxError(\"Invalid format specifier 'abc'\")\n",
   'fstring__error_str_s_on_int.py':
       "# string format specifier ':s' on integer raises ValueError\nf'{42:s}'\n# Raise=ValueError(\"Unknown format code 's' for object of type 'int'\")\n",
   'function__call_duplicate_kwargs.py':
@@ -458,7 +458,7 @@ const Map<String, String> fixtureCorpus = {
   'import__runtime_error_when_executed.py':
       "# Verify that ModuleNotFoundError is raised when an unknown module import is actually executed\n# (not guarded by TYPE_CHECKING)\n\ncondition = True\nif condition:\n    import nonexistent_at_runtime\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__runtime_error_when_executed.py\", line 6, in <module>\n    import nonexistent_at_runtime\nModuleNotFoundError: No module named 'nonexistent_at_runtime'\n\"\"\"\n",
   'import__star_error.py':
-      "# xfail=cpython\n# xfail=wasm\nfrom sys import *\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__star_error.py\", line 2, in <module>\n    from sys import *\n    ~~~~~~~~~~~~~~~~~\nNotImplementedError: Wildcard imports (`from ... import *`) are not supported\n\"\"\"\n",
+      "# xfail=cpython\nfrom sys import *\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__star_error.py\", line 2, in <module>\n    from sys import *\n    ~~~~~~~~~~~~~~~~~\nNotImplementedError: Wildcard imports (`from ... import *`) are not supported\n\"\"\"\n",
   'import__sys.py':
       "# Tests for sys module import\n\nimport sys\n\n# === sys.version ===\n# Check that version is a non-empty string (exact value differs between interpreters)\nassert isinstance(sys.version, str), 'version should be a string'\nassert len(sys.version) > 0, 'version should be non-empty'\n\n# === sys.version_info ===\n# Test index access returns integers for first 3 elements\nassert isinstance(sys.version_info[0], int), 'major version should be int'\nassert isinstance(sys.version_info[1], int), 'minor version should be int'\nassert isinstance(sys.version_info[2], int), 'micro version should be int'\nassert isinstance(sys.version_info[3], str), 'releaselevel should be str'\nassert isinstance(sys.version_info[4], int), 'serial should be int'\n\n# Test negative indexing\nassert sys.version_info[-1] == sys.version_info[4], 'negative index -1 should equal index 4'\nassert sys.version_info[-2] == sys.version_info[3], 'negative index -2 should equal index 3'\nassert sys.version_info[-5] == sys.version_info[0], 'negative index -5 should equal index 0'\n\n# Test named attribute access matches index access\nassert sys.version_info.major == sys.version_info[0], 'major attr should equal index 0'\nassert sys.version_info.minor == sys.version_info[1], 'minor attr should equal index 1'\nassert sys.version_info.micro == sys.version_info[2], 'micro attr should equal index 2'\nassert sys.version_info.releaselevel == sys.version_info[3], 'releaselevel attr should equal index 3'\nassert sys.version_info.serial == sys.version_info[4], 'serial attr should equal index 4'\n\n# Test len\nassert len(sys.version_info) == 5, 'version_info should have 5 elements'\n\n# Test tuple equality (works after fixing NamedTuple equality)\nv = sys.version_info\nassert (v[0], v[1]) == (v.major, v.minor), 'tuple of indices should equal tuple of attrs'\nassert v.major == v[0], 'major attr should equal index 0'\nassert v.minor == v[1], 'minor attr should equal index 1'\n\n# === sys.platform ===\n# Check that platform is a non-empty string (exact value differs between interpreters)\nassert isinstance(sys.platform, str), 'platform should be a string'\nassert len(sys.platform) > 0, 'platform should be non-empty'\n\n# === sys.stdout and sys.stderr ===\n# These should exist - we test by accessing them (will fail if not present)\nstdout = sys.stdout\nstderr = sys.stderr\n",
   'import__sys_monty.py':
@@ -658,7 +658,7 @@ const Map<String, String> fixtureCorpus = {
   'os__getenv_key_type_error.py':
       "# call-external\nimport os\n\nos.getenv(123)\n# Raise=TypeError('str expected, not int')\n",
   'parse_error__complex.py':
-      "# xfail=cpython\n# xfail=wasm\n1 + 2j\n# Raise=NotImplementedError('The monty syntax parser does not yet support complex constants')\n",
+      "# xfail=cpython\n1 + 2j\n# Raise=NotImplementedError('The monty syntax parser does not yet support complex constants')\n",
   'pathlib__import.py':
       "import pathlib\n\n# Verify that pathlib.Path can be called as an attribute\np = pathlib.Path('a.txt')\nassert p.name == 'a.txt'\n\n# Verify that it still works when imported directly\nfrom pathlib import Path\n\np2 = Path('b.txt')\nassert p2.name == 'b.txt'\n",
   'pathlib__os.py':
