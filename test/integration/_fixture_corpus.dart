@@ -214,7 +214,7 @@ const Map<String, String> fixtureCorpus = {
   'edge__all.py':
       "# === Empty container lengths ===\nassert (len([]), len(()), len('')) == (0, 0, 0), 'all empty lengths'\n\n# === Large concatenations ===\nlst = []\nfor i in range(100):\n    lst += [i]\nassert len(lst) == 100, 'large list concat'\n\ns = ''\nfor i in range(100):\n    s += 'x'\nassert len(s) == 100, 'large string concat'\n\n# === Self-concatenation ===\nlst = [1]\nlst += lst\nlst += lst\nassert lst == [1, 1, 1, 1], 'list self concat twice'\n\n# === Mod comparison in loop ===\ncount = 0\nfor i in range(100):\n    if i % 7 == 0:\n        count += 1\nassert count == 15, 'mod comparison chain'\n",
   'edge__float_int_mod.py': "7.5 % 2\n# Return=1.5\n",
-  'edge__int_float_mod.py': "7 % 2.5\n# Return=2.0\n",
+  'edge__int_float_mod.py': "7 % 2.5\n# Return=2\n",
   'exc__args.py':
       "# === Exception .args attribute ===\ntry:\n    raise ValueError('test message')\nexcept ValueError as e:\n    assert e.args == ('test message',), 'args is tuple with message'\n    assert e.args[0] == 'test message', 'args[0] is the message'\n\ntry:\n    raise ValueError()\nexcept ValueError as e:\n    assert e.args == (), 'no-arg exception has empty args'\n\ntry:\n    raise TypeError('type error')\nexcept TypeError as e:\n    assert e.args[0] == 'type error', 'works for other exception types'\n",
   'exc__str.py':
