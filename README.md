@@ -287,7 +287,7 @@ The CI pipeline validates both compilers. Compilation commands:
 # dart2js
 dart compile js test/integration/wasm_runner.dart -o test/integration/web/wasm_runner.dart.js
 
-# dart2wasm
+# dart2wasm (using the dedicated WASM harness)
 dart compile wasm test/integration/wasm_runner_wasm.dart -o test/integration/web/wasm_runner.wasm
 ```
 
@@ -301,10 +301,18 @@ Execution time includes the full integration suite (440 passing fixtures).
 | **dart2js** | 440 | 24 | 0 | **3002** |
 | **dart2wasm** | 440 | 24 | 0 | **2991** |
 
-Performance is nearly identical across compilers because execution is bound by
-the underlying Rust-WASM engine and JS Worker round-trips rather than the Dart
-harness logic. `dart2wasm` provides stricter numeric type distinction (e.g.
-correctly identifying `MontyFloat(2.0)` vs `MontyInt(2)`).
+**Key Insights:**
+- **Stricter Semantics:** `dart2wasm` provides superior numeric precision for
+  Python compatibility, correctly distinguishing between `int` and `double`
+  (e.g. `MontyInt(2)` vs `MontyFloat(2.0)`), whereas `dart2js` blurs these
+  types into JavaScript numbers.
+- **Worker Overhead:** Performance parity indicates that execution is currently
+  bound by **JS Worker context-switching** and the underlying Rust-WASM engine
+  rather than Dart logic. This allows for complex Dart-side extensions with
+  minimal performance impact.
+- **Interactive REPL:** A decoupled web demo is available in `packages/dart_monty_web`,
+  demonstrating a persistent, stateful REPL in the browser using the new
+  WASM bridge extensions.
 
 ---
 
