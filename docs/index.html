@@ -163,5 +163,18 @@
     <a href="https://github.com/runyaga/dart_monty_core">GitHub</a> ·
     MIT License
   </footer>
+
+  <script>
+  /* Clean up stale coi-serviceworker registrations from prior deployments
+     that had a scope broad enough to cover /flutter/ and /repl/ together. */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      regs.forEach(function (reg) {
+        var url = (reg.active || reg.installing || reg.waiting || {}).scriptURL || '';
+        if (url.includes('coi-serviceworker')) reg.unregister();
+      });
+    });
+  }
+  </script>
 </body>
 </html>

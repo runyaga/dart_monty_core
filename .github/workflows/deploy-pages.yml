@@ -93,18 +93,11 @@ jobs:
           cp ../../js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              web/@pydantic/monty-wasm32-wasi/
 
-          # Inject dart_monty_bridge.js into the Flutter bootstrap page so that
-          # window.DartMontyBridge exists before any Dart code runs.
-          python3 -c "
-          import re
-          with open('web/index.html') as f: html = f.read()
-          html = re.sub(
-            r'(<script src=\"flutter_bootstrap\.js\")',
-            '<script src=\"dart_monty_bridge.js\"></script>\n  \g<1>',
-            html
-          )
-          with open('web/index.html', 'w') as f: f.write(html)
-          "
+          # Patch index.html:
+          #   1. Remove any stale coi-serviceworker (prior deploys used a broader
+          #      scope that intercepts Flutter's own fetch requests, breaking load).
+          #   2. Inject dart_monty_bridge.js before flutter_bootstrap.js.
+          python3 ../../tool/inject_flutter_html.py web/index.html
 
           flutter pub get
           flutter build web --base-href /dart_monty_core/flutter/
