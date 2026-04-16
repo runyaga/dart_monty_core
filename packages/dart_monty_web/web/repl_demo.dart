@@ -4,22 +4,24 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:web/web.dart' as web;
 
 void main() async {
-  final output = web.document.getElementById('output') as web.HTMLDivElement;
-  final input = web.document.getElementById('input') as web.HTMLInputElement;
-  final runButton = web.document.getElementById('run') as web.HTMLButtonElement;
+  final output =
+      web.document.getElementById('output')! as web.HTMLDivElement;
+  final input =
+      web.document.getElementById('input')! as web.HTMLInputElement;
+  final runButton =
+      web.document.getElementById('run')! as web.HTMLButtonElement;
 
   void write(String text, {String? className}) {
-    final div = web.document.createElement('div') as web.HTMLDivElement;
+    final div = web.document.createElement('div') as web.HTMLDivElement
+      ..textContent = text;
     if (className != null) div.className = className;
-    div.textContent = text;
-    output.appendChild(div);
-    output.scrollTop = output.scrollHeight;
+    output..appendChild(div)..scrollTop = output.scrollHeight;
   }
 
   write('Monty REPL initialized.', className: 'system-line');
-  
+
   final repl = MontyRepl();
-  
+
   // Enable UI
   input.disabled = false;
   runButton.disabled = false;
@@ -34,8 +36,7 @@ void main() async {
 
     try {
       final result = await repl.feed(code);
-      
-      // Print output first
+
       if (result.printOutput != null && result.printOutput!.isNotEmpty) {
         write(result.printOutput!, className: 'print-line');
       }
@@ -45,7 +46,7 @@ void main() async {
       } else if (result.value is! MontyNull) {
         write('=> ${result.value}', className: 'output-line');
       }
-    } catch (e) {
+    } on Object catch (e) {
       write('Error: $e', className: 'error-line');
     }
   }
