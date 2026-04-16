@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
@@ -186,6 +187,61 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   }
 
   @override
+  Future<Uint8List> compileCode(String code) async {
+    assertNotDisposed('compileCode');
+    await _ensureInitialized();
+
+    return _bindings.compileCode(code);
+  }
+
+  @override
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    assertNotDisposed('runPrecompiled');
+    assertIdle('runPrecompiled');
+    markActive();
+    try {
+      await _ensureInitialized();
+      final result = await _bindings.runPrecompiled(
+        compiled,
+        limitsJson: _encodeLimitsJson(limits),
+        scriptName: scriptName,
+      );
+
+      return _translateRunResult(result);
+    } finally {
+      markIdle();
+    }
+  }
+
+  @override
+  Future<MontyProgress> startPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    assertNotDisposed('startPrecompiled');
+    assertIdle('startPrecompiled');
+    markActive();
+    try {
+      await _ensureInitialized();
+      final progress = await _bindings.startPrecompiled(
+        compiled,
+        limitsJson: _encodeLimitsJson(limits),
+        scriptName: scriptName,
+      );
+
+      return translateProgress(progress);
+    } catch (e) {
+      markIdle();
+      rethrow;
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     if (isDisposed) return;
     // Force idle if active — allows dispose during test teardown and
@@ -349,7 +405,8 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
   /// Throws the appropriate sealed [MontyError] subtype for a failed run.
   ///
-  /// Resource errors (MemoryLimitExceeded) throw [MontyResourceError].
+  /// Resource errors (`MemoryLimitExceeded`) throw [MontyResourceError].
+  /// Syntax errors (`SyntaxError`) throw [MontySyntaxError].
   /// All other Python exceptions throw [MontyScriptError] wrapping a full
   /// [MontyException] with traceback and source location details.
   Never _throwError(_ErrorInfo e) {
@@ -363,6 +420,13 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       columnNumber: e.columnNumber,
       sourceCode: e.sourceCode,
     );
+    if (e.excType == 'SyntaxError') {
+      throw MontySyntaxError(
+        e.message,
+        excType: e.excType,
+        exception: exception,
+      );
+    }
     throw MontyScriptError(e.message, excType: e.excType, exception: exception);
   }
 }

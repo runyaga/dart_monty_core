@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/code_capture.dart' as code_capture;
+import 'package:dart_monty_core/src/platform/inputs_encoder.dart'
+    as inputs_encoder;
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
@@ -63,13 +66,19 @@ Map<String, Object?> _toArgMap(
 
 String _wrapSessionCode(
   String code,
-  Iterable<String> stateKeys,
-) {
+  Iterable<String> stateKeys, {
+  Map<String, Object?>? inputs,
+}) {
   final restore = _buildRestoreCode(stateKeys);
   final persist = _buildPersistCode(code, stateKeys);
   final (processed, hasResult) = code_capture.captureLastExpression(code);
-  final buf = StringBuffer(restore)
-    ..write('\n')
+  final buf = StringBuffer(restore)..write('\n');
+  if (inputs != null && inputs.isNotEmpty) {
+    buf
+      ..write(inputs_encoder.inputsToCode(inputs))
+      ..write('\n');
+  }
+  buf
     ..write(processed)
     ..write('\n')
     ..write(persist);
@@ -130,14 +139,21 @@ class MontySession {
   /// [externals] maps Python-callable function names to Dart handlers.
   /// Any Python call to a registered name is dispatched here; unregistered
   /// names raise a Python exception.
+  ///
+  /// [inputs] injects per-invocation Python variables before [code] runs.
+  /// Each key becomes a Python variable; values are converted to Python
+  /// literals. Inputs are **not persisted** across calls.
+  ///
+  /// Throws [ArgumentError] if any value in [inputs] cannot be converted.
   Future<MontyResult> run(
     String code, {
     MontyLimits? limits,
     String? scriptName,
     Map<String, MontyCallback> externals = const {},
+    Map<String, Object?>? inputs,
   }) async {
     _checkNotDisposed();
-    final wrapped = _wrapSessionCode(code, _state.keys);
+    final wrapped = _wrapSessionCode(code, _state.keys, inputs: inputs);
     final extFns = [_restoreStateFn, _persistStateFn, ...externals.keys];
     final progress = await _safeCall(
       () => _platform.start(
@@ -149,6 +165,32 @@ class MontySession {
     );
 
     return _dispatchLoop(progress, externals);
+  }
+
+  /// Executes pre-compiled [compiled] bytes and returns the result.
+  ///
+  /// Pre-compiled bytes are obtained from [MontyPlatform.compileCode] or
+  /// `Monty.compile`. Running pre-compiled code avoids re-parsing on
+  /// repeated executions of the same script.
+  ///
+  /// State is **not** preserved across [runPrecompiled] calls — the compiled
+  /// code runs in isolation without `__restore_state__`/`__persist_state__`
+  /// wrapping. For stateful execution use [run] instead.
+  ///
+  /// On WASM, throws [UnsupportedError] — snapshot support requires a
+  /// future update to the WASM JS bridge.
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) {
+    _checkNotDisposed();
+
+    return _platform.runPrecompiled(
+      compiled,
+      limits: limits,
+      scriptName: scriptName,
+    );
   }
 
   /// Starts iterative execution, surfacing [MontyPending] for user callbacks.

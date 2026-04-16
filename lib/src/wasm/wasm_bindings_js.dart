@@ -460,6 +460,28 @@ class WasmBindingsJs extends WasmBindings {
     return _decodeProgress(resultJson.toDart);
   }
 
+  @override
+  Future<WasmProgressResult> resumeNameLookupValue(
+    String valueJson, {
+    int? sessionId,
+  }) async {
+    final resultJson = await _jsResumeNameLookupValue(
+      valueJson.toJS,
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
+  }
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId}) async {
+    final resultJson = await _jsResumeNameLookupUndefined(
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
+  }
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -503,27 +525,5 @@ class WasmBindingsJs extends WasmBindings {
       sourceCode: map['source_code'] as String?,
       variableName: map['variableName'] as String?,
     );
-  }
-
-  @override
-  Future<WasmProgressResult> resumeNameLookupValue(
-    String valueJson, {
-    int? sessionId,
-  }) async {
-    final resultJson = await _jsResumeNameLookupValue(
-      valueJson.toJS,
-      sessionId?.toJS,
-    ).toDart;
-
-    return _decodeProgress(resultJson.toDart);
-  }
-
-  @override
-  Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId}) async {
-    final resultJson = await _jsResumeNameLookupUndefined(
-      sessionId?.toJS,
-    ).toDart;
-
-    return _decodeProgress(resultJson.toDart);
   }
 }

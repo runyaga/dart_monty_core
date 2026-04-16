@@ -53,6 +53,31 @@ class MontyScriptError extends MontyError {
   String get _typeName => 'MontyScriptError';
 }
 
+/// Thrown when the Python interpreter encounters a syntax (parse) error.
+///
+/// A subtype of [MontyScriptError] — existing `on MontyScriptError` catch
+/// blocks continue to catch this type. Use [MontySyntaxError] specifically
+/// when you want to distinguish parse errors from runtime errors:
+///
+/// ```dart
+/// try {
+///   await monty.run('def foo(  # unclosed paren');
+/// } on MontySyntaxError catch (e) {
+///   editor.highlightLine(e.exception?.lineNumber);
+/// } on MontyScriptError catch (e) {
+///   showRuntimeError(e);
+/// }
+/// ```
+///
+/// Equivalent to `MontySyntaxError` in the JS `@pydantic/monty` SDK.
+final class MontySyntaxError extends MontyScriptError {
+  /// Creates a [MontySyntaxError].
+  const MontySyntaxError(super.message, {super.excType, super.exception});
+
+  @override
+  String get _typeName => 'MontySyntaxError';
+}
+
 /// Thrown when the Rust interpreter panics (caught by catch_unwind).
 ///
 /// **Supervisor action:** Harsh backoff — indicates a native bridge bug.

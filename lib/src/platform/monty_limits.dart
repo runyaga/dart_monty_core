@@ -19,6 +19,32 @@ final class MontyLimits {
     );
   }
 
+  /// Creates limits using the same field names as the JS `@pydantic/monty`
+  /// SDK.
+  ///
+  /// ```dart
+  /// // JS: { maxMemory: 1_000_000, maxDurationSecs: 5, maxRecursionDepth: 200 }
+  /// MontyLimits.jsAligned(
+  ///   maxMemory: 1000000,
+  ///   maxDurationSecs: 5,
+  ///   maxRecursionDepth: 200,
+  /// )
+  /// ```
+  ///
+  /// Note: `maxAllocations` and `gcInterval` from the JS SDK are not
+  /// supported in the current Rust engine and have no Dart equivalent.
+  factory MontyLimits.jsAligned({
+    int? maxMemory,
+    double? maxDurationSecs,
+    int? maxRecursionDepth,
+  }) => MontyLimits(
+    memoryBytes: maxMemory,
+    timeoutMs: maxDurationSecs != null
+        ? (maxDurationSecs * 1000).round()
+        : null,
+    stackDepth: maxRecursionDepth,
+  );
+
   /// Maximum memory in bytes, or `null` for unlimited.
   final int? memoryBytes;
 

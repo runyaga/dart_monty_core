@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
@@ -61,6 +63,28 @@ class ReplPlatform implements MontyPlatform {
   @override
   Future<MontyProgress> resumeNameLookupUndefined(String name) =>
       throw UnsupportedError('NameLookup not supported by ReplPlatform');
+
+  @override
+  Future<Uint8List> compileCode(String code) =>
+      throw UnsupportedError('compileCode() is not supported by ReplPlatform');
+
+  @override
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) => throw UnsupportedError(
+    'runPrecompiled() is not supported by ReplPlatform',
+  );
+
+  @override
+  Future<MontyProgress> startPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) => throw UnsupportedError(
+    'startPrecompiled() is not supported by ReplPlatform',
+  );
 
   @override
   Future<void> dispose() => _repl.dispose();

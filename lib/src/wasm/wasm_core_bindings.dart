@@ -139,6 +139,38 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<Uint8List> compileCode(String code) {
+    throw UnsupportedError(
+      'compileCode() is not supported on WASM — snapshot support requires '
+      'a future update to the WASM JS bridge.',
+    );
+  }
+
+  @override
+  Future<CoreRunResult> runPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+  }) {
+    throw UnsupportedError(
+      'runPrecompiled() is not supported on WASM — snapshot support requires '
+      'a future update to the WASM JS bridge.',
+    );
+  }
+
+  @override
+  Future<CoreProgressResult> startPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+  }) {
+    throw UnsupportedError(
+      'startPrecompiled() is not supported on WASM — snapshot support '
+      'requires a future update to the WASM JS bridge.',
+    );
+  }
+
+  @override
   Future<Uint8List> snapshot() {
     return _bindings.snapshot(sessionId: _sessionId);
   }
@@ -157,6 +189,29 @@ class WasmCoreBindings implements MontyCoreBindings {
       await _bindings.disposeSession(_sessionId!);
       _sessionId = null;
     }
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeNameLookupValue(
+      valueJson,
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeNameLookupUndefined(
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
   }
 
   // ---------------------------------------------------------------------------
@@ -281,28 +336,5 @@ class WasmCoreBindings implements MontyCoreBindings {
       default:
         throw StateError('Unknown progress state: ${progress.state}');
     }
-  }
-
-  @override
-  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
-    final sw = Stopwatch()..start();
-    final progress = await _bindings.resumeNameLookupValue(
-      valueJson,
-      sessionId: _sessionId,
-    );
-    sw.stop();
-
-    return _translateProgressResult(progress, sw.elapsedMilliseconds);
-  }
-
-  @override
-  Future<CoreProgressResult> resumeNameLookupUndefined() async {
-    final sw = Stopwatch()..start();
-    final progress = await _bindings.resumeNameLookupUndefined(
-      sessionId: _sessionId,
-    );
-    sw.stop();
-
-    return _translateProgressResult(progress, sw.elapsedMilliseconds);
   }
 }
