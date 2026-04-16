@@ -52,8 +52,8 @@ jobs:
       - name: Build JS bridge
         run: cd js && npm install --force && node build.js
 
-      # ── Web REPL (dart2js) ───────────────────────────────────────────────────
-      - name: Build web REPL (dart2js)
+      # ── Web REPL — shared setup (assets, deps) ──────────────────────────────
+      - name: Prepare web REPL assets
         run: |
           WEB=packages/dart_monty_web/web
           dart pub get
@@ -64,10 +64,18 @@ jobs:
           mkdir -p $WEB/@pydantic/monty-wasm32-wasi
           cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              $WEB/@pydantic/monty-wasm32-wasi/
-          dart compile js $WEB/repl_demo.dart -o $WEB/repl_demo.dart.js --no-source-maps
 
-          # dart2wasm — produces repl_demo.mjs + repl_demo.wasm (required by index_wasm.html)
-          dart compile wasm $WEB/repl_demo.dart -o $WEB/repl_demo.wasm
+      # ── Web REPL (dart2js) ───────────────────────────────────────────────────
+      - name: Build web REPL (dart2js)
+        run: |
+          dart compile js packages/dart_monty_web/web/repl_demo.dart \
+            -o packages/dart_monty_web/web/repl_demo.dart.js --no-source-maps
+
+      # ── Web REPL (dart2wasm) ─────────────────────────────────────────────────
+      - name: Build web REPL (dart2wasm)
+        run: |
+          dart compile wasm packages/dart_monty_web/web/repl_demo.dart \
+            -o packages/dart_monty_web/web/repl_demo.wasm
 
       # ── Flutter web ──────────────────────────────────────────────────────────
       # flutter create --platforms web adds web/ scaffolding if not present.
