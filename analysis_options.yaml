@@ -12,6 +12,7 @@ analyzer:
     - 'build/**'
     - 'native/**'
     - 'lib/src/ffi/generated/**'
+    - 'packages/dart_monty_flutter/**'
 
   language:
     strict-casts: true

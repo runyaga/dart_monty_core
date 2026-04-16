@@ -864,12 +864,184 @@ function handleDispose(id) {
 }
 
 // ---------------------------------------------------------------------------
+// REPL Handlers
+// ---------------------------------------------------------------------------
+
+let activeReplHandle = null;
+
+function handleReplCreate(id, scriptName) {
+  if (activeReplHandle) {
+    wasm.monty_repl_free(activeReplHandle);
+    activeReplHandle = null;
+  }
+
+  let cName = null;
+  let outError = null;
+  let handle;
+  try {
+    outError = allocOutPtr();
+    cName = scriptName ? allocCString(scriptName) : null;
+    handle = wasm.monty_repl_create(cName ? cName.ptr : 0, outError.ptr);
+  } catch (e) {
+    if (outError) outError.free();
+    throw e;
+  } finally {
+    if (cName) wasm.monty_dealloc(cName.ptr, cName.size);
+  }
+
+  if (handle === 0) {
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errMsg || 'monty_repl_create failed',
+      errorType: 'CompileError',
+    });
+    return;
+  }
+  outError.free();
+  activeReplHandle = handle;
+  self.postMessage({ type: 'result', id, ok: true });
+}
+
+function handleReplFeedRun(id, code) {
+  if (!activeReplHandle) {
+    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+    return;
+  }
+
+  let cCode = null;
+  let outResult = null;
+  let outError = null;
+  try {
+    cCode = allocCString(code);
+    outResult = allocOutPtr();
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_feed_run(activeReplHandle, cCode.ptr, outResult.ptr, outError.ptr);
+    
+    const resultPtr = outResult.read();
+    const errorPtr = outError.read();
+    const resultJson = readAndFreeCString(resultPtr);
+    const errorMsg = readAndFreeCString(errorPtr);
+
+    if (tag === RESULT_OK && resultJson) {
+      const adapted = adaptResultForDart(resultJson, false);
+      self.postMessage({ type: 'result', id, ...adapted });
+    } else if (resultJson) {
+      const adapted = adaptResultForDart(resultJson, true);
+      self.postMessage({ type: 'result', id, ...adapted });
+    } else {
+      self.postMessage({ type: 'result', id, ok: false, error: errorMsg || 'repl_feed_run failed', errorType: 'MontyException' });
+    }
+  } finally {
+    if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
+    if (outResult) outResult.free();
+    if (outError) outError.free();
+  }
+}
+
+function handleReplFeedStart(id, code) {
+  if (!activeReplHandle) {
+    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+    return;
+  }
+  let cCode = null;
+  let outError = null;
+  try {
+    cCode = allocCString(code);
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_feed_start(activeReplHandle, cCode.ptr, outError.ptr);
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, activeReplHandle, tag, errMsg));
+  } finally {
+    if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
+    if (outError) outError.free();
+  }
+}
+
+function handleReplSetExtFns(id, extFns) {
+  if (!activeReplHandle) {
+    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+    return;
+  }
+  let cExtFns = null;
+  try {
+    cExtFns = extFns && extFns.length > 0 ? allocCString(extFns.join(',')) : null;
+    wasm.monty_repl_set_ext_fns(activeReplHandle, cExtFns ? cExtFns.ptr : 0);
+    self.postMessage({ type: 'result', id, ok: true });
+  } finally {
+    if (cExtFns) wasm.monty_dealloc(cExtFns.ptr, cExtFns.size);
+  }
+}
+
+function handleReplResume(id, value) {
+  if (!activeReplHandle) {
+    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+    return;
+  }
+  let cVal = null;
+  let outError = null;
+  try {
+    cVal = allocCString(JSON.stringify(value));
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_resume(activeReplHandle, cVal.ptr, outError.ptr);
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, activeReplHandle, tag, errMsg));
+  } finally {
+    if (cVal) wasm.monty_dealloc(cVal.ptr, cVal.size);
+    if (outError) outError.free();
+  }
+}
+
+function handleReplResumeWithError(id, errorMessage) {
+  if (!activeReplHandle) {
+    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+    return;
+  }
+  let cErr = null;
+  let outError = null;
+  try {
+    cErr = allocCString(errorMessage);
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_resume_with_error(activeReplHandle, cErr.ptr, outError.ptr);
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, activeReplHandle, tag, errMsg));
+  } finally {
+    if (cErr) wasm.monty_dealloc(cErr.ptr, cErr.size);
+    if (outError) outError.free();
+  }
+}
+
+function handleReplDetectContinuation(id, source) {
+  let cSource = null;
+  try {
+    cSource = allocCString(source);
+    const mode = wasm.monty_repl_detect_continuation(cSource.ptr);
+    self.postMessage({ type: 'result', id, ok: true, value: mode });
+  } finally {
+    if (cSource) wasm.monty_dealloc(cSource.ptr, cSource.size);
+  }
+}
+
+function handleReplDispose(id) {
+  if (activeReplHandle) {
+    wasm.monty_repl_free(activeReplHandle);
+    activeReplHandle = null;
+  }
+  self.postMessage({ type: 'result', id, ok: true });
+}
+
+// ---------------------------------------------------------------------------
 // Message dispatch
 // ---------------------------------------------------------------------------
 
 self.onmessage = (e) => {
   const { type, id, code, extFns, value, errorMessage, excType, limits,
-    dataBase64, scriptName, resultsJson, errorsJson, valueJson } = e.data;
+    dataBase64, scriptName, resultsJson, errorsJson, valueJson, source } = e.data;
   try {
     switch (type) {
       case 'run':
@@ -907,6 +1079,30 @@ self.onmessage = (e) => {
         break;
       case 'dispose':
         handleDispose(id);
+        break;
+      case 'replCreate':
+        handleReplCreate(id, scriptName);
+        break;
+      case 'replFeedRun':
+        handleReplFeedRun(id, code);
+        break;
+      case 'replFeedStart':
+        handleReplFeedStart(id, code);
+        break;
+      case 'replSetExtFns':
+        handleReplSetExtFns(id, extFns);
+        break;
+      case 'replResume':
+        handleReplResume(id, value);
+        break;
+      case 'replResumeWithError':
+        handleReplResumeWithError(id, errorMessage);
+        break;
+      case 'replDetectContinuation':
+        handleReplDetectContinuation(id, source);
+        break;
+      case 'replDispose':
+        handleReplDispose(id);
         break;
       default:
         self.postMessage({

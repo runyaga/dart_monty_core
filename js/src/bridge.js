@@ -485,6 +485,84 @@ async function dispose() {
   return JSON.stringify({ ok: true });
 }
 
+// ---------------------------------------------------------------------------
+// REPL API
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new REPL session.
+ * @returns {Promise<string>} JSON result.
+ */
+async function replCreate(scriptName) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const result = await callWorker(sid, { type: 'replCreate', scriptName }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+/**
+ * Feed code to the REPL and run to completion.
+ */
+async function replFeedRun(code) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const result = await callWorker(sid, { type: 'replFeedRun', code }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+async function replFeedStart(code) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const result = await callWorker(sid, { type: 'replFeedStart', code }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+async function replSetExtFns(extFnsJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const extFns = JSON.parse(extFnsJson);
+  const result = await callWorker(sid, { type: 'replSetExtFns', extFns }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+async function replResume(valueJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const value = JSON.parse(valueJson);
+  const result = await callWorker(sid, { type: 'replResume', value }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+async function replResumeWithError(errorJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const errorMessage = JSON.parse(errorJson);
+  const result = await callWorker(sid, { type: 'replResumeWithError', errorMessage }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+async function replDetectContinuation(source) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const result = await callWorker(sid, { type: 'replDetectContinuation', source }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+async function replDispose() {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const result = await callWorker(sid, { type: 'replDispose' }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
 // Expose bridge on window for Dart JS interop
 window.DartMontyBridge = {
   init,
@@ -506,6 +584,15 @@ window.DartMontyBridge = {
   createSession,
   disposeSession,
   getDefaultSessionId: () => defaultSessionId,
+  // REPL API
+  replCreate,
+  replFeedRun,
+  replFeedStart,
+  replSetExtFns,
+  replResume,
+  replResumeWithError,
+  replDetectContinuation,
+  replDispose,
 };
 
 console.log('[DartMontyBridge] Registered on window (Worker pool architecture)');

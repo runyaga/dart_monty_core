@@ -12,12 +12,20 @@ native/Cargo.lock
 # DCM local config contains credentials — never commit
 .dcm.yaml
 
-# WASM test runner compiled output (built in CI, not committed)
-test/integration/web/wasm_runner.dart.js
-test/integration/web/wasm_runner.dart.js.map
+# Built artifacts — never committed; always generated at build time
+# assets/ is the canonical staging area: cargo + node build.js write here,
+# scripts copy from here into test/integration/web/ and packages/*/web/.
+assets/dart_monty_native.wasm
+assets/dart_monty_bridge.js
+assets/dart_monty_worker.js
+
+# WASM test runner staging (copied from assets/ before each test run)
 test/integration/web/dart_monty_bridge.js
 test/integration/web/dart_monty_worker.js
 test/integration/web/dart_monty_native.wasm
+test/integration/web/wasm_runner.dart.js
+test/integration/web/wasm_runner.dart.js.map
+test/integration/web/wasm_runner.dart.js.deps
 test/integration/web/@pydantic/
 
 # macOS

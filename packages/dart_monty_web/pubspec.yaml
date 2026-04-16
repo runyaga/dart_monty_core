@@ -1,0 +1,12 @@
+name: dart_monty_web
+description: Web REPL demo for Monty Python interpreter.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  dart_monty_core:
+    path: ../..
+  web: ^1.1.0

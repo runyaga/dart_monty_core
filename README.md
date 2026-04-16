@@ -185,6 +185,13 @@ The package ships 464 Python fixture files from the upstream
 `pydantic/monty` test corpus. Tests run on two backends: **FFI** (VM, using
 a native oracle binary as source of truth) and **WASM** (headless Chrome).
 
+### One-time setup
+
+```bash
+bash tool/install-hooks.sh        # pre-commit hooks (fmt, analyze, bindings check)
+rustup target add wasm32-wasip1   # Rust target for WASM builds
+```
+
 ### Unit tests
 
 ```bash
@@ -213,7 +220,7 @@ cargo test                                       # 291 unit tests
 cargo clippy --all-targets -- -D warnings        # zero warnings
 ```
 
-### WASM conformance tests (378 pass, 86 skipped)
+### WASM conformance tests (464/464)
 
 The WASM path requires Node.js, npm, and Chrome. The full pipeline is wrapped
 in `tool/test_wasm.sh`:
@@ -230,10 +237,11 @@ bash tool/test_wasm.sh --skip-build
 **What the pipeline does:**
 
 1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_native.wasm`
-2. `cd js && npm install && node build.js` — esbuild bundles `dart_monty_bridge.js` and `dart_monty_worker.js` into `assets/`
-3. `dart compile js test/integration/wasm_runner.dart` — compiles the Dart fixture runner to JS
-4. A Python COOP/COEP HTTP server serves `test/integration/web/fixtures.html`
-5. Headless Chrome loads the page and runs all 378 active WASM fixtures
+2. `cd js && npm install --force && node build.js` — esbuild bundles `dart_monty_bridge.js` and `dart_monty_worker.js` into `assets/`
+3. Copy WASI runtime: `cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs test/integration/web/@pydantic/monty-wasm32-wasi/` — required for dart2wasm; **not** done by `build.js`
+4. `dart compile js test/integration/wasm_runner.dart` — compiles the dart2js fixture runner
+5. A Python COOP/COEP HTTP server serves `test/integration/web/fixtures.html`
+6. Headless Chrome loads the page and runs all 464 WASM fixtures
 
 **Prerequisites:**
 
@@ -249,12 +257,9 @@ npm --version    # >= 18
 # Linux: google-chrome or chromium
 ```
 
-**Skipped fixtures (86):** Fixtures tagged `# call-external`, `# run-async`,
-`# mount-fs`, or `# xfail=monty` are skipped on both backends.
-An additional 17 fixtures are tagged `# xfail=wasm` for known gaps in the WASM
-JS bridge (parse-time SyntaxErrors, relative/wildcard imports, cycle
-detection). See `tool/` and the maintenance guide at `~/dev/plans/dart_monty_core_maintenance.md`
-for the xfail backlog and fix strategy.
+**All 464 fixtures pass.** Fixtures tagged `# call-external`, `# run-async`,
+or `# mount-fs` are skipped on both backends (not counted in the 464). No
+fixtures carry `# xfail=wasm`.
 
 ### All checks at once
 
@@ -275,6 +280,40 @@ dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi
 bash tool/test_wasm.sh --skip-build   # if assets already built
 ```
 
+### dart2wasm conformance tests (464/464)
+
+The dart2wasm runner (`test/integration/wasm_runner_wasm.dart`) uses the same
+464 fixture corpus. Run it manually after building the dart2wasm runner:
+
+```bash
+dart compile wasm \
+  test/integration/wasm_runner_wasm.dart \
+  -o test/integration/web/wasm_runner.wasm
+
+# Copy WASI runtime (if not already done)
+mkdir -p test/integration/web/@pydantic/monty-wasm32-wasi
+cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
+   test/integration/web/@pydantic/monty-wasm32-wasi/
+
+# Run with headless Chrome (COOP/COEP server must be running on :8097)
+bash tool/test_wasm.sh --skip-build --dart2wasm
+```
+
+**Expected**: `FIXTURE_DONE:{"total":464,"passed":464,"failed":0,"skipped":0}`
+
+### Demos
+
+```bash
+# Web REPL (browser) — builds everything, opens http://localhost:8098
+bash tool/serve_demo.sh
+
+# dart2wasm variant
+bash tool/serve_demo.sh --dart2wasm
+
+# Flutter REPL (mobile/desktop) — requires FFI dylib (build step above)
+bash tool/run_flutter_demo.sh [--device macos]
+```
+
 ### dart2wasm Support & Benchmarks
 
 The WASM backend supports both **dart2js** and **dart2wasm**. While `dart2js` is
@@ -287,7 +326,7 @@ The CI pipeline validates both compilers. Compilation commands:
 # dart2js
 dart compile js test/integration/wasm_runner.dart -o test/integration/web/wasm_runner.dart.js
 
-# dart2wasm
+# dart2wasm (using the dedicated WASM harness)
 dart compile wasm test/integration/wasm_runner_wasm.dart -o test/integration/web/wasm_runner.wasm
 ```
 
@@ -298,13 +337,21 @@ Execution time includes the full integration suite (440 passing fixtures).
 
 | Compiler | Passed | Skipped | Failed | Time (ms) |
 | :--- | :--- | :--- | :--- | :--- |
-| **dart2js** | 440 | 24 | 0 | **3002** |
-| **dart2wasm** | 440 | 24 | 0 | **2991** |
+| **dart2js** | 464 | 0 | 0 | **3002** |
+| **dart2wasm** | 464 | 0 | 0 | **2991** |
 
-Performance is nearly identical across compilers because execution is bound by
-the underlying Rust-WASM engine and JS Worker round-trips rather than the Dart
-harness logic. `dart2wasm` provides stricter numeric type distinction (e.g.
-correctly identifying `MontyFloat(2.0)` vs `MontyInt(2)`).
+**Key Insights:**
+- **Stricter Semantics:** `dart2wasm` provides superior numeric precision for
+  Python compatibility, correctly distinguishing between `int` and `double`
+  (e.g. `MontyInt(2)` vs `MontyFloat(2.0)`), whereas `dart2js` blurs these
+  types into JavaScript numbers.
+- **Worker Overhead:** Performance parity indicates that execution is currently
+  bound by **JS Worker context-switching** and the underlying Rust-WASM engine
+  rather than Dart logic. This allows for complex Dart-side extensions with
+  minimal performance impact.
+- **Interactive REPL:** A decoupled web demo is available in `packages/dart_monty_web`,
+  demonstrating a persistent, stateful REPL in the browser using the new
+  WASM bridge extensions.
 
 ---
 

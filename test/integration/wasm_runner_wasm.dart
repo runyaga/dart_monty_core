@@ -24,6 +24,7 @@ import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 
 import '_fixture_corpus.dart';
 import '_fixture_parser.dart';
@@ -49,16 +50,18 @@ const _supportedExtFns = {
   'make_point',
   'make_mutable_point',
   'make_user',
+  'make_empty',
+  // Dataclass method calls (self is arguments[0])
+  'sum', // Point/MutablePoint.sum() → x + y
+  'add', // Point.add(dx, dy) → new Point(x=x+dx, y=y+dy)
+  'scale', // Point.scale(factor) → new Point(x=x*factor, y=y*factor)
+  'describe', // Point.describe(label) → '{label}({x}, {y})'
+  'greeting', // User.greeting() → 'Hello, {name}!'
 };
 
 /// Known ext-function names used in the corpus that we do NOT implement yet.
 /// Any fixture calling one of these is kept skipped to avoid wrong failures.
-/// `make_empty` stays here to keep `dataclass__basic.py` skipped (it calls
-/// methods on dataclasses which requires the correct type_id at runtime).
-const _unsupportedExtFns = {
-  'make_empty',
-  'async_call',
-};
+const Set<String> _unsupportedExtFns = {};
 
 /// Values supplied for [MontyNameLookup] progress when the engine encounters
 /// an unregistered global name. Mirrors the oracle in the monty-datatest crate.
@@ -76,7 +79,7 @@ const _nameConstants = <String, Object?>{
 Object? _dispatch(
   String functionName,
   List<MontyValue> args,
-  Map<String, MontyValue>? _, // kwargs — unused for current functions
+  Map<String, MontyValue>? kwargs,
 ) => switch (functionName) {
   // add_ints(a: int, b: int) → int
   'add_ints' => (args.first.dartValue! as int) + (args[1].dartValue! as int),
@@ -104,7 +107,8 @@ Object? _dispatch(
     'attrs': {'x': 1, 'y': 2},
     'frozen': false,
   },
-  // make_user(name: str) → mutable User(name=name, active=True)
+  // make_user(name: str) → frozen User(name=name, active=True)
+  // Frozen so that hash(user) works (the fixture asserts hashability).
   'make_user' => {
     '__type': 'dataclass',
     'name': 'User',
@@ -114,9 +118,94 @@ Object? _dispatch(
       'name': (args.first as MontyString).value,
       'active': true,
     },
+    'frozen': true,
+  },
+  // make_empty() → mutable Empty() with no fields
+  'make_empty' => {
+    '__type': 'dataclass',
+    'name': 'Empty',
+    'type_id': 0,
+    'field_names': <String>[],
+    'attrs': <String, Object?>{},
     'frozen': false,
   },
+  // --- dataclass method calls (arguments[0] is self) ---
+
+  // sum(self) → self.x + self.y
+  'sum' => () {
+    final self = args.first as MontyDataclass;
+    return (self.attrs['x']! as MontyInt).value +
+        (self.attrs['y']! as MontyInt).value;
+  }(),
+
+  // add(self, dx, dy) → new dataclass(x=self.x+dx, y=self.y+dy)
+  'add' => () {
+    final self = args.first as MontyDataclass;
+    final dx = (args[1] as MontyInt).value;
+    final dy = (args[2] as MontyInt).value;
+    return {
+      '__type': 'dataclass',
+      'name': self.name,
+      'type_id': self.typeId,
+      'field_names': ['x', 'y'],
+      'attrs': {
+        'x': (self.attrs['x']! as MontyInt).value + dx,
+        'y': (self.attrs['y']! as MontyInt).value + dy,
+      },
+      'frozen': self.frozen,
+    };
+  }(),
+
+  // scale(self, factor) → new dataclass(x=self.x*factor, y=self.y*factor)
+  'scale' => () {
+    final self = args.first as MontyDataclass;
+    final factor = (args[1] as MontyInt).value;
+    return {
+      '__type': 'dataclass',
+      'name': self.name,
+      'type_id': self.typeId,
+      'field_names': ['x', 'y'],
+      'attrs': {
+        'x': (self.attrs['x']! as MontyInt).value * factor,
+        'y': (self.attrs['y']! as MontyInt).value * factor,
+      },
+      'frozen': self.frozen,
+    };
+  }(),
+
+  // describe(self, label) or describe(self, label=label)
+  // → '{label}({self.x}, {self.y})'
+  'describe' => () {
+    final self = args.first as MontyDataclass;
+    final labelValue =
+        (args.length > 1 ? args[1] : kwargs?['label'])! as MontyString;
+    final label = labelValue.value;
+    final x = (self.attrs['x']! as MontyInt).value;
+    final y = (self.attrs['y']! as MontyInt).value;
+    return '$label($x, $y)';
+  }(),
+
+  // greeting(self: User) → 'Hello, {name}!'
+  'greeting' => () {
+    final self = args.first as MontyDataclass;
+    final name = (self.attrs['name']! as MontyString).value;
+    return 'Hello, $name!';
+  }(),
+
   _ => throw StateError('Unexpected external function: $functionName'),
+};
+
+// ---------------------------------------------------------------------------
+// MontyValue → Dart conversion (used for async_call echo results)
+// ---------------------------------------------------------------------------
+
+Object? _montyValueToDart(MontyValue v) => switch (v) {
+  MontyInt(:final value) => value,
+  MontyFloat(:final value) => value,
+  MontyString(:final value) => value,
+  MontyBool(:final value) => value,
+  MontyList(:final items) => items.map(_montyValueToDart).toList(),
+  _ => null, // MontyNull and any other type → null
 };
 
 // ---------------------------------------------------------------------------
@@ -716,6 +805,9 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
   }
 
   if (progress != null) {
+    // Stores async_call echo values keyed by callId.
+    // Consumed when MontyResolveFutures arrives.
+    final pendingResults = <int, Object?>{};
     dispatchLoop:
     while (true) {
       switch (progress!) {
@@ -727,28 +819,61 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
         case MontyPending(
           :final functionName,
           :final arguments,
+          :final callId,
           :final kwargs,
+          :final methodCall,
         ):
-          if (!_supportedExtFns.contains(functionName)) {
-            shouldSkip = true;
-            break dispatchLoop;
-          }
-          final isRaiseError = functionName == 'raise_error';
-          try {
-            if (isRaiseError) {
-              final excType = (arguments.first as MontyString).value;
-              final msg = (arguments[1] as MontyString).value;
-              progress = await platform.resumeWithException(excType, msg);
-            } else {
-              final ret = _dispatch(functionName, arguments, kwargs);
-              progress = await platform.resume(ret);
+          if (functionName == 'async_call') {
+            // Echo function: store the result and convert to a future so the
+            // engine can continue running other coroutines in the same gather.
+            pendingResults[callId] = _montyValueToDart(arguments.first);
+            try {
+              progress = await (platform as MontyFutureCapable)
+                  .resumeAsFuture();
+            } on MontyScriptError catch (e) {
+              thrownExcType = e.excType;
+              break dispatchLoop;
+            } on MontyResourceError {
+              thrownExcType = 'MemoryLimitExceeded';
+              break dispatchLoop;
             }
-          } on MontyScriptError catch (e) {
-            thrownExcType = e.excType;
-            break dispatchLoop;
-          } on MontyResourceError {
-            thrownExcType = 'MemoryLimitExceeded';
-            break dispatchLoop;
+          } else if (!_supportedExtFns.contains(functionName)) {
+            if (methodCall) {
+              // Unknown public method on external dataclass — raise
+              // AttributeError so Python try/except blocks can catch it.
+              final typeName =
+                  (arguments.firstOrNull as MontyDataclass?)?.name ?? 'object';
+              try {
+                progress = await platform.resumeWithException(
+                  'AttributeError',
+                  "'$typeName' object has no attribute '$functionName'",
+                );
+              } on MontyScriptError catch (e) {
+                thrownExcType = e.excType;
+                break dispatchLoop;
+              }
+            } else {
+              shouldSkip = true;
+              break dispatchLoop;
+            }
+          } else {
+            final isRaiseError = functionName == 'raise_error';
+            try {
+              if (isRaiseError) {
+                final excType = (arguments.first as MontyString).value;
+                final msg = (arguments[1] as MontyString).value;
+                progress = await platform.resumeWithException(excType, msg);
+              } else {
+                final ret = _dispatch(functionName, arguments, kwargs);
+                progress = await platform.resume(ret);
+              }
+            } on MontyScriptError catch (e) {
+              thrownExcType = e.excType;
+              break dispatchLoop;
+            } on MontyResourceError {
+              thrownExcType = 'MemoryLimitExceeded';
+              break dispatchLoop;
+            }
           }
 
         case MontyOsCall(
@@ -806,10 +931,22 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
             break dispatchLoop;
           }
 
-        case MontyResolveFutures():
-          // Async futures not yet implemented — skip this fixture.
-          shouldSkip = true;
-          break dispatchLoop;
+        case MontyResolveFutures(:final pendingCallIds):
+          // Resolve all pending futures with their stored echo values.
+          try {
+            final results = <int, Object?>{
+              for (final id in pendingCallIds) id: pendingResults.remove(id),
+            };
+            progress = await (platform as MontyFutureCapable).resolveFutures(
+              results,
+            );
+          } on MontyScriptError catch (e) {
+            thrownExcType = e.excType;
+            break dispatchLoop;
+          } on MontyResourceError {
+            thrownExcType = 'MemoryLimitExceeded';
+            break dispatchLoop;
+          }
       }
     }
   }
@@ -863,6 +1000,63 @@ Future<void> main() async {
 
   final stopwatch = Stopwatch()..start();
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    // -----------------------------------------------------------------------
+    // Path D — run-async: start() + async dispatch loop
+    // Handles pure-async fixtures and async+call-external (async_call echo).
+    // -----------------------------------------------------------------------
+    if (fixtureIsRunAsync(value)) {
+      final expectation = parseFixture(
+        value,
+        skipWasm: true,
+        skipRunAsync: false,
+        skipCallExternal: false, // async+ext fixtures are handled here too
+      );
+      if (expectation == null) {
+        skipped++;
+        continue;
+      }
+
+      final extFns = fixtureIsCallExternal(value) ? ['async_call'] : <String>[];
+      final platform = createPlatformMonty();
+      try {
+        final vfs = _VirtualFs();
+        final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
+          platform,
+          value,
+          key,
+          vfs,
+          externalFunctions: extFns,
+        );
+
+        if (shouldSkip) {
+          skipped++;
+        } else {
+          final (ok, reason) = _evaluate(
+            expectation,
+            thrownExcType,
+            resultValue,
+          );
+          if (ok) {
+            passed++;
+            _log('FIXTURE_RESULT:{"name":"$key","ok":true}');
+          } else {
+            failed++;
+            final escaped = reason.replaceAll('"', r'\"');
+            _log(
+              'FIXTURE_RESULT:{"name":"$key","ok":false,"reason":"$escaped"}',
+            );
+          }
+        }
+      } on Object catch (e) {
+        failed++;
+        final escaped = '$e'.replaceAll('"', r'\"');
+        _log('FIXTURE_RESULT:{"name":"$key","ok":false,"reason":"$escaped"}');
+      } finally {
+        await platform.dispose();
+      }
+      continue;
+    }
+
     // -----------------------------------------------------------------------
     // Path C — mount-fs: start() with /mnt VFS + injected `root` variable
     // -----------------------------------------------------------------------
