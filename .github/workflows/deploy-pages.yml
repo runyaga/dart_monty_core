@@ -1,0 +1,96 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; cancel in-progress if a new push arrives
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Toolchains ──────────────────────────────────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      # ── Rust WASM binary ─────────────────────────────────────────────────────
+      - name: Build Rust WASM binary
+        run: cd native && cargo build --release --target wasm32-wasip1
+
+      # ── JS bridge (esbuild → assets/) ───────────────────────────────────────
+      # --force: @pydantic/monty-wasm32-wasi declares cpu:wasm32; npm refuses on
+      # x64 Linux without --force. The package is a WASM binary — the check is a
+      # false positive.
+      - name: Build JS bridge
+        run: cd js && npm install --force && node build.js
+
+      # ── Web REPL (dart2js) ───────────────────────────────────────────────────
+      - name: Build web REPL (dart2js)
+        run: |
+          WEB=packages/dart_monty_web/web
+          dart pub get
+          cd packages/dart_monty_web && dart pub get && cd ../..
+          cp assets/dart_monty_bridge.js   $WEB/
+          cp assets/dart_monty_worker.js   $WEB/
+          cp assets/dart_monty_native.wasm $WEB/
+          mkdir -p $WEB/@pydantic/monty-wasm32-wasi
+          cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
+             $WEB/@pydantic/monty-wasm32-wasi/
+          dart compile js $WEB/repl_demo.dart -o $WEB/repl_demo.dart.js --no-source-maps
+
+      # ── Flutter web ──────────────────────────────────────────────────────────
+      # flutter create --platforms web adds web/ scaffolding if not present.
+      # It is idempotent when web/ already exists.
+      - name: Build Flutter web
+        run: |
+          cd packages/dart_monty_flutter
+          flutter create --platforms web .
+          flutter pub get
+          flutter build web --base-href /dart_monty_core/flutter/
+
+      # ── Assemble site/ ───────────────────────────────────────────────────────
+      - name: Assemble site
+        run: |
+          mkdir -p site/repl site/flutter
+          cp -r packages/dart_monty_web/web/. site/repl/
+          cp -r packages/dart_monty_flutter/build/web/. site/flutter/
+          cp docs/index.html site/index.html
+
+      # ── Deploy ───────────────────────────────────────────────────────────────
+      - uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dart_monty_core — Monty Python Interpreter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .logo {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #4ec9b0;
+      font-family: 'Consolas', 'Courier New', monospace;
+      letter-spacing: -1px;
+      margin-bottom: 0.5rem;
+    }
+
+    .tagline {
+      color: #888;
+      font-size: 1rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .sub {
+      color: #555;
+      font-size: 0.85rem;
+      margin-bottom: 3rem;
+    }
+
+    .sub a {
+      color: #569cd6;
+      text-decoration: none;
+    }
+
+    .sub a:hover { text-decoration: underline; }
+
+    .cards {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 700px;
+    }
+
+    .card {
+      background: #252526;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1.75rem 2rem;
+      width: 280px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s, transform 0.1s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .card:hover {
+      border-color: #4ec9b0;
+      transform: translateY(-2px);
+    }
+
+    .card-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      width: fit-content;
+    }
+
+    .badge-dart { background: #007acc; color: #fff; }
+    .badge-flutter { background: #0553b1; color: #fff; }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #e8e8e8;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+
+    .card-desc {
+      font-size: 0.875rem;
+      color: #888;
+      line-height: 1.5;
+    }
+
+    .card-note {
+      font-size: 0.75rem;
+      color: #555;
+      margin-top: 0.25rem;
+    }
+
+    footer {
+      margin-top: 4rem;
+      font-size: 0.8rem;
+      color: #444;
+      text-align: center;
+    }
+
+    footer a { color: #555; text-decoration: none; }
+    footer a:hover { color: #888; }
+  </style>
+</head>
+<body>
+  <div class="logo">&gt;_ monty</div>
+  <p class="tagline">A sandboxed Python interpreter in Rust</p>
+  <p class="sub">
+    <a href="https://github.com/pydantic/monty">pydantic/monty</a> ·
+    <a href="https://github.com/runyaga/dart_monty_core">dart_monty_core</a>
+  </p>
+
+  <div class="cards">
+    <a href="repl/" class="card">
+      <span class="card-badge badge-dart">dart2js</span>
+      <div class="card-title">Web REPL</div>
+      <div class="card-desc">
+        Interactive Python REPL running entirely in the browser via a
+        WASM Worker. Built with pure Dart + <code>dart_monty_core</code>.
+      </div>
+      <div class="card-note">No install required · dart2js build</div>
+    </a>
+
+    <a href="flutter/" class="card">
+      <span class="card-badge badge-flutter">Flutter web</span>
+      <div class="card-title">Flutter REPL</div>
+      <div class="card-desc">
+        The same Monty REPL as a Flutter web app. Dark Material UI,
+        scrollable output panel, persistent interpreter state.
+      </div>
+      <div class="card-note">Flutter web build · WASM backend</div>
+    </a>
+  </div>
+
+  <footer>
+    <a href="https://github.com/runyaga/dart_monty_core">GitHub</a> ·
+    MIT License
+  </footer>
+</body>
+</html>
