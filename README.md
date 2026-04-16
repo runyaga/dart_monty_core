@@ -11,10 +11,15 @@ Works on VM (FFI), Web (WASM), and in isolates.
 ## What is Monty?
 
 Monty is a sandboxed Python interpreter implemented in Rust. It executes a
-safe subset of Python — arithmetic, data structures, functions, classes,
-closures — with hard resource limits (memory, stack depth, timeout). It
-cannot import arbitrary modules or access the filesystem unless your Dart
-code explicitly allows it via an `OsCallHandler`.
+safe subset of Python — arithmetic, data structures, functions, closures,
+comprehensions, exceptions, and a curated standard library (`math`, `re`,
+`json`, `datetime`, `pathlib`) — with hard resource limits (memory, stack
+depth, timeout). It cannot import arbitrary modules or access the filesystem
+unless your Dart code explicitly allows it via an `OsCallHandler`.
+
+Notable **unsupported** Python features: `class` keyword (user-defined
+classes), `yield`/generators, `match`/`case`, `del`, decorators, and C
+extensions. Use dicts and functions in place of classes.
 
 `dart_monty_core` is the raw binding layer. If you want Flutter widgets,
 reactive state, or a richer plugin system, see `dart_monty`.
@@ -257,9 +262,9 @@ npm --version    # >= 18
 # Linux: google-chrome or chromium
 ```
 
-**All 464 fixtures pass.** Fixtures tagged `# call-external`, `# run-async`,
-or `# mount-fs` are skipped on both backends (not counted in the 464). No
-fixtures carry `# xfail=wasm`.
+**All 464 fixtures pass — none are skipped.** The corpus was pre-filtered
+from the upstream `pydantic/monty` test suite to include only fixtures
+compatible with the Dart FFI and WASM backends.
 
 ### All checks at once
 
