@@ -184,6 +184,23 @@ class NativeBindingsFfi extends NativeBindings {
   }
 
   @override
+  ProgressResult resumeNameLookupUndefined(int handle) {
+    final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      final tag = ffi_native.monty_resume_name_lookup_undefined(
+        ptr,
+        outError,
+      );
+
+      return _buildProgressResult(ptr, tag, outError.value);
+    } finally {
+      calloc.free(outError);
+    }
+  }
+
+  @override
   ProgressResult resolveFutures(
     int handle,
     String resultsJson,
