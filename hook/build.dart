@@ -3,32 +3,6 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 
-/// GitHub repository for pre-built binary downloads.
-const _repo = 'runyaga/dart_monty_core';
-
-/// Reads the native library version from `NATIVE_LIB_VERSION`.
-///
-/// Single source of truth for the version used in GitHub Release download
-/// URLs (`native-lib-v<version>`). The file lives at the repo root in
-/// `native/NATIVE_LIB_VERSION` and is copied into the FFI package root
-/// before publishing. Both contributor and consumer paths read from it.
-String _readNativeLibVersion(Uri packageRoot) {
-  // Check package root first (consumer path: file copied at publish time).
-  final pkgFile = File.fromUri(packageRoot.resolve('NATIVE_LIB_VERSION'));
-  if (pkgFile.existsSync()) return pkgFile.readAsStringSync().trim();
-
-  // Fall back to monorepo path (contributor path).
-  final nativeFile = File.fromUri(
-    packageRoot.resolve('native/NATIVE_LIB_VERSION'),
-  );
-  if (nativeFile.existsSync()) return nativeFile.readAsStringSync().trim();
-
-  throw StateError(
-    'NATIVE_LIB_VERSION not found. '
-    'Expected at package root or native/ directory.',
-  );
-}
-
 void main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
@@ -89,18 +63,8 @@ void main(List<String> args) async {
       );
     }
 
-    // Consumer path: download pre-built binary from GitHub Releases.
-    final version = _readNativeLibVersion(input.packageRoot);
-    if (await _download(os, arch, outFile, version)) {
-      _addAsset(output, input.packageName, outFile.uri);
-
-      return;
-    }
-
     throw StateError(
-      'Cannot obtain dart_monty native library.\n'
-      'Consumers: check your network connection.\n'
-      'Contributors: clone the full monorepo with native/ directory.',
+      'native/Cargo.toml not found — clone the full monorepo to build from source.',
     );
   });
 }
@@ -123,69 +87,6 @@ List<String> _cargoPaths(OS os, Architecture? arch, String libName) {
     if (triple != null) 'target/$triple/release/$libName',
     'target/release/$libName',
   ];
-}
-
-Future<bool> _download(
-  OS os,
-  Architecture? arch,
-  File outFile,
-  String version,
-) async {
-  final archStr = arch?.toString() ?? 'x64';
-  final filename = switch (os) {
-    OS.macOS => 'libdart_monty_native-macos-$archStr.dylib',
-    OS.linux => 'libdart_monty_native-linux-$archStr.so',
-    OS.windows => 'dart_monty_native-windows-$archStr.dll',
-    _ => null,
-  };
-  if (filename == null) return false;
-
-  final url = Uri.parse(
-    'https://github.com/$_repo/releases/download/native-lib-v$version/$filename',
-  );
-
-  final tmpFile = File('${outFile.path}.tmp');
-
-  try {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final request = await client.getUrl(url);
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        await response.drain<void>();
-
-        return false;
-      }
-
-      final contentLength = response.contentLength;
-      await response.pipe(tmpFile.openWrite());
-
-      if (contentLength > 0 && tmpFile.lengthSync() != contentLength) {
-        throw StateError('Content-Length mismatch');
-      }
-
-      tmpFile.renameSync(outFile.path);
-    } finally {
-      client.close(force: true);
-    }
-
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['+x', outFile.path]);
-    }
-
-    return true;
-  } on Object {
-    if (tmpFile.existsSync()) {
-      try {
-        tmpFile.deleteSync();
-      } on Object {
-        // Ignore cleanup failures.
-      }
-    }
-
-    return false;
-  }
 }
 
 String? _rustTriple(OS os, Architecture? arch) {
