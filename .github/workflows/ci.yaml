@@ -334,7 +334,7 @@ jobs:
 
           cd js
           echo "--- npm install ---"
-          npm install
+          npm install --force
           echo "--- node build.js ---"
           node build.js
           cd "$GITHUB_WORKSPACE"
