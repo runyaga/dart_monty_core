@@ -333,9 +333,12 @@ jobs:
           WEB_DIR="test/integration/web"
 
           cd js
-          npm install --silent
+          echo "--- npm install ---"
+          npm install
+          echo "--- node build.js ---"
           node build.js
           cd "$GITHUB_WORKSPACE"
+          echo "--- build complete ---"
 
           # Verify build outputs exist before staging — fail loudly if missing.
           for f in assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm; do
