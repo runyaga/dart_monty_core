@@ -190,8 +190,19 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   Future<Uint8List> compileCode(String code) async {
     assertNotDisposed('compileCode');
     await _ensureInitialized();
+    try {
+      return await _bindings.compileCode(code);
+    } on MontyScriptError catch (e) {
+      if (e.excType == 'SyntaxError') {
+        throw MontySyntaxError(
+          e.message,
+          excType: e.excType,
+          exception: e.exception,
+        );
+      }
 
-    return _bindings.compileCode(code);
+      rethrow;
+    }
   }
 
   @override
