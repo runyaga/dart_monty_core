@@ -66,6 +66,9 @@ jobs:
              $WEB/@pydantic/monty-wasm32-wasi/
           dart compile js $WEB/repl_demo.dart -o $WEB/repl_demo.dart.js --no-source-maps
 
+          # dart2wasm — produces repl_demo.mjs + repl_demo.wasm (required by index_wasm.html)
+          dart compile wasm $WEB/repl_demo.dart -o $WEB/repl_demo.wasm
+
       # ── Flutter web ──────────────────────────────────────────────────────────
       # flutter create --platforms web adds web/ scaffolding if not present.
       # It is idempotent when web/ already exists.
