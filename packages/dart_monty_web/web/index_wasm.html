@@ -96,11 +96,37 @@
     <button id="run" disabled>Run</button>
   </footer>
 
+  <!--
+    coi-serviceworker: registers a service worker that injects COOP/COEP headers
+    so SharedArrayBuffer is available on GitHub Pages (which cannot set headers).
+    On first load the SW is registered and the page reloads; on the second load
+    the SW is active and cross-origin isolation is in effect.
+  -->
+  <script>
+    if (typeof SharedArrayBuffer === 'undefined') {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./coi-serviceworker.js').then(reg => {
+          if (reg.active && !navigator.serviceWorker.controller) {
+            location.reload();
+          } else {
+            reg.addEventListener('updatefound', () => location.reload());
+          }
+        }).catch(err => console.error('Service worker registration failed:', err));
+      } else {
+        const out = document.getElementById('output');
+        const div = document.createElement('div');
+        div.className = 'error-line';
+        div.textContent = 'Service workers not supported — try a modern browser.';
+        out.appendChild(div);
+      }
+    }
+  </script>
+
   <!-- Bridge must load before the Dart runner -->
   <script src="dart_monty_bridge.js"></script>
   <script type="module">
     import { compileStreaming } from './repl_demo.mjs';
-    
+
     try {
       const compiledApp = await compileStreaming(fetch('./repl_demo.wasm'));
       const instantiatedApp = await compiledApp.instantiate({});
