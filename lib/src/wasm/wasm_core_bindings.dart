@@ -139,23 +139,25 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<Uint8List> compileCode(String code) {
-    throw UnsupportedError(
-      'compileCode() is not supported on WASM — snapshot support requires '
-      'a future update to the WASM JS bridge.',
-    );
-  }
+  Future<Uint8List> compileCode(String code) =>
+      _bindings.compile(code, sessionId: _sessionId);
 
   @override
   Future<CoreRunResult> runPrecompiled(
     Uint8List compiled, {
     String? limitsJson,
     String? scriptName,
-  }) {
-    throw UnsupportedError(
-      'runPrecompiled() is not supported on WASM — snapshot support requires '
-      'a future update to the WASM JS bridge.',
+  }) async {
+    final sw = Stopwatch()..start();
+    final result = await _bindings.runPrecompiled(
+      compiled,
+      limitsJson: limitsJson,
+      scriptName: scriptName,
+      sessionId: _sessionId,
     );
+    sw.stop();
+
+    return _translateRunResult(result, sw.elapsedMilliseconds);
   }
 
   @override
@@ -163,11 +165,17 @@ class WasmCoreBindings implements MontyCoreBindings {
     Uint8List compiled, {
     String? limitsJson,
     String? scriptName,
-  }) {
-    throw UnsupportedError(
-      'startPrecompiled() is not supported on WASM — snapshot support '
-      'requires a future update to the WASM JS bridge.',
+  }) async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.startPrecompiled(
+      compiled,
+      limitsJson: limitsJson,
+      scriptName: scriptName,
+      sessionId: _sessionId,
     );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
   }
 
   @override

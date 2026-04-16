@@ -217,7 +217,12 @@ abstract class MontyCoreBindings {
   /// The engine raises NameError.
   Future<CoreProgressResult> resumeNameLookupUndefined();
 
-  /// Captures the current execution state as a snapshot.
+  /// Captures the current Rust interpreter heap as a raw snapshot.
+  ///
+  /// **Rust heap only.** Python globals held Dart-side by `MontySession` are
+  /// not included. For a self-contained snapshot that preserves all variables,
+  /// use `MontySession.snapshot()` or `Monty.snapshot()`. `MontyRepl` users
+  /// can call this method directly — the REPL heap is complete.
   Future<Uint8List> snapshot();
 
   /// Restores execution state from [data].

@@ -99,9 +99,6 @@ class Monty {
   ///
   /// State is **not** preserved across [runPrecompiled] calls. For stateful
   /// execution, use [run] instead.
-  ///
-  /// On WASM, throws [UnsupportedError] — snapshot support requires a
-  /// future update to the WASM JS bridge.
   Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,
@@ -111,6 +108,25 @@ class Monty {
     limits: limits,
     scriptName: scriptName,
   );
+
+  /// Captures all Python variables persisted by this session.
+  ///
+  /// Returns a self-contained binary snapshot. Pass to [restore] on the same
+  /// or a new [Monty] instance to recreate the Python variable state.
+  ///
+  /// Safe to call between [run] calls — no live interpreter handle is
+  /// required. See [MontySession.snapshot] for details.
+  ///
+  /// **Note on external functions:** Dart [MontyCallback] closures registered
+  /// via `externals:` cannot be serialised. Re-provide them in the
+  /// `externals:` parameter of subsequent [run] calls after [restore].
+  Uint8List snapshot() => _session.snapshot();
+
+  /// Restores Python variables from a snapshot produced by [snapshot].
+  ///
+  /// The next [run] call will inject the restored variables into the Python
+  /// scope. Throws [ArgumentError] if [bytes] is not a valid snapshot.
+  void restore(Uint8List bytes) => _session.restore(bytes);
 
   /// Clears all persisted state.
   ///
@@ -130,9 +146,6 @@ class Monty {
   /// same script.
   ///
   /// Equivalent to `Monty.dump()` in the JS `@pydantic/monty` SDK.
-  ///
-  /// On WASM, throws [UnsupportedError] — snapshot support requires a
-  /// future update to the WASM JS bridge.
   ///
   /// ```dart
   /// final binary = await Monty.compile('x * 2 + y');
