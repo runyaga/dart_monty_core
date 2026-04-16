@@ -76,6 +76,11 @@ final class MontyComplete extends MontyProgress {
   /// The final result of the execution.
   final MontyResult result;
 
+  /// The Python expression result. Shorthand for `result.value`.
+  ///
+  /// Equivalent to `MontyComplete.output` in the JS `@pydantic/monty` SDK.
+  MontyValue get output => result.value;
+
   @override
   Map<String, dynamic> toJson() {
     return {'type': 'complete', 'result': result.toJson()};

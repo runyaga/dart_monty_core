@@ -32,23 +32,34 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 class Monty {
   /// Creates a Monty interpreter with the auto-detected backend.
   ///
+  /// [scriptName] is used as the default filename in tracebacks and error
+  /// messages. It can be overridden per-call in [run]. Equivalent to the
+  /// `scriptName` option in the JS `@pydantic/monty` SDK.
+  ///
   /// Pass [osHandler] to enable Python `pathlib`, `os`, and `datetime`
   /// access. Without it, OS calls resume with a permission error.
-  factory Monty({OsCallHandler? osHandler}) =>
-      Monty._(createPlatformMonty(), osHandler);
+  factory Monty({
+    OsCallHandler? osHandler,
+    String scriptName = 'main.py',
+  }) => Monty._(createPlatformMonty(), osHandler, scriptName);
 
   /// Creates a Monty interpreter with an explicit platform backend.
   factory Monty.withPlatform(
     MontyPlatform platform, {
     OsCallHandler? osHandler,
-  }) => Monty._(platform, osHandler);
+    String scriptName = 'main.py',
+  }) => Monty._(platform, osHandler, scriptName);
 
-  Monty._(MontyPlatform platform, OsCallHandler? osHandler)
+  Monty._(MontyPlatform platform, OsCallHandler? osHandler, String scriptName)
     : _platform = platform,
+      _scriptName = scriptName,
       _session = MontySession(platform: platform, osHandler: osHandler);
 
   final MontyPlatform _platform;
   final MontySession _session;
+
+  /// The default script name used in tracebacks for this session.
+  final String _scriptName;
 
   /// The underlying platform — for advanced use (iterative start/resume).
   MontyPlatform get platform => _platform;
@@ -59,6 +70,8 @@ class Monty {
   /// Executes Python [code] and returns the result.
   ///
   /// Variables defined in [code] persist for subsequent [run] calls.
+  ///
+  /// [scriptName] overrides the constructor's default for this call only.
   ///
   /// [inputs] injects per-invocation Python variables before [code] runs.
   /// Each key becomes a Python variable; values are converted to Python
@@ -74,7 +87,7 @@ class Monty {
   }) => _session.run(
     code,
     limits: limits,
-    scriptName: scriptName,
+    scriptName: scriptName ?? _scriptName,
     externals: externals,
     inputs: inputs,
   );

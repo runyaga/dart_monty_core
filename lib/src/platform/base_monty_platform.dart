@@ -405,7 +405,8 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
   /// Throws the appropriate sealed [MontyError] subtype for a failed run.
   ///
-  /// Resource errors (MemoryLimitExceeded) throw [MontyResourceError].
+  /// Resource errors (`MemoryLimitExceeded`) throw [MontyResourceError].
+  /// Syntax errors (`SyntaxError`) throw [MontySyntaxError].
   /// All other Python exceptions throw [MontyScriptError] wrapping a full
   /// [MontyException] with traceback and source location details.
   Never _throwError(_ErrorInfo e) {
@@ -419,6 +420,13 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       columnNumber: e.columnNumber,
       sourceCode: e.sourceCode,
     );
+    if (e.excType == 'SyntaxError') {
+      throw MontySyntaxError(
+        e.message,
+        excType: e.excType,
+        exception: exception,
+      );
+    }
     throw MontyScriptError(e.message, excType: e.excType, exception: exception);
   }
 }
