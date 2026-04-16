@@ -1,0 +1,8 @@
+# Flutter build outputs
+build/
+.dart_tool/
+pubspec.lock
+*.g.dart
+
+# Coverage
+coverage/

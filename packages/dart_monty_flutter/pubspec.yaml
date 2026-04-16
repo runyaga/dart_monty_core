@@ -1,0 +1,18 @@
+name: dart_monty_flutter
+description: Flutter REPL demo for Monty Python interpreter.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+  flutter: '>=3.27.0'
+
+dependencies:
+  dart_monty_core:
+    path: ../..
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
