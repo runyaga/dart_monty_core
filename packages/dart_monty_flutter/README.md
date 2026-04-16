@@ -14,10 +14,9 @@ A dark-themed Material REPL app backed by `MontyRepl`. Enter Python expressions;
 results appear in a scrollable output panel. State is persistent across inputs —
 define a function, call it on the next line.
 
-**Supported platforms**: iOS · Android · macOS · Linux · Windows
+**Supported platforms**: iOS · Android · macOS · Linux · Windows · **Web**
 
-**Not supported here**: Flutter web — use [`packages/dart_monty_web`](../dart_monty_web/)
-for the browser REPL.
+Live demo: **https://runyaga.github.io/dart_monty_core/flutter/**
 
 ---
 
@@ -97,14 +96,12 @@ flutter run -d macos
 
 ---
 
-## Note on Flutter web
+## Flutter web
 
-This package targets native (mobile + desktop) platforms only. The `MontyFfi`
-backend uses `dart:ffi` to load the native dylib — not available on the web.
+The app runs on the web too. The CI build scaffolds the web target with
+`flutter create --platforms web` and substitutes the `MontyWasm` backend
+(WASM Worker) in place of `MontyFfi`, which requires a native dylib not
+available in the browser. Everything else — the UI, the REPL loop, the
+`MontyRepl` API — is identical.
 
-For a browser REPL, see [`packages/dart_monty_web`](../dart_monty_web/), which
-uses the `MontyWasm` backend backed by a WASM Worker.
-
-The GitHub Pages demo at **https://runyaga.github.io/dart_monty_core/flutter/**
-uses a separate Flutter web build (scaffolded with `flutter create --platforms web`)
-that substitutes the WASM backend automatically.
+Live: **https://runyaga.github.io/dart_monty_core/flutter/**
