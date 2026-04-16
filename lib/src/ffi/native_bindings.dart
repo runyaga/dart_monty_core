@@ -124,6 +124,11 @@ abstract class NativeBindings {
   /// Resumes by creating a future for the pending call.
   ProgressResult resumeAsFuture(int handle);
 
+  /// Resumes from a NameLookup by indicating the variable is undefined.
+  ///
+  /// The engine raises NameError in Python.
+  ProgressResult resumeNameLookupUndefined(int handle);
+
   /// Resolves pending futures with [resultsJson] and [errorsJson].
   ///
   /// [resultsJson] is a JSON object mapping call_id (string) to value.

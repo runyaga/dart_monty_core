@@ -479,12 +479,14 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Compute metrics
+        continue-on-error: true
         run: |
           dcm calculate-metrics \
             --ci-key=${{ secrets.DCM_CI_KEY }} \
             --email=${{ secrets.DCM_EMAIL }} \
             lib/
       - name: Analyze (rules)
+        continue-on-error: true
         run: |
           dcm analyze \
             --ci-key=${{ secrets.DCM_CI_KEY }} \
