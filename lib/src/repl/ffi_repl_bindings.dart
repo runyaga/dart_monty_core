@@ -133,6 +133,13 @@ class FfiReplBindings implements ReplBindings {
     return _translateProgressResult(result);
   }
 
+  @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() {
+    throw UnimplementedError(
+      'resumeNameLookupUndefined is not supported by the FFI REPL backend',
+    );
+  }
+
   // -----------------------------------------------------------------------
   // Translation (same logic as FfiCoreBindings._translateRunResult)
   // -----------------------------------------------------------------------

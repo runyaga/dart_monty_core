@@ -34,6 +34,7 @@ final class ProgressResult {
     this.isError,
     this.errorMessage,
     this.futureCallIdsJson,
+    this.variableName,
   });
 
   /// `0` = complete, `1` = pending, `2` = error, `3` = resolve_futures.
@@ -66,6 +67,9 @@ final class ProgressResult {
 
   /// JSON array of pending future call IDs (when tag == 3).
   final String? futureCallIdsJson;
+
+  /// Variable name being looked up (when tag == 5).
+  final String? variableName;
 }
 
 /// Abstract interface over the 17 native C functions.

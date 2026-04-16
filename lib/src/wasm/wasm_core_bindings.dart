@@ -272,8 +272,37 @@ class WasmCoreBindings implements MontyCoreBindings {
           pendingCallIds: progress.pendingCallIds ?? const [],
         );
 
+      case 'name_lookup':
+        return CoreProgressResult(
+          state: 'name_lookup',
+          variableName: progress.variableName ?? '',
+        );
+
       default:
         throw StateError('Unknown progress state: ${progress.state}');
     }
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeNameLookupValue(
+      valueJson,
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeNameLookupUndefined(
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
   }
 }

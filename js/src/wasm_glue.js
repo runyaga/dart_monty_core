@@ -198,6 +198,7 @@ export const PROGRESS_PENDING = 1;
 export const PROGRESS_ERROR = 2;
 export const PROGRESS_RESOLVE_FUTURES = 3;
 export const PROGRESS_OS_CALL = 4;
+export const PROGRESS_NAME_LOOKUP = 5;
 
 // ResultTag enum
 export const RESULT_OK = 0;

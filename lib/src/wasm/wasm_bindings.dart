@@ -78,6 +78,7 @@ final class WasmProgressResult {
     this.lineNumber,
     this.columnNumber,
     this.sourceCode,
+    this.variableName,
   });
 
   /// Whether the operation succeeded.
@@ -134,6 +135,9 @@ final class WasmProgressResult {
 
   /// Source code at the error location (when [ok] is false).
   final String? sourceCode;
+
+  /// Variable name being looked up (when state is `'name_lookup'`).
+  final String? variableName;
 }
 
 /// Result of [WasmBindings.discover].
@@ -335,4 +339,19 @@ abstract class WasmBindings {
     String errorJson, {
     int? sessionId,
   });
+
+  /// Resumes a name lookup by providing [valueJson] for the looked-up name.
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmProgressResult> resumeNameLookupValue(
+    String valueJson, {
+    int? sessionId,
+  });
+
+  /// Resumes a name lookup by indicating the name is undefined.
+  ///
+  /// The engine raises NameError. When [sessionId] is non-null, routes to
+  /// that specific session instead of the default.
+  Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId});
 }

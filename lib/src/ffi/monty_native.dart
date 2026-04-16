@@ -201,6 +201,7 @@ class MontyNative extends MontyPlatform
       case MontyPending():
       case MontyOsCall():
       case MontyResolveFutures():
+      case MontyNameLookup():
         markActive();
 
         return progress;

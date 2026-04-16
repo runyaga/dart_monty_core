@@ -69,6 +69,20 @@ abstract class MontyPlatform {
     throw UnimplementedError('resumeWithException() has not been implemented.');
   }
 
+  /// Resumes a name lookup by providing [value] for [name].
+  Future<MontyProgress> resumeNameLookup(String name, Object? value) {
+    throw UnimplementedError('resumeNameLookup() has not been implemented.');
+  }
+
+  /// Resumes a name lookup by indicating [name] is undefined.
+  ///
+  /// The engine raises NameError.
+  Future<MontyProgress> resumeNameLookupUndefined(String name) {
+    throw UnimplementedError(
+      'resumeNameLookupUndefined() has not been implemented.',
+    );
+  }
+
   /// Releases resources held by this interpreter instance.
   Future<void> dispose() {
     throw UnimplementedError('dispose() has not been implemented.');

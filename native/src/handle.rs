@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use monty::{
     ExtFunctionResult, FunctionCall, LimitedTracker, MontyException, MontyObject, MontyRun,
-    NameLookupResult, OsCall, PrintWriter, ResolveFutures, ResourceLimits, RunProgress,
+    NameLookup, NameLookupResult, OsCall, PrintWriter, ResolveFutures, ResourceLimits, RunProgress,
 };
 use serde_json::Value;
 
@@ -49,6 +49,7 @@ pub enum MontyProgressTag {
     Error = 2,
     ResolveFutures = 3,
     OsCall = 4,
+    NameLookup = 5,
 }
 
 /// Metadata captured when paused at a `FunctionCall`.
@@ -84,6 +85,10 @@ enum HandleState {
     Futures {
         futures: ResolveFutures<Tracker>,
         call_ids_json: String,
+    },
+    NameLookup {
+        lookup: NameLookup<Tracker>,
+        name: String,
     },
     Complete {
         result_json: String,
@@ -385,6 +390,56 @@ impl MontyHandle {
         }
     }
 
+    /// Get the variable name being looked up (only valid in NameLookup state).
+    pub fn name_lookup_name(&self) -> Option<&str> {
+        match &self.state {
+            HandleState::NameLookup { name, .. } => Some(name.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Resume from NameLookup by supplying a value (JSON string).
+    pub fn resume_name_lookup_value(
+        &mut self,
+        value_json: &str,
+    ) -> (MontyProgressTag, Option<String>) {
+        let val: Value = match serde_json::from_str(value_json) {
+            Ok(v) => v,
+            Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
+        };
+        let obj = json_to_monty_object(&val);
+        let state = std::mem::replace(&mut self.state, HandleState::Consumed);
+        match state {
+            HandleState::NameLookup { lookup, .. } => {
+                self.run_snapshot_op(|print| lookup.resume(NameLookupResult::Value(obj), print))
+            }
+            other => {
+                self.state = other;
+                (
+                    MontyProgressTag::Error,
+                    Some("handle not in NameLookup state".into()),
+                )
+            }
+        }
+    }
+
+    /// Resume from NameLookup with Undefined (will raise NameError in Python).
+    pub fn resume_name_lookup_undefined(&mut self) -> (MontyProgressTag, Option<String>) {
+        let state = std::mem::replace(&mut self.state, HandleState::Consumed);
+        match state {
+            HandleState::NameLookup { lookup, .. } => {
+                self.run_snapshot_op(|print| lookup.resume(NameLookupResult::Undefined, print))
+            }
+            other => {
+                self.state = other;
+                (
+                    MontyProgressTag::Error,
+                    Some("handle not in NameLookup state".into()),
+                )
+            }
+        }
+    }
+
     /// Get the OS function name (only valid in OsCall state).
     ///
     /// Returns the Python-style name, e.g. `"Path.read_text"`, `"os.getenv"`.
@@ -552,25 +607,25 @@ impl MontyHandle {
                 }
                 RunProgress::NameLookup(lookup) => {
                     let name = lookup.name.clone();
-                    let mut buf = String::new();
-                    let result = if self.ext_fn_names.contains(&name) {
-                        lookup.resume(
+                    if self.ext_fn_names.contains(&name) {
+                        // Known ext function: resolve inline as Function and continue.
+                        let mut buf = String::new();
+                        let result = lookup.resume(
                             NameLookupResult::Value(MontyObject::Function {
                                 name,
                                 docstring: None,
                             }),
                             PrintWriter::CollectString(&mut buf),
-                        )
+                        );
+                        self.print_output.push_str(&buf);
+                        match result {
+                            Ok(next) => progress = next,
+                            Err(exc) => return self.handle_exception(&exc),
+                        }
                     } else {
-                        lookup.resume(
-                            NameLookupResult::Undefined,
-                            PrintWriter::CollectString(&mut buf),
-                        )
-                    };
-                    self.print_output.push_str(&buf);
-                    match result {
-                        Ok(next) => progress = next,
-                        Err(exc) => return self.handle_exception(&exc),
+                        // Unknown name: surface to the host for resolution.
+                        self.state = HandleState::NameLookup { lookup, name };
+                        return (MontyProgressTag::NameLookup, None);
                     }
                 }
                 RunProgress::OsCall(call) => {

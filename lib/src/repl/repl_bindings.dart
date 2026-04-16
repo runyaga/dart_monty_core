@@ -30,6 +30,11 @@ abstract class ReplBindings {
   /// Resumes by raising an error in Python.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
 
+  /// Resumes a name lookup by indicating the name is undefined.
+  ///
+  /// The engine raises NameError.
+  Future<CoreProgressResult> resumeNameLookupUndefined();
+
   /// Disposes the REPL session.
   Future<void> dispose();
 }

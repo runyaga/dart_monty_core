@@ -60,6 +60,17 @@ const _unsupportedExtFns = {
   'async_call',
 };
 
+/// Values supplied for [MontyNameLookup] progress when the engine encounters
+/// an unregistered global name. Mirrors the oracle in the monty-datatest crate.
+const _nameConstants = <String, Object?>{
+  'CONST_INT': 42,
+  'CONST_STR': 'hello',
+  'CONST_FLOAT': 3.14,
+  'CONST_BOOL': true,
+  'CONST_LIST': [1, 2, 3],
+  'CONST_NONE': null,
+};
+
 /// Dispatches a supported [functionName] call to its Dart implementation.
 /// Returns the Dart value to resume with (passed to MontyPlatform.resume).
 Object? _dispatch(
@@ -774,6 +785,24 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
             break dispatchLoop;
           } on Object catch (_) {
             shouldSkip = true;
+            break dispatchLoop;
+          }
+
+        case MontyNameLookup(:final variableName):
+          try {
+            if (_nameConstants.containsKey(variableName)) {
+              progress = await platform.resumeNameLookup(
+                variableName,
+                _nameConstants[variableName],
+              );
+            } else {
+              progress = await platform.resumeNameLookupUndefined(variableName);
+            }
+          } on MontyScriptError catch (e) {
+            thrownExcType = e.excType;
+            break dispatchLoop;
+          } on MontyResourceError {
+            thrownExcType = 'MemoryLimitExceeded';
             break dispatchLoop;
           }
 

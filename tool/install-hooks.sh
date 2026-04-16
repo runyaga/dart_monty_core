@@ -6,11 +6,12 @@
 set -euo pipefail
 
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS_DIR="$PKG/.git/hooks"
+# git rev-parse --git-common-dir returns the shared .git dir even in a
+# worktree (where .git is a file, not a directory).
+HOOKS_DIR="$(git -C "$PKG" rev-parse --git-common-dir)/hooks"
 
 if [ ! -d "$HOOKS_DIR" ]; then
-  echo "ERROR: $HOOKS_DIR not found. Are you inside a git repo?"
-  exit 1
+  mkdir -p "$HOOKS_DIR"
 fi
 
 HOOK="$HOOKS_DIR/pre-commit"

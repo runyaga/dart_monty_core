@@ -40,6 +40,7 @@ typedef enum {
     MONTY_PROGRESS_ERROR           = 2,
     MONTY_PROGRESS_RESOLVE_FUTURES = 3,
     MONTY_PROGRESS_OS_CALL         = 4,
+    MONTY_PROGRESS_NAME_LOOKUP     = 5,
 } MontyProgressTag;
 
 /* ------------------------------------------------------------------ */
@@ -271,6 +272,42 @@ char *monty_complete_result_json(const MontyHandle *handle);
 int monty_complete_is_error(const MontyHandle *handle);
 
 /* ------------------------------------------------------------------ */
+/* NameLookup accessors (valid after MONTY_PROGRESS_NAME_LOOKUP)      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Get the name the engine is looking up.
+ * Only valid after monty_start/monty_resume returned MONTY_PROGRESS_NAME_LOOKUP.
+ *
+ * @return  Heap-allocated NUL-terminated name string, or NULL.
+ *          Caller frees with monty_string_free().
+ */
+char *monty_name_lookup_name(const MontyHandle *handle);
+
+/**
+ * Resume by providing a value for the looked-up name.
+ *
+ * @param handle      Handle in NAME_LOOKUP state.
+ * @param value_json  NUL-terminated JSON encoding of the value.
+ * @param out_error   Receives error message on failure. Caller frees.
+ * @return            MONTY_PROGRESS_COMPLETE, _PENDING, _NAME_LOOKUP, or _ERROR.
+ */
+MontyProgressTag monty_resume_name_lookup_value(MontyHandle *handle,
+                                                 const char *value_json,
+                                                 char **out_error);
+
+/**
+ * Resume by indicating the looked-up name is undefined.
+ * The engine will raise NameError.
+ *
+ * @param handle     Handle in NAME_LOOKUP state.
+ * @param out_error  Receives error message on failure. Caller frees.
+ * @return           MONTY_PROGRESS_COMPLETE, _ERROR, or _PENDING.
+ */
+MontyProgressTag monty_resume_name_lookup_undefined(MontyHandle *handle,
+                                                     char **out_error);
+
+/* ------------------------------------------------------------------ */
 /* Snapshots                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -428,3 +465,4 @@ void monty_bytes_free(uint8_t *ptr, size_t len);
 #endif
 
 #endif /* DART_MONTY_H */
+

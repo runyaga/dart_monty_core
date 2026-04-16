@@ -4,7 +4,7 @@ import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 
 /// GitHub repository for pre-built binary downloads.
-const _repo = 'runyaga/dart_monty';
+const _repo = 'runyaga/dart_monty_core';
 
 /// Reads the native library version from `NATIVE_LIB_VERSION`.
 ///

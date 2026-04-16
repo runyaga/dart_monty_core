@@ -153,6 +153,20 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) {
+    throw UnimplementedError(
+      'resumeNameLookupValue is not supported by the FFI backend',
+    );
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() {
+    throw UnimplementedError(
+      'resumeNameLookupUndefined is not supported by the FFI backend',
+    );
+  }
+
+  @override
   Future<Uint8List> snapshot() async {
     final handle = _requireHandle('snapshot');
 
@@ -242,6 +256,11 @@ class FfiCoreBindings implements MontyCoreBindings {
         return _translateResolveFutures(progress, handle);
       case 4:
         return _translateOsCall(progress, handle);
+      case 5:
+        return CoreProgressResult(
+          state: 'name_lookup',
+          variableName: progress.variableName ?? '',
+        );
       default:
         _freeHandle(handle);
         throw StateError('Unknown progress tag: ${progress.tag}');
