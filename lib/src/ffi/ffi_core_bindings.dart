@@ -304,6 +304,8 @@ class FfiCoreBindings implements MontyCoreBindings {
       case 4:
         return _translateOsCall(progress, handle);
       case 5:
+        _storeHandle(handle);
+
         return CoreProgressResult(
           state: 'name_lookup',
           variableName: progress.variableName ?? '',
