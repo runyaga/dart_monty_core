@@ -1,4 +1,4 @@
-import 'package:dart_monty_core/src/callbacks.dart';
+import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/monty_factory.dart';
 import 'package:dart_monty_core/src/monty_session.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
@@ -61,12 +61,12 @@ class Monty {
     String code, {
     MontyLimits? limits,
     String? scriptName,
-    Map<String, MontyCallback> callbacks = const {},
+    Map<String, MontyCallback> externals = const {},
   }) => _session.run(
     code,
     limits: limits,
     scriptName: scriptName,
-    callbacks: callbacks,
+    externals: externals,
   );
 
   /// Clears all persisted state.

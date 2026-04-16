@@ -348,6 +348,81 @@ rm "$LOG"
 
 ---
 
+## Running Rust checks
+
+All four checks run inside `native/`:
+
+```bash
+cd native
+
+# Format
+cargo fmt --check
+
+# Lints (all clippy pedantic + extras; -D warnings = fail on any warning)
+cargo clippy -- -D warnings
+
+# Dependency audit (licenses, advisories, bans)
+cargo deny check
+
+# Tests with line-coverage gate (≥60% required; src/bin/ excluded from measurement)
+cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/'
+```
+
+`cargo llvm-cov` requires the `llvm-tools-preview` component and `cargo-llvm-cov`:
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov
+```
+
+There are currently no `#[test]` functions in `native/src/` — coverage comes
+entirely from the oracle binary exercising the library. If line coverage drops
+below 60% CI will fail.
+
+---
+
+## Running Dart static checks
+
+```bash
+dart pub get
+
+# Static analysis (fatal on infos)
+dart analyze --fatal-infos
+
+# Format check
+dart format --line-length=80 --set-exit-if-changed lib/ test/ hook/ tool/
+```
+
+---
+
+## Running Dart unit tests (JIT + AOT)
+
+There are **no unit tests yet** — only integration tests. Both commands below
+exit 79 (no tests found), which is tolerated by CI until unit tests are added.
+
+```bash
+# JIT
+dart test --exclude-tags=ffi,wasm,integration,ladder --coverage=coverage
+
+# AOT (kernel)
+dart test --exclude-tags=ffi,wasm,integration,ladder --platform vm --compiler=kernel
+```
+
+---
+
+## Running DCM (code metrics + rules)
+
+DCM requires a licence key; it runs in CI only. For local use install DCM and
+substitute your own credentials:
+
+```bash
+dart pub get
+dcm calculate-metrics --ci-key=<KEY> --email=<EMAIL> lib/
+dcm analyze          --ci-key=<KEY> --email=<EMAIL> lib/
+```
+
+---
+
 ## Running demos
 
 ### Web REPL (browser)
@@ -386,11 +461,12 @@ URL: **https://runyaga.github.io/dart_monty_core/**
 changes (path filter)
   │
   ├─► rust ──────────────────────────────────────► build-wasm ──► test-wasm
-  │   (fmt + clippy + deny + coverage ≥60%)       (wasm32-wasip1)  (dart2js + dart2wasm
+  │   (fmt + clippy + deny + llvm-cov ≥60%)       (wasm32-wasip1)  (dart2js + dart2wasm
   │                                                                  464 fixtures each)
-  ├─► ffigen ─► test (analyze + unit + coverage)
-  │             test-ffi (464 FFI fixtures)
-  │             dcm (code metrics)
+  ├─► ffigen ─► test     (analyze + fmt + unit JIT + coverage + patch-coverage gate 70%)
+  │          ├─ test-aot (unit AOT/kernel — exit 79 tolerated until unit tests exist)
+  │          ├─ test-ffi (464 FFI fixtures)
+  │          └─ dcm      (calculate-metrics + analyze rules)
   │
   └─► deploy-pages (on main push)
       (cargo + npm + dart compile → GitHub Pages)

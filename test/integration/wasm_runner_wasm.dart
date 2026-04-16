@@ -205,7 +205,7 @@ Object? _montyValueToDart(MontyValue v) => switch (v) {
   MontyString(:final value) => value,
   MontyBool(:final value) => value,
   MontyList(:final items) => items.map(_montyValueToDart).toList(),
-  _ => null, // MontyNull and any other type → null
+  _ => null, // MontyNone and any other type → null
 };
 
 // ---------------------------------------------------------------------------
@@ -524,7 +524,7 @@ String _montyTypeName(MontyValue v) => switch (v) {
   MontyBytes() => 'bytes',
   MontyList() => 'list',
   MontyDict() => 'dict',
-  MontyNull() => 'NoneType',
+  MontyNone() => 'NoneType',
   _ => 'object',
 };
 
@@ -569,7 +569,7 @@ Object? _osDispatch(
       return {'__type': 'date', 'year': 2024, 'month': 1, 'day': 15};
 
     case 'datetime.now':
-      final tz = args.isNotEmpty ? args.first : const MontyNull();
+      final tz = args.isNotEmpty ? args.first : const MontyNone();
       if (tz is MontyTimeZone) {
         return {
           '__type': 'datetime',
@@ -585,7 +585,7 @@ Object? _osDispatch(
         };
       }
 
-      // Naive datetime (no tz arg, or MontyNull)
+      // Naive datetime (no tz arg, or MontyNone)
       return {
         '__type': 'datetime',
         'year': 2024,
@@ -603,7 +603,7 @@ Object? _osDispatch(
     case 'os.getenv':
       final key = (args.first as MontyString).value;
       if (_virtualEnv.containsKey(key)) return _virtualEnv[key];
-      final def = args.length > 1 ? args[1] : const MontyNull();
+      final def = args.length > 1 ? args[1] : const MontyNone();
 
       return def.dartValue;
 

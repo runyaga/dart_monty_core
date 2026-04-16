@@ -30,7 +30,7 @@ sealed class MontyValue {
   /// - Collections: List (→ [MontyList]), Map without `__type` (→ [MontyDict])
   /// - Typed wrappers: Map with `__type` key dispatches to the appropriate type
   factory MontyValue.fromJson(Object? json) => switch (json) {
-    null => const MontyNull(),
+    null => const MontyNone(),
     final bool b => MontyBool(b),
     final int n => MontyInt(n),
     final double d => MontyFloat(d),
@@ -52,7 +52,7 @@ sealed class MontyValue {
   /// - `Map` (values recursively converted, keys coerced to String)
   factory MontyValue.fromDart(Object? value) => switch (value) {
     final MontyValue mv => mv,
-    null => const MontyNull(),
+    null => const MontyNone(),
     final bool b => MontyBool(b),
     final int n => MontyInt(n),
     final double d => MontyFloat(d),

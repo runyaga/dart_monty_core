@@ -6,9 +6,9 @@ part of 'monty_value.dart';
 
 /// Represents a Python `None` value.
 @immutable
-final class MontyNull extends MontyValue {
-  /// Creates a [MontyNull].
-  const MontyNull();
+final class MontyNone extends MontyValue {
+  /// Creates a [MontyNone].
+  const MontyNone();
 
   @override
   Null toJson() => null;
@@ -17,13 +17,13 @@ final class MontyNull extends MontyValue {
   Null get dartValue => null;
 
   @override
-  bool operator ==(Object other) => other is MontyNull;
+  bool operator ==(Object other) => other is MontyNone;
 
   @override
   int get hashCode => null.hashCode;
 
   @override
-  String toString() => 'MontyNull()';
+  String toString() => 'MontyNone()';
 }
 
 /// Represents a Python `bool` value.

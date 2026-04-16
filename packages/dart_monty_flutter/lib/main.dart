@@ -68,7 +68,7 @@ class _MontyReplPageState extends State<MontyReplPage> {
         }
         if (result.error != null) {
           _lines.add(_ReplLine(result.error!.message, _LineKind.error));
-        } else if (result.value is! MontyNull) {
+        } else if (result.value is! MontyNone) {
           _lines.add(_ReplLine('=> ${result.value}', _LineKind.output));
         }
       });

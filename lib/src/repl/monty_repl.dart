@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:dart_monty_core/src/callbacks.dart';
+import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
@@ -137,21 +137,21 @@ class MontyRepl {
   /// Feeds [code] and runs to completion.
   ///
   /// State (variables, functions, classes, heap objects) persists across
-  /// calls. If [callbacks] are provided, Python can call registered host
+  /// calls. If [externals] are provided, Python can call registered host
   /// functions; each call is dispatched and the result resumed automatically.
   ///
   /// If [code] raises a Python exception, the REPL survives and the error
   /// is returned in [MontyResult.error].
   Future<MontyResult> feed(
     String code, {
-    Map<String, MontyCallback> callbacks = const {},
+    Map<String, MontyCallback> externals = const {},
     OsCallHandler? osHandler,
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
 
-    if (callbacks.isEmpty && osHandler == null) {
-      // Fast path: no callbacks, use simple feedRun.
+    if (externals.isEmpty && osHandler == null) {
+      // Fast path: no externals, use simple feedRun.
       final r = await _bindings.feedRun(code);
       if (r.ok) {
         return MontyResult(
@@ -168,11 +168,11 @@ class MontyRepl {
       );
     }
 
-    // Iterative path: drive the start/resume loop, dispatching callbacks.
-    _bindings.setExtFns(callbacks.keys.toList());
+    // Iterative path: drive the start/resume loop, dispatching externals.
+    _bindings.setExtFns(externals.keys.toList());
     final initial = _translateProgress(await _bindings.feedStart(code));
 
-    return _driveLoop(initial, callbacks, osHandler);
+    return _driveLoop(initial, externals, osHandler);
   }
 
   // ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ class MontyRepl {
 
   Future<MontyResult> _driveLoop(
     MontyProgress initial,
-    Map<String, MontyCallback> callbacks,
+    Map<String, MontyCallback> externals,
     OsCallHandler? osHandler,
   ) async {
     var progress = initial;
@@ -257,7 +257,7 @@ class MontyRepl {
         case MontyComplete(:final result):
           return result;
         case MontyPending(:final functionName):
-          final cb = callbacks[functionName];
+          final cb = externals[functionName];
           if (cb == null) {
             progress = _translateProgress(
               await _bindings.resumeWithError(
