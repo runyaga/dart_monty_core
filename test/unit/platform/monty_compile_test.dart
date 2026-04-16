@@ -8,8 +8,40 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
+import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/mock_monty_platform.dart';
 import 'package:test/test.dart';
+
+// Throws [MontyScriptError] from compileCode with the given excType;
+// used to test SyntaxError promotion in BaseMontyPlatform.compileCode.
+final class _ThrowingBindings implements MontyCoreBindings {
+  _ThrowingBindings(this._excType);
+  final String _excType;
+
+  @override
+  Future<bool> init() async => true;
+
+  @override
+  Future<Uint8List> compileCode(String code) async => throw MontyScriptError(
+    '$_excType: stub error',
+    excType: _excType,
+  );
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+final class _StubPlatform extends BaseMontyPlatform {
+  _StubPlatform(MontyCoreBindings bindings) : super(bindings: bindings);
+
+  @override
+  String get backendName => '_StubPlatform';
+}
 
 const _zeroUsage = MontyResourceUsage(
   memoryBytesUsed: 0,
@@ -139,6 +171,33 @@ void main() {
       // The bytes encode the code — verify round-trip through JSON.
       final decoded = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
       expect(decoded['code'], '42');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  group('BaseMontyPlatform.compileCode error promotion', () {
+    test('SyntaxError is promoted to MontySyntaxError', () async {
+      final platform = _StubPlatform(_ThrowingBindings('SyntaxError'));
+      addTearDown(platform.dispose);
+      await expectLater(
+        platform.compileCode('bad code'),
+        throwsA(isA<MontySyntaxError>()),
+      );
+    });
+
+    test('non-SyntaxError is rethrown as MontyScriptError', () async {
+      final platform = _StubPlatform(_ThrowingBindings('ValueError'));
+      addTearDown(platform.dispose);
+      await expectLater(
+        platform.compileCode('bad code'),
+        throwsA(
+          isA<MontyScriptError>().having(
+            (e) => e is MontySyntaxError,
+            'is not MontySyntaxError',
+            isFalse,
+          ),
+        ),
+      );
     });
   });
 }
