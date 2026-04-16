@@ -8,17 +8,31 @@ import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 /// WASM implementation of [ReplBindings].
 ///
 /// Manages a persistent REPL session inside a Web Worker via
-/// [WasmBindings].
+/// [WasmBindings]. Each instance generates a unique [_replId] so that
+/// multiple concurrent [WasmReplBindings] instances can coexist within the
+/// same Worker without clobbering each other's Rust heap handle.
 class WasmReplBindings implements ReplBindings {
   /// Creates [WasmReplBindings] backed by [bindings].
-  WasmReplBindings({required WasmBindings bindings}) : _bindings = bindings;
+  WasmReplBindings({required WasmBindings bindings})
+    : _bindings = bindings,
+      _replId = _nextReplId();
+
+  /// Monotonically increasing counter used to generate unique REPL IDs.
+  static int _counter = 0;
+
+  /// Generates a new unique REPL ID.
+  static String _nextReplId() => 'repl-${++_counter}';
 
   final WasmBindings _bindings;
+
+  /// Unique identifier for this REPL handle within the shared Worker.
+  final String _replId;
+
   bool _created = false;
 
   @override
   Future<void> create({String? scriptName}) async {
-    await _bindings.replCreate(scriptName: scriptName);
+    await _bindings.replCreate(scriptName: scriptName, replId: _replId);
     _created = true;
   }
 
@@ -27,7 +41,7 @@ class WasmReplBindings implements ReplBindings {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = await _bindings.replFeedRun(code);
+    final result = await _bindings.replFeedRun(code, replId: _replId);
 
     return _translateWasmRunResult(result);
   }
@@ -41,7 +55,7 @@ class WasmReplBindings implements ReplBindings {
   void setExtFns(List<String> names) {
     // Fire-and-forget — the Worker processes this synchronously.
     // ignore: discarded_futures
-    _bindings.replSetExtFns(names.join(','));
+    _bindings.replSetExtFns(names.join(','), replId: _replId);
   }
 
   @override
@@ -49,7 +63,7 @@ class WasmReplBindings implements ReplBindings {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = await _bindings.replFeedStart(code);
+    final result = await _bindings.replFeedStart(code, replId: _replId);
 
     return _translateWasmProgressResult(result);
   }
@@ -59,7 +73,7 @@ class WasmReplBindings implements ReplBindings {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = await _bindings.replResume(valueJson);
+    final result = await _bindings.replResume(valueJson, replId: _replId);
 
     return _translateWasmProgressResult(result);
   }
@@ -70,7 +84,10 @@ class WasmReplBindings implements ReplBindings {
       throw StateError('REPL not created. Call create() first.');
     }
     final errorJson = json.encode(errorMessage);
-    final result = await _bindings.replResumeWithError(errorJson);
+    final result = await _bindings.replResumeWithError(
+      errorJson,
+      replId: _replId,
+    );
 
     return _translateWasmProgressResult(result);
   }
@@ -89,7 +106,7 @@ class WasmReplBindings implements ReplBindings {
   @override
   Future<void> dispose() async {
     if (!_created) return;
-    await _bindings.replFree();
+    await _bindings.replFree(replId: _replId);
     _created = false;
   }
 
