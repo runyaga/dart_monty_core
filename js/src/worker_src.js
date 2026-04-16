@@ -88,18 +88,71 @@ function excTypeFromMsg(msg) {
 }
 
 // ---------------------------------------------------------------------------
+// Progress API vtables — typed accessors per handle kind
+// ---------------------------------------------------------------------------
+// MontyHandle* (session) and MontyReplHandle* (REPL) are distinct Rust types
+// with parallel but separate C exports. Passing the wrong handle type to a C
+// function is undefined behaviour — the struct layout differs. These vtables
+// make readProgress() handle-type-aware: non-REPL handlers pass
+// SESSION_PROGRESS, REPL handlers pass REPL_PROGRESS. Adding a new progress
+// tag requires only one change inside readProgress().
+//
+// The closures capture the module-level `wasm` variable by reference so they
+// always use the post-init value; they are safe to define before initWasm().
+
+const SESSION_PROGRESS = {
+  completeIsError:      (h) => wasm.monty_complete_is_error(h),
+  completeResultJson:   (h) => wasm.monty_complete_result_json(h),
+  pendingFnName:        (h) => wasm.monty_pending_fn_name(h),
+  pendingFnArgsJson:    (h) => wasm.monty_pending_fn_args_json(h),
+  pendingFnKwargsJson:  (h) => wasm.monty_pending_fn_kwargs_json(h),
+  pendingCallId:        (h) => wasm.monty_pending_call_id(h),
+  pendingMethodCall:    (h) => wasm.monty_pending_method_call(h),
+  pendingFutureCallIds: (h) => wasm.monty_pending_future_call_ids(h),
+  osCallFnName:         (h) => wasm.monty_os_call_fn_name(h),
+  osCallArgsJson:       (h) => wasm.monty_os_call_args_json(h),
+  osCallKwargsJson:     (h) => wasm.monty_os_call_kwargs_json(h),
+  osCallId:             (h) => wasm.monty_os_call_id(h),
+  nameLookupName:       (h) => wasm.monty_name_lookup_name(h),
+};
+
+const REPL_PROGRESS = {
+  completeIsError:      (h) => wasm.monty_repl_complete_is_error(h),
+  completeResultJson:   (h) => wasm.monty_repl_complete_result_json(h),
+  pendingFnName:        (h) => wasm.monty_repl_pending_fn_name(h),
+  pendingFnArgsJson:    (h) => wasm.monty_repl_pending_fn_args_json(h),
+  pendingFnKwargsJson:  (h) => wasm.monty_repl_pending_fn_kwargs_json(h),
+  pendingCallId:        (h) => wasm.monty_repl_pending_call_id(h),
+  pendingMethodCall:    (h) => wasm.monty_repl_pending_method_call(h),
+  pendingFutureCallIds: (h) => wasm.monty_repl_pending_future_call_ids(h),
+  osCallFnName:         (h) => wasm.monty_repl_os_call_fn_name(h),
+  osCallArgsJson:       (h) => wasm.monty_repl_os_call_args_json(h),
+  osCallKwargsJson:     (h) => wasm.monty_repl_os_call_kwargs_json(h),
+  osCallId:             (h) => wasm.monty_repl_os_call_id(h),
+  // REPL auto-resolves NameLookup internally (process_repl_progress loop);
+  // PROGRESS_NAME_LOOKUP never surfaces to JS for REPL handles.
+  nameLookupName:       null,
+};
+
+// ---------------------------------------------------------------------------
 // Progress reading (shared by start, resume, resumeAsFuture, resumeFutures)
 // ---------------------------------------------------------------------------
 
 /**
  * Read progress state from a handle after a C-ABI progress call.
+ *
+ * @param {number}  id      - Dart request ID to echo back.
+ * @param {number}  handle  - C handle pointer (MontyHandle* or MontyReplHandle*).
+ * @param {number}  tag     - PROGRESS_* constant returned by the C call.
+ * @param {string}  errMsg  - Error string from the out-error pointer, if any.
+ * @param {object}  api     - SESSION_PROGRESS or REPL_PROGRESS vtable.
  * @returns {Object} message payload to send back to main thread.
  */
-function readProgress(id, handle, tag, errMsg) {
+function readProgress(id, handle, tag, errMsg, api) {
   switch (tag) {
     case PROGRESS_COMPLETE: {
-      const isErr = wasm.monty_complete_is_error(handle);
-      const ptr = wasm.monty_complete_result_json(handle);
+      const isErr = api.completeIsError(handle);
+      const ptr = api.completeResultJson(handle);
       const json = readAndFreeCString(ptr);
       if (json) {
         const adapted = adaptResultForDart(json, isErr === 1);
@@ -116,17 +169,14 @@ function readProgress(id, handle, tag, errMsg) {
     }
 
     case PROGRESS_PENDING: {
-      const fnName = readAndFreeCString(wasm.monty_pending_fn_name(handle));
-      const argsJson = readAndFreeCString(wasm.monty_pending_fn_args_json(handle));
-      const kwargsJson = readAndFreeCString(wasm.monty_pending_fn_kwargs_json(handle));
-      const callId = wasm.monty_pending_call_id(handle);
-      const methodCall = wasm.monty_pending_method_call(handle);
+      const fnName = readAndFreeCString(api.pendingFnName(handle));
+      const argsJson = readAndFreeCString(api.pendingFnArgsJson(handle));
+      const kwargsJson = readAndFreeCString(api.pendingFnKwargsJson(handle));
+      const callId = api.pendingCallId(handle);
+      const methodCall = api.pendingMethodCall(handle);
 
       return {
-        type: 'result',
-        id,
-        ok: true,
-        state: 'pending',
+        type: 'result', id, ok: true, state: 'pending',
         functionName: fnName,
         args: argsJson ? JSON.parse(argsJson) : [],
         kwargs: kwargsJson ? JSON.parse(kwargsJson) : {},
@@ -136,27 +186,21 @@ function readProgress(id, handle, tag, errMsg) {
     }
 
     case PROGRESS_RESOLVE_FUTURES: {
-      const idsPtr = wasm.monty_pending_future_call_ids(handle);
+      const idsPtr = api.pendingFutureCallIds(handle);
       const idsJson = readAndFreeCString(idsPtr);
       return {
-        type: 'result',
-        id,
-        ok: true,
-        state: 'resolve_futures',
+        type: 'result', id, ok: true, state: 'resolve_futures',
         pendingCallIds: idsJson ? JSON.parse(idsJson) : [],
       };
     }
 
     case PROGRESS_OS_CALL: {
-      const fnName = readAndFreeCString(wasm.monty_os_call_fn_name(handle));
-      const argsJson = readAndFreeCString(wasm.monty_os_call_args_json(handle));
-      const kwargsJson = readAndFreeCString(wasm.monty_os_call_kwargs_json(handle));
-      const callId = wasm.monty_os_call_id(handle);
+      const fnName = readAndFreeCString(api.osCallFnName(handle));
+      const argsJson = readAndFreeCString(api.osCallArgsJson(handle));
+      const kwargsJson = readAndFreeCString(api.osCallKwargsJson(handle));
+      const callId = api.osCallId(handle);
       return {
-        type: 'result',
-        id,
-        ok: true,
-        state: 'os_call',
+        type: 'result', id, ok: true, state: 'os_call',
         functionName: fnName,
         args: argsJson ? JSON.parse(argsJson) : [],
         kwargs: kwargsJson ? JSON.parse(kwargsJson) : {},
@@ -165,13 +209,18 @@ function readProgress(id, handle, tag, errMsg) {
     }
 
     case PROGRESS_NAME_LOOKUP: {
-      const namePtr = wasm.monty_name_lookup_name(handle);
+      if (!api.nameLookupName) {
+        // REPL auto-resolves NameLookup internally — this tag should never reach JS.
+        return {
+          type: 'result', id, ok: false,
+          error: 'Unexpected PROGRESS_NAME_LOOKUP for REPL handle',
+          errorType: 'InternalError',
+        };
+      }
+      const namePtr = api.nameLookupName(handle);
       const variableName = readAndFreeCString(namePtr);
       return {
-        type: 'result',
-        id,
-        ok: true,
-        state: 'name_lookup',
+        type: 'result', id, ok: true, state: 'name_lookup',
         variableName,
       };
     }
@@ -180,8 +229,8 @@ function readProgress(id, handle, tag, errMsg) {
       // Python runtime exceptions: handle_exception() sets state to Complete
       // (is_error=true) before returning PROGRESS_ERROR. Read the full result
       // JSON so exc_type, traceback, etc. are available to Dart.
-      const isErrState = wasm.monty_complete_is_error(handle);
-      const errPtr2 = wasm.monty_complete_result_json(handle);
+      const isErrState = api.completeIsError(handle);
+      const errPtr2 = api.completeResultJson(handle);
       const errJson = readAndFreeCString(errPtr2);
       if (errJson && isErrState === 1) {
         const adapted = adaptResultForDart(errJson, true);
@@ -189,9 +238,7 @@ function readProgress(id, handle, tag, errMsg) {
       }
       // Fallback for internal Rust errors (no complete JSON available).
       return {
-        type: 'result',
-        id,
-        ok: false,
+        type: 'result', id, ok: false,
         error: errMsg || 'Unknown error',
         errorType: 'MontyException',
         excType: excTypeFromMsg(errMsg),
@@ -200,9 +247,7 @@ function readProgress(id, handle, tag, errMsg) {
 
     default:
       return {
-        type: 'result',
-        id,
-        ok: false,
+        type: 'result', id, ok: false,
         error: `Unknown progress tag: ${tag}`,
         errorType: 'InternalError',
       };
@@ -379,7 +424,7 @@ function handleStart(id, code, extFns, limits, scriptName) {
 
   let msg;
   try {
-    msg = readProgress(id, handle, tag, errMsg);
+    msg = readProgress(id, handle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     activeHandle = null;
     wasm.monty_free(handle);
@@ -430,7 +475,7 @@ function handleResume(id, value) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -481,7 +526,7 @@ function handleResumeWithError(id, errorMessage) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -536,7 +581,7 @@ function handleResumeWithException(id, excType, errorMessage) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -581,7 +626,7 @@ function handleResumeAsFuture(id) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -636,7 +681,7 @@ function handleResolveFutures(id, resultsJson, errorsJson) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -1016,7 +1061,7 @@ function handleStartPrecompiled(id, dataBase64, limits, scriptName) {
 
   let msg;
   try {
-    msg = readProgress(id, handle, tag, errMsg);
+    msg = readProgress(id, handle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     activeHandle = null;
     wasm.monty_free(handle);
@@ -1067,7 +1112,7 @@ function handleResumeNameLookupValue(id, valueJson) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -1112,7 +1157,7 @@ function handleResumeNameLookupUndefined(id) {
 
   let msg;
   try {
-    msg = readProgress(id, activeHandle, tag, errMsg);
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
   } catch (e) {
     wasm.monty_free(activeHandle);
     activeHandle = null;
@@ -1232,7 +1277,7 @@ function handleReplFeedStart(id, replId, code) {
     const tag = wasm.monty_repl_feed_start(handle, cCode.ptr, outError.ptr);
     const errPtr = outError.read();
     const errMsg = readAndFreeCString(errPtr);
-    self.postMessage(readProgress(id, handle, tag, errMsg));
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
   } finally {
     if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
     if (outError) outError.free();
@@ -1271,7 +1316,7 @@ function handleReplResume(id, replId, value) {
     const tag = wasm.monty_repl_resume(handle, cVal.ptr, outError.ptr);
     const errPtr = outError.read();
     const errMsg = readAndFreeCString(errPtr);
-    self.postMessage(readProgress(id, handle, tag, errMsg));
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
   } finally {
     if (cVal) wasm.monty_dealloc(cVal.ptr, cVal.size);
     if (outError) outError.free();
@@ -1293,7 +1338,7 @@ function handleReplResumeWithError(id, replId, errorMessage) {
     const tag = wasm.monty_repl_resume_with_error(handle, cErr.ptr, outError.ptr);
     const errPtr = outError.read();
     const errMsg = readAndFreeCString(errPtr);
-    self.postMessage(readProgress(id, handle, tag, errMsg));
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
   } finally {
     if (cErr) wasm.monty_dealloc(cErr.ptr, cErr.size);
     if (outError) outError.free();
