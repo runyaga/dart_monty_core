@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:dart_monty_core/src/callbacks.dart';
+import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/code_capture.dart' as code_capture;
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
@@ -90,7 +90,7 @@ const _zeroUsage = MontyResourceUsage(
 /// Python globals between executions. Only JSON-serializable values persist
 /// (int, float, str, bool, list, dict, None).
 ///
-/// Register Dart callbacks with `callbacks` to let Python call host functions.
+/// Register Dart callbacks with `externals` to let Python call host functions.
 /// OS calls (pathlib, os.getenv, datetime) are handled by `osHandler`; if
 /// none is provided, OS calls raise a Python exception.
 ///
@@ -127,18 +127,18 @@ class MontySession {
 
   /// Executes [code] with state restored from previous calls.
   ///
-  /// [callbacks] maps Python-callable function names to Dart handlers.
+  /// [externals] maps Python-callable function names to Dart handlers.
   /// Any Python call to a registered name is dispatched here; unregistered
   /// names raise a Python exception.
   Future<MontyResult> run(
     String code, {
     MontyLimits? limits,
     String? scriptName,
-    Map<String, MontyCallback> callbacks = const {},
+    Map<String, MontyCallback> externals = const {},
   }) async {
     _checkNotDisposed();
     final wrapped = _wrapSessionCode(code, _state.keys);
-    final extFns = [_restoreStateFn, _persistStateFn, ...callbacks.keys];
+    final extFns = [_restoreStateFn, _persistStateFn, ...externals.keys];
     final progress = await _safeCall(
       () => _platform.start(
         wrapped,
@@ -148,7 +148,7 @@ class MontySession {
       ),
     );
 
-    return _dispatchLoop(progress, callbacks);
+    return _dispatchLoop(progress, externals);
   }
 
   /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
@@ -219,7 +219,7 @@ class MontySession {
 
   Future<MontyResult> _dispatchLoop(
     MontyProgress initial,
-    Map<String, MontyCallback> callbacks,
+    Map<String, MontyCallback> externals,
   ) async {
     var progress = initial;
     while (true) {
@@ -232,7 +232,7 @@ class MontySession {
         case MontyComplete(:final result):
           return result;
         case MontyPending(:final functionName):
-          final cb = callbacks[functionName];
+          final cb = externals[functionName];
           if (cb == null) {
             progress = await _safeCall(
               () => _platform.resumeWithError(
@@ -318,7 +318,7 @@ class MontySession {
     } on MontyScriptError catch (e) {
       return MontyComplete(
         result: MontyResult(
-          value: const MontyNull(),
+          value: const MontyNone(),
           error: e.exception,
           usage: _zeroUsage,
         ),
@@ -326,7 +326,7 @@ class MontySession {
     } on MontyError catch (e) {
       return MontyComplete(
         result: MontyResult(
-          value: const MontyNull(),
+          value: const MontyNone(),
           error: MontyException(message: e.message),
           usage: _zeroUsage,
         ),

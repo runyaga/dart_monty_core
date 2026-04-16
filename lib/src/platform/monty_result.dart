@@ -36,13 +36,13 @@ final class MontyResult {
   /// The return value from the Python execution.
   ///
   /// Python always produces a value — when a script returns `None` this field
-  /// holds [MontyNull] rather than a Dart `null`. Use [MontyNull.dartValue]
+  /// holds [MontyNone] rather than a Dart `null`. Use [MontyNone.dartValue]
   /// (which returns `null`) if you need the raw Dart representation.
   ///
   /// Use pattern matching to access typed values:
   /// ```dart
   /// switch (result.value) {
-  ///   case MontyNull(): // Python returned None
+  ///   case MontyNone(): // Python returned None
   ///   case MontyInt(:final value): print(value);
   ///   case MontyString(:final value): print(value);
   ///   case MontyDate(:final year, :final month, :final day): ...

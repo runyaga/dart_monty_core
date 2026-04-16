@@ -14,7 +14,7 @@
 ///
 /// // Stateful session with callbacks
 /// final session = MontySession(platform: platform);
-/// await session.run('x = 42', callbacks: {
+/// await session.run('x = 42', externals: {
 ///   'my_fn': (args) async => 'hello',
 /// });
 ///
@@ -27,7 +27,7 @@
 /// ```
 library;
 
-export 'src/callbacks.dart';
+export 'src/externals.dart';
 export 'src/monty.dart';
 export 'src/monty_factory.dart';
 export 'src/monty_session.dart';

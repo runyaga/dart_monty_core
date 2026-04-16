@@ -46,7 +46,7 @@ void main() async {
 
       if (result.error != null) {
         write(result.error!.message, className: 'error-line');
-      } else if (result.value is! MontyNull) {
+      } else if (result.value is! MontyNone) {
         write('=> ${result.value}', className: 'output-line');
       }
     } on Object catch (e) {
