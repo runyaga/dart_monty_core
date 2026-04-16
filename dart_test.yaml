@@ -1,9 +1,15 @@
 tags:
+  unit:
+    # No skip — unit tests run by default with plain `dart test`.
   integration:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=integration"
   ffi:
     skip: "FFI integration tests. Run: dart test -p vm --run-skipped --tags=ffi"
+  ffi-unit:
+    skip: "FFI unit tests (require native dylib). Run: dart test -p vm --run-skipped --tags=ffi-unit"
   wasm:
     skip: "WASM integration tests. Run: dart test -p chrome --run-skipped --tags=wasm"
+  wasm-unit:
+    skip: "WASM unit tests (require Chrome). Run: dart test -p chrome --run-skipped --tags=wasm-unit"
   ladder:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=ladder"
