@@ -29,7 +29,10 @@ void main() async {
 
   Future<void> execute() async {
     final code = input.value.trim();
-    if (code.isEmpty) return;
+    if (code.isEmpty) {
+      input.focus();
+      return;
+    }
 
     input.value = '';
     write('>>> $code', className: 'input-line');
@@ -49,6 +52,7 @@ void main() async {
     } on Object catch (e) {
       write('Error: $e', className: 'error-line');
     }
+    input.focus();
   }
 
   runButton.onclick = (web.MouseEvent e) {

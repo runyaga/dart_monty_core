@@ -73,6 +73,28 @@ jobs:
         run: |
           cd packages/dart_monty_flutter
           flutter create --platforms web .
+
+          # Copy WASM assets so MontyWasm can load the worker at runtime
+          cp ../../assets/dart_monty_bridge.js   web/
+          cp ../../assets/dart_monty_worker.js   web/
+          cp ../../assets/dart_monty_native.wasm web/
+          mkdir -p web/@pydantic/monty-wasm32-wasi
+          cp ../../js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
+             web/@pydantic/monty-wasm32-wasi/
+
+          # Inject dart_monty_bridge.js into the Flutter bootstrap page so that
+          # window.DartMontyBridge exists before any Dart code runs.
+          python3 -c "
+          import re
+          with open('web/index.html') as f: html = f.read()
+          html = re.sub(
+            r'(<script src=\"flutter_bootstrap\.js\")',
+            '<script src=\"dart_monty_bridge.js\"></script>\n  \g<1>',
+            html
+          )
+          with open('web/index.html', 'w') as f: f.write(html)
+          "
+
           flutter pub get
           flutter build web --base-href /dart_monty_core/flutter/
 

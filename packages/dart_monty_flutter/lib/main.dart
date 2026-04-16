@@ -36,6 +36,7 @@ class _MontyReplPageState extends State<MontyReplPage> {
   final MontyRepl _repl = MontyRepl();
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
   final List<_ReplLine> _lines = [
     const _ReplLine('Monty REPL initialized.', _LineKind.system),
   ];
@@ -45,6 +46,7 @@ class _MontyReplPageState extends State<MontyReplPage> {
     _repl.dispose();
     _controller.dispose();
     _scrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -84,6 +86,7 @@ class _MontyReplPageState extends State<MontyReplPage> {
           curve: Curves.easeOut,
         );
       }
+      _focusNode.requestFocus();
     });
   }
 
@@ -147,6 +150,7 @@ class _MontyReplPageState extends State<MontyReplPage> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
+                    focusNode: _focusNode,
                     style: const TextStyle(
                       color: Color(0xFFCCCCCC),
                       fontFamily: 'monospace',

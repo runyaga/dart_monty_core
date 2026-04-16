@@ -49,18 +49,18 @@
 
     .cards {
       display: flex;
-      gap: 1.5rem;
+      gap: 1.25rem;
       flex-wrap: wrap;
       justify-content: center;
-      max-width: 700px;
+      max-width: 900px;
     }
 
     .card {
       background: #252526;
       border: 1px solid #333;
       border-radius: 8px;
-      padding: 1.75rem 2rem;
-      width: 280px;
+      padding: 1.5rem 1.75rem;
+      width: 260px;
       text-decoration: none;
       color: inherit;
       transition: border-color 0.15s, transform 0.1s;
@@ -85,18 +85,19 @@
       width: fit-content;
     }
 
-    .badge-dart { background: #007acc; color: #fff; }
-    .badge-flutter { background: #0553b1; color: #fff; }
+    .badge-dart2js  { background: #007acc; color: #fff; }
+    .badge-dart2wasm { background: #4ec9b0; color: #1e1e1e; }
+    .badge-flutter  { background: #0553b1; color: #fff; }
 
     .card-title {
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 600;
       color: #e8e8e8;
       font-family: 'Consolas', 'Courier New', monospace;
     }
 
     .card-desc {
-      font-size: 0.875rem;
+      font-size: 0.85rem;
       color: #888;
       line-height: 1.5;
     }
@@ -127,14 +128,24 @@
   </p>
 
   <div class="cards">
-    <a href="repl/" class="card">
-      <span class="card-badge badge-dart">dart2js</span>
+    <a href="repl/index_js.html" class="card">
+      <span class="card-badge badge-dart2js">dart2js</span>
       <div class="card-title">Web REPL</div>
       <div class="card-desc">
-        Interactive Python REPL running entirely in the browser via a
-        WASM Worker. Built with pure Dart + <code>dart_monty_core</code>.
+        Interactive Python REPL in the browser. Compiled with dart2js,
+        backed by a WASM Worker running the Monty engine.
       </div>
-      <div class="card-note">No install required · dart2js build</div>
+      <div class="card-note">No install · works everywhere</div>
+    </a>
+
+    <a href="repl/index_wasm.html" class="card">
+      <span class="card-badge badge-dart2wasm">dart2wasm</span>
+      <div class="card-title">Web REPL</div>
+      <div class="card-desc">
+        Same REPL compiled with dart2wasm. Superior numeric precision
+        — correctly distinguishes <code>int</code> from <code>float</code>.
+      </div>
+      <div class="card-note">Requires COOP/COEP · local serve only</div>
     </a>
 
     <a href="flutter/" class="card">
@@ -142,7 +153,7 @@
       <div class="card-title">Flutter REPL</div>
       <div class="card-desc">
         The same Monty REPL as a Flutter web app. Dark Material UI,
-        scrollable output panel, persistent interpreter state.
+        scrollable output, persistent interpreter state.
       </div>
       <div class="card-note">Flutter web build · WASM backend</div>
     </a>
