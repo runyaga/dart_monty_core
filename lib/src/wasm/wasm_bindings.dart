@@ -326,23 +326,34 @@ abstract class WasmBindings {
 
   /// Creates a persistent REPL session in the Worker.
   ///
-  /// When [sessionId] is non-null, routes to that specific session instead of
-  /// the default.
-  Future<void> replCreate({String? scriptName, int? sessionId});
-
-  /// Frees the REPL session in the Worker.
+  /// [replId] uniquely identifies this REPL handle within the shared Worker so
+  /// that multiple concurrent REPL instances do not clobber each other.
   ///
   /// When [sessionId] is non-null, routes to that specific session instead of
   /// the default.
-  Future<void> replFree({int? sessionId});
+  Future<void> replCreate({String? scriptName, int? sessionId, String? replId});
+
+  /// Frees the REPL session in the Worker.
+  ///
+  /// [replId] must match the value passed to [replCreate].
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<void> replFree({int? sessionId, String? replId});
 
   /// Feeds a Python snippet to the REPL and runs to completion.
   ///
   /// The REPL session survives -- state persists for subsequent calls.
   ///
+  /// [replId] must match the value passed to [replCreate].
+  ///
   /// When [sessionId] is non-null, routes to that specific session instead of
   /// the default.
-  Future<WasmRunResult> replFeedRun(String code, {int? sessionId});
+  Future<WasmRunResult> replFeedRun(
+    String code, {
+    int? sessionId,
+    String? replId,
+  });
 
   /// Detects whether a source fragment is complete or needs more input.
   ///
@@ -354,29 +365,50 @@ abstract class WasmBindings {
 
   /// Registers external function names for REPL name resolution.
   ///
+  /// [replId] must match the value passed to [replCreate].
+  ///
   /// When [sessionId] is non-null, routes to that specific session instead of
   /// the default.
-  Future<void> replSetExtFns(String extFns, {int? sessionId});
+  Future<void> replSetExtFns(
+    String extFns, {
+    int? sessionId,
+    String? replId,
+  });
 
   /// Starts iterative REPL execution. Pauses at external function calls.
   ///
-  /// When [sessionId] is non-null, routes to that specific session instead of
-  /// the default.
-  Future<WasmProgressResult> replFeedStart(String code, {int? sessionId});
-
-  /// Resumes REPL execution with a JSON-encoded return value.
+  /// [replId] must match the value passed to [replCreate].
   ///
   /// When [sessionId] is non-null, routes to that specific session instead of
   /// the default.
-  Future<WasmProgressResult> replResume(String valueJson, {int? sessionId});
+  Future<WasmProgressResult> replFeedStart(
+    String code, {
+    int? sessionId,
+    String? replId,
+  });
+
+  /// Resumes REPL execution with a JSON-encoded return value.
+  ///
+  /// [replId] must match the value passed to [replCreate].
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmProgressResult> replResume(
+    String valueJson, {
+    int? sessionId,
+    String? replId,
+  });
 
   /// Resumes REPL execution with an error.
+  ///
+  /// [replId] must match the value passed to [replCreate].
   ///
   /// When [sessionId] is non-null, routes to that specific session instead of
   /// the default.
   Future<WasmProgressResult> replResumeWithError(
     String errorJson, {
     int? sessionId,
+    String? replId,
   });
 
   /// Resumes a name lookup by providing [valueJson] for the looked-up name.

@@ -117,16 +117,21 @@ external JSPromise<JSString> _jsDispose([JSNumber? sessionId]);
 external void _jsDisposeSession(JSNumber sessionId);
 
 @JS('DartMontyBridge.replCreate')
-external JSPromise<JSString> _jsReplCreate([
+external JSPromise<JSString> _jsReplCreate(
+  JSString replId, [
   JSString? scriptName,
   JSNumber? sessionId,
 ]);
 
-@JS('DartMontyBridge.replFree')
-external JSPromise<JSString> _jsReplFree([JSNumber? sessionId]);
+@JS('DartMontyBridge.replDispose')
+external JSPromise<JSString> _jsReplDispose(
+  JSString replId, [
+  JSNumber? sessionId,
+]);
 
 @JS('DartMontyBridge.replFeedRun')
 external JSPromise<JSString> _jsReplFeedRun(
+  JSString replId,
   JSString code, [
   JSNumber? sessionId,
 ]);
@@ -139,24 +144,28 @@ external JSPromise<JSString> _jsReplDetectContinuation(
 
 @JS('DartMontyBridge.replSetExtFns')
 external JSPromise<JSString> _jsReplSetExtFns(
+  JSString replId,
   JSString extFns, [
   JSNumber? sessionId,
 ]);
 
 @JS('DartMontyBridge.replFeedStart')
 external JSPromise<JSString> _jsReplFeedStart(
+  JSString replId,
   JSString code, [
   JSNumber? sessionId,
 ]);
 
 @JS('DartMontyBridge.replResume')
 external JSPromise<JSString> _jsReplResume(
+  JSString replId,
   JSString valueJson, [
   JSNumber? sessionId,
 ]);
 
 @JS('DartMontyBridge.replResumeWithError')
 external JSPromise<JSString> _jsReplResumeWithError(
+  JSString replId,
   JSString errorJson, [
   JSNumber? sessionId,
 ]);
@@ -430,9 +439,14 @@ class WasmBindingsJs extends WasmBindings {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> replCreate({String? scriptName, int? sessionId}) async {
+  Future<void> replCreate({
+    String? scriptName,
+    int? sessionId,
+    String? replId,
+  }) async {
     await _ensureInit();
     final resultJson = await _jsReplCreate(
+      (replId ?? 'default').toJS,
       scriptName?.toJS,
       sessionId?.toJS,
     ).toDart;
@@ -445,8 +459,11 @@ class WasmBindingsJs extends WasmBindings {
   }
 
   @override
-  Future<void> replFree({int? sessionId}) async {
-    final resultJson = await _jsReplFree(sessionId?.toJS).toDart;
+  Future<void> replFree({int? sessionId, String? replId}) async {
+    final resultJson = await _jsReplDispose(
+      (replId ?? 'default').toJS,
+      sessionId?.toJS,
+    ).toDart;
     final map = json.decode(resultJson.toDart) as Map<String, dynamic>;
     if (map['ok'] != true) {
       throw StateError(
@@ -456,8 +473,16 @@ class WasmBindingsJs extends WasmBindings {
   }
 
   @override
-  Future<WasmRunResult> replFeedRun(String code, {int? sessionId}) async {
-    final resultJson = await _jsReplFeedRun(code.toJS, sessionId?.toJS).toDart;
+  Future<WasmRunResult> replFeedRun(
+    String code, {
+    int? sessionId,
+    String? replId,
+  }) async {
+    final resultJson = await _jsReplFeedRun(
+      (replId ?? 'default').toJS,
+      code.toJS,
+      sessionId?.toJS,
+    ).toDart;
     final map = json.decode(resultJson.toDart) as Map<String, dynamic>;
     final rawTraceback = map['traceback'] as List<Object?>?;
 
@@ -500,8 +525,13 @@ class WasmBindingsJs extends WasmBindings {
   // ---------------------------------------------------------------------------
 
   @override
-  Future<void> replSetExtFns(String extFns, {int? sessionId}) async {
+  Future<void> replSetExtFns(
+    String extFns, {
+    int? sessionId,
+    String? replId,
+  }) async {
     final resultJson = await _jsReplSetExtFns(
+      (replId ?? 'default').toJS,
       extFns.toJS,
       sessionId?.toJS,
     ).toDart;
@@ -517,8 +547,10 @@ class WasmBindingsJs extends WasmBindings {
   Future<WasmProgressResult> replFeedStart(
     String code, {
     int? sessionId,
+    String? replId,
   }) async {
     final resultJson = await _jsReplFeedStart(
+      (replId ?? 'default').toJS,
       code.toJS,
       sessionId?.toJS,
     ).toDart;
@@ -530,8 +562,10 @@ class WasmBindingsJs extends WasmBindings {
   Future<WasmProgressResult> replResume(
     String valueJson, {
     int? sessionId,
+    String? replId,
   }) async {
     final resultJson = await _jsReplResume(
+      (replId ?? 'default').toJS,
       valueJson.toJS,
       sessionId?.toJS,
     ).toDart;
@@ -543,8 +577,10 @@ class WasmBindingsJs extends WasmBindings {
   Future<WasmProgressResult> replResumeWithError(
     String errorJson, {
     int? sessionId,
+    String? replId,
   }) async {
     final resultJson = await _jsReplResumeWithError(
+      (replId ?? 'default').toJS,
       errorJson.toJS,
       sessionId?.toJS,
     ).toDart;

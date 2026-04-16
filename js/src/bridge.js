@@ -561,59 +561,62 @@ async function dispose() {
 
 /**
  * Create a new REPL session.
+ * @param {string} replId Unique identifier for this REPL handle.
+ * @param {string} [scriptName] Optional script name for tracebacks.
  * @returns {Promise<string>} JSON result.
  */
-async function replCreate(scriptName) {
+async function replCreate(replId, scriptName) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
-  const result = await callWorker(sid, { type: 'replCreate', scriptName }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replCreate', replId, scriptName }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
 /**
  * Feed code to the REPL and run to completion.
+ * @param {string} replId Unique identifier for this REPL handle.
  */
-async function replFeedRun(code) {
+async function replFeedRun(replId, code) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
-  const result = await callWorker(sid, { type: 'replFeedRun', code }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replFeedRun', replId, code }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replFeedStart(code) {
+async function replFeedStart(replId, code) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
-  const result = await callWorker(sid, { type: 'replFeedStart', code }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replFeedStart', replId, code }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replSetExtFns(extFnsJson) {
+async function replSetExtFns(replId, extFnsJson) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const extFns = JSON.parse(extFnsJson);
-  const result = await callWorker(sid, { type: 'replSetExtFns', extFns }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replSetExtFns', replId, extFns }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replResume(valueJson) {
+async function replResume(replId, valueJson) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const value = JSON.parse(valueJson);
-  const result = await callWorker(sid, { type: 'replResume', value }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replResume', replId, value }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replResumeWithError(errorJson) {
+async function replResumeWithError(replId, errorJson) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const errorMessage = JSON.parse(errorJson);
-  const result = await callWorker(sid, { type: 'replResumeWithError', errorMessage }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replResumeWithError', replId, errorMessage }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
@@ -625,11 +628,11 @@ async function replDetectContinuation(source) {
   return JSON.stringify(result);
 }
 
-async function replDispose() {
+async function replDispose(replId) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
-  const result = await callWorker(sid, { type: 'replDispose' }, session.timeoutMs);
+  const result = await callWorker(sid, { type: 'replDispose', replId }, session.timeoutMs);
   return JSON.stringify(result);
 }
 

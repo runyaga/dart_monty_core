@@ -1137,12 +1137,16 @@ function handleDispose(id) {
 // REPL Handlers
 // ---------------------------------------------------------------------------
 
-let activeReplHandle = null;
+const replHandles = new Map(); // replId (string) -> i32 Rust handle
 
-function handleReplCreate(id, scriptName) {
-  if (activeReplHandle) {
-    wasm.monty_repl_free(activeReplHandle);
-    activeReplHandle = null;
+function handleReplCreate(id, replId, scriptName) {
+  if (!replId) {
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: 'replId is required for replCreate',
+      errorType: 'StateError',
+    });
+    return;
   }
 
   let cName = null;
@@ -1171,13 +1175,15 @@ function handleReplCreate(id, scriptName) {
     return;
   }
   outError.free();
-  activeReplHandle = handle;
+  replHandles.set(replId, handle);
   self.postMessage({ type: 'result', id, ok: true });
 }
 
-function handleReplFeedRun(id, code) {
-  if (!activeReplHandle) {
-    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+function handleReplFeedRun(id, replId, code) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
     return;
   }
 
@@ -1188,8 +1194,8 @@ function handleReplFeedRun(id, code) {
     cCode = allocCString(code);
     outResult = allocOutPtr();
     outError = allocOutPtr();
-    const tag = wasm.monty_repl_feed_run(activeReplHandle, cCode.ptr, outResult.ptr, outError.ptr);
-    
+    const tag = wasm.monty_repl_feed_run(handle, cCode.ptr, outResult.ptr, outError.ptr);
+
     const resultPtr = outResult.read();
     const errorPtr = outError.read();
     const resultJson = readAndFreeCString(resultPtr);
@@ -1211,9 +1217,11 @@ function handleReplFeedRun(id, code) {
   }
 }
 
-function handleReplFeedStart(id, code) {
-  if (!activeReplHandle) {
-    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+function handleReplFeedStart(id, replId, code) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
     return;
   }
   let cCode = null;
@@ -1221,34 +1229,38 @@ function handleReplFeedStart(id, code) {
   try {
     cCode = allocCString(code);
     outError = allocOutPtr();
-    const tag = wasm.monty_repl_feed_start(activeReplHandle, cCode.ptr, outError.ptr);
+    const tag = wasm.monty_repl_feed_start(handle, cCode.ptr, outError.ptr);
     const errPtr = outError.read();
     const errMsg = readAndFreeCString(errPtr);
-    self.postMessage(readProgress(id, activeReplHandle, tag, errMsg));
+    self.postMessage(readProgress(id, handle, tag, errMsg));
   } finally {
     if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
     if (outError) outError.free();
   }
 }
 
-function handleReplSetExtFns(id, extFns) {
-  if (!activeReplHandle) {
-    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+function handleReplSetExtFns(id, replId, extFns) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
     return;
   }
   let cExtFns = null;
   try {
     cExtFns = extFns && extFns.length > 0 ? allocCString(extFns.join(',')) : null;
-    wasm.monty_repl_set_ext_fns(activeReplHandle, cExtFns ? cExtFns.ptr : 0);
+    wasm.monty_repl_set_ext_fns(handle, cExtFns ? cExtFns.ptr : 0);
     self.postMessage({ type: 'result', id, ok: true });
   } finally {
     if (cExtFns) wasm.monty_dealloc(cExtFns.ptr, cExtFns.size);
   }
 }
 
-function handleReplResume(id, value) {
-  if (!activeReplHandle) {
-    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+function handleReplResume(id, replId, value) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
     return;
   }
   let cVal = null;
@@ -1256,19 +1268,21 @@ function handleReplResume(id, value) {
   try {
     cVal = allocCString(JSON.stringify(value));
     outError = allocOutPtr();
-    const tag = wasm.monty_repl_resume(activeReplHandle, cVal.ptr, outError.ptr);
+    const tag = wasm.monty_repl_resume(handle, cVal.ptr, outError.ptr);
     const errPtr = outError.read();
     const errMsg = readAndFreeCString(errPtr);
-    self.postMessage(readProgress(id, activeReplHandle, tag, errMsg));
+    self.postMessage(readProgress(id, handle, tag, errMsg));
   } finally {
     if (cVal) wasm.monty_dealloc(cVal.ptr, cVal.size);
     if (outError) outError.free();
   }
 }
 
-function handleReplResumeWithError(id, errorMessage) {
-  if (!activeReplHandle) {
-    self.postMessage({ type: 'result', id, ok: false, error: 'No REPL session', errorType: 'StateError' });
+function handleReplResumeWithError(id, replId, errorMessage) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
     return;
   }
   let cErr = null;
@@ -1276,10 +1290,10 @@ function handleReplResumeWithError(id, errorMessage) {
   try {
     cErr = allocCString(errorMessage);
     outError = allocOutPtr();
-    const tag = wasm.monty_repl_resume_with_error(activeReplHandle, cErr.ptr, outError.ptr);
+    const tag = wasm.monty_repl_resume_with_error(handle, cErr.ptr, outError.ptr);
     const errPtr = outError.read();
     const errMsg = readAndFreeCString(errPtr);
-    self.postMessage(readProgress(id, activeReplHandle, tag, errMsg));
+    self.postMessage(readProgress(id, handle, tag, errMsg));
   } finally {
     if (cErr) wasm.monty_dealloc(cErr.ptr, cErr.size);
     if (outError) outError.free();
@@ -1297,11 +1311,15 @@ function handleReplDetectContinuation(id, source) {
   }
 }
 
-function handleReplDispose(id) {
-  if (activeReplHandle) {
-    wasm.monty_repl_free(activeReplHandle);
-    activeReplHandle = null;
+function handleReplDispose(id, replId) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
+    return;
   }
+  wasm.monty_repl_free(handle);
+  replHandles.delete(replId);
   self.postMessage({ type: 'result', id, ok: true });
 }
 
@@ -1311,7 +1329,8 @@ function handleReplDispose(id) {
 
 self.onmessage = (e) => {
   const { type, id, code, extFns, value, errorMessage, excType, limits,
-    dataBase64, scriptName, resultsJson, errorsJson, valueJson, source } = e.data;
+    dataBase64, scriptName, resultsJson, errorsJson, valueJson, source,
+    replId } = e.data;
   try {
     switch (type) {
       case 'run':
@@ -1360,28 +1379,28 @@ self.onmessage = (e) => {
         handleDispose(id);
         break;
       case 'replCreate':
-        handleReplCreate(id, scriptName);
+        handleReplCreate(id, replId, scriptName);
         break;
       case 'replFeedRun':
-        handleReplFeedRun(id, code);
+        handleReplFeedRun(id, replId, code);
         break;
       case 'replFeedStart':
-        handleReplFeedStart(id, code);
+        handleReplFeedStart(id, replId, code);
         break;
       case 'replSetExtFns':
-        handleReplSetExtFns(id, extFns);
+        handleReplSetExtFns(id, replId, extFns);
         break;
       case 'replResume':
-        handleReplResume(id, value);
+        handleReplResume(id, replId, value);
         break;
       case 'replResumeWithError':
-        handleReplResumeWithError(id, errorMessage);
+        handleReplResumeWithError(id, replId, errorMessage);
         break;
       case 'replDetectContinuation':
         handleReplDetectContinuation(id, source);
         break;
       case 'replDispose':
-        handleReplDispose(id);
+        handleReplDispose(id, replId);
         break;
       default:
         self.postMessage({

@@ -104,6 +104,30 @@ final platform = ReplPlatform(repl: MontyRepl());
 final session = MontySession(platform: platform);
 ```
 
+#### Concurrent REPLs on WASM
+
+Multiple `MontyRepl` instances can coexist concurrently on both FFI and WASM
+backends. Each instance owns its own Rust heap handle — creating a second REPL
+does not free or corrupt the first:
+
+```dart
+final repl1 = MontyRepl();
+final repl2 = MontyRepl();
+
+await repl1.feed('x = 10');
+await repl2.feed('x = 99');
+
+print((await repl1.feed('x')).value); // MontyInt(10)
+print((await repl2.feed('x')).value); // MontyInt(99)
+
+await repl1.dispose();
+await repl2.dispose();
+```
+
+On WASM, each `MontyRepl` generates a unique `replId` that is threaded through
+the JS bridge into the Web Worker, so independent Rust heap handles are
+maintained in a `Map` rather than a single scalar.
+
 ---
 
 ## MontyValue
@@ -259,9 +283,44 @@ final monty = Monty();
 await monty.runPrecompiled(binary);
 ```
 
-> **Note:** Pre-compilation is not supported on WASM — `Monty.compile()`
-> throws `UnsupportedError` on the web backend until the WASM JS bridge
-> is updated to expose snapshot support.
+Pre-compilation works on both **FFI** and **WASM** backends.
+
+---
+
+## Snapshot and restore
+
+`Monty.snapshot()` captures all Python variables persisted by a session as a
+`Uint8List`. Pass those bytes to `Monty.restore()` on a new instance to
+recreate the exact variable state — across process restarts, app launches, or
+network round-trips.
+
+```dart
+// Session A — run some code and capture state
+final montyA = Monty();
+await montyA.run('x = 10');
+await montyA.run('y = x * 3');
+await montyA.run('label = "result"');
+
+// "Download" — bytes are safe to store in a file, IndexedDB, or a server
+final bytes = montyA.snapshot();
+
+// "Upload" — restore into a fresh session (e.g. on next app launch)
+final montyB = Monty();
+montyB.restore(bytes);
+
+print(montyB.state['x']);     // 10
+print(montyB.state['y']);     // 30
+print(montyB.state['label']); // result
+
+// Continue executing from the restored state
+final result = await montyB.run('y + x');
+print(result.value); // MontyInt(40)
+```
+
+The snapshot format is a v1 JSON envelope (`{"v":1,"dartState":{...}}`) encoded
+as UTF-8 bytes. Only JSON-serializable Python values are captured (int, float,
+str, bool, list, dict, None). `restore()` throws `ArgumentError` on invalid or
+unsupported-version bytes.
 
 ---
 
