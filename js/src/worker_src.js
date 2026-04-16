@@ -759,6 +759,276 @@ function handleRestore(id, dataBase64) {
   self.postMessage({ type: 'result', id, ok: true });
 }
 
+function handleCompile(id, code, scriptName) {
+  let cCode = null;
+  let cName = null;
+  let outError = null;
+
+  let handle;
+  try {
+    outError = allocOutPtr();
+    cCode = allocCString(code);
+    cName = scriptName ? allocCString(scriptName) : null;
+    handle = wasm.monty_create(cCode.ptr, 0, cName ? cName.ptr : 0, outError.ptr);
+  } catch (e) {
+    if (outError) outError.free();
+    throw e;
+  } finally {
+    if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
+    if (cName) wasm.monty_dealloc(cName.ptr, cName.size);
+  }
+
+  if (handle === 0) {
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errMsg || 'monty_create failed',
+      errorType: 'CompileError',
+      excType: excTypeFromMsg(errMsg),
+    });
+    return;
+  }
+  outError.free();
+
+  // Snapshot the compiled (pre-execution) handle — captures bytecode only.
+  // Does NOT set activeHandle; handle is freed after snapshotting.
+  const outLen = allocOutPtr();
+  let ptr;
+  try {
+    ptr = wasm.monty_snapshot(handle, outLen.ptr);
+  } catch (e) {
+    outLen.free();
+    wasm.monty_free(handle);
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  }
+  wasm.monty_free(handle);
+
+  if (ptr === 0) {
+    outLen.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: 'monty_snapshot returned null after compile',
+      errorType: 'StateError',
+    });
+    return;
+  }
+
+  const len = outLen.read();
+  outLen.free();
+
+  const wasmBytes = new Uint8Array(wasm.memory.buffer, ptr, len);
+  let copy;
+  try {
+    copy = wasmBytes.slice();
+  } finally {
+    wasm.monty_bytes_free(ptr, len);
+  }
+
+  // Transfer ArrayBuffer to main thread (zero-copy move)
+  self.postMessage(
+    { type: 'result', id, ok: true, snapshotBuffer: copy.buffer },
+    [copy.buffer],
+  );
+}
+
+function handleRunPrecompiled(id, dataBase64, limits, scriptName) {
+  // Decode base64 to Uint8Array
+  const binary = atob(dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  const outError = allocOutPtr();
+
+  const ptr = wasm.monty_alloc(bytes.length);
+  if (ptr === 0) {
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: `monty_alloc(${bytes.length}) returned null — OOM`,
+      errorType: 'MemoryError',
+    });
+    return;
+  }
+  new Uint8Array(wasm.memory.buffer).set(bytes, ptr);
+
+  let handle;
+  try {
+    handle = wasm.monty_restore(ptr, bytes.length, outError.ptr);
+  } catch (e) {
+    outError.free();
+    throw e;
+  } finally {
+    wasm.monty_dealloc(ptr, bytes.length);
+  }
+
+  if (handle === 0) {
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errMsg || 'monty_restore failed',
+      errorType: 'RestoreError',
+    });
+    return;
+  }
+  outError.free();
+
+  // Apply limits
+  if (limits) {
+    if (limits.memory_bytes != null) wasm.monty_set_memory_limit(handle, limits.memory_bytes);
+    if (limits.timeout_ms != null) wasm.monty_set_time_limit_ms(handle, BigInt(limits.timeout_ms));
+    if (limits.stack_depth != null) wasm.monty_set_stack_limit(handle, limits.stack_depth);
+  }
+
+  let outResult = null;
+  let outErrMsg = null;
+
+  let resultTag;
+  try {
+    outResult = allocOutPtr();
+    outErrMsg = allocOutPtr();
+    resultTag = wasm.monty_run(handle, outResult.ptr, outErrMsg.ptr);
+  } catch (e) {
+    if (outResult) outResult.free();
+    if (outErrMsg) outErrMsg.free();
+    wasm.monty_free(handle);
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  }
+
+  const resultPtr = outResult.read();
+  const errorPtr = outErrMsg.read();
+  const resultJson = readAndFreeCString(resultPtr);
+  const errorMsg = readAndFreeCString(errorPtr);
+  outResult.free();
+  outErrMsg.free();
+  wasm.monty_free(handle);
+
+  if (resultTag === RESULT_OK && resultJson) {
+    const adapted = adaptResultForDart(resultJson, false);
+    self.postMessage({ type: 'result', id, ...adapted });
+  } else if (resultJson) {
+    const adapted = adaptResultForDart(resultJson, true);
+    self.postMessage({ type: 'result', id, ...adapted });
+  } else {
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errorMsg || 'monty_run failed',
+      errorType: 'MontyException',
+    });
+  }
+}
+
+function handleStartPrecompiled(id, dataBase64, limits, scriptName) {
+  // Free any abandoned execution before starting a new one.
+  if (activeHandle) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+  }
+
+  // Decode base64 to Uint8Array
+  const binary = atob(dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  const outError = allocOutPtr();
+
+  const ptr = wasm.monty_alloc(bytes.length);
+  if (ptr === 0) {
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: `monty_alloc(${bytes.length}) returned null — OOM`,
+      errorType: 'MemoryError',
+    });
+    return;
+  }
+  new Uint8Array(wasm.memory.buffer).set(bytes, ptr);
+
+  let handle;
+  try {
+    handle = wasm.monty_restore(ptr, bytes.length, outError.ptr);
+  } catch (e) {
+    outError.free();
+    throw e;
+  } finally {
+    wasm.monty_dealloc(ptr, bytes.length);
+  }
+
+  if (handle === 0) {
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errMsg || 'monty_restore failed',
+      errorType: 'RestoreError',
+    });
+    return;
+  }
+  outError.free();
+
+  // Apply limits
+  if (limits) {
+    if (limits.memory_bytes != null) wasm.monty_set_memory_limit(handle, limits.memory_bytes);
+    if (limits.timeout_ms != null) wasm.monty_set_time_limit_ms(handle, BigInt(limits.timeout_ms));
+    if (limits.stack_depth != null) wasm.monty_set_stack_limit(handle, limits.stack_depth);
+  }
+
+  activeHandle = handle;
+
+  let outErr;
+  let tag;
+  try {
+    outErr = allocOutPtr();
+    tag = wasm.monty_start(handle, outErr.ptr);
+  } catch (e) {
+    if (outErr) outErr.free();
+    activeHandle = null;
+    wasm.monty_free(handle);
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  }
+
+  const errPtr = outErr.read();
+  const errMsg = readAndFreeCString(errPtr);
+  outErr.free();
+
+  let msg;
+  try {
+    msg = readProgress(id, handle, tag, errMsg);
+  } catch (e) {
+    activeHandle = null;
+    wasm.monty_free(handle);
+    throw e;
+  }
+  if (tag === PROGRESS_COMPLETE || tag === PROGRESS_ERROR) {
+    activeHandle = null;
+    wasm.monty_free(handle);
+  }
+  self.postMessage(msg);
+}
+
 function handleResumeNameLookupValue(id, valueJson) {
   if (!activeHandle) {
     self.postMessage({
@@ -1070,6 +1340,15 @@ self.onmessage = (e) => {
         break;
       case 'restore':
         handleRestore(id, dataBase64);
+        break;
+      case 'compile':
+        handleCompile(id, code, scriptName);
+        break;
+      case 'runPrecompiled':
+        handleRunPrecompiled(id, dataBase64, limits, scriptName);
+        break;
+      case 'startPrecompiled':
+        handleStartPrecompiled(id, dataBase64, limits, scriptName);
         break;
       case 'resumeNameLookupValue':
         handleResumeNameLookupValue(id, valueJson);

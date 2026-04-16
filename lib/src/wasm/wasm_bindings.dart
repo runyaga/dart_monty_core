@@ -272,6 +272,45 @@ abstract class WasmBindings {
   /// the default.
   Future<void> restore(Uint8List data, {int? sessionId});
 
+  /// Compiles [code] and returns the bytecode as a binary snapshot.
+  ///
+  /// Creates a temporary handle, snapshots compiled bytecode, and frees the
+  /// handle. The returned bytes can be passed to [runPrecompiled] or
+  /// [startPrecompiled] to execute without re-parsing.
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<Uint8List> compile(String code, {String? scriptName, int? sessionId});
+
+  /// Runs precompiled [compiled] bytes to completion.
+  ///
+  /// Restores a handle from the snapshot bytes, applies [limitsJson] if
+  /// provided, runs to completion, and frees the handle.
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmRunResult> runPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  });
+
+  /// Starts iterative execution from precompiled [compiled] bytes.
+  ///
+  /// Restores a handle from the snapshot bytes, applies [limitsJson] if
+  /// provided, and starts execution. The handle is stored for subsequent
+  /// [resume] calls.
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmProgressResult> startPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  });
+
   /// Discovers the bridge API surface.
   Future<WasmDiscoverResult> discover();
 

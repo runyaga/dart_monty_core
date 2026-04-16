@@ -84,6 +84,29 @@ external JSPromise<JSString> _jsRestore(
   JSNumber? sessionId,
 ]);
 
+@JS('DartMontyBridge.compile')
+external JSPromise<JSAny> _jsCompile(
+  JSString code, [
+  JSString? scriptName,
+  JSNumber? sessionId,
+]);
+
+@JS('DartMontyBridge.runPrecompiled')
+external JSPromise<JSString> _jsRunPrecompiled(
+  JSString dataBase64, [
+  JSString? limitsJson,
+  JSString? scriptName,
+  JSNumber? sessionId,
+]);
+
+@JS('DartMontyBridge.startPrecompiled')
+external JSPromise<JSString> _jsStartPrecompiled(
+  JSString dataBase64, [
+  JSString? limitsJson,
+  JSString? scriptName,
+  JSNumber? sessionId,
+]);
+
 @JS('DartMontyBridge.discover')
 external JSString _jsDiscover();
 
@@ -315,6 +338,75 @@ class WasmBindingsJs extends WasmBindings {
     if (map['ok'] != true) {
       throw StateError(map['error'] as String? ?? 'Restore failed');
     }
+  }
+
+  @override
+  Future<Uint8List> compile(
+    String code, {
+    String? scriptName,
+    int? sessionId,
+  }) async {
+    final jsAny = await _jsCompile(
+      code.toJS,
+      scriptName?.toJS,
+      sessionId?.toJS,
+    ).toDart;
+    final result = jsAny as _SnapshotResult;
+    if (!result.ok.toDart) {
+      throw StateError(result.error?.toDart ?? 'compile failed');
+    }
+
+    return result.snapshotBuffer!.toDart.asUint8List();
+  }
+
+  @override
+  Future<WasmRunResult> runPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  }) async {
+    final dataBase64 = base64Encode(compiled);
+    final resultJson = await _jsRunPrecompiled(
+      dataBase64.toJS,
+      limitsJson?.toJS,
+      scriptName?.toJS,
+      sessionId?.toJS,
+    ).toDart;
+    final map = json.decode(resultJson.toDart) as Map<String, dynamic>;
+    final rawTraceback = map['traceback'] as List<Object?>?;
+
+    return WasmRunResult(
+      ok: map['ok'] as bool,
+      value: map['value'],
+      printOutput: map['print_output'] as String?,
+      error: map['error'] as String?,
+      errorType: map['errorType'] as String?,
+      excType: map['excType'] as String?,
+      traceback: rawTraceback,
+      filename: map['filename'] as String?,
+      lineNumber: map['line_number'] as int?,
+      columnNumber: map['column_number'] as int?,
+      sourceCode: map['source_code'] as String?,
+    );
+  }
+
+  @override
+  Future<WasmProgressResult> startPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  }) async {
+    final dataBase64 = base64Encode(compiled);
+    final resultJson = await _jsStartPrecompiled(
+      dataBase64.toJS,
+      limitsJson?.toJS,
+      scriptName?.toJS,
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
   }
 
   @override
