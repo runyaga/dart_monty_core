@@ -52,8 +52,8 @@ jobs:
       - name: Build JS bridge
         run: cd js && npm install --force && node build.js
 
-      # ── Web REPL (dart2js) ───────────────────────────────────────────────────
-      - name: Build web REPL (dart2js)
+      # ── Web REPL — shared setup (assets, deps) ──────────────────────────────
+      - name: Prepare web REPL assets
         run: |
           WEB=packages/dart_monty_web/web
           dart pub get
@@ -64,10 +64,18 @@ jobs:
           mkdir -p $WEB/@pydantic/monty-wasm32-wasi
           cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              $WEB/@pydantic/monty-wasm32-wasi/
-          dart compile js $WEB/repl_demo.dart -o $WEB/repl_demo.dart.js --no-source-maps
 
-          # dart2wasm — produces repl_demo.mjs + repl_demo.wasm (required by index_wasm.html)
-          dart compile wasm $WEB/repl_demo.dart -o $WEB/repl_demo.wasm
+      # ── Web REPL (dart2js) ───────────────────────────────────────────────────
+      - name: Build web REPL (dart2js)
+        run: |
+          dart compile js packages/dart_monty_web/web/repl_demo.dart \
+            -o packages/dart_monty_web/web/repl_demo.dart.js --no-source-maps
+
+      # ── Web REPL (dart2wasm) ─────────────────────────────────────────────────
+      - name: Build web REPL (dart2wasm)
+        run: |
+          dart compile wasm packages/dart_monty_web/web/repl_demo.dart \
+            -o packages/dart_monty_web/web/repl_demo.wasm
 
       # ── Flutter web ──────────────────────────────────────────────────────────
       # flutter create --platforms web adds web/ scaffolding if not present.
@@ -85,18 +93,11 @@ jobs:
           cp ../../js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              web/@pydantic/monty-wasm32-wasi/
 
-          # Inject dart_monty_bridge.js into the Flutter bootstrap page so that
-          # window.DartMontyBridge exists before any Dart code runs.
-          python3 -c "
-          import re
-          with open('web/index.html') as f: html = f.read()
-          html = re.sub(
-            r'(<script src=\"flutter_bootstrap\.js\")',
-            '<script src=\"dart_monty_bridge.js\"></script>\n  \g<1>',
-            html
-          )
-          with open('web/index.html', 'w') as f: f.write(html)
-          "
+          # Patch index.html:
+          #   1. Remove any stale coi-serviceworker (prior deploys used a broader
+          #      scope that intercepts Flutter's own fetch requests, breaking load).
+          #   2. Inject dart_monty_bridge.js before flutter_bootstrap.js.
+          python3 ../../tool/inject_flutter_html.py web/index.html
 
           flutter pub get
           flutter build web --base-href /dart_monty_core/flutter/
