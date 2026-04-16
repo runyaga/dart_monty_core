@@ -29,10 +29,22 @@ final result = await repl.feed('x = 42');
 final r2 = await repl.feed('x * 2');
 print(r2.value); // MontyInt(84)
 
+// Inject per-invocation inputs — no string-formatting needed
+final r3 = await repl.feed(
+  'output = [x * scale for x in data]',
+  inputs: {'data': [1, 2, 3], 'scale': 10},
+);
+
 if (result.error != null) {
   print('${result.error!.excType}: ${result.error!.message}');
 }
 ```
+
+> **Note on `Monty.compile()` / `runPrecompiled()`:** These APIs are not
+> supported on WASM — snapshot support requires a future update to the
+> WASM JS bridge. Calling them throws `UnsupportedError` on the web
+> backend. Use `repl.feed(code, inputs: {...})` for repeated execution
+> instead.
 
 See [`web/repl_demo.dart`](web/repl_demo.dart) for the full wiring including DOM
 manipulation, button event handlers, and the dispose pattern.

@@ -42,6 +42,9 @@ await monty.run('y = x * 2');
 final r = await monty.run('x + y');
 print(r.value); // MontyInt(126)
 await monty.dispose();
+
+// Pass per-invocation inputs (not persisted)
+await monty.run('result = x * multiplier', inputs: {'x': 10, 'multiplier': 3});
 ```
 
 ---
@@ -52,10 +55,12 @@ await monty.dispose();
 
 | Member | Description |
 |---|---|
-| `Monty({osHandler})` | Persistent interpreter, auto-detected backend |
+| `Monty({osHandler, scriptName})` | Persistent interpreter, auto-detected backend |
 | `Monty.withPlatform(platform)` | Explicit backend |
 | `Monty.exec(code)` | One-shot: create → run → dispose |
-| `monty.run(code, {callbacks})` | Execute Python, state persists |
+| `Monty.compile(code)` | Pre-compile to `Uint8List` bytes |
+| `monty.run(code, {externals, inputs})` | Execute Python, state persists |
+| `monty.runPrecompiled(bytes)` | Run pre-compiled bytes |
 | `monty.state` | Current globals as `Map<String, Object?>` |
 | `monty.clearState()` | Reset globals |
 | `monty.dispose()` | Free resources |
@@ -70,7 +75,7 @@ or want to pass `MontyCallback` handlers:
 final platform = createPlatformMonty(); // FFI or WASM
 final session = MontySession(platform: platform);
 
-final result = await session.run('greet("world")', callbacks: {
+final result = await session.run('greet("world")', externals: {
   'greet': (args) async => 'Hello, ${args['_0']}!',
 });
 print(result.value); // MontyString('Hello, world!')
@@ -112,7 +117,7 @@ switch (result.value) {
   case MontyFloat(:final value):  print('float: $value');
   case MontyString(:final value): print('str: $value');
   case MontyBool(:final value):   print('bool: $value');
-  case MontyNull():               print('None');
+  case MontyNone():               print('None');
   case MontyList(:final items):   print('list[${items.length}]');
   case MontyDict(:final items):   print('dict keys: ${items.keys}');
   case MontyDate(:final year, :final month, :final day): ...
@@ -128,15 +133,32 @@ Construct values from Dart with `MontyValue.fromDart(value)`.
 
 | Exception | When |
 |---|---|
-| `MontyScriptError` | Python raised an exception (`TypeError`, `ValueError`, …) |
+| `MontySyntaxError` | Python parse/syntax error (`SyntaxError`) |
+| `MontyScriptError` | Python runtime exception (`TypeError`, `ValueError`, …) |
 | `MontyResourceError` | Memory or stack limit exceeded |
+
+`MontySyntaxError` is a subtype of `MontyScriptError` — existing
+`on MontyScriptError` catch blocks continue to catch it. Use it explicitly
+when you want to distinguish parse errors from runtime errors:
+
+```dart
+try {
+  await monty.run('def foo(  # unclosed paren');
+} on MontySyntaxError catch (e) {
+  print('Syntax error at line ${e.exception?.lineNumber}');
+} on MontyScriptError catch (e) {
+  print('${e.excType}: ${e.message}');
+}
+```
+
+Runtime errors:
 
 ```dart
 try {
   await monty.run('1 / 0');
 } on MontyScriptError catch (e) {
   print(e.excType);       // ZeroDivisionError
-  print(e.exception.traceback);
+  print(e.exception?.traceback);
 }
 ```
 
@@ -181,6 +203,65 @@ await monty.run(
   ),
 );
 ```
+
+Or use JS SDK-compatible field names:
+
+```dart
+await monty.run(
+  untrustedCode,
+  limits: MontyLimits.jsAligned(
+    maxMemory: 32 * 1024 * 1024,
+    maxDurationSecs: 5,
+    maxRecursionDepth: 200,
+  ),
+);
+```
+
+---
+
+## Passing inputs
+
+Inject per-invocation variables before Python code runs. Inputs accept any
+JSON-compatible Dart value (`int`, `double`, `bool`, `String`, `List`,
+`Map`, `null`) and are **not persisted** across calls:
+
+```dart
+await monty.run(
+  'output = [x * factor for x in data]',
+  inputs: {
+    'data': [1, 2, 3, 4, 5],
+    'factor': 10,
+  },
+);
+print(monty.state['output']); // [10, 20, 30, 40, 50]
+```
+
+Special float values are handled correctly:
+
+```dart
+await monty.run('y = x + 1', inputs: {'x': double.infinity});
+// → y = float('inf') + 1
+```
+
+---
+
+## Pre-compilation
+
+Compile Python source once and reuse the bytecode across multiple runs.
+Useful when running the same script with different inputs many times:
+
+```dart
+// Compile once — parsing happens here
+final binary = await Monty.compile('output = [x * factor for x in data]');
+
+// Run many times — no re-parsing
+final monty = Monty();
+await monty.runPrecompiled(binary);
+```
+
+> **Note:** Pre-compilation is not supported on WASM — `Monty.compile()`
+> throws `UnsupportedError` on the web backend until the WASM JS bridge
+> is updated to expose snapshot support.
 
 ---
 
@@ -357,6 +438,33 @@ Execution time includes the full integration suite (440 passing fixtures).
 - **Interactive REPL:** A decoupled web demo is available in `packages/dart_monty_web`,
   demonstrating a persistent, stateful REPL in the browser using the new
   WASM bridge extensions.
+
+---
+
+## Coming from @pydantic/monty (JS/TS)
+
+If you know the JavaScript `@pydantic/monty` SDK, here is the Dart equivalent
+for each common operation:
+
+| Task | JS (`@pydantic/monty`) | Dart (`dart_monty_core`) |
+|---|---|---|
+| Pass inputs | `m.run({ inputs: {x: 10} })` | `await monty.run(code, inputs: {'x': 10})` |
+| Set script name | `new Monty(code, {scriptName: 'x.py'})` | `Monty(scriptName: 'x.py')` |
+| Pre-compile code | `const b = m.dump()` | `final b = await Monty.compile(code)` |
+| Run pre-compiled | `Monty.load(b).run()` | `await monty.runPrecompiled(b)` |
+| Catch syntax errors | `catch (e as MontySyntaxError)` | `on MontySyntaxError catch (e)` |
+| JS-style limits | `{ maxDurationSecs: 5, maxMemory: 1e6 }` | `MontyLimits.jsAligned(maxDurationSecs: 5, maxMemory: 1000000)` |
+
+### Conscious divergences
+
+Some Dart API choices intentionally differ from JS:
+
+| Dart API | Reason |
+|---|---|
+| `run(code)` — code passed at runtime | State persistence (`__restore_state__`) requires dynamic code per call |
+| `MontyValue` type hierarchy | Richer than raw JS values; enables exhaustive Dart pattern matching |
+| `MontyProgress` sealed union | More expressive than JS `MontySnapshot instanceof` checks |
+| `OsCallHandler` separate from externals | Intentional Dart extension for OS-call interception |
 
 ---
 

@@ -34,7 +34,7 @@ final result = await repl.feed('fib(10)');
 switch (result.value) {
   case MontyInt(:final value):    print('int: $value');
   case MontyString(:final value): print('str: $value');
-  case MontyNull():               print('None');
+  case MontyNone():               print('None');
   default:                        print(result.value);
 }
 
@@ -48,11 +48,27 @@ await repl.dispose();
 
 Key API surface used in `lib/main.dart`:
 - `MontyRepl()` — creates a persistent interpreter (backed by FFI dylib on device)
-- `repl.feed(code)` — execute Python, returns `MontyFeedResult`
+- `repl.feed(code)` — execute Python, returns `MontyResult`
+- `repl.feed(code, inputs: {'x': 10})` — inject per-invocation variables
 - `result.value` — `MontyValue?` (null = expression with no return value)
 - `result.error` — `MontyScriptError?` (non-throwing; TypeError, NameError, …)
 - `result.printOutput` — captured `print()` output
 - `repl.dispose()` — free Rust heap resources (call in `State.dispose()`)
+
+### Passing Flutter state into Python
+
+Use `inputs:` to inject widget state or user data into Python without
+string-formatting:
+
+```dart
+final result = await repl.feed(
+  'score = base * multiplier',
+  inputs: {
+    'base': widget.score,       // int from Flutter state
+    'multiplier': widget.level, // int from Flutter state
+  },
+);
+```
 
 ---
 
