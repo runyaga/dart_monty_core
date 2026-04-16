@@ -316,57 +316,53 @@ jobs:
           name: wasm-binary
           path: native/target/wasm32-wasip1/release
 
-      # Sparse-checkout dart_monty to reuse its pre-built JS bridge assets.
-      # The bridge JS is built against the same DartMontyBridge API we bind to.
-      - name: Checkout dart_monty bridge assets
-        uses: actions/checkout@v4
-        with:
-          repository: runyaga/dart_monty
-          ref: main
-          path: dart_monty_bridge_src
-          sparse-checkout: |
-            packages/dart_monty_wasm/js
-            packages/dart_monty_wasm/assets
-          sparse-checkout-cone-mode: false
-
       - uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: npm-${{ hashFiles('dart_monty_bridge_src/packages/dart_monty_wasm/js/package-lock.json') }}
+          key: npm-${{ hashFiles('js/package.json') }}
           restore-keys: npm-
 
-      # Build the JS bridge, replacing the bundled WASM with our freshly built one.
+      # Build the JS bridge from the local js/ directory (which contains the
+      # NameLookup support and all other in-progress API changes for this repo).
+      # build.js reads the WASM binary from native/target/wasm32-wasip1/release/
+      # (placed there by the Download WASM binary step above) and writes
+      # assets to assets/.
       - name: Build JS bridge
         run: |
-          BRIDGE_DIR="dart_monty_bridge_src/packages/dart_monty_wasm/js"
-          ASSETS_DIR="dart_monty_bridge_src/packages/dart_monty_wasm/assets"
+          set -euo pipefail
           WEB_DIR="test/integration/web"
 
-          # build.js resolves the WASM binary relative to the bridge repo root
-          # at native/target/wasm32-wasip1/release/. Plant our pre-built binary
-          # there so it doesn't try to invoke cargo.
-          BRIDGE_WASM_DIR="dart_monty_bridge_src/native/target/wasm32-wasip1/release"
-          mkdir -p "$BRIDGE_WASM_DIR"
-          cp "$GITHUB_WORKSPACE/native/target/wasm32-wasip1/release/dart_monty_native.wasm" \
-             "$BRIDGE_WASM_DIR/dart_monty_native.wasm"
-
-          cd "$BRIDGE_DIR"
-          npm install --force
-          npm run build
-          # Return to workspace root — $ASSETS_DIR and $WASI_PKG are relative paths
+          cd js
+          npm install --silent
+          node build.js
           cd "$GITHUB_WORKSPACE"
 
-          # Stage bridge assets for the test runner
-          mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
-          cp "$ASSETS_DIR/dart_monty_bridge.js" "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp "$ASSETS_DIR/dart_monty_worker.js" "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp "$ASSETS_DIR/dart_monty_native.wasm" "$GITHUB_WORKSPACE/$WEB_DIR/"
+          # Verify build outputs exist before staging — fail loudly if missing.
+          for f in assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm; do
+            [ -f "$f" ] || { echo "FATAL: $f not found after build"; exit 1; }
+          done
 
-          # WASI runtime required by the Worker
-          WASI_PKG="$BRIDGE_DIR/node_modules/@pydantic/monty-wasm32-wasi"
+          # Stage bridge assets for the test runner.
+          mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
+          cp assets/dart_monty_bridge.js "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp assets/dart_monty_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp assets/dart_monty_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
+
+          # WASI runtime required by the Worker.
+          WASI_PKG="js/node_modules/@pydantic/monty-wasm32-wasi"
+          [ -f "$WASI_PKG/wasi-worker-browser.mjs" ] || { echo "FATAL: $WASI_PKG/wasi-worker-browser.mjs not found"; exit 1; }
           mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi"
           cp "$WASI_PKG/wasi-worker-browser.mjs" \
              "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi/"
+
+          # Final verification — every file the test runner needs must exist.
+          for f in \
+            "$WEB_DIR/dart_monty_bridge.js" \
+            "$WEB_DIR/dart_monty_worker.js" \
+            "$WEB_DIR/dart_monty_native.wasm" \
+            "$WEB_DIR/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs"; do
+            [ -f "$GITHUB_WORKSPACE/$f" ] || { echo "FATAL: staged asset missing: $f"; exit 1; }
+          done
 
           echo "=== bridge assets staged ==="
           ls -lh "$GITHUB_WORKSPACE/$WEB_DIR/"
