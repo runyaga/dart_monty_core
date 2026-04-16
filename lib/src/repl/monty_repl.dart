@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/inputs_encoder.dart'
+    as inputs_encoder;
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
@@ -142,17 +144,25 @@ class MontyRepl {
   ///
   /// If [code] raises a Python exception, the REPL survives and the error
   /// is returned in [MontyResult.error].
+  ///
+  /// [inputs] injects per-invocation Python variables before [code] runs.
+  /// Each key becomes a Python variable; values are converted to Python
+  /// literals.
   Future<MontyResult> feed(
     String code, {
     Map<String, MontyCallback> externals = const {},
     OsCallHandler? osHandler,
+    Map<String, Object?>? inputs,
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
+    final effectiveCode = inputs != null && inputs.isNotEmpty
+        ? '${inputs_encoder.inputsToCode(inputs)}\n$code'
+        : code;
 
     if (externals.isEmpty && osHandler == null) {
       // Fast path: no externals, use simple feedRun.
-      final r = await _bindings.feedRun(code);
+      final r = await _bindings.feedRun(effectiveCode);
       if (r.ok) {
         return MontyResult(
           value: MontyValue.fromJson(r.value),
@@ -170,7 +180,9 @@ class MontyRepl {
 
     // Iterative path: drive the start/resume loop, dispatching externals.
     _bindings.setExtFns(externals.keys.toList());
-    final initial = _translateProgress(await _bindings.feedStart(code));
+    final initial = _translateProgress(
+      await _bindings.feedStart(effectiveCode),
+    );
 
     return _driveLoop(initial, externals, osHandler);
   }

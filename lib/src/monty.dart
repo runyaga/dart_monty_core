@@ -57,16 +57,24 @@ class Monty {
   /// Executes Python [code] and returns the result.
   ///
   /// Variables defined in [code] persist for subsequent [run] calls.
+  ///
+  /// [inputs] injects per-invocation Python variables before [code] runs.
+  /// Each key becomes a Python variable; values are converted to Python
+  /// literals. Inputs are **not persisted** across calls.
+  ///
+  /// Throws [ArgumentError] if any value in [inputs] cannot be converted.
   Future<MontyResult> run(
     String code, {
     MontyLimits? limits,
     String? scriptName,
     Map<String, MontyCallback> externals = const {},
+    Map<String, Object?>? inputs,
   }) => _session.run(
     code,
     limits: limits,
     scriptName: scriptName,
     externals: externals,
+    inputs: inputs,
   );
 
   /// Clears all persisted state.
@@ -92,10 +100,16 @@ class Monty {
     MontyLimits? limits,
     String? scriptName,
     OsCallHandler? osHandler,
+    Map<String, Object?>? inputs,
   }) async {
     final monty = Monty(osHandler: osHandler);
     try {
-      return await monty.run(code, limits: limits, scriptName: scriptName);
+      return await monty.run(
+        code,
+        limits: limits,
+        scriptName: scriptName,
+        inputs: inputs,
+      );
     } finally {
       await monty.dispose();
     }
