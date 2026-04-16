@@ -24,7 +24,6 @@
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 
 import '_fixture_corpus.dart';
 import '_fixture_parser.dart';
