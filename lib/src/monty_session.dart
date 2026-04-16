@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
@@ -176,9 +177,6 @@ class MontySession {
   /// State is **not** preserved across [runPrecompiled] calls — the compiled
   /// code runs in isolation without `__restore_state__`/`__persist_state__`
   /// wrapping. For stateful execution use [run] instead.
-  ///
-  /// On WASM, throws [UnsupportedError] — snapshot support requires a
-  /// future update to the WASM JS bridge.
   Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,
@@ -190,6 +188,52 @@ class MontySession {
       compiled,
       limits: limits,
       scriptName: scriptName,
+    );
+  }
+
+  /// Captures all Python variables persisted by this session.
+  ///
+  /// Returns a self-contained binary snapshot that can be passed to [restore]
+  /// on a new [MontySession] backed by the same or a different platform.
+  ///
+  /// After each [run] call completes, `MontySession` state lives entirely in
+  /// the Dart-side `_state` map — the Rust execution handle is freed. This
+  /// snapshot therefore serialises only the Dart state; no live Rust heap is
+  /// required and the method is safe to call between [run] calls.
+  ///
+  /// **Note on external functions:** Dart [MontyCallback] closures registered
+  /// via `externals:` cannot be serialised. Re-provide them in the
+  /// `externals:` parameter of subsequent [run] calls after [restore].
+  Uint8List snapshot() {
+    _checkNotDisposed();
+    final envelope = jsonEncode({
+      'v': 1,
+      'dartState': _state,
+    });
+
+    return Uint8List.fromList(utf8.encode(envelope));
+  }
+
+  /// Restores Python variables from a snapshot produced by [snapshot].
+  ///
+  /// Replaces the Dart-side Python globals. The next [run] call after
+  /// [restore] will inject the restored variables into the Python scope.
+  ///
+  /// Throws [ArgumentError] if [bytes] is not a valid session snapshot or
+  /// if the snapshot format version is unsupported.
+  void restore(Uint8List bytes) {
+    _checkNotDisposed();
+    final Map<String, dynamic> envelope;
+    try {
+      envelope = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    } on FormatException catch (e) {
+      throw ArgumentError('Not a valid MontySession snapshot: $e');
+    }
+    if (envelope['v'] != 1) {
+      throw ArgumentError('Unsupported snapshot version: ${envelope['v']}');
+    }
+    _state = (envelope['dartState'] as Map<String, dynamic>).map(
+      (k, v) => MapEntry(k, v as Object?),
     );
   }
 

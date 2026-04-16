@@ -391,6 +391,76 @@ async function restore(dataBase64) {
 }
 
 /**
+ * Compile Python code and return the bytecode as a snapshot buffer.
+ *
+ * Creates a temporary handle, snapshots compiled bytecode, and frees
+ * the handle. Returns a raw JS object (ArrayBuffer is not JSON-safe).
+ *
+ * @param {string} code       Python source code.
+ * @param {string} scriptName Script name for tracebacks (optional).
+ * @returns {Promise<Object>} Raw JS object with snapshotBuffer ArrayBuffer.
+ */
+async function compile(code, scriptName) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) {
+    return { ok: false, error: 'Not initialized' };
+  }
+
+  const session = sessions.get(sid);
+  const msg = { type: 'compile', code };
+  if (scriptName) msg.scriptName = scriptName;
+  const result = await callWorker(sid, msg, session.timeoutMs);
+  // Return raw JS object — snapshotBuffer is an ArrayBuffer, not JSON-safe.
+  return result;
+}
+
+/**
+ * Run precompiled bytecode to completion.
+ *
+ * @param {string} dataBase64 Base64-encoded compiled snapshot bytes.
+ * @param {string} limitsJson JSON-encoded limits map (optional).
+ * @param {string} scriptName Script name for tracebacks (optional).
+ * @returns {Promise<string>} JSON result.
+ */
+async function runPrecompiled(dataBase64, limitsJson, scriptName) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+
+  const session = sessions.get(sid);
+  const hardTimeout = parseHardTimeout(limitsJson);
+  if (hardTimeout != null) session.timeoutMs = hardTimeout;
+
+  const limits = limitsJson ? JSON.parse(limitsJson) : null;
+  const msg = { type: 'runPrecompiled', dataBase64, limits };
+  if (scriptName) msg.scriptName = scriptName;
+  const result = await callWorker(sid, msg, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+/**
+ * Start iterative execution from precompiled bytecode.
+ *
+ * @param {string} dataBase64 Base64-encoded compiled snapshot bytes.
+ * @param {string} limitsJson JSON-encoded limits map (optional).
+ * @param {string} scriptName Script name for tracebacks (optional).
+ * @returns {Promise<string>} JSON result.
+ */
+async function startPrecompiled(dataBase64, limitsJson, scriptName) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+
+  const session = sessions.get(sid);
+  const hardTimeout = parseHardTimeout(limitsJson);
+  if (hardTimeout != null) session.timeoutMs = hardTimeout;
+
+  const limits = limitsJson ? JSON.parse(limitsJson) : null;
+  const msg = { type: 'startPrecompiled', dataBase64, limits };
+  if (scriptName) msg.scriptName = scriptName;
+  const result = await callWorker(sid, msg, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+/**
  * Resume a name lookup by providing a value for the looked-up name.
  *
  * @param {string} valueJson JSON-encoded value.
@@ -577,6 +647,9 @@ window.DartMontyBridge = {
   resumeNameLookupUndefined,
   snapshot,
   restore,
+  compile,
+  runPrecompiled,
+  startPrecompiled,
   discover,
   cancel,
   dispose,

@@ -93,9 +93,6 @@ abstract class MontyPlatform {
   /// script with different `inputs` values.
   ///
   /// Equivalent to `Monty.dump()` in the JS `@pydantic/monty` SDK.
-  ///
-  /// On WASM, throws [UnsupportedError] — snapshot support requires a
-  /// future update to the WASM JS bridge.
   Future<Uint8List> compileCode(String code) {
     throw UnimplementedError('compileCode() has not been implemented.');
   }
@@ -105,9 +102,6 @@ abstract class MontyPlatform {
   /// Equivalent to `Monty.load(binary).run()` in the JS `@pydantic/monty`
   /// SDK. The [compiled] bytes are self-contained and may be used across
   /// sessions and calls.
-  ///
-  /// On WASM, throws [UnsupportedError] — snapshot support requires a
-  /// future update to the WASM JS bridge.
   Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,
@@ -120,9 +114,6 @@ abstract class MontyPlatform {
   ///
   /// Use [MontyPlatform.resume] or [MontyPlatform.resumeWithError] to
   /// continue after each [MontyPending].
-  ///
-  /// On WASM, throws [UnsupportedError] — snapshot support requires a
-  /// future update to the WASM JS bridge.
   Future<MontyProgress> startPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,
