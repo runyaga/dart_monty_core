@@ -20,8 +20,8 @@ String toPythonLiteral(Object? value) => switch (value) {
   final double d when d.isInfinite => d < 0 ? "float('-inf')" : "float('inf')",
   final double d => '$d',
   final String s => _escapePythonString(s),
-  final List<dynamic> l => '[${l.map(toPythonLiteral).join(', ')}]',
-  final Map<dynamic, dynamic> m =>
+  final List<Object?> l => '[${l.map(toPythonLiteral).join(', ')}]',
+  final Map<Object?, Object?> m =>
     '{${m.entries.map(_mapEntryLiteral).join(', ')}}',
   _ => throw ArgumentError(
     'Cannot convert ${value.runtimeType} to Python literal',
@@ -41,6 +41,7 @@ String toPythonLiteral(Object? value) => switch (value) {
 /// Throws [ArgumentError] if any value cannot be converted.
 String inputsToCode(Map<String, Object?> inputs) {
   if (inputs.isEmpty) return '';
+
   return inputs.entries
       .map((e) => '${e.key} = ${toPythonLiteral(e.value)}')
       .join('\n');
@@ -53,8 +54,9 @@ String _escapePythonString(String s) {
       .replaceAll('\n', r'\n')
       .replaceAll('\r', r'\r')
       .replaceAll('\t', r'\t');
+
   return "'$esc'";
 }
 
-String _mapEntryLiteral(MapEntry<dynamic, dynamic> entry) =>
+String _mapEntryLiteral(MapEntry<Object?, Object?> entry) =>
     '${toPythonLiteral(entry.key)}: ${toPythonLiteral(entry.value)}';

@@ -191,6 +191,29 @@ class WasmCoreBindings implements MontyCoreBindings {
     }
   }
 
+  @override
+  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeNameLookupValue(
+      valueJson,
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
+  }
+
+  @override
+  Future<CoreProgressResult> resumeNameLookupUndefined() async {
+    final sw = Stopwatch()..start();
+    final progress = await _bindings.resumeNameLookupUndefined(
+      sessionId: _sessionId,
+    );
+    sw.stop();
+
+    return _translateProgressResult(progress, sw.elapsedMilliseconds);
+  }
+
   // ---------------------------------------------------------------------------
   // Session invalidation
   // ---------------------------------------------------------------------------
@@ -313,28 +336,5 @@ class WasmCoreBindings implements MontyCoreBindings {
       default:
         throw StateError('Unknown progress state: ${progress.state}');
     }
-  }
-
-  @override
-  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
-    final sw = Stopwatch()..start();
-    final progress = await _bindings.resumeNameLookupValue(
-      valueJson,
-      sessionId: _sessionId,
-    );
-    sw.stop();
-
-    return _translateProgressResult(progress, sw.elapsedMilliseconds);
-  }
-
-  @override
-  Future<CoreProgressResult> resumeNameLookupUndefined() async {
-    final sw = Stopwatch()..start();
-    final progress = await _bindings.resumeNameLookupUndefined(
-      sessionId: _sessionId,
-    );
-    sw.stop();
-
-    return _translateProgressResult(progress, sw.elapsedMilliseconds);
   }
 }
