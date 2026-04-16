@@ -139,6 +139,38 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<Uint8List> compileCode(String code) {
+    throw UnsupportedError(
+      'compileCode() is not supported on WASM — snapshot support requires '
+      'a future update to the WASM JS bridge.',
+    );
+  }
+
+  @override
+  Future<CoreRunResult> runPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+  }) {
+    throw UnsupportedError(
+      'runPrecompiled() is not supported on WASM — snapshot support requires '
+      'a future update to the WASM JS bridge.',
+    );
+  }
+
+  @override
+  Future<CoreProgressResult> startPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+  }) {
+    throw UnsupportedError(
+      'startPrecompiled() is not supported on WASM — snapshot support '
+      'requires a future update to the WASM JS bridge.',
+    );
+  }
+
+  @override
   Future<Uint8List> snapshot() {
     return _bindings.snapshot(sessionId: _sessionId);
   }

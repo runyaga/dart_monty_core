@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/monty_factory.dart';
 import 'package:dart_monty_core/src/monty_session.dart';
@@ -77,6 +79,26 @@ class Monty {
     inputs: inputs,
   );
 
+  /// Executes pre-compiled [compiled] bytes and returns the result.
+  ///
+  /// Pre-compiled bytes are obtained from [compile]. Running pre-compiled
+  /// code avoids re-parsing on repeated executions of the same script.
+  ///
+  /// State is **not** preserved across [runPrecompiled] calls. For stateful
+  /// execution, use [run] instead.
+  ///
+  /// On WASM, throws [UnsupportedError] — snapshot support requires a
+  /// future update to the WASM JS bridge.
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) => _session.runPrecompiled(
+    compiled,
+    limits: limits,
+    scriptName: scriptName,
+  );
+
   /// Clears all persisted state.
   ///
   /// After calling this, the next [run] starts with empty globals.
@@ -86,6 +108,31 @@ class Monty {
   Future<void> dispose() async {
     _session.dispose();
     await _platform.dispose();
+  }
+
+  /// Compiles [code] and returns the bytecode as a binary blob.
+  ///
+  /// Use [runPrecompiled] or [MontySession.runPrecompiled] to execute the
+  /// result. Pre-compiling avoids re-parsing on repeated executions of the
+  /// same script.
+  ///
+  /// Equivalent to `Monty.dump()` in the JS `@pydantic/monty` SDK.
+  ///
+  /// On WASM, throws [UnsupportedError] — snapshot support requires a
+  /// future update to the WASM JS bridge.
+  ///
+  /// ```dart
+  /// final binary = await Monty.compile('x * 2 + y');
+  /// // Run the same compiled code with different inputs:
+  /// final r1 = await session.runPrecompiled(binary);
+  /// ```
+  static Future<Uint8List> compile(String code) async {
+    final platform = createPlatformMonty();
+    try {
+      return await platform.compileCode(code);
+    } finally {
+      await platform.dispose();
+    }
   }
 
   /// One-shot evaluation — creates, runs, disposes automatically.

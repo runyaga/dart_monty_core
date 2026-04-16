@@ -167,6 +167,52 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<Uint8List> compileCode(String code) async {
+    final handle = _bindings.create(code);
+    try {
+      return _bindings.snapshot(handle);
+    } finally {
+      _bindings.free(handle);
+    }
+  }
+
+  @override
+  Future<CoreRunResult> runPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+  }) async {
+    final handle = _bindings.restore(compiled);
+    try {
+      _applyLimits(handle, limitsJson);
+      final result = _bindings.run(handle);
+
+      return _translateRunResult(result);
+    } finally {
+      _bindings.free(handle);
+    }
+  }
+
+  @override
+  Future<CoreProgressResult> startPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+  }) async {
+    final handle = _bindings.restore(compiled);
+    final ProgressResult progress;
+    try {
+      _applyLimits(handle, limitsJson);
+      progress = _bindings.start(handle);
+    } catch (e) {
+      _bindings.free(handle);
+      rethrow;
+    }
+
+    return _translateProgressResult(handle, progress);
+  }
+
+  @override
   Future<Uint8List> snapshot() async {
     final handle = _requireHandle('snapshot');
 

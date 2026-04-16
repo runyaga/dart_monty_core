@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
@@ -99,6 +100,27 @@ final class MockCallHistory {
   /// The most recent snapshot data passed to [MockMontyPlatform.restore].
   Uint8List? get lastRestoreData =>
       restoreDataList.isEmpty ? null : restoreDataList.last;
+
+  /// Codes passed to [MockMontyPlatform.compileCode], in call order.
+  final List<String> compileCodeList = [];
+
+  /// Data passed to [MockMontyPlatform.runPrecompiled], in call order.
+  final List<Uint8List> runPrecompiledDataList = [];
+
+  /// Data passed to [MockMontyPlatform.startPrecompiled], in call order.
+  final List<Uint8List> startPrecompiledDataList = [];
+
+  /// The most recent code passed to [MockMontyPlatform.compileCode].
+  String? get lastCompileCode =>
+      compileCodeList.isEmpty ? null : compileCodeList.last;
+
+  /// The most recent data passed to [MockMontyPlatform.runPrecompiled].
+  Uint8List? get lastRunPrecompiledData =>
+      runPrecompiledDataList.isEmpty ? null : runPrecompiledDataList.last;
+
+  /// The most recent data passed to [MockMontyPlatform.startPrecompiled].
+  Uint8List? get lastStartPrecompiledData =>
+      startPrecompiledDataList.isEmpty ? null : startPrecompiledDataList.last;
 }
 
 /// A mock implementation of [MontyPlatform] for testing.
@@ -239,6 +261,47 @@ class MockMontyPlatform extends MontyPlatform
 
     history.resolveFuturesResultsList.add(results);
     history.resolveFuturesErrorsList.add(errors);
+
+    return _dequeueAndTransition();
+  }
+
+  @override
+  Future<Uint8List> compileCode(String code) async {
+    history.compileCodeList.add(code);
+
+    // Encode the code as UTF-8 JSON so tests can decode and verify the input.
+    return Uint8List.fromList(utf8.encode(jsonEncode({'code': code})));
+  }
+
+  @override
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    final result = runResult;
+    if (result == null) {
+      throw StateError(
+        'runResult not set. Assign a MontyResult before calling '
+        'runPrecompiled().',
+      );
+    }
+    history.runPrecompiledDataList.add(compiled);
+
+    return result;
+  }
+
+  @override
+  Future<MontyProgress> startPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    assertNotDisposed('startPrecompiled');
+    assertIdle('startPrecompiled');
+    markActive();
+
+    history.startPrecompiledDataList.add(compiled);
 
     return _dequeueAndTransition();
   }

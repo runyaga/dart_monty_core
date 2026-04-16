@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/code_capture.dart' as code_capture;
@@ -164,6 +165,32 @@ class MontySession {
     );
 
     return _dispatchLoop(progress, externals);
+  }
+
+  /// Executes pre-compiled [compiled] bytes and returns the result.
+  ///
+  /// Pre-compiled bytes are obtained from [MontyPlatform.compileCode] or
+  /// `Monty.compile`. Running pre-compiled code avoids re-parsing on
+  /// repeated executions of the same script.
+  ///
+  /// State is **not** preserved across [runPrecompiled] calls — the compiled
+  /// code runs in isolation without `__restore_state__`/`__persist_state__`
+  /// wrapping. For stateful execution use [run] instead.
+  ///
+  /// On WASM, throws [UnsupportedError] — snapshot support requires a
+  /// future update to the WASM JS bridge.
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) {
+    _checkNotDisposed();
+
+    return _platform.runPrecompiled(
+      compiled,
+      limits: limits,
+      scriptName: scriptName,
+    );
   }
 
   /// Starts iterative execution, surfacing [MontyPending] for user callbacks.

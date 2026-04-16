@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
@@ -176,6 +177,61 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       final progress = await _bindings.resumeWithException(
         excType,
         errorMessage,
+      );
+
+      return translateProgress(progress);
+    } catch (e) {
+      markIdle();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Uint8List> compileCode(String code) async {
+    assertNotDisposed('compileCode');
+    await _ensureInitialized();
+
+    return _bindings.compileCode(code);
+  }
+
+  @override
+  Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    assertNotDisposed('runPrecompiled');
+    assertIdle('runPrecompiled');
+    markActive();
+    try {
+      await _ensureInitialized();
+      final result = await _bindings.runPrecompiled(
+        compiled,
+        limitsJson: _encodeLimitsJson(limits),
+        scriptName: scriptName,
+      );
+
+      return _translateRunResult(result);
+    } finally {
+      markIdle();
+    }
+  }
+
+  @override
+  Future<MontyProgress> startPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    assertNotDisposed('startPrecompiled');
+    assertIdle('startPrecompiled');
+    markActive();
+    try {
+      await _ensureInitialized();
+      final progress = await _bindings.startPrecompiled(
+        compiled,
+        limitsJson: _encodeLimitsJson(limits),
+        scriptName: scriptName,
       );
 
       return translateProgress(progress);
