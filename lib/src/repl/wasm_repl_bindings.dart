@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
@@ -101,6 +102,23 @@ class WasmReplBindings implements ReplBindings {
     return _translateWasmProgressResult(
       await _bindings.resumeNameLookupUndefined(),
     );
+  }
+
+  @override
+  Future<Uint8List> snapshot() {
+    if (!_created) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+
+    return _bindings.replSnapshot(replId: _replId);
+  }
+
+  @override
+  Future<void> restore(Uint8List bytes) async {
+    // replRestore in the Worker frees the old handle and stores the new one
+    // under the same replId — no explicit free needed here.
+    await _bindings.replRestore(replId: _replId, data: bytes);
+    _created = true;
   }
 
   @override

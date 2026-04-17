@@ -470,6 +470,53 @@ class NativeBindingsFfi extends NativeBindings {
     }
   }
 
+  @override
+  Uint8List replSnapshot(int handle) {
+    final ptr = Pointer<ffi_native.MontyReplHandle>.fromAddress(handle);
+    final outLen = calloc<Size>();
+
+    try {
+      final buf = ffi_native.monty_repl_snapshot(ptr, outLen);
+      if (buf == nullptr) {
+        throw StateError(
+          'monty_repl_snapshot returned null — REPL may be mid-execution',
+        );
+      }
+      final len = outLen.value;
+      final bytes = Uint8List.fromList(buf.cast<Uint8>().asTypedList(len));
+      ffi_native.monty_bytes_free(buf, len);
+
+      return bytes;
+    } finally {
+      calloc.free(outLen);
+    }
+  }
+
+  @override
+  int replRestore(Uint8List data) {
+    final cData = calloc<Uint8>(data.length);
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      cData.asTypedList(data.length).setAll(0, data);
+      final handle = ffi_native.monty_repl_restore(
+        cData,
+        data.length,
+        outError,
+      );
+      if (handle == nullptr) {
+        final errorMsg = _readAndFreeString(outError.value);
+        throw StateError(errorMsg ?? 'monty_repl_restore returned null');
+      }
+
+      return handle.address;
+    } finally {
+      calloc
+        ..free(cData)
+        ..free(outError);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------

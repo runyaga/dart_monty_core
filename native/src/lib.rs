@@ -1237,6 +1237,89 @@ pub unsafe extern "C" fn monty_repl_pending_future_call_ids(
 }
 
 // ---------------------------------------------------------------------------
+// REPL snapshots
+// ---------------------------------------------------------------------------
+
+/// Serialise a REPL handle's heap to postcard bytes.
+///
+/// - `handle`: non-null pointer to a `MontyReplHandle` in Idle or Complete state.
+/// - `out_len`: receives the byte count on success.
+///
+/// Returns a heap-allocated byte buffer (free with `monty_bytes_free`),
+/// or NULL if the handle is mid-execution or `handle`/`out_len` is NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_repl_snapshot(
+    handle: *const MontyReplHandle,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if handle.is_null() || out_len.is_null() {
+        return ptr::null_mut();
+    }
+    // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
+    let h = unsafe { &*handle };
+    match catch_ffi_panic(|| h.snapshot()) {
+        Ok(Ok(bytes)) => {
+            let len = bytes.len();
+            let boxed = bytes.into_boxed_slice();
+            let ptr = Box::into_raw(boxed).cast::<u8>();
+            // SAFETY: out_len is non-null (just checked), writing the byte count
+            unsafe { *out_len = len };
+            ptr
+        }
+        Ok(Err(_)) | Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Restore a `MontyReplHandle` from postcard bytes produced by `monty_repl_snapshot`.
+///
+/// - `data`: pointer to the byte buffer (caller owns; not consumed).
+/// - `len`: byte count.
+/// - `out_error`: on failure, receives a heap-allocated error string
+///   (free with `monty_string_free`). May be NULL.
+///
+/// Returns a heap-allocated handle (free with `monty_repl_free`), or NULL on error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_repl_restore(
+    data: *const u8,
+    len: usize,
+    out_error: *mut *mut c_char,
+) -> *mut MontyReplHandle {
+    if data.is_null() {
+        if !out_error.is_null() {
+            // SAFETY: out_error is non-null (just checked), writing error message
+            unsafe { *out_error = to_c_string("data is NULL") };
+        }
+        return ptr::null_mut();
+    }
+    // SAFETY: data is non-null (just checked) and len matches the snapshot buffer
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) };
+    match catch_ffi_panic(|| MontyReplHandle::restore(bytes)) {
+        Ok(Ok(handle)) => {
+            let ptr = Box::into_raw(Box::new(handle));
+            LIVE_REPL_HANDLES
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(ptr as usize);
+            ptr
+        }
+        Ok(Err(msg)) => {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing restore error message
+                unsafe { *out_error = to_c_string(&msg) };
+            }
+            ptr::null_mut()
+        }
+        Err(panic_msg) => {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing panic message
+                unsafe { *out_error = to_c_string(&panic_msg) };
+            }
+            ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Memory management
 // ---------------------------------------------------------------------------
 

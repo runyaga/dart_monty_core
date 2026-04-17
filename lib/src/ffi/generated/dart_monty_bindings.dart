@@ -769,6 +769,41 @@ external ffi.Pointer<ffi.Char> monty_repl_pending_future_call_ids(
   ffi.Pointer<MontyReplHandle> handle,
 );
 
+/// Serialise a REPL handle's heap to postcard bytes.
+///
+/// @param handle   Non-null REPL handle in Idle or Complete state.
+/// @param out_len  Receives the byte count on success.
+/// @return         Heap-allocated bytes (free with monty_bytes_free()), or NULL on error.
+@ffi.Native<
+  ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<MontyReplHandle>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external ffi.Pointer<ffi.Uint8> monty_repl_snapshot(
+  ffi.Pointer<MontyReplHandle> handle,
+  ffi.Pointer<ffi.Size> out_len,
+);
+
+/// Restore a REPL handle from postcard bytes produced by monty_repl_snapshot().
+///
+/// @param data       Pointer to snapshot bytes (not consumed by this call).
+/// @param len        Byte count.
+/// @param out_error  On failure, receives error string (free with monty_string_free()).
+/// @return           New REPL handle (free with monty_repl_free()), or NULL on error.
+@ffi.Native<
+  ffi.Pointer<MontyReplHandle> Function(
+    ffi.Pointer<ffi.Uint8>,
+    ffi.Size,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>()
+external ffi.Pointer<MontyReplHandle> monty_repl_restore(
+  ffi.Pointer<ffi.Uint8> data,
+  int len,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
 /// Free a string returned by any monty_* function. Safe with NULL.
 @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Char>)>()
 external void monty_string_free(

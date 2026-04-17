@@ -168,4 +168,17 @@ class WasmBindingsJs extends WasmBindings {
   @override
   Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId}) =>
       throw UnimplementedError();
+
+  @override
+  Future<Uint8List> replSnapshot({
+    required String replId,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> replRestore({
+    required String replId,
+    required Uint8List data,
+    int? sessionId,
+  }) => throw UnimplementedError();
 }

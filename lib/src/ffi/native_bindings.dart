@@ -200,4 +200,15 @@ abstract class NativeBindings {
     String resultsJson,
     String errorsJson,
   );
+
+  /// Serialises a REPL handle's heap to postcard bytes.
+  ///
+  /// Throws [StateError] if the REPL is mid-execution.
+  Uint8List replSnapshot(int handle);
+
+  /// Restores a REPL handle from postcard bytes produced by [replSnapshot].
+  ///
+  /// Returns the new handle address. The caller must free the old handle
+  /// via [replFree] before calling this.
+  int replRestore(Uint8List data);
 }

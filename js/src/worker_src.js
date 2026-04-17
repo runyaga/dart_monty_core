@@ -1368,6 +1368,112 @@ function handleReplDispose(id, replId) {
   self.postMessage({ type: 'result', id, ok: true });
 }
 
+function handleReplSnapshot(id, replId) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`,
+      errorType: 'StateError',
+    });
+    return;
+  }
+
+  const outLen = allocOutPtr();
+  let ptr;
+  try {
+    ptr = wasm.monty_repl_snapshot(handle, outLen.ptr);
+  } catch (e) {
+    outLen.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  }
+
+  if (ptr === 0) {
+    outLen.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: 'monty_repl_snapshot returned null — REPL may be mid-execution',
+      errorType: 'StateError',
+    });
+    return;
+  }
+
+  const len = outLen.read();
+  outLen.free();
+
+  const wasmBytes = new Uint8Array(wasm.memory.buffer, ptr, len);
+  let copy;
+  try {
+    copy = wasmBytes.slice();
+  } finally {
+    wasm.monty_bytes_free(ptr, len);
+  }
+
+  self.postMessage(
+    { type: 'result', id, ok: true, snapshotBuffer: copy.buffer },
+    [copy.buffer],
+  );
+}
+
+function handleReplRestore(id, replId, dataBase64) {
+  // Free existing handle for this replId, if any.
+  const existing = replHandles.get(replId);
+  if (existing) {
+    wasm.monty_repl_free(existing);
+    replHandles.delete(replId);
+  }
+
+  // Decode base64 to Uint8Array.
+  const binary = atob(dataBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  const outError = allocOutPtr();
+  const ptr = wasm.monty_alloc(bytes.length);
+  if (ptr === 0) {
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: `monty_alloc(${bytes.length}) returned null — OOM`,
+      errorType: 'MemoryError',
+    });
+    return;
+  }
+  new Uint8Array(wasm.memory.buffer).set(bytes, ptr);
+
+  let handle;
+  try {
+    handle = wasm.monty_repl_restore(ptr, bytes.length, outError.ptr);
+  } catch (e) {
+    outError.free();
+    throw e;
+  } finally {
+    wasm.monty_dealloc(ptr, bytes.length);
+  }
+
+  if (handle === 0) {
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    outError.free();
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errMsg || 'monty_repl_restore failed',
+      errorType: 'RestoreError',
+    });
+    return;
+  }
+  outError.free();
+  replHandles.set(replId, handle);
+  self.postMessage({ type: 'result', id, ok: true });
+}
+
 // ---------------------------------------------------------------------------
 // Message dispatch
 // ---------------------------------------------------------------------------
@@ -1446,6 +1552,12 @@ self.onmessage = (e) => {
         break;
       case 'replDispose':
         handleReplDispose(id, replId);
+        break;
+      case 'replSnapshot':
+        handleReplSnapshot(id, replId);
+        break;
+      case 'replRestore':
+        handleReplRestore(id, replId, dataBase64);
         break;
       default:
         self.postMessage({

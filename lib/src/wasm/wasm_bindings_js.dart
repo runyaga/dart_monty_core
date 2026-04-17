@@ -181,6 +181,19 @@ external JSPromise<JSString> _jsResumeNameLookupUndefined([
   JSNumber? sessionId,
 ]);
 
+@JS('DartMontyBridge.replSnapshot')
+external JSPromise<JSAny> _jsReplSnapshot(
+  JSString replId, [
+  JSNumber? sessionId,
+]);
+
+@JS('DartMontyBridge.replRestore')
+external JSPromise<JSString> _jsReplRestore(
+  JSString replId,
+  JSString dataBase64, [
+  JSNumber? sessionId,
+]);
+
 /// Concrete [WasmBindings] implementation using `dart:js_interop`.
 ///
 /// Calls static methods on `window.DartMontyBridge`, which manages a
@@ -608,6 +621,41 @@ class WasmBindingsJs extends WasmBindings {
     ).toDart;
 
     return _decodeProgress(resultJson.toDart);
+  }
+
+  @override
+  Future<Uint8List> replSnapshot({
+    required String replId,
+    int? sessionId,
+  }) async {
+    final jsAny = await _jsReplSnapshot(
+      replId.toJS,
+      sessionId?.toJS,
+    ).toDart;
+    final result = jsAny as _SnapshotResult;
+    if (!result.ok.toDart) {
+      throw StateError(result.error?.toDart ?? 'replSnapshot failed');
+    }
+
+    return result.snapshotBuffer!.toDart.asUint8List();
+  }
+
+  @override
+  Future<void> replRestore({
+    required String replId,
+    required Uint8List data,
+    int? sessionId,
+  }) async {
+    final dataBase64 = base64Encode(data);
+    final resultJson = await _jsReplRestore(
+      replId.toJS,
+      dataBase64.toJS,
+      sessionId?.toJS,
+    ).toDart;
+    final map = json.decode(resultJson.toDart) as Map<String, dynamic>;
+    if (map['ok'] != true) {
+      throw StateError(map['error'] as String? ?? 'replRestore failed');
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -125,24 +125,26 @@ class MontySession {
     return _repl.resumeWithError(errorMessage);
   }
 
-  /// Not yet implemented — see issue #23.
+  /// Serialises the REPL heap to postcard bytes.
   ///
-  /// Snapshot/restore requires exposing `replSnapshot`/`replRestore` on the
-  /// REPL path (JS bridge + `ReplBindings`) so the full Rust heap can be
-  /// serialised, rather than relying on Python introspection or Dart-side
-  /// variable tracking.
-  Future<Uint8List> snapshot() => Future.error(
-    UnsupportedError(
-      'MontySession.snapshot() is not yet implemented. '
-      'Track progress at https://github.com/runyaga/dart_monty_core/issues/23',
-    ),
-  );
+  /// The bytes can be passed to [restore] to rehydrate an identical session.
+  /// Throws [StateError] if the session is disposed or the REPL is
+  /// mid-execution.
+  Future<Uint8List> snapshot() {
+    _checkNotDisposed();
 
-  /// Not yet implemented — see issue #23.
-  void restore(Uint8List bytes) => throw UnsupportedError(
-    'MontySession.restore() is not yet implemented. '
-    'Track progress at https://github.com/runyaga/dart_monty_core/issues/23',
-  );
+    return _repl.snapshot();
+  }
+
+  /// Restores this session's REPL from bytes produced by [snapshot].
+  ///
+  /// The current REPL handle is freed and replaced with a new one restored
+  /// from [bytes]. Any in-flight [run] calls must complete before calling this.
+  Future<void> restore(Uint8List bytes) {
+    _checkNotDisposed();
+
+    return _repl.restore(bytes);
+  }
 
   /// Clears all persisted state. The next [run] starts with empty globals.
   void clearState() {
