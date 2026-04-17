@@ -1,0 +1,26 @@
+# Build artifacts and generated files
+coverage/
+js/node_modules/
+native/target/
+native/.dart_tool/
+
+# Sub-packages have their own pubspecs
+packages/
+
+# CI and tooling not relevant to consumers
+.github/
+tool/
+AGENTS.md
+CLAUDE.md
+dcm_options.yaml
+
+# Docs dir (non-standard name — pub convention is doc/)
+docs/
+
+# Test infrastructure
+dart_test.yaml
+ffigen.yaml
+
+# Gitignored files that are tracked in git (exclude from published package)
+native/.dart_tool/
+pubspec.lock

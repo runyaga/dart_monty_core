@@ -3,7 +3,6 @@ description: Thin Dart binding for pydantic/monty — no plugins, no bridge, no 
 version: 0.0.12
 homepage: https://github.com/runyaga/dart_monty_core
 repository: https://github.com/runyaga/dart_monty_core
-publish_to: none
 
 environment:
   sdk: ^3.10.0
