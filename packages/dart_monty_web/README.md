@@ -40,11 +40,34 @@ if (result.error != null) {
 }
 ```
 
-> **Note on `Monty.compile()` / `runPrecompiled()`:** These APIs are not
-> supported on WASM — snapshot support requires a future update to the
-> WASM JS bridge. Calling them throws `UnsupportedError` on the web
-> backend. Use `repl.feed(code, inputs: {...})` for repeated execution
-> instead.
+### Concurrent REPLs
+
+Multiple `MontyRepl` instances can coexist concurrently on the WASM backend.
+Each instance generates a unique `replId` that is threaded through the JS
+bridge into the Web Worker, so independent Rust heap handles are maintained
+in a `Map` rather than a single scalar:
+
+```dart
+final repl1 = MontyRepl();
+final repl2 = MontyRepl();
+
+await repl1.feed('x = 1');
+await repl2.feed('x = 2');
+
+print((await repl1.feed('x')).value); // MontyInt(1)
+print((await repl2.feed('x')).value); // MontyInt(2)
+```
+
+### Compile and run precompiled
+
+`Monty.compile()` and `Monty.runPrecompiled()` are fully supported on the WASM
+backend. Use them to avoid re-parsing the same script on repeated executions:
+
+```dart
+final binary = await Monty.compile('output = [x * 2 for x in data]');
+final monty = Monty();
+final result = await monty.runPrecompiled(binary);
+```
 
 See [`web/repl_demo.dart`](web/repl_demo.dart) for the full wiring including DOM
 manipulation, button event handlers, and the dispose pattern.
