@@ -55,6 +55,181 @@ Future<Object?> _osHandler(
 }
 
 // ---------------------------------------------------------------------------
+// Examples palette — 10 samples from simple to sophisticated
+// ---------------------------------------------------------------------------
+class _Step {
+  const _Step({required this.label, required this.code});
+  final String label;
+  final String code;
+}
+
+class _Sample {
+  const _Sample({
+    required this.num,
+    required this.title,
+    required this.tabIndex,
+    required this.tabName,
+    required this.desc,
+    required this.steps,
+  });
+  final int num;
+  final String title;
+  final int tabIndex; // 1=REPL, 2=Externals, 3=VFS
+  final String tabName;
+  final String desc;
+  final List<_Step> steps;
+}
+
+const _kSamples = <_Sample>[
+  _Sample(
+    num: 1,
+    title: 'Typed values across FFI',
+    tabIndex: 1,
+    tabName: 'REPL',
+    desc: 'Every Python value crosses the FFI boundary as a typed MontyValue '
+        'subtype — MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. '
+        'Submit this dict to see each field typed individually.',
+    steps: [
+      _Step(
+        label: '→ REPL',
+        code: '{"pi": 3.14159, "n": 42, "items": [1, 2, 3], "ok": True}',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 2,
+    title: 'Heap persistence between calls',
+    tabIndex: 1,
+    tabName: 'REPL',
+    desc: 'Python state lives in the Rust heap between feed() calls — not '
+        're-parsed, not serialised. Inject step 1, run it, then inject step 2: '
+        'x is still there.',
+    steps: [
+      _Step(label: 'Step 1', code: 'x = [i**2 for i in range(1, 6)]'),
+      _Step(label: 'Step 2', code: 'sum(x)  # x persists in the Rust heap'),
+    ],
+  ),
+  _Sample(
+    num: 3,
+    title: 'Multi-line block detection',
+    tabIndex: 1,
+    tabName: 'REPL',
+    desc: 'detectContinuation() returns incompleteBlock when the statement is '
+        'not yet closed. Paste the full function — the REPL waits for the '
+        'de-indent before executing.',
+    steps: [
+      _Step(
+        label: '→ REPL',
+        code: 'def fib(n):\n'
+            '    a, b = 0, 1\n'
+            '    for _ in range(n): a, b = b, a+b\n'
+            '    return a\n'
+            '\n'
+            '[fib(i) for i in range(10)]',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 4,
+    title: 'Snapshot / restore the heap',
+    tabIndex: 1,
+    tabName: 'REPL',
+    desc: 'snapshot() serialises the entire Rust heap to postcard bytes. Run '
+        'step 1 (then 📸 Snap), mutate with step 2, then ↩ Restore — the heap '
+        'rewinds exactly to the snapshot point.',
+    steps: [
+      _Step(label: 'Step 1 → snap', code: 'counter = 0; counter'),
+      _Step(label: 'Step 2 → restore', code: 'counter += 1; counter'),
+    ],
+  ),
+  _Sample(
+    num: 5,
+    title: 'Error taxonomy',
+    tabIndex: 1,
+    tabName: 'REPL',
+    desc: 'MontyError is sealed: MontySyntaxError is caught before execution '
+        'starts; MontyScriptError wraps runtime exceptions with a Python '
+        'traceback. Each step exercises a different subtype.',
+    steps: [
+      _Step(label: 'SyntaxError', code: 'def broken('),
+      _Step(label: 'ZeroDivisionError', code: '1 / 0'),
+      _Step(label: 'NameError', code: 'undefined_name'),
+    ],
+  ),
+  _Sample(
+    num: 6,
+    title: 'Single callback — one suspension',
+    tabIndex: 2,
+    tabName: 'Externals',
+    desc: 'Calling compute() suspends Python execution and fires a MontyCallback '
+        'in Dart. Dart handles the arithmetic and calls resume(). '
+        'The ⚡ line logs each round-trip.',
+    steps: [
+      _Step(label: '→ Externals', code: 'compute("add", 19, 23)'),
+    ],
+  ),
+  _Sample(
+    num: 7,
+    title: 'Nested calls — three suspensions',
+    tabIndex: 2,
+    tabName: 'Externals',
+    desc: 'One Python expression can trigger multiple MontyCallback firings. '
+        'The two inner compute() calls suspend first, then the outer mul. '
+        'Count the ⚡ lines — three distinct suspend/resume cycles.',
+    steps: [
+      _Step(
+        label: '→ Externals',
+        code: 'compute("mul", compute("add", 2, 3), compute("add", 4, 1))',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 8,
+    title: 'Kwargs in the callback map',
+    tabIndex: 2,
+    tabName: 'Externals',
+    desc: 'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
+        'kwargs appear by their Python name. format_currency(19.99, code="EUR") '
+        'fires with {_0: 19.99, code: "EUR"}.',
+    steps: [
+      _Step(label: '→ Externals', code: 'format_currency(19.99, code="EUR")'),
+    ],
+  ),
+  _Sample(
+    num: 9,
+    title: 'OsCall — pathlib interception',
+    tabIndex: 3,
+    tabName: 'VFS',
+    desc: 'pathlib.Path.read_text() becomes a MontyOsCall — Python suspends, '
+        'Dart looks up the path in its in-memory map, resumes with the string. '
+        'Import must run first; VFS state persists.',
+    steps: [
+      _Step(label: 'Step 1', code: 'import pathlib'),
+      _Step(
+        label: 'Step 2',
+        code: 'pathlib.Path("/data/hello.txt").read_text()',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 10,
+    title: 'VFS write → read round-trip',
+    tabIndex: 3,
+    tabName: 'VFS',
+    desc: 'Writing from Python mutates Dart\'s in-memory map via an OsCall. '
+        'Reading it back confirms the full cycle: Python → OsCall → Dart map '
+        'mutation → OsCall → Python value.',
+    steps: [
+      _Step(
+        label: 'Write',
+        code: 'pathlib.Path("/data/new.txt").write_text("written from Python!")',
+      ),
+      _Step(label: 'Read', code: 'pathlib.Path("/data/new.txt").read_text()'),
+    ],
+  ),
+];
+
+// ---------------------------------------------------------------------------
 // Fake data for the Externals tab callbacks
 // ---------------------------------------------------------------------------
 const _dbTables = <String, List<Map<String, Object>>>{
@@ -109,6 +284,10 @@ class _DemoShellState extends State<_DemoShell>
   late final Monty _vfsMonty;
   late final MontySession _manualSession;
 
+  final _replKey = GlobalKey<_ReplPanelState>();
+  final _externalsKey = GlobalKey<_ExternalsPanelState>();
+  final _vfsKey = GlobalKey<_VfsPanelState>();
+
   @override
   void initState() {
     super.initState();
@@ -132,6 +311,13 @@ class _DemoShellState extends State<_DemoShell>
     return Scaffold(
       appBar: AppBar(
         title: const Text('dart_monty_core'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.lightbulb_outline),
+            tooltip: 'Examples',
+            onPressed: () => _showSamples(context),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           isScrollable: true,
@@ -148,11 +334,68 @@ class _DemoShellState extends State<_DemoShell>
         controller: _tabs,
         children: [
           _ExecPanel(),
-          _ReplPanel(repl: _replA),
-          _ExternalsPanel(session: _externalsSession),
-          _VfsPanel(monty: _vfsMonty),
+          _ReplPanel(key: _replKey, repl: _replA),
+          _ExternalsPanel(key: _externalsKey, session: _externalsSession),
+          _VfsPanel(key: _vfsKey, monty: _vfsMonty),
           _SessionPanel(session: _manualSession),
         ],
+      ),
+    );
+  }
+
+  void _injectSample(int tabIndex, String code) {
+    switch (tabIndex) {
+      case 1:
+        _replKey.currentState?.injectCode(code);
+      case 2:
+        _externalsKey.currentState?.injectCode(code);
+      case 3:
+        _vfsKey.currentState?.injectCode(code);
+    }
+    _tabs.animateTo(tabIndex);
+  }
+
+  void _showSamples(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFF1e1e1e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        builder: (_, scrollCtrl) => ListView.builder(
+          controller: scrollCtrl,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+          itemCount: _kSamples.length + 1,
+          itemBuilder: (_, i) {
+            if (i == 0) {
+              return const Padding(
+                padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
+                child: Text(
+                  '10 Examples  —  tap any snippet to inject it',
+                  style: TextStyle(
+                    color: Color(0xFF4ec9b0),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            }
+            final sample = _kSamples[i - 1];
+            return _SampleCard(
+              sample: sample,
+              onInject: (code) {
+                Navigator.pop(ctx);
+                _injectSample(sample.tabIndex, code);
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -329,6 +572,8 @@ class _ReplPanelState extends State<_ReplPanel> {
   final _ctrl = TextEditingController();
   Uint8List? _snap;
 
+  void injectCode(String code) => setState(() => _ctrl.text = code);
+
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
 
@@ -453,6 +698,8 @@ class _ExternalsPanelState extends State<_ExternalsPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
   int _callNum = 0;
+
+  void injectCode(String code) => setState(() => _ctrl.text = code);
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -589,6 +836,8 @@ class _VfsPanelState extends State<_VfsPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
   Uint8List? _snap;
+
+  void injectCode(String code) => setState(() => _ctrl.text = code);
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -791,6 +1040,114 @@ class _SessionPanelState extends State<_SessionPanel> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sample card widget for the examples bottom sheet
+// ---------------------------------------------------------------------------
+class _SampleCard extends StatelessWidget {
+  const _SampleCard({required this.sample, required this.onInject});
+  final _Sample sample;
+  final void Function(String code) onInject;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = switch (sample.tabIndex) {
+      2 => const Color(0xFF7a3f9c),
+      3 => const Color(0xFF3a7a3a),
+      _ => const Color(0xFF0e639c),
+    };
+
+    return Card(
+      color: const Color(0xFF1a1a1a),
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: accent.withAlpha(100)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '${sample.num} of 10 · ${sample.tabName}',
+                  style: const TextStyle(
+                    color: Color(0xFF6a9955),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              sample.title,
+              style: TextStyle(
+                color: accent,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              sample.desc,
+              style: const TextStyle(color: Color(0xFF999999), fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 8),
+            ...sample.steps.map(
+              (step) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111111),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        step.code,
+                        style: const TextStyle(
+                          color: Color(0xFF9cdcfe),
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      onPressed: () => onInject(step.code),
+                      child: Text(step.label, style: const TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

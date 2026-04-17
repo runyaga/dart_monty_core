@@ -95,6 +95,7 @@ void main() {
   _initReplPanel();
   _initExternalsPanel();
   _initVfsPanel();
+  _initExamples();
 }
 
 // ---------------------------------------------------------------------------
@@ -495,6 +496,247 @@ void _initVfsPanel() {
   }.toJS;
   input.disabled = false;
   runBtn.disabled = false;
+}
+
+// ---------------------------------------------------------------------------
+// Examples palette — 10 samples from simple to sophisticated
+// ---------------------------------------------------------------------------
+class _Step {
+  const _Step({required this.label, required this.code});
+  final String label;
+  final String code;
+}
+
+class _Sample {
+  const _Sample({
+    required this.num,
+    required this.title,
+    required this.panel,
+    required this.desc,
+    required this.steps,
+  });
+  final int num;
+  final String title;
+  final String panel; // 'a' | 'b' | 'vfs'
+  final String desc;
+  final List<_Step> steps;
+}
+
+const _kSamples = <_Sample>[
+  _Sample(
+    num: 1,
+    title: 'Typed values across FFI',
+    panel: 'a',
+    desc: 'Every Python value crosses the FFI boundary as a typed MontyValue '
+        'subtype — MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. '
+        'Submit this dict to see each field typed individually.',
+    steps: [
+      _Step(
+        label: '→ REPL',
+        code: '{"pi": 3.14159, "n": 42, "items": [1, 2, 3], "ok": True}',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 2,
+    title: 'Heap persistence between calls',
+    panel: 'a',
+    desc: 'Python state lives in the Rust heap between feed() calls — not '
+        're-parsed, not serialised to JSON. Inject step 1, run it, then '
+        'inject step 2: x is still there.',
+    steps: [
+      _Step(label: 'Step 1', code: 'x = [i**2 for i in range(1, 6)]'),
+      _Step(label: 'Step 2', code: 'sum(x)  # x persists in the Rust heap'),
+    ],
+  ),
+  _Sample(
+    num: 3,
+    title: 'Multi-line block detection',
+    panel: 'a',
+    desc: 'detectContinuation() returns incompleteBlock when the statement is '
+        'not yet closed. Paste the full function — the REPL holds input until '
+        'the de-indent completes the block.',
+    steps: [
+      _Step(
+        label: '→ REPL',
+        code: 'def fib(n):\n'
+            '    a, b = 0, 1\n'
+            '    for _ in range(n): a, b = b, a+b\n'
+            '    return a\n'
+            '\n'
+            '[fib(i) for i in range(10)]',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 4,
+    title: 'Snapshot / restore the heap',
+    panel: 'a',
+    desc: 'snapshot() serialises the entire Rust heap to postcard bytes. '
+        'Run step 1 to set counter=0, click 📸, mutate with step 2 a few '
+        'times, then click ↩ — the heap rewinds exactly.',
+    steps: [
+      _Step(label: 'Step 1 (then 📸)', code: 'counter = 0; counter'),
+      _Step(label: 'Step 2 (then ↩)', code: 'counter += 1; counter'),
+    ],
+  ),
+  _Sample(
+    num: 5,
+    title: 'Error taxonomy',
+    panel: 'a',
+    desc: 'MontyError is sealed: MontySyntaxError is caught before execution '
+        'starts; MontyScriptError wraps runtime exceptions with a Python '
+        'traceback. Each snippet exercises a different subtype.',
+    steps: [
+      _Step(label: 'SyntaxError', code: 'def broken('),
+      _Step(label: 'ZeroDivisionError', code: '1 / 0'),
+      _Step(label: 'NameError', code: 'undefined_name'),
+    ],
+  ),
+  _Sample(
+    num: 6,
+    title: 'Single callback — one suspension',
+    panel: 'b',
+    desc: 'Calling compute() suspends Python execution and emits MontyPending. '
+        'Dart\'s handler runs, calls session.resume() with the result. '
+        'The ⚡ line logs each round-trip across the boundary.',
+    steps: [
+      _Step(label: '→ Externals', code: 'compute("add", 19, 23)'),
+    ],
+  ),
+  _Sample(
+    num: 7,
+    title: 'Nested calls — three suspensions',
+    panel: 'b',
+    desc: 'A single Python expression can trigger multiple MontyPending events. '
+        'Here the two inner compute() calls suspend first, then the outer mul. '
+        'Count the ⚡ lines — three distinct suspend/resume cycles.',
+    steps: [
+      _Step(
+        label: '→ Externals',
+        code: 'compute("mul", compute("add", 2, 3), compute("add", 4, 1))',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 8,
+    title: 'Kwargs in the callback map',
+    panel: 'b',
+    desc: 'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
+        'kwargs appear by their Python name. format_currency(19.99, code="EUR") '
+        'fires the callback with {_0: 19.99, code: "EUR"}.',
+    steps: [
+      _Step(label: '→ Externals', code: 'format_currency(19.99, code="EUR")'),
+    ],
+  ),
+  _Sample(
+    num: 9,
+    title: 'OsCall — pathlib interception',
+    panel: 'vfs',
+    desc: 'pathlib.Path.read_text() becomes a MontyOsCall — Python execution '
+        'suspends, Dart looks up the path in its in-memory map, and resumes '
+        'with the string. The import must run first; state persists.',
+    steps: [
+      _Step(label: 'Step 1', code: 'import pathlib'),
+      _Step(
+        label: 'Step 2',
+        code: 'pathlib.Path("/data/hello.txt").read_text()',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 10,
+    title: 'VFS write → read round-trip',
+    panel: 'vfs',
+    desc: 'Writing from Python mutates Dart\'s in-memory map via an OsCall. '
+        'Reading it back confirms the full cycle: Python → OsCall → Dart map '
+        'mutation → OsCall → Python value.',
+    steps: [
+      _Step(
+        label: 'Write',
+        code: 'pathlib.Path("/data/new.txt").write_text("written from Python!")',
+      ),
+      _Step(label: 'Read', code: 'pathlib.Path("/data/new.txt").read_text()'),
+    ],
+  ),
+];
+
+void _initExamples() {
+  final toggleBtn =
+      web.document.getElementById('examples-toggle')! as web.HTMLButtonElement;
+  final strip =
+      web.document.getElementById('examples-strip')! as web.HTMLDivElement;
+
+  for (final sample in _kSamples) {
+    strip.appendChild(_buildSampleCard(sample));
+  }
+
+  var open = false;
+  toggleBtn.onclick = (web.MouseEvent _) {
+    open = !open;
+    strip.style.display = open ? 'flex' : 'none';
+    toggleBtn.textContent = open ? '✕ Hide' : '📖 Examples';
+  }.toJS;
+}
+
+web.HTMLDivElement _buildSampleCard(_Sample sample) {
+  final card = web.document.createElement('div') as web.HTMLDivElement
+    ..className = 'sample-card';
+
+  final panelLabel = switch (sample.panel) {
+    'a' => 'REPL',
+    'b' => 'Externals',
+    _ => 'VFS',
+  };
+
+  final numEl = web.document.createElement('div') as web.HTMLDivElement
+    ..className = 'sample-num'
+    ..textContent = '${sample.num} of 10 · $panelLabel';
+  card.appendChild(numEl);
+
+  final titleEl = web.document.createElement('div') as web.HTMLDivElement
+    ..className = 'sample-title'
+    ..textContent = sample.title;
+  card.appendChild(titleEl);
+
+  final descEl = web.document.createElement('div') as web.HTMLDivElement
+    ..className = 'sample-desc'
+    ..textContent = sample.desc;
+  card.appendChild(descEl);
+
+  for (final step in sample.steps) {
+    final codeEl = web.document.createElement('pre') as web.HTMLPreElement
+      ..className = 'sample-code'
+      ..textContent = step.code;
+    card.appendChild(codeEl);
+
+    final actionsEl = web.document.createElement('div') as web.HTMLDivElement
+      ..className = 'sample-actions';
+
+    final btnClass = switch (sample.panel) {
+      'b' => 'inject-btn ext',
+      'vfs' => 'inject-btn vfs',
+      _ => 'inject-btn',
+    };
+    final injectBtn =
+        web.document.createElement('button') as web.HTMLButtonElement
+          ..className = btnClass
+          ..textContent = step.label;
+
+    final code = step.code;
+    final panel = sample.panel;
+    injectBtn.onclick = (web.MouseEvent _) {
+      final inputEl = web.document.getElementById('input-$panel')!
+          as web.HTMLInputElement;
+      inputEl.value = code;
+      inputEl.focus();
+    }.toJS;
+
+    actionsEl.appendChild(injectBtn);
+    card.appendChild(actionsEl);
+  }
+
+  return card;
 }
 
 // ---------------------------------------------------------------------------

@@ -74,13 +74,47 @@
     .error-line  { color: #f44747; }
     .print-line  { color: #b5cea8; }
     .system-line { color: #6a9955; font-style: italic; }
+
+    /* Examples palette */
+    #examples-strip {
+      background: #252526; border-bottom: 2px solid #333;
+      padding: 10px 12px; display: none; gap: 10px;
+      overflow-x: auto; flex-shrink: 0; align-items: stretch;
+    }
+    .sample-card {
+      background: #1a1a1a; border: 1px solid #3c3c3c; border-radius: 6px;
+      padding: 10px 12px; min-width: 230px; max-width: 260px;
+      flex-shrink: 0; display: flex; flex-direction: column; gap: 5px;
+    }
+    .sample-num  { color: #6a9955; font-size: 0.66rem; font-weight: bold; text-transform: uppercase; }
+    .sample-title{ color: #4ec9b0; font-size: 0.82rem; font-weight: bold; }
+    .sample-desc { color: #999; font-size: 0.72rem; line-height: 1.45; flex: 1; }
+    .sample-code {
+      background: #111; border-radius: 3px; padding: 5px 7px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11px; color: #9cdcfe; white-space: pre; overflow-x: auto;
+    }
+    .sample-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+    .inject-btn {
+      background: #0e639c; color: white; border: none;
+      padding: 3px 8px; border-radius: 3px; cursor: pointer;
+      font-size: 10px; font-weight: bold; white-space: nowrap;
+    }
+    .inject-btn:hover { background: #1177bb; }
+    .inject-btn.ext { background: #7a3f9c; }
+    .inject-btn.ext:hover { background: #8a4fac; }
+    .inject-btn.vfs { background: #3a7a3a; }
+    .inject-btn.vfs:hover { background: #4a8a4a; }
   </style>
 </head>
 <body>
   <header>
     <h1>Monty Python REPL — concurrent sessions · snapshot · VFS</h1>
+    <button id="examples-toggle" class="btn-sm">📖 Examples</button>
     <span class="badge">dart2wasm</span>
   </header>
+
+  <div id="examples-strip"></div>
 
   <div class="panels">
     <!-- Session A — MontyRepl, independent Rust heap handle -->
