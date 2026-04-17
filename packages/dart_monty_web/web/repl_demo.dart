@@ -232,13 +232,13 @@ void _initVfsPanel() {
       write('No snapshot yet — click 📸 first.', className: 'system-line');
       return;
     }
-    try {
-      monty.restore(
-        Uint8List.fromList(saved),
-      );
-      write('✅ State restored from snapshot.', className: 'system-line');
-    } on Object catch (e) {
-      write('Restore error: $e', className: 'error-line');
-    }
+    unawaited(() async {
+      try {
+        await monty.restore(Uint8List.fromList(saved));
+        write('✅ State restored from snapshot.', className: 'system-line');
+      } on Object catch (e) {
+        write('Restore error: $e', className: 'error-line');
+      }
+    }());
   }.toJS;
 }
