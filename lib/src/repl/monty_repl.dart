@@ -95,9 +95,9 @@ Map<String, Object?> _replArgsToMap(
 
 /// A stateful REPL session backed by the Monty Rust interpreter.
 ///
-/// Unlike `MontySession` which fakes state persistence via code generation,
-/// [MontyRepl] uses the native Rust REPL — heap, globals, functions, and
-/// classes all persist across [feed] calls without serialization.
+/// Heap, globals, functions, and classes all persist across [feed] calls
+/// without serialization — the underlying Rust REPL handle is reused between
+/// calls, not recreated.
 ///
 /// ```dart
 /// final repl = MontyRepl();

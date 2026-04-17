@@ -41,7 +41,7 @@ await monty.run('x = 42');
 await monty.run('y = x * 2');
 final r = await monty.run('x + y');
 print(r.value); // MontyInt(126)
-await monty.dispose();
+monty.dispose();
 
 // Pass per-invocation inputs (not persisted)
 await monty.run('result = x * multiplier', inputs: {'x': 10, 'multiplier': 3});
@@ -56,38 +56,34 @@ await monty.run('result = x * multiplier', inputs: {'x': 10, 'multiplier': 3});
 | Member | Description |
 |---|---|
 | `Monty({osHandler, scriptName})` | Persistent interpreter, auto-detected backend |
-| `Monty.withPlatform(platform)` | Explicit backend |
 | `Monty.exec(code)` | One-shot: create → run → dispose |
 | `Monty.compile(code)` | Pre-compile to `Uint8List` bytes |
+| `Monty.runPrecompiled(bytes)` | Run pre-compiled bytes (static, stateless) |
 | `monty.run(code, {externals, inputs})` | Execute Python, state persists |
-| `monty.runPrecompiled(bytes)` | Run pre-compiled bytes |
-| `monty.state` | Current globals as `Map<String, Object?>` |
 | `monty.clearState()` | Reset globals |
-| `monty.dispose()` | Free resources |
+| `monty.dispose()` | Free resources (synchronous) |
 
 ### `MontySession` — lower-level stateful execution
 
-`MontySession` wraps any `MontyPlatform` and serializes globals between
-calls. Use it directly when you need fine-grained control over the platform
-or want to pass `MontyCallback` handlers:
+`MontySession` is backed by the native Rust REPL heap — the same as `Monty`,
+but exposed directly. Use it when you need the `externals` callback API,
+`snapshot`/`restore`, or per-call `inputs` injection:
 
 ```dart
-final platform = createPlatformMonty(); // FFI or WASM
-final session = MontySession(platform: platform);
+final session = MontySession();
 
 final result = await session.run('greet("world")', externals: {
   'greet': (args) async => 'Hello, ${args['_0']}!',
 });
 print(result.value); // MontyString('Hello, world!')
 
-await platform.dispose();
+session.dispose();
 ```
 
 ### `MontyRepl` — persistent Rust heap REPL
 
-Unlike `MontySession`, `MontyRepl` keeps the interpreter alive between
-calls — heap objects, closures, and generator state all persist without
-serialization overhead:
+`MontyRepl` exposes the Rust REPL handle directly. Heap objects, closures, and
+generator state all persist across calls:
 
 ```dart
 final repl = MontyRepl();
@@ -95,13 +91,6 @@ await repl.feed('def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)');
 final r = await repl.feed('fib(10)');
 print(r.value); // MontyInt(55)
 await repl.dispose();
-```
-
-Use `ReplPlatform` to adapt a `MontyRepl` to the `MontyPlatform` interface:
-
-```dart
-final platform = ReplPlatform(repl: MontyRepl());
-final session = MontySession(platform: platform);
 ```
 
 #### Concurrent REPLs on WASM
@@ -257,7 +246,8 @@ await monty.run(
     'factor': 10,
   },
 );
-print(monty.state['output']); // [10, 20, 30, 40, 50]
+final r = await monty.run('output');
+print(r.value); // MontyList([10, 20, 30, 40, 50])
 ```
 
 Special float values are handled correctly:
@@ -284,43 +274,6 @@ await monty.runPrecompiled(binary);
 ```
 
 Pre-compilation works on both **FFI** and **WASM** backends.
-
----
-
-## Snapshot and restore
-
-`Monty.snapshot()` captures all Python variables persisted by a session as a
-`Uint8List`. Pass those bytes to `Monty.restore()` on a new instance to
-recreate the exact variable state — across process restarts, app launches, or
-network round-trips.
-
-```dart
-// Session A — run some code and capture state
-final montyA = Monty();
-await montyA.run('x = 10');
-await montyA.run('y = x * 3');
-await montyA.run('label = "result"');
-
-// "Download" — bytes are safe to store in a file, IndexedDB, or a server
-final bytes = montyA.snapshot();
-
-// "Upload" — restore into a fresh session (e.g. on next app launch)
-final montyB = Monty();
-montyB.restore(bytes);
-
-print(montyB.state['x']);     // 10
-print(montyB.state['y']);     // 30
-print(montyB.state['label']); // result
-
-// Continue executing from the restored state
-final result = await montyB.run('y + x');
-print(result.value); // MontyInt(40)
-```
-
-The snapshot format is a v1 JSON envelope (`{"v":1,"dartState":{...}}`) encoded
-as UTF-8 bytes. Only JSON-serializable Python values are captured (int, float,
-str, bool, list, dict, None). `restore()` throws `ArgumentError` on invalid or
-unsupported-version bytes.
 
 ---
 
@@ -520,7 +473,7 @@ Some Dart API choices intentionally differ from JS:
 
 | Dart API | Reason |
 |---|---|
-| `run(code)` — code passed at runtime | State persistence (`__restore_state__`) requires dynamic code per call |
+| `run(code)` — code passed at runtime | Externals binding and `inputs` injection happen at call time |
 | `MontyValue` type hierarchy | Richer than raw JS values; enables exhaustive Dart pattern matching |
 | `MontyProgress` sealed union | More expressive than JS `MontySnapshot instanceof` checks |
 | `OsCallHandler` separate from externals | Intentional Dart extension for OS-call interception |

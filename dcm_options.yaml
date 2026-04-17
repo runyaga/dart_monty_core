@@ -86,7 +86,10 @@ dcm:
     - no-equal-nested-conditions
 
     # --- Common Anti-Patterns ---
-    - avoid-unused-parameters
+    - avoid-unused-parameters:
+        exclude:
+          # limits/scriptName kept for API compatibility; REPL ignores both
+          - "lib/src/monty_session.dart"
     - avoid-nested-conditional-expressions
     - avoid-missing-enum-constant-in-map
     - avoid-unnecessary-type-assertions
@@ -148,6 +151,8 @@ dcm:
           - "lib/src/wasm/wasm_bindings_js.dart"
           # NativeBindingsFfi has non-final fields (handle state)
           - "lib/src/ffi/native_bindings_ffi.dart"
+          # Private constructor wraps MontySession which creates platform state
+          - "lib/src/monty.dart"
     - format-comment
 
     # --- Immutability ---
@@ -240,6 +245,9 @@ dcm:
           # strict re-ordering would harm readability
           - "lib/src/platform/monty_value_datetime.dart"
           - "lib/src/platform/monty_stack_frame.dart"
+          # _nextReplId() is a constructor helper; grouping it with the
+          # counter field it mutates is clearer than moving it to the end
+          - "lib/src/repl/wasm_repl_bindings.dart"
 
     # --- Testing ---
     - prefer-test-matcher

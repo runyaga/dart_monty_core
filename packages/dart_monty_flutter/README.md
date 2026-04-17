@@ -55,41 +55,6 @@ Key API surface used in `lib/main.dart`:
 - `result.printOutput` — captured `print()` output
 - `repl.dispose()` — free Rust heap resources (call in `State.dispose()`)
 
-### Snapshot and restore
-
-Use `Monty.snapshot()` and `Monty.restore()` to persist Python session state
-across app restarts via `shared_preferences`:
-
-```dart
-import 'dart:convert';
-import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-const _snapshotKey = 'monty_session';
-
-// Save state when app goes to background
-Future<void> saveState(Monty monty) async {
-  final prefs = await SharedPreferences.getInstance();
-  final bytes = monty.snapshot();
-  await prefs.setString(_snapshotKey, base64Encode(bytes));
-}
-
-// Restore state on app launch
-Future<Monty> loadOrCreate() async {
-  final prefs = await SharedPreferences.getInstance();
-  final encoded = prefs.getString(_snapshotKey);
-  final monty = Monty();
-  if (encoded != null) {
-    monty.restore(base64Decode(encoded));
-  }
-  return monty;
-}
-```
-
-The snapshot captures all JSON-serializable Python variables (int, float, str,
-bool, list, dict, None). Variables are restored into the Python scope on the
-next `monty.run(...)` call.
-
 ### Passing Flutter state into Python
 
 Use `inputs:` to inject widget state or user data into Python without
