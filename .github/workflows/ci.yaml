@@ -97,6 +97,10 @@ jobs:
           name: ffi-bindings
           path: lib/src/ffi/generated
       - run: dart pub get
+      - name: Stub missing build artifacts
+        # Assets are gitignored (built at publish time). Touch empty stubs so
+        # dart analyze doesn't fail on the flutter.assets: references in pubspec.yaml.
+        run: touch assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm
       - name: Analyze
         run: dart analyze --fatal-infos
       - name: Format check
