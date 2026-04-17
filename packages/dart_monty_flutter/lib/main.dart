@@ -113,7 +113,10 @@ class _MontyDemoPageState extends State<MontyDemoPage>
         backgroundColor: const Color(0xFF333333),
         title: const Text(
           'Monty Demo',
-          style: TextStyle(color: Color(0xFF4EC9B0), fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Color(0xFF4EC9B0),
+            fontWeight: FontWeight.bold,
+          ),
         ),
         bottom: TabBar(
           controller: _tabs,
@@ -161,14 +164,18 @@ class _ReplPanelState extends State<_ReplPanel> {
   @override
   void initState() {
     super.initState();
-    _lines.add(_ReplLine(
-      'Session ${widget.label} — Monty REPL ready.',
-      _LineKind.system,
-    ));
-    _lines.add(const _ReplLine(
-      'Tip: set x = 10 here, then evaluate x in the other session.',
-      _LineKind.system,
-    ));
+    _lines.add(
+      _ReplLine(
+        'Session ${widget.label} — Monty REPL ready.',
+        _LineKind.system,
+      ),
+    );
+    _lines.add(
+      const _ReplLine(
+        'Tip: set x = 10 here, then evaluate x in the other session.',
+        _LineKind.system,
+      ),
+    );
   }
 
   @override
@@ -247,15 +254,19 @@ class _ReplPanelState extends State<_ReplPanel> {
                   focusNode: _focus,
                   autofocus: true,
                   style: const TextStyle(
-                    color: Color(0xFFCCCCCC), fontFamily: 'monospace', fontSize: 13,
+                    color: Color(0xFFCCCCCC),
+                    fontFamily: 'monospace',
+                    fontSize: 13,
                   ),
                   decoration: InputDecoration(
                     hintText: 'Python code…',
                     hintStyle: const TextStyle(color: Color(0xFF666666)),
                     filled: true,
                     fillColor: const Color(0xFF3C3C3C),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(4),
                       borderSide: const BorderSide(color: Color(0xFF555555)),
@@ -353,31 +364,41 @@ class _VfsPanelState extends State<_VfsPanel> {
       final bytes = await widget.monty.snapshot();
       setState(() {
         _savedSnapshot = bytes;
-        _lines.add(_ReplLine(
-          '📸 Snapshot saved (${bytes.length} bytes). Modify state then tap ↩.',
-          _LineKind.system,
-        ));
+        _lines.add(
+          _ReplLine(
+            '📸 Snapshot saved (${bytes.length} bytes). Modify state then tap ↩.',
+            _LineKind.system,
+          ),
+        );
       });
     } on Object catch (e) {
-      setState(() => _lines.add(_ReplLine('Snapshot error: $e', _LineKind.error)));
+      setState(
+        () => _lines.add(_ReplLine('Snapshot error: $e', _LineKind.error)),
+      );
     }
   }
 
   void _restore() {
     final saved = _savedSnapshot;
     if (saved == null) {
-      setState(() => _lines.add(
-        const _ReplLine('No snapshot — tap 📸 first.', _LineKind.system),
-      ));
+      setState(
+        () => _lines.add(
+          const _ReplLine('No snapshot — tap 📸 first.', _LineKind.system),
+        ),
+      );
       return;
     }
     try {
       widget.monty.restore(saved);
-      setState(() => _lines.add(
-        const _ReplLine('✅ State restored from snapshot.', _LineKind.system),
-      ));
+      setState(
+        () => _lines.add(
+          const _ReplLine('✅ State restored from snapshot.', _LineKind.system),
+        ),
+      );
     } on Object catch (e) {
-      setState(() => _lines.add(_ReplLine('Restore error: $e', _LineKind.error)));
+      setState(
+        () => _lines.add(_ReplLine('Restore error: $e', _LineKind.error)),
+      );
     }
   }
 
@@ -415,7 +436,9 @@ class _VfsPanelState extends State<_VfsPanel> {
                   focusNode: _focus,
                   autofocus: false,
                   style: const TextStyle(
-                    color: Color(0xFFCCCCCC), fontFamily: 'monospace', fontSize: 13,
+                    color: Color(0xFFCCCCCC),
+                    fontFamily: 'monospace',
+                    fontSize: 13,
                   ),
                   decoration: InputDecoration(
                     hintText:
@@ -423,8 +446,10 @@ class _VfsPanelState extends State<_VfsPanel> {
                     hintStyle: const TextStyle(color: Color(0xFF666666)),
                     filled: true,
                     fillColor: const Color(0xFF3C3C3C),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(4),
                       borderSide: const BorderSide(color: Color(0xFF555555)),
@@ -473,7 +498,9 @@ class _DemoButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: small ? const Color(0xFF3C3C3C) : const Color(0xFF0E639C),
+        backgroundColor: small
+            ? const Color(0xFF3C3C3C)
+            : const Color(0xFF0E639C),
         foregroundColor: Colors.white,
         padding: small
             ? const EdgeInsets.symmetric(horizontal: 10, vertical: 8)
@@ -498,10 +525,10 @@ enum _LineKind { input, output, print, error, system }
 
 extension on _LineKind {
   Color get color => switch (this) {
-    _LineKind.input  => const Color(0xFF9CDCFE),
+    _LineKind.input => const Color(0xFF9CDCFE),
     _LineKind.output => const Color(0xFFDCDCAA),
-    _LineKind.print  => const Color(0xFFB5CEA8),
-    _LineKind.error  => const Color(0xFFF44747),
+    _LineKind.print => const Color(0xFFB5CEA8),
+    _LineKind.error => const Color(0xFFF44747),
     _LineKind.system => const Color(0xFF6A9955),
   };
 }

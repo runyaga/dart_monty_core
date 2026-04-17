@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
+import 'package:dart_monty_core/src/platform/code_capture.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
@@ -18,20 +19,6 @@ const _zeroUsage = MontyResourceUsage(
   timeElapsedMs: 0,
   stackDepthUsed: 0,
 );
-
-// Python snippet that captures all JSON-serialisable globals.
-// __-prefixed temporaries are filtered by the `not k.startswith('_')` guard.
-const _snapshotPy = '''
-import json as __json
-__snap = {}
-for __k, __v in list(vars().items()):
-    if not __k.startswith('_'):
-        try:
-            __json.dumps(__v)
-            __snap[__k] = __v
-        except Exception:
-            pass
-__snap''';
 
 /// A stateful execution session backed by the native Rust REPL heap.
 ///
@@ -61,6 +48,11 @@ class MontySession {
   final OsCallHandler? _osHandler;
   final String? _scriptName;
   MontyRepl _repl;
+
+  // Dart-side tracking of top-level Python variable names.
+  // Monty does not expose vars()/globals(), so we infer assigned names from
+  // code analysis and restore them individually on snapshot().
+  final Set<String> _knownVars = {};
 
   // State to be injected on the next run() after a restore().
   Map<String, Object?>? _pendingRestore;
@@ -95,6 +87,13 @@ class MontySession {
     _checkNotDisposed();
     final effectiveInputs = _mergeInputs(_pendingRestore, inputs);
     _pendingRestore = null;
+
+    // Track names that will be set in the REPL after this call.
+    _knownVars.addAll(extractAssignmentTargets(code));
+    if (effectiveInputs != null) {
+      _knownVars.addAll(effectiveInputs.keys);
+    }
+
     try {
       return await _repl.feed(
         code,
@@ -125,29 +124,33 @@ class MontySession {
     List<String>? externalFunctions,
     MontyLimits? limits,
     String? scriptName,
-  }) async {
+  }) {
     _checkNotDisposed();
     _pendingRestore = null;
+    _knownVars.addAll(extractAssignmentTargets(code));
+
     return _repl.feedStart(code, externalFunctions: externalFunctions);
   }
 
   /// Resumes a paused execution with [returnValue].
   Future<MontyProgress> resume(Object? returnValue) {
     _checkNotDisposed();
+
     return _repl.resume(returnValue);
   }
 
   /// Resumes a paused execution by raising [errorMessage] in Python.
   Future<MontyProgress> resumeWithError(String errorMessage) {
     _checkNotDisposed();
+
     return _repl.resumeWithError(errorMessage);
   }
 
   /// Captures JSON-serialisable Python globals as a portable snapshot.
   ///
-  /// Runs a lightweight Python introspection snippet via the REPL to collect
-  /// all JSON-serialisable globals. Non-serialisable values (functions,
-  /// classes, module objects) are excluded.
+  /// Reads each Dart-tracked variable directly from the REPL — no Python
+  /// introspection needed. Non-serialisable values (functions, class
+  /// instances, module objects) are silently skipped.
   ///
   /// Pass the returned bytes to [restore] on a new [MontySession] to recreate
   /// variable state.
@@ -157,28 +160,33 @@ class MontySession {
   /// calls after [restore].
   Future<Uint8List> snapshot() async {
     _checkNotDisposed();
-    // If there is pending restore state that hasn't been injected yet, do so
-    // now so introspection captures it.
+
+    // Flush any pending restore into the REPL before snapshotting.
     final pending = _pendingRestore;
     if (pending != null) {
+      _knownVars.addAll(pending.keys);
       try {
         await _repl.feed('pass', inputs: pending);
       } on Object {
-        // ignore — fall through to introspection on whatever state exists
+        // ignore — snapshot whatever state the REPL currently holds
       }
       _pendingRestore = null;
     }
-    MontyResult result;
-    try {
-      result = await _repl.feed(_snapshotPy);
-    } on Object {
-      return _encodeSnapshot(const {});
-    }
+
     final state = <String, Object?>{};
-    final value = result.value;
-    if (value is MontyDict) {
-      state.addAll(value.entries.map((k, v) => MapEntry(k, v.dartValue)));
+    for (final varName in List.of(_knownVars)) {
+      try {
+        final result = await _repl.feed(varName);
+        final dartVal = result.value.dartValue;
+        if (_isJsonSafe(dartVal)) {
+          state[varName] = dartVal;
+        }
+      } on Object {
+        // Variable no longer in scope (deleted or never set) — remove tracking.
+        _knownVars.remove(varName);
+      }
     }
+
     return _encodeSnapshot(state);
   }
 
@@ -228,6 +236,7 @@ class MontySession {
   void _resetRepl() {
     unawaited(_repl.dispose());
     _repl = MontyRepl(scriptName: _scriptName);
+    _knownVars.clear();
   }
 
   static Map<String, Object?>? _mergeInputs(
@@ -237,12 +246,28 @@ class MontySession {
     if (restore == null && inputs == null) return null;
     if (restore == null) return inputs;
     if (inputs == null) return restore;
+
     return {...restore, ...inputs};
   }
 
   static Uint8List _encodeSnapshot(Map<String, Object?> state) {
     final envelope = jsonEncode({'v': 2, 'replState': state});
+
     return Uint8List.fromList(utf8.encode(envelope));
+  }
+
+  /// Returns true if [value] can be round-tripped through JSON without loss.
+  static bool _isJsonSafe(Object? value) {
+    if (value == null || value is bool || value is String) return true;
+    if (value is int) return true;
+    if (value is double) return !value.isNaN && !value.isInfinite;
+    if (value is List) return value.every(_isJsonSafe);
+    if (value is Map) {
+      return value.keys.every((k) => k is String) &&
+          value.values.every(_isJsonSafe);
+    }
+
+    return false;
   }
 
   void _checkNotDisposed() {

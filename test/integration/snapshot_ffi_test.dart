@@ -110,8 +110,7 @@ void main() {
     });
 
     test('snapshot on disposed session throws StateError', () async {
-      final m = _make();
-      await m.dispose();
+      final m = _make()..dispose();
       await expectLater(m.snapshot, throwsStateError);
     });
   });

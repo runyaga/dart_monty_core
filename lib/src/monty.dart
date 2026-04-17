@@ -93,7 +93,7 @@ class Monty {
   void clearState() => _session.clearState();
 
   /// Releases all resources.
-  Future<void> dispose() async => _session.dispose();
+  void dispose() => _session.dispose();
 
   /// Compiles [code] and returns the bytecode as a binary blob.
   ///
@@ -152,7 +152,7 @@ class Monty {
         inputs: inputs,
       );
     } finally {
-      await monty.dispose();
+      monty.dispose();
     }
   }
 }

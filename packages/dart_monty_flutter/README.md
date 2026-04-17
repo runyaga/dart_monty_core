@@ -70,7 +70,7 @@ const _snapshotKey = 'monty_session';
 // Save state when app goes to background
 Future<void> saveState(Monty monty) async {
   final prefs = await SharedPreferences.getInstance();
-  final bytes = monty.snapshot();
+  final bytes = await monty.snapshot();
   await prefs.setString(_snapshotKey, base64Encode(bytes));
 }
 
