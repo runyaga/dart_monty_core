@@ -60,8 +60,6 @@ await monty.run('result = x * multiplier', inputs: {'x': 10, 'multiplier': 3});
 | `Monty.compile(code)` | Pre-compile to `Uint8List` bytes |
 | `Monty.runPrecompiled(bytes)` | Run pre-compiled bytes (static, stateless) |
 | `monty.run(code, {externals, inputs})` | Execute Python, state persists |
-| `monty.snapshot()` | Capture globals as portable `Uint8List` |
-| `monty.restore(bytes)` | Inject snapshot state on next `run` call |
 | `monty.clearState()` | Reset globals |
 | `monty.dispose()` | Free resources (synchronous) |
 
@@ -276,39 +274,6 @@ await monty.runPrecompiled(binary);
 ```
 
 Pre-compilation works on both **FFI** and **WASM** backends.
-
----
-
-## Snapshot and restore
-
-`Monty.snapshot()` captures all Python variables persisted by a session as a
-`Uint8List`. Pass those bytes to `Monty.restore()` on a new instance to
-recreate the exact variable state — across process restarts, app launches, or
-network round-trips.
-
-```dart
-// Session A — run some code and capture state
-final montyA = Monty();
-await montyA.run('x = 10');
-await montyA.run('y = x * 3');
-await montyA.run('label = "result"');
-
-// "Download" — bytes are safe to store in a file, IndexedDB, or a server
-final bytes = await montyA.snapshot();
-
-// "Upload" — restore into a fresh session (e.g. on next app launch)
-final montyB = Monty();
-montyB.restore(bytes);
-
-// Continue executing from the restored state — variables are available
-final result = await montyB.run('y + x');
-print(result.value); // MontyInt(40)
-```
-
-The snapshot format is a v2 JSON envelope (`{"v":2,"replState":{...}}`) encoded
-as UTF-8 bytes. Only JSON-serializable Python values are captured (int, float,
-str, bool, list, dict, None). `restore()` accepts v1 and v2 snapshots and
-throws `ArgumentError` on invalid or unsupported-version bytes.
 
 ---
 

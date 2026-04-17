@@ -40,32 +40,6 @@ if (result.error != null) {
 }
 ```
 
-### Snapshot and restore
-
-`Monty.snapshot()` and `Monty.restore()` work on the WASM backend. Use them to
-persist session state in `localStorage` or `IndexedDB` across page reloads:
-
-```dart
-import 'dart:convert';
-import 'dart:html' as html;
-import 'package:dart_monty_core/dart_monty_core.dart';
-
-// Save state to localStorage
-final monty = Monty();
-await monty.run('counter = 42');
-final bytes = await monty.snapshot();
-html.window.localStorage['monty_state'] = base64Encode(bytes);
-
-// Restore on next page load
-final saved = html.window.localStorage['monty_state'];
-if (saved != null) {
-  final monty2 = Monty();
-  monty2.restore(base64Decode(saved));
-  final r = await monty2.run('counter');
-  print(r.value); // MontyInt(42)
-}
-```
-
 ### Concurrent REPLs
 
 Multiple `MontyRepl` instances can coexist concurrently on the WASM backend.

@@ -11,8 +11,7 @@
 //  VFS / OsCall — a Monty() session (REPL-backed) with an in-memory
 //    filesystem wired to the osHandler. `import pathlib` on one call
 //    persists to the next — the Rust REPL heap stays alive between run()
-//    calls. Also demonstrates snapshot / restore (📸 / ↩).
-import 'dart:typed_data';
+//    calls.
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:flutter/material.dart';
@@ -294,7 +293,7 @@ class _ReplPanelState extends State<_ReplPanel> {
 }
 
 // ---------------------------------------------------------------------------
-// VFS panel widget (Monty + osHandler + snapshot/restore)
+// VFS panel widget (Monty + osHandler)
 // ---------------------------------------------------------------------------
 class _VfsPanel extends StatefulWidget {
   const _VfsPanel({required this.monty});
@@ -308,7 +307,6 @@ class _VfsPanelState extends State<_VfsPanel> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   final _focus = FocusNode();
-  Uint8List? _savedSnapshot;
   final List<_ReplLine> _lines = [
     const _ReplLine(
       'VFS session — try: import pathlib  then: pathlib.Path("/data/hello.txt").read_text()',
@@ -357,49 +355,6 @@ class _VfsPanelState extends State<_VfsPanel> {
       }
       _focus.requestFocus();
     });
-  }
-
-  Future<void> _snapshot() async {
-    try {
-      final bytes = await widget.monty.snapshot();
-      setState(() {
-        _savedSnapshot = bytes;
-        _lines.add(
-          _ReplLine(
-            '📸 Snapshot saved (${bytes.length} bytes). Modify state then tap ↩.',
-            _LineKind.system,
-          ),
-        );
-      });
-    } on Object catch (e) {
-      setState(
-        () => _lines.add(_ReplLine('Snapshot error: $e', _LineKind.error)),
-      );
-    }
-  }
-
-  void _restore() {
-    final saved = _savedSnapshot;
-    if (saved == null) {
-      setState(
-        () => _lines.add(
-          const _ReplLine('No snapshot — tap 📸 first.', _LineKind.system),
-        ),
-      );
-      return;
-    }
-    try {
-      widget.monty.restore(saved);
-      setState(
-        () => _lines.add(
-          const _ReplLine('✅ State restored from snapshot.', _LineKind.system),
-        ),
-      );
-    } on Object catch (e) {
-      setState(
-        () => _lines.add(_ReplLine('Restore error: $e', _LineKind.error)),
-      );
-    }
   }
 
   @override
@@ -468,10 +423,6 @@ class _VfsPanelState extends State<_VfsPanel> {
               ),
               const SizedBox(width: 6),
               _DemoButton(label: 'Run', onPressed: _execute),
-              const SizedBox(width: 4),
-              _DemoButton(label: '📸', onPressed: _snapshot, small: true),
-              const SizedBox(width: 4),
-              _DemoButton(label: '↩', onPressed: _restore, small: true),
             ],
           ),
         ),

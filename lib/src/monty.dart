@@ -70,21 +70,10 @@ class Monty {
     inputs: inputs,
   );
 
-  /// Captures JSON-serialisable Python globals as a portable snapshot.
-  ///
-  /// Returns a self-contained binary snapshot. Pass to [restore] on the same
-  /// or a new [Monty] instance to recreate the Python variable state.
-  ///
-  /// Functions, classes, and module objects are excluded (not serialisable).
-  ///
-  /// **Note on external functions:** [MontyCallback] closures cannot be
-  /// serialised. Re-provide them in subsequent [run] calls after [restore].
+  /// Not yet implemented — see issue #23.
   Future<Uint8List> snapshot() => _session.snapshot();
 
-  /// Restores Python variables from a snapshot produced by [snapshot].
-  ///
-  /// The next [run] call will inject the restored variables. Throws
-  /// [ArgumentError] if [bytes] is not a valid snapshot.
+  /// Not yet implemented — see issue #23.
   void restore(Uint8List bytes) => _session.restore(bytes);
 
   /// Clears all persisted state.
