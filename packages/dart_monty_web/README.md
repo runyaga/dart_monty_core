@@ -3,7 +3,14 @@
 Browser REPL demo for [Monty](https://github.com/pydantic/monty) — a sandboxed
 Python interpreter in Rust, wrapped by `dart_monty_core`.
 
-This is a **cargo-culting example**: copy the patterns here to build your own
+> **Note for JS/npm users**: If you are building a JavaScript or TypeScript
+> application, use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty)
+> directly — that is the canonical npm package maintained by the Monty authors.
+> `dart_monty_web` exists to demonstrate `dart_monty_core` for **Dart web**
+> developers who want the same interpreter through Dart APIs.
+> For **Flutter Web**, see [`dart_monty_flutter`](../dart_monty_flutter/).
+
+This is a **reference example**: copy the patterns here to build your own
 Dart web app on top of `dart_monty_core`.
 
 ---
@@ -90,12 +97,17 @@ The included Python server in `tool/serve_demo.sh` sets these headers. GitHub
 Pages **cannot** set custom headers — the dart2js demo works on Pages; the
 dart2wasm demo requires local serve.
 
-### Compiled assets are not committed
+### Assets
 
-`dart_monty_bridge.js`, `dart_monty_worker.js`, `dart_monty_native.wasm`, and
-`repl_demo.dart.js` are git-ignored. They must be built (or copied from the
-pre-built worktree) before serving. The `tool/serve_demo.sh` script handles
-this automatically.
+`dart_monty_bridge.js`, `dart_monty_worker.js`, and `dart_monty_native.wasm`
+are **not committed to git** — they are built by the maintainer's publish
+workflow (Rust + Node.js) and shipped in the pub.dev package under `assets/`.
+Consumers installing via `dart pub add` receive them pre-built and do not
+need Node.js or npm.
+
+`repl_demo.dart.js` (the compiled Dart app) is always git-ignored and must be
+compiled locally via `dart compile js`. The `tool/serve_demo.sh` script
+handles this automatically.
 
 ### Why `npm install --force`?
 
