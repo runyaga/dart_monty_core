@@ -4,12 +4,13 @@
 //    Exercises: Monty.exec, inputs, MontyLimits, MontyResourceUsage,
 //               MontyValue exhaustive pattern matching.
 //
-//  Tab 2 — MontyRepl A (persistent heap)
+//  Tab 2 — MontyRepl (persistent heap)
 //    Exercises: MontyRepl.feed, externals, osHandler, detectContinuation,
 //               snapshot, restore, feedStart/resume loop.
 //
-//  Tab 3 — MontyRepl B (independent heap — isolation demo)
-//    Same as A, but a completely separate Rust handle.
+//  Tab 3 — Externals (MontySession + Dart callbacks)
+//    Exercises: MontySession.run, MontyCallback, callback call-flow logging.
+//    Registered: db_query, compute, format_currency, now.
 //
 //  Tab 4 — VFS / OsCall (Monty with osHandler)
 //    Exercises: Monty(osHandler:), pathlib, OsCallException,
@@ -53,6 +54,21 @@ Future<Object?> _osHandler(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Fake data for the Externals tab callbacks
+// ---------------------------------------------------------------------------
+const _dbTables = <String, List<Map<String, Object>>>{
+  'users': [
+    {'id': 1, 'name': 'Alice', 'role': 'admin'},
+    {'id': 2, 'name': 'Bob', 'role': 'user'},
+    {'id': 3, 'name': 'Carol', 'role': 'user'},
+  ],
+  'orders': [
+    {'id': 101, 'item': 'Widget', 'qty': 3, 'price': 9.99},
+    {'id': 102, 'item': 'Gadget', 'qty': 1, 'price': 49.99},
+  ],
+};
+
 void main() => runApp(const MontyDemoApp());
 
 class MontyDemoApp extends StatelessWidget {
@@ -89,25 +105,25 @@ class _DemoShellState extends State<_DemoShell>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   final _replA = MontyRepl();
-  final _replB = MontyRepl();
+  final _externalsSession = MontySession();
   late final Monty _vfsMonty;
-  late final MontySession _session;
+  late final MontySession _manualSession;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 5, vsync: this);
     _vfsMonty = Monty(osHandler: _osHandler);
-    _session = MontySession(osHandler: _osHandler);
+    _manualSession = MontySession(osHandler: _osHandler);
   }
 
   @override
   void dispose() {
     _tabs.dispose();
     _replA.dispose();
-    _replB.dispose();
+    _externalsSession.dispose();
     _vfsMonty.dispose();
-    _session.dispose();
+    _manualSession.dispose();
     super.dispose();
   }
 
@@ -121,8 +137,8 @@ class _DemoShellState extends State<_DemoShell>
           isScrollable: true,
           tabs: const [
             Tab(text: 'exec()'),
-            Tab(text: 'REPL A'),
-            Tab(text: 'REPL B'),
+            Tab(text: 'REPL'),
+            Tab(text: 'Externals'),
             Tab(text: 'VFS'),
             Tab(text: 'Session'),
           ],
@@ -132,10 +148,10 @@ class _DemoShellState extends State<_DemoShell>
         controller: _tabs,
         children: [
           _ExecPanel(),
-          _ReplPanel(label: 'A', repl: _replA, otherLabel: 'B'),
-          _ReplPanel(label: 'B', repl: _replB, otherLabel: 'A'),
+          _ReplPanel(repl: _replA),
+          _ExternalsPanel(session: _externalsSession),
           _VfsPanel(monty: _vfsMonty),
-          _SessionPanel(session: _session),
+          _SessionPanel(session: _manualSession),
         ],
       ),
     );
@@ -298,17 +314,11 @@ class _ExecPanelState extends State<_ExecPanel> {
 }
 
 // ---------------------------------------------------------------------------
-// Tabs 2 & 3 — MontyRepl (A or B)
+// Tab 2 — MontyRepl (persistent heap)
 // ---------------------------------------------------------------------------
 class _ReplPanel extends StatefulWidget {
-  const _ReplPanel({
-    required this.label,
-    required this.repl,
-    required this.otherLabel,
-  });
-  final String label;
+  const _ReplPanel({required this.repl});
   final MontyRepl repl;
-  final String otherLabel;
 
   @override
   State<_ReplPanel> createState() => _ReplPanelState();
@@ -326,7 +336,6 @@ class _ReplPanelState extends State<_ReplPanel> {
     final code = _ctrl.text.trim();
     if (code.isEmpty) return;
 
-    // detectContinuation: drive REPL prompt logic.
     final mode = await widget.repl.detectContinuation(code);
     if (mode != ReplContinuationMode.complete) return;
 
@@ -334,7 +343,6 @@ class _ReplPanelState extends State<_ReplPanel> {
     _write('>>> $code', _LineStyle.input);
 
     try {
-      // feed() auto-dispatches externals + osHandler.
       final result = await widget.repl.feed(
         code,
         externals: {
@@ -359,11 +367,8 @@ class _ReplPanelState extends State<_ReplPanel> {
   @override
   void initState() {
     super.initState();
-    _write(
-      'Session ${widget.label} — heap is isolated from ${widget.otherLabel}.',
-      _LineStyle.system,
-    );
-    _write('host_upper("hello") calls Dart from Python.', _LineStyle.system);
+    _write('Persistent heap — state survives between runs.', _LineStyle.system);
+    _write('host_upper("hello") calls into Dart from Python.', _LineStyle.system);
   }
 
   @override
@@ -393,7 +398,10 @@ class _ReplPanelState extends State<_ReplPanel> {
                   ElevatedButton(
                     onPressed: () async {
                       final s = _snap;
-                      if (s == null) { _write('No snapshot.', _LineStyle.system); return; }
+                      if (s == null) {
+                        _write('No snapshot.', _LineStyle.system);
+                        return;
+                      }
                       try {
                         await widget.repl.restore(s);
                         _write('↩ Restored.', _LineStyle.system);
@@ -422,6 +430,142 @@ class _ReplPanelState extends State<_ReplPanel> {
                   ElevatedButton(onPressed: _execute, child: const Text('Run')),
                 ],
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 3 — Externals (MontySession.run + Dart callbacks)
+// ---------------------------------------------------------------------------
+class _ExternalsPanel extends StatefulWidget {
+  const _ExternalsPanel({required this.session});
+  final MontySession session;
+
+  @override
+  State<_ExternalsPanel> createState() => _ExternalsPanelState();
+}
+
+class _ExternalsPanelState extends State<_ExternalsPanel> {
+  final _lines = <_OutputLine>[];
+  final _ctrl = TextEditingController();
+  int _callNum = 0;
+
+  void _write(String text, _LineStyle style) =>
+      setState(() => _lines.add(_OutputLine(text, style)));
+
+  // Format positional args from the callback args map (_0, _1, …).
+  String _fmtCallArgs(Map<String, Object?> args) {
+    final parts = <String>[];
+    for (var i = 0; args.containsKey('_$i'); i++) {
+      final v = args['_$i'];
+      parts.add(v is String ? '"$v"' : '$v');
+    }
+    return parts.join(', ');
+  }
+
+  Future<Object?> _loggedCall(
+    String name,
+    Map<String, Object?> args,
+    Object? result,
+  ) {
+    final n = ++_callNum;
+    final argStr = _fmtCallArgs(args);
+    final resultStr = result is List ? '${result.length} rows' : '$result';
+    _write('  ⚡ #$n $name($argStr) → $resultStr', _LineStyle.system);
+    return Future.value(result);
+  }
+
+  Future<void> _execute() async {
+    final code = _ctrl.text.trim();
+    if (code.isEmpty) return;
+    _ctrl.clear();
+    _write('>>> $code', _LineStyle.input);
+
+    try {
+      final result = await widget.session.run(
+        code,
+        externals: {
+          'db_query': (args) async {
+            final table = (args['_0'] as String?) ?? 'users';
+            final rows = _dbTables[table] ?? [];
+            return _loggedCall('db_query', args, rows);
+          },
+          'compute': (args) async {
+            final op = args['_0'] as String;
+            final a = (args['_1'] as num).toDouble();
+            final b = (args['_2'] as num).toDouble();
+            final val = switch (op) {
+              'add' => a + b,
+              'mul' => a * b,
+              'sub' => a - b,
+              _ => b != 0 ? a / b : double.nan,
+            };
+            return _loggedCall('compute', args, val);
+          },
+          'format_currency': (args) async {
+            final amount = (args['_0'] as num).toDouble();
+            final currency = (args['code'] as String?) ?? 'USD';
+            final str = switch (currency) {
+              'EUR' => '€${amount.toStringAsFixed(2)}',
+              'GBP' => '£${amount.toStringAsFixed(2)}',
+              _ => '\$${amount.toStringAsFixed(2)}',
+            };
+            return _loggedCall('format_currency', args, str);
+          },
+          'now': (args) async {
+            return _loggedCall('now', args, DateTime.now().toIso8601String());
+          },
+        },
+      );
+
+      if (result.printOutput != null && result.printOutput!.isNotEmpty) {
+        _write(result.printOutput!.trimRight(), _LineStyle.print);
+      }
+      if (result.error != null) {
+        _write('${result.error!.excType}: ${result.error!.message}', _LineStyle.error);
+      } else if (result.value is! MontyNone) {
+        _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
+      }
+    } on MontyError catch (e) {
+      _write('Error: $e', _LineStyle.error);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _write('Python calls Dart — each ⚡ line is a round-trip callback.', _LineStyle.system);
+    _write('db_query("users")       db_query("orders")', _LineStyle.system);
+    _write('compute("add", 3, 4)    compute("mul", 6, 7)', _LineStyle.system);
+    _write('format_currency(19.99)  format_currency(9.50, code="EUR")', _LineStyle.system);
+    _write('now()', _LineStyle.system);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(child: _ReplOutput(lines: _lines)),
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  decoration: const InputDecoration(
+                    hintText: 'result = db_query("users")',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (_) => _execute(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(onPressed: _execute, child: const Text('Run')),
             ],
           ),
         ),
@@ -566,13 +710,11 @@ class _SessionPanelState extends State<_SessionPanel> {
     _write('>>> $code', _LineStyle.input);
 
     try {
-      // Start iterative execution. Registers 'compute' as an external.
       var progress = await widget.session.start(
         code,
         externalFunctions: ['compute'],
       );
 
-      // Exhaustive dispatch over all 5 MontyProgress subtypes.
       while (true) {
         switch (progress) {
           case MontyComplete(:final result):
@@ -619,7 +761,7 @@ class _SessionPanelState extends State<_SessionPanel> {
   @override
   void initState() {
     super.initState();
-    _write('Manual start/resume loop. Try:', _LineStyle.system);
+    _write('Manual start/resume loop — raw MontyProgress dispatch.', _LineStyle.system);
     _write('  result = compute(5) + compute(10)', _LineStyle.system);
     _write('  (compute doubles the argument via Dart callback)', _LineStyle.system);
   }
