@@ -4,133 +4,97 @@
   <meta charset="UTF-8">
   <title>Monty Interactive REPL (dart2wasm)</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0; padding: 0;
-      background: #1e1e1e; color: #d4d4d4;
-      display: flex; flex-direction: column; height: 100vh;
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      margin: 0; 
+      padding: 0; 
+      background: #1e1e1e; 
+      color: #d4d4d4;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
     }
     header {
-      background: #333; padding: 10px 20px;
-      display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid #444; flex-shrink: 0;
+      background: #333;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #444;
     }
-    h1 { margin: 0; font-size: 1.1rem; color: #4ec9b0; }
-    .badge {
-      background: #4ec9b0; color: #1e1e1e;
-      padding: 2px 8px; border-radius: 4px;
-      font-size: 0.75rem; font-weight: bold;
+    h1 { margin: 0; font-size: 1.2rem; color: #4ec9b0; }
+    .badge { 
+      background: #4ec9b0; 
+      color: #1e1e1e; 
+      padding: 2px 8px; 
+      border-radius: 4px; 
+      font-size: 0.8rem;
+      font-weight: bold;
     }
-
-    .panels {
-      display: flex; flex: 1; overflow: hidden; gap: 1px;
-      background: #444;
-    }
-    .panel {
-      display: flex; flex-direction: column; flex: 1;
-      background: #1e1e1e; overflow: hidden;
-    }
-    .panel-header {
-      background: #2d2d2d; padding: 6px 12px;
-      font-size: 0.75rem; font-weight: bold;
-      display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid #444; flex-shrink: 0;
-    }
-    .panel-header span { color: #4ec9b0; }
-    .panel-header .hint { color: #888; font-weight: normal; font-size: 0.7rem; }
-
-    .output {
-      flex: 1; padding: 12px; overflow-y: auto;
+    #output {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
       font-family: 'Consolas', 'Courier New', monospace;
-      white-space: pre-wrap; font-size: 13px; line-height: 1.5;
+      white-space: pre-wrap;
+      font-size: 14px;
+      line-height: 1.4;
     }
-    .input-row {
-      background: #252526; padding: 8px; border-top: 1px solid #333;
-      display: flex; gap: 6px; flex-shrink: 0;
-    }
-    .input-row input {
-      flex: 1; background: #3c3c3c; border: 1px solid #555; color: #ccc;
-      padding: 6px 10px; border-radius: 4px;
-      font-family: 'Consolas', 'Courier New', monospace; font-size: 13px;
-    }
-    .input-row input:focus { outline: none; border-color: #4ec9b0; }
-    .btn {
-      background: #0e639c; color: white; border: none;
-      padding: 6px 14px; border-radius: 4px; cursor: pointer;
-      font-size: 12px; font-weight: bold; white-space: nowrap;
-    }
-    .btn:hover { background: #1177bb; }
-    .btn:disabled { background: #444; cursor: not-allowed; }
-    .btn-sm {
-      background: #3c3c3c; color: #ccc; border: 1px solid #555;
-      padding: 4px 8px; border-radius: 4px; cursor: pointer;
-      font-size: 11px;
-    }
-    .btn-sm:hover { background: #4a4a4a; }
-
-.input-line  { color: #9cdcfe; }
+    .line { margin-bottom: 4px; }
+    .input-line { color: #9cdcfe; }
     .output-line { color: #dcdcaa; }
-    .error-line  { color: #f44747; }
-    .print-line  { color: #b5cea8; }
+    .error-line { color: #f44747; }
+    .print-line { color: #b5cea8; }
     .system-line { color: #6a9955; font-style: italic; }
+    
+    footer {
+      background: #252526;
+      padding: 10px 20px;
+      display: flex;
+      gap: 10px;
+      border-top: 1px solid #333;
+    }
+    input {
+      flex: 1;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      color: #ccc;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 14px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #4ec9b0;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: #1177bb; }
+    button:disabled { background: #444; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Monty Python REPL — concurrent sessions · snapshot · VFS</h1>
+    <h1>Monty Python REPL</h1>
     <span class="badge">dart2wasm</span>
   </header>
-
-  <div class="panels">
-    <!-- Session A — MontyRepl, independent Rust heap handle -->
-    <div class="panel">
-      <div class="panel-header">
-        <span>Session A</span>
-        <span class="hint">MontyRepl · independent state</span>
-      </div>
-      <div class="output" id="output-a">
-        <div class="system-line">Initializing…</div>
-      </div>
-      <div class="input-row">
-        <input id="input-a" disabled placeholder="Python code…">
-        <button id="run-a" class="btn" disabled>Run</button>
-      </div>
-    </div>
-
-    <!-- Session B — MontyRepl, separate replId from A -->
-    <div class="panel">
-      <div class="panel-header">
-        <span>Session B</span>
-        <span class="hint">MontyRepl · independent state</span>
-      </div>
-      <div class="output" id="output-b">
-        <div class="system-line">Initializing…</div>
-      </div>
-      <div class="input-row">
-        <input id="input-b" disabled placeholder="Python code…">
-        <button id="run-b" class="btn" disabled>Run</button>
-      </div>
-    </div>
-
-    <!-- VFS panel — MontyRepl with osHandler per feed() call -->
-    <div class="panel">
-      <div class="panel-header">
-        <span>VFS / OsCall</span>
-        <span class="hint">MontyRepl · osHandler · pathlib</span>
-      </div>
-      <div class="output" id="output-vfs">
-        <div class="system-line">Initializing…</div>
-      </div>
-      <div class="input-row">
-        <input id="input-vfs" disabled
-          placeholder="import pathlib; pathlib.Path('/data/hello.txt').read_text()">
-        <button id="run-vfs" class="btn" disabled>Run</button>
-        <button id="snap-vfs" class="btn-sm">📸</button>
-        <button id="restore-vfs" class="btn-sm">↩</button>
-      </div>
-    </div>
+  
+  <div id="output">
+    <div class="system-line">Initializing Monty engine (WASM)...</div>
   </div>
+
+  <footer>
+    <input type="text" id="input" placeholder="Enter Python code here (e.g. 1 + 1)" autofocus disabled>
+    <button id="run" disabled>Run</button>
+  </footer>
 
   <!--
     coi-serviceworker: registers a service worker that injects COOP/COEP headers
@@ -149,7 +113,7 @@
           }
         }).catch(err => console.error('Service worker registration failed:', err));
       } else {
-        const out = document.getElementById('output-a');
+        const out = document.getElementById('output');
         const div = document.createElement('div');
         div.className = 'error-line';
         div.textContent = 'Service workers not supported — try a modern browser.';
@@ -169,7 +133,7 @@
       instantiatedApp.invokeMain();
     } catch (e) {
       console.error('Failed to run dart2wasm REPL demo:', e);
-      const output = document.getElementById('output-a');
+      const output = document.getElementById('output');
       if (output) {
         const err = document.createElement('div');
         err.className = 'error-line';
