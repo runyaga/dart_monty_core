@@ -9,9 +9,9 @@
   ],
   "native-assets": {
     "macos_arm64": {
-      "package:dart_monty/dart_monty_ffi.dart": [
+      "package:dart_monty_core/dart_monty_core_ffi.dart": [
         "absolute",
-        "/Users/runyaga/dev/dart_monty/main/native/.dart_tool/lib/libdart_monty_native.dylib"
+        "/Users/runyaga/dev/dart_monty_core--repl-snapshot/native/.dart_tool/lib/libdart_monty_native.dylib"
       ]
     }
   }
