@@ -1,0 +1,10 @@
+name: dart_monty_core_examples
+description: Progressive examples covering every dart_monty_core API.
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  dart_monty_core:
+    path: ../

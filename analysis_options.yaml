@@ -13,6 +13,8 @@ analyzer:
     - 'native/**'
     - 'lib/src/ffi/generated/**'
     - 'packages/dart_monty_flutter/**'
+    - 'packages/dart_monty_web/**'
+    - 'example/**'
 
   language:
     strict-casts: true
