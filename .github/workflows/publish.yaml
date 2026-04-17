@@ -1,0 +1,71 @@
+name: Publish to pub.dev
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+
+jobs:
+  publish:
+    name: Build assets & publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC token for pub.dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Rust: build WASM binary ──────────────────────────────────────────
+      - name: Install Rust stable + wasm32-wasip1
+        run: rustup target add wasm32-wasip1
+
+      - name: Build dart_monty_native.wasm
+        run: |
+          cargo build \
+            --manifest-path native/Cargo.toml \
+            --target wasm32-wasip1 \
+            --release
+
+      # ── Node: bundle JS bridge and worker ───────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+
+      - name: Build JS assets
+        working-directory: js
+        run: |
+          npm install --force
+          node build.js
+
+      - name: Verify assets
+        run: |
+          for f in assets/dart_monty_bridge.js \
+                   assets/dart_monty_worker.js \
+                   assets/dart_monty_native.wasm; do
+            [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
+            echo "$(du -sh $f)"
+          done
+
+      # Force-stage the built assets so dart pub publish includes them.
+      # They are gitignored in the repo (not committed) but pub reads the
+      # git index — git add -f makes them visible to pub without polluting
+      # the repo history.
+      - name: Stage assets for publish
+        run: git add -f assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm
+
+      # ── Dart: analyze + publish ──────────────────────────────────────────
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - run: dart pub get
+
+      - name: Analyze
+        run: dart analyze --fatal-infos lib/
+
+      - name: Dry run
+        run: dart pub publish --dry-run
+
+      - name: Publish
+        run: dart pub publish --force

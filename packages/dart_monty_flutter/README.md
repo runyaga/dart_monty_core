@@ -1,123 +1,137 @@
 # dart_monty_flutter
 
-Flutter REPL demo for [Monty](https://github.com/pydantic/monty) — a sandboxed
-Python interpreter in Rust, wrapped by `dart_monty_core`.
+Flutter integration for [dart_monty_core](https://github.com/runyaga/dart_monty_core) —
+a sandboxed Python interpreter backed by [pydantic/monty](https://github.com/pydantic/monty)
+(Rust + WASM).
 
-This is a **cargo-culting example**: copy the patterns here to build your own
-Flutter app on top of `dart_monty_core`.
-
----
-
-## What it is
-
-A dark-themed Material REPL app backed by `MontyRepl`. Enter Python expressions;
-results appear in a scrollable output panel. State is persistent across inputs —
-define a function, call it on the next line.
-
-**Supported platforms**: iOS · Android · macOS · Linux · Windows · **Web**
-
-Live demo: **https://runyaga.github.io/dart_monty_core/flutter/**
+> **Note for JS/npm users**: If you are building a JavaScript or TypeScript application,
+> use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty) directly —
+> that is the canonical npm package. `dart_monty_flutter` exists for **Dart and Flutter**
+> developers who want the same interpreter through Dart APIs.
 
 ---
 
-## How dart_monty_core is used
+## Quick start
+
+### 1. Add the dependency
+
+```yaml
+# pubspec.yaml
+dependencies:
+  dart_monty_flutter:
+    git:
+      url: https://github.com/runyaga/dart_monty_core
+      path: packages/dart_monty_flutter
+      ref: main
+```
+
+### 2. Initialise in `main()`
 
 ```dart
-import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_flutter/dart_monty_flutter.dart';
 
-// Create a persistent REPL (keeps the Rust heap alive between calls)
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // On web: injects dart_monty_bridge.js (served automatically by Flutter
+  // from packages/dart_monty_core/assets/).
+  // On native: no-op — the Rust dylib is compiled at build time.
+  await DartMontyFlutter.ensureInitialized();
+
+  runApp(const MyApp());
+}
+```
+
+### 3. Use the API
+
+```dart
+import 'package:dart_monty_flutter/dart_monty_flutter.dart';
+
+// Persistent interpreter — Rust heap survives between calls
 final repl = MontyRepl();
 
-// Feed Python — result.value is a typed MontyValue
-final result = await repl.feed('fib(10)');
+final result = await repl.feed('x = 42');
+final r2    = await repl.feed('x * 2');      // MontyInt(84)
 
-switch (result.value) {
+switch (r2.value) {
   case MontyInt(:final value):    print('int: $value');
   case MontyString(:final value): print('str: $value');
   case MontyNone():               print('None');
-  default:                        print(result.value);
+  default:                        print(r2.value);
 }
 
-if (result.error != null) {
-  print('${result.error!.excType}: ${result.error!.message}');
-}
+if (r2.error != null) print('${r2.error!.excType}: ${r2.error!.message}');
 
-// Always dispose when done
-await repl.dispose();
+repl.dispose(); // free Rust resources (call in State.dispose())
 ```
 
-Key API surface used in `lib/main.dart`:
-- `MontyRepl()` — creates a persistent interpreter (backed by FFI dylib on device)
-- `repl.feed(code)` — execute Python, returns `MontyResult`
-- `repl.feed(code, inputs: {'x': 10})` — inject per-invocation variables
-- `result.value` — `MontyValue?` (null = expression with no return value)
-- `result.error` — `MontyScriptError?` (non-throwing; TypeError, NameError, …)
-- `result.printOutput` — captured `print()` output
-- `repl.dispose()` — free Rust heap resources (call in `State.dispose()`)
+---
 
-### Passing Flutter state into Python
+## How it works per platform
 
-Use `inputs:` to inject widget state or user data into Python without
-string-formatting:
+### Native (Android · iOS · macOS · Linux · Windows)
+
+`dart_monty_core` ships a `hook/build.dart` Dart native-assets hook. When you
+run `flutter pub get`, the hook runs `cargo build --release` on the consumer's
+machine and links the resulting dylib. **You need Rust + cargo installed.**
+
+`DartMontyFlutter.ensureInitialized()` is a no-op on native — the library is
+already present at build time.
+
+### Web (Flutter Web)
+
+The Monty Python interpreter runs inside a Web Worker backed by a pre-built
+`dart_monty_native.wasm` binary. `dart_monty_core` ships three pre-built
+assets:
+
+| Asset | Purpose |
+|---|---|
+| `dart_monty_bridge.js` | Main-thread bridge — exposes `window.DartMontyBridge` |
+| `dart_monty_worker.js` | Web Worker — runs the WASM interpreter |
+| `dart_monty_native.wasm` | Compiled Monty Rust interpreter |
+
+Flutter serves package assets automatically at
+`packages/dart_monty_core/assets/<file>`. `ensureInitialized()` injects a
+`<script>` tag pointing at `dart_monty_bridge.js`; the bridge and worker
+load the other two files relative to their own URL — no manual file copying
+is needed.
+
+---
+
+## Passing Flutter state into Python
 
 ```dart
 final result = await repl.feed(
   'score = base * multiplier',
   inputs: {
-    'base': widget.score,       // int from Flutter state
-    'multiplier': widget.level, // int from Flutter state
+    'base': widget.score,
+    'multiplier': widget.level,
   },
 );
 ```
 
 ---
 
-## Prerequisites
+## VFS / OS calls
 
-```bash
-# Flutter SDK 3.27+
-flutter --version
-
-# Rust toolchain (for the native dylib)
-rustup --version
+```dart
+final monty = Monty(osHandler: (op, args, kwargs) async {
+  if (op == 'Path.read_text') return myFs[args.first as String] ?? '';
+  throw OsCallException('$op not supported');
+});
+await monty.run("import pathlib; pathlib.Path('/data/f.txt').read_text()");
 ```
-
-Build the native dylib for your target platform (one-time, or after Rust source changes):
-
-```bash
-cd ../../native && cargo build --release && cd -
-```
-
-Output:
-- macOS: `native/target/release/libdart_monty_native.dylib`
-- Linux: `native/target/release/libdart_monty_native.so`
-- iOS/Android: cross-compile with `cargo build --release --target <triple>`
 
 ---
 
-## Run
+## Demo app
+
+`lib/main.dart` is a full three-panel Flutter REPL demonstrating concurrent
+sessions, VFS/OsCall, and snapshot/restore. Run it with:
 
 ```bash
-# Easiest — uses tool/run_flutter_demo.sh (auto-detects device)
-bash ../../tool/run_flutter_demo.sh
-
-# Specify a device
-bash ../../tool/run_flutter_demo.sh --device macos
-bash ../../tool/run_flutter_demo.sh --device ios
-
-# Or directly with Flutter
 flutter pub get
-flutter run -d macos
+flutter run -d macos   # or chrome, ios, android
 ```
 
----
-
-## Flutter web
-
-The app runs on the web too. The CI build scaffolds the web target with
-`flutter create --platforms web` and substitutes the `MontyWasm` backend
-(WASM Worker) in place of `MontyFfi`, which requires a native dylib not
-available in the browser. Everything else — the UI, the REPL loop, the
-`MontyRepl` API — is identical.
-
-Live: **https://runyaga.github.io/dart_monty_core/flutter/**
+Live web demo: **https://runyaga.github.io/dart_monty_core/flutter/**

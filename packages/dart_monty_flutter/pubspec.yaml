@@ -1,6 +1,10 @@
 name: dart_monty_flutter
-description: Flutter REPL demo for Monty Python interpreter.
+description: >-
+  Flutter integration for dart_monty_core — initializes the WASM bridge on
+  web and exposes the Monty Python interpreter with Flutter-friendly helpers.
 version: 0.0.1
+homepage: https://github.com/runyaga/dart_monty_core
+repository: https://github.com/runyaga/dart_monty_core/tree/main/packages/dart_monty_flutter
 publish_to: none
 
 environment:
@@ -12,6 +16,7 @@ dependencies:
     path: ../..
   flutter:
     sdk: flutter
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_test:

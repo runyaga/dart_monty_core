@@ -26,6 +26,65 @@ reactive state, or a richer plugin system, see `dart_monty`.
 
 ---
 
+## Installation
+
+```yaml
+dependencies:
+  dart_monty_core: ^0.0.12
+```
+
+### FFI (native: macOS · Linux · Windows · iOS · Android)
+
+Requires **Rust + cargo** installed. The `hook/build.dart` native-assets hook
+compiles the Rust dylib automatically when you run `dart pub get` or
+`flutter pub get`. No pre-built binaries are downloaded.
+
+```bash
+dart pub get   # triggers cargo build --release for your platform
+```
+
+### WASM (Flutter Web)
+
+Use [`dart_monty_flutter`](packages/dart_monty_flutter/) which auto-injects
+the JS bridge for you:
+
+```dart
+// main.dart
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DartMontyFlutter.ensureInitialized(); // loads bridge.js from package assets
+  runApp(const MyApp());
+}
+```
+
+`dart_monty_bridge.js`, `dart_monty_worker.js`, and `dart_monty_native.wasm`
+are built at publish time and ship in the pub.dev package under `assets/`.
+Flutter serves them automatically at `packages/dart_monty_core/assets/`.
+No npm or Node.js needed by your app.
+
+### WASM (plain Dart web, no Flutter)
+
+Copy the three asset files to your `web/` directory and add a script tag:
+
+```bash
+# One-time copy from pub cache
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_bridge.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_worker.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_native.wasm web/
+```
+
+```html
+<!-- index.html — must load before your compiled Dart app -->
+<script src="dart_monty_bridge.js"></script>
+```
+
+> **Note for JS/npm users**: If you are building a JavaScript or TypeScript
+> application, use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty)
+> directly — that is the canonical npm package. `dart_monty_core` is for Dart
+> developers who want the same interpreter through Dart APIs.
+
+---
+
 ## Quick start
 
 ```dart
