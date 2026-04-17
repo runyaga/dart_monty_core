@@ -105,6 +105,28 @@ String? _assignmentName(String segment) {
   return name.startsWith('_') ? null : name;
 }
 
+/// Extracts top-level `import` and `from … import` statements from [code].
+///
+/// Only considers lines with no leading whitespace (top-level).
+/// Handles semicolons for multi-statement lines.
+/// These are replayed as a preamble on every subsequent run call so that
+/// module names stay in scope across calls even though module objects are
+/// not JSON-serializable and cannot be stored in persistent state.
+Set<String> extractImportStatements(String code) {
+  final stmts = <String>{};
+  for (final line in code.split('\n')) {
+    if (line.isEmpty || line[0] == ' ' || line[0] == '\t') continue;
+    for (final raw in line.split(';')) {
+      final seg = raw.trim();
+      if (seg.startsWith('import ') || seg.startsWith('from ')) {
+        stmts.add(seg);
+      }
+    }
+  }
+
+  return stmts;
+}
+
 /// Extracts top-level assignment target names from [code].
 ///
 /// Only considers lines with no leading whitespace (top-level).

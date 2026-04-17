@@ -8,13 +8,16 @@
 //    Worker's replHandles Map. Variables in A are invisible in B.
 //    Tip: set x = 10 in A, then evaluate x in B — B won't see it.
 //
-//  VFS / OsCall   — a MontyRepl with an in-memory virtual filesystem
-//    wired to the osHandler per feed() call. Uses MontyRepl (not Monty)
-//    so that `import pathlib` on one call persists to the next — the Rust
-//    REPL heap stays alive across feed() calls whereas MontySession only
-//    persists JSON-serializable variables (modules are not serializable).
+//  VFS / OsCall   — a Monty() session with an in-memory virtual filesystem
+//    wired to the osHandler. Python's pathlib.Path reads and writes go
+//    through the Dart handler instead of the real filesystem.
+//    MontySession replays stored import statements as a preamble on each
+//    run() call so that `import pathlib` on one call persists to the next.
+//    Also demonstrates snapshot / restore — click 📸 to capture state
+//    and ↩ to restore it.
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:web/web.dart' as web;
@@ -138,13 +141,7 @@ void _initReplPanel(String panelId, String label, MontyRepl repl) {
 }
 
 // ---------------------------------------------------------------------------
-// VFS panel — MontyRepl with osHandler per-call
-//
-// MontySession (Monty) persists only JSON-serializable variables. Module
-// objects (from `import pathlib`) are not JSON-serializable and are silently
-// dropped by _buildPersistCode. MontyRepl keeps the full Rust heap alive
-// across feed() calls, so `import pathlib` on one line is visible on the
-// next — exactly the interactive REPL experience users expect.
+// VFS panel — Monty() with osHandler + snapshot/restore
 // ---------------------------------------------------------------------------
 void _initVfsPanel() {
   final output = _div('output-vfs');
@@ -152,6 +149,8 @@ void _initVfsPanel() {
   final runBtn = _button('run-vfs');
   final snapBtn = _button('snap-vfs');
   final restoreBtn = _button('restore-vfs');
+
+  Uint8List? savedSnapshot;
 
   void write(String text, {String? className}) {
     final div = web.document.createElement('div') as web.HTMLDivElement
@@ -162,12 +161,13 @@ void _initVfsPanel() {
       ..scrollTop = output.scrollHeight;
   }
 
-  // MontyRepl keeps the Rust REPL alive between feed() calls.
-  // osHandler is supplied per-call so pathlib OS calls reach _vfs.
-  final repl = MontyRepl();
+  // Monty session with in-memory VFS wired to the osHandler.
+  // MontySession replays top-level import statements as a preamble on each
+  // run() call, so `import pathlib` on one call persists to the next.
+  final monty = Monty(osHandler: _osHandler);
 
   write(
-    'VFS REPL — try: import pathlib  then: '
+    'VFS session — try: import pathlib  then: '
     'pathlib.Path("/data/hello.txt").read_text()',
     className: 'system-line',
   );
@@ -175,8 +175,6 @@ void _initVfsPanel() {
 
   input.disabled = false;
   runBtn.disabled = false;
-  snapBtn.disabled = true; // snapshot not yet supported on MontyRepl
-  restoreBtn.disabled = true;
   input.placeholder = 'import pathlib';
 
   Future<void> execute() async {
@@ -188,7 +186,7 @@ void _initVfsPanel() {
     input.value = '';
     write('>>> $code', className: 'input-line');
     try {
-      final result = await repl.feed(code, osHandler: _osHandler);
+      final result = await monty.run(code);
       if (result.printOutput != null && result.printOutput!.isNotEmpty) {
         write(result.printOutput!, className: 'print-line');
       }
@@ -210,17 +208,36 @@ void _initVfsPanel() {
     if (e.key == 'Enter') unawaited(execute());
   }.toJS;
 
+  // Snapshot: capture current Python variables → Uint8List.
   snapBtn.onclick = (web.MouseEvent _) {
-    write(
-      'Snapshot not yet available for MontyRepl.',
-      className: 'system-line',
-    );
+    try {
+      final bytes = monty.snapshot();
+      savedSnapshot = bytes;
+      write(
+        '📸 Snapshot saved (${bytes.length} bytes). '
+        'Modify state then click ↩ to restore.',
+        className: 'system-line',
+      );
+    } on Object catch (e) {
+      write('Snapshot error: $e', className: 'error-line');
+    }
   }.toJS;
 
+  // Restore: reload the most recently saved snapshot.
   restoreBtn.onclick = (web.MouseEvent _) {
-    write(
-      'Restore not yet available for MontyRepl.',
-      className: 'system-line',
-    );
+    final saved = savedSnapshot;
+    if (saved == null) {
+      write('No snapshot yet — click 📸 first.', className: 'system-line');
+      return;
+    }
+    try {
+      monty.restore(saved);
+      write(
+        '✅ State restored from snapshot.',
+        className: 'system-line',
+      );
+    } on Object catch (e) {
+      write('Restore error: $e', className: 'error-line');
+    }
   }.toJS;
 }
