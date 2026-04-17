@@ -67,24 +67,13 @@ Map<String, Object?> _toArgMap(
 
 String _wrapSessionCode(
   String code,
-  Iterable<String> stateKeys,
-  Iterable<String> knownImports, {
+  Iterable<String> stateKeys, {
   Map<String, Object?>? inputs,
 }) {
   final restore = _buildRestoreCode(stateKeys);
   final persist = _buildPersistCode(code, stateKeys);
   final (processed, hasResult) = code_capture.captureLastExpression(code);
-  final buf = StringBuffer();
-  // Replay stored import statements first so module names are in scope even
-  // though module objects are not JSON-serializable and absent from _state.
-  for (final stmt in knownImports) {
-    buf
-      ..write(stmt)
-      ..write('\n');
-  }
-  buf
-    ..write(restore)
-    ..write('\n');
+  final buf = StringBuffer(restore)..write('\n');
   if (inputs != null && inputs.isNotEmpty) {
     buf
       ..write(inputs_encoder.inputsToCode(inputs))
@@ -137,11 +126,6 @@ class MontySession {
   final MontyPlatform _platform;
   final OsCallHandler? _osHandler;
   Map<String, Object?> _state = {};
-  // Top-level import statements seen across all run() calls. Module objects
-  // are not JSON-serializable so they cannot live in _state; instead we
-  // replay these statements at the top of every wrapped execution so module
-  // names remain in scope across calls.
-  Set<String> _knownImports = {};
   bool _isDisposed = false;
 
   /// The current persisted state map. Read-only snapshot.
@@ -170,13 +154,7 @@ class MontySession {
     Map<String, Object?>? inputs,
   }) async {
     _checkNotDisposed();
-    _knownImports.addAll(code_capture.extractImportStatements(code));
-    final wrapped = _wrapSessionCode(
-      code,
-      _state.keys,
-      _knownImports,
-      inputs: inputs,
-    );
+    final wrapped = _wrapSessionCode(code, _state.keys, inputs: inputs);
     final extFns = [_restoreStateFn, _persistStateFn, ...externals.keys];
     final progress = await _safeCall(
       () => _platform.start(
@@ -231,7 +209,6 @@ class MontySession {
     final envelope = jsonEncode({
       'v': 1,
       'dartState': _state,
-      'imports': _knownImports.toList(),
     });
 
     return Uint8List.fromList(utf8.encode(envelope));
@@ -258,9 +235,6 @@ class MontySession {
     _state = (envelope['dartState'] as Map<String, dynamic>).map(
       (k, v) => MapEntry(k, v as Object?),
     );
-    _knownImports = Set<String>.from(
-      (envelope['imports'] as List<dynamic>?)?.cast<String>() ?? const [],
-    );
   }
 
   /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
@@ -275,8 +249,7 @@ class MontySession {
     String? scriptName,
   }) async {
     _checkNotDisposed();
-    _knownImports.addAll(code_capture.extractImportStatements(code));
-    final wrapped = _wrapSessionCode(code, _state.keys, _knownImports);
+    final wrapped = _wrapSessionCode(code, _state.keys);
     final allExtFns = [_restoreStateFn, _persistStateFn, ...?externalFunctions];
     final initial = await _safeCall(
       () => _platform.start(
@@ -310,7 +283,6 @@ class MontySession {
   void clearState() {
     _checkNotDisposed();
     _state = {};
-    _knownImports = {};
   }
 
   /// Disposes the session. Does NOT dispose the underlying platform.
