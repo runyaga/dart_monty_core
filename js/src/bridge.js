@@ -636,6 +636,40 @@ async function replDispose(replId) {
   return JSON.stringify(result);
 }
 
+/**
+ * Snapshot a REPL handle's heap to postcard bytes.
+ *
+ * @param {string} replId Unique identifier for the REPL handle.
+ * @returns {Promise<Object>} Raw JS object with snapshotBuffer ArrayBuffer.
+ */
+async function replSnapshot(replId) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) {
+    return { ok: false, error: 'Not initialized' };
+  }
+  const session = sessions.get(sid);
+  const result = await callWorker(sid, { type: 'replSnapshot', replId }, session.timeoutMs);
+  // Return raw JS object — snapshotBuffer is an ArrayBuffer, not JSON-safe.
+  return result;
+}
+
+/**
+ * Restore a REPL handle from base64-encoded postcard bytes.
+ *
+ * @param {string} replId   Unique identifier for the REPL handle.
+ * @param {string} dataBase64 Base64-encoded snapshot data.
+ * @returns {Promise<string>} JSON result.
+ */
+async function replRestore(replId, dataBase64) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const result = await callWorker(
+    sid, { type: 'replRestore', replId, dataBase64 }, session.timeoutMs,
+  );
+  return JSON.stringify(result);
+}
+
 // Expose bridge on window for Dart JS interop
 window.DartMontyBridge = {
   init,
@@ -669,6 +703,8 @@ window.DartMontyBridge = {
   replResumeWithError,
   replDetectContinuation,
   replDispose,
+  replSnapshot,
+  replRestore,
 };
 
 console.log('[DartMontyBridge] Registered on window (Worker pool architecture)');

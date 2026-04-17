@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 
 /// Internal bindings interface for REPL operations.
@@ -34,6 +36,17 @@ abstract class ReplBindings {
   ///
   /// The engine raises NameError.
   Future<CoreProgressResult> resumeNameLookupUndefined();
+
+  /// Serialises the REPL heap to postcard bytes.
+  ///
+  /// Throws [StateError] if the REPL is mid-execution.
+  Future<Uint8List> snapshot();
+
+  /// Restores the REPL from postcard bytes produced by [snapshot].
+  ///
+  /// The old native handle is freed and replaced with a new one
+  /// restored from [bytes].
+  Future<void> restore(Uint8List bytes);
 
   /// Disposes the REPL session.
   Future<void> dispose();

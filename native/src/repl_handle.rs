@@ -110,6 +110,36 @@ impl MontyReplHandle {
         }
     }
 
+    /// Serialises the REPL heap to postcard bytes.
+    ///
+    /// Only valid in `Idle` or `Complete` states (when the `MontyRepl` is
+    /// accessible). Returns `Err` if the REPL is mid-execution (`Paused`,
+    /// `OsCall`, `Futures`).
+    pub fn snapshot(&self) -> Result<Vec<u8>, String> {
+        match &self.state {
+            ReplHandleState::Idle(repl) => repl
+                .dump()
+                .map_err(|e| format!("repl snapshot failed: {e}")),
+            ReplHandleState::Complete { repl, .. } => repl
+                .dump()
+                .map_err(|e| format!("repl snapshot failed: {e}")),
+            _ => Err("can only snapshot an idle or complete REPL (not mid-execution)".into()),
+        }
+    }
+
+    /// Restores a `MontyReplHandle` from postcard bytes produced by `snapshot`.
+    ///
+    /// On success, the returned handle is in `Idle` state with the restored
+    /// interpreter state. `ext_fn_names` and `print_output` are reset to defaults.
+    pub fn restore(bytes: &[u8]) -> Result<Self, String> {
+        let repl = MontyRepl::load(bytes).map_err(|e| format!("repl restore failed: {e}"))?;
+        Ok(Self {
+            state: ReplHandleState::Idle(repl),
+            ext_fn_names: HashSet::new(),
+            print_output: String::new(),
+        })
+    }
+
     /// Registers external function names for `feed_start()` name resolution.
     pub fn set_ext_fns(&mut self, names: Vec<String>) {
         self.ext_fn_names = names.into_iter().collect();
@@ -939,6 +969,55 @@ mod tests {
     // -----------------------------------------------------------------------
     // Debug fmt
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Snapshot / restore
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn snapshot_restore_preserves_state() {
+        let mut repl = MontyReplHandle::new("test.py");
+        let (tag, _, _) = repl.feed_run("x = 42");
+        assert_eq!(tag, MontyResultTag::Ok);
+
+        let bytes = repl
+            .snapshot()
+            .expect("snapshot should succeed in Idle state");
+        assert!(!bytes.is_empty());
+
+        let mut restored = MontyReplHandle::restore(&bytes).expect("restore should succeed");
+        let (tag, json, _) = restored.feed_run("x");
+        assert_eq!(tag, MontyResultTag::Ok);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["value"], 42);
+    }
+
+    #[test]
+    fn snapshot_mid_execution_returns_err() {
+        let mut repl = MontyReplHandle::new("test.py");
+        repl.set_ext_fns(vec!["f".into()]);
+        repl.feed_start("f()");
+        // Handle is now Paused — snapshot must fail
+        assert!(repl.snapshot().is_err());
+    }
+
+    #[test]
+    fn restore_isolates_from_original() {
+        let mut repl = MontyReplHandle::new("test.py");
+        repl.feed_run("x = 1");
+
+        let bytes = repl.snapshot().unwrap();
+        let mut restored = MontyReplHandle::restore(&bytes).unwrap();
+
+        // Modify original
+        repl.feed_run("x = 99");
+
+        // Restored session should still have x == 1
+        let (tag, json, _) = restored.feed_run("x");
+        assert_eq!(tag, MontyResultTag::Ok);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["value"], 1);
+    }
 
     #[test]
     fn debug_fmt_does_not_panic() {

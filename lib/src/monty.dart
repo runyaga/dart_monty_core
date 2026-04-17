@@ -70,11 +70,17 @@ class Monty {
     inputs: inputs,
   );
 
-  /// Not yet implemented — see issue #23.
+  /// Serialises the interpreter state to postcard bytes.
+  ///
+  /// Pass the result to [restore] to rehydrate an identical interpreter.
+  /// Throws [StateError] if the interpreter is mid-execution.
   Future<Uint8List> snapshot() => _session.snapshot();
 
-  /// Not yet implemented — see issue #23.
-  void restore(Uint8List bytes) => _session.restore(bytes);
+  /// Restores this interpreter's state from bytes produced by [snapshot].
+  ///
+  /// The current REPL handle is freed and replaced. Await this before
+  /// issuing further [run] calls.
+  Future<void> restore(Uint8List bytes) => _session.restore(bytes);
 
   /// Clears all persisted state.
   ///

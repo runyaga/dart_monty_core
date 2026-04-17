@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
@@ -241,6 +242,31 @@ class MontyRepl {
       2 => ReplContinuationMode.incompleteBlock,
       _ => ReplContinuationMode.complete,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snapshot / restore
+  // ---------------------------------------------------------------------------
+
+  /// Serialises the REPL heap to postcard bytes.
+  ///
+  /// The bytes can be passed to [restore] to rehydrate an identical REPL.
+  /// The REPL must not be mid-execution (no pending [feedStart]/[resume]
+  /// loop in progress). Throws [StateError] if mid-execution.
+  Future<Uint8List> snapshot() {
+    _checkNotDisposed();
+
+    return _bindings.snapshot();
+  }
+
+  /// Restores the REPL from bytes produced by [snapshot].
+  ///
+  /// The current REPL handle is freed and replaced with a new one restored
+  /// from [bytes]. Any in-flight operations must complete before calling this.
+  Future<void> restore(Uint8List bytes) {
+    _checkNotDisposed();
+
+    return _bindings.restore(bytes);
   }
 
   // ---------------------------------------------------------------------------

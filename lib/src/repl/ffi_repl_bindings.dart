@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/ffi/generated/dart_monty_bindings.dart'
     as ffi_native;
@@ -138,6 +139,48 @@ class FfiReplBindings implements ReplBindings {
     throw UnimplementedError(
       'resumeNameLookupUndefined is not supported by the FFI REPL backend',
     );
+  }
+
+  @override
+  Future<Uint8List> snapshot() async {
+    final handle = _replHandle;
+    if (handle == null) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+
+    return _bindings.replSnapshot(handle);
+  }
+
+  @override
+  Future<void> restore(Uint8List bytes) async {
+    // Detach old finalizer to prevent double-free.
+    final token = _detachToken;
+    if (_guard != null && token != null) {
+      _replHandleFinalizer.detach(token);
+    }
+    // Free old handle explicitly.
+    final oldHandle = _replHandle;
+    if (oldHandle != null) {
+      _bindings.replFree(oldHandle);
+    }
+    _replHandle = null;
+    _guard = null;
+    _detachToken = null;
+
+    // Restore new handle from bytes.
+    final newHandle = _bindings.replRestore(bytes);
+    _replHandle = newHandle;
+
+    // Attach new finalizer.
+    final guard = _ReplHandleGuard(newHandle);
+    final token2 = Object();
+    _replHandleFinalizer.attach(
+      guard,
+      ffi.Pointer.fromAddress(newHandle),
+      detach: token2,
+    );
+    _guard = guard;
+    _detachToken = token2;
   }
 
   // -----------------------------------------------------------------------

@@ -425,4 +425,19 @@ abstract class WasmBindings {
   /// The engine raises NameError. When [sessionId] is non-null, routes to
   /// that specific session instead of the default.
   Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId});
+
+  /// Serialises a REPL handle's heap to postcard bytes.
+  ///
+  /// [replId] must match the value passed to [replCreate].
+  /// Throws [StateError] if the REPL is mid-execution.
+  Future<Uint8List> replSnapshot({required String replId, int? sessionId});
+
+  /// Restores a REPL handle from postcard bytes produced by [replSnapshot].
+  ///
+  /// The old Worker-side handle for [replId] is freed and replaced.
+  Future<void> replRestore({
+    required String replId,
+    required Uint8List data,
+    int? sessionId,
+  });
 }
