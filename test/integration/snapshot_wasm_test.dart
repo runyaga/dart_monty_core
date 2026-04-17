@@ -8,27 +8,26 @@ import 'package:test/test.dart';
 
 void main() {
   group('snapshot_wasm', () {
-    test('snapshot of empty session is non-empty', () {
+    test('snapshot of empty session is non-empty', () async {
       final m = Monty();
       addTearDown(m.dispose);
-      expect(m.snapshot(), isNotEmpty);
+      expect(await m.snapshot(), isNotEmpty);
     });
 
     test('int variable survives round-trip', () async {
       final m = Monty();
       addTearDown(m.dispose);
       await m.run('answer = 42');
-      final m2 = Monty()..restore(m.snapshot());
+      final snap = await m.snapshot();
+      final m2 = Monty()..restore(snap);
       addTearDown(m2.dispose);
       expect((await m2.run('answer')).value, const MontyInt(42));
     });
 
-    test('compile + runPrecompiled returns correct result', () async {
-      final m = Monty();
-      addTearDown(m.dispose);
+    test('compile + runPrecompiled returns correct result (static)', () async {
       final binary = await Monty.compile('1 + 1');
       expect(binary, isNotEmpty);
-      expect((await m.runPrecompiled(binary)).value, const MontyInt(2));
+      expect((await Monty.runPrecompiled(binary)).value, const MontyInt(2));
     });
   });
 }

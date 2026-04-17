@@ -12,13 +12,13 @@
 /// final result = await platform.run('1 + 1');
 /// print(result.value); // MontyInt(2)
 ///
-/// // Stateful session with callbacks
-/// final session = MontySession(platform: platform);
+/// // Stateful session — backed by the Rust REPL heap
+/// final session = MontySession();
 /// await session.run('x = 42', externals: {
 ///   'my_fn': (args) async => 'hello',
 /// });
 ///
-/// // Persistent REPL (native Rust heap)
+/// // Persistent REPL (same Rust heap, lower-level API)
 /// final repl = MontyRepl();
 /// await repl.feed('x = 42');
 /// final r = await repl.feed('x + 1');

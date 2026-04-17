@@ -3,90 +3,15 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
-import 'package:dart_monty_core/src/platform/code_capture.dart' as code_capture;
-import 'package:dart_monty_core/src/platform/inputs_encoder.dart'
-    as inputs_encoder;
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
-import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/repl/monty_repl.dart';
 import 'package:meta/meta.dart';
-
-const _restoreStateFn = '__restore_state__';
-const _persistStateFn = '__persist_state__';
-
-String _buildRestoreCode(Iterable<String> keys) {
-  final buf = StringBuffer('__d = __restore_state__()');
-  for (final key in keys) {
-    buf.write('\n$key = __d["$key"]');
-  }
-
-  return buf.toString();
-}
-
-String _buildPersistCode(
-  String code,
-  Iterable<String> existingKeys,
-) {
-  final names = <String>{
-    ...existingKeys,
-    ...code_capture.extractAssignmentTargets(code),
-  };
-  if (names.isEmpty) return '__persist_state__({})';
-  final buf = StringBuffer('__d2 = {}');
-  for (final name in names) {
-    buf
-      ..write('\ntry:')
-      ..write('\n    __d2["$name"] = $name')
-      ..write('\nexcept Exception:')
-      ..write('\n    pass');
-  }
-  buf.write('\n__persist_state__(__d2)');
-
-  return buf.toString();
-}
-
-Map<String, Object?> _toArgMap(
-  List<MontyValue> positional,
-  Map<String, MontyValue>? kwargs,
-) {
-  final result = <String, Object?>{};
-  if (kwargs != null) {
-    result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
-  }
-  for (var i = 0; i < positional.length; i++) {
-    result['_$i'] = positional[i].dartValue;
-  }
-
-  return result;
-}
-
-String _wrapSessionCode(
-  String code,
-  Iterable<String> stateKeys, {
-  Map<String, Object?>? inputs,
-}) {
-  final restore = _buildRestoreCode(stateKeys);
-  final persist = _buildPersistCode(code, stateKeys);
-  final (processed, hasResult) = code_capture.captureLastExpression(code);
-  final buf = StringBuffer(restore)..write('\n');
-  if (inputs != null && inputs.isNotEmpty) {
-    buf
-      ..write(inputs_encoder.inputsToCode(inputs))
-      ..write('\n');
-  }
-  buf
-    ..write(processed)
-    ..write('\n')
-    ..write(persist);
-  if (hasResult) buf.write('\n__r');
-
-  return buf.toString();
-}
 
 const _zeroUsage = MontyResourceUsage(
   memoryBytesUsed: 0,
@@ -94,58 +19,72 @@ const _zeroUsage = MontyResourceUsage(
   stackDepthUsed: 0,
 );
 
-/// A stateful execution session that persists variables across calls.
+// Python snippet that captures all JSON-serialisable globals.
+// __-prefixed temporaries are filtered by the `not k.startswith('_')` guard.
+const _snapshotPy = '''
+import json as __json
+__snap = {}
+for __k, __v in list(vars().items()):
+    if not __k.startswith('_'):
+        try:
+            __json.dumps(__v)
+            __snap[__k] = __v
+        except Exception:
+            pass
+__snap''';
+
+/// A stateful execution session backed by the native Rust REPL heap.
 ///
-/// Each [MontySession] wraps a [MontyPlatform] and maintains a snapshot of
-/// Python globals between executions. Only JSON-serializable values persist
-/// (int, float, str, bool, list, dict, None).
+/// All Python state — variables, functions, classes, and module objects —
+/// persists natively across [run] calls without JSON serialisation.
+/// Two-call import patterns work naturally:
+///
+/// ```dart
+/// final session = MontySession();
+/// await session.run('import pathlib');
+/// final r = await session.run('pathlib.Path("/data/f.txt").read_text()');
+/// session.dispose();
+/// ```
 ///
 /// Register Dart callbacks with `externals` to let Python call host functions.
 /// OS calls (pathlib, os.getenv, datetime) are handled by `osHandler`; if
 /// none is provided, OS calls raise a Python exception.
-///
-/// ```dart
-/// final platform = createMontyPlatform();
-/// final session = MontySession(platform: platform);
-/// await session.run('x = 42');
-/// final result = await session.run('x + 1');
-/// print(result.value); // MontyInt(43)
-/// session.dispose();
-/// ```
 class MontySession {
-  /// Creates a [MontySession] backed by [platform].
-  ///
-  /// The session does NOT take ownership of [platform] — calling [dispose]
-  /// does not dispose the platform.
+  /// Creates a [MontySession].
   MontySession({
-    required MontyPlatform platform,
     OsCallHandler? osHandler,
-  }) : _platform = platform,
-       _osHandler = osHandler;
+    String? scriptName,
+  }) : _osHandler = osHandler,
+       _scriptName = scriptName,
+       _repl = MontyRepl(scriptName: scriptName);
 
-  final MontyPlatform _platform;
   final OsCallHandler? _osHandler;
-  Map<String, Object?> _state = {};
-  bool _isDisposed = false;
+  final String? _scriptName;
+  MontyRepl _repl;
 
-  /// The current persisted state map. Read-only snapshot.
-  Map<String, Object?> get state => Map.unmodifiable(_state);
+  // State to be injected on the next run() after a restore().
+  Map<String, Object?>? _pendingRestore;
+
+  bool _isDisposed = false;
 
   /// Whether this session has been disposed.
   @visibleForTesting
   bool get isDisposed => _isDisposed;
 
-  /// Executes [code] with state restored from previous calls.
+  /// Executes [code] with full Python state from previous calls available.
+  ///
+  /// All Python objects (variables, functions, classes, modules) persist via
+  /// the Rust REPL heap across calls.
   ///
   /// [externals] maps Python-callable function names to Dart handlers.
-  /// Any Python call to a registered name is dispatched here; unregistered
-  /// names raise a Python exception.
   ///
   /// [inputs] injects per-invocation Python variables before [code] runs.
   /// Each key becomes a Python variable; values are converted to Python
-  /// literals. Inputs are **not persisted** across calls.
+  /// literals.
   ///
-  /// Throws [ArgumentError] if any value in [inputs] cannot be converted.
+  /// [limits] and [scriptName] are accepted for API compatibility but
+  /// ignored — the REPL uses `NoLimitTracker` and the session-level
+  /// scriptName.
   Future<MontyResult> run(
     String code, {
     MontyLimits? limits,
@@ -154,73 +93,102 @@ class MontySession {
     Map<String, Object?>? inputs,
   }) async {
     _checkNotDisposed();
-    final wrapped = _wrapSessionCode(code, _state.keys, inputs: inputs);
-    final extFns = [_restoreStateFn, _persistStateFn, ...externals.keys];
-    final progress = await _safeCall(
-      () => _platform.start(
-        wrapped,
-        externalFunctions: extFns,
-        limits: limits,
-        scriptName: scriptName,
-      ),
-    );
-
-    return _dispatchLoop(progress, externals);
+    final effectiveInputs = _mergeInputs(_pendingRestore, inputs);
+    _pendingRestore = null;
+    try {
+      return await _repl.feed(
+        code,
+        externals: externals,
+        osHandler: _osHandler,
+        inputs: effectiveInputs,
+      );
+    } on MontyScriptError catch (e) {
+      return MontyResult(
+        value: const MontyNone(),
+        error: e.exception,
+        usage: _zeroUsage,
+      );
+    } on MontyError catch (e) {
+      return MontyResult(
+        value: const MontyNone(),
+        error: MontyException(message: e.message),
+        usage: _zeroUsage,
+      );
+    }
   }
 
-  /// Executes pre-compiled [compiled] bytes and returns the result.
+  /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
   ///
-  /// Pre-compiled bytes are obtained from [MontyPlatform.compileCode] or
-  /// `Monty.compile`. Running pre-compiled code avoids re-parsing on
-  /// repeated executions of the same script.
-  ///
-  /// State is **not** preserved across [runPrecompiled] calls — the compiled
-  /// code runs in isolation without `__restore_state__`/`__persist_state__`
-  /// wrapping. For stateful execution use [run] instead.
-  Future<MontyResult> runPrecompiled(
-    Uint8List compiled, {
+  /// [limits] and [scriptName] are accepted for API compatibility but ignored.
+  Future<MontyProgress> start(
+    String code, {
+    List<String>? externalFunctions,
     MontyLimits? limits,
     String? scriptName,
-  }) {
+  }) async {
     _checkNotDisposed();
-
-    return _platform.runPrecompiled(
-      compiled,
-      limits: limits,
-      scriptName: scriptName,
-    );
+    _pendingRestore = null;
+    return _repl.feedStart(code, externalFunctions: externalFunctions);
   }
 
-  /// Captures all Python variables persisted by this session.
-  ///
-  /// Returns a self-contained binary snapshot that can be passed to [restore]
-  /// on a new [MontySession] backed by the same or a different platform.
-  ///
-  /// After each [run] call completes, `MontySession` state lives entirely in
-  /// the Dart-side `_state` map — the Rust execution handle is freed. This
-  /// snapshot therefore serialises only the Dart state; no live Rust heap is
-  /// required and the method is safe to call between [run] calls.
-  ///
-  /// **Note on external functions:** Dart [MontyCallback] closures registered
-  /// via `externals:` cannot be serialised. Re-provide them in the
-  /// `externals:` parameter of subsequent [run] calls after [restore].
-  Uint8List snapshot() {
+  /// Resumes a paused execution with [returnValue].
+  Future<MontyProgress> resume(Object? returnValue) {
     _checkNotDisposed();
-    final envelope = jsonEncode({
-      'v': 1,
-      'dartState': _state,
-    });
+    return _repl.resume(returnValue);
+  }
 
-    return Uint8List.fromList(utf8.encode(envelope));
+  /// Resumes a paused execution by raising [errorMessage] in Python.
+  Future<MontyProgress> resumeWithError(String errorMessage) {
+    _checkNotDisposed();
+    return _repl.resumeWithError(errorMessage);
+  }
+
+  /// Captures JSON-serialisable Python globals as a portable snapshot.
+  ///
+  /// Runs a lightweight Python introspection snippet via the REPL to collect
+  /// all JSON-serialisable globals. Non-serialisable values (functions,
+  /// classes, module objects) are excluded.
+  ///
+  /// Pass the returned bytes to [restore] on a new [MontySession] to recreate
+  /// variable state.
+  ///
+  /// **Note on external functions:** [MontyCallback] closures registered via
+  /// `externals:` cannot be serialised. Re-provide them in subsequent [run]
+  /// calls after [restore].
+  Future<Uint8List> snapshot() async {
+    _checkNotDisposed();
+    // If there is pending restore state that hasn't been injected yet, do so
+    // now so introspection captures it.
+    final pending = _pendingRestore;
+    if (pending != null) {
+      try {
+        await _repl.feed('pass', inputs: pending);
+      } on Object {
+        // ignore — fall through to introspection on whatever state exists
+      }
+      _pendingRestore = null;
+    }
+    MontyResult result;
+    try {
+      result = await _repl.feed(_snapshotPy);
+    } on Object {
+      return _encodeSnapshot(const {});
+    }
+    final state = <String, Object?>{};
+    final value = result.value;
+    if (value is MontyDict) {
+      state.addAll(value.entries.map((k, v) => MapEntry(k, v.dartValue)));
+    }
+    return _encodeSnapshot(state);
   }
 
   /// Restores Python variables from a snapshot produced by [snapshot].
   ///
-  /// Replaces the Dart-side Python globals. The next [run] call after
-  /// [restore] will inject the restored variables into the Python scope.
+  /// Resets the REPL to a fresh state and injects the snapshot variables on
+  /// the next [run] call.
   ///
-  /// Throws [ArgumentError] if [bytes] is not a valid session snapshot or
-  /// if the snapshot format version is unsupported.
+  /// Accepts both v1 (legacy `dartState` key) and v2 (`replState` key)
+  /// envelopes. Throws [ArgumentError] if [bytes] is not a valid snapshot.
   void restore(Uint8List bytes) {
     _checkNotDisposed();
     final Map<String, dynamic> envelope;
@@ -229,195 +197,52 @@ class MontySession {
     } on FormatException catch (e) {
       throw ArgumentError('Not a valid MontySession snapshot: $e');
     }
-    if (envelope['v'] != 1) {
-      throw ArgumentError('Unsupported snapshot version: ${envelope['v']}');
+    final version = envelope['v'] as int?;
+    if (version != 1 && version != 2) {
+      throw ArgumentError('Unsupported snapshot version: $version');
     }
-    _state = (envelope['dartState'] as Map<String, dynamic>).map(
-      (k, v) => MapEntry(k, v as Object?),
+    final stateKey = version == 1 ? 'dartState' : 'replState';
+    _resetRepl();
+    _pendingRestore = Map<String, Object?>.from(
+      (envelope[stateKey] as Map<String, dynamic>?) ?? const {},
     );
   }
 
-  /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
-  ///
-  /// Internal state functions are intercepted transparently. Register
-  /// [externalFunctions] names here; handle pauses with [resume] and
-  /// [resumeWithError].
-  Future<MontyProgress> start(
-    String code, {
-    List<String>? externalFunctions,
-    MontyLimits? limits,
-    String? scriptName,
-  }) async {
-    _checkNotDisposed();
-    final wrapped = _wrapSessionCode(code, _state.keys);
-    final allExtFns = [_restoreStateFn, _persistStateFn, ...?externalFunctions];
-    final initial = await _safeCall(
-      () => _platform.start(
-        wrapped,
-        externalFunctions: allExtFns,
-        limits: limits,
-        scriptName: scriptName,
-      ),
-    );
-
-    return _intercept(initial);
-  }
-
-  /// Resumes a paused execution with [returnValue].
-  Future<MontyProgress> resume(Object? returnValue) async {
-    _checkNotDisposed();
-
-    return _intercept(await _safeCall(() => _platform.resume(returnValue)));
-  }
-
-  /// Resumes a paused execution by raising [errorMessage] in Python.
-  Future<MontyProgress> resumeWithError(String errorMessage) async {
-    _checkNotDisposed();
-
-    return _intercept(
-      await _safeCall(() => _platform.resumeWithError(errorMessage)),
-    );
-  }
-
-  /// Clears all persisted state.
+  /// Clears all persisted state. The next [run] starts with empty globals.
   void clearState() {
     _checkNotDisposed();
-    _state = {};
+    _resetRepl();
+    _pendingRestore = null;
   }
 
-  /// Disposes the session. Does NOT dispose the underlying platform.
+  /// Disposes the session.
   void dispose() {
     _isDisposed = true;
-    _state = {};
+    unawaited(_repl.dispose());
   }
 
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
 
-  void _captureState(List<MontyValue> arguments) {
-    if (arguments.isEmpty) return;
-    final arg = arguments.first;
-    if (arg is MontyDict) {
-      _state = arg.entries.map((k, v) => MapEntry(k, v.dartValue));
-    }
+  void _resetRepl() {
+    unawaited(_repl.dispose());
+    _repl = MontyRepl(scriptName: _scriptName);
   }
 
-  Future<MontyResult> _dispatchLoop(
-    MontyProgress initial,
-    Map<String, MontyCallback> externals,
-  ) async {
-    var progress = initial;
-    while (true) {
-      switch (progress) {
-        case MontyPending(functionName: _restoreStateFn):
-          progress = await _safeCall(() => _platform.resume(_state));
-        case MontyPending(functionName: _persistStateFn):
-          _captureState(progress.arguments);
-          progress = await _safeCall(() => _platform.resume(null));
-        case MontyComplete(:final result):
-          return result;
-        case MontyPending(:final functionName):
-          final cb = externals[functionName];
-          if (cb == null) {
-            progress = await _safeCall(
-              () => _platform.resumeWithError(
-                'No handler registered for: $functionName',
-              ),
-            );
-          } else {
-            try {
-              final args = _toArgMap(progress.arguments, progress.kwargs);
-              final result = await cb(args);
-              progress = await _safeCall(() => _platform.resume(result));
-            } on Object catch (e) {
-              progress = await _safeCall(
-                () => _platform.resumeWithError(e.toString()),
-              );
-            }
-          }
-        case MontyOsCall():
-          progress = await _handleOsCall(progress);
-        case MontyResolveFutures():
-          progress = await _safeCall(() => _platform.resume(null));
-        case MontyNameLookup(:final variableName):
-          progress = await _safeCall(
-            () => _platform.resumeNameLookupUndefined(variableName),
-          );
-      }
-    }
+  static Map<String, Object?>? _mergeInputs(
+    Map<String, Object?>? restore,
+    Map<String, Object?>? inputs,
+  ) {
+    if (restore == null && inputs == null) return null;
+    if (restore == null) return inputs;
+    if (inputs == null) return restore;
+    return {...restore, ...inputs};
   }
 
-  Future<MontyProgress> _handleOsCall(MontyOsCall call) async {
-    final handler = _osHandler;
-    if (handler == null) {
-      return _safeCall(
-        () => _platform.resumeWithError(
-          'OS operations not available — no OsCallHandler configured',
-        ),
-      );
-    }
-    try {
-      final args = call.arguments.map((v) => v.dartValue).toList();
-      final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
-      final result = await handler(call.operationName, args, kwargs);
-
-      return await _safeCall(() => _platform.resume(result));
-    } on OsCallException catch (e) {
-      final excType = e.pythonExceptionType;
-      if (excType != null) {
-        return _safeCall(
-          () => _platform.resumeWithException(excType, e.message),
-        );
-      }
-
-      return _safeCall(() => _platform.resumeWithError(e.message));
-    } on Object catch (e) {
-      return _safeCall(() => _platform.resumeWithError(e.toString()));
-    }
-  }
-
-  Future<MontyProgress> _intercept(MontyProgress progress) async {
-    var current = progress;
-    while (true) {
-      switch (current) {
-        case MontyPending(functionName: _restoreStateFn):
-          current = await _safeCall(() => _platform.resume(_state));
-        case MontyPending(functionName: _persistStateFn):
-          _captureState(current.arguments);
-          current = await _safeCall(() => _platform.resume(null));
-        case MontyComplete():
-        case MontyPending():
-        case MontyOsCall():
-        case MontyResolveFutures():
-        case MontyNameLookup():
-          return current;
-      }
-    }
-  }
-
-  Future<MontyProgress> _safeCall(
-    Future<MontyProgress> Function() fn,
-  ) async {
-    try {
-      return await fn();
-    } on MontyScriptError catch (e) {
-      return MontyComplete(
-        result: MontyResult(
-          value: const MontyNone(),
-          error: e.exception,
-          usage: _zeroUsage,
-        ),
-      );
-    } on MontyError catch (e) {
-      return MontyComplete(
-        result: MontyResult(
-          value: const MontyNone(),
-          error: MontyException(message: e.message),
-          usage: _zeroUsage,
-        ),
-      );
-    }
+  static Uint8List _encodeSnapshot(Map<String, Object?> state) {
+    final envelope = jsonEncode({'v': 2, 'replState': state});
+    return Uint8List.fromList(utf8.encode(envelope));
   }
 
   void _checkNotDisposed() {

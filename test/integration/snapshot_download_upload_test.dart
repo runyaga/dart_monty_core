@@ -26,7 +26,7 @@ void main() {
       await montyA.run('label = "result"');
 
       // "Download" snapshot bytes (save to disk / IndexedDB / server).
-      final downloadedBytes = montyA.snapshot();
+      final downloadedBytes = await montyA.snapshot();
       expect(downloadedBytes, isNotEmpty);
 
       // Simulate storage round-trip.
@@ -37,22 +37,23 @@ void main() {
       addTearDown(montyB.dispose);
       montyB.restore(uploadedBytes);
 
-      expect(montyB.state['x'], equals(10));
-      expect(montyB.state['y'], equals(30));
-      expect(montyB.state['label'], equals('result'));
+      // Verify all variables survived the round-trip.
+      expect((await montyB.run('x')).value, const MontyInt(10));
+      expect((await montyB.run('y')).value, const MontyInt(30));
+      expect((await montyB.run('label')).value, const MontyString('result'));
 
       // Continue executing from the restored state.
       final result = await montyB.run('y + x');
       expect(result.value, equals(const MontyInt(40)));
     });
 
-    test('snapshot envelope is v1 JSON with dartState key', () {
+    test('snapshot envelope is v2 JSON with replState key', () async {
       final m = Monty();
       addTearDown(m.dispose);
       final envelope =
-          jsonDecode(utf8.decode(m.snapshot())) as Map<String, dynamic>;
-      expect(envelope['v'], equals(1));
-      expect(envelope, contains('dartState'));
+          jsonDecode(utf8.decode(await m.snapshot())) as Map<String, dynamic>;
+      expect(envelope['v'], equals(2));
+      expect(envelope, contains('replState'));
     });
 
     test('invalid bytes throw ArgumentError on restore', () {

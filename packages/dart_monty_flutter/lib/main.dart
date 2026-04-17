@@ -8,10 +8,10 @@
 //    in A are invisible in B and vice versa.
 //    Tip: set x = 10 in Session A, then evaluate x in Session B — B won't see it.
 //
-//  VFS / OsCall — a Monty() session with an in-memory filesystem wired
-//    to the osHandler. Python's pathlib.Path reads and writes go through
-//    the Dart handler instead of the real filesystem.
-//    Also demonstrates snapshot / restore (📸 / ↩).
+//  VFS / OsCall — a Monty() session (REPL-backed) with an in-memory
+//    filesystem wired to the osHandler. `import pathlib` on one call
+//    persists to the next — the Rust REPL heap stays alive between run()
+//    calls. Also demonstrates snapshot / restore (📸 / ↩).
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
@@ -300,7 +300,7 @@ class _VfsPanelState extends State<_VfsPanel> {
   Uint8List? _savedSnapshot;
   final List<_ReplLine> _lines = [
     const _ReplLine(
-      'VFS session — try: import pathlib; pathlib.Path("/data/hello.txt").read_text()',
+      'VFS session — try: import pathlib  then: pathlib.Path("/data/hello.txt").read_text()',
       _LineKind.system,
     ),
     _ReplLine('Files: ${_vfs.keys.join(", ")}', _LineKind.system),
@@ -348,9 +348,9 @@ class _VfsPanelState extends State<_VfsPanel> {
     });
   }
 
-  void _snapshot() {
+  Future<void> _snapshot() async {
     try {
-      final bytes = widget.monty.snapshot();
+      final bytes = await widget.monty.snapshot();
       setState(() {
         _savedSnapshot = bytes;
         _lines.add(_ReplLine(

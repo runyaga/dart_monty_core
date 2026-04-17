@@ -4,18 +4,18 @@ import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/monty_factory.dart';
 import 'package:dart_monty_core/src/monty_session.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
-import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
 
 /// Monty sandboxed Python interpreter.
 ///
-/// Variables persist across [run] calls:
+/// All Python state — variables, functions, classes, and module objects —
+/// persists natively across [run] calls via the Rust REPL heap. No JSON
+/// serialisation overhead, and two-call import patterns work naturally:
+///
 /// ```dart
 /// final monty = Monty();
-/// await monty.run('x = 42');
-/// await monty.run('y = x * 2');
-/// final result = await monty.run('x + y');
-/// print(result.value); // MontyInt(126)
+/// await monty.run('import pathlib');
+/// final r = await monty.run('pathlib.Path("/data/f.txt").read_text()');
 /// await monty.dispose();
 /// ```
 ///
@@ -32,52 +32,30 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 class Monty {
   /// Creates a Monty interpreter with the auto-detected backend.
   ///
-  /// [scriptName] is used as the default filename in tracebacks and error
-  /// messages. It can be overridden per-call in [run]. Equivalent to the
-  /// `scriptName` option in the JS `@pydantic/monty` SDK.
+  /// [scriptName] is used as the filename in tracebacks and error messages.
   ///
   /// Pass [osHandler] to enable Python `pathlib`, `os`, and `datetime`
   /// access. Without it, OS calls resume with a permission error.
   factory Monty({
     OsCallHandler? osHandler,
     String scriptName = 'main.py',
-  }) => Monty._(createPlatformMonty(), osHandler, scriptName);
+  }) => Monty._(MontySession(osHandler: osHandler, scriptName: scriptName));
 
-  /// Creates a Monty interpreter with an explicit platform backend.
-  factory Monty.withPlatform(
-    MontyPlatform platform, {
-    OsCallHandler? osHandler,
-    String scriptName = 'main.py',
-  }) => Monty._(platform, osHandler, scriptName);
+  Monty._(MontySession session) : _session = session;
 
-  Monty._(MontyPlatform platform, OsCallHandler? osHandler, String scriptName)
-    : _platform = platform,
-      _scriptName = scriptName,
-      _session = MontySession(platform: platform, osHandler: osHandler);
-
-  final MontyPlatform _platform;
   final MontySession _session;
-
-  /// The default script name used in tracebacks for this session.
-  final String _scriptName;
-
-  /// The underlying platform — for advanced use (iterative start/resume).
-  MontyPlatform get platform => _platform;
-
-  /// The current persisted state as a JSON-decoded map.
-  Map<String, Object?> get state => _session.state;
 
   /// Executes Python [code] and returns the result.
   ///
-  /// Variables defined in [code] persist for subsequent [run] calls.
-  ///
-  /// [scriptName] overrides the constructor's default for this call only.
+  /// Variables, functions, classes, and module imports all persist across
+  /// calls via the Rust REPL heap.
   ///
   /// [inputs] injects per-invocation Python variables before [code] runs.
   /// Each key becomes a Python variable; values are converted to Python
-  /// literals. Inputs are **not persisted** across calls.
+  /// literals.
   ///
-  /// Throws [ArgumentError] if any value in [inputs] cannot be converted.
+  /// [limits] and [scriptName] are accepted for API compatibility but ignored
+  /// — the REPL uses `NoLimitTracker` and the session-level scriptName.
   Future<MontyResult> run(
     String code, {
     MontyLimits? limits,
@@ -87,45 +65,26 @@ class Monty {
   }) => _session.run(
     code,
     limits: limits,
-    scriptName: scriptName ?? _scriptName,
+    scriptName: scriptName,
     externals: externals,
     inputs: inputs,
   );
 
-  /// Executes pre-compiled [compiled] bytes and returns the result.
-  ///
-  /// Pre-compiled bytes are obtained from [compile]. Running pre-compiled
-  /// code avoids re-parsing on repeated executions of the same script.
-  ///
-  /// State is **not** preserved across [runPrecompiled] calls. For stateful
-  /// execution, use [run] instead.
-  Future<MontyResult> runPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) => _session.runPrecompiled(
-    compiled,
-    limits: limits,
-    scriptName: scriptName,
-  );
-
-  /// Captures all Python variables persisted by this session.
+  /// Captures JSON-serialisable Python globals as a portable snapshot.
   ///
   /// Returns a self-contained binary snapshot. Pass to [restore] on the same
   /// or a new [Monty] instance to recreate the Python variable state.
   ///
-  /// Safe to call between [run] calls — no live interpreter handle is
-  /// required. See [MontySession.snapshot] for details.
+  /// Functions, classes, and module objects are excluded (not serialisable).
   ///
-  /// **Note on external functions:** Dart [MontyCallback] closures registered
-  /// via `externals:` cannot be serialised. Re-provide them in the
-  /// `externals:` parameter of subsequent [run] calls after [restore].
-  Uint8List snapshot() => _session.snapshot();
+  /// **Note on external functions:** [MontyCallback] closures cannot be
+  /// serialised. Re-provide them in subsequent [run] calls after [restore].
+  Future<Uint8List> snapshot() => _session.snapshot();
 
   /// Restores Python variables from a snapshot produced by [snapshot].
   ///
-  /// The next [run] call will inject the restored variables into the Python
-  /// scope. Throws [ArgumentError] if [bytes] is not a valid snapshot.
+  /// The next [run] call will inject the restored variables. Throws
+  /// [ArgumentError] if [bytes] is not a valid snapshot.
   void restore(Uint8List bytes) => _session.restore(bytes);
 
   /// Clears all persisted state.
@@ -134,28 +93,37 @@ class Monty {
   void clearState() => _session.clearState();
 
   /// Releases all resources.
-  Future<void> dispose() async {
-    _session.dispose();
-    await _platform.dispose();
-  }
+  Future<void> dispose() async => _session.dispose();
 
   /// Compiles [code] and returns the bytecode as a binary blob.
   ///
-  /// Use [runPrecompiled] or [MontySession.runPrecompiled] to execute the
-  /// result. Pre-compiling avoids re-parsing on repeated executions of the
-  /// same script.
-  ///
-  /// Equivalent to `Monty.dump()` in the JS `@pydantic/monty` SDK.
-  ///
-  /// ```dart
-  /// final binary = await Monty.compile('x * 2 + y');
-  /// // Run the same compiled code with different inputs:
-  /// final r1 = await session.runPrecompiled(binary);
-  /// ```
+  /// Use [runPrecompiled] to execute the result. Pre-compiling avoids
+  /// re-parsing on repeated executions of the same script.
   static Future<Uint8List> compile(String code) async {
     final platform = createPlatformMonty();
     try {
       return await platform.compileCode(code);
+    } finally {
+      await platform.dispose();
+    }
+  }
+
+  /// Runs pre-compiled bytecode from [compile] in a stateless context.
+  ///
+  /// Creates a temporary backend, runs once, and disposes. Does not affect
+  /// any session state. For stateful execution use [run] instead.
+  static Future<MontyResult> runPrecompiled(
+    Uint8List compiled, {
+    MontyLimits? limits,
+    String? scriptName,
+  }) async {
+    final platform = createPlatformMonty();
+    try {
+      return await platform.runPrecompiled(
+        compiled,
+        limits: limits,
+        scriptName: scriptName,
+      );
     } finally {
       await platform.dispose();
     }

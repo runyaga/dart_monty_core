@@ -134,34 +134,6 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  group('MontySession.runPrecompiled', () {
-    test('delegates to platform and returns result', () async {
-      final mock = MockMontyPlatform()..runResult = _intResult;
-      final session = MontySession(platform: mock);
-      final bytes = await mock.compileCode('42');
-      final result = await session.runPrecompiled(bytes);
-      expect(result.value, const MontyInt(42));
-    });
-
-    test('passes limits to platform', () async {
-      const limits = MontyLimits(timeoutMs: 1000);
-      final mock = MockMontyPlatform()..runResult = _intResult;
-      final session = MontySession(platform: mock);
-      final bytes = await mock.compileCode('pass');
-      // Ignore the result; verify that the bytes were forwarded.
-      await session.runPrecompiled(bytes, limits: limits);
-      expect(mock.history.lastRunPrecompiledData, bytes);
-    });
-
-    test('throws StateError on disposed session', () async {
-      final mock = MockMontyPlatform()..runResult = _intResult;
-      final session = MontySession(platform: mock)..dispose();
-      final bytes = await mock.compileCode('pass');
-      expect(() => session.runPrecompiled(bytes), throwsStateError);
-    });
-  });
-
-  // -------------------------------------------------------------------------
   group('compile + runPrecompiled round-trip (mock)', () {
     test('compile → runPrecompiled returns expected result', () async {
       final mock = MockMontyPlatform()..runResult = _intResult;
