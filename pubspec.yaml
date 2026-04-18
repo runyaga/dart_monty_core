@@ -20,8 +20,3 @@ dev_dependencies:
   test: ^1.25.0
   very_good_analysis: ^10.0.0
 
-flutter:
-  assets:
-    - assets/dart_monty_bridge.js
-    - assets/dart_monty_worker.js
-    - assets/dart_monty_native.wasm
