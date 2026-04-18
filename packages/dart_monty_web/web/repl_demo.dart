@@ -72,6 +72,8 @@ web.HTMLDivElement _div(String id) =>
     web.document.getElementById(id)! as web.HTMLDivElement;
 web.HTMLInputElement _input(String id) =>
     web.document.getElementById(id)! as web.HTMLInputElement;
+web.HTMLTextAreaElement _textarea(String id) =>
+    web.document.getElementById(id)! as web.HTMLTextAreaElement;
 web.HTMLButtonElement _button(String id) =>
     web.document.getElementById(id)! as web.HTMLButtonElement;
 
@@ -99,7 +101,7 @@ void main() {
 // ---------------------------------------------------------------------------
 void _initReplPanel() {
   final output = _div('output-a');
-  final input = _input('input-a');
+  final input = _textarea('input-a'); // textarea preserves newlines
   final runBtn = _button('run-a');
 
   final repl = MontyRepl();
@@ -203,8 +205,12 @@ void _initReplPanel() {
   runBtn.onclick = (web.MouseEvent _) {
     unawaited(execute());
   }.toJS;
+  // Enter submits; Shift+Enter inserts a newline (textarea default).
   input.onkeydown = (web.KeyboardEvent e) {
-    if (e.key == 'Enter') unawaited(execute());
+    if (e.key == 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      unawaited(execute());
+    }
   }.toJS;
   input.disabled = false;
   runBtn.disabled = false;

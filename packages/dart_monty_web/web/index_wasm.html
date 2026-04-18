@@ -49,12 +49,13 @@
       background: #252526; padding: 8px; border-top: 1px solid #333;
       display: flex; gap: 6px; flex-shrink: 0;
     }
-    .input-row input {
+    .input-row input, .input-row textarea {
       flex: 1; background: #3c3c3c; border: 1px solid #555; color: #ccc;
       padding: 6px 10px; border-radius: 4px;
       font-family: 'Consolas', 'Courier New', monospace; font-size: 13px;
     }
-    .input-row input:focus { outline: none; border-color: #4ec9b0; }
+    .input-row input:focus, .input-row textarea:focus { outline: none; border-color: #4ec9b0; }
+    .input-row textarea { resize: vertical; min-height: 32px; max-height: 160px; line-height: 1.4; }
     .btn {
       background: #0e639c; color: white; border: none;
       padding: 6px 14px; border-radius: 4px; cursor: pointer;
@@ -127,7 +128,7 @@
         <div class="system-line">Initializing…</div>
       </div>
       <div class="input-row">
-        <input id="input-a" disabled placeholder="Python code…">
+        <textarea id="input-a" disabled placeholder="Python code… (Shift+Enter for newline, Enter to run)" rows="2"></textarea>
         <button id="run-a" class="btn" disabled>Run</button>
       </div>
     </div>

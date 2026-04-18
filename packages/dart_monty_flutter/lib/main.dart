@@ -322,10 +322,22 @@ class _DemoShellState extends State<_DemoShell>
       appBar: AppBar(
         title: const Text('dart_monty_core'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.lightbulb_outline),
-            tooltip: 'Examples',
-            onPressed: () => _showSamples(context),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.lightbulb_outline, size: 16),
+              label: const Text('Examples', style: TextStyle(fontSize: 12)),
+              onPressed: () => _showSamples(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF4ec9b0),
+                side: const BorderSide(color: Color(0xFF4ec9b0)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           ),
         ],
         bottom: TabBar(
@@ -478,7 +490,15 @@ class _ExecPanel extends StatefulWidget {
 class _ExecPanelState extends State<_ExecPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
   var _limitChoice = 'none';
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -555,11 +575,15 @@ class _ExecPanelState extends State<_ExecPanel> {
               Expanded(
                 child: TextField(
                   controller: _ctrl,
+                  focusNode: _focus,
                   decoration: const InputDecoration(
                     hintText: 'Python code…',
                     border: OutlineInputBorder(),
                   ),
-                  onSubmitted: (_) => _execute(),
+                  onSubmitted: (_) {
+                    _execute();
+                    _focus.requestFocus();
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -586,9 +610,20 @@ class _ReplPanel extends StatefulWidget {
 class _ReplPanelState extends State<_ReplPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
   Uint8List? _snap;
 
-  void injectCode(String code) => setState(() => _ctrl.text = code);
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void injectCode(String code) {
+    setState(() => _ctrl.text = code);
+    _focus.requestFocus();
+  }
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -686,11 +721,15 @@ class _ReplPanelState extends State<_ReplPanel> {
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
+                      focusNode: _focus,
                       decoration: const InputDecoration(
                         hintText: 'Python code…',
                         border: OutlineInputBorder(),
                       ),
-                      onSubmitted: (_) => _execute(),
+                      onSubmitted: (_) {
+                        _execute();
+                        _focus.requestFocus();
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -719,9 +758,20 @@ class _ExternalsPanel extends StatefulWidget {
 class _ExternalsPanelState extends State<_ExternalsPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
   int _callNum = 0;
 
-  void injectCode(String code) => setState(() => _ctrl.text = code);
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void injectCode(String code) {
+    setState(() => _ctrl.text = code);
+    _focus.requestFocus();
+  }
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -835,11 +885,15 @@ class _ExternalsPanelState extends State<_ExternalsPanel> {
               Expanded(
                 child: TextField(
                   controller: _ctrl,
+                  focusNode: _focus,
                   decoration: const InputDecoration(
                     hintText: 'result = db_query("users")',
                     border: OutlineInputBorder(),
                   ),
-                  onSubmitted: (_) => _execute(),
+                  onSubmitted: (_) {
+                    _execute();
+                    _focus.requestFocus();
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -866,9 +920,20 @@ class _VfsPanel extends StatefulWidget {
 class _VfsPanelState extends State<_VfsPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
   Uint8List? _snap;
 
-  void injectCode(String code) => setState(() => _ctrl.text = code);
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void injectCode(String code) {
+    setState(() => _ctrl.text = code);
+    _focus.requestFocus();
+  }
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -949,11 +1014,15 @@ class _VfsPanelState extends State<_VfsPanel> {
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
+                      focusNode: _focus,
                       decoration: const InputDecoration(
                         hintText: 'import pathlib',
                         border: OutlineInputBorder(),
                       ),
-                      onSubmitted: (_) => _execute(),
+                      onSubmitted: (_) {
+                        _execute();
+                        _focus.requestFocus();
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -982,6 +1051,14 @@ class _SessionPanel extends StatefulWidget {
 class _SessionPanelState extends State<_SessionPanel> {
   final _lines = <_OutputLine>[];
   final _ctrl = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
 
   void _write(String text, _LineStyle style) =>
       setState(() => _lines.add(_OutputLine(text, style)));
@@ -1081,11 +1158,15 @@ class _SessionPanelState extends State<_SessionPanel> {
               Expanded(
                 child: TextField(
                   controller: _ctrl,
+                  focusNode: _focus,
                   decoration: const InputDecoration(
                     hintText: 'result = compute(5) + compute(10)',
                     border: OutlineInputBorder(),
                   ),
-                  onSubmitted: (_) => _execute(),
+                  onSubmitted: (_) {
+                    _execute();
+                    _focus.requestFocus();
+                  },
                 ),
               ),
               const SizedBox(width: 8),
