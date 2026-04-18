@@ -560,7 +560,7 @@ class _ExecPanelState extends State<_ExecPanel> {
 // Tab 2 — MontyRepl (persistent heap)
 // ---------------------------------------------------------------------------
 class _ReplPanel extends StatefulWidget {
-  const _ReplPanel({required this.repl});
+  const _ReplPanel({super.key, required this.repl});
   final MontyRepl repl;
 
   @override
@@ -687,7 +687,7 @@ class _ReplPanelState extends State<_ReplPanel> {
 // Tab 3 — Externals (MontySession.run + Dart callbacks)
 // ---------------------------------------------------------------------------
 class _ExternalsPanel extends StatefulWidget {
-  const _ExternalsPanel({required this.session});
+  const _ExternalsPanel({super.key, required this.session});
   final MontySession session;
 
   @override
@@ -825,7 +825,7 @@ class _ExternalsPanelState extends State<_ExternalsPanel> {
 // Tab 4 — VFS / OsCall
 // ---------------------------------------------------------------------------
 class _VfsPanel extends StatefulWidget {
-  const _VfsPanel({required this.monty});
+  const _VfsPanel({super.key, required this.monty});
   final Monty monty;
 
   @override
