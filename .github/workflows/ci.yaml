@@ -453,49 +453,6 @@ jobs:
         env:
           WEB_DIR: test/integration/web
 
-  # ---------------------------------------------------------------------------
-  # DCM — compute metrics + rules analysis
-  # ---------------------------------------------------------------------------
-  dcm:
-    name: DCM (metrics + analyze)
-    needs: [changes, ffigen]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: stable
-      - uses: actions/cache@v4
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v4
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
-      - run: dart pub get
-      - name: Install DCM
-        uses: CQLabs/setup-dcm@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Compute metrics
-        continue-on-error: true
-        run: |
-          dcm calculate-metrics \
-            --ci-key=${{ secrets.DCM_CI_KEY }} \
-            --email=${{ secrets.DCM_EMAIL }} \
-            lib/
-      - name: Analyze (rules)
-        continue-on-error: true
-        run: |
-          dcm analyze \
-            --ci-key=${{ secrets.DCM_CI_KEY }} \
-            --email=${{ secrets.DCM_EMAIL }} \
-            lib/
 
   # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
