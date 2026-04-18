@@ -95,7 +95,9 @@ Future<void> _snapshotCapable() async {
   print('MontySession snapshot: ${snap2.length} bytes');
   await session.run('count = 999');
   await session.restore(snap2);
-  print('MontySession restore → count = ${(await session.run("count")).value}'); // 10
+  print(
+    'MontySession restore → count = ${(await session.run("count")).value}',
+  ); // 10
   session.dispose();
 
   // Low-level: MontyRepl.snapshot() / MontyRepl.restore()
@@ -128,8 +130,7 @@ Future<void> _futureCapable() async {
       return;
     }
 
-    var progress = await platform.start(
-      '''
+    var progress = await platform.start('''
 import asyncio
 async def fetch(name):
     return name
@@ -139,8 +140,7 @@ async def main():
     return [a, b]
 
 asyncio.run(main())
-''',
-    );
+''');
 
     // Drive the futures protocol.
     final pendingCalls = <int, MontyPending>{}; // callId → pending

@@ -22,7 +22,7 @@
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  _errorInResult();      // Python errors land in result.error, not thrown
+  _errorInResult(); // Python errors land in result.error, not thrown
   await _syntaxError();
   await _scriptError();
   await _resourceError();
@@ -39,10 +39,10 @@ void _errorInResult() {
     print('isError: ${r.isError}');
     if (r.error != null) {
       final e = r.error!;
-      print('excType:  ${e.excType}');   // ZeroDivisionError
+      print('excType:  ${e.excType}'); // ZeroDivisionError
       print('message:  ${e.message}');
       print('line:     ${e.lineNumber}');
-      print('value:    ${r.value}');     // MontyNone
+      print('value:    ${r.value}'); // MontyNone
     }
   });
 }
@@ -122,13 +122,16 @@ void _disposedError() {
   print('\n── MontyDisposedError ──');
   final monty = Monty();
   monty.dispose();
-  monty.run('1 + 1').then((_) {
-    print('should not reach here');
-  }).catchError((Object e) {
-    if (e is MontyDisposedError) {
-      print('disposed error: ${e.message}');
-    }
-  });
+  monty
+      .run('1 + 1')
+      .then((_) {
+        print('should not reach here');
+      })
+      .catchError((Object e) {
+        if (e is MontyDisposedError) {
+          print('disposed error: ${e.message}');
+        }
+      });
 }
 
 // ── Exhaustive supervisor pattern match ───────────────────────────────────────

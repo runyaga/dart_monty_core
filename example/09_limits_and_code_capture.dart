@@ -55,11 +55,13 @@ Future<void> _limits() async {
   // Accepts the JavaScript SDK field names — useful when reading limits from
   // a JS config or if migrating from a JS-adjacent API.
   final limits = MontyLimits.jsAligned(
-    maxMemory: 64 * 1024 * 1024,  // 64 MB
+    maxMemory: 64 * 1024 * 1024, // 64 MB
     maxDurationSecs: 5.0,
     maxRecursionDepth: 500,
   );
-  print('jsAligned: memory=${limits.memoryBytes}  timeout=${limits.timeoutMs}ms  stack=${limits.stackDepth}');
+  print(
+    'jsAligned: memory=${limits.memoryBytes}  timeout=${limits.timeoutMs}ms  stack=${limits.stackDepth}',
+  );
 
   // ── MontyResourceUsage ───────────────────────────────────────────────────────
   final r = await Monty.exec('[i**2 for i in range(1000)]');
@@ -71,7 +73,9 @@ Future<void> _limits() async {
   // JSON round-trip (useful for logging / telemetry).
   final usageJson = r.usage.toJson();
   final usage2 = MontyResourceUsage.fromJson(usageJson);
-  print('  json round-trip ok: ${usage2.memoryBytesUsed == r.usage.memoryBytesUsed}');
+  print(
+    '  json round-trip ok: ${usage2.memoryBytesUsed == r.usage.memoryBytesUsed}',
+  );
 }
 
 // ── code_capture utilities ────────────────────────────────────────────────────
@@ -83,12 +87,12 @@ void _codeCaptureUtilities() {
   // MontyRepl.detectContinuation() is the right tool for REPL prompts;
   // isExpression() is useful for deciding whether to capture a return value.
   for (final line in [
-    '1 + 1',           // expression
-    'x = 5',           // statement (assignment)
-    'def f(): pass',   // statement (function def)
-    '"hello"',         // expression
-    'import os',       // statement
-    'print("hi")',     // expression (call)
+    '1 + 1', // expression
+    'x = 5', // statement (assignment)
+    'def f(): pass', // statement (function def)
+    '"hello"', // expression
+    'import os', // statement
+    'print("hi")', // expression (call)
   ]) {
     print('isExpression("$line"): ${isExpression(line)}');
   }
@@ -98,14 +102,16 @@ void _codeCaptureUtilities() {
   // captureLastExpression() — wraps trailing expression as __r = (expr).
   // Useful for REPL-style display: user types `x + 1` and you capture the value.
   final cases = [
-    'x = 5\nx + 1',          // last line is expression — captured
+    'x = 5\nx + 1', // last line is expression — captured
     'def f():\n  return 42', // last line is statement — not captured
-    '"result"',               // expression only
+    '"result"', // expression only
   ];
 
   for (final code in cases) {
     final (modified, captured) = captureLastExpression(code);
-    print('captureLastExpression(${code.split("\n").last.trim()}): captured=$captured');
+    print(
+      'captureLastExpression(${code.split("\n").last.trim()}): captured=$captured',
+    );
     if (captured) print('  modified tail: ${modified.split("\n").last}');
   }
 

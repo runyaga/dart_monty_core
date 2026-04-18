@@ -59,9 +59,17 @@ result = a + b
         session.dispose();
         return;
 
-      case MontyPending(:final functionName, :final arguments, kwargs: _, :final callId, :final methodCall):
+      case MontyPending(
+        :final functionName,
+        :final arguments,
+        kwargs: _,
+        :final callId,
+        :final methodCall,
+      ):
         callCount++;
-        print('  call #$callId: $functionName(${arguments.map((a) => a.dartValue)})  method=$methodCall');
+        print(
+          '  call #$callId: $functionName(${arguments.map((a) => a.dartValue)})  method=$methodCall',
+        );
         final n = arguments.first.dartValue as int;
         // Resume with the computed value. It must be JSON-encodable.
         progress = await session.resume(n * 2);
@@ -120,12 +128,10 @@ Future<void> _osCallManual() async {
   print('\n── os call manual ──');
   final session = MontySession();
 
-  var progress = await session.start(
-    '''
+  var progress = await session.start('''
 import pathlib
 content = pathlib.Path("/data/notes.txt").read_text()
-''',
-  );
+''');
 
   while (true) {
     switch (progress) {

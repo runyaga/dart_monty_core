@@ -75,11 +75,7 @@ web.HTMLInputElement _input(String id) =>
 web.HTMLButtonElement _button(String id) =>
     web.document.getElementById(id)! as web.HTMLButtonElement;
 
-void _appendLine(
-  web.HTMLDivElement output,
-  String text, {
-  String? className,
-}) {
+void _appendLine(web.HTMLDivElement output, String text, {String? className}) {
   final div = web.document.createElement('div') as web.HTMLDivElement
     ..textContent = text;
   if (className != null) div.className = className;
@@ -143,8 +139,7 @@ void _initReplPanel() {
       final result = await repl.feed(
         code,
         externals: {
-          'host_upper': (args) async =>
-              (args['_0'] as String).toUpperCase(),
+          'host_upper': (args) async => (args['_0'] as String).toUpperCase(),
         },
         osHandler: _vfsOsHandler,
       );
@@ -256,7 +251,10 @@ void _initExternalsPanel() {
     '  format_currency(amount, code="USD") → str',
     className: 'system-line',
   );
-  write('  now()                              → ISO timestamp', className: 'system-line');
+  write(
+    '  now()                              → ISO timestamp',
+    className: 'system-line',
+  );
   write('─' * 48, className: 'system-line');
   write(
     'Try: rows = db_query("users", filter="active")',
@@ -314,8 +312,7 @@ void _initExternalsPanel() {
       while (true) {
         switch (progress) {
           case MontyComplete(:final result):
-            if (result.printOutput != null &&
-                result.printOutput!.isNotEmpty) {
+            if (result.printOutput != null && result.printOutput!.isNotEmpty) {
               write(result.printOutput!.trimRight(), className: 'print-line');
             }
             if (result.error != null) {
@@ -338,8 +335,7 @@ void _initExternalsPanel() {
             final argStr = [
               ...arguments.map((a) => _fmt(a)),
               if (kwargs != null)
-                ...kwargs.entries
-                    .map((e) => '${e.key}=${_fmt(e.value)}'),
+                ...kwargs.entries.map((e) => '${e.key}=${_fmt(e.value)}'),
             ].join(', ');
 
             final cb = externals[functionName];
@@ -386,8 +382,7 @@ void _initExternalsPanel() {
             );
 
           case MontyNameLookup(:final variableName):
-            progress =
-                await session.resumeWithError('$variableName not found');
+            progress = await session.resumeWithError('$variableName not found');
 
           case MontyResolveFutures():
             progress = await session.resume(null);
@@ -430,10 +425,7 @@ void _initVfsPanel() {
     'VFS panel — Monty with osHandler. State persists across run() calls.',
     className: 'system-line',
   );
-  write(
-    'Files: ${_vfs.keys.join(", ")}',
-    className: 'system-line',
-  );
+  write('Files: ${_vfs.keys.join(", ")}', className: 'system-line');
   write(
     'Try: import pathlib  →  pathlib.Path("/data/hello.txt").read_text()',
     className: 'system-line',
@@ -527,7 +519,8 @@ const _kSamples = <_Sample>[
     num: 1,
     title: 'Typed values across FFI',
     panel: 'a',
-    desc: 'Every Python value crosses the FFI boundary as a typed MontyValue '
+    desc:
+        'Every Python value crosses the FFI boundary as a typed MontyValue '
         'subtype — MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. '
         'Submit this dict to see each field typed individually.',
     steps: [
@@ -541,7 +534,8 @@ const _kSamples = <_Sample>[
     num: 2,
     title: 'Heap persistence between calls',
     panel: 'a',
-    desc: 'Python state lives in the Rust heap between feed() calls — not '
+    desc:
+        'Python state lives in the Rust heap between feed() calls — not '
         're-parsed, not serialised to JSON. Inject step 1, run it, then '
         'inject step 2: x is still there.',
     steps: [
@@ -553,13 +547,15 @@ const _kSamples = <_Sample>[
     num: 3,
     title: 'Multi-line block detection',
     panel: 'a',
-    desc: 'detectContinuation() returns incompleteBlock when the statement is '
+    desc:
+        'detectContinuation() returns incompleteBlock when the statement is '
         'not yet closed. Paste the full function — the REPL holds input until '
         'the de-indent completes the block.',
     steps: [
       _Step(
         label: '→ REPL',
-        code: 'def fib(n):\n'
+        code:
+            'def fib(n):\n'
             '    a, b = 0, 1\n'
             '    for _ in range(n): a, b = b, a+b\n'
             '    return a\n'
@@ -572,7 +568,8 @@ const _kSamples = <_Sample>[
     num: 4,
     title: 'Snapshot / restore the heap',
     panel: 'a',
-    desc: 'snapshot() serialises the entire Rust heap to postcard bytes. '
+    desc:
+        'snapshot() serialises the entire Rust heap to postcard bytes. '
         'Run step 1 to set counter=0, click 📸, mutate with step 2 a few '
         'times, then click ↩ — the heap rewinds exactly.',
     steps: [
@@ -584,7 +581,8 @@ const _kSamples = <_Sample>[
     num: 5,
     title: 'Error taxonomy',
     panel: 'a',
-    desc: 'MontyError is sealed: MontySyntaxError is caught before execution '
+    desc:
+        'MontyError is sealed: MontySyntaxError is caught before execution '
         'starts; MontyScriptError wraps runtime exceptions with a Python '
         'traceback. Each snippet exercises a different subtype.',
     steps: [
@@ -597,18 +595,18 @@ const _kSamples = <_Sample>[
     num: 6,
     title: 'Single callback — one suspension',
     panel: 'b',
-    desc: 'Calling compute() suspends Python execution and emits MontyPending. '
+    desc:
+        'Calling compute() suspends Python execution and emits MontyPending. '
         'Dart\'s handler runs, calls session.resume() with the result. '
         'The ⚡ line logs each round-trip across the boundary.',
-    steps: [
-      _Step(label: '→ Externals', code: 'compute("add", 19, 23)'),
-    ],
+    steps: [_Step(label: '→ Externals', code: 'compute("add", 19, 23)')],
   ),
   _Sample(
     num: 7,
     title: 'Nested calls — three suspensions',
     panel: 'b',
-    desc: 'A single Python expression can trigger multiple MontyPending events. '
+    desc:
+        'A single Python expression can trigger multiple MontyPending events. '
         'Here the two inner compute() calls suspend first, then the outer mul. '
         'Count the ⚡ lines — three distinct suspend/resume cycles.',
     steps: [
@@ -622,7 +620,8 @@ const _kSamples = <_Sample>[
     num: 8,
     title: 'Kwargs in the callback map',
     panel: 'b',
-    desc: 'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
+    desc:
+        'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
         'kwargs appear by their Python name. format_currency(19.99, code="EUR") '
         'fires the callback with {_0: 19.99, code: "EUR"}.',
     steps: [
@@ -633,7 +632,8 @@ const _kSamples = <_Sample>[
     num: 9,
     title: 'OsCall — pathlib interception',
     panel: 'vfs',
-    desc: 'pathlib.Path.read_text() becomes a MontyOsCall — Python execution '
+    desc:
+        'pathlib.Path.read_text() becomes a MontyOsCall — Python execution '
         'suspends, Dart looks up the path in its in-memory map, and resumes '
         'with the string. The import must run first; state persists.',
     steps: [
@@ -648,13 +648,15 @@ const _kSamples = <_Sample>[
     num: 10,
     title: 'VFS write → read round-trip',
     panel: 'vfs',
-    desc: 'Writing from Python mutates Dart\'s in-memory map via an OsCall. '
+    desc:
+        'Writing from Python mutates Dart\'s in-memory map via an OsCall. '
         'Reading it back confirms the full cycle: Python → OsCall → Dart map '
         'mutation → OsCall → Python value.',
     steps: [
       _Step(
         label: 'Write',
-        code: 'pathlib.Path("/data/new.txt").write_text("written from Python!")',
+        code:
+            'pathlib.Path("/data/new.txt").write_text("written from Python!")',
       ),
       _Step(label: 'Read', code: 'pathlib.Path("/data/new.txt").read_text()'),
     ],
@@ -726,8 +728,8 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
     final code = step.code;
     final panel = sample.panel;
     injectBtn.onclick = (web.MouseEvent _) {
-      final inputEl = web.document.getElementById('input-$panel')!
-          as web.HTMLInputElement;
+      final inputEl =
+          web.document.getElementById('input-$panel')! as web.HTMLInputElement;
       inputEl.value = code;
       inputEl.focus();
     }.toJS;
@@ -743,40 +745,39 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 // Value formatter — exhaustive over all 18 MontyValue subtypes
 // ---------------------------------------------------------------------------
 String _fmt(MontyValue v) => switch (v) {
-      MontyNone() => 'None',
-      MontyBool(:final value) => value.toString(),
-      MontyInt(:final value) => value.toString(),
-      MontyFloat(:final value) => value.isNaN
-          ? 'nan'
-          : value.isInfinite
-              ? (value > 0 ? 'inf' : '-inf')
-              : value.toString(),
-      MontyString(:final value) => '"$value"',
-      MontyBytes(:final value) => 'b[${value.length}]',
-      MontyList(:final items) =>
-        '[${items.take(3).map(_fmt).join(', ')}${items.length > 3 ? ', …(${items.length})' : ''}]',
-      MontyTuple(:final items) => '(${items.map(_fmt).join(', ')})',
-      MontyDict(:final entries) =>
-        '{${entries.entries.take(3).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 3 ? ', …' : ''}}',
-      MontySet(:final items) => '{${items.map(_fmt).join(', ')}}',
-      MontyFrozenSet(:final items) =>
-        'frozenset({${items.map(_fmt).join(', ')}})',
-      MontyDate(:final year, :final month, :final day) =>
-        '$year-$month-$day',
-      MontyDateTime(
-        :final year,
-        :final month,
-        :final day,
-        :final hour,
-        :final minute,
-      ) =>
-        '$year-$month-${day}T$hour:$minute',
-      MontyTimeDelta(:final days, :final seconds) => '${days}d ${seconds}s',
-      MontyTimeZone(:final offsetSeconds, :final name) =>
-        name ?? '${offsetSeconds}s',
-      MontyPath(:final value) => 'Path("$value")',
-      MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
-        '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
-      MontyDataclass(:final name, :final attrs) =>
-        '$name(${attrs.entries.map((e) => '${e.key}=${_fmt(e.value)}').join(', ')})',
-    };
+  MontyNone() => 'None',
+  MontyBool(:final value) => value.toString(),
+  MontyInt(:final value) => value.toString(),
+  MontyFloat(:final value) =>
+    value.isNaN
+        ? 'nan'
+        : value.isInfinite
+        ? (value > 0 ? 'inf' : '-inf')
+        : value.toString(),
+  MontyString(:final value) => '"$value"',
+  MontyBytes(:final value) => 'b[${value.length}]',
+  MontyList(:final items) =>
+    '[${items.take(3).map(_fmt).join(', ')}${items.length > 3 ? ', …(${items.length})' : ''}]',
+  MontyTuple(:final items) => '(${items.map(_fmt).join(', ')})',
+  MontyDict(:final entries) =>
+    '{${entries.entries.take(3).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 3 ? ', …' : ''}}',
+  MontySet(:final items) => '{${items.map(_fmt).join(', ')}}',
+  MontyFrozenSet(:final items) => 'frozenset({${items.map(_fmt).join(', ')}})',
+  MontyDate(:final year, :final month, :final day) => '$year-$month-$day',
+  MontyDateTime(
+    :final year,
+    :final month,
+    :final day,
+    :final hour,
+    :final minute,
+  ) =>
+    '$year-$month-${day}T$hour:$minute',
+  MontyTimeDelta(:final days, :final seconds) => '${days}d ${seconds}s',
+  MontyTimeZone(:final offsetSeconds, :final name) =>
+    name ?? '${offsetSeconds}s',
+  MontyPath(:final value) => 'Path("$value")',
+  MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
+    '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
+  MontyDataclass(:final name, :final attrs) =>
+    '$name(${attrs.entries.map((e) => '${e.key}=${_fmt(e.value)}').join(', ')})',
+};

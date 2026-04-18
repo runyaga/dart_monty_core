@@ -45,9 +45,20 @@ Future<void> _scalars() async {
   print('2**32: ${n.value}');
 
   // MontyFloat — NaN and Infinity survive the round-trip
-  for (final expr in ['3.14', 'float("nan")', 'float("inf")', 'float("-inf")']) {
+  for (final expr in [
+    '3.14',
+    'float("nan")',
+    'float("inf")',
+    'float("-inf")',
+  ]) {
     final v = (await monty.run(expr)).value as MontyFloat;
-    print('$expr → ${v.value.isNaN ? "NaN" : v.value.isInfinite ? "${v.value > 0 ? '+' : '-'}Inf" : v.value}');
+    print(
+      '$expr → ${v.value.isNaN
+          ? "NaN"
+          : v.value.isInfinite
+          ? "${v.value > 0 ? '+' : '-'}Inf"
+          : v.value}',
+    );
   }
 
   // MontyString — UTF-8
@@ -76,7 +87,9 @@ Future<void> _collections() async {
   // MontyDict — str keys only (Monty restriction)
   final d = (await monty.run('{"a": 1, "b": [2, 3]}')).value as MontyDict;
   print('dict keys: ${d.entries.keys.toList()}');
-  print('dict["b"]: ${(d.entries["b"] as MontyList).items.map((v) => v.dartValue)}');
+  print(
+    'dict["b"]: ${(d.entries["b"] as MontyList).items.map((v) => v.dartValue)}',
+  );
 
   // MontySet
   final set_ = (await monty.run('{1, 2, 3, 2, 1}')).value as MontySet;
@@ -100,17 +113,28 @@ Future<void> _datetimes() async {
   await monty.run('import datetime');
 
   // MontyDate
-  final date = (await monty.run('datetime.date(2024, 6, 15)')).value as MontyDate;
-  print('date: ${date.year}-${date.month}-${date.day}  dartValue=${date.dartValue}');
+  final date =
+      (await monty.run('datetime.date(2024, 6, 15)')).value as MontyDate;
+  print(
+    'date: ${date.year}-${date.month}-${date.day}  dartValue=${date.dartValue}',
+  );
 
   // MontyDateTime (naive — no timezone)
-  final dt = (await monty.run('datetime.datetime(2024, 6, 15, 12, 30, 0)')).value as MontyDateTime;
-  print('datetime: ${dt.year}-${dt.month}-${dt.day} ${dt.hour}:${dt.minute}:${dt.second}');
+  final dt =
+      (await monty.run('datetime.datetime(2024, 6, 15, 12, 30, 0)')).value
+          as MontyDateTime;
+  print(
+    'datetime: ${dt.year}-${dt.month}-${dt.day} ${dt.hour}:${dt.minute}:${dt.second}',
+  );
   print('  naive (offsetSeconds=${dt.offsetSeconds})');
 
   // MontyTimeDelta
-  final td = (await monty.run('datetime.timedelta(days=2, hours=3)')).value as MontyTimeDelta;
-  print('timedelta: days=${td.days} seconds=${td.seconds}  dartValue=${td.dartValue}');
+  final td =
+      (await monty.run('datetime.timedelta(days=2, hours=3)')).value
+          as MontyTimeDelta;
+  print(
+    'timedelta: days=${td.days} seconds=${td.seconds}  dartValue=${td.dartValue}',
+  );
 
   monty.dispose();
 }
@@ -149,7 +173,9 @@ u = User("Alice", 30)
   final dc = (await monty.run('u')).value as MontyDataclass;
   print('dataclass: ${dc.name}  frozen=${dc.frozen}  typeId=${dc.typeId}');
   print('  fields: ${dc.fieldNames}');
-  print('  name=${dc.attrs["name"]!.dartValue}  age=${dc.attrs["age"]!.dartValue}');
+  print(
+    '  name=${dc.attrs["name"]!.dartValue}  age=${dc.attrs["age"]!.dartValue}',
+  );
   print('  dartValue: ${dc.dartValue}');
 
   monty.dispose();
@@ -161,18 +187,20 @@ Future<void> _fromDartAndJson() async {
 
   // Convert Dart values to MontyValue.
   final values = [
-    MontyValue.fromDart(null),         // MontyNone
-    MontyValue.fromDart(true),         // MontyBool
-    MontyValue.fromDart(42),           // MontyInt
-    MontyValue.fromDart(3.14),         // MontyFloat
-    MontyValue.fromDart('hello'),      // MontyString
-    MontyValue.fromDart([1, 2, 3]),    // MontyList
-    MontyValue.fromDart({'a': 1}),     // MontyDict
+    MontyValue.fromDart(null), // MontyNone
+    MontyValue.fromDart(true), // MontyBool
+    MontyValue.fromDart(42), // MontyInt
+    MontyValue.fromDart(3.14), // MontyFloat
+    MontyValue.fromDart('hello'), // MontyString
+    MontyValue.fromDart([1, 2, 3]), // MontyList
+    MontyValue.fromDart({'a': 1}), // MontyDict
   ];
 
   for (final v in values) {
     final json = v.toJson();
     final roundTrip = MontyValue.fromJson(json);
-    print('${v.runtimeType}: dartValue=${v.dartValue}  roundTrip=${roundTrip.dartValue}');
+    print(
+      '${v.runtimeType}: dartValue=${v.dartValue}  roundTrip=${roundTrip.dartValue}',
+    );
   }
 }

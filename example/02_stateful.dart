@@ -26,16 +26,15 @@ Future<void> main() async {
   // ── inputs: per-call variable injection ────────────────────────────────────
   // Dart values are converted to Python literals and prepended as assignments.
   // They shadow globals for that call only — the heap is not permanently changed.
-  final r2 = await monty.run(
-    'square(n)',
-    inputs: {'n': 5},
-  );
+  final r2 = await monty.run('square(n)', inputs: {'n': 5});
   print('square(5) = ${r2.value}'); // MontyInt(25)
 
   // Supported input types: null, bool, int, double, String, List, Map.
   await monty.run(
     'total = sum(numbers)',
-    inputs: {'numbers': [1, 2, 3, 4, 5]},
+    inputs: {
+      'numbers': [1, 2, 3, 4, 5],
+    },
   );
   print('sum = ${(await monty.run("total")).value}'); // MontyInt(15)
 

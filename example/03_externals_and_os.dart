@@ -46,13 +46,16 @@ greeting = greet(name="World")
   );
 
   print('add(3,4) = ${(await monty.run("result")).value}'); // 7
-  print('greet = ${(await monty.run("greeting")).value}');   // Hello, World!
+  print('greet = ${(await monty.run("greeting")).value}'); // Hello, World!
 
   // Return complex types: Dart List/Map are converted to Python list/dict.
   await monty.run(
     'data = fetch_data()',
     externals: {
-      'fetch_data': (_) async => {'name': 'alice', 'scores': [98, 87, 92]},
+      'fetch_data': (_) async => {
+        'name': 'alice',
+        'scores': [98, 87, 92],
+      },
     },
   );
   final data = await monty.run('data["scores"]');
@@ -143,7 +146,8 @@ Future<void> _osCallError() async {
       if (op == 'Path.read_text') {
         throw OsCallException(
           'Permission denied: ${args.first}',
-          pythonExceptionType: 'PermissionError', // becomes a Python PermissionError
+          pythonExceptionType:
+              'PermissionError', // becomes a Python PermissionError
         );
       }
       throw OsCallException('$op not supported');
@@ -151,14 +155,12 @@ Future<void> _osCallError() async {
   );
 
   await monty.run('import pathlib');
-  final r = await monty.run(
-    '''
+  final r = await monty.run('''
 try:
     pathlib.Path("/secret").read_text()
 except PermissionError as e:
     result = f"caught: {e}"
-''',
-  );
+''');
   print(r.printOutput ?? ''); // (empty — result is in variable)
   print(await monty.run('result')); // MontyResult with MontyString
   monty.dispose();

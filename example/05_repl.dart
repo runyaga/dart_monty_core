@@ -63,11 +63,11 @@ Future<void> _continuationDetection() async {
   final repl = MontyRepl();
 
   final cases = [
-    '1 + 1',           // complete
-    'def f(',          // incompleteImplicit (open paren)
-    'if True:',        // incompleteBlock    (open block)
-    'x = {',          // incompleteImplicit (open brace)
-    '"hello"',         // complete
+    '1 + 1', // complete
+    'def f(', // incompleteImplicit (open paren)
+    'if True:', // incompleteBlock    (open block)
+    'x = {', // incompleteImplicit (open brace)
+    '"hello"', // complete
   ];
 
   for (final code in cases) {

@@ -20,9 +20,7 @@ abstract final class DartMontyFlutter {
   static Future<void> ensureInitialized() async {
     if (_isBridgeLoaded()) return;
 
-    await _injectScript(
-      'packages/dart_monty_core/assets/dart_monty_bridge.js',
-    );
+    await _injectScript('packages/dart_monty_core/assets/dart_monty_bridge.js');
   }
 }
 
@@ -33,8 +31,7 @@ bool _isBridgeLoaded() => _dartMontyBridge != null;
 
 Future<void> _injectScript(String src) {
   final completer = Completer<void>();
-  final script = (web.document.createElement('script')
-      as web.HTMLScriptElement)
+  final script = (web.document.createElement('script') as web.HTMLScriptElement)
     ..src = src
     ..onload = (web.Event _) {
       completer.complete();

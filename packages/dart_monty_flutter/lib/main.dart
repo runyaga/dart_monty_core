@@ -86,7 +86,8 @@ const _kSamples = <_Sample>[
     title: 'Typed values across FFI',
     tabIndex: 1,
     tabName: 'REPL',
-    desc: 'Every Python value crosses the FFI boundary as a typed MontyValue '
+    desc:
+        'Every Python value crosses the FFI boundary as a typed MontyValue '
         'subtype — MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. '
         'Submit this dict to see each field typed individually.',
     steps: [
@@ -101,7 +102,8 @@ const _kSamples = <_Sample>[
     title: 'Heap persistence between calls',
     tabIndex: 1,
     tabName: 'REPL',
-    desc: 'Python state lives in the Rust heap between feed() calls — not '
+    desc:
+        'Python state lives in the Rust heap between feed() calls — not '
         're-parsed, not serialised. Inject step 1, run it, then inject step 2: '
         'x is still there.',
     steps: [
@@ -114,13 +116,15 @@ const _kSamples = <_Sample>[
     title: 'Multi-line block detection',
     tabIndex: 1,
     tabName: 'REPL',
-    desc: 'detectContinuation() returns incompleteBlock when the statement is '
+    desc:
+        'detectContinuation() returns incompleteBlock when the statement is '
         'not yet closed. Paste the full function — the REPL waits for the '
         'de-indent before executing.',
     steps: [
       _Step(
         label: '→ REPL',
-        code: 'def fib(n):\n'
+        code:
+            'def fib(n):\n'
             '    a, b = 0, 1\n'
             '    for _ in range(n): a, b = b, a+b\n'
             '    return a\n'
@@ -134,7 +138,8 @@ const _kSamples = <_Sample>[
     title: 'Snapshot / restore the heap',
     tabIndex: 1,
     tabName: 'REPL',
-    desc: 'snapshot() serialises the entire Rust heap to postcard bytes. Run '
+    desc:
+        'snapshot() serialises the entire Rust heap to postcard bytes. Run '
         'step 1 (then 📸 Snap), mutate with step 2, then ↩ Restore — the heap '
         'rewinds exactly to the snapshot point.',
     steps: [
@@ -147,7 +152,8 @@ const _kSamples = <_Sample>[
     title: 'Error taxonomy',
     tabIndex: 1,
     tabName: 'REPL',
-    desc: 'MontyError is sealed: MontySyntaxError is caught before execution '
+    desc:
+        'MontyError is sealed: MontySyntaxError is caught before execution '
         'starts; MontyScriptError wraps runtime exceptions with a Python '
         'traceback. Each step exercises a different subtype.',
     steps: [
@@ -161,19 +167,19 @@ const _kSamples = <_Sample>[
     title: 'Single callback — one suspension',
     tabIndex: 2,
     tabName: 'Externals',
-    desc: 'Calling compute() suspends Python execution and fires a MontyCallback '
+    desc:
+        'Calling compute() suspends Python execution and fires a MontyCallback '
         'in Dart. Dart handles the arithmetic and calls resume(). '
         'The ⚡ line logs each round-trip.',
-    steps: [
-      _Step(label: '→ Externals', code: 'compute("add", 19, 23)'),
-    ],
+    steps: [_Step(label: '→ Externals', code: 'compute("add", 19, 23)')],
   ),
   _Sample(
     num: 7,
     title: 'Nested calls — three suspensions',
     tabIndex: 2,
     tabName: 'Externals',
-    desc: 'One Python expression can trigger multiple MontyCallback firings. '
+    desc:
+        'One Python expression can trigger multiple MontyCallback firings. '
         'The two inner compute() calls suspend first, then the outer mul. '
         'Count the ⚡ lines — three distinct suspend/resume cycles.',
     steps: [
@@ -188,7 +194,8 @@ const _kSamples = <_Sample>[
     title: 'Kwargs in the callback map',
     tabIndex: 2,
     tabName: 'Externals',
-    desc: 'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
+    desc:
+        'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
         'kwargs appear by their Python name. format_currency(19.99, code="EUR") '
         'fires with {_0: 19.99, code: "EUR"}.',
     steps: [
@@ -200,7 +207,8 @@ const _kSamples = <_Sample>[
     title: 'OsCall — pathlib interception',
     tabIndex: 3,
     tabName: 'VFS',
-    desc: 'pathlib.Path.read_text() becomes a MontyOsCall — Python suspends, '
+    desc:
+        'pathlib.Path.read_text() becomes a MontyOsCall — Python suspends, '
         'Dart looks up the path in its in-memory map, resumes with the string. '
         'Import must run first; VFS state persists.',
     steps: [
@@ -216,13 +224,15 @@ const _kSamples = <_Sample>[
     title: 'VFS write → read round-trip',
     tabIndex: 3,
     tabName: 'VFS',
-    desc: 'Writing from Python mutates Dart\'s in-memory map via an OsCall. '
+    desc:
+        'Writing from Python mutates Dart\'s in-memory map via an OsCall. '
         'Reading it back confirms the full cycle: Python → OsCall → Dart map '
         'mutation → OsCall → Python value.',
     steps: [
       _Step(
         label: 'Write',
-        code: 'pathlib.Path("/data/new.txt").write_text("written from Python!")',
+        code:
+            'pathlib.Path("/data/new.txt").write_text("written from Python!")',
       ),
       _Step(label: 'Read', code: 'pathlib.Path("/data/new.txt").read_text()'),
     ],
@@ -494,7 +504,10 @@ class _ExecPanelState extends State<_ExecPanel> {
       }
 
       if (result.error != null) {
-        _write('${result.error!.excType}: ${result.error!.message}', _LineStyle.error);
+        _write(
+          '${result.error!.excType}: ${result.error!.message}',
+          _LineStyle.error,
+        );
       } else {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
         _write(
@@ -513,7 +526,10 @@ class _ExecPanelState extends State<_ExecPanel> {
   void initState() {
     super.initState();
     _write('One-shot — no state persists between runs.', _LineStyle.system);
-    _write('Try: [i*i for i in range(5)]  {"key": [1,2,3]}  2**32', _LineStyle.system);
+    _write(
+      'Try: [i*i for i in range(5)]  {"key": [1,2,3]}  2**32',
+      _LineStyle.system,
+    );
   }
 
   @override
@@ -600,7 +616,10 @@ class _ReplPanelState extends State<_ReplPanel> {
         _write(result.printOutput!.trimRight(), _LineStyle.print);
       }
       if (result.error != null) {
-        _write('${result.error!.excType}: ${result.error!.message}', _LineStyle.error);
+        _write(
+          '${result.error!.excType}: ${result.error!.message}',
+          _LineStyle.error,
+        );
       } else if (result.value is! MontyNone) {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
       }
@@ -613,7 +632,10 @@ class _ReplPanelState extends State<_ReplPanel> {
   void initState() {
     super.initState();
     _write('Persistent heap — state survives between runs.', _LineStyle.system);
-    _write('host_upper("hello") calls into Dart from Python.', _LineStyle.system);
+    _write(
+      'host_upper("hello") calls into Dart from Python.',
+      _LineStyle.system,
+    );
   }
 
   @override
@@ -773,7 +795,10 @@ class _ExternalsPanelState extends State<_ExternalsPanel> {
         _write(result.printOutput!.trimRight(), _LineStyle.print);
       }
       if (result.error != null) {
-        _write('${result.error!.excType}: ${result.error!.message}', _LineStyle.error);
+        _write(
+          '${result.error!.excType}: ${result.error!.message}',
+          _LineStyle.error,
+        );
       } else if (result.value is! MontyNone) {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
       }
@@ -785,10 +810,16 @@ class _ExternalsPanelState extends State<_ExternalsPanel> {
   @override
   void initState() {
     super.initState();
-    _write('Python calls Dart — each ⚡ line is a round-trip callback.', _LineStyle.system);
+    _write(
+      'Python calls Dart — each ⚡ line is a round-trip callback.',
+      _LineStyle.system,
+    );
     _write('db_query("users")       db_query("orders")', _LineStyle.system);
     _write('compute("add", 3, 4)    compute("mul", 6, 7)', _LineStyle.system);
-    _write('format_currency(19.99)  format_currency(9.50, code="EUR")', _LineStyle.system);
+    _write(
+      'format_currency(19.99)  format_currency(9.50, code="EUR")',
+      _LineStyle.system,
+    );
     _write('now()', _LineStyle.system);
   }
 
@@ -854,7 +885,10 @@ class _VfsPanelState extends State<_VfsPanel> {
         _write(result.printOutput!.trimRight(), _LineStyle.print);
       }
       if (result.error != null) {
-        _write('${result.error!.excType}: ${result.error!.message}', _LineStyle.error);
+        _write(
+          '${result.error!.excType}: ${result.error!.message}',
+          _LineStyle.error,
+        );
       } else if (result.value is! MontyNone) {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
       }
@@ -971,13 +1005,20 @@ class _SessionPanelState extends State<_SessionPanel> {
               _write(result.printOutput!.trimRight(), _LineStyle.print);
             }
             if (result.error != null) {
-              _write('${result.error!.excType}: ${result.error!.message}', _LineStyle.error);
+              _write(
+                '${result.error!.excType}: ${result.error!.message}',
+                _LineStyle.error,
+              );
             } else if (result.value is! MontyNone) {
               _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
             }
             return;
 
-          case MontyPending(:final functionName, :final arguments, :final callId):
+          case MontyPending(
+            :final functionName,
+            :final arguments,
+            :final callId,
+          ):
             _write(
               '  ⚡ $functionName(${arguments.map((a) => a.dartValue).join(", ")}) [#$callId]',
               _LineStyle.system,
@@ -986,7 +1027,9 @@ class _SessionPanelState extends State<_SessionPanel> {
               final n = arguments.first.dartValue as int;
               progress = await widget.session.resume(n * 2);
             } else {
-              progress = await widget.session.resumeWithError('Unknown: $functionName');
+              progress = await widget.session.resumeWithError(
+                'Unknown: $functionName',
+              );
             }
 
           case MontyOsCall(:final operationName):
@@ -995,10 +1038,15 @@ class _SessionPanelState extends State<_SessionPanel> {
 
           case MontyNameLookup(:final variableName):
             _write('  🔍 $variableName → undefined', _LineStyle.system);
-            progress = await widget.session.resumeWithError('$variableName not defined');
+            progress = await widget.session.resumeWithError(
+              '$variableName not defined',
+            );
 
           case MontyResolveFutures(:final pendingCallIds):
-            _write('  ⏳ resolve ${pendingCallIds.length} futures', _LineStyle.system);
+            _write(
+              '  ⏳ resolve ${pendingCallIds.length} futures',
+              _LineStyle.system,
+            );
             progress = await widget.session.resume(null);
         }
       }
@@ -1010,9 +1058,15 @@ class _SessionPanelState extends State<_SessionPanel> {
   @override
   void initState() {
     super.initState();
-    _write('Manual start/resume loop — raw MontyProgress dispatch.', _LineStyle.system);
+    _write(
+      'Manual start/resume loop — raw MontyProgress dispatch.',
+      _LineStyle.system,
+    );
     _write('  result = compute(5) + compute(10)', _LineStyle.system);
-    _write('  (compute doubles the argument via Dart callback)', _LineStyle.system);
+    _write(
+      '  (compute doubles the argument via Dart callback)',
+      _LineStyle.system,
+    );
   }
 
   @override
@@ -1097,7 +1151,11 @@ class _SampleCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               sample.desc,
-              style: const TextStyle(color: Color(0xFF999999), fontSize: 12, height: 1.4),
+              style: const TextStyle(
+                color: Color(0xFF999999),
+                fontSize: 12,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 8),
             ...sample.steps.map(
@@ -1139,7 +1197,10 @@ class _SampleCard extends StatelessWidget {
                         ),
                       ),
                       onPressed: () => onInject(step.code),
-                      child: Text(step.label, style: const TextStyle(fontSize: 11)),
+                      child: Text(
+                        step.label,
+                        style: const TextStyle(fontSize: 11),
+                      ),
                     ),
                   ],
                 ),
@@ -1160,7 +1221,11 @@ String _fmtValue(MontyValue v) => switch (v) {
   MontyBool(:final value) => value.toString(),
   MontyInt(:final value) => value.toString(),
   MontyFloat(:final value) =>
-    value.isNaN ? 'nan' : value.isInfinite ? (value > 0 ? 'inf' : '-inf') : value.toString(),
+    value.isNaN
+        ? 'nan'
+        : value.isInfinite
+        ? (value > 0 ? 'inf' : '-inf')
+        : value.toString(),
   MontyString(:final value) => '"$value"',
   MontyBytes(:final value) => 'b[${value.length}]',
   MontyList(:final items) => '[${items.map(_fmtValue).join(', ')}]',
@@ -1168,12 +1233,20 @@ String _fmtValue(MontyValue v) => switch (v) {
   MontyDict(:final entries) =>
     '{${entries.entries.map((e) => '"${e.key}": ${_fmtValue(e.value)}').join(', ')}}',
   MontySet(:final items) => '{${items.map(_fmtValue).join(', ')}}',
-  MontyFrozenSet(:final items) => 'frozenset({${items.map(_fmtValue).join(', ')}})',
+  MontyFrozenSet(:final items) =>
+    'frozenset({${items.map(_fmtValue).join(', ')}})',
   MontyDate(:final year, :final month, :final day) => '$year-$month-$day',
-  MontyDateTime(:final year, :final month, :final day, :final hour, :final minute) =>
+  MontyDateTime(
+    :final year,
+    :final month,
+    :final day,
+    :final hour,
+    :final minute,
+  ) =>
     '$year-$month-${day}T$hour:$minute',
   MontyTimeDelta(:final days, :final seconds) => '${days}d ${seconds}s',
-  MontyTimeZone(:final offsetSeconds, :final name) => name ?? '${offsetSeconds}s',
+  MontyTimeZone(:final offsetSeconds, :final name) =>
+    name ?? '${offsetSeconds}s',
   MontyPath(:final value) => 'Path("$value")',
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     '$typeName(${List.generate(fieldNames.length, (i) => "${fieldNames[i]}=${_fmtValue(values[i])}").join(", ")})',
