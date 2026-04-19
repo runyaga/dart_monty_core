@@ -134,6 +134,14 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeNotFound(String fnName) async {
+    final handle = _requireHandle('resumeNotFound');
+    final progress = _bindings.resumeNotFound(handle, fnName);
+
+    return _translateProgressResult(handle, progress);
+  }
+
+  @override
   Future<CoreProgressResult> resumeAsFuture() async {
     final handle = _requireHandle('resumeAsFuture');
     final progress = _bindings.resumeAsFuture(handle);

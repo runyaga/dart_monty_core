@@ -225,6 +225,14 @@ class MontyRepl {
     return _translateProgress(await _bindings.resumeWithError(errorMessage));
   }
 
+  /// Resumes a paused OS call by signalling that the host does not handle
+  /// [fnName]. Python raises `NameError: name '<fnName>' is not defined`.
+  Future<MontyProgress> resumeNotFound(String fnName) async {
+    _checkNotDisposed();
+
+    return _translateProgress(await _bindings.resumeNotFound(fnName));
+  }
+
   // ---------------------------------------------------------------------------
   // Continuation detection
   // ---------------------------------------------------------------------------
@@ -368,6 +376,10 @@ class MontyRepl {
 
       return _translateProgress(
         await _bindings.resume(jsonEncode(result)),
+      );
+    } on OsCallNotHandledException catch (e) {
+      return _translateProgress(
+        await _bindings.resumeNotFound(e.fnName ?? call.operationName),
       );
     } on OsCallException catch (e) {
       return _translateProgress(

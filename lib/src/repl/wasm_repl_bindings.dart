@@ -94,6 +94,20 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeNotFound(String fnName) async {
+    if (!_created) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final fnNameJson = json.encode(fnName);
+    final result = await _bindings.replResumeNotFound(
+      fnNameJson,
+      replId: _replId,
+    );
+
+    return _translateWasmProgressResult(result);
+  }
+
+  @override
   Future<CoreProgressResult> resumeNameLookupUndefined() async {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');

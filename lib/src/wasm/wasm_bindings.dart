@@ -238,6 +238,16 @@ abstract class WasmBindings {
     int? sessionId,
   });
 
+  /// Resumes signalling "function not found" — raises Python NameError.
+  ///
+  /// [fnName] is embedded in the resulting NameError message.
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmProgressResult> resumeNotFound(
+    String fnName, {
+    int? sessionId,
+  });
+
   /// Resumes by creating a future for the pending call.
   ///
   /// Returns a progress result which may be `pending` (next call),
@@ -407,6 +417,20 @@ abstract class WasmBindings {
   /// the default.
   Future<WasmProgressResult> replResumeWithError(
     String errorJson, {
+    int? sessionId,
+    String? replId,
+  });
+
+  /// Resumes REPL execution signalling "function not found" — raises Python
+  /// NameError.
+  ///
+  /// [fnNameJson] is the JSON-encoded function name embedded in the error.
+  /// [replId] must match the value passed to [replCreate].
+  ///
+  /// When [sessionId] is non-null, routes to that specific session instead of
+  /// the default.
+  Future<WasmProgressResult> replResumeNotFound(
+    String fnNameJson, {
     int? sessionId,
     String? replId,
   });

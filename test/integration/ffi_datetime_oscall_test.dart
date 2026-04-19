@@ -139,5 +139,48 @@ void main() {
       expect(result.error, isNull);
       expect(result.value, const MontyBool(true));
     });
+
+    test(
+      'OsCallNotHandledException surfaces Python NameError (not RuntimeError)',
+      () async {
+        final repl = MontyRepl();
+        addTearDown(repl.dispose);
+
+        OsCallHandler notHandled() =>
+            (op, args, kwargs) async => throw const OsCallNotHandledException();
+
+        await repl.feed('import datetime', osHandler: notHandled());
+        final error = await repl
+            .feed('datetime.date.today()', osHandler: notHandled())
+            .then<MontyScriptError?>((_) => null)
+            .catchError((Object e) => e as MontyScriptError?);
+
+        expect(error, isNotNull);
+        expect(error?.excType, 'NameError');
+        expect(error?.message, contains('date.today'));
+      },
+    );
+
+    test(
+      'OsCallException surfaces Python RuntimeError (contrast with NameError)',
+      () async {
+        final repl = MontyRepl();
+        addTearDown(repl.dispose);
+
+        OsCallHandler alwaysFails() =>
+            (op, args, kwargs) async =>
+                throw const OsCallException('handler refused');
+
+        await repl.feed('import datetime', osHandler: alwaysFails());
+        final error = await repl
+            .feed('datetime.date.today()', osHandler: alwaysFails())
+            .then<MontyScriptError?>((_) => null)
+            .catchError((Object e) => e as MontyScriptError?);
+
+        expect(error, isNotNull);
+        expect(error?.excType, 'RuntimeError');
+        expect(error?.message, contains('handler refused'));
+      },
+    );
   });
 }

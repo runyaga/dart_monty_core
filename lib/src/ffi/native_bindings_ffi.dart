@@ -170,6 +170,23 @@ class NativeBindingsFfi extends NativeBindings {
   }
 
   @override
+  ProgressResult resumeNotFound(int handle, String fnName) {
+    final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
+    final cName = fnName.toNativeUtf8().cast<Char>();
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      final tag = ffi_native.monty_resume_not_found(ptr, cName, outError);
+
+      return _buildProgressResult(ptr, tag, outError.value);
+    } finally {
+      calloc
+        ..free(cName)
+        ..free(outError);
+    }
+  }
+
+  @override
   ProgressResult resumeAsFuture(int handle) {
     final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
     final outError = calloc<Pointer<Char>>();
@@ -424,6 +441,27 @@ class NativeBindingsFfi extends NativeBindings {
     } finally {
       calloc
         ..free(cError)
+        ..free(outError);
+    }
+  }
+
+  @override
+  ProgressResult replResumeNotFound(int handle, String fnName) {
+    final ptr = Pointer<ffi_native.MontyReplHandle>.fromAddress(handle);
+    final cName = fnName.toNativeUtf8().cast<Char>();
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      final tag = ffi_native.monty_repl_resume_not_found(
+        ptr,
+        cName,
+        outError,
+      );
+
+      return _buildReplProgressResult(ptr, tag, outError.value);
+    } finally {
+      calloc
+        ..free(cName)
         ..free(outError);
     }
   }

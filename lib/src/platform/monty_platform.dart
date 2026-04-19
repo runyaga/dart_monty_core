@@ -71,6 +71,13 @@ abstract class MontyPlatform {
     throw UnimplementedError('resumeWithException() has not been implemented.');
   }
 
+  /// Resumes a paused execution signalling "function not found" — the VM
+  /// raises NameError. Use this when the host does not handle the requested
+  /// operation, matching Python's behavior for undefined globals.
+  Future<MontyProgress> resumeNotFound(String fnName) {
+    throw UnimplementedError('resumeNotFound() has not been implemented.');
+  }
+
   /// Resumes a name lookup by providing [value] for [name].
   Future<MontyProgress> resumeNameLookup(String name, Object? value) {
     throw UnimplementedError('resumeNameLookup() has not been implemented.');

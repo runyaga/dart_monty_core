@@ -65,6 +65,12 @@ external JSPromise<JSString> _jsResumeWithException(
   JSNumber? sessionId,
 ]);
 
+@JS('DartMontyBridge.resumeNotFound')
+external JSPromise<JSString> _jsResumeNotFound(
+  JSString fnNameJson, [
+  JSNumber? sessionId,
+]);
+
 @JS('DartMontyBridge.resumeAsFuture')
 external JSPromise<JSString> _jsResumeAsFuture([JSNumber? sessionId]);
 
@@ -167,6 +173,13 @@ external JSPromise<JSString> _jsReplResume(
 external JSPromise<JSString> _jsReplResumeWithError(
   JSString replId,
   JSString errorJson, [
+  JSNumber? sessionId,
+]);
+
+@JS('DartMontyBridge.replResumeNotFound')
+external JSPromise<JSString> _jsReplResumeNotFound(
+  JSString replId,
+  JSString fnNameJson, [
   JSNumber? sessionId,
 ]);
 
@@ -310,6 +323,20 @@ class WasmBindingsJs extends WasmBindings {
     final resultJson = await _jsResumeWithException(
       excTypeJson.toJS,
       errorJson.toJS,
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
+  }
+
+  @override
+  Future<WasmProgressResult> resumeNotFound(
+    String fnName, {
+    int? sessionId,
+  }) async {
+    final fnNameJson = json.encode(fnName);
+    final resultJson = await _jsResumeNotFound(
+      fnNameJson.toJS,
       sessionId?.toJS,
     ).toDart;
 
@@ -595,6 +622,21 @@ class WasmBindingsJs extends WasmBindings {
     final resultJson = await _jsReplResumeWithError(
       (replId ?? 'default').toJS,
       errorJson.toJS,
+      sessionId?.toJS,
+    ).toDart;
+
+    return _decodeProgress(resultJson.toDart);
+  }
+
+  @override
+  Future<WasmProgressResult> replResumeNotFound(
+    String fnNameJson, {
+    int? sessionId,
+    String? replId,
+  }) async {
+    final resultJson = await _jsReplResumeNotFound(
+      (replId ?? 'default').toJS,
+      fnNameJson.toJS,
       sessionId?.toJS,
     ).toDart;
 
