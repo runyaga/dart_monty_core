@@ -1459,3 +1459,90 @@ fn free_null_is_noop() {
     // NULL has always been safe, but verify it still is.
     unsafe { monty_free(ptr::null_mut()) };
 }
+
+// ---------------------------------------------------------------------------
+// OS call: date.today round-trip via C FFI
+//
+// Covers monty v0.0.14 addition of OsFunction::DateToday. The host receives
+// OsCall("date.today") and resumes with a __type=date JSON object; the crate
+// reconstructs it into a MontyDate and the assertion `isinstance(r, date)`
+// passes inside Python.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn os_call_date_today_round_trip() {
+    let code = c("import datetime\n\
+         r = datetime.date.today()\n\
+         assert isinstance(r, datetime.date)\n\
+         r");
+    let mut out_error: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut out_error) };
+    assert!(!handle.is_null());
+
+    let tag = unsafe { monty_start(handle, &mut out_error) };
+    assert_eq!(tag, MontyProgressTag::OsCall);
+
+    let fn_name_ptr = unsafe { monty_os_call_fn_name(handle) };
+    let fn_name = unsafe { read_c_string(fn_name_ptr) };
+    assert_eq!(fn_name, "date.today");
+
+    let resume_value = c(r#"{"__type":"date","year":2024,"month":1,"day":15}"#);
+    let tag = unsafe { monty_resume(handle, resume_value.as_ptr(), &mut out_error) };
+    assert_eq!(tag, MontyProgressTag::Complete);
+    assert_eq!(unsafe { monty_complete_is_error(handle) }, 0);
+
+    let result_ptr = unsafe { monty_complete_result_json(handle) };
+    let result_str = unsafe { read_c_string(result_ptr) };
+    let result: serde_json::Value = serde_json::from_str(&result_str).unwrap();
+    assert_eq!(result["value"]["__type"], "date");
+    assert_eq!(result["value"]["year"], 2024);
+    assert_eq!(result["value"]["month"], 1);
+    assert_eq!(result["value"]["day"], 15);
+
+    unsafe { monty_free(handle) };
+}
+
+// ---------------------------------------------------------------------------
+// OS call: datetime.now (naive) round-trip via C FFI
+//
+// Covers monty v0.0.14 addition of OsFunction::DateTimeNow. The naive case
+// passes MontyNone as the single positional tz argument and expects a
+// MontyDateTime with offset_seconds = null and timezone_name = null.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn os_call_datetime_now_naive_round_trip() {
+    let code = c("import datetime\n\
+         r = datetime.datetime.now()\n\
+         assert isinstance(r, datetime.datetime)\n\
+         assert r.tzinfo is None\n\
+         r");
+    let mut out_error: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut out_error) };
+    assert!(!handle.is_null());
+
+    let tag = unsafe { monty_start(handle, &mut out_error) };
+    assert_eq!(tag, MontyProgressTag::OsCall);
+
+    let fn_name_ptr = unsafe { monty_os_call_fn_name(handle) };
+    let fn_name = unsafe { read_c_string(fn_name_ptr) };
+    assert_eq!(fn_name, "datetime.now");
+
+    let resume_value = c(
+        r#"{"__type":"datetime","year":2024,"month":1,"day":15,"hour":10,"minute":30,"second":0,"microsecond":0}"#,
+    );
+    let tag = unsafe { monty_resume(handle, resume_value.as_ptr(), &mut out_error) };
+    assert_eq!(tag, MontyProgressTag::Complete);
+    assert_eq!(unsafe { monty_complete_is_error(handle) }, 0);
+
+    let result_ptr = unsafe { monty_complete_result_json(handle) };
+    let result_str = unsafe { read_c_string(result_ptr) };
+    let result: serde_json::Value = serde_json::from_str(&result_str).unwrap();
+    assert_eq!(result["value"]["__type"], "datetime");
+    assert_eq!(result["value"]["year"], 2024);
+    assert_eq!(result["value"]["hour"], 10);
+    assert!(result["value"]["offset_seconds"].is_null());
+    assert!(result["value"]["timezone_name"].is_null());
+
+    unsafe { monty_free(handle) };
+}
