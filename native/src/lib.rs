@@ -277,6 +277,24 @@ pub unsafe extern "C" fn monty_resume_with_exception(
         .resume_with_exception(exc_type_str, msg))
 }
 
+/// Resume execution signalling "function not found" (raises NameError in Python).
+///
+/// - `fn_name`: NUL-terminated name of the missing function (used in the
+///   Python `NameError` message).
+/// - `out_error`: receives an error message on FFI failure (caller frees).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_resume_not_found(
+    handle: *mut MontyHandle,
+    fn_name: *const c_char,
+    out_error: *mut *mut c_char,
+) -> MontyProgressTag {
+    // SAFETY: fn_name is a NUL-terminated C string from Dart FFI; parse_c_str validates non-null
+    let Ok(name) = (unsafe { parse_c_str(fn_name, "fn_name", out_error) }) else {
+        return MontyProgressTag::Error;
+    };
+    ffi_progress!(handle, out_error, |h| h.resume_not_found(name))
+}
+
 // ---------------------------------------------------------------------------
 // Async / Futures
 // ---------------------------------------------------------------------------
@@ -999,6 +1017,48 @@ pub unsafe extern "C" fn monty_repl_resume_with_error(
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
     match catch_ffi_panic(|| h.resume_with_error(msg_str)) {
+        Ok((tag, err)) => {
+            if !out_error.is_null() {
+                match err {
+                    // SAFETY: out_error is non-null (just checked), writing error message string
+                    Some(ref msg) => unsafe { *out_error = to_c_string(msg) },
+                    // SAFETY: out_error is non-null (just checked), clearing error to indicate success
+                    None => unsafe { *out_error = ptr::null_mut() },
+                }
+            }
+            tag
+        }
+        Err(panic_msg) => {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing panic message string
+                unsafe { *out_error = to_c_string(&panic_msg) };
+            }
+            MontyProgressTag::Error
+        }
+    }
+}
+
+/// Resume REPL execution signalling "function not found" (raises NameError in Python).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_repl_resume_not_found(
+    handle: *mut MontyReplHandle,
+    fn_name: *const c_char,
+    out_error: *mut *mut c_char,
+) -> MontyProgressTag {
+    if handle.is_null() {
+        if !out_error.is_null() {
+            // SAFETY: out_error is non-null (just checked), Dart caller provides a valid writable pointer
+            unsafe { *out_error = to_c_string("handle is NULL") };
+        }
+        return MontyProgressTag::Error;
+    }
+    // SAFETY: fn_name is a NUL-terminated C string from Dart FFI; parse_c_str validates non-null
+    let Ok(name) = (unsafe { parse_c_str(fn_name, "fn_name", out_error) }) else {
+        return MontyProgressTag::Error;
+    };
+    // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
+    let h = unsafe { &mut *handle };
+    match catch_ffi_panic(|| h.resume_not_found(name)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
