@@ -9,6 +9,9 @@ coverage/
 native/target/
 native/Cargo.lock
 
+# JS bridge build deps
+js/node_modules/
+
 # DCM local config contains credentials — never commit
 .dcm.yaml
 
