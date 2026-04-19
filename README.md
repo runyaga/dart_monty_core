@@ -30,7 +30,7 @@ reactive state, or a richer plugin system, see `dart_monty`.
 
 ```yaml
 dependencies:
-  dart_monty_core: ^0.0.12
+  dart_monty_core: ^0.0.14
 ```
 
 ### FFI (native: macOS · Linux · Windows · iOS · Android)
@@ -404,7 +404,7 @@ are compared. All 464 fixtures must pass.
 
 ```bash
 cd native
-cargo test                                       # 291 unit tests
+cargo test                                       # 314 unit + integration tests
 cargo clippy --all-targets -- -D warnings        # zero warnings
 ```
 
@@ -521,7 +521,7 @@ dart compile wasm test/integration/wasm_runner_wasm.dart -o test/integration/web
 #### Performance Benchmark (464 Fixtures)
 
 Benchmark conducted on an Apple M5 Max (April 2026) using headless Chrome 147.
-Execution time includes the full integration suite (440 passing fixtures).
+Execution time includes the full integration suite (464 passing fixtures).
 
 | Compiler | Passed | Skipped | Failed | Time (ms) |
 | :--- | :--- | :--- | :--- | :--- |
@@ -572,7 +572,7 @@ Some Dart API choices intentionally differ from JS:
 
 ## Native layer
 
-The Rust crate in `native/` wraps `pydantic/monty@v0.0.12` and exposes a
+The Rust crate in `native/` wraps `pydantic/monty@v0.0.14` and exposes a
 C ABI consumed by the FFI binding and compiled to WASM for the web backend.
 Bindings are generated via `ffigen`; regenerate with:
 

@@ -5,22 +5,44 @@
 ### Upgraded
 - Rust dependency `monty` bumped from `v0.0.12` → `v0.0.14` (Cargo.toml + Cargo.lock)
 
-### Added
-- `OsCallNotHandledException` — throw from an `OsCallHandler` to signal that the host does
-  not implement the requested OS call. Python sees `NameError: name '<fn>' is not defined`
-  (previously hosts had to fall back to `OsCallException`, which produced a generic
-  `RuntimeError`).
-- `monty_resume_not_found` / `monty_repl_resume_not_found` C FFI exports, matching
-  `ExtFunctionResult::NotFound` in upstream monty (`native/src/handle.rs`,
-  `native/src/repl_handle.rs`, `native/src/lib.rs`, `native/include/dart_monty.h`).
-- `DartMontyBridge.resumeNotFound` / `DartMontyBridge.replResumeNotFound` on the WASM
-  JS bridge (`js/src/bridge.js`, `js/src/worker_src.js`).
-- `resumeNotFound` on `MontyPlatform`, `MontyCoreBindings`, `ReplBindings`,
-  `NativeBindings`, and `WasmBindings`; `MontyRepl.resumeNotFound` /
-  `ReplPlatform.resumeNotFound` on the platform layer.
-- FFI + WASM integration tests for `date.today()` / `datetime.now()` OS calls and for the
-  `OsCallNotHandledException` → `NameError` path (`ffi_datetime_oscall_test.dart`,
-  `wasm_datetime_oscall_test.dart`).
+### Added — new public API
+
+- **`OsCallNotHandledException`** (`lib/src/platform/os_call_exception.dart`,
+  re-exported from `package:dart_monty_core/dart_monty_core.dart`). Throw from
+  an `OsCallHandler` to signal that the host does not implement the requested
+  OS call. Python sees `NameError: name '<fn>' is not defined` — matching the
+  semantics of an undefined global — instead of the generic `RuntimeError`
+  that `OsCallException` produces. Optional `fnName` field lets the handler
+  override the function name reported to Python.
+  ```dart
+  final monty = Monty(osHandler: (op, args, kwargs) async {
+    if (op == 'os.getenv') return Platform.environment[args[0] as String];
+    throw const OsCallNotHandledException(); // → NameError in Python
+  });
+  ```
+- **`MontyRepl.resumeNotFound(String fnName)`** — public method on the REPL
+  façade; also exposed on `ReplPlatform` for platform-layer callers.
+- **`OsCallHandler` now handles `"date.today"` and `"datetime.now"`** — monty
+  v0.0.14 adds these as explicit OS calls. Hosts return `MontyDate(year, month, day)`
+  for `date.today` and `MontyDateTime(...)` for `datetime.now`. The single
+  positional arg to `datetime.now` carries the timezone as `MontyTimeZone` or
+  `MontyNone`.
+
+### Added — internal plumbing
+
+- `monty_resume_not_found` / `monty_repl_resume_not_found` C FFI exports,
+  matching `ExtFunctionResult::NotFound` in upstream monty
+  (`native/src/handle.rs`, `native/src/repl_handle.rs`, `native/src/lib.rs`,
+  `native/include/dart_monty.h`).
+- `DartMontyBridge.resumeNotFound` / `DartMontyBridge.replResumeNotFound` on
+  the WASM JS bridge (`js/src/bridge.js`, `js/src/worker_src.js`).
+- `resumeNotFound` on the abstract binding contracts: `MontyCoreBindings`,
+  `ReplBindings`, `NativeBindings`, and `WasmBindings` (run + REPL variants).
+- FFI + WASM integration tests for `date.today()` / `datetime.now()` OS calls
+  and for the `OsCallNotHandledException` → `NameError` path
+  (`ffi_datetime_oscall_test.dart`, `wasm_datetime_oscall_test.dart`).
+- Oracle conformance on all three backends at 464/464: FFI, dart2js WASM,
+  dart2wasm WASM.
 
 ### What changed upstream (monty v0.0.12 → v0.0.14)
 
