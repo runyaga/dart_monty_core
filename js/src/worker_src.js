@@ -1,10 +1,10 @@
 /**
- * worker_src.js — Runs dart_monty_native.wasm inside a Web Worker via C-ABI.
+ * worker_src.js — Runs dart_monty_core_native.wasm inside a Web Worker via C-ABI.
  *
  * Replaces the NAPI-RS class-based approach with direct calls to the 28
  * exported C functions. String marshalling via monty_alloc/monty_dealloc.
  *
- * Bundled by esbuild into dart_monty_worker.js for the browser.
+ * Bundled by esbuild into dart_monty_core_worker.js for the browser.
  */
 
 import {
@@ -30,7 +30,7 @@ let wasm = null;
 // ---------------------------------------------------------------------------
 
 async function initWasm() {
-  const wasmUrl = new URL('./dart_monty_native.wasm', import.meta.url);
+  const wasmUrl = new URL('./dart_monty_core_native.wasm', import.meta.url);
   wasm = await instantiateMonty(wasmUrl);
   self.postMessage({
     type: 'ready',

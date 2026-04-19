@@ -13,14 +13,16 @@ abstract final class DartMontyFlutter {
   /// Safe to call multiple times: subsequent calls are no-ops if the bridge
   /// is already loaded.
   ///
-  /// The bridge and its dependencies (dart_monty_worker.js and
-  /// dart_monty_native.wasm) are served automatically from the
+  /// The bridge and its dependencies (dart_monty_core_worker.js and
+  /// dart_monty_core_native.wasm) are served automatically from the
   /// `packages/dart_monty_core/assets/` path that Flutter exposes for every
   /// package asset. No manual file copying is required.
   static Future<void> ensureInitialized() async {
     if (_isBridgeLoaded()) return;
 
-    await _injectScript('packages/dart_monty_core/assets/dart_monty_bridge.js');
+    await _injectScript(
+      'packages/dart_monty_core/assets/dart_monty_core_bridge.js',
+    );
   }
 }
 

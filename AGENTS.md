@@ -17,22 +17,22 @@ native/src/ (Rust)
   │     → native/target/debug/oracle             [FFI test oracle]
   │
   └─ cargo build --target wasm32-wasip1 --release
-        → dart_monty_native.wasm
+        → dart_monty_native.wasm   (cargo crate artifact; copied to assets/ as dart_monty_core_native.wasm)
               │
               ▼
 js/src/ (esbuild via node build.js)
   └─────────────────────────────── assets/          ← canonical staging area
-                                   ├── dart_monty_native.wasm
-                                   ├── dart_monty_bridge.js
-                                   └── dart_monty_worker.js
+                                   ├── dart_monty_core_native.wasm
+                                   ├── dart_monty_core_bridge.js
+                                   └── dart_monty_core_worker.js
                                          │
               ┌──────────────────────────┼──────────────────────────┐
               ▼                          ▼                          ▼
-  test/integration/web/      packages/dart_monty_web/web/   packages/dart_monty_flutter/
-  ├── dart_monty_bridge.js    ├── dart_monty_bridge.js       (uses FFI dylib at runtime)
-  ├── dart_monty_worker.js    ├── dart_monty_worker.js
-  ├── dart_monty_native.wasm  ├── dart_monty_native.wasm
-  ├── @pydantic/wasi-*        ├── @pydantic/wasi-*
+  test/integration/web/           packages/dart_monty_web/web/   packages/dart_monty_flutter/
+  ├── dart_monty_core_bridge.js    ├── dart_monty_core_bridge.js       (uses FFI dylib at runtime)
+  ├── dart_monty_core_worker.js    ├── dart_monty_core_worker.js
+  ├── dart_monty_core_native.wasm  ├── dart_monty_core_native.wasm
+  ├── @pydantic/wasi-*             ├── @pydantic/wasi-*
   ├── wasm_runner.dart.js     └── repl_demo.dart.js
   └── wasm_runner.wasm            (dart compile js)
       (dart compile wasm)
@@ -54,14 +54,14 @@ committed. When the Rust or npm build chain is broken or slow, copy from here:
 SRC=/Users/runyaga/dev/dart_monty_core--wasm-support
 
 # Populate assets/ (all three files)
-cp "$SRC/assets/dart_monty_bridge.js"   assets/
-cp "$SRC/assets/dart_monty_worker.js"   assets/
-cp "$SRC/assets/dart_monty_native.wasm" assets/
+cp "$SRC/assets/dart_monty_core_bridge.js"   assets/
+cp "$SRC/assets/dart_monty_core_worker.js"   assets/
+cp "$SRC/assets/dart_monty_core_native.wasm" assets/
 
 # Populate test web dir directly (skip the copy step below)
-cp "$SRC/test/integration/web/dart_monty_bridge.js"   test/integration/web/
-cp "$SRC/test/integration/web/dart_monty_worker.js"   test/integration/web/
-cp "$SRC/test/integration/web/dart_monty_native.wasm" test/integration/web/
+cp "$SRC/test/integration/web/dart_monty_core_bridge.js"   test/integration/web/
+cp "$SRC/test/integration/web/dart_monty_core_worker.js"   test/integration/web/
+cp "$SRC/test/integration/web/dart_monty_core_native.wasm" test/integration/web/
 cp "$SRC/test/integration/web/wasm_runner.dart.js"    test/integration/web/
 cp "$SRC/test/integration/web/wasm_runner.mjs"        test/integration/web/
 cp "$SRC/test/integration/web/wasm_runner.wasm"       test/integration/web/
@@ -80,16 +80,16 @@ dart_monty_core/
 │   └── target/                 # Cargo output (git-ignored)
 │
 ├── js/                         # JS bridge (esbuild)
-│   ├── src/bridge.js           # Main-thread IIFE → dart_monty_bridge.js
-│   ├── src/worker_src.js       # Worker ESM → dart_monty_worker.js
+│   ├── src/bridge.js           # Main-thread IIFE → dart_monty_core_bridge.js
+│   ├── src/worker_src.js       # Worker ESM → dart_monty_core_worker.js
 │   ├── src/wasm_glue.js        # WASM C API wrappers (imported by worker)
 │   ├── build.js                # esbuild bundler script
 │   └── package.json
 │
-├── assets/                     # Built JS+WASM staging area (git-ignored)
-│   ├── dart_monty_bridge.js    ← node js/build.js
-│   ├── dart_monty_worker.js    ← node js/build.js
-│   └── dart_monty_native.wasm  ← cargo build wasm32-wasip1
+├── assets/                          # Built JS+WASM staging area (git-ignored)
+│   ├── dart_monty_core_bridge.js    ← node js/build.js
+│   ├── dart_monty_core_worker.js    ← node js/build.js
+│   └── dart_monty_core_native.wasm  ← cargo build wasm32-wasip1 (crate artifact is dart_monty_native.wasm; copied under new name)
 │
 ├── lib/                        # Dart library source
 │   └── src/
@@ -197,7 +197,7 @@ cargo build --target wasm32-wasip1 --release
 **Output**: `native/target/wasm32-wasip1/release/dart_monty_native.wasm`
 
 The WASM binary is the monty interpreter compiled to run inside a browser
-WASM Worker. It is loaded by `dart_monty_worker.js` at runtime.
+WASM Worker. It is loaded by `dart_monty_core_worker.js` at runtime.
 
 ---
 
@@ -216,9 +216,9 @@ node build.js
 ```
 
 **Output** (written directly to `assets/`):
-- `assets/dart_monty_bridge.js` — IIFE, loaded on the main thread
-- `assets/dart_monty_worker.js` — ESM Worker, loads + runs the WASM binary
-- `assets/dart_monty_native.wasm` — copied from `native/target/wasm32-wasip1/release/`
+- `assets/dart_monty_core_bridge.js` — IIFE, loaded on the main thread
+- `assets/dart_monty_core_worker.js` — ESM Worker, loads + runs the WASM binary
+- `assets/dart_monty_core_native.wasm` — copied from `native/target/wasm32-wasip1/release/dart_monty_native.wasm` (cargo crate artifact renamed on copy)
 
 `build.js` copies the WASM binary automatically, so build step 2 is only
 needed if you run steps out of order.
@@ -284,9 +284,9 @@ Before running tests manually, copy from `assets/` into `test/integration/web/`.
 `tool/test_wasm.sh` does this automatically; its cleanup trap removes them on exit.
 
 ```bash
-cp assets/dart_monty_bridge.js   test/integration/web/
-cp assets/dart_monty_worker.js   test/integration/web/
-cp assets/dart_monty_native.wasm test/integration/web/
+cp assets/dart_monty_core_bridge.js   test/integration/web/
+cp assets/dart_monty_core_worker.js   test/integration/web/
+cp assets/dart_monty_core_native.wasm test/integration/web/
 # Also copy WASI runtime (step 3b above)
 ```
 
@@ -490,9 +490,9 @@ changes (path filter)
 |---|---|---|
 | `libdart_monty_native.{dylib,so,dll}` | `cargo build --release` | (loaded by dart:ffi at runtime) |
 | `native/target/debug/oracle` | `cargo build --bin oracle` | (spawned as subprocess by dart test) |
-| `dart_monty_native.wasm` | `cargo build --target wasm32-wasip1` | `assets/` → `test/integration/web/`, `packages/dart_monty_web/web/` |
-| `dart_monty_bridge.js` | `node js/build.js` | `assets/` → same as above |
-| `dart_monty_worker.js` | `node js/build.js` | `assets/` → same as above |
+| `dart_monty_native.wasm` (cargo) → `dart_monty_core_native.wasm` (asset) | `cargo build --target wasm32-wasip1` (crate-named output, copied into `assets/` under the `_core` name) | `assets/` → `test/integration/web/`, `packages/dart_monty_web/web/` |
+| `dart_monty_core_bridge.js` | `node js/build.js` | `assets/` → same as above |
+| `dart_monty_core_worker.js` | `node js/build.js` | `assets/` → same as above |
 | `wasi-worker-browser.mjs` | npm (pre-built) | `test/integration/web/@pydantic/...`, `packages/dart_monty_web/web/@pydantic/...` |
 | `wasm_runner.dart.js` | `dart compile js` | `test/integration/web/` |
 | `wasm_runner.wasm` + `.mjs` | `dart compile wasm` | `test/integration/web/` |
@@ -505,14 +505,14 @@ changes (path filter)
 ## What NOT to commit
 
 ```
-assets/dart_monty_*.{js,wasm}          # git-ignored; built at CI time
-test/integration/web/dart_monty_*.js   # git-ignored; copied before test run
-test/integration/web/dart_monty_*.wasm # git-ignored; copied before test run
+assets/dart_monty_core_*.{js,wasm}          # git-ignored; built at CI time
+test/integration/web/dart_monty_core_*.js   # git-ignored; copied before test run
+test/integration/web/dart_monty_core_*.wasm # git-ignored; copied before test run
 test/integration/web/wasm_runner.dart.js*  # git-ignored; dart compile js output
 test/integration/web/@pydantic/        # git-ignored; WASI runtime copy
 packages/dart_monty_web/web/repl_demo.dart.js   # git-ignored (see web/.gitignore)
 packages/dart_monty_web/web/*.wasm     # git-ignored
-packages/dart_monty_web/web/dart_monty_*.js     # git-ignored
+packages/dart_monty_web/web/dart_monty_core_*.js     # git-ignored
 packages/dart_monty_web/web/@pydantic/ # git-ignored
 ```
 

@@ -100,7 +100,7 @@ jobs:
       - name: Stub missing build artifacts
         # Assets are gitignored (built at publish time). Touch empty stubs so
         # dart analyze doesn't fail on the flutter.assets: references in pubspec.yaml.
-        run: touch assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm
+        run: touch assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm
       - name: Analyze
         run: dart analyze --fatal-infos
       - name: Format check
@@ -338,15 +338,15 @@ jobs:
           echo "--- build complete ---"
 
           # Verify build outputs exist before staging — fail loudly if missing.
-          for f in assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm; do
+          for f in assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm; do
             [ -f "$f" ] || { echo "FATAL: $f not found after build"; exit 1; }
           done
 
           # Stage bridge assets for the test runner.
           mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
-          cp assets/dart_monty_bridge.js "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp assets/dart_monty_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp assets/dart_monty_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp assets/dart_monty_core_bridge.js "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp assets/dart_monty_core_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp assets/dart_monty_core_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
 
           # WASI runtime required by the Worker.
           WASI_PKG="js/node_modules/@pydantic/monty-wasm32-wasi"
@@ -357,9 +357,9 @@ jobs:
 
           # Final verification — every file the test runner needs must exist.
           for f in \
-            "$WEB_DIR/dart_monty_bridge.js" \
-            "$WEB_DIR/dart_monty_worker.js" \
-            "$WEB_DIR/dart_monty_native.wasm" \
+            "$WEB_DIR/dart_monty_core_bridge.js" \
+            "$WEB_DIR/dart_monty_core_worker.js" \
+            "$WEB_DIR/dart_monty_core_native.wasm" \
             "$WEB_DIR/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs"; do
             [ -f "$GITHUB_WORKSPACE/$f" ] || { echo "FATAL: staged asset missing: $f"; exit 1; }
           done

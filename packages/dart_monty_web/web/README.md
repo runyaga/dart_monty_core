@@ -65,9 +65,9 @@ Then visit:
 cd js && npm install --force && node build.js && cd ..
 
 # 2. Copy bridge assets into this directory
-cp assets/dart_monty_bridge.js   packages/dart_monty_web/web/
-cp assets/dart_monty_worker.js   packages/dart_monty_web/web/
-cp assets/dart_monty_native.wasm packages/dart_monty_web/web/
+cp assets/dart_monty_core_bridge.js   packages/dart_monty_web/web/
+cp assets/dart_monty_core_worker.js   packages/dart_monty_web/web/
+cp assets/dart_monty_core_native.wasm packages/dart_monty_web/web/
 
 # 3. Copy WASI runtime (node build.js does NOT copy this — manual step required)
 mkdir -p packages/dart_monty_web/web/@pydantic/monty-wasm32-wasi

@@ -47,14 +47,14 @@ if [ "$SKIP_BUILD" = false ]; then
   cd "$PKG/native"
   cargo build --target wasm32-wasip1 --release
   mkdir -p "$ASSETS_DIR"
-  cp target/wasm32-wasip1/release/dart_monty_native.wasm "$ASSETS_DIR/"
-  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_native.wasm" | cut -f1))"
+  cp target/wasm32-wasip1/release/dart_monty_native.wasm "$ASSETS_DIR/dart_monty_core_native.wasm"
+  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"
 fi
 
-if [ ! -f "$ASSETS_DIR/dart_monty_native.wasm" ]; then
-  echo "ERROR: Missing WASM binary: $ASSETS_DIR/dart_monty_native.wasm"
+if [ ! -f "$ASSETS_DIR/dart_monty_core_native.wasm" ]; then
+  echo "ERROR: Missing WASM binary: $ASSETS_DIR/dart_monty_core_native.wasm"
   echo "  Run without --skip-build to build it."
   exit 1
 fi
@@ -77,7 +77,7 @@ else
   echo "--- Skipping JS bridge build (--skip-build) ---"
 fi
 
-for f in dart_monty_bridge.js dart_monty_worker.js dart_monty_native.wasm; do
+for f in dart_monty_core_bridge.js dart_monty_core_worker.js dart_monty_core_native.wasm; do
   if [ ! -f "$ASSETS_DIR/$f" ]; then
     echo "ERROR: Missing bridge asset: $ASSETS_DIR/$f"
     echo "  Run without --skip-build to build the JS bridge."
@@ -91,9 +91,9 @@ done
 echo ""
 echo "--- Copying assets to $WEB_DIR ---"
 mkdir -p "$WEB_DIR"
-cp "$ASSETS_DIR/dart_monty_bridge.js"   "$WEB_DIR/"
-cp "$ASSETS_DIR/dart_monty_worker.js"   "$WEB_DIR/"
-cp "$ASSETS_DIR/dart_monty_native.wasm" "$WEB_DIR/"
+cp "$ASSETS_DIR/dart_monty_core_bridge.js"   "$WEB_DIR/"
+cp "$ASSETS_DIR/dart_monty_core_worker.js"   "$WEB_DIR/"
+cp "$ASSETS_DIR/dart_monty_core_native.wasm" "$WEB_DIR/"
 
 # WASI runtime for the Worker (needed when running dart2wasm)
 WASI_PKG="$JS_DIR/node_modules/@pydantic/monty-wasm32-wasi"
@@ -139,9 +139,9 @@ SERVE_PID=""
 cleanup() {
   [ -n "$SERVE_PID" ] && kill "$SERVE_PID" 2>/dev/null || true
   rm -f \
-    "$WEB_DIR/dart_monty_bridge.js" \
-    "$WEB_DIR/dart_monty_worker.js" \
-    "$WEB_DIR/dart_monty_native.wasm" \
+    "$WEB_DIR/dart_monty_core_bridge.js" \
+    "$WEB_DIR/dart_monty_core_worker.js" \
+    "$WEB_DIR/dart_monty_core_native.wasm" \
     "$WEB_DIR/repl_demo.dart.js" \
     "$WEB_DIR/repl_demo.dart.js.deps" \
     "$WEB_DIR/repl_demo.dart.js.map" \

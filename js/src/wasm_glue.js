@@ -1,5 +1,5 @@
 /**
- * wasm_glue.js — WASI shim + C-ABI helpers for dart_monty_native.wasm.
+ * wasm_glue.js — WASI shim + C-ABI helpers for dart_monty_core_native.wasm.
  *
  * Replaces the entire NAPI-RS runtime + @pydantic/monty npm stack.
  * Only 6 WASI imports needed: random_get, clock_time_get, fd_write,
@@ -86,7 +86,7 @@ function createWasiImports(getMemory) {
 let wasm = null;
 
 /**
- * Instantiate dart_monty_native.wasm.
+ * Instantiate dart_monty_core_native.wasm.
  *
  * Uses compileStreaming with ArrayBuffer fallback for servers that
  * don't set the correct application/wasm Content-Type.
