@@ -239,7 +239,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wasm-binary
-          path: native/target/wasm32-wasip1/release/dart_monty_native.wasm
+          path: native/target/wasm32-wasip1/release/dart_monty_core_native.wasm
           retention-days: 1
 
   # ---------------------------------------------------------------------------

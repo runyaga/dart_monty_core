@@ -18,7 +18,7 @@ jobs:
       - name: Install Rust stable + wasm32-wasip1
         run: rustup target add wasm32-wasip1
 
-      - name: Build dart_monty_native.wasm
+      - name: Build dart_monty_core_native.wasm
         run: |
           cargo build \
             --manifest-path native/Cargo.toml \

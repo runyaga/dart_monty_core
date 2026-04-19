@@ -6,7 +6,7 @@
  *
  * 1. esbuild worker_src.js + wasm_glue.js → ../assets/dart_monty_core_worker.js (ESM)
  * 2. esbuild bridge.js → ../assets/dart_monty_core_bridge.js (IIFE)
- * 3. Copy native/target/.../dart_monty_native.wasm → ../assets/dart_monty_core_native.wasm
+ * 3. Copy dart_monty_core_native.wasm from native/target/ → ../assets/
  * 4. Run wasm-opt -Oz (if available)
  *
  * Directory layout (relative to this file at dart_monty_core/js/build.js):
@@ -24,11 +24,7 @@ const NATIVE_TARGET = path.resolve(
   __dirname, '..', 'native', 'target',
   'wasm32-wasip1', 'release',
 );
-// Cargo output is named from the Rust crate ("dart_monty_native"); on copy
-// we rename to dart_monty_core_* so deployed assets don't collide with a
-// sibling dart_monty package.
-const WASM_SRC_NAME = 'dart_monty_native.wasm';
-const WASM_DST_NAME = 'dart_monty_core_native.wasm';
+const WASM_NAME = 'dart_monty_core_native.wasm';
 
 // Ensure assets directory exists
 fs.mkdirSync(ASSETS, { recursive: true });
@@ -58,8 +54,8 @@ execSync(
 
 // Step 3: Copy WASM binary from native build
 console.log('[build] Copying WASM binary...');
-const wasmSrc = path.join(NATIVE_TARGET, WASM_SRC_NAME);
-const wasmDst = path.join(ASSETS, WASM_DST_NAME);
+const wasmSrc = path.join(NATIVE_TARGET, WASM_NAME);
+const wasmDst = path.join(ASSETS, WASM_NAME);
 
 if (!fs.existsSync(wasmSrc)) {
   console.error(
@@ -71,7 +67,7 @@ if (!fs.existsSync(wasmSrc)) {
 
 fs.copyFileSync(wasmSrc, wasmDst);
 const sizeMB = (fs.statSync(wasmDst).size / 1024 / 1024).toFixed(1);
-console.log(`  Copied ${WASM_SRC_NAME} → ${WASM_DST_NAME} (${sizeMB} MB)`);
+console.log(`  Copied ${WASM_NAME} (${sizeMB} MB)`);
 
 // Step 4: Optimize with wasm-opt (optional — skip if not installed)
 try {

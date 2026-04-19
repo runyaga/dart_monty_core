@@ -424,7 +424,7 @@ bash tool/test_wasm.sh --skip-build
 
 **What the pipeline does:**
 
-1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_native.wasm` (crate-derived cargo artifact), which `build.js` copies into `assets/dart_monty_core_native.wasm`
+1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_core_native.wasm`, which `build.js` copies into `assets/`
 2. `cd js && npm install --force && node build.js` — esbuild bundles `dart_monty_core_bridge.js` and `dart_monty_core_worker.js` into `assets/`
 3. Copy WASI runtime: `cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs test/integration/web/@pydantic/monty-wasm32-wasi/` — required for dart2wasm; **not** done by `build.js`
 4. `dart compile js test/integration/wasm_runner.dart` — compiles the dart2js fixture runner

@@ -11,13 +11,13 @@ Read it before touching any build step.
 ```
 native/src/ (Rust)
   ├─ cargo build --release
-  │     → libdart_monty_native.{dylib,so,dll}   [FFI backend: VM/desktop]
+  │     → libdart_monty_core_native.{dylib,so,dll}   [FFI backend: VM/desktop]
   │
   ├─ cargo build --bin oracle
   │     → native/target/debug/oracle             [FFI test oracle]
   │
   └─ cargo build --target wasm32-wasip1 --release
-        → dart_monty_native.wasm   (cargo crate artifact; copied to assets/ as dart_monty_core_native.wasm)
+        → dart_monty_core_native.wasm   (copied to assets/)
               │
               ▼
 js/src/ (esbuild via node build.js)
@@ -89,7 +89,7 @@ dart_monty_core/
 ├── assets/                          # Built JS+WASM staging area (git-ignored)
 │   ├── dart_monty_core_bridge.js    ← node js/build.js
 │   ├── dart_monty_core_worker.js    ← node js/build.js
-│   └── dart_monty_core_native.wasm  ← cargo build wasm32-wasip1 (crate artifact is dart_monty_native.wasm; copied under new name)
+│   └── dart_monty_core_native.wasm  ← cargo build wasm32-wasip1
 │
 ├── lib/                        # Dart library source
 │   └── src/
@@ -146,9 +146,9 @@ cargo build --release
 ```
 
 **Output** (platform-specific):
-- macOS: `native/target/release/libdart_monty_native.dylib`
-- Linux: `native/target/release/libdart_monty_native.so`
-- Windows: `native/target/release/dart_monty_native.dll`
+- macOS: `native/target/release/libdart_monty_core_native.dylib`
+- Linux: `native/target/release/libdart_monty_core_native.so`
+- Windows: `native/target/release/dart_monty_core_native.dll`
 
 **Used by**: `MontyFfi` backend (dart:ffi), Flutter REPL demo, FFI conformance tests.
 
@@ -194,7 +194,7 @@ cd native
 cargo build --target wasm32-wasip1 --release
 ```
 
-**Output**: `native/target/wasm32-wasip1/release/dart_monty_native.wasm`
+**Output**: `native/target/wasm32-wasip1/release/dart_monty_core_native.wasm`
 
 The WASM binary is the monty interpreter compiled to run inside a browser
 WASM Worker. It is loaded by `dart_monty_core_worker.js` at runtime.
@@ -218,7 +218,7 @@ node build.js
 **Output** (written directly to `assets/`):
 - `assets/dart_monty_core_bridge.js` — IIFE, loaded on the main thread
 - `assets/dart_monty_core_worker.js` — ESM Worker, loads + runs the WASM binary
-- `assets/dart_monty_core_native.wasm` — copied from `native/target/wasm32-wasip1/release/dart_monty_native.wasm` (cargo crate artifact renamed on copy)
+- `assets/dart_monty_core_native.wasm` — copied from `native/target/wasm32-wasip1/release/dart_monty_core_native.wasm`
 
 `build.js` copies the WASM binary automatically, so build step 2 is only
 needed if you run steps out of order.
@@ -474,7 +474,7 @@ changes (path filter)
 
 **Artifact hand-offs**:
 - `ffigen` uploads `dart_monty_bindings.dart` → consumed by `test`, `test-ffi`, `dcm`
-- `build-wasm` uploads `dart_monty_native.wasm` → consumed by `test-wasm`
+- `build-wasm` uploads `dart_monty_core_native.wasm` → consumed by `test-wasm`
 - `test` uploads `lcov.info` → consumed by `patch-coverage`
 
 **Key CI flags**:
@@ -488,9 +488,9 @@ changes (path filter)
 
 | File | Built by | Destination(s) |
 |---|---|---|
-| `libdart_monty_native.{dylib,so,dll}` | `cargo build --release` | (loaded by dart:ffi at runtime) |
+| `libdart_monty_core_native.{dylib,so,dll}` | `cargo build --release` | (loaded by dart:ffi at runtime) |
 | `native/target/debug/oracle` | `cargo build --bin oracle` | (spawned as subprocess by dart test) |
-| `dart_monty_native.wasm` (cargo) → `dart_monty_core_native.wasm` (asset) | `cargo build --target wasm32-wasip1` (crate-named output, copied into `assets/` under the `_core` name) | `assets/` → `test/integration/web/`, `packages/dart_monty_web/web/` |
+| `dart_monty_core_native.wasm` | `cargo build --target wasm32-wasip1` | `assets/` → `test/integration/web/`, `packages/dart_monty_web/web/` |
 | `dart_monty_core_bridge.js` | `node js/build.js` | `assets/` → same as above |
 | `dart_monty_core_worker.js` | `node js/build.js` | `assets/` → same as above |
 | `wasi-worker-browser.mjs` | npm (pre-built) | `test/integration/web/@pydantic/...`, `packages/dart_monty_web/web/@pydantic/...` |

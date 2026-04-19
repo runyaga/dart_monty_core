@@ -47,7 +47,7 @@ if [ "$SKIP_BUILD" = false ]; then
   cd "$PKG/native"
   cargo build --target wasm32-wasip1 --release
   mkdir -p "$ASSETS_DIR"
-  cp target/wasm32-wasip1/release/dart_monty_native.wasm "$ASSETS_DIR/dart_monty_core_native.wasm"
+  cp target/wasm32-wasip1/release/dart_monty_core_native.wasm "$ASSETS_DIR/"
   echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"

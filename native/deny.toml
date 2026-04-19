@@ -20,7 +20,7 @@ allow = [
 confidence-threshold = 0.8
 # Our own crate doesn't have a license field in Cargo.toml (publish = false)
 exceptions = [
-    { allow = ["MIT"], crate = "dart_monty_native" },
+    { allow = ["MIT"], crate = "dart_monty_core_native" },
 ]
 
 [bans]
