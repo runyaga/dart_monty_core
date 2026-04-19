@@ -5,6 +5,23 @@
 ### Upgraded
 - Rust dependency `monty` bumped from `v0.0.12` → `v0.0.14` (Cargo.toml + Cargo.lock)
 
+### Added
+- `OsCallNotHandledException` — throw from an `OsCallHandler` to signal that the host does
+  not implement the requested OS call. Python sees `NameError: name '<fn>' is not defined`
+  (previously hosts had to fall back to `OsCallException`, which produced a generic
+  `RuntimeError`).
+- `monty_resume_not_found` / `monty_repl_resume_not_found` C FFI exports, matching
+  `ExtFunctionResult::NotFound` in upstream monty (`native/src/handle.rs`,
+  `native/src/repl_handle.rs`, `native/src/lib.rs`, `native/include/dart_monty.h`).
+- `DartMontyBridge.resumeNotFound` / `DartMontyBridge.replResumeNotFound` on the WASM
+  JS bridge (`js/src/bridge.js`, `js/src/worker_src.js`).
+- `resumeNotFound` on `MontyPlatform`, `MontyCoreBindings`, `ReplBindings`,
+  `NativeBindings`, and `WasmBindings`; `MontyRepl.resumeNotFound` /
+  `ReplPlatform.resumeNotFound` on the platform layer.
+- FFI + WASM integration tests for `date.today()` / `datetime.now()` OS calls and for the
+  `OsCallNotHandledException` → `NameError` path (`ffi_datetime_oscall_test.dart`,
+  `wasm_datetime_oscall_test.dart`).
+
 ### What changed upstream (monty v0.0.12 → v0.0.14)
 
 **New types (not yet surfaced in dart_monty_core):**
@@ -14,7 +31,8 @@
 - `JsonMontyObject` / `JsonMontyArray` / `JsonMontyPairs` — upstream serde-serialize wrappers.
   dart_monty_core continues to use its own `monty_object_to_json` / `json_to_monty_object`.
 - `ExtFunctionResult::NotFound` — signal that the host does not handle an OS call, allowing
-  Python to raise an appropriate exception. **Not yet exposed in the FFI** (see gaps below).
+  Python to raise `NameError: name '<fn>' is not defined`. Now surfaced through the full
+  stack as `OsCallNotHandledException` (FFI + WASM).
 
 **New OsFunction variants:**
 - `OsFunction::DateToday` → `"date.today"` — Python `date.today()`.
@@ -37,13 +55,13 @@
 
 ### Gap inventory — follow-up work required
 
-| # | Gap | File(s) | Priority |
-|---|-----|---------|----------|
-| 1 | `ExtFunctionResult::NotFound` not in FFI — no `monty_resume_not_found` / `monty_repl_resume_not_found` export; hosts cannot signal "OS call not handled" | `native/src/handle.rs`, `native/src/repl_handle.rs`, `native/src/lib.rs`, `native/include/dart_monty.h`, Dart binding chain | High |
-| 2 | No integration tests for `"date.today"` / `"datetime.now"` OS calls | `test/`, `native/tests/` | High |
-| 3 | `OsCallHandler` docs don't explain return types for `"date.today"` (use `MontyDate`) and `"datetime.now"` (use `MontyDateTime`) — fixed `externals.dart` comment, but no example | `lib/src/externals.dart`, `example/` | Medium |
-| 4 | `Ellipsis` serialised as plain `"..."` string; upstream `JsonMontyObject` uses `{"$ellipsis":"..."}` to disambiguate from the string literal `"..."` | `native/src/convert.rs`, `lib/src/platform/monty_value.dart` | Low |
-| 5 | `DictPairs.len()` / `DictPairs.is_empty()` not used in `dict_to_json` — minor convert.rs efficiency opportunity | `native/src/convert.rs` | Low |
+| # | Gap | File(s) | Priority | Status |
+|---|-----|---------|----------|--------|
+| 1 | `ExtFunctionResult::NotFound` not in FFI — no `monty_resume_not_found` / `monty_repl_resume_not_found` export; hosts cannot signal "OS call not handled" | `native/src/handle.rs`, `native/src/repl_handle.rs`, `native/src/lib.rs`, `native/include/dart_monty.h`, Dart binding chain | High | **Closed** — surfaced as `OsCallNotHandledException` across FFI + WASM |
+| 2 | No integration tests for `"date.today"` / `"datetime.now"` OS calls | `test/`, `native/tests/` | High | **Closed** — `ffi_datetime_oscall_test.dart`, `wasm_datetime_oscall_test.dart`, `native/tests/integration.rs` |
+| 3 | `OsCallHandler` docs don't explain return types for `"date.today"` (use `MontyDate`) and `"datetime.now"` (use `MontyDateTime`) — fixed `externals.dart` comment, but no example | `lib/src/externals.dart`, `example/` | Medium | Open |
+| 4 | `Ellipsis` serialised as plain `"..."` string; upstream `JsonMontyObject` uses `{"$ellipsis":"..."}` to disambiguate from the string literal `"..."` | `native/src/convert.rs`, `lib/src/platform/monty_value.dart` | Low | Open |
+| 5 | `DictPairs.len()` / `DictPairs.is_empty()` not used in `dict_to_json` — minor convert.rs efficiency opportunity | `native/src/convert.rs` | Low | Open |
 
 ## 0.0.12 - Initial Release
 
