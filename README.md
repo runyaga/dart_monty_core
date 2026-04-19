@@ -6,6 +6,24 @@ a sandboxed Python interpreter written in Rust.
 **No Flutter. No bridge. No plugin registry.**  
 Works on VM (FFI), Web (WASM), and in isolates.
 
+> ### ⚠️ Experimental — expect breakage
+>
+> **`pydantic/monty` is changing daily.** Upstream frequently lands
+> breaking changes to its Rust API, Python semantics, OS call surface,
+> and bytecode format — sometimes several times per day. `dart_monty_core`
+> pins a specific upstream tag (currently **monty v0.0.14**) and bumps it
+> deliberately; each bump often requires adjustments here.
+>
+> Because of that:
+> - Pin an **exact** version in your `pubspec.yaml` (`dart_monty_core: 0.0.14`,
+>   not `^0.0.14`) — patch releases may track upstream breaking changes.
+> - Public APIs on this package, the JS bridge, and the native C ABI may
+>   change without a deprecation cycle while we're pre-1.0.
+> - Pre-built WASM assets built against one version will not run against a
+>   different native WASM binary — always rebuild both sides together.
+> - Not recommended for production. Fine for prototyping, evaluation, and
+>   internal tooling where you can re-pin quickly.
+
 ---
 
 ## What is Monty?
