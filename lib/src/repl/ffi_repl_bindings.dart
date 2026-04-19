@@ -135,6 +135,17 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeNotFound(String fnName) async {
+    final handle = _replHandle;
+    if (handle == null) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = _bindings.replResumeNotFound(handle, fnName);
+
+    return _translateProgressResult(result);
+  }
+
+  @override
   Future<CoreProgressResult> resumeNameLookupUndefined() {
     throw UnimplementedError(
       'resumeNameLookupUndefined is not supported by the FFI REPL backend',

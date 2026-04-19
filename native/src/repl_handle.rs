@@ -298,6 +298,48 @@ impl MontyReplHandle {
         }
     }
 
+    /// Resume by signalling "function not found".
+    ///
+    /// Raises `NameError: name '<fn_name>' is not defined` in Python. Used
+    /// when the host can't dispatch an OS call — Python sees the same error
+    /// it would for a missing global, instead of a generic `RuntimeError`.
+    pub fn resume_not_found(&mut self, fn_name: &str) -> (MontyProgressTag, Option<String>) {
+        let state = std::mem::replace(&mut self.state, ReplHandleState::Consumed);
+        match state {
+            ReplHandleState::Paused { call, .. } => {
+                let mut buf = String::new();
+                let result = call.resume(
+                    ExtFunctionResult::NotFound(fn_name.to_string()),
+                    PrintWriter::CollectString(&mut buf),
+                );
+                self.print_output.push_str(&buf);
+                match result {
+                    Ok(progress) => self.process_repl_progress(progress),
+                    Err(err) => self.handle_repl_start_error(*err),
+                }
+            }
+            ReplHandleState::OsCall { call, .. } => {
+                let mut buf = String::new();
+                let result = call.resume(
+                    ExtFunctionResult::NotFound(fn_name.to_string()),
+                    PrintWriter::CollectString(&mut buf),
+                );
+                self.print_output.push_str(&buf);
+                match result {
+                    Ok(progress) => self.process_repl_progress(progress),
+                    Err(err) => self.handle_repl_start_error(*err),
+                }
+            }
+            other => {
+                self.state = other;
+                (
+                    MontyProgressTag::Error,
+                    Some("handle not in Paused or OsCall state".into()),
+                )
+            }
+        }
+    }
+
     /// Resume by converting the pending call into a future.
     pub fn resume_as_future(&mut self) -> (MontyProgressTag, Option<String>) {
         let state = std::mem::replace(&mut self.state, ReplHandleState::Consumed);
@@ -1134,6 +1176,52 @@ mod tests {
     // -----------------------------------------------------------------------
     // Async future path
     // -----------------------------------------------------------------------
+
+    #[test]
+    fn resume_not_found_raises_name_error() {
+        let mut repl = MontyReplHandle::new("test.py");
+        repl.set_ext_fns(vec!["missing_fn".into()]);
+        let (tag, _) = repl.feed_start("missing_fn(1)");
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let (tag, _) = repl.resume_not_found("missing_fn");
+        assert_eq!(tag, MontyProgressTag::Error);
+        assert_eq!(repl.complete_is_error(), Some(true));
+
+        let result: serde_json::Value =
+            serde_json::from_str(repl.complete_result_json().unwrap()).unwrap();
+        assert_eq!(result["error"]["exc_type"], "NameError");
+        assert!(
+            result["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("missing_fn")
+        );
+    }
+
+    #[test]
+    fn resume_not_found_caught_in_python() {
+        let mut repl = MontyReplHandle::new("test.py");
+        repl.set_ext_fns(vec!["missing_fn".into()]);
+        let (tag, _) = repl.feed_start(
+            "try:\n    missing_fn()\nexcept NameError as e:\n    result = 'caught'\nresult",
+        );
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let (tag, _) = repl.resume_not_found("missing_fn");
+        assert_eq!(tag, MontyProgressTag::Complete);
+        let result: serde_json::Value =
+            serde_json::from_str(repl.complete_result_json().unwrap()).unwrap();
+        assert_eq!(result["value"], "caught");
+    }
+
+    #[test]
+    fn resume_not_found_wrong_state() {
+        let mut repl = MontyReplHandle::new("test.py");
+        let (tag, err) = repl.resume_not_found("foo");
+        assert_eq!(tag, MontyProgressTag::Error);
+        assert!(err.is_some());
+    }
 
     #[test]
     fn resume_as_future_then_resolve() {

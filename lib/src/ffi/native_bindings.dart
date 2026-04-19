@@ -121,6 +121,9 @@ abstract class NativeBindings {
     String errorMessage,
   );
 
+  /// Resumes signalling "function not found" (raises NameError in Python).
+  ProgressResult resumeNotFound(int handle, String fnName);
+
   /// Resumes by creating a future for the pending call.
   ProgressResult resumeAsFuture(int handle);
 
@@ -190,6 +193,9 @@ abstract class NativeBindings {
 
   /// Resumes REPL execution with an error (raises RuntimeError in Python).
   ProgressResult replResumeWithError(int handle, String errorMessage);
+
+  /// Resumes REPL execution signalling "function not found" (raises NameError).
+  ProgressResult replResumeNotFound(int handle, String fnName);
 
   /// Resumes REPL by creating a future for the pending call.
   ProgressResult replResumeAsFuture(int handle);

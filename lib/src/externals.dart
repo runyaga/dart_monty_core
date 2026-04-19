@@ -1,3 +1,4 @@
+import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 
 export 'package:dart_monty_core/src/platform/os_call_exception.dart';
@@ -13,8 +14,11 @@ typedef MontyCallback = Future<Object?> Function(Map<String, Object?> args);
 /// environment, datetime).
 ///
 /// [operation] is the dotted operation name, e.g. `"Path.read_text"`,
-/// `"os.getenv"`, `"datetime.now"`.
+/// `"os.getenv"`, `"datetime.now"`, `"date.today"`.
 /// [args] and [kwargs] are the positional and keyword arguments.
+///
+/// For `"date.today"`, return a [MontyDate] with the current date.
+/// For `"datetime.now"`, return a [MontyDateTime] with the current date/time.
 ///
 /// Throw an [OsCallException] to raise a Python exception from the handler.
 /// Return `null` to return `None` to Python.

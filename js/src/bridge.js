@@ -326,6 +326,27 @@ async function resumeWithException(excTypeJson, errorJson) {
 }
 
 /**
+ * Resume a paused OS call by signalling "function not found" — raises
+ * Python `NameError: name '<fnName>' is not defined`.
+ *
+ * @param {string} fnNameJson JSON-encoded function name.
+ * @returns {Promise<string>} JSON result.
+ */
+async function resumeNotFound(fnNameJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+
+  const session = sessions.get(sid);
+  const fnName = JSON.parse(fnNameJson);
+  const result = await callWorker(
+    sid,
+    { type: 'resumeNotFound', fnName },
+    session.timeoutMs,
+  );
+  return JSON.stringify(result);
+}
+
+/**
  * Resume by creating a future for the pending external function call.
  *
  * @returns {Promise<string>} JSON result with state: pending, resolve_futures, or complete.
@@ -620,6 +641,19 @@ async function replResumeWithError(replId, errorJson) {
   return JSON.stringify(result);
 }
 
+async function replResumeNotFound(replId, fnNameJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const fnName = JSON.parse(fnNameJson);
+  const result = await callWorker(
+    sid,
+    { type: 'replResumeNotFound', replId, fnName },
+    session.timeoutMs,
+  );
+  return JSON.stringify(result);
+}
+
 async function replDetectContinuation(source) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
@@ -678,6 +712,7 @@ window.DartMontyBridge = {
   resume,
   resumeWithError,
   resumeWithException,
+  resumeNotFound,
   resumeAsFuture,
   resolveFutures,
   resumeNameLookupValue,
@@ -701,6 +736,7 @@ window.DartMontyBridge = {
   replSetExtFns,
   replResume,
   replResumeWithError,
+  replResumeNotFound,
   replDetectContinuation,
   replDispose,
   replSnapshot,

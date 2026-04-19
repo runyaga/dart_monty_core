@@ -63,6 +63,12 @@ class WasmBindingsJs extends WasmBindings {
   }) => throw UnimplementedError();
 
   @override
+  Future<WasmProgressResult> resumeNotFound(
+    String fnName, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<WasmProgressResult> resumeAsFuture({int? sessionId}) =>
       throw UnimplementedError();
 
@@ -155,6 +161,13 @@ class WasmBindingsJs extends WasmBindings {
   @override
   Future<WasmProgressResult> replResumeWithError(
     String errorJson, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResumeNotFound(
+    String fnNameJson, {
     int? sessionId,
     String? replId,
   }) => throw UnimplementedError();

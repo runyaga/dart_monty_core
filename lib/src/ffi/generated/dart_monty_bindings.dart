@@ -199,6 +199,43 @@ MontyProgressTag monty_resume_with_exception(
   ),
 );
 
+/// Resume execution signalling "function not found" — raises NameError
+/// in Python.
+///
+/// Use this when the host can't dispatch the requested OS call (e.g. the
+/// operation name is unknown) and wants Python to see the same error it
+/// would for an undefined global, not a RuntimeError.
+///
+/// @param handle     Handle in PENDING or OS_CALL state.
+/// @param fn_name    NUL-terminated name of the missing function; embedded
+/// in the NameError message.
+/// @param out_error  Receives FFI error message on failure. Caller frees.
+/// @return           MONTY_PROGRESS_COMPLETE, _PENDING, or _ERROR.
+@ffi.Native<
+  ffi.UnsignedInt Function(
+    ffi.Pointer<MontyHandle>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>(symbol: 'monty_resume_not_found')
+external int _monty_resume_not_found(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Char> fn_name,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
+MontyProgressTag monty_resume_not_found(
+  ffi.Pointer<MontyHandle> handle,
+  ffi.Pointer<ffi.Char> fn_name,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+) => MontyProgressTag.fromValue(
+  _monty_resume_not_found(
+    handle,
+    fn_name,
+    out_error,
+  ),
+);
+
 /// Resume by creating a future (tells the VM this call returns a future).
 /// Only valid when handle is in PENDING state.
 ///
@@ -653,6 +690,33 @@ MontyProgressTag monty_repl_resume_with_error(
   _monty_repl_resume_with_error(
     handle,
     error_message,
+    out_error,
+  ),
+);
+
+/// Resume REPL execution signalling "function not found" — raises
+/// NameError in Python.
+@ffi.Native<
+  ffi.UnsignedInt Function(
+    ffi.Pointer<MontyReplHandle>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>(symbol: 'monty_repl_resume_not_found')
+external int _monty_repl_resume_not_found(
+  ffi.Pointer<MontyReplHandle> handle,
+  ffi.Pointer<ffi.Char> fn_name,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
+MontyProgressTag monty_repl_resume_not_found(
+  ffi.Pointer<MontyReplHandle> handle,
+  ffi.Pointer<ffi.Char> fn_name,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+) => MontyProgressTag.fromValue(
+  _monty_repl_resume_not_found(
+    handle,
+    fn_name,
     out_error,
   ),
 );

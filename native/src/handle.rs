@@ -236,6 +236,17 @@ impl MontyHandle {
         self.resume_with_result(result)
     }
 
+    /// Resume by signalling "function not found".
+    ///
+    /// The VM raises `NameError: name '<fn_name>' is not defined`, matching
+    /// Python semantics when a callable genuinely does not exist. Hosts use
+    /// this when they can't dispatch the OS call and want the Python script
+    /// to see a `NameError` rather than a `RuntimeError`.
+    pub fn resume_not_found(&mut self, fn_name: &str) -> (MontyProgressTag, Option<String>) {
+        let result = ExtFunctionResult::NotFound(fn_name.to_string());
+        self.resume_with_result(result)
+    }
+
     /// Resume by creating a future (tells the VM this call returns a future).
     ///
     /// The VM continues executing until all coroutines are blocked, then
@@ -1480,5 +1491,50 @@ outer()
 
         let result: Value = serde_json::from_str(handle.complete_result_json().unwrap()).unwrap();
         assert_eq!(result["value"], "limited_response");
+    }
+
+    // --- NotFound (resume_not_found) ---
+
+    #[test]
+    fn test_resume_not_found_raises_name_error() {
+        let code = "ext_fn(1)";
+        let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let (tag, _) = handle.resume_not_found("ext_fn");
+        assert_eq!(tag, MontyProgressTag::Error);
+        assert_eq!(handle.complete_is_error(), Some(true));
+
+        let result: Value = serde_json::from_str(handle.complete_result_json().unwrap()).unwrap();
+        assert_eq!(result["error"]["exc_type"], "NameError");
+        assert!(
+            result["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("ext_fn")
+        );
+    }
+
+    #[test]
+    fn test_resume_not_found_caught_as_name_error() {
+        let code = "try:\n    ext_fn(1)\nexcept NameError as e:\n    result = 'caught'\nresult";
+        let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let (tag, _) = handle.resume_not_found("ext_fn");
+        assert_eq!(tag, MontyProgressTag::Complete);
+
+        let result: Value = serde_json::from_str(handle.complete_result_json().unwrap()).unwrap();
+        assert_eq!(result["value"], "caught");
+    }
+
+    #[test]
+    fn test_resume_not_found_wrong_state() {
+        let mut handle = MontyHandle::new("2 + 2".into(), vec![], None).unwrap();
+        let (tag, err) = handle.resume_not_found("any");
+        assert_eq!(tag, MontyProgressTag::Error);
+        assert!(err.is_some());
     }
 }

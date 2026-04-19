@@ -187,6 +187,20 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   }
 
   @override
+  Future<MontyProgress> resumeNotFound(String fnName) async {
+    assertNotDisposed('resumeNotFound');
+    assertActive('resumeNotFound');
+    try {
+      final progress = await _bindings.resumeNotFound(fnName);
+
+      return translateProgress(progress);
+    } catch (e) {
+      markIdle();
+      rethrow;
+    }
+  }
+
+  @override
   Future<Uint8List> compileCode(String code) async {
     assertNotDisposed('compileCode');
     await _ensureInitialized();

@@ -30,7 +30,7 @@ reactive state, or a richer plugin system, see `dart_monty`.
 
 ```yaml
 dependencies:
-  dart_monty_core: ^0.0.12
+  dart_monty_core: ^0.0.14
 ```
 
 ### FFI (native: macOS · Linux · Windows · iOS · Android)
@@ -43,7 +43,7 @@ compiles the Rust dylib automatically when you run `dart pub get` or
 dart pub get   # triggers cargo build --release for your platform
 ```
 
-### WASM (Flutter Web)
+### WASM (Flutter Web — pub.dev package)
 
 Use [`dart_monty_flutter`](packages/dart_monty_flutter/) which auto-injects
 the JS bridge for you:
@@ -61,6 +61,37 @@ Future<void> main() async {
 are built at publish time and ship in the pub.dev package under `assets/`.
 Flutter serves them automatically at `packages/dart_monty_core/assets/`.
 No npm or Node.js needed by your app.
+
+### WASM (Flutter Web — git dependency)
+
+When depending on `dart_monty_core` via a `git:` or `path:` override, the
+pre-built WASM assets are not included (they are gitignored build artifacts).
+Copy them from the local repository to your Flutter app's `web/` directory
+once, and add a synchronous `<script>` tag so the bridge is ready before
+Flutter's `main()` runs:
+
+```bash
+# From inside your Flutter app directory
+cp /path/to/dart_monty_core/assets/dart_monty_bridge.js web/
+cp /path/to/dart_monty_core/assets/dart_monty_worker.js web/
+cp /path/to/dart_monty_core/assets/dart_monty_native.wasm web/
+```
+
+```html
+<!-- web/index.html — add before flutter_bootstrap.js, without async -->
+<script src="dart_monty_bridge.js"></script>
+<script src="flutter_bootstrap.js" async=""></script>
+```
+
+The synchronous `<script>` sets `window.DartMontyBridge` before Dart starts,
+so `DartMontyFlutter.ensureInitialized()` sees the bridge as already loaded
+and returns immediately without attempting the package-assets path.
+
+To rebuild the artifacts from source (requires Rust + Node.js):
+
+```bash
+cd js && npm install --force && node build.js
+```
 
 ### WASM (plain Dart web, no Flutter)
 
@@ -373,7 +404,7 @@ are compared. All 464 fixtures must pass.
 
 ```bash
 cd native
-cargo test                                       # 291 unit tests
+cargo test                                       # 314 unit + integration tests
 cargo clippy --all-targets -- -D warnings        # zero warnings
 ```
 
@@ -490,7 +521,7 @@ dart compile wasm test/integration/wasm_runner_wasm.dart -o test/integration/web
 #### Performance Benchmark (464 Fixtures)
 
 Benchmark conducted on an Apple M5 Max (April 2026) using headless Chrome 147.
-Execution time includes the full integration suite (440 passing fixtures).
+Execution time includes the full integration suite (464 passing fixtures).
 
 | Compiler | Passed | Skipped | Failed | Time (ms) |
 | :--- | :--- | :--- | :--- | :--- |
@@ -541,7 +572,7 @@ Some Dart API choices intentionally differ from JS:
 
 ## Native layer
 
-The Rust crate in `native/` wraps `pydantic/monty@v0.0.12` and exposes a
+The Rust crate in `native/` wraps `pydantic/monty@v0.0.14` and exposes a
 C ABI consumed by the FFI binding and compiled to WASM for the web backend.
 Bindings are generated via `ffigen`; regenerate with:
 

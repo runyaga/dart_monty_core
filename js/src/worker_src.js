@@ -594,6 +594,57 @@ function handleResumeWithException(id, excType, errorMessage) {
   self.postMessage(msg);
 }
 
+function handleResumeNotFound(id, fnName) {
+  if (!activeHandle) {
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: 'No active handle to resume.',
+      errorType: 'StateError',
+    });
+    return;
+  }
+
+  let cFnName = null;
+  let outErr = null;
+
+  let tag;
+  try {
+    cFnName = allocCString(fnName);
+    outErr = allocOutPtr();
+    tag = wasm.monty_resume_not_found(activeHandle, cFnName.ptr, outErr.ptr);
+  } catch (e) {
+    if (cFnName) wasm.monty_dealloc(cFnName.ptr, cFnName.size);
+    if (outErr) outErr.free();
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  }
+  wasm.monty_dealloc(cFnName.ptr, cFnName.size);
+
+  const errPtr = outErr.read();
+  const errMsg = readAndFreeCString(errPtr);
+  outErr.free();
+
+  let msg;
+  try {
+    msg = readProgress(id, activeHandle, tag, errMsg, SESSION_PROGRESS);
+  } catch (e) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+    throw e;
+  }
+  if (tag === PROGRESS_COMPLETE || tag === PROGRESS_ERROR) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+  }
+  self.postMessage(msg);
+}
+
 function handleResumeAsFuture(id) {
   if (!activeHandle) {
     self.postMessage({
@@ -1345,6 +1396,28 @@ function handleReplResumeWithError(id, replId, errorMessage) {
   }
 }
 
+function handleReplResumeNotFound(id, replId, fnName) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
+    return;
+  }
+  let cFnName = null;
+  let outError = null;
+  try {
+    cFnName = allocCString(fnName);
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_resume_not_found(handle, cFnName.ptr, outError.ptr);
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
+  } finally {
+    if (cFnName) wasm.monty_dealloc(cFnName.ptr, cFnName.size);
+    if (outError) outError.free();
+  }
+}
+
 function handleReplDetectContinuation(id, source) {
   let cSource = null;
   try {
@@ -1479,7 +1552,7 @@ function handleReplRestore(id, replId, dataBase64) {
 // ---------------------------------------------------------------------------
 
 self.onmessage = (e) => {
-  const { type, id, code, extFns, value, errorMessage, excType, limits,
+  const { type, id, code, extFns, value, errorMessage, excType, fnName, limits,
     dataBase64, scriptName, resultsJson, errorsJson, valueJson, source,
     replId } = e.data;
   try {
@@ -1498,6 +1571,9 @@ self.onmessage = (e) => {
         break;
       case 'resumeWithException':
         handleResumeWithException(id, excType, errorMessage);
+        break;
+      case 'resumeNotFound':
+        handleResumeNotFound(id, fnName);
         break;
       case 'resumeAsFuture':
         handleResumeAsFuture(id);
@@ -1546,6 +1622,9 @@ self.onmessage = (e) => {
         break;
       case 'replResumeWithError':
         handleReplResumeWithError(id, replId, errorMessage);
+        break;
+      case 'replResumeNotFound':
+        handleReplResumeNotFound(id, replId, fnName);
         break;
       case 'replDetectContinuation':
         handleReplDetectContinuation(id, source);

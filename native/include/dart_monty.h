@@ -140,6 +140,24 @@ MontyProgressTag monty_resume_with_exception(MontyHandle *handle,
                                              const char *error_message,
                                              char **out_error);
 
+/**
+ * Resume execution signalling "function not found" — raises NameError
+ * in Python.
+ *
+ * Use this when the host can't dispatch the requested OS call (e.g. the
+ * operation name is unknown) and wants Python to see the same error it
+ * would for an undefined global, not a RuntimeError.
+ *
+ * @param handle     Handle in PENDING or OS_CALL state.
+ * @param fn_name    NUL-terminated name of the missing function; embedded
+ *                   in the NameError message.
+ * @param out_error  Receives FFI error message on failure. Caller frees.
+ * @return           MONTY_PROGRESS_COMPLETE, _PENDING, or _ERROR.
+ */
+MontyProgressTag monty_resume_not_found(MontyHandle *handle,
+                                        const char *fn_name,
+                                        char **out_error);
+
 /* ------------------------------------------------------------------ */
 /* Async / Futures                                                    */
 /* ------------------------------------------------------------------ */
@@ -422,6 +440,14 @@ MontyProgressTag monty_repl_resume(MontyReplHandle *handle,
 MontyProgressTag monty_repl_resume_with_error(MontyReplHandle *handle,
                                                const char *error_message,
                                                char **out_error);
+
+/**
+ * Resume REPL execution signalling "function not found" — raises
+ * NameError in Python.
+ */
+MontyProgressTag monty_repl_resume_not_found(MontyReplHandle *handle,
+                                              const char *fn_name,
+                                              char **out_error);
 
 /** Resume REPL by creating a future for the pending call. */
 MontyProgressTag monty_repl_resume_as_future(MontyReplHandle *handle,

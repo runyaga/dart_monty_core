@@ -32,6 +32,12 @@ abstract class ReplBindings {
   /// Resumes by raising an error in Python.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
 
+  /// Resumes by signalling "function not found" — Python sees NameError.
+  ///
+  /// Used when the host cannot dispatch an OS call; [fnName] is embedded in
+  /// the resulting Python NameError message.
+  Future<CoreProgressResult> resumeNotFound(String fnName);
+
   /// Resumes a name lookup by indicating the name is undefined.
   ///
   /// The engine raises NameError.

@@ -200,6 +200,12 @@ abstract class MontyCoreBindings {
     String errorMessage,
   );
 
+  /// Resumes execution signalling "function not found" — Python sees NameError.
+  ///
+  /// Used when the host cannot dispatch an OS call; [fnName] is embedded in
+  /// the resulting Python NameError message.
+  Future<CoreProgressResult> resumeNotFound(String fnName);
+
   /// Resumes execution, converting the pending call into a future.
   Future<CoreProgressResult> resumeAsFuture();
 
