@@ -2,6 +2,6 @@
 # NOT committed to git; built by the publish workflow and force-staged
 # (git add -f) so dart pub publish includes them in the package.
 # Regenerate locally: cd js && npm install --force && node build.js
-dart_monty_native.wasm
-dart_monty_bridge.js
-dart_monty_worker.js
+dart_monty_core_native.wasm
+dart_monty_core_bridge.js
+dart_monty_core_worker.js

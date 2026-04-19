@@ -18,7 +18,7 @@ jobs:
       - name: Install Rust stable + wasm32-wasip1
         run: rustup target add wasm32-wasip1
 
-      - name: Build dart_monty_native.wasm
+      - name: Build dart_monty_core_native.wasm
         run: |
           cargo build \
             --manifest-path native/Cargo.toml \
@@ -40,9 +40,9 @@ jobs:
 
       - name: Verify assets
         run: |
-          for f in assets/dart_monty_bridge.js \
-                   assets/dart_monty_worker.js \
-                   assets/dart_monty_native.wasm; do
+          for f in assets/dart_monty_core_bridge.js \
+                   assets/dart_monty_core_worker.js \
+                   assets/dart_monty_core_native.wasm; do
             [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
             echo "$(du -sh $f)"
           done
@@ -52,7 +52,7 @@ jobs:
       # git index — git add -f makes them visible to pub without polluting
       # the repo history.
       - name: Stage assets for publish
-        run: git add -f assets/dart_monty_bridge.js assets/dart_monty_worker.js assets/dart_monty_native.wasm
+        run: git add -f assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm
 
       # ── Dart: analyze + publish ──────────────────────────────────────────
       - uses: dart-lang/setup-dart@v1

@@ -99,7 +99,7 @@ dart2wasm demo requires local serve.
 
 ### Assets
 
-`dart_monty_bridge.js`, `dart_monty_worker.js`, and `dart_monty_native.wasm`
+`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and `dart_monty_core_native.wasm`
 are **not committed to git** — they are built by the maintainer's publish
 workflow (Rust + Node.js) and shipped in the pub.dev package under `assets/`.
 Consumers installing via `dart pub add` receive them pre-built and do not
@@ -161,9 +161,9 @@ cd js && npm install --force && node build.js && cd ..
 dart pub get
 
 # 4. Copy bridge assets to web/
-cp assets/dart_monty_bridge.js   web/
-cp assets/dart_monty_worker.js   web/
-cp assets/dart_monty_native.wasm web/
+cp assets/dart_monty_core_bridge.js   web/
+cp assets/dart_monty_core_worker.js   web/
+cp assets/dart_monty_core_native.wasm web/
 
 # 5. Copy WASI runtime (NOT done by build.js — must be copied manually)
 mkdir -p web/@pydantic/monty-wasm32-wasi

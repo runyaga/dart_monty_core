@@ -33,7 +33,7 @@ import 'package:dart_monty_flutter/dart_monty_flutter.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // On web: injects dart_monty_bridge.js (served automatically by Flutter
+  // On web: injects dart_monty_core_bridge.js (served automatically by Flutter
   // from packages/dart_monty_core/assets/).
   // On native: no-op — the Rust dylib is compiled at build time.
   await DartMontyFlutter.ensureInitialized();
@@ -81,18 +81,18 @@ already present at build time.
 ### Web (Flutter Web)
 
 The Monty Python interpreter runs inside a Web Worker backed by a pre-built
-`dart_monty_native.wasm` binary. `dart_monty_core` ships three pre-built
+`dart_monty_core_native.wasm` binary. `dart_monty_core` ships three pre-built
 assets:
 
 | Asset | Purpose |
 |---|---|
-| `dart_monty_bridge.js` | Main-thread bridge — exposes `window.DartMontyBridge` |
-| `dart_monty_worker.js` | Web Worker — runs the WASM interpreter |
-| `dart_monty_native.wasm` | Compiled Monty Rust interpreter |
+| `dart_monty_core_bridge.js` | Main-thread bridge — exposes `window.DartMontyBridge` |
+| `dart_monty_core_worker.js` | Web Worker — runs the WASM interpreter |
+| `dart_monty_core_native.wasm` | Compiled Monty Rust interpreter |
 
 Flutter serves package assets automatically at
 `packages/dart_monty_core/assets/<file>`. `ensureInitialized()` injects a
-`<script>` tag pointing at `dart_monty_bridge.js`; the bridge and worker
+`<script>` tag pointing at `dart_monty_core_bridge.js`; the bridge and worker
 load the other two files relative to their own URL — no manual file copying
 is needed.
 

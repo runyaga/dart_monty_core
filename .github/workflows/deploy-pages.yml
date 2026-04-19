@@ -58,9 +58,9 @@ jobs:
           WEB=packages/dart_monty_web/web
           dart pub get
           cd packages/dart_monty_web && dart pub get && cd ../..
-          cp assets/dart_monty_bridge.js   $WEB/
-          cp assets/dart_monty_worker.js   $WEB/
-          cp assets/dart_monty_native.wasm $WEB/
+          cp assets/dart_monty_core_bridge.js   $WEB/
+          cp assets/dart_monty_core_worker.js   $WEB/
+          cp assets/dart_monty_core_native.wasm $WEB/
           mkdir -p $WEB/@pydantic/monty-wasm32-wasi
           cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              $WEB/@pydantic/monty-wasm32-wasi/
@@ -86,9 +86,9 @@ jobs:
           flutter create --platforms web .
 
           # Copy WASM assets so MontyWasm can load the worker at runtime
-          cp ../../assets/dart_monty_bridge.js   web/
-          cp ../../assets/dart_monty_worker.js   web/
-          cp ../../assets/dart_monty_native.wasm web/
+          cp ../../assets/dart_monty_core_bridge.js   web/
+          cp ../../assets/dart_monty_core_worker.js   web/
+          cp ../../assets/dart_monty_core_native.wasm web/
           mkdir -p web/@pydantic/monty-wasm32-wasi
           cp ../../js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              web/@pydantic/monty-wasm32-wasi/
@@ -96,7 +96,7 @@ jobs:
           # Patch index.html:
           #   1. Remove any stale coi-serviceworker (prior deploys used a broader
           #      scope that intercepts Flutter's own fetch requests, breaking load).
-          #   2. Inject dart_monty_bridge.js before flutter_bootstrap.js.
+          #   2. Inject dart_monty_core_bridge.js before flutter_bootstrap.js.
           python3 ../../tool/inject_flutter_html.py web/index.html
 
           flutter pub get

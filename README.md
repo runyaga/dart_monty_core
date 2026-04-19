@@ -6,6 +6,24 @@ a sandboxed Python interpreter written in Rust.
 **No Flutter. No bridge. No plugin registry.**  
 Works on VM (FFI), Web (WASM), and in isolates.
 
+> ### ⚠️ Experimental — expect breakage
+>
+> **`pydantic/monty` is changing daily.** Upstream frequently lands
+> breaking changes to its Rust API, Python semantics, OS call surface,
+> and bytecode format — sometimes several times per day. `dart_monty_core`
+> pins a specific upstream tag (currently **monty v0.0.14**) and bumps it
+> deliberately; each bump often requires adjustments here.
+>
+> Because of that:
+> - Pin an **exact** version in your `pubspec.yaml` (`dart_monty_core: 0.0.14`,
+>   not `^0.0.14`) — patch releases may track upstream breaking changes.
+> - Public APIs on this package, the JS bridge, and the native C ABI may
+>   change without a deprecation cycle while we're pre-1.0.
+> - Pre-built WASM assets built against one version will not run against a
+>   different native WASM binary — always rebuild both sides together.
+> - Not recommended for production. Fine for prototyping, evaluation, and
+>   internal tooling where you can re-pin quickly.
+
 ---
 
 ## What is Monty?
@@ -57,7 +75,7 @@ Future<void> main() async {
 }
 ```
 
-`dart_monty_bridge.js`, `dart_monty_worker.js`, and `dart_monty_native.wasm`
+`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and `dart_monty_core_native.wasm`
 are built at publish time and ship in the pub.dev package under `assets/`.
 Flutter serves them automatically at `packages/dart_monty_core/assets/`.
 No npm or Node.js needed by your app.
@@ -72,14 +90,14 @@ Flutter's `main()` runs:
 
 ```bash
 # From inside your Flutter app directory
-cp /path/to/dart_monty_core/assets/dart_monty_bridge.js web/
-cp /path/to/dart_monty_core/assets/dart_monty_worker.js web/
-cp /path/to/dart_monty_core/assets/dart_monty_native.wasm web/
+cp /path/to/dart_monty_core/assets/dart_monty_core_bridge.js web/
+cp /path/to/dart_monty_core/assets/dart_monty_core_worker.js web/
+cp /path/to/dart_monty_core/assets/dart_monty_core_native.wasm web/
 ```
 
 ```html
 <!-- web/index.html — add before flutter_bootstrap.js, without async -->
-<script src="dart_monty_bridge.js"></script>
+<script src="dart_monty_core_bridge.js"></script>
 <script src="flutter_bootstrap.js" async=""></script>
 ```
 
@@ -99,14 +117,14 @@ Copy the three asset files to your `web/` directory and add a script tag:
 
 ```bash
 # One-time copy from pub cache
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_bridge.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_worker.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_native.wasm web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_bridge.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_worker.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_native.wasm web/
 ```
 
 ```html
 <!-- index.html — must load before your compiled Dart app -->
-<script src="dart_monty_bridge.js"></script>
+<script src="dart_monty_core_bridge.js"></script>
 ```
 
 > **Note for JS/npm users**: If you are building a JavaScript or TypeScript
@@ -424,8 +442,8 @@ bash tool/test_wasm.sh --skip-build
 
 **What the pipeline does:**
 
-1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_native.wasm`
-2. `cd js && npm install --force && node build.js` — esbuild bundles `dart_monty_bridge.js` and `dart_monty_worker.js` into `assets/`
+1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_core_native.wasm`, which `build.js` copies into `assets/`
+2. `cd js && npm install --force && node build.js` — esbuild bundles `dart_monty_core_bridge.js` and `dart_monty_core_worker.js` into `assets/`
 3. Copy WASI runtime: `cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs test/integration/web/@pydantic/monty-wasm32-wasi/` — required for dart2wasm; **not** done by `build.js`
 4. `dart compile js test/integration/wasm_runner.dart` — compiles the dart2js fixture runner
 5. A Python COOP/COEP HTTP server serves `test/integration/web/fixtures.html`

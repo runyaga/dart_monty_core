@@ -8,7 +8,7 @@ repl_demo.wasm
 repl_demo.wasm.map
 
 # Bridge assets — copied from js/ build output, never committed
-dart_monty_bridge.js
-dart_monty_worker.js
-dart_monty_native.wasm
+dart_monty_core_bridge.js
+dart_monty_core_worker.js
+dart_monty_core_native.wasm
 @pydantic/

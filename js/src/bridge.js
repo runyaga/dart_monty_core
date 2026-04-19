@@ -40,7 +40,7 @@ function createSession() {
       // Blob URL trampoline: allows Worker creation when bridge.js is
       // served from a different origin (e.g. CDN). Direct cross-origin
       // Worker URLs throw SecurityError; a same-origin Blob proxy avoids it.
-      const workerUrl = new URL('./dart_monty_worker.js', _bridgeBase).href;
+      const workerUrl = new URL('./dart_monty_core_worker.js', _bridgeBase).href;
       const blob = new Blob(
         [`import "${workerUrl}";`],
         { type: 'application/javascript' },

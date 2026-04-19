@@ -48,14 +48,14 @@ if [ "$SKIP_BUILD" = false ]; then
   cd "$PKG/native"
   cargo build --target wasm32-wasip1 --release
   mkdir -p "$ASSETS_DIR"
-  cp target/wasm32-wasip1/release/dart_monty_native.wasm "$ASSETS_DIR/"
-  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_native.wasm" | cut -f1))"
+  cp target/wasm32-wasip1/release/dart_monty_core_native.wasm "$ASSETS_DIR/"
+  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"
 fi
 
-if [ ! -f "$ASSETS_DIR/dart_monty_native.wasm" ]; then
-  echo "ERROR: Missing WASM binary: $ASSETS_DIR/dart_monty_native.wasm"
+if [ ! -f "$ASSETS_DIR/dart_monty_core_native.wasm" ]; then
+  echo "ERROR: Missing WASM binary: $ASSETS_DIR/dart_monty_core_native.wasm"
   echo "  Run without --skip-build to build it."
   exit 1
 fi
@@ -72,7 +72,8 @@ if [ "$SKIP_BUILD" = false ]; then
   fi
   cd "$JS_DIR"
   npm install --silent
-  # build.js copies dart_monty_native.wasm from native/target/ —
+  # build.js copies the WASM binary from native/target/ into assets/ under the
+  # deployed name (dart_monty_core_native.wasm) —
   # point it at our assets dir by running it from there
   node build.js
   echo "  JS bridge: OK"
@@ -80,7 +81,7 @@ else
   echo "--- Skipping JS bridge build (--skip-build) ---"
 fi
 
-for f in dart_monty_bridge.js dart_monty_worker.js; do
+for f in dart_monty_core_bridge.js dart_monty_core_worker.js; do
   if [ ! -f "$ASSETS_DIR/$f" ]; then
     echo "ERROR: Missing JS asset: $ASSETS_DIR/$f"
     echo "  Run without --skip-build to build the JS bridge."
@@ -110,9 +111,9 @@ echo "  Compile: OK"
 # -------------------------------------------------------
 echo ""
 echo "--- Copying assets to test web dir ---"
-cp "$ASSETS_DIR/dart_monty_bridge.js"   "$INTEG_WEB/"
-cp "$ASSETS_DIR/dart_monty_worker.js"   "$INTEG_WEB/"
-cp "$ASSETS_DIR/dart_monty_native.wasm" "$INTEG_WEB/"
+cp "$ASSETS_DIR/dart_monty_core_bridge.js"   "$INTEG_WEB/"
+cp "$ASSETS_DIR/dart_monty_core_worker.js"   "$INTEG_WEB/"
+cp "$ASSETS_DIR/dart_monty_core_native.wasm" "$INTEG_WEB/"
 echo "  Assets: OK"
 
 # -------------------------------------------------------
@@ -125,9 +126,9 @@ cleanup() {
     kill "$SERVE_PID" 2>/dev/null || true
     wait "$SERVE_PID" 2>/dev/null || true
   fi
-  rm -f "$INTEG_WEB/dart_monty_bridge.js" \
-        "$INTEG_WEB/dart_monty_worker.js" \
-        "$INTEG_WEB/dart_monty_native.wasm" \
+  rm -f "$INTEG_WEB/dart_monty_core_bridge.js" \
+        "$INTEG_WEB/dart_monty_core_worker.js" \
+        "$INTEG_WEB/dart_monty_core_native.wasm" \
         "$INTEG_WEB/wasm_runner.dart.js" \
         "$INTEG_WEB/wasm_runner.dart.js.deps"
 }

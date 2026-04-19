@@ -20,9 +20,9 @@ js/node_modules/
 # Regenerate locally: cd js && npm install --force && node build.js
 
 # WASM test runner staging (copied from assets/ before each test run)
-test/integration/web/dart_monty_bridge.js
-test/integration/web/dart_monty_worker.js
-test/integration/web/dart_monty_native.wasm
+test/integration/web/dart_monty_core_bridge.js
+test/integration/web/dart_monty_core_worker.js
+test/integration/web/dart_monty_core_native.wasm
 test/integration/web/wasm_runner.dart.js
 test/integration/web/wasm_runner.dart.js.map
 test/integration/web/wasm_runner.dart.js.deps

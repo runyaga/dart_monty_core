@@ -4,7 +4,7 @@ Patch Flutter's web/index.html for the dart_monty_core GitHub Pages deploy:
 
   1. Remove any stale coi-serviceworker — prior deployments may have registered
      one with a scope broad enough to cover /flutter/, breaking the page on load.
-  2. Inject dart_monty_bridge.js before flutter_bootstrap.js so that
+  2. Inject dart_monty_core_bridge.js before flutter_bootstrap.js so that
      window.DartMontyBridge exists before any Dart code runs.
 
 Usage:
@@ -32,7 +32,7 @@ CLEANUP_SCRIPT = """\
 </script>
 """
 
-BRIDGE_TAG = '<script src="dart_monty_bridge.js"></script>\n  '
+BRIDGE_TAG = '<script src="dart_monty_core_bridge.js"></script>\n  '
 
 
 def patch(path: str) -> None:

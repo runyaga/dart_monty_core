@@ -12,9 +12,9 @@ void main(List<String> args) async {
     final arch = code.targetArchitecture;
 
     final libName = switch (os) {
-      OS.macOS => 'libdart_monty_native.dylib',
-      OS.linux => 'libdart_monty_native.so',
-      OS.windows => 'dart_monty_native.dll',
+      OS.macOS => 'libdart_monty_core_native.dylib',
+      OS.linux => 'libdart_monty_core_native.so',
+      OS.windows => 'dart_monty_core_native.dll',
       _ => null,
     };
 

@@ -7,7 +7,7 @@
 use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
-use dart_monty_native::*;
+use dart_monty_core_native::*;
 use monty::{
     ExtFunctionResult, MontyObject, MontyRun, NameLookupResult, NoLimitTracker, PrintWriter,
     ResolveFutures, RunProgress,

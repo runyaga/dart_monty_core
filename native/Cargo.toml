@@ -1,5 +1,5 @@
 [package]
-name = "dart_monty_native"
+name = "dart_monty_core_native"
 version = "0.0.14"
 edition = "2024"
 license = "MIT"
@@ -10,7 +10,7 @@ name = "oracle"
 path = "src/bin/oracle.rs"
 
 [lib]
-name = "dart_monty_native"
+name = "dart_monty_core_native"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]

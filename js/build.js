@@ -4,9 +4,9 @@
  *
  * Direct C-ABI — zero npm runtime dependencies at runtime.
  *
- * 1. esbuild worker_src.js + wasm_glue.js → ../assets/dart_monty_worker.js (ESM)
- * 2. esbuild bridge.js → ../assets/dart_monty_bridge.js (IIFE)
- * 3. Copy dart_monty_native.wasm from native/target/ → ../assets/
+ * 1. esbuild worker_src.js + wasm_glue.js → ../assets/dart_monty_core_worker.js (ESM)
+ * 2. esbuild bridge.js → ../assets/dart_monty_core_bridge.js (IIFE)
+ * 3. Copy dart_monty_core_native.wasm from native/target/ → ../assets/
  * 4. Run wasm-opt -Oz (if available)
  *
  * Directory layout (relative to this file at dart_monty_core/js/build.js):
@@ -24,7 +24,7 @@ const NATIVE_TARGET = path.resolve(
   __dirname, '..', 'native', 'target',
   'wasm32-wasip1', 'release',
 );
-const WASM_NAME = 'dart_monty_native.wasm';
+const WASM_NAME = 'dart_monty_core_native.wasm';
 
 // Ensure assets directory exists
 fs.mkdirSync(ASSETS, { recursive: true });
@@ -34,7 +34,7 @@ console.log('[build] Bundling worker (C-ABI)...');
 execSync(
   `npx esbuild src/worker_src.js ` +
     `--bundle --format=esm ` +
-    `--outfile=${path.join(ASSETS, 'dart_monty_worker.js')} ` +
+    `--outfile=${path.join(ASSETS, 'dart_monty_core_worker.js')} ` +
     `--platform=browser ` +
     `--external:*.wasm ` +
     `--log-level=warning`,
@@ -46,7 +46,7 @@ console.log('[build] Bundling bridge...');
 execSync(
   `npx esbuild src/bridge.js ` +
     `--bundle --format=iife ` +
-    `--outfile=${path.join(ASSETS, 'dart_monty_bridge.js')} ` +
+    `--outfile=${path.join(ASSETS, 'dart_monty_core_bridge.js')} ` +
     `--platform=browser ` +
     `--log-level=warning`,
   { cwd: __dirname, stdio: 'inherit' },
