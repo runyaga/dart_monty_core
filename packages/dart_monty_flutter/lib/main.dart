@@ -157,7 +157,7 @@ const _kSamples = <_Sample>[
         'starts; MontyScriptError wraps runtime exceptions with a Python '
         'traceback. Each step exercises a different subtype.',
     steps: [
-      _Step(label: 'SyntaxError', code: 'def broken('),
+      _Step(label: 'SyntaxError', code: 'def broken(:'),
       _Step(label: 'ZeroDivisionError', code: '1 / 0'),
       _Step(label: 'NameError', code: 'undefined_name'),
     ],
@@ -537,8 +537,10 @@ class _ExecPanelState extends State<_ExecPanel> {
       }
     } on MontyResourceError catch (e) {
       _write('ResourceError: ${e.message}', _LineStyle.error);
+    } on MontyScriptError catch (e) {
+      _write('${e.excType}: ${e.message}', _LineStyle.error);
     } on MontyError catch (e) {
-      _write('Error: $e', _LineStyle.error);
+      _write('${e.runtimeType}: ${e.message}', _LineStyle.error);
     }
   }
 
@@ -658,8 +660,10 @@ class _ReplPanelState extends State<_ReplPanel> {
       } else if (result.value is! MontyNone) {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
       }
+    } on MontyScriptError catch (e) {
+      _write('${e.excType}: ${e.message}', _LineStyle.error);
     } on MontyError catch (e) {
-      _write('Error: $e', _LineStyle.error);
+      _write('${e.runtimeType}: ${e.message}', _LineStyle.error);
     }
   }
 
@@ -852,8 +856,10 @@ class _ExternalsPanelState extends State<_ExternalsPanel> {
       } else if (result.value is! MontyNone) {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
       }
+    } on MontyScriptError catch (e) {
+      _write('${e.excType}: ${e.message}', _LineStyle.error);
     } on MontyError catch (e) {
-      _write('Error: $e', _LineStyle.error);
+      _write('${e.runtimeType}: ${e.message}', _LineStyle.error);
     }
   }
 
@@ -957,8 +963,10 @@ class _VfsPanelState extends State<_VfsPanel> {
       } else if (result.value is! MontyNone) {
         _write('=> ${_fmtValue(result.value)}', _LineStyle.output);
       }
+    } on MontyScriptError catch (e) {
+      _write('${e.excType}: ${e.message}', _LineStyle.error);
     } on MontyError catch (e) {
-      _write('Error: $e', _LineStyle.error);
+      _write('${e.runtimeType}: ${e.message}', _LineStyle.error);
     }
   }
 
@@ -1127,8 +1135,10 @@ class _SessionPanelState extends State<_SessionPanel> {
             progress = await widget.session.resume(null);
         }
       }
+    } on MontyScriptError catch (e) {
+      _write('${e.excType}: ${e.message}', _LineStyle.error);
     } on MontyError catch (e) {
-      _write('Error: $e', _LineStyle.error);
+      _write('${e.runtimeType}: ${e.message}', _LineStyle.error);
     }
   }
 

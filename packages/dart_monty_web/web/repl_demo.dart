@@ -157,8 +157,10 @@ void _initReplPanel() {
       } else if (result.value is! MontyNone) {
         write('=> ${_fmt(result.value)}', className: 'output-line');
       }
+    } on MontyScriptError catch (e) {
+      write('${e.excType}: ${e.message}', className: 'error-line');
     } on MontyError catch (e) {
-      write('Error: $e', className: 'error-line');
+      write('${e.runtimeType}: ${e.message}', className: 'error-line');
     }
     input.focus();
   }
@@ -394,8 +396,10 @@ void _initExternalsPanel() {
             progress = await session.resume(null);
         }
       }
+    } on MontyScriptError catch (e) {
+      write('${e.excType}: ${e.message}', className: 'error-line');
     } on MontyError catch (e) {
-      write('Error: $e', className: 'error-line');
+      write('${e.runtimeType}: ${e.message}', className: 'error-line');
       input.focus();
     }
   }
@@ -460,8 +464,10 @@ void _initVfsPanel() {
       } else if (result.value is! MontyNone) {
         write('=> ${_fmt(result.value)}', className: 'output-line');
       }
+    } on MontyScriptError catch (e) {
+      write('${e.excType}: ${e.message}', className: 'error-line');
     } on MontyError catch (e) {
-      write('Error: $e', className: 'error-line');
+      write('${e.runtimeType}: ${e.message}', className: 'error-line');
     }
     input.focus();
   }
@@ -592,7 +598,7 @@ const _kSamples = <_Sample>[
         'starts; MontyScriptError wraps runtime exceptions with a Python '
         'traceback. Each snippet exercises a different subtype.',
     steps: [
-      _Step(label: 'SyntaxError', code: 'def broken('),
+      _Step(label: 'SyntaxError', code: 'def broken(:'),
       _Step(label: 'ZeroDivisionError', code: '1 / 0'),
       _Step(label: 'NameError', code: 'undefined_name'),
     ],
