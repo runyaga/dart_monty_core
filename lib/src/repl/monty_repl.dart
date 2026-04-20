@@ -180,7 +180,7 @@ class MontyRepl {
     }
 
     // Iterative path: drive the start/resume loop, dispatching externals.
-    _bindings.setExtFns(externals.keys.toList());
+    await _bindings.setExtFns(externals.keys.toList());
     final initial = _translateProgress(
       await _bindings.feedStart(effectiveCode),
     );
@@ -204,7 +204,7 @@ class MontyRepl {
     _checkNotDisposed();
     await _ensureCreated();
     if (externalFunctions != null && externalFunctions.isNotEmpty) {
-      _bindings.setExtFns(externalFunctions);
+      await _bindings.setExtFns(externalFunctions);
     }
 
     return _translateProgress(await _bindings.feedStart(code));
