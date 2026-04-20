@@ -157,7 +157,7 @@ const _kSamples = <_Sample>[
         'starts; MontyScriptError wraps runtime exceptions with a Python '
         'traceback. Each step exercises a different subtype.',
     steps: [
-      _Step(label: 'SyntaxError', code: 'def broken('),
+      _Step(label: 'SyntaxError', code: 'def broken(:'),
       _Step(label: 'ZeroDivisionError', code: '1 / 0'),
       _Step(label: 'NameError', code: 'undefined_name'),
     ],
