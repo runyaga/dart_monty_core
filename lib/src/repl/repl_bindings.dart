@@ -21,7 +21,7 @@ abstract class ReplBindings {
   Future<int> detectContinuation(String source);
 
   /// Registers external function names for name resolution.
-  void setExtFns(List<String> names);
+  Future<void> setExtFns(List<String> names);
 
   /// Starts iterative execution. Pauses at external function calls.
   Future<CoreProgressResult> feedStart(String code);

@@ -95,7 +95,7 @@ class FfiReplBindings implements ReplBindings {
   // -----------------------------------------------------------------------
 
   @override
-  void setExtFns(List<String> names) {
+  Future<void> setExtFns(List<String> names) async {
     final handle = _replHandle;
     if (handle == null) return;
     _bindings.replSetExtFns(handle, names.join(','));

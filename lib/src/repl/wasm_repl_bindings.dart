@@ -53,11 +53,8 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
-  void setExtFns(List<String> names) {
-    // Fire-and-forget — the Worker processes this synchronously.
-    // ignore: discarded_futures
-    _bindings.replSetExtFns(names.join(','), replId: _replId);
-  }
+  Future<void> setExtFns(List<String> names) =>
+      _bindings.replSetExtFns(json.encode(names), replId: _replId);
 
   @override
   Future<CoreProgressResult> feedStart(String code) async {
