@@ -166,32 +166,29 @@ void main() {
       expect(missing.value, const MontyBool(false));
     });
 
-    test(
-      'OsCallException becomes Python RuntimeError, REPL survives',
-      () async {
-        // Handler that throws OsCallException for every op — ensures the
-        // exception-to-RuntimeError translation is exercised even for ops like
-        // read_text that we know are real OS calls.
-        Future<Object?> alwaysThrows(
-          String op,
-          List<Object?> args,
-          Map<String, Object?>? kwargs,
-        ) async => throw OsCallException('handler rejected: $op');
-        final repl = MontyRepl();
-        addTearDown(repl.dispose);
+    test('OsCallException → Python RuntimeError, REPL survives', () async {
+      // Handler that throws OsCallException for every op — ensures the
+      // exception-to-RuntimeError translation is exercised even for ops like
+      // read_text that we know are real OS calls.
+      Future<Object?> alwaysThrows(
+        String op,
+        List<Object?> args,
+        Map<String, Object?>? kwargs,
+      ) async => throw OsCallException('handler rejected: $op');
+      final repl = MontyRepl();
+      addTearDown(repl.dispose);
 
-        await repl.feed('import pathlib', osHandler: alwaysThrows);
+      await repl.feed('import pathlib', osHandler: alwaysThrows);
 
-        // read_text is a real OS call → alwaysThrows → Python RuntimeError
-        final result = await repl.feed(
-          "try:\n  pathlib.Path('/x').read_text()\nexcept RuntimeError as e:\n  str(e)",
-          osHandler: alwaysThrows,
-        );
-        expect(result.error, isNull); // Python caught it — no Dart exception
-        // REPL survives; subsequent calls still work
-        final ok = await repl.feed('1 + 1');
-        expect(ok.value, const MontyInt(2));
-      },
-    );
+      // read_text is a real OS call → alwaysThrows → Python RuntimeError
+      final result = await repl.feed(
+        "try:\n  pathlib.Path('/x').read_text()\nexcept RuntimeError as e:\n  str(e)",
+        osHandler: alwaysThrows,
+      );
+      expect(result.error, isNull); // Python caught it — no Dart exception
+      // REPL survives; subsequent calls still work
+      final ok = await repl.feed('1 + 1');
+      expect(ok.value, const MontyInt(2));
+    });
   });
 }
