@@ -54,7 +54,7 @@ class WasmReplBindings implements ReplBindings {
 
   @override
   Future<void> setExtFns(List<String> names) =>
-      _bindings.replSetExtFns(json.encode(names), replId: _replId);
+      _bindings.replSetExtFns(names.join(','), replId: _replId);
 
   @override
   Future<CoreProgressResult> feedStart(String code) async {
