@@ -614,11 +614,11 @@ async function replFeedStart(replId, code) {
   return JSON.stringify(result);
 }
 
-async function replSetExtFns(replId, extFnsJson) {
+async function replSetExtFns(replId, extFnsCsv) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
-  const extFns = JSON.parse(extFnsJson);
+  const extFns = extFnsCsv ? extFnsCsv.split(',') : [];
   const result = await callWorker(sid, { type: 'replSetExtFns', replId, extFns }, session.timeoutMs);
   return JSON.stringify(result);
 }
