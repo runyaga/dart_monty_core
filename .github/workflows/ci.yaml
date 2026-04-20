@@ -413,8 +413,12 @@ jobs:
             local label=$2
             local log=$(mktemp)
             echo "--- Running $label test ---"
-            
-            timeout 300 "$CHROME" \
+
+            # Run Chrome in the background and stream stderr to the log file.
+            # Poll the log for FIXTURE_DONE instead of waiting for Chrome to
+            # exit — headless Chrome never exits on its own, so without this
+            # we burn the full 300s timeout on every run.
+            "$CHROME" \
               --headless \
               --disable-gpu \
               --no-sandbox \
@@ -422,18 +426,30 @@ jobs:
               --enable-logging=stderr \
               --v=0 \
               "$url" \
-              2>"$log" || true
+              2>"$log" &
+            local chrome_pid=$!
+
+            local elapsed=0
+            while [ $elapsed -lt 300 ]; do
+              if grep -q 'FIXTURE_DONE:' "$log" 2>/dev/null; then
+                break
+              fi
+              sleep 1
+              elapsed=$((elapsed + 1))
+            done
+            kill "$chrome_pid" 2>/dev/null || true
+            wait "$chrome_pid" 2>/dev/null || true
 
             DONE_LINE=$(grep -o 'FIXTURE_DONE:{[^}]*}' "$log" || true)
             if [ -z "$DONE_LINE" ]; then
-              echo "ERROR ($label): No FIXTURE_DONE line captured. Chrome output:"
+              echo "ERROR ($label): No FIXTURE_DONE line captured after ${elapsed}s. Chrome output:"
               grep -i "CONSOLE\|FIXTURE\|ERROR" "$log" | head -60 || true
               rm -f "$log"
               TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
               return
             fi
 
-            echo "$label: $DONE_LINE"
+            echo "$label: $DONE_LINE (${elapsed}s)"
             FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | wc -l || echo 0)
             if [ "$FAILURES" -gt 0 ]; then
               echo "ERROR ($label): $FAILURES fixtures failed"
