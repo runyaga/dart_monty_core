@@ -48,7 +48,9 @@ if [ ! -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
     echo "FATAL: npm not found. Install Node.js to fetch @pydantic/monty-wasm32-wasi."
     exit 1
   fi
-  (cd "$PKG/js" && npm install --silent)
+  # --force bypasses EBADPLATFORM on arm64 hosts (the WASI package declares
+  # cpu: wasm32). tool/test_wasm.sh and the CI test-wasm job already use --force.
+  (cd "$PKG/js" && npm install --force --silent)
 fi
 if [ ! -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
   echo "FATAL: $WASI_PKG/wasi-worker-browser.mjs still missing after npm install"
