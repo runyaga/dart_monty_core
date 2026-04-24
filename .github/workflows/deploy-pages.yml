@@ -25,10 +25,6 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── Toolchains ──────────────────────────────────────────────────────────
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip1
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -37,22 +33,20 @@ jobs:
         with:
           sdk: stable
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
+      # ── Web REPL — uses committed assets (Mode A) ───────────────────────────
+      # Assets live in assets/ and are committed to git. No cargo build or
+      # node build.js step needed. CI's drift-check job guarantees the
+      # committed assets match the Rust source on every PR.
+      #
+      # npm install is only needed for @pydantic/monty-wasm32-wasi — a
+      # runtime dep (WASI worker shim) that isn't produced by our build.
+      # --force: package declares cpu:wasm32; npm refuses on x64 Linux
+      # otherwise. The package is a WASM binary — the check is a false
+      # positive.
+      - name: Install WASI runtime dep
+        working-directory: js
+        run: npm install --force
 
-      # ── Rust WASM binary ─────────────────────────────────────────────────────
-      - name: Build Rust WASM binary
-        run: cd native && cargo build --release --target wasm32-wasip1
-
-      # ── JS bridge (esbuild → assets/) ───────────────────────────────────────
-      # --force: @pydantic/monty-wasm32-wasi declares cpu:wasm32; npm refuses on
-      # x64 Linux without --force. The package is a WASM binary — the check is a
-      # false positive.
-      - name: Build JS bridge
-        run: cd js && npm install --force && node build.js
-
-      # ── Web REPL — shared setup (assets, deps) ──────────────────────────────
       - name: Prepare web REPL assets
         run: |
           WEB=packages/dart_monty_web/web
@@ -77,37 +71,15 @@ jobs:
           dart compile wasm packages/dart_monty_web/web/repl_demo.dart \
             -o packages/dart_monty_web/web/repl_demo.wasm
 
-      # ── Flutter web ──────────────────────────────────────────────────────────
-      # flutter create --platforms web adds web/ scaffolding if not present.
-      # It is idempotent when web/ already exists.
-      - name: Build Flutter web
-        run: |
-          cd packages/dart_monty_flutter
-          flutter create --platforms web .
-
-          # Copy WASM assets so MontyWasm can load the worker at runtime
-          cp ../../assets/dart_monty_core_bridge.js   web/
-          cp ../../assets/dart_monty_core_worker.js   web/
-          cp ../../assets/dart_monty_core_native.wasm web/
-          mkdir -p web/@pydantic/monty-wasm32-wasi
-          cp ../../js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-             web/@pydantic/monty-wasm32-wasi/
-
-          # Patch index.html:
-          #   1. Remove any stale coi-serviceworker (prior deploys used a broader
-          #      scope that intercepts Flutter's own fetch requests, breaking load).
-          #   2. Inject dart_monty_core_bridge.js before flutter_bootstrap.js.
-          python3 ../../tool/inject_flutter_html.py web/index.html
-
-          flutter pub get
-          flutter build web --base-href /dart_monty_core/flutter/
-
       # ── Assemble site/ ───────────────────────────────────────────────────────
+      # Flutter REPL demo removed: the dart_monty_flutter sidecar was deleted
+      # under the Mode A asset refactor. The shim moves to dart_monty as
+      # DartMonty.ensureInitialized(). A replacement Flutter demo can live in
+      # dart_monty/example/ later if wanted.
       - name: Assemble site
         run: |
-          mkdir -p site/repl site/flutter
+          mkdir -p site/repl
           cp -r packages/dart_monty_web/web/. site/repl/
-          cp -r packages/dart_monty_flutter/build/web/. site/flutter/
           cp docs/index.html site/index.html
 
       # ── Deploy ───────────────────────────────────────────────────────────────
