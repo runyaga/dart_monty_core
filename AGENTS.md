@@ -41,8 +41,10 @@ js/src/ (esbuild via node build.js)
 **Rule**: `assets/` is the only directory that receives build output
 directly. Everything else copies from `assets/`. The three built files
 in `assets/` **are committed to git** (Mode A asset distribution).
-CI's `drift-check` job re-runs `tool/prebuild.sh` on every PR and
-fails if the rebuild produces different bytes. Regenerate locally:
+CI exercises the WASM/JS bridge through the `test-wasm` integration
+suite on every PR; byte-level drift-check (rebuild-and-compare) is
+deferred until reproducible cross-host WASM builds are solved.
+Regenerate locally when source changes:
 
 ```bash
 bash tool/prebuild.sh
@@ -537,5 +539,5 @@ If you modify any source file, rebuild the corresponding artifact before testing
 | FFI `DynamicLibraryLoadError` | Native dylib not built | `cd native && cargo build --release` |
 | FFI tests: `ProcessException` on oracle | Oracle binary not built | `cd native && cargo build --bin oracle` |
 | Bindings stale check fails in CI | C header changed, ffigen not re-run | `bash tool/generate_bindings.sh` |
-| CI `drift-check` fails | Committed `assets/` stale vs source | `bash tool/prebuild.sh && git add assets/` |
+| `assets/` stale after editing `native/` or `js/` | Forgot to regenerate | `bash tool/prebuild.sh && git add assets/` |
 | GitHub Pages REPL broken (SharedArrayBuffer) | Pages can't set COOP/COEP headers | Expected — dart2js works; dart2wasm needs local serve |

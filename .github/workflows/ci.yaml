@@ -239,38 +239,6 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Asset drift check — assets/ is committed (Mode A); reverify against
-  # a fresh rebuild so the committed files never diverge from the Rust
-  # crate + JS bridge source.
-  # ---------------------------------------------------------------------------
-  drift-check:
-    name: Assets drift check
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Rebuild assets
-        run: bash tool/prebuild.sh
-      - name: Verify committed assets match rebuild
-        run: |
-          if ! git diff --exit-code assets/; then
-            echo "::error::Committed assets/ differ from rebuild output."
-            echo "Run locally: bash tool/prebuild.sh && git add assets/ && commit."
-            exit 1
-          fi
-
-  # ---------------------------------------------------------------------------
   # FFI integration tests — 464 fixtures, oracle binary vs MontyFfi
   # Runs on VM (JIT). The oracle subprocess itself is a Rust binary.
   # ---------------------------------------------------------------------------

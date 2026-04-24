@@ -135,9 +135,11 @@ the Rust crate or JS bridge changes. Requires Rust (with the
 bash tool/prebuild.sh
 ```
 
-CI verifies on every PR that the committed `assets/` match a fresh
-rebuild. If you change `native/` or `js/` source, run `tool/prebuild.sh`
-and commit the result in the same PR.
+If you change `native/` or `js/` source, run `tool/prebuild.sh` and
+commit the result in the same PR. CI runs the WASM/JS integration
+suite on every PR, so a stale `assets/` that no longer parses or
+runs will fail `test-wasm`. Byte-level drift-check (rebuild-and-compare)
+is deferred pending a reproducible cross-host WASM build story.
 
 ---
 

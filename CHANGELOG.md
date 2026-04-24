@@ -10,8 +10,9 @@
   by Flutter's asset bundler. No manual `cp` step required.
 - **`tool/prebuild.sh`** — canonical regeneration script for the three
   web assets (`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`,
-  `dart_monty_core_native.wasm`). CI verifies no drift against the
-  committed outputs.
+  `dart_monty_core_native.wasm`). Byte-level drift-check is deferred
+  pending reproducible cross-host WASM builds; CI still exercises
+  the assets via the `test-wasm` integration suite.
 
 ### Changed
 

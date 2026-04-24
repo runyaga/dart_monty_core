@@ -14,29 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Verify committed assets are fresh ─────────────────────────────────
-      # Assets are committed to git (Mode A). Rebuild from source and assert
-      # the result matches what's committed — refuse to publish stale assets.
-      - name: Install Rust stable + wasm32-wasip1
-        run: rustup target add wasm32-wasip1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: js/package-lock.json
-
-      - name: Rebuild assets
-        run: bash tool/prebuild.sh
-
-      - name: Fail if committed assets are stale
-        run: |
-          if ! git diff --exit-code assets/; then
-            echo "::error::Committed assets/ are stale relative to source."
-            echo "Run locally: bash tool/prebuild.sh && git add assets/ && commit"
-            echo "then re-tag."
-            exit 1
-          fi
+      # Assets are committed to git (Mode A). No rebuild or force-stage
+      # step is needed — dart pub publish picks up whatever is in the
+      # working tree. Release authors are responsible for committing
+      # fresh assets via `bash tool/prebuild.sh` before tagging.
+      # (Reproducible cross-host WASM builds are tracked separately;
+      # until that's solved, drift-check is deferred.)
 
       # ── Dart: analyze + publish ──────────────────────────────────────────
       - uses: dart-lang/setup-dart@v1
