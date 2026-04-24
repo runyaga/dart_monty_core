@@ -64,29 +64,22 @@ dart pub get   # triggers cargo build --release for your platform
 
 ### WASM (Flutter Web)
 
-Flutter consumers use `dart_monty` for the high-level API and depend on
-`dart_monty_core` so Flutter's asset bundler can locate the WASM/JS
-files directly. Flutter's asset resolver does not chase transitive
-references — `- package: X` must name the package that physically
-contains the files — so both deps are required.
+Flutter consumers depend on [`dart_monty`](https://github.com/runyaga/dart_monty)
+(the high-level API). `dart_monty_core` comes in transitively and
+Flutter automatically bundles its declared `flutter.assets` — no
+consumer-side redeclaration needed.
 
 ```yaml
 # pubspec.yaml
 dependencies:
-  dart_monty: ^<version>
-  # Required — Flutter's asset bundler needs this package listed
-  # directly. Do not remove; it is not redundant.
-  dart_monty_core: ^<version>
-
-flutter:
-  assets:
-    - packages/dart_monty_core/assets/dart_monty_core_bridge.js
-    - packages/dart_monty_core/assets/dart_monty_core_worker.js
-    - packages/dart_monty_core/assets/dart_monty_core_native.wasm
+  dart_monty: ^<version>   # dart_monty_core comes in transitively
 ```
 
 ```dart
 // main.dart
+import 'package:dart_monty/dart_monty.dart';
+import 'package:flutter/widgets.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await DartMonty.ensureInitialized(); // loads bridge on web; no-op on native
@@ -95,15 +88,15 @@ Future<void> main() async {
 ```
 
 `DartMonty.ensureInitialized()` dynamically injects
-`<script src="packages/dart_monty_core/assets/dart_monty_core_bridge.js">`
+`<script src="assets/packages/dart_monty_core/lib/assets/dart_monty_core_bridge.js">`
 into the document, awaits load, and verifies the bridge is ready. No
 `<script>` tag in `web/index.html` is required; `--base-href` is
 honoured automatically. The three built assets
 (`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and
-`dart_monty_core_native.wasm`) live under `lib/assets/` (Flutter's
-`packages/<name>/...` URI resolves against a package's `lib/` root)
-and are committed to git — they ship with both pub.dev releases and
-`git:`/`path:` dependencies with no manual `cp` step.
+`dart_monty_core_native.wasm`) live under `lib/assets/` so Flutter's
+`packages/dart_monty_core/...` URI resolves against this package's
+`lib/` root. They are committed to git and ship with both pub.dev
+releases and `git:`/`path:` dependencies with no manual `cp` step.
 
 ### WASM (plain Dart web, no Flutter)
 
