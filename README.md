@@ -107,29 +107,8 @@ print(r.value); // MontyInt(55)
 await repl.dispose();
 ```
 
-#### Concurrent REPLs on WASM
-
-Multiple `MontyRepl` instances can coexist concurrently on both FFI and WASM
-backends. Each instance owns its own Rust heap handle — creating a second REPL
-does not free or corrupt the first:
-
-```dart
-final repl1 = MontyRepl();
-final repl2 = MontyRepl();
-
-await repl1.feed('x = 10');
-await repl2.feed('x = 99');
-
-print((await repl1.feed('x')).value); // MontyInt(10)
-print((await repl2.feed('x')).value); // MontyInt(99)
-
-await repl1.dispose();
-await repl2.dispose();
-```
-
-On WASM, each `MontyRepl` generates a unique `replId` that is threaded through
-the JS bridge into the Web Worker, so independent Rust heap handles are
-maintained in a `Map` rather than a single scalar.
+Multiple `MontyRepl` instances can coexist concurrently on both backends —
+each owns its own Rust heap handle.
 
 ---
 
