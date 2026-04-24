@@ -52,9 +52,9 @@ jobs:
           WEB=packages/dart_monty_web/web
           dart pub get
           cd packages/dart_monty_web && dart pub get && cd ../..
-          cp assets/dart_monty_core_bridge.js   $WEB/
-          cp assets/dart_monty_core_worker.js   $WEB/
-          cp assets/dart_monty_core_native.wasm $WEB/
+          cp lib/assets/dart_monty_core_bridge.js   $WEB/
+          cp lib/assets/dart_monty_core_worker.js   $WEB/
+          cp lib/assets/dart_monty_core_native.wasm $WEB/
           mkdir -p $WEB/@pydantic/monty-wasm32-wasi
           cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
              $WEB/@pydantic/monty-wasm32-wasi/

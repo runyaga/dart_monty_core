@@ -1,0 +1,3 @@
+# Built assets are committed to git (Mode A asset distribution).
+# Regenerate with `bash tool/prebuild.sh`. Lives under lib/ so Flutter
+# can resolve them via `packages/dart_monty_core/assets/...`.

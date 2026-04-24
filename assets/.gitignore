@@ -1,3 +1,0 @@
-# Built assets are committed to git (Mode A asset distribution).
-# Regenerate with `bash tool/prebuild.sh`. CI enforces no drift by
-# running the script and asserting `git diff --exit-code assets/`.

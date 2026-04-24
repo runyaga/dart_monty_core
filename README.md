@@ -80,7 +80,9 @@ dependencies:
 
 flutter:
   assets:
-    - package: dart_monty_core
+    - packages/dart_monty_core/assets/dart_monty_core_bridge.js
+    - packages/dart_monty_core/assets/dart_monty_core_worker.js
+    - packages/dart_monty_core/assets/dart_monty_core_native.wasm
 ```
 
 ```dart
@@ -98,9 +100,10 @@ into the document, awaits load, and verifies the bridge is ready. No
 `<script>` tag in `web/index.html` is required; `--base-href` is
 honoured automatically. The three built assets
 (`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and
-`dart_monty_core_native.wasm`) are committed to git and ship with
-both pub.dev releases and `git:`/`path:` dependencies — no manual
-`cp` step, no `npm install` required by your app.
+`dart_monty_core_native.wasm`) live under `lib/assets/` (Flutter's
+`packages/<name>/...` URI resolves against a package's `lib/` root)
+and are committed to git — they ship with both pub.dev releases and
+`git:`/`path:` dependencies with no manual `cp` step.
 
 ### WASM (plain Dart web, no Flutter)
 
@@ -110,9 +113,9 @@ asset files to your `web/` directory and add a `<script>` tag.
 
 ```bash
 # From your Dart web project
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_bridge.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_worker.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_native.wasm web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_bridge.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_worker.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_native.wasm web/
 ```
 
 ```html

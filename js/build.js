@@ -18,7 +18,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const ASSETS = path.resolve(__dirname, '..', 'assets');
+const ASSETS = path.resolve(__dirname, '..', 'lib', 'assets');
 // dart_monty_core/js/build.js → one level up = dart_monty_core/native/
 const NATIVE_TARGET = path.resolve(
   __dirname, '..', 'native', 'target',
@@ -87,5 +87,5 @@ try {
   console.log('  wasm-opt not found — skipping optimization');
 }
 
-console.log('[build] Done. Assets in ../assets/');
+console.log('[build] Done. Assets in ../lib/assets/');
 console.log('[build] Zero npm runtime dependencies.');

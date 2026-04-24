@@ -325,15 +325,15 @@ jobs:
           cd "$GITHUB_WORKSPACE"
 
           # Verify committed assets exist (they should — drift-check enforces).
-          for f in assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm; do
+          for f in lib/assets/dart_monty_core_bridge.js lib/assets/dart_monty_core_worker.js lib/assets/dart_monty_core_native.wasm; do
             [ -f "$f" ] || { echo "FATAL: committed asset missing: $f (run bash tool/prebuild.sh)"; exit 1; }
           done
 
           # Stage bridge assets for the test runner.
           mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
-          cp assets/dart_monty_core_bridge.js "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp assets/dart_monty_core_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp assets/dart_monty_core_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp lib/assets/dart_monty_core_bridge.js "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp lib/assets/dart_monty_core_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
+          cp lib/assets/dart_monty_core_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
 
           # WASI runtime required by the Worker.
           WASI_PKG="js/node_modules/@pydantic/monty-wasm32-wasi"
