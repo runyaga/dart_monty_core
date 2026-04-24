@@ -19,8 +19,9 @@ Works on VM (FFI), Web (WASM), and in isolates.
 >   not `^0.0.14`) — patch releases may track upstream breaking changes.
 > - Public APIs on this package, the JS bridge, and the native C ABI may
 >   change without a deprecation cycle while we're pre-1.0.
-> - Pre-built WASM assets built against one version will not run against a
->   different native WASM binary — always rebuild both sides together.
+> - The committed `assets/` (JS bridge + WASM) must stay in sync with
+>   the committed `native/` Rust crate. CI enforces this; regenerate
+>   with `bash tool/prebuild.sh` if you change either side.
 > - Not recommended for production. Fine for prototyping, evaluation, and
 >   internal tooling where you can re-pin quickly.
 
@@ -61,62 +62,54 @@ compiles the Rust dylib automatically when you run `dart pub get` or
 dart pub get   # triggers cargo build --release for your platform
 ```
 
-### WASM (Flutter Web — pub.dev package)
+### WASM (Flutter Web)
 
-Use [`dart_monty_flutter`](packages/dart_monty_flutter/) which auto-injects
-the JS bridge for you:
+Flutter consumers use `dart_monty` for the high-level API and depend on
+`dart_monty_core` so Flutter's asset bundler can locate the WASM/JS
+files directly. Flutter's asset resolver does not chase transitive
+references — `- package: X` must name the package that physically
+contains the files — so both deps are required.
+
+```yaml
+# pubspec.yaml
+dependencies:
+  dart_monty: ^<version>
+  # Required — Flutter's asset bundler needs this package listed
+  # directly. Do not remove; it is not redundant.
+  dart_monty_core: ^<version>
+
+flutter:
+  assets:
+    - package: dart_monty_core
+```
 
 ```dart
 // main.dart
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DartMontyFlutter.ensureInitialized(); // loads bridge.js from package assets
+  await DartMonty.ensureInitialized(); // loads bridge on web; no-op on native
   runApp(const MyApp());
 }
 ```
 
-`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and `dart_monty_core_native.wasm`
-are built at publish time and ship in the pub.dev package under `assets/`.
-Flutter serves them automatically at `packages/dart_monty_core/assets/`.
-No npm or Node.js needed by your app.
-
-### WASM (Flutter Web — git dependency)
-
-When depending on `dart_monty_core` via a `git:` or `path:` override, the
-pre-built WASM assets are not included (they are gitignored build artifacts).
-Copy them from the local repository to your Flutter app's `web/` directory
-once, and add a synchronous `<script>` tag so the bridge is ready before
-Flutter's `main()` runs:
-
-```bash
-# From inside your Flutter app directory
-cp /path/to/dart_monty_core/assets/dart_monty_core_bridge.js web/
-cp /path/to/dart_monty_core/assets/dart_monty_core_worker.js web/
-cp /path/to/dart_monty_core/assets/dart_monty_core_native.wasm web/
-```
-
-```html
-<!-- web/index.html — add before flutter_bootstrap.js, without async -->
-<script src="dart_monty_core_bridge.js"></script>
-<script src="flutter_bootstrap.js" async=""></script>
-```
-
-The synchronous `<script>` sets `window.DartMontyBridge` before Dart starts,
-so `DartMontyFlutter.ensureInitialized()` sees the bridge as already loaded
-and returns immediately without attempting the package-assets path.
-
-To rebuild the artifacts from source (requires Rust + Node.js):
-
-```bash
-cd js && npm install --force && node build.js
-```
+`DartMonty.ensureInitialized()` dynamically injects
+`<script src="packages/dart_monty_core/assets/dart_monty_core_bridge.js">`
+into the document, awaits load, and verifies the bridge is ready. No
+`<script>` tag in `web/index.html` is required; `--base-href` is
+honoured automatically. The three built assets
+(`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and
+`dart_monty_core_native.wasm`) are committed to git and ship with
+both pub.dev releases and `git:`/`path:` dependencies — no manual
+`cp` step, no `npm install` required by your app.
 
 ### WASM (plain Dart web, no Flutter)
 
-Copy the three asset files to your `web/` directory and add a script tag:
+For plain-Dart web apps (no Flutter asset bundler), copy the three
+asset files to your `web/` directory and add a `<script>` tag.
+`packages/dart_monty_web/` in this repo demonstrates the full wiring:
 
 ```bash
-# One-time copy from pub cache
+# From your Dart web project
 cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_bridge.js web/
 cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_worker.js web/
 cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core_native.wasm web/
@@ -131,6 +124,22 @@ cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/assets/dart_monty_core
 > application, use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty)
 > directly — that is the canonical npm package. `dart_monty_core` is for Dart
 > developers who want the same interpreter through Dart APIs.
+
+### Building assets from source
+
+Assets are committed to git but you can rebuild them from source when
+the Rust crate or JS bridge changes. Requires Rust (with the
+`wasm32-wasip1` target) and Node.js 20+.
+
+```bash
+bash tool/prebuild.sh
+```
+
+If you change `native/` or `js/` source, run `tool/prebuild.sh` and
+commit the result in the same PR. CI runs the WASM/JS integration
+suite on every PR, so a stale `assets/` that no longer parses or
+runs will fail `test-wasm`. Byte-level drift-check (rebuild-and-compare)
+is deferred pending a reproducible cross-host WASM build story.
 
 ---
 

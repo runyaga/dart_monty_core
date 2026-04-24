@@ -14,45 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Rust: build WASM binary ──────────────────────────────────────────
-      - name: Install Rust stable + wasm32-wasip1
-        run: rustup target add wasm32-wasip1
-
-      - name: Build dart_monty_core_native.wasm
-        run: |
-          cargo build \
-            --manifest-path native/Cargo.toml \
-            --target wasm32-wasip1 \
-            --release
-
-      # ── Node: bundle JS bridge and worker ───────────────────────────────
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: js/package-lock.json
-
-      - name: Build JS assets
-        working-directory: js
-        run: |
-          npm install --force
-          node build.js
-
-      - name: Verify assets
-        run: |
-          for f in assets/dart_monty_core_bridge.js \
-                   assets/dart_monty_core_worker.js \
-                   assets/dart_monty_core_native.wasm; do
-            [ -f "$f" ] || { echo "MISSING: $f"; exit 1; }
-            echo "$(du -sh $f)"
-          done
-
-      # Force-stage the built assets so dart pub publish includes them.
-      # They are gitignored in the repo (not committed) but pub reads the
-      # git index — git add -f makes them visible to pub without polluting
-      # the repo history.
-      - name: Stage assets for publish
-        run: git add -f assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm
+      # Assets are committed to git (Mode A). No rebuild or force-stage
+      # step is needed — dart pub publish picks up whatever is in the
+      # working tree. Release authors are responsible for committing
+      # fresh assets via `bash tool/prebuild.sh` before tagging.
+      # (Reproducible cross-host WASM builds are tracked separately;
+      # until that's solved, drift-check is deferred.)
 
       # ── Dart: analyze + publish ──────────────────────────────────────────
       - uses: dart-lang/setup-dart@v1

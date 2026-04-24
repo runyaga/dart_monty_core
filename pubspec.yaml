@@ -20,3 +20,12 @@ dev_dependencies:
   test: ^1.25.0
   very_good_analysis: ^10.0.0
 
+# Flutter consumers reference these via `- package: dart_monty_core`
+# under their own `flutter.assets`. Non-Flutter tooling ignores this
+# stanza — no Flutter SDK dependency is introduced.
+flutter:
+  assets:
+    - assets/dart_monty_core_bridge.js
+    - assets/dart_monty_core_worker.js
+    - assets/dart_monty_core_native.wasm
+

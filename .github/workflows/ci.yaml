@@ -97,10 +97,6 @@ jobs:
           name: ffi-bindings
           path: lib/src/ffi/generated
       - run: dart pub get
-      - name: Stub missing build artifacts
-        # Assets are gitignored (built at publish time). Touch empty stubs so
-        # dart analyze doesn't fail on the flutter.assets: references in pubspec.yaml.
-        run: touch assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm
       - name: Analyze
         run: dart analyze --fatal-infos
       - name: Format check
@@ -289,7 +285,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test-wasm:
     name: WASM/JS integration tests
-    needs: [changes, build-wasm]
+    needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -307,39 +303,30 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
 
-      - name: Download WASM binary
-        uses: actions/download-artifact@v4
-        with:
-          name: wasm-binary
-          path: native/target/wasm32-wasip1/release
-
       - uses: actions/cache@v4
         with:
           path: ~/.npm
           key: npm-${{ hashFiles('js/package.json') }}
           restore-keys: npm-
 
-      # Build the JS bridge from the local js/ directory (which contains the
-      # NameLookup support and all other in-progress API changes for this repo).
-      # build.js reads the WASM binary from native/target/wasm32-wasip1/release/
-      # (placed there by the Download WASM binary step above) and writes
-      # assets to assets/.
-      - name: Build JS bridge
+      # Assets are committed to git (Mode A). Stage them directly for
+      # the test runner rather than rebuilding from source — drift-check
+      # owns the rebuild-parity story. npm install is still needed for
+      # the WASI runtime (@pydantic/monty-wasm32-wasi), which is a pure
+      # runtime dep not produced by our build.
+      - name: Stage bridge assets for test runner
         run: |
           set -euo pipefail
           WEB_DIR="test/integration/web"
 
           cd js
-          echo "--- npm install ---"
+          echo "--- npm install (WASI runtime) ---"
           npm install --force
-          echo "--- node build.js ---"
-          node build.js
           cd "$GITHUB_WORKSPACE"
-          echo "--- build complete ---"
 
-          # Verify build outputs exist before staging — fail loudly if missing.
+          # Verify committed assets exist (they should — drift-check enforces).
           for f in assets/dart_monty_core_bridge.js assets/dart_monty_core_worker.js assets/dart_monty_core_native.wasm; do
-            [ -f "$f" ] || { echo "FATAL: $f not found after build"; exit 1; }
+            [ -f "$f" ] || { echo "FATAL: committed asset missing: $f (run bash tool/prebuild.sh)"; exit 1; }
           done
 
           # Stage bridge assets for the test runner.

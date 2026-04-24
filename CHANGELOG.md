@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`flutter.assets` pubspec stanza.** Flutter consumers can reference
+  `- package: dart_monty_core` under their own `flutter.assets` to have
+  the WASM/JS bridge files served at `packages/dart_monty_core/assets/...`
+  by Flutter's asset bundler. No manual `cp` step required.
+- **`tool/prebuild.sh`** — canonical regeneration script for the three
+  web assets (`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`,
+  `dart_monty_core_native.wasm`). Byte-level drift-check is deferred
+  pending reproducible cross-host WASM builds; CI still exercises
+  the assets via the `test-wasm` integration suite.
+
+### Changed
+
+- **Web assets are now committed to git** instead of built at publish
+  time and force-staged. Git-dep consumers get a working `pub get`
+  without running any build step. See README "Building from source".
+
+### Removed — BREAKING
+
+- **`packages/dart_monty_flutter/` sidecar deleted.** The
+  `DartMontyFlutter.ensureInitialized()` shim moves to `dart_monty` as
+  `DartMonty.ensureInitialized()`. Flutter consumers update their
+  import and call site:
+
+  ```dart
+  // before
+  import 'package:dart_monty_flutter/dart_monty_flutter.dart';
+  await DartMontyFlutter.ensureInitialized();
+
+  // after
+  import 'package:dart_monty/dart_monty.dart';
+  await DartMonty.ensureInitialized();
+  ```
+
 ## 0.0.14 - monty upstream upgrade
 
 ### Upgraded

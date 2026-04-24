@@ -8,7 +8,9 @@ Python interpreter in Rust, wrapped by `dart_monty_core`.
 > directly — that is the canonical npm package maintained by the Monty authors.
 > `dart_monty_web` exists to demonstrate `dart_monty_core` for **Dart web**
 > developers who want the same interpreter through Dart APIs.
-> For **Flutter Web**, see [`dart_monty_flutter`](../dart_monty_flutter/).
+> For **Flutter Web**, depend on `dart_monty` + `dart_monty_core` and
+> call `DartMonty.ensureInitialized()`. See dart_monty_core's top-level
+> README "WASM (Flutter Web)" section.
 
 This is a **reference example**: copy the patterns here to build your own
 Dart web app on top of `dart_monty_core`.
@@ -99,11 +101,13 @@ dart2wasm demo requires local serve.
 
 ### Assets
 
-`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and `dart_monty_core_native.wasm`
-are **not committed to git** — they are built by the maintainer's publish
-workflow (Rust + Node.js) and shipped in the pub.dev package under `assets/`.
-Consumers installing via `dart pub add` receive them pre-built and do not
-need Node.js or npm.
+`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and
+`dart_monty_core_native.wasm` are **committed to git** (Mode A asset
+distribution) and ship in the pub.dev package under `assets/`.
+Consumers installing via `dart pub add` receive them pre-built and do
+not need Node.js or npm to run. CI rebuilds from source on every PR
+and verifies the committed files match; regenerate locally with
+`bash tool/prebuild.sh` at the repo root.
 
 `repl_demo.dart.js` (the compiled Dart app) is always git-ignored and must be
 compiled locally via `dart compile js`. The `tool/serve_demo.sh` script
@@ -214,7 +218,7 @@ block `SharedArrayBuffer` without them.
 
 ## Note on Flutter web
 
-This package uses pure Dart web (not Flutter). See
-[`packages/dart_monty_flutter`](../dart_monty_flutter/) for the Flutter REPL
-demo (mobile/desktop targets). A Flutter web build is deployed to
-`/flutter/` on GitHub Pages.
+This package uses pure Dart web (not Flutter). Flutter consumers use
+`dart_monty` + `dart_monty_core` and call `DartMonty.ensureInitialized()`
+— no manual `<script>` tag, no `cp` step. See dart_monty_core's
+top-level README for the full pattern.
