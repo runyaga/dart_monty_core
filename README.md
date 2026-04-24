@@ -6,24 +6,19 @@ a sandboxed Python interpreter written in Rust.
 **No Flutter. No bridge. No plugin registry.**  
 Works on VM (FFI), Web (WASM), and in isolates.
 
-> ### ⚠️ Experimental — expect breakage
+> ### Pre-1.0 — pin exact versions
 >
-> **`pydantic/monty` is changing daily.** Upstream frequently lands
-> breaking changes to its Rust API, Python semantics, OS call surface,
-> and bytecode format — sometimes several times per day. `dart_monty_core`
-> pins a specific upstream tag (currently **monty v0.0.14**) and bumps it
-> deliberately; each bump often requires adjustments here.
+> `pydantic/monty` is iterating rapidly; upstream occasionally lands
+> breaking changes to the Rust API, Python semantics, or bytecode format.
+> `dart_monty_core` pins a specific upstream tag (currently **monty v0.0.14**)
+> and bumps it deliberately.
 >
-> Because of that:
-> - Pin an **exact** version in your `pubspec.yaml` (`dart_monty_core: 0.0.14`,
+> - Pin an exact version in your `pubspec.yaml` (`dart_monty_core: 0.0.14`,
 >   not `^0.0.14`) — patch releases may track upstream breaking changes.
-> - Public APIs on this package, the JS bridge, and the native C ABI may
->   change without a deprecation cycle while we're pre-1.0.
-> - The committed `assets/` (JS bridge + WASM) must stay in sync with
->   the committed `native/` Rust crate. CI enforces this; regenerate
->   with `bash tool/prebuild.sh` if you change either side.
-> - Not recommended for production. Fine for prototyping, evaluation, and
->   internal tooling where you can re-pin quickly.
+> - Public APIs may change without a deprecation cycle while we're pre-1.0.
+> - The committed `assets/` (JS bridge + WASM) must stay in sync with the
+>   committed `native/` Rust crate. CI enforces this; rebuild with
+>   `bash tool/prebuild.sh` if you change either side.
 
 ---
 
