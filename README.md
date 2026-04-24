@@ -10,7 +10,7 @@ Works on VM (FFI), Web (WASM), and in isolates.
 >
 > `pydantic/monty` is iterating rapidly; upstream occasionally lands
 > breaking changes to the Rust API, Python semantics, or bytecode format.
-> `dart_monty_core` pins a specific upstream tag (currently **monty v0.0.14**)
+> `dart_monty_core` pins a specific upstream tag (currently **monty v0.0.17**)
 > and bumps it deliberately.
 >
 > - Pin an exact version in your `pubspec.yaml` (`dart_monty_core: 0.0.14`,
@@ -587,7 +587,7 @@ Some Dart API choices intentionally differ from JS:
 
 ## Native layer
 
-The Rust crate in `native/` wraps `pydantic/monty@v0.0.14` and exposes a
+The Rust crate in `native/` wraps `pydantic/monty@v0.0.17` and exposes a
 C ABI consumed by the FFI binding and compiled to WASM for the web backend.
 Bindings are generated via `ffigen`; regenerate with:
 
