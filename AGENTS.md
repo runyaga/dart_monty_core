@@ -53,15 +53,15 @@ builds are solved. Regenerate locally when source changes:
 bash tool/prebuild.sh
 ```
 
-Flutter consumers depend on `dart_monty_core` in their pubspec and
-reference each asset explicitly under `flutter.assets` — e.g.
-`- packages/dart_monty_core/assets/dart_monty_core_bridge.js`.
-Flutter then serves them at `packages/dart_monty_core/assets/...`
-(note: the consumer-facing URL omits the `lib/` segment; Flutter
-inserts the `lib/` lookup internally). The high-level
-`DartMonty.ensureInitialized()` API (in `dart_monty`) resolves that
-URL at runtime, so consumers do not need a `<script>` tag in
-`web/index.html`.
+Flutter consumers depend on `dart_monty` (the high-level API).
+`dart_monty_core` comes in transitively, and Flutter bundles a
+dependency's declared `flutter.assets` automatically — no
+consumer-side redeclaration is required. Assets land in the build
+at `assets/packages/dart_monty_core/lib/assets/*` (Flutter preserves the
+`lib/` segment for transitively-bundled package assets). The
+high-level `DartMonty.ensureInitialized()` API in `dart_monty`
+resolves that URL at runtime, so consumers do not need a `<script>`
+tag in `web/index.html`.
 
 ---
 
