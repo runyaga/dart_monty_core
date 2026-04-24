@@ -15,9 +15,9 @@ js/node_modules/
 # DCM local config contains credentials — never commit
 .dcm.yaml
 
-# assets/ JS/WASM files are NOT committed — built by CI at publish time.
-# See assets/.gitignore for per-file rules.
-# Regenerate locally: cd js && npm install --force && node build.js
+# assets/ JS/WASM files ARE committed to git (Mode A asset distribution).
+# Regenerate with: bash tool/prebuild.sh
+# CI verifies no drift on every PR.
 
 # WASM test runner staging (copied from assets/ before each test run)
 test/integration/web/dart_monty_core_bridge.js
