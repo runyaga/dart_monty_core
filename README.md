@@ -394,6 +394,39 @@ Pre-compilation works on both **FFI** and **WASM** backends.
 
 ---
 
+## Known upstream limitations
+
+The following Python patterns currently raise `RuntimeError` because the
+upstream `pydantic/monty` VM does not yet support suspending for external
+function calls from within iterator-consuming C builtins:
+
+- `map(ext_fn, ...)` — and `map(lambda: ext_fn(...), ...)` (wrapping does
+  not escape the limitation; the suspension point is still inside `map`'s
+  frame)
+- `filter(ext_fn, ...)`
+- `sorted(..., key=ext_fn)`
+
+Error surfaced verbatim from the Rust VM:
+
+```
+RuntimeError: Internal error in monty:
+map(): external functions are not yet supported in this context
+```
+
+External functions **do** work as first-class values in every other context
+(bare references, assignment to variables, passing to user-defined
+higher-order functions, storage in lists/dicts, etc.). The limitation is
+specifically about C-implemented iterator builtins calling back into user
+code that suspends.
+
+This is an upstream gap, not a `dart_monty_core` bug. Regression fixtures
+under `test/integration/_fixture_corpus.dart` with the `_xfail` suffix
+encode the current behavior; when upstream fixes it, those fixtures will
+start failing with "expected RuntimeError but got value" — that's the
+signal to remove the `# Raise=` directive.
+
+---
+
 ## Testing
 
 The package ships 464 Python fixture files from the upstream
