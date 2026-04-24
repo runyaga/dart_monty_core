@@ -2,14 +2,13 @@
 #
 # prebuild.sh — rebuild dart_monty_core web assets.
 #
-# Produces:
-#   assets/dart_monty_core_bridge.js    (IIFE main-thread bridge)
-#   assets/dart_monty_core_worker.js    (ESM WASM worker)
-#   assets/dart_monty_core_native.wasm  (Rust engine compiled to WASI)
+# Produces (under lib/assets/ so Flutter can resolve them via
+# `packages/dart_monty_core/assets/...`):
+#   lib/assets/dart_monty_core_bridge.js    (IIFE main-thread bridge)
+#   lib/assets/dart_monty_core_worker.js    (ESM WASM worker)
+#   lib/assets/dart_monty_core_native.wasm  (Rust engine compiled to WASI)
 #
-# These files are committed to git (Mode A asset distribution). CI
-# verifies they stay in sync with the Rust crate by re-running this
-# script and asserting `git diff --exit-code assets/`.
+# These files are committed to git (Mode A asset distribution).
 #
 # Regenerate assets locally when native/ or js/ source changes:
 #
@@ -41,5 +40,5 @@ echo "[prebuild] Bundling bridge + worker + copying WASM..."
 node build.js
 cd "$ROOT"
 
-echo "[prebuild] Done. Assets in $ROOT/assets/."
-ls -la assets/
+echo "[prebuild] Done. Assets in $ROOT/lib/assets/."
+ls -la lib/assets/

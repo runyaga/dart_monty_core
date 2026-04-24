@@ -17,11 +17,11 @@ native/src/ (Rust)
   │     → native/target/debug/oracle             [FFI test oracle]
   │
   └─ cargo build --target wasm32-wasip1 --release
-        → dart_monty_core_native.wasm   (copied to assets/)
+        → dart_monty_core_native.wasm   (copied to lib/assets/)
               │
               ▼
 js/src/ (esbuild via node build.js)
-  └─────────────────────────────── assets/          ← canonical staging area
+  └─────────────────────────────── lib/assets/      ← canonical staging area
                                    ├── dart_monty_core_native.wasm
                                    ├── dart_monty_core_bridge.js
                                    └── dart_monty_core_worker.js
@@ -38,22 +38,27 @@ js/src/ (esbuild via node build.js)
       (dart compile wasm)
 ```
 
-**Rule**: `assets/` is the only directory that receives build output
-directly. Everything else copies from `assets/`. The three built files
-in `assets/` **are committed to git** (Mode A asset distribution).
-CI exercises the WASM/JS bridge through the `test-wasm` integration
-suite on every PR; byte-level drift-check (rebuild-and-compare) is
-deferred until reproducible cross-host WASM builds are solved.
-Regenerate locally when source changes:
+**Rule**: `lib/assets/` is the only directory that receives build
+output directly. Everything else copies from `lib/assets/`. The three
+built files in `lib/assets/` **are committed to git** (Mode A asset
+distribution). The files must live under `lib/` because Flutter's
+`packages/<name>/...` URI scheme resolves against a package's `lib/`
+root — assets at the repo root are invisible to cross-package
+consumers. CI exercises the WASM/JS bridge through the `test-wasm`
+integration suite on every PR; byte-level drift-check
+(rebuild-and-compare) is deferred until reproducible cross-host WASM
+builds are solved. Regenerate locally when source changes:
 
 ```bash
 bash tool/prebuild.sh
 ```
 
 Flutter consumers depend on `dart_monty_core` in their pubspec and
-reference `- package: dart_monty_core` under `flutter.assets`; the
-Flutter asset bundler then serves the three files at
-`packages/dart_monty_core/assets/...`. The high-level
+reference each asset explicitly under `flutter.assets` — e.g.
+`- packages/dart_monty_core/assets/dart_monty_core_bridge.js`.
+Flutter then serves them at `packages/dart_monty_core/assets/...`
+(note: the consumer-facing URL omits the `lib/` segment; Flutter
+inserts the `lib/` lookup internally). The high-level
 `DartMonty.ensureInitialized()` API (in `dart_monty`) resolves that
 URL at runtime, so consumers do not need a `<script>` tag in
 `web/index.html`.
@@ -77,12 +82,11 @@ dart_monty_core/
 │   ├── build.js                # esbuild bundler script
 │   └── package.json
 │
-├── assets/                          # Built JS+WASM artefacts (committed)
-│   ├── dart_monty_core_bridge.js    ← node js/build.js
-│   ├── dart_monty_core_worker.js    ← node js/build.js
-│   └── dart_monty_core_native.wasm  ← cargo build wasm32-wasip1
-│
 ├── lib/                        # Dart library source
+│   ├── assets/                      # Built JS+WASM artefacts (committed)
+│   │   ├── dart_monty_core_bridge.js    ← node js/build.js
+│   │   ├── dart_monty_core_worker.js    ← node js/build.js
+│   │   └── dart_monty_core_native.wasm  ← cargo build wasm32-wasip1
 │   └── src/
 │       ├── ffi/                # FFI backend (dart:ffi)
 │       │   └── generated/dart_monty_bindings.dart  ← ffigen output
@@ -206,9 +210,9 @@ node build.js
 ```
 
 **Output** (written directly to `assets/`):
-- `assets/dart_monty_core_bridge.js` — IIFE, loaded on the main thread
-- `assets/dart_monty_core_worker.js` — ESM Worker, loads + runs the WASM binary
-- `assets/dart_monty_core_native.wasm` — copied from `native/target/wasm32-wasip1/release/dart_monty_core_native.wasm`
+- `lib/assets/dart_monty_core_bridge.js` — IIFE, loaded on the main thread
+- `lib/assets/dart_monty_core_worker.js` — ESM Worker, loads + runs the WASM binary
+- `lib/assets/dart_monty_core_native.wasm` — copied from `native/target/wasm32-wasip1/release/dart_monty_core_native.wasm`
 
 `build.js` copies the WASM binary automatically, so build step 2 is only
 needed if you run steps out of order.
@@ -274,9 +278,9 @@ Before running tests manually, copy from `assets/` into `test/integration/web/`.
 `tool/test_wasm.sh` does this automatically; its cleanup trap removes them on exit.
 
 ```bash
-cp assets/dart_monty_core_bridge.js   test/integration/web/
-cp assets/dart_monty_core_worker.js   test/integration/web/
-cp assets/dart_monty_core_native.wasm test/integration/web/
+cp lib/assets/dart_monty_core_bridge.js   test/integration/web/
+cp lib/assets/dart_monty_core_worker.js   test/integration/web/
+cp lib/assets/dart_monty_core_native.wasm test/integration/web/
 # Also copy WASI runtime (step 3b above)
 ```
 
@@ -495,7 +499,7 @@ changes (path filter)
 ## What NOT to commit
 
 ```
-# assets/dart_monty_core_*.{js,wasm} ARE committed (Mode A).
+# lib/assets/dart_monty_core_*.{js,wasm} ARE committed (Mode A).
 # Everything below is a downstream copy — always git-ignored.
 test/integration/web/dart_monty_core_*.js   # git-ignored; copied before test run
 test/integration/web/dart_monty_core_*.wasm # git-ignored; copied before test run

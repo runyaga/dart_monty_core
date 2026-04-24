@@ -165,9 +165,9 @@ cd js && npm install --force && node build.js && cd ..
 dart pub get
 
 # 4. Copy bridge assets to web/
-cp assets/dart_monty_core_bridge.js   web/
-cp assets/dart_monty_core_worker.js   web/
-cp assets/dart_monty_core_native.wasm web/
+cp lib/assets/dart_monty_core_bridge.js   web/
+cp lib/assets/dart_monty_core_worker.js   web/
+cp lib/assets/dart_monty_core_native.wasm web/
 
 # 5. Copy WASI runtime (NOT done by build.js — must be copied manually)
 mkdir -p web/@pydantic/monty-wasm32-wasi

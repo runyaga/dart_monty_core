@@ -25,7 +25,11 @@ dev_dependencies:
 # stanza — no Flutter SDK dependency is introduced.
 flutter:
   assets:
-    - assets/dart_monty_core_bridge.js
-    - assets/dart_monty_core_worker.js
-    - assets/dart_monty_core_native.wasm
+    # Must live under lib/ so Flutter consumers can reference them via
+    # `packages/dart_monty_core/assets/...` — the packages/<name>/ URI
+    # scheme resolves against the package's `lib/` root. Files at the
+    # repo root are invisible to cross-package asset resolution.
+    - lib/assets/dart_monty_core_bridge.js
+    - lib/assets/dart_monty_core_worker.js
+    - lib/assets/dart_monty_core_native.wasm
 
