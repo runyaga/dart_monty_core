@@ -26,10 +26,10 @@ js/src/ (esbuild via node build.js)
                                    ├── dart_monty_core_bridge.js
                                    └── dart_monty_core_worker.js
                                          │
-              ┌──────────────────────────┼──────────────────────────┐
-              ▼                          ▼                          ▼
-  test/integration/web/           packages/dart_monty_web/web/   packages/dart_monty_flutter/
-  ├── dart_monty_core_bridge.js    ├── dart_monty_core_bridge.js       (uses FFI dylib at runtime)
+              ┌──────────────────────────────┐
+              ▼                              ▼
+  test/integration/web/           packages/dart_monty_web/web/
+  ├── dart_monty_core_bridge.js    ├── dart_monty_core_bridge.js
   ├── dart_monty_core_worker.js    ├── dart_monty_core_worker.js
   ├── dart_monty_core_native.wasm  ├── dart_monty_core_native.wasm
   ├── @pydantic/wasi-*             ├── @pydantic/wasi-*
@@ -38,34 +38,23 @@ js/src/ (esbuild via node build.js)
       (dart compile wasm)
 ```
 
-**Rule**: `assets/` is the only directory that receives build output directly.
-Everything else copies from `assets/`. The `assets/` files are git-ignored;
-downstream copies are temporary and are cleaned up by script traps.
-
----
-
-## Pre-built reference worktree
-
-A local worktree at `/Users/runyaga/dev/dart_monty_core--wasm-support`
-(branch `feature/wasm-flutter-support`) has **all artifacts pre-built** and
-committed. When the Rust or npm build chain is broken or slow, copy from here:
+**Rule**: `assets/` is the only directory that receives build output
+directly. Everything else copies from `assets/`. The three built files
+in `assets/` **are committed to git** (Mode A asset distribution).
+CI's `drift-check` job re-runs `tool/prebuild.sh` on every PR and
+fails if the rebuild produces different bytes. Regenerate locally:
 
 ```bash
-SRC=/Users/runyaga/dev/dart_monty_core--wasm-support
-
-# Populate assets/ (all three files)
-cp "$SRC/assets/dart_monty_core_bridge.js"   assets/
-cp "$SRC/assets/dart_monty_core_worker.js"   assets/
-cp "$SRC/assets/dart_monty_core_native.wasm" assets/
-
-# Populate test web dir directly (skip the copy step below)
-cp "$SRC/test/integration/web/dart_monty_core_bridge.js"   test/integration/web/
-cp "$SRC/test/integration/web/dart_monty_core_worker.js"   test/integration/web/
-cp "$SRC/test/integration/web/dart_monty_core_native.wasm" test/integration/web/
-cp "$SRC/test/integration/web/wasm_runner.dart.js"    test/integration/web/
-cp "$SRC/test/integration/web/wasm_runner.mjs"        test/integration/web/
-cp "$SRC/test/integration/web/wasm_runner.wasm"       test/integration/web/
+bash tool/prebuild.sh
 ```
+
+Flutter consumers depend on `dart_monty_core` in their pubspec and
+reference `- package: dart_monty_core` under `flutter.assets`; the
+Flutter asset bundler then serves the three files at
+`packages/dart_monty_core/assets/...`. The high-level
+`DartMonty.ensureInitialized()` API (in `dart_monty`) resolves that
+URL at runtime, so consumers do not need a `<script>` tag in
+`web/index.html`.
 
 ---
 
@@ -86,7 +75,7 @@ dart_monty_core/
 │   ├── build.js                # esbuild bundler script
 │   └── package.json
 │
-├── assets/                          # Built JS+WASM staging area (git-ignored)
+├── assets/                          # Built JS+WASM artefacts (committed)
 │   ├── dart_monty_core_bridge.js    ← node js/build.js
 │   ├── dart_monty_core_worker.js    ← node js/build.js
 │   └── dart_monty_core_native.wasm  ← cargo build wasm32-wasip1
@@ -108,16 +97,15 @@ dart_monty_core/
 │       └── wasm_runner_wasm.html  # dart2wasm entry point
 │
 ├── packages/
-│   ├── dart_monty_web/         # Browser REPL demo (pure Dart web)
-│   └── dart_monty_flutter/     # Flutter REPL demo (mobile/desktop/web)
+│   └── dart_monty_web/         # Browser REPL demo (pure Dart web)
 │
 ├── docs/
 │   └── index.html              # GitHub Pages cover page
 │
 └── tool/
+    ├── prebuild.sh             # Rebuild committed assets (cargo + node)
     ├── test_wasm.sh            # Full WASM test pipeline
     ├── serve_demo.sh           # Web demo build + serve
-    ├── run_flutter_demo.sh     # Flutter demo launcher
     ├── generate_bindings.sh    # ffigen regeneration
     ├── install-hooks.sh        # Install pre-commit hook
     └── pre-commit.sh           # Pre-commit checks (fmt, analyze, bindings)
@@ -505,7 +493,8 @@ changes (path filter)
 ## What NOT to commit
 
 ```
-assets/dart_monty_core_*.{js,wasm}          # git-ignored; built at CI time
+# assets/dart_monty_core_*.{js,wasm} ARE committed (Mode A).
+# Everything below is a downstream copy — always git-ignored.
 test/integration/web/dart_monty_core_*.js   # git-ignored; copied before test run
 test/integration/web/dart_monty_core_*.wasm # git-ignored; copied before test run
 test/integration/web/wasm_runner.dart.js*  # git-ignored; dart compile js output
@@ -533,7 +522,6 @@ If you modify any source file, rebuild the corresponding artifact before testing
 | `test/integration/wasm_runner.dart` | Step 4 (dart compile js) |
 | `test/integration/wasm_runner_wasm.dart` | Step 5 (dart compile wasm) |
 | `packages/dart_monty_web/web/repl_demo.dart` | `dart compile js` in dart_monty_web |
-| `packages/dart_monty_flutter/lib/**` | `flutter build` for target platform |
 | `lib/**` (library source) | Steps 4 + 5 (re-compile dart runners) |
 | `native/include/dart_monty.h` | Run `bash tool/generate_bindings.sh` |
 
@@ -545,9 +533,9 @@ If you modify any source file, rebuild the corresponding artifact before testing
 |---|---|---|
 | `EBADPLATFORM` on `npm install` | `@pydantic/monty-wasm32-wasi` declares `cpu:wasm32` | `npm install --force` |
 | Chrome `TypeError: Cannot read ... 'init'` | `wasi-worker-browser.mjs` not copied | Run step 3b (WASI runtime copy) |
-| dart2wasm 0/464 all fail | Bridge assets missing from `test/integration/web/` | Copy from `assets/` or from wasm-support worktree |
+| dart2wasm 0/464 all fail | Bridge assets missing from `test/integration/web/` | Copy from `assets/` |
 | FFI `DynamicLibraryLoadError` | Native dylib not built | `cd native && cargo build --release` |
 | FFI tests: `ProcessException` on oracle | Oracle binary not built | `cd native && cargo build --bin oracle` |
 | Bindings stale check fails in CI | C header changed, ffigen not re-run | `bash tool/generate_bindings.sh` |
-| `dart analyze` errors in Flutter package | Flutter SDK not in PATH for analyzer | Add `packages/dart_monty_flutter/**` to `analysis_options.yaml` excludes |
+| CI `drift-check` fails | Committed `assets/` stale vs source | `bash tool/prebuild.sh && git add assets/` |
 | GitHub Pages REPL broken (SharedArrayBuffer) | Pages can't set COOP/COEP headers | Expected — dart2js works; dart2wasm needs local serve |
