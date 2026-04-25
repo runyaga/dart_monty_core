@@ -512,9 +512,6 @@ bash tool/serve_demo.sh
 
 # dart2wasm variant
 bash tool/serve_demo.sh --dart2wasm
-
-# Flutter REPL (mobile/desktop) — requires FFI dylib (build step above)
-bash tool/run_flutter_demo.sh [--device macos]
 ```
 
 ### dart2wasm Support & Benchmarks
