@@ -279,6 +279,9 @@ jobs:
           dart test \
             test/integration/oracle_ffi_test.dart \
             test/integration/oracle_ffi_ext_test.dart \
+            test/integration/ffi_datetime_oscall_test.dart \
+            test/integration/ffi_multi_repl_test.dart \
+            test/integration/ffi_repl_oscall_test.dart \
             -p vm --run-skipped --tags=ffi --reporter=expanded
 
   # ---------------------------------------------------------------------------
