@@ -276,7 +276,9 @@ jobs:
       - run: dart pub get
       - name: Run FFI integration tests
         run: |
-          dart test test/integration/oracle_ffi_test.dart \
+          dart test \
+            test/integration/oracle_ffi_test.dart \
+            test/integration/oracle_ffi_ext_test.dart \
             -p vm --run-skipped --tags=ffi --reporter=expanded
 
   # ---------------------------------------------------------------------------
