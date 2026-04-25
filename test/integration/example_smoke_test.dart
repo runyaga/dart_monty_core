@@ -21,10 +21,10 @@ import 'package:test/test.dart';
 /// Examples that currently fail or hang on `main`. Each entry is a
 /// regression to fix; once fixed, remove the entry so the test enforces
 /// the example.
-const _skipReasons = <String, String>{
+const _skipReasons = {
   'example/06_compile_and_platform.dart':
       'TODO: UnimplementedError — resumeNameLookupValue is not supported by '
-          'the FFI backend (FfiCoreBindings:165). Binding gap, not docs rot.',
+      'the FFI backend (FfiCoreBindings:165). Binding gap, not docs rot.',
   'example/07_all_values.dart':
       'TODO: type cast error at line 157 — MontyNone vs MontyNamedTuple.',
   'example/08_all_errors.dart':
@@ -34,13 +34,14 @@ const _skipReasons = <String, String>{
 };
 
 void main() {
-  final examples = Directory('example')
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.endsWith('.dart'))
-      .map((f) => f.path)
-      .toList()
-    ..sort();
+  final examples =
+      Directory('example')
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .map((f) => f.path)
+          .toList()
+        ..sort();
 
   group('example smoke', () {
     for (final ex in examples) {
@@ -52,13 +53,15 @@ void main() {
           final skipReason = _skipReasons[ex];
           if (skipReason != null) {
             markTestSkipped(skipReason);
+
             return;
           }
           final result = await Process.run('dart', ['run', ex]);
           expect(
             result.exitCode,
             equals(0),
-            reason: 'exit=${result.exitCode}\n'
+            reason:
+                'exit=${result.exitCode}\n'
                 '--- stdout ---\n${result.stdout}\n'
                 '--- stderr ---\n${result.stderr}',
           );
