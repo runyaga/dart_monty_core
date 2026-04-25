@@ -19,6 +19,19 @@
 - **Web assets are now committed to git** instead of built at publish
   time and force-staged. Git-dep consumers get a working `pub get`
   without running any build step. See README "Building from source".
+- **`MontyException.message` no longer carries the exception-type prefix.**
+  The Rust shim was setting `"message": e.summary()`, where upstream's
+  `summary()` returns `"ExcType: msg"`. Combined with the separately-
+  exposed `excType` field, the natural `${e.excType}: ${e.message}`
+  idiom produced doubled output: `SyntaxError: SyntaxError: …`,
+  `ZeroDivisionError: ZeroDivisionError: division by zero`, etc.
+  `message` now carries just the raw exception message (or empty
+  string when upstream reports `None`). Same change applies to the
+  oracle binary's JSON output (`native/src/bin/oracle.rs`). The C
+  out-error fallback in `lib.rs` and the secondary `Option<String>`
+  returned alongside JSON envelopes from `handle.rs`/`repl_handle.rs`
+  intentionally still use `summary()` — those paths have no separate
+  `excType` field for the consumer to compose with.
 
 ### Removed — BREAKING
 

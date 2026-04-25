@@ -102,7 +102,7 @@ fn build_error_json(e: &MontyException, print_buf: &str) -> Value {
 /// Mirrors `monty_exception_to_json` in `error.rs` exactly.
 fn exception_to_json(e: &MontyException) -> Value {
     let mut obj = json!({
-        "message": e.summary(),
+        "message": e.message().unwrap_or(""),
         "exc_type": e.exc_type().to_string(),
     });
     let map = obj.as_object_mut().unwrap();
