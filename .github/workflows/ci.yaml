@@ -485,6 +485,10 @@ jobs:
             FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | wc -l || echo 0)
             if [ "$FAILURES" -gt 0 ]; then
               echo "ERROR ($label): $FAILURES fixtures failed"
+              echo "  --- failed fixtures ---"
+              grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | while IFS= read -r line; do
+                echo "    ${line#*FIXTURE_RESULT:}"
+              done
               TOTAL_FAILURES=$((TOTAL_FAILURES + FAILURES))
             fi
             rm -f "$log"
