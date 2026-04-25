@@ -71,7 +71,10 @@ if [ "$SKIP_BUILD" = false ]; then
     exit 1
   fi
   cd "$JS_DIR"
-  npm install --silent
+  # --force bypasses EBADPLATFORM on arm64/x64 hosts (the WASI package
+  # @pydantic/monty-wasm32-wasi declares cpu: wasm32). The CI test-wasm
+  # job already uses --force.
+  npm install --force --silent
   # build.js copies the WASM binary from native/target/ into assets/ under the
   # deployed name (dart_monty_core_native.wasm) —
   # point it at our assets dir by running it from there
