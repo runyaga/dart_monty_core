@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+### Upgraded
+
+- Rust dependency `monty` bumped from `v0.0.14` → `v0.0.17` (Cargo.toml +
+  Cargo.lock). README references updated. Build is source-compatible: `cargo
+  check`, `cargo clippy -D warnings`, `cargo test --lib` (188 passed) and
+  `dart test` on FFI (67 passed) all green with no shim changes required.
+
+### What changed upstream (monty v0.0.14 → v0.0.17)
+
+**New Python builtins (auto-supported, no FFI plumbing needed):**
+
+- `hasattr(obj, name)` — returns `bool`, never raises (PR #66, v0.0.15)
+- `setattr(obj, name, value)` — uses existing `py_set_attr` (PR #67, v0.0.17)
+- Chain assignment `a = b = 1` (PR #357, v0.0.15)
+
+**New surface (not yet exposed by dart_monty_core):**
+
+- **`MontyRun::call_function` / `MontySession::call`** — call a defined
+  Python function from Rust with native args, instead of building a call
+  string and feeding it through the REPL (PR #271, v0.0.15). Candidate for
+  a new `MontyRepl.call(name, args)` Dart API; today consumers concatenate
+  source.
+- **Async `Monty` construction without holding the GIL** (PR #358,
+  v0.0.15). dart_monty_core constructs synchronously inside a worker —
+  consider whether the async path matters for WASM.
+- **`ResourceTracker::gc_interval`** — `LimitedTracker` now honours a
+  custom GC interval rather than the hard-coded 100 000 default (PR #371,
+  v0.0.17). `MontyLimits` does not surface this; add a knob if consumers
+  need it.
+- **`monty-js` widened limits to `f64`** (>u32::MAX) (PR #344, v0.0.17).
+  Rust `ResourceLimits` types are unchanged; only the JS bridge type
+  changed. Verify when we next regenerate WASM bindings.
+
+**Behaviour changes worth tracking:**
+
+- Lone-surrogate input now raises `MontySyntaxError` instead of a raw
+  PyO3 `UnicodeEncodeError` (PR #355, v0.0.15).
+- Other input-conversion errors are wrapped as `MontyRuntimeError` instead
+  of bubbling raw PyO3 errors (PR #356, v0.0.15).
+- "Cheap sourcemaps" — per-instruction encoding changed, which shifts
+  the postcard wire format used by `MontyRepl.dump` / `restore` (PR
+  #354, v0.0.15). **v0.0.14 snapshots cannot be restored on v0.0.17.**
+  `PINNED_SNAPSHOT_2_PLUS_2` in `native/tests/integration.rs` updated
+  to the new bytes; the dump for `"2 + 2"` shrank from 98 → 74 bytes.
+  Consumers persisting snapshots across upgrades must regenerate.
+- Empty tuple singleton no longer counts toward the memory limit, so
+  `memoryBytes: 0` is now meaningful for allocation-free code (PR #363,
+  v0.0.17). Tests that asserted "even trivial code overflows at 0 bytes"
+  will start to fail.
+- `prefix_code` field renamed to `type_check_stubs` (PR #361, v0.0.16).
+  Not used anywhere in `native/` or `lib/` — confirmed via grep.
+- Input-safety hardening (PR #360, v0.0.16) — touched `convert.rs`,
+  `external.rs`, `monty_cls.rs`, `repl.rs`. No behaviour regressions
+  observed in our test corpus.
+
+**Bug fixes (inherited):**
+
+- Partial-future resolution panics in mixed `asyncio.gather()` (PR #251,
+  v0.0.15).
+- Negating `i64::MIN` no longer panics; slicing algorithms unified into
+  `slice.rs` (PR #368, v0.0.17).
+- `gc_interval` parameter is no longer silently ignored (PR #371, v0.0.17).
+
+### Gap inventory — follow-up work to consider
+
+| # | Gap | Files | Priority |
+|---|-----|-------|----------|
+| 1 | Expose `MontyRepl.call(name, args)` Dart API leveraging upstream `MontySession::call` (PR #271) | `lib/src/repl/`, `native/src/repl_handle.rs`, `native/include/dart_monty.h` | Medium |
+| 2 | Add `gc_interval` knob on `MontyLimits` (PR #371) | `lib/src/platform/monty_limits.dart`, `native/src/handle.rs` | Low |
+| 3 | Add fixture coverage for `hasattr` / `setattr` / chain assignment in our cross-backend corpus | `test/integration/_fixture_corpus.dart` | Low |
+| 4 | Document new `MontySyntaxError` path for lone surrogates (PR #355) in error docs | `README.md`, `CHANGELOG.md` (this entry) | Low |
+
 ### Added
 
 - **`flutter.assets` pubspec stanza.** Flutter consumers can reference
