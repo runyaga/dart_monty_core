@@ -59,9 +59,15 @@ pub unsafe fn parse_c_str<'a>(
 ///
 /// Includes `exc_type` (e.g. `"ValueError"`) and full `traceback` array
 /// with all frames from the upstream exception.
+///
+/// `message` carries only the raw exception message (without the type
+/// prefix that upstream's `summary()` would prepend). Consumers compose
+/// it with `exc_type` themselves — `${e.excType}: ${e.message}` is the
+/// idiomatic form. Storing the prefix on both fields produced
+/// `SyntaxError: SyntaxError: …` output downstream.
 pub fn monty_exception_to_json(e: &MontyException) -> Value {
     let mut obj = json!({
-        "message": e.summary(),
+        "message": e.message().unwrap_or(""),
         "exc_type": e.exc_type().to_string(),
     });
     let map = obj.as_object_mut().unwrap();

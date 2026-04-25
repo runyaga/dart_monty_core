@@ -1,3 +1,5 @@
+custom_html_template_path: test/integration/wasm_test_template.html
+
 tags:
   unit: {}
   integration:
@@ -5,6 +7,6 @@ tags:
   ffi:
     skip: "FFI integration tests. Run: dart test -p vm --run-skipped --tags=ffi"
   wasm:
-    skip: "WASM integration tests. Run: dart test -p chrome --run-skipped --tags=wasm"
+    skip: "WASM integration tests. Run: bash tool/test_wasm_unit.sh"
   ladder:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=ladder"

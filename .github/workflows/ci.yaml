@@ -458,6 +458,47 @@ jobs:
 
 
   # ---------------------------------------------------------------------------
+  # WASM unit-style tests — package:test scenarios under test/integration/wasm_*_test.dart
+  # (datetime_oscall, multi_repl, setextfns, fixture). Distinct from the
+  # fixture-corpus runner above, which uses a standalone Dart program.
+  # ---------------------------------------------------------------------------
+  test-wasm-unit:
+    name: WASM unit-style tests
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('js/package.json') }}
+          restore-keys: npm-
+
+      - run: dart pub get
+
+      - name: Install WASI runtime (npm)
+        run: |
+          set -euo pipefail
+          cd js
+          npm install --force
+
+      - name: Run WASM unit-style tests
+        run: bash tool/test_wasm_unit.sh
+
+  # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
   # ---------------------------------------------------------------------------
   patch-coverage:
