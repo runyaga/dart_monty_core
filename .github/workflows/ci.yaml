@@ -280,6 +280,46 @@ jobs:
             -p vm --run-skipped --tags=ffi --reporter=expanded
 
   # ---------------------------------------------------------------------------
+  # Example smoke tests — every example/*.dart must compile and exit 0.
+  # `dart analyze` only checks types; this is the only thing exercising the
+  # examples at runtime. Broken examples are tracked via markTestSkipped()
+  # with a TODO reason; remove the skip-list entry to enforce.
+  # ---------------------------------------------------------------------------
+  test-examples:
+    name: Example smoke tests
+    needs: [changes, ffigen]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Download FFI bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: ffi-bindings
+          path: lib/src/ffi/generated
+      - name: Build native library
+        working-directory: native
+        run: cargo build --release
+      - run: dart pub get
+      - name: Run example smoke tests
+        run: |
+          dart test test/integration/example_smoke_test.dart \
+            -p vm --run-skipped --tags=example --reporter=expanded
+
+  # ---------------------------------------------------------------------------
   # WASM/JS integration tests — 464 fixtures through MontyWasm in headless Chrome
   # Uses the dart_monty JS bridge (sparse-checkout) + freshly built WASM binary.
   # ---------------------------------------------------------------------------
