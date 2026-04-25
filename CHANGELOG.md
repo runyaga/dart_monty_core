@@ -41,9 +41,12 @@
   PyO3 `UnicodeEncodeError` (PR #355, v0.0.15).
 - Other input-conversion errors are wrapped as `MontyRuntimeError` instead
   of bubbling raw PyO3 errors (PR #356, v0.0.15).
-- "Cheap sourcemaps" — traceback shape may have shifted; existing
-  fixtures still pass but worth a manual diff if any consumer parses
-  traceback line/col (PR #354, v0.0.15).
+- "Cheap sourcemaps" — per-instruction encoding changed, which shifts
+  the postcard wire format used by `MontyRepl.dump` / `restore` (PR
+  #354, v0.0.15). **v0.0.14 snapshots cannot be restored on v0.0.17.**
+  `PINNED_SNAPSHOT_2_PLUS_2` in `native/tests/integration.rs` updated
+  to the new bytes; the dump for `"2 + 2"` shrank from 98 → 74 bytes.
+  Consumers persisting snapshots across upgrades must regenerate.
 - Empty tuple singleton no longer counts toward the memory limit, so
   `memoryBytes: 0` is now meaningful for allocation-free code (PR #363,
   v0.0.17). Tests that asserted "even trivial code overflows at 0 bytes"
