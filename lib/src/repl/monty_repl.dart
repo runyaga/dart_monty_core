@@ -167,6 +167,13 @@ class MontyRepl {
         ? '${inputs_encoder.inputsToCode(inputs)}\n$code'
         : code;
 
+    // Always sync the Rust handle's ext_fn_names HashSet to this feed's
+    // externals — including clearing it when externals is empty. Without
+    // this, names registered in a previous feed leak into the next
+    // feed's NameLookup auto-resolve and surface as a confusing
+    // "no handler registered" error instead of NameError.
+    await _bindings.setExtFns(externals.keys.toList());
+
     if (externals.isEmpty && osHandler == null) {
       // Fast path: no externals, use simple feedRun.
       final r = await _bindings.feedRun(effectiveCode);
@@ -186,7 +193,6 @@ class MontyRepl {
     }
 
     // Iterative path: drive the start/resume loop, dispatching externals.
-    await _bindings.setExtFns(externals.keys.toList());
     final initial = _translateProgress(
       await _bindings.feedStart(effectiveCode),
     );
