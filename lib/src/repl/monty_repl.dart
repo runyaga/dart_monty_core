@@ -133,6 +133,12 @@ class MontyRepl {
   bool _created = false;
   bool _disposed = false;
 
+  /// Script name used as the filename in tracebacks and error messages.
+  ///
+  /// Returns `null` when the REPL was constructed without one, in which
+  /// case the engine falls back to its default (`'main.py'`).
+  String? get scriptName => _scriptName;
+
   // ---------------------------------------------------------------------------
   // Synchronous feed
   // ---------------------------------------------------------------------------

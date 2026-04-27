@@ -53,6 +53,12 @@ class MontySession {
   @visibleForTesting
   bool get isDisposed => _isDisposed;
 
+  /// Script name used as the filename in tracebacks and error messages.
+  ///
+  /// Returns `null` when the session was constructed without one, in which
+  /// case the engine falls back to its default (`'main.py'`).
+  String? get scriptName => _scriptName;
+
   /// Executes [code] with full Python state from previous calls available.
   ///
   /// All Python objects (variables, functions, classes, modules) persist via

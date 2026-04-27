@@ -43,6 +43,10 @@ class Monty {
 
   final MontySession _session;
 
+  /// Script name used as the filename in tracebacks and error messages.
+  /// Defaults to `'main.py'` when unset.
+  String get scriptName => _session.scriptName ?? 'main.py';
+
   /// Executes Python [code] and returns the result.
   ///
   /// Variables, functions, classes, and module imports all persist across
