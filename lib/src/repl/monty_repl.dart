@@ -197,6 +197,11 @@ class MontyRepl {
   /// Register callback names in [externalFunctions]. When Python calls one,
   /// execution pauses and returns [MontyPending]. Use [resume] or
   /// [resumeWithError] to continue.
+  ///
+  /// [externalFunctions] is `List<String>` (names only) here, distinct from
+  /// the `Map<String, MontyCallback>` form on [feed]. The list shape is
+  /// intentional: the iterative path lets the caller drive dispatch, so
+  /// only the name registry crosses the FFI/WASM boundary.
   Future<MontyProgress> feedStart(
     String code, {
     List<String>? externalFunctions,
@@ -240,6 +245,8 @@ class MontyRepl {
   /// Returns whether [source] is syntactically complete for execution.
   ///
   /// Useful for building REPL UIs that show `>>>` vs `...` prompts.
+  /// Dart-only — the upstream `pydantic_monty` Python package does not
+  /// expose this helper; it wraps the engine's incomplete-input detector.
   Future<ReplContinuationMode> detectContinuation(String source) async {
     _checkNotDisposed();
     await _ensureCreated();
@@ -331,7 +338,9 @@ class MontyRepl {
         case MontyResolveFutures():
           progress = _translateProgress(await _bindings.resume('null'));
         case MontyNameLookup():
-          // REPL doesn't support NameLookup — signal NameError to Python.
+          // The Rust handle auto-resolves NameLookup via ext_fn_names; this
+          // branch only fires when the name was not registered. Signal
+          // NameError back to Python.
           progress = _translateProgress(
             await _bindings.resumeNameLookupUndefined(),
           );
