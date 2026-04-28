@@ -18,8 +18,9 @@ packages/
 # CI and tooling not relevant to consumers
 .github/
 tool/
-AGENTS.md
 CLAUDE.md
+# AGENTS.md is intentionally NOT excluded — it serves consumers compiling
+# from source (Toolchain prerequisites, Build) as well as maintainers.
 dcm_options.yaml
 analysis_options.yaml
 dart_test.yaml
@@ -27,6 +28,14 @@ ffigen.yaml
 
 # Docs dir (non-standard name — pub convention is doc/)
 docs/
+
+# Local mkdocs scaffolding — used to generate llms.txt locally for the
+# UX simulation harness; not consumer-facing artefacts.
+mkdocs.yml
+mkdocs_docs/
+site_mkdocs/
+.venv-docs/
+requirements-docs.txt
 
 # Gitignored files that are tracked in git (exclude from published package)
 pubspec.lock
