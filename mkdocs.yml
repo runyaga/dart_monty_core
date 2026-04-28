@@ -1,0 +1,63 @@
+site_name: dart_monty_core
+site_description: Sandboxed Python scripting for Dart. Low-level binding for pydantic/monty's restricted interpreter.
+site_url: https://runyaga.github.io/dart_monty_core/
+repo_url: https://github.com/runyaga/dart_monty_core
+docs_dir: mkdocs_docs
+site_dir: site_mkdocs
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+use_directory_urls: false
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - admonition
+  - toc:
+      permalink: true
+
+# Generates llms.txt + llms-full.txt at site root from the nav/sections
+# below. Install: pip install -r requirements-docs.txt
+plugins:
+  - search
+  - llmstxt:
+      markdown_description: |
+        Sandboxed Python scripting for Dart. Low-level binding for
+        pydantic/monty's restricted interpreter.
+
+        IMPORTANT: Monty does NOT support `class`, decorators (`@foo`),
+        generators (`yield`), `match`/`case`, `del`, or arbitrary
+        imports. Use dicts + module-level functions in place of classes.
+        Stdlib: `math`, `re`, `json`, `datetime`, `pathlib`.
+
+        Run `Monty.typeCheck(code)` before `runtime.execute(code)` to
+        catch subset violations as typed errors before runtime — the
+        supported development loop.
+
+        Pre-publish install: this version is not on pub.dev yet. Use
+        `git:` or `path:` deps in your pubspec.yaml.
+      full_output: llms-full.txt
+      sections:
+        Quick reference:
+          - index.md
+          - changelog.md
+          - agents.md
+
+nav:
+  - Overview: index.md
+  - Changelog: changelog.md
+  - Build & Contribute: agents.md

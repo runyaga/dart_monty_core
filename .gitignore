@@ -36,3 +36,7 @@ test/integration/@pydantic/
 
 # macOS
 .DS_Store
+
+# Local mkdocs build artefacts
+.venv-docs/
+site_mkdocs/
