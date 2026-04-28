@@ -292,6 +292,18 @@ abstract class WasmBindings {
   /// the default.
   Future<Uint8List> compile(String code, {String? scriptName, int? sessionId});
 
+  /// Runs static type checking on [code] without executing it.
+  ///
+  /// Returns the Monty `json`-format diagnostics string when errors are
+  /// found, or `null` when the code type-checks cleanly. Throws on
+  /// infrastructure failure.
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName,
+    int? sessionId,
+  });
+
   /// Runs precompiled [compiled] bytes to completion.
   ///
   /// Restores a handle from the snapshot bytes, applies [limitsJson] if

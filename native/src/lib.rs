@@ -8,10 +8,11 @@ mod repl_handle;
 pub use handle::{MontyHandle, MontyProgressTag, MontyResultTag};
 pub use repl_handle::MontyReplHandle;
 
-use std::ffi::{c_char, c_int};
+use std::ffi::{CStr, c_char, c_int};
 use std::ptr;
 
 use error::{catch_ffi_panic, parse_c_str, to_c_string};
+use monty_type_checking::{SourceFile, type_check};
 
 /// Common FFI wrapper for functions returning `MontyProgressTag`.
 /// Handles: handle null check, panic boundary, error out-parameter.
@@ -1375,6 +1376,123 @@ pub unsafe extern "C" fn monty_repl_restore(
                 unsafe { *out_error = to_c_string(&panic_msg) };
             }
             ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Type checking (stateless static analysis — no MontyHandle)
+// ---------------------------------------------------------------------------
+
+/// Run static type checking on Python source code.
+///
+/// The check uses a pooled in-memory database scrubbed on drop, so it never
+/// touches the execution heap of any `MontyHandle` in flight.
+///
+/// - `code`: NUL-terminated UTF-8 Python source.
+/// - `prefix_code`: optional NUL-terminated prefix (e.g. input variable
+///   declarations or external function signatures), or NULL.
+/// - `script_name`: NUL-terminated script name used in diagnostic spans.
+/// - `out_diagnostics_json`: receives the diagnostic render in Monty's
+///   `json` format on errors found, or NULL if the code type-checks
+///   cleanly. Caller frees with `monty_string_free`.
+/// - `out_error`: receives an error message if the type-check infrastructure
+///   itself fails (caller frees). NULL on success or on errors-found.
+///
+/// Returns `MONTY_RESULT_OK` if the check ran (regardless of whether errors
+/// were found) or `MONTY_RESULT_ERROR` if the infrastructure failed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_type_check(
+    code: *const c_char,
+    prefix_code: *const c_char,
+    script_name: *const c_char,
+    out_diagnostics_json: *mut *mut c_char,
+    out_error: *mut *mut c_char,
+) -> MontyResultTag {
+    // SAFETY: Caller guarantees `code` is a valid NUL-terminated C string if non-null.
+    let Ok(code_str) = (unsafe { parse_c_str(code, "code", out_error) }) else {
+        return MontyResultTag::Error;
+    };
+
+    // SAFETY: Caller guarantees `script_name` is a valid NUL-terminated C string if non-null.
+    let Ok(script_str) = (unsafe { parse_c_str(script_name, "script_name", out_error) }) else {
+        return MontyResultTag::Error;
+    };
+
+    // prefix_code is optional — NULL means "no prefix".
+    let prefix_str: Option<&str> = if prefix_code.is_null() {
+        None
+    } else {
+        // SAFETY: `prefix_code` is non-null (just checked) and the caller guarantees it
+        // is a valid NUL-terminated C string.
+        if let Ok(s) = unsafe { CStr::from_ptr(prefix_code) }.to_str() {
+            Some(s)
+        } else {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing error message
+                unsafe {
+                    *out_error = to_c_string("prefix_code is not valid UTF-8");
+                }
+            }
+            return MontyResultTag::Error;
+        }
+    };
+
+    // The reference monty-js binding prepends `prefix_code\n` to the main
+    // source before type-checking; mirror that behavior here.
+    let effective_code = match prefix_str {
+        Some(prefix) => format!("{prefix}\n{code_str}"),
+        None => code_str.to_string(),
+    };
+
+    let outcome = catch_ffi_panic(|| {
+        let source = SourceFile::new(&effective_code, script_str);
+        match type_check(&source, None) {
+            Ok(None) => Ok(None),
+            Ok(Some(diagnostics)) => diagnostics
+                .format_from_str("json")
+                .map(|d| Some(d.to_string()))
+                .map_err(|e| format!("format_from_str: {e}")),
+            Err(e) => Err(e),
+        }
+    });
+
+    match outcome {
+        Ok(Ok(None)) => {
+            if !out_diagnostics_json.is_null() {
+                // SAFETY: out_diagnostics_json is non-null (just checked), clearing to NULL
+                unsafe { *out_diagnostics_json = ptr::null_mut() };
+            }
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), clearing to indicate success
+                unsafe { *out_error = ptr::null_mut() };
+            }
+            MontyResultTag::Ok
+        }
+        Ok(Ok(Some(json))) => {
+            if !out_diagnostics_json.is_null() {
+                // SAFETY: out_diagnostics_json is non-null (just checked), writing diagnostics JSON
+                unsafe { *out_diagnostics_json = to_c_string(&json) };
+            }
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), clearing — errors-found is not a failure
+                unsafe { *out_error = ptr::null_mut() };
+            }
+            MontyResultTag::Ok
+        }
+        Ok(Err(infra_err)) => {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing infrastructure error
+                unsafe { *out_error = to_c_string(&infra_err) };
+            }
+            MontyResultTag::Error
+        }
+        Err(panic_msg) => {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing panic message
+                unsafe { *out_error = to_c_string(&panic_msg) };
+            }
+            MontyResultTag::Error
         }
     }
 }

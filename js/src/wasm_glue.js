@@ -76,6 +76,13 @@ function createWasiImports(getMemory) {
     proc_exit(code) {
       throw new Error(`WASI proc_exit called with code ${code}`);
     },
+
+    // No-op — JS is single-threaded; there's nothing to yield to.
+    // Required by salsa-rs (the incremental computation framework
+    // pulled in by monty-type-checking).
+    sched_yield() {
+      return 0;
+    },
   };
 }
 

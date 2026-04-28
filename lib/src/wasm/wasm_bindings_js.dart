@@ -97,6 +97,14 @@ external JSPromise<JSAny> _jsCompile(
   JSNumber? sessionId,
 ]);
 
+@JS('DartMontyBridge.typeCheck')
+external JSPromise<JSString> _jsTypeCheck(
+  JSString code, [
+  JSString? prefixCode,
+  JSString? scriptName,
+  JSNumber? sessionId,
+]);
+
 @JS('DartMontyBridge.runPrecompiled')
 external JSPromise<JSString> _jsRunPrecompiled(
   JSString dataBase64, [
@@ -406,6 +414,27 @@ class WasmBindingsJs extends WasmBindings {
     }
 
     return result.snapshotBuffer!.toDart.asUint8List();
+  }
+
+  @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+    int? sessionId,
+  }) async {
+    final resultJson = await _jsTypeCheck(
+      code.toJS,
+      prefixCode?.toJS,
+      scriptName.toJS,
+      sessionId?.toJS,
+    ).toDart;
+    final map = json.decode(resultJson.toDart) as Map<String, dynamic>;
+    if (map['ok'] != true) {
+      throw StateError(map['error'] as String? ?? 'typeCheck failed');
+    }
+
+    return map['diagnosticsJson'] as String?;
   }
 
   @override

@@ -130,16 +130,10 @@ Future<void> _hydrateRegistry() async {
   }
 
   final externalFunctions = <String, MontyCallback>{
-    'make_user': (a) async => _dataclass(
-      name: 'User',
-      typeId: 1,
-      attrs: {'name': 'carol', 'age': 7},
-    ),
-    'make_order': (a) async => _dataclass(
-      name: 'Order',
-      typeId: 2,
-      attrs: {'id': 99, 'total': 12.5},
-    ),
+    'make_user': (a) async =>
+        _dataclass(name: 'User', typeId: 1, attrs: {'name': 'carol', 'age': 7}),
+    'make_order': (a) async =>
+        _dataclass(name: 'Order', typeId: 2, attrs: {'id': 99, 'total': 12.5}),
   };
 
   final ru = await Monty(

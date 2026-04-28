@@ -1,8 +1,17 @@
 [advisories]
 version = 2
 # atomic-polyfill is unmaintained but comes from monty's transitive deps.
-# We can't fix this until upstream monty updates their deps.
-ignore = ["RUSTSEC-2023-0089"]
+# unic-* crates flow in via ty_python_semantic → ruff_python_literal
+# (monty_type_checking). All unfixable upstream — open-i18n/rust-unic is
+# archived with no safe upgrade. Tracked in upstream advisory-db#2414.
+ignore = [
+    "RUSTSEC-2023-0089",
+    "RUSTSEC-2025-0075",  # unic-char-range
+    "RUSTSEC-2025-0080",  # unic-common
+    "RUSTSEC-2025-0081",  # unic-char-property
+    "RUSTSEC-2025-0094",  # unic-ucd-category
+    "RUSTSEC-2025-0098",  # unic-ucd-version
+]
 
 [licenses]
 version = 2
@@ -12,7 +21,9 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "CC0-1.0",          # constant_time_eq (transitive via monty_type_checking)
     "ISC",
+    "MPL-2.0",          # colored (transitive via monty_type_checking)
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "Zlib",

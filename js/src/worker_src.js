@@ -1230,6 +1230,69 @@ function handleDispose(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Type checking (stateless — no activeHandle)
+// ---------------------------------------------------------------------------
+
+function handleTypeCheck(id, code, prefixCode, scriptName) {
+  let cCode = null;
+  let cPrefix = null;
+  let cName = null;
+  const outDiag = allocOutPtr();
+  const outError = allocOutPtr();
+
+  let resultTag;
+  try {
+    cCode = allocCString(code);
+    cPrefix = prefixCode ? allocCString(prefixCode) : null;
+    cName = allocCString(scriptName || 'main.py');
+    resultTag = wasm.monty_type_check(
+      cCode.ptr,
+      cPrefix ? cPrefix.ptr : 0,
+      cName.ptr,
+      outDiag.ptr,
+      outError.ptr,
+    );
+  } catch (e) {
+    outDiag.free();
+    outError.free();
+    if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
+    if (cPrefix) wasm.monty_dealloc(cPrefix.ptr, cPrefix.size);
+    if (cName) wasm.monty_dealloc(cName.ptr, cName.size);
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: e.message || String(e),
+      errorType: 'Panic',
+    });
+    return;
+  } finally {
+    if (cCode) wasm.monty_dealloc(cCode.ptr, cCode.size);
+    if (cPrefix) wasm.monty_dealloc(cPrefix.ptr, cPrefix.size);
+    if (cName) wasm.monty_dealloc(cName.ptr, cName.size);
+  }
+
+  const diagPtr = outDiag.read();
+  const errPtr = outError.read();
+  const diagnosticsJson = readAndFreeCString(diagPtr);
+  const errMsg = readAndFreeCString(errPtr);
+  outDiag.free();
+  outError.free();
+
+  if (resultTag !== 0) {
+    self.postMessage({
+      type: 'result', id, ok: false,
+      error: errMsg || 'monty_type_check failed',
+      errorType: 'TypeCheckError',
+    });
+    return;
+  }
+
+  self.postMessage({
+    type: 'result', id, ok: true,
+    diagnosticsJson, // null when no errors found
+  });
+}
+
+// ---------------------------------------------------------------------------
 // REPL Handlers
 // ---------------------------------------------------------------------------
 
@@ -1554,7 +1617,7 @@ function handleReplRestore(id, replId, dataBase64) {
 self.onmessage = (e) => {
   const { type, id, code, extFns, value, errorMessage, excType, fnName, limits,
     dataBase64, scriptName, resultsJson, errorsJson, valueJson, source,
-    replId } = e.data;
+    replId, prefixCode } = e.data;
   try {
     switch (type) {
       case 'run':
@@ -1604,6 +1667,9 @@ self.onmessage = (e) => {
         break;
       case 'dispose':
         handleDispose(id);
+        break;
+      case 'typeCheck':
+        handleTypeCheck(id, code, prefixCode, scriptName);
         break;
       case 'replCreate':
         handleReplCreate(id, replId, scriptName);

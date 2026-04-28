@@ -186,6 +186,17 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  }) async => _bindings.typeCheck(
+    code,
+    prefixCode: prefixCode,
+    scriptName: scriptName,
+  );
+
+  @override
   Future<CoreRunResult> runPrecompiled(
     Uint8List compiled, {
     String? limitsJson,

@@ -242,6 +242,20 @@ abstract class MontyCoreBindings {
   /// re-parsing.
   Future<Uint8List> compileCode(String code);
 
+  /// Runs static type checking on [code] without executing it.
+  ///
+  /// Stateless — uses a pooled in-memory database scrubbed on drop, so
+  /// the analysis heap is isolated from any in-flight execution heap.
+  ///
+  /// Returns the Monty `json`-format diagnostics string when errors are
+  /// found, or `null` when the code type-checks cleanly. Throws on
+  /// type-check infrastructure failure.
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  });
+
   /// Runs precompiled [compiled] bytes to completion.
   ///
   /// Restores a handle from the snapshot bytes, applies [limitsJson], and

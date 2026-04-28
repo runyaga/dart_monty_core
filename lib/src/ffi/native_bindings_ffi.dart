@@ -303,6 +303,54 @@ class NativeBindingsFfi extends NativeBindings {
     }
   }
 
+  @override
+  String? typeCheck(
+    String code, {
+    String? prefixCode,
+    String? scriptName,
+  }) {
+    final cCode = code.toNativeUtf8().cast<Char>();
+    final cPrefix = prefixCode != null
+        ? prefixCode.toNativeUtf8().cast<Char>()
+        : nullptr.cast<Char>();
+    final cName = (scriptName ?? 'main.py').toNativeUtf8().cast<Char>();
+    final outDiag = calloc<Pointer<Char>>();
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      final tag = ffi_native.monty_type_check(
+        cCode,
+        cPrefix,
+        cName,
+        outDiag,
+        outError,
+      );
+      if (tag != ffi_native.MontyResultTag.MONTY_RESULT_OK) {
+        final errorMsg = _readAndFreeString(outError.value);
+        // Clean up out-diag in case it was set despite the error tag.
+        if (outDiag.value != nullptr) {
+          ffi_native.monty_string_free(outDiag.value);
+        }
+        throw MontyException(
+          message: errorMsg ?? 'monty_type_check failed',
+        );
+      }
+      // Clean — no diagnostics.
+      if (outDiag.value == nullptr) {
+        return null;
+      }
+
+      return _readAndFreeString(outDiag.value);
+    } finally {
+      calloc.free(cCode);
+      if (prefixCode != null) calloc.free(cPrefix);
+      calloc
+        ..free(cName)
+        ..free(outDiag)
+        ..free(outError);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // REPL
   // ---------------------------------------------------------------------------
