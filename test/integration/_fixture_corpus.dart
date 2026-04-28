@@ -306,13 +306,13 @@ const Map<String, String> fixtureCorpus = {
   'ext_call__name_lookup_fn_06_conditional.py':
       "# call-external\n# First-class ext fn reference: in conditional expression.\nop = add_ints if True else add_ints\nresult = op(10, 5)\nassert result == 15, f'expected 15, got {result}'\n",
   'ext_call__name_lookup_fn_07_map_two_args_xfail.py':
-      "# call-external\n# KNOWN UPSTREAM LIMITATION (pydantic/monty):\n# map() cannot suspend for external function calls.\n# When upstream adds support, this test will fail — remove Raise= directive.\nlist(map(add_ints, [1, 2, 3], [10, 20, 30]))\n# Raise=RuntimeError\n",
+      "# call-external\n# KNOWN UPSTREAM LIMITATION (pydantic/monty):\n# map() cannot suspend for external function calls.\n# When upstream adds support, change Raise= to Return=[11, 22, 33].\nlist(map(add_ints, [1, 2, 3], [10, 20, 30]))\n# Raise=NotImplementedError\n",
   'ext_call__name_lookup_fn_08_map_one_arg_xfail.py':
-      "# call-external\n# KNOWN UPSTREAM LIMITATION (pydantic/monty):\n# map() cannot suspend for external function calls.\n# When upstream adds support, this test will fail — remove Raise= directive.\nlist(map(return_value, [1, 2, 3]))\n# Raise=RuntimeError\n",
+      "# call-external\n# KNOWN UPSTREAM LIMITATION (pydantic/monty):\n# map() cannot suspend for external function calls.\n# When upstream adds support, change Raise= to Return=[1, 2, 3].\nlist(map(return_value, [1, 2, 3]))\n# Raise=NotImplementedError\n",
   'ext_call__name_lookup_fn_09_user_fn_in_map.py':
       "# call-external\n# Control: map() with user-defined (pure Python) fn works fine.\n# Only external functions trip the upstream limitation.\ndef my_add(a, b):\n    return a + b\nresult = list(map(my_add, [1, 2, 3], [10, 20, 30]))\nassert result == [11, 22, 33], f'expected [11, 22, 33], got {result}'\n",
   'ext_call__name_lookup_fn_10_lambda_in_map_xfail.py':
-      "# call-external\n# KNOWN UPSTREAM LIMITATION (pydantic/monty):\n# Wrapping an external function in a lambda does NOT escape the limitation —\n# the suspend point is still inside map()'s stack frame.\n# When upstream adds support, this test will fail — remove Raise= directive.\nlist(map(lambda x: add_ints(x, 100), [1, 2, 3]))\n# Raise=RuntimeError\n",
+      "# call-external\n# KNOWN UPSTREAM LIMITATION (pydantic/monty):\n# Wrapping an external function in a lambda does NOT escape the limitation —\n# the suspend point is still inside map()'s stack frame.\n# When upstream adds support, change Raise= to Return=[101, 102, 103].\nlist(map(lambda x: add_ints(x, 100), [1, 2, 3]))\n# Raise=NotImplementedError\n",
   'ext_call__name_lookup_undefined.py':
       "# call-external\n# When NameLookup returns Undefined for an unknown name, NameError is raised.\ntotally_unknown_name\n# Raise=NameError(\"name 'totally_unknown_name' is not defined\")\n",
   'ext_call__nested_calls.py':

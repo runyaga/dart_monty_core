@@ -276,7 +276,12 @@ jobs:
       - run: dart pub get
       - name: Run FFI integration tests
         run: |
-          dart test test/integration/oracle_ffi_test.dart \
+          dart test \
+            test/integration/oracle_ffi_test.dart \
+            test/integration/oracle_ffi_ext_test.dart \
+            test/integration/ffi_datetime_oscall_test.dart \
+            test/integration/ffi_multi_repl_test.dart \
+            test/integration/ffi_repl_oscall_test.dart \
             -p vm --run-skipped --tags=ffi --reporter=expanded
 
   # ---------------------------------------------------------------------------
@@ -480,6 +485,10 @@ jobs:
             FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | wc -l || echo 0)
             if [ "$FAILURES" -gt 0 ]; then
               echo "ERROR ($label): $FAILURES fixtures failed"
+              echo "  --- failed fixtures ---"
+              grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | while IFS= read -r line; do
+                echo "    ${line#*FIXTURE_RESULT:}"
+              done
               TOTAL_FAILURES=$((TOTAL_FAILURES + FAILURES))
             fi
             rm -f "$log"
