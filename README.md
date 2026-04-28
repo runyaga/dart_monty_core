@@ -10,9 +10,9 @@ interpreter from Pydantic, written in Rust.
 [`dart_monty`](https://github.com/runyaga/dart_monty), which depends
 on this package.
 
-> **Pre-1.0** — install via `git:` from GitHub (see Installation
-> below). Versioning convention: minor version mirrors the upstream
-> `monty` patch (`0.X.0 ↔ monty v0.0.X`).
+**Pre-1.0** — install via `git:` from GitHub (see Installation
+below). Versioning convention: minor version mirrors the upstream
+`monty` patch (`0.X.0 ↔ monty v0.0.X`).
 
 ## Why
 
@@ -218,7 +218,9 @@ For local development against a worktree, use `path:` instead:
 ```yaml
 dependencies:
   dart_monty_core:
-    path: /path/to/dart_monty_core
+    git:
+      url: https://github.com/runyaga/dart_monty_core
+      ref: v0.17.0   # pin to a tag; do not float on main
 ```
 
 ### Prerequisites for FFI (desktop only)
@@ -251,9 +253,11 @@ WASM ships pre-built — no toolchain required. Copy the three assets into
 your `web/` and add a script tag:
 
 ```bash
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_bridge.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_worker.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_native.wasm web/
+# Git-deps cache the cloned repo here (path encodes the resolved sha):
+SRC=$(find ~/.pub-cache/git -maxdepth 2 -type d -name 'dart_monty_core-*' | head -1)
+cp "$SRC/lib/assets/dart_monty_core_bridge.js" web/
+cp "$SRC/lib/assets/dart_monty_core_worker.js" web/
+cp "$SRC/lib/assets/dart_monty_core_native.wasm" web/
 ```
 
 ```html
