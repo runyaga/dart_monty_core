@@ -11,9 +11,10 @@
 //    Each call is logged with its arguments and return value so the flow
 //    is visible.
 //
-//  Panel VFS — Monty + osHandler (virtual filesystem, snapshot/restore)
-//    Exercises: Monty(osHandler:), pathlib, OsCallException, snapshot,
-//               restore, MontyPath value type.
+//  Panel VFS — MontyRepl + per-call osHandler (virtual filesystem,
+//  snapshot/restore)
+//    Exercises: MontyRepl.feedRun(osHandler:), pathlib, OsCallException,
+//               snapshot, restore, MontyPath value type.
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:typed_data';
@@ -415,7 +416,7 @@ void _initExternalsPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Panel VFS — Monty with osHandler, pathlib, snapshot/restore
+// Panel VFS — MontyRepl with per-call osHandler, pathlib, snapshot/restore
 // ---------------------------------------------------------------------------
 void _initVfsPanel() {
   final output = _div('output-vfs');
@@ -425,14 +426,14 @@ void _initVfsPanel() {
   final restoreBtn = _button('restore-vfs');
 
   Uint8List? savedSnap;
-  final monty = Monty(osHandler: _vfsOsHandler);
+  final repl = MontyRepl();
 
   void write(String text, {String? className}) =>
       _appendLine(output, text, className: className);
 
   output.innerHTML = ''.toJS;
   write(
-    'VFS panel — Monty with osHandler. State persists across run() calls.',
+    'VFS panel — MontyRepl with per-call osHandler. State persists across feedRun calls.',
     className: 'system-line',
   );
   write('Files: ${_vfs.keys.join(", ")}', className: 'system-line');
@@ -451,7 +452,7 @@ void _initVfsPanel() {
     write('>>> $code', className: 'input-line');
 
     try {
-      final result = await monty.run(code);
+      final result = await repl.feedRun(code, osHandler: _vfsOsHandler);
 
       if (result.printOutput != null && result.printOutput!.isNotEmpty) {
         write(result.printOutput!.trimRight(), className: 'print-line');
@@ -474,7 +475,7 @@ void _initVfsPanel() {
 
   snapBtn.onclick = (web.MouseEvent _) {
     unawaited(() async {
-      final b = await monty.snapshot();
+      final b = await repl.snapshot();
       savedSnap = b;
       write('📸 Snapshot (${b.length} bytes).', className: 'system-line');
     }());
@@ -487,7 +488,7 @@ void _initVfsPanel() {
       return;
     }
     unawaited(() async {
-      await monty.restore(s);
+      await repl.restore(s);
       write('↩ Restored.', className: 'system-line');
     }());
   }.toJS;
