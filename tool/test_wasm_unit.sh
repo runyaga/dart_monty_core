@@ -90,6 +90,7 @@ dart test \
   --tags=wasm \
   --reporter expanded \
   --concurrency 2 \
+  test/integration/wasm_dataclass_hydrate_test.dart \
   test/integration/wasm_datetime_oscall_test.dart \
   test/integration/wasm_fixture_test.dart \
   test/integration/wasm_monty_compile_run_test.dart \

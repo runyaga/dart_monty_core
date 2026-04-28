@@ -138,6 +138,38 @@ final class MontyDataclass extends MontyValue {
   /// Whether the dataclass is frozen (immutable).
   final bool frozen;
 
+  /// The attribute values converted to plain Dart objects via
+  /// [MontyValue.dartValue]. Convenient for hydrating into a
+  /// user-supplied class.
+  Map<String, Object?> get dartAttrs =>
+      attrs.map((k, v) => MapEntry(k, v.dartValue));
+
+  /// Hydrates this dataclass into a Dart object via [factory].
+  ///
+  /// `factory` receives [dartAttrs] (a plain `Map<String, Object?>`) and
+  /// returns the user class. Composes naturally with `Map<String,
+  /// DataclassFactory>` registries on the caller side:
+  ///
+  /// ```dart
+  /// final factories = <String, Object Function(Map<String, Object?>)>{
+  ///   'User': (a) => User(name: a['name'] as String, age: a['age'] as int),
+  ///   'Order': Order.fromAttrs,
+  /// };
+  ///
+  /// final dc = result.value as MontyDataclass;
+  /// final dartObject = factories[dc.name]!(dc.dartAttrs);
+  /// ```
+  ///
+  /// For one-off conversion, call [hydrate] directly:
+  ///
+  /// ```dart
+  /// final user = (result.value as MontyDataclass).hydrate(
+  ///   (a) => User(name: a['name'] as String),
+  /// );
+  /// ```
+  T hydrate<T>(T Function(Map<String, Object?> attrs) factory) =>
+      factory(dartAttrs);
+
   @override
   Map<String, Object?> toJson() => {
     '__type': 'dataclass',
