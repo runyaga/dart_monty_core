@@ -197,10 +197,15 @@ maxRecursionDepth:)`.
 
 ### Install (from GitHub)
 
-`dart_monty_core` is distributed via GitHub. **Do not use
-`dart pub add dart_monty_core`** — pub.dev does not yet have
-0.17.0; the historical `dart_monty` 0.11.0 there is a different,
-older API.
+> ## ⚠️ Do **not** run `dart pub add dart_monty_core`
+>
+> pub.dev does not yet have 0.17.0. The legacy `dart_monty` package
+> on pub.dev is the **0.11.0** API which has nothing in common with
+> the current `dart_monty_core`. `dart pub add` silently succeeds
+> against that legacy package and you'll spend time debugging an API
+> mismatch that has nothing to do with your code.
+>
+> Install via `git:` deps as shown below.
 
 ```yaml
 dependencies:
