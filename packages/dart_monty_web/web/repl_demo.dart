@@ -192,9 +192,17 @@ void _initReplPanel() {
   // Static signatures for Dart-registered externals so Monty.typeCheck
   // recognises calls like host_upper("hi") instead of flagging an
   // undefined name. Kept in sync with the externalFunctions map below.
+  // The body must be type-clean (return a str): Monty's checker treats
+  // `...` as an empty body that implicitly returns None.
   const externalsPrefix = '''
-def host_upper(s: str) -> str: ...
+def host_upper(s: str) -> str:
+    return s
 ''';
+  // Newline count of the prefix — diagnostics in this region come from
+  // the synthetic prefix, not user code, and are filtered out below.
+  // Diagnostics in user code have their line numbers rebased so they
+  // line up with the textarea.
+  final prefixLines = '\n'.allMatches(externalsPrefix).length;
 
   typeCheckBtn.onclick = (web.MouseEvent _) {
     unawaited(() async {
@@ -204,10 +212,13 @@ def host_upper(s: str) -> str: ...
         return;
       }
       try {
-        final errors = await Monty.typeCheck(
+        final raw = await Monty.typeCheck(
           code,
           prefixCode: externalsPrefix,
         );
+        final errors = raw
+            .where((e) => e.line == null || e.line! > prefixLines)
+            .toList(growable: false);
         if (errors.isEmpty) {
           write('🔎 No type errors.', className: 'system-line');
           return;
@@ -217,9 +228,10 @@ def host_upper(s: str) -> str: ...
           className: 'system-line',
         );
         for (final e in errors) {
-          final loc = (e.line != null && e.column != null)
-              ? '${e.line}:${e.column}'
-              : (e.line?.toString() ?? '?');
+          final userLine = e.line == null ? null : e.line! - prefixLines;
+          final loc = (userLine != null && e.column != null)
+              ? '$userLine:${e.column}'
+              : (userLine?.toString() ?? '?');
           write('  $loc  ${e.code}: ${e.message}', className: 'error-line');
         }
       } on Object catch (e) {
