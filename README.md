@@ -185,21 +185,59 @@ maxRecursionDepth:)`.
 
 ## Installation
 
+> **This package builds the native FFI binary from source on `dart pub get`.**
+> If you don't want a Rust toolchain on consumer machines, depend on
+> [`dart_monty`](https://github.com/runyaga/dart_monty) instead — it
+> bundles per-platform binaries and is the right call for almost every
+> Flutter consumer.
+
 ```yaml
 dependencies:
-  dart_monty_core: 0.17.0
+  dart_monty_core: 0.17.0   # exact pin until 1.0
 ```
 
-**Native (FFI)** — needs Rust + Cargo; the native-assets hook compiles the
-dylib on `pub get`.
+### Prerequisites for FFI (native targets — desktop, server, CLI, mobile)
 
-**Web (WASM)** — copy the three assets from `lib/assets/` into your `web/`
-and add `<script src="dart_monty_core_bridge.js"></script>`.
-`packages/dart_monty_web/` demonstrates the full wiring.
+The `hook/build.dart` native-assets hook runs `cargo build --release` on
+the consumer's machine during `pub get`. Required toolchain:
 
-**Flutter** — depend on [`dart_monty`](https://github.com/runyaga/dart_monty);
-assets are bundled automatically. JS / TS apps should use
-[`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty) directly.
+- **Rust** — install via [rustup](https://rustup.rs)
+- **System toolchain for the link step**:
+  - **macOS**: `xcode-select --install` (provides `clang`)
+  - **Linux**: `sudo apt install build-essential` / `dnf install gcc` / equivalent
+  - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with the C++ workload
+  - **iOS**: Xcode + `rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios`
+  - **Android**: [Android NDK](https://developer.android.com/ndk/downloads) + [`cargo-ndk`](https://crates.io/crates/cargo-ndk) + `rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi`
+
+For Flutter mobile apps, using
+[`dart_monty`](https://github.com/runyaga/dart_monty) (which ships
+pre-built per-ABI binaries) is almost always the right call instead of
+setting up Rust + NDK on every developer's machine.
+
+First `pub get` takes 1–3 minutes (compiling the native crate); subsequent
+runs reuse cargo's cache.
+
+### Web (WASM)
+
+WASM ships pre-built — no toolchain required. Copy the three assets into
+your `web/` and add a script tag:
+
+```bash
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_bridge.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_worker.js web/
+cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_native.wasm web/
+```
+
+```html
+<script src="dart_monty_core_bridge.js"></script>
+```
+
+`packages/dart_monty_web/` in this repo demonstrates the full wiring.
+
+### Other ecosystems
+
+- **Flutter** — [`dart_monty`](https://github.com/runyaga/dart_monty) bundles per-arch binaries; no Rust required.
+- **JS / TS** — use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty); the canonical npm package.
 
 ## Known upstream limitations
 
