@@ -34,14 +34,14 @@ Future<void> _autoDispatch() async {
 }
 
 // ── Manual loop ───────────────────────────────────────────────────────────────
-// session.start() returns the first MontyProgress.
+// session.feedStart() returns the first MontyProgress.
 // Loop with resume() until MontyComplete.
 Future<void> _manualLoop() async {
   print('\n── manual loop ──');
   final session = MontySession();
 
   // Register which external names Python can call.
-  var progress = await session.start(
+  var progress = await session.feedStart(
     '''
 a = compute(5)
 b = compute(a)
@@ -95,7 +95,7 @@ Future<void> _resumeWithError() async {
   print('\n── resumeWithError ──');
   final session = MontySession();
 
-  var progress = await session.start(
+  var progress = await session.feedStart(
     '''
 try:
     x = risky_call()
@@ -128,7 +128,7 @@ Future<void> _osCallManual() async {
   print('\n── os call manual ──');
   final session = MontySession();
 
-  var progress = await session.start('''
+  var progress = await session.feedStart('''
 import pathlib
 content = pathlib.Path("/data/notes.txt").read_text()
 ''');

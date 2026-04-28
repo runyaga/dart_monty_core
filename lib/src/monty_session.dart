@@ -106,8 +106,12 @@ class MontySession {
 
   /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
   ///
-  /// [limits] and [scriptName] are accepted for API compatibility but ignored.
-  Future<MontyProgress> start(
+  /// Mirrors [MontyRepl.feedStart]; pause-and-resume drives external
+  /// dispatch from Dart so only the names cross the FFI/WASM boundary.
+  ///
+  /// [limits] and [scriptName] are accepted for API compatibility but
+  /// ignored.
+  Future<MontyProgress> feedStart(
     String code, {
     List<String>? externalFunctions,
     MontyLimits? limits,

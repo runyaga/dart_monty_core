@@ -5,7 +5,7 @@
 //               snapshot, restore, all MontyValue types, MontyResult fields.
 //
 //  Panel B — Externals showcase (Python → Dart callbacks)
-//    Exercises: MontySession.start/resume, MontyPending (functionName, args,
+//    Exercises: MontySession.feedStart/resume, MontyPending (functionName, args,
 //               kwargs, callId), resumeWithError, MontyOsCall, MontyProgress.
 //    Pre-registered Dart functions: db_query, compute, format_currency, now.
 //    Each call is logged with its arguments and return value so the flow
@@ -312,7 +312,7 @@ void _initExternalsPanel() {
 
     try {
       // Use start/resume so we can log each MontyPending call as it happens.
-      var progress = await session.start(
+      var progress = await session.feedStart(
         code,
         externalFunctions: externals.keys.toList(),
       );
