@@ -1,7 +1,7 @@
 /// Shared utilities for capturing the last expression in user code.
 ///
 /// Used by `AgentSession` to wrap the trailing expression as `__r = (expr)`
-/// so it becomes the execution's return value. `MontySession` is backed by
+/// so it becomes the execution's return value. `MontyRepl` is backed by
 /// `MontyRepl` whose Rust interpreter handles expression capture natively.
 library;
 

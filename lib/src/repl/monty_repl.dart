@@ -127,7 +127,7 @@ class MontyRepl {
        _scriptName = scriptName,
        _preamble = preamble;
 
-  final ReplBindings _bindings;
+  ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;
   bool _created = false;
@@ -147,25 +147,36 @@ class MontyRepl {
   /// Feeds [code] and runs to completion.
   ///
   /// State (variables, functions, classes, heap objects) persists across
-  /// calls. If [externalFunctions] are provided, Python can call them like
-  /// regular functions; each call is dispatched and the result resumed
-  /// automatically.
+  /// calls. If [externalFunctions] are provided, Python can call them
+  /// like regular functions; each call is dispatched and the result
+  /// resumed automatically.
   ///
-  /// If [code] raises a Python exception, the REPL survives and the error
-  /// is returned in [MontyResult.error].
+  /// Python-level exceptions land in [MontyResult.error] rather than
+  /// throwing — the REPL survives and can keep running. Binding-level
+  /// failures (handle invalidated, resource limits) still throw.
   ///
-  /// [inputs] injects per-invocation Python variables before [code] runs.
-  /// Each key becomes a Python variable; values are converted to Python
-  /// literals.
+  /// [inputs] injects per-invocation Python variables before [code]
+  /// runs. Each key becomes a Python variable; values are converted to
+  /// Python literals.
   ///
-  /// [externalFunctions] is a `Map<String, MontyCallback>` here — distinct
-  /// from the `List<String>` form on [feedStart], where the iterative
-  /// path drives dispatch from Dart and only the names cross the boundary.
+  /// [externalFunctions] is a `Map<String, MontyCallback>` here —
+  /// distinct from the `List<String>` form on [feedStart], where the
+  /// iterative path drives dispatch from Dart and only the names cross
+  /// the boundary.
+  ///
+  /// [printCallback], if provided, is invoked once per call with the
+  /// captured `print()` output before the result returns. The first
+  /// argument is always `'stdout'` (matches Python's
+  /// `Literal['stdout']`). This is a batch callback — the entire
+  /// captured output is delivered in a single call when execution
+  /// completes; per-flush streaming is not currently supported. When
+  /// the held code prints nothing, the callback is not invoked.
   Future<MontyResult> feedRun(
     String code, {
     Map<String, MontyCallback> externalFunctions = const {},
     OsCallHandler? osHandler,
     Map<String, Object?>? inputs,
+    void Function(String stream, String text)? printCallback,
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
@@ -174,38 +185,62 @@ class MontyRepl {
         : code;
 
     // Always sync the Rust handle's ext_fn_names HashSet to this feed's
-    // externalFunctions — including clearing it when empty. Without this,
-    // names registered in a previous feed leak into the next feed's
-    // NameLookup auto-resolve and surface as a confusing
+    // externalFunctions — including clearing it when empty. Without
+    // this, names registered in a previous feed leak into the next
+    // feed's NameLookup auto-resolve and surface as a confusing
     // "no handler registered" error instead of NameError.
     await _bindings.setExtFns(externalFunctions.keys.toList());
 
-    if (externalFunctions.isEmpty && osHandler == null) {
-      // Fast path: no externalFunctions, use simple feedRun.
-      final r = await _bindings.feedRun(effectiveCode);
-      _pending = false;
-      if (r.ok) {
-        return MontyResult(
-          value: MontyValue.fromJson(r.value),
-          error: _buildReplError(r.error, r.excType, r.traceback),
-          usage: r.usage ?? _replZeroUsage,
-          printOutput: r.printOutput,
+    try {
+      if (externalFunctions.isEmpty && osHandler == null) {
+        // Fast path: no externalFunctions, use simple feedRun.
+        final r = await _bindings.feedRun(effectiveCode);
+        _pending = false;
+        _emitPrintOutput(printCallback, r.printOutput);
+        if (r.ok) {
+          return MontyResult(
+            value: MontyValue.fromJson(r.value),
+            error: _buildReplError(r.error, r.excType, r.traceback),
+            usage: r.usage ?? _replZeroUsage,
+            printOutput: r.printOutput,
+          );
+        }
+        _throwReplError(
+          message: r.error ?? 'Unknown error',
+          excType: r.excType,
+          traceback: r.traceback,
         );
       }
-      _throwReplError(
-        message: r.error ?? 'Unknown error',
-        excType: r.excType,
-        traceback: r.traceback,
+
+      // Iterative path: drive the start/resume loop, dispatching
+      // externalFunctions.
+      final initial = _translateProgress(
+        await _bindings.feedStart(effectiveCode),
+      );
+
+      final result = await _driveLoop(
+        initial,
+        externalFunctions,
+        osHandler,
+      );
+      _emitPrintOutput(printCallback, result.printOutput);
+      return result;
+    } on MontyScriptError catch (e) {
+      return MontyResult(
+        value: const MontyNone(),
+        error: e.exception,
+        usage: _replZeroUsage,
       );
     }
+  }
 
-    // Iterative path: drive the start/resume loop, dispatching
-    // externalFunctions.
-    final initial = _translateProgress(
-      await _bindings.feedStart(effectiveCode),
-    );
-
-    return _driveLoop(initial, externalFunctions, osHandler);
+  static void _emitPrintOutput(
+    void Function(String stream, String text)? cb,
+    String? text,
+  ) {
+    if (cb != null && text != null && text.isNotEmpty) {
+      cb('stdout', text);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -310,6 +345,20 @@ class MontyRepl {
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
+
+  /// Wipes all persisted state. The next [feedRun]/[feedStart] call starts
+  /// with empty globals.
+  ///
+  /// Disposes the underlying Rust handle and creates a fresh one. Throws
+  /// [StateError] if the REPL is mid-execution (a `feedStart`/`resume`
+  /// loop is paused) — await the loop to completion first.
+  Future<void> clearState() async {
+    _checkNotDisposed();
+    _checkNotPending('clearState');
+    await _bindings.dispose();
+    _bindings = repl_factory.createReplBindings();
+    _created = false;
+  }
 
   /// Disposes the REPL session and frees native resources.
   Future<void> dispose() async {
@@ -418,8 +467,16 @@ class MontyRepl {
         await _bindings.resumeNotFound(e.fnName ?? call.operationName),
       );
     } on OsCallException catch (e) {
+      // The REPL bindings do not yet expose a typed exception path
+      // (no monty_repl_resume_with_exception). Best-effort: prefix the
+      // requested Python exception type into the message so it is
+      // visible in Python tracebacks; the actual class surfaces as
+      // RuntimeError until the binding is extended.
+      final wireMessage = e.pythonExceptionType != null
+          ? '${e.pythonExceptionType}: ${e.message}'
+          : e.message;
       return _translateProgress(
-        await _bindings.resumeWithError(e.message),
+        await _bindings.resumeWithError(wireMessage),
       );
     } on Object catch (e) {
       return _translateProgress(await _bindings.resumeWithError(e.toString()));

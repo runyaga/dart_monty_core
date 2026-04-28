@@ -56,19 +56,19 @@ final r2 = await program.run(inputs: {'x': 7, 'multiplier': 6});
 print(r1.value); // MontyInt(30)
 print(r2.value); // MontyInt(42)
 
-// 3. Stateful session — variables, functions, imports all survive
-final session = MontySession();
-await session.run('x = 42');
-await session.run('y = x * 2');
-final r3 = await session.run('x + y');
+// 3. Stateful REPL — variables, functions, imports all survive
+final repl = MontyRepl();
+await repl.feedRun('x = 42');
+await repl.feedRun('y = x * 2');
+final r3 = await repl.feedRun('x + y');
 print(r3.value); // MontyInt(126)
-session.dispose();
+await repl.dispose();
 ```
 
 `Monty(code)` mirrors the reference `pydantic_monty.Monty(code)` shape:
 construct once, run with different inputs. Each `.run()` is a fresh
-interpreter — perfect for parameterised scripts but **not** REPL-style state
-accumulation. Use `MontySession()` (or `MontyRepl()`) for that.
+interpreter — perfect for parameterised scripts but **not** REPL-style
+state accumulation. Use `MontyRepl()` for that.
 
 ---
 
@@ -88,46 +88,36 @@ accumulation. Use `MontySession()` (or `MontyRepl()`) for that.
 | `Monty.compile(code)` | Pre-compile to `Uint8List` bytes |
 | `Monty.runPrecompiled(bytes, {limits, scriptName})` | Run pre-compiled bytes (static, stateless) |
 
-### `MontySession` — stateful execution
+### `MontyRepl` — stateful REPL
 
-`MontySession` keeps a live Rust REPL heap across `.run()` calls. Use it
-when state must survive between calls — the closest analog to a Python
-REPL:
-
-```dart
-final session = MontySession();
-
-final result = await session.run('greet("world")', externalFunctions: {
-  'greet': (args) async => 'Hello, ${args['_0']}!',
-});
-print(result.value); // MontyString('Hello, world!')
-
-session.dispose();
-```
-
-| Member | Description |
-|---|---|
-| `MontySession({osHandler, scriptName})` | Stateful session, auto-detected backend |
-| `session.run(code, {externalFunctions, inputs, limits})` | Execute Python; state persists |
-| `session.feedStart(code, {externalFunctions})` | Iterative entry — caller drives resume |
-| `session.resume`, `session.resumeWithError` | Drive a paused iterative execution |
-| `session.snapshot()`, `session.restore(bytes)` | Capture / restore the Rust heap |
-| `session.clearState()` | Wipe globals; next `run` starts fresh |
-| `session.dispose()` | Free resources (synchronous) |
-
-### `MontyRepl` — low-level REPL handle
-
-`MontyRepl` exposes the Rust REPL handle directly. Same lifecycle as
-`MontySession` but with no Python-exception → `MontyResult.error` swallowing
-— exceptions throw at the call site:
+`MontyRepl` keeps a live Rust REPL heap across `feedRun` calls. Use
+it when state must survive between calls — variables, functions,
+classes, and imports persist in the heap:
 
 ```dart
 final repl = MontyRepl();
+
 await repl.feedRun('def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)');
 final r = await repl.feedRun('fib(10)');
 print(r.value); // MontyInt(55)
+
 await repl.dispose();
 ```
+
+Python-level exceptions land in `MontyResult.error` — the REPL stays
+alive so subsequent calls can keep running. Binding-level failures
+(resource limits, disposed handle) still throw.
+
+| Member | Description |
+|---|---|
+| `MontyRepl({scriptName, preamble})` | Stateful REPL, auto-detected backend |
+| `repl.feedRun(code, {externalFunctions, inputs, osHandler})` | Execute Python; state persists |
+| `repl.feedStart(code, {externalFunctions})` | Iterative entry — caller drives resume |
+| `repl.resume`, `repl.resumeWithError`, `repl.resumeNotFound` | Drive a paused iterative execution |
+| `repl.detectContinuation(source)` | Returns the prompt mode (`>>>` vs `...`) for a fragment |
+| `repl.snapshot()`, `repl.restore(bytes)` | Capture / restore the Rust heap |
+| `repl.clearState()` | Wipe globals; next `feedRun` starts fresh |
+| `repl.dispose()` | Free resources |
 
 Multiple `MontyRepl` instances can coexist concurrently on both backends —
 each owns its own Rust heap handle.
@@ -190,9 +180,11 @@ try {
 }
 ```
 
-Recoverable errors (e.g. `NameError`) are also available as
-`result.error` without throwing when using `MontySession.run()` or
-`Monty(code).run()` directly.
+`Monty(code).run()` and `MontyRepl.feedRun()` both surface Python-level
+exceptions in `MontyResult.error` rather than throwing — the
+interpreter stays alive and can keep running. Use `try` / `on
+MontyScriptError` only at boundaries where a thrown error type makes
+sense (resource limits, disposed handle).
 
 ---
 
@@ -201,11 +193,16 @@ Recoverable errors (e.g. `NameError`) are also available as
 Python code that touches `pathlib`, `os.getenv`, or `datetime.now` pauses
 and asks the host. Provide an `OsCallHandler` to service those calls:
 
+For stateful execution, pass `osHandler` per `feedRun` call (or wrap
+the closure once and reuse):
+
 ```dart
-final session = MontySession(osHandler: (op, args, kwargs) async {
+final repl = MontyRepl();
+final fsHandler = (String op, List args, Map? kwargs) async {
   if (op == 'os.getenv') return Platform.environment[args[0] as String];
   throw OsCallException('not supported', pythonExceptionType: 'PermissionError');
-});
+};
+final r = await repl.feedRun('import os; os.getenv("HOME")', osHandler: fsHandler);
 ```
 
 For one-shot evaluation, pass `osHandler` per `.run()` call instead:
@@ -273,20 +270,20 @@ final r = await Monty('output = [x * factor for x in data]\noutput').run(
 print(r.value); // MontyList([10, 20, 30, 40, 50])
 ```
 
-Or with a `MontySession` so the result name persists for follow-up reads:
+Or with a `MontyRepl` so the result name persists for follow-up reads:
 
 ```dart
-final session = MontySession();
-await session.run(
+final repl = MontyRepl();
+await repl.feedRun(
   'output = [x * factor for x in data]',
   inputs: {
     'data': [1, 2, 3, 4, 5],
     'factor': 10,
   },
 );
-final r = await session.run('output');
+final r = await repl.feedRun('output');
 print(r.value); // MontyList([10, 20, 30, 40, 50])
-session.dispose();
+await repl.dispose();
 ```
 
 Special float values are handled correctly:
@@ -614,7 +611,7 @@ for each common operation:
 | External callbacks | `m.run({ external_functions: { f } })` | `Monty(code).run(externalFunctions: {'f': cb})` |
 | Pre-compile code | `const b = m.dump()` | `final b = await Monty.compile(code)` |
 | Run pre-compiled | `Monty.load(b).run()` | `await Monty.runPrecompiled(b)` |
-| Stateful REPL | n/a (use new Monty for each call) | `final s = MontySession(); await s.run(code);` |
+| Stateful REPL | n/a (use new Monty for each call) | `final r = MontyRepl(); await r.feedRun(code);` |
 | Catch syntax errors | `catch (e as MontySyntaxError)` | `on MontySyntaxError catch (e)` |
 | JS-style limits | `{ maxDurationSecs: 5, maxMemory: 1e6 }` | `MontyLimits.jsAligned(maxDurationSecs: 5, maxMemory: 1000000)` |
 
@@ -625,7 +622,7 @@ Some Dart API choices intentionally differ from JS:
 | Dart API | Reason |
 |---|---|
 | `Monty(code).run({inputs, externalFunctions, …})` | Mirrors the reference shape; per-call params keep the call-site type-checked |
-| `MontySession` is a separate class | Stateful REPL semantics are explicit, not implicit in `Monty` |
+| `MontyRepl` is a separate class | Stateful REPL semantics are explicit, not implicit in `Monty` |
 | `MontyValue` type hierarchy | Richer than raw JS values; enables exhaustive Dart pattern matching |
 | `MontyProgress` sealed union | More expressive than JS `MontySnapshot instanceof` checks |
 | `OsCallHandler` separate from externalFunctions | Intentional Dart extension for OS-call interception |

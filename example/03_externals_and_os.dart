@@ -29,9 +29,9 @@ Future<void> main() async {
 Future<void> _externalFunctions() async {
   print('\n── externalFunctions ──');
 
-  final session = MontySession();
+  final repl = MontyRepl();
 
-  await session.run(
+  await repl.feedRun(
     '''
 result = add(3, 4)
 greeting = greet(name="World")
@@ -45,11 +45,11 @@ greeting = greet(name="World")
     },
   );
 
-  print('add(3,4) = ${(await session.run("result")).value}'); // 7
-  print('greet = ${(await session.run("greeting")).value}'); // Hello, World!
+  print('add(3,4) = ${(await repl.feedRun("result")).value}'); // 7
+  print('greet = ${(await repl.feedRun("greeting")).value}'); // Hello, World!
 
   // Return complex types: Dart List/Map are converted to Python list/dict.
-  await session.run(
+  await repl.feedRun(
     'data = fetch_data()',
     externalFunctions: {
       'fetch_data': (_) async => {
@@ -58,10 +58,10 @@ greeting = greet(name="World")
       },
     },
   );
-  final data = await session.run('data["scores"]');
+  final data = await repl.feedRun('data["scores"]');
   print('scores: $data'); // MontyList
 
-  session.dispose();
+  repl.dispose();
 }
 
 // ── OS calls: virtual filesystem ─────────────────────────────────────────────
@@ -104,27 +104,36 @@ Future<void> _osCallsVirtualFs() async {
     }
   }
 
-  final session = MontySession(osHandler: osHandler);
+  final repl = MontyRepl();
 
   // pathlib works across calls because state persists on the Rust REPL heap.
-  await session.run('import pathlib');
-  final content = await session.run(
+  // The osHandler is passed per feedRun call.
+  await repl.feedRun('import pathlib', osHandler: osHandler);
+  final content = await repl.feedRun(
     'pathlib.Path("/data/hello.txt").read_text()',
+    osHandler: osHandler,
   );
   print('file content: ${content.value}');
 
   // Write then read back.
-  await session.run(
+  await repl.feedRun(
     'pathlib.Path("/data/new.txt").write_text("written from Python")',
+    osHandler: osHandler,
   );
   print('wrote to VFS: ${vfs["/data/new.txt"]}');
 
   // os.getenv
-  final env = await session.run('import os; os.getenv("APP_ENV")');
+  final env = await repl.feedRun(
+    'import os; os.getenv("APP_ENV")',
+    osHandler: osHandler,
+  );
   print('APP_ENV = ${env.value}');
 
   // MontyPath: Python Path objects round-trip as MontyPath values.
-  final pathVal = await session.run('pathlib.Path("/data/hello.txt")');
+  final pathVal = await repl.feedRun(
+    'pathlib.Path("/data/hello.txt")',
+    osHandler: osHandler,
+  );
   switch (pathVal.value) {
     case MontyPath(:final value):
       print('path object: $value');
@@ -132,7 +141,7 @@ Future<void> _osCallsVirtualFs() async {
       print('path: ${pathVal.value}');
   }
 
-  session.dispose();
+  repl.dispose();
 }
 
 // ── OS call errors ────────────────────────────────────────────────────────────
@@ -141,27 +150,26 @@ Future<void> _osCallsVirtualFs() async {
 Future<void> _osCallError() async {
   print('\n── os call errors ──');
 
-  final session = MontySession(
-    osHandler: (op, args, kwargs) async {
-      if (op == 'Path.read_text') {
-        throw OsCallException(
-          'Permission denied: ${args.first}',
-          pythonExceptionType:
-              'PermissionError', // becomes a Python PermissionError
-        );
-      }
-      throw OsCallException('$op not supported');
-    },
-  );
+  final repl = MontyRepl();
+  OsCallHandler osHandler = (op, args, kwargs) async {
+    if (op == 'Path.read_text') {
+      throw OsCallException(
+        'Permission denied: ${args.first}',
+        pythonExceptionType:
+            'PermissionError', // becomes a Python PermissionError
+      );
+    }
+    throw OsCallException('$op not supported');
+  };
 
-  await session.run('import pathlib');
-  final r = await session.run('''
+  await repl.feedRun('import pathlib', osHandler: osHandler);
+  final r = await repl.feedRun('''
 try:
     pathlib.Path("/secret").read_text()
 except PermissionError as e:
     result = f"caught: {e}"
-''');
+''', osHandler: osHandler);
   print(r.printOutput ?? ''); // (empty — result is in variable)
-  print(await session.run('result')); // MontyResult with MontyString
-  session.dispose();
+  print(await repl.feedRun('result')); // MontyResult with MontyString
+  repl.dispose();
 }

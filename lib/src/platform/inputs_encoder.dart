@@ -1,6 +1,6 @@
 /// Utilities for converting Dart values to Python literal strings.
 ///
-/// Used by MontySession and MontyRepl to inject per-invocation input
+/// Used by Monty(code).run and MontyRepl.feedRun to inject per-invocation
 /// variables into the Python scope before execution.
 library;
 

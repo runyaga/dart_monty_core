@@ -90,11 +90,14 @@ dart test \
   --tags=wasm \
   --reporter expanded \
   --concurrency 2 \
+  test/integration/wasm_dataclass_hydrate_test.dart \
   test/integration/wasm_datetime_oscall_test.dart \
   test/integration/wasm_fixture_test.dart \
   test/integration/wasm_monty_compile_run_test.dart \
   test/integration/wasm_monty_exec_externals_test.dart \
+  test/integration/wasm_mount_dir_test.dart \
   test/integration/wasm_multi_repl_test.dart \
+  test/integration/wasm_print_callback_test.dart \
   test/integration/wasm_repl_extfns_lifecycle_test.dart \
   test/integration/wasm_repl_snapshot_lifecycle_test.dart \
   test/integration/wasm_setextfns_test.dart \

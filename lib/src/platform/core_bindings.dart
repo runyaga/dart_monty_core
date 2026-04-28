@@ -225,9 +225,9 @@ abstract class MontyCoreBindings {
 
   /// Captures the current Rust interpreter heap as a raw snapshot.
   ///
-  /// **Rust heap only.** Python globals held Dart-side by `MontySession` are
+  /// **Rust heap only.** Python globals managed Dart-side are
   /// not included. For a self-contained snapshot that preserves all variables,
-  /// use `MontySession.snapshot()` or `Monty.snapshot()`. `MontyRepl` users
+  /// use `MontyRepl.snapshot()`. Consumers
   /// can call this method directly — the REPL heap is complete.
   Future<Uint8List> snapshot();
 

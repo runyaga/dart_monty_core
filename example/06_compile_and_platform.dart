@@ -58,7 +58,7 @@ Future<void> _platformDirect() async {
 
   final platform = createPlatformMonty();
   try {
-    // Same API as MontySession.run but without session state management.
+    // Same API as MontyRepl.run but without session state management.
     final r = await platform.run('"hello from platform".upper()');
     print('upper: ${r.value}');
 
@@ -71,26 +71,26 @@ Future<void> _platformDirect() async {
   }
 }
 
-// ── Platform-level snapshot via Monty/MontySession ───────────────────────────
+// ── Platform-level snapshot via Monty/MontyRepl ───────────────────────────
 // MontySnapshotCapable is an internal interface on MontyFfi/MontyWasm.
-// Public snapshot/restore is exposed via MontySession and MontyRepl.
+// Public snapshot/restore is exposed via MontyRepl and MontyRepl.
 // Use those — they handle the platform details for you. Monty(code) is a
 // stateless compiled-program holder and intentionally does not expose
 // snapshot/restore.
 Future<void> _snapshotCapable() async {
   print('\n── snapshot at each API level ──');
 
-  // Mid-level: MontySession.snapshot() / MontySession.restore()
-  final session = MontySession();
-  await session.run('count = 10');
-  final snap2 = await session.snapshot();
-  print('MontySession snapshot: ${snap2.length} bytes');
-  await session.run('count = 999');
-  await session.restore(snap2);
+  // Mid-level: MontyRepl.snapshot() / MontyRepl.restore()
+  final repl = MontyRepl();
+  await repl.feedRun('count = 10');
+  final snap2 = await repl.snapshot();
+  print('MontyRepl snapshot: ${snap2.length} bytes');
+  await repl.feedRun('count = 999');
+  await repl.restore(snap2);
   print(
-    'MontySession restore → count = ${(await session.run("count")).value}',
+    'MontyRepl restore → count = ${(await repl.feedRun("count")).value}',
   ); // 10
-  session.dispose();
+  repl.dispose();
 
   // Low-level: MontyRepl.snapshot() / MontyRepl.restore()
   final repl = MontyRepl();

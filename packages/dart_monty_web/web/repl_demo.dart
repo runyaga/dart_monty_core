@@ -5,7 +5,7 @@
 //               snapshot, restore, all MontyValue types, MontyResult fields.
 //
 //  Panel B — Externals showcase (Python → Dart callbacks)
-//    Exercises: MontySession.feedStart/resume, MontyPending (functionName, args,
+//    Exercises: MontyRepl.feedStart/resume, MontyPending (functionName, args,
 //               kwargs, callId), resumeWithError, MontyOsCall, MontyProgress.
 //    Pre-registered Dart functions: db_query, compute, format_currency, now.
 //    Each call is logged with its arguments and return value so the flow
@@ -236,7 +236,7 @@ void _initExternalsPanel() {
   final input = _input('input-b');
   final runBtn = _button('run-b');
 
-  final session = MontySession();
+  final repl = MontyRepl();
 
   void write(String text, {String? className}) =>
       _appendLine(output, text, className: className);
@@ -312,7 +312,7 @@ void _initExternalsPanel() {
 
     try {
       // Use start/resume so we can log each MontyPending call as it happens.
-      var progress = await session.feedStart(
+      var progress = await repl.feedStart(
         code,
         externalFunctions: externals.keys.toList(),
       );
@@ -352,7 +352,7 @@ void _initExternalsPanel() {
                 '  ⚡ #$callId $functionName($argStr) → ERROR: no handler',
                 className: 'error-line',
               );
-              progress = await session.resumeWithError(
+              progress = await repl.resumeWithError(
                 'No handler: $functionName',
               );
             } else {
@@ -374,26 +374,26 @@ void _initExternalsPanel() {
                   '  ⚡ #$callId $functionName($argStr) → $resultStr',
                   className: 'system-line',
                 );
-                progress = await session.resume(result);
+                progress = await repl.resume(result);
               } on Object catch (e) {
                 write(
                   '  ⚡ #$callId $functionName($argStr) → ERROR: $e',
                   className: 'error-line',
                 );
-                progress = await session.resumeWithError(e.toString());
+                progress = await repl.resumeWithError(e.toString());
               }
             }
 
           case MontyOsCall(:final operationName):
-            progress = await session.resumeWithError(
+            progress = await repl.resumeWithError(
               '$operationName not available in externals panel',
             );
 
           case MontyNameLookup(:final variableName):
-            progress = await session.resumeWithError('$variableName not found');
+            progress = await repl.resumeWithError('$variableName not found');
 
           case MontyResolveFutures():
-            progress = await session.resume(null);
+            progress = await repl.resume(null);
         }
       }
     } on MontyScriptError catch (e) {
@@ -609,7 +609,7 @@ const _kSamples = <_Sample>[
     panel: 'b',
     desc:
         'Calling compute() suspends Python execution and emits MontyPending. '
-        'Dart\'s handler runs, calls session.resume() with the result. '
+        'Dart\'s handler runs, calls repl.resume() with the result. '
         'The ⚡ line logs each round-trip across the boundary.',
     steps: [_Step(label: '→ Externals', code: 'compute("add", 19, 23)')],
   ),

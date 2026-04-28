@@ -3,7 +3,6 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/platform/mock_monty_platform.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -56,7 +55,7 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  group('MontySyntaxError routing via MockMontyPlatform', () {
+  group('MontySyntaxError routing', () {
     // Simulate a platform that raises SyntaxError by enqueueing a complete
     // result that carries the error — the session's _safeCall converts
     // MontyScriptError into a MontyComplete with error set. For direct
@@ -76,16 +75,10 @@ void main() {
       expect(err, isNot(isA<MontySyntaxError>()));
     });
 
-    test('MontySession converts MontySyntaxError to MontyComplete', () async {
-      // MontySession._safeCall catches MontyScriptError (including
-      // MontySyntaxError) and returns a MontyComplete with error set.
-      final mock = MockMontyPlatform();
-
-      // Enqueue a result that will cause the session to call platform.resume
-      // with the state. We verify the session survives a MontySyntaxError
-      // thrown by the platform by hooking it as a MontyComplete error result.
-      // The simplest verification: confirm MontySyntaxError IS MontyScriptError
-      // so _safeCall catches it.
+    test('MontySyntaxError is caught by `on MontyScriptError`', () async {
+      // MontyRepl.feedRun catches MontyScriptError internally (including
+      // MontySyntaxError) and returns it via MontyResult.error. Verify
+      // the type hierarchy that powers that catch.
       const syntax = MontySyntaxError('bad', excType: 'SyntaxError');
       Object caught = '';
       try {
@@ -94,9 +87,6 @@ void main() {
         caught = e;
       }
       expect(caught, isA<MontySyntaxError>());
-
-      // Unused — just verifying the mock can be created without error.
-      expect(mock, isNotNull);
     });
   });
 

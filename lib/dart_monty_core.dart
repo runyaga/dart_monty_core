@@ -12,13 +12,7 @@
 /// final result = await platform.run('1 + 1');
 /// print(result.value); // MontyInt(2)
 ///
-/// // Stateful session — backed by the Rust REPL heap
-/// final session = MontySession();
-/// await session.run('x = 42', externalFunctions: {
-///   'my_fn': (args) async => 'hello',
-/// });
-///
-/// // Persistent REPL (same Rust heap, lower-level API)
+/// // Stateful REPL — variables, functions, imports persist across calls
 /// final repl = MontyRepl();
 /// await repl.feedRun('x = 42');
 /// final r = await repl.feedRun('x + 1');
@@ -30,7 +24,9 @@ library;
 export 'src/externals.dart';
 export 'src/monty.dart';
 export 'src/monty_factory.dart';
-export 'src/monty_session.dart';
+export 'src/mount/memory_mounted_os_handler.dart';
+export 'src/mount/mount_dir.dart';
+export 'src/mount/mount_mode.dart';
 export 'src/platform/code_capture.dart';
 export 'src/platform/monty_error.dart';
 export 'src/platform/monty_exception.dart';
