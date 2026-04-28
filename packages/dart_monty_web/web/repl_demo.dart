@@ -621,17 +621,18 @@ const _kSamples = <_Sample>[
   ),
   _Sample(
     num: 3,
-    title: 'Multi-line block detection',
+    title: 'Multi-line block detection (typed)',
     panel: 'a',
     desc:
         'detectContinuation() returns incompleteBlock when the statement is '
-        'not yet closed. Paste the full function — the REPL holds input until '
-        'the de-indent completes the block.',
+        'not yet closed. Paste the full annotated function — the REPL holds '
+        'input until the de-indent completes the block, and 🔎 type-checks '
+        'the n: int / -> int signature before you run it.',
     steps: [
       _Step(
         label: '→ REPL',
         code:
-            'def fib(n):\n'
+            'def fib(n: int) -> int:\n'
             '    a, b = 0, 1\n'
             '    for _ in range(n): a, b = b, a+b\n'
             '    return a\n'
@@ -832,11 +833,14 @@ String _fmt(MontyValue v) => switch (v) {
         : value.toString(),
   MontyString(:final value) => '"$value"',
   MontyBytes(:final value) => 'b[${value.length}]',
+  // Show up to 20 items — enough for demo punchlines like
+  // `[fib(i) for i in range(10)]` (Sample #3) without unbounded
+  // rendering for pathological inputs like `range(1_000_000)`.
   MontyList(:final items) =>
-    '[${items.take(3).map(_fmt).join(', ')}${items.length > 3 ? ', …(${items.length})' : ''}]',
+    '[${items.take(20).map(_fmt).join(', ')}${items.length > 20 ? ', …(${items.length})' : ''}]',
   MontyTuple(:final items) => '(${items.map(_fmt).join(', ')})',
   MontyDict(:final entries) =>
-    '{${entries.entries.take(3).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 3 ? ', …' : ''}}',
+    '{${entries.entries.take(20).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 20 ? ', …' : ''}}',
   MontySet(:final items) => '{${items.map(_fmt).join(', ')}}',
   MontyFrozenSet(:final items) => 'frozenset({${items.map(_fmt).join(', ')}})',
   MontyDate(:final year, :final month, :final day) => '$year-$month-$day',
