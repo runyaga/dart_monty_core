@@ -94,6 +94,7 @@ dart test \
   test/integration/wasm_fixture_test.dart \
   test/integration/wasm_monty_compile_run_test.dart \
   test/integration/wasm_monty_exec_externals_test.dart \
+  test/integration/wasm_mount_dir_test.dart \
   test/integration/wasm_multi_repl_test.dart \
   test/integration/wasm_print_callback_test.dart \
   test/integration/wasm_repl_extfns_lifecycle_test.dart \
