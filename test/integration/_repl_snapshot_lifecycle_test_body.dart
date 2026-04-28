@@ -51,7 +51,7 @@ void runReplSnapshotLifecycleTests() {
       addTearDown(repl.dispose);
 
       // Capture clean snapshot bytes for restore.
-      await repl.feed('x = 1');
+      await repl.feedRun('x = 1');
       final bytes = await repl.snapshot();
 
       // Pause execution and attempt restore.
@@ -73,7 +73,7 @@ void runReplSnapshotLifecycleTests() {
       addTearDown(repl.dispose);
 
       // Fast path (no externalFunctions, no osHandler).
-      await repl.feed('x = 7');
+      await repl.feedRun('x = 7');
       final bytes = await repl.snapshot();
       expect(bytes, isNotEmpty);
     });
@@ -84,7 +84,7 @@ void runReplSnapshotLifecycleTests() {
 
       // Iterative path that completes naturally — externalFunctions
       // dispatched.
-      final r = await repl.feed(
+      final r = await repl.feedRun(
         'r = double(21)',
         externalFunctions: {'double': (args) async => (args['_0']! as int) * 2},
       );

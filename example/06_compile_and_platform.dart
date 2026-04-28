@@ -94,12 +94,12 @@ Future<void> _snapshotCapable() async {
 
   // Low-level: MontyRepl.snapshot() / MontyRepl.restore()
   final repl = MontyRepl();
-  await repl.feed('n = 7');
+  await repl.feedRun('n = 7');
   final snap3 = await repl.snapshot();
   print('MontyRepl snapshot: ${snap3.length} bytes');
-  await repl.feed('n = 0');
+  await repl.feedRun('n = 0');
   await repl.restore(snap3);
-  print('MontyRepl restore → n = ${(await repl.feed("n")).value}'); // 7
+  print('MontyRepl restore → n = ${(await repl.feedRun("n")).value}'); // 7
   await repl.dispose();
 }
 
@@ -221,7 +221,7 @@ Future<void> _replPlatform() async {
   print('x + 1 = ${r.value}'); // 101
 
   // The underlying repl retains state.
-  await repl.feed('x += 50');
+  await repl.feedRun('x += 50');
   print('x after repl feed: ${(await platform.run("x")).value}'); // 151
 
   await platform.dispose(); // disposes the underlying repl too

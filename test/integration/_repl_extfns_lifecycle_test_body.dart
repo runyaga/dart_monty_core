@@ -1,7 +1,7 @@
 // Shared test body for ffi_repl_extfns_lifecycle_test.dart and
 // wasm_repl_extfns_lifecycle_test.dart.
 //
-// Pins the fix that makes MontyRepl.feed re-sync ext_fn_names on every
+// Pins the fix that makes MontyRepl.feedRun re-sync ext_fn_names on every
 // call so leaked names from earlier feeds raise a clean Python NameError
 // instead of "no handler registered". The bug surfaces through the Rust
 // handle, which is identical FFI/WASM, so both backends share these
@@ -19,7 +19,7 @@ void runReplExtFnsLifecycleTests() {
         addTearDown(repl.dispose);
 
         // Feed 1: register `fetch`, call it.
-        await repl.feed(
+        await repl.feedRun(
           'x = fetch(1)',
           externalFunctions: {
             'fetch': (args) async => (args['_0']! as int) * 10,
@@ -30,7 +30,7 @@ void runReplExtFnsLifecycleTests() {
         // NOT be resolvable — Python should raise NameError on the fast
         // path.
         await expectLater(
-          repl.feed('y = fetch(2)'),
+          repl.feedRun('y = fetch(2)'),
           throwsA(
             isA<MontyScriptError>().having(
               (e) => e.excType,
@@ -49,7 +49,7 @@ void runReplExtFnsLifecycleTests() {
         addTearDown(repl.dispose);
 
         // Iterative path: register `fetch`.
-        await repl.feed(
+        await repl.feedRun(
           'x = fetch(7)',
           externalFunctions: {'fetch': (args) async => args['_0']},
         );
@@ -58,10 +58,10 @@ void runReplExtFnsLifecycleTests() {
         // in between. The handle's ext_fn_names must be cleared before
         // this feed runs, so a subsequent iterative feed without `fetch`
         // raises NameError.
-        await repl.feed('y = x + 1');
+        await repl.feedRun('y = x + 1');
 
         await expectLater(
-          repl.feed('z = fetch(99)'),
+          repl.feedRun('z = fetch(99)'),
           throwsA(
             isA<MontyScriptError>().having(
               (e) => e.excType,
@@ -80,20 +80,20 @@ void runReplExtFnsLifecycleTests() {
         addTearDown(repl.dispose);
 
         // Feed 1: register `a`.
-        await repl.feed(
+        await repl.feedRun(
           'r = a(5)',
           externalFunctions: {'a': (args) async => (args['_0']! as int) + 1},
         );
 
         // Feed 2: register `b` instead. `a` must no longer resolve when
         // referenced again.
-        await repl.feed(
+        await repl.feedRun(
           'r = b(5)',
           externalFunctions: {'b': (args) async => (args['_0']! as int) * 2},
         );
 
         await expectLater(
-          repl.feed('r = a(5)'),
+          repl.feedRun('r = a(5)'),
           throwsA(
             isA<MontyScriptError>().having(
               (e) => e.excType,

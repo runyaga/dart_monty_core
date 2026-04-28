@@ -96,14 +96,14 @@ Map<String, Object?> _replArgsToMap(
 
 /// A stateful REPL session backed by the Monty Rust interpreter.
 ///
-/// Heap, globals, functions, and classes all persist across [feed] calls
+/// Heap, globals, functions, and classes all persist across [feedRun] calls
 /// without serialization — the underlying Rust REPL handle is reused between
 /// calls, not recreated.
 ///
 /// ```dart
 /// final repl = MontyRepl();
-/// await repl.feed('x = 42');
-/// final result = await repl.feed('x + 1');
+/// await repl.feedRun('x = 42');
+/// final result = await repl.feedRun('x + 1');
 /// print(result.value); // MontyInt(43)
 /// await repl.dispose();
 /// ```
@@ -161,7 +161,7 @@ class MontyRepl {
   /// [externalFunctions] is a `Map<String, MontyCallback>` here — distinct
   /// from the `List<String>` form on [feedStart], where the iterative
   /// path drives dispatch from Dart and only the names cross the boundary.
-  Future<MontyResult> feed(
+  Future<MontyResult> feedRun(
     String code, {
     Map<String, MontyCallback> externalFunctions = const {},
     OsCallHandler? osHandler,
@@ -219,7 +219,7 @@ class MontyRepl {
   /// [resumeWithError] to continue.
   ///
   /// [externalFunctions] is `List<String>` (names only) here, distinct from
-  /// the `Map<String, MontyCallback>` form on [feed]. The list shape is
+  /// the `Map<String, MontyCallback>` form on [feedRun]. The list shape is
   /// intentional: the iterative path lets the caller drive dispatch, so
   /// only the name registry crosses the FFI/WASM boundary.
   Future<MontyProgress> feedStart(

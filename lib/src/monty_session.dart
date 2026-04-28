@@ -83,7 +83,7 @@ class MontySession {
   }) async {
     _checkNotDisposed();
     try {
-      return await _repl.feed(
+      return await _repl.feedRun(
         code,
         externalFunctions: externalFunctions,
         osHandler: _osHandler,

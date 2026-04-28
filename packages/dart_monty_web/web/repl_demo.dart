@@ -1,7 +1,7 @@
 // Web demo for dart_monty_core — three panels.
 //
 //  Panel A — MontyRepl (persistent heap, snapshot/restore, detectContinuation)
-//    Exercises: MontyRepl.feed, externals, osHandler, detectContinuation,
+//    Exercises: MontyRepl.feedRun, externals, osHandler, detectContinuation,
 //               snapshot, restore, all MontyValue types, MontyResult fields.
 //
 //  Panel B — Externals showcase (Python → Dart callbacks)
@@ -138,7 +138,7 @@ void _initReplPanel() {
     write('>>> $code', className: 'input-line');
 
     try {
-      final result = await repl.feed(
+      final result = await repl.feedRun(
         code,
         externalFunctions: {
           'host_upper': (args) async => (args['_0'] as String).toUpperCase(),

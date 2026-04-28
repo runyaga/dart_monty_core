@@ -33,23 +33,23 @@ Future<void> _basicFeed() async {
   final repl = MontyRepl();
 
   // State persists: x survives across calls.
-  await repl.feed('x = 42');
-  final r = await repl.feed('x + 1');
+  await repl.feedRun('x = 42');
+  final r = await repl.feedRun('x + 1');
   print('x + 1 = ${r.value}'); // MontyInt(43)
 
   // Externals auto-dispatched — no manual loop needed.
-  await repl.feed(
+  await repl.feedRun(
     'result = double(x)',
     externalFunctions: {'double': (args) async => (args['_0'] as int) * 2},
   );
-  print('double(42) = ${(await repl.feed("result")).value}'); // 84
+  print('double(42) = ${(await repl.feedRun("result")).value}'); // 84
 
   // inputs inject variables for that call only.
-  final r3 = await repl.feed('y * 3', inputs: {'y': 7});
+  final r3 = await repl.feedRun('y * 3', inputs: {'y': 7});
   print('7*3 = ${r3.value}'); // 21
 
   // Print output is captured in printOutput.
-  final r4 = await repl.feed('print("from python")');
+  final r4 = await repl.feedRun('print("from python")');
   print('captured: "${r4.printOutput?.trim()}"');
 
   await repl.dispose();
@@ -123,19 +123,19 @@ Future<void> _snapshotRestore() async {
   print('\n── snapshot/restore ──');
   final repl = MontyRepl();
 
-  await repl.feed('import pathlib');
-  await repl.feed('items = [1, 2, 3]');
-  await repl.feed('items.append(4)');
-  print('before snap: ${(await repl.feed("items")).value}');
+  await repl.feedRun('import pathlib');
+  await repl.feedRun('items = [1, 2, 3]');
+  await repl.feedRun('items.append(4)');
+  print('before snap: ${(await repl.feedRun("items")).value}');
 
   final bytes = await repl.snapshot();
   print('snapshot: ${bytes.length} bytes');
 
-  await repl.feed('items.append(999)'); // mutate
-  print('after mutate: ${(await repl.feed("items")).value}');
+  await repl.feedRun('items.append(999)'); // mutate
+  print('after mutate: ${(await repl.feedRun("items")).value}');
 
   await repl.restore(bytes); // rewind to snapshot point
-  print('after restore: ${(await repl.feed("items")).value}');
+  print('after restore: ${(await repl.feedRun("items")).value}');
 
   await repl.dispose();
 }
@@ -147,11 +147,11 @@ Future<void> _multiReplIsolation() async {
   final replA = MontyRepl();
   final replB = MontyRepl();
 
-  await replA.feed('x = "from A"');
-  await replB.feed('x = "from B"');
+  await replA.feedRun('x = "from A"');
+  await replB.feedRun('x = "from B"');
 
-  print('A: ${(await replA.feed("x")).value}'); // from A
-  print('B: ${(await replB.feed("x")).value}'); // from B — fully independent
+  print('A: ${(await replA.feedRun("x")).value}'); // from A
+  print('B: ${(await replB.feedRun("x")).value}'); // from B — fully independent
 
   await replA.dispose();
   await replB.dispose();
@@ -166,7 +166,7 @@ Future<void> _preamble() async {
   );
 
   // preamble functions are available immediately.
-  final r = await repl.feed('circle_area(5)');
+  final r = await repl.feedRun('circle_area(5)');
   print('circle_area(5) = ${r.value}');
 
   await repl.dispose();

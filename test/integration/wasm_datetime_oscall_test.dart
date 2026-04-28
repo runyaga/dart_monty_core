@@ -56,8 +56,8 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import datetime', osHandler: _datetimeHandler());
-      final result = await repl.feed(
+      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final result = await repl.feedRun(
         'datetime.date.today()',
         osHandler: _datetimeHandler(),
       );
@@ -73,8 +73,8 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import datetime', osHandler: _datetimeHandler());
-      final result = await repl.feed(
+      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final result = await repl.feedRun(
         'datetime.datetime.now().tzinfo is None',
         osHandler: _datetimeHandler(),
       );
@@ -87,8 +87,8 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import datetime', osHandler: _datetimeHandler());
-      final result = await repl.feed(
+      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final result = await repl.feedRun(
         'datetime.datetime.now(datetime.timezone.utc)'
         '.tzinfo is datetime.timezone.utc',
         osHandler: _datetimeHandler(),
@@ -107,9 +107,9 @@ void main() {
         OsCallHandler notHandled() =>
             (op, args, kwargs) async => throw const OsCallNotHandledException();
 
-        await repl.feed('import datetime', osHandler: notHandled());
+        await repl.feedRun('import datetime', osHandler: notHandled());
         final error = await repl
-            .feed('datetime.date.today()', osHandler: notHandled())
+            .feedRun('datetime.date.today()', osHandler: notHandled())
             .then<MontyScriptError?>((_) => null)
             .catchError((Object e) => e as MontyScriptError?);
 
@@ -129,9 +129,9 @@ void main() {
             (op, args, kwargs) async =>
                 throw const OsCallException('handler refused');
 
-        await repl.feed('import datetime', osHandler: alwaysFails());
+        await repl.feedRun('import datetime', osHandler: alwaysFails());
         final error = await repl
-            .feed('datetime.date.today()', osHandler: alwaysFails())
+            .feedRun('datetime.date.today()', osHandler: alwaysFails())
             .then<MontyScriptError?>((_) => null)
             .catchError((Object e) => e as MontyScriptError?);
 

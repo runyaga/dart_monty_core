@@ -62,7 +62,7 @@ Future<void> _syntaxError() async {
 }
 
 // ── MontyScriptError ──────────────────────────────────────────────────────────
-// Thrown by Monty.exec / MontyRepl.feed when Python raises and doesn't catch.
+// Thrown by Monty.exec / MontyRepl.feedRun when Python raises and doesn't catch.
 // result.error is preferred for session/repl — the REPL survives the error.
 Future<void> _scriptError() async {
   print('\n── MontyScriptError (thrown + traceback) ──');
@@ -73,7 +73,7 @@ Future<void> _scriptError() async {
   try {
     // Force a throw by creating a fresh exec that raises.
     final repl = MontyRepl();
-    await repl.feed('''
+    await repl.feedRun('''
 def outer():
     inner()
 

@@ -14,11 +14,11 @@ void main() {
       addTearDown(repl1.dispose);
       addTearDown(repl2.dispose);
 
-      await repl1.feed('x = 10');
-      await repl2.feed('x = 99');
+      await repl1.feedRun('x = 10');
+      await repl2.feedRun('x = 99');
 
-      expect((await repl1.feed('x')).value, const MontyInt(10));
-      expect((await repl2.feed('x')).value, const MontyInt(99));
+      expect((await repl1.feedRun('x')).value, const MontyInt(10));
+      expect((await repl2.feedRun('x')).value, const MontyInt(99));
     });
 
     test('disposing one REPL does not affect the other', () async {
@@ -26,11 +26,11 @@ void main() {
       final repl2 = MontyRepl();
       addTearDown(repl2.dispose);
 
-      await repl1.feed('msg = "repl1"');
-      await repl2.feed('msg = "repl2"');
+      await repl1.feedRun('msg = "repl1"');
+      await repl2.feedRun('msg = "repl2"');
       await repl1.dispose();
 
-      expect((await repl2.feed('msg')).value, const MontyString('repl2'));
+      expect((await repl2.feedRun('msg')).value, const MontyString('repl2'));
     });
 
     test('three concurrent REPLs remain isolated', () async {
@@ -42,10 +42,10 @@ void main() {
       });
 
       for (var i = 0; i < repls.length; i++) {
-        await repls[i].feed('n = $i');
+        await repls[i].feedRun('n = $i');
       }
       for (var i = 0; i < repls.length; i++) {
-        expect((await repls[i].feed('n')).value, MontyInt(i));
+        expect((await repls[i].feedRun('n')).value, MontyInt(i));
       }
     });
 
@@ -53,7 +53,7 @@ void main() {
       'creating second REPL does not corrupt or panic first (regression)',
       () async {
         final repl1 = MontyRepl();
-        await repl1.feed('result = 2 + 2');
+        await repl1.feedRun('result = 2 + 2');
 
         // This used to free repl1's handle → WASM panic on next repl1
         // operation.
@@ -61,7 +61,7 @@ void main() {
         addTearDown(repl1.dispose);
         addTearDown(repl2.dispose);
 
-        expect((await repl1.feed('result')).value, const MontyInt(4));
+        expect((await repl1.feedRun('result')).value, const MontyInt(4));
       },
     );
   });

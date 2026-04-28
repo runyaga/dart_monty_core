@@ -20,8 +20,8 @@
 ///
 /// // Persistent REPL (same Rust heap, lower-level API)
 /// final repl = MontyRepl();
-/// await repl.feed('x = 42');
-/// final r = await repl.feed('x + 1');
+/// await repl.feedRun('x = 42');
+/// final r = await repl.feedRun('x + 1');
 /// print(r.value); // MontyInt(43)
 /// await repl.dispose();
 /// ```
