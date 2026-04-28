@@ -36,7 +36,18 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// Supported operations: `Path.read_text`, `Path.read_bytes`,
 /// `Path.write_text`, `Path.write_bytes`, `Path.exists`, `Path.is_file`,
 /// `Path.is_dir`, `Path.is_symlink`, `Path.unlink`, `Path.iterdir`,
-/// `Path.absolute`, `Path.resolve`. Unsupported ops fall through.
+/// `Path.absolute`, `Path.resolve`, `Path.mkdir`, `Path.rmdir`,
+/// `Path.rename`. Unsupported ops fall through.
+///
+/// Directories are implicit in the flat `Map<String, String>` model: a
+/// path is a directory iff some key with that prefix exists, or the path
+/// itself is a mount root. `Path.mkdir` therefore performs the relevant
+/// error checks (parent missing, target already a file, target already
+/// a non-empty directory under `exist_ok=False`) but does not insert
+/// anything into the map on success — `Path.exists` against a freshly
+/// `mkdir`'d empty directory returns `False` until a child is written.
+/// This matches the trade-off of the flat-map backing store; consumers
+/// that need first-class empty directories should use a richer handler.
 OsCallHandler memoryMountedOsHandler({
   required List<MountDir> mounts,
   required Map<String, String> vfs,
@@ -162,6 +173,111 @@ OsCallHandler memoryMountedOsHandler({
       case 'Path.absolute':
       case 'Path.resolve':
         return path;
+
+      case 'Path.mkdir':
+        _requireWritable(mount, path);
+        final parents = (kwargs?['parents'] as bool?) ?? false;
+        final existOk = (kwargs?['exist_ok'] as bool?) ?? false;
+        if (vfs.containsKey(path)) {
+          // A file occupies the path. exist_ok only applies to existing
+          // directories — Python raises FileExistsError here regardless.
+          throw OsCallException(
+            'File exists at $path',
+            pythonExceptionType: 'FileExistsError',
+          );
+        }
+        if (_hasChildren(vfs, path) || _isMountRoot(path, normalizedMounts)) {
+          if (!existOk) {
+            throw OsCallException(
+              'Directory exists: $path',
+              pythonExceptionType: 'FileExistsError',
+            );
+          }
+
+          return null;
+        }
+        final parentOfTarget = _parentPath(path);
+        if (!parents && !_dirExists(vfs, parentOfTarget, normalizedMounts)) {
+          throw OsCallException(
+            'No such directory: $parentOfTarget',
+            pythonExceptionType: 'FileNotFoundError',
+          );
+        }
+        // No-op: directories are implicit. The target becomes "exists"
+        // the moment a child key is written under it.
+
+        return null;
+
+      case 'Path.rmdir':
+        _requireWritable(mount, path);
+        if (vfs.containsKey(path)) {
+          throw OsCallException(
+            'Not a directory: $path',
+            pythonExceptionType: 'NotADirectoryError',
+          );
+        }
+        if (_hasChildren(vfs, path)) {
+          throw OsCallException(
+            'Directory not empty: $path',
+            pythonExceptionType: 'OSError',
+          );
+        }
+        // Empty/non-existent under the flat-map model — no key to drop.
+
+        return null;
+
+      case 'Path.rename':
+        _requireWritable(mount, path);
+        final rawTarget = args.length > 1 ? args[1] : null;
+        if (rawTarget is! String) {
+          throw OsCallException(
+            'rename expects a destination path string, got '
+            '${rawTarget.runtimeType}',
+            pythonExceptionType: 'TypeError',
+          );
+        }
+        final target = _normalizePath(rawTarget);
+        final targetMount = _findMount(target, normalizedMounts);
+        if (targetMount == null) {
+          return notMine(op, [target], kwargs);
+        }
+        _requireWritable(targetMount, target);
+        final srcContent = vfs[path];
+        if (srcContent != null) {
+          // File rename: re-key.
+          vfs.remove(path);
+          vfs[target] = srcContent;
+
+          return null;
+        }
+        if (_hasChildren(vfs, path)) {
+          // Directory rename: re-prefix every child key. Targeting a
+          // non-empty directory is rejected to avoid silent merges.
+          if (_hasChildren(vfs, target) || vfs.containsKey(target)) {
+            throw OsCallException(
+              'Rename target already exists: $target',
+              pythonExceptionType: 'OSError',
+            );
+          }
+          final oldPrefix = path.endsWith('/') ? path : '$path/';
+          final newPrefix = target.endsWith('/') ? target : '$target/';
+          final moves = <String, String>{};
+          for (final key in vfs.keys) {
+            if (key.startsWith(oldPrefix)) {
+              moves[key] = '$newPrefix${key.substring(oldPrefix.length)}';
+            }
+          }
+          for (final entry in moves.entries) {
+            final value = vfs.remove(entry.key);
+            if (value != null) vfs[entry.value] = value;
+          }
+
+          return null;
+        }
+        throw OsCallException(
+          'No such file or directory: $path',
+          pythonExceptionType: 'FileNotFoundError',
+        );
     }
 
     return notMine(op, args, kwargs);
@@ -227,4 +343,30 @@ bool _hasChildren(Map<String, String> vfs, String path) {
     if (key.startsWith(prefix)) return true;
   }
   return false;
+}
+
+bool _isMountRoot(String normalized, List<MountDir> mounts) {
+  for (final m in mounts) {
+    if (m.virtualPath == normalized) return true;
+  }
+
+  return false;
+}
+
+bool _dirExists(
+  Map<String, String> vfs,
+  String normalized,
+  List<MountDir> mounts,
+) {
+  if (_isMountRoot(normalized, mounts)) return true;
+
+  return _hasChildren(vfs, normalized);
+}
+
+String _parentPath(String normalized) {
+  if (normalized == '/' || normalized.isEmpty) return '/';
+  final i = normalized.lastIndexOf('/');
+  if (i <= 0) return '/';
+
+  return normalized.substring(0, i);
 }
