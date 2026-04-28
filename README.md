@@ -10,7 +10,9 @@ interpreter from Pydantic, written in Rust.
 [`dart_monty`](https://github.com/runyaga/dart_monty), which depends
 on this package.
 
-> **Pre-1.0** — pin exact (`dart_monty_core: 0.17.0`); minor version mirrors the upstream `monty` patch (`0.X.0 ↔ monty v0.0.X`).
+> **Pre-1.0** — install via `git:` from GitHub (see Installation
+> below). Versioning convention: minor version mirrors the upstream
+> `monty` patch (`0.X.0 ↔ monty v0.0.X`).
 
 ## Why
 
@@ -196,9 +198,27 @@ maxRecursionDepth:)`.
 > toolchain required. See `AGENTS.md` "Native binary release pipeline
 > (0.17.1+)".
 
+### Install (from GitHub)
+
+`dart_monty_core` is distributed via GitHub. **Do not use
+`dart pub add dart_monty_core`** — pub.dev does not yet have
+0.17.0; the historical `dart_monty` 0.11.0 there is a different,
+older API.
+
 ```yaml
 dependencies:
-  dart_monty_core: 0.17.0   # exact pin until 1.0
+  dart_monty_core:
+    git:
+      url: https://github.com/runyaga/dart_monty_core.git
+      ref: main
+```
+
+For local development against a worktree, use `path:` instead:
+
+```yaml
+dependencies:
+  dart_monty_core:
+    path: /path/to/dart_monty_core
 ```
 
 ### Prerequisites for FFI (desktop only)
