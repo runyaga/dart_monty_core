@@ -186,33 +186,34 @@ maxRecursionDepth:)`.
 ## Installation
 
 > **This package builds the native FFI binary from source on `dart pub get`.**
-> If you don't want a Rust toolchain on consumer machines, depend on
-> [`dart_monty`](https://github.com/runyaga/dart_monty) instead — it
-> bundles per-platform binaries and is the right call for almost every
-> Flutter consumer.
+> Every FFI consumer needs a Rust toolchain, including Flutter consumers
+> coming in via [`dart_monty`](https://github.com/runyaga/dart_monty).
 
 ```yaml
 dependencies:
   dart_monty_core: 0.17.0   # exact pin until 1.0
 ```
 
-### Prerequisites for FFI (native targets — desktop, server, CLI, mobile)
+### Prerequisites for FFI (desktop only)
 
-The `hook/build.dart` native-assets hook runs `cargo build --release` on
-the consumer's machine during `pub get`. Required toolchain:
+`hook/build.dart` runs `cargo build --release --target <host-triple>`
+on the consumer's machine during `pub get`. Required toolchain:
 
 - **Rust** — install via [rustup](https://rustup.rs)
-- **System toolchain for the link step**:
+- **C linker** for the cdylib link step:
   - **macOS**: `xcode-select --install` (provides `clang`)
   - **Linux**: `sudo apt install build-essential` / `dnf install gcc` / equivalent
   - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with the C++ workload
-  - **iOS**: Xcode + `rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios`
-  - **Android**: [Android NDK](https://developer.android.com/ndk/downloads) + [`cargo-ndk`](https://crates.io/crates/cargo-ndk) + `rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi`
 
-For Flutter mobile apps, using
-[`dart_monty`](https://github.com/runyaga/dart_monty) (which ships
-pre-built per-ABI binaries) is almost always the right call instead of
-setting up Rust + NDK on every developer's machine.
+Supported FFI host triples in v0.17.0: `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`,
+`x86_64-unknown-linux-gnu`, `aarch64-pc-windows-msvc`,
+`x86_64-pc-windows-msvc`. **Mobile (iOS, Android) is not handled by this
+package's hook** — the hook returns no native asset for those targets.
+If you're using `dart_monty_core` directly and need Monty on mobile,
+compiling and wiring the native crate into your Flutter project's iOS /
+Android plugin is your responsibility. For a higher-level Flutter
+integration, use [`dart_monty`](https://github.com/runyaga/dart_monty).
 
 First `pub get` takes 1–3 minutes (compiling the native crate); subsequent
 runs reuse cargo's cache.
@@ -236,7 +237,7 @@ cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_
 
 ### Other ecosystems
 
-- **Flutter** — [`dart_monty`](https://github.com/runyaga/dart_monty) bundles per-arch binaries; no Rust required.
+- **Flutter** — [`dart_monty`](https://github.com/runyaga/dart_monty) wraps this package with the Flutter integration layer (asset loading, plugin scaffolding). When using `dart_monty_core` directly, mobile (iOS / Android) compilation is your responsibility; `dart_monty` is the alternative.
 - **JS / TS** — use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty); the canonical npm package.
 
 ## Known upstream limitations
