@@ -1,11 +1,10 @@
 # AGENTS.md — dart_monty_core build & test guide
 
 Reference for two audiences: **(1) consumers compiling `dart_monty_core`
-0.17.0 from source** (the only path on 0.17.0 — see Toolchain
-prerequisites below), and **(2) maintainers** building, testing, and
-releasing this package. Once 0.17.1 ships prebuilt binaries (see
-"Native binary release pipeline (0.17.1+)" near the end), audience (1)
-can skip the Rust toolchain entirely.
+from source** (see Toolchain prerequisites below), and **(2) maintainers**
+building, testing, and releasing this package. The native FFI binary is
+built from source on every consumer `pub get` via `hook/build.dart`;
+no prebuilts are shipped.
 
 ## Toolchain prerequisites
 
@@ -217,57 +216,21 @@ git tag v0.18.0 && git push origin v0.18.0
 | `lib/assets/` stale after editing `native/` or `js/` | `bash tool/prebuild.sh && git add lib/assets/` |
 | Bindings stale check fails in CI | `bash tool/generate_bindings.sh` |
 
-## Native binary release pipeline (0.17.1+)
+## Native binary distribution
 
-Starting at 0.17.1, prebuilt FFI binaries are published as GitHub
-Release assets and downloaded by `hook/build.dart` on consumer
-machines. Compile-from-source is preserved as a fallback when a network
-download fails or when a contributor is iterating on the Rust crate
-(presence of `native/Cargo.toml` in the package root is the signal —
-see `hook/build.dart`).
+`dart_monty_core` does not ship prebuilt FFI binaries. Every consumer
+that needs FFI builds the native crate from source via `hook/build.dart`
+on `pub get`, which requires a working Rust toolchain (cargo + rustc).
+The supported FFI host triples are `aarch64-apple-darwin`,
+`x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`,
+`x86_64-unknown-linux-gnu`, `aarch64-pc-windows-msvc`,
+`x86_64-pc-windows-msvc`. WASM is the only prebuilt asset — the three
+files (bridge JS, worker JS, native WASM) live in `lib/assets/`.
 
-### Artefacts shipped per release
-
-| Platform | Triple | File | Approx. size |
-|---|---|---|---|
-| macOS arm64 | `aarch64-apple-darwin` | `libdart_monty_core_native-aarch64-apple-darwin.dylib` | ~6 MB |
-| macOS x86_64 | `x86_64-apple-darwin` | `libdart_monty_core_native-x86_64-apple-darwin.dylib` | ~6 MB |
-| Linux x86_64 | `x86_64-unknown-linux-gnu` | `libdart_monty_core_native-x86_64-unknown-linux-gnu.so` | ~6 MB |
-| Linux aarch64 | `aarch64-unknown-linux-gnu` | `libdart_monty_core_native-aarch64-unknown-linux-gnu.so` | ~6 MB |
-| Windows x86_64 | `x86_64-pc-windows-msvc` | `dart_monty_core_native-x86_64-pc-windows-msvc.dll` | ~6 MB |
-| Android (4 ABIs) | `aarch64-linux-android` etc. | `libdart_monty_core_native-<abi>.so` | ~6 MB each |
-| iOS xcframework | (universal) | `dart_monty_core_native.xcframework.zip` | 70 MB zipped, 171 MB unzipped |
-
-WASM stays committed in `lib/assets/` — there is no FFI hook for the
-web target.
-
-### Why download instead of commit
-
-iOS xcframework size (170 MB unzipped) rules out committing binaries
-to the package: the resulting tarball would exceed pub.dev's 100 MB
-hard cap. Download-on-demand from GitHub Releases keeps the published
-package small (~6 MB tarball, just the WASM trio + Dart sources).
-
-### Release workflow (new in 0.17.1)
-
-1. Bump `pubspec.yaml` version to `0.17.1`.
-2. `tool/build_release_artefacts.sh` (forthcoming) cross-compiles all
-   triples and uploads them to a draft GitHub Release.
-3. `hook/build.dart` (extended) probes platform at `pub get` time,
-   downloads the matching artefact via HTTPS, verifies SHA-256 against
-   a manifest committed alongside the hook, caches under
-   `${PUB_CACHE}/dart_monty_core/native/<version>/<triple>/`, and
-   wires it as the `CodeAsset`.
-4. CI matrix-builds the artefacts on macOS, Ubuntu, Windows runners
-   and asserts manifest checksums. Promote draft → published when the
-   matrix is green.
-5. Tag `v0.17.1` triggers `publish.yaml`; OIDC handles the upload.
-
-### Outstanding design decisions for 0.17.1
-
-- Manifest format (JSON next to `hook/build.dart` vs embedded const map).
-- Behaviour when offline — fall back to source build silently or hard
-  fail with an actionable error?
-- Cache location (`PUB_CACHE` vs system temp).
-- Code-signing for macOS dylib (Developer ID + notarization) — defer
-  to 0.17.x when Apple Developer cert is provisioned.
+Mobile (iOS/Android) is **not** handled by the build hook. The hook
+returns no asset for those targets. If you need Monty on mobile via
+`dart_monty_core` directly, compiling and wiring the native crate
+into your Flutter project's iOS/Android plugin is your responsibility
+— the README's "Mobile (iOS, Android) is not handled by this
+package's hook" section is the entry point. There is no published
+roadmap for prebuilt mobile binaries at this time.

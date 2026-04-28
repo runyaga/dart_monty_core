@@ -2,11 +2,7 @@
 
 ## Unreleased
 
-(0.17.1 — prebuilt native binaries for macOS, Linux, Windows, iOS, and
-Android. Build hook will download per-platform artefacts from this
-repo's GitHub Releases on `pub get` instead of compiling from source.
-See `AGENTS.md` "Native binary release pipeline (0.17.1+)" for the
-design.)
+(no entries)
 
 ## 0.17.0
 
@@ -83,9 +79,6 @@ fixtures pass on both FFI and WASM backends (no fixture is skipped).
 - **Web (WASM)** — three prebuilt assets ship in `lib/assets/`
   (`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`,
   `dart_monty_core_native.wasm`). No toolchain required.
-
-Prebuilt FFI binaries for all 5 platforms (macOS, Linux, Windows, iOS,
-Android) arrive in **0.17.1** — see Unreleased above.
 
 ### Migration from the discontinued federated packages
 
