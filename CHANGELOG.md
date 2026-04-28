@@ -195,6 +195,20 @@ Python package.
   `ffi_*_test.dart` and `wasm_*_test.dart` files are thin wrappers
   that set the right `@Tags` and import the body.
 
+### Additive features
+
+- **`printCallback`** parameter on `Monty.run`, `Monty.exec`, and
+  `MontyRepl.feedRun` — batch callback invoked with the script's
+  captured `print()` output before the call returns.
+- **`MountDir` + `memoryMountedOsHandler`** — declarative virtual
+  mounts for Python `pathlib.Path`, backed by an in-memory map.
+  Enforces path normalisation, `..` traversal rejection, mode, and
+  per-write byte limit. dart:io-backed real-filesystem variant is a
+  follow-up.
+- **`MontyDataclass.hydrate` / `dartAttrs`** — convert a Python
+  `@dataclass` returned to Dart into a user-supplied class via a
+  factory.
+
 ## 0.0.14 - monty upstream upgrade
 
 ### Upgraded
