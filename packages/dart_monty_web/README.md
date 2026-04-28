@@ -34,12 +34,12 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 final repl = MontyRepl();
 
 // Feed Python expressions
-final result = await repl.feed('x = 42');
-final r2 = await repl.feed('x * 2');
+final result = await repl.feedRun('x = 42');
+final r2 = await repl.feedRun('x * 2');
 print(r2.value); // MontyInt(84)
 
 // Inject per-invocation inputs — no string-formatting needed
-final r3 = await repl.feed(
+final r3 = await repl.feedRun(
   'output = [x * scale for x in data]',
   inputs: {'data': [1, 2, 3], 'scale': 10},
 );
@@ -60,11 +60,11 @@ in a `Map` rather than a single scalar:
 final repl1 = MontyRepl();
 final repl2 = MontyRepl();
 
-await repl1.feed('x = 1');
-await repl2.feed('x = 2');
+await repl1.feedRun('x = 1');
+await repl2.feedRun('x = 2');
 
-print((await repl1.feed('x')).value); // MontyInt(1)
-print((await repl2.feed('x')).value); // MontyInt(2)
+print((await repl1.feedRun('x')).value); // MontyInt(1)
+print((await repl2.feedRun('x')).value); // MontyInt(2)
 ```
 
 ### Compile and run precompiled
@@ -74,8 +74,7 @@ backend. Use them to avoid re-parsing the same script on repeated executions:
 
 ```dart
 final binary = await Monty.compile('output = [x * 2 for x in data]');
-final monty = Monty();
-final result = await monty.runPrecompiled(binary);
+final result = await Monty.runPrecompiled(binary);
 ```
 
 See [`web/repl_demo.dart`](web/repl_demo.dart) for the full wiring including DOM

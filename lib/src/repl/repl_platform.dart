@@ -30,7 +30,7 @@ class ReplPlatform implements MontyPlatform {
     String code, {
     MontyLimits? limits,
     String? scriptName,
-  }) => _repl.feed(code);
+  }) => _repl.feedRun(code);
 
   @override
   Future<MontyProgress> start(

@@ -6,91 +6,73 @@ import 'package:dart_monty_core/src/monty_session.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
 
-/// Monty sandboxed Python interpreter.
+/// A compiled Python program.
 ///
-/// All Python state — variables, functions, classes, and module objects —
-/// persists natively across [run] calls via the Rust REPL heap. No JSON
-/// serialisation overhead, and two-call import patterns work naturally:
+/// `Monty(code)` holds a Python source string; subsequent calls to [run]
+/// execute it with different inputs. Each [run] runs in a fresh
+/// interpreter — state from earlier calls does not persist. Mirrors the
+/// reference `pydantic_monty.Monty(code).run(...)` shape.
 ///
 /// ```dart
-/// final monty = Monty();
-/// await monty.run('import pathlib');
-/// final r = await monty.run('pathlib.Path("/data/f.txt").read_text()');
-/// await monty.dispose();
+/// final program = Monty('x * 2');
+/// final r = await program.run(inputs: {'x': 21});
+/// print(r.value); // MontyInt(42)
 /// ```
 ///
-/// For one-shot evaluation:
-/// ```dart
-/// final result = await Monty.exec('2 + 2');
-/// ```
+/// For one-shot execution that does not need to be reused, [Monty.exec] is
+/// a static convenience.
 ///
-/// To enable filesystem/environment/datetime access, provide an
-/// [OsCallHandler]:
-/// ```dart
-/// final monty = Monty(osHandler: myOsCallHandler);
-/// ```
+/// For stateful execution (variables, functions, classes, imports
+/// accumulating across runs) use [MontySession] instead.
 class Monty {
-  /// Creates a Monty interpreter with the auto-detected backend.
+  /// Holds [code] as a Python program.
   ///
   /// [scriptName] is used as the filename in tracebacks and error messages.
-  ///
-  /// Pass [osHandler] to enable Python `pathlib`, `os`, and `datetime`
-  /// access. Without it, OS calls resume with a permission error.
-  factory Monty({OsCallHandler? osHandler, String scriptName = 'main.py'}) =>
-      Monty._(MontySession(osHandler: osHandler, scriptName: scriptName));
+  factory Monty(String code, {String scriptName = 'main.py'}) =>
+      Monty._(code: code, scriptName: scriptName);
 
-  Monty._(MontySession session) : _session = session;
+  Monty._({required String code, required String scriptName})
+    : _code = code,
+      _scriptName = scriptName;
 
-  final MontySession _session;
+  final String _code;
+  final String _scriptName;
 
   /// Script name used as the filename in tracebacks and error messages.
-  /// Defaults to `'main.py'` when unset.
-  String get scriptName => _session.scriptName ?? 'main.py';
+  String get scriptName => _scriptName;
 
-  /// Executes Python [code] and returns the result.
+  /// Runs the held code with optional [inputs], [externalFunctions],
+  /// [limits], and [osHandler].
   ///
-  /// Variables, functions, classes, and module imports all persist across
-  /// calls via the Rust REPL heap.
+  /// [inputs] are converted to Python literals and prepended to the code
+  /// as assignments; they shadow same-named variables for that call only.
+  /// [externalFunctions] maps Python-callable names to Dart callbacks;
+  /// Python can call them like any other function and the result is
+  /// resumed automatically.
   ///
-  /// [inputs] injects per-invocation Python variables before [code] runs.
-  /// Each key becomes a Python variable; values are converted to Python
-  /// literals.
-  ///
-  /// [limits] and [scriptName] are accepted for API compatibility but ignored
-  /// — the REPL uses `NoLimitTracker` and the session-level scriptName.
-  Future<MontyResult> run(
-    String code, {
-    MontyLimits? limits,
-    String? scriptName,
-    Map<String, MontyCallback> externals = const {},
+  /// Each call runs in a fresh interpreter — state from earlier calls does
+  /// not persist. Use [MontySession] for stateful execution.
+  Future<MontyResult> run({
     Map<String, Object?>? inputs,
-  }) => _session.run(
-    code,
-    limits: limits,
-    scriptName: scriptName,
-    externals: externals,
-    inputs: inputs,
-  );
-
-  /// Serialises the interpreter state to postcard bytes.
-  ///
-  /// Pass the result to [restore] to rehydrate an identical interpreter.
-  /// Throws [StateError] if the interpreter is mid-execution.
-  Future<Uint8List> snapshot() => _session.snapshot();
-
-  /// Restores this interpreter's state from bytes produced by [snapshot].
-  ///
-  /// The current REPL handle is freed and replaced. Await this before
-  /// issuing further [run] calls.
-  Future<void> restore(Uint8List bytes) => _session.restore(bytes);
-
-  /// Clears all persisted state.
-  ///
-  /// After calling this, the next [run] starts with empty globals.
-  void clearState() => _session.clearState();
-
-  /// Releases all resources.
-  void dispose() => _session.dispose();
+    Map<String, MontyCallback> externalFunctions = const {},
+    MontyLimits? limits,
+    OsCallHandler? osHandler,
+  }) async {
+    final session = MontySession(
+      osHandler: osHandler,
+      scriptName: _scriptName,
+    );
+    try {
+      return await session.run(
+        _code,
+        externalFunctions: externalFunctions,
+        inputs: inputs,
+        limits: limits,
+      );
+    } finally {
+      session.dispose();
+    }
+  }
 
   /// Compiles [code] and returns the bytecode as a binary blob.
   ///
@@ -108,7 +90,7 @@ class Monty {
   /// Runs pre-compiled bytecode from [compile] in a stateless context.
   ///
   /// Creates a temporary backend, runs once, and disposes. Does not affect
-  /// any session state. For stateful execution use [run] instead.
+  /// any session state.
   static Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,
@@ -126,32 +108,22 @@ class Monty {
     }
   }
 
-  /// One-shot evaluation — creates, runs, disposes automatically.
-  ///
-  /// Stateless — no variable persistence across calls.
+  /// One-shot evaluation — wraps [Monty] + [run] for code that runs once.
   ///
   /// ```dart
   /// final result = await Monty.exec('2 + 2');
   /// ```
   static Future<MontyResult> exec(
     String code, {
-    MontyLimits? limits,
-    String? scriptName,
-    OsCallHandler? osHandler,
-    Map<String, MontyCallback> externals = const {},
     Map<String, Object?>? inputs,
-  }) async {
-    final monty = Monty(osHandler: osHandler);
-    try {
-      return await monty.run(
-        code,
-        limits: limits,
-        scriptName: scriptName,
-        externals: externals,
-        inputs: inputs,
-      );
-    } finally {
-      monty.dispose();
-    }
-  }
+    Map<String, MontyCallback> externalFunctions = const {},
+    MontyLimits? limits,
+    String scriptName = 'main.py',
+    OsCallHandler? osHandler,
+  }) => Monty(code, scriptName: scriptName).run(
+    inputs: inputs,
+    externalFunctions: externalFunctions,
+    limits: limits,
+    osHandler: osHandler,
+  );
 }

@@ -31,9 +31,9 @@ const _zeroUsage = MontyResourceUsage(
 /// session.dispose();
 /// ```
 ///
-/// Register Dart callbacks with `externals` to let Python call host functions.
-/// OS calls (pathlib, os.getenv, datetime) are handled by `osHandler`; if
-/// none is provided, OS calls raise a Python exception.
+/// Register Dart callbacks with `externalFunctions` to let Python call host
+/// functions. OS calls (pathlib, os.getenv, datetime) are handled by
+/// `osHandler`; if none is provided, OS calls raise a Python exception.
 class MontySession {
   /// Creates a [MontySession].
   MontySession({
@@ -64,7 +64,8 @@ class MontySession {
   /// All Python objects (variables, functions, classes, modules) persist via
   /// the Rust REPL heap across calls.
   ///
-  /// [externals] maps Python-callable function names to Dart handlers.
+  /// [externalFunctions] maps Python-callable function names to Dart
+  /// handlers.
   ///
   /// [inputs] injects per-invocation Python variables before [code] runs.
   /// Each key becomes a Python variable; values are converted to Python
@@ -77,14 +78,14 @@ class MontySession {
     String code, {
     MontyLimits? limits,
     String? scriptName,
-    Map<String, MontyCallback> externals = const {},
+    Map<String, MontyCallback> externalFunctions = const {},
     Map<String, Object?>? inputs,
   }) async {
     _checkNotDisposed();
     try {
-      return await _repl.feed(
+      return await _repl.feedRun(
         code,
-        externals: externals,
+        externalFunctions: externalFunctions,
         osHandler: _osHandler,
         inputs: inputs,
       );
@@ -105,8 +106,12 @@ class MontySession {
 
   /// Starts iterative execution, surfacing [MontyPending] for user callbacks.
   ///
-  /// [limits] and [scriptName] are accepted for API compatibility but ignored.
-  Future<MontyProgress> start(
+  /// Mirrors [MontyRepl.feedStart]; pause-and-resume drives external
+  /// dispatch from Dart so only the names cross the FFI/WASM boundary.
+  ///
+  /// [limits] and [scriptName] are accepted for API compatibility but
+  /// ignored.
+  Future<MontyProgress> feedStart(
     String code, {
     List<String>? externalFunctions,
     MontyLimits? limits,

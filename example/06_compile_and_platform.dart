@@ -73,20 +73,12 @@ Future<void> _platformDirect() async {
 
 // ── Platform-level snapshot via Monty/MontySession ───────────────────────────
 // MontySnapshotCapable is an internal interface on MontyFfi/MontyWasm.
-// Public snapshot/restore is exposed via Monty, MontySession, and MontyRepl.
-// Use those — they handle the platform details for you.
+// Public snapshot/restore is exposed via MontySession and MontyRepl.
+// Use those — they handle the platform details for you. Monty(code) is a
+// stateless compiled-program holder and intentionally does not expose
+// snapshot/restore.
 Future<void> _snapshotCapable() async {
   print('\n── snapshot at each API level ──');
-
-  // High-level: Monty.snapshot() / Monty.restore()
-  final monty = Monty();
-  await monty.run('x = 42; items = [1, 2, 3]');
-  final snap1 = await monty.snapshot();
-  print('Monty snapshot: ${snap1.length} bytes');
-  await monty.run('x = 99');
-  await monty.restore(snap1);
-  print('Monty restore → x = ${(await monty.run("x")).value}'); // 42
-  monty.dispose();
 
   // Mid-level: MontySession.snapshot() / MontySession.restore()
   final session = MontySession();
@@ -102,12 +94,12 @@ Future<void> _snapshotCapable() async {
 
   // Low-level: MontyRepl.snapshot() / MontyRepl.restore()
   final repl = MontyRepl();
-  await repl.feed('n = 7');
+  await repl.feedRun('n = 7');
   final snap3 = await repl.snapshot();
   print('MontyRepl snapshot: ${snap3.length} bytes');
-  await repl.feed('n = 0');
+  await repl.feedRun('n = 0');
   await repl.restore(snap3);
-  print('MontyRepl restore → n = ${(await repl.feed("n")).value}'); // 7
+  print('MontyRepl restore → n = ${(await repl.feedRun("n")).value}'); // 7
   await repl.dispose();
 }
 
@@ -229,7 +221,7 @@ Future<void> _replPlatform() async {
   print('x + 1 = ${r.value}'); // 101
 
   // The underlying repl retains state.
-  await repl.feed('x += 50');
+  await repl.feedRun('x += 50');
   print('x after repl feed: ${(await platform.run("x")).value}'); // 151
 
   await platform.dispose(); // disposes the underlying repl too

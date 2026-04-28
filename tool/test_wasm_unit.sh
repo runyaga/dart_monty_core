@@ -92,6 +92,7 @@ dart test \
   --concurrency 2 \
   test/integration/wasm_datetime_oscall_test.dart \
   test/integration/wasm_fixture_test.dart \
+  test/integration/wasm_monty_compile_run_test.dart \
   test/integration/wasm_monty_exec_externals_test.dart \
   test/integration/wasm_multi_repl_test.dart \
   test/integration/wasm_repl_extfns_lifecycle_test.dart \

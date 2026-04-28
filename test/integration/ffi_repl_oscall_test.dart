@@ -46,7 +46,7 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      final importResult = await repl.feed(
+      final importResult = await repl.feedRun(
         'import pathlib',
         osHandler: handler,
       );
@@ -56,7 +56,7 @@ void main() {
         reason: 'import pathlib should not error',
       );
 
-      final readResult = await repl.feed(
+      final readResult = await repl.feedRun(
         "pathlib.Path('/data/hello.txt').read_text()",
         osHandler: handler,
       );
@@ -73,7 +73,7 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      final result = await repl.feed(
+      final result = await repl.feedRun(
         "import pathlib; pathlib.Path('/data/hello.txt').read_text()",
         osHandler: handler,
       );
@@ -93,10 +93,10 @@ void main() {
         addTearDown(repl.dispose);
 
         // Import without osHandler (fast path)
-        await repl.feed('import pathlib');
+        await repl.feedRun('import pathlib');
 
         // Use pathlib with osHandler
-        final result = await repl.feed(
+        final result = await repl.feedRun(
           "pathlib.Path('/data/hello.txt').read_text()",
           osHandler: handler,
         );
@@ -114,15 +114,15 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import pathlib', osHandler: handler);
+      await repl.feedRun('import pathlib', osHandler: handler);
 
-      await repl.feed(
+      await repl.feedRun(
         "pathlib.Path('/data/new.txt').write_text('written!')",
         osHandler: handler,
       );
       expect(vfs['/data/new.txt'], 'written!');
 
-      final result = await repl.feed(
+      final result = await repl.feedRun(
         "pathlib.Path('/data/new.txt').read_text()",
         osHandler: handler,
       );
@@ -135,9 +135,9 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import pathlib', osHandler: handler);
+      await repl.feedRun('import pathlib', osHandler: handler);
 
-      final result = await repl.feed(
+      final result = await repl.feedRun(
         "pathlib.Path('/data/missing.txt').read_text()",
         osHandler: handler,
       );
@@ -151,15 +151,15 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import pathlib', osHandler: handler);
+      await repl.feedRun('import pathlib', osHandler: handler);
 
-      final exists = await repl.feed(
+      final exists = await repl.feedRun(
         "pathlib.Path('/data/hello.txt').exists()",
         osHandler: handler,
       );
       expect(exists.value, const MontyBool(true));
 
-      final missing = await repl.feed(
+      final missing = await repl.feedRun(
         "pathlib.Path('/data/nope.txt').exists()",
         osHandler: handler,
       );
@@ -178,16 +178,16 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feed('import pathlib', osHandler: alwaysThrows);
+      await repl.feedRun('import pathlib', osHandler: alwaysThrows);
 
       // read_text is a real OS call → alwaysThrows → Python RuntimeError
-      final result = await repl.feed(
+      final result = await repl.feedRun(
         "try:\n  pathlib.Path('/x').read_text()\nexcept RuntimeError as e:\n  str(e)",
         osHandler: alwaysThrows,
       );
       expect(result.error, isNull); // Python caught it — no Dart exception
       // REPL survives; subsequent calls still work
-      final ok = await repl.feed('1 + 1');
+      final ok = await repl.feedRun('1 + 1');
       expect(ok.value, const MontyInt(2));
     });
   });

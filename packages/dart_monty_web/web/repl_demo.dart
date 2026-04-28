@@ -1,11 +1,11 @@
 // Web demo for dart_monty_core — three panels.
 //
 //  Panel A — MontyRepl (persistent heap, snapshot/restore, detectContinuation)
-//    Exercises: MontyRepl.feed, externals, osHandler, detectContinuation,
+//    Exercises: MontyRepl.feedRun, externals, osHandler, detectContinuation,
 //               snapshot, restore, all MontyValue types, MontyResult fields.
 //
 //  Panel B — Externals showcase (Python → Dart callbacks)
-//    Exercises: MontySession.start/resume, MontyPending (functionName, args,
+//    Exercises: MontySession.feedStart/resume, MontyPending (functionName, args,
 //               kwargs, callId), resumeWithError, MontyOsCall, MontyProgress.
 //    Pre-registered Dart functions: db_query, compute, format_currency, now.
 //    Each call is logged with its arguments and return value so the flow
@@ -138,9 +138,9 @@ void _initReplPanel() {
     write('>>> $code', className: 'input-line');
 
     try {
-      final result = await repl.feed(
+      final result = await repl.feedRun(
         code,
-        externals: {
+        externalFunctions: {
           'host_upper': (args) async => (args['_0'] as String).toUpperCase(),
         },
         osHandler: _vfsOsHandler,
@@ -312,7 +312,7 @@ void _initExternalsPanel() {
 
     try {
       // Use start/resume so we can log each MontyPending call as it happens.
-      var progress = await session.start(
+      var progress = await session.feedStart(
         code,
         externalFunctions: externals.keys.toList(),
       );
