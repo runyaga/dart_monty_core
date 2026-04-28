@@ -1,11 +1,11 @@
 // Shared test body for ffi_repl_extfns_lifecycle_test.dart and
 // wasm_repl_extfns_lifecycle_test.dart.
 //
-// Pins the fix that makes MontyRepl.feedRun re-sync ext_fn_names on every
-// call so leaked names from earlier feeds raise a clean Python NameError
-// instead of "no handler registered". The bug surfaces through the Rust
-// handle, which is identical FFI/WASM, so both backends share these
-// scenarios.
+// Pins the fix that makes MontyRepl.feedRun re-sync ext_fn_names on
+// every call so leaked names from earlier feeds raise a clean Python
+// NameError instead of "no handler registered". The bug surfaces
+// through the Rust handle, which is identical FFI/WASM, so both
+// backends share these scenarios.
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
@@ -27,18 +27,10 @@ void runReplExtFnsLifecycleTests() {
         );
 
         // Feed 2: no externalFunctions. The leftover `fetch` name must
-        // NOT be resolvable — Python should raise NameError on the fast
-        // path.
-        await expectLater(
-          repl.feedRun('y = fetch(2)'),
-          throwsA(
-            isA<MontyScriptError>().having(
-              (e) => e.excType,
-              'excType',
-              'NameError',
-            ),
-          ),
-        );
+        // NOT be resolvable — Python should raise NameError on the
+        // fast path.
+        final r = await repl.feedRun('y = fetch(2)');
+        expect(r.error?.excType, 'NameError');
       },
     );
 
@@ -54,22 +46,14 @@ void runReplExtFnsLifecycleTests() {
           externalFunctions: {'fetch': (args) async => args['_0']},
         );
 
-        // Fast-path feed (no externalFunctions, no osHandler) sandwiched
-        // in between. The handle's ext_fn_names must be cleared before
-        // this feed runs, so a subsequent iterative feed without `fetch`
-        // raises NameError.
+        // Fast-path feed (no externalFunctions, no osHandler)
+        // sandwiched in between. The handle's ext_fn_names must be
+        // cleared before this feed runs, so a subsequent iterative
+        // feed without `fetch` raises NameError.
         await repl.feedRun('y = x + 1');
 
-        await expectLater(
-          repl.feedRun('z = fetch(99)'),
-          throwsA(
-            isA<MontyScriptError>().having(
-              (e) => e.excType,
-              'excType',
-              'NameError',
-            ),
-          ),
-        );
+        final r = await repl.feedRun('z = fetch(99)');
+        expect(r.error?.excType, 'NameError');
       },
     );
 
@@ -85,23 +69,15 @@ void runReplExtFnsLifecycleTests() {
           externalFunctions: {'a': (args) async => (args['_0']! as int) + 1},
         );
 
-        // Feed 2: register `b` instead. `a` must no longer resolve when
-        // referenced again.
+        // Feed 2: register `b` instead. `a` must no longer resolve
+        // when referenced again.
         await repl.feedRun(
           'r = b(5)',
           externalFunctions: {'b': (args) async => (args['_0']! as int) * 2},
         );
 
-        await expectLater(
-          repl.feedRun('r = a(5)'),
-          throwsA(
-            isA<MontyScriptError>().having(
-              (e) => e.excType,
-              'excType',
-              'NameError',
-            ),
-          ),
-        );
+        final r = await repl.feedRun('r = a(5)');
+        expect(r.error?.excType, 'NameError');
       },
     );
   });

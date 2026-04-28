@@ -26,10 +26,10 @@ Future<void> main() async {
 
 Future<void> _scalars() async {
   print('\n── scalars ──');
-  final session = MontySession();
+  final repl = MontyRepl();
 
   // MontyNone — Python None
-  final none = await session.run('None');
+  final none = await repl.feedRun('None');
   switch (none.value) {
     case MontyNone():
       print('None: dartValue=${none.value.dartValue}'); // null
@@ -37,11 +37,11 @@ Future<void> _scalars() async {
   }
 
   // MontyBool
-  final yes = (await session.run('True')).value as MontyBool;
+  final yes = (await repl.feedRun('True')).value as MontyBool;
   print('True: ${yes.value}, dartValue=${yes.dartValue}');
 
   // MontyInt — arbitrary precision (Monty restricts to i64 range)
-  final n = (await session.run('2 ** 32')).value as MontyInt;
+  final n = (await repl.feedRun('2 ** 32')).value as MontyInt;
   print('2**32: ${n.value}');
 
   // MontyFloat — NaN and Infinity survive the round-trip
@@ -51,7 +51,7 @@ Future<void> _scalars() async {
     'float("inf")',
     'float("-inf")',
   ]) {
-    final v = (await session.run(expr)).value as MontyFloat;
+    final v = (await repl.feedRun(expr)).value as MontyFloat;
     print(
       '$expr → ${v.value.isNaN
           ? "NaN"
@@ -62,67 +62,67 @@ Future<void> _scalars() async {
   }
 
   // MontyString — UTF-8
-  final s = (await session.run('"héllo 世界"')).value as MontyString;
+  final s = (await repl.feedRun('"héllo 世界"')).value as MontyString;
   print('str: ${s.value}');
 
   // MontyBytes
-  final b = (await session.run('b"hello"')).value as MontyBytes;
+  final b = (await repl.feedRun('b"hello"')).value as MontyBytes;
   print('bytes: ${b.value} (len=${b.value.length})');
 
-  session.dispose();
+  repl.dispose();
 }
 
 Future<void> _collections() async {
   print('\n── collections ──');
-  final session = MontySession();
+  final repl = MontyRepl();
 
   // MontyList — ordered, mutable
-  final list = (await session.run('[1, "two", 3.0, None]')).value as MontyList;
+  final list = (await repl.feedRun('[1, "two", 3.0, None]')).value as MontyList;
   print('list items: ${list.items.map((v) => v.dartValue)}');
 
   // MontyTuple — ordered, immutable
-  final tup = (await session.run('(1, 2, 3)')).value as MontyTuple;
+  final tup = (await repl.feedRun('(1, 2, 3)')).value as MontyTuple;
   print('tuple: ${tup.items.map((v) => v.dartValue)}');
 
   // MontyDict — str keys only (Monty restriction)
-  final d = (await session.run('{"a": 1, "b": [2, 3]}')).value as MontyDict;
+  final d = (await repl.feedRun('{"a": 1, "b": [2, 3]}')).value as MontyDict;
   print('dict keys: ${d.entries.keys.toList()}');
   print(
     'dict["b"]: ${(d.entries["b"] as MontyList).items.map((v) => v.dartValue)}',
   );
 
   // MontySet
-  final set_ = (await session.run('{1, 2, 3, 2, 1}')).value as MontySet;
+  final set_ = (await repl.feedRun('{1, 2, 3, 2, 1}')).value as MontySet;
   print('set items: ${set_.items.length} unique'); // 3
 
   // MontyFrozenSet
   final fs =
-      (await session.run('frozenset({4, 5, 6})')).value as MontyFrozenSet;
+      (await repl.feedRun('frozenset({4, 5, 6})')).value as MontyFrozenSet;
   print('frozenset: ${fs.items.map((v) => v.dartValue)}');
 
   // dartValue recursively converts nested collections.
-  final nested = (await session.run('{"x": [1, {"y": True}]}')).value;
+  final nested = (await repl.feedRun('{"x": [1, {"y": True}]}')).value;
   print('nested dartValue: ${nested.dartValue}');
 
-  session.dispose();
+  repl.dispose();
 }
 
 Future<void> _datetimes() async {
   print('\n── datetimes ──');
-  final session = MontySession();
+  final repl = MontyRepl();
 
-  await session.run('import datetime');
+  await repl.feedRun('import datetime');
 
   // MontyDate
   final date =
-      (await session.run('datetime.date(2024, 6, 15)')).value as MontyDate;
+      (await repl.feedRun('datetime.date(2024, 6, 15)')).value as MontyDate;
   print(
     'date: ${date.year}-${date.month}-${date.day}  dartValue=${date.dartValue}',
   );
 
   // MontyDateTime (naive — no timezone)
   final dt =
-      (await session.run('datetime.datetime(2024, 6, 15, 12, 30, 0)')).value
+      (await repl.feedRun('datetime.datetime(2024, 6, 15, 12, 30, 0)')).value
           as MontyDateTime;
   print(
     'datetime: ${dt.year}-${dt.month}-${dt.day} ${dt.hour}:${dt.minute}:${dt.second}',
@@ -131,37 +131,37 @@ Future<void> _datetimes() async {
 
   // MontyTimeDelta
   final td =
-      (await session.run('datetime.timedelta(days=2, hours=3)')).value
+      (await repl.feedRun('datetime.timedelta(days=2, hours=3)')).value
           as MontyTimeDelta;
   print(
     'timedelta: days=${td.days} seconds=${td.seconds}  dartValue=${td.dartValue}',
   );
 
-  session.dispose();
+  repl.dispose();
 }
 
 Future<void> _structured() async {
   print('\n── structured ──');
-  final session = MontySession();
+  final repl = MontyRepl();
 
   // MontyPath — returned when Python evaluates a pathlib.Path object
-  await session.run('import pathlib');
-  final p = (await session.run('pathlib.Path("/usr/bin")')).value as MontyPath;
+  await repl.feedRun('import pathlib');
+  final p = (await repl.feedRun('pathlib.Path("/usr/bin")')).value as MontyPath;
   print('path: ${p.value}  dartValue=${p.dartValue}');
 
   // MontyNamedTuple — Python collections.namedtuple
-  await session.run('''
+  await repl.feedRun('''
 from collections import namedtuple
 Point = namedtuple("Point", ["x", "y"])
 pt = Point(3, 4)
 ''');
-  final nt = (await session.run('pt')).value as MontyNamedTuple;
+  final nt = (await repl.feedRun('pt')).value as MontyNamedTuple;
   print('namedtuple type: ${nt.typeName}  fields: ${nt.fieldNames}');
   print('  x=${nt.values[0].dartValue}  y=${nt.values[1].dartValue}');
   print('  dartValue: ${nt.dartValue}');
 
   // MontyDataclass — Python @dataclass
-  await session.run('''
+  await repl.feedRun('''
 from dataclasses import dataclass
 @dataclass
 class User:
@@ -171,7 +171,7 @@ class User:
 
 u = User("Alice", 30)
 ''');
-  final dc = (await session.run('u')).value as MontyDataclass;
+  final dc = (await repl.feedRun('u')).value as MontyDataclass;
   print('dataclass: ${dc.name}  frozen=${dc.frozen}  typeId=${dc.typeId}');
   print('  fields: ${dc.fieldNames}');
   print(
@@ -179,7 +179,7 @@ u = User("Alice", 30)
   );
   print('  dartValue: ${dc.dartValue}');
 
-  session.dispose();
+  repl.dispose();
 }
 
 // ── MontyValue.fromDart / JSON round-trip ─────────────────────────────────────

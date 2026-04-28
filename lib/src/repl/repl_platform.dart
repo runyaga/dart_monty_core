@@ -8,15 +8,14 @@ import 'package:dart_monty_core/src/repl/monty_repl.dart';
 
 /// Adapts [MontyRepl] to the [MontyPlatform] interface.
 ///
-/// This allows `MontyRepl` to be used anywhere a [MontyPlatform] is
-/// expected — for example with `MontySession` — while keeping REPL heap
-/// state (variables, functions, classes) persistent across calls.
+/// Use this when a consumer expects a [MontyPlatform] but you want to
+/// drive it with a stateful [MontyRepl] heap rather than a fresh
+/// per-call platform.
 ///
 /// ```dart
 /// final repl = MontyRepl();
 /// final platform = ReplPlatform(repl: repl);
-/// final session = MontySession(platform: platform);
-/// await session.run('x = 42');
+/// await platform.run('x = 42');
 /// await repl.dispose();
 /// ```
 class ReplPlatform implements MontyPlatform {

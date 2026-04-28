@@ -150,14 +150,13 @@ void main() {
             (op, args, kwargs) async => throw const OsCallNotHandledException();
 
         await repl.feedRun('import datetime', osHandler: notHandled());
-        final error = await repl
-            .feedRun('datetime.date.today()', osHandler: notHandled())
-            .then<MontyScriptError?>((_) => null)
-            .catchError((Object e) => e as MontyScriptError?);
-
-        expect(error, isNotNull);
-        expect(error?.excType, 'NameError');
-        expect(error?.message, contains('date.today'));
+        final result = await repl.feedRun(
+          'datetime.date.today()',
+          osHandler: notHandled(),
+        );
+        expect(result.error, isNotNull);
+        expect(result.error?.excType, 'NameError');
+        expect(result.error?.message, contains('date.today'));
       },
     );
 
@@ -172,14 +171,13 @@ void main() {
                 throw const OsCallException('handler refused');
 
         await repl.feedRun('import datetime', osHandler: alwaysFails());
-        final error = await repl
-            .feedRun('datetime.date.today()', osHandler: alwaysFails())
-            .then<MontyScriptError?>((_) => null)
-            .catchError((Object e) => e as MontyScriptError?);
-
-        expect(error, isNotNull);
-        expect(error?.excType, 'RuntimeError');
-        expect(error?.message, contains('handler refused'));
+        final result = await repl.feedRun(
+          'datetime.date.today()',
+          osHandler: alwaysFails(),
+        );
+        expect(result.error, isNotNull);
+        expect(result.error?.excType, 'RuntimeError');
+        expect(result.error?.message, contains('handler refused'));
       },
     );
   });

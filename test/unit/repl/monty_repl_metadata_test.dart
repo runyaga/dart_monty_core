@@ -1,8 +1,8 @@
-// Unit tests for MontyRepl/MontySession/Monty scriptName getter.
+// Unit tests for the scriptName getter on Monty and MontyRepl.
 //
-// scriptName is the filename surfaced in Python tracebacks. Both the REPL
-// (low-level) and the Session (high-level) accept it at construction; Monty
-// defaults to 'main.py' when unset, mirroring the reference Python class.
+// scriptName is the filename surfaced in Python tracebacks. Monty
+// defaults to 'main.py' when unset, mirroring the reference Python
+// class; MontyRepl returns `null` so the engine's own fallback applies.
 @Tags(['unit'])
 library;
 
@@ -19,18 +19,6 @@ void main() {
     test('Monty round-trips a custom scriptName', () {
       final monty = Monty('pass', scriptName: 'analysis.py');
       expect(monty.scriptName, 'analysis.py');
-    });
-
-    test('MontySession returns null when no scriptName given', () {
-      final session = MontySession();
-      addTearDown(session.dispose);
-      expect(session.scriptName, isNull);
-    });
-
-    test('MontySession round-trips a custom scriptName', () {
-      final session = MontySession(scriptName: 'job.py');
-      addTearDown(session.dispose);
-      expect(session.scriptName, 'job.py');
     });
 
     test('MontyRepl returns null when no scriptName given', () async {

@@ -140,11 +140,10 @@
 
 ### Added
 
-- **`MontyRepl.scriptName` / `MontySession.scriptName` getters.** The
-  reference `pydantic_monty` class exposes `script_name`; the Dart side
-  stored `_scriptName` but had no accessor. `Monty.scriptName` returns
-  the same value with a `'main.py'` fallback to match the engine
-  default.
+- **`MontyRepl.scriptName` getter.** The reference `pydantic_monty`
+  class exposes `script_name`; the Dart side stored `_scriptName` but
+  had no accessor. `Monty.scriptName` returns the same value with a
+  `'main.py'` fallback to match the engine default.
 
 ### Changed
 
@@ -162,26 +161,32 @@
 
 ### API alignment
 
-Reshapes the public Dart surface to match the reference
-`pydantic_monty` Python class and removes the Map vs List naming
-mismatches that had accumulated.
+Reshapes the public Dart surface to two classes — `Monty` (stateless)
+and `MontyRepl` (stateful) — matching the reference `pydantic_monty`
+Python package.
 
 - **`Monty(code)` is now a compiled-program holder.** Construct with
   Python source, call `.run({inputs, externalFunctions, limits,
   osHandler})` to execute. State does not persist between calls —
   each `.run()` is a fresh interpreter. For REPL-style state
-  accumulation use `MontySession()`. `snapshot` / `restore` /
-  `clearState` / `dispose` live on `MontySession` and `MontyRepl`,
-  where the state actually lives.
+  accumulation use `MontyRepl()`.
+- **`MontySession` is removed.** Its job (catch Python exceptions,
+  return them as `MontyResult.error`) now lives directly on
+  `MontyRepl.feedRun`. `clearState()`, `snapshot()`, `restore()` move
+  onto `MontyRepl`. The two-class shape mirrors `pydantic_monty`
+  exactly.
+- **`MontyRepl.feedRun` returns Python errors as data**, not as a
+  thrown `MontyScriptError`. Binding-level failures (resource limits,
+  disposed handle) still throw. The iterative entry points
+  (`feedStart` / `resume`) keep their throwing contract since they
+  hand control back to the caller per progress step.
 - **`externalFunctions:`** is the parameter name on `Monty.run`,
-  `Monty.exec`, `MontySession.run`, and `MontyRepl.feedRun`
-  (`Map<String, MontyCallback>`). `MontyRepl.feedStart` already used
-  this name with a `List<String>` value; the map/list divergence
-  between iterative and run-to-completion entry points is intentional
-  and documented.
+  `Monty.exec`, and `MontyRepl.feedRun` (`Map<String, MontyCallback>`).
+  `MontyRepl.feedStart` already used this name with a `List<String>`
+  value; the map/list divergence between iterative and
+  run-to-completion entry points is intentional and documented.
 - **`MontyRepl.feedRun`** runs to completion (paired symmetrically
-  with `feedStart`); **`MontySession.feedStart`** is the iterative
-  entry point on Session.
+  with `feedStart`).
 
 ### Test infrastructure
 

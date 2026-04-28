@@ -2,9 +2,9 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/monty_factory.dart';
-import 'package:dart_monty_core/src/monty_session.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
+import 'package:dart_monty_core/src/repl/monty_repl.dart';
 
 /// A compiled Python program.
 ///
@@ -19,15 +19,16 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 /// print(r.value); // MontyInt(42)
 /// ```
 ///
-/// For one-shot execution that does not need to be reused, [Monty.exec] is
-/// a static convenience.
+/// For one-shot execution that does not need to be reused, [Monty.exec]
+/// is a static convenience.
 ///
 /// For stateful execution (variables, functions, classes, imports
-/// accumulating across runs) use [MontySession] instead.
+/// accumulating across runs) use [MontyRepl] instead.
 class Monty {
   /// Holds [code] as a Python program.
   ///
-  /// [scriptName] is used as the filename in tracebacks and error messages.
+  /// [scriptName] is used as the filename in tracebacks and error
+  /// messages.
   factory Monty(String code, {String scriptName = 'main.py'}) =>
       Monty._(code: code, scriptName: scriptName);
 
@@ -44,33 +45,34 @@ class Monty {
   /// Runs the held code with optional [inputs], [externalFunctions],
   /// [limits], and [osHandler].
   ///
-  /// [inputs] are converted to Python literals and prepended to the code
-  /// as assignments; they shadow same-named variables for that call only.
-  /// [externalFunctions] maps Python-callable names to Dart callbacks;
-  /// Python can call them like any other function and the result is
-  /// resumed automatically.
+  /// [inputs] are converted to Python literals and prepended to the
+  /// code as assignments; they shadow same-named variables for that
+  /// call only. [externalFunctions] maps Python-callable names to Dart
+  /// callbacks; Python can call them like any other function and the
+  /// result is resumed automatically.
   ///
-  /// Each call runs in a fresh interpreter — state from earlier calls does
-  /// not persist. Use [MontySession] for stateful execution.
+  /// Each call runs in a fresh interpreter — state from earlier calls
+  /// does not persist. Use [MontyRepl] for stateful execution.
+  ///
+  /// Python-level exceptions land in [MontyResult.error] rather than
+  /// throwing, matching the reference Python class. Binding-level
+  /// failures (e.g. resource limits) still throw.
   Future<MontyResult> run({
     Map<String, Object?>? inputs,
     Map<String, MontyCallback> externalFunctions = const {},
     MontyLimits? limits,
     OsCallHandler? osHandler,
   }) async {
-    final session = MontySession(
-      osHandler: osHandler,
-      scriptName: _scriptName,
-    );
+    final repl = MontyRepl(scriptName: _scriptName);
     try {
-      return await session.run(
+      return await repl.feedRun(
         _code,
         externalFunctions: externalFunctions,
+        osHandler: osHandler,
         inputs: inputs,
-        limits: limits,
       );
     } finally {
-      session.dispose();
+      await repl.dispose();
     }
   }
 
@@ -89,8 +91,8 @@ class Monty {
 
   /// Runs pre-compiled bytecode from [compile] in a stateless context.
   ///
-  /// Creates a temporary backend, runs once, and disposes. Does not affect
-  /// any session state.
+  /// Creates a temporary backend, runs once, and disposes. Does not
+  /// affect any session state.
   static Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,

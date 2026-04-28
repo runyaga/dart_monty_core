@@ -3,7 +3,7 @@
 // MontyRepl wraps a single Rust REPL handle. All state (variables, imports,
 // functions, dataclasses) persists on that handle across feed() calls.
 //
-// Key differences from Monty/MontySession:
+// Key differences from Monty/MontyRepl:
 //  - feed() auto-dispatches externals (convenient)
 //  - feedStart()/resume() lets YOU drive the loop (flexible)
 //  - detectContinuation() tells you if input is syntactically complete

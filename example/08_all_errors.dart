@@ -62,18 +62,17 @@ Future<void> _syntaxError() async {
 }
 
 // ── MontyScriptError ──────────────────────────────────────────────────────────
-// Thrown by Monty.exec / MontyRepl.feedRun when Python raises and doesn't catch.
-// result.error is preferred for session/repl — the REPL survives the error.
+// MontyScriptError is the exception type for Python-level errors. Both
+// Monty.exec and MontyRepl.feedRun return errors as data via
+// MontyResult.error rather than throwing — the REPL stays alive and can
+// keep running. MontyScriptError appears in MontyResult.error.exception
+// for callers who want to inspect typed details (excType, traceback,
+// line number).
 Future<void> _scriptError() async {
-  print('\n── MontyScriptError (thrown + traceback) ──');
+  print('\n── MontyScriptError (in result.error, REPL survives) ──');
 
-  // When code raises an unhandled exception in a one-shot context, it throws.
-  // But with Monty/MontySession/MontyRepl the error lands in result.error —
-  // the session survives and you can keep running code.
-  try {
-    // Force a throw by creating a fresh exec that raises.
-    final repl = MontyRepl();
-    await repl.feedRun('''
+  final repl = MontyRepl();
+  final r = await repl.feedRun('''
 def outer():
     inner()
 
@@ -82,24 +81,19 @@ def inner():
 
 outer()
 ''');
-    await repl.dispose();
-  } on MontyScriptError catch (e) {
+
+  if (r.error != null) {
+    final e = r.error!;
     print('script error!');
     print('  excType:  ${e.excType}');
     print('  message:  ${e.message}');
-    _printException(e.exception);
+    _printException(e);
   }
 
-  // Prefer reading result.error in sessions so the interpreter survives.
-  final session = MontySession();
-  final r = await session.run('raise TypeError("type error")');
-  if (r.error != null) {
-    print('session survived: ${r.error!.excType} — ${r.error!.message}');
-    // Session is still alive — we can keep running.
-    final r2 = await session.run('1 + 1');
-    print('next call works: ${r2.value}');
-  }
-  session.dispose();
+  // The REPL is still alive — keep running.
+  final r2 = await repl.feedRun('1 + 1');
+  print('next call works: ${r2.value}');
+  repl.dispose();
 }
 
 // ── MontyResourceError ────────────────────────────────────────────────────────
@@ -120,10 +114,10 @@ Future<void> _resourceError() async {
 // Thrown when you use an interpreter after calling dispose().
 void _disposedError() {
   print('\n── MontyDisposedError ──');
-  final session = MontySession();
-  session.dispose();
-  session
-      .run('1 + 1')
+  final repl = MontyRepl();
+  repl.dispose();
+  repl
+      .feedRun('1 + 1')
       .then((_) {
         print('should not reach here');
       })

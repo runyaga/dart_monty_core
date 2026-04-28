@@ -1,11 +1,11 @@
 // 02 — Stateful interpreter
 //
-// MontySession() keeps a live Rust REPL heap across run() calls —
+// MontyRepl() keeps a live Rust REPL heap across run() calls —
 // variables, functions, classes, and imports all persist without
 // serialisation. For stateless single-shot evaluation see Monty(code) and
 // Monty.exec.
 //
-// Covers: MontySession constructor, run, clearState, dispose, snapshot,
+// Covers: MontyRepl constructor, run, clearState, dispose, snapshot,
 //         restore.
 //
 // Run: dart run example/02_stateful.dart
@@ -14,58 +14,60 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
   // ── State persistence across calls ──────────────────────────────────────────
-  final session = MontySession();
+  final repl = MontyRepl();
 
-  await session.run('x = 10');
-  await session.run('y = 20');
-  final r = await session.run('x + y');
+  await repl.feedRun('x = 10');
+  await repl.feedRun('y = 20');
+  final r = await repl.feedRun('x + y');
   print('x + y = ${r.value}'); // MontyInt(30)
 
   // Functions survive too.
-  await session.run('def square(n): return n * n');
-  final sq = await session.run('square(7)');
+  await repl.feedRun('def square(n): return n * n');
+  final sq = await repl.feedRun('square(7)');
   print('square(7) = ${sq.value}'); // MontyInt(49)
 
   // ── inputs: per-call variable injection ────────────────────────────────────
   // Dart values are converted to Python literals and prepended as assignments.
   // They shadow globals for that call only — the heap is not permanently changed.
-  final r2 = await session.run('square(n)', inputs: {'n': 5});
+  final r2 = await repl.feedRun('square(n)', inputs: {'n': 5});
   print('square(5) = ${r2.value}'); // MontyInt(25)
 
   // Supported input types: null, bool, int, double, String, List, Map.
-  await session.run(
+  await repl.feedRun(
     'total = sum(numbers)',
     inputs: {
       'numbers': [1, 2, 3, 4, 5],
     },
   );
-  print('sum = ${(await session.run("total")).value}'); // MontyInt(15)
+  print('sum = ${(await repl.feedRun("total")).value}'); // MontyInt(15)
 
   // ── clearState ─────────────────────────────────────────────────────────────
-  // Wipes globals. Next run() starts with an empty heap.
-  session.clearState();
-  final blank = await session.run('x');
+  // Wipes globals. Next feedRun() starts with an empty heap. Looking
+  // up a previously-defined name raises Python NameError, which lands
+  // in MontyResult.error rather than throwing.
+  await repl.clearState();
+  final blank = await repl.feedRun('x');
   print('after clear — x error: ${blank.error?.excType}'); // NameError
 
   // ── snapshot / restore ─────────────────────────────────────────────────────
   // Capture the full heap as bytes, then restore it later.
-  await session.run('counter = 0');
-  await session.run('counter += 1');
-  await session.run('counter += 1');
-  print('counter before snap: ${(await session.run("counter")).value}'); // 2
+  await repl.feedRun('counter = 0');
+  await repl.feedRun('counter += 1');
+  await repl.feedRun('counter += 1');
+  print('counter before snap: ${(await repl.feedRun("counter")).value}'); // 2
 
-  final snap = await session.snapshot();
+  final snap = await repl.snapshot();
   print('snapshot: ${snap.length} bytes');
 
-  await session.run('counter += 100'); // mutate after snapshot
-  print('mutated: ${(await session.run("counter")).value}'); // 102
+  await repl.feedRun('counter += 100'); // mutate after snapshot
+  print('mutated: ${(await repl.feedRun("counter")).value}'); // 102
 
-  await session.restore(snap); // rewind
-  print('restored: ${(await session.run("counter")).value}'); // 2
+  await repl.restore(snap); // rewind
+  print('restored: ${(await repl.feedRun("counter")).value}'); // 2
 
   // ── dispose ────────────────────────────────────────────────────────────────
   // Always dispose to free the native Rust handle.
-  session.dispose();
+  repl.dispose();
 
   // ── Static one-shot helpers ─────────────────────────────────────────────────
   // Monty.exec — no state, no setup, dispose happens automatically.
