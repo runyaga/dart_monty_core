@@ -156,9 +156,39 @@
   comment removed (the Rust handle auto-resolves names via
   `ext_fn_names`; the Dart branch only fires when a name was not
   registered). `feedStart`'s `List<String> externalFunctions` shape is
-  now documented as intentional (versus `feed`'s `Map<String,
+  now documented as intentional (versus `feedRun`'s `Map<String,
   MontyCallback>`), and `detectContinuation` is called out as a
   Dart-only helper without a `pydantic_monty` equivalent.
+
+### API alignment
+
+Reshapes the public Dart surface to match the reference
+`pydantic_monty` Python class and removes the Map vs List naming
+mismatches that had accumulated.
+
+- **`Monty(code)` is now a compiled-program holder.** Construct with
+  Python source, call `.run({inputs, externalFunctions, limits,
+  osHandler})` to execute. State does not persist between calls —
+  each `.run()` is a fresh interpreter. For REPL-style state
+  accumulation use `MontySession()`. `snapshot` / `restore` /
+  `clearState` / `dispose` live on `MontySession` and `MontyRepl`,
+  where the state actually lives.
+- **`externalFunctions:`** is the parameter name on `Monty.run`,
+  `Monty.exec`, `MontySession.run`, and `MontyRepl.feedRun`
+  (`Map<String, MontyCallback>`). `MontyRepl.feedStart` already used
+  this name with a `List<String>` value; the map/list divergence
+  between iterative and run-to-completion entry points is intentional
+  and documented.
+- **`MontyRepl.feedRun`** runs to completion (paired symmetrically
+  with `feedStart`); **`MontySession.feedStart`** is the iterative
+  entry point on Session.
+
+### Test infrastructure
+
+- **Shared FFI/WASM test bodies.** Twin test pairs share a single
+  `_<name>_test_body.dart` containing the assertions; the
+  `ffi_*_test.dart` and `wasm_*_test.dart` files are thin wrappers
+  that set the right `@Tags` and import the body.
 
 ## 0.0.14 - monty upstream upgrade
 
