@@ -868,6 +868,62 @@ external ffi.Pointer<MontyReplHandle> monty_repl_restore(
   ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
 );
 
+/// Run static type checking on Python source code.
+///
+/// Uses a pooled in-memory database scrubbed on drop, so the analysis
+/// heap never touches an in-flight execution heap of any MontyHandle.
+///
+/// @param code                  Python source (NUL-terminated UTF-8).
+/// @param prefix_code           Optional prefix code prepended before
+/// type-check (e.g. input variable
+/// declarations). NULL for no prefix.
+/// @param script_name           Filename used in diagnostic spans.
+/// @param out_diagnostics_json  On errors found, receives the
+/// diagnostic render in Monty's `json`
+/// format (free with monty_string_free()).
+/// Set to NULL when the code type-checks
+/// cleanly.
+/// @param out_error             On infrastructure failure, receives an
+/// error message (free with
+/// monty_string_free()). NULL on success
+/// or errors-found.
+/// @return                      MONTY_RESULT_OK if the check ran (with
+/// or without errors), MONTY_RESULT_ERROR
+/// if the type-check infrastructure
+/// itself failed.
+@ffi.Native<
+  ffi.UnsignedInt Function(
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>(symbol: 'monty_type_check')
+external int _monty_type_check(
+  ffi.Pointer<ffi.Char> code,
+  ffi.Pointer<ffi.Char> prefix_code,
+  ffi.Pointer<ffi.Char> script_name,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_diagnostics_json,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
+MontyResultTag monty_type_check(
+  ffi.Pointer<ffi.Char> code,
+  ffi.Pointer<ffi.Char> prefix_code,
+  ffi.Pointer<ffi.Char> script_name,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_diagnostics_json,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+) => MontyResultTag.fromValue(
+  _monty_type_check(
+    code,
+    prefix_code,
+    script_name,
+    out_diagnostics_json,
+    out_error,
+  ),
+);
+
 /// Free a string returned by any monty_* function. Safe with NULL.
 @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Char>)>()
 external void monty_string_free(

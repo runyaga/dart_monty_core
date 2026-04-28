@@ -159,6 +159,14 @@ abstract class NativeBindings {
   /// Returns the new handle address as an `int`, or throws on error.
   int restore(Uint8List data);
 
+  /// Runs static type checking on [code] without executing it.
+  ///
+  /// Stateless — does not create or modify any handle. Returns the
+  /// Monty `json`-format diagnostics string when errors are found, or
+  /// `null` when the code type-checks cleanly. Throws on infrastructure
+  /// failure.
+  String? typeCheck(String code, {String? prefixCode, String scriptName});
+
   // ---------------------------------------------------------------------------
   // REPL
   // ---------------------------------------------------------------------------

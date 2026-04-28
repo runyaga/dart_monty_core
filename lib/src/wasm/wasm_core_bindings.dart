@@ -155,6 +155,18 @@ class WasmCoreBindings implements MontyCoreBindings {
       _bindings.compile(code, sessionId: _sessionId);
 
   @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  }) => _bindings.typeCheck(
+    code,
+    prefixCode: prefixCode,
+    scriptName: scriptName,
+    sessionId: _sessionId,
+  );
+
+  @override
   Future<CoreRunResult> runPrecompiled(
     Uint8List compiled, {
     String? limitsJson,

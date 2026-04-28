@@ -72,6 +72,15 @@ class ReplPlatform implements MontyPlatform {
       throw UnsupportedError('compileCode() is not supported by ReplPlatform');
 
   @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  }) => throw UnsupportedError(
+    'typeCheck() is not supported by ReplPlatform',
+  );
+
+  @override
   Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,

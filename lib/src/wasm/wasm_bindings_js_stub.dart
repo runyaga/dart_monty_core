@@ -94,6 +94,14 @@ class WasmBindingsJs extends WasmBindings {
   }) => throw UnimplementedError();
 
   @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<WasmRunResult> runPrecompiled(
     Uint8List compiled, {
     String? limitsJson,

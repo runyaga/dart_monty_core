@@ -4,6 +4,7 @@ import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/monty_factory.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
+import 'package:dart_monty_core/src/platform/monty_typing_error.dart';
 import 'package:dart_monty_core/src/repl/monty_repl.dart';
 
 /// A compiled Python program.
@@ -107,6 +108,40 @@ class Monty {
         limits: limits,
         scriptName: scriptName,
       );
+    } finally {
+      await platform.dispose();
+    }
+  }
+
+  /// Runs static type checking on [code] without executing it.
+  ///
+  /// Returns the list of typing diagnostics — empty when the code
+  /// type-checks cleanly. Stateless: uses an isolated analysis heap
+  /// scrubbed on completion, so it never touches an in-flight execution.
+  ///
+  /// [prefixCode] is prepended before checking — useful for declaring
+  /// inputs or external function signatures so the analyser knows their
+  /// types. [scriptName] sets the filename surfaced in diagnostic spans.
+  ///
+  /// ```dart
+  /// final errors = await Monty.typeCheck('x: int = "not an int"');
+  /// for (final e in errors) {
+  ///   print('${e.path}:${e.line}:${e.column} ${e.code}: ${e.message}');
+  /// }
+  /// ```
+  static Future<List<MontyTypingError>> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  }) async {
+    final platform = createPlatformMonty();
+    try {
+      final json = await platform.typeCheck(
+        code,
+        prefixCode: prefixCode,
+        scriptName: scriptName,
+      );
+      return MontyTypingError.listFromJson(json);
     } finally {
       await platform.dispose();
     }

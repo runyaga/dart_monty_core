@@ -436,6 +436,33 @@ async function compile(code, scriptName) {
 }
 
 /**
+ * Run static type checking on Python source code.
+ *
+ * Stateless — no handle is created or modified. Resolves to a JSON
+ * string with `{ ok, diagnosticsJson }` where `diagnosticsJson` is the
+ * Monty `json` format render of the diagnostics, or `null` when the
+ * code type-checks cleanly.
+ *
+ * @param {string} code        Python source code.
+ * @param {string} prefixCode  Optional prefix code prepended before checking.
+ * @param {string} scriptName  Script name for diagnostic spans (optional).
+ * @returns {Promise<string>}  JSON-encoded `{ ok, diagnosticsJson, ... }`.
+ */
+async function typeCheck(code, prefixCode, scriptName) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) {
+    return JSON.stringify({ ok: false, error: 'Not initialized' });
+  }
+
+  const session = sessions.get(sid);
+  const msg = { type: 'typeCheck', code };
+  if (prefixCode) msg.prefixCode = prefixCode;
+  if (scriptName) msg.scriptName = scriptName;
+  const result = await callWorker(sid, msg, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
+/**
  * Run precompiled bytecode to completion.
  *
  * @param {string} dataBase64 Base64-encoded compiled snapshot bytes.
@@ -720,6 +747,7 @@ window.DartMontyBridge = {
   snapshot,
   restore,
   compile,
+  typeCheck,
   runPrecompiled,
   startPrecompiled,
   discover,

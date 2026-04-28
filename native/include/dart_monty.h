@@ -500,6 +500,41 @@ uint8_t *monty_repl_snapshot(const MontyReplHandle *handle, size_t *out_len);
 MontyReplHandle *monty_repl_restore(const uint8_t *data, size_t len, char **out_error);
 
 /* ------------------------------------------------------------------ */
+/* Type checking (stateless static analysis)                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Run static type checking on Python source code.
+ *
+ * Uses a pooled in-memory database scrubbed on drop, so the analysis
+ * heap never touches an in-flight execution heap of any MontyHandle.
+ *
+ * @param code                  Python source (NUL-terminated UTF-8).
+ * @param prefix_code           Optional prefix code prepended before
+ *                              type-check (e.g. input variable
+ *                              declarations). NULL for no prefix.
+ * @param script_name           Filename used in diagnostic spans.
+ * @param out_diagnostics_json  On errors found, receives the
+ *                              diagnostic render in Monty's `json`
+ *                              format (free with monty_string_free()).
+ *                              Set to NULL when the code type-checks
+ *                              cleanly.
+ * @param out_error             On infrastructure failure, receives an
+ *                              error message (free with
+ *                              monty_string_free()). NULL on success
+ *                              or errors-found.
+ * @return                      MONTY_RESULT_OK if the check ran (with
+ *                              or without errors), MONTY_RESULT_ERROR
+ *                              if the type-check infrastructure
+ *                              itself failed.
+ */
+MontyResultTag monty_type_check(const char *code,
+                                const char *prefix_code,
+                                const char *script_name,
+                                char **out_diagnostics_json,
+                                char **out_error);
+
+/* ------------------------------------------------------------------ */
 /* Memory management                                                  */
 /* ------------------------------------------------------------------ */
 

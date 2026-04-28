@@ -33,9 +33,7 @@ Future<void> main() async {
 Future<void> _readWrite() async {
   print('\n── read / write ──');
 
-  final vfs = <String, String>{
-    '/data/hello.txt': 'Hello from VFS!',
-  };
+  final vfs = <String, String>{'/data/hello.txt': 'Hello from VFS!'};
 
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
@@ -60,9 +58,7 @@ Future<void> _readOnly() async {
   print('\n── readOnly ──');
 
   final handler = memoryMountedOsHandler(
-    mounts: const [
-      MountDir(virtualPath: '/secrets', mode: MountMode.readOnly),
-    ],
+    mounts: const [MountDir(virtualPath: '/secrets', mode: MountMode.readOnly)],
     vfs: {'/secrets/api_key.txt': 'sk-12345'},
   );
 

@@ -104,6 +104,19 @@ abstract class MontyPlatform {
     throw UnimplementedError('compileCode() has not been implemented.');
   }
 
+  /// Runs static type checking on [code] without executing it.
+  ///
+  /// Returns the Monty `json`-format diagnostics string when errors are
+  /// found, or `null` when the code type-checks cleanly. Throws on
+  /// type-check infrastructure failure.
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  }) {
+    throw UnimplementedError('typeCheck() has not been implemented.');
+  }
+
   /// Executes pre-compiled [compiled] bytes returned by [compileCode].
   ///
   /// Equivalent to `Monty.load(binary).run()` in the JS `@pydantic/monty`

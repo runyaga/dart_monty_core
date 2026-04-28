@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- **`Monty.typeCheck(code, {prefixCode, scriptName})`** — static type
+  analysis that returns a `List<MontyTypingError>` (empty when clean).
+  Stateless — uses an isolated analysis heap. Wraps upstream
+  `monty-type-checking`. New `MontyTypingError` value class exposes
+  `code`, `message`, `path`, `line`/`column`, `endLine`/`endColumn`, and
+  `url`. WASM bridge gains a `sched_yield` no-op to satisfy salsa-rs's
+  WASI imports.
+
 ### Upgraded
 
 - Rust dependency `monty` bumped from `v0.0.14` → `v0.0.17` (Cargo.toml +

@@ -220,6 +220,21 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   }
 
   @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+  }) async {
+    assertNotDisposed('typeCheck');
+    await _ensureInitialized();
+    return _bindings.typeCheck(
+      code,
+      prefixCode: prefixCode,
+      scriptName: scriptName,
+    );
+  }
+
+  @override
   Future<MontyResult> runPrecompiled(
     Uint8List compiled, {
     MontyLimits? limits,
