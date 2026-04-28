@@ -165,14 +165,14 @@ void main() {
         () => readOnly('Path.unlink', ['/data/x.txt'], null),
         throwsA(isA<OsCallException>()),
       );
-      expect(vfs.containsKey('/data/x.txt'), true);
+      expect(vfs, contains('/data/x.txt'));
 
       final writable = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         vfs: vfs,
       );
       await writable('Path.unlink', ['/data/x.txt'], null);
-      expect(vfs.containsKey('/data/x.txt'), false);
+      expect(vfs, isNot(contains('/data/x.txt')));
     });
 
     test('paths outside every mount fall through to fallthrough', () async {
@@ -182,6 +182,7 @@ void main() {
         vfs: const {},
         fallthrough: (op, args, kwargs) async {
           fallthroughCalled++;
+
           return null;
         },
       );
@@ -215,6 +216,7 @@ void main() {
         vfs: const {},
         fallthrough: (op, args, kwargs) async {
           fallthroughOp = op;
+
           return 'env-value';
         },
       );
@@ -241,5 +243,316 @@ void main() {
         null,
       );
     });
+
+    // -------------------------------------------------------------------
+    // Path.mkdir
+    // -------------------------------------------------------------------
+
+    test('mkdir succeeds as a no-op when parent (mount root) exists', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: const {},
+      );
+      // Parent is the mount root /sandbox — implicitly exists.
+      final r = await handler('Path.mkdir', ['/sandbox/data'], null);
+      expect(r, isNull);
+    });
+
+    test('mkdir parents=False raises FileNotFoundError on missing parent', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: const {},
+      );
+      expect(
+        () => handler('Path.mkdir', ['/sandbox/a/b/c'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'FileNotFoundError',
+          ),
+        ),
+      );
+    });
+
+    test(
+      'mkdir parents=True succeeds when intermediates are missing',
+      () async {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/sandbox')],
+          vfs: const {},
+        );
+        final r = await handler(
+          'Path.mkdir',
+          ['/sandbox/a/b/c'],
+          {'parents': true},
+        );
+        expect(r, isNull);
+      },
+    );
+
+    test('mkdir raises FileExistsError when a file occupies the path', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: {'/sandbox/data': 'I am a file pretending to be a dir'},
+      );
+      expect(
+        () => handler('Path.mkdir', ['/sandbox/data'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'FileExistsError',
+          ),
+        ),
+      );
+    });
+
+    test(
+      'mkdir raises FileExistsError on existing implicit dir w/o exist_ok',
+      () {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/sandbox')],
+          vfs: {'/sandbox/data/file.txt': 'x'},
+        );
+        expect(
+          () => handler('Path.mkdir', ['/sandbox/data'], null),
+          throwsA(
+            isA<OsCallException>().having(
+              (e) => e.pythonExceptionType,
+              'pythonExceptionType',
+              'FileExistsError',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'mkdir exist_ok=True silently succeeds on existing implicit dir',
+      () async {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/sandbox')],
+          vfs: {'/sandbox/data/file.txt': 'x'},
+        );
+        final r = await handler(
+          'Path.mkdir',
+          ['/sandbox/data'],
+          {'exist_ok': true},
+        );
+        expect(r, isNull);
+      },
+    );
+
+    test('mkdir on readOnly mount raises PermissionError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [
+          MountDir(virtualPath: '/sandbox', mode: MountMode.readOnly),
+        ],
+        vfs: const {},
+      );
+      expect(
+        () => handler('Path.mkdir', ['/sandbox/data'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'PermissionError',
+          ),
+        ),
+      );
+    });
+
+    // -------------------------------------------------------------------
+    // Path.rmdir
+    // -------------------------------------------------------------------
+
+    test('rmdir on a file raises NotADirectoryError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: {'/sandbox/file.txt': 'x'},
+      );
+      expect(
+        () => handler('Path.rmdir', ['/sandbox/file.txt'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'NotADirectoryError',
+          ),
+        ),
+      );
+    });
+
+    test('rmdir on non-empty directory raises OSError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: {'/sandbox/data/file.txt': 'x'},
+      );
+      expect(
+        () => handler('Path.rmdir', ['/sandbox/data'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'OSError',
+          ),
+        ),
+      );
+    });
+
+    test('rmdir on empty/non-existent path is a no-op success', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: const {},
+      );
+      final r = await handler('Path.rmdir', ['/sandbox/empty'], null);
+      expect(r, isNull);
+    });
+
+    test('rmdir on readOnly mount raises PermissionError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [
+          MountDir(virtualPath: '/sandbox', mode: MountMode.readOnly),
+        ],
+        vfs: const {},
+      );
+      expect(
+        () => handler('Path.rmdir', ['/sandbox/data'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'PermissionError',
+          ),
+        ),
+      );
+    });
+
+    // -------------------------------------------------------------------
+    // Path.rename
+    // -------------------------------------------------------------------
+
+    test('rename moves a file by re-keying the map', () async {
+      final vfs = {'/sandbox/a.txt': 'alpha'};
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: vfs,
+      );
+      await handler('Path.rename', ['/sandbox/a.txt', '/sandbox/b.txt'], null);
+      expect(vfs.containsKey('/sandbox/a.txt'), false);
+      expect(vfs['/sandbox/b.txt'], 'alpha');
+    });
+
+    test('rename across two writable mounts succeeds', () async {
+      final vfs = {'/data/x.txt': 'x'};
+      final handler = memoryMountedOsHandler(
+        mounts: const [
+          MountDir(virtualPath: '/data'),
+          MountDir(virtualPath: '/scratch'),
+        ],
+        vfs: vfs,
+      );
+      await handler('Path.rename', ['/data/x.txt', '/scratch/x.txt'], null);
+      expect(vfs['/scratch/x.txt'], 'x');
+      expect(vfs.containsKey('/data/x.txt'), false);
+    });
+
+    test('rename with readOnly source mount raises PermissionError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [
+          MountDir(virtualPath: '/data', mode: MountMode.readOnly),
+        ],
+        vfs: {'/data/x.txt': 'x'},
+      );
+      expect(
+        () => handler('Path.rename', ['/data/x.txt', '/data/y.txt'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'PermissionError',
+          ),
+        ),
+      );
+    });
+
+    test('rename with readOnly destination mount raises PermissionError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [
+          MountDir(virtualPath: '/src'),
+          MountDir(virtualPath: '/dst', mode: MountMode.readOnly),
+        ],
+        vfs: {'/src/x.txt': 'x'},
+      );
+      expect(
+        () => handler('Path.rename', ['/src/x.txt', '/dst/x.txt'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'PermissionError',
+          ),
+        ),
+      );
+    });
+
+    test('rename of a missing path raises FileNotFoundError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: const {},
+      );
+      expect(
+        () => handler('Path.rename', ['/sandbox/a', '/sandbox/b'], null),
+        throwsA(
+          isA<OsCallException>().having(
+            (e) => e.pythonExceptionType,
+            'pythonExceptionType',
+            'FileNotFoundError',
+          ),
+        ),
+      );
+    });
+
+    test('rename of an implicit directory re-prefixes every child', () async {
+      final vfs = {
+        '/sandbox/old/a.txt': 'a',
+        '/sandbox/old/sub/b.txt': 'b',
+        '/sandbox/keep.txt': 'keep',
+      };
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: vfs,
+      );
+      await handler('Path.rename', ['/sandbox/old', '/sandbox/new'], null);
+      expect(vfs.containsKey('/sandbox/old/a.txt'), false);
+      expect(vfs.containsKey('/sandbox/old/sub/b.txt'), false);
+      expect(vfs['/sandbox/new/a.txt'], 'a');
+      expect(vfs['/sandbox/new/sub/b.txt'], 'b');
+      expect(vfs['/sandbox/keep.txt'], 'keep');
+    });
+
+    test(
+      'rename onto an existing non-empty directory raises OSError',
+      () {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/sandbox')],
+          vfs: {
+            '/sandbox/old/a.txt': 'a',
+            '/sandbox/new/b.txt': 'b',
+          },
+        );
+        expect(
+          () => handler('Path.rename', ['/sandbox/old', '/sandbox/new'], null),
+          throwsA(
+            isA<OsCallException>().having(
+              (e) => e.pythonExceptionType,
+              'pythonExceptionType',
+              'OSError',
+            ),
+          ),
+        );
+      },
+    );
   });
 }
