@@ -132,6 +132,7 @@ class MontyRepl {
   final String? _preamble;
   bool _created = false;
   bool _disposed = false;
+  bool _pending = false;
 
   /// Script name used as the filename in tracebacks and error messages.
   ///
@@ -177,6 +178,7 @@ class MontyRepl {
     if (externals.isEmpty && osHandler == null) {
       // Fast path: no externals, use simple feedRun.
       final r = await _bindings.feedRun(effectiveCode);
+      _pending = false;
       if (r.ok) {
         return MontyResult(
           value: MontyValue.fromJson(r.value),
@@ -282,6 +284,7 @@ class MontyRepl {
   /// loop in progress). Throws [StateError] if mid-execution.
   Future<Uint8List> snapshot() {
     _checkNotDisposed();
+    _checkNotPending('snapshot');
 
     return _bindings.snapshot();
   }
@@ -289,9 +292,11 @@ class MontyRepl {
   /// Restores the REPL from bytes produced by [snapshot].
   ///
   /// The current REPL handle is freed and replaced with a new one restored
-  /// from [bytes]. Any in-flight operations must complete before calling this.
+  /// from [bytes]. Any in-flight operations must complete before calling
+  /// this. Throws [StateError] if mid-execution.
   Future<void> restore(Uint8List bytes) {
     _checkNotDisposed();
+    _checkNotPending('restore');
 
     return _bindings.restore(bytes);
   }
@@ -363,12 +368,16 @@ class MontyRepl {
   MontyProgress _translateProgress(CoreProgressResult p) {
     switch (p.state) {
       case 'complete':
+        _pending = false;
         return _buildCompleteProgress(p);
       case 'pending':
+        _pending = true;
         return _buildPendingProgress(p);
       case 'os_call':
+        _pending = true;
         return _buildOsCallProgress(p);
       case 'error':
+        _pending = false;
         _throwReplError(
           message: p.error ?? 'Unknown error',
           excType: p.excType,
@@ -424,6 +433,15 @@ class MontyRepl {
 
   void _checkNotDisposed() {
     if (_disposed) throw StateError('MontyRepl has been disposed.');
+  }
+
+  void _checkNotPending(String op) {
+    if (_pending) {
+      throw StateError(
+        'Cannot $op a MontyRepl that is mid-execution; '
+        'await all feedStart/resume calls until they return MontyComplete.',
+      );
+    }
   }
 }
 

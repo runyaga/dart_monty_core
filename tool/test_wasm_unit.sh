@@ -95,5 +95,6 @@ dart test \
   test/integration/wasm_monty_exec_externals_test.dart \
   test/integration/wasm_multi_repl_test.dart \
   test/integration/wasm_repl_extfns_lifecycle_test.dart \
+  test/integration/wasm_repl_snapshot_lifecycle_test.dart \
   test/integration/wasm_setextfns_test.dart \
   "$@"
