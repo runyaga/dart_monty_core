@@ -1,6 +1,6 @@
 name: dart_monty_core
 description: Thin Dart binding for pydantic/monty — no plugins, no bridge, no registry.
-version: 0.0.2
+version: 0.17.0
 homepage: https://github.com/runyaga/dart_monty_core
 repository: https://github.com/runyaga/dart_monty_core
 

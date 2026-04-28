@@ -1,646 +1,212 @@
 # dart_monty_core
 
-Thin Dart binding for [pydantic/monty](https://github.com/pydantic/monty) —
-a sandboxed Python interpreter written in Rust.
+Run Python in Dart. A thin binding for
+[pydantic/monty](https://github.com/pydantic/monty) — the sandboxed Python
+interpreter from Pydantic, written in Rust.
 
-**No Flutter. No bridge. No plugin registry.**  
-Works on VM (FFI), Web (WASM), and in isolates.
+`dart_monty_core` is the raw binding layer — `Monty`, `MontyRepl`,
+`MontyValue`, the FFI/WASM platform glue. For a higher-level API
+(Flutter integration, asset auto-loading, plugin scaffolding) see
+[`dart_monty`](https://github.com/runyaga/dart_monty), which depends
+on this package.
 
-> ### Pre-1.0 — pin exact versions
->
-> `pydantic/monty` is iterating rapidly; upstream occasionally lands
-> breaking changes to the Rust API, Python semantics, or bytecode format.
-> `dart_monty_core` pins a specific upstream tag (currently **monty v0.0.17**)
-> and bumps it deliberately.
->
-> - Pin an exact version in your `pubspec.yaml` (`dart_monty_core: 0.0.14`,
->   not `^0.0.14`) — patch releases may track upstream breaking changes.
-> - Public APIs may change without a deprecation cycle while we're pre-1.0.
-> - The committed `assets/` (JS bridge + WASM) must stay in sync with the
->   committed `native/` Rust crate. CI enforces this; rebuild with
->   `bash tool/prebuild.sh` if you change either side.
+> **Pre-1.0** — pin exact (`dart_monty_core: 0.17.0`); minor version mirrors the upstream `monty` patch (`0.X.0 ↔ monty v0.0.X`).
 
----
+## Why
 
-## What is Monty?
+Dart is compiled, no reflection — fast and tree-shakeable, but you can't
+ship new behaviour without re-shipping a binary. Monty is a sandboxed
+Python runtime designed to behave as Dart's *scripting* language: an
+embeddable Python subset under hard resource limits, on both native (FFI)
+and web (WASM).
 
-Monty is a sandboxed Python interpreter implemented in Rust. It executes a
-safe subset of Python — arithmetic, data structures, functions, closures,
-comprehensions, exceptions, and a curated standard library (`math`, `re`,
-`json`, `datetime`, `pathlib`) — with hard resource limits (memory, stack
-depth, timeout). It cannot import arbitrary modules or access the filesystem
-unless your Dart code explicitly allows it via an `OsCallHandler`.
+LLMs generate excellent Python. Let them script your Dart app — through
+code your app type-checks, runs in a sandbox, exposes only the external
+functions and OS calls you whitelist, and inspects the typed result. More
+flexible than a plug-in registry, safer than `eval` — Pydantic runs an
+active **$5,000 bug bounty** at [hackmonty.com](https://hackmonty.com/)
+for the underlying interpreter.
 
-Notable **unsupported** Python features: `class` keyword (user-defined
-classes), `yield`/generators, `match`/`case`, `del`, decorators, and C
-extensions. Use dicts and functions in place of classes.
+```dart
+final errors = await Monty.typeCheck(llmCode);
+if (errors.isNotEmpty) return;
 
-`dart_monty_core` is the raw binding layer. If you want Flutter widgets,
-reactive state, or a richer plugin system, see `dart_monty`.
-
----
+final result = await Monty(llmCode).run(
+  inputs: {'temperatureC': 22},
+  externalFunctions: {
+    'fetchWeather': (args) async => weatherApi.get(args['_0'] as String),
+    'log': (args) async { logger.info(args['_0']); return null; },
+  },
+  limits: const MontyLimits(memoryBytes: 32 << 20, timeoutMs: 5000),
+);
+```
 
 ## Quick start
 
 ```dart
 import 'package:dart_monty_core/dart_monty_core.dart';
 
-// 1. One-shot evaluation
-final result = await Monty.exec('2 ** 10');
-print(result.value); // MontyInt(1024)
+// One-shot
+final r = await Monty.exec('2 ** 10');
+print(r.value); // MontyInt(1024)
 
-// 2. Compiled-program, run with different inputs (state does NOT persist)
-final program = Monty('x * multiplier');
-final r1 = await program.run(inputs: {'x': 10, 'multiplier': 3});
-final r2 = await program.run(inputs: {'x': 7, 'multiplier': 6});
-print(r1.value); // MontyInt(30)
-print(r2.value); // MontyInt(42)
+// Compiled program — different inputs, no shared state
+final program = Monty('x * y');
+print((await program.run(inputs: {'x': 10, 'y': 3})).value); // MontyInt(30)
+print((await program.run(inputs: {'x': 7, 'y': 6})).value);  // MontyInt(42)
 
-// 3. Stateful REPL — variables, functions, imports all survive
+// Stateful REPL — variables, functions, imports survive
 final repl = MontyRepl();
-await repl.feedRun('x = 42');
-await repl.feedRun('y = x * 2');
-final r3 = await repl.feedRun('x + y');
-print(r3.value); // MontyInt(126)
+await repl.feedRun('def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)');
+print((await repl.feedRun('fib(10)')).value); // MontyInt(55)
 await repl.dispose();
 ```
 
-`Monty(code)` mirrors the reference `pydantic_monty.Monty(code)` shape:
-construct once, run with different inputs. Each `.run()` is a fresh
-interpreter — perfect for parameterised scripts but **not** REPL-style
-state accumulation. Use `MontyRepl()` for that.
+## API
 
----
+### `Monty` — compiled program
 
-## Core API
-
-### `Monty` — compiled program holder
-
-`Monty(code)` mirrors the reference Python class. Construct once, call
-`.run()` with different inputs.
-
-| Member | Description |
+| | |
 |---|---|
-| `Monty(code, {scriptName})` | Hold Python source as a re-runnable program |
-| `monty.run({inputs, externalFunctions, limits, osHandler})` | Run the held code in a fresh interpreter |
-| `monty.scriptName` | The script name surfaced in tracebacks |
-| `Monty.exec(code, {…})` | Static one-shot: thin wrapper around `Monty(code).run(…)` |
-| `Monty.compile(code)` | Pre-compile to `Uint8List` bytes |
-| `Monty.runPrecompiled(bytes, {limits, scriptName})` | Run pre-compiled bytes (static, stateless) |
+| `Monty(code, {scriptName})` | Hold source as a re-runnable program |
+| `run({inputs, externalFunctions, limits, osHandler, printCallback})` | Run in a fresh interpreter |
+| `Monty.exec(code, {…})` | One-shot wrapper |
+| `Monty.compile(code)` / `Monty.runPrecompiled(bytes, {…})` | Pre-compile and replay |
+| `Monty.typeCheck(code, {prefixCode, scriptName})` | Static type analysis → `List<MontyTypingError>` |
 
 ### `MontyRepl` — stateful REPL
 
-`MontyRepl` keeps a live Rust REPL heap across `feedRun` calls. Use
-it when state must survive between calls — variables, functions,
-classes, and imports persist in the heap:
-
-```dart
-final repl = MontyRepl();
-
-await repl.feedRun('def fib(n): return n if n < 2 else fib(n-1) + fib(n-2)');
-final r = await repl.feedRun('fib(10)');
-print(r.value); // MontyInt(55)
-
-await repl.dispose();
-```
-
-Python-level exceptions land in `MontyResult.error` — the REPL stays
-alive so subsequent calls can keep running. Binding-level failures
-(resource limits, disposed handle) still throw.
-
-| Member | Description |
+| | |
 |---|---|
-| `MontyRepl({scriptName, preamble})` | Stateful REPL, auto-detected backend |
-| `repl.feedRun(code, {externalFunctions, inputs, osHandler})` | Execute Python; state persists |
-| `repl.feedStart(code, {externalFunctions})` | Iterative entry — caller drives resume |
-| `repl.resume`, `repl.resumeWithError`, `repl.resumeNotFound` | Drive a paused iterative execution |
-| `repl.detectContinuation(source)` | Returns the prompt mode (`>>>` vs `...`) for a fragment |
-| `repl.snapshot()`, `repl.restore(bytes)` | Capture / restore the Rust heap |
-| `repl.clearState()` | Wipe globals; next `feedRun` starts fresh |
-| `repl.dispose()` | Free resources |
+| `MontyRepl({scriptName, preamble})` | Auto-detected backend |
+| `feedRun(code, {inputs, externalFunctions, osHandler, printCallback})` | State persists |
+| `feedStart(code) + resume / resumeWithError` | Iterative externals + OS calls |
+| `detectContinuation(code)` | `>>>` vs `...` mode |
+| `snapshot()` / `restore(bytes)` | Serialise / restore the heap |
+| `clearState()` / `dispose()` | Wipe / free |
 
-Multiple `MontyRepl` instances can coexist concurrently on both backends —
-each owns its own Rust heap handle.
+Multiple `MontyRepl`s coexist — each owns its own Rust heap.
 
----
-
-## MontyValue
-
-Python values cross the boundary as typed `MontyValue` subclasses. Use
-pattern matching:
+### `MontyValue` — typed Python values
 
 ```dart
 switch (result.value) {
-  case MontyInt(:final value):    print('int: $value');
-  case MontyFloat(:final value):  print('float: $value');
-  case MontyString(:final value): print('str: $value');
-  case MontyBool(:final value):   print('bool: $value');
-  case MontyNone():               print('None');
-  case MontyList(:final items):   print('list[${items.length}]');
-  case MontyDict(:final items):   print('dict keys: ${items.keys}');
-  case MontyDate(:final year, :final month, :final day): ...
-  case null:                      print('no return value');
+  case MontyInt(:final value):     /* … */ ;
+  case MontyString(:final value):  /* … */ ;
+  case MontyList(:final items):    /* … */ ;
+  case MontyDict(:final entries):  /* … */ ;
+  case MontyDate(:final year):     /* … */ ;
+  case MontyNamedTuple(:final fieldNames, :final values): /* … */ ;
+  case MontyDataclass(:final name, :final attrs): /* … */ ;
+  case MontyNone(): /* … */ ;
 }
 ```
 
-Construct values from Dart with `MontyValue.fromDart(value)`.
+18 subtypes — scalars (`MontyInt`, `MontyFloat`, `MontyString`, `MontyBool`,
+`MontyBytes`, `MontyNone`), collections (`MontyList`, `MontyTuple`,
+`MontyDict`, `MontySet`, `MontyFrozenSet`), datetime (`MontyDate`,
+`MontyDateTime`, `MontyTimeDelta`, `MontyTimeZone`), and structured
+(`MontyPath`, `MontyNamedTuple`, `MontyDataclass`).
+`MontyDataclass.hydrate(factory)` turns a Python `@dataclass` into your
+own Dart class:
 
----
+```dart
+final user = (result.value as MontyDataclass).hydrate(User.fromAttrs);
+```
 
-## Errors
+Build from Dart with `MontyValue.fromDart(value)`.
 
-| Exception | When |
+### Errors
+
+| | |
 |---|---|
-| `MontySyntaxError` | Python parse/syntax error (`SyntaxError`) |
-| `MontyScriptError` | Python runtime exception (`TypeError`, `ValueError`, …) |
-| `MontyResourceError` | Memory or stack limit exceeded |
+| `MontySyntaxError` | Python parse error (subtype of `MontyScriptError`) |
+| `MontyScriptError` | Python runtime exception |
+| `MontyResourceError` | Limit exceeded (memory / stack / timeout) |
 
-`MontySyntaxError` is a subtype of `MontyScriptError` — existing
-`on MontyScriptError` catch blocks continue to catch it. Use it explicitly
-when you want to distinguish parse errors from runtime errors:
+`run()` / `feedRun()` surface Python-level exceptions in `MontyResult.error`
+rather than throwing — the interpreter stays alive. Resource limits and
+disposal still throw.
+
+### External functions
+
+Python calls Dart callbacks by name. Positional args at `_0`, `_1`, …;
+kwargs by Python name. Sync or async.
 
 ```dart
-try {
-  await Monty.exec('def foo(  # unclosed paren');
-} on MontySyntaxError catch (e) {
-  print('Syntax error at line ${e.exception?.lineNumber}');
-} on MontyScriptError catch (e) {
-  print('${e.excType}: ${e.message}');
-}
+await Monty('compute("mul", 6, 7)').run(externalFunctions: {
+  'compute': (args) async => switch (args['_0']) {
+    'mul' => (args['_1'] as int) * (args['_2'] as int),
+    _ => 0,
+  },
+});
 ```
 
-Runtime errors:
+### OS calls
+
+`pathlib`, `os.getenv`, `datetime.now`, `time.time` pause and call your
+`OsCallHandler`. Optional — provide only when the script touches the OS.
 
 ```dart
-try {
-  await Monty.exec('1 / 0');
-} on MontyScriptError catch (e) {
-  print(e.excType);       // ZeroDivisionError
-  print(e.exception?.traceback);
-}
-```
-
-`Monty(code).run()` and `MontyRepl.feedRun()` both surface Python-level
-exceptions in `MontyResult.error` rather than throwing — the
-interpreter stays alive and can keep running. Use `try` / `on
-MontyScriptError` only at boundaries where a thrown error type makes
-sense (resource limits, disposed handle).
-
----
-
-## OS call handler
-
-Python code that touches `pathlib`, `os.getenv`, or `datetime.now` pauses
-and asks the host. Provide an `OsCallHandler` to service those calls:
-
-For stateful execution, pass `osHandler` per `feedRun` call (or wrap
-the closure once and reuse):
-
-```dart
-final repl = MontyRepl();
-final fsHandler = (String op, List args, Map? kwargs) async {
-  if (op == 'os.getenv') return Platform.environment[args[0] as String];
-  throw OsCallException('not supported', pythonExceptionType: 'PermissionError');
-};
-final r = await repl.feedRun('import os; os.getenv("HOME")', osHandler: fsHandler);
-```
-
-For one-shot evaluation, pass `osHandler` per `.run()` call instead:
-
-```dart
-final result = await Monty('os.getenv("PATH")').run(
-  osHandler: (op, args, kwargs) async {
-    if (op == 'os.getenv') return Platform.environment[args[0] as String];
-    return null;
+await Monty('os.getenv("HOME")').run(
+  osHandler: (op, args, kwargs) async => switch (op) {
+    'os.getenv' => Platform.environment[args[0] as String],
+    _ => throw OsCallException('not supported',
+        pythonExceptionType: 'PermissionError'),
   },
 );
 ```
 
----
+`memoryMountedOsHandler` (`lib/src/mount/`) provides a ready-made in-memory
+VFS with mount-based sandboxing.
 
-## Backends
-
-| Backend | How selected | Use case |
-|---|---|---|
-| `MontyFfi` | `dart.library.ffi` present | Desktop, server, mobile |
-| `MontyWasm` | `dart.library.js_interop` present | Web (dart2js / dart2wasm) |
-| `createPlatformMonty()` | Auto | Pick the right one at compile time |
-
----
-
-## Resource limits
+### Resource limits
 
 ```dart
-await Monty(untrustedCode).run(
-  limits: MontyLimits(
-    memoryBytes: 32 * 1024 * 1024, // 32 MB
+await Monty(code).run(
+  limits: const MontyLimits(
+    memoryBytes: 32 << 20,
     stackDepth: 200,
     timeoutMs: 5000,
   ),
 );
 ```
 
-Or use JS SDK-compatible field names:
+JS-aligned spelling: `MontyLimits.jsAligned(maxMemory:, maxDurationSecs:,
+maxRecursionDepth:)`.
 
-```dart
-await Monty(untrustedCode).run(
-  limits: MontyLimits.jsAligned(
-    maxMemory: 32 * 1024 * 1024,
-    maxDurationSecs: 5,
-    maxRecursionDepth: 200,
-  ),
-);
-```
+## Backends
 
----
-
-## Passing inputs
-
-Inject per-invocation variables before Python code runs. Inputs accept any
-JSON-compatible Dart value (`int`, `double`, `bool`, `String`, `List`,
-`Map`, `null`) and are **not persisted** across calls:
-
-```dart
-final r = await Monty('output = [x * factor for x in data]\noutput').run(
-  inputs: {
-    'data': [1, 2, 3, 4, 5],
-    'factor': 10,
-  },
-);
-print(r.value); // MontyList([10, 20, 30, 40, 50])
-```
-
-Or with a `MontyRepl` so the result name persists for follow-up reads:
-
-```dart
-final repl = MontyRepl();
-await repl.feedRun(
-  'output = [x * factor for x in data]',
-  inputs: {
-    'data': [1, 2, 3, 4, 5],
-    'factor': 10,
-  },
-);
-final r = await repl.feedRun('output');
-print(r.value); // MontyList([10, 20, 30, 40, 50])
-await repl.dispose();
-```
-
-Special float values are handled correctly:
-
-```dart
-await Monty('y = x + 1').run(inputs: {'x': double.infinity});
-// → y = float('inf') + 1
-```
-
----
-
-## Pre-compilation
-
-Compile Python source once and reuse the bytecode across multiple runs.
-Useful when running the same script with different inputs many times:
-
-```dart
-// Compile once — parsing happens here
-final binary = await Monty.compile('output = [x * factor for x in data]');
-
-// Run the bytecode statelessly. runPrecompiled is a static method —
-// no Monty instance is needed.
-final result = await Monty.runPrecompiled(binary);
-```
-
-Pre-compilation works on both **FFI** and **WASM** backends.
-
----
-
-## Known upstream limitations
-
-External functions **cannot** be invoked from inside these iterator-consuming
-C builtins — the upstream `pydantic/monty` VM doesn't yet support suspending
-for ext fn calls in those contexts:
-
-- `map(ext_fn, ...)` — wrapping in a lambda does NOT help
-- `filter(ext_fn, ...)`
-- `sorted(..., key=ext_fn)`
-
-The VM raises `RuntimeError: Internal error in monty: map(): external
-functions are not yet supported in this context`. First-class references
-work everywhere else (bare refs, user-defined HOFs, lists, conditionals).
-Regression fixtures under `test/integration/_fixture_corpus.dart` with
-the `_xfail` suffix encode this; they'll auto-fail when upstream fixes it.
-
----
+| | Selected when |
+|---|---|
+| `MontyFfi` | `dart.library.ffi` present (desktop / server / mobile) |
+| `MontyWasm` | `dart.library.js_interop` present (web) |
+| `createPlatformMonty()` | Auto-pick at compile time |
 
 ## Installation
 
 ```yaml
 dependencies:
-  dart_monty_core: ^0.0.14
+  dart_monty_core: 0.17.0
 ```
 
-### FFI (native: macOS · Linux · Windows · iOS · Android)
+**Native (FFI)** — needs Rust + Cargo; the native-assets hook compiles the
+dylib on `pub get`.
 
-Requires **Rust + cargo** installed. The `hook/build.dart` native-assets hook
-compiles the Rust dylib automatically when you run `dart pub get` or
-`flutter pub get`. No pre-built binaries are downloaded.
+**Web (WASM)** — copy the three assets from `lib/assets/` into your `web/`
+and add `<script src="dart_monty_core_bridge.js"></script>`.
+`packages/dart_monty_web/` demonstrates the full wiring.
 
-```bash
-dart pub get   # triggers cargo build --release for your platform
-```
+**Flutter** — depend on [`dart_monty`](https://github.com/runyaga/dart_monty);
+assets are bundled automatically. JS / TS apps should use
+[`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty) directly.
 
-### WASM (plain Dart web, no Flutter)
+## Known upstream limitations
 
-For plain-Dart web apps (no Flutter asset bundler), copy the three
-asset files to your `web/` directory and add a `<script>` tag.
-`packages/dart_monty_web/` in this repo demonstrates the full wiring:
-
-```bash
-# From your Dart web project
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_bridge.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_worker.js web/
-cp $(dart pub cache dir)/hosted/pub.dev/dart_monty_core-*/lib/assets/dart_monty_core_native.wasm web/
-```
-
-```html
-<!-- index.html — must load before your compiled Dart app -->
-<script src="dart_monty_core_bridge.js"></script>
-```
-
-> **Note for JS/npm users**: If you are building a JavaScript or TypeScript
-> application, use [`@pydantic/monty`](https://www.npmjs.com/package/@pydantic/monty)
-> directly — that is the canonical npm package. `dart_monty_core` is for Dart
-> developers who want the same interpreter through Dart APIs.
-
-### Flutter (Web, iOS, Android, macOS, Linux, Windows)
-
-Flutter consumers depend on [`dart_monty`](https://github.com/runyaga/dart_monty)
-(the high-level API). `dart_monty_core` comes in transitively and
-Flutter automatically bundles its declared `flutter.assets` — no
-consumer-side redeclaration needed.
-
-```yaml
-# pubspec.yaml
-dependencies:
-  dart_monty: ^<version>   # dart_monty_core comes in transitively
-```
-
-```dart
-// main.dart
-import 'package:dart_monty/dart_monty.dart';
-import 'package:flutter/widgets.dart';
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await DartMonty.ensureInitialized(); // loads bridge on web; no-op on native
-  runApp(const MyApp());
-}
-```
-
-`DartMonty.ensureInitialized()` dynamically injects
-`<script src="assets/packages/dart_monty_core/lib/assets/dart_monty_core_bridge.js">`
-into the document, awaits load, and verifies the bridge is ready. No
-`<script>` tag in `web/index.html` is required; `--base-href` is
-honoured automatically. The three built assets
-(`dart_monty_core_bridge.js`, `dart_monty_core_worker.js`, and
-`dart_monty_core_native.wasm`) live under `lib/assets/` so Flutter's
-`packages/dart_monty_core/...` URI resolves against this package's
-`lib/` root. They are committed to git and ship with both pub.dev
-releases and `git:`/`path:` dependencies with no manual `cp` step.
-
-### Building assets from source
-
-Assets are committed to git but you can rebuild them from source when
-the Rust crate or JS bridge changes. Requires Rust (with the
-`wasm32-wasip1` target) and Node.js 20+.
-
-```bash
-bash tool/prebuild.sh
-```
-
-If you change `native/` or `js/` source, run `tool/prebuild.sh` and
-commit the result in the same PR. CI runs the WASM/JS integration
-suite on every PR, so a stale `assets/` that no longer parses or
-runs will fail `test-wasm`. Byte-level drift-check (rebuild-and-compare)
-is deferred pending a reproducible cross-host WASM build story.
-
----
-
-## Testing
-
-The package ships 464 Python fixture files from the upstream
-`pydantic/monty` test corpus. Tests run on two backends: **FFI** (VM, using
-a native oracle binary as source of truth) and **WASM** (headless Chrome).
-
-### One-time setup
-
-```bash
-bash tool/install-hooks.sh        # pre-commit hooks (fmt, analyze, bindings check)
-rustup target add wasm32-wasip1   # Rust target for WASM builds
-```
-
-### Unit tests
-
-```bash
-dart test --exclude-tags=ffi,wasm,integration
-```
-
-### FFI conformance tests (464 fixtures)
-
-```bash
-# 1. Build the Rust oracle + native dylib (one-time, or after Cargo.toml change)
-cd native && cargo build --release && cargo build --bin oracle && cd ..
-
-# 2. Run all 464 oracle conformance tests
-dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi
-```
-
-The oracle binary (`native/src/bin/oracle.rs`) is the source of truth. Each
-fixture runs through both the oracle and the Dart FFI binding and the results
-are compared. All 464 fixtures must pass.
-
-### Rust tests and linting
-
-```bash
-cd native
-cargo test                                       # 314 unit + integration tests
-cargo clippy --all-targets -- -D warnings        # zero warnings
-```
-
-### WASM conformance tests (464/464)
-
-The WASM path requires Node.js, npm, and Chrome. The full pipeline is wrapped
-in `tool/test_wasm.sh`:
-
-```bash
-# Full pipeline: compile Rust → WASM, bundle JS bridge, compile Dart runner,
-# serve with COOP/COEP headers, run headless Chrome.
-bash tool/test_wasm.sh
-
-# Skip the cargo + npm build if assets are already built:
-bash tool/test_wasm.sh --skip-build
-```
-
-**What the pipeline does:**
-
-1. `cargo build --target wasm32-wasip1 --release` — builds `dart_monty_core_native.wasm`, which `build.js` copies into `assets/`
-2. `cd js && npm install --force && node build.js` — esbuild bundles `dart_monty_core_bridge.js` and `dart_monty_core_worker.js` into `assets/`
-3. Copy WASI runtime: `cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs test/integration/web/@pydantic/monty-wasm32-wasi/` — required for dart2wasm; **not** done by `build.js`
-4. `dart compile js test/integration/wasm_runner.dart` — compiles the dart2js fixture runner
-5. A Python COOP/COEP HTTP server serves `test/integration/web/fixtures.html`
-6. Headless Chrome loads the page and runs all 464 WASM fixtures
-
-**Prerequisites:**
-
-```bash
-# Rust wasm32-wasip1 target
-rustup target add wasm32-wasip1
-
-# Node.js (for esbuild)
-npm --version    # >= 18
-
-# Chrome (detected automatically)
-# macOS: /Applications/Google Chrome.app/...
-# Linux: google-chrome or chromium
-```
-
-**All 464 fixtures pass — none are skipped.** The corpus was pre-filtered
-from the upstream `pydantic/monty` test suite to include only fixtures
-compatible with the Dart FFI and WASM backends.
-
-### All checks at once
-
-```bash
-# Rust
-cd native && cargo test && cargo clippy --all-targets -- -D warnings && cd ..
-
-# Dart static analysis
-dart analyze --fatal-infos lib/
-
-# Dart format check
-dart format --set-exit-if-changed lib/ test/ tool/
-
-# FFI conformance
-dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi
-
-# WASM conformance (requires Chrome + Node.js)
-bash tool/test_wasm.sh --skip-build   # if assets already built
-```
-
-### dart2wasm conformance tests (464/464)
-
-The dart2wasm runner (`test/integration/wasm_runner_wasm.dart`) uses the same
-464 fixture corpus. Run it manually after building the dart2wasm runner:
-
-```bash
-dart compile wasm \
-  test/integration/wasm_runner_wasm.dart \
-  -o test/integration/web/wasm_runner.wasm
-
-# Copy WASI runtime (if not already done)
-mkdir -p test/integration/web/@pydantic/monty-wasm32-wasi
-cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-   test/integration/web/@pydantic/monty-wasm32-wasi/
-
-# Run with headless Chrome (COOP/COEP server must be running on :8097)
-bash tool/test_wasm.sh --skip-build --dart2wasm
-```
-
-**Expected**: `FIXTURE_DONE:{"total":464,"passed":464,"failed":0,"skipped":0}`
-
-### Demos
-
-```bash
-# Web REPL (browser) — builds everything, opens http://localhost:8098
-bash tool/serve_demo.sh
-
-# dart2wasm variant
-bash tool/serve_demo.sh --dart2wasm
-```
-
-### dart2wasm Support & Benchmarks
-
-The WASM backend supports both **dart2js** and **dart2wasm**. While `dart2js` is
-currently the default, the project is fully compatible with `dart2wasm` via
-`package:js_interop`.
-
-The CI pipeline validates both compilers. Compilation commands:
-
-```bash
-# dart2js
-dart compile js test/integration/wasm_runner.dart -o test/integration/web/wasm_runner.dart.js
-
-# dart2wasm (using the dedicated WASM harness)
-dart compile wasm test/integration/wasm_runner_wasm.dart -o test/integration/web/wasm_runner.wasm
-```
-
-#### Performance Benchmark (464 Fixtures)
-
-Benchmark conducted on an Apple M5 Max (April 2026) using headless Chrome 147.
-Execution time includes the full integration suite (464 passing fixtures).
-
-| Compiler | Passed | Skipped | Failed | Time (ms) |
-| :--- | :--- | :--- | :--- | :--- |
-| **dart2js** | 464 | 0 | 0 | **3002** |
-| **dart2wasm** | 464 | 0 | 0 | **2991** |
-
-**Key Insights:**
-- **Stricter Semantics:** `dart2wasm` provides superior numeric precision for
-  Python compatibility, correctly distinguishing between `int` and `double`
-  (e.g. `MontyInt(2)` vs `MontyFloat(2.0)`), whereas `dart2js` blurs these
-  types into JavaScript numbers.
-- **Worker Overhead:** Performance parity indicates that execution is currently
-  bound by **JS Worker context-switching** and the underlying Rust-WASM engine
-  rather than Dart logic. This allows for complex Dart-side extensions with
-  minimal performance impact.
-- **Interactive REPL:** A decoupled web demo is available in `packages/dart_monty_web`,
-  demonstrating a persistent, stateful REPL in the browser using the new
-  WASM bridge extensions.
-
----
-
-## Coming from @pydantic/monty (JS/TS)
-
-If you know the JavaScript `@pydantic/monty` SDK, here is the Dart equivalent
-for each common operation:
-
-| Task | JS (`@pydantic/monty`) | Dart (`dart_monty_core`) |
-|---|---|---|
-| One-shot eval | `new Monty(code).run()` | `await Monty.exec(code)` or `await Monty(code).run()` |
-| Pass inputs | `m.run({ inputs: {x: 10} })` | `await Monty(code).run(inputs: {'x': 10})` |
-| Set script name | `new Monty(code, {scriptName: 'x.py'})` | `Monty(code, scriptName: 'x.py')` |
-| External callbacks | `m.run({ external_functions: { f } })` | `Monty(code).run(externalFunctions: {'f': cb})` |
-| Pre-compile code | `const b = m.dump()` | `final b = await Monty.compile(code)` |
-| Run pre-compiled | `Monty.load(b).run()` | `await Monty.runPrecompiled(b)` |
-| Stateful REPL | n/a (use new Monty for each call) | `final r = MontyRepl(); await r.feedRun(code);` |
-| Catch syntax errors | `catch (e as MontySyntaxError)` | `on MontySyntaxError catch (e)` |
-| JS-style limits | `{ maxDurationSecs: 5, maxMemory: 1e6 }` | `MontyLimits.jsAligned(maxDurationSecs: 5, maxMemory: 1000000)` |
-
-### Conscious divergences
-
-Some Dart API choices intentionally differ from JS:
-
-| Dart API | Reason |
-|---|---|
-| `Monty(code).run({inputs, externalFunctions, …})` | Mirrors the reference shape; per-call params keep the call-site type-checked |
-| `MontyRepl` is a separate class | Stateful REPL semantics are explicit, not implicit in `Monty` |
-| `MontyValue` type hierarchy | Richer than raw JS values; enables exhaustive Dart pattern matching |
-| `MontyProgress` sealed union | More expressive than JS `MontySnapshot instanceof` checks |
-| `OsCallHandler` separate from externalFunctions | Intentional Dart extension for OS-call interception |
-
----
-
-## Native layer
-
-The Rust crate in `native/` wraps `pydantic/monty@v0.0.17` and exposes a
-C ABI consumed by the FFI binding and compiled to WASM for the web backend.
-Bindings are generated via `ffigen`; regenerate with:
-
-```bash
-dart tool/generate_bindings.sh   # or: bash tool/generate_bindings.sh
-```
-
----
+External functions can't be called from inside iterator-consuming C
+builtins — `map(ext_fn, …)`, `filter(ext_fn, …)`, `sorted(…, key=ext_fn)`
+raise `RuntimeError` upstream. First-class references work everywhere else.
 
 ## License
 
-MIT
+MIT.
