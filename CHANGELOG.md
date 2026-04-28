@@ -122,6 +122,44 @@
   await DartMonty.ensureInitialized();
   ```
 
+### Fixed
+
+- **`Monty.exec` now accepts `externals:`.** `Monty.run` always supported
+  externals; the static one-shot wrapper silently dropped them, leaving
+  Python in `Monty.exec(...)` unable to call back into Dart. Forwarded
+  through to `monty.run` and pinned with FFI + WASM integration tests.
+- **`MontyRepl.feed` re-syncs `ext_fn_names` on every call.** The
+  iterative path called `setExtFns`, the fast path did not, so names
+  registered in a previous feed leaked into the next feed's NameLookup
+  resolution and surfaced as a confusing
+  "No handler registered for: X" error instead of a clean Python
+  NameError. `setExtFns` now runs at the top of `feed()` (with `[]` when
+  externals is empty), covering both paths. Three regression scenarios
+  pinned on FFI + WASM. Note: the upstream list-comprehension shadowing
+  bug (API_REVIEW §4) is a separate engine-level issue.
+
+### Added
+
+- **`MontyRepl.scriptName` / `MontySession.scriptName` getters.** The
+  reference `pydantic_monty` class exposes `script_name`; the Dart side
+  stored `_scriptName` but had no accessor. `Monty.scriptName` returns
+  the same value with a `'main.py'` fallback to match the engine
+  default.
+
+### Changed
+
+- **`MontyRepl.snapshot` / `restore` throw `StateError` mid-pause.**
+  Previously they bubbled an opaque Rust-side error when called while
+  a `feedStart`/`resume` loop was paused. Dart now tracks pending
+  state and throws `StateError` with an actionable message instead.
+- **REPL dartdoc tightened.** Stale "REPL doesn't support NameLookup"
+  comment removed (the Rust handle auto-resolves names via
+  `ext_fn_names`; the Dart branch only fires when a name was not
+  registered). `feedStart`'s `List<String> externalFunctions` shape is
+  now documented as intentional (versus `feed`'s `Map<String,
+  MontyCallback>`), and `detectContinuation` is called out as a
+  Dart-only helper without a `pydantic_monty` equivalent.
+
 ## 0.0.14 - monty upstream upgrade
 
 ### Upgraded
