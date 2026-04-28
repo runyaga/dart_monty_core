@@ -185,9 +185,16 @@ maxRecursionDepth:)`.
 
 ## Installation
 
-> **This package builds the native FFI binary from source on `dart pub get`.**
+> **0.17.0 builds the native FFI binary from source on `dart pub get`.**
 > Every FFI consumer needs a Rust toolchain, including Flutter consumers
 > coming in via [`dart_monty`](https://github.com/runyaga/dart_monty).
+>
+> **Prebuilt binaries arrive in 0.17.1** for macOS (arm64+x86_64), Linux
+> (x86_64-gnu+aarch64-gnu), Windows (x86_64), iOS (xcframework), and
+> Android (4 ABIs). The build hook will download the matching artefact
+> from this repo's GitHub Releases on first `pub get` — no Rust
+> toolchain required. See `AGENTS.md` "Native binary release pipeline
+> (0.17.1+)".
 
 ```yaml
 dependencies:

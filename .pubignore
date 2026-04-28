@@ -18,8 +18,9 @@ packages/
 # CI and tooling not relevant to consumers
 .github/
 tool/
-AGENTS.md
 CLAUDE.md
+# AGENTS.md is intentionally NOT excluded — it serves consumers compiling
+# from source (Toolchain prerequisites, Build) as well as maintainers.
 dcm_options.yaml
 analysis_options.yaml
 dart_test.yaml
