@@ -36,14 +36,16 @@ class Monty {
   ///
   /// Pass [osHandler] to enable Python `pathlib`, `os`, and `datetime`
   /// access. Without it, OS calls resume with a permission error.
-  factory Monty({
-    OsCallHandler? osHandler,
-    String scriptName = 'main.py',
-  }) => Monty._(MontySession(osHandler: osHandler, scriptName: scriptName));
+  factory Monty({OsCallHandler? osHandler, String scriptName = 'main.py'}) =>
+      Monty._(MontySession(osHandler: osHandler, scriptName: scriptName));
 
   Monty._(MontySession session) : _session = session;
 
   final MontySession _session;
+
+  /// Script name used as the filename in tracebacks and error messages.
+  /// Defaults to `'main.py'` when unset.
+  String get scriptName => _session.scriptName ?? 'main.py';
 
   /// Executes Python [code] and returns the result.
   ///
@@ -136,6 +138,7 @@ class Monty {
     MontyLimits? limits,
     String? scriptName,
     OsCallHandler? osHandler,
+    Map<String, MontyCallback> externals = const {},
     Map<String, Object?>? inputs,
   }) async {
     final monty = Monty(osHandler: osHandler);
@@ -144,6 +147,7 @@ class Monty {
         code,
         limits: limits,
         scriptName: scriptName,
+        externals: externals,
         inputs: inputs,
       );
     } finally {

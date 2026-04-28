@@ -132,6 +132,13 @@ class MontyRepl {
   final String? _preamble;
   bool _created = false;
   bool _disposed = false;
+  bool _pending = false;
+
+  /// Script name used as the filename in tracebacks and error messages.
+  ///
+  /// Returns `null` when the REPL was constructed without one, in which
+  /// case the engine falls back to its default (`'main.py'`).
+  String? get scriptName => _scriptName;
 
   // ---------------------------------------------------------------------------
   // Synchronous feed
@@ -161,9 +168,17 @@ class MontyRepl {
         ? '${inputs_encoder.inputsToCode(inputs)}\n$code'
         : code;
 
+    // Always sync the Rust handle's ext_fn_names HashSet to this feed's
+    // externals — including clearing it when externals is empty. Without
+    // this, names registered in a previous feed leak into the next
+    // feed's NameLookup auto-resolve and surface as a confusing
+    // "no handler registered" error instead of NameError.
+    await _bindings.setExtFns(externals.keys.toList());
+
     if (externals.isEmpty && osHandler == null) {
       // Fast path: no externals, use simple feedRun.
       final r = await _bindings.feedRun(effectiveCode);
+      _pending = false;
       if (r.ok) {
         return MontyResult(
           value: MontyValue.fromJson(r.value),
@@ -180,7 +195,6 @@ class MontyRepl {
     }
 
     // Iterative path: drive the start/resume loop, dispatching externals.
-    await _bindings.setExtFns(externals.keys.toList());
     final initial = _translateProgress(
       await _bindings.feedStart(effectiveCode),
     );
@@ -197,6 +211,11 @@ class MontyRepl {
   /// Register callback names in [externalFunctions]. When Python calls one,
   /// execution pauses and returns [MontyPending]. Use [resume] or
   /// [resumeWithError] to continue.
+  ///
+  /// [externalFunctions] is `List<String>` (names only) here, distinct from
+  /// the `Map<String, MontyCallback>` form on [feed]. The list shape is
+  /// intentional: the iterative path lets the caller drive dispatch, so
+  /// only the name registry crosses the FFI/WASM boundary.
   Future<MontyProgress> feedStart(
     String code, {
     List<String>? externalFunctions,
@@ -240,6 +259,8 @@ class MontyRepl {
   /// Returns whether [source] is syntactically complete for execution.
   ///
   /// Useful for building REPL UIs that show `>>>` vs `...` prompts.
+  /// Dart-only — the upstream `pydantic_monty` Python package does not
+  /// expose this helper; it wraps the engine's incomplete-input detector.
   Future<ReplContinuationMode> detectContinuation(String source) async {
     _checkNotDisposed();
     await _ensureCreated();
@@ -263,6 +284,7 @@ class MontyRepl {
   /// loop in progress). Throws [StateError] if mid-execution.
   Future<Uint8List> snapshot() {
     _checkNotDisposed();
+    _checkNotPending('snapshot');
 
     return _bindings.snapshot();
   }
@@ -270,9 +292,11 @@ class MontyRepl {
   /// Restores the REPL from bytes produced by [snapshot].
   ///
   /// The current REPL handle is freed and replaced with a new one restored
-  /// from [bytes]. Any in-flight operations must complete before calling this.
+  /// from [bytes]. Any in-flight operations must complete before calling
+  /// this. Throws [StateError] if mid-execution.
   Future<void> restore(Uint8List bytes) {
     _checkNotDisposed();
+    _checkNotPending('restore');
 
     return _bindings.restore(bytes);
   }
@@ -331,7 +355,9 @@ class MontyRepl {
         case MontyResolveFutures():
           progress = _translateProgress(await _bindings.resume('null'));
         case MontyNameLookup():
-          // REPL doesn't support NameLookup — signal NameError to Python.
+          // The Rust handle auto-resolves NameLookup via ext_fn_names; this
+          // branch only fires when the name was not registered. Signal
+          // NameError back to Python.
           progress = _translateProgress(
             await _bindings.resumeNameLookupUndefined(),
           );
@@ -342,12 +368,16 @@ class MontyRepl {
   MontyProgress _translateProgress(CoreProgressResult p) {
     switch (p.state) {
       case 'complete':
+        _pending = false;
         return _buildCompleteProgress(p);
       case 'pending':
+        _pending = true;
         return _buildPendingProgress(p);
       case 'os_call':
+        _pending = true;
         return _buildOsCallProgress(p);
       case 'error':
+        _pending = false;
         _throwReplError(
           message: p.error ?? 'Unknown error',
           excType: p.excType,
@@ -403,6 +433,15 @@ class MontyRepl {
 
   void _checkNotDisposed() {
     if (_disposed) throw StateError('MontyRepl has been disposed.');
+  }
+
+  void _checkNotPending(String op) {
+    if (_pending) {
+      throw StateError(
+        'Cannot $op a MontyRepl that is mid-execution; '
+        'await all feedStart/resume calls until they return MontyComplete.',
+      );
+    }
   }
 }
 
