@@ -2,7 +2,8 @@
 //
 //  Panel A — MontyRepl (persistent heap, snapshot/restore, detectContinuation)
 //    Exercises: MontyRepl.feedRun, externals, osHandler, detectContinuation,
-//               snapshot, restore, all MontyValue types, MontyResult fields.
+//               snapshot, restore, all MontyValue types, MontyResult fields,
+//               Monty.typeCheck (🔎 pre-flight, no execution).
 //
 //  Panel B — Externals showcase (Python → Dart callbacks)
 //    Exercises: MontyRepl.feedStart/resume, MontyPending (functionName, args,
@@ -124,6 +125,10 @@ void _initReplPanel() {
     'Externals: host_upper("hello")  calls a Dart function from Python.',
     className: 'system-line',
   );
+  write(
+    'Pre-flight: 🔎 runs Monty.typeCheck on the input — diagnostics, no execution.',
+    className: 'system-line',
+  );
 
   Future<void> execute() async {
     final code = input.value.trim();
@@ -166,7 +171,9 @@ void _initReplPanel() {
     input.focus();
   }
 
-  // Snap button — append inline after run button.
+  // Inline buttons appended after the Run button. Insertion order matters:
+  // each insertAdjacentElement('afterend', …) places the element directly
+  // after Run, so the visible order becomes Run, 🔎, 📸, ↩.
   final snapBtn = web.document.createElement('button') as web.HTMLButtonElement
     ..textContent = '📸'
     ..className = 'btn-sm';
@@ -174,8 +181,52 @@ void _initReplPanel() {
       web.document.createElement('button') as web.HTMLButtonElement
         ..textContent = '↩'
         ..className = 'btn-sm';
+  final typeCheckBtn =
+      web.document.createElement('button') as web.HTMLButtonElement
+        ..textContent = '🔎'
+        ..className = 'btn-sm';
   runBtn.insertAdjacentElement('afterend', restoreBtn);
   runBtn.insertAdjacentElement('afterend', snapBtn);
+  runBtn.insertAdjacentElement('afterend', typeCheckBtn);
+
+  // Static signatures for Dart-registered externals so Monty.typeCheck
+  // recognises calls like host_upper("hi") instead of flagging an
+  // undefined name. Kept in sync with the externalFunctions map below.
+  const externalsPrefix = '''
+def host_upper(s: str) -> str: ...
+''';
+
+  typeCheckBtn.onclick = (web.MouseEvent _) {
+    unawaited(() async {
+      final code = input.value.trim();
+      if (code.isEmpty) {
+        write('🔎 No code to check.', className: 'system-line');
+        return;
+      }
+      try {
+        final errors = await Monty.typeCheck(
+          code,
+          prefixCode: externalsPrefix,
+        );
+        if (errors.isEmpty) {
+          write('🔎 No type errors.', className: 'system-line');
+          return;
+        }
+        write(
+          '🔎 ${errors.length} type ${errors.length == 1 ? 'error' : 'errors'}:',
+          className: 'system-line',
+        );
+        for (final e in errors) {
+          final loc = (e.line != null && e.column != null)
+              ? '${e.line}:${e.column}'
+              : (e.line?.toString() ?? '?');
+          write('  $loc  ${e.code}: ${e.message}', className: 'error-line');
+        }
+      } on Object catch (e) {
+        write('🔎 typeCheck failed: $e', className: 'error-line');
+      }
+    }());
+  }.toJS;
 
   snapBtn.onclick = (web.MouseEvent _) {
     unawaited(() async {
