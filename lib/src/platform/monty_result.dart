@@ -63,6 +63,23 @@ final class MontyResult {
   /// Whether this result represents an error.
   bool get isError => error != null;
 
+  /// Whether this result represents a successful execution.
+  ///
+  /// Equivalent to `error == null`. Provided as a positive-form alias of
+  /// [isError] for use sites that read more naturally as a success check
+  /// (`if (result.ok) ...`, `expect(result.ok, isTrue)`).
+  bool get ok => error == null;
+
+  /// The Python exception class name when [error] is set, else `null`.
+  ///
+  /// Shorthand for `result.error?.excType`. Useful when filtering on the
+  /// exception type without first null-checking [error]:
+  ///
+  /// ```dart
+  /// if (result.excType == 'ValueError') { ... }
+  /// ```
+  String? get excType => error?.excType;
+
   /// Serializes this result to a JSON-compatible map.
   Map<String, dynamic> toJson() {
     return {
