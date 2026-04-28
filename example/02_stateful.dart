@@ -1,9 +1,12 @@
 // 02 — Stateful interpreter
 //
-// Monty() keeps a live Rust REPL heap across run() calls — variables,
-// functions, classes, and imports all persist without serialisation.
+// MontySession() keeps a live Rust REPL heap across run() calls —
+// variables, functions, classes, and imports all persist without
+// serialisation. For stateless single-shot evaluation see Monty(code) and
+// Monty.exec.
 //
-// Covers: Monty constructor, run, clearState, dispose, snapshot, restore.
+// Covers: MontySession constructor, run, clearState, dispose, snapshot,
+//         restore.
 //
 // Run: dart run example/02_stateful.dart
 
@@ -11,58 +14,58 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
   // ── State persistence across calls ──────────────────────────────────────────
-  final monty = Monty();
+  final session = MontySession();
 
-  await monty.run('x = 10');
-  await monty.run('y = 20');
-  final r = await monty.run('x + y');
+  await session.run('x = 10');
+  await session.run('y = 20');
+  final r = await session.run('x + y');
   print('x + y = ${r.value}'); // MontyInt(30)
 
   // Functions survive too.
-  await monty.run('def square(n): return n * n');
-  final sq = await monty.run('square(7)');
+  await session.run('def square(n): return n * n');
+  final sq = await session.run('square(7)');
   print('square(7) = ${sq.value}'); // MontyInt(49)
 
   // ── inputs: per-call variable injection ────────────────────────────────────
   // Dart values are converted to Python literals and prepended as assignments.
   // They shadow globals for that call only — the heap is not permanently changed.
-  final r2 = await monty.run('square(n)', inputs: {'n': 5});
+  final r2 = await session.run('square(n)', inputs: {'n': 5});
   print('square(5) = ${r2.value}'); // MontyInt(25)
 
   // Supported input types: null, bool, int, double, String, List, Map.
-  await monty.run(
+  await session.run(
     'total = sum(numbers)',
     inputs: {
       'numbers': [1, 2, 3, 4, 5],
     },
   );
-  print('sum = ${(await monty.run("total")).value}'); // MontyInt(15)
+  print('sum = ${(await session.run("total")).value}'); // MontyInt(15)
 
   // ── clearState ─────────────────────────────────────────────────────────────
   // Wipes globals. Next run() starts with an empty heap.
-  monty.clearState();
-  final blank = await monty.run('x');
+  session.clearState();
+  final blank = await session.run('x');
   print('after clear — x error: ${blank.error?.excType}'); // NameError
 
   // ── snapshot / restore ─────────────────────────────────────────────────────
   // Capture the full heap as bytes, then restore it later.
-  await monty.run('counter = 0');
-  await monty.run('counter += 1');
-  await monty.run('counter += 1');
-  print('counter before snap: ${(await monty.run("counter")).value}'); // 2
+  await session.run('counter = 0');
+  await session.run('counter += 1');
+  await session.run('counter += 1');
+  print('counter before snap: ${(await session.run("counter")).value}'); // 2
 
-  final snap = await monty.snapshot();
+  final snap = await session.snapshot();
   print('snapshot: ${snap.length} bytes');
 
-  await monty.run('counter += 100'); // mutate after snapshot
-  print('mutated: ${(await monty.run("counter")).value}'); // 102
+  await session.run('counter += 100'); // mutate after snapshot
+  print('mutated: ${(await session.run("counter")).value}'); // 102
 
-  await monty.restore(snap); // rewind
-  print('restored: ${(await monty.run("counter")).value}'); // 2
+  await session.restore(snap); // rewind
+  print('restored: ${(await session.run("counter")).value}'); // 2
 
   // ── dispose ────────────────────────────────────────────────────────────────
   // Always dispose to free the native Rust handle.
-  monty.dispose();
+  session.dispose();
 
   // ── Static one-shot helpers ─────────────────────────────────────────────────
   // Monty.exec — no state, no setup, dispose happens automatically.

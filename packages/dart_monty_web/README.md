@@ -74,8 +74,7 @@ backend. Use them to avoid re-parsing the same script on repeated executions:
 
 ```dart
 final binary = await Monty.compile('output = [x * 2 for x in data]');
-final monty = Monty();
-final result = await monty.runPrecompiled(binary);
+final result = await Monty.runPrecompiled(binary);
 ```
 
 See [`web/repl_demo.dart`](web/repl_demo.dart) for the full wiring including DOM

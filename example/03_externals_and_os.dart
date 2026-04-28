@@ -29,9 +29,9 @@ Future<void> main() async {
 Future<void> _externals() async {
   print('\n── externals ──');
 
-  final monty = Monty();
+  final session = MontySession();
 
-  await monty.run(
+  await session.run(
     '''
 result = add(3, 4)
 greeting = greet(name="World")
@@ -45,11 +45,11 @@ greeting = greet(name="World")
     },
   );
 
-  print('add(3,4) = ${(await monty.run("result")).value}'); // 7
-  print('greet = ${(await monty.run("greeting")).value}'); // Hello, World!
+  print('add(3,4) = ${(await session.run("result")).value}'); // 7
+  print('greet = ${(await session.run("greeting")).value}'); // Hello, World!
 
   // Return complex types: Dart List/Map are converted to Python list/dict.
-  await monty.run(
+  await session.run(
     'data = fetch_data()',
     externals: {
       'fetch_data': (_) async => {
@@ -58,10 +58,10 @@ greeting = greet(name="World")
       },
     },
   );
-  final data = await monty.run('data["scores"]');
+  final data = await session.run('data["scores"]');
   print('scores: $data'); // MontyList
 
-  monty.dispose();
+  session.dispose();
 }
 
 // ── OS calls: virtual filesystem ─────────────────────────────────────────────
@@ -104,27 +104,27 @@ Future<void> _osCallsVirtualFs() async {
     }
   }
 
-  final monty = Monty(osHandler: osHandler);
+  final session = MontySession(osHandler: osHandler);
 
   // pathlib works across calls because state persists on the Rust REPL heap.
-  await monty.run('import pathlib');
-  final content = await monty.run(
+  await session.run('import pathlib');
+  final content = await session.run(
     'pathlib.Path("/data/hello.txt").read_text()',
   );
   print('file content: ${content.value}');
 
   // Write then read back.
-  await monty.run(
+  await session.run(
     'pathlib.Path("/data/new.txt").write_text("written from Python")',
   );
   print('wrote to VFS: ${vfs["/data/new.txt"]}');
 
   // os.getenv
-  final env = await monty.run('import os; os.getenv("APP_ENV")');
+  final env = await session.run('import os; os.getenv("APP_ENV")');
   print('APP_ENV = ${env.value}');
 
   // MontyPath: Python Path objects round-trip as MontyPath values.
-  final pathVal = await monty.run('pathlib.Path("/data/hello.txt")');
+  final pathVal = await session.run('pathlib.Path("/data/hello.txt")');
   switch (pathVal.value) {
     case MontyPath(:final value):
       print('path object: $value');
@@ -132,7 +132,7 @@ Future<void> _osCallsVirtualFs() async {
       print('path: ${pathVal.value}');
   }
 
-  monty.dispose();
+  session.dispose();
 }
 
 // ── OS call errors ────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ Future<void> _osCallsVirtualFs() async {
 Future<void> _osCallError() async {
   print('\n── os call errors ──');
 
-  final monty = Monty(
+  final session = MontySession(
     osHandler: (op, args, kwargs) async {
       if (op == 'Path.read_text') {
         throw OsCallException(
@@ -154,14 +154,14 @@ Future<void> _osCallError() async {
     },
   );
 
-  await monty.run('import pathlib');
-  final r = await monty.run('''
+  await session.run('import pathlib');
+  final r = await session.run('''
 try:
     pathlib.Path("/secret").read_text()
 except PermissionError as e:
     result = f"caught: {e}"
 ''');
   print(r.printOutput ?? ''); // (empty — result is in variable)
-  print(await monty.run('result')); // MontyResult with MontyString
-  monty.dispose();
+  print(await session.run('result')); // MontyResult with MontyString
+  session.dispose();
 }

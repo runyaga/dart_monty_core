@@ -12,14 +12,12 @@ import 'package:test/test.dart';
 void main() {
   group('scriptName getter', () {
     test('Monty defaults to main.py when no scriptName given', () {
-      final monty = Monty();
-      addTearDown(monty.dispose);
+      final monty = Monty('pass');
       expect(monty.scriptName, 'main.py');
     });
 
     test('Monty round-trips a custom scriptName', () {
-      final monty = Monty(scriptName: 'analysis.py');
-      addTearDown(monty.dispose);
+      final monty = Monty('pass', scriptName: 'analysis.py');
       expect(monty.scriptName, 'analysis.py');
     });
 
