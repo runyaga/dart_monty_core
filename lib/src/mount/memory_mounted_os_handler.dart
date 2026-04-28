@@ -78,7 +78,7 @@ OsCallHandler memoryMountedOsHandler({
   return (op, args, kwargs) async {
     if (!op.startsWith('Path.')) return notMine(op, args, kwargs);
 
-    final rawPath = args.isEmpty ? null : args.first;
+    final rawPath = args.firstOrNull;
     if (rawPath is! String) return notMine(op, args, kwargs);
     final path = _normalizePath(rawPath);
     final mount = _findMount(path, normalizedMounts);
@@ -93,6 +93,7 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'FileNotFoundError',
           );
         }
+
         return content;
 
       case 'Path.read_bytes':
@@ -103,11 +104,12 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'FileNotFoundError',
           );
         }
+
         return utf8.encode(content);
 
       case 'Path.write_text':
         _requireWritable(mount, path);
-        final value = args.length > 1 ? args[1] : null;
+        final value = args.elementAtOrNull(1);
         if (value is! String) {
           throw OsCallException(
             'write_text expects a string, got ${value.runtimeType}',
@@ -116,11 +118,12 @@ OsCallHandler memoryMountedOsHandler({
         }
         _enforceLimit(mount, path, utf8.encode(value).length);
         vfs[path] = value;
+
         return value.length;
 
       case 'Path.write_bytes':
         _requireWritable(mount, path);
-        final value = args.length > 1 ? args[1] : null;
+        final value = args.elementAtOrNull(1);
         final List<int> bytes;
         if (value is List) {
           bytes = value.cast<int>();
@@ -132,6 +135,7 @@ OsCallHandler memoryMountedOsHandler({
         }
         _enforceLimit(mount, path, bytes.length);
         vfs[path] = utf8.decode(bytes, allowMalformed: true);
+
         return bytes.length;
 
       case 'Path.exists':
@@ -155,6 +159,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         vfs.remove(path);
+
         return null;
 
       case 'Path.iterdir':
@@ -168,6 +173,7 @@ OsCallHandler memoryMountedOsHandler({
             firstSlash == -1 ? key : '$prefix${tail.substring(0, firstSlash)}',
           );
         }
+
         return children.map(MontyPath.new).toList();
 
       case 'Path.absolute':
@@ -228,7 +234,7 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.rename':
         _requireWritable(mount, path);
-        final rawTarget = args.length > 1 ? args[1] : null;
+        final rawTarget = args.elementAtOrNull(1);
         if (rawTarget is! String) {
           throw OsCallException(
             'rename expects a destination path string, got '
@@ -296,25 +302,34 @@ String _normalizePath(String path) {
     }
     segments.add(part);
   }
-  return isAbs ? '/${segments.join('/')}' : segments.join('/');
+  final joined = segments.join('/');
+
+  return isAbs ? '/$joined' : joined;
 }
 
 MountDir? _findMount(String normalized, List<MountDir> mounts) {
   MountDir? match;
   var matchLen = -1;
   for (final m in mounts) {
-    final prefix = m.virtualPath == '/'
-        ? '/'
-        : (m.virtualPath.endsWith('/') ? m.virtualPath : '${m.virtualPath}/');
+    final virtual = m.virtualPath;
+    final String prefix;
+    if (virtual == '/') {
+      prefix = '/';
+    } else if (virtual.endsWith('/')) {
+      prefix = virtual;
+    } else {
+      prefix = '$virtual/';
+    }
     final inMount =
-        normalized == m.virtualPath ||
+        normalized == virtual ||
         '$normalized/'.startsWith(prefix) ||
-        m.virtualPath == '/';
-    if (inMount && m.virtualPath.length > matchLen) {
+        virtual == '/';
+    if (inMount && virtual.length > matchLen) {
       match = m;
-      matchLen = m.virtualPath.length;
+      matchLen = virtual.length;
     }
   }
+
   return match;
 }
 
@@ -342,6 +357,7 @@ bool _hasChildren(Map<String, String> vfs, String path) {
   for (final key in vfs.keys) {
     if (key.startsWith(prefix)) return true;
   }
+
   return false;
 }
 

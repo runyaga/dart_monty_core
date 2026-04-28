@@ -165,14 +165,14 @@ void main() {
         () => readOnly('Path.unlink', ['/data/x.txt'], null),
         throwsA(isA<OsCallException>()),
       );
-      expect(vfs.containsKey('/data/x.txt'), true);
+      expect(vfs, contains('/data/x.txt'));
 
       final writable = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         vfs: vfs,
       );
       await writable('Path.unlink', ['/data/x.txt'], null);
-      expect(vfs.containsKey('/data/x.txt'), false);
+      expect(vfs, isNot(contains('/data/x.txt')));
     });
 
     test('paths outside every mount fall through to fallthrough', () async {
@@ -182,6 +182,7 @@ void main() {
         vfs: const {},
         fallthrough: (op, args, kwargs) async {
           fallthroughCalled++;
+
           return null;
         },
       );
@@ -215,6 +216,7 @@ void main() {
         vfs: const {},
         fallthrough: (op, args, kwargs) async {
           fallthroughOp = op;
+
           return 'env-value';
         },
       );
