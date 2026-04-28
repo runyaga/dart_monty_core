@@ -339,6 +339,7 @@ class NativeBindingsFfi extends NativeBindings {
       if (outDiag.value == nullptr) {
         return null;
       }
+
       return _readAndFreeString(outDiag.value);
     } finally {
       calloc.free(cCode);

@@ -433,6 +433,7 @@ class WasmBindingsJs extends WasmBindings {
     if (map['ok'] != true) {
       throw StateError(map['error'] as String? ?? 'typeCheck failed');
     }
+
     return map['diagnosticsJson'] as String?;
   }
 

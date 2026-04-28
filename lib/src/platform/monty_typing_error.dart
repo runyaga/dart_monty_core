@@ -55,18 +55,6 @@ final class MontyTypingError {
     );
   }
 
-  /// Parses the JSON-array string emitted by `Monty.typeCheck` into a
-  /// list of diagnostics. An empty/null input returns an empty list.
-  static List<MontyTypingError> listFromJson(String? jsonStr) {
-    if (jsonStr == null || jsonStr.isEmpty) return const [];
-    final decoded = json.decode(jsonStr);
-    if (decoded is! List) return const [];
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(MontyTypingError.fromJson)
-        .toList(growable: false);
-  }
-
   /// Diagnostic rule code (e.g. `'invalid-assignment'`).
   final String code;
 
@@ -91,11 +79,30 @@ final class MontyTypingError {
   /// Documentation URL for [code], if available.
   final String? url;
 
+  /// Parses the JSON-array string emitted by `Monty.typeCheck` into a
+  /// list of diagnostics. An empty/null input returns an empty list.
+  static List<MontyTypingError> listFromJson(String? jsonStr) {
+    if (jsonStr == null || jsonStr.isEmpty) return const [];
+    final decoded = json.decode(jsonStr);
+    if (decoded is! List) return const [];
+
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(MontyTypingError.fromJson)
+        .toList(growable: false);
+  }
+
   @override
   String toString() {
-    final loc = (path != null && line != null && column != null)
-        ? '$path:$line:$column'
-        : (line != null ? 'line $line' : 'unknown');
+    final String loc;
+    if (path != null && line != null && column != null) {
+      loc = '$path:$line:$column';
+    } else if (line != null) {
+      loc = 'line $line';
+    } else {
+      loc = 'unknown';
+    }
+
     return 'MontyTypingError($code at $loc: $message)';
   }
 }

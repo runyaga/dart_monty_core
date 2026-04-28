@@ -141,6 +141,7 @@ class Monty {
         prefixCode: prefixCode,
         scriptName: scriptName,
       );
+
       return MontyTypingError.listFromJson(json);
     } finally {
       await platform.dispose();

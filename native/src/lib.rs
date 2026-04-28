@@ -1410,15 +1410,13 @@ pub unsafe extern "C" fn monty_type_check(
     out_error: *mut *mut c_char,
 ) -> MontyResultTag {
     // SAFETY: Caller guarantees `code` is a valid NUL-terminated C string if non-null.
-    let code_str = match unsafe { parse_c_str(code, "code", out_error) } {
-        Ok(s) => s,
-        Err(()) => return MontyResultTag::Error,
+    let Ok(code_str) = (unsafe { parse_c_str(code, "code", out_error) }) else {
+        return MontyResultTag::Error;
     };
 
     // SAFETY: Caller guarantees `script_name` is a valid NUL-terminated C string if non-null.
-    let script_str = match unsafe { parse_c_str(script_name, "script_name", out_error) } {
-        Ok(s) => s,
-        Err(()) => return MontyResultTag::Error,
+    let Ok(script_str) = (unsafe { parse_c_str(script_name, "script_name", out_error) }) else {
+        return MontyResultTag::Error;
     };
 
     // prefix_code is optional — NULL means "no prefix".
@@ -1427,17 +1425,16 @@ pub unsafe extern "C" fn monty_type_check(
     } else {
         // SAFETY: `prefix_code` is non-null (just checked) and the caller guarantees it
         // is a valid NUL-terminated C string.
-        match unsafe { CStr::from_ptr(prefix_code) }.to_str() {
-            Ok(s) => Some(s),
-            Err(_) => {
-                if !out_error.is_null() {
-                    // SAFETY: out_error is non-null (just checked), writing error message
-                    unsafe {
-                        *out_error = to_c_string("prefix_code is not valid UTF-8");
-                    }
+        if let Ok(s) = unsafe { CStr::from_ptr(prefix_code) }.to_str() {
+            Some(s)
+        } else {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing error message
+                unsafe {
+                    *out_error = to_c_string("prefix_code is not valid UTF-8");
                 }
-                return MontyResultTag::Error;
             }
+            return MontyResultTag::Error;
         }
     };
 

@@ -227,6 +227,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   }) async {
     assertNotDisposed('typeCheck');
     await _ensureInitialized();
+
     return _bindings.typeCheck(
       code,
       prefixCode: prefixCode,
