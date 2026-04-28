@@ -41,20 +41,20 @@ class Monty {
   /// Script name used as the filename in tracebacks and error messages.
   String get scriptName => _scriptName;
 
-  /// Runs the held code with optional [inputs], [externals], [limits], and
-  /// [osHandler].
+  /// Runs the held code with optional [inputs], [externalFunctions],
+  /// [limits], and [osHandler].
   ///
   /// [inputs] are converted to Python literals and prepended to the code
   /// as assignments; they shadow same-named variables for that call only.
-  /// [externals] maps Python-callable names to Dart callbacks; Python can
-  /// call them like any other function and the result is resumed
-  /// automatically.
+  /// [externalFunctions] maps Python-callable names to Dart callbacks;
+  /// Python can call them like any other function and the result is
+  /// resumed automatically.
   ///
   /// Each call runs in a fresh interpreter — state from earlier calls does
   /// not persist. Use [MontySession] for stateful execution.
   Future<MontyResult> run({
     Map<String, Object?>? inputs,
-    Map<String, MontyCallback> externals = const {},
+    Map<String, MontyCallback> externalFunctions = const {},
     MontyLimits? limits,
     OsCallHandler? osHandler,
   }) async {
@@ -65,7 +65,7 @@ class Monty {
     try {
       return await session.run(
         _code,
-        externals: externals,
+        externalFunctions: externalFunctions,
         inputs: inputs,
         limits: limits,
       );
@@ -116,13 +116,13 @@ class Monty {
   static Future<MontyResult> exec(
     String code, {
     Map<String, Object?>? inputs,
-    Map<String, MontyCallback> externals = const {},
+    Map<String, MontyCallback> externalFunctions = const {},
     MontyLimits? limits,
     String scriptName = 'main.py',
     OsCallHandler? osHandler,
   }) => Monty(code, scriptName: scriptName).run(
     inputs: inputs,
-    externals: externals,
+    externalFunctions: externalFunctions,
     limits: limits,
     osHandler: osHandler,
   );

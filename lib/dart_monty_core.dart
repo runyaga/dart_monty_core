@@ -14,7 +14,7 @@
 ///
 /// // Stateful session — backed by the Rust REPL heap
 /// final session = MontySession();
-/// await session.run('x = 42', externals: {
+/// await session.run('x = 42', externalFunctions: {
 ///   'my_fn': (args) async => 'hello',
 /// });
 ///

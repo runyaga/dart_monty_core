@@ -140,7 +140,7 @@ void _initReplPanel() {
     try {
       final result = await repl.feed(
         code,
-        externals: {
+        externalFunctions: {
           'host_upper': (args) async => (args['_0'] as String).toUpperCase(),
         },
         osHandler: _vfsOsHandler,

@@ -27,7 +27,7 @@ Future<void> _autoDispatch() async {
 
   await session.run(
     'greeting = greet("Dart")',
-    externals: {'greet': (args) async => 'Hi, ${args["_0"]}!'},
+    externalFunctions: {'greet': (args) async => 'Hi, ${args["_0"]}!'},
   );
   print('auto: ${(await session.run("greeting")).value}');
   session.dispose();

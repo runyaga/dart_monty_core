@@ -47,7 +47,9 @@ void runMontyCompileRunTests() {
       final program = Monty('double(value)');
       final r = await program.run(
         inputs: {'value': 7},
-        externals: {'double': (args) async => (args['_0']! as int) * 2},
+        externalFunctions: {
+          'double': (args) async => (args['_0']! as int) * 2,
+        },
       );
       expect(r.error, isNull);
       expect(r.value.dartValue, 14);

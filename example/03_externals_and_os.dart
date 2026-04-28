@@ -2,13 +2,13 @@
 //
 // Python code can call back into Dart via two mechanisms:
 //
-//  1. externals — named host functions declared before execution.
+//  1. externalFunctions — named host functions declared before execution.
 //     Python calls them like regular functions; Dart handles each call.
 //
 //  2. osHandler — intercepts pathlib, os.getenv, os.environ, datetime
 //     operations. Lets you provide a virtual filesystem or sandbox.
 //
-// Covers: MontyCallback, OsCallHandler, OsCallException, externals param,
+// Covers: MontyCallback, OsCallHandler, OsCallException, externalFunctions param,
 //         Monty(osHandler:), MontyPath, MontyResult.printOutput.
 //
 // Run: dart run example/03_externals_and_os.dart
@@ -16,7 +16,7 @@
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _externals();
+  await _externalFunctions();
   await _osCallsVirtualFs();
   await _osCallError();
 }
@@ -26,8 +26,8 @@ Future<void> main() async {
 //
 // Positional args arrive as '_0', '_1', ... in the map.
 // Keyword args arrive under their Python names.
-Future<void> _externals() async {
-  print('\n── externals ──');
+Future<void> _externalFunctions() async {
+  print('\n── externalFunctions ──');
 
   final session = MontySession();
 
@@ -36,7 +36,7 @@ Future<void> _externals() async {
 result = add(3, 4)
 greeting = greet(name="World")
 ''',
-    externals: {
+    externalFunctions: {
       // Synchronous-style: return the value directly.
       'add': (args) async => (args['_0'] as int) + (args['_1'] as int),
 
@@ -51,7 +51,7 @@ greeting = greet(name="World")
   // Return complex types: Dart List/Map are converted to Python list/dict.
   await session.run(
     'data = fetch_data()',
-    externals: {
+    externalFunctions: {
       'fetch_data': (_) async => {
         'name': 'alice',
         'scores': [98, 87, 92],

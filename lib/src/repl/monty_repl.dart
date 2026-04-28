@@ -147,8 +147,9 @@ class MontyRepl {
   /// Feeds [code] and runs to completion.
   ///
   /// State (variables, functions, classes, heap objects) persists across
-  /// calls. If [externals] are provided, Python can call registered host
-  /// functions; each call is dispatched and the result resumed automatically.
+  /// calls. If [externalFunctions] are provided, Python can call them like
+  /// regular functions; each call is dispatched and the result resumed
+  /// automatically.
   ///
   /// If [code] raises a Python exception, the REPL survives and the error
   /// is returned in [MontyResult.error].
@@ -156,9 +157,13 @@ class MontyRepl {
   /// [inputs] injects per-invocation Python variables before [code] runs.
   /// Each key becomes a Python variable; values are converted to Python
   /// literals.
+  ///
+  /// [externalFunctions] is a `Map<String, MontyCallback>` here — distinct
+  /// from the `List<String>` form on [feedStart], where the iterative
+  /// path drives dispatch from Dart and only the names cross the boundary.
   Future<MontyResult> feed(
     String code, {
-    Map<String, MontyCallback> externals = const {},
+    Map<String, MontyCallback> externalFunctions = const {},
     OsCallHandler? osHandler,
     Map<String, Object?>? inputs,
   }) async {
@@ -169,14 +174,14 @@ class MontyRepl {
         : code;
 
     // Always sync the Rust handle's ext_fn_names HashSet to this feed's
-    // externals — including clearing it when externals is empty. Without
-    // this, names registered in a previous feed leak into the next
-    // feed's NameLookup auto-resolve and surface as a confusing
+    // externalFunctions — including clearing it when empty. Without this,
+    // names registered in a previous feed leak into the next feed's
+    // NameLookup auto-resolve and surface as a confusing
     // "no handler registered" error instead of NameError.
-    await _bindings.setExtFns(externals.keys.toList());
+    await _bindings.setExtFns(externalFunctions.keys.toList());
 
-    if (externals.isEmpty && osHandler == null) {
-      // Fast path: no externals, use simple feedRun.
+    if (externalFunctions.isEmpty && osHandler == null) {
+      // Fast path: no externalFunctions, use simple feedRun.
       final r = await _bindings.feedRun(effectiveCode);
       _pending = false;
       if (r.ok) {
@@ -194,12 +199,13 @@ class MontyRepl {
       );
     }
 
-    // Iterative path: drive the start/resume loop, dispatching externals.
+    // Iterative path: drive the start/resume loop, dispatching
+    // externalFunctions.
     final initial = _translateProgress(
       await _bindings.feedStart(effectiveCode),
     );
 
-    return _driveLoop(initial, externals, osHandler);
+    return _driveLoop(initial, externalFunctions, osHandler);
   }
 
   // ---------------------------------------------------------------------------
@@ -318,7 +324,7 @@ class MontyRepl {
 
   Future<MontyResult> _driveLoop(
     MontyProgress initial,
-    Map<String, MontyCallback> externals,
+    Map<String, MontyCallback> externalFunctions,
     OsCallHandler? osHandler,
   ) async {
     var progress = initial;
@@ -327,7 +333,7 @@ class MontyRepl {
         case MontyComplete(:final result):
           return result;
         case MontyPending(:final functionName):
-          final cb = externals[functionName];
+          final cb = externalFunctions[functionName];
           if (cb == null) {
             progress = _translateProgress(
               await _bindings.resumeWithError(
