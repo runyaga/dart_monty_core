@@ -11,6 +11,11 @@
   `code`, `message`, `path`, `line`/`column`, `endLine`/`endColumn`, and
   `url`. WASM bridge gains a `sched_yield` no-op to satisfy salsa-rs's
   WASI imports.
+- **`MontyResult.ok` and `MontyResult.excType`** convenience getters.
+  `ok` is the positive-form alias of `isError` (`bool get ok => error == null`);
+  `excType` is shorthand for `error?.excType`. Read more naturally in test
+  harnesses and UI code (`expect(result.ok, isTrue)`, `if (result.excType ==
+  'ValueError')`). Closes #38.
 
 ### Upgraded
 
