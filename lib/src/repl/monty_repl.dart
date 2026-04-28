@@ -163,11 +163,20 @@ class MontyRepl {
   /// distinct from the `List<String>` form on [feedStart], where the
   /// iterative path drives dispatch from Dart and only the names cross
   /// the boundary.
+  ///
+  /// [printCallback], if provided, is invoked once per call with the
+  /// captured `print()` output before the result returns. The first
+  /// argument is always `'stdout'` (matches Python's
+  /// `Literal['stdout']`). This is a batch callback — the entire
+  /// captured output is delivered in a single call when execution
+  /// completes; per-flush streaming is not currently supported. When
+  /// the held code prints nothing, the callback is not invoked.
   Future<MontyResult> feedRun(
     String code, {
     Map<String, MontyCallback> externalFunctions = const {},
     OsCallHandler? osHandler,
     Map<String, Object?>? inputs,
+    void Function(String stream, String text)? printCallback,
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
@@ -187,6 +196,7 @@ class MontyRepl {
         // Fast path: no externalFunctions, use simple feedRun.
         final r = await _bindings.feedRun(effectiveCode);
         _pending = false;
+        _emitPrintOutput(printCallback, r.printOutput);
         if (r.ok) {
           return MontyResult(
             value: MontyValue.fromJson(r.value),
@@ -208,13 +218,28 @@ class MontyRepl {
         await _bindings.feedStart(effectiveCode),
       );
 
-      return await _driveLoop(initial, externalFunctions, osHandler);
+      final result = await _driveLoop(
+        initial,
+        externalFunctions,
+        osHandler,
+      );
+      _emitPrintOutput(printCallback, result.printOutput);
+      return result;
     } on MontyScriptError catch (e) {
       return MontyResult(
         value: const MontyNone(),
         error: e.exception,
         usage: _replZeroUsage,
       );
+    }
+  }
+
+  static void _emitPrintOutput(
+    void Function(String stream, String text)? cb,
+    String? text,
+  ) {
+    if (cb != null && text != null && text.isNotEmpty) {
+      cb('stdout', text);
     }
   }
 
