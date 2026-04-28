@@ -11,20 +11,22 @@ Maintainer reference for building, testing, and releasing this package.
 | Dart SDK ≥ 3.10 | `brew install dart` | dart.dev/get-dart | dart.dev/get-dart |
 | Web tests | Node 20+ + Chrome | Node 20+ + Chrome | Node 20+ + Chrome |
 
-Cross-compilation targets:
+Maintainers also need the WASM target for rebuilding `lib/assets/`:
 
 ```bash
 rustup target add wasm32-wasip1
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios   # iOS
-rustup target add aarch64-linux-android x86_64-linux-android armv7-linux-androideabi  # Android (also needs NDK + cargo-ndk)
 ```
 
 `dart_monty_core` does **not** ship pre-built FFI dylibs — they're built
-from source on every consumer's machine via `hook/build.dart`. WASM
-consumers get pre-built artefacts from `lib/assets/` (Mode A). Flutter
-consumers should depend on
-[`dart_monty`](https://github.com/runyaga/dart_monty), which bundles
-per-arch binaries.
+from source on every consumer's machine via `hook/build.dart`. The hook
+supports desktop triples only (macOS / Linux / Windows × arm64 + x64);
+iOS and Android fall through with no asset emitted. WASM consumers get
+pre-built artefacts from `lib/assets/` (Mode A). When using
+`dart_monty_core` directly, mobile (iOS / Android) compilation is the
+consumer's responsibility — they compile the native crate and wire it
+into their Flutter plugin themselves.
+[`dart_monty`](https://github.com/runyaga/dart_monty) is the higher-level
+Flutter wrapper for consumers who want the integration layer instead.
 
 ## Architecture
 
