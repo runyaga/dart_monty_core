@@ -283,6 +283,7 @@ jobs:
             test/integration/ffi_datetime_oscall_test.dart \
             test/integration/ffi_multi_repl_test.dart \
             test/integration/ffi_repl_oscall_test.dart \
+            test/integration/repros \
             -p vm --run-skipped --tags=ffi --reporter=expanded
 
   # ---------------------------------------------------------------------------
