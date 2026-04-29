@@ -100,8 +100,9 @@ users `dart pub remove` the old name and `dart pub add dart_monty`
 
 - Python features intentionally unsupported: user-defined classes
   (`class` keyword), generators (`yield`), `match`/`case`, `del`,
-  decorators, C extensions. Use dicts and functions in place of
-  classes.
+  C extensions. Use dicts and functions in place of classes.
+  (Decorators *are* supported and pass both `typeCheck` and
+  runtime — see `dart_monty/README.md` "Actually supported".)
 - Pre-1.0 — pin exact versions (`dart_monty_core: 0.17.0`, not
   `^0.17.0`). Patch releases may track upstream pydantic/monty
   breaking changes; minor version mirrors the upstream `monty` patch

@@ -1,0 +1,57 @@
+# dart_monty_core — index for LLM/agent consumers
+
+Low-level Rust-backed sandboxed Python interpreter with Dart FFI
+bindings. Smaller surface than `dart_monty`: no bridge, no
+extensions, no host functions. Just `Monty.exec`, `Monty.typeCheck`,
+`MontyLimits`, and the typed `MontyResult` wrapper.
+
+If you're driving this package from an LLM agent, start here:
+
+## Quick start
+
+- `README.md` — overview + install
+- `CHANGELOG.md` — release notes (subset rules in the "Notes"
+  section of each release)
+- `AGENTS.md` — conventions and contributor instructions
+- `example/example.dart` — minimal end-to-end smoke test
+- `lib/dart_monty_core.dart` — single-file public-API export
+
+## What's the API
+
+- `Monty.exec(code, limits?)` — one-shot execution, returns
+  `MontyResult`. `code` is a Python expression or program.
+- `Monty.typeCheck(code, prefixCode?)` — pre-flight type analysis
+  using mypy-rules-of-thumb. Catches subset violations (no `class`,
+  no decorators in core, etc.) BEFORE runtime.
+- `MontyLimits(memoryBytes:, timeoutMs:)` — hard caps on the script.
+  Out-of-memory and timeout violations surface as typed errors,
+  NOT Dart-side OOMs or hangs.
+- `MontyResult.value` — typed wrapper (`MontyInt`, `MontyString`,
+  `MontyDouble`, `MontyBool`, `MontyList`, `MontyDict`, `MontyNull`).
+  Pattern-match or call `.toJson()` for plain Dart values.
+
+## Subset rules (read first)
+
+- `class` (no user-defined classes) — use dicts and module-level
+  functions
+- generators (`yield`) — unsupported
+- `match`/`case`, `del` — unsupported
+- C extensions — unsupported
+- decorators — supported (despite older docs claiming otherwise)
+- walrus (`:=`), chained assignment — supported
+- curated stdlib: `math`, `re`, `json`, `datetime`, `pathlib`,
+  `collections`
+
+## What's NOT on the doc surface
+
+`lib/src/**`, `test/**`, `tool/**`, `hook/**`, and `native/**` are
+implementation detail. If your question requires reading them, that
+indicates a doc gap — file an issue or open a PR adding the missing
+explanation.
+
+## Companion package
+
+`dart_monty` wraps this package with a Bridge, Extensions, and
+host-function dispatch. If you need `MontyRuntime`, the template
+engine, message bus, sandbox-spawn children, or anything beyond
+`Monty.exec`, see `dart_monty/llms.txt`.
