@@ -38,6 +38,7 @@ void main(List<String> args) async {
       final result = await Process.run('cargo', [
         'build',
         '--release',
+        '--lib',
         ...targetArgs,
       ], workingDirectory: Directory.fromUri(nativeDir).path);
       if (result.exitCode != 0) {
