@@ -1,5 +1,13 @@
 # dart_monty_core
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/runyaga/dart_monty/main/docs/assets/dart_monty.jpg" alt="dart_monty_core" width="280">
+</p>
+
+[![CI](https://github.com/runyaga/dart_monty_core/actions/workflows/ci.yaml/badge.svg)](https://github.com/runyaga/dart_monty_core/actions/workflows/ci.yaml)
+[![Pages](https://github.com/runyaga/dart_monty_core/actions/workflows/deploy-pages.yml/badge.svg)](https://runyaga.github.io/dart_monty_core/)
+[![codecov](https://codecov.io/gh/runyaga/dart_monty_core/graph/badge.svg)](https://codecov.io/gh/runyaga/dart_monty_core)
+
 Run Python in Dart. A thin binding for
 [pydantic/monty](https://github.com/pydantic/monty) — the sandboxed Python
 interpreter from Pydantic, written in Rust.

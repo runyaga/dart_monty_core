@@ -3,6 +3,11 @@ description: Sandboxed Python scripting for Dart. Low-level binding for pydantic
 version: 0.17.0
 homepage: https://github.com/runyaga/dart_monty_core
 repository: https://github.com/runyaga/dart_monty_core
+topics:
+  - python
+  - sandbox
+  - interpreter
+  - dart
 
 environment:
   sdk: ^3.10.0
