@@ -11,14 +11,16 @@ void main(List<String> args) async {
     final os = code.targetOS;
     final arch = code.targetArchitecture;
 
+    // iOS uses static linking (.a); desktop hosts use dynamic loading.
     final libName = switch (os) {
       OS.macOS => 'libdart_monty_core_native.dylib',
       OS.linux => 'libdart_monty_core_native.so',
       OS.windows => 'dart_monty_core_native.dll',
+      OS.iOS => 'libdart_monty_core_native.a',
       _ => null,
     };
 
-    // Graceful fallback for iOS/Android — no native assets for now.
+    // Graceful fallback for Android — no native assets for now.
     if (libName == null) return;
 
     // Include arch in the output path to avoid collisions when Flutter
@@ -33,7 +35,8 @@ void main(List<String> args) async {
 
     if (cargoToml.existsSync()) {
       // Contributor path: always run cargo (handles incremental builds).
-      final triple = _rustTriple(os, arch);
+      final iosSdk = os == OS.iOS ? code.iOS.targetSdk : null;
+      final triple = _rustTriple(os, arch, iosSdk);
       final targetArgs = triple != null ? ['--target', triple] : <String>[];
       final result = await Process.run('cargo', [
         'build',
@@ -49,11 +52,11 @@ void main(List<String> args) async {
         );
       }
 
-      for (final sub in _cargoPaths(os, arch, libName)) {
+      for (final sub in _cargoPaths(os, arch, libName, iosSdk)) {
         final f = File.fromUri(nativeDir.resolve(sub));
         if (f.existsSync() && f.lengthSync() > 0) {
           f.copySync(outFile.path);
-          _addAsset(output, input.packageName, outFile.uri);
+          _addAsset(output, input.packageName, outFile.uri, os: os);
 
           return;
         }
@@ -70,19 +73,34 @@ void main(List<String> args) async {
   });
 }
 
-void _addAsset(BuildOutputBuilder output, String packageName, Uri file) {
+void _addAsset(
+  BuildOutputBuilder output,
+  String packageName,
+  Uri file, {
+  required OS os,
+}) {
+  // iOS bans dynamic libraries outside frameworks → static linking.
+  // All other targets ship a dylib/so/dll.
+  final linkMode = os == OS.iOS
+      ? StaticLinking()
+      : DynamicLoadingBundled() as LinkMode;
   output.assets.code.add(
     CodeAsset(
       package: packageName,
       name: 'dart_monty_core_ffi.dart',
-      linkMode: DynamicLoadingBundled(),
+      linkMode: linkMode,
       file: file,
     ),
   );
 }
 
-List<String> _cargoPaths(OS os, Architecture? arch, String libName) {
-  final triple = _rustTriple(os, arch);
+List<String> _cargoPaths(
+  OS os,
+  Architecture? arch,
+  String libName,
+  IOSSdk? iosSdk,
+) {
+  final triple = _rustTriple(os, arch, iosSdk);
 
   return [
     if (triple != null) 'target/$triple/release/$libName',
@@ -90,7 +108,7 @@ List<String> _cargoPaths(OS os, Architecture? arch, String libName) {
   ];
 }
 
-String? _rustTriple(OS os, Architecture? arch) {
+String? _rustTriple(OS os, Architecture? arch, IOSSdk? iosSdk) {
   final a = arch?.toString() ?? 'arm64';
 
   return switch ((os, a)) {
@@ -100,6 +118,13 @@ String? _rustTriple(OS os, Architecture? arch) {
     (OS.linux, 'x64') => 'x86_64-unknown-linux-gnu',
     (OS.windows, 'arm64') => 'aarch64-pc-windows-msvc',
     (OS.windows, 'x64') => 'x86_64-pc-windows-msvc',
+    // iOS device is always arm64. The simulator on Apple Silicon is also
+    // arm64 but uses a distinct '-sim' triple; on Intel it's x86_64.
+    (OS.iOS, 'arm64') =>
+      iosSdk == IOSSdk.iPhoneSimulator
+          ? 'aarch64-apple-ios-sim'
+          : 'aarch64-apple-ios',
+    (OS.iOS, 'x64') => 'x86_64-apple-ios',
     _ => null,
   };
 }
