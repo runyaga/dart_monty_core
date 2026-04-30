@@ -25,7 +25,7 @@ set -euo pipefail
 
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 JS_DIR="$PKG/js"
-ASSETS_DIR="$PKG/assets"
+ASSETS_DIR="$PKG/lib/assets"
 INTEG_WEB="$PKG/test/integration/web"
 SERVE_PORT=8097
 SKIP_BUILD=false
