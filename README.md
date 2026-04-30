@@ -1,5 +1,13 @@
 # dart_monty_core
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/runyaga/dart_monty/main/docs/assets/dart_monty.jpg" alt="dart_monty_core" width="280">
+</p>
+
+[![CI](https://github.com/runyaga/dart_monty_core/actions/workflows/ci.yaml/badge.svg)](https://github.com/runyaga/dart_monty_core/actions/workflows/ci.yaml)
+[![Pages](https://github.com/runyaga/dart_monty_core/actions/workflows/deploy-pages.yml/badge.svg)](https://runyaga.github.io/dart_monty_core/)
+[![codecov](https://codecov.io/gh/runyaga/dart_monty_core/graph/badge.svg)](https://codecov.io/gh/runyaga/dart_monty_core)
+
 Run Python in Dart. A thin binding for
 [pydantic/monty](https://github.com/pydantic/monty) — the sandboxed Python
 interpreter from Pydantic, written in Rust.
@@ -190,13 +198,6 @@ maxRecursionDepth:)`.
 > **0.17.0 builds the native FFI binary from source on `dart pub get`.**
 > Every FFI consumer needs a Rust toolchain, including Flutter consumers
 > coming in via [`dart_monty`](https://github.com/runyaga/dart_monty).
->
-> **Prebuilt binaries arrive in 0.17.1** for macOS (arm64+x86_64), Linux
-> (x86_64-gnu+aarch64-gnu), Windows (x86_64), iOS (xcframework), and
-> Android (4 ABIs). The build hook will download the matching artefact
-> from this repo's GitHub Releases on first `pub get` — no Rust
-> toolchain required. See `AGENTS.md` "Native binary release pipeline
-> (0.17.1+)".
 
 ### Install (from pub.dev)
 
