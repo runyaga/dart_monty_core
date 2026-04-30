@@ -8,7 +8,6 @@ js/
 native/target/
 native/.dart_tool/
 native/tests/
-native/src/bin/
 native/lcov.info
 native/Cargo.lock
 
