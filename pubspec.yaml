@@ -7,7 +7,7 @@ topics:
   - python
   - sandbox
   - interpreter
-  - dart
+  - scripting
 
 environment:
   sdk: ^3.10.0
