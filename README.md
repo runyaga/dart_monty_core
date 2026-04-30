@@ -18,10 +18,6 @@ interpreter from Pydantic, written in Rust.
 [`dart_monty`](https://github.com/runyaga/dart_monty), which depends
 on this package.
 
-**Pre-1.0** — published on pub.dev (see Installation below).
-Versioning convention: minor version mirrors the upstream `monty`
-patch (`0.X.0 ↔ monty v0.0.X`).
-
 ## Why
 
 Dart is compiled, no reflection — fast and tree-shakeable, but you can't
