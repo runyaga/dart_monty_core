@@ -124,6 +124,11 @@ jobs:
             mkdir -p coverage
             touch coverage/lcov.info
           fi
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Upload lcov artifact
         if: always()
         uses: actions/upload-artifact@v4
