@@ -293,6 +293,48 @@ class MontyRepl {
     return _translateProgress(await _bindings.resumeNotFound(fnName));
   }
 
+  /// Resumes the paused REPL by promising a future for the pending call.
+  ///
+  /// Use this in place of [resume] when the host is going to deliver the
+  /// pending call's result later via [resolveFutures]. The VM keeps
+  /// running until it hits an `await`, then yields [MontyResolveFutures]
+  /// listing the call IDs whose values it now needs.
+  ///
+  /// Throws [UnsupportedError] when the underlying bindings backend does
+  /// not implement the futures path (currently the WASM backend).
+  Future<MontyProgress> resumeAsFuture() async {
+    _checkNotDisposed();
+
+    return _translateProgress(await _bindings.resumeAsFuture());
+  }
+
+  /// Resolves the call IDs the VM is waiting on with [results] and
+  /// optionally [errors], then continues execution.
+  ///
+  /// [results] maps each call ID to its resolved value; [errors] maps
+  /// call IDs to error message strings (raised as `RuntimeError` in
+  /// Python). The union of keys must cover every ID the engine listed
+  /// in the preceding [MontyResolveFutures].
+  ///
+  /// Throws [UnsupportedError] when the bindings backend does not
+  /// implement the futures path.
+  Future<MontyProgress> resolveFutures(
+    Map<int, Object?> results, {
+    Map<int, String>? errors,
+  }) async {
+    _checkNotDisposed();
+    final resultsJson = jsonEncode(
+      results.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    final errorsJson = errors != null
+        ? jsonEncode(errors.map((k, v) => MapEntry(k.toString(), v)))
+        : '{}';
+
+    return _translateProgress(
+      await _bindings.resolveFutures(resultsJson, errorsJson),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Continuation detection
   // ---------------------------------------------------------------------------
@@ -431,6 +473,11 @@ class MontyRepl {
       case 'os_call':
         _pending = true;
         return _buildOsCallProgress(p);
+      case 'resolve_futures':
+        _pending = true;
+        return MontyResolveFutures(
+          pendingCallIds: p.pendingCallIds ?? const [],
+        );
       case 'error':
         _pending = false;
         _throwReplError(

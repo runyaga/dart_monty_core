@@ -153,6 +153,35 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeAsFuture() async {
+    final handle = _replHandle;
+    if (handle == null) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = _bindings.replResumeAsFuture(handle);
+
+    return _translateProgressResult(result);
+  }
+
+  @override
+  Future<CoreProgressResult> resolveFutures(
+    String resultsJson,
+    String errorsJson,
+  ) async {
+    final handle = _replHandle;
+    if (handle == null) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = _bindings.replResolveFutures(
+      handle,
+      resultsJson,
+      errorsJson,
+    );
+
+    return _translateProgressResult(result);
+  }
+
+  @override
   Future<Uint8List> snapshot() async {
     final handle = _replHandle;
     if (handle == null) {
