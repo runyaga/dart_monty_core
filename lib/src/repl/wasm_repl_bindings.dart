@@ -116,6 +116,33 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeAsFuture() async {
+    if (!_created) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = await _bindings.replResumeAsFuture(replId: _replId);
+
+    return _translateWasmProgressResult(result);
+  }
+
+  @override
+  Future<CoreProgressResult> resolveFutures(
+    String resultsJson,
+    String errorsJson,
+  ) async {
+    if (!_created) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = await _bindings.replResolveFutures(
+      resultsJson,
+      errorsJson,
+      replId: _replId,
+    );
+
+    return _translateWasmProgressResult(result);
+  }
+
+  @override
   Future<Uint8List> snapshot() {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');

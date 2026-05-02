@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
@@ -18,7 +19,7 @@ import 'package:dart_monty_core/src/repl/monty_repl.dart';
 /// await platform.run('x = 42');
 /// await repl.dispose();
 /// ```
-class ReplPlatform implements MontyPlatform {
+class ReplPlatform implements MontyFutureCapable {
   /// Creates a [ReplPlatform] wrapping [repl].
   const ReplPlatform({required MontyRepl repl}) : _repl = repl;
 
@@ -58,6 +59,15 @@ class ReplPlatform implements MontyPlatform {
   @override
   Future<MontyProgress> resumeNotFound(String fnName) =>
       _repl.resumeNotFound(fnName);
+
+  @override
+  Future<MontyProgress> resumeAsFuture() => _repl.resumeAsFuture();
+
+  @override
+  Future<MontyProgress> resolveFutures(
+    Map<int, Object?> results, {
+    Map<int, String>? errors,
+  }) => _repl.resolveFutures(results, errors: errors);
 
   @override
   Future<MontyProgress> resumeNameLookup(String name, Object? value) =>

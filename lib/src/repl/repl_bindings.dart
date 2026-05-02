@@ -43,6 +43,25 @@ abstract class ReplBindings {
   /// The engine raises NameError.
   Future<CoreProgressResult> resumeNameLookupUndefined();
 
+  /// Resumes the paused REPL by promising a future for the pending call.
+  ///
+  /// Instead of providing an immediate return value (as [resume] does), this
+  /// tells the VM that the host will deliver the pending call's result later
+  /// via [resolveFutures]. The VM keeps executing until it hits an `await`,
+  /// then yields a `resolve_futures` progress.
+  Future<CoreProgressResult> resumeAsFuture();
+
+  /// Resolves outstanding REPL futures with their results and/or errors.
+  ///
+  /// [resultsJson] is a JSON object mapping `callId.toString()` to the
+  /// resolved value. [errorsJson] is a JSON object mapping
+  /// `callId.toString()` to an error message string (each becomes a
+  /// RuntimeError in Python). Pass an empty `'{}'` when no errors occurred.
+  Future<CoreProgressResult> resolveFutures(
+    String resultsJson,
+    String errorsJson,
+  );
+
   /// Serialises the REPL heap to postcard bytes.
   ///
   /// Throws [StateError] if the REPL is mid-execution.

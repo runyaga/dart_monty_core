@@ -447,6 +447,27 @@ abstract class WasmBindings {
     String? replId,
   });
 
+  /// Resumes the paused REPL by promising a future for the pending call.
+  ///
+  /// [replId] must match the value passed to [replCreate]. The Worker
+  /// returns a `resolve_futures` progress once the VM hits an `await`
+  /// over the promised call.
+  Future<WasmProgressResult> replResumeAsFuture({
+    required String replId,
+    int? sessionId,
+  });
+
+  /// Resolves outstanding REPL futures with [resultsJson] and
+  /// [errorsJson] (each a JSON object keyed by `callId.toString()`).
+  ///
+  /// [replId] must match the value passed to [replCreate].
+  Future<WasmProgressResult> replResolveFutures(
+    String resultsJson,
+    String errorsJson, {
+    required String replId,
+    int? sessionId,
+  });
+
   /// Resumes a name lookup by providing [valueJson] for the looked-up name.
   ///
   /// When [sessionId] is non-null, routes to that specific session instead of

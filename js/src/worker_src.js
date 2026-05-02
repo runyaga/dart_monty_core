@@ -1481,6 +1481,52 @@ function handleReplResumeNotFound(id, replId, fnName) {
   }
 }
 
+function handleReplResumeAsFuture(id, replId) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
+    return;
+  }
+  let outError = null;
+  try {
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_resume_as_future(handle, outError.ptr);
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
+  } finally {
+    if (outError) outError.free();
+  }
+}
+
+function handleReplResolveFutures(id, replId, resultsJson, errorsJson) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
+    return;
+  }
+  let cResults = null;
+  let cErrors = null;
+  let outError = null;
+  try {
+    cResults = allocCString(resultsJson);
+    cErrors = allocCString(errorsJson);
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_resume_futures(
+      handle, cResults.ptr, cErrors.ptr, outError.ptr,
+    );
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
+  } finally {
+    if (cResults) wasm.monty_dealloc(cResults.ptr, cResults.size);
+    if (cErrors) wasm.monty_dealloc(cErrors.ptr, cErrors.size);
+    if (outError) outError.free();
+  }
+}
+
 function handleReplDetectContinuation(id, source) {
   let cSource = null;
   try {
@@ -1691,6 +1737,12 @@ self.onmessage = (e) => {
         break;
       case 'replResumeNotFound':
         handleReplResumeNotFound(id, replId, fnName);
+        break;
+      case 'replResumeAsFuture':
+        handleReplResumeAsFuture(id, replId);
+        break;
+      case 'replResolveFutures':
+        handleReplResolveFutures(id, replId, resultsJson, errorsJson);
         break;
       case 'replDetectContinuation':
         handleReplDetectContinuation(id, source);
