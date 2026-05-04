@@ -40,8 +40,8 @@ if (errors.isNotEmpty) return;
 final result = await Monty(llmCode).run(
   inputs: {'temperatureC': 22},
   externalFunctions: {
-    'fetchWeather': (args) async => weatherApi.get(args['_0'] as String),
-    'log': (args) async { logger.info(args['_0']); return null; },
+    'fetchWeather': (args, _) async => weatherApi.get(args[0] as String),
+    'log': (args, _) async { logger.info(args[0]); return null; },
   },
   limits: const MontyLimits(memoryBytes: 32 << 20, timeoutMs: 5000),
 );
@@ -75,7 +75,7 @@ await repl.dispose();
 | | |
 |---|---|
 | `Monty(code, {scriptName})` | Hold source as a re-runnable program |
-| `run({inputs, externalFunctions, limits, osHandler, printCallback})` | Run in a fresh interpreter |
+| `run({inputs, externalFunctions, externalAsyncFunctions, limits, osHandler, printCallback})` | Run in a fresh interpreter |
 | `Monty.exec(code, {…})` | One-shot wrapper |
 | `Monty.compile(code)` / `Monty.runPrecompiled(bytes, {…})` | Pre-compile and replay |
 | `Monty.typeCheck(code, {prefixCode, scriptName})` | Static type analysis → `List<MontyTypingError>` |
@@ -85,8 +85,8 @@ await repl.dispose();
 | | |
 |---|---|
 | `MontyRepl({scriptName, preamble})` | Auto-detected backend |
-| `feedRun(code, {inputs, externalFunctions, osHandler, printCallback})` | State persists |
-| `feedStart(code) + resume / resumeWithError` | Iterative externals + OS calls |
+| `feedRun(code, {inputs, externalFunctions, externalAsyncFunctions, osHandler, printCallback})` | State persists |
+| `feedStart(code, {externalFunctions, externalAsyncFunctions, …}) + resume / resumeWithError` | Iterative externals + OS calls |
 | `detectContinuation(code)` | `>>>` vs `...` mode |
 | `snapshot()` / `restore(bytes)` | Serialise / restore the heap |
 | `clearState()` / `dispose()` | Wipe / free |
@@ -184,7 +184,8 @@ await Monty('x is None').run(inputs: {'x': const MontyNone()});
 
 `inputs:` is a textual prepend, so it composes with **any** script —
 including ones that use `async def` / `await` / `asyncio.gather`. Pure-
-Python async (no Dart externals) works at every API layer with no flag:
+Python async (no Dart externals) works at every API layer with no extra
+setup:
 
 ```dart
 await Monty('''
@@ -194,23 +195,24 @@ await double()
 // → MontyInt(42)
 ```
 
-For a script that `await`s a Dart-registered external function, opt
-into the futures path with `useFutures: true`:
+For a script that `await`s a Dart-registered external function, register
+it under `externalAsyncFunctions` instead of `externalFunctions`:
 
 ```dart
 await Monty('result = await fetch(key)\nresult').run(
   inputs: {'key': 'token'},
-  externalFunctions: {'fetch': (args) async => 'value-for-${args['_0']}'},
-  useFutures: true,
+  externalAsyncFunctions: {
+    'fetch': (args, _) async => 'value-for-${args[0]}',
+  },
 );
 // → MontyString('value-for-token')
 ```
 
-The flag also enables concurrent dispatch — `asyncio.gather(fetch(a),
-fetch(b), fetch(c))` fires all three callbacks before the first
-`MontyResolveFutures`, then resolves them in argument order. Default is
-`false` for back-compat (callbacks resolve eagerly Dart-side; Python
-`await ext()` raises `TypeError` on the eager value).
+`asyncio.gather` over multiple `externalAsyncFunctions` callbacks runs
+them concurrently — all callbacks fire before the first
+`MontyResolveFutures`, then resolve in argument order. Callbacks in
+`externalFunctions` resolve eagerly Dart-side; Python `await ext()` on
+one of those raises `TypeError`.
 
 For the cell-by-cell contract across every API layer × backend, see
 [`docs/deep-dives/async-matrix.md`][async-matrix].
@@ -219,22 +221,35 @@ For the cell-by-cell contract across every API layer × backend, see
 
 ### External functions
 
-Python calls Dart callbacks by name. Positional args at `_0`, `_1`, …;
-kwargs by Python name. Sync or async.
+Python calls Dart callbacks by name. The callback signature is
+`(List<Object?> args, Map<String, Object?>? kwargs)` — positional args
+by index, keyword args by name.
 
 ```dart
 await Monty('compute("mul", 6, 7)').run(externalFunctions: {
-  'compute': (args) async => switch (args['_0']) {
-    'mul' => (args['_1'] as int) * (args['_2'] as int),
+  'compute': (args, _) async => switch (args[0]) {
+    'mul' => (args[1] as int) * (args[2] as int),
     _ => 0,
   },
 });
 ```
 
-A callback returning a `Future` is awaited and resolved
-synchronously from Python's perspective — see *Inputs injection →
-Async scripts* for the await-able variant pending on
-`feat/repl-future-capable`.
+Use `externalAsyncFunctions` when Python needs to `await` the result
+directly or when you want concurrent dispatch via `asyncio.gather`:
+
+```dart
+await Monty('result = await fetch(key)').run(
+  inputs: {'key': 'token'},
+  externalAsyncFunctions: {
+    'fetch': (args, _) async => 'value-for-${args[0]}',
+  },
+);
+```
+
+Callbacks in `externalFunctions` are awaited Dart-side before Python
+resumes (sync from Python's perspective). Callbacks in
+`externalAsyncFunctions` hand Python a coroutine — Python `await`s it,
+and `asyncio.gather` over multiple such calls runs them concurrently.
 
 ### OS calls
 
@@ -361,6 +376,18 @@ cp "$SRC/lib/assets/dart_monty_core_native.wasm" web/
 External functions can't be called from inside iterator-consuming C
 builtins — `map(ext_fn, …)`, `filter(ext_fn, …)`, `sorted(…, key=ext_fn)`
 raise `RuntimeError` upstream. First-class references work everywhere else.
+
+## Stability and versioning
+
+This package does **not** follow semantic versioning. Breaking changes can
+land in any release. The [CHANGELOG](CHANGELOG.md) is kept up-to-date with
+every breaking change, so pin to a specific version and read the changelog
+before upgrading.
+
+We expect to stabilise the API and adopt semver when the package goes into
+production — roughly 1–3 months from now. If you are planning to depend on
+this package, please open an issue so we can factor your use-case into the
+stabilisation work.
 
 ## License
 
