@@ -5,10 +5,12 @@ export 'package:dart_monty_core/src/platform/os_call_exception.dart';
 
 /// A callback invoked when Python calls a registered host function.
 ///
-/// Receives the named arguments map from Python. Return value is
-/// serialized back to Python as the function's return value.
+/// [args] are the positional arguments in call order; [kwargs] are the
+/// keyword arguments by name (`null` when the call site used no kwargs).
+/// Return value is serialized back to Python as the function's return value.
 /// Return `null` to return `None` to Python.
-typedef MontyCallback = Future<Object?> Function(Map<String, Object?> args);
+typedef MontyCallback =
+    Future<Object?> Function(List<Object?> args, Map<String, Object?>? kwargs);
 
 /// A callback invoked when Python performs an OS operation (filesystem,
 /// environment, datetime).

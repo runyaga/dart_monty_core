@@ -33,7 +33,7 @@ MontyComplete _buildCompleteProgress(CoreProgressResult p) => MontyComplete(
 
 MontyPending _buildPendingProgress(CoreProgressResult p) => MontyPending(
   functionName: p.functionName ?? '',
-  arguments: _parseReplArgList(p.arguments),
+  args: _parseReplArgList(p.arguments),
   kwargs: _parseReplKwargMap(p.kwargs),
   callId: p.callId ?? 0,
   methodCall: p.methodCall ?? false,
@@ -41,7 +41,7 @@ MontyPending _buildPendingProgress(CoreProgressResult p) => MontyPending(
 
 MontyOsCall _buildOsCallProgress(CoreProgressResult p) => MontyOsCall(
   operationName: p.functionName ?? '',
-  arguments: _parseReplArgList(p.arguments),
+  args: _parseReplArgList(p.arguments),
   kwargs: _parseReplKwargMap(p.kwargs),
   callId: p.callId ?? 0,
 );
@@ -79,21 +79,6 @@ List<MontyValue> _parseReplArgList(List<Object?>? args) =>
 
 Map<String, MontyValue>? _parseReplKwargMap(Map<String, Object?>? kwargs) =>
     kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v)));
-
-Map<String, Object?> _replArgsToMap(
-  List<MontyValue> positional,
-  Map<String, MontyValue>? kwargs,
-) {
-  final result = <String, Object?>{};
-  if (kwargs != null) {
-    result.addAll(kwargs.map((k, v) => MapEntry(k, v.dartValue)));
-  }
-  for (var i = 0; i < positional.length; i++) {
-    result['_$i'] = positional[i].dartValue;
-  }
-
-  return result;
-}
 
 /// A stateful REPL session backed by the Monty Rust interpreter.
 ///
@@ -463,11 +448,11 @@ class MontyRepl {
               // future, and tell the engine to keep running until it hits an
               // `await`. The engine will surface MontyResolveFutures with
               // the call IDs it now needs values for.
-              final args = _replArgsToMap(
-                progress.arguments,
-                progress.kwargs,
+              final cbArgs = progress.args.map((v) => v.dartValue).toList();
+              final cbKwargs = progress.kwargs?.map(
+                (k, v) => MapEntry(k, v.dartValue),
               );
-              final fut = Future<Object?>(() => asyncCb(args));
+              final fut = Future<Object?>(() => asyncCb(cbArgs, cbKwargs));
               pendingFutures[callId] = fut;
               // Suppress "unhandled async error" — errors are caught and
               // surfaced via the errors map during resolveFutures.
@@ -475,11 +460,11 @@ class MontyRepl {
               progress = _translateProgress(await _bindings.resumeAsFuture());
             } else {
               try {
-                final args = _replArgsToMap(
-                  progress.arguments,
-                  progress.kwargs,
+                final cbArgs = progress.args.map((v) => v.dartValue).toList();
+                final cbKwargs = progress.kwargs?.map(
+                  (k, v) => MapEntry(k, v.dartValue),
                 );
-                final res = await syncCb!(args);
+                final res = await syncCb!(cbArgs, cbKwargs);
                 progress = _translateProgress(
                   await _bindings.resume(jsonEncode(res)),
                 );
@@ -587,7 +572,7 @@ class MontyRepl {
       );
     }
     try {
-      final args = call.arguments.map((v) => v.dartValue).toList();
+      final args = call.args.map((v) => v.dartValue).toList();
       final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
       final result = await handler(call.operationName, args, kwargs);
 

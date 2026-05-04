@@ -815,7 +815,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
 
         case MontyPending(
           :final functionName,
-          :final arguments,
+          :final args,
           :final callId,
           :final kwargs,
           :final methodCall,
@@ -823,7 +823,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
           if (functionName == 'async_call') {
             // Echo function: store the result and convert to a future so the
             // engine can continue running other coroutines in the same gather.
-            pendingResults[callId] = _montyValueToDart(arguments.first);
+            pendingResults[callId] = _montyValueToDart(args.first);
             try {
               progress = await (platform as MontyFutureCapable)
                   .resumeAsFuture();
@@ -839,7 +839,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
               // Unknown public method on external dataclass — raise
               // AttributeError so Python try/except blocks can catch it.
               final typeName =
-                  (arguments.firstOrNull as MontyDataclass?)?.name ?? 'object';
+                  (args.firstOrNull as MontyDataclass?)?.name ?? 'object';
               try {
                 progress = await platform.resumeWithException(
                   'AttributeError',
@@ -857,11 +857,11 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
             final isRaiseError = functionName == 'raise_error';
             try {
               if (isRaiseError) {
-                final excType = (arguments.first as MontyString).value;
-                final msg = (arguments[1] as MontyString).value;
+                final excType = (args.first as MontyString).value;
+                final msg = (args[1] as MontyString).value;
                 progress = await platform.resumeWithException(excType, msg);
               } else {
-                final ret = _dispatch(functionName, arguments, kwargs);
+                final ret = _dispatch(functionName, args, kwargs);
                 progress = await platform.resume(ret);
               }
             } on MontyScriptError catch (e) {
@@ -875,13 +875,13 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
 
         case MontyOsCall(
           :final operationName,
-          :final arguments,
+          :final args,
           :final kwargs,
         ):
           Object? osRet;
           _OsError? osErr;
           try {
-            osRet = _osDispatch(operationName, arguments, kwargs, vfs);
+            osRet = _osDispatch(operationName, args, kwargs, vfs);
           } on _OsError catch (e) {
             osErr = e;
           }

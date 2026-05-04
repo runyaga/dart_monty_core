@@ -136,7 +136,7 @@ final class MockCallHistory {
 /// For [start], [resume], and [resumeWithError], enqueue progress values
 /// using [enqueueProgress]:
 /// ```dart
-/// mock.enqueueProgress(MontyPending(functionName: 'fetch', arguments: []));
+/// mock.enqueueProgress(MontyPending(functionName: 'fetch', args: []));
 /// mock.enqueueProgress(MontyComplete(result: result));
 /// ```
 class MockMontyPlatform extends MontyPlatform

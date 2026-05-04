@@ -48,7 +48,7 @@ void runMontyCompileRunTests() {
       final r = await program.run(
         inputs: {'value': 7},
         externalFunctions: {
-          'double': (args) async => (args['_0']! as int) * 2,
+          'double': (args, _) async => (args[0]! as int) * 2,
         },
       );
       expect(r.error, isNull);

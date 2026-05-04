@@ -22,7 +22,7 @@ void runReplExtFnsLifecycleTests() {
         await repl.feedRun(
           'x = fetch(1)',
           externalFunctions: {
-            'fetch': (args) async => (args['_0']! as int) * 10,
+            'fetch': (args, _) async => (args[0]! as int) * 10,
           },
         );
 
@@ -43,7 +43,7 @@ void runReplExtFnsLifecycleTests() {
         // Iterative path: register `fetch`.
         await repl.feedRun(
           'x = fetch(7)',
-          externalFunctions: {'fetch': (args) async => args['_0']},
+          externalFunctions: {'fetch': (args, _) => Future.value(args[0])},
         );
 
         // Fast-path feed (no externalFunctions, no osHandler)
@@ -66,14 +66,14 @@ void runReplExtFnsLifecycleTests() {
         // Feed 1: register `a`.
         await repl.feedRun(
           'r = a(5)',
-          externalFunctions: {'a': (args) async => (args['_0']! as int) + 1},
+          externalFunctions: {'a': (args, _) async => (args[0]! as int) + 1},
         );
 
         // Feed 2: register `b` instead. `a` must no longer resolve
         // when referenced again.
         await repl.feedRun(
           'r = b(5)',
-          externalFunctions: {'b': (args) async => (args['_0']! as int) * 2},
+          externalFunctions: {'b': (args, _) async => (args[0]! as int) * 2},
         );
 
         final r = await repl.feedRun('r = a(5)');

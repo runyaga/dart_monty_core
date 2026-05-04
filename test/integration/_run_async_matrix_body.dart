@@ -20,10 +20,10 @@ void runRunAsyncMatrixTests() {
       var calls = 0;
       final r = await Monty('fetch(7)').run(
         externalFunctions: {
-          'fetch': (args) {
+          'fetch': (args, _) {
             calls++;
 
-            return Future.value((args['_0']! as int) + 1);
+            return Future.value((args[0]! as int) + 1);
           },
         },
       );
@@ -38,11 +38,11 @@ void runRunAsyncMatrixTests() {
       var calls = 0;
       final r = await Monty('fetch(7)').run(
         externalFunctions: {
-          'fetch': (args) async {
+          'fetch': (args, _) async {
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return (args['_0']! as int) + 1;
+            return (args[0]! as int) + 1;
           },
         },
       );
@@ -62,10 +62,10 @@ async def doubled(n):
 await doubled(3)
 ''').run(
             externalFunctions: {
-              'fetch': (args) {
+              'fetch': (args, _) {
                 calls++;
 
-                return Future.value(args['_0']);
+                return Future.value(args[0]);
               },
             },
           );
@@ -85,11 +85,11 @@ async def doubled(n):
 await doubled(3)
 ''').run(
             externalFunctions: {
-              'fetch': (args) async {
+              'fetch': (args, _) async {
                 calls++;
                 await Future<void>.delayed(Duration.zero);
 
-                return args['_0'];
+                return args[0];
               },
             },
           );
@@ -107,11 +107,11 @@ await doubled(3)
         var calls = 0;
         final r = await Monty('await fetch("token")').run(
           externalAsyncFunctions: {
-            'fetch': (args) async {
+            'fetch': (args, _) async {
               calls++;
               await Future<void>.delayed(Duration.zero);
 
-              return 'value-for-${args['_0']}';
+              return 'value-for-${args[0]}';
             },
           },
         );
@@ -133,8 +133,8 @@ results = await asyncio.gather(fetch(1), fetch(2), fetch(3))
 results
 ''').run(
               externalAsyncFunctions: {
-                'fetch': (args) async {
-                  final n = args['_0']! as int;
+                'fetch': (args, _) async {
+                  final n = args[0]! as int;
                   fired.add(n);
                   await Future<void>.delayed(Duration.zero);
 
@@ -155,7 +155,7 @@ results
       'externalFunctions (sync): Python `await ext()` still raises TypeError',
       () async {
         final r = await Monty('await fetch(1)').run(
-          externalFunctions: {'fetch': (args) => Future.value(args['_0'])},
+          externalFunctions: {'fetch': (args, _) => Future.value(args[0])},
         );
 
         expect(r.error, isNotNull);
@@ -175,10 +175,10 @@ result
 ''').run(
               inputs: {'seed': 'alice'},
               externalAsyncFunctions: {
-                'fetch': (args) async {
+                'fetch': (args, _) async {
                   await Future<void>.delayed(Duration.zero);
 
-                  return 'hello, ${args['_0']}';
+                  return 'hello, ${args[0]}';
                 },
               },
             );

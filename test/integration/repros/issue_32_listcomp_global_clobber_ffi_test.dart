@@ -26,7 +26,7 @@ import '_xfail.dart';
 void main() {
   group('issue #32 — list-comp external survives repeat feedRun calls', () {
     Map<String, MontyCallback> externals() => {
-      'sync_fn': (_) async => 'sync_ok',
+      'sync_fn': (_, _) async => 'sync_ok',
     };
 
     test(

@@ -86,7 +86,7 @@ void runReplSnapshotLifecycleTests() {
       // dispatched.
       final r = await repl.feedRun(
         'r = double(21)',
-        externalFunctions: {'double': (args) async => (args['_0']! as int) * 2},
+        externalFunctions: {'double': (args, _) async => (args[0]! as int) * 2},
       );
       expect(r.error, isNull);
 
