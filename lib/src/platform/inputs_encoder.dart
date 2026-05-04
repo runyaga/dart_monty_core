@@ -5,8 +5,7 @@
 library;
 
 import 'package:dart_monty_core/src/platform/monty_internal_error.dart';
-import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show MontyNone;
+import 'package:dart_monty_core/src/platform/monty_value.dart' show MontyNone;
 
 /// Converts a Dart value to a Python source literal.
 ///
