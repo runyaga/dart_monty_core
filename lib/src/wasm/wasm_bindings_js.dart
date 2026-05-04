@@ -801,7 +801,7 @@ class WasmBindingsJs extends WasmBindings {
       value: map['value'],
       printOutput: map['print_output'] as String?,
       functionName: map['functionName'] as String?,
-      arguments: args != null ? List<Object?>.from(args) : null,
+      args: args != null ? List<Object?>.from(args) : null,
       kwargs: rawKwargs != null ? Map.from(rawKwargs) : null,
       callId: map['callId'] as int?,
       methodCall: map['methodCall'] as bool?,

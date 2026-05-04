@@ -375,7 +375,7 @@ class FfiCoreBindings implements MontyCoreBindings {
     return CoreProgressResult(
       state: 'pending',
       functionName: progress.functionName ?? '',
-      arguments: args,
+      args: args,
       kwargs: kwargs,
       callId: progress.callId ?? 0,
       methodCall: progress.methodCall ?? false,
@@ -441,7 +441,7 @@ class FfiCoreBindings implements MontyCoreBindings {
     return CoreProgressResult(
       state: 'os_call',
       functionName: progress.functionName ?? '',
-      arguments: args,
+      args: args,
       kwargs: kwargs,
       callId: progress.callId ?? 0,
     );

@@ -212,7 +212,7 @@ class WasmReplBindings implements ReplBindings {
       CoreProgressResult(
         state: 'pending',
         functionName: r.functionName,
-        arguments: r.arguments,
+        args: r.args,
         kwargs: r.kwargs,
         callId: r.callId,
         methodCall: r.methodCall,
@@ -222,7 +222,7 @@ class WasmReplBindings implements ReplBindings {
       CoreProgressResult(
         state: 'os_call',
         functionName: r.functionName,
-        arguments: r.arguments,
+        args: r.args,
         kwargs: r.kwargs,
         callId: r.callId,
       );

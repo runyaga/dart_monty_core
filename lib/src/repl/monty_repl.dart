@@ -33,7 +33,7 @@ MontyComplete _buildCompleteProgress(CoreProgressResult p) => MontyComplete(
 
 MontyPending _buildPendingProgress(CoreProgressResult p) => MontyPending(
   functionName: p.functionName ?? '',
-  args: _parseReplArgList(p.arguments),
+  args: _parseReplArgList(p.args),
   kwargs: _parseReplKwargMap(p.kwargs),
   callId: p.callId ?? 0,
   methodCall: p.methodCall ?? false,
@@ -41,7 +41,7 @@ MontyPending _buildPendingProgress(CoreProgressResult p) => MontyPending(
 
 MontyOsCall _buildOsCallProgress(CoreProgressResult p) => MontyOsCall(
   operationName: p.functionName ?? '',
-  args: _parseReplArgList(p.arguments),
+  args: _parseReplArgList(p.args),
   kwargs: _parseReplKwargMap(p.kwargs),
   callId: p.callId ?? 0,
 );
@@ -464,7 +464,7 @@ class MontyRepl {
                 final cbKwargs = progress.kwargs?.map(
                   (k, v) => MapEntry(k, v.dartValue),
                 );
-                final res = await syncCb!(cbArgs, cbKwargs);
+                final res = await cb(cbArgs, cbKwargs);
                 progress = _translateProgress(
                   await _bindings.resume(jsonEncode(res)),
                 );
