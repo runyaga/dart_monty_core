@@ -3,7 +3,7 @@
 // `Monty.run` wraps `MontyRepl.feedRun` in a one-shot REPL lifecycle. The
 // matrix here mirrors the Layer 2 cells but exercises the public one-shot
 // surface — proves the wrapper preserves the contract (no leakage,
-// no extra serialisation steps, useFutures threads through).
+// no extra serialisation steps, externalAsyncFunctions threads through).
 //
 // Both `ffi_run_async_matrix_test.dart` and
 // `wasm_run_async_matrix_test.dart` call [runRunAsyncMatrixTests].
@@ -99,58 +99,63 @@ await doubled(3)
       expect(calls, 1);
     });
 
-    // matrix-cell: (async Dart) × (Python `await ext()`) — useFutures: true
-    test('cell 5a: useFutures=true wires Python `await fetch(x)`', () async {
-      var calls = 0;
-      final r = await Monty('await fetch("token")').run(
-        externalFunctions: {
-          'fetch': (args) async {
-            calls++;
-            await Future<void>.delayed(Duration.zero);
+    // matrix-cell: (async Dart) × (Python `await ext()`) — register the
+    // callback in externalAsyncFunctions so _driveLoop uses resumeAsFuture.
+    test(
+      'cell 5a: externalAsyncFunctions wires Python `await fetch(x)`',
+      () async {
+        var calls = 0;
+        final r = await Monty('await fetch("token")').run(
+          externalAsyncFunctions: {
+            'fetch': (args) async {
+              calls++;
+              await Future<void>.delayed(Duration.zero);
 
-            return 'value-for-${args['_0']}';
+              return 'value-for-${args['_0']}';
+            },
           },
-        },
-        useFutures: true,
-      );
+        );
 
-      expect(r.error, isNull);
-      expect(r.value.dartValue, 'value-for-token');
-      expect(calls, 1);
-    });
+        expect(r.error, isNull);
+        expect(r.value.dartValue, 'value-for-token');
+        expect(calls, 1);
+      },
+    );
 
-    test('cell 5b: useFutures=true + asyncio.gather over externals', () async {
-      final fired = <int>[];
-      final r =
-          await Monty('''
+    test(
+      'cell 5b: externalAsyncFunctions + asyncio.gather over externals',
+      () async {
+        final fired = <int>[];
+        final r =
+            await Monty('''
 import asyncio
 results = await asyncio.gather(fetch(1), fetch(2), fetch(3))
 results
 ''').run(
-            externalFunctions: {
-              'fetch': (args) async {
-                final n = args['_0']! as int;
-                fired.add(n);
-                await Future<void>.delayed(Duration.zero);
+              externalAsyncFunctions: {
+                'fetch': (args) async {
+                  final n = args['_0']! as int;
+                  fired.add(n);
+                  await Future<void>.delayed(Duration.zero);
 
-                return n * 10;
+                  return n * 10;
+                },
               },
-            },
-            useFutures: true,
-          );
+            );
 
-      expect(r.error, isNull);
-      expect(r.value.dartValue, [10, 20, 30]);
-      expect(fired.toSet(), {1, 2, 3});
-    });
+        expect(r.error, isNull);
+        expect(r.value.dartValue, [10, 20, 30]);
+        expect(fired.toSet(), {1, 2, 3});
+      },
+    );
 
-    // Default-off back-compat: Python `await ext()` raises TypeError when
-    // useFutures is not opted in.
+    // Back-compat: handler in externalFunctions (sync) → Python `await ext()`
+    // still raises TypeError.
     test(
-      'useFutures=false: Python `await ext()` still raises TypeError',
+      'externalFunctions (sync): Python `await ext()` still raises TypeError',
       () async {
         final r = await Monty('await fetch(1)').run(
-          externalFunctions: {'fetch': (args) async => args['_0']},
+          externalFunctions: {'fetch': (args) => Future.value(args['_0'])},
         );
 
         expect(r.error, isNotNull);
@@ -158,10 +163,10 @@ results
       },
     );
 
-    // Inputs + useFutures interplay — the new flag must not break the
-    // existing inputs: parameter.
+    // externalAsyncFunctions + inputs interplay — confirm the two parameters
+    // compose correctly.
     test(
-      'useFutures + inputs: inputs visible inside awaited external script',
+      'externalAsyncFunctions + inputs: inputs visible inside awaited external',
       () async {
         final r =
             await Monty('''
@@ -169,14 +174,13 @@ result = await fetch(seed)
 result
 ''').run(
               inputs: {'seed': 'alice'},
-              externalFunctions: {
+              externalAsyncFunctions: {
                 'fetch': (args) async {
                   await Future<void>.delayed(Duration.zero);
 
                   return 'hello, ${args['_0']}';
                 },
               },
-              useFutures: true,
             );
 
         expect(r.error, isNull);

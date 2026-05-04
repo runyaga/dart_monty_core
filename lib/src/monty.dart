@@ -61,20 +61,20 @@ class Monty {
   Future<MontyResult> run({
     Map<String, Object?>? inputs,
     Map<String, MontyCallback> externalFunctions = const {},
+    Map<String, MontyCallback> externalAsyncFunctions = const {},
     MontyLimits? limits,
     OsCallHandler? osHandler,
     void Function(String stream, String text)? printCallback,
-    bool useFutures = false,
   }) async {
     final repl = MontyRepl(scriptName: _scriptName);
     try {
       return await repl.feedRun(
         _code,
         externalFunctions: externalFunctions,
+        externalAsyncFunctions: externalAsyncFunctions,
         osHandler: osHandler,
         inputs: inputs,
         printCallback: printCallback,
-        useFutures: useFutures,
       );
     } finally {
       await repl.dispose();
@@ -159,17 +159,17 @@ class Monty {
     String code, {
     Map<String, Object?>? inputs,
     Map<String, MontyCallback> externalFunctions = const {},
+    Map<String, MontyCallback> externalAsyncFunctions = const {},
     MontyLimits? limits,
     String scriptName = 'main.py',
     OsCallHandler? osHandler,
     void Function(String stream, String text)? printCallback,
-    bool useFutures = false,
   }) => Monty(code, scriptName: scriptName).run(
     inputs: inputs,
     externalFunctions: externalFunctions,
+    externalAsyncFunctions: externalAsyncFunctions,
     limits: limits,
     osHandler: osHandler,
     printCallback: printCallback,
-    useFutures: useFutures,
   );
 }

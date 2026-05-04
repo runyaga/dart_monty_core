@@ -175,13 +175,22 @@ class MontyRepl {
   Future<MontyResult> feedRun(
     String code, {
     Map<String, MontyCallback> externalFunctions = const {},
+    Map<String, MontyCallback> externalAsyncFunctions = const {},
     OsCallHandler? osHandler,
     Map<String, Object?>? inputs,
     void Function(String stream, String text)? printCallback,
-    bool useFutures = false,
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
+    final overlap = externalFunctions.keys.toSet().intersection(
+      externalAsyncFunctions.keys.toSet(),
+    );
+    if (overlap.isNotEmpty) {
+      throw ArgumentError(
+        'externalFunctions and externalAsyncFunctions must be disjoint; '
+        'overlapping keys: $overlap',
+      );
+    }
     final effectiveCode = inputs != null && inputs.isNotEmpty
         ? '${inputs_encoder.inputsToCode(inputs)}\n$code'
         : code;
@@ -191,10 +200,15 @@ class MontyRepl {
     // this, names registered in a previous feed leak into the next
     // feed's NameLookup auto-resolve and surface as a confusing
     // "no handler registered" error instead of NameError.
-    await _bindings.setExtFns(externalFunctions.keys.toList());
+    await _bindings.setExtFns([
+      ...externalFunctions.keys,
+      ...externalAsyncFunctions.keys,
+    ]);
 
     try {
-      if (externalFunctions.isEmpty && osHandler == null) {
+      if (externalFunctions.isEmpty &&
+          externalAsyncFunctions.isEmpty &&
+          osHandler == null) {
         // Fast path: no externalFunctions, use simple feedRun.
         final r = await _bindings.feedRun(effectiveCode);
         _pending = false;
@@ -223,8 +237,8 @@ class MontyRepl {
       final result = await _driveLoop(
         initial,
         externalFunctions,
+        externalAsyncFunctions,
         osHandler,
-        useFutures: useFutures,
       );
       _emitPrintOutput(printCallback, result.printOutput);
 
@@ -420,12 +434,12 @@ class MontyRepl {
   Future<MontyResult> _driveLoop(
     MontyProgress initial,
     Map<String, MontyCallback> externalFunctions,
-    OsCallHandler? osHandler, {
-    bool useFutures = false,
-  }) async {
-    // Per-call map of pending callback futures keyed by callId. Only
-    // populated when [useFutures] is true; cleaned up by the
-    // [MontyResolveFutures] branch as it drains them.
+    Map<String, MontyCallback> externalAsyncFunctions,
+    OsCallHandler? osHandler,
+  ) async {
+    // Per-call map of pending futures keyed by callId. Populated only for
+    // callbacks registered in externalAsyncFunctions; drained by the
+    // MontyResolveFutures branch.
     final pendingFutures = <int, Future<Object?>>{};
 
     var progress = initial;
@@ -435,14 +449,16 @@ class MontyRepl {
           case MontyComplete(:final result):
             return result;
           case MontyPending(:final functionName, :final callId):
-            final cb = externalFunctions[functionName];
+            final asyncCb = externalAsyncFunctions[functionName];
+            final syncCb = externalFunctions[functionName];
+            final cb = asyncCb ?? syncCb;
             if (cb == null) {
               progress = _translateProgress(
                 await _bindings.resumeWithError(
                   'No handler registered for: $functionName',
                 ),
               );
-            } else if (useFutures) {
+            } else if (asyncCb != null) {
               // Futures path: launch the callback unawaited, register the
               // future, and tell the engine to keep running until it hits an
               // `await`. The engine will surface MontyResolveFutures with
@@ -451,7 +467,7 @@ class MontyRepl {
                 progress.arguments,
                 progress.kwargs,
               );
-              final fut = Future<Object?>(() => cb(args));
+              final fut = Future<Object?>(() => asyncCb(args));
               pendingFutures[callId] = fut;
               // Suppress "unhandled async error" — errors are caught and
               // surfaced via the errors map during resolveFutures.
@@ -463,7 +479,7 @@ class MontyRepl {
                   progress.arguments,
                   progress.kwargs,
                 );
-                final res = await cb(args);
+                final res = await syncCb!(args);
                 progress = _translateProgress(
                   await _bindings.resume(jsonEncode(res)),
                 );
@@ -476,9 +492,9 @@ class MontyRepl {
           case MontyOsCall():
             progress = await _handleOsCall(progress, osHandler);
           case MontyResolveFutures(:final pendingCallIds):
-            if (!useFutures) {
-              // Sync dispatch path was used — there's nothing to resolve
-              // batch-wise. Resume with null so the engine can advance.
+            if (pendingFutures.isEmpty) {
+              // No async callbacks were registered — nothing to resolve.
+              // Resume with null so the engine can advance.
               progress = _translateProgress(await _bindings.resume('null'));
               break;
             }

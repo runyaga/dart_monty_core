@@ -108,67 +108,71 @@ await doubled(3)
       expect(calls, 1);
     });
 
-    // matrix-cell: (async Dart) × (Python `await ext()`) — the key cell
-    // requires `useFutures: true`.
-    test('cell 5a: useFutures=true wires Python `await fetch(x)`', () async {
-      var calls = 0;
-      final r = await repl.feedRun(
-        'await fetch("token")',
-        externalFunctions: {
-          'fetch': (args) async {
-            calls++;
-            await Future<void>.delayed(Duration.zero);
+    // matrix-cell: (async Dart) × (Python `await ext()`) — register the
+    // callback in externalAsyncFunctions so _driveLoop uses resumeAsFuture.
+    test(
+      'cell 5a: externalAsyncFunctions wires Python `await fetch(x)`',
+      () async {
+        var calls = 0;
+        final r = await repl.feedRun(
+          'await fetch("token")',
+          externalAsyncFunctions: {
+            'fetch': (args) async {
+              calls++;
+              await Future<void>.delayed(Duration.zero);
 
-            return 'value-for-${args['_0']}';
+              return 'value-for-${args['_0']}';
+            },
           },
-        },
-        useFutures: true,
-      );
+        );
 
-      expect(r.error, isNull);
-      expect(r.value.dartValue, 'value-for-token');
-      expect(calls, 1);
-    });
+        expect(r.error, isNull);
+        expect(r.value.dartValue, 'value-for-token');
+        expect(calls, 1);
+      },
+    );
 
     // matrix-cell: same as 5a, but `asyncio.gather` to confirm concurrent
     // dispatch (all callbacks fire before the first MontyResolveFutures).
-    test('cell 5b: useFutures=true + asyncio.gather over externals', () async {
-      final fired = <int>[];
-      final r = await repl.feedRun(
-        '''
+    test(
+      'cell 5b: externalAsyncFunctions + asyncio.gather over externals',
+      () async {
+        final fired = <int>[];
+        final r = await repl.feedRun(
+          '''
 import asyncio
 results = await asyncio.gather(fetch(1), fetch(2), fetch(3))
 results
 ''',
-        externalFunctions: {
-          'fetch': (args) async {
-            final n = args['_0']! as int;
-            fired.add(n);
-            await Future<void>.delayed(Duration.zero);
+          externalAsyncFunctions: {
+            'fetch': (args) async {
+              final n = args['_0']! as int;
+              fired.add(n);
+              await Future<void>.delayed(Duration.zero);
 
-            return n * 10;
+              return n * 10;
+            },
           },
-        },
-        useFutures: true,
-      );
+        );
 
-      expect(r.error, isNull);
-      expect(r.value.dartValue, [10, 20, 30]);
-      // All three dispatched (in some order) before gather yielded — that's
-      // the whole point of futures-mode.
-      expect(fired.toSet(), {1, 2, 3});
-      expect(fired, hasLength(3));
-    });
+        expect(r.error, isNull);
+        expect(r.value.dartValue, [10, 20, 30]);
+        // All three dispatched (in some order) before gather yielded — that's
+        // the whole point of async dispatch.
+        expect(fired.toSet(), {1, 2, 3});
+        expect(fired, hasLength(3));
+      },
+    );
 
-    // Default (useFutures=false): Python `await ext()` MUST still raise
-    // TypeError — the legacy contract is preserved for back-compat.
+    // Back-compat: handler in externalFunctions (sync dispatch) → Python
+    // `await ext()` still raises TypeError.
     test(
-      'useFutures=false: Python `await ext()` still raises TypeError',
+      'externalFunctions (sync): Python `await ext()` still raises TypeError',
       () async {
         final r = await repl.feedRun(
           'await fetch(1)',
           externalFunctions: {
-            'fetch': (args) async => args['_0'],
+            'fetch': (args) => Future.value(args['_0']),
           },
         );
 
