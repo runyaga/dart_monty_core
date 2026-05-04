@@ -21,10 +21,10 @@ const _deepEquality = DeepCollectionEquality();
 /// switch (progress) {
 ///   case MontyComplete(:final result):
 ///     print(result.value);
-///   case MontyPending(:final functionName, :final arguments):
-///     print('Call $functionName with $arguments');
-///   case MontyOsCall(:final operationName, :final arguments):
-///     print('OS call: $operationName with $arguments');
+///   case MontyPending(:final functionName, :final args):
+///     print('Call $functionName with $args');
+///   case MontyOsCall(:final operationName, :final args):
+///     print('OS call: $operationName with $args');
 ///   case MontyResolveFutures(:final pendingCallIds):
 ///     print('Resolve futures: $pendingCallIds');
 ///   case MontyNameLookup(:final variableName):
@@ -129,7 +129,7 @@ final class MontyPending extends MontyProgress {
   /// Creates a [MontyPending] from a JSON map.
   ///
   /// Expected keys: `type` (must be `'pending'`), `function_name`,
-  /// `arguments` (list, defaults to empty if absent), `kwargs` (map,
+  /// `arguments` (list, decoded into [args]), `kwargs` (map,
   /// optional), `call_id` (int, defaults to 0), `method_call` (bool,
   /// defaults to false).
   factory MontyPending.fromJson(Map<String, dynamic> json) {
