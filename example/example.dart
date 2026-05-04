@@ -2,12 +2,13 @@
 //
 // dart_monty_core — featured example
 //
-// Covers the four main usage patterns:
+// Covers the five main usage patterns:
 //
 //  1. One-shot  — Monty.exec / Monty.run
 //  2. Inputs    — chain programs: feed one result into the next as a Python variable
 //  3. Externals — sync and async Dart callbacks from Python
 //  4. REPL      — stateful interpreter with persistent variables
+//  5. VFS       — sandboxed in-memory filesystem via Python pathlib
 //
 // Run: dart run example/example.dart
 
@@ -60,4 +61,22 @@ a + b
   final fib = await repl.feedRun('result');
   print('fib(10) = ${fib.value.dartValue}'); // 55
   await repl.dispose();
+
+  // ── 5. VFS — sandboxed in-memory filesystem ──────────────────────────────────
+  // Pre-populate a Dart Map, mount it at /data, then let Python read and
+  // write through pathlib.Path. The backing Map is ordinary Dart — inspect
+  // or update it from either side with no serialisation needed.
+  final vfs = <String, String>{'/data/input.txt': 'hello from Dart'};
+  final handler = memoryMountedOsHandler(
+    mounts: const [MountDir(virtualPath: '/data')],
+    vfs: vfs,
+  );
+
+  await Monty('''
+from pathlib import Path
+text = Path("/data/input.txt").read_text()
+Path("/data/output.txt").write_text(text.upper())
+''').run(osHandler: handler);
+
+  print(vfs['/data/output.txt']); // HELLO FROM DART
 }
