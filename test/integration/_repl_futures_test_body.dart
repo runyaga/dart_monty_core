@@ -60,6 +60,11 @@ Future<MontyComplete> _runWithFutures(
   }
 }
 
+// Matrix coverage: this body covers Layer 1 (caller-driven manual loop).
+// Every test here maps to the **(async Dart) × (Python `await ext()`)**
+// quadrant — the manual loop is the only path that exposed futures before
+// the _driveLoop fix. Per-test cell annotations below use the layer
+// numbering shared with the other matrix bodies.
 void runReplFuturesTests() {
   group('MontyRepl.resumeAsFuture / resolveFutures', () {
     late MontyRepl repl;
@@ -69,6 +74,7 @@ void runReplFuturesTests() {
 
     // --- Single await ------------------------------------------------------
 
+    // matrix-cell: Layer 1 / cell 5a (single await, value path)
     test('await of a single external returns the resolved value', () async {
       final pendings = <MontyPending>[];
       final result = await _runWithFutures(
@@ -112,6 +118,7 @@ result
     // delivery is fixed later, swap them for try/except-catches-it
     // assertions.
 
+    // matrix-cell: Layer 1 / cell 5 (single await, error path)
     test(
       'resolveFutures errors terminate the script with MontyScriptError',
       () async {
@@ -145,6 +152,7 @@ out
 
     // --- Concurrent dispatch (asyncio.gather) ------------------------------
 
+    // matrix-cell: Layer 1 / cell 5b (gather, concurrent dispatch)
     test('asyncio.gather over externals dispatches concurrently and '
         'resolves in argument order', () async {
       final dispatched = <int>[];

@@ -184,7 +184,7 @@ await Monty('x is None').run(inputs: {'x': const MontyNone()});
 
 `inputs:` is a textual prepend, so it composes with **any** script —
 including ones that use `async def` / `await` / `asyncio.gather`. Pure-
-Python async (no Dart externals) works on every release:
+Python async (no Dart externals) works at every API layer with no flag:
 
 ```dart
 await Monty('''
@@ -194,11 +194,28 @@ await double()
 // → MontyInt(42)
 ```
 
-A script that `await`s a Dart-registered external function is a
-different story today — externals resolve **synchronously** through
-`run()` / `feedRun()`, so `result = await fetch(key)` raises
-`TypeError: 'str' object can't be awaited` because `fetch` returns a
-plain string instead of a future.
+For a script that `await`s a Dart-registered external function, opt
+into the futures path with `useFutures: true`:
+
+```dart
+await Monty('result = await fetch(key)\nresult').run(
+  inputs: {'key': 'token'},
+  externalFunctions: {'fetch': (args) async => 'value-for-${args['_0']}'},
+  useFutures: true,
+);
+// → MontyString('value-for-token')
+```
+
+The flag also enables concurrent dispatch — `asyncio.gather(fetch(a),
+fetch(b), fetch(c))` fires all three callbacks before the first
+`MontyResolveFutures`, then resolves them in argument order. Default is
+`false` for back-compat (callbacks resolve eagerly Dart-side; Python
+`await ext()` raises `TypeError` on the eager value).
+
+For the cell-by-cell contract across every API layer × backend, see
+[`docs/deep-dives/async-matrix.md`][async-matrix].
+
+[async-matrix]: docs/deep-dives/async-matrix.md
 
 ### External functions
 

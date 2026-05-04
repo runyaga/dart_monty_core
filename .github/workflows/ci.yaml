@@ -286,10 +286,12 @@ jobs:
             test/integration/oracle_ffi_test.dart \
             test/integration/oracle_ffi_ext_test.dart \
             test/integration/ffi_datetime_oscall_test.dart \
+            test/integration/ffi_feedrun_async_matrix_test.dart \
             test/integration/ffi_monty_async_inputs_test.dart \
             test/integration/ffi_multi_repl_test.dart \
             test/integration/ffi_repl_futures_test.dart \
             test/integration/ffi_repl_oscall_test.dart \
+            test/integration/ffi_run_async_matrix_test.dart \
             test/integration/repros \
             -p vm --run-skipped --tags=ffi --exclude-tags=pending-futures \
             --reporter=expanded

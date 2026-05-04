@@ -64,6 +64,7 @@ class Monty {
     MontyLimits? limits,
     OsCallHandler? osHandler,
     void Function(String stream, String text)? printCallback,
+    bool useFutures = false,
   }) async {
     final repl = MontyRepl(scriptName: _scriptName);
     try {
@@ -73,6 +74,7 @@ class Monty {
         osHandler: osHandler,
         inputs: inputs,
         printCallback: printCallback,
+        useFutures: useFutures,
       );
     } finally {
       await repl.dispose();
@@ -161,11 +163,13 @@ class Monty {
     String scriptName = 'main.py',
     OsCallHandler? osHandler,
     void Function(String stream, String text)? printCallback,
+    bool useFutures = false,
   }) => Monty(code, scriptName: scriptName).run(
     inputs: inputs,
     externalFunctions: externalFunctions,
     limits: limits,
     osHandler: osHandler,
     printCallback: printCallback,
+    useFutures: useFutures,
   );
 }

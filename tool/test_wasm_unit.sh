@@ -93,6 +93,7 @@ dart test \
   --concurrency 2 \
   test/integration/wasm_dataclass_hydrate_test.dart \
   test/integration/wasm_datetime_oscall_test.dart \
+  test/integration/wasm_feedrun_async_matrix_test.dart \
   test/integration/wasm_fixture_test.dart \
   test/integration/wasm_monty_async_inputs_test.dart \
   test/integration/wasm_monty_compile_run_test.dart \
@@ -103,6 +104,7 @@ dart test \
   test/integration/wasm_repl_extfns_lifecycle_test.dart \
   test/integration/wasm_repl_futures_test.dart \
   test/integration/wasm_repl_snapshot_lifecycle_test.dart \
+  test/integration/wasm_run_async_matrix_test.dart \
   test/integration/wasm_setextfns_test.dart \
   test/integration/wasm_type_check_test.dart \
   "$@"
