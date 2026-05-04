@@ -6,7 +6,7 @@
 //   - pure-Python async (no Dart externals — works on every release)
 //   - external calls without await (the long-standing sync path —
 //     callback resolves Dart-side, Python sees the plain value)
-//   - external async with `useFutures: true` (the futures path that
+//   - external async via externalAsyncFunctions (the futures path that
 //     `_driveLoop` wires through `resumeAsFuture`/`resolveFutures` —
 //     enables Python `await ext()` and `asyncio.gather` over externals)
 //
@@ -95,14 +95,14 @@ result
       );
     });
 
-    // ----- External async via `useFutures: true` -------------------------
+    // ----- External async via externalAsyncFunctions --------------------
     // When Python uses `await fetch(...)` against a Dart external, the
     // engine needs the host to surface the call as an awaitable so Python's
-    // event loop can suspend on it. With `useFutures: true`, `_driveLoop`
-    // launches each callback as an unawaited Future, replies with
-    // `resumeAsFuture`, and batches the results back via `resolveFutures`
-    // when MontyResolveFutures fires.
-    group('external async with useFutures: true', () {
+    // event loop can suspend on it. Registering the callback in
+    // externalAsyncFunctions causes _driveLoop to launch each callback as
+    // an unawaited Future, reply with resumeAsFuture, and batch the results
+    // back via resolveFutures when MontyResolveFutures fires.
+    group('external async with externalAsyncFunctions', () {
       test('await of a Dart external returns the resolved value', () async {
         var fetchCallCount = 0;
         final r =
@@ -111,7 +111,7 @@ result = await fetch(key)
 result
 ''').run(
               inputs: {'key': 'token'},
-              externalFunctions: {
+              externalAsyncFunctions: {
                 'fetch': (args) async {
                   fetchCallCount++;
                   await Future<void>.delayed(Duration.zero);
@@ -119,7 +119,6 @@ result
                   return 'value-for-${args['_0']}';
                 },
               },
-              useFutures: true,
             );
 
         expect(r.error, isNull);
@@ -142,7 +141,7 @@ results = await asyncio.gather(
 results
 ''').run(
                 inputs: {'a': 1, 'b': 2, 'c': 3},
-                externalFunctions: {
+                externalAsyncFunctions: {
                   'fetch': (args) async {
                     final n = args['_0']! as int;
                     calls.add(n);
@@ -151,7 +150,6 @@ results
                     return n * 10;
                   },
                 },
-                useFutures: true,
               );
 
           expect(r.error, isNull);
