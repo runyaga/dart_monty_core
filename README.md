@@ -129,10 +129,86 @@ Build from Dart with `MontyValue.fromDart(value)`.
 | `MontySyntaxError` | Python parse error (subtype of `MontyScriptError`) |
 | `MontyScriptError` | Python runtime exception |
 | `MontyResourceError` | Limit exceeded (memory / stack / timeout) |
+| `MontyInternalError` | API misuse (extends `Error`, not `Exception`, so it can't be swallowed by `on Exception`) |
 
 `run()` / `feedRun()` surface Python-level exceptions in `MontyResult.error`
-rather than throwing — the interpreter stays alive. Resource limits and
-disposal still throw.
+rather than throwing — the interpreter stays alive. Resource limits,
+disposal, and `MontyInternalError` still throw.
+
+### Inputs injection
+
+`run({inputs: {…}})` and `feedRun({inputs: {…}})` accept a
+`Map<String, Object?>` of per-call variables. Each entry is converted to
+a Python literal via [`toPythonLiteral`][te] and prepended to the script
+as an assignment statement, so the value is bound as a top-level Python
+name *before* user code runs.
+
+```dart
+final r = await Monty('greeting + ", " + name + "!"').run(inputs: {
+  'greeting': 'hello',
+  'name': 'Alice',
+});
+// r.value.dartValue == 'hello, Alice!'
+```
+
+Each call gets a fresh injection — `inputs` is **not** durable state.
+Use `MontyRepl.feedRun(code, inputs: {…})` for the stateful equivalent;
+inputs there are also re-bound per call, but anything else assigned by
+the script persists across calls.
+
+**Convertible types** — `bool`, `int`, `double` (incl. `nan` / `inf`),
+`String`, `List`, `Map`, and `MontyNone()`. Nested lists / maps are
+converted recursively.
+
+**Two distinct error mechanisms:**
+
+| Bad input | Throws | When to expect |
+|---|---|---|
+| Dart `null` value | `MontyInternalError` | Use `MontyNone()` for Python `None` — Dart `null` is rejected so it cannot be silently swallowed. |
+| Unsupported type (e.g. `DateTime`, custom class) | `ArgumentError` | Convert to a supported type before injection. |
+
+Both throw **synchronously** from `run()` — the script never starts.
+
+```dart
+// MontyInternalError — can't be caught by `on Exception`:
+await Monty('x').run(inputs: {'x': null});
+// ArgumentError:
+await Monty('x').run(inputs: {'x': DateTime.now()});
+// Correct: use MontyNone() for Python None
+await Monty('x is None').run(inputs: {'x': const MontyNone()});
+```
+
+[te]: lib/src/platform/inputs_encoder.dart
+
+#### Async scripts
+
+`inputs:` is a textual prepend, so it composes with **any** script —
+including ones that use `async def` / `await` / `asyncio.gather`. Pure-
+Python async (no Dart externals) works on every release:
+
+```dart
+await Monty('''
+async def double(): return n * 2
+await double()
+''').run(inputs: {'n': 21});
+// → MontyInt(42)
+```
+
+A script that `await`s a Dart-registered external function is a
+different story today — externals resolve **synchronously** through
+`run()` / `feedRun()`, so `result = await fetch(key)` raises
+`TypeError: 'str' object can't be awaited` because `fetch` returns a
+plain string instead of a future. True awaitable externals are tracked
+on the unmerged [`feat/repl-future-capable`][async-branch] branch
+which exposes `resumeAsFuture` / `resolveFutures` on `MontyRepl`.
+The matching test pair —
+[`ffi_monty_async_inputs_test.dart`][async-test-ffi] /
+[`wasm_monty_async_inputs_test.dart`][async-test-wasm] — pins both
+behaviours so the boundary is unambiguous.
+
+[async-branch]: https://github.com/runyaga/dart_monty_core/tree/feat/repl-future-capable
+[async-test-ffi]: test/integration/ffi_monty_async_inputs_test.dart
+[async-test-wasm]: test/integration/wasm_monty_async_inputs_test.dart
 
 ### External functions
 
@@ -147,6 +223,11 @@ await Monty('compute("mul", 6, 7)').run(externalFunctions: {
   },
 });
 ```
+
+A callback returning a `Future` is awaited and resolved
+synchronously from Python's perspective — see *Inputs injection →
+Async scripts* for the await-able variant pending on
+`feat/repl-future-capable`.
 
 ### OS calls
 
