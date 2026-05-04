@@ -338,7 +338,7 @@ class WasmCoreBindings implements MontyCoreBindings {
         return CoreProgressResult(
           state: 'pending',
           functionName: progress.functionName ?? '',
-          arguments: progress.arguments ?? const [],
+          args: progress.args ?? const [],
           kwargs: progress.kwargs,
           callId: progress.callId ?? 0,
           methodCall: progress.methodCall ?? false,
@@ -348,7 +348,7 @@ class WasmCoreBindings implements MontyCoreBindings {
         return CoreProgressResult(
           state: 'os_call',
           functionName: progress.functionName ?? '',
-          arguments: progress.arguments ?? const [],
+          args: progress.args ?? const [],
           kwargs: progress.kwargs,
           callId: progress.callId ?? 0,
         );

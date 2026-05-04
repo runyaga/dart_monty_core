@@ -27,11 +27,10 @@ void runFeedRunAsyncMatrixTests() {
       final r = await repl.feedRun(
         'fetch(7)',
         externalFunctions: {
-          'fetch': (args) {
+          'fetch': (args, _) {
             calls++;
 
-            // Synchronous-style: return a pre-resolved Future.
-            return Future.value((args['_0']! as int) + 1);
+            return Future.value((args[0]! as int) + 1);
           },
         },
       );
@@ -47,11 +46,11 @@ void runFeedRunAsyncMatrixTests() {
       final r = await repl.feedRun(
         'fetch(7)',
         externalFunctions: {
-          'fetch': (args) async {
+          'fetch': (args, _) async {
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return (args['_0']! as int) + 1;
+            return (args[0]! as int) + 1;
           },
         },
       );
@@ -71,10 +70,10 @@ async def doubled(n):
 await doubled(3)
 ''',
         externalFunctions: {
-          'fetch': (args) {
+          'fetch': (args, _) {
             calls++;
 
-            return Future.value(args['_0']);
+            return Future.value(args[0]);
           },
         },
       );
@@ -94,11 +93,11 @@ async def doubled(n):
 await doubled(3)
 ''',
         externalFunctions: {
-          'fetch': (args) async {
+          'fetch': (args, _) async {
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return args['_0'];
+            return args[0];
           },
         },
       );
@@ -117,11 +116,11 @@ await doubled(3)
         final r = await repl.feedRun(
           'await fetch("token")',
           externalAsyncFunctions: {
-            'fetch': (args) async {
+            'fetch': (args, _) async {
               calls++;
               await Future<void>.delayed(Duration.zero);
 
-              return 'value-for-${args['_0']}';
+              return 'value-for-${args[0]}';
             },
           },
         );
@@ -145,8 +144,8 @@ results = await asyncio.gather(fetch(1), fetch(2), fetch(3))
 results
 ''',
           externalAsyncFunctions: {
-            'fetch': (args) async {
-              final n = args['_0']! as int;
+            'fetch': (args, _) async {
+              final n = args[0]! as int;
               fired.add(n);
               await Future<void>.delayed(Duration.zero);
 
@@ -172,7 +171,7 @@ results
         final r = await repl.feedRun(
           'await fetch(1)',
           externalFunctions: {
-            'fetch': (args) => Future.value(args['_0']),
+            'fetch': (args, _) => Future.value(args[0]),
           },
         );
 

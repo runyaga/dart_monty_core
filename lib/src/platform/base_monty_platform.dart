@@ -426,7 +426,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
     return MontyPending(
       functionName: p.functionName ?? '',
-      arguments: _parseArgList(p.arguments),
+      args: _parseArgList(p.args),
       kwargs: _parseKwargMap(p.kwargs),
       callId: p.callId ?? 0,
       methodCall: p.methodCall ?? false,
@@ -438,7 +438,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
 
     return MontyOsCall(
       operationName: p.functionName ?? '',
-      arguments: _parseArgList(p.arguments),
+      args: _parseArgList(p.args),
       kwargs: _parseKwargMap(p.kwargs),
       callId: p.callId ?? 0,
     );

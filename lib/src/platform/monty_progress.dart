@@ -21,10 +21,10 @@ const _deepEquality = DeepCollectionEquality();
 /// switch (progress) {
 ///   case MontyComplete(:final result):
 ///     print(result.value);
-///   case MontyPending(:final functionName, :final arguments):
-///     print('Call $functionName with $arguments');
-///   case MontyOsCall(:final operationName, :final arguments):
-///     print('OS call: $operationName with $arguments');
+///   case MontyPending(:final functionName, :final args):
+///     print('Call $functionName with $args');
+///   case MontyOsCall(:final operationName, :final args):
+///     print('OS call: $operationName with $args');
 ///   case MontyResolveFutures(:final pendingCallIds):
 ///     print('Resolve futures: $pendingCallIds');
 ///   case MontyNameLookup(:final variableName):
@@ -117,10 +117,10 @@ final class MontyComplete extends MontyProgress {
 /// ```
 @immutable
 final class MontyPending extends MontyProgress {
-  /// Creates a [MontyPending] with the given [functionName] and [arguments].
+  /// Creates a [MontyPending] with the given [functionName] and [args].
   const MontyPending({
     required this.functionName,
-    required this.arguments,
+    required this.args,
     this.kwargs,
     this.callId = 0,
     this.methodCall = false,
@@ -129,7 +129,7 @@ final class MontyPending extends MontyProgress {
   /// Creates a [MontyPending] from a JSON map.
   ///
   /// Expected keys: `type` (must be `'pending'`), `function_name`,
-  /// `arguments` (list, defaults to empty if absent), `kwargs` (map,
+  /// `arguments` (list, decoded into [args]), `kwargs` (map,
   /// optional), `call_id` (int, defaults to 0), `method_call` (bool,
   /// defaults to false).
   factory MontyPending.fromJson(Map<String, dynamic> json) {
@@ -138,7 +138,7 @@ final class MontyPending extends MontyProgress {
 
     return MontyPending(
       functionName: json['function_name'] as String,
-      arguments: rawArgs != null
+      args: rawArgs != null
           ? rawArgs.map(MontyValue.fromJson).toList()
           : const [],
       kwargs: rawKwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
@@ -151,7 +151,7 @@ final class MontyPending extends MontyProgress {
   final String functionName;
 
   /// The positional arguments to pass to the external function.
-  final List<MontyValue> arguments;
+  final List<MontyValue> args;
 
   /// Keyword arguments from the Python call site.
   ///
@@ -174,7 +174,7 @@ final class MontyPending extends MontyProgress {
     return {
       'type': 'pending',
       'function_name': functionName,
-      'arguments': arguments.map((e) => e.toJson()).toList(),
+      'arguments': args.map((e) => e.toJson()).toList(),
       if (kwargs != null)
         'kwargs': kwargs!.map((k, v) => MapEntry(k, v.toJson())),
       if (callId != 0) 'call_id': callId,
@@ -187,7 +187,7 @@ final class MontyPending extends MontyProgress {
     return identical(this, other) ||
         (other is MontyPending &&
             other.functionName == functionName &&
-            _deepEquality.equals(other.arguments, arguments) &&
+            _deepEquality.equals(other.args, args) &&
             _deepEquality.equals(other.kwargs, kwargs) &&
             other.callId == callId &&
             other.methodCall == methodCall);
@@ -196,14 +196,14 @@ final class MontyPending extends MontyProgress {
   @override
   int get hashCode => Object.hash(
     functionName,
-    _deepEquality.hash(arguments),
+    _deepEquality.hash(args),
     _deepEquality.hash(kwargs),
     callId,
     methodCall,
   );
 
   @override
-  String toString() => 'MontyPending($functionName, $arguments)';
+  String toString() => 'MontyPending($functionName, $args)';
 }
 
 /// Execution paused, awaiting an OS/filesystem operation.
@@ -213,13 +213,13 @@ final class MontyPending extends MontyProgress {
 /// The host (Dart) handles the I/O and resumes with the result.
 ///
 /// ```dart
-/// case MontyOsCall(:final operationName, :final arguments):
+/// case MontyOsCall(:final operationName, :final args):
 ///   switch (operationName) {
 ///     case 'Path.exists':
-///       final path = arguments.first as String;
+///       final path = args.first as String;
 ///       progress = await platform.resume(File(path).existsSync());
 ///     case 'os.getenv':
-///       final key = arguments.first as String;
+///       final key = args.first as String;
 ///       progress = await platform.resume(Platform.environment[key]);
 ///   }
 /// ```
@@ -228,7 +228,7 @@ final class MontyOsCall extends MontyProgress {
   /// Creates a [MontyOsCall].
   const MontyOsCall({
     required this.operationName,
-    required this.arguments,
+    required this.args,
     this.kwargs,
     this.callId = 0,
   });
@@ -240,7 +240,7 @@ final class MontyOsCall extends MontyProgress {
 
     return MontyOsCall(
       operationName: json['operation_name'] as String,
-      arguments: rawArgs != null
+      args: rawArgs != null
           ? rawArgs.map(MontyValue.fromJson).toList()
           : const [],
       kwargs: rawKwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
@@ -252,7 +252,7 @@ final class MontyOsCall extends MontyProgress {
   final String operationName;
 
   /// The positional arguments for the operation.
-  final List<MontyValue> arguments;
+  final List<MontyValue> args;
 
   /// Keyword arguments from the Python call site.
   final Map<String, MontyValue>? kwargs;
@@ -265,7 +265,7 @@ final class MontyOsCall extends MontyProgress {
     return {
       'type': 'os_call',
       'operation_name': operationName,
-      'arguments': arguments.map((e) => e.toJson()).toList(),
+      'arguments': args.map((e) => e.toJson()).toList(),
       if (kwargs != null)
         'kwargs': kwargs!.map((k, v) => MapEntry(k, v.toJson())),
       if (callId != 0) 'call_id': callId,
@@ -277,7 +277,7 @@ final class MontyOsCall extends MontyProgress {
     return identical(this, other) ||
         (other is MontyOsCall &&
             other.operationName == operationName &&
-            _deepEquality.equals(other.arguments, arguments) &&
+            _deepEquality.equals(other.args, args) &&
             _deepEquality.equals(other.kwargs, kwargs) &&
             other.callId == callId);
   }
@@ -285,13 +285,13 @@ final class MontyOsCall extends MontyProgress {
   @override
   int get hashCode => Object.hash(
     operationName,
-    _deepEquality.hash(arguments),
+    _deepEquality.hash(args),
     _deepEquality.hash(kwargs),
     callId,
   );
 
   @override
-  String toString() => 'MontyOsCall($operationName, $arguments)';
+  String toString() => 'MontyOsCall($operationName, $args)';
 }
 
 /// Execution paused, awaiting resolution of pending futures.

@@ -22,10 +22,10 @@ Future<void> main() async {
 }
 
 // ── External functions ────────────────────────────────────────────────────────
-// MontyCallback = Future<Object?> Function(Map<String, Object?> args)
+// MontyCallback = Future<Object?> Function(List<Object?> args, Map<String, Object?>? kwargs)
 //
-// Positional args arrive as '_0', '_1', ... in the map.
-// Keyword args arrive under their Python names.
+// Positional args arrive in the args list.
+// Keyword args arrive in the kwargs map.
 Future<void> _externalFunctions() async {
   print('\n── externalFunctions ──');
 
@@ -37,11 +37,11 @@ result = add(3, 4)
 greeting = greet(name="World")
 ''',
     externalFunctions: {
-      // Synchronous-style: return the value directly.
-      'add': (args) async => (args['_0'] as int) + (args['_1'] as int),
+      // Positional args arrive in the args list.
+      'add': (args, _) async => (args[0]! as int) + (args[1]! as int),
 
-      // Keyword args land under their Python names.
-      'greet': (args) async => 'Hello, ${args['name']}!',
+      // Keyword args land in the kwargs map.
+      'greet': (_, kwargs) async => 'Hello, ${kwargs!['name']}!',
     },
   );
 
@@ -52,7 +52,7 @@ greeting = greet(name="World")
   await repl.feedRun(
     'data = fetch_data()',
     externalFunctions: {
-      'fetch_data': (_) async => {
+      'fetch_data': (_, _) async => {
         'name': 'alice',
         'scores': [98, 87, 92],
       },

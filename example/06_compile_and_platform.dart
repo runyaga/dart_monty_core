@@ -153,7 +153,7 @@ asyncio.run(main())
           final results = <int, Object?>{};
           for (final id in pendingCallIds) {
             final call = pendingCalls[id]!;
-            results[id] = call.arguments.first.dartValue; // echo the name arg
+            results[id] = call.args.first.dartValue; // echo the name arg
           }
           progress = await platform.resolveFutures(results);
 

@@ -262,7 +262,7 @@ class FfiReplBindings implements ReplBindings {
         return CoreProgressResult(
           state: 'os_call',
           functionName: progress.functionName,
-          arguments: parsedArgs,
+          args: parsedArgs,
           kwargs: parsedKwargs,
           callId: progress.callId,
         );
@@ -310,7 +310,7 @@ class FfiReplBindings implements ReplBindings {
     return CoreProgressResult(
       state: 'pending',
       functionName: progress.functionName,
-      arguments: parsedArgs,
+      args: parsedArgs,
       kwargs: parsedKwargs,
       callId: progress.callId,
       methodCall: progress.methodCall,

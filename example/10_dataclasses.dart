@@ -72,10 +72,10 @@ Future<void> _readingFields() async {
 
   final r = await Monty('make_user("alice", 30)').run(
     externalFunctions: {
-      'make_user': (args) async => _dataclass(
+      'make_user': (args, _) async => _dataclass(
         name: 'User',
         typeId: 1,
-        attrs: {'name': args['_0']! as String, 'age': args['_1']! as int},
+        attrs: {'name': args[0]! as String, 'age': args[1]! as int},
       ),
     },
   );
@@ -97,10 +97,10 @@ Future<void> _hydrateOne() async {
 
   final r = await Monty('make_user("bob", 42)').run(
     externalFunctions: {
-      'make_user': (args) async => _dataclass(
+      'make_user': (args, _) async => _dataclass(
         name: 'User',
         typeId: 1,
-        attrs: {'name': args['_0']! as String, 'age': args['_1']! as int},
+        attrs: {'name': args[0]! as String, 'age': args[1]! as int},
       ),
     },
   );
@@ -130,9 +130,9 @@ Future<void> _hydrateRegistry() async {
   }
 
   final externalFunctions = <String, MontyCallback>{
-    'make_user': (a) async =>
+    'make_user': (_, _) async =>
         _dataclass(name: 'User', typeId: 1, attrs: {'name': 'carol', 'age': 7}),
-    'make_order': (a) async =>
+    'make_order': (_, _) async =>
         _dataclass(name: 'Order', typeId: 2, attrs: {'id': 99, 'total': 12.5}),
   };
 

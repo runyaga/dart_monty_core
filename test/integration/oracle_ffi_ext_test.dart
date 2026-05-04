@@ -91,13 +91,13 @@ Future<(String?, MontyValue?, bool)> _runDispatch(
           resultValue = result.value;
           break dispatchLoop;
 
-        case MontyPending(:final functionName, :final arguments):
+        case MontyPending(:final functionName, :final args):
           if (!_supportedExtFns.contains(functionName)) {
             skipped = true;
             break dispatchLoop;
           }
           try {
-            final ret = _dispatch(functionName, arguments);
+            final ret = _dispatch(functionName, args);
             progress = await platform.resume(ret);
           } on MontyScriptError catch (e) {
             thrownExcType = e.excType;

@@ -52,9 +52,9 @@ void runDataclassHydrateTests() {
       () async {
         final r = await Monty('make_user("alice", 30)').run(
           externalFunctions: {
-            'make_user': (args) async => _userDataclass(
-              name: args['_0']! as String,
-              age: args['_1']! as int,
+            'make_user': (args, _) async => _userDataclass(
+              name: args[0]! as String,
+              age: args[1]! as int,
             ),
           },
         );
@@ -84,8 +84,8 @@ void runDataclassHydrateTests() {
       Future<Object?> dispatchAndHydrate(String code) async {
         final r = await Monty(code).run(
           externalFunctions: {
-            'make_user': (args) async => _userDataclass(name: 'eve', age: 9),
-            'make_order': (args) async => _orderDataclass(id: 99, total: 12.5),
+            'make_user': (_, _) async => _userDataclass(name: 'eve', age: 9),
+            'make_order': (_, _) async => _orderDataclass(id: 99, total: 12.5),
           },
         );
         if (r.value is! MontyDataclass) return r.value;
@@ -107,10 +107,10 @@ void runDataclassHydrateTests() {
       () async {
         final r = await Monty('make_user("frank", 20)').run(
           externalFunctions: {
-            'make_user': (args) async => {
+            'make_user': (args, _) async => {
               ..._userDataclass(
-                name: args['_0']! as String,
-                age: args['_1']! as int,
+                name: args[0]! as String,
+                age: args[1]! as int,
               ),
               'frozen': true,
             },

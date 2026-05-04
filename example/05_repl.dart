@@ -40,7 +40,7 @@ Future<void> _basicFeed() async {
   // Externals auto-dispatched — no manual loop needed.
   await repl.feedRun(
     'result = double(x)',
-    externalFunctions: {'double': (args) async => (args['_0'] as int) * 2},
+    externalFunctions: {'double': (args, _) async => (args[0]! as int) * 2},
   );
   print('double(42) = ${(await repl.feedRun("result")).value}'); // 84
 
@@ -103,9 +103,9 @@ Future<void> _manualFeedLoop() async {
         await repl.dispose();
         return;
 
-      case MontyPending(:final functionName, :final arguments):
+      case MontyPending(:final functionName, :final args):
         step++;
-        final n = arguments.first.dartValue as int;
+        final n = args.first.dartValue as int;
         print('  step $step: $functionName($n) → ${n * 10}');
         progress = await repl.resume(n * 10); // return value
 

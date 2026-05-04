@@ -68,7 +68,7 @@ final class CoreRunResult {
 /// populated:
 ///
 /// - `'complete'` — [value] holds the Python return value.
-/// - `'pending'` — [functionName], [arguments], [kwargs], [callId], and
+/// - `'pending'` — [functionName], [args], [kwargs], [callId], and
 ///   [methodCall] describe the external function call.
 /// - `'resolve_futures'` — [pendingCallIds] lists call IDs awaiting
 ///   resolution.
@@ -83,7 +83,7 @@ final class CoreProgressResult {
     this.usage,
     this.printOutput,
     this.functionName,
-    this.arguments,
+    this.args,
     this.kwargs,
     this.callId,
     this.methodCall,
@@ -114,7 +114,7 @@ final class CoreProgressResult {
   final String? functionName;
 
   /// Positional arguments (when [state] is `'pending'`).
-  final List<Object?>? arguments;
+  final List<Object?>? args;
 
   /// Keyword arguments (when [state] is `'pending'`).
   final Map<String, Object?>? kwargs;

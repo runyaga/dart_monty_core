@@ -64,7 +64,7 @@ final class WasmProgressResult {
     this.state,
     this.value,
     this.functionName,
-    this.arguments,
+    this.args,
     this.kwargs,
     this.callId,
     this.methodCall,
@@ -98,7 +98,7 @@ final class WasmProgressResult {
   final String? functionName;
 
   /// The function arguments (when state is `'pending'`).
-  final List<Object?>? arguments;
+  final List<Object?>? args;
 
   /// Keyword arguments from the Python call site (when state is `'pending'`).
   final Map<String, Object?>? kwargs;

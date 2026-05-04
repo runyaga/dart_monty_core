@@ -147,7 +147,7 @@ void _initReplPanel() {
       final result = await repl.feedRun(
         code,
         externalFunctions: {
-          'host_upper': (args) async => (args['_0'] as String).toUpperCase(),
+          'host_upper': (args, _) async => (args[0] as String).toUpperCase(),
         },
         osHandler: _vfsOsHandler,
       );
@@ -339,17 +339,17 @@ void _initExternalsPanel() {
 
   // Dart implementations of each external.
   final externals = <String, MontyCallback>{
-    'db_query': (args) async {
-      final table = args['_0'] as String;
-      final filter = args['filter'];
+    'db_query': (args, kwargs) async {
+      final table = args[0] as String;
+      final filter = kwargs?['filter'];
       final rows = _mockDb[table] ?? [];
       if (filter == null || filter == 'None' || filter == false) return rows;
       return rows.where((r) => r['active'] == true).toList();
     },
-    'compute': (args) async {
-      final op = args['_0'] as String;
-      final a = args['_1'] as num;
-      final b = args['_2'] as num;
+    'compute': (args, _) async {
+      final op = args[0] as String;
+      final a = args[1] as num;
+      final b = args[2] as num;
       return switch (op) {
         'add' => a + b,
         'mul' => a * b,
@@ -357,12 +357,12 @@ void _initExternalsPanel() {
         _ => throw Exception('unknown op: $op'),
       };
     },
-    'format_currency': (args) async {
-      final amount = args['_0'] as num;
-      final code = (args['code'] as String?) ?? 'USD';
+    'format_currency': (args, kwargs) async {
+      final amount = args[0] as num;
+      final code = (kwargs?['code'] as String?) ?? 'USD';
       return '$code ${amount.toStringAsFixed(2)}';
     },
-    'now': (_) async => DateTime.now().toIso8601String(),
+    'now': (_, _) async => DateTime.now().toIso8601String(),
   };
 
   Future<void> execute() async {
@@ -400,12 +400,12 @@ void _initExternalsPanel() {
 
           case MontyPending(
             :final functionName,
-            :final arguments,
+            :final args,
             :final kwargs,
             :final callId,
           ):
             final argStr = [
-              ...arguments.map((a) => _fmt(a)),
+              ...args.map((a) => _fmt(a)),
               if (kwargs != null)
                 ...kwargs.entries.map((e) => '${e.key}=${_fmt(e.value)}'),
             ].join(', ');
@@ -421,16 +421,11 @@ void _initExternalsPanel() {
               );
             } else {
               try {
-                final dartArgs = <String, Object?>{};
-                if (kwargs != null) {
-                  dartArgs.addAll(
-                    kwargs.map((k, v) => MapEntry(k, v.dartValue)),
-                  );
-                }
-                for (var i = 0; i < arguments.length; i++) {
-                  dartArgs['_$i'] = arguments[i].dartValue;
-                }
-                final result = await cb(dartArgs);
+                final dartArgs = args.map((v) => v.dartValue).toList();
+                final dartKwargs = kwargs?.map(
+                  (k, v) => MapEntry(k, v.dartValue),
+                );
+                final result = await cb(dartArgs, dartKwargs);
                 final resultStr = result is List
                     ? '[${(result as List).length} rows]'
                     : result.toString();

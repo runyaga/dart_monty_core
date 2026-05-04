@@ -79,11 +79,11 @@ result
 ''').run(
                 inputs: {'key': 'token'},
                 externalFunctions: {
-                  'fetch': (args) async {
+                  'fetch': (args, _) async {
                     fetchCallCount++;
                     await Future<void>.delayed(Duration.zero);
 
-                    return 'value-for-${args['_0']}';
+                    return 'value-for-${args[0]}';
                   },
                 },
               );
@@ -112,11 +112,11 @@ result
 ''').run(
               inputs: {'key': 'token'},
               externalAsyncFunctions: {
-                'fetch': (args) async {
+                'fetch': (args, _) async {
                   fetchCallCount++;
                   await Future<void>.delayed(Duration.zero);
 
-                  return 'value-for-${args['_0']}';
+                  return 'value-for-${args[0]}';
                 },
               },
             );
@@ -142,8 +142,8 @@ results
 ''').run(
                 inputs: {'a': 1, 'b': 2, 'c': 3},
                 externalAsyncFunctions: {
-                  'fetch': (args) async {
-                    final n = args['_0']! as int;
+                  'fetch': (args, _) async {
+                    final n = args[0]! as int;
                     calls.add(n);
                     await Future<void>.delayed(Duration.zero);
 

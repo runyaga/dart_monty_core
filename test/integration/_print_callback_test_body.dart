@@ -74,7 +74,7 @@ void runPrintCallbackTests() {
       final r = await Monty('print(double(value))').run(
         inputs: {'value': 21},
         externalFunctions: {
-          'double': (args) async => (args['_0']! as int) * 2,
+          'double': (args, _) async => (args[0]! as int) * 2,
         },
         printCallback: (stream, text) => captured.add((stream, text)),
       );
