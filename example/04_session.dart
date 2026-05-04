@@ -27,7 +27,7 @@ Future<void> _autoDispatch() async {
 
   await repl.feedRun(
     'greeting = greet("Dart")',
-    externalFunctions: {'greet': (args) async => 'Hi, ${args["_0"]}!'},
+    externalFunctions: {'greet': (args, _) async => 'Hi, ${args[0]}!'},
   );
   print('auto: ${(await repl.feedRun("greeting")).value}');
   repl.dispose();

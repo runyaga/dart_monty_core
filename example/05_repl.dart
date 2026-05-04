@@ -40,7 +40,7 @@ Future<void> _basicFeed() async {
   // Externals auto-dispatched — no manual loop needed.
   await repl.feedRun(
     'result = double(x)',
-    externalFunctions: {'double': (args) async => (args['_0'] as int) * 2},
+    externalFunctions: {'double': (args, _) async => (args[0]! as int) * 2},
   );
   print('double(42) = ${(await repl.feedRun("result")).value}'); // 84
 
