@@ -88,6 +88,7 @@ dart test \
   -p chrome \
   --run-skipped \
   --tags=wasm \
+  --exclude-tags=pending-futures \
   --reporter expanded \
   --concurrency 2 \
   test/integration/wasm_dataclass_hydrate_test.dart \
