@@ -1,10 +1,14 @@
 // Shared test body for ffi_monty_async_inputs_test.dart and
 // wasm_monty_async_inputs_test.dart.
 //
-// Pins down how `Monty(code).run(inputs: ...)` interacts with async
-// scripts on the current `main` (without the unmerged feat/repl-future-capable
-// REPL-level futures wiring). The intent is to make the boundary testable:
-// what works today, and what depends on landing the futures-capable REPL.
+// Pins down how `Monty(code).run(inputs: ...)` interacts with async scripts.
+// Three groups:
+//   - pure-Python async (no Dart externals — works on every release)
+//   - external calls without await (the long-standing sync path —
+//     callback resolves Dart-side, Python sees the plain value)
+//   - external async with `useFutures: true` (the futures path that
+//     `_driveLoop` wires through `resumeAsFuture`/`resolveFutures` —
+//     enables Python `await ext()` and `asyncio.gather` over externals)
 //
 // Both files call [runMontyAsyncInputsTests] so the assertions stay in sync
 // across the FFI and WASM backends.
@@ -91,57 +95,40 @@ result
       );
     });
 
-    // ----- External async (depends on futures-capable REPL) ---------------
+    // ----- External async via `useFutures: true` -------------------------
     // When Python uses `await fetch(...)` against a Dart external, the
-    // platform needs to surface the call as an awaitable so Python's event
-    // loop can suspend on it. That requires `MontyFutureCapable.
-    // resumeAsFuture` + `resolveFutures` to be wired through the REPL —
-    // the work on the unmerged feat/repl-future-capable branch.
-    //
-    // Today (probed on main):
-    //   - `result = await fetch(key)` raises TypeError:
-    //         "'str' object can't be awaited"
-    //   - `await asyncio.gather(fetch(a), fetch(b), fetch(c))` raises
-    //         TypeError: "An asyncio.Future, a coroutine or an awaitable is
-    //         required"
-    //   In both cases the Dart callback DOES fire (so dispatch works), but
-    //   the value is returned eagerly as a plain Python value rather than
-    //   as an awaitable that Python can suspend on.
-    //
-    // The two tests below codify the SPEC that feat/repl-future-capable
-    // must satisfy. They are skipped on main and should be flipped to
-    // green once that branch lands.
-    group('external async — pending feat/repl-future-capable', () {
-      test(
-        'await of a Dart external returns the resolved value',
-        tags: 'pending-futures',
-        () async {
-          var fetchCallCount = 0;
-          final r =
-              await Monty('''
+    // engine needs the host to surface the call as an awaitable so Python's
+    // event loop can suspend on it. With `useFutures: true`, `_driveLoop`
+    // launches each callback as an unawaited Future, replies with
+    // `resumeAsFuture`, and batches the results back via `resolveFutures`
+    // when MontyResolveFutures fires.
+    group('external async with useFutures: true', () {
+      test('await of a Dart external returns the resolved value', () async {
+        var fetchCallCount = 0;
+        final r =
+            await Monty('''
 result = await fetch(key)
 result
 ''').run(
-                inputs: {'key': 'token'},
-                externalFunctions: {
-                  'fetch': (args) async {
-                    fetchCallCount++;
-                    await Future<void>.delayed(Duration.zero);
+              inputs: {'key': 'token'},
+              externalFunctions: {
+                'fetch': (args) async {
+                  fetchCallCount++;
+                  await Future<void>.delayed(Duration.zero);
 
-                    return 'value-for-${args['_0']}';
-                  },
+                  return 'value-for-${args['_0']}';
                 },
-              );
+              },
+              useFutures: true,
+            );
 
-          expect(r.error, isNull);
-          expect(fetchCallCount, equals(1));
-          expect(r.value.dartValue, 'value-for-token');
-        },
-      );
+        expect(r.error, isNull);
+        expect(fetchCallCount, equals(1));
+        expect(r.value.dartValue, 'value-for-token');
+      });
 
       test(
         'asyncio.gather over Dart externals resolves in argument order',
-        tags: 'pending-futures',
         () async {
           final calls = <int>[];
           final r =
@@ -164,6 +151,7 @@ results
                     return n * 10;
                   },
                 },
+                useFutures: true,
               );
 
           expect(r.error, isNull);

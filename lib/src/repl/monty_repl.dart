@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -177,6 +178,7 @@ class MontyRepl {
     OsCallHandler? osHandler,
     Map<String, Object?>? inputs,
     void Function(String stream, String text)? printCallback,
+    bool useFutures = false,
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
@@ -222,8 +224,10 @@ class MontyRepl {
         initial,
         externalFunctions,
         osHandler,
+        useFutures: useFutures,
       );
       _emitPrintOutput(printCallback, result.printOutput);
+
       return result;
     } on MontyScriptError catch (e) {
       return MontyResult(
@@ -291,6 +295,48 @@ class MontyRepl {
     _checkNotDisposed();
 
     return _translateProgress(await _bindings.resumeNotFound(fnName));
+  }
+
+  /// Resumes the paused REPL by promising a future for the pending call.
+  ///
+  /// Use this in place of [resume] when the host is going to deliver the
+  /// pending call's result later via [resolveFutures]. The VM keeps
+  /// running until it hits an `await`, then yields [MontyResolveFutures]
+  /// listing the call IDs whose values it now needs.
+  ///
+  /// Throws [UnsupportedError] when the underlying bindings backend does
+  /// not implement the futures path (currently the WASM backend).
+  Future<MontyProgress> resumeAsFuture() async {
+    _checkNotDisposed();
+
+    return _translateProgress(await _bindings.resumeAsFuture());
+  }
+
+  /// Resolves the call IDs the VM is waiting on with [results] and
+  /// optionally [errors], then continues execution.
+  ///
+  /// [results] maps each call ID to its resolved value; [errors] maps
+  /// call IDs to error message strings (raised as `RuntimeError` in
+  /// Python). The union of keys must cover every ID the engine listed
+  /// in the preceding [MontyResolveFutures].
+  ///
+  /// Throws [UnsupportedError] when the bindings backend does not
+  /// implement the futures path.
+  Future<MontyProgress> resolveFutures(
+    Map<int, Object?> results, {
+    Map<int, String>? errors,
+  }) async {
+    _checkNotDisposed();
+    final resultsJson = jsonEncode(
+      results.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    final errorsJson = errors != null
+        ? jsonEncode(errors.map((k, v) => MapEntry(k.toString(), v)))
+        : '{}';
+
+    return _translateProgress(
+      await _bindings.resolveFutures(resultsJson, errorsJson),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -374,50 +420,115 @@ class MontyRepl {
   Future<MontyResult> _driveLoop(
     MontyProgress initial,
     Map<String, MontyCallback> externalFunctions,
-    OsCallHandler? osHandler,
-  ) async {
+    OsCallHandler? osHandler, {
+    bool useFutures = false,
+  }) async {
+    // Per-call map of pending callback futures keyed by callId. Only
+    // populated when [useFutures] is true; cleaned up by the
+    // [MontyResolveFutures] branch as it drains them.
+    final pendingFutures = <int, Future<Object?>>{};
+
     var progress = initial;
-    while (true) {
-      switch (progress) {
-        case MontyComplete(:final result):
-          return result;
-        case MontyPending(:final functionName):
-          final cb = externalFunctions[functionName];
-          if (cb == null) {
-            progress = _translateProgress(
-              await _bindings.resumeWithError(
-                'No handler registered for: $functionName',
-              ),
-            );
-          } else {
-            try {
+    try {
+      while (true) {
+        switch (progress) {
+          case MontyComplete(:final result):
+            return result;
+          case MontyPending(:final functionName, :final callId):
+            final cb = externalFunctions[functionName];
+            if (cb == null) {
+              progress = _translateProgress(
+                await _bindings.resumeWithError(
+                  'No handler registered for: $functionName',
+                ),
+              );
+            } else if (useFutures) {
+              // Futures path: launch the callback unawaited, register the
+              // future, and tell the engine to keep running until it hits an
+              // `await`. The engine will surface MontyResolveFutures with
+              // the call IDs it now needs values for.
               final args = _replArgsToMap(
                 progress.arguments,
                 progress.kwargs,
               );
-              final res = await cb(args);
-              progress = _translateProgress(
-                await _bindings.resume(jsonEncode(res)),
-              );
-            } on Object catch (e) {
-              progress = _translateProgress(
-                await _bindings.resumeWithError(e.toString()),
-              );
+              final fut = Future<Object?>(() => cb(args));
+              pendingFutures[callId] = fut;
+              // Suppress "unhandled async error" — errors are caught and
+              // surfaced via the errors map during resolveFutures.
+              _suppressFutureErrors(fut);
+              progress = _translateProgress(await _bindings.resumeAsFuture());
+            } else {
+              try {
+                final args = _replArgsToMap(
+                  progress.arguments,
+                  progress.kwargs,
+                );
+                final res = await cb(args);
+                progress = _translateProgress(
+                  await _bindings.resume(jsonEncode(res)),
+                );
+              } on Object catch (e) {
+                progress = _translateProgress(
+                  await _bindings.resumeWithError(e.toString()),
+                );
+              }
             }
-          }
-        case MontyOsCall():
-          progress = await _handleOsCall(progress, osHandler);
-        case MontyResolveFutures():
-          progress = _translateProgress(await _bindings.resume('null'));
-        case MontyNameLookup():
-          // The Rust handle auto-resolves NameLookup via ext_fn_names; this
-          // branch only fires when the name was not registered. Signal
-          // NameError back to Python.
-          progress = _translateProgress(
-            await _bindings.resumeNameLookupUndefined(),
-          );
+          case MontyOsCall():
+            progress = await _handleOsCall(progress, osHandler);
+          case MontyResolveFutures(:final pendingCallIds):
+            if (!useFutures) {
+              // Sync dispatch path was used — there's nothing to resolve
+              // batch-wise. Resume with null so the engine can advance.
+              progress = _translateProgress(await _bindings.resume('null'));
+              break;
+            }
+            final results = <int, Object?>{};
+            final errors = <int, String>{};
+            for (final id in pendingCallIds) {
+              final fut = pendingFutures.remove(id);
+              if (fut == null) {
+                errors[id] =
+                    'No pending future for callId $id (engine/host out of sync)';
+                continue;
+              }
+              try {
+                results[id] = await fut;
+              } on Object catch (e) {
+                errors[id] = e.toString();
+              }
+            }
+            progress = _translateProgress(
+              await _bindings.resolveFutures(
+                jsonEncode(
+                  results.map((k, v) => MapEntry(k.toString(), v)),
+                ),
+                jsonEncode(
+                  errors.map((k, v) => MapEntry(k.toString(), v)),
+                ),
+              ),
+            );
+          case MontyNameLookup():
+            // The Rust handle auto-resolves NameLookup via ext_fn_names; this
+            // branch only fires when the name was not registered. Signal
+            // NameError back to Python.
+            progress = _translateProgress(
+              await _bindings.resumeNameLookupUndefined(),
+            );
+        }
       }
+    } finally {
+      // Drain any callbacks still pending if the loop exits through a
+      // throw — guarantees no unhandled async errors leak out of the call.
+      pendingFutures.values.forEach(_suppressFutureErrors);
+      pendingFutures.clear();
     }
+  }
+
+  /// Catches and discards any error from [future] so that callbacks launched
+  /// unawaited on the futures path do not surface as unhandled async errors.
+  /// Errors are re-surfaced via the errors map during `resolveFutures`.
+  static void _suppressFutureErrors(Future<Object?> future) {
+    unawaited(future.catchError((Object _) => null));
   }
 
   MontyProgress _translateProgress(CoreProgressResult p) {
@@ -431,6 +542,11 @@ class MontyRepl {
       case 'os_call':
         _pending = true;
         return _buildOsCallProgress(p);
+      case 'resolve_futures':
+        _pending = true;
+        return MontyResolveFutures(
+          pendingCallIds: p.pendingCallIds ?? const [],
+        );
       case 'error':
         _pending = false;
         _throwReplError(
