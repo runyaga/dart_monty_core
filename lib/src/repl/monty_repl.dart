@@ -536,15 +536,19 @@ class MontyRepl {
     switch (p.state) {
       case 'complete':
         _pending = false;
+
         return _buildCompleteProgress(p);
       case 'pending':
         _pending = true;
+
         return _buildPendingProgress(p);
       case 'os_call':
         _pending = true;
+
         return _buildOsCallProgress(p);
       case 'resolve_futures':
         _pending = true;
+
         return MontyResolveFutures(
           pendingCallIds: p.pendingCallIds ?? const [],
         );
@@ -592,6 +596,7 @@ class MontyRepl {
       final wireMessage = e.pythonExceptionType != null
           ? '${e.pythonExceptionType}: ${e.message}'
           : e.message;
+
       return _translateProgress(
         await _bindings.resumeWithError(wireMessage),
       );
