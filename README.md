@@ -198,17 +198,7 @@ A script that `await`s a Dart-registered external function is a
 different story today — externals resolve **synchronously** through
 `run()` / `feedRun()`, so `result = await fetch(key)` raises
 `TypeError: 'str' object can't be awaited` because `fetch` returns a
-plain string instead of a future. True awaitable externals are tracked
-on the unmerged [`feat/repl-future-capable`][async-branch] branch
-which exposes `resumeAsFuture` / `resolveFutures` on `MontyRepl`.
-The matching test pair —
-[`ffi_monty_async_inputs_test.dart`][async-test-ffi] /
-[`wasm_monty_async_inputs_test.dart`][async-test-wasm] — pins both
-behaviours so the boundary is unambiguous.
-
-[async-branch]: https://github.com/runyaga/dart_monty_core/tree/feat/repl-future-capable
-[async-test-ffi]: test/integration/ffi_monty_async_inputs_test.dart
-[async-test-wasm]: test/integration/wasm_monty_async_inputs_test.dart
+plain string instead of a future.
 
 ### External functions
 
