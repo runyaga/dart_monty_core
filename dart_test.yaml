@@ -12,3 +12,5 @@ tags:
     skip: "Example smoke tests. Run: dart test -p vm --run-skipped --tags=example"
   ladder:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=ladder"
+  pending-futures:
+    skip: "Pending feat/repl-future-capable. Run with --run-skipped --tags=pending-futures to confirm the spec is still failing."

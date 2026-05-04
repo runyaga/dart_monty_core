@@ -93,6 +93,7 @@ dart test \
   test/integration/wasm_dataclass_hydrate_test.dart \
   test/integration/wasm_datetime_oscall_test.dart \
   test/integration/wasm_fixture_test.dart \
+  test/integration/wasm_monty_async_inputs_test.dart \
   test/integration/wasm_monty_compile_run_test.dart \
   test/integration/wasm_monty_exec_externals_test.dart \
   test/integration/wasm_mount_dir_test.dart \
