@@ -144,7 +144,7 @@ as an assignment statement, so the value is bound as a top-level Python
 name *before* user code runs.
 
 ```dart
-final r = await Monty('greeting + ", " + name + "!"').run(inputs: {
+final r = await Monty('f"{greeting}, {name}!"').run(inputs: {
   'greeting': 'hello',
   'name': 'Alice',
 });
