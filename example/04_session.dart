@@ -61,16 +61,16 @@ result = a + b
 
       case MontyPending(
         :final functionName,
-        :final arguments,
+        :final args,
         kwargs: _,
         :final callId,
         :final methodCall,
       ):
         callCount++;
         print(
-          '  call #$callId: $functionName(${arguments.map((a) => a.dartValue)})  method=$methodCall',
+          '  call #$callId: $functionName(${args.map((a) => a.dartValue)})  method=$methodCall',
         );
-        final n = arguments.first.dartValue as int;
+        final n = args.first.dartValue as int;
         // Resume with the computed value. It must be JSON-encodable.
         progress = await repl.resume(n * 2);
 
@@ -140,7 +140,7 @@ content = pathlib.Path("/data/notes.txt").read_text()
         repl.dispose();
         return;
 
-      case MontyOsCall(:final operationName, arguments: _):
+      case MontyOsCall(:final operationName, args: _):
         // Intercept and handle the OS call manually.
         Object? value;
         if (operationName == 'Path.read_text') {

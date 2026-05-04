@@ -103,9 +103,9 @@ Future<void> _manualFeedLoop() async {
         await repl.dispose();
         return;
 
-      case MontyPending(:final functionName, :final arguments):
+      case MontyPending(:final functionName, :final args):
         step++;
-        final n = arguments.first.dartValue as int;
+        final n = args.first.dartValue as int;
         print('  step $step: $functionName($n) → ${n * 10}');
         progress = await repl.resume(n * 10); // return value
 
