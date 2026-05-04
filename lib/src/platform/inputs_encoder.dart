@@ -4,16 +4,26 @@
 /// variables into the Python scope before execution.
 library;
 
+import 'package:dart_monty_core/src/platform/monty_internal_error.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart' show MontyNone;
+
 /// Converts a Dart value to a Python source literal.
 ///
-/// Handles: `null` (→ `None`), `bool` (→ `True`/`False`), `int`, `double`
-/// (including `NaN` and `Infinity`), `String`, `List<dynamic>`, and
-/// `Map<dynamic, dynamic>`.
+/// Handles: [MontyNone] (→ `None`), `bool` (→ `True`/`False`),
+/// `int`, `double` (including `NaN` and `Infinity`), `String`,
+/// `List<dynamic>`, and `Map<dynamic, dynamic>`.
 ///
-/// Throws [ArgumentError] for unsupported types such as arbitrary objects
-/// or [DateTime].
+/// Use [MontyNone] explicitly to represent Python `None` — Dart `null` is
+/// treated as an unsupported type and will throw [ArgumentError].
+///
+/// Throws [ArgumentError] for unsupported types such as `null`, arbitrary
+/// objects, or [DateTime].
 String toPythonLiteral(Object? value) => switch (value) {
-  null => 'None',
+  null => throw MontyInternalError(
+    'toPythonLiteral: Dart null is not a valid Python literal. '
+    'Use MontyNone() to represent Python None.',
+  ),
+  MontyNone() => 'None',
   final bool b => b ? 'True' : 'False',
   final int n => '$n',
   final double d when d.isNaN => "float('nan')",

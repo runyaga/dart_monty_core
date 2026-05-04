@@ -70,4 +70,69 @@ void runMontyCompileRunTests() {
       expect(Monty('1', scriptName: 'job.py').scriptName, 'job.py');
     });
   });
+
+  group('inputs are kwargs-only', () {
+    // The Dart API exposes `inputs` as a named parameter — there is no
+    // positional form. This group verifies that the named-only contract is
+    // enforced end-to-end at the Python runtime level.
+
+    test('named inputs dict injects variables', () async {
+      final program = Monty('f"{say}, {target}!"');
+      final r = await program.run(inputs: {'say': 'hi', 'target': 'alan'});
+      expect(r.error, isNull);
+      expect(r.value.dartValue, 'hi, alan!');
+    });
+
+    test('omitting inputs is valid — no injections', () async {
+      final program = Monty('2 + 2');
+      final r = await program.run();
+      expect(r.error, isNull);
+      expect(r.value.dartValue, 4);
+    });
+
+    test('passing null inputs is a no-op', () async {
+      // Explicitly passing null is equivalent to omitting the param.
+      // ignore: avoid_redundant_argument_values
+      final r = await Monty('3 + 3').run(inputs: null);
+      expect(r.error, isNull);
+      expect(r.value.dartValue, 6);
+    });
+  });
+
+  group('return-value semantics', () {
+    // pydantic-monty captures the *last expression* of a script as its
+    // result value. Assignment statements, bare `pass`, and other
+    // statement-only scripts yield MontyNone (dartValue == null).
+    // A module-level `return` is a Python SyntaxError.
+
+    test('last expression is captured as result value', () async {
+      final r = await Monty('x + 1').run(inputs: {'x': 41});
+      expect(r.error, isNull);
+      expect(r.value.dartValue, 42);
+    });
+
+    test(
+      'assignment statement yields MontyNone — not the assigned value',
+      () async {
+        final r = await Monty('x = 42').run();
+        expect(r.error, isNull);
+        // Assignment is a statement; no last-expression value.
+        expect(r.value.dartValue, isNull);
+      },
+    );
+
+    test('module-level return yields the return value', () async {
+      // pydantic-monty treats module-level `return` as a valid return
+      // statement — it returns the value rather than raising SyntaxError.
+      final r = await Monty('return 42').run();
+      expect(r.error, isNull);
+      expect(r.value.dartValue, 42);
+    });
+
+    test('expression after assignment is the result', () async {
+      final r = await Monty('x = 7\nx * 6').run();
+      expect(r.error, isNull);
+      expect(r.value.dartValue, 42);
+    });
+  });
 }
