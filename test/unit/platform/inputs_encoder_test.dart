@@ -2,14 +2,23 @@
 @Tags(['unit'])
 library;
 
+import 'package:dart_monty_core/dart_monty_core.dart'
+    show MontyInternalError, MontyNone;
 import 'package:dart_monty_core/src/platform/inputs_encoder.dart';
 import 'package:test/test.dart';
 
 void main() {
   // -------------------------------------------------------------------------
   group('toPythonLiteral', () {
-    test('null → None', () {
-      expect(toPythonLiteral(null), 'None');
+    test('null throws MontyInternalError', () {
+      expect(
+        () => toPythonLiteral(null),
+        throwsA(isA<MontyInternalError>()),
+      );
+    });
+
+    test('MontyNone() → None', () {
+      expect(toPythonLiteral(const MontyNone()), 'None');
     });
 
     test('true → True', () {
@@ -109,13 +118,13 @@ void main() {
 
     test('list with mixed types', () {
       expect(
-        toPythonLiteral([1, 'two', null, true]),
+        toPythonLiteral([1, 'two', const MontyNone(), true]),
         "[1, 'two', None, True]",
       );
     });
 
     test('unsupported type throws ArgumentError', () {
-      expect(() => toPythonLiteral(Object()), throwsArgumentError);
+      expect(() => toPythonLiteral(Object()), throwsA(isA<ArgumentError>()));
     });
   });
 
@@ -137,8 +146,15 @@ void main() {
       expect(inputsToCode({'name': 'Alice'}), "name = 'Alice'");
     });
 
-    test('null entry → None', () {
-      expect(inputsToCode({'x': null}), 'x = None');
+    test('MontyNone entry → None', () {
+      expect(inputsToCode({'x': const MontyNone()}), 'x = None');
+    });
+
+    test('null entry throws MontyInternalError', () {
+      expect(
+        () => inputsToCode({'x': null}),
+        throwsA(isA<MontyInternalError>()),
+      );
     });
 
     test('nan entry', () {
@@ -173,7 +189,10 @@ void main() {
     });
 
     test('unsupported value type propagates ArgumentError', () {
-      expect(() => inputsToCode({'bad': Object()}), throwsArgumentError);
+      expect(
+        () => inputsToCode({'bad': Object()}),
+        throwsA(isA<ArgumentError>()),
+      );
     });
   });
 }
