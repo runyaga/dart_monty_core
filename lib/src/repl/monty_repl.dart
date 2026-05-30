@@ -288,6 +288,23 @@ class MontyRepl {
     return _translateProgress(await _bindings.resumeWithError(errorMessage));
   }
 
+  /// Resumes a paused execution by raising a typed Python exception.
+  ///
+  /// [excType] is the Python exception class name (e.g. `'FileNotFoundError'`);
+  /// unknown names fall back to `RuntimeError`. Used by hosts driving the
+  /// `feedStart`/`resume` loop themselves (the built-in `feedRun` OS-call
+  /// dispatch already delivers typed exceptions).
+  Future<MontyProgress> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) async {
+    _checkNotDisposed();
+
+    return _translateProgress(
+      await _bindings.resumeWithException(excType, errorMessage),
+    );
+  }
+
   /// Resumes a paused OS call by signalling that the host does not handle
   /// [fnName]. Python raises `NameError: name '<fnName>' is not defined`.
   Future<MontyProgress> resumeNotFound(String fnName) async {
