@@ -1459,6 +1459,31 @@ function handleReplResumeWithError(id, replId, errorMessage) {
   }
 }
 
+function handleReplResumeWithException(id, replId, excType, errorMessage) {
+  const handle = replHandles.get(replId);
+  if (!handle) {
+    self.postMessage({ type: 'result', id, ok: false,
+      error: `No REPL session for replId: ${replId}`, errorType: 'StateError' });
+    return;
+  }
+  let cExcType = null;
+  let cErr = null;
+  let outError = null;
+  try {
+    cExcType = allocCString(excType);
+    cErr = allocCString(errorMessage);
+    outError = allocOutPtr();
+    const tag = wasm.monty_repl_resume_with_exception(handle, cExcType.ptr, cErr.ptr, outError.ptr);
+    const errPtr = outError.read();
+    const errMsg = readAndFreeCString(errPtr);
+    self.postMessage(readProgress(id, handle, tag, errMsg, REPL_PROGRESS));
+  } finally {
+    if (cExcType) wasm.monty_dealloc(cExcType.ptr, cExcType.size);
+    if (cErr) wasm.monty_dealloc(cErr.ptr, cErr.size);
+    if (outError) outError.free();
+  }
+}
+
 function handleReplResumeNotFound(id, replId, fnName) {
   const handle = replHandles.get(replId);
   if (!handle) {
@@ -1734,6 +1759,9 @@ self.onmessage = (e) => {
         break;
       case 'replResumeWithError':
         handleReplResumeWithError(id, replId, errorMessage);
+        break;
+      case 'replResumeWithException':
+        handleReplResumeWithException(id, replId, excType, errorMessage);
         break;
       case 'replResumeNotFound':
         handleReplResumeNotFound(id, replId, fnName);

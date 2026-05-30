@@ -248,6 +248,32 @@ pub fn json_to_monty_object(val: &Value) -> MontyObject {
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false),
                     },
+                    "filehandle" => {
+                        // Host (OS handler) returns this for an `Open` call; the
+                        // interpreter turns it into the `OpenFile` heap wrapper.
+                        // Mode is the canonical open() string (`r`/`rb`/`w`/…);
+                        // the engine only ever emits modes that round-trip, so a
+                        // parse failure falls back to read-only text.
+                        let path = map
+                            .get("path")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let position = map
+                            .get("position")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0);
+                        let mode = map
+                            .get("mode")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| s.parse::<monty::FileMode>().ok())
+                            .unwrap_or(monty::FileMode::Read(false));
+                        MontyObject::FileHandle(monty::MontyFileHandle {
+                            path,
+                            mode,
+                            position,
+                        })
+                    }
                     _ => {
                         // Unknown __type — fall through to dict
                         let pairs: Vec<(MontyObject, MontyObject)> = map

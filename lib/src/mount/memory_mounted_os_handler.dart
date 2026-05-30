@@ -76,6 +76,49 @@ OsCallHandler memoryMountedOsHandler({
   }
 
   return (op, args, kwargs) async {
+    // `open()` arrives as the bare `Open` OS-call (no `Path.` prefix) carrying
+    // [path, mode]. The host performs the open-time effect and returns a
+    // FileHandle; the interpreter then drives reads/writes through the
+    // `Path.read_text`/`write_text`/`append_text` calls handled below.
+    if (op == 'Open') {
+      final rawPath = args.firstOrNull;
+      if (rawPath is! String) return notMine(op, args, kwargs);
+      final path = _normalizePath(rawPath);
+      final mount = _findMount(path, normalizedMounts);
+      if (mount == null) return notMine(op, args, kwargs);
+
+      final modeArg = args.elementAtOrNull(1);
+      final mode = modeArg is String ? modeArg : 'r';
+      final readOnly = mode == 'r' || mode == 'rb';
+
+      if (readOnly) {
+        // Existing-file requirement, matching CPython's `open(path)`.
+        if (!vfs.containsKey(path)) {
+          if (_hasChildren(vfs, path) || _isMountRoot(path, normalizedMounts)) {
+            throw OsCallException(
+              "[Errno 21] Is a directory: '$path'",
+              pythonExceptionType: 'IsADirectoryError',
+            );
+          }
+          throw OsCallException(
+            "[Errno 2] No such file or directory: '$path'",
+            pythonExceptionType: 'FileNotFoundError',
+          );
+        }
+      } else {
+        _requireWritable(mount, path);
+        if (mode == 'w' || mode == 'wb') {
+          // Truncate (creating if missing) immediately on open.
+          vfs[path] = '';
+        } else {
+          // `a`/`ab`: create if missing, preserving existing content.
+          vfs.putIfAbsent(path, () => '');
+        }
+      }
+
+      return MontyFileHandle(path: path, mode: mode);
+    }
+
     if (!op.startsWith('Path.')) return notMine(op, args, kwargs);
 
     final rawPath = args.firstOrNull;
@@ -105,7 +148,9 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
 
-        return utf8.encode(content);
+        // Return a typed bytes value (not a bare List, which would decode as
+        // a Python list and break binary `open(...).read()` buffering).
+        return MontyBytes(utf8.encode(content));
 
       case 'Path.write_text':
         _requireWritable(mount, path);
@@ -135,6 +180,37 @@ OsCallHandler memoryMountedOsHandler({
         }
         _enforceLimit(mount, path, bytes.length);
         vfs[path] = utf8.decode(bytes, allowMalformed: true);
+
+        return bytes.length;
+
+      case 'Path.append_text':
+        _requireWritable(mount, path);
+        final value = args.elementAtOrNull(1);
+        if (value is! String) {
+          throw OsCallException(
+            'append_text expects a string, got ${value.runtimeType}',
+            pythonExceptionType: 'TypeError',
+          );
+        }
+        _enforceLimit(mount, path, utf8.encode(value).length);
+        vfs[path] = '${vfs[path] ?? ''}$value';
+
+        return value.length;
+
+      case 'Path.append_bytes':
+        _requireWritable(mount, path);
+        final value = args.elementAtOrNull(1);
+        final List<int> bytes;
+        if (value is List) {
+          bytes = value.cast<int>();
+        } else {
+          throw OsCallException(
+            'append_bytes expects a List<int>, got ${value.runtimeType}',
+            pythonExceptionType: 'TypeError',
+          );
+        }
+        _enforceLimit(mount, path, bytes.length);
+        vfs[path] = '${vfs[path] ?? ''}${utf8.decode(bytes, allowMalformed: true)}';
 
         return bytes.length;
 

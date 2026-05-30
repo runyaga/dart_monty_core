@@ -646,10 +646,7 @@ impl MontyHandle {
                     let meta = OsCallMeta {
                         os_fn_name,
                         args_json: serde_json::to_string(
-                            &args
-                                .iter()
-                                .map(monty_object_to_json)
-                                .collect::<Vec<_>>(),
+                            &args.iter().map(monty_object_to_json).collect::<Vec<_>>(),
                         )
                         .unwrap_or_else(|_| "[]".into()),
                         kwargs_json: if kwargs.is_empty() {

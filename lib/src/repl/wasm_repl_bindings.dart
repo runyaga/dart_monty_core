@@ -91,6 +91,23 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) async {
+    if (!_created) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = await _bindings.replResumeWithException(
+      json.encode(excType),
+      json.encode(errorMessage),
+      replId: _replId,
+    );
+
+    return _translateWasmProgressResult(result);
+  }
+
+  @override
   Future<CoreProgressResult> resumeNotFound(String fnName) async {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');

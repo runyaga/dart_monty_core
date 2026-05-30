@@ -32,6 +32,14 @@ abstract class ReplBindings {
   /// Resumes by raising an error in Python.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
 
+  /// Resumes by raising a typed Python exception. [excType] is the Python
+  /// exception class name (e.g. `FileNotFoundError`); unknown names fall
+  /// back to RuntimeError.
+  Future<CoreProgressResult> resumeWithException(
+    String excType,
+    String errorMessage,
+  );
+
   /// Resumes by signalling "function not found" — Python sees NameError.
   ///
   /// Used when the host cannot dispatch an OS call; [fnName] is embedded in

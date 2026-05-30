@@ -27,6 +27,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 
 import '_fixture_corpus.dart';
 import '_fixture_parser.dart';
+import '_unsupported_wasm_fixtures.dart';
 
 @JS('console.log')
 external void _consoleLog(JSAny? message);
@@ -63,32 +64,8 @@ const _supportedExtFns = {
 const Set<String> _unsupportedExtFns = {};
 
 /// v0.0.18 corpus fixtures exercising interpreter features not yet wired into
-/// the WASM binding. Skipped here (not failed) until support lands; tracked in
-/// the 0.18.0 CHANGELOG. Remove entries as each gap is closed.
-const Set<String> _unsupportedFixtures = {
-  // `open()` / file I/O: the new `Open` OS-call is not yet dispatched through
-  // the Dart OS handler + WASM VFS (fails with "Unsupported OS call: Open").
-  'open__fs.py',
-  'open__fs_windows.py',
-  'with__all.py',
-  // Context-manager behaviors driven by the synthetic `_test_cm()` hook, which
-  // only exists when the native crate is built with the `test-hooks` cargo
-  // feature (not enabled in the shipped build) — fixtures NameError otherwise.
-  'with__cm_behaviors.py',
-  'with__cm_context_expr_raises_traceback.py',
-  'with__cm_enter_raises_traceback.py',
-  'with__cm_exit_raises_normal_exit_traceback.py',
-  'with__cm_nested_body_raises_traceback.py',
-  'with__cm_traceback.py',
-  // Cyclic containers: FFI produces the correct cyclic value; only the WASM
-  // runner's expected-value comparison mismatches the `[[...]]` cycle repr.
-  'pyobject__cycle_dict_self.py',
-  'pyobject__cycle_list_dict.py',
-  'pyobject__cycle_list_self.py',
-  'pyobject__cycle_multiple_refs.py',
-  // dart2js divergence on `2**63`-scale range membership (big-int boundary).
-  'range__ops.py',
-};
+/// the WASM binding. Shared with the other WASM fixture harnesses.
+const _unsupportedFixtures = unsupportedWasmFixtures;
 
 /// Values supplied for [MontyNameLookup] progress when the engine encounters
 /// an unregistered global name. Mirrors the oracle in the monty-datatest crate.
@@ -397,6 +374,70 @@ final class _VirtualFs {
     _files[p] = b;
   }
 
+  /// Performs the open-time effect for `open(p, mode)` and returns the
+  /// FileHandle payload the interpreter resumes with. `r`/`rb` require an
+  /// existing file; `w`/`wb` truncate (creating if missing); `a`/`ab` create
+  /// if missing, preserving content. The engine then drives reads/writes via
+  /// `Path.read_text`/`write_text`/`append_text`.
+  Map<String, Object?> open(String p, String mode) {
+    if (_dirs.contains(p)) {
+      throw _OsError(
+        "[Errno 21] Is a directory: '$p'",
+        pythonExceptionType: 'IsADirectoryError',
+      );
+    }
+    final readOnly = mode == 'r' || mode == 'rb';
+    if (readOnly) {
+      if (!_files.containsKey(p)) {
+        throw _OsError(
+          "[Errno 2] No such file or directory: '$p'",
+          pythonExceptionType: 'FileNotFoundError',
+        );
+      }
+    } else {
+      final parent = _parent(p);
+      if (parent != '/' && !_dirs.contains(parent)) {
+        throw _OsError(
+          "[Errno 2] No such file or directory: '$p'",
+          pythonExceptionType: 'FileNotFoundError',
+        );
+      }
+      if (mode == 'w' || mode == 'wb') {
+        _files[p] = ''; // truncate / create empty
+      } else {
+        _files.putIfAbsent(p, () => ''); // a/ab: create, preserve content
+      }
+    }
+
+    return {'__type': 'filehandle', 'path': p, 'mode': mode, 'position': 0};
+  }
+
+  /// Appends text to [p], returning the number of codepoints written.
+  int appendText(String p, String t) {
+    final existing = _files[p];
+    final base = existing is String
+        ? existing
+        : existing is List<int>
+        ? utf8.decode(existing, allowMalformed: true)
+        : '';
+    _files[p] = '$base$t';
+
+    return t.runes.length;
+  }
+
+  /// Appends bytes to [p], returning the number of bytes written.
+  int appendBytes(String p, List<int> b) {
+    final existing = _files[p];
+    final base = existing is List<int>
+        ? existing
+        : existing is String
+        ? utf8.encode(existing)
+        : <int>[];
+    _files[p] = [...base, ...b];
+
+    return b.length;
+  }
+
   void unlink(String p) {
     if (_dirs.contains(p)) {
       throw _OsError(
@@ -591,6 +632,42 @@ Object? _osDispatch(
   _VirtualFs vfs,
 ) {
   switch (op) {
+    // ---- open() / file I/O ----
+    case 'Open':
+      final p = _pathStr(args.first);
+      _validatePath(p);
+      final modeArg = args.length > 1 ? args[1] : const MontyString('r');
+      final mode = modeArg is MontyString ? modeArg.value : 'r';
+
+      return vfs.open(p, mode);
+
+    case 'Path.append_text':
+      final p = _pathStr(args.first);
+      _validatePath(p);
+      final atArg = args.length > 1 ? args[1] : const MontyNone();
+      if (atArg is! MontyString) {
+        throw _OsError(
+          'data must be str, not ${_montyTypeName(atArg)}',
+          pythonExceptionType: 'TypeError',
+        );
+      }
+
+      return vfs.appendText(p, atArg.value);
+
+    case 'Path.append_bytes':
+      final p = _pathStr(args.first);
+      _validatePath(p);
+      final abArg = args.length > 1 ? args[1] : const MontyNone();
+      if (abArg is! MontyBytes) {
+        throw _OsError(
+          "a bytes-like object is required, not '${_montyTypeName(abArg)}'",
+          pythonExceptionType: 'TypeError',
+        );
+      }
+      vfs.appendBytes(p, abArg.value);
+
+      return null;
+
     // ---- datetime ----
     case 'date.today':
       return {'__type': 'date', 'year': 2024, 'month': 1, 'day': 15};

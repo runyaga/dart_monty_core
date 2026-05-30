@@ -34,6 +34,69 @@ final class MontyPath extends MontyValue {
 }
 
 // ---------------------------------------------------------------------------
+// FileHandle
+// ---------------------------------------------------------------------------
+
+/// Represents an open file object (`_io.TextIOWrapper` / `BufferedReader` /
+/// …) produced by Python's `open()`.
+///
+/// The interpreter never holds a live OS handle: an `Open` OS-call returns
+/// one of these (carrying the virtual [path], canonical open() [mode], and
+/// byte/char [position]), and the engine drives subsequent reads/writes
+/// through `Path.read_text`/`write_text`/… OS-calls. An [OsCallHandler]
+/// servicing `Open` returns a [MontyFileHandle] to satisfy the call.
+@immutable
+final class MontyFileHandle extends MontyValue {
+  /// Creates a [MontyFileHandle] for [path] opened in [mode] at [position].
+  const MontyFileHandle({
+    required this.path,
+    required this.mode,
+    this.position = 0,
+  });
+
+  factory MontyFileHandle._fromMap(Map<String, dynamic> map) => MontyFileHandle(
+    path: map['path'] as String? ?? '',
+    mode: map['mode'] as String? ?? 'r',
+    position: (map['position'] as num?)?.toInt() ?? 0,
+  );
+
+  /// The virtual (sandbox) path of the file. Never a host path.
+  final String path;
+
+  /// The canonical `open()` mode string (`r`, `rb`, `w`, `wb`, `a`, `ab`).
+  final String mode;
+
+  /// Position for sized/line/seek operations: char index in text mode,
+  /// byte index in binary mode. `0` for a freshly opened file.
+  final int position;
+
+  @override
+  Map<String, Object?> toJson() => {
+    '__type': 'filehandle',
+    'path': path,
+    'mode': mode,
+    'position': position,
+  };
+
+  @override
+  Map<String, Object?> get dartValue => toJson();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyFileHandle &&
+          other.path == path &&
+          other.mode == mode &&
+          other.position == position);
+
+  @override
+  int get hashCode => Object.hash(path, mode, position);
+
+  @override
+  String toString() => 'MontyFileHandle($path, mode: $mode, pos: $position)';
+}
+
+// ---------------------------------------------------------------------------
 // Structured types
 // ---------------------------------------------------------------------------
 

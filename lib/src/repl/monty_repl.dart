@@ -588,17 +588,15 @@ class MontyRepl {
         await _bindings.resumeNotFound(e.fnName ?? call.operationName),
       );
     } on OsCallException catch (e) {
-      // The REPL bindings do not yet expose a typed exception path
-      // (no monty_repl_resume_with_exception). Best-effort: prefix the
-      // requested Python exception type into the message so it is
-      // visible in Python tracebacks; the actual class surfaces as
-      // RuntimeError until the binding is extended.
-      final wireMessage = e.pythonExceptionType != null
-          ? '${e.pythonExceptionType}: ${e.message}'
-          : e.message;
+      // Deliver the requested Python exception class so scripts can catch it
+      // (`except FileNotFoundError:` etc.). Unknown names fall back to
+      // RuntimeError inside the engine.
+      final excType = e.pythonExceptionType;
 
       return _translateProgress(
-        await _bindings.resumeWithError(wireMessage),
+        excType != null
+            ? await _bindings.resumeWithException(excType, e.message)
+            : await _bindings.resumeWithError(e.message),
       );
     } on Object catch (e) {
       return _translateProgress(await _bindings.resumeWithError(e.toString()));

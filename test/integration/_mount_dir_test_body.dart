@@ -49,20 +49,18 @@ void runMountDirTests() {
       );
 
       // The handler raises OsCallException(pythonExceptionType:
-      // 'PermissionError'). REPL bindings don't yet plumb typed Python
-      // exceptions, so it surfaces as RuntimeError with the type name
-      // prefixed into the message.
+      // 'PermissionError'), delivered to Python as a typed PermissionError.
       final r = await Monty(
         'import pathlib\n'
         'pathlib.Path("/data/x.txt").write_text("new")',
       ).run(osHandler: handler);
 
       expect(r.error, isNotNull);
-      expect(r.error?.message, contains('PermissionError'));
+      expect(r.error?.excType, 'PermissionError');
       expect(r.error?.message, contains('/data/x.txt'));
     });
 
-    test('Python sees a path outside every mount as a runtime error', () async {
+    test('Python sees a path outside every mount as a PermissionError', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         vfs: const {},
@@ -73,8 +71,30 @@ void runMountDirTests() {
       ).run(osHandler: handler);
 
       expect(r.error, isNotNull);
-      expect(r.error?.message, contains('PermissionError'));
+      expect(r.error?.excType, 'PermissionError');
       expect(r.error?.message, contains('/etc/passwd'));
+    });
+
+    test('Python can catch the typed OS exception with except', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        vfs: const {},
+      );
+
+      final r = await Monty(
+        'import pathlib\n'
+        'try:\n'
+        '    pathlib.Path("/data/missing.txt").read_text()\n'
+        "    out = 'no-error'\n"
+        'except FileNotFoundError as e:\n'
+        "    out = ('caught', str(e))\n"
+        'out',
+      ).run(osHandler: handler);
+
+      expect(r.error, isNull);
+      final tuple = r.value.dartValue! as List<Object?>;
+      expect(tuple.first, 'caught');
+      expect(tuple[1], contains('/data/missing.txt'));
     });
 
     test('exists / is_file / is_dir reflect mount state', () async {

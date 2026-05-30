@@ -256,45 +256,63 @@ impl MontyReplHandle {
 
     /// Resume a paused execution by raising an error in Python.
     pub fn resume_with_error(&mut self, error_message: &str) -> (MontyProgressTag, Option<String>) {
+        self.resume_with_monty_exception(monty::MontyException::new(
+            monty::ExcType::RuntimeError,
+            Some(error_message.to_string()),
+        ))
+    }
+
+    /// Resume a paused execution by raising a typed Python exception.
+    ///
+    /// `exc_type` is the Python exception class name (e.g.
+    /// `"FileNotFoundError"`). Unknown names fall back to `RuntimeError`.
+    pub fn resume_with_exception(
+        &mut self,
+        exc_type: &str,
+        error_message: &str,
+    ) -> (MontyProgressTag, Option<String>) {
+        let exc_kind = exc_type
+            .parse::<monty::ExcType>()
+            .unwrap_or(monty::ExcType::RuntimeError);
+        self.resume_with_monty_exception(monty::MontyException::new(
+            exc_kind,
+            Some(error_message.to_string()),
+        ))
+    }
+
+    /// Shared resume path: deliver `exc` to the paused/OS call as the
+    /// external-function result, then advance the REPL.
+    fn resume_with_monty_exception(
+        &mut self,
+        exc: monty::MontyException,
+    ) -> (MontyProgressTag, Option<String>) {
         let state = std::mem::replace(&mut self.state, ReplHandleState::Consumed);
-        match state {
-            ReplHandleState::Paused { call, .. } => {
-                let mut buf = String::new();
-                let result = call.resume(
-                    ExtFunctionResult::Error(monty::MontyException::new(
-                        monty::ExcType::RuntimeError,
-                        Some(error_message.to_string()),
-                    )),
-                    PrintWriter::CollectString(&mut buf),
-                );
-                self.print_output.push_str(&buf);
-                match result {
-                    Ok(progress) => self.process_repl_progress(progress),
-                    Err(err) => self.handle_repl_start_error(*err),
-                }
-            }
-            ReplHandleState::OsCall { call, .. } => {
-                let mut buf = String::new();
-                let result = call.resume(
-                    ExtFunctionResult::Error(monty::MontyException::new(
-                        monty::ExcType::RuntimeError,
-                        Some(error_message.to_string()),
-                    )),
-                    PrintWriter::CollectString(&mut buf),
-                );
-                self.print_output.push_str(&buf);
-                match result {
-                    Ok(progress) => self.process_repl_progress(progress),
-                    Err(err) => self.handle_repl_start_error(*err),
-                }
-            }
+        let call = match state {
+            ReplHandleState::Paused { call, .. } => Ok(call),
+            ReplHandleState::OsCall { call, .. } => Err(call),
             other => {
                 self.state = other;
-                (
+                return (
                     MontyProgressTag::Error,
                     Some("handle not in Paused or OsCall state".into()),
-                )
+                );
             }
+        };
+        let mut buf = String::new();
+        let result = match call {
+            Ok(c) => c.resume(
+                ExtFunctionResult::Error(exc),
+                PrintWriter::CollectString(&mut buf),
+            ),
+            Err(c) => c.resume(
+                ExtFunctionResult::Error(exc),
+                PrintWriter::CollectString(&mut buf),
+            ),
+        };
+        self.print_output.push_str(&buf);
+        match result {
+            Ok(progress) => self.process_repl_progress(progress),
+            Err(err) => self.handle_repl_start_error(*err),
         }
     }
 
@@ -581,10 +599,7 @@ impl MontyReplHandle {
                     let meta = OsCallMeta {
                         os_fn_name,
                         args_json: serde_json::to_string(
-                            &args
-                                .iter()
-                                .map(monty_object_to_json)
-                                .collect::<Vec<_>>(),
+                            &args.iter().map(monty_object_to_json).collect::<Vec<_>>(),
                         )
                         .unwrap_or_else(|_| "[]".into()),
                         kwargs_json: if kwargs.is_empty() {

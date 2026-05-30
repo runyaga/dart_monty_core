@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.18.1
+
+### Added
+
+- **`open()` / file I/O.** `memoryMountedOsHandler` now services the `Open`
+  OS-call (existence-check for `r`/`rb`, truncate-create for `w`/`wb`,
+  create-preserving for `a`/`ab`) and the `append_text`/`append_bytes`
+  calls the interpreter emits. Python can `open()` files, read/write/append,
+  and use `with open(...) as f:` against an in-memory mount. A new
+  **`MontyFileHandle`** `MontyValue` represents the returned file object.
+- **Typed OS exceptions.** OS-handler errors are now delivered to Python as
+  their real class — `except FileNotFoundError:` / `PermissionError:` etc.
+  work. Previously every `OsCallException` surfaced as `RuntimeError`
+  (REPL/run path). New FFI + WASM resume entry points:
+  `monty_repl_resume_with_exception` and `DartMontyBridge.replResumeWithException`.
+
+### Fixed
+
+- `memoryMountedOsHandler`'s `Path.read_bytes` now returns a typed bytes value
+  instead of a bare list, so binary `open(..., 'rb').read()` buffers correctly.
+
+### Known limitations
+
+- The exhaustive `open__fs` / `open__fs_windows` corpus fixtures pass on FFI
+  but remain skipped on the WASM runners (binary-buffer/seek edge cases and
+  Windows text-encoding specifics). Core file I/O is covered by `with__all`
+  (un-skipped) and `wasm_open_test`. The `with__cm_*` (test-hooks),
+  `pyobject__cycle_*` (runner comparison), and `range__ops` (dart2js big-int)
+  fixtures remain skipped as before.
+
 ## 0.18.0
 
 Tracks upstream [`monty` v0.0.18](https://github.com/pydantic/monty/releases/tag/v0.0.18).
