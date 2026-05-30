@@ -1,25 +1,31 @@
-// Shared skip-set for the WASM fixture harnesses (wasm_runner.dart,
+// Shared skip-sets for the WASM fixture harnesses (wasm_runner.dart,
 // wasm_runner_wasm.dart, wasm_fixture_test.dart).
-//
-// These corpus fixtures depend on capabilities outside the host binding's
-// reach. They are skipped (not failed); tracked in the CHANGELOG. Remove
-// entries if/when the underlying capability lands.
 
-const Set<String> unsupportedWasmFixtures = {
-  // Synthetic context-manager (`_test_cm()`): only exists under monty's
-  // testing-only `test-hooks` cargo feature, never in the shipped binary the
-  // WASM runners use. These have dedicated FFI conformance via a marker-gated
-  // test-hooks build — `bash tool/test_cm.sh` (ffi_with_cm_test.dart). A WASM
-  // equivalent would need a separate staged test-hooks wasm. Real
-  // `with open(...)` is covered by with__all.py on both backends.
+/// Fixtures that never run on the WASM corpus runners, regardless of build:
+/// the shared monty wasm32 engine diverges from native here, so it's an
+/// upstream concern, not a host-binding gap.
+const alwaysUnsupportedWasmFixtures = {
+  // Pure-Python range membership at `2**63` (beyond i64). Passes on native FFI;
+  // the same monty wasm32 engine diverges.
+  'range__ops.py',
+};
+
+/// Fixtures that need monty's synthetic `_test_cm()` context manager, which
+/// only exists under the testing-only `test-hooks` cargo feature. They run on
+/// the corpus runners ONLY when compiled with `-DMONTY_TEST_HOOKS=true` against
+/// a test-hooks WASM binary (see tool/test_cm_wasm.sh) — never in the shipped
+/// build. Real `with open(...)` is covered by with__all.py on both backends.
+const testHooksWasmFixtures = {
   'with__cm_behaviors.py',
   'with__cm_context_expr_raises_traceback.py',
   'with__cm_enter_raises_traceback.py',
   'with__cm_exit_raises_normal_exit_traceback.py',
   'with__cm_nested_body_raises_traceback.py',
   'with__cm_traceback.py',
-  // Pure-Python range membership at `2**63` (beyond i64). The same monty
-  // engine runs on both backends, so this is an upstream wasm32 big-int
-  // divergence (passes on native FFI), not a host-binding gap.
-  'range__ops.py',
+};
+
+/// Union of both — fixtures skipped under a normal (no-test-hooks) WASM build.
+const unsupportedWasmFixtures = {
+  ...alwaysUnsupportedWasmFixtures,
+  ...testHooksWasmFixtures,
 };

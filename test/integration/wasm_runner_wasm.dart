@@ -65,7 +65,9 @@ const Set<String> _unsupportedExtFns = {};
 
 /// v0.0.18 corpus fixtures exercising interpreter features not yet wired into
 /// the WASM binding. Shared with the other WASM fixture harnesses.
-const _unsupportedFixtures = unsupportedWasmFixtures;
+// Set by `dart compile wasm -DMONTY_TEST_HOOKS=true` (tool/test_cm_wasm.sh),
+// paired with a test-hooks WASM binary so `_test_cm`-based fixtures can run.
+const _testHooks = bool.fromEnvironment('MONTY_TEST_HOOKS');
 
 /// Values supplied for [MontyNameLookup] progress when the engine encounters
 /// an unregistered global name. Mirrors the oracle in the monty-datatest crate.
@@ -1107,8 +1109,10 @@ Future<void> main() async {
 
   final stopwatch = Stopwatch()..start();
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
-    // Skip fixtures for v0.0.18 features not yet wired into the WASM binding.
-    if (_unsupportedFixtures.contains(key)) {
+    // Engine-level divergences are always skipped; test-hooks fixtures run
+    // only under a `-DMONTY_TEST_HOOKS=true` build against a test-hooks WASM.
+    if (alwaysUnsupportedWasmFixtures.contains(key) ||
+        (!_testHooks && testHooksWasmFixtures.contains(key))) {
       skipped++;
       continue;
     }

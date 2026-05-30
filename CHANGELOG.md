@@ -25,10 +25,11 @@
 
 - `with__cm_*` use monty's synthetic `_test_cm()`, which only exists under the
   testing-only `test-hooks` cargo feature (never shipped). They have dedicated
-  FFI conformance via `bash tool/test_cm.sh` (a marker-gated test-hooks build
-  of the oracle + FFI dylib); they stay skipped on the WASM runners, which use
-  the shipped no-test-hooks binary. Real `with open(...)` is covered by
-  `with__all` on both backends.
+  conformance on both backends via opt-in test-hooks builds that never touch
+  the shipped binaries: `bash tool/test_cm.sh` (FFI — marker-gated oracle +
+  dylib) and `bash tool/test_cm_wasm.sh` (WASM — a staged test-hooks `.wasm`
+  with the corpus runner compiled `-DMONTY_TEST_HOOKS=true`). The default
+  suites skip them. Real `with open(...)` is covered by `with__all`.
 - `range__ops` exercises `2**63` range membership where the shared monty
   wasm32 engine diverges from native; skipped on the WASM runners only.
 - `open__fs` / `open__fs_windows` and `pyobject__cycle_*` pass on both backends.
