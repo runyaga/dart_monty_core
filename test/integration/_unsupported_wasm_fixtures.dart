@@ -6,11 +6,12 @@
 // entries if/when the underlying capability lands.
 
 const Set<String> unsupportedWasmFixtures = {
-  // Synthetic context-manager (`_test_cm()`): only exists when the native
-  // crate is built with monty's `test-hooks` cargo feature, which is
-  // explicitly testing-only and intentionally not in the shipped binary.
-  // Exercising these would need a parallel test-hooks build of both the FFI
-  // dylib and WASM binary. Real `with open(...)` is covered by with__all.py.
+  // Synthetic context-manager (`_test_cm()`): only exists under monty's
+  // testing-only `test-hooks` cargo feature, never in the shipped binary the
+  // WASM runners use. These have dedicated FFI conformance via a marker-gated
+  // test-hooks build — `bash tool/test_cm.sh` (ffi_with_cm_test.dart). A WASM
+  // equivalent would need a separate staged test-hooks wasm. Real
+  // `with open(...)` is covered by with__all.py on both backends.
   'with__cm_behaviors.py',
   'with__cm_context_expr_raises_traceback.py',
   'with__cm_enter_raises_traceback.py',

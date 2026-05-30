@@ -23,12 +23,15 @@
 
 ### Known limitations
 
-- Two corpus fixtures remain skipped on the WASM runners, for reasons outside
-  the host binding: `with__cm_*` need monty's testing-only `test-hooks` cargo
-  feature (the synthetic `_test_cm` CM; real `with open(...)` is covered by
-  `with__all`), and `range__ops` exercises `2**63` range membership where the
-  shared monty wasm32 engine diverges from native. The `open__fs` /
-  `open__fs_windows` and `pyobject__cycle_*` fixtures now pass on both backends.
+- `with__cm_*` use monty's synthetic `_test_cm()`, which only exists under the
+  testing-only `test-hooks` cargo feature (never shipped). They have dedicated
+  FFI conformance via `bash tool/test_cm.sh` (a marker-gated test-hooks build
+  of the oracle + FFI dylib); they stay skipped on the WASM runners, which use
+  the shipped no-test-hooks binary. Real `with open(...)` is covered by
+  `with__all` on both backends.
+- `range__ops` exercises `2**63` range membership where the shared monty
+  wasm32 engine diverges from native; skipped on the WASM runners only.
+- `open__fs` / `open__fs_windows` and `pyobject__cycle_*` pass on both backends.
 
 ## 0.18.0
 
