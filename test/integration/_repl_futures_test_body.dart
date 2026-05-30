@@ -109,23 +109,20 @@ result
 
     // --- Error path --------------------------------------------------------
     //
-    // Observed contract (probed on FFI 2026-05-04): an `errors` entry on
-    // resolveFutures terminates the script with `MontyScriptError`, even
-    // when Python wraps the await in `try/except`. The docstring says the
-    // error is "raised as RuntimeError in Python", but in practice the
-    // failure short-circuits past Python's exception handling. Tests
-    // below verify the actual contract; if the engine's per-call error
-    // delivery is fixed later, swap them for try/except-catches-it
-    // assertions.
+    // Contract (monty v0.0.18): an `errors` entry on resolveFutures is
+    // raised as a `RuntimeError` at the await point in Python, so a
+    // wrapping `try/except RuntimeError` catches it normally. (Up to
+    // v0.0.17 this short-circuited past Python's exception handling and
+    // terminated the script with `MontyScriptError`; v0.0.18's exception
+    // handling fixes deliver the per-call error correctly.)
 
     // matrix-cell: Layer 1 / cell 5 (single await, error path)
     test(
-      'resolveFutures errors terminate the script with MontyScriptError',
+      'resolveFutures errors surface as a catchable RuntimeError in Python',
       () async {
-        expect(
-          () => _runWithFutures(
-            repl,
-            '''
+        final result = await _runWithFutures(
+          repl,
+          '''
 try:
     result = await fetch(1)
     out = ("ok", result)
@@ -133,20 +130,17 @@ except RuntimeError as e:
     out = ("err", str(e))
 out
 ''',
-            externalFunctions: ['fetch'],
-            resolver: (ids, _) => (
-              results: <int, Object?>{},
-              errors: {for (final id in ids) id: 'simulated upstream failure'},
-            ),
-          ),
-          throwsA(
-            isA<MontyScriptError>().having(
-              (e) => e.message,
-              'message',
-              contains('simulated upstream failure'),
-            ),
+          externalFunctions: ['fetch'],
+          resolver: (ids, _) => (
+            results: <int, Object?>{},
+            errors: {for (final id in ids) id: 'simulated upstream failure'},
           ),
         );
+
+        expect(result.result.error, isNull);
+        final tuple = result.result.value.dartValue! as List<Object?>;
+        expect(tuple.first, 'err');
+        expect(tuple[1], contains('simulated upstream failure'));
       },
     );
 

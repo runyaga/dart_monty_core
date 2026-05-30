@@ -116,6 +116,12 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
             "offset_seconds": tz.offset_seconds,
             "name": tz.name,
         }),
+        MontyObject::FileHandle(fh) => json!({
+            "__type": "filehandle",
+            "path": fh.path,
+            "mode": fh.mode.as_str(),
+            "position": fh.position,
+        }),
     }
 }
 
