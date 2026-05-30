@@ -357,7 +357,9 @@ final class _VirtualFs {
     return t.runes.length; // codepoint count, not UTF-16 unit count
   }
 
-  void writeBytes(String p, List<int> b) {
+  /// Writes bytes to [p] and returns the number of bytes written (needed by
+  /// the buffered binary `open(...).write()` path to advance position).
+  int writeBytes(String p, List<int> b) {
     if (_dirs.contains(p)) {
       throw _OsError(
         "[Errno 21] Is a directory: '$p'",
@@ -372,6 +374,8 @@ final class _VirtualFs {
       );
     }
     _files[p] = b;
+
+    return b.length;
   }
 
   /// Performs the open-time effect for `open(p, mode)` and returns the
@@ -664,9 +668,7 @@ Object? _osDispatch(
           pythonExceptionType: 'TypeError',
         );
       }
-      vfs.appendBytes(p, abArg.value);
-
-      return null;
+      return vfs.appendBytes(p, abArg.value);
 
     // ---- datetime ----
     case 'date.today':
@@ -778,7 +780,9 @@ Object? _osDispatch(
           pythonExceptionType: 'FileNotFoundError',
         );
       }
-      final b = c is String ? c.codeUnits : c as List<int>;
+      // utf8.encode (not codeUnits) so non-ASCII text reads back as its real
+      // on-disk UTF-8 bytes (e.g. β → 0xCE 0xB2, not the UTF-16 unit 946).
+      final b = c is String ? utf8.encode(c) : c as List<int>;
 
       return {'__type': 'bytes', 'value': b};
 
@@ -820,9 +824,8 @@ Object? _osDispatch(
           pythonExceptionType: 'TypeError',
         );
       }
-      vfs.writeBytes(p, wbArg.value);
 
-      return null;
+      return vfs.writeBytes(p, wbArg.value);
 
     case 'Path.mkdir':
       final p = _pathStr(args.first);

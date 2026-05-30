@@ -23,12 +23,12 @@
 
 ### Known limitations
 
-- The exhaustive `open__fs` / `open__fs_windows` corpus fixtures pass on FFI
-  but remain skipped on the WASM runners (binary-buffer/seek edge cases and
-  Windows text-encoding specifics). Core file I/O is covered by `with__all`
-  (un-skipped) and `wasm_open_test`. The `with__cm_*` (test-hooks),
-  `pyobject__cycle_*` (runner comparison), and `range__ops` (dart2js big-int)
-  fixtures remain skipped as before.
+- Two corpus fixtures remain skipped on the WASM runners, for reasons outside
+  the host binding: `with__cm_*` need monty's testing-only `test-hooks` cargo
+  feature (the synthetic `_test_cm` CM; real `with open(...)` is covered by
+  `with__all`), and `range__ops` exercises `2**63` range membership where the
+  shared monty wasm32 engine diverges from native. The `open__fs` /
+  `open__fs_windows` and `pyobject__cycle_*` fixtures now pass on both backends.
 
 ## 0.18.0
 

@@ -197,6 +197,23 @@ ExpectRaise? _parseTracebackDocstring(String source) {
 }
 
 Object? _parseReturnValue(String raw) {
+  final trimmed = raw.trim();
+
+  // Nested list/dict reprs (only the cyclic fixtures use these). A bracket
+  // pair containing just `...` is the cycle marker, which the engine
+  // serialises as the placeholder string `[...]` / `{...}` — so parsing it to
+  // that same string makes structural comparison match.
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    final parser = _ReprParser(trimmed);
+    final value = parser.tryParse();
+    if (value != _ReprParser.failed) return value;
+    // Fall through to scalar handling on parse failure.
+  }
+
+  return _parseScalarRepr(trimmed);
+}
+
+Object? _parseScalarRepr(String raw) {
   if (raw == 'None') return null;
   if (raw == 'True') return true;
   if (raw == 'False') return false;
@@ -213,6 +230,125 @@ Object? _parseReturnValue(String raw) {
   }
 
   return raw;
+}
+
+/// Minimal recursive-descent parser for the Python-repr subset used in
+/// `# Return=` directives: nested lists/dicts, scalars, and the cycle
+/// markers `[...]` / `{...}` (emitted as their placeholder strings).
+class _ReprParser {
+  _ReprParser(this._s);
+
+  static const Object failed = Object();
+
+  final String _s;
+  int _i = 0;
+  bool _error = false;
+
+  Object? tryParse() {
+    final value = _value();
+    _skipSpace();
+    if (_error || _i != _s.length) return failed;
+
+    return value;
+  }
+
+  Object? _value() {
+    _skipSpace();
+    if (_i >= _s.length) {
+      _error = true;
+
+      return null;
+    }
+    final c = _s[_i];
+    if (c == '[') return _collection(']', '[...]', isDict: false);
+    if (c == '{') return _collection('}', '{...}', isDict: true);
+
+    return _scalar();
+  }
+
+  Object? _collection(String close, String marker, {required bool isDict}) {
+    _i++; // consume the already-matched opening bracket
+    _skipSpace();
+    if (_peek() == '.') {
+      // `...` cycle marker → placeholder string.
+      if (!_consume('...')) return null;
+      _skipSpace();
+      if (!_consume(close)) return null;
+
+      return marker;
+    }
+    final list = <Object?>[];
+    final map = <String, Object?>{};
+    while (true) {
+      _skipSpace();
+      if (_peek() == close) {
+        _i++;
+        break;
+      }
+      final key = _value();
+      if (_error) return null;
+      if (isDict) {
+        _skipSpace();
+        if (!_consume(':')) return null;
+        final val = _value();
+        if (_error) return null;
+        map['$key'] = val;
+      } else {
+        list.add(key);
+      }
+      _skipSpace();
+      if (_peek() == ',') {
+        _i++;
+      }
+    }
+
+    return isDict ? map : list;
+  }
+
+  Object? _scalar() {
+    final start = _i;
+    final first = _peek();
+    if (first == "'" || first == '"') {
+      _i++;
+      final buf = StringBuffer();
+      while (_i < _s.length && _s[_i] != first) {
+        buf.write(_s[_i]);
+        _i++;
+      }
+      if (_i >= _s.length) {
+        _error = true;
+
+        return null;
+      }
+      _i++; // closing quote
+
+      return buf.toString();
+    }
+    while (_i < _s.length && !',]}:'.contains(_s[_i])) {
+      _i++;
+    }
+
+    return _parseScalarRepr(_s.substring(start, _i).trim());
+  }
+
+  String _peek() => _i < _s.length ? _s[_i] : '';
+
+  bool _consume(String token) {
+    if (_s.startsWith(token, _i)) {
+      _i += token.length;
+
+      return true;
+    }
+    _error = true;
+
+    return false;
+  }
+
+  void _skipSpace() {
+    while (_i < _s.length && _s[_i] == ' ') {
+      _i++;
+    }
+  }
 }
 
 FixtureExpectation _parseRaise(String raw) {
