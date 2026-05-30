@@ -144,9 +144,13 @@ cargo fmt --check
 cargo clippy -- -D warnings
 cargo deny check
 cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/'   # ≥60% gate
+cd ..
+dcm analyze lib test                                               # code metrics + custom rules
 ```
 
-DCM (code metrics + custom rules) runs in CI only — requires licence keys.
+DCM (code metrics + custom rules) is a local step — run it before pushing.
+It is not wired into CI yet. The `dcm analyze` command runs without a licence
+key; only the paid rules tier needs one.
 
 ## Demos
 
@@ -166,8 +170,9 @@ belong in `dart_monty`.
 ## CI
 
 - `ci.yaml` — analyze, format, FFI feature + oracle, WASM (dart2js +
-  dart2wasm), Rust fmt/clippy/deny/coverage, DCM, patch-coverage 70%
-  gate. Runs on PRs and `main`.
+  dart2wasm), Rust fmt/clippy/deny/coverage, patch-coverage 70%
+  gate. Runs on PRs and `main`. (DCM is not in CI — run it locally; see
+  Static checks.)
 - `publish.yaml` — fires on tag push matching
   `v[0-9]+.[0-9]+.[0-9]+*`; analyze → dry-run → `pub publish --force`
   via OIDC.
