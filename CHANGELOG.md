@@ -10,6 +10,11 @@
   calls the interpreter emits. Python can `open()` files, read/write/append,
   and use `with open(...) as f:` against an in-memory mount. A new
   **`MontyFileHandle`** `MontyValue` represents the returned file object.
+- **`resolveOpenCall(...)`** — the store-agnostic `open()` primitive that owns
+  the mode→effect mapping (existence-check / truncate / create → file handle,
+  with typed errors). `memoryMountedOsHandler` delegates to it, and any
+  `OsCallHandler` (e.g. a `package:file`-backed one) can support `open()` by
+  supplying its `exists`/`truncate`/`createIfMissing` primitives.
 - **Typed OS exceptions.** OS-handler errors are now delivered to Python as
   their real class — `except FileNotFoundError:` / `PermissionError:` etc.
   work. Previously every `OsCallException` surfaced as `RuntimeError`

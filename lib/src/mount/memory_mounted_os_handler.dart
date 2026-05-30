@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/mount_mode.dart';
+import 'package:dart_monty_core/src/mount/open_call.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 
 /// Builds an [OsCallHandler] that serves Python `pathlib.Path` operations
@@ -89,34 +90,19 @@ OsCallHandler memoryMountedOsHandler({
 
       final modeArg = args.elementAtOrNull(1);
       final mode = modeArg is String ? modeArg : 'r';
-      final readOnly = mode == 'r' || mode == 'rb';
 
-      if (readOnly) {
-        // Existing-file requirement, matching CPython's `open(path)`.
-        if (!vfs.containsKey(path)) {
-          if (_hasChildren(vfs, path) || _isMountRoot(path, normalizedMounts)) {
-            throw OsCallException(
-              "[Errno 21] Is a directory: '$path'",
-              pythonExceptionType: 'IsADirectoryError',
-            );
-          }
-          throw OsCallException(
-            "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
-          );
-        }
-      } else {
-        _requireWritable(mount, path);
-        if (mode == 'w' || mode == 'wb') {
-          // Truncate (creating if missing) immediately on open.
-          vfs[path] = '';
-        } else {
-          // `a`/`ab`: create if missing, preserving existing content.
-          vfs.putIfAbsent(path, () => '');
-        }
-      }
-
-      return MontyFileHandle(path: path, mode: mode);
+      // Core owns the open() mode→effect mapping; this handler just supplies
+      // its in-memory store primitives.
+      return resolveOpenCall(
+        path,
+        mode,
+        exists: vfs.containsKey,
+        isDirectory: (p) =>
+            _hasChildren(vfs, p) || _isMountRoot(p, normalizedMounts),
+        ensureWritable: (p) => _requireWritable(mount, p),
+        truncate: (p) => vfs[p] = '',
+        createIfMissing: (p) => vfs.putIfAbsent(p, () => ''),
+      );
     }
 
     if (!op.startsWith('Path.')) return notMine(op, args, kwargs);
