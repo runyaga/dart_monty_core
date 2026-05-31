@@ -62,6 +62,24 @@ Future<Object?> _vfsOsHandler(
     case 'Path.unlink':
       _vfs.remove(args.first! as String);
       return null;
+    // open() (monty 0.0.18) — the interpreter emits the prefix-less `Open`,
+    // takes the returned handle, then drives writes through `append_text`.
+    // resolveOpenCall (owned by dart_monty_core) maps mode → effect and
+    // raises the typed FileNotFoundError for a missing 'r' target; this
+    // map-backed VFS only supplies the filesystem facts.
+    case 'Open':
+      return resolveOpenCall(
+        args[0]! as String,
+        args[1]! as String,
+        exists: _vfs.containsKey,
+        truncate: (p) => _vfs[p] = '',
+        createIfMissing: (p) => _vfs.putIfAbsent(p, () => ''),
+      );
+    case 'Path.append_text':
+      final text = args[1]! as String;
+      _vfs[args[0]! as String] = (_vfs[args[0]! as String] ?? '') + text;
+      // f.write() resumes with the number of characters written.
+      return text.length;
     default:
       throw OsCallException('$op not supported in this demo');
   }
@@ -814,7 +832,7 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 }
 
 // ---------------------------------------------------------------------------
-// Value formatter — exhaustive over all 18 MontyValue subtypes
+// Value formatter — exhaustive over all 19 MontyValue subtypes
 // ---------------------------------------------------------------------------
 String _fmt(MontyValue v) => switch (v) {
   MontyNone() => 'None',
@@ -851,6 +869,8 @@ String _fmt(MontyValue v) => switch (v) {
   MontyTimeZone(:final offsetSeconds, :final name) =>
     name ?? '${offsetSeconds}s',
   MontyPath(:final value) => 'Path("$value")',
+  MontyFileHandle(:final path, :final mode) =>
+    "<file '$path' mode '$mode'>",
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
   MontyDataclass(:final name, :final attrs) =>
