@@ -43,7 +43,7 @@ final class MontyPath extends MontyValue {
 /// The interpreter never holds a live OS handle: an `Open` OS-call returns
 /// one of these (carrying the virtual [path], canonical open() [mode], and
 /// byte/char [position]), and the engine drives subsequent reads/writes
-/// through `Path.read_text`/`write_text`/… OS-calls. An [OsCallHandler]
+/// through `Path.read_text`/`write_text`/… OS-calls. An `OsCallHandler`
 /// servicing `Open` returns a [MontyFileHandle] to satisfy the call.
 @immutable
 final class MontyFileHandle extends MontyValue {

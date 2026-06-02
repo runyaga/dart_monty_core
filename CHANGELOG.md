@@ -26,6 +26,14 @@
 - `memoryMountedOsHandler`'s `Path.read_bytes` now returns a typed bytes value
   instead of a bare list, so binary `open(..., 'rb').read()` buffers correctly.
 
+### Changed
+
+- **Snapshot bytecode format (monty 0.18, breaking).** The upgrade changed
+  monty's instruction encoding: the `monty_snapshot` byte stream for `"2 + 2"`
+  shrank from 74 to 60 bytes. Snapshots are NOT portable across the 0.17 → 0.18
+  upgrade — consumers persisting snapshots across versions must regenerate
+  them. Pinned by `snapshot_format_pinning` in `native/tests/integration.rs`.
+
 ### Known limitations
 
 - `with__cm_*` use monty's synthetic `_test_cm()`, which only exists under the
@@ -37,6 +45,10 @@
   suites skip them. Real `with open(...)` is covered by `with__all`.
 - `range__ops` exercises `2**63` range membership where the shared monty
   wasm32 engine diverges from native; skipped on the WASM runners only.
+- `edge__int_float_mod` (`int % float`) should yield a float; native FFI
+  returns `2.0` but the monty wasm32 engine returns `2` (an upstream wasm
+  number-coercion divergence). Skipped on the WASM runners only; the reverse
+  `edge__float_int_mod` is unaffected.
 - `open__fs` / `open__fs_windows` and `pyobject__cycle_*` pass on both backends.
 
 ## 0.18.0

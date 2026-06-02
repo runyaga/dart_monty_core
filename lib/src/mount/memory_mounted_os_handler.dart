@@ -196,7 +196,8 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, bytes.length);
-        vfs[path] = '${vfs[path] ?? ''}${utf8.decode(bytes, allowMalformed: true)}';
+        final decoded = utf8.decode(bytes, allowMalformed: true);
+        vfs[path] = '${vfs[path] ?? ''}$decoded';
 
         return bytes.length;
 

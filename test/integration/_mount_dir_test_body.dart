@@ -60,20 +60,23 @@ void runMountDirTests() {
       expect(r.error?.message, contains('/data/x.txt'));
     });
 
-    test('Python sees a path outside every mount as a PermissionError', () async {
-      final handler = memoryMountedOsHandler(
-        mounts: const [MountDir(virtualPath: '/data')],
-        vfs: const {},
-      );
+    test(
+      'Python sees a path outside every mount as a PermissionError',
+      () async {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/data')],
+          vfs: const {},
+        );
 
-      final r = await Monty(
-        'import pathlib\npathlib.Path("/etc/passwd").read_text()',
-      ).run(osHandler: handler);
+        final r = await Monty(
+          'import pathlib\npathlib.Path("/etc/passwd").read_text()',
+        ).run(osHandler: handler);
 
-      expect(r.error, isNotNull);
-      expect(r.error?.excType, 'PermissionError');
-      expect(r.error?.message, contains('/etc/passwd'));
-    });
+        expect(r.error, isNotNull);
+        expect(r.error?.excType, 'PermissionError');
+        expect(r.error?.message, contains('/etc/passwd'));
+      },
+    );
 
     test('Python can catch the typed OS exception with except', () async {
       final handler = memoryMountedOsHandler(

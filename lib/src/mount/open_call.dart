@@ -1,3 +1,4 @@
+import 'package:dart_monty_core/src/externals.dart' show OsCallHandler;
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 
@@ -8,7 +9,7 @@ import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 /// so every [OsCallHandler] can support `open()` without re-deriving the
 /// mode → effect mapping. It is **store-agnostic**: the caller supplies the
 /// filesystem primitives as callbacks, so the same logic backs the in-memory
-/// [memoryMountedOsHandler] and any `package:file`/host-backed handler.
+/// `memoryMountedOsHandler` and any `package:file`/host-backed handler.
 ///
 /// The interpreter never holds a live OS handle: it takes this handle and then
 /// drives reads/writes through the regular `Path.read_text` / `write_text` /
@@ -29,10 +30,10 @@ MontyFileHandle resolveOpenCall(
   String path,
   String mode, {
   required bool Function(String path) exists,
-  bool Function(String path) isDirectory = _alwaysFalse,
-  void Function(String path)? ensureWritable,
   required void Function(String path) truncate,
   required void Function(String path) createIfMissing,
+  bool Function(String path) isDirectory = _alwaysFalse,
+  void Function(String path)? ensureWritable,
 }) {
   final readOnly = mode == 'r' || mode == 'rb';
   if (readOnly) {

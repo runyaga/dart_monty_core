@@ -8,6 +8,11 @@ const alwaysUnsupportedWasmFixtures = {
   // Pure-Python range membership at `2**63` (beyond i64). Passes on native FFI;
   // the same monty wasm32 engine diverges.
   'range__ops.py',
+  // `int % float` should yield a float (CPython: `7 % 2.5 == 2.0`). Native FFI
+  // returns MontyFloat(2.0); the monty wasm32 engine returns MontyInt(2) — an
+  // upstream wasm number-coercion divergence. `edge__float_int_mod` (the
+  // reverse operand order) is unaffected and still runs.
+  'edge__int_float_mod.py',
 };
 
 /// Fixtures that need monty's synthetic `_test_cm()` context manager, which
@@ -25,7 +30,7 @@ const testHooksWasmFixtures = {
 };
 
 /// Union of both — fixtures skipped under a normal (no-test-hooks) WASM build.
-const unsupportedWasmFixtures = {
+const Set<String> unsupportedWasmFixtures = {
   ...alwaysUnsupportedWasmFixtures,
   ...testHooksWasmFixtures,
 };

@@ -20,25 +20,28 @@ void main() {
       created = [];
     });
 
-    MontyFileHandle open(String path, String mode, {bool readOnlyMount = false}) =>
-        resolveOpenCall(
-          path,
-          mode,
-          exists: files.contains,
-          isDirectory: dirs.contains,
-          ensureWritable: (p) {
-            if (readOnlyMount) {
-              throw const OsCallException(
-                'read-only',
-                pythonExceptionType: 'PermissionError',
-              );
-            }
-          },
-          truncate: truncated.add,
-          createIfMissing: (p) {
-            if (!files.contains(p)) created.add(p);
-          },
-        );
+    MontyFileHandle open(
+      String path,
+      String mode, {
+      bool readOnlyMount = false,
+    }) => resolveOpenCall(
+      path,
+      mode,
+      exists: files.contains,
+      isDirectory: dirs.contains,
+      ensureWritable: (p) {
+        if (readOnlyMount) {
+          throw const OsCallException(
+            'read-only',
+            pythonExceptionType: 'PermissionError',
+          );
+        }
+      },
+      truncate: truncated.add,
+      createIfMissing: (p) {
+        if (!files.contains(p)) created.add(p);
+      },
+    );
 
     test('read mode returns a handle for an existing file', () {
       final h = open('/a.txt', 'r');

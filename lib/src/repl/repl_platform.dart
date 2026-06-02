@@ -52,8 +52,7 @@ class ReplPlatform implements MontyFutureCapable {
   Future<MontyProgress> resumeWithException(
     String excType,
     String errorMessage,
-  ) =>
-      _repl.resumeWithException(excType, errorMessage);
+  ) => _repl.resumeWithException(excType, errorMessage);
 
   @override
   Future<MontyProgress> resumeNotFound(String fnName) =>

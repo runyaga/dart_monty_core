@@ -108,26 +108,28 @@ void runOpenTests() {
       expect(vfs['/m/w.txt'], 'hello');
     });
 
-    test('opening a missing file raises a catchable FileNotFoundError',
-        () async {
-      final handler = memoryMountedOsHandler(
-        mounts: const [MountDir(virtualPath: '/m')],
-        vfs: const {},
-      );
+    test(
+      'opening a missing file raises a catchable FileNotFoundError',
+      () async {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/m')],
+          vfs: const {},
+        );
 
-      final r = await Monty(
-        'try:\n'
-        '    open("/m/nope.txt")\n'
-        "    out = 'no-error'\n"
-        'except FileNotFoundError as e:\n'
-        "    out = ('caught', str(e))\n"
-        'out',
-      ).run(osHandler: handler);
+        final r = await Monty(
+          'try:\n'
+          '    open("/m/nope.txt")\n'
+          "    out = 'no-error'\n"
+          'except FileNotFoundError as e:\n'
+          "    out = ('caught', str(e))\n"
+          'out',
+        ).run(osHandler: handler);
 
-      expect(r.error, isNull);
-      final tuple = r.value.dartValue! as List<Object?>;
-      expect(tuple.first, 'caught');
-      expect(tuple[1], contains('/m/nope.txt'));
-    });
+        expect(r.error, isNull);
+        final tuple = r.value.dartValue! as List<Object?>;
+        expect(tuple.first, 'caught');
+        expect(tuple[1], contains('/m/nope.txt'));
+      },
+    );
   });
 }

@@ -41,8 +41,7 @@ void main() {
     ..writeln('// Run: dart tool/generate_fixture_corpus.dart')
     ..writeln(
       '// ignore_for_file: lines_longer_than_80_chars, '
-      'prefer_single_quotes, avoid_escaping_inner_quotes, '
-      'eol_at_end_of_file',
+      'prefer_single_quotes, avoid_escaping_inner_quotes',
     )
     ..writeln()
     ..writeln('/// Python fixture corpus embedded at compile time.')
@@ -63,9 +62,7 @@ void main() {
     buf.writeln("  '$name': $dartLiteral,");
   }
 
-  buf
-    ..writeln('};')
-    ..writeln();
+  buf.writeln('};');
 
   const outPath = 'test/integration/_fixture_corpus.dart';
   fs.file(outPath).writeAsStringSync(buf.toString());
