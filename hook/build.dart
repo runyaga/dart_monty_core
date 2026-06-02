@@ -35,11 +35,23 @@ void main(List<String> args) async {
       // Contributor path: always run cargo (handles incremental builds).
       final triple = _rustTriple(os, arch);
       final targetArgs = triple != null ? ['--target', triple] : <String>[];
+      // Testing-only opt-in: a `native/.test-hooks` marker file makes the hook
+      // build the dylib with monty's `test-hooks` feature so the `with__cm_*`
+      // conformance fixtures (which use the synthetic `_test_cm()`) can run.
+      // A marker file (not an env var) is used because native-assets build
+      // hooks run hermetically and don't inherit host env vars. The file is
+      // gitignored and only tool/test_cm.sh creates it — never in shipped
+      // builds.
+      final testHooksMarker = File.fromUri(nativeDir.resolve('.test-hooks'));
+      final testHooks = testHooksMarker.existsSync()
+          ? ['--features', 'test-hooks']
+          : <String>[];
       final result = await Process.run('cargo', [
         'build',
         '--release',
         '--lib',
         ...targetArgs,
+        ...testHooks,
       ], workingDirectory: Directory.fromUri(nativeDir).path);
       if (result.exitCode != 0) {
         throw StateError(

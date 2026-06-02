@@ -433,6 +433,19 @@ abstract class WasmBindings {
     String? replId,
   });
 
+  /// Resumes REPL execution with a typed Python exception.
+  ///
+  /// [excTypeJson] is the JSON-encoded Python exception class name (e.g.
+  /// `"FileNotFoundError"`); unknown names fall back to RuntimeError.
+  /// [errorJson] is the JSON-encoded message. [replId] must match the value
+  /// passed to [replCreate].
+  Future<WasmProgressResult> replResumeWithException(
+    String excTypeJson,
+    String errorJson, {
+    int? sessionId,
+    String? replId,
+  });
+
   /// Resumes REPL execution signalling "function not found" — raises Python
   /// NameError.
   ///

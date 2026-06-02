@@ -202,6 +202,15 @@ abstract class NativeBindings {
   /// Resumes REPL execution with an error (raises RuntimeError in Python).
   ProgressResult replResumeWithError(int handle, String errorMessage);
 
+  /// Resumes REPL execution with a typed Python exception. [excType] is the
+  /// Python exception class name (e.g. `FileNotFoundError`); unknown names
+  /// fall back to RuntimeError.
+  ProgressResult replResumeWithException(
+    int handle,
+    String excType,
+    String errorMessage,
+  );
+
   /// Resumes REPL execution signalling "function not found" (raises NameError).
   ProgressResult replResumeNotFound(int handle, String fnName);
 

@@ -62,6 +62,24 @@ Future<Object?> _vfsOsHandler(
     case 'Path.unlink':
       _vfs.remove(args.first! as String);
       return null;
+    // open() (monty 0.0.18) — the interpreter emits the prefix-less `Open`,
+    // takes the returned handle, then drives writes through `append_text`.
+    // resolveOpenCall (owned by dart_monty_core) maps mode → effect and
+    // raises the typed FileNotFoundError for a missing 'r' target; this
+    // map-backed VFS only supplies the filesystem facts.
+    case 'Open':
+      return resolveOpenCall(
+        args[0]! as String,
+        args[1]! as String,
+        exists: _vfs.containsKey,
+        truncate: (p) => _vfs[p] = '',
+        createIfMissing: (p) => _vfs.putIfAbsent(p, () => ''),
+      );
+    case 'Path.append_text':
+      final text = args[1]! as String;
+      _vfs[args[0]! as String] = (_vfs[args[0]! as String] ?? '') + text;
+      // f.write() resumes with the number of characters written.
+      return text.length;
     default:
       throw OsCallException('$op not supported in this demo');
   }
@@ -562,7 +580,7 @@ void _initVfsPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Examples palette — 10 samples from simple to sophisticated
+// Examples palette — 15 samples from simple to sophisticated
 // ---------------------------------------------------------------------------
 class _Step {
   const _Step({required this.label, required this.code});
@@ -733,6 +751,99 @@ const _kSamples = <_Sample>[
       _Step(label: 'Read', code: 'pathlib.Path("/data/new.txt").read_text()'),
     ],
   ),
+  _Sample(
+    num: 11,
+    title: 'open() write → close → read-back',
+    panel: 'vfs',
+    desc:
+        'monty 0.0.18 ships the builtin open(). Calling it crosses the OsCall '
+        'boundary as `Open`, which dart_monty_core\'s resolveOpenCall maps to a '
+        'truncate-and-create effect on Dart\'s map; f.write() then rides an '
+        'append_text OsCall and resumes with the char count. The dict shows '
+        'the write count, the closed flag, and the round-tripped read — one '
+        'physical line, three boundary crossings.',
+    steps: [
+      _Step(
+        label: '→ VFS',
+        code:
+            'f = open("/data/note.txt", "w"); n = f.write("hello\\nworld\\n"); '
+            'f.close(); {"wrote": n, "closed": f.closed, '
+            '"read_back": open("/data/note.txt").read()}',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 12,
+    title: 'with open(...) — context manager auto-close',
+    panel: 'vfs',
+    desc:
+        'A single-line `with` statement is valid Python when its body is one '
+        'simple statement. The context manager enters on the `Open` OsCall and '
+        'guarantees the handle is closed on exit — no explicit f.close(). '
+        'Run the write step, then the read step to confirm the bytes landed '
+        'in Dart\'s map after the block exited.',
+    steps: [
+      _Step(
+        label: 'Write (with)',
+        code:
+            'with open("/data/ctx.txt", "w") as f: f.write("via context manager")',
+      ),
+      _Step(label: 'Read back', code: 'open("/data/ctx.txt").read()'),
+    ],
+  ),
+  _Sample(
+    num: 13,
+    title: 'open(..., "a") — append preserves content',
+    panel: 'vfs',
+    desc:
+        'Mode "a" maps to createIfMissing (never truncate), so existing bytes '
+        'survive. Seed the file, then open it twice in append mode — each '
+        'f.write() is an append_text OsCall onto Dart\'s map. The final read '
+        'shows all three fragments concatenated in order.',
+    steps: [
+      _Step(
+        label: 'Seed',
+        code: 'pathlib.Path("/data/log.txt").write_text("line1\\n")',
+      ),
+      _Step(
+        label: 'Append',
+        code:
+            'f = open("/data/log.txt", "a"); f.write("line2\\n"); '
+            'f.write("line3\\n"); f.close(); open("/data/log.txt").read()',
+      ),
+    ],
+  ),
+  _Sample(
+    num: 14,
+    title: 'open() missing file → typed FileNotFoundError',
+    panel: 'vfs',
+    desc:
+        'open() in read mode against a path Dart\'s map does not contain. '
+        'resolveOpenCall raises an OsCallException tagged FileNotFoundError, '
+        'which surfaces in Python as the real builtin exception and renders '
+        'red below. This is the demo — the error is the point, so it is not '
+        'wrapped in try/except (which would not fit on one line anyway).',
+    steps: [_Step(label: '→ VFS', code: 'open("/data/missing.txt").read()')],
+  ),
+  _Sample(
+    num: 15,
+    title: 'OsCall breadth — exists / write / unlink',
+    panel: 'vfs',
+    desc:
+        'Three distinct Path.* OsCalls chained on one line: probe a path, '
+        'create it via write_text, probe again, then unlink it. Every boolean '
+        'and the deletion crosses the boundary into Dart\'s map, so the dict '
+        'captures the full lifecycle: gone → created → gone again.',
+    steps: [
+      _Step(
+        label: '→ VFS',
+        code:
+            'p = pathlib.Path("/data/tmp.txt"); before = p.exists(); '
+            'p.write_text("temp"); created = p.exists(); p.unlink(); '
+            '{"before": before, "created": created, "after": p.exists()}',
+      ),
+    ],
+  ),
 ];
 
 void _initExamples() {
@@ -765,7 +876,7 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 
   final numEl = web.document.createElement('div') as web.HTMLDivElement
     ..className = 'sample-num'
-    ..textContent = '${sample.num} of 10 · $panelLabel';
+    ..textContent = '${sample.num} of ${_kSamples.length} · $panelLabel';
   card.appendChild(numEl);
 
   final titleEl = web.document.createElement('div') as web.HTMLDivElement
@@ -814,7 +925,7 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 }
 
 // ---------------------------------------------------------------------------
-// Value formatter — exhaustive over all 18 MontyValue subtypes
+// Value formatter — exhaustive over all 19 MontyValue subtypes
 // ---------------------------------------------------------------------------
 String _fmt(MontyValue v) => switch (v) {
   MontyNone() => 'None',
@@ -851,6 +962,8 @@ String _fmt(MontyValue v) => switch (v) {
   MontyTimeZone(:final offsetSeconds, :final name) =>
     name ?? '${offsetSeconds}s',
   MontyPath(:final value) => 'Path("$value")',
+  MontyFileHandle(:final path, :final mode) =>
+    "<file '$path' mode '$mode'>",
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
   MontyDataclass(:final name, :final attrs) =>

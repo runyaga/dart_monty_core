@@ -668,6 +668,16 @@ async function replResumeWithError(replId, errorJson) {
   return JSON.stringify(result);
 }
 
+async function replResumeWithException(replId, excTypeJson, errorJson) {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) return notInitializedError();
+  const session = sessions.get(sid);
+  const excType = JSON.parse(excTypeJson);
+  const errorMessage = JSON.parse(errorJson);
+  const result = await callWorker(sid, { type: 'replResumeWithException', replId, excType, errorMessage }, session.timeoutMs);
+  return JSON.stringify(result);
+}
+
 async function replResumeAsFuture(replId) {
   const sid = resolveSessionId(null);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
@@ -788,6 +798,7 @@ window.DartMontyBridge = {
   replSetExtFns,
   replResume,
   replResumeWithError,
+  replResumeWithException,
   replResumeNotFound,
   replResumeAsFuture,
   replResolveFutures,

@@ -27,6 +27,7 @@ export 'src/monty_factory.dart';
 export 'src/mount/memory_mounted_os_handler.dart';
 export 'src/mount/mount_dir.dart';
 export 'src/mount/mount_mode.dart';
+export 'src/mount/open_call.dart';
 export 'src/platform/code_capture.dart';
 export 'src/platform/inputs_encoder.dart';
 export 'src/platform/monty_error.dart';

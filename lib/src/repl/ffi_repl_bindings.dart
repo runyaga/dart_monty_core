@@ -135,6 +135,24 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
+  Future<CoreProgressResult> resumeWithException(
+    String excType,
+    String errorMessage,
+  ) async {
+    final handle = _replHandle;
+    if (handle == null) {
+      throw StateError('REPL not created. Call create() first.');
+    }
+    final result = _bindings.replResumeWithException(
+      handle,
+      excType,
+      errorMessage,
+    );
+
+    return _translateProgressResult(result);
+  }
+
+  @override
   Future<CoreProgressResult> resumeNotFound(String fnName) async {
     final handle = _replHandle;
     if (handle == null) {

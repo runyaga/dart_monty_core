@@ -639,22 +639,20 @@ impl MontyHandle {
                         return (MontyProgressTag::NameLookup, None);
                     }
                 }
-                RunProgress::OsCall(call) => {
+                RunProgress::OsCall(mut call) => {
+                    let os_fn_name = call.function_call.name().to_string();
+                    let call_id = call.call_id;
+                    let (args, kwargs) = call.take_function_call().to_args();
                     let meta = OsCallMeta {
-                        os_fn_name: call.function.to_string(),
+                        os_fn_name,
                         args_json: serde_json::to_string(
-                            &call
-                                .args
-                                .iter()
-                                .map(monty_object_to_json)
-                                .collect::<Vec<_>>(),
+                            &args.iter().map(monty_object_to_json).collect::<Vec<_>>(),
                         )
                         .unwrap_or_else(|_| "[]".into()),
-                        kwargs_json: if call.kwargs.is_empty() {
+                        kwargs_json: if kwargs.is_empty() {
                             "{}".into()
                         } else {
-                            let map: serde_json::Map<String, Value> = call
-                                .kwargs
+                            let map: serde_json::Map<String, Value> = kwargs
                                 .iter()
                                 .map(|(k, v)| {
                                     let key = if let MontyObject::String(s) = k {
@@ -667,7 +665,7 @@ impl MontyHandle {
                                 .collect();
                             serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
                         },
-                        call_id: call.call_id,
+                        call_id,
                     };
                     self.state = HandleState::OsCall { call, meta };
                     return (MontyProgressTag::OsCall, None);

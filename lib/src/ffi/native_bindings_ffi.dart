@@ -494,6 +494,34 @@ class NativeBindingsFfi extends NativeBindings {
   }
 
   @override
+  ProgressResult replResumeWithException(
+    int handle,
+    String excType,
+    String errorMessage,
+  ) {
+    final ptr = Pointer<ffi_native.MontyReplHandle>.fromAddress(handle);
+    final cExcType = excType.toNativeUtf8().cast<Char>();
+    final cError = errorMessage.toNativeUtf8().cast<Char>();
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      final tag = ffi_native.monty_repl_resume_with_exception(
+        ptr,
+        cExcType,
+        cError,
+        outError,
+      );
+
+      return _buildReplProgressResult(ptr, tag, outError.value);
+    } finally {
+      calloc
+        ..free(cExcType)
+        ..free(cError)
+        ..free(outError);
+    }
+  }
+
+  @override
   ProgressResult replResumeNotFound(int handle, String fnName) {
     final ptr = Pointer<ffi_native.MontyReplHandle>.fromAddress(handle);
     final cName = fnName.toNativeUtf8().cast<Char>();

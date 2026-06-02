@@ -86,6 +86,7 @@ sealed class MontyValue {
         'timedelta': MontyTimeDelta._fromMap,
         'timezone': MontyTimeZone._fromMap,
         'path': MontyPath._fromMap,
+        'filehandle': MontyFileHandle._fromMap,
         'namedtuple': MontyNamedTuple._fromMap,
         'dataclass': MontyDataclass._fromMap,
       };

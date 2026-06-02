@@ -442,6 +442,16 @@ MontyProgressTag monty_repl_resume_with_error(MontyReplHandle *handle,
                                                char **out_error);
 
 /**
+ * Resume REPL execution with a typed Python exception. `exc_type` is the
+ * Python exception class name (e.g. "FileNotFoundError"); unknown names
+ * fall back to RuntimeError.
+ */
+MontyProgressTag monty_repl_resume_with_exception(MontyReplHandle *handle,
+                                                   const char *exc_type,
+                                                   const char *error_message,
+                                                   char **out_error);
+
+/**
  * Resume REPL execution signalling "function not found" — raises
  * NameError in Python.
  */
