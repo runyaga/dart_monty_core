@@ -24,7 +24,7 @@ jobs:
       # ── Dart: analyze + publish ──────────────────────────────────────────
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
 
       - run: dart pub get
 
