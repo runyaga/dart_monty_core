@@ -106,6 +106,15 @@ jobs:
         run: |
           dart format --line-length=80 --set-exit-if-changed \
             lib/ test/ hook/ tool/
+      - name: DCM ratchet (no new issues above baseline)
+        # `dcm analyze` is chronically red (206 issues at 0.18.1), so gating on a
+        # clean run is not achievable and gating on the raw count is useless — 5
+        # new issues move 206 -> 211 unnoticed, and fixing 10 old ones masks new
+        # ones behind a net improvement. The ratchet fails on any new rule, any
+        # per-rule increase, or any new file. Baseline: tool/dcm-baseline.json.
+        run: |
+          dart pub global activate dcm 2>/dev/null || true
+          bash tool/dcm_ratchet.sh
       - name: Test (JIT, unit only)
         # Exit 79 = no tests found; acceptable until unit tests exist alongside
         # the integration suite. Coverage will be empty but that is tolerated.
