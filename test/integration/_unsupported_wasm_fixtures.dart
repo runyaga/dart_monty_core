@@ -13,6 +13,28 @@ const alwaysUnsupportedWasmFixtures = {
   // upstream wasm number-coercion divergence. `edge__float_int_mod` (the
   // reverse operand order) is unaffected and still runs.
   'edge__int_float_mod.py',
+  // ---- added with the monty v0.0.19 corpus (531 fixtures, was 482) --------
+  // These four arrived when the corpus symlink was repointed from v0.0.18 to
+  // v0.0.19. All four fail IDENTICALLY on the 0.18 reference oracle and on
+  // 0.19, so none is a 0.19 regression — they are pre-existing harness gaps
+  // that the larger corpus made visible.
+  //
+  // Three need `sys.setrecursionlimit`, which is gated behind the
+  // `test-hooks` cargo feature AND requires a tracker exposing a settable
+  // recursion limit. Under a test-hooks build they get as far as
+  //   ValueError: sys.setrecursionlimit: this runtime does not expose a
+  //               settable recursion limit
+  // because our REPL path constructs `NoLimitTracker`;
+  // `recursion_limit_override`
+  // lives on `LimitedTracker`. Unblocked by core#124 (FB-1), not by anything in
+  // the 0.19 upgrade.
+  'recursion__deep_repr.py',
+  'recursion__limit_depth.py',
+  'json__dumps_recursion.py',
+  // Needs an external function (`make_point`) supplied by the harness — the
+  // fixture is marked `# call-external`. Same class of gap as core#125: the
+  // harness does not provide the capabilities some fixtures require.
+  'dataclass__basic.py',
 };
 
 /// Fixtures that need monty's synthetic `_test_cm()` context manager, which

@@ -1,10 +1,12 @@
 // Shared test body for ffi_monty_019_semantics_test.dart (and its WASM mirror).
 //
 // Pins the monty v0.0.19 behaviour changes that are SILENT — they alter runtime
-// semantics without any compile error, so nothing else in the suite would catch a
+// semantics without any compile error, so nothing else in the suite would catch
+// a
 // regression or an accidental revert.
 //
-// Every expectation here was verified to differ under v0.0.18 by running the same
+// Every expectation here was verified to differ under v0.0.18 by running the
+// same
 // snippet against the preserved 0.18 reference oracle
 // (~/dev/plans/monty-0.19-upgrade/reference-018/). A test that passes on both
 // versions would not be evidence of anything, which is the standard P2's gate
@@ -67,7 +69,8 @@ void runMonty019SemanticsTests() {
 
     // -- upstream #612 : action-less open() modes are rejected ---------------
     //
-    // 0.18: 'b' alone was accepted at parse time and only failed later, when the
+    // 0.18: 'b' alone was accepted at parse time and only failed later, when
+    // the
     //       Open OS-call was dispatched (NotImplementedError with no handler).
     // 0.19: rejected up front with ValueError, before any dispatch.
     //
@@ -98,15 +101,17 @@ void runMonty019SemanticsTests() {
 
     // -- upstream #576 : the Open OS-call was renamed to 'open' --------------
     //
-    // The only op renamed in 0.19, and the only break in this release that fails
-    // SILENTLY in consumer code: a handler matching 'Open' simply stops matching
+    // The only op renamed in 0.19, and the only break in this release that
+    // fails
+    // SILENTLY in consumer code: a handler matching 'Open' simply stops
+    // matching
     // and falls through. See BREAKING-LEDGER.md row 4.
     test('the open() OS-call is dispatched as op "open"', () async {
       final seen = <String>[];
       final r = await Monty('open("/m/a.txt", "r")\n').run(
         osHandler: (op, args, kwargs) async {
           seen.add(op);
-          throw OsCallException('stop', pythonExceptionType: 'OSError');
+          throw const OsCallException('stop', pythonExceptionType: 'OSError');
         },
       );
 

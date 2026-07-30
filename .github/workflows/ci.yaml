@@ -106,6 +106,12 @@ jobs:
         run: |
           dart format --line-length=80 --set-exit-if-changed \
             lib/ test/ hook/ tool/
+      - name: Fixture corpus matches the pinned monty version
+        # The corpus is a symlink into a monty checkout, so it silently drifts
+        # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus
+        # against a v0.0.19 interpreter reported all-green having never seen the
+        # 49 fixtures upstream added for 0.19.
+        run: bash tool/check_fixture_corpus.sh
       - name: DCM ratchet (no new issues above baseline)
         # `dcm analyze` is chronically red (206 issues at 0.18.1), so gating on a
         # clean run is not achievable and gating on the raw count is useless — 5

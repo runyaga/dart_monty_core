@@ -1,11 +1,13 @@
 // Shared test body for ffi_control_d_test.dart (and its WASM mirror).
 //
-// CONTROL (d) of the P3 control set: an end-to-end check of the value-conversion
+// CONTROL (d) of the P3 control set: an end-to-end check of the value-
+// conversion
 // contract that does NOT share a code path with the thing it verifies.
 //
 // Why it exists. `native/src/bin/oracle.rs` includes `convert.rs` via
 // `#[path = "../convert.rs"]`, so the FFI side and the oracle side share the
-// conversion code and AGREE EVEN WHEN BOTH ARE WRONG. That is not a theory: with
+// conversion code and AGREE EVEN WHEN BOTH ARE WRONG. That is not a theory:
+// with
 // one deliberate bug compiled into both, the 482-fixture suite reported 482/482
 // green while the convert.rs unit tests (control a') failed.
 //
@@ -15,30 +17,32 @@
 //       asserting the DOCUMENTED wire contract
 //
 // SELECTION CRITERIA (recorded so the subset cannot be quietly cherry-picked):
-//   1. One case per `monty_object_to_json` match arm that is reachable from pure
-//      in-sandbox Python — 18 of them. Verified reachable by probing each snippet
+// 1. One case per `monty_object_to_json` match arm that is reachable from pure
+// in-sandbox Python — 18 of them. Verified reachable by probing each snippet
 //      against the oracle binary before writing this file.
 //   2. Both branches of every conditional arm: `BigInt` fits-in-i64 vs not, and
 //      `Dict` string-keyed vs non-string-keyed.
 //   3. Every tagged-envelope type, because the tag is the part that carries
 //      round-trip information and the part the schema doc got wrong.
 //   4. Deliberately EXCLUDED: arms that cannot be reached without host OS-call
-//      handlers (`FileHandle` via `open()`, `date.today`, `os.environ`) and arms
+// handlers (`FileHandle` via `open()`, `date.today`, `os.environ`) and arms
 //      whose payload is not constructible from Python (`Cycle`, `Type`,
 //      `BuiltinFunction`, `Function`, `Exception`, `Dataclass`, `NamedTuple`).
 //      Those are covered by a' at the unit level, or by core#125 once the FFI
-//      harness gains handlers. Excluding them is a stated limit, not an accident.
+// harness gains handlers. Excluding them is a stated limit, not an accident.
 //
 // Expectations are derived from the documented schema in `convert.rs`, not from
 // running the code. That distinction is what makes this a check rather than a
-// tautology — and it is how the stale schema doc was caught: it claimed `Tuple`,
-// `Bytes`, `Set` and `FrozenSet` serialize as bare arrays, which they never have.
+// tautology — and it is how the stale schema doc was caught: it claimed
+// `Tuple`,
+// `Bytes`, `Set` and `FrozenSet` serialize as bare arrays, which they never
+// have.
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 void runControlDTests() {
-  group("control (d) — value conversion contract", () {
+  group('control (d) — value conversion contract', () {
     Future<MontyValue> eval(String code) async {
       final r = await Monty(code).run();
       expect(r.error, isNull, reason: 'snippet must evaluate: $code');
@@ -102,7 +106,8 @@ void runControlDTests() {
     });
 
     // ---- tagged envelopes ------------------------------------------------
-    // These carry a `__type` tag because a bare array would lose the distinction
+    // These carry a `__type` tag because a bare array would lose the
+    // distinction
     // between list/tuple/set/frozenset. The tag is what round-trips.
     test('Tuple is a distinct type, not a bare array', () async {
       final v = await eval('(1, 2)');
