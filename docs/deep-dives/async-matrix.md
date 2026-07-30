@@ -136,7 +136,7 @@ Every claim on this page is a test:
 - L1: [`test/integration/_repl_futures_test_body.dart`][repl-futures]
 - L2: [`test/integration/_feedrun_async_matrix_body.dart`][feedrun-matrix]
 - L3: [`test/integration/_run_async_matrix_body.dart`][run-matrix]
-- L4 (in dart_monty): `test/integration/_runtime_async_matrix_body.dart`
+- L4 (in dart_monty): `dart_monty/test/integration/_runtime_async_matrix_body.dart`
 
 Each shared body has FFI + WASM driver pairs (the L4 body has FFI only
 because dart_monty's integration suite is FFI-tagged). Run them with:

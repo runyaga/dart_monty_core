@@ -207,11 +207,14 @@ Artifact hand-offs: `ffigen` → `dart_monty_bindings.dart`; `build-wasm`
 
 ## Releasing
 
-Versioning: `0.X.0 ↔ monty v0.0.X`. When upstream ships `monty v0.0.19`,
-bump `native/Cargo.toml`'s git tag, verify conformance, then ship
-`dart_monty_core 0.19.0`. Patch releases (`0.X.Y`, Y>0) are reserved
+Versioning: `0.X.0 ↔ monty v0.0.X`. When upstream ships `monty v0.0.N`,
+bump the git tag on all three `monty*` deps in `native/Cargo.toml`
+(they must move together), verify conformance, then ship
+`dart_monty_core 0.N.0`. Patch releases (`0.X.Y`, Y>0) are reserved
 for our own fixes between upstream bumps. Pre-1.0: consumers pin exact
-(`dart_monty_core: 0.18.1`, not `^0.18.1`).
+(`dart_monty_core: 0.19.0`, not `^0.19.0`).
+
+Current: `0.19.0 ↔ monty v0.0.19`.
 
 **First publish of a new package must be manual** — pub.dev rejects
 OIDC for packages that don't yet exist:

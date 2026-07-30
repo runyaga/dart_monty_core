@@ -219,7 +219,13 @@ one of those raises `TypeError`.
 For the cell-by-cell contract across every API layer × backend, see
 [`docs/deep-dives/async-matrix.md`][async-matrix].
 
+Architecture references: [`docs/reference/native-crate.md`][native-crate] (the
+Rust C-FFI layer) and [`docs/reference/bridge-integration.md`][bridge-integration]
+(how Dart, the JS bridge and the WASM Worker fit together in a browser tab).
+
 [async-matrix]: docs/deep-dives/async-matrix.md
+[native-crate]: docs/reference/native-crate.md
+[bridge-integration]: docs/reference/bridge-integration.md
 
 ### External functions
 
@@ -255,8 +261,15 @@ and `asyncio.gather` over multiple such calls runs them concurrently.
 
 ### OS calls
 
-`pathlib`, `os.getenv`, `datetime.now`, `time.time` pause and call your
-`OsCallHandler`. Optional — provide only when the script touches the OS.
+`pathlib`, `open()`, `os.getenv`, `os.environ`, `date.today` and
+`datetime.now` pause and call your `OsCallHandler`. Optional — provide only
+when the script touches the OS.
+
+There are 23 ops. The name you match on is the Python-visible one:
+`Path.read_text`, `os.getenv`, `datetime.now` — and `open`, which is the
+only undotted name. **`open` is lowercase as of 0.19.0** (it was `'Open'`);
+see the CHANGELOG, because a handler switching on the old spelling stops
+matching silently rather than failing.
 
 ```dart
 await Monty('os.getenv("HOME")').run(

@@ -21,7 +21,8 @@ small consumer-facing surface.
   if (op == 'open') { ... }
   ```
 
-  Upstream renamed exactly one op in v0.0.19 (all 23 others are unchanged);
+  Upstream renamed exactly one of the 23 ops in v0.0.19 (the other 22 are
+  unchanged);
   `'Open'` was the only capitalised, undotted name, so `'open'` is now consistent
   with `Path.*`, `os.*`, `date.*` and `datetime.*`.
 

@@ -83,6 +83,27 @@ cp "$WASI_PKG/wasi-worker-browser.mjs" "$INTEG/@pydantic/monty-wasm32-wasi/"
 # Step 4: Run the WASM unit-style tests
 # -----------------------------------------------------------------------------
 echo ""
+# The file list below is explicit rather than a glob, so that a deliberately
+# excluded test stays excluded. The cost is that a NEW wasm_*_test.dart is
+# silently never run — which is exactly what happened to the two 0.19 suites:
+# they existed, were tagged `wasm`, and no CI job touched them. Guard the class.
+echo "--- Checking every wasm_*_test.dart is listed ---"
+UNLISTED=0
+for f in test/integration/wasm_*_test.dart; do
+  if ! grep -qF "$f" "$0"; then
+    echo "  UNLISTED: $f"
+    UNLISTED=1
+  fi
+done
+if [ "$UNLISTED" = "1" ]; then
+  echo "FAIL: the file(s) above are tagged wasm but are not in this script's list,"
+  echo "      so nothing runs them. Add them below, or add an explicit exclusion"
+  echo "      comment naming why they are skipped."
+  exit 1
+fi
+echo "  all listed"
+
+echo ""
 echo "--- Running dart test -p chrome --tags=wasm ---"
 dart test \
   -p chrome \
@@ -108,4 +129,6 @@ dart test \
   test/integration/wasm_run_async_matrix_test.dart \
   test/integration/wasm_setextfns_test.dart \
   test/integration/wasm_type_check_test.dart \
+  test/integration/wasm_control_d_test.dart \
+  test/integration/wasm_monty_019_semantics_test.dart \
   "$@"
