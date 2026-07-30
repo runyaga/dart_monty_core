@@ -15,8 +15,10 @@ use monty_types::MontyObject;
 /// Defined here because `convert.rs` is the only module shared by the library
 /// and the `oracle` binary, which must agree or fixture conformance diverges.
 ///
-/// Follow-up: expose this per-handle through the Dart resource-limits API so
-/// consumers with legitimately high-volume output can raise or disable it.
+/// Follow-up: expose this as its own knob — deliberately NOT via `MontyLimits`.
+/// Upstream documents `CollectString`/`CollectStreams` caps as "Not covered by
+/// `ResourceLimits.max_memory`", so folding them into the resource-limits API
+/// would conflate two mechanisms upstream keeps separate.
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
 /// Compile options used for every program and REPL session.
@@ -59,11 +61,24 @@ use serde_json::{Number, Value, json};
 /// - `BigInt` → number if fits i64, else string
 /// - `Float` → number
 /// - `String` → string
-/// - `List`/`Tuple` → array
+/// - `List` → array
 /// - `Dict` → object (string keys) or array of `[k, v]` pairs
 /// - `Ellipsis` → `"..."`
-/// - `Bytes` → array of ints
-/// - `Set`/`FrozenSet` → array
+///
+/// Types with no native JSON counterpart use a tagged envelope,
+/// `{"__type": <tag>, ...}`, which `json_to_monty_object` reads back so the
+/// value round-trips. A bare array would lose the distinction between `list`,
+/// `tuple`, `set` and `frozenset`:
+/// - `Tuple` → `{"__type": "tuple", "value": [...]}`
+/// - `Bytes` → `{"__type": "bytes", "value": [<u8>, ...]}`
+/// - `Set` → `{"__type": "set", "value": [...]}`
+/// - `FrozenSet` → `{"__type": "frozenset", "value": [...]}`
+/// - `Path` → `{"__type": "path", "value": <str>}`
+/// - `Date`/`DateTime`/`TimeDelta`/`TimeZone` → `{"__type": ..., <fields>}`
+///
+/// This list previously claimed `Tuple`, `Bytes`, `Set` and `FrozenSet`
+/// serialized as bare arrays. They never have; the tagged form is required for
+/// round-tripping. Found by control (d) during the monty 0.19 upgrade.
 pub fn monty_object_to_json(obj: &MontyObject) -> Value {
     match obj {
         MontyObject::None => Value::Null,
