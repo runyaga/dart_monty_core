@@ -624,7 +624,7 @@ Object? _osDispatch(
 ) {
   switch (op) {
     // ---- open() / file I/O ----
-    case 'Open':
+    case 'open':
       final p = _pathStr(args.first);
       _validatePath(p);
       final modeArg = args.length > 1 ? args[1] : const MontyString('r');

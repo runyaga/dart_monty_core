@@ -81,7 +81,13 @@ OsCallHandler memoryMountedOsHandler({
     // [path, mode]. The host performs the open-time effect and returns a
     // FileHandle; the interpreter then drives reads/writes through the
     // `Path.read_text`/`write_text`/`append_text` calls handled below.
-    if (op == 'Open') {
+    // monty v0.0.19 renamed this OS-call from 'Open' to 'open': #576 replaced
+    // the hand-written `name()` match with `strum::IntoStaticStr` plus
+    // per-variant `#[strum(serialize = ...)]`. Every other op name was
+    // preserved. 'Open' was the only capitalised, undotted op, so the rename
+    // also makes it consistent with 'Path.*', 'os.*', 'date.*', 'datetime.*'.
+    // BREAKING for consumers whose custom handlers match on 'Open'.
+    if (op == 'open') {
       final rawPath = args.firstOrNull;
       if (rawPath is! String) return notMine(op, args, kwargs);
       final path = _normalizePath(rawPath);
