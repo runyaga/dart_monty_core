@@ -160,5 +160,29 @@ for required in "index_js.html" "dart_monty_core_bridge.js" "repl_demo.dart.js";
   fi
 done
 
+# ---------------------------------------------------------------- execute
+# Everything above proves the page LOADS. This proves the demo WORKS: drive the
+# real page over CDP, type Python into #input-a, click Run, and require the
+# computed result. The REPL initialises its WASM engine on click, so without this
+# a totally broken engine still passes.
+echo "--- Chrome (CDP): does the demo actually execute Python? ---"
+CDP_PORT=${PAGES_CDP_PORT:-9334}
+CDP_PROFILE=$(mktemp -d)
+"$CHROME" --headless=new --disable-gpu --no-sandbox --disable-dev-shm-usage \
+  --user-data-dir="$CDP_PROFILE" --remote-debugging-port="$CDP_PORT" about:blank \
+  >/dev/null 2>&1 &
+CDP_PID=$!
+trap 'kill $SERVER_PID $CDP_PID 2>/dev/null' EXIT
+sleep 6
+
+DRIVE_LOG=$(mktemp)
+node tool/pages_drive.mjs "$CDP_PORT" "http://127.0.0.1:$PORT/repl/" >"$DRIVE_LOG" 2>&1
+DRIVE_RC=$?
+sed 's/^/  /' "$DRIVE_LOG"
+if [ "$DRIVE_RC" != "0" ]; then
+  echo "  FAIL: the demo did not evaluate Python"
+  STATUS=1
+fi
+
 [ "$STATUS" = "0" ] || fail "the Pages site does not render cleanly"
 echo "OK: site builds and renders in Chrome with no console or network errors"
