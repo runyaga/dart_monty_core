@@ -8,10 +8,8 @@ use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 
 use dart_monty_core_native::*;
-use monty::{
-    ExtFunctionResult, MontyObject, MontyRun, NameLookupResult, NoLimitTracker, PrintWriter,
-    ResolveFutures, RunProgress,
-};
+use monty::{MontyRun, ResolveFutures, RunProgress};
+use monty_types::{ExtFunctionResult, MontyObject, NameLookupResult, NoLimitTracker, PrintWriter};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -815,7 +813,7 @@ fn create_with_non_utf8_script_name_null_out_error() {
 /// Drive execution through FunctionCalls, returning Future for each,
 /// until we reach ResolveFutures. Returns the FutureSnapshot and
 /// collected (call_id, function_name) pairs.
-fn drive_to_resolve_futures<T: monty::ResourceTracker>(
+fn drive_to_resolve_futures<T: monty_types::ResourceTracker>(
     mut progress: RunProgress<T>,
 ) -> (ResolveFutures<T>, Vec<(u32, String)>) {
     let mut collected = Vec::new();
@@ -860,7 +858,13 @@ async def main():
 
 await main()
 ";
-    let runner = MontyRun::new(code.to_owned(), "test.py", vec![]).unwrap();
+    let runner = MontyRun::new(
+        code.to_owned(),
+        "test.py",
+        vec![],
+        dart_monty_core_native::convert::compile_options(),
+    )
+    .unwrap();
 
     let progress = runner
         .start(vec![], NoLimitTracker, PrintWriter::Stdout)
@@ -892,7 +896,13 @@ async def main():
 
 await main()
 ";
-    let runner = MontyRun::new(code.to_owned(), "test.py", vec![]).unwrap();
+    let runner = MontyRun::new(
+        code.to_owned(),
+        "test.py",
+        vec![],
+        dart_monty_core_native::convert::compile_options(),
+    )
+    .unwrap();
 
     let progress = runner
         .start(vec![], NoLimitTracker, PrintWriter::Stdout)
@@ -929,7 +939,13 @@ async def main():
 
 await main()
 ";
-    let runner = MontyRun::new(code.to_owned(), "test.py", vec![]).unwrap();
+    let runner = MontyRun::new(
+        code.to_owned(),
+        "test.py",
+        vec![],
+        dart_monty_core_native::convert::compile_options(),
+    )
+    .unwrap();
 
     let progress = runner
         .start(vec![], NoLimitTracker, PrintWriter::Stdout)
@@ -973,7 +989,13 @@ async def main():
 
 await main()
 ";
-    let runner = MontyRun::new(code.to_owned(), "test.py", vec![]).unwrap();
+    let runner = MontyRun::new(
+        code.to_owned(),
+        "test.py",
+        vec![],
+        dart_monty_core_native::convert::compile_options(),
+    )
+    .unwrap();
 
     let progress = runner
         .start(vec![], NoLimitTracker, PrintWriter::Stdout)
@@ -988,8 +1010,8 @@ await main()
         ),
         (
             call_ids[1].0,
-            ExtFunctionResult::Error(monty::MontyException::new(
-                monty::ExcType::RuntimeError,
+            ExtFunctionResult::Error(monty_types::MontyException::new(
+                monty_types::ExcType::RuntimeError,
                 Some("network timeout".into()),
             )),
         ),
@@ -998,7 +1020,7 @@ await main()
 
     assert!(result.is_err(), "should propagate the error");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type(), monty::ExcType::RuntimeError);
+    assert_eq!(exc.exc_type(), monty_types::ExcType::RuntimeError);
     assert_eq!(exc.message(), Some("network timeout"));
 }
 
@@ -1011,7 +1033,13 @@ async def main():
 
 await main()
 ";
-    let runner = MontyRun::new(code.to_owned(), "test.py", vec![]).unwrap();
+    let runner = MontyRun::new(
+        code.to_owned(),
+        "test.py",
+        vec![],
+        dart_monty_core_native::convert::compile_options(),
+    )
+    .unwrap();
 
     let progress = runner
         .start(vec![], NoLimitTracker, PrintWriter::Stdout)
@@ -1023,8 +1051,8 @@ await main()
     // Error in future resolution propagates as MontyException
     let results = vec![(
         call_ids[0].0,
-        ExtFunctionResult::Error(monty::MontyException::new(
-            monty::ExcType::RuntimeError,
+        ExtFunctionResult::Error(monty_types::MontyException::new(
+            monty_types::ExcType::RuntimeError,
             Some("network failure".into()),
         )),
     )];
@@ -1032,7 +1060,7 @@ await main()
 
     assert!(result.is_err(), "error should propagate from future");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type(), monty::ExcType::RuntimeError);
+    assert_eq!(exc.exc_type(), monty_types::ExcType::RuntimeError);
     assert_eq!(exc.message(), Some("network failure"));
 }
 
@@ -1209,14 +1237,17 @@ fn snapshot_round_trip_via_ffi() {
 /// (the prefix-byte slot for sourcemap/source-line info shifted), shrinking
 /// the dump for `"2 + 2"` from 98 to 74 bytes. v0.0.17 → v0.0.18 changed the
 /// instruction encoding again, shrinking the same dump from 74 to 60 bytes.
+/// v0.0.18 → v0.0.19 changed it once more, 60 → 59 bytes: serialized sessions
+/// now carry `CompileOptions` (upstream #556 — the assert-annotation truncation
+/// limit is applied at runtime, so it travels with the session).
 /// Snapshots are NOT portable across these upgrades — consumers persisting
 /// snapshots must migrate.
 #[rustfmt::skip]
 const PINNED_SNAPSHOT_2_PLUS_2: &[u8] = &[
-    0x00, 0x00, 0x06, 0x08, 0x02, 0x08, 0x02, 0x19, 0x68, 0x00, 0x04, 0x00, 0x90, 0x4E, 0x00, 0x01,
-    0x00, 0x02, 0x90, 0x4E, 0x04, 0x05, 0x00, 0x04, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x05, 0x90, 0x4E,
-    0x00, 0x05, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x01, 0x07, 0x3C, 0x69, 0x6E, 0x70, 0x75, 0x74,
-    0x3E, 0x00, 0x00, 0x00, 0x05, 0x32, 0x20, 0x2B, 0x20, 0x32, 0x00, 0x00,
+    0x00, 0x06, 0x08, 0x02, 0x08, 0x02, 0x17, 0x66, 0x00, 0x04, 0x00, 0x90, 0x4E, 0x00, 0x01, 0x00,
+    0x02, 0x90, 0x4E, 0x04, 0x05, 0x00, 0x04, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x05, 0x90, 0x4E, 0x00,
+    0x05, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x07, 0x3C, 0x69, 0x6E, 0x70, 0x75, 0x74, 0x3E, 0x00,
+    0x00, 0x00, 0x05, 0x32, 0x20, 0x2B, 0x20, 0x32, 0x00, 0x00, 0x00,
 ];
 
 #[test]

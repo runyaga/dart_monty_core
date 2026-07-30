@@ -124,7 +124,7 @@ impl MontyHandle {
         script_name: Option<String>,
     ) -> Result<Self, MontyException> {
         let name = script_name.unwrap_or_else(|| "<input>".into());
-        let compiled = MontyRun::new(code, &name, vec![])?;
+        let compiled = MontyRun::new(code, &name, vec![], crate::convert::compile_options())?;
 
         Ok(Self {
             state: HandleState::Ready(compiled),
@@ -150,7 +150,11 @@ impl MontyHandle {
         let mut buf = String::new();
         let limits = self.limits.clone().unwrap_or_else(default_limits);
         let tracker = Tracker::new(limits);
-        let result = compiled.run(vec![], tracker, PrintWriter::CollectString(&mut buf));
+        let result = compiled.run(
+            vec![],
+            tracker,
+            PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
+        );
 
         self.print_output.push_str(&buf);
 
@@ -550,7 +554,10 @@ impl MontyHandle {
         f: impl FnOnce(PrintWriter) -> Result<RunProgress<Tracker>, MontyException>,
     ) -> (MontyProgressTag, Option<String>) {
         let mut buf = String::new();
-        let result = f(PrintWriter::CollectString(&mut buf));
+        let result = f(PrintWriter::CollectString(
+            &mut buf,
+            crate::convert::PRINT_COLLECT_LIMIT,
+        ));
         self.print_output.push_str(&buf);
         match result {
             Ok(progress) => self.process_progress(progress),
@@ -627,7 +634,10 @@ impl MontyHandle {
                                 name,
                                 docstring: None,
                             }),
-                            PrintWriter::CollectString(&mut buf),
+                            PrintWriter::CollectString(
+                                &mut buf,
+                                crate::convert::PRINT_COLLECT_LIMIT,
+                            ),
                         );
                         self.print_output.push_str(&buf);
                         match result {
@@ -640,10 +650,17 @@ impl MontyHandle {
                         return (MontyProgressTag::NameLookup, None);
                     }
                 }
-                RunProgress::OsCall(mut call) => {
+                RunProgress::OsCall(call) => {
                     let os_fn_name = call.function_call.name().to_string();
                     let call_id = call.call_id;
-                    let (args, kwargs) = call.take_function_call().to_args();
+                    // #583 removed `take_function_call()`: the OS-call payload is now RETAINED in the
+                    // suspended state instead of being moved out (the `OsFunctionCall::Used`
+                    // placeholder is gone). We read a clone here because the payload is needed
+                    // NOW, to build the metadata handed to Dart, while the resume happens in a
+                    // LATER FFI call — so upstream's `resume_with(.., FnOnce(OsFunctionCall))`,
+                    // which supplies the payload at resume time, does not fit this flow. The
+                    // original stays intact for the eventual `resume()`.
+                    let (args, kwargs) = call.function_call.clone().to_args();
                     let meta = OsCallMeta {
                         os_fn_name,
                         args_json: serde_json::to_string(

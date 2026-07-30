@@ -1,4 +1,51 @@
 use monty_types::MontyObject;
+
+/// Cap on print output collected into a host-side buffer.
+///
+/// Upstream #558 added this parameter to `PrintWriter::CollectString` /
+/// `CollectStreams` so a sandboxed `while True: print("x")` cannot exhaust the
+/// **host** process's memory — print collection previously sat outside all
+/// resource accounting.
+///
+/// Exceeding the cap raises a catchable Python `MemoryError` (via
+/// `check_print_collect_limit`); it does **not** truncate, and no output is
+/// silently lost. `None` would restore the unbounded 0.18 behaviour and with it
+/// the host-OOM exposure.
+///
+/// Defined here because `convert.rs` is the only module shared by the library
+/// and the `oracle` binary, which must agree or fixture conformance diverges.
+///
+/// Follow-up: expose this per-handle through the Dart resource-limits API so
+/// consumers with legitimately high-volume output can raise or disable it.
+pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
+
+/// Compile options used for every program and REPL session.
+///
+/// monty v0.0.19 (#556) added pytest-style introspected `assert` messages and
+/// turned them **on by default** (`AssertMessageAnnotations::MaxBytes(120)`),
+/// deliberately diverging from CPython: `assert 2 == 5` becomes
+/// `AssertionError('assert 2 == 5')` where CPython raises `AssertionError()`
+/// with an empty message. The change is visible in `str(e)`, `e.args[0]`,
+/// tracebacks and host-side error objects.
+///
+/// We pin it **Off**, which reproduces CPython — and therefore our v0.0.18
+/// behaviour — exactly. Two reasons:
+///
+///  1. Scope: the 0.19 upgrade is port-to-green. Introspected assert messages
+///     are a new *capability*, and adopting a new default silently is not a
+///     port. It gets surfaced deliberately, as an opt-in, or not at all.
+///  2. Blast radius: it rewrites the `AssertionError` text of every failing
+///     assert, which is the single largest source of expected-output churn in
+///     the 482-fixture conformance corpus.
+///
+/// Follow-up: expose this through the Dart API so consumers can opt in.
+#[must_use]
+pub fn compile_options() -> monty_types::CompileOptions {
+    monty_types::CompileOptions {
+        assert_message_annotations: monty_types::AssertMessageAnnotations::Off,
+    }
+}
+
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Number, Value, json};

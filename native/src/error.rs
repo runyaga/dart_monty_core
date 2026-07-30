@@ -193,7 +193,13 @@ mod tests {
         use monty_types::{NoLimitTracker, PrintWriter};
 
         let code = "def inner():\n    1/0\n\ndef outer():\n    inner()\n\nouter()";
-        let compiled = MontyRun::new(code.into(), "<test>", vec![]).unwrap();
+        let compiled = MontyRun::new(
+            code.into(),
+            "<test>",
+            vec![],
+            crate::convert::compile_options(),
+        )
+        .unwrap();
         let err = compiled
             .run(vec![], NoLimitTracker, PrintWriter::Disabled)
             .unwrap_err();

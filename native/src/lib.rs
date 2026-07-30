@@ -1,6 +1,10 @@
 #![allow(clippy::missing_safety_doc)]
 
-mod convert;
+// `pub` so tests/integration.rs can use the shared PRINT_COLLECT_LIMIT and
+// compile_options() — tests must construct runs the same way production does, or
+// they are not testing what ships. This crate is `publish = false`, so this is
+// not a public API commitment.
+pub mod convert;
 mod error;
 mod handle;
 mod repl_handle;

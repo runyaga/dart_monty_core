@@ -4,9 +4,7 @@ use monty::{
     MontyRepl, ReplFunctionCall, ReplOsCall, ReplProgress, ReplResolveFutures, ReplStartError,
     detect_repl_continuation_mode,
 };
-use monty_types::{
-    ExtFunctionResult, MontyObject, NameLookupResult, NoLimitTracker, PrintWriter,
-};
+use monty_types::{ExtFunctionResult, MontyObject, NameLookupResult, NoLimitTracker, PrintWriter};
 use serde_json::Value;
 
 use crate::convert::{json_to_monty_object, monty_object_to_json};
@@ -106,7 +104,11 @@ impl MontyReplHandle {
     #[must_use]
     pub fn new(script_name: &str) -> Self {
         Self {
-            state: ReplHandleState::Idle(MontyRepl::new(script_name, NoLimitTracker)),
+            state: ReplHandleState::Idle(MontyRepl::new(
+                script_name,
+                NoLimitTracker,
+                crate::convert::compile_options(),
+            )),
             ext_fn_names: HashSet::new(),
             print_output: String::new(),
         }
@@ -163,7 +165,11 @@ impl MontyReplHandle {
         };
 
         let mut buf = String::new();
-        let result = repl.feed_run(code, vec![], PrintWriter::CollectString(&mut buf));
+        let result = repl.feed_run(
+            code,
+            vec![],
+            PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
+        );
 
         self.print_output.push_str(&buf);
 
@@ -203,7 +209,11 @@ impl MontyReplHandle {
         };
 
         let mut buf = String::new();
-        let result = repl.feed_start(code, vec![], PrintWriter::CollectString(&mut buf));
+        let result = repl.feed_start(
+            code,
+            vec![],
+            PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
+        );
         self.print_output.push_str(&buf);
 
         match result {
@@ -226,7 +236,7 @@ impl MontyReplHandle {
                 let mut buf = String::new();
                 let result = call.resume(
                     ExtFunctionResult::Return(obj),
-                    PrintWriter::CollectString(&mut buf),
+                    PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
                 );
                 self.print_output.push_str(&buf);
                 match result {
@@ -238,7 +248,7 @@ impl MontyReplHandle {
                 let mut buf = String::new();
                 let result = call.resume(
                     ExtFunctionResult::Return(obj),
-                    PrintWriter::CollectString(&mut buf),
+                    PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
                 );
                 self.print_output.push_str(&buf);
                 match result {
@@ -304,11 +314,11 @@ impl MontyReplHandle {
         let result = match call {
             Ok(c) => c.resume(
                 ExtFunctionResult::Error(exc),
-                PrintWriter::CollectString(&mut buf),
+                PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
             ),
             Err(c) => c.resume(
                 ExtFunctionResult::Error(exc),
-                PrintWriter::CollectString(&mut buf),
+                PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
             ),
         };
         self.print_output.push_str(&buf);
@@ -330,7 +340,7 @@ impl MontyReplHandle {
                 let mut buf = String::new();
                 let result = call.resume(
                     ExtFunctionResult::NotFound(fn_name.to_string()),
-                    PrintWriter::CollectString(&mut buf),
+                    PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
                 );
                 self.print_output.push_str(&buf);
                 match result {
@@ -342,7 +352,7 @@ impl MontyReplHandle {
                 let mut buf = String::new();
                 let result = call.resume(
                     ExtFunctionResult::NotFound(fn_name.to_string()),
-                    PrintWriter::CollectString(&mut buf),
+                    PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
                 );
                 self.print_output.push_str(&buf);
                 match result {
@@ -366,7 +376,10 @@ impl MontyReplHandle {
         match state {
             ReplHandleState::Paused { call, .. } => {
                 let mut buf = String::new();
-                let result = call.resume_pending(PrintWriter::CollectString(&mut buf));
+                let result = call.resume_pending(PrintWriter::CollectString(
+                    &mut buf,
+                    crate::convert::PRINT_COLLECT_LIMIT,
+                ));
                 self.print_output.push_str(&buf);
                 match result {
                     Ok(progress) => self.process_repl_progress(progress),
@@ -413,13 +426,17 @@ impl MontyReplHandle {
         for (id_str, val) in &errors_map {
             if let Ok(id) = id_str.parse::<u32>() {
                 let msg = val.as_str().unwrap_or("error").to_string();
-                let exc = monty_types::MontyException::new(monty_types::ExcType::RuntimeError, Some(msg));
+                let exc =
+                    monty_types::MontyException::new(monty_types::ExcType::RuntimeError, Some(msg));
                 resolved.push((id, ExtFunctionResult::Error(exc)));
             }
         }
 
         let mut buf = String::new();
-        let result = futures.resume(resolved, PrintWriter::CollectString(&mut buf));
+        let result = futures.resume(
+            resolved,
+            PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
+        );
         self.print_output.push_str(&buf);
 
         match result {
@@ -594,10 +611,17 @@ impl MontyReplHandle {
                     self.state = ReplHandleState::Paused { call, meta };
                     return (MontyProgressTag::Pending, None);
                 }
-                ReplProgress::OsCall(mut call) => {
+                ReplProgress::OsCall(call) => {
                     let os_fn_name = call.function_call.name().to_string();
                     let call_id = call.call_id;
-                    let (args, kwargs) = call.take_function_call().to_args();
+                    // #583 removed `take_function_call()`: the OS-call payload is now RETAINED in the
+                    // suspended state instead of being moved out (the `OsFunctionCall::Used`
+                    // placeholder is gone). We read a clone here because the payload is needed
+                    // NOW, to build the metadata handed to Dart, while the resume happens in a
+                    // LATER FFI call — so upstream's `resume_with(.., FnOnce(OsFunctionCall))`,
+                    // which supplies the payload at resume time, does not fit this flow. The
+                    // original stays intact for the eventual `resume()`.
+                    let (args, kwargs) = call.function_call.clone().to_args();
                     let meta = OsCallMeta {
                         os_fn_name,
                         args_json: serde_json::to_string(
@@ -643,12 +667,18 @@ impl MontyReplHandle {
                                 name,
                                 docstring: None,
                             }),
-                            PrintWriter::CollectString(&mut buf),
+                            PrintWriter::CollectString(
+                                &mut buf,
+                                crate::convert::PRINT_COLLECT_LIMIT,
+                            ),
                         )
                     } else {
                         lookup.resume(
                             NameLookupResult::Undefined,
-                            PrintWriter::CollectString(&mut buf),
+                            PrintWriter::CollectString(
+                                &mut buf,
+                                crate::convert::PRINT_COLLECT_LIMIT,
+                            ),
                         )
                     };
                     self.print_output.push_str(&buf);
