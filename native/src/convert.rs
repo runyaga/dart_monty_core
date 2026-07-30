@@ -1,4 +1,4 @@
-use monty::MontyObject;
+use monty_types::MontyObject;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Number, Value, json};
@@ -136,12 +136,12 @@ pub fn json_to_monty_object(val: &Value) -> MontyObject {
         Value::Object(map) => {
             if let Some(type_str) = map.get("__type").and_then(|v| v.as_str()) {
                 match type_str {
-                    "date" => MontyObject::Date(monty::MontyDate {
+                    "date" => MontyObject::Date(monty_types::MontyDate {
                         year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
                         month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
                         day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
                     }),
-                    "datetime" => MontyObject::DateTime(monty::MontyDateTime {
+                    "datetime" => MontyObject::DateTime(monty_types::MontyDateTime {
                         year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
                         month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
                         day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
@@ -162,7 +162,7 @@ pub fn json_to_monty_object(val: &Value) -> MontyObject {
                             .and_then(|v| v.as_str())
                             .map(std::string::ToString::to_string),
                     }),
-                    "timedelta" => MontyObject::TimeDelta(monty::MontyTimeDelta {
+                    "timedelta" => MontyObject::TimeDelta(monty_types::MontyTimeDelta {
                         days: map["days"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
                         seconds: map["seconds"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
                         microseconds: map["microseconds"]
@@ -171,7 +171,7 @@ pub fn json_to_monty_object(val: &Value) -> MontyObject {
                             .try_into()
                             .unwrap_or(0),
                     }),
-                    "timezone" => MontyObject::TimeZone(monty::MontyTimeZone {
+                    "timezone" => MontyObject::TimeZone(monty_types::MontyTimeZone {
                         offset_seconds: map["offset_seconds"]
                             .as_i64()
                             .unwrap_or(0)
@@ -266,9 +266,9 @@ pub fn json_to_monty_object(val: &Value) -> MontyObject {
                         let mode = map
                             .get("mode")
                             .and_then(|v| v.as_str())
-                            .and_then(|s| s.parse::<monty::FileMode>().ok())
-                            .unwrap_or(monty::FileMode::Read(false));
-                        MontyObject::FileHandle(monty::MontyFileHandle {
+                            .and_then(|s| s.parse::<monty_types::FileMode>().ok())
+                            .unwrap_or(monty_types::FileMode::Read(false));
+                        MontyObject::FileHandle(monty_types::MontyFileHandle {
                             path,
                             mode,
                             position,
@@ -326,7 +326,7 @@ fn number_to_monty_object(n: &Number) -> MontyObject {
     }
 }
 
-fn dict_to_json(pairs: &monty::DictPairs) -> Value {
+fn dict_to_json(pairs: &monty_types::DictPairs) -> Value {
     // Collect pairs via the &DictPairs IntoIterator impl.
     let items: Vec<&(MontyObject, MontyObject)> = pairs.into_iter().collect();
     let all_string_keys = items
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn test_exception_with_arg() {
         let exc = MontyObject::Exception {
-            exc_type: monty::ExcType::ValueError,
+            exc_type: monty_types::ExcType::ValueError,
             arg: Some("bad value".into()),
         };
         assert_eq!(
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn test_exception_no_arg() {
         let exc = MontyObject::Exception {
-            exc_type: monty::ExcType::RuntimeError,
+            exc_type: monty_types::ExcType::RuntimeError,
             arg: None,
         };
         assert_eq!(
@@ -752,7 +752,7 @@ mod tests {
 
     #[test]
     fn rt_date() {
-        let obj = MontyObject::Date(monty::MontyDate {
+        let obj = MontyObject::Date(monty_types::MontyDate {
             year: 2026,
             month: 4,
             day: 9,
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn rt_date_min() {
-        let obj = MontyObject::Date(monty::MontyDate {
+        let obj = MontyObject::Date(monty_types::MontyDate {
             year: 1,
             month: 1,
             day: 1,
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn rt_date_max() {
-        let obj = MontyObject::Date(monty::MontyDate {
+        let obj = MontyObject::Date(monty_types::MontyDate {
             year: 9999,
             month: 12,
             day: 31,
@@ -803,7 +803,7 @@ mod tests {
 
     #[test]
     fn rt_date_leap_day() {
-        let obj = MontyObject::Date(monty::MontyDate {
+        let obj = MontyObject::Date(monty_types::MontyDate {
             year: 2024,
             month: 2,
             day: 29,
@@ -822,7 +822,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_naive() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 4,
             day: 9,
@@ -851,7 +851,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_utc() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 1,
             day: 1,
@@ -873,7 +873,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_positive_offset() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 6,
             day: 15,
@@ -895,7 +895,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_negative_offset() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 12,
             day: 25,
@@ -917,7 +917,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_microseconds() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 4,
             day: 9,
@@ -936,7 +936,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_max_microseconds() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 4,
             day: 9,
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn rt_datetime_midnight() {
-        let obj = MontyObject::DateTime(monty::MontyDateTime {
+        let obj = MontyObject::DateTime(monty_types::MontyDateTime {
             year: 2026,
             month: 1,
             day: 1,
@@ -985,7 +985,7 @@ mod tests {
 
     #[test]
     fn rt_timedelta() {
-        let obj = MontyObject::TimeDelta(monty::MontyTimeDelta {
+        let obj = MontyObject::TimeDelta(monty_types::MontyTimeDelta {
             days: 1,
             seconds: 3600,
             microseconds: 500,
@@ -1002,7 +1002,7 @@ mod tests {
 
     #[test]
     fn rt_timedelta_zero() {
-        let obj = MontyObject::TimeDelta(monty::MontyTimeDelta {
+        let obj = MontyObject::TimeDelta(monty_types::MontyTimeDelta {
             days: 0,
             seconds: 0,
             microseconds: 0,
@@ -1019,7 +1019,7 @@ mod tests {
 
     #[test]
     fn rt_timedelta_negative() {
-        let obj = MontyObject::TimeDelta(monty::MontyTimeDelta {
+        let obj = MontyObject::TimeDelta(monty_types::MontyTimeDelta {
             days: -5,
             seconds: 43200,
             microseconds: 0,
@@ -1037,7 +1037,7 @@ mod tests {
 
     #[test]
     fn rt_timezone_utc() {
-        let obj = MontyObject::TimeZone(monty::MontyTimeZone {
+        let obj = MontyObject::TimeZone(monty_types::MontyTimeZone {
             offset_seconds: 0,
             name: None,
         });
@@ -1052,7 +1052,7 @@ mod tests {
 
     #[test]
     fn rt_timezone_named() {
-        let obj = MontyObject::TimeZone(monty::MontyTimeZone {
+        let obj = MontyObject::TimeZone(monty_types::MontyTimeZone {
             offset_seconds: -18000,
             name: Some("EST".into()),
         });
@@ -1067,7 +1067,7 @@ mod tests {
 
     #[test]
     fn rt_timezone_positive() {
-        let obj = MontyObject::TimeZone(monty::MontyTimeZone {
+        let obj = MontyObject::TimeZone(monty_types::MontyTimeZone {
             offset_seconds: 32400, // +09:00
             name: Some("JST".into()),
         });
@@ -1413,7 +1413,7 @@ mod tests {
     #[test]
     fn rt_exception_becomes_string() {
         let obj = MontyObject::Exception {
-            exc_type: monty::ExcType::ValueError,
+            exc_type: monty_types::ExcType::ValueError,
             arg: Some("bad".into()),
         };
         match round_trip(&obj) {

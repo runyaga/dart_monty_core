@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
 use monty::{
-    ExtFunctionResult, MontyObject, MontyRepl, NameLookupResult, NoLimitTracker, PrintWriter,
-    ReplFunctionCall, ReplOsCall, ReplProgress, ReplResolveFutures, ReplStartError,
+    MontyRepl, ReplFunctionCall, ReplOsCall, ReplProgress, ReplResolveFutures, ReplStartError,
     detect_repl_continuation_mode,
+};
+use monty_types::{
+    ExtFunctionResult, MontyObject, NameLookupResult, NoLimitTracker, PrintWriter,
 };
 use serde_json::Value;
 
@@ -256,8 +258,8 @@ impl MontyReplHandle {
 
     /// Resume a paused execution by raising an error in Python.
     pub fn resume_with_error(&mut self, error_message: &str) -> (MontyProgressTag, Option<String>) {
-        self.resume_with_monty_exception(monty::MontyException::new(
-            monty::ExcType::RuntimeError,
+        self.resume_with_monty_exception(monty_types::MontyException::new(
+            monty_types::ExcType::RuntimeError,
             Some(error_message.to_string()),
         ))
     }
@@ -272,9 +274,9 @@ impl MontyReplHandle {
         error_message: &str,
     ) -> (MontyProgressTag, Option<String>) {
         let exc_kind = exc_type
-            .parse::<monty::ExcType>()
-            .unwrap_or(monty::ExcType::RuntimeError);
-        self.resume_with_monty_exception(monty::MontyException::new(
+            .parse::<monty_types::ExcType>()
+            .unwrap_or(monty_types::ExcType::RuntimeError);
+        self.resume_with_monty_exception(monty_types::MontyException::new(
             exc_kind,
             Some(error_message.to_string()),
         ))
@@ -284,7 +286,7 @@ impl MontyReplHandle {
     /// external-function result, then advance the REPL.
     fn resume_with_monty_exception(
         &mut self,
-        exc: monty::MontyException,
+        exc: monty_types::MontyException,
     ) -> (MontyProgressTag, Option<String>) {
         let state = std::mem::replace(&mut self.state, ReplHandleState::Consumed);
         let call = match state {
@@ -411,7 +413,7 @@ impl MontyReplHandle {
         for (id_str, val) in &errors_map {
             if let Ok(id) = id_str.parse::<u32>() {
                 let msg = val.as_str().unwrap_or("error").to_string();
-                let exc = monty::MontyException::new(monty::ExcType::RuntimeError, Some(msg));
+                let exc = monty_types::MontyException::new(monty_types::ExcType::RuntimeError, Some(msg));
                 resolved.push((id, ExtFunctionResult::Error(exc)));
             }
         }

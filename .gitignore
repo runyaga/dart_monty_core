@@ -7,7 +7,16 @@ coverage/
 
 # Rust
 native/target/
-native/Cargo.lock
+# native/Cargo.lock IS committed (deliberately un-ignored during the monty 0.19
+# upgrade). Cargo's "libraries don't commit lockfiles" convention does not apply
+# here: hook/build.dart compiles this crate as a TOP-LEVEL package on every
+# consumer's `pub get`, so it behaves like an application and the lockfile is
+# honoured. Without it every consumer re-resolves transitively and can get a
+# broken tree — which happened for real: fresh resolution picked get-size2
+# 0.10.3, whose GetSize impl targets a different compact_str major than
+# ruff_python_ast 0.0.3 uses, so the build failed with an unsatisfied trait
+# bound in a dependency we do not control. Upstream monty pins get-size2 0.10.1
+# in its own committed lockfile and builds fine.
 
 # JS bridge build deps
 js/node_modules/

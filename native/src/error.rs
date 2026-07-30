@@ -1,7 +1,7 @@
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use monty::MontyException;
+use monty_types::MontyException;
 use serde_json::{Value, json};
 
 /// Allocate a C string from a Rust `&str`. Caller must free with `monty_string_free`.
@@ -121,7 +121,7 @@ pub fn monty_exception_to_json(e: &MontyException) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use monty::ExcType;
+    use monty_types::ExcType;
     use std::ffi::CStr;
     use std::ptr;
 
@@ -189,7 +189,8 @@ mod tests {
     #[test]
     fn test_monty_exception_to_json_with_traceback() {
         // Run code that produces a multi-frame traceback through monty
-        use monty::{MontyRun, NoLimitTracker, PrintWriter};
+        use monty::MontyRun;
+        use monty_types::{NoLimitTracker, PrintWriter};
 
         let code = "def inner():\n    1/0\n\ndef outer():\n    inner()\n\nouter()";
         let compiled = MontyRun::new(code.into(), "<test>", vec![]).unwrap();

@@ -14,8 +14,19 @@ name = "dart_monty_core_native"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-monty = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.18" }
-monty_type_checking = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.18" }
+# monty v0.0.19 split its public surface: the `monty` crate went from 1321 to 306
+# public items, and most of what we use moved to the new `monty-types` crate.
+# See ~/dev/plans/monty-0.19-upgrade/artifacts/monty-api-diff-018-019.txt
+#
+# Note `monty_type_checking` was renamed to `monty-type-checking` upstream. The
+# Rust path stays `monty_type_checking::` — cargo maps the hyphen to underscore.
+#
+# `monty-fs` is deliberately NOT a dependency: mounting moved host-side in 0.19
+# (upstream #576), but this shim never used `monty::fs` — mounts are implemented
+# on our side via OS-call handlers.
+monty = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
+monty-type-checking = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
+monty-types = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
 num-bigint = "0.4"
 num-traits = "0.2"
 serde_json = "1"

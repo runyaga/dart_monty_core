@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use monty::{
-    ExtFunctionResult, FunctionCall, LimitedTracker, MontyException, MontyObject, MontyRun,
-    NameLookup, NameLookupResult, OsCall, PrintWriter, ResolveFutures, ResourceLimits, RunProgress,
+use monty::{FunctionCall, MontyRun, NameLookup, OsCall, ResolveFutures, RunProgress};
+use monty_types::{
+    ExtFunctionResult, LimitedTracker, MontyException, MontyObject, NameLookupResult, PrintWriter,
+    ResourceLimits,
 };
 use serde_json::Value;
 
@@ -212,7 +213,7 @@ impl MontyHandle {
     /// Resume with an error message.
     pub fn resume_with_error(&mut self, error_message: &str) -> (MontyProgressTag, Option<String>) {
         let exc = MontyException::new(
-            monty::ExcType::RuntimeError,
+            monty_types::ExcType::RuntimeError,
             Some(error_message.to_string()),
         );
         let result = ExtFunctionResult::Error(exc);
@@ -229,8 +230,8 @@ impl MontyHandle {
         error_message: &str,
     ) -> (MontyProgressTag, Option<String>) {
         let exc_kind = exc_type
-            .parse::<monty::ExcType>()
-            .unwrap_or(monty::ExcType::RuntimeError);
+            .parse::<monty_types::ExcType>()
+            .unwrap_or(monty_types::ExcType::RuntimeError);
         let exc = MontyException::new(exc_kind, Some(error_message.to_string()));
         let result = ExtFunctionResult::Error(exc);
         self.resume_with_result(result)
@@ -333,7 +334,7 @@ impl MontyHandle {
                 }
             };
             let msg = val.as_str().unwrap_or("unknown error").to_string();
-            let exc = MontyException::new(monty::ExcType::RuntimeError, Some(msg));
+            let exc = MontyException::new(monty_types::ExcType::RuntimeError, Some(msg));
             ext_results.push((call_id, ExtFunctionResult::Error(exc)));
         }
 
@@ -694,8 +695,8 @@ impl MontyHandle {
 /// Build a `PendingMeta` from a `FunctionCall` variant's fields.
 fn build_pending_meta(
     function_name: String,
-    args: &[monty::MontyObject],
-    kwargs: &[(monty::MontyObject, monty::MontyObject)],
+    args: &[monty_types::MontyObject],
+    kwargs: &[(monty_types::MontyObject, monty_types::MontyObject)],
     call_id: u32,
     method_call: bool,
 ) -> PendingMeta {
@@ -709,7 +710,7 @@ fn build_pending_meta(
         let map: serde_json::Map<String, Value> = kwargs
             .iter()
             .map(|(k, v)| {
-                let key = if let monty::MontyObject::String(s) = k {
+                let key = if let monty_types::MontyObject::String(s) = k {
                     s.clone()
                 } else {
                     format!("{k}")

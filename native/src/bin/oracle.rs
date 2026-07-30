@@ -24,7 +24,8 @@
 
 use std::io::{self, Read};
 
-use monty::{MontyException, MontyRun, NoLimitTracker, PrintWriter};
+use monty::MontyRun;
+use monty_types::{MontyException, NoLimitTracker, PrintWriter};
 use serde_json::{Value, json};
 
 // Re-use the crate's MontyObject → JSON conversion directly.
