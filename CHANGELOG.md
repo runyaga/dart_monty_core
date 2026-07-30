@@ -9,6 +9,26 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **Dict key order now follows Python insertion order; it used to be sorted
+  alphabetically.** ⚠️ **Silent** — nothing errors, values simply arrive in a
+  different order. `{"b": 1, "a": 2, "c": 3}` previously came back as
+  `{"a": 2, "b": 1, "c": 3}`. Affects **both backends, FFI included**.
+
+  ```python
+  d = {"b": 1, "a": 2, "c": 3}
+  list(d)     # was ['a', 'b', 'c']  ->  now ['b', 'a', 'c']
+  ```
+
+  This restores correct Python semantics: dicts have been insertion-ordered
+  since CPython 3.7, and monty computes the order correctly in Rust — `repr(d)`
+  always returned `{'b': 1, 'a': 2, 'c': 3}`. Our JSON encoder was discarding it,
+  because `serde_json::Map` is a sorted `BTreeMap` unless the `preserve_order`
+  feature is enabled. It now is.
+
+  If you sort our output before comparing, nothing changes for you. If you
+  relied on receiving alphabetical order, you were relying on a bug — sort
+  explicitly. Fixes #129.
+
 - **The `open()` OS-call op is now `'open'`, was `'Open'`.** ⚠️ **This is the one
   change that fails silently.** If you have a custom `OsCallHandler` that matches
   on the op name, a `case 'Open':` (or `if (op == 'Open')`) stops matching and

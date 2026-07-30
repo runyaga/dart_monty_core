@@ -788,19 +788,66 @@ mod tests {
         }
     }
 
+    /// Helper: a Dict's (key, value) pairs as comparable strings, IN ORDER.
+    fn dict_pairs(obj: MontyObject) -> Vec<(String, i64)> {
+        match obj {
+            MontyObject::Dict(pairs) => pairs
+                .into_iter()
+                .map(|(k, v)| {
+                    let key = match k {
+                        MontyObject::String(s) => s,
+                        other => panic!("expected String key, got {other:?}"),
+                    };
+                    let val = match v {
+                        MontyObject::Int(i) => i,
+                        other => panic!("expected Int value, got {other:?}"),
+                    };
+                    (key, val)
+                })
+                .collect(),
+            other => panic!("expected Dict, got {other:?}"),
+        }
+    }
+
     #[test]
     fn rt_dict_string_keys() {
         let obj = MontyObject::dict(vec![
             (MontyObject::String("a".into()), MontyObject::Int(1)),
             (MontyObject::String("b".into()), MontyObject::Int(2)),
         ]);
-        match round_trip(&obj) {
-            MontyObject::Dict(pairs) => {
-                let items: Vec<_> = pairs.into_iter().collect();
-                assert_eq!(items.len(), 2);
-            }
-            other => panic!("expected Dict, got {other:?}"),
-        }
+        // Assert the actual contents, not just the count: a length-only check
+        // passes even if the keys are renamed, reordered, or the values swapped.
+        assert_eq!(
+            dict_pairs(round_trip(&obj)),
+            vec![("a".to_string(), 1), ("b".to_string(), 2)]
+        );
+    }
+
+    /// Python dicts are insertion-ordered, and that order is observable through
+    /// `list(d)`, iteration and `repr(d)`. We lost it: `serde_json` without the
+    /// `preserve_order` feature backs `Map` with a sorted `BTreeMap`, so
+    /// `{"b":…, "a":…}` came back as `{"a":…, "b":…}` (core#129).
+    ///
+    /// The keys here are deliberately NOT in sorted order — with a `BTreeMap`
+    /// this test fails, which is the whole point. The conformance corpus could
+    /// never have caught this: exactly one of its 531 fixtures returns a dict,
+    /// and that one's keys are already sorted.
+    #[test]
+    fn rt_dict_preserves_insertion_order() {
+        let obj = MontyObject::dict(vec![
+            (MontyObject::String("b".into()), MontyObject::Int(1)),
+            (MontyObject::String("a".into()), MontyObject::Int(2)),
+            (MontyObject::String("c".into()), MontyObject::Int(3)),
+        ]);
+        assert_eq!(
+            dict_pairs(round_trip(&obj)),
+            vec![
+                ("b".to_string(), 1),
+                ("a".to_string(), 2),
+                ("c".to_string(), 3)
+            ],
+            "dict insertion order must survive the JSON round-trip"
+        );
     }
 
     // =========================================================================
