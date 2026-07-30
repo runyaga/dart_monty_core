@@ -198,6 +198,35 @@ jobs:
         run: echo "AOT kernel test completed via dart test --compiler=kernel"
 
   # ---------------------------------------------------------------------------
+  # GitHub Pages render gate — the deployed site must load in a real browser
+  # ---------------------------------------------------------------------------
+  # https://runyaga.github.io/dart_monty_core/ serves the web REPL against the
+  # SAME committed lib/assets/ bundle consumers get, so this is the only check
+  # that the published artefacts resolve and wire up in a browser. A green WASM
+  # fixture corpus does not cover it: that drives a test harness, not the
+  # deployed page.
+  pages:
+    name: Pages site renders
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install WASI runtime dep
+        working-directory: js
+        run: npm install --force
+      - run: dart pub get
+      - name: Pages render gate
+        run: bash tool/check_pages.sh
+
+  # ---------------------------------------------------------------------------
   # Rust: fmt + clippy + tests + llvm-cov coverage (≥80% line coverage)
   # ---------------------------------------------------------------------------
   rust:

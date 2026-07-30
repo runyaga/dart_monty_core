@@ -15,6 +15,11 @@ analyzer:
     - 'packages/dart_monty_flutter/**'
     - 'packages/dart_monty_web/**'
     - 'example/**'
+    # Assembled GitHub Pages output (tool/check_pages.sh). It is a COPY of
+    # packages/dart_monty_web/web, which is already excluded above, so
+    # analysing it would double-report that package's issues. `.gitignore`
+    # does not help here — the analyzer does not consult it.
+    - 'site/**'
 
   language:
     strict-casts: true
