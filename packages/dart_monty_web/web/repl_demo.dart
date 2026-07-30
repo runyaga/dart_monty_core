@@ -62,12 +62,18 @@ Future<Object?> _vfsOsHandler(
     case 'Path.unlink':
       _vfs.remove(args.first! as String);
       return null;
-    // open() (monty 0.0.18) — the interpreter emits the prefix-less `Open`,
-    // takes the returned handle, then drives writes through `append_text`.
-    // resolveOpenCall (owned by dart_monty_core) maps mode → effect and
-    // raises the typed FileNotFoundError for a missing 'r' target; this
-    // map-backed VFS only supplies the filesystem facts.
-    case 'Open':
+    // open() — the interpreter emits the prefix-less `open`, takes the returned
+    // handle, then drives writes through `append_text`. resolveOpenCall (owned by
+    // dart_monty_core) maps mode → effect and raises the typed FileNotFoundError
+    // for a missing 'r' target; this map-backed VFS only supplies the filesystem
+    // facts.
+    //
+    // monty v0.0.19 renamed this op from 'Open' to 'open' (#576). This demo is a
+    // CONSUMER of dart_monty_core, and it broke exactly the way the CHANGELOG
+    // warns consumers it will: the case stopped matching, the call fell through to
+    // `default`, and the VFS example failed with "open not supported in this demo"
+    // — with no compile error anywhere.
+    case 'open':
       return resolveOpenCall(
         args[0]! as String,
         args[1]! as String,
