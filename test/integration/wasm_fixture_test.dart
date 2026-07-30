@@ -27,7 +27,13 @@ void main() {
         // v0.0.18 features not yet wired into the WASM binding.
         if (unsupportedWasmFixtures.contains(key)) return;
         final expectation = parseFixture(value, skipWasm: true);
-        if (expectation == null) return; // skipped fixture
+        if (expectation == null) {
+          // Was a bare `return`: the test asserted nothing and reported
+          // GREEN. Reporting a skip is the honest signal (core#130).
+          markTestSkipped('no Return=/Raise= directive to assert against');
+
+          return;
+        }
 
         final platform = createPlatformMonty();
         MontyResult? result;

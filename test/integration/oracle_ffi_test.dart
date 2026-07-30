@@ -24,7 +24,13 @@ void main() {
     for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
       test(key, () async {
         final expectation = parseFixture(value);
-        if (expectation == null) return; // skipped fixture
+        if (expectation == null) {
+          // Was a bare `return`: the test asserted nothing and reported
+          // GREEN. Reporting a skip is the honest signal (core#130).
+          markTestSkipped('no Return=/Raise= directive to assert against');
+
+          return;
+        }
 
         // Run the oracle to get the authoritative expected result.
         final oracleJson = await runOracle(value);

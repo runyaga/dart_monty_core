@@ -138,22 +138,55 @@ Future<(String?, MontyValue?, bool)> _runDispatch(
 
 void main() {
   group('oracle_ffi_ext', () {
-    for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    // Register ONLY the `# call-external` fixtures.
+    //
+    // This harness exists to exercise external-function dispatch, which the
+    // other fixtures do not use. Previously all 531 were registered and the
+    // ~475 non-call-external ones hit a bare `return` — so they reported as
+    // PASSING while asserting nothing, and this harness advertised 531 green
+    // tests on the strength of 51 real assertions (core#130).
+    //
+    // A test that can never run is not a test. Filtering at registration is
+    // honest in a way that skipping inside the body is not: the count now
+    // matches the work actually done.
+    final callExternalFixtures = Map.fromEntries(
+      fixtureCorpus.entries.where((e) => fixtureIsCallExternal(e.value)),
+    );
+
+    test('the corpus still contains call-external fixtures', () {
+      // Guards the filter itself: if a corpus regeneration or a directive
+      // rename silently emptied this harness, every other test here would
+      // vanish and the suite would still be green.
+      expect(
+        callExternalFixtures,
+        isNotEmpty,
+        reason:
+            'no `# call-external` fixtures found — the filter or the '
+            'corpus is broken, and this harness is now testing nothing',
+      );
+    });
+
+    for (final MapEntry(:key, :value) in callExternalFixtures.entries) {
       test(key, () async {
-        // Only run `# call-external` fixtures — others are covered by
-        // oracle_ffi_test.dart. skip-async / skip-wasm don't apply here.
         final expectation = parseFixture(
           value,
           skipCallExternal: false,
         );
-        if (expectation == null) return;
-        if (!fixtureIsCallExternal(value)) return;
+        if (expectation == null) {
+          markTestSkipped('no Return=/Raise= directive to assert against');
+
+          return;
+        }
 
         final (thrownExcType, resultValue, skipped) = await _runDispatch(
           value,
           key,
         );
-        if (skipped) return;
+        if (skipped) {
+          markTestSkipped('dispatch harness could not run this fixture');
+
+          return;
+        }
 
         switch (expectation) {
           case ExpectNoException():
