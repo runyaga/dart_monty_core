@@ -89,6 +89,7 @@ sealed class MontyValue {
         'filehandle': MontyFileHandle._fromMap,
         'namedtuple': MontyNamedTuple._fromMap,
         'dataclass': MontyDataclass._fromMap,
+        'ellipsis': MontyEllipsis._fromMap,
       };
 
   /// Serializes this value back to JSON compatible with the Rust side.

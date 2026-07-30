@@ -63,7 +63,7 @@ use serde_json::{Number, Value, json};
 /// - `String` → string
 /// - `List` → array
 /// - `Dict` → object (string keys) or array of `[k, v]` pairs
-/// - `Ellipsis` → `"..."`
+/// - `Ellipsis` → `{"__type": "ellipsis"}`
 ///
 /// Types with no native JSON counterpart use a tagged envelope,
 /// `{"__type": <tag>, ...}`, which `json_to_monty_object` reads back so the
@@ -101,7 +101,10 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
             "__type": "frozenset",
             "value": items.iter().map(monty_object_to_json).collect::<Vec<_>>(),
         }),
-        MontyObject::Ellipsis => Value::String("...".into()),
+        // `...` gets a tagged envelope like every other non-JSON-native value.
+        // It used to serialize as the bare string "...", which is
+        // indistinguishable from the actual string "..." (core#129).
+        MontyObject::Ellipsis => json!({ "__type": "ellipsis" }),
         MontyObject::Bytes(bytes) => json!({
             "__type": "bytes",
             "value": bytes,
@@ -336,6 +339,7 @@ pub fn json_to_monty_object(val: &Value) -> MontyObject {
                             position,
                         })
                     }
+                    "ellipsis" => MontyObject::Ellipsis,
                     _ => {
                         // Unknown __type — fall through to dict
                         let pairs: Vec<(MontyObject, MontyObject)> = map
@@ -543,7 +547,10 @@ mod tests {
 
     #[test]
     fn test_ellipsis() {
-        assert_eq!(monty_object_to_json(&MontyObject::Ellipsis), json!("..."));
+        assert_eq!(
+            monty_object_to_json(&MontyObject::Ellipsis),
+            json!({ "__type": "ellipsis" })
+        );
     }
 
     #[test]
@@ -1494,13 +1501,32 @@ mod tests {
 
     // --- Representational types (not data, just display) ---
 
+    /// This test used to be `rt_ellipsis_becomes_string`, and it ASSERTED THE
+    /// BUG: that `...` round-trips as the string `"..."`. A test that pins
+    /// lossy behaviour as correct makes the defect permanent, and this one
+    /// did exactly that until core#129.
     #[test]
-    fn rt_ellipsis_becomes_string() {
-        let back = round_trip(&MontyObject::Ellipsis);
-        match back {
-            MontyObject::String(s) => assert_eq!(s, "..."),
-            other => panic!("Ellipsis round-trips as String: got {other:?}"),
-        }
+    fn rt_ellipsis_round_trips_losslessly() {
+        assert!(
+            matches!(round_trip(&MontyObject::Ellipsis), MontyObject::Ellipsis),
+            "Ellipsis must survive the JSON round-trip"
+        );
+    }
+
+    /// The point of the envelope: `...` and the string `"..."` must not
+    /// collapse onto each other.
+    #[test]
+    fn rt_ellipsis_is_distinguishable_from_the_string() {
+        let dots = MontyObject::String("...".into());
+        assert_ne!(
+            monty_object_to_json(&MontyObject::Ellipsis),
+            monty_object_to_json(&dots),
+            "Ellipsis and the string \"...\" must serialize differently"
+        );
+        assert!(
+            matches!(round_trip(&dots), MontyObject::String(ref s) if s == "..."),
+            "the string \"...\" must still round-trip as a string"
+        );
     }
 
     // ---- Control a' (P2) ------------------------------------------------

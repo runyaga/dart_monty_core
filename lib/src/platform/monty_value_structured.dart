@@ -1,6 +1,43 @@
 part of 'monty_value.dart';
 
 // ---------------------------------------------------------------------------
+// Ellipsis
+// ---------------------------------------------------------------------------
+
+/// Python's `Ellipsis` (`...`).
+///
+/// It has exactly one value, so this is a singleton with no payload.
+///
+/// Before 0.19.0 `...` was serialized as the bare string `"..."`, which made it
+/// indistinguishable from the actual string `"..."` — both arrived as
+/// [MontyString]. It now travels as `{"__type": "ellipsis"}` (core#129).
+@immutable
+final class MontyEllipsis extends MontyValue {
+  /// Creates the [MontyEllipsis] singleton value.
+  const MontyEllipsis();
+
+  factory MontyEllipsis._fromMap(Map<String, dynamic> _) =>
+      const MontyEllipsis();
+
+  @override
+  Map<String, Object?> toJson() => {'__type': 'ellipsis'};
+
+  /// There is no Dart equivalent of `...`, so the sentinel represents itself.
+  @override
+  Object? get dartValue => this;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is MontyEllipsis;
+
+  @override
+  int get hashCode => (MontyEllipsis).hashCode;
+
+  @override
+  String toString() => 'MontyEllipsis()';
+}
+
+// ---------------------------------------------------------------------------
 // Path
 // ---------------------------------------------------------------------------
 

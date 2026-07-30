@@ -9,6 +9,25 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **Python's `Ellipsis` (`...`) is now `MontyEllipsis`, not `MontyString('...')`.**
+  It travels as `{"__type": "ellipsis"}` rather than the bare string `"..."`, so
+  `...` and the actual string `"..."` are finally distinguishable — previously
+  both arrived as `MontyString` and nothing could tell them apart.
+
+  ```dart
+  final r = await Monty('...').run();
+  // was: MontyString('...')
+  // now: MontyEllipsis()
+  ```
+
+  **This adds a variant to the sealed `MontyValue` hierarchy.** If you have an
+  exhaustive `switch` over `MontyValue`, it will no longer compile until you add
+  a `MontyEllipsis` arm — the analyzer will point at each one. That is the only
+  loud part; code that treated `...` as a string just stops matching it.
+
+  A test in `convert.rs` asserted the old collapse as correct behaviour, which
+  is precisely why the defect survived to 0.19. It has been inverted. Fixes #129.
+
 - **Dict key order now follows Python insertion order; it used to be sorted
   alphabetically.** ⚠️ **Silent** — nothing errors, values simply arrive in a
   different order. `{"b": 1, "a": 2, "c": 3}` previously came back as

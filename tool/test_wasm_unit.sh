@@ -131,4 +131,5 @@ dart test \
   test/integration/wasm_type_check_test.dart \
   test/integration/wasm_control_d_test.dart \
   test/integration/wasm_monty_019_semantics_test.dart \
+  test/integration/wasm_ellipsis_test.dart \
   "$@"

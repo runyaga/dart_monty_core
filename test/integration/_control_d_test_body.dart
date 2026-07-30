@@ -85,8 +85,16 @@ void runControlDTests() {
       expect((await eval('"s"')).dartValue, 's');
     });
 
-    test('Ellipsis -> "..."', () async {
-      expect((await eval('...')).dartValue, '...');
+    // Was `Ellipsis -> "..."`, asserting the collapse as correct and thereby
+    // making it permanent (core#129). `...` now carries a tagged envelope and
+    // arrives as MontyEllipsis, distinct from the string "...".
+    test('Ellipsis -> MontyEllipsis, distinct from the string', () async {
+      final ellipsis = await eval('...');
+      final dots = await eval('"..."');
+
+      expect(ellipsis, isA<MontyEllipsis>());
+      expect(dots, isA<MontyString>());
+      expect(ellipsis, isNot(equals(dots)));
     });
 
     // ---- containers ------------------------------------------------------

@@ -28,11 +28,11 @@ asset) and records provenance here instead of diffing bytes.
 |---|---|---|
 | `dart_monty_core_bridge.js` | 19034 | `2645a793c9bbb097c04b32b1e82a45ca…` |
 | `dart_monty_core_worker.js` | 51823 | `2f37657f9855b2302f559afbf620b53a…` |
-| `dart_monty_core_native.wasm` | 14391048 | `da993e4b0cdd3ef1566903ed414b6100…` |
+| `dart_monty_core_native.wasm` | 14375976 | `9176459f67b130a16e09b40a5401c6eb…` |
 
 ## Notes for this build
 
-- The wasm grew 13,728,501 → 14,391,048 bytes moving monty v0.0.18 → v0.0.19.
+- The wasm grew 13,728,501 → 14,375,976 bytes moving monty v0.0.18 → v0.0.19.
   That is a genuine engine size change, not reproducibility noise.
 - `bridge.js` and `worker.js` are **byte-identical** to the 0.18.1 build.
   Upstream #525 moved browser wasm onto web workers, but our own glue already
