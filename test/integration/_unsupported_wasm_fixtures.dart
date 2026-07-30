@@ -6,12 +6,28 @@
 /// upstream concern, not a host-binding gap.
 const alwaysUnsupportedWasmFixtures = {
   // Pure-Python range membership at `2**63` (beyond i64). Passes on native FFI;
-  // the same monty wasm32 engine diverges.
+  // diverges on the web backend — very likely the same JS-boundary precision
+  // loss
+  // as edge__int_float_mod below (core#128), not an engine difference. Re-check
+  // when that is fixed; this may simply start passing.
   'range__ops.py',
   // `int % float` should yield a float (CPython: `7 % 2.5 == 2.0`). Native FFI
-  // returns MontyFloat(2.0); the monty wasm32 engine returns MontyInt(2) — an
-  // upstream wasm number-coercion divergence. `edge__float_int_mod` (the
-  // reverse operand order) is unaffected and still runs.
+  // returns MontyFloat(2.0); the web backend returns MontyInt(2).
+  //
+  // The "upstream wasm number-coercion divergence" this comment used to claim
+  // is
+  // NOT the cause. The wasm32 engine computes 2.0 correctly — `repr(7 % 2.5)`
+  // returns "2.0" on the web backend, so the interpreter has the right value
+  // and
+  // only the transport is wrong. js/src/bridge.js resolves the worker reply as
+  // a
+  // JS object (postMessage structured clone, every number an IEEE-754 double)
+  // and re-serialises it, so integral floats collapse to ints and integers in
+  // (2^53, 2^63] lose precision before Dart ever sees them. Ours to fix, not
+  // upstream's: core#128.
+  //
+  // `edge__float_int_mod` (the reverse operand order) is unaffected and still
+  // runs.
   'edge__int_float_mod.py',
   // ---- added with the monty v0.0.19 corpus (531 fixtures, was 482) --------
   // These four arrived when the corpus symlink was repointed from v0.0.18 to
