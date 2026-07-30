@@ -9,7 +9,14 @@ native/target/
 native/.dart_tool/
 native/tests/
 native/lcov.info
-native/Cargo.lock
+# native/Cargo.lock is deliberately NOT excluded. It is committed (see
+# .gitignore) because hook/build.dart compiles this crate as a TOP-LEVEL package
+# on every consumer's `pub get`, so the lockfile is honoured — but only if it is
+# actually in the published archive. Excluding it here meant consumers
+# re-resolved Rust dependencies from scratch, which is the exact scenario that
+# fails: free resolution picks a get-size2 whose GetSize impl targets a different
+# compact_str major than ruff_python_ast uses, and the build dies inside a
+# dependency neither we nor the consumer controls.
 
 # Sub-packages have their own pubspecs
 packages/

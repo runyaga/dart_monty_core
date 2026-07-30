@@ -110,11 +110,11 @@ switch (result.value) {
 }
 ```
 
-18 subtypes — scalars (`MontyInt`, `MontyFloat`, `MontyString`, `MontyBool`,
-`MontyBytes`, `MontyNone`), collections (`MontyList`, `MontyTuple`,
-`MontyDict`, `MontySet`, `MontyFrozenSet`), datetime (`MontyDate`,
-`MontyDateTime`, `MontyTimeDelta`, `MontyTimeZone`), and structured
-(`MontyPath`, `MontyNamedTuple`, `MontyDataclass`).
+19 subtypes — scalars (`MontyInt`, `MontyFloat`, `MontyString`, `MontyBool`,
+`MontyNone`), collections (`MontyList`, `MontyTuple`, `MontyDict`, `MontySet`,
+`MontyFrozenSet`, `MontyBytes`), datetime (`MontyDate`, `MontyDateTime`,
+`MontyTimeDelta`, `MontyTimeZone`), and structured (`MontyPath`,
+`MontyNamedTuple`, `MontyDataclass`, `MontyFileHandle`).
 `MontyDataclass.hydrate(factory)` turns a Python `@dataclass` into your
 own Dart class:
 
@@ -296,7 +296,7 @@ maxRecursionDepth:)`.
 
 ## Installation
 
-> **0.17.0 builds the native FFI binary from source on `dart pub get`.**
+> **This package builds the native FFI binary from source on `dart pub get`.**
 > Every FFI consumer needs a Rust toolchain, including Flutter consumers
 > coming in via [`dart_monty`](https://github.com/runyaga/dart_monty).
 
@@ -310,7 +310,7 @@ Or pin in `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  dart_monty_core: ^0.17.0
+  dart_monty_core: 0.19.0
 ```
 
 To track unreleased fixes on `main`, use a `git:` dependency
@@ -335,7 +335,7 @@ on the consumer's machine during `pub get`. Required toolchain:
   - **Linux**: `sudo apt install build-essential` / `dnf install gcc` / equivalent
   - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with the C++ workload
 
-Supported FFI host triples in v0.17.0: `aarch64-apple-darwin`,
+Supported FFI host triples: `aarch64-apple-darwin`,
 `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`,
 `x86_64-unknown-linux-gnu`, `aarch64-pc-windows-msvc`,
 `x86_64-pc-windows-msvc`. **Mobile (iOS, Android) is not handled by this

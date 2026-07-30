@@ -24,9 +24,16 @@ lives in code.
 
 ## The matrix
 
-Every cell here is **green on `main`** as of the futures-driveloop fix
-(`dart_monty_core` PR landing this doc). The `useFutures` opt-in is
-the toggle that activates the cell-5 column.
+Every cell here is green on `main`, verified by the `*_async_matrix_*`
+integration suites on both backends. Registering a callback under
+`externalAsyncFunctions` is what activates the `await ext()` column.
+
+> **Updated for 0.17.1+.** This document previously described a boolean
+> `useFutures:` parameter on `feedRun` / `feedStart` / `Monty.run`. That parameter
+> was **removed in 0.17.1**; futures dispatch is now selected **per function** by
+> registering it in `externalAsyncFunctions` rather than globally by a flag. The
+> underlying engine protocol (`resumeAsFuture` / `resolveFutures`) is unchanged —
+> only how you opt in.
 
 ### L1 — `MontyRepl.feedStart` + manual loop
 
@@ -39,18 +46,18 @@ L1 has always supported every cell — the caller controls dispatch, so
 the host can implement whatever protocol it wants. Reference:
 [`_repl_futures_test_body.dart`][repl-futures] (10 tests).
 
-### L2 — `MontyRepl.feedRun(useFutures: false)` (default)
+### L2 — `MontyRepl.feedRun` with `externalFunctions` only
 
 | | sync Dart | async Dart |
 |---|---|---|
 | bare Python call | ✅ | ✅ (callback awaited eagerly Dart-side) |
 | `await ext()` | ❌ `TypeError: 'str' object can't be awaited` |
 
-Default behaviour preserves back-compat: callbacks are awaited inline
-before resuming Python. Python sees the plain value, so `await fn()`
-fails because the value is not awaitable.
+A callback registered under `externalFunctions` is awaited inline before Python
+resumes, so Python sees a plain value and `await fn()` fails — the value is not
+awaitable.
 
-### L2 — `MontyRepl.feedRun(useFutures: true)`
+### L2 — `MontyRepl.feedRun` with `externalAsyncFunctions`
 
 | | sync Dart | async Dart |
 |---|---|---|
@@ -58,35 +65,36 @@ fails because the value is not awaitable.
 | `await ext()` | ✅ | ✅ |
 | `asyncio.gather(a(), b(), c())` over externals | ✅ all dispatch concurrently, resolve in argument order |
 
-`useFutures: true` switches `_driveLoop` to launch each callback as an
-unawaited `Future`, reply with `resumeAsFuture()`, and batch the results
-back via `resolveFutures()` when the engine surfaces
-`MontyResolveFutures`. Reference:
+For functions registered in `externalAsyncFunctions`, `_driveLoop` launches the
+callback as an unawaited `Future`, replies with `resumeAsFuture()`, and batches
+results back via `resolveFutures()` when the engine surfaces
+`MontyResolveFutures`. Because the choice is per function, a single script can mix
+inline-awaited and futures-dispatched externals. Reference:
 [`_feedrun_async_matrix_body.dart`][feedrun-matrix].
 
-### L3 — `Monty(code).run(useFutures: …)`
+### L3 — `Monty(code).run(...)`
 
-`Monty.run` and `Monty.exec` plumb `useFutures` straight through to
-`feedRun`. The matrix is identical to L2. Reference:
+`Monty.run` and `Monty.exec` plumb `externalFunctions` and
+`externalAsyncFunctions` straight through to `feedRun`. The matrix is identical to
+L2. Reference:
 [`_run_async_matrix_body.dart`][run-matrix].
 
 ### L4 — `MontyRuntime.execute` (dart_monty)
 
-| `MontyRuntime(useFutures:)` | sync Dart | async Dart | `await ext()` |
+| registration | sync Dart | async Dart | `await ext()` |
 |---|---|---|---|
-| `false` (default) | ✅ | ✅ (eager) | ❌ TypeError |
-| `true` | ✅ | ✅ | ✅ |
+| `externalFunctions` | ✅ | ✅ (eager) | ❌ TypeError |
+| `externalAsyncFunctions` | ✅ | ✅ | ✅ |
 
 L4 takes a different code path than L2/L3: `MontyRuntime` constructs a
-`PlatformBridge` whose `dispatchToolCallAsFuture` is the futures-mode
-twin of `dispatchToolCall`. Setting `useFutures: true` on `MontyRuntime`
-flips the bridge into futures mode, which leverages `ReplPlatform`'s
-existing `MontyFutureCapable` implementation (no `_driveLoop` involved).
+`PlatformBridge` whose `dispatchToolCallAsFuture` is the futures-mode twin of
+`dispatchToolCall`, leveraging `ReplPlatform`'s `MontyFutureCapable`
+implementation (no `_driveLoop` involved).
 Reference: `dart_monty/test/integration/_runtime_async_matrix_body.dart`.
 
-## When to opt in
+## When to register a function as async
 
-Set `useFutures: true` when **any** of:
+Register under `externalAsyncFunctions` when **either** of:
 
 - The Python script uses `await` against a Dart-registered external
   (the only way to express "this host call is async" inside Python).
@@ -95,23 +103,31 @@ Set `useFutures: true` when **any** of:
   `MontyResolveFutures`, so independent I/O fans out instead of
   serialising.
 
-Leave `useFutures: false` (the default) when:
+Use plain `externalFunctions` when:
 
-- The host handlers are simple sync values or you don't care about
-  concurrency — serial dispatch is easier to reason about and avoids
-  any chance of handlers racing over shared state.
-- You want bit-for-bit back-compat with pre-fix behaviour.
+- The handler returns a simple synchronous value, or you do not need
+  concurrency — serial dispatch is easier to reason about and removes any chance
+  of handlers racing over shared state.
 
 ## How errors surface
 
-`useFutures: true` collects per-call errors into a map and passes them
-to `resolveFutures(results, errors)`. Today, an `errors` entry
-**terminates the script** with `MontyScriptError` rather than raising a
-catchable Python `RuntimeError` (`try / except RuntimeError` does not
-catch). The error message bubbles up verbatim in
-`MontyScriptError.message`, so callers can route it however they want.
-This is a known pydantic-monty engine constraint, not a host-side bug;
-the L1 manual-loop tests pin the contract end-to-end.
+Futures dispatch collects per-call errors into a map and passes them to
+`resolveFutures(results, errors)`. **These errors are catchable in Python** — an
+`errors` entry surfaces as a raisable exception, so `try / except` around the
+`await` works.
+
+> **Corrected.** This section previously stated that an `errors` entry
+> *terminates the script* with `MontyScriptError` and that `try / except
+> RuntimeError` does not catch it. That was fixed in 0.17.1 — see the CHANGELOG
+> entry "`resolveFutures` per-call errors are now catchable in Python", which notes
+> the old behaviour short-circuited past Python's exception handling. The L1
+> manual-loop tests pin the current contract end-to-end.
+
+⚠️ **This is verified for L1–L3 (`dart_monty_core`) only.** L4 goes through
+`dart_monty`'s `PlatformBridge`, a different code path, and that repo has open
+issues reporting async errors still bypassing Python `try/except`
+(`dart_monty#311`, `dart_monty#242`). Do not assume the fix reaches L4 until those
+are closed.
 
 ## The spec — the executable matrix
 
