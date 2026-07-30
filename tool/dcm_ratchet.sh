@@ -18,9 +18,21 @@ cd "$(git rev-parse --show-toplevel)"
 BASELINE="${1:-tool/dcm-baseline.json}"
 if [ "${1:-}" = "--update" ]; then BASELINE=tool/dcm-baseline.json; UPDATE=1; else UPDATE=0; fi
 
+# A gate that silently skips is not a gate. Skipping is allowed ONLY when the
+# caller opts in explicitly (local runs on a machine without dcm); anywhere the
+# ratchet is relied upon — CI above all — a missing dcm must FAIL, because the
+# alternative is a green tick that checked nothing.
 if ! command -v dcm >/dev/null 2>&1; then
-  echo "dcm not installed — skipping ratchet (install: brew tap CQLabs/dcm && brew install dcm)"
-  exit 0
+  if [ "${DCM_RATCHET_ALLOW_MISSING:-0}" = "1" ]; then
+    echo "dcm not installed — SKIPPING (DCM_RATCHET_ALLOW_MISSING=1)"
+    exit 0
+  fi
+  echo "FAIL: dcm is not installed, so the ratchet cannot run."
+  echo "  Install:  brew tap CQLabs/dcm && brew install dcm"
+  echo "  Note dcm is NOT a pub package — 'dart pub global activate dcm' does"
+  echo "  not work. To skip deliberately on a machine without it:"
+  echo "    DCM_RATCHET_ALLOW_MISSING=1 bash tool/dcm_ratchet.sh"
+  exit 1
 fi
 
 TMP=$(mktemp)

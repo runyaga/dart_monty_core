@@ -1494,29 +1494,22 @@ mod tests {
 
     #[test]
     fn type_serializes_via_display() {
-        // Type's payload became monty_types::MontyType in 0.19. We render it with
-        // Display, so a change in that impl changes our output.
+        // The expected string is LITERAL on purpose. Asserting against
+        // `MontyType::Bool.to_string()` would recompute exactly what
+        // `monty_object_to_json` already does, so an upstream change to that
+        // `Display` impl would sail through green while our wire output silently
+        // changed — the tautology this control exists to avoid. Verified against
+        // the interpreter: `type(True)` marshals to "bool".
         let obj = MontyObject::Type(monty_types::MontyType::Bool);
-        let json = monty_object_to_json(&obj);
-        assert_eq!(
-            json,
-            Value::String(monty_types::MontyType::Bool.to_string())
-        );
-        match json {
-            Value::String(s) => assert!(!s.is_empty(), "Display must not be empty"),
-            other => panic!("Type must serialize as a JSON string, got {other:?}"),
-        }
+        assert_eq!(monty_object_to_json(&obj), Value::String("bool".into()));
     }
 
     #[test]
     fn builtin_function_serializes_via_debug() {
-        // BuiltinFunction's payload only moved crates; we render it with Debug.
+        // Literal for the same reason as the Type test above: recomputing the
+        // Debug impl under test would make the assertion unfalsifiable.
         let obj = MontyObject::BuiltinFunction(monty_types::BuiltinsFunctions::Abs);
-        let json = monty_object_to_json(&obj);
-        assert_eq!(
-            json,
-            Value::String(format!("{:?}", monty_types::BuiltinsFunctions::Abs))
-        );
+        assert_eq!(monty_object_to_json(&obj), Value::String("Abs".into()));
     }
 
     #[test]

@@ -112,15 +112,23 @@ jobs:
         # against a v0.0.19 interpreter reported all-green having never seen the
         # 49 fixtures upstream added for 0.19.
         run: bash tool/check_fixture_corpus.sh
+      - name: Install DCM
+        # dcm is NOT a pub package — `dart pub global activate dcm` cannot work.
+        # An earlier version of this workflow did exactly that with `|| true`,
+        # which meant the ratchet below skipped on every single run: a green tick
+        # that checked nothing. The official action is the supported install, and
+        # tool/dcm_ratchet.sh now FAILS rather than skips when dcm is absent, so
+        # this breaking again cannot go unnoticed.
+        uses: CQLabs/setup-dcm@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: DCM ratchet (no new issues above baseline)
         # `dcm analyze` is chronically red (206 issues at 0.18.1), so gating on a
         # clean run is not achievable and gating on the raw count is useless — 5
         # new issues move 206 -> 211 unnoticed, and fixing 10 old ones masks new
         # ones behind a net improvement. The ratchet fails on any new rule, any
         # per-rule increase, or any new file. Baseline: tool/dcm-baseline.json.
-        run: |
-          dart pub global activate dcm 2>/dev/null || true
-          bash tool/dcm_ratchet.sh
+        run: bash tool/dcm_ratchet.sh
       - name: Test (JIT, unit only)
         # Exit 79 = no tests found; acceptable until unit tests exist alongside
         # the integration suite. Coverage will be empty but that is tolerated.

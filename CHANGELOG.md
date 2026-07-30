@@ -1,5 +1,88 @@
 # Changelog
 
+## Unreleased (0.19.0)
+
+Requires `monty` v0.0.19. The `monty` crate's public surface was split in 0.19 —
+it went from 1321 to 306 public items and most of what this package uses moved to
+the new `monty-types` crate — so this is a substantial internal change with a
+small consumer-facing surface.
+
+### Breaking
+
+- **The `open()` OS-call op is now `'open'`, was `'Open'`.** ⚠️ **This is the one
+  change that fails silently.** If you have a custom `OsCallHandler` that matches
+  on the op name, a `case 'Open':` (or `if (op == 'Open')`) stops matching and
+  every `open()` falls through to your not-handled path. Rename it:
+
+  ```dart
+  // before
+  if (op == 'Open') { ... }
+  // after
+  if (op == 'open') { ... }
+  ```
+
+  Upstream renamed exactly one op in v0.0.19 (all 23 others are unchanged);
+  `'Open'` was the only capitalised, undotted name, so `'open'` is now consistent
+  with `Path.*`, `os.*`, `date.*` and `datetime.*`.
+
+- **Print output is capped at 10 MB and raises `MemoryError` past it.** Print
+  collection previously sat outside all resource accounting, so sandboxed code
+  could exhaust the *host* process with a `while True: print(x)` loop. Exceeding
+  the cap now raises a normal, catchable Python `MemoryError` — the write is
+  rejected, nothing is truncated and no output is silently lost:
+
+  ```python
+  try:
+      for _ in range(1_000_000):
+          print("x" * 100_000)
+  except MemoryError:
+      ...          # reachable; chunk the output or stream it via printCallback
+  ```
+
+- **Session snapshots are not portable across this upgrade.** The canonical dump
+  for `"2 + 2"` changed from 60 to 59 bytes, because serialized sessions now carry
+  `CompileOptions`. Snapshots taken with 0.18.x cannot be restored on 0.19.0 and
+  must be regenerated. (This has been true of every monty bump: 98 → 74 → 60 → 59.)
+
+- **`monty`'s argument-error wording now matches CPython** for Python-style
+  argument callsites. For example `json.dumps(1, 2)` raised
+  `TypeError('dumps expected at most 1 argument, got 2')` and now raises
+  `TypeError('dumps() takes 1 positional argument but 2 were given')`. If you
+  assert on these strings, update them.
+
+- **`native/Cargo.lock` is now committed.** The build hook compiles the Rust crate
+  as a top-level package on every consumer's `pub get`, so the lockfile is honoured
+  and pinning it is what makes your build reproducible. It is also load-bearing:
+  free resolution selected a `get-size2` whose `GetSize` impl targeted a different
+  `compact_str` major than `ruff_python_ast` used, and the build failed inside a
+  dependency neither we nor you control. If you vendor or patch transitive Rust
+  dependencies, you now inherit our pins.
+
+### Deliberately unchanged
+
+- **`assert` keeps CPython semantics.** monty v0.0.19 enables pytest-style
+  introspected assert messages by default, so `assert 2 == 5` would raise
+  `AssertionError('assert 2 == 5')` where CPython raises an empty
+  `AssertionError()`. This release pins them **off**, preserving 0.18 behaviour;
+  adopting a new upstream default silently is not an upgrade. An opt-in is
+  planned.
+
+### Security
+
+- Removed four stale `unic-*` advisory exemptions from `native/deny.toml`.
+  v0.0.19 dropped that dependency chain entirely, so the crate no longer carries
+  those unmaintained transitive dependencies.
+
+### Internal
+
+- Depends on the new `monty-types` crate; `monty_type_checking` is now
+  `monty-type-checking` upstream (the Rust path is unchanged). `monty-fs` is
+  **not** required — this package never used `monty::fs`.
+- The conformance corpus moved to v0.0.19's 531 fixtures (was 482 from v0.0.18),
+  and `tool/check_fixture_corpus.sh` now fails the build if the corpus and the
+  pinned monty version disagree.
+
+
 ## 0.18.1
 
 Requires `monty` v0.0.18 (Rust 1.95+ to build from source). Upgrades the
