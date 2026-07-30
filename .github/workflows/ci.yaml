@@ -138,7 +138,12 @@ jobs:
       - name: Generate LCOV
         # Skip if no coverage data was collected (no unit tests yet).
         run: |
-          if compgen -G "coverage/*.json" > /dev/null 2>&1; then
+          # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
+          # coverage/*.json. The old glob never matched, so an EMPTY lcov was
+          # written every run and the 70% patch-coverage gate short-circuited to
+          # exit 0 -- it has never once been enforced (core#130).
+          shopt -s globstar nullglob
+          if compgen -G "coverage/**/*.json" > /dev/null 2>&1; then
             dart pub global activate coverage
             dart pub global run coverage:format_coverage \
               --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
@@ -194,8 +199,24 @@ jobs:
             --platform vm \
             --compiler=kernel \
           || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
-      - name: Run compiled AOT snapshot (if available)
-        run: echo "AOT kernel test completed via dart test --compiler=kernel"
+      # This job did NOT exercise AOT: `--compiler=kernel` is the JIT default,
+      # and the step here was a literal `echo` claiming success (core#130).
+      #
+      # It now really compiles an AOT executable, so the step can fail.
+      #
+      # It deliberately does NOT RUN the result. Verified locally: the binary
+      # compiles, then dies at startup with
+      #   "Couldn't resolve native function 'monty_repl_create' ...
+      #    No available native assets."
+      # `dart compile exe` does not bundle this package's native asset, so the
+      # package cannot currently be used from an AOT executable at all. That is
+      # a real limitation this fake gate was hiding; tracked in its own issue
+      # (same family as #98). Running the probe here would just pin a known
+      # failure red. When the asset gap is fixed, drop the comment and add
+      #   ./aot_probe
+      # as the next line -- tool/aot_probe.dart already asserts its own result.
+      - name: Compile an AOT executable (compilation only -- see note)
+        run: dart compile exe tool/aot_probe.dart -o aot_probe
 
   # ---------------------------------------------------------------------------
   # GitHub Pages render gate — the deployed site must load in a real browser
@@ -227,7 +248,7 @@ jobs:
         run: bash tool/check_pages.sh
 
   # ---------------------------------------------------------------------------
-  # Rust: fmt + clippy + tests + llvm-cov coverage (≥80% line coverage)
+  # Rust: fmt + clippy + tests + llvm-cov coverage (≥60% line coverage)
   # ---------------------------------------------------------------------------
   rust:
     name: Rust (fmt + clippy + test + coverage)
@@ -333,21 +354,26 @@ jobs:
         run: cargo build --bin oracle
       - run: dart pub get
       - name: Run FFI integration tests
+        # GLOB, not a hand-maintained list. The previous explicit list named 7
+        # of the 19 ffi_*_test.dart files on disk, so twelve suites ran in no CI
+        # job at all -- including ffi_open_test, mounts, snapshot/restore,
+        # typeCheck, and ffi_monty_019_semantics_test, which was written for the
+        # 0.19 upgrade itself (core#130). The local matrix always globbed, so
+        # those suites passed locally and were simply never run in CI.
+        #
+        # ffi_with_cm_test.dart is the one deliberate exclusion: it needs
+        # `--features test-hooks`, which is never shipped (see tool/test_cm.sh).
         run: |
+          FFI_TESTS=$(ls test/integration/ffi_*_test.dart | grep -v with_cm)
+          echo "Running $(echo "$FFI_TESTS" | wc -l | tr -d ' ') FFI suites:"
+          echo "$FFI_TESTS" | sed 's/^/  /'
           dart test \
+            $FFI_TESTS \
             test/integration/oracle_ffi_test.dart \
             test/integration/oracle_ffi_ext_test.dart \
-            test/integration/ffi_datetime_oscall_test.dart \
-            test/integration/ffi_feedrun_async_matrix_test.dart \
-            test/integration/ffi_monty_async_inputs_test.dart \
-            test/integration/ffi_multi_repl_test.dart \
-            test/integration/ffi_repl_futures_test.dart \
-            test/integration/ffi_repl_oscall_test.dart \
-            test/integration/ffi_run_async_matrix_test.dart \
             test/integration/repros \
             -p vm --run-skipped --tags=ffi --exclude-tags=pending-futures \
             --reporter=expanded
-
   # ---------------------------------------------------------------------------
   # Example smoke tests — every example/*.dart must compile and exit 0.
   # `dart analyze` only checks types; this is the only thing exercising the
