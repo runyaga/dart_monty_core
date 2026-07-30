@@ -19,11 +19,28 @@ void runReplExtFnsLifecycleTests() {
         addTearDown(repl.dispose);
 
         // Feed 1: register `fetch`, call it.
-        await repl.feedRun(
-          'x = fetch(1)',
+        //
+        // The result is asserted deliberately (core#130). Without this, the
+        // test passes even when registration never worked at all: feed 1
+        // would error unnoticed and feed 2's NameError would look like
+        // correct de-registration. `setExtFns(const [])` passed this test.
+        final r1 = await repl.feedRun(
+          'x = fetch(1)\nx',
           externalFunctions: {
             'fetch': (args, _) async => (args[0]! as int) * 10,
           },
+        );
+        expect(
+          r1.error,
+          isNull,
+          reason:
+              'registration itself must succeed before de-registration '
+              'can mean anything',
+        );
+        expect(
+          r1.value,
+          equals(MontyValue.fromDart(10)),
+          reason: 'the registered external must actually have been called',
         );
 
         // Feed 2: no externalFunctions. The leftover `fetch` name must

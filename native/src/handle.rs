@@ -1240,6 +1240,71 @@ result
 
     // --- Accessor tests ---
 
+    /// core#130: the OS-call kwargs branch was entirely uncovered. Mutating it
+    /// to always emit `"{}"` — i.e. silently dropping every keyword argument on
+    /// the way to an OS handler — left all 193 Rust tests green, because
+    /// `handle.rs` had NO OS-call tests at all and `os_call_kwargs_json()` was a
+    /// public accessor nothing called.
+    ///
+    /// `Path.mkdir(parents=..., exist_ok=...)` is dispatched as an OS call and
+    /// carries its flags as keyword arguments, so it reaches the branch.
+    #[test]
+    fn os_call_kwargs_are_actually_serialized() {
+        let code = "from pathlib import Path\nPath('/tmp/x').mkdir(parents=True, exist_ok=True)";
+        let mut handle = MontyHandle::new(code.into(), vec![], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(
+            tag,
+            MontyProgressTag::OsCall,
+            "mkdir must suspend as an OS call"
+        );
+        assert_eq!(handle.os_call_fn_name(), Some("Path.mkdir"));
+
+        let raw = handle
+            .os_call_kwargs_json()
+            .expect("an OS call must expose its kwargs");
+        let parsed: Value = serde_json::from_str(raw).expect("kwargs must be valid JSON");
+
+        assert_eq!(
+            parsed["parents"], true,
+            "keyword argument `parents` was dropped: got {raw}"
+        );
+        assert_eq!(
+            parsed["exist_ok"], true,
+            "keyword argument `exist_ok` was dropped: got {raw}"
+        );
+    }
+
+    /// core#130: the kwargs `else` branch — the one that actually SERIALIZES
+    /// keyword arguments — had no test. `test_pending_kwargs_empty` only covers
+    /// the `kwargs.is_empty()` arm, so replacing the whole expression with
+    /// `"{}"` (i.e. silently dropping every keyword argument passed from Python
+    /// to a host function) left the suite green.
+    ///
+    /// This is that mutation's red test.
+    #[test]
+    fn pending_kwargs_are_actually_serialized() {
+        let code = "result = ext_fn(1, k=2, name='x')\nresult";
+        let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let raw = handle
+            .pending_fn_kwargs_json()
+            .expect("paused call must expose kwargs");
+        let parsed: Value = serde_json::from_str(raw).expect("kwargs must be valid JSON");
+
+        assert_eq!(
+            parsed["k"], 2,
+            "keyword argument `k` was dropped: got {raw}"
+        );
+        assert_eq!(
+            parsed["name"], "x",
+            "keyword argument `name` was dropped: got {raw}"
+        );
+        assert_ne!(raw, "{}", "kwargs collapsed to empty: got {raw}");
+    }
+
     #[test]
     fn test_pending_kwargs_empty() {
         let code = "result = ext_fn(42)\nresult";
