@@ -56,8 +56,22 @@ fi
 [ -f site/index.html ] || fail "site/index.html not built (drop --skip-build)"
 
 # ---------------------------------------------------------------- serve
-# COOP/COEP are required: the REPL needs SharedArrayBuffer. Serving without them
-# is itself a failure mode this gate must reproduce faithfully.
+# PRODUCTION-FAITHFUL: no COOP/COEP headers.
+#
+# GitHub Pages cannot set custom response headers, so anything that depends on the
+# server sending COOP/COEP does not work in production. An earlier version of this
+# gate sent them, which meant it was testing a configuration that never ships —
+# it could not have detected a page that only works with headers present.
+#
+# Verified empirically that this is the right configuration: with headers absent,
+# index_js.html works because dart2js does not need SharedArrayBuffer, and
+# index_wasm.html works because it registers a COI service worker (the supported
+# way to get cross-origin isolation without server headers). So the invariant this
+# gate now enforces is the correct one: a page that needs isolation must ship the
+# service worker rather than assume headers.
+#
+# tool/serve_demo.sh still sends headers for local development; that is fine, it is
+# not a release gate.
 SRV=$(mktemp -d)/coi.py
 cat > "$SRV" <<'PY'
 import http.server, socketserver, sys
@@ -67,10 +81,6 @@ import http.server, socketserver, sys
 # and with what status; the assertions below are made against that.
 ACCESS = sys.argv[2]
 class H(http.server.SimpleHTTPRequestHandler):
-    def end_headers(self):
-        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
-        self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
-        super().end_headers()
     def send_response(self, code, message=None):
         super().send_response(code, message)
         with open(ACCESS, 'a') as f:

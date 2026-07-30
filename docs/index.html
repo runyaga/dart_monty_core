@@ -142,10 +142,12 @@
       <span class="card-badge badge-dart2wasm">dart2wasm</span>
       <div class="card-title">Web REPL</div>
       <div class="card-desc">
-        Same REPL compiled with dart2wasm. Superior numeric precision
-        — correctly distinguishes <code>int</code> from <code>float</code>.
+        The same REPL compiled to WebAssembly. Keeps <code>int</code> and
+        <code>float</code> distinct where JavaScript numbers cannot: try
+        <code>2**63 - 1</code> — dart2wasm renders <code>…776000.0</code>,
+        dart2js renders <code>…776000</code>.
       </div>
-      <div class="card-note">dart2wasm · superior numeric precision</div>
+      <div class="card-note">dart2wasm · preserves int/float distinction</div>
     </a>
 
   </div>
