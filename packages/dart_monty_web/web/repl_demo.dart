@@ -612,11 +612,12 @@ class _Sample {
 const _kSamples = <_Sample>[
   _Sample(
     num: 1,
-    title: 'Typed values across FFI',
+    title: 'Typed values across the host boundary',
     panel: 'a',
     desc:
-        'Every Python value crosses the FFI boundary as a typed MontyValue '
-        'subtype — MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. '
+        'Every Python value crosses into Dart as a typed MontyValue subtype — '
+        'MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. This page '
+        'runs the WASM backend; the same types come back over FFI on native. '
         'Submit this dict to see each field typed individually.',
     steps: [
       _Step(
@@ -717,9 +718,10 @@ const _kSamples = <_Sample>[
     title: 'Kwargs in the callback map',
     panel: 'b',
     desc:
-        'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
-        'kwargs appear by their Python name. format_currency(19.99, code="EUR") '
-        'fires the callback with {_0: 19.99, code: "EUR"}.',
+        'MontyCallback receives (args, kwargs) as two separate values: '
+        'positional arguments as a list, keyword arguments as a map keyed by '
+        'their Python name. format_currency(19.99, code="EUR") fires the '
+        'callback with args = [19.99] and kwargs = {code: "EUR"}.',
     steps: [
       _Step(label: '→ Externals', code: 'format_currency(19.99, code="EUR")'),
     ],
