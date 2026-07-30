@@ -1441,9 +1441,68 @@ mod tests {
         }
     }
 
-    // Note: MontyObject::Type and MontyObject::BuiltinFunction are not tested
-    // here because the inner types are private to the monty crate.
-    // They serialize as display strings and aren't meaningful to round-trip.
+    // ---- Control a' (P2) ------------------------------------------------
+    //
+    // The 482-fixture oracle suite CANNOT see a bug in this file: oracle.rs
+    // includes convert.rs via #[path], so the FFI side and the oracle side share
+    // it and agree even when both are wrong. These tests are the independent
+    // check — expectations are derived from the monty 0.19 TYPE DEFINITIONS, not
+    // from running the interpreter.
+    //
+    // Diffing MontyObject across v0.0.18 -> v0.0.19 (see
+    // artifacts/monty-api-diff-018-019.txt) shows 27 variants on both sides,
+    // none added or removed, and exactly three payload changes:
+    //
+    //   Cycle(HeapId, String)          -> Cycle(usize, String)
+    //   Type(monty::types::type::Type) -> Type(monty_types::MontyType)
+    //   BuiltinFunction(builtins::..)  -> BuiltinFunction(monty_types::..)
+    //
+    // Those three are therefore the entire convert.rs risk surface for this
+    // upgrade, and each is pinned below.
+    //
+    // The previous note here said Type and BuiltinFunction "are not tested
+    // because the inner types are private to the monty crate". That is obsolete:
+    // 0.19 made MontyType and BuiltinsFunctions public in monty-types, so the two
+    // variants that were previously untestable now are.
+
+    #[test]
+    fn cycle_ignores_its_id_field() {
+        // Cycle's first field changed HeapId -> usize in 0.19. We discard it and
+        // emit only the description, so the change is inert — pin that, because a
+        // future edit that starts emitting the id would silently alter output
+        // that no oracle comparison could flag.
+        let a = monty_object_to_json(&MontyObject::Cycle(0, "[...]".into()));
+        let b = monty_object_to_json(&MontyObject::Cycle(999_999, "[...]".into()));
+        assert_eq!(a, Value::String("[...]".into()));
+        assert_eq!(a, b, "the id field must not affect JSON output");
+    }
+
+    #[test]
+    fn type_serializes_via_display() {
+        // Type's payload became monty_types::MontyType in 0.19. We render it with
+        // Display, so a change in that impl changes our output.
+        let obj = MontyObject::Type(monty_types::MontyType::Bool);
+        let json = monty_object_to_json(&obj);
+        assert_eq!(
+            json,
+            Value::String(monty_types::MontyType::Bool.to_string())
+        );
+        match json {
+            Value::String(s) => assert!(!s.is_empty(), "Display must not be empty"),
+            other => panic!("Type must serialize as a JSON string, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn builtin_function_serializes_via_debug() {
+        // BuiltinFunction's payload only moved crates; we render it with Debug.
+        let obj = MontyObject::BuiltinFunction(monty_types::BuiltinsFunctions::Abs);
+        let json = monty_object_to_json(&obj);
+        assert_eq!(
+            json,
+            Value::String(format!("{:?}", monty_types::BuiltinsFunctions::Abs))
+        );
+    }
 
     #[test]
     fn rt_function_becomes_string() {
