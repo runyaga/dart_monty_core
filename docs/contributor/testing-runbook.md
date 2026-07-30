@@ -1,0 +1,285 @@
+# Testing runbook
+
+This package has **nine distinct test mechanisms**. Which one to reach for is
+not discoverable from the code, and running the wrong one — or the right one
+wrongly — produces a green result that verified nothing.
+
+This file is the single source of truth for how to verify a change.
+`AGENTS.md` links here rather than restating commands: restated commands are
+what rot. Seven instructions in the sibling `dart_monty` repo's `AGENTS.md` were
+outright false (including `cd native && cargo build` for a crate that does not
+exist there) precisely because they were a second copy nobody executed.
+
+**The gate for changing this file: run every command in it, verbatim.** That
+check is what found those seven, and nothing else would have.
+
+---
+
+## Before you commit: run mechanism 9
+
+```bash
+bash tool/gate.sh
+```
+
+That is the answer for **every** change. It runs all fourteen steps, and a red
+step means do not commit — including when it looks unrelated to what you touched.
+
+The table below is for **fast feedback while developing**, not a substitute. It
+cannot be complete: you do not know which mechanism your change affects until
+something fails, which is the entire reason mechanism 9 exists. A change to
+`convert.rs` "obviously" needs 2 and 3 — it also silently changes what the
+browser sees, and the committed `.wasm`.
+
+| While iterating on… | Fastest useful signal |
+|---|---|
+| pure Dart in `lib/` | 1 |
+| anything in `native/` | **clear the dylib cache** (Traps §1), then 2 and 7 |
+| `convert.rs` (value conversion) | 2, then 4 and 5 — and rebuild the WASM assets |
+| the web demo or `docs/index.html` | 6 |
+| a test harness or CI wiring | read Traps §3 first, then 9 |
+
+---
+
+## 1. Unit tests — pure Dart
+
+```bash
+dart test --exclude-tags=ffi,wasm,integration,ladder,example
+```
+
+**Verifies:** pure-Dart logic with no native library and no browser.
+**Cannot verify:** anything crossing the FFI or WASM boundary — which is most of
+this package. Dart line coverage from this run alone is ~32%, and the large
+uncovered files are the FFI bindings, which the excluded suites do exercise.
+A high number here would not mean the package works.
+
+## 2. FFI integration — the native path
+
+```bash
+dart test $(ls test/integration/ffi_*_test.dart | grep -v with_cm) \
+  --run-skipped --tags=ffi -p vm
+```
+
+**Verifies:** Dart ↔ Rust over the C ABI, using the real compiled library.
+**Note the glob.** A hand-maintained list previously named 7 of the 19 files on
+disk, so twelve suites ran in no CI job at all. If you add a
+`ffi_*_test.dart`, the glob picks it up; do not replace it with a list.
+
+`ffi_with_cm_test.dart` is the one deliberate exclusion — it needs
+`--features test-hooks`, which is never shipped. See `tool/test_cm.sh`.
+
+**`--run-skipped --tags=ffi` is required, and so is the file list.** Two ways to
+get a meaningless green here, both verified:
+
+```bash
+dart test --tags=ffi -p vm                 # "All tests skipped." EXIT 0
+dart test --tags=ffi -p vm --run-skipped   # FAILS: picks up ffi_with_cm_test
+```
+
+The first is the dangerous one: these suites are skipped by default (see
+`dart_test.yaml`), so without `--run-skipped` every test is skipped, nothing
+runs, and the command **exits 0**. In a shell one-liner or a CI step that only
+checks the exit code, that is indistinguishable from success.
+
+The second fails because a bare `--tags=ffi` sweep includes
+`ffi_with_cm_test.dart`, which needs `--features test-hooks`. That is why the
+command above passes an explicit glob with `grep -v with_cm`.
+
+## 3. Oracle conformance — 531 fixtures
+
+> **STUB — being rewritten.** This mechanism currently compares `MontyFfi`
+> against the `oracle` binary, which links the same Rust crate and shares
+> `convert.rs` with the FFI shim via `#[path = "../convert.rs"]`. Both sides of
+> the comparison therefore use the same encoder, and the suite is structurally
+> unable to detect a bug *inside* `convert.rs` — which is exactly how the dict
+> ordering and `Ellipsis` defects (#129) survived 1062 "passing" fixtures.
+>
+> Work is in flight to add an independent reference (monty's own `repr()`, which
+> returns dict insertion order correctly and would have caught #129 immediately),
+> and to assert against the fixtures' own `# Return=` / `# Raise=` directives —
+> those are authored upstream in monty's repository, so they are genuinely
+> independent, but only **141 of 531** fixtures carry one.
+>
+> This section will be written once that lands. Until then, treat a green oracle
+> run as evidence that FFI and the oracle agree — **not** as evidence that either
+> is correct.
+
+```bash
+dart test test/integration/oracle_ffi_test.dart \
+          test/integration/oracle_ffi_ext_test.dart \
+  -p vm --run-skipped --tags=ffi
+```
+
+## 4. WASM fixture corpus — dart2js through a browser
+
+```bash
+bash tool/test_wasm.sh              # full build + run
+bash tool/test_wasm.sh --skip-build # reuse current assets
+```
+
+**Verifies:** the 531 fixtures against the WASM engine, compiled to JS and driven
+in headless Chrome through `fixtures.html`.
+**Not** `dart test`. It is a bespoke harness that parses `FIXTURE_RESULT` lines.
+
+Its expectations come from `# Return=` / `# Raise=` directives authored in
+upstream monty's `test_cases/`, so unlike mechanism 3 it is **not** circular.
+It is still blind to dict ordering for a different reason: exactly one of the 531
+fixtures returns a dict, and that one's keys are already in sorted order.
+
+## 5. WASM package:test suites — `dart test -p chrome`
+
+```bash
+bash tool/test_wasm_unit.sh
+```
+
+**Verifies:** the `wasm_*_test.dart` suites in a real browser.
+
+**Do not run `dart test -p chrome --tags=wasm` directly.** It fails: several
+`test/integration/*.dart` files cannot compile for chrome, and the script also
+stages the bridge assets the page needs. Use the script.
+
+The script keeps an explicit file list *and* a guard that fails if any
+`wasm_*_test.dart` on disk is unlisted — added after two new suites silently ran
+nowhere. If you add a suite, add it to the list; the guard will tell you.
+
+## 6. Pages render + execute — the deployed site
+
+```bash
+bash tool/check_pages.sh              # build + serve + drive
+bash tool/check_pages.sh --skip-build
+```
+
+**Verifies:** the assembled GitHub Pages site loads its assets and **actually
+evaluates Python**, driven over the Chrome DevTools Protocol. Nothing else covers
+the deployed artefact.
+
+**Serves without COOP/COEP on purpose.** GitHub Pages cannot set response
+headers, so a gate that sent them would test a configuration that never ships.
+
+**dart2js and dart2wasm are different targets and behave differently.** Measured
+inside each page with no `Cross-Origin-*` headers:
+
+| page | `crossOriginIsolated` | `SharedArrayBuffer` | service worker |
+|---|---|---|---|
+| `index_wasm.html` | `true` | available | `coi-serviceworker.js` controlling |
+| `index_js.html` | `false` | **absent** | none |
+
+Both work. `index_wasm.html` is isolated **because `coi-serviceworker.js` injects
+the headers client-side** — that file is load-bearing, do not remove it. They also
+diverge on numerics at the JS boundary (#128), so a value that is correct on one
+target is not automatically correct on the other.
+
+This gate drives `index_js.html`. Confirming `index_wasm.html` on the live Pages
+origin is a release-cycle step and has not been done.
+
+## 7. Rust
+
+```bash
+cd native
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
+cargo deny check
+cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/'
+```
+
+CI fails under **60%** line coverage. For a crate whose job is faithful value
+conversion, an aggregate floor is weak — it permits `convert.rs` coverage to fall
+while unrelated code holds the number up.
+
+## 8. DCM ratchet
+
+```bash
+bash tool/dcm_ratchet.sh            # fails on any NEW issue above baseline
+bash tool/dcm_ratchet.sh --update   # deliberate rebaseline
+```
+
+`dcm analyze` has long been red (206 issues), so a clean run was never the bar
+and a raw count hides new issues behind net improvements. This fails on any new
+rule, per-rule increase, or newly-offending file; reducing counts is always
+allowed.
+
+**`--update` defeats the purpose if used to silence your own change.** Rebaseline
+only when the new issues are genuinely intended, and say why in the commit.
+
+## 9. The gate — run this before every commit
+
+```bash
+bash tool/gate.sh
+KEEP_WASM=1 bash tool/gate.sh   # keep a deliberately rebuilt .wasm (see Traps)
+```
+
+Runs all fourteen steps and prints `GATE GREEN` or `GATE RED`, with per-step
+logs. **A red matrix means do not commit** — including when the failing step
+looks unrelated to your change. It has caught genuine defects in changes that
+"obviously" could not have broken anything.
+
+---
+
+## Traps
+
+Each of these cost real time. None are guessable.
+
+### 1. A stale native library silently tests the OLD engine
+
+After changing anything in `native/`, `dart test` may load a cached dylib from
+`.dart_tool/hooks_runner`. **Symptom:** a fix that provably works in `cargo test`
+does not appear in Dart, and the test asserts the old behaviour.
+
+```bash
+rm -rf .dart_tool/hooks_runner
+```
+
+The matrix does this automatically when `native/` is newer. Manual runs do not.
+
+### 2. `dart format --output=none` CHECKS — it does not write
+
+Using it to "fix" formatting verifies nothing and leaves the file unformatted.
+To write: `dart format --line-length=80 lib/ test/ hook/ tool/`.
+To check: add `--output=none --set-exit-if-changed`.
+
+### 3. Explicit file lists silently drop new tests
+
+This has happened twice. Twelve `ffi_*_test.dart` files were in no CI job; two
+new `wasm_*_test.dart` suites ran nowhere. A file can exist, be correctly tagged,
+pass locally, and never run in CI.
+
+Prefer a glob. If a list is unavoidable, add an unlisted-file guard —
+`tool/test_wasm_unit.sh` has one.
+
+### 4. `--compiler=kernel` is the JIT default, not AOT
+
+A job named `test-aot` ran no AOT for months and ended in an `echo` claiming
+success. Related: the package currently **cannot run from an AOT executable at
+all** (#131) — it compiles, then dies on the first FFI call with
+`No available native assets`.
+
+### 5. `$?` after a pipe is the LAST command's status
+
+`cmd | tail -3; echo $?` reports `tail`'s exit code. Several "verified" results
+in this repo's history were measuring `tail`. Capture the status of the command
+you care about, or use `${PIPESTATUS[0]}`.
+
+### 6. A bare `return` in a fixture harness is a passing test that asserts nothing
+
+646 of 1593 registered tests did exactly this (#130). If a fixture cannot be run,
+either do not register it, or call `markTestSkipped(reason)` — never return
+silently, which reports green.
+
+### 7. The WASM build is not byte-reproducible
+
+An unchanged tree produces a different `.wasm`, so the matrix restores the
+committed asset by default. When you have deliberately rebuilt it — because
+`native/` changed — run with `KEEP_WASM=1`, and update `lib/assets/PROVENANCE.md`
+(size and all three sha256s). Nothing currently enforces that file's accuracy;
+it has been found stale.
+
+---
+
+## Verification philosophy
+
+Two disciplines decide whether any of the above is worth running:
+**a test is not verified until you have seen it fail**, and **never assert
+current behaviour just to make a test pass**. Both, with the cases that prove
+them, live in
+[`testing-philosophy.md`](testing-philosophy.md) — methodology, not procedure,
+so it is deliberately not in this runbook.

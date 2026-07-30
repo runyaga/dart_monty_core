@@ -58,7 +58,7 @@ test/unit/                    pure-Dart unit tests (functional)
 test/integration/             FFI + WASM integration + oracle conformance
   ├── ffi_*_test.dart         FFI feature tests
   ├── wasm_*_test.dart        WASM feature tests (mirror of ffi_*)
-  ├── oracle_ffi_*_test.dart  oracle conformance (482 fixtures)
+  ├── oracle_ffi_*_test.dart  oracle conformance (531 fixtures)
   ├── wasm_runner*.dart       WASM corpus runners (dart2js + dart2wasm)
   └── repros/                 xfail repros + _xfail.dart helper
 test/fixtures/                test data (corpus symlink + side-loadable .py repros)
@@ -92,84 +92,26 @@ cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
 If you change `native/include/dart_monty.h`, regenerate bindings:
 `bash tool/generate_bindings.sh`.
 
-## Tests — three categories
+## Tests
 
-**Functional (`test/unit/`)** — pure Dart, no interpreter, ~50ms.
-Covers `MontyValue` (19 subtypes), `MontyResult`, `MontyException`,
-the `MontyError` hierarchy, mount handler, REPL metadata.
+**Canonical: [`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md).**
+Nine mechanisms, what each verifies, what each *cannot* verify, and the traps
+that make a green run meaningless. Read it before writing or running tests.
 
-```bash
-dart test --exclude-tags=ffi,wasm,integration,ladder,example
-```
+The commit gate is `bash tool/gate.sh` — a red step means do not commit, even
+when it looks unrelated to your change.
 
-**Integration (`test/integration/{ffi,wasm}_*_test.dart`)** —
-exercises the real interpreter through one of the two backends. Each
-feature usually has `ffi_<feature>_test.dart` and
-`wasm_<feature>_test.dart` sharing a `_<feature>_test_body.dart`.
-
-```bash
-# FFI — note the exclusion: ffi_with_cm_test.dart needs the `test-hooks`
-# cargo feature, so the bare `ffi_*_test.dart` glob FAILS on a default build.
-cd native && cargo build --release && cd ..
-dart test $(ls test/integration/ffi_*_test.dart | grep -v with_cm) \
-  -p vm --run-skipped --tags=ffi
-
-# The test-hooks suite has its own script (builds with --features test-hooks):
-bash tool/test_cm.sh
-
-# WASM (full pipeline; --skip-build to reuse assets)
-bash tool/test_wasm.sh
-```
-
-**Oracle conformance (`test/integration/oracle_ffi_*_test.dart`)** —
-482 Python fixtures × Rust oracle binary vs Dart FFI. Outputs must
-match exactly. The same corpus is replayed through WASM via
-`wasm_runner.dart` (dart2js) and `wasm_runner_wasm.dart` (dart2wasm),
-both driven by `tool/test_wasm.sh`.
-
-```bash
-cd native && cargo build --bin oracle && cd ..
-dart test test/integration/oracle_ffi_test.dart \
-          test/integration/oracle_ffi_ext_test.dart \
-  -p vm --run-skipped --tags=ffi
-```
-
-**Repros (`test/integration/repros/`)** — side-loadable `.py` + xfail
-Dart test pair for each upstream-blocked bug. `xfail()` inverts the
-assertion: today the inner expectation fails (bug reproduces), test
-passes. When upstream fixes it, `xfail()` raises and CI flags the
-test for promotion. Removing the wrapper is the only change needed.
+Test layout: `test/unit/` is pure Dart. `test/integration/{ffi,wasm}_*_test.dart`
+pair up per feature and share a `_<feature>_test_body.dart`, so a new feature
+needs **both** runners — a missing one runs nowhere, which has happened twice.
 
 ## Static checks
 
-```bash
-dart analyze --fatal-infos
-dart format --line-length=80 --set-exit-if-changed lib/ test/ hook/ tool/
-
-cd native
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo deny check
-cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/'   # ≥60% gate
-cd ..
-dcm analyze lib test                                               # code metrics + custom rules
-bash tool/dcm_ratchet.sh                                           # CI gate: no new issues
-```
-
-`dcm analyze` reports a **known baseline of 206 issues** (135 warning + 71
-style) at 0.18.1, so a clean run is not the gate. `tool/dcm_ratchet.sh` is:
-it fails on any new rule, any per-rule increase, or any new file with issues,
-comparing against `tool/dcm-baseline.json`. Reducing counts is always allowed
-and never required. Regenerate the baseline deliberately with
-`bash tool/dcm_ratchet.sh --update`.
-
-Why a ratchet and not a fix: gating on the raw count is useless — 5 new issues
-move 206 → 211 unnoticed, and *fixing* 10 old ones drops it to 201 so new
-regressions hide behind a net improvement.
-
-The `dcm analyze` command runs without a licence key; only the paid rules tier
-needs one. If `dcm` is absent the ratchet skips with a notice rather than
-failing.
+Commands and the DCM-ratchet rationale live in the runbook
+([mechanisms 7 and 8](docs/contributor/testing-runbook.md)). In short: `dcm`
+has a known non-zero baseline, so a clean run was never the bar —
+`tool/dcm_ratchet.sh` fails on any *new* issue above `tool/dcm-baseline.json`,
+and `--update` is a deliberate act that belongs in its own commit with a reason.
 
 ## Demos
 
