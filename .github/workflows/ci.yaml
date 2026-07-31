@@ -136,6 +136,14 @@ jobs:
         # new issues move 206 -> 211 unnoticed, and fixing 10 old ones masks new
         # ones behind a net improvement. The ratchet fails on any new rule, any
         # per-rule increase, or any new file. Baseline: tool/dcm-baseline.json.
+        env:
+          # DCM is commercial and refuses to run on CI unlicensed: exit 64,
+          # "Both CI key and purchase email should be provided to run on CI."
+          # That -- not the version float -- is why this ratchet has never once
+          # executed in CI. Both secrets already exist on this repo, and the
+          # sibling dart_monty repo already passes them; this job never did.
+          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
+          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
         run: bash tool/dcm_ratchet.sh
       - name: Test (JIT, unit only)
         # Exit 79 = no tests found; acceptable until unit tests exist alongside

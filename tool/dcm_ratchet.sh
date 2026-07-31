@@ -55,7 +55,15 @@ ERR=$(mktemp)
 # produced no usable JSON in CI the script died on a bare
 # `json.decoder.JSONDecodeError` with the actual reason thrown away. A gate that
 # hides why it failed is barely better than one that cannot fail.
-dcm analyze lib test --reporter=json > "$TMP" 2>"$ERR"
+# DCM is commercial. It runs unlicensed LOCALLY for the free rule tier, but on
+# CI it refuses with "Both CI key and purchase email should be provided to run
+# on CI." and exits 64 -- which is why this gate never ran there. Pass the
+# credentials when present; stay unlicensed when not, so local use is unchanged.
+DCM_AUTH=()
+if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
+  DCM_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
+fi
+dcm analyze lib test --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
 DCM_RC=$?
 
 if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$TMP" 2>/dev/null; then
@@ -67,9 +75,9 @@ if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))
   echo "  --- first 20 lines of stderr ---"
   head -20 "$ERR" | sed 's/^/    /'
   echo
-  echo "  Common cause in CI: dcm needs activation. Locally it runs unlicensed for"
-  echo "  the free rule tier; a hosted runner may need CQLabs/setup-dcm to have"
-  echo "  supplied credentials."
+  echo "  If stderr mentions a CI key: DCM is commercial and will not run on CI"
+  echo "  unlicensed. Set DCM_CI_KEY and DCM_EMAIL in the environment (both"
+  echo "  already exist as repository secrets)."
   rm -f "$TMP" "$ERR"
   exit 1
 fi
