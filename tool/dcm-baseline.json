@@ -1,4 +1,6 @@
 {
+  "_comment": "Per-rule/per-file issue counts, and the dcm version that produced them. A different version reports different counts, so comparing across versions compares two different things. tool/dcm_ratchet.sh refuses to run on a mismatch.",
+  "_dcm_version": "1.37.0",
   "by_file": {
     "lib/src/monty.dart": 1,
     "lib/src/repl/monty_repl.dart": 12,

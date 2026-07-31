@@ -122,6 +122,14 @@ jobs:
         uses: CQLabs/setup-dcm@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # PINNED, and it must match whatever generated tool/dcm-baseline.json.
+          # setup-dcm installs the latest by default: CI ran 1.38.3 against a
+          # baseline produced by 1.37.0. A ratchet compares per-rule counts, so a
+          # different analyzer version silently changes the thing being compared
+          # -- the same floating-input problem as `sdk: stable`, where a gate
+          # cannot tell 'we broke it' from 'the world moved'.
+          # Bump this and regenerate the baseline in the SAME commit.
+          version: 1.37.0
       - name: DCM ratchet (no new issues above baseline)
         # `dcm analyze` is chronically red (206 issues at 0.18.1), so gating on a
         # clean run is not achievable and gating on the raw count is useless — 5
