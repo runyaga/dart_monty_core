@@ -94,9 +94,16 @@ If you change `native/include/dart_monty.h`, regenerate bindings:
 
 ## Tests
 
-**Canonical: [`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md).**
-Nine mechanisms, what each verifies, what each *cannot* verify, and the traps
-that make a green run meaningless. Read it before writing or running tests.
+**Before you write a test**, you must be able to name three things — the break
+you applied and saw go red, where the expected value came from, and what your
+reference shares with the code it checks (the answer must be nothing).
+[`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
+says why each one has bitten this repo.
+
+**Before you run tests**, read
+[`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md):
+nine mechanisms, what each verifies, what each *cannot* verify, and the traps
+that make a green run meaningless.
 
 The commit gate is `bash tool/gate.sh` — a red step means do not commit, even
 when it looks unrelated to your change.
