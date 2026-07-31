@@ -16,6 +16,15 @@
 // Usage: node tool/pages_drive.mjs <cdp-port> <url>
 // Prints GATE_RESULT:{...}; exits 0 only if Python actually evaluated.
 const PORT = process.argv[2], URL_ = process.argv[3];
+
+// Global WebSocket is stable from Node 22. Fail with the reason rather than a
+// bare `ReferenceError` twenty lines later -- which is exactly how this
+// presented the first time CI ran this gate.
+if (typeof WebSocket === 'undefined') {
+  console.error(
+    `FAIL: this driver needs a global WebSocket (Node >= 22); running ${process.version}.`);
+  process.exit(1);
+}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const t = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find(x => x.type === 'page');
 const ws = new WebSocket(t.webSocketDebuggerUrl);

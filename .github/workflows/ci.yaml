@@ -239,7 +239,11 @@ jobs:
           sdk: 3.11.4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: tool/pages_drive.mjs drives Chrome over CDP using the
+          # GLOBAL WebSocket, stable from Node 22. On 20 this gate died with
+          # `ReferenceError: WebSocket is not defined`, and it only surfaced
+          # the first time CI ever ran the gate.
+          node-version: 22
       - name: Install WASI runtime dep
         working-directory: js
         run: npm install --force
