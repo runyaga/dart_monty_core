@@ -697,7 +697,13 @@ jobs:
             echo "Coverage tracefile is empty — skipping patch coverage gate until unit tests exist."
             exit 0
           fi
-          lcov --remove coverage/lcov.info \
+          # --ignore-errors unused: these exclusions are DEFENSIVE. A file the
+          # unit tests never import has no entry in the tracefile, so its
+          # pattern matches nothing and lcov exits 25 -- which is exactly how
+          # this gate died the first time it ever ran. The patterns must stay
+          # (the files exist and should be excluded when present); the
+          # not-present case must not be fatal.
+          lcov --ignore-errors unused --remove coverage/lcov.info \
             '*/ffi/generated/*' \
             '*/native_bindings_ffi.dart' \
             '*/native_isolate_bindings_impl.dart' \
