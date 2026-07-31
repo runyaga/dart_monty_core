@@ -841,6 +841,21 @@ class WasmBindingsJs extends WasmBindings {
     }
   }
 
+  /// The wire-format version the loaded WASM asset reports, or `null` when the
+  /// asset predates the export entirely.
+  ///
+  /// The handshake itself lives in [_assertWireFormat] and runs at init, which
+  /// means a stale asset surfaces on the web as *every* value-carrying test
+  /// failing at once — 519 identical failures, once, in CI. Reading the
+  /// version directly lets `wasm_wire_format_test.dart` state the same fact as
+  /// one named test, so the WASM half of the handshake is checked by something
+  /// other than the collapse of everything else.
+  ///
+  /// Only meaningful after [init]: the version is recorded per session by the
+  /// JS bridge when the worker reports ready, so before that there is no
+  /// session to read it from and the answer is `null`.
+  int? get reportedWireFormatVersion => _jsWireFormatVersion()?.toDartInt;
+
   WasmProgressResult _decodeProgress(String jsonStr) {
     final map = json.decode(jsonStr) as Map<String, dynamic>;
     final args = map['args'] as List<Object?>?;
