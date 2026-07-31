@@ -208,7 +208,21 @@ void runWireContractTests() {
 
           var value = result.value;
           if (r.inner) {
-            value = (value as MontyList).items.first;
+            // Destructured rather than indexed, which asserts the shape instead
+            // of reaching into it: a cycle arrives as a ONE-item container
+            // holding the marker, and if that stops being true this row would
+            // otherwise silently measure a different value. It also satisfies
+            // two DCM rules that contradict each other on the alternatives —
+            // prefer-first wants `.first` where avoid-unsafe-collection-methods
+            // forbids it, and both reject `[0]`.
+            if (value case MontyList(items: [final marker])) {
+              value = marker;
+            } else {
+              fail(
+                'row ${r.row} expects a one-item container holding the marker, '
+                'got $value',
+              );
+            }
           }
 
           expect(
