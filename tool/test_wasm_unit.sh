@@ -132,4 +132,5 @@ dart test \
   test/integration/wasm_control_d_test.dart \
   test/integration/wasm_monty_019_semantics_test.dart \
   test/integration/wasm_ellipsis_test.dart \
+  test/integration/wasm_repr_oracle_test.dart \
   "$@"

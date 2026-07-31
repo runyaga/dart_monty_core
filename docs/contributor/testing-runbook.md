@@ -84,30 +84,42 @@ The second fails because a bare `--tags=ffi` sweep includes
 `ffi_with_cm_test.dart`, which needs `--features test-hooks`. That is why the
 command above passes an explicit glob with `grep -v with_cm`.
 
-## 3. Oracle conformance — 531 fixtures
-
-> **STUB — being rewritten.** This mechanism currently compares `MontyFfi`
-> against the `oracle` binary, which links the same Rust crate and shares
-> `convert.rs` with the FFI shim via `#[path = "../convert.rs"]`. Both sides of
-> the comparison therefore use the same encoder, and the suite is structurally
-> unable to detect a bug *inside* `convert.rs` — which is exactly how the dict
-> ordering and `Ellipsis` defects (#129) survived 1062 "passing" fixtures.
->
-> Work is in flight to add an independent reference (monty's own `repr()`, which
-> returns dict insertion order correctly and would have caught #129 immediately),
-> and to assert against the fixtures' own `# Return=` / `# Raise=` directives —
-> those are authored upstream in monty's repository, so they are genuinely
-> independent, but only **141 of 531** fixtures carry one.
->
-> This section will be written once that lands. Until then, treat a green oracle
-> run as evidence that FFI and the oracle agree — **not** as evidence that either
-> is correct.
+## 3. Oracle conformance + the repr differential
 
 ```bash
 dart test test/integration/oracle_ffi_test.dart \
           test/integration/oracle_ffi_ext_test.dart \
-  -p vm --run-skipped --tags=ffi
+  -p vm --run-skipped --tags=ffi          # conformance (circular — read on)
+dart test test/integration/ffi_repr_oracle_test.dart \
+  -p vm --run-skipped --tags=ffi          # the independent check
 ```
+
+**Conformance is circular, and you must know that to read it.** It compares
+`MontyFfi` against the `oracle` binary, which links the same Rust crate and
+shares `convert.rs` with the FFI shim via `#[path = "../convert.rs"]`. Both
+sides use the same encoder, so it **cannot detect a bug inside `convert.rs`** —
+which is exactly how dict-ordering and `Ellipsis` collapse survived 1062
+"passing" fixtures (#129). A green conformance run means FFI and the oracle
+agree; it is not evidence that either is right.
+
+**The repr differential is the independent check.** monty computes `repr()` in
+Rust, upstream, before anything of ours touches the value. So it runs each
+expression twice —
+
+    monty's repr(expr)          <- upstream, independent
+    render(decode(run(expr)))   <- our encoder + decoder + our renderer
+
+— and requires the strings to match. `test/integration/_monty_repr.dart` is
+deliberately hand-written and shares no code with `lib/`; if it reused the
+encoder it would reintroduce the circularity it exists to break.
+
+Proven to work: reintroducing #129 (sorting dict keys in the encoder) turns it
+red on the unsorted-dict cases, while the full 1062-fixture conformance suite
+stays green.
+
+Known divergences are listed in the body and reported as **skips with an issue
+link**, never asserted as correct — see `_knownDivergences` and #134 (integers
+outside i64 arrive as `MontyString`).
 
 ## 4. WASM fixture corpus — dart2js through a browser
 
