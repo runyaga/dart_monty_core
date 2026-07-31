@@ -134,4 +134,5 @@ dart test \
   test/integration/wasm_ellipsis_test.dart \
   test/integration/wasm_repr_oracle_test.dart \
   test/integration/wasm_wire_format_test.dart \
+  test/integration/wasm_wire_contract_test.dart \
   "$@"
