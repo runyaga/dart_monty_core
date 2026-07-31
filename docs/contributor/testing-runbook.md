@@ -216,8 +216,8 @@ only when the new issues are genuinely intended, and say why in the commit.
 ## 9. The gate — run this before every commit
 
 ```bash
-bash tool/gate.sh
-KEEP_WASM=1 bash tool/gate.sh   # keep a deliberately rebuilt .wasm (see Traps)
+bash tool/prebuild.sh           # ONLY if you changed native/ or js/ (see Traps)
+bash tool/gate.sh               # read-only; never rebuilds, never restores
 ```
 
 Runs all fourteen steps and prints `GATE GREEN` or `GATE RED`, with per-step
@@ -281,10 +281,28 @@ silently, which reports green.
 
 An unchanged tree produces a different `.wasm`, so **a `git diff` on the blob
 tells you nothing** — it is always dirty after a rebuild and never means what it
-appears to mean. That is why the matrix restores the committed asset by default.
+appears to mean.
 
-When you have deliberately rebuilt it, run with `KEEP_WASM=1` and regenerate
-`tool/wasm-provenance.json` (sizes, sha256s, and the commit `native/` was at).
+The gate used to work around that by *restoring* the committed asset after its
+web steps. That reverted a deliberate rebuild — the one adding the
+`monty_wire_format_version` export — the stale binary was committed, and every
+web job in CI went red. A local gate cannot catch it: the FFI path compiles from
+source, so only the web path loads the committed asset.
+
+So building and gating are now separate jobs, and **the gate never writes to the
+working tree**:
+
+| | |
+|---|---|
+| `bash tool/prebuild.sh` | writes `lib/assets/`. You run it, you commit the result. |
+| `bash tool/gate.sh` | reads `lib/assets/`. Never rebuilds, never restores. |
+
+`tool/gate.sh` therefore runs `tool/test_wasm.sh --skip-build`, so its web steps
+exercise the exact bytes you are about to commit. Forgetting `prebuild.sh` is
+caught by `tool/check_asset_freshness.sh` (gate step 1), which hashes the
+**sources** rather than the non-reproducible output. When you rebuild, also
+regenerate `tool/wasm-provenance.json` (sizes, sha256s, and the commit `native/`
+was at).
 
 That record lives in `tool/` — which is `.pubignore`d — and **not** in
 `lib/assets/`, which ships. It used to ship: every consumer downloaded a file
@@ -300,14 +318,6 @@ sha256 recorded in `pubspec.lock`, which is strictly stronger.
 The useful CI check is therefore not hash-matching. It is: **fail if `native/**`
 has changed since the commit recorded in the JSON**, which catches the case that
 actually happened — assets going stale against the crate.
-
-
-
-An unchanged tree produces a different `.wasm`, so the matrix restores the
-committed asset by default. When you have deliberately rebuilt it — because
-`native/` changed — run with `KEEP_WASM=1`, and update `lib/assets/PROVENANCE.md`
-(size and all three sha256s). Nothing currently enforces that file's accuracy;
-it has been found stale.
 
 ---
 

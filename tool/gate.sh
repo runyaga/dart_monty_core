@@ -16,7 +16,11 @@
 #
 # Usage:
 #   bash tool/gate.sh [outdir]
-#   KEEP_WASM=1 bash tool/gate.sh      # keep a deliberately rebuilt .wasm
+#
+# The gate is READ-ONLY: it validates the tree as it stands, including the
+# committed binaries in lib/assets/. If you changed native/ or js/, run
+# `bash tool/prebuild.sh` FIRST — the gate will not rebuild for you, and step 1
+# (asset_fresh) fails if you forget.
 #
 # Logs land in <outdir> (default: .gate-logs/, gitignored), one file per step
 # plus SUMMARY.txt.
@@ -63,7 +67,12 @@ ns cargo_deny    cargo deny check
 # excluded here; it is retired in P1b since monty 0.19 dropped `_test_cm()`.
 s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart | grep -v with_cm) --run-skipped --tags=ffi -p vm
 s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi
-s  wasm_full     bash tool/test_wasm.sh
+# --skip-build is deliberate and load-bearing: without it this step REBUILDS
+# lib/assets/*.wasm, i.e. the gate would test an artefact that is not the one
+# being committed. It cost us a red CI once already (see the note at the foot of
+# this file). With it, the gate exercises the committed asset — the same thing
+# CI and every web consumer load — and touches nothing.
+s  wasm_full     bash tool/test_wasm.sh --skip-build
 # wasm_full drives the FIXTURE CORPUS through a bespoke fixtures.html harness.
 # It does NOT run the package:test suites on chrome — those are a different
 # mechanism (`dart test -p chrome --tags=wasm`, via tool/test_wasm_unit.sh) and
@@ -76,15 +85,34 @@ s  wasm_unit     bash tool/test_wasm_unit.sh
 # copies, COOP/COEP, relative paths under /repl/).
 s  pages_render  bash tool/check_pages.sh
 
-# tool/test_wasm.sh rebuilds lib/assets/*.wasm, and that build is NOT
-# byte-reproducible (same size, different bytes from an unchanged tree — see
-# issue #41). Left alone it dirties the repo on every matrix run, which fights
-# the commit-per-gate rule (D8). Restore it unless the wasm was deliberately
-# regenerated as part of the current gate (P4).
-if [ "${KEEP_WASM:-0}" != "1" ] && ! git diff --quiet -- lib/assets/dart_monty_core_native.wasm 2>/dev/null; then
-  git checkout -- lib/assets/dart_monty_core_native.wasm
+# -----------------------------------------------------------------------------
+# THE GATE DOES NOT WRITE TO THE WORKING TREE. Why that rule exists:
+#
+# This step used to rebuild lib/assets/*.wasm (test_wasm.sh with no flag), and
+# because that build is NOT byte-reproducible (identical tree, different bytes —
+# issue #41) every gate run left the repo dirty, fighting the commit-per-gate
+# rule. The fix at the time was for the gate to `git checkout --` the wasm
+# afterwards. That restore then silently reverted a DELIBERATE rebuild — the one
+# that added the monty_wire_format_version export — the stale binary got
+# committed, and CI went red across every web job.
+#
+# A local gate structurally cannot catch that: the FFI path compiles from
+# source, so only the web path ever loads the committed asset, and the gate's
+# own web steps ran BEFORE the restore. Any smarter restore heuristic has the
+# same shape — an export-surface check would pass right through Phase 2, which
+# changes what convert.rs emits without adding a symbol.
+#
+# So the two responsibilities are split instead of threaded:
+#   tool/prebuild.sh   writes lib/assets/. A human runs it and commits the result.
+#   tool/gate.sh       reads lib/assets/. Never rebuilds, never restores.
+# Staleness is caught by tool/check_asset_freshness.sh (step 1), which hashes
+# the SOURCES — the one layer that needs no discipline.
+#
+# KEEP_WASM is gone: there is nothing left to keep or discard.
+if ! git diff --quiet -- lib/assets/ 2>/dev/null; then
   echo "" >> "$OUT/SUMMARY.txt"
-  echo "note: restored lib/assets/*.wasm (non-reproducible rebuild; KEEP_WASM=1 to retain)" >> "$OUT/SUMMARY.txt"
+  echo "note: lib/assets/ is dirty and was NOT touched — the gate tested exactly" >> "$OUT/SUMMARY.txt"
+  echo "      these bytes, so commit them with this change or CI will load others." >> "$OUT/SUMMARY.txt"
 fi
 
 echo "" >> "$OUT/SUMMARY.txt"; echo "done $(date -u +%FT%TZ)" >> "$OUT/SUMMARY.txt"
