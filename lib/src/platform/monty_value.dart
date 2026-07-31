@@ -109,7 +109,7 @@ sealed class MontyValue {
     // depended on whether some other variant produced the same characters.
     'bigint': MontyBigInt._fromMap,
     'exception': MontyExceptionValue._fromMap,
-    'float': _nonFiniteFloatFromMap,
+    'float': _taggedFloatFromMap,
     for (final k in MontyOpaqueKind.values) k.wireTag: MontyOpaque._fromMap,
   };
 
@@ -139,24 +139,35 @@ sealed class MontyValue {
   /// Typed wrappers return their `toJson()` map.
   Object? get dartValue;
 
-  /// Decodes the tagged float envelope, which carries ONLY non-finite forms.
+  /// Decodes the tagged float envelope.
   ///
-  /// A finite float is a JSON number and never reaches here. NaN and the
-  /// infinities have no JSON number representation, so they travel as text —
-  /// and they used to travel as BARE text, which is why the Python string
-  /// `"NaN"` decoded as `MontyFloat(NaN)`.
-  static MontyValue _nonFiniteFloatFromMap(Map<String, dynamic> map) {
+  /// Three shapes travel tagged, all for the same reason — a JSON number cannot
+  /// carry them intact:
+  ///
+  /// - NaN and the infinities, which have no JSON number form at all. They used
+  ///   to travel as BARE text, which is why the Python string `"NaN"` decoded
+  ///   as `MontyFloat(NaN)`.
+  /// - integral floats, because `JSON.parse("4.0")` is `4` — the int/float
+  ///   distinction lives only in the text (core#128a).
+  /// - negative zero, because `JSON.stringify(-0)` is `"0"` (core#128c).
+  ///
+  /// Every other finite float stays a plain JSON number, which is why this
+  /// costs nothing measurable in corpus size.
+  static MontyValue _taggedFloatFromMap(Map<String, dynamic> map) {
     final text = map['value'];
     final parsed = switch (text) {
       'NaN' => double.nan,
       'Infinity' => double.infinity,
       '-Infinity' => double.negativeInfinity,
+      // `-0.0` parses to a negative zero, and `4.0` to a double equal to 4 but
+      // NOT an int — which is the whole point.
+      final String s => double.tryParse(s),
       _ => null,
     };
     if (parsed == null) {
       throw FormatException(
-        'a tagged float carries only NaN/Infinity/-Infinity; got $text. '
-        'Finite floats travel as JSON numbers.',
+        'a tagged float needs NaN/Infinity/-Infinity or a parseable decimal '
+        'under "value"; got $text',
         json.encode(map),
       );
     }

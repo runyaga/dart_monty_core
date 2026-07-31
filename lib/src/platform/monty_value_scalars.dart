@@ -63,8 +63,22 @@ final class MontyInt extends MontyValue {
   /// The underlying integer value.
   final int value;
 
+  /// The largest magnitude every backend holds exactly in a Dart `int`.
+  ///
+  /// On dart2js `int` IS a double, so beyond this an integer cannot be a
+  /// [MontyInt] at all there. Values past it decode as [MontyBigInt] on every
+  /// backend, and encode as the bigint envelope so the digits survive.
+  static final BigInt _exactIntLimit = BigInt.from(1) << 53;
+
   @override
-  int toJson() => value;
+  Object toJson() {
+    final big = BigInt.from(value);
+    if (big.abs() > _exactIntLimit) {
+      return {'__type': 'bigint', 'value': big.toString()};
+    }
+
+    return value;
+  }
 
   @override
   int get dartValue => value;
@@ -96,9 +110,17 @@ final class MontyFloat extends MontyValue {
     // indistinguishable from the Python strings "NaN"/"Infinity"/"-Infinity" —
     // and the decoder resolved that ambiguity by guessing float, so a genuine
     // string was silently converted (wire v3 / rule R2).
-    if (value.isNaN) return _nonFinite('NaN');
-    if (value == double.infinity) return _nonFinite('Infinity');
-    if (value == double.negativeInfinity) return _nonFinite('-Infinity');
+    if (value.isNaN) return _tagged('NaN');
+    if (value == double.infinity) return _tagged('Infinity');
+    if (value == double.negativeInfinity) return _tagged('-Infinity');
+
+    // Tier 3 / core#128: an integral float and a negative zero are the two
+    // shapes a JSON number cannot carry across the web transport — `4.0`
+    // reparses as `4`, and `-0.0` re-serialises as `0`. Carried as text they
+    // survive, and only these two shapes pay for it.
+    if (value == value.roundToDouble() || (value == 0 && value.isNegative)) {
+      return _tagged(_exactText(value));
+    }
 
     // A finite float stays a plain JSON number. Tier 3 will envelope these too,
     // for the int/float and signed-zero distinctions the web transport
@@ -124,10 +146,27 @@ final class MontyFloat extends MontyValue {
   @override
   String toString() => 'MontyFloat($value)';
 
-  static Map<String, Object?> _nonFinite(String text) => {
+  static Map<String, Object?> _tagged(String text) => {
     '__type': 'float',
     'value': text,
   };
+
+  /// Renders so the type and the sign survive: `4.0`, not `4`; `-0.0`, not `0`.
+  static String _exactText(double v) {
+    if (v == 0 && v.isNegative) return '-0.0';
+
+    final text = '$v';
+    // On dart2js `int` and `double` are one type, so `'${4.0}'` is `"4"` — the
+    // same int/float collapse this envelope exists to prevent, appearing in
+    // Dart's own rendering. Without this the web would emit
+    // {"__type":"float","value":"4"}: still decoded as a float because the TAG
+    // carries the type, but the text would disagree with what the Rust encoder
+    // writes for the identical value, and the two sides must agree byte for
+    // byte or the differential is comparing different things.
+    if (!text.contains('.') && !text.contains('e')) return '$text.0';
+
+    return text;
+  }
 }
 
 /// Represents a Python `str` value.

@@ -9,6 +9,34 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **The web backends no longer lose numbers (#128).** Three distinct defects,
+  all from the same cause — a JSON number's *text* is where the information
+  lives, and the JS bridge reparses it:
+
+  | Python | was, on dart2js/dart2wasm | now |
+  |---|---|---|
+  | `4.0` | `MontyInt(4)` — `JSON.parse("4.0") === 4` | `MontyFloat(4.0)` |
+  | `-0.0` | `MontyFloat(0.0)` — `JSON.stringify(-0) === "0"` | `MontyFloat(-0.0)` |
+  | `2**62` | `4611686018427388000` (rounded) | exact |
+
+  Those three shapes now travel as tagged **text**, which no reparse can damage.
+  Every other finite number stays a plain JSON number, so the corpus does not
+  grow — tagging *all* numbers was measured at 6.52× bytes and 17.4× round-trip
+  latency and rejected.
+
+- **Integers beyond 2⁵³ are `MontyBigInt` on every backend, including the VM.**
+  Previously anything inside i64 was a `MontyInt`. On dart2js Dart's `int` IS a
+  double, so past 2⁵³ such a value cannot be a `MontyInt` there at all; making
+  the type depend on the backend would be worse than moving the boundary. The
+  value is exact either way.
+
+  ```dart
+  // was, on the VM: MontyInt(4611686018427387904)
+  // now, everywhere: MontyBigInt(4611686018427387904)
+  ```
+
+- **Wire format is now 4.**
+
 - **A bare JSON string now means Python `str` and nothing else (#134 + four
   more).** Seven value types used to collapse onto a bare string, so a value's
   Dart type depended on whether some *other* type happened to produce the same

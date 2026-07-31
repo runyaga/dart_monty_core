@@ -64,8 +64,20 @@ void runControlDTests() {
       expect((await eval('7')).dartValue, 7);
     });
 
-    test('BigInt within i64 -> number', () async {
-      expect((await eval('2**62')).dartValue, 4611686018427387904);
+    test('BigInt within the EXACT range -> number', () async {
+      // The boundary is 2^53, not i64: past it a Dart `int` cannot hold the
+      // value on dart2js, so it becomes a MontyBigInt on every backend.
+      expect((await eval('2**52')).dartValue, 4503599627370496);
+    });
+
+    test('BigInt past 2^53 -> exact BigInt, on every backend', () async {
+      // This case previously asserted the dart2js-ROUNDED number
+      // (4611686018427388000 for 2**62) and so documented the precision loss as
+      // correct. core#128b.
+      expect(
+        (await eval('2**62')).dartValue,
+        BigInt.parse('4611686018427387904'),
+      );
     });
 
     test('BigInt beyond i64 -> BigInt (both branches of the arm)', () async {

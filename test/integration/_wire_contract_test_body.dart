@@ -32,8 +32,14 @@ class _Row {
     this.row,
     this.code,
     this.expected, {
-    // ignore: unused_element_parameter — see the field doc; the mechanism stays
+    // Both are unused now that Tiers 1-3 have fixed every row that had one.
+    // They stay because the MECHANISM is the point: the next defect found gets
+    // a pending row naming its issue, never a green test asserting the wrong
+    // answer. See the field docs.
+    // ignore: unused_element_parameter
     this.pending,
+    // Same reason as `pending` directly above.
+    // ignore: unused_element_parameter
     this.webPending,
     this.inner = false,
   });
@@ -58,9 +64,12 @@ class _Row {
   /// green test asserting the wrong answer.
   final String? pending;
 
-  /// Set when only the web backends get it wrong (core#128 — the JS bridge
-  /// reparses number text). Kept separate from [pending] so a blanket skip
-  /// cannot hide that FFI gets these right.
+  /// Set when only the web backends get it wrong. Kept separate from [pending]
+  /// so a blanket skip cannot hide one backend getting it right.
+  ///
+  /// **Currently unused.** It held the core#128 family until Tier 3 moved the
+  /// ambiguous number shapes into tagged text, which the JS bridge cannot
+  /// damage. Kept for the same reason as [pending].
   final String? webPending;
 
   /// Assert on the first item of the returned list rather than on the list.
@@ -87,27 +96,18 @@ const _rows = [
   _Row(1, 'None', 'none'),
   _Row(2, 'True', 'bool'),
   _Row(3, '42', 'int'),
-  _Row(
-    3,
-    '2**53 + 1',
-    'int',
-    webPending: 'ints above 2^53 lose precision at the JS boundary — core#128',
-  ),
+  // Past 2^53 an integer is a bigint on EVERY backend: on dart2js `int` IS a
+  // double and cannot hold it, so letting the Dart type vary by backend would
+  // break invariant I1. core#128b.
+  _Row(4, '2**53 + 1', 'bigint'),
   // core#134 CLOSED by Tier 2: a value's type no longer depends on its
   // magnitude.
   _Row(4, '2**63', 'bigint'),
-  _Row(
-    5,
-    '4.0',
-    'float',
-    webPending: 'integral floats collapse to int at the JS boundary — core#128',
-  ),
-  _Row(
-    5,
-    '-0.0',
-    'float',
-    webPending: 'signed zero is lost at the JS boundary — core#128',
-  ),
+  // core#128a: `JSON.parse("4.0")` is `4`, so the int/float distinction had to
+  // leave the number's text. Asserted on all three backends since Tier 3.
+  _Row(5, '4.0', 'float'),
+  // core#128c: `JSON.stringify(-0)` is `"0"`.
+  _Row(5, '-0.0', 'float'),
   _Row(6, '"s"', 'str'),
   // The STRING "NaN" is a string. It used to decode as MontyFloat(NaN) because
   // non-finite floats travelled as bare text.

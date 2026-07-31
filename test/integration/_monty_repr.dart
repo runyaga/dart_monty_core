@@ -100,6 +100,13 @@ String _floatRepr(double d) {
     return s.replaceFirst('e', 'e+');
   }
 
+  // On dart2js `int` and `double` are one type, so `4.0.toString()` is `"4"` —
+  // the SAME int/float collapse as core#128, one layer up in Dart's own
+  // rendering rather than in the JSON. CPython says `4.0`. Found by this
+  // differential going red on chrome with `Expected: '4.0' Actual: '4'` while
+  // FFI stayed green, which is exactly the split it exists to detect.
+  if (!s.contains('.') && !s.contains('e')) return '$s.0';
+
   return s;
 }
 

@@ -44,7 +44,10 @@ use monty_types::MontyObject;
 ///                non-finite float, exception, type, function, builtin, repr and
 ///                cycle all gained envelopes, and `abs` stopped arriving as
 ///                Rust's Debug rendering "Abs". Closes core#134.
-pub const WIRE_FORMAT_VERSION: u32 = 3;
+///   4  0.19.0 — Tier 3: integral floats, -0.0 and ints past 2^53 travel as
+///                tagged TEXT, because a JSON number's text is what the web
+///                transport reparses. Closes core#128 on all three backends.
+pub const WIRE_FORMAT_VERSION: u32 = 4;
 
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
@@ -111,7 +114,7 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
     match obj {
         MontyObject::None => Value::Null,
         MontyObject::Bool(b) => Value::Bool(*b),
-        MontyObject::Int(n) => json!(n),
+        MontyObject::Int(n) => int_to_json(*n),
         MontyObject::BigInt(n) => bigint_to_json(n),
         MontyObject::Float(f) => float_to_json(*f),
         MontyObject::String(s) => Value::String(s.clone()),
@@ -513,11 +516,33 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
 /// `MontyString` and a value's TYPE depended on its magnitude (core#134). The
 /// digits travel as text either way — JSON numbers cannot hold them — but now
 /// the envelope says they are an integer.
-fn bigint_to_json(n: &BigInt) -> Value {
-    if let Some(i) = n.to_i64() {
-        json!(i)
-    } else {
+/// The largest magnitude every backend can hold in a Dart `int`.
+///
+/// On dart2js `int` IS a double, so 2^53 is the exact-integer ceiling there —
+/// `JSON.parse("9007199254740993")` measurably returns `…992`. Beyond this an
+/// integer cannot be a `MontyInt` on all three backends, so it becomes a
+/// `MontyBigInt` on ALL of them rather than changing type per backend, which
+/// would break invariant I1.
+const EXACT_INT_LIMIT: i64 = 1 << 53;
+
+/// True when `n` needs the bigint envelope to survive the web transport.
+fn needs_bigint_envelope(n: i64) -> bool {
+    !(-EXACT_INT_LIMIT..=EXACT_INT_LIMIT).contains(&n)
+}
+
+/// Encode an `i64` — as a JSON number when that is lossless everywhere.
+fn int_to_json(n: i64) -> Value {
+    if needs_bigint_envelope(n) {
         json!({ "__type": "bigint", "value": n.to_string() })
+    } else {
+        json!(n)
+    }
+}
+
+fn bigint_to_json(n: &BigInt) -> Value {
+    match n.to_i64() {
+        Some(i) if !needs_bigint_envelope(i) => json!(i),
+        _ => json!({ "__type": "bigint", "value": n.to_string() }),
     }
 }
 
@@ -531,19 +556,41 @@ fn bigint_to_json(n: &BigInt) -> Value {
 /// distinctions the web transport destroys (core#128). This is only the
 /// non-finite half, which is a pure R2 fix and needs no measurement.
 fn float_to_json(f: f64) -> Value {
-    if f.is_finite() {
-        return Number::from_f64(f).map_or(Value::Null, Value::Number);
+    if !f.is_finite() {
+        let text = if f.is_nan() {
+            "NaN"
+        } else if f.is_sign_positive() {
+            "Infinity"
+        } else {
+            "-Infinity"
+        };
+
+        return json!({ "__type": "float", "value": text });
     }
 
-    let text = if f.is_nan() {
-        "NaN"
-    } else if f.is_sign_positive() {
-        "Infinity"
-    } else {
-        "-Infinity"
-    };
+    // Tier 3, and the whole of core#128: the int/float distinction and the sign
+    // of zero live ONLY in a JSON number's text, and the web transport reparses
+    // that text (`JSON.parse("4.0") === 4`, `JSON.stringify(-0) === "0"`). A
+    // value carried as a tagged STRING cannot be damaged by either.
+    //
+    // Only the two ambiguous shapes are tagged, so ordinary floats stay JSON
+    // numbers and the corpus does not grow: measured at 1.00x bytes on integer
+    // and realistic-float payloads, where tagging every number cost 6.52x and
+    // 17.4x round-trip latency.
+    if f.fract() == 0.0 || (f == 0.0 && f.is_sign_negative()) {
+        return json!({ "__type": "float", "value": format_exact_float(f) });
+    }
 
-    json!({ "__type": "float", "value": text })
+    Number::from_f64(f).map_or(Value::Null, Value::Number)
+}
+
+/// Render a finite float so Python can read the type back off the text.
+///
+/// `4.0` must not print as `4`, and `-0.0` must keep its sign — those two facts
+/// are the payload. Rust's `{:?}` gives `4.0` and `-0.0`; `{}` gives `4` and
+/// `-0`, which is exactly the loss being fixed.
+fn format_exact_float(f: f64) -> String {
+    format!("{f:?}")
 }
 
 fn number_to_monty_object(n: &Number) -> MontyObject {

@@ -75,12 +75,40 @@ void main() {
       expect(const MontyInt(0), isNot(const MontyBool(false)));
     });
 
-    test('toJson + dartValue + round-trip', () {
+    test('toJson + dartValue + round-trip within the exact range', () {
       expect(const MontyInt(42).toJson(), 42);
       expect(const MontyInt(-7).dartValue, -7);
       _expectRoundTrip(const MontyInt(0));
       _expectRoundTrip(const MontyInt(-42));
-      _expectRoundTrip(const MontyInt(0x7FFFFFFFFFFFFFFF));
+      // 2^53 exactly is the last value every backend holds in a Dart `int`.
+      _expectRoundTrip(const MontyInt(9007199254740992));
+    });
+
+    test('past 2^53 it encodes as a bigint and decodes as MontyBigInt', () {
+      // Tier 3 / core#128b. On dart2js `int` IS a double, so beyond 2^53 an
+      // integer cannot be a MontyInt there at all — `JSON.parse` measurably
+      // returns 9007199254740992 for 9007199254740993. Rather than let the TYPE
+      // depend on the backend (which would break invariant I1), it is a
+      // MontyBigInt on ALL backends past the boundary.
+      // Written as an expression, not a literal: the literal itself trips
+      // avoid_js_rounded_ints, because it is precisely a value JavaScript
+      // cannot hold — which is the defect under test.
+      const past = MontyInt((1 << 53) + 1);
+      expect(past.toJson(), {
+        '__type': 'bigint',
+        'value': '9007199254740993',
+      });
+      expect(
+        MontyValue.fromJson(past.toJson()),
+        MontyBigInt(BigInt.parse('9007199254740993')),
+        reason: 'the value survives; the Dart type deliberately changes',
+      );
+
+      // i64 max, comfortably past the boundary.
+      expect(
+        MontyValue.fromJson(const MontyInt(0x7FFFFFFFFFFFFFFF).toJson()),
+        MontyBigInt(BigInt.parse('9223372036854775807')),
+      );
     });
   });
 
@@ -718,13 +746,53 @@ void main() {
       );
     });
 
-    test('a tagged float carrying a finite value is REJECTED', () {
-      // Only the non-finite forms travel tagged; anything else means the
-      // payload did not come from this encoder.
+    test('a tagged float may carry a finite value since Tier 3', () {
+      // Was asserted as REJECTED when only the non-finite forms travelled
+      // tagged. Tier 3 also tags integral floats and -0.0, because those are
+      // the shapes a JSON number cannot carry across the web transport.
       expect(
-        () => MontyValue.fromJson({'__type': 'float', 'value': '1.5'}),
+        MontyValue.fromJson({'__type': 'float', 'value': '4.0'}),
+        const MontyFloat(4),
+      );
+
+      final negZero =
+          MontyValue.fromJson({'__type': 'float', 'value': '-0.0'})
+              as MontyFloat;
+      expect(negZero.value.isNegative, isTrue, reason: 'the sign is the point');
+      expect(negZero.value, 0);
+
+      // Unparseable text is still refused.
+      expect(
+        () => MontyValue.fromJson({'__type': 'float', 'value': 'not-a-number'}),
         throwsA(isA<FormatException>()),
       );
+    });
+
+    test('the two ambiguous float shapes are tagged, others are not', () {
+      // `4.0` reparses as `4` and `-0.0` re-serialises as `0` on the web; every
+      // other finite float survives as a plain JSON number, which is why this
+      // costs nothing measurable in corpus size.
+      expect(const MontyFloat(4).toJson(), {'__type': 'float', 'value': '4.0'});
+      // NOT `-0`: an int literal converts to POSITIVE zero, which would make
+      // this test pass while asserting the opposite of what it says. The
+      // prefer_int_literals lint is wrong here; the sign IS the point.
+      // ignore: prefer_int_literals
+      expect(const MontyFloat(-0.0).toJson(), {
+        '__type': 'float',
+        'value': '-0.0',
+      });
+      expect(const MontyFloat(3.14).toJson(), 3.14);
+      expect(const MontyFloat(0.1).toJson(), 0.1);
+    });
+
+    test('4.0 and 4 stay distinguishable through a round-trip', () {
+      // The single sentence core#128a is about.
+      final floatJson = const MontyFloat(4).toJson();
+      final intJson = const MontyInt(4).toJson();
+
+      expect(floatJson, isNot(intJson));
+      expect(MontyValue.fromJson(floatJson), isA<MontyFloat>());
+      expect(MontyValue.fromJson(intJson), isA<MontyInt>());
     });
 
     test('plain List → MontyList', () {

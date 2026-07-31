@@ -100,14 +100,18 @@ const _isWeb = bool.fromEnvironment('dart.library.js_interop');
 /// (`4.0` -> `4`) and integers above 2^53 lose precision. FFI is correct, which
 /// is why these are backend-specific rather than global — a blanket skip would
 /// hide the fact that one backend gets this right (core#128).
-const _webOnlyDivergences = {
-  '4.0': 'integral floats collapse to int at the JS boundary — core#128',
-  '-0.0': 'signed zero is lost at the JS boundary — core#128',
-  '0.1 + 0.2': 'float text is reparsed at the JS boundary — core#128',
-  '1e100': 'float text is reparsed at the JS boundary — core#128',
-  '2**63 - 1': 'ints above 2^53 lose precision at the JS boundary — core#128',
-  '-2**63': 'ints above 2^53 lose precision at the JS boundary — core#128',
-};
+/// Divergences that exist ONLY on the web backends.
+///
+/// **Empty as of Tier 3.** It held the core#128 family — `4.0` collapsing to
+/// `4`, `-0.0` losing its sign, and integers above 2^53 losing precision — all
+/// of which came from the JS bridge reparsing a JSON number's text. Those three
+/// shapes now travel as tagged text, which `JSON.parse`/`stringify` cannot
+/// damage, so FFI and the two web backends agree.
+///
+/// Kept for the same reason as [_knownDivergences]: a backend-specific defect
+/// belongs here as a skip naming the backend, never as a blanket skip that
+/// would hide one backend getting it right.
+const _webOnlyDivergences = <String, String>{};
 
 void runReprOracleTests() {
   group('repr differential — independent value-fidelity oracle', () {
