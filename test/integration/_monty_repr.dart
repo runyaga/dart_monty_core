@@ -45,6 +45,12 @@ String montyRepr(MontyValue v) => switch (v) {
   MontyFrozenSet(:final items) =>
     'frozenset({${items.map(montyRepr).join(', ')}})',
   MontyDict(:final entries) => _dictRepr(entries),
+  // Rendered so the differential can SEE a forged type. monty reports
+  // `{"__type":"path","value":"x"}` as a dict; if our pipeline decodes it to a
+  // MontyPath, the strings differ and the test goes red — which is how the
+  // forgery in core#136 becomes visible to an instrument rather than to a
+  // hand-written probe. CPython renders a path as `PosixPath('…')`.
+  MontyPath(:final value) => "PosixPath('$value')",
   // Types this renderer does not model. Returning a sentinel rather than
   // throwing keeps the differential test able to report "unsupported" as a
   // skip instead of dying.

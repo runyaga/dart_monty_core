@@ -57,6 +57,16 @@ const _expressions = [
   // bytes
   'b""',
   'b"hi"',
+  // ---- WIRE-CONTRACT.md rows that are LOSSY today -----------------------
+  // Each is a known divergence below. They are here so the instrument that
+  // enforces the contract can actually see them: before this, the differential
+  // could not observe the forgery or the exception collapse at all.
+  '{"__type": "path", "value": "x"}', // row 11 — forgery (#136)
+  'ValueError("boom")', // row 22 — exception
+  'int', // row 23 — Type
+  'abs', // row 25 — BuiltinFunction
+  '{1: "a"}', // non-string keys -> MontyList
+  '"NaN"', // str "NaN" -> MontyFloat
 ];
 
 /// Expressions where our pipeline is KNOWN to disagree with monty's repr.
@@ -70,6 +80,18 @@ const _knownDivergences = {
   // MontyString and render with quotes where monty renders a bare integer.
   '2**63': 'ints beyond i64 arrive as MontyString — core#134',
   '-2**63 - 1': 'ints beyond i64 arrive as MontyString — core#134',
+  // WIRE-CONTRACT.md rows still lossy. Recorded as skips with an issue, never
+  // asserted as correct — asserting current-but-wrong behaviour is what made
+  // core#129 permanent. Each flips to a real assertion as its tier lands.
+  '{"__type": "path", "value": "x"}':
+      'a plain dict decodes as the tagged type it names — core#136 (Tier 1)',
+  'ValueError("boom")':
+      'exceptions collapse onto a bare string, indistinguishable from '
+      'the string "ValueError: boom" — Tier 2',
+  'int': 'Type collapses onto a bare string — Tier 2',
+  'abs': 'BuiltinFunction encodes as Rust {:?} ("Abs") — Tier 2',
+  '{1: "a"}': 'non-string-key dicts arrive as MontyList — Tier 2',
+  '"NaN"': 'the string "NaN" decodes as MontyFloat(NaN) — Tier 2',
 };
 
 /// True when compiled for the web (dart2js or dart2wasm).
@@ -101,6 +123,19 @@ void runReprOracleTests() {
 
     for (final expr in _expressions) {
       test(expr, () async {
+        // Known-divergent on every backend: recorded, never asserted as
+        // correct. Checked HERE as well as in the separate reporting loop
+        // above, because an expression can appear in both lists — it is listed
+        // in _expressions so the instrument exercises it, and in
+        // _knownDivergences so it is reported honestly rather than failing the
+        // build until its tier lands.
+        final known = _knownDivergences[expr];
+        if (known != null) {
+          markTestSkipped(known);
+
+          return;
+        }
+
         if (_isWeb && _webOnlyDivergences.containsKey(expr)) {
           markTestSkipped(_webOnlyDivergences[expr]!);
 
