@@ -1,0 +1,19 @@
+{
+  "_comment": "Provenance for the committed WASM/JS assets in lib/assets/. Lives in tool/ (.pubignore'd) rather than lib/assets/ because it is DEVELOPMENT knowledge: consumers used to download it with the package and it told them nothing actionable. See docs/contributor/testing-runbook.md for why a git diff on the blob is uninformative.",
+  "assets": {
+    "dart_monty_core_bridge.js": {
+      "bytes": 19034,
+      "sha256": "2645a793c9bbb097c04b32b1e82a45ca580fab1d333016db5c118991c660a494"
+    },
+    "dart_monty_core_native.wasm": {
+      "bytes": 14375976,
+      "sha256": "9176459f67b130a16e09b40a5401c6eb8aa693ba7a16dc6a82353621aecf06cc"
+    },
+    "dart_monty_core_worker.js": {
+      "bytes": 51823,
+      "sha256": "2f37657f9855b2302f559afbf620b53afc13782d7f79ba07d87b3a371db51f58"
+    }
+  },
+  "monty_tag": "v0.0.19",
+  "native_commit": "f5610574158839b6e1c4fcb89d0b358ccc248a06"
+}

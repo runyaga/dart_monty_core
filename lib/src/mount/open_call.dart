@@ -14,7 +14,7 @@ import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 /// The interpreter never holds a live OS handle: it takes this handle and then
 /// drives reads/writes through the regular `Path.read_text` / `write_text` /
 /// `append_text` OS-calls. A handler therefore only needs this for the bare
-/// `Open` call itself.
+/// `open` call itself.
 ///
 /// Semantics (the only modes monty emits):
 /// - `r` / `rb` — the file must already exist; otherwise throws a typed

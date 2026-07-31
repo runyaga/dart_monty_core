@@ -279,6 +279,30 @@ silently, which reports green.
 
 ### 7. The WASM build is not byte-reproducible
 
+An unchanged tree produces a different `.wasm`, so **a `git diff` on the blob
+tells you nothing** — it is always dirty after a rebuild and never means what it
+appears to mean. That is why the matrix restores the committed asset by default.
+
+When you have deliberately rebuilt it, run with `KEEP_WASM=1` and regenerate
+`tool/wasm-provenance.json` (sizes, sha256s, and the commit `native/` was at).
+
+That record lives in `tool/` — which is `.pubignore`d — and **not** in
+`lib/assets/`, which ships. It used to ship: every consumer downloaded a file
+explaining our internal build-reproducibility problem, of no use to them. It was
+also found stale, with all three hashes wrong and nothing verifying it.
+
+It is deliberately **not** a supply-chain attestation. An in-package hash of an
+in-package artefact is a circular oracle: the record travels in the same archive
+as the binary it attests, so anyone who can alter one can alter the other. Real
+verification needs something out-of-band — pub.dev already publishes an archive
+sha256 recorded in `pubspec.lock`, which is strictly stronger.
+
+The useful CI check is therefore not hash-matching. It is: **fail if `native/**`
+has changed since the commit recorded in the JSON**, which catches the case that
+actually happened — assets going stale against the crate.
+
+
+
 An unchanged tree produces a different `.wasm`, so the matrix restores the
 committed asset by default. When you have deliberately rebuilt it — because
 `native/` changed — run with `KEEP_WASM=1`, and update `lib/assets/PROVENANCE.md`

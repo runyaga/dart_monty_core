@@ -77,11 +77,11 @@ final class MontyPath extends MontyValue {
 /// Represents an open file object (`_io.TextIOWrapper` / `BufferedReader` /
 /// …) produced by Python's `open()`.
 ///
-/// The interpreter never holds a live OS handle: an `Open` OS-call returns
+/// The interpreter never holds a live OS handle: an `open` OS-call returns
 /// one of these (carrying the virtual [path], canonical open() [mode], and
 /// byte/char [position]), and the engine drives subsequent reads/writes
 /// through `Path.read_text`/`write_text`/… OS-calls. An `OsCallHandler`
-/// servicing `Open` returns a [MontyFileHandle] to satisfy the call.
+/// servicing `open` returns a [MontyFileHandle] to satisfy the call.
 @immutable
 final class MontyFileHandle extends MontyValue {
   /// Creates a [MontyFileHandle] for [path] opened in [mode] at [position].

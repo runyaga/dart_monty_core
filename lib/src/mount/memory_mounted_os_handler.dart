@@ -77,16 +77,13 @@ OsCallHandler memoryMountedOsHandler({
   }
 
   return (op, args, kwargs) async {
-    // `open()` arrives as the bare `Open` OS-call (no `Path.` prefix) carrying
-    // [path, mode]. The host performs the open-time effect and returns a
-    // FileHandle; the interpreter then drives reads/writes through the
-    // `Path.read_text`/`write_text`/`append_text` calls handled below.
-    // monty v0.0.19 renamed this OS-call from 'Open' to 'open': #576 replaced
-    // the hand-written `name()` match with `strum::IntoStaticStr` plus
-    // per-variant `#[strum(serialize = ...)]`. Every other op name was
-    // preserved. 'Open' was the only capitalised, undotted op, so the rename
-    // also makes it consistent with 'Path.*', 'os.*', 'date.*', 'datetime.*'.
-    // BREAKING for consumers whose custom handlers match on 'Open'.
+    // Carries [path, mode]; reads and writes then arrive separately as
+    // `Path.read_text`/`write_text`/`append_text`, handled below.
+    //
+    // Do not "correct" this to 'Open'. Upstream's Rust enum variant is
+    // `Open`, but it carries `#[strum(serialize = "open")]`, so the string
+    // that crosses the boundary is lowercase — reading the Rust source
+    // suggests the opposite. It is also the only undotted op name.
     if (op == 'open') {
       final rawPath = args.firstOrNull;
       if (rawPath is! String) return notMine(op, args, kwargs);
