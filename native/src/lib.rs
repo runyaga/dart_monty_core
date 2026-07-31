@@ -66,6 +66,17 @@ macro_rules! ffi_progress {
 /// - `out_error`: on failure, receives an error message (caller frees with `monty_string_free`).
 ///
 /// Returns a heap-allocated handle, or NULL on error.
+/// Returns the value-encoding wire format version this library emits.
+///
+/// The Dart decoder compares it against its own expectation at init. A
+/// mismatch means the committed WASM/JS assets in `lib/assets/` are stale
+/// relative to the crate — a case `git diff` cannot detect, because the wasm
+/// build is not byte-reproducible.
+#[unsafe(no_mangle)]
+pub extern "C" fn monty_wire_format_version() -> u32 {
+    crate::convert::WIRE_FORMAT_VERSION
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn monty_create(
     code: *const c_char,

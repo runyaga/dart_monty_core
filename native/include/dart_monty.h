@@ -66,6 +66,19 @@ MontyHandle *monty_create(const char *code,
 /**
  * Free a handle. Safe to call with NULL.
  */
+/**
+ * Returns the value-encoding wire format version this library emits.
+ *
+ * The Dart decoder asserts this at init. A mismatch means the committed
+ * WASM/JS assets in lib/assets/ are stale relative to the crate -- a case
+ * `git diff` cannot detect, because the wasm build is not byte-reproducible
+ * (an unchanged tree yields different bytes).
+ *
+ * Bump WIRE_FORMAT_VERSION in convert.rs in the SAME commit as any change to
+ * what the encoder emits or the decoder accepts.
+ */
+uint32_t monty_wire_format_version(void);
+
 void monty_free(MontyHandle *handle);
 
 /* ------------------------------------------------------------------ */

@@ -19,6 +19,23 @@ use monty_types::MontyObject;
 /// Upstream documents `CollectString`/`CollectStreams` caps as "Not covered by
 /// `ResourceLimits.max_memory`", so folding them into the resource-limits API
 /// would conflate two mechanisms upstream keeps separate.
+/// The version of the value-encoding wire format.
+///
+/// Bump this in the SAME commit as any change to what `monty_object_to_json`
+/// emits or `json_to_monty_object` accepts. The Dart decoder asserts it at
+/// init, so a stale committed asset fails loudly at startup instead of
+/// mis-decoding values at some later point.
+///
+/// This exists because the WASM assets in `lib/assets/` are committed build
+/// artefacts and the build is NOT byte-reproducible — an unchanged tree yields
+/// different bytes — so `git diff` on the blob cannot tell you whether the
+/// asset matches the crate. A version integer can.
+///
+/// History:
+///   1  0.19.0 — `Ellipsis` gained `{"__type":"ellipsis"}`; dict insertion
+///                order preserved (core#129).
+pub const WIRE_FORMAT_VERSION: u32 = 1;
+
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
 /// Compile options used for every program and REPL session.

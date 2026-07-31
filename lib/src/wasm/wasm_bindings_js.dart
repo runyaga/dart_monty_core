@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/src/ffi/native_bindings.dart'
+    show WireFormatMismatch, expectedWireFormatVersion;
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
 /// JS interop extension type for the raw snapshot result object.
@@ -80,6 +82,16 @@ external JSPromise<JSString> _jsResolveFutures(
   JSString errorsJson, [
   JSNumber? sessionId,
 ]);
+
+/// The value-encoding wire format the loaded wasm reports, or `null` when the
+/// committed asset predates the symbol.
+///
+/// Asserted at init so a STALE `lib/assets/*.wasm` fails loudly rather than
+/// mis-decoding values later. `git diff` on the blob cannot detect staleness —
+/// the wasm build is not byte-reproducible, so an unchanged tree yields
+/// different bytes.
+@JS('DartMontyBridge.getWireFormatVersion')
+external JSNumber? _jsWireFormatVersion();
 
 @JS('DartMontyBridge.snapshot')
 external JSPromise<JSAny> _jsSnapshot([JSNumber? sessionId]);
@@ -810,7 +822,23 @@ class WasmBindingsJs extends WasmBindings {
   Future<void> _ensureInit() async {
     if (_initialized) return;
     await _jsInit().toDart;
+    _assertWireFormat();
     _initialized = true;
+  }
+
+  /// Rejects a stale committed WASM asset at init.
+  ///
+  /// `lib/assets/dart_monty_core_native.wasm` is a committed build artefact and
+  /// the build is not byte-reproducible, so `git diff` on the blob cannot tell
+  /// you whether it matches `native/`. This can. A `null` version means the
+  /// asset predates the symbol entirely, which is treated as a mismatch rather
+  /// than as "no opinion" — otherwise an old asset would silently opt out of
+  /// the very check that exists to catch it.
+  void _assertWireFormat() {
+    final reported = _jsWireFormatVersion()?.toDartInt;
+    if (reported != expectedWireFormatVersion) {
+      throw WireFormatMismatch(expectedWireFormatVersion, reported ?? -1);
+    }
   }
 
   WasmProgressResult _decodeProgress(String jsonStr) {
