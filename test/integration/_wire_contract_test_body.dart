@@ -32,6 +32,7 @@ class _Row {
     this.row,
     this.code,
     this.expected, {
+    // ignore: unused_element_parameter — see the field doc; the mechanism stays
     this.pending,
     this.webPending,
     this.inner = false,
@@ -50,6 +51,11 @@ class _Row {
 
   /// Set when today's encoder gets this row wrong on EVERY backend: the issue
   /// and the tier that fixes it. Reported as a skip, never asserted.
+  ///
+  /// **Currently unused, and deliberately kept.** Every row that had one is
+  /// fixed by Tiers 1 and 2. The field stays because the mechanism is the
+  /// point: a newly-found defect gets a `pending` row with its issue, never a
+  /// green test asserting the wrong answer.
   final String? pending;
 
   /// Set when only the web backends get it wrong (core#128 — the JS bridge
@@ -65,12 +71,18 @@ class _Row {
 
 /// Every constructible row of the contract table.
 ///
-/// Rows 10 (`NamedTuple`), 19 (`FileHandle`) and 20 (`Dataclass`) are absent,
-/// and that is reported as a skip below rather than passed over. `collections`
-/// and `dataclasses` are not importable in this build (measured:
-/// `ModuleNotFoundError`), and a file handle needs a mounted filesystem. Their
-/// Dart types exist and are reached by other paths, so the gap is in THIS
-/// instrument, not in the encoder.
+/// Rows 10, 19, 20 and 24 are absent, and that is reported as a skip below
+/// rather than passed over — in every case the gap is in THIS instrument, not
+/// in the encoder:
+///
+/// - 10 `NamedTuple` / 20 `Dataclass` — `collections` and `dataclasses` are not
+///   importable in this build (measured: `ModuleNotFoundError`).
+/// - 19 `FileHandle` — needs a mounted filesystem.
+/// - 24 `Function` — **not reachable from Python at all** on monty v0.0.19.
+///   Measured: a lambda, a `def` function and a class all come back as
+///   `Repr` (`<function 'f' at 0xc>`), never `Function`. Row 24 was briefly
+///   asserted against `(lambda: 1)` here and failed with
+///   `Expected: 'function' Actual: 'repr'`, which is how this was found.
 const _rows = [
   _Row(1, 'None', 'none'),
   _Row(2, 'True', 'bool'),
@@ -81,12 +93,9 @@ const _rows = [
     'int',
     webPending: 'ints above 2^53 lose precision at the JS boundary — core#128',
   ),
-  _Row(
-    4,
-    '2**63',
-    'bigint',
-    pending: 'ints beyond i64 arrive as MontyString — core#134 (Tier 2)',
-  ),
+  // core#134 CLOSED by Tier 2: a value's type no longer depends on its
+  // magnitude.
+  _Row(4, '2**63', 'bigint'),
   _Row(
     5,
     '4.0',
@@ -100,12 +109,12 @@ const _rows = [
     webPending: 'signed zero is lost at the JS boundary — core#128',
   ),
   _Row(6, '"s"', 'str'),
-  _Row(
-    6,
-    '"NaN"',
-    'str',
-    pending: 'the string "NaN" decodes as MontyFloat(NaN) — Tier 2',
-  ),
+  // The STRING "NaN" is a string. It used to decode as MontyFloat(NaN) because
+  // non-finite floats travelled as bare text.
+  _Row(6, '"NaN"', 'str'),
+  // ...and the non-finite floats themselves still arrive as floats.
+  _Row(5, 'float("nan")', 'float'),
+  _Row(5, 'float("inf")', 'float'),
   _Row(7, 'b"hi"', 'bytes'),
   _Row(8, '[1, 2]', 'list'),
   _Row(9, '(1, 2)', 'tuple'),
@@ -126,57 +135,23 @@ const _rows = [
   _Row(17, 'import datetime\ndatetime.timezone.utc', 'timezone'),
   _Row(18, 'import pathlib\npathlib.Path("x")', 'path'),
   _Row(21, '...', 'ellipsis'),
-  _Row(
-    22,
-    'ValueError("boom")',
-    'exception',
-    pending:
-        'exceptions collapse onto a bare string, byte-identical to the string '
-        '"ValueError: boom" — Tier 2',
-  ),
-  _Row(
-    23,
-    'int',
-    'type',
-    pending: 'Type collapses onto a bare string — Tier 2',
-  ),
-  _Row(
-    24,
-    '(lambda: 1)',
-    'function',
-    pending:
-        'Function collapses onto a bare string with a fabricated address '
-        '— Tier 2',
-  ),
-  _Row(
-    25,
-    'abs',
-    'builtin',
-    pending: 'BuiltinFunction encodes as Rust {:?} ("Abs") — Tier 2',
-  ),
-  _Row(
-    26,
-    'class C:\n    pass\nC()',
-    'repr',
-    pending: 'Repr collapses onto a bare string — Tier 2',
-  ),
-  _Row(
-    27,
-    'a = []\na.append(a)\na',
-    'cycle',
-    pending: 'the cycle marker collapses onto the bare string "[...]" — Tier 2',
-    inner: true,
-  ),
+  _Row(22, 'ValueError("boom")', 'exception'),
+  _Row(23, 'int', 'type'),
+  _Row(25, 'abs', 'builtin'),
+  _Row(26, 'class C:\n    pass\nC()', 'repr'),
+  _Row(27, 'a = []\na.append(a)\na', 'cycle', inner: true),
 ];
 
 void runWireContractTests() {
   group('wire contract — type identity (I1)', () {
-    test('rows 10, 19 and 20 are not covered here', () {
+    test('rows 10, 19, 20 and 24 are not covered here', () {
       markTestSkipped(
         'NamedTuple and Dataclass need collections/dataclasses, which this '
-        'build does not provide (ModuleNotFoundError), and FileHandle needs a '
-        'mounted filesystem. Their Dart types are exercised by '
-        'ffi_dataclass_hydrate_test.dart and ffi_open_test.dart instead.',
+        'build does not provide (ModuleNotFoundError); FileHandle needs a '
+        'mounted filesystem; and Function is not reachable from Python on '
+        'monty v0.0.19 — lambdas, def functions and classes all arrive as '
+        'Repr. Covered elsewhere: ffi_dataclass_hydrate_test.dart, '
+        'ffi_open_test.dart, and the Function encoder arm by a Rust unit test.',
       );
     });
 

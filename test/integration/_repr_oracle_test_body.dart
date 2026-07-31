@@ -58,9 +58,9 @@ const _expressions = [
   'b""',
   'b"hi"',
   // ---- WIRE-CONTRACT.md rows -------------------------------------------
-  // Rows 11 are now ASSERTED (Tier 1 closed core#136); the rest are still
-  // known divergences below. All are listed here so the instrument that
-  // enforces the contract can actually see them.
+  // All of these are now ASSERTED — Tier 1 closed core#136 (the forgery) and
+  // Tier 2 closed core#134 and the string collapses. They stay listed here so
+  // the instrument keeps exercising them.
   '{"__type": "path", "value": "x"}', // row 11 — forgery, FIXED (#136)
   'ValueError("boom")', // row 22 — exception
   'int', // row 23 — Type
@@ -75,21 +75,20 @@ const _expressions = [
 /// Asserting current-but-wrong behaviour is what made core#129 permanent, so a
 /// known defect gets a visible skip and an issue link — not a green test that
 /// pins it.
-const _knownDivergences = {
-  // Integers outside i64 are encoded as a JSON string, so they arrive as
-  // MontyString and render with quotes where monty renders a bare integer.
-  '2**63': 'ints beyond i64 arrive as MontyString — core#134',
-  '-2**63 - 1': 'ints beyond i64 arrive as MontyString — core#134',
-  // WIRE-CONTRACT.md rows still lossy. Recorded as skips with an issue, never
-  // asserted as correct — asserting current-but-wrong behaviour is what made
-  // core#129 permanent. Each flips to a real assertion as its tier lands.
-  'ValueError("boom")':
-      'exceptions collapse onto a bare string, indistinguishable from '
-      'the string "ValueError: boom" — Tier 2',
-  'int': 'Type collapses onto a bare string — Tier 2',
-  'abs': 'BuiltinFunction encodes as Rust {:?} ("Abs") — Tier 2',
-  '"NaN"': 'the string "NaN" decodes as MontyFloat(NaN) — Tier 2',
-};
+/// Expressions where our pipeline is KNOWN to disagree with monty's repr.
+///
+/// **Empty as of Tier 2.** Every row that lived here has been fixed and its
+/// entry deleted rather than retained as documentation: core#129 (dict order,
+/// Ellipsis), core#136 (the forgery), core#134 (ints beyond i64), and the
+/// string collapses for exceptions, types, builtins and non-finite floats.
+///
+/// The web-only number divergences are a separate map below, because FFI gets
+/// those right and a blanket skip would hide that (core#128, Tier 3).
+///
+/// Keep the mechanism, not the entries: a known defect belongs here as a skip
+/// with an issue, never as a green test asserting the wrong answer — which is
+/// what let core#129 survive 1062 passing fixtures.
+const _knownDivergences = <String, String>{};
 
 /// True when compiled for the web (dart2js or dart2wasm).
 const _isWeb = bool.fromEnvironment('dart.library.js_interop');

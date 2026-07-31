@@ -42,7 +42,10 @@ sealed class MontyValue {
     final bool b => MontyBool(b),
     final int n => MontyInt(n),
     final double d => MontyFloat(d),
-    final String s => _parseSpecialFloat(s) ?? MontyString(s),
+    // A bare JSON string is a Python `str`, full stop — rule R2. It used to be
+    // run through _parseSpecialFloat first, so the STRING "NaN" became
+    // MontyFloat(NaN). Non-finite floats now carry the float envelope.
+    final String s => MontyString(s),
     final List<dynamic> l => MontyList(l.map(MontyValue.fromJson).toList()),
     final Map<String, dynamic> m => _parseMap(m),
     _ => throw ArgumentError(
@@ -102,6 +105,12 @@ sealed class MontyValue {
     // `entries` for anything else. The tag names the TYPE; the payload key
     // names how the keys are encoded.
     'dict': _dictFromMap,
+    // Tier 2 — rule R2: these all used to be bare strings, so a value's type
+    // depended on whether some other variant produced the same characters.
+    'bigint': MontyBigInt._fromMap,
+    'exception': MontyExceptionValue._fromMap,
+    'float': _nonFiniteFloatFromMap,
+    for (final k in MontyOpaqueKind.values) k.wireTag: MontyOpaque._fromMap,
   };
 
   /// Encodes a host-supplied value as wire JSON.
@@ -130,6 +139,31 @@ sealed class MontyValue {
   /// Typed wrappers return their `toJson()` map.
   Object? get dartValue;
 
+  /// Decodes the tagged float envelope, which carries ONLY non-finite forms.
+  ///
+  /// A finite float is a JSON number and never reaches here. NaN and the
+  /// infinities have no JSON number representation, so they travel as text —
+  /// and they used to travel as BARE text, which is why the Python string
+  /// `"NaN"` decoded as `MontyFloat(NaN)`.
+  static MontyValue _nonFiniteFloatFromMap(Map<String, dynamic> map) {
+    final text = map['value'];
+    final parsed = switch (text) {
+      'NaN' => double.nan,
+      'Infinity' => double.infinity,
+      '-Infinity' => double.negativeInfinity,
+      _ => null,
+    };
+    if (parsed == null) {
+      throw FormatException(
+        'a tagged float carries only NaN/Infinity/-Infinity; got $text. '
+        'Finite floats travel as JSON numbers.',
+        json.encode(map),
+      );
+    }
+
+    return MontyFloat(parsed);
+  }
+
   /// Dispatches the two dict payload shapes.
   ///
   /// `entries` (any key type) wins if present; otherwise `value` (string keys).
@@ -139,13 +173,6 @@ sealed class MontyValue {
 
     return MontyDict._fromMap(map);
   }
-
-  static MontyValue? _parseSpecialFloat(String s) => switch (s) {
-    'NaN' => const MontyFloat(double.nan),
-    'Infinity' => const MontyFloat(double.infinity),
-    '-Infinity' => const MontyFloat(double.negativeInfinity),
-    _ => null,
-  };
 
   // Returns different sealed subclasses based on __type, so it
   // cannot be a constructor.

@@ -40,7 +40,11 @@ use monty_types::MontyObject;
 ///                object and an unknown `__type` instead of guessing a dict.
 ///                Closes core#136: a bare object was byte-identical to an
 ///                envelope, so sandboxed Python could mint any host type.
-pub const WIRE_FORMAT_VERSION: u32 = 2;
+///   3  0.19.0 — Tier 2: a bare string means `str` and NOTHING else. bigint,
+///                non-finite float, exception, type, function, builtin, repr and
+///                cycle all gained envelopes, and `abs` stopped arriving as
+///                Rust's Debug rendering "Abs". Closes core#134.
+pub const WIRE_FORMAT_VERSION: u32 = 3;
 
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
@@ -164,18 +168,34 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
                 "frozen": frozen,
             })
         }
-        MontyObject::Type(t) => Value::String(format!("{t}")),
-        MontyObject::BuiltinFunction(f) => Value::String(format!("{f:?}")),
-        MontyObject::Exception { exc_type, arg } => {
-            let msg = match arg {
-                Some(a) => format!("{exc_type}: {a}"),
-                None => format!("{exc_type}"),
-            };
-            Value::String(msg)
-        }
-        MontyObject::Repr(r) => Value::String(r.clone()),
-        MontyObject::Cycle(_, desc) => Value::String(desc.clone()),
-        MontyObject::Function { name, .. } => Value::String(format!("<function {name}>")),
+        // Tier 2, rule R2: a bare JSON string means Python `str` and nothing
+        // else. These seven variants all used to collapse onto one, so a value's
+        // type depended on whether some OTHER variant happened to produce the
+        // same characters. The clearest case: `ValueError("boom")` and the
+        // string `"ValueError: boom"` were byte-identical on the wire.
+        MontyObject::Type(t) => json!({ "__type": "type", "text": t.to_string() }),
+        // `{f}` not `{f:?}`. Debug printed Rust's variant name — `abs` arrived as
+        // "Abs" — so the wire carried a Rust identifier where a reader expects
+        // the Python name. Display is strum's `serialize_all = "lowercase"`, and
+        // `EnumString` parses it back, so this round-trips exactly.
+        MontyObject::BuiltinFunction(f) => json!({
+            "__type": "builtin",
+            "text": f.to_string(),
+        }),
+        // exc_type and message travel SEPARATELY. Joining them with ": " was
+        // lossy in both directions: unrecoverable if the message contained
+        // ": ", and indistinguishable from a string that merely looked like it.
+        MontyObject::Exception { exc_type, arg } => json!({
+            "__type": "exception",
+            "exc_type": exc_type.to_string(),
+            "message": arg.as_ref().map(std::string::ToString::to_string),
+        }),
+        MontyObject::Repr(r) => json!({ "__type": "repr", "text": r }),
+        MontyObject::Cycle(_, desc) => json!({ "__type": "cycle", "text": desc }),
+        MontyObject::Function { name, .. } => json!({
+            "__type": "function",
+            "text": format!("<function {name}>"),
+        }),
         MontyObject::Date(d) => json!({
             "__type": "date",
             "year": d.year,
@@ -422,6 +442,60 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                     })
                 }
                 "ellipsis" => MontyObject::Ellipsis,
+                "bigint" => {
+                    let text = map.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                    text.parse::<BigInt>()
+                        .map(MontyObject::BigInt)
+                        .map_err(|e| format!("bad bigint {text:?}: {e}"))?
+                }
+                "float" => {
+                    // Only the non-finite forms travel tagged; a finite float is
+                    // a JSON number and never reaches this arm.
+                    let text = map.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                    match text {
+                        "NaN" => MontyObject::Float(f64::NAN),
+                        "Infinity" => MontyObject::Float(f64::INFINITY),
+                        "-Infinity" => MontyObject::Float(f64::NEG_INFINITY),
+                        other => {
+                            return Err(format!(
+                                "a tagged float carries only NaN/Infinity/-Infinity, got {other:?}"
+                            ));
+                        }
+                    }
+                }
+                "exception" => {
+                    let exc = map.get("exc_type").and_then(|v| v.as_str()).unwrap_or("");
+                    let arg = map
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .map(std::string::ToString::to_string);
+                    MontyObject::Exception {
+                        exc_type: exc
+                            .parse::<monty_types::ExcType>()
+                            .map_err(|_| format!("unknown exception type {exc:?}"))?,
+                        arg,
+                    }
+                }
+                "builtin" => {
+                    let text = map.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                    MontyObject::BuiltinFunction(
+                        text.parse::<monty_types::BuiltinsFunctions>()
+                            .map_err(|_| format!("unknown builtin {text:?}"))?,
+                    )
+                }
+                // Host-side OBSERVATIONS of interpreter internals, not values the
+                // interpreter can be handed back. `type` names a class this side
+                // cannot construct; `function` and `repr` carry a rendering, not
+                // the callable or the object; `cycle` marks a place in a graph
+                // that does not exist over here. Rejected rather than
+                // approximated — silently substituting something plausible is
+                // the class of bug this whole change removes.
+                kind @ ("type" | "function" | "repr" | "cycle") => {
+                    return Err(format!(
+                        "a {kind} cannot be sent back into the interpreter: it is a \
+                         host-side rendering, not a constructible value"
+                    ));
+                }
                 unknown => {
                     return Err(format!(
                         "unknown __type {unknown:?}: the decoder rejects what it does not \
@@ -433,24 +507,43 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
     })
 }
 
+/// Integers that fit i64 stay JSON numbers; the rest get a tagged envelope.
+///
+/// They used to become a BARE JSON string, so `2**63` arrived in Dart as a
+/// `MontyString` and a value's TYPE depended on its magnitude (core#134). The
+/// digits travel as text either way — JSON numbers cannot hold them — but now
+/// the envelope says they are an integer.
 fn bigint_to_json(n: &BigInt) -> Value {
     if let Some(i) = n.to_i64() {
         json!(i)
     } else {
-        Value::String(n.to_string())
+        json!({ "__type": "bigint", "value": n.to_string() })
     }
 }
 
+/// Finite floats stay JSON numbers; NaN and the infinities get an envelope.
+///
+/// They used to be the bare strings "NaN"/"Infinity"/"-Infinity", which the Dart
+/// decoder turned back into floats — so the Python STRING `"NaN"` also decoded as
+/// `MontyFloat(NaN)`. Two different values, one wire representation.
+///
+/// Tier 3 will envelope finite floats too, for the int/float and signed-zero
+/// distinctions the web transport destroys (core#128). This is only the
+/// non-finite half, which is a pure R2 fix and needs no measurement.
 fn float_to_json(f: f64) -> Value {
     if f.is_finite() {
-        Number::from_f64(f).map_or(Value::Null, Value::Number)
-    } else if f.is_nan() {
-        Value::String("NaN".into())
-    } else if f.is_sign_positive() {
-        Value::String("Infinity".into())
-    } else {
-        Value::String("-Infinity".into())
+        return Number::from_f64(f).map_or(Value::Null, Value::Number);
     }
+
+    let text = if f.is_nan() {
+        "NaN"
+    } else if f.is_sign_positive() {
+        "Infinity"
+    } else {
+        "-Infinity"
+    };
+
+    json!({ "__type": "float", "value": text })
 }
 
 fn number_to_monty_object(n: &Number) -> MontyObject {
@@ -551,7 +644,10 @@ mod tests {
     fn test_bigint_too_large() {
         let n = BigInt::parse_bytes(b"99999999999999999999999", 10).unwrap();
         let val = monty_object_to_json(&MontyObject::BigInt(n.clone()));
-        assert_eq!(val, Value::String(n.to_string()));
+        // Tier 2: was a BARE string, so `2**63` decoded as MontyString and a
+        // value's type depended on its magnitude (core#134). The digits still
+        // travel as text — JSON numbers cannot hold them — but tagged.
+        assert_eq!(val, json!({"__type": "bigint", "value": n.to_string()}));
     }
 
     #[test]
@@ -566,7 +662,9 @@ mod tests {
     fn test_float_nan() {
         assert_eq!(
             monty_object_to_json(&MontyObject::Float(f64::NAN)),
-            Value::String("NaN".into())
+            // Was the bare string "NaN", which made the STRING "NaN" decode as
+            // a float. Tagged since Tier 2.
+            json!({"__type": "float", "value": "NaN"})
         );
     }
 
@@ -574,11 +672,11 @@ mod tests {
     fn test_float_infinity() {
         assert_eq!(
             monty_object_to_json(&MontyObject::Float(f64::INFINITY)),
-            Value::String("Infinity".into())
+            json!({"__type": "float", "value": "Infinity"})
         );
         assert_eq!(
             monty_object_to_json(&MontyObject::Float(f64::NEG_INFINITY)),
-            Value::String("-Infinity".into())
+            json!({"__type": "float", "value": "-Infinity"})
         );
     }
 
@@ -850,9 +948,16 @@ mod tests {
             exc_type: monty_types::ExcType::ValueError,
             arg: Some("bad value".into()),
         };
+        // exc_type and message travel separately now. Joined with ": " they were
+        // byte-identical to the STRING "ValueError: bad value", and a message
+        // containing ": " could not be recovered.
         assert_eq!(
             monty_object_to_json(&exc),
-            Value::String("ValueError: bad value".into())
+            json!({
+                "__type": "exception",
+                "exc_type": "ValueError",
+                "message": "bad value",
+            })
         );
     }
 
@@ -864,7 +969,11 @@ mod tests {
         };
         assert_eq!(
             monty_object_to_json(&exc),
-            Value::String("RuntimeError".into())
+            json!({
+                "__type": "exception",
+                "exc_type": "RuntimeError",
+                "message": null,
+            })
         );
     }
 
@@ -873,7 +982,7 @@ mod tests {
         let r = MontyObject::Repr("<object at 0x123>".into());
         assert_eq!(
             monty_object_to_json(&r),
-            Value::String("<object at 0x123>".into())
+            json!({"__type": "repr", "text": "<object at 0x123>"})
         );
     }
 
@@ -1675,15 +1784,17 @@ mod tests {
     // --- BigInt (large values stay lossy — JSON has no big-int type) ---
 
     #[test]
-    fn rt_bigint_large_stays_lossy() {
+    fn rt_bigint_large_round_trips_exactly() {
+        // Was `rt_bigint_large_stays_lossy`, asserting MontyObject::String "by
+        // design — JSON has no native big-integer type". The premise was true and
+        // the conclusion was not: JSON has no big-integer type, but the envelope
+        // says what the text means, so nothing is lost. core#134.
         let n = BigInt::parse_bytes(b"99999999999999999999999", 10).unwrap();
-        let obj = MontyObject::BigInt(n);
-        let back = round_trip(&obj);
-        // This stays lossy by design — JSON has no native big-integer type.
-        assert!(
-            matches!(back, MontyObject::String(_)),
-            "large BigInt stays lossy (String): got {back:?}"
-        );
+        let obj = MontyObject::BigInt(n.clone());
+        match round_trip(&obj) {
+            MontyObject::BigInt(back) => assert_eq!(back, n, "exact digits"),
+            other => panic!("expected BigInt, got {other:?}"),
+        }
     }
 
     // --- Representational types (not data, just display) ---
@@ -1748,7 +1859,7 @@ mod tests {
         // that no oracle comparison could flag.
         let a = monty_object_to_json(&MontyObject::Cycle(0, "[...]".into()));
         let b = monty_object_to_json(&MontyObject::Cycle(999_999, "[...]".into()));
-        assert_eq!(a, Value::String("[...]".into()));
+        assert_eq!(a, json!({"__type": "cycle", "text": "[...]"}));
         assert_eq!(a, b, "the id field must not affect JSON output");
     }
 
@@ -1761,7 +1872,10 @@ mod tests {
         // changed — the tautology this control exists to avoid. Verified against
         // the interpreter: `type(True)` marshals to "bool".
         let obj = MontyObject::Type(monty_types::MontyType::Bool);
-        assert_eq!(monty_object_to_json(&obj), Value::String("bool".into()));
+        assert_eq!(
+            monty_object_to_json(&obj),
+            json!({"__type": "type", "text": "bool"})
+        );
     }
 
     #[test]
@@ -1769,39 +1883,123 @@ mod tests {
         // Literal for the same reason as the Type test above: recomputing the
         // Debug impl under test would make the assertion unfalsifiable.
         let obj = MontyObject::BuiltinFunction(monty_types::BuiltinsFunctions::Abs);
-        assert_eq!(monty_object_to_json(&obj), Value::String("Abs".into()));
+        // "abs", not "Abs". Debug printed Rust's variant name, so the wire
+        // carried a Rust identifier where a reader expects the Python name.
+        assert_eq!(
+            monty_object_to_json(&obj),
+            json!({"__type": "builtin", "text": "abs"})
+        );
     }
 
     #[test]
-    fn rt_function_becomes_string() {
+    fn a_function_is_tagged_and_refused_on_the_way_back() {
+        // Was `rt_function_becomes_string`. Two changes: the wire says `function`
+        // rather than handing over a bare string, and sending one back is now an
+        // ERROR instead of silently becoming a str. A rendering of a callable is
+        // not a callable, and approximating one is the class of bug Tier 1 and
+        // Tier 2 exist to remove.
         let obj = MontyObject::Function {
             name: "my_func".into(),
             docstring: Some("does stuff".into()),
         };
-        match round_trip(&obj) {
-            MontyObject::String(s) => assert_eq!(s, "<function my_func>"),
-            other => panic!("Function round-trips as String: got {other:?}"),
-        }
+        let json = monty_object_to_json(&obj);
+        assert_eq!(
+            json,
+            json!({"__type": "function", "text": "<function my_func>"})
+        );
+
+        let err = json_to_monty_object(&json).expect_err("must not decode");
+        assert!(err.contains("cannot be sent back"), "message: {err}");
     }
 
     #[test]
-    fn rt_exception_becomes_string() {
+    fn rt_exception_round_trips_as_an_exception() {
+        // Was `rt_exception_becomes_string`, asserting "ValueError: bad" — the
+        // exact bytes of the STRING "ValueError: bad". Nothing downstream could
+        // tell an exception from prose describing one.
         let obj = MontyObject::Exception {
             exc_type: monty_types::ExcType::ValueError,
             arg: Some("bad".into()),
         };
         match round_trip(&obj) {
-            MontyObject::String(s) => assert_eq!(s, "ValueError: bad"),
-            other => panic!("Exception round-trips as String: got {other:?}"),
+            MontyObject::Exception { exc_type, arg } => {
+                assert_eq!(exc_type, monty_types::ExcType::ValueError);
+                assert_eq!(arg.as_deref(), Some("bad"));
+            }
+            other => panic!("expected Exception, got {other:?}"),
+        }
+    }
+
+    /// A message containing ": " survives, which the joined form could not.
+    #[test]
+    fn rt_exception_message_with_colon_space() {
+        let obj = MontyObject::Exception {
+            exc_type: monty_types::ExcType::ValueError,
+            arg: Some("expected: got 3".into()),
+        };
+        match round_trip(&obj) {
+            MontyObject::Exception { arg, .. } => {
+                assert_eq!(arg.as_deref(), Some("expected: got 3"));
+            }
+            other => panic!("expected Exception, got {other:?}"),
         }
     }
 
     #[test]
-    fn rt_repr_becomes_string() {
+    fn an_exception_and_a_string_that_looks_like_one_differ_on_the_wire() {
+        // The clearest single statement of what Tier 2 fixed.
+        let exc = monty_object_to_json(&MontyObject::Exception {
+            exc_type: monty_types::ExcType::ValueError,
+            arg: Some("boom".into()),
+        });
+        let text = monty_object_to_json(&MontyObject::String("ValueError: boom".into()));
+        assert_ne!(exc, text, "these used to be byte-identical");
+    }
+
+    #[test]
+    fn a_repr_is_tagged_and_refused_on_the_way_back() {
         let obj = MontyObject::Repr("<object>".into());
+        let json = monty_object_to_json(&obj);
+        assert_eq!(json, json!({"__type": "repr", "text": "<object>"}));
+        assert!(
+            json_to_monty_object(&json)
+                .expect_err("must not decode")
+                .contains("cannot be sent back")
+        );
+    }
+
+    #[test]
+    fn a_builtin_round_trips_by_its_python_name() {
+        let obj = MontyObject::BuiltinFunction(monty_types::BuiltinsFunctions::Abs);
         match round_trip(&obj) {
-            MontyObject::String(s) => assert_eq!(s, "<object>"),
-            other => panic!("Repr round-trips as String: got {other:?}"),
+            MontyObject::BuiltinFunction(f) => {
+                assert_eq!(f, monty_types::BuiltinsFunctions::Abs);
+            }
+            other => panic!("expected BuiltinFunction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_finite_floats_round_trip_and_the_string_nan_stays_a_string() {
+        for f in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            match round_trip(&MontyObject::Float(f)) {
+                MontyObject::Float(back) => {
+                    // Compared by PROPERTY, not by `==`: clippy forbids strict
+                    // float comparison, and NaN != NaN would make an equality
+                    // assertion wrong here anyway.
+                    assert_eq!(back.is_nan(), f.is_nan(), "nan-ness of {f}");
+                    assert_eq!(back.is_infinite(), f.is_infinite(), "infinity of {f}");
+                    assert_eq!(back.is_sign_negative(), f.is_sign_negative(), "sign of {f}");
+                }
+                other => panic!("expected Float for {f}, got {other:?}"),
+            }
+        }
+
+        // The other half of the same defect: these are DIFFERENT values and used
+        // to share one wire representation.
+        match round_trip(&MontyObject::String("NaN".into())) {
+            MontyObject::String(s) => assert_eq!(s, "NaN"),
+            other => panic!("the string \"NaN\" must stay a string, got {other:?}"),
         }
     }
 

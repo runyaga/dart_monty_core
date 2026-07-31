@@ -115,10 +115,22 @@ void main() {
       );
     });
 
-    test('toJson encodes specials as strings', () {
-      expect(const MontyFloat(double.nan).toJson(), 'NaN');
-      expect(const MontyFloat(double.infinity).toJson(), 'Infinity');
-      expect(const MontyFloat(double.negativeInfinity).toJson(), '-Infinity');
+    test('toJson encodes the non-finite forms as tagged envelopes', () {
+      expect(const MontyFloat(double.nan).toJson(), {
+        '__type': 'float',
+        'value': 'NaN',
+      });
+      expect(const MontyFloat(double.infinity).toJson(), {
+        '__type': 'float',
+        'value': 'Infinity',
+      });
+      // Wire v3: the non-finite forms are TAGGED. They used to be bare strings,
+      // which is why the str "NaN" decoded as a float.
+      expect(const MontyFloat(double.negativeInfinity).toJson(), {
+        '__type': 'float',
+        'value': '-Infinity',
+      });
+      // A finite float is still a plain JSON number.
       expect(const MontyFloat(3.14).toJson(), 3.14);
     });
 
@@ -149,16 +161,32 @@ void main() {
       _expectRoundTrip(const MontyString('unicode: π α 🎉'));
     });
 
-    test(
-      'special-float strings are NOT mistaken for strings on round-trip',
-      () {
-        // NaN-as-string is parsed back as MontyFloat by fromJson — that's the
-        // intended escape encoding. A genuine MontyString('NaN') would
-        // round-trip differently. Document the limit:
-        final got = MontyValue.fromJson(const MontyString('NaN').toJson());
+    test('the string "NaN" round-trips as a STRING', () {
+      // Was: 'special-float strings are NOT mistaken for strings on
+      // round-trip', asserting isA<MontyFloat>() and calling the collision "the
+      // intended escape encoding" while documenting it as a limit. It was a
+      // defect: `float('nan')` and the str `"NaN"` had one wire representation,
+      // so the decoder had to guess and guessed wrong half the time. Non-finite
+      // floats now carry a `float` envelope, and a bare string is a `str`.
+      for (final text in ['NaN', 'Infinity', '-Infinity']) {
+        expect(
+          MontyValue.fromJson(MontyString(text).toJson()),
+          MontyString(text),
+          reason: 'the STRING "$text" must survive as a string',
+        );
+      }
+    });
+
+    test('non-finite floats round-trip as floats', () {
+      for (final d in [double.nan, double.infinity, double.negativeInfinity]) {
+        final got = MontyValue.fromJson(MontyFloat(d).toJson());
         expect(got, isA<MontyFloat>());
-      },
-    );
+        final f = (got as MontyFloat).value;
+        expect(f.isNaN, d.isNaN);
+        expect(f.isInfinite, d.isInfinite);
+        expect(f.isNegative, d.isNegative);
+      }
+    });
   });
 
   // ------------------------------------------------------------------
@@ -677,15 +705,25 @@ void main() {
       expect(MontyValue.fromJson('hi'), const MontyString('hi'));
     });
 
-    test('special-float marker strings → MontyFloat', () {
-      expect(MontyValue.fromJson('NaN'), isA<MontyFloat>());
+    test('a bare marker string is a STRING, not a float', () {
+      // Was 'special-float marker strings → MontyFloat'. Rule R2: a bare JSON
+      // string means `str`. The floats themselves arrive tagged.
+      expect(MontyValue.fromJson('NaN'), const MontyString('NaN'));
+      expect(MontyValue.fromJson('Infinity'), const MontyString('Infinity'));
+      expect(MontyValue.fromJson('-Infinity'), const MontyString('-Infinity'));
+
       expect(
-        MontyValue.fromJson('Infinity'),
+        MontyValue.fromJson({'__type': 'float', 'value': 'Infinity'}),
         const MontyFloat(double.infinity),
       );
+    });
+
+    test('a tagged float carrying a finite value is REJECTED', () {
+      // Only the non-finite forms travel tagged; anything else means the
+      // payload did not come from this encoder.
       expect(
-        MontyValue.fromJson('-Infinity'),
-        const MontyFloat(double.negativeInfinity),
+        () => MontyValue.fromJson({'__type': 'float', 'value': '1.5'}),
+        throwsA(isA<FormatException>()),
       );
     });
 

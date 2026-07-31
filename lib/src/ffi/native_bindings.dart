@@ -91,7 +91,7 @@ final class ProgressResult {
 /// tree yields different bytes — so `git diff` on the blob cannot tell you
 /// whether the asset matches the crate. A version integer can, and a mismatch
 /// then fails loudly at init instead of mis-decoding values later.
-const int expectedWireFormatVersion = 2;
+const int expectedWireFormatVersion = 3;
 
 /// Thrown at init when the native library's wire format does not match
 /// [expectedWireFormatVersion].

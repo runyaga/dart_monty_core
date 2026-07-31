@@ -68,12 +68,13 @@ void runControlDTests() {
       expect((await eval('2**62')).dartValue, 4611686018427387904);
     });
 
-    test('BigInt beyond i64 -> string (both branches of the arm)', () async {
-      // The documented rule is "number if fits i64, else string". This is the
-      // else-branch; the case above is the then-branch.
+    test('BigInt beyond i64 -> BigInt (both branches of the arm)', () async {
+      // The rule WAS "number if fits i64, else string", and the else-branch is
+      // what core#134 was: a value's type depended on its magnitude. It is now
+      // "number if fits i64, else a tagged bigint carrying exact digits".
       expect(
         (await eval('2**80')).dartValue,
-        '1208925819614629174706176',
+        BigInt.parse('1208925819614629174706176'),
       );
     });
 

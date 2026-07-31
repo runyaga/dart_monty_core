@@ -91,10 +91,18 @@ final class MontyFloat extends MontyValue {
 
   @override
   Object toJson() {
-    if (value.isNaN) return 'NaN';
-    if (value == double.infinity) return 'Infinity';
-    if (value == double.negativeInfinity) return '-Infinity';
+    // The non-finite forms have no JSON number representation, so they travel
+    // as TAGGED text. They used to be bare strings, which made them
+    // indistinguishable from the Python strings "NaN"/"Infinity"/"-Infinity" —
+    // and the decoder resolved that ambiguity by guessing float, so a genuine
+    // string was silently converted (wire v3 / rule R2).
+    if (value.isNaN) return _nonFinite('NaN');
+    if (value == double.infinity) return _nonFinite('Infinity');
+    if (value == double.negativeInfinity) return _nonFinite('-Infinity');
 
+    // A finite float stays a plain JSON number. Tier 3 will envelope these too,
+    // for the int/float and signed-zero distinctions the web transport
+    // destroys (core#128).
     return value;
   }
 
@@ -115,6 +123,11 @@ final class MontyFloat extends MontyValue {
 
   @override
   String toString() => 'MontyFloat($value)';
+
+  static Map<String, Object?> _nonFinite(String text) => {
+    '__type': 'float',
+    'value': text,
+  };
 }
 
 /// Represents a Python `str` value.
@@ -141,4 +154,115 @@ final class MontyString extends MontyValue {
 
   @override
   String toString() => 'MontyString($value)';
+}
+
+/// Represents a Python `int` too large for a Dart `int` (i.e. beyond i64).
+///
+/// Python integers are unbounded; JSON numbers and Dart `int`s are not. Such a
+/// value travels as `{"__type": "bigint", "value": "<digits>"}` — the digits as
+/// text, because no JSON number can hold them — and arrives here as an exact
+/// [BigInt].
+///
+/// Before wire format v2 it arrived as a [MontyString], so a value's Dart TYPE
+/// depended on its MAGNITUDE: `2**62` was a [MontyInt] and `2**63` was a string
+/// (core#134). Nothing in the type system hinted that the boundary existed.
+///
+/// Note this variant only appears BEYOND the i64 range. Values that fit stay
+/// [MontyInt], because widening every integer to [BigInt] would cost every
+/// consumer an unwrap for a case that almost never occurs.
+@immutable
+final class MontyBigInt extends MontyValue {
+  /// Creates a [MontyBigInt] with the given [value].
+  const MontyBigInt(this.value);
+
+  factory MontyBigInt._fromMap(Map<String, dynamic> map) {
+    final raw = map['value'];
+    final parsed = raw is String ? BigInt.tryParse(raw) : null;
+    if (parsed == null) {
+      throw FormatException(
+        'a bigint envelope needs base-10 digits as a string under "value"; '
+        'got ${raw.runtimeType}',
+        json.encode(map),
+      );
+    }
+
+    return MontyBigInt(parsed);
+  }
+
+  /// The exact integer value.
+  final BigInt value;
+
+  @override
+  Map<String, Object?> toJson() => {
+    '__type': 'bigint',
+    'value': value.toString(),
+  };
+
+  @override
+  BigInt get dartValue => value;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || (other is MontyBigInt && other.value == value);
+
+  @override
+  int get hashCode => value.hashCode;
+
+  @override
+  String toString() => 'MontyBigInt($value)';
+}
+
+/// Represents a Python exception object travelling as a VALUE.
+///
+/// Not to be confused with `MontyException`, which is the Dart exception this
+/// package THROWS when the interpreter fails. This is what you get when Python
+/// hands an exception back as data — `return ValueError("boom")`, or an
+/// exception caught and returned.
+///
+/// It travels as `{"__type": "exception", "exc_type": "ValueError",
+/// "message": "boom"}`. Before wire format v2 it was the bare string
+/// `"ValueError: boom"` — **byte-identical to the Python string of the same
+/// text**, so nothing downstream could tell an exception from prose describing
+/// one. Joining the two halves with `": "` was also unrecoverable whenever the
+/// message itself contained `": "`.
+@immutable
+final class MontyExceptionValue extends MontyValue {
+  /// Creates a [MontyExceptionValue].
+  const MontyExceptionValue({required this.excType, this.message});
+
+  factory MontyExceptionValue._fromMap(Map<String, dynamic> map) =>
+      MontyExceptionValue(
+        excType: map['exc_type'] as String? ?? '',
+        message: map['message'] as String?,
+      );
+
+  /// The Python exception class name, e.g. `'ValueError'`.
+  final String excType;
+
+  /// The exception's argument, when it has one.
+  final String? message;
+
+  @override
+  Map<String, Object?> toJson() => {
+    '__type': 'exception',
+    'exc_type': excType,
+    'message': message,
+  };
+
+  @override
+  Map<String, Object?> get dartValue => toJson();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyExceptionValue &&
+          other.excType == excType &&
+          other.message == message);
+
+  @override
+  int get hashCode => Object.hash(excType, message);
+
+  @override
+  String toString() =>
+      'MontyExceptionValue($excType${message == null ? '' : ': $message'})';
 }

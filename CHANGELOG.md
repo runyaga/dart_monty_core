@@ -9,6 +9,46 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **A bare JSON string now means Python `str` and nothing else (#134 + four
+  more).** Seven value types used to collapse onto a bare string, so a value's
+  Dart type depended on whether some *other* type happened to produce the same
+  characters. Each now travels tagged:
+
+  | Python | was | now |
+  |---|---|---|
+  | `2**63` (beyond i64) | `MontyString` | **`MontyBigInt`** (exact `BigInt`) |
+  | `ValueError("boom")` | `MontyString('ValueError: boom')` | **`MontyExceptionValue`** |
+  | `float('nan')`, `inf`, `-inf` | `MontyString('NaN')` … | `MontyFloat` (tagged on the wire) |
+  | `int` (a class) | `MontyString('int')` | **`MontyOpaque(type, 'int')`** |
+  | `abs` | `MontyString('Abs')` ← Rust `Debug`! | **`MontyOpaque(builtin, 'abs')`** |
+  | an object's `repr()` | `MontyString` | **`MontyOpaque(repr, …)`** |
+  | a cycle marker `[...]` | `MontyString('[...]')` | **`MontyOpaque(cycle, '[...]')`** |
+
+  Two of these were worse than lossy. `ValueError("boom")` was **byte-identical**
+  to the Python string `"ValueError: boom"`, so nothing downstream could tell an
+  exception from prose describing one — and a message containing `": "` could not
+  be recovered at all. And `abs` arrived as `"Abs"`, Rust's `Debug` rendering of
+  an internal enum, where every reader would expect the Python name.
+
+  The string `"NaN"` is now a string. It used to decode as `MontyFloat(NaN)`,
+  because non-finite floats travelled as bare text and the decoder parsed any
+  string that looked like one.
+
+  **Three new variants on the sealed `MontyValue`** — `MontyBigInt`,
+  `MontyExceptionValue`, `MontyOpaque` — so exhaustive `switch`es stop compiling
+  until each gains an arm. Loud, and the analyzer names every site.
+
+  `MontyExceptionValue` is deliberately *not* called `MontyException`: that name
+  is already the exception this package THROWS. Reusing it would leave
+  `catch (e) { if (e is MontyException) }` compiling and silently never matching.
+
+- **`MontyOpaque` cannot be sent back into the interpreter.** `type`, `function`,
+  `repr` and `cycle` are host-side renderings, not constructible values, so
+  decoding one is an error rather than an approximation. `builtin` is the
+  exception — its Python name identifies it, so it round-trips exactly.
+
+- **Wire format is now 3.** Asserted at init on both backends.
+
 - **Sandbox escape fixed: sandboxed Python could mint any host type (#136).**
   Returning the plain dict `{"__type": "path", "value": "/etc/passwd"}` from
   Python arrived in Dart as a genuine `MontyPath` — untrusted code choosing its

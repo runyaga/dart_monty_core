@@ -24,6 +24,7 @@ String montyTypeName(MontyValue v) => switch (v) {
   MontyNone() => 'none',
   MontyBool() => 'bool',
   MontyInt() => 'int',
+  MontyBigInt() => 'bigint',
   MontyFloat() => 'float',
   MontyString() => 'str',
   MontyBytes() => 'bytes',
@@ -44,4 +45,8 @@ String montyTypeName(MontyValue v) => switch (v) {
   MontyFileHandle() => 'filehandle',
   MontyDataclass() => 'dataclass',
   MontyEllipsis() => 'ellipsis',
+  MontyExceptionValue() => 'exception',
+  // The five opaque kinds each keep their own contract tag, which is why the
+  // variant carries a typed kind rather than collapsing them.
+  MontyOpaque(:final kind) => kind.wireTag,
 };

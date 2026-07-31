@@ -259,12 +259,11 @@ fn type_return_via_python() {
 
     let json_str = unsafe { read_c_string(result_json) };
     let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    // Type variant returns format!("{t}") which should contain "int"
-    let val = parsed["value"].as_str().unwrap();
-    assert!(
-        val.contains("int"),
-        "expected 'int' in type string, got: {val}"
-    );
+    // Tier 2: a type is tagged. It used to be a bare string, indistinguishable
+    // from the str "int".
+    assert_eq!(parsed["value"]["__type"], "type");
+    let val = parsed["value"]["text"].as_str().unwrap();
+    assert_eq!(val, "int", "the Python-visible type name");
 
     if !error_msg.is_null() {
         unsafe { monty_string_free(error_msg) };
@@ -292,8 +291,10 @@ fn builtin_fn_return_via_python() {
 
     let json_str = unsafe { read_c_string(result_json) };
     let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    // BuiltinFunction variant returns format!("{f:?}")
-    assert!(parsed["value"].is_string());
+    // Tier 2: a builtin is tagged and carries its PYTHON name. It used to be a
+    // bare string holding Rust's Debug rendering, so `len` arrived as "Len".
+    assert_eq!(parsed["value"]["__type"], "builtin");
+    assert_eq!(parsed["value"]["text"], "len");
 
     if !error_msg.is_null() {
         unsafe { monty_string_free(error_msg) };

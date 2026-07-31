@@ -29,7 +29,11 @@ String montyRepr(MontyValue v) => switch (v) {
   MontyNone() => 'None',
   MontyEllipsis() => 'Ellipsis',
   MontyBool(:final value) => value ? 'True' : 'False',
-  MontyInt(:final value) => value.toString(),
+  // An int and a bigint render identically — CPython prints bare digits for
+  // both, and the only difference is which side of i64 the value falls on.
+  // Bound through `dartValue` rather than each variant's `value` field because
+  // the two are `int` and `BigInt`, which an or-pattern cannot unify.
+  MontyInt() || MontyBigInt() => '${v.dartValue}',
   MontyFloat(:final value) => _floatRepr(value),
   MontyString(:final value) => _strRepr(value),
   MontyBytes(:final value) => _bytesRepr(value),
@@ -45,6 +49,20 @@ String montyRepr(MontyValue v) => switch (v) {
   MontyFrozenSet(:final items) =>
     'frozenset({${items.map(montyRepr).join(', ')}})',
   MontyDict(:final entries) => _dictRepr(entries),
+  // ---- Tier 2 variants ----------------------------------------------------
+  // Each rendering was MEASURED against monty's own repr(), not guessed:
+  //   repr(2**63)              = 9223372036854775808  (with MontyInt, above)
+  //   repr(ValueError("boom")) = ValueError('boom')
+  //   repr(int)               = <class 'int'>
+  //   repr(abs)               = <built-in function abs>
+  MontyExceptionValue(:final excType, :final message) =>
+    message == null ? '$excType()' : '$excType(${_strRepr(message)})',
+  // The wire carries the NAME for a type and a builtin, and CPython's repr
+  // wraps it. For `repr` and `cycle` the text already IS the rendering.
+  MontyOpaque(kind: MontyOpaqueKind.type, :final text) => "<class '$text'>",
+  MontyOpaque(kind: MontyOpaqueKind.builtin, :final text) =>
+    '<built-in function $text>',
+  MontyOpaque(:final text) => text,
   // Non-string-key dicts (the `entries` envelope, Tier 1). CPython renders them
   // exactly like any other dict — `{1: 'a'}` — so the keys go through the same
   // renderer as the values rather than being stringified.

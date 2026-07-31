@@ -16,6 +16,8 @@
 //
 // Returns null when the fixture must be skipped.
 
+import 'package:dart_monty_core/dart_monty_core.dart';
+
 sealed class FixtureExpectation {
   const FixtureExpectation();
 }
@@ -199,10 +201,9 @@ ExpectRaise? _parseTracebackDocstring(String source) {
 Object? _parseReturnValue(String raw) {
   final trimmed = raw.trim();
 
-  // Nested list/dict reprs (only the cyclic fixtures use these). A bracket
-  // pair containing just `...` is the cycle marker, which the engine
-  // serialises as the placeholder string `[...]` / `{...}` — so parsing it to
-  // that same string makes structural comparison match.
+  // Nested list/dict reprs (only the cyclic fixtures use these). A bracket pair
+  // containing just `...` is the cycle marker, which the engine serialises as a
+  // tagged `cycle` envelope, so it parses to the matching typed value.
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     final parser = _ReprParser(trimmed);
     final value = parser.tryParse();
@@ -234,7 +235,8 @@ Object? _parseScalarRepr(String raw) {
 
 /// Minimal recursive-descent parser for the Python-repr subset used in
 /// `# Return=` directives: nested lists/dicts, scalars, and the cycle
-/// markers `[...]` / `{...}` (emitted as their placeholder strings).
+/// markers `[...]` / `{...}`, which become `MontyOpaque(cycle, …)` since wire
+/// format v3 gave the cycle marker its own type.
 class _ReprParser {
   _ReprParser(this._s);
 
@@ -270,12 +272,16 @@ class _ReprParser {
     _i++; // consume the already-matched opening bracket
     _skipSpace();
     if (_peek() == '.') {
-      // `...` cycle marker → placeholder string.
+      // `...` is the cycle marker. Since wire format v3 the engine sends it as
+      // `{"__type":"cycle","text":"[...]"}` rather than the bare string
+      // `[...]`, so the expectation must be the typed value, or comparison
+      // fails with two values that PRINT identically — how this was found:
+      //   "expected MontyList(1 items), got MontyList(1 items)"
       if (!_consume('...')) return null;
       _skipSpace();
       if (!_consume(close)) return null;
 
-      return marker;
+      return MontyOpaque(MontyOpaqueKind.cycle, marker);
     }
     final list = <Object?>[];
     final map = <String, Object?>{};

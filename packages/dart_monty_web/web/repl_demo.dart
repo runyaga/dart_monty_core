@@ -958,6 +958,13 @@ String _fmt(MontyValue v) => switch (v) {
   // point of the variant is that they are typed values, not labels.
   MontyPairsDict(:final pairs) =>
     '{${pairs.take(20).map((p) => '${_fmt(p.$1)}: ${_fmt(p.$2)}').join(', ')}${pairs.length > 20 ? ', …' : ''}}',
+  // ---- Tier 2 variants (wire v3) ----------------------------------------
+  // These five all used to arrive as MontyString, so the demo rendered them
+  // without knowing what they were.
+  MontyBigInt(:final value) => '$value',
+  MontyExceptionValue(:final excType, :final message) =>
+    message == null ? '$excType()' : '$excType($message)',
+  MontyOpaque(:final text) => text,
   MontySet(:final items) => '{${items.map(_fmt).join(', ')}}',
   MontyFrozenSet(:final items) => 'frozenset({${items.map(_fmt).join(', ')}})',
   MontyDate(:final year, :final month, :final day) => '$year-$month-$day',
