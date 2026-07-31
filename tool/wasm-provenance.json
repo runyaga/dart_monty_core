@@ -1,5 +1,6 @@
 {
   "_comment": "Provenance for the committed WASM/JS assets in lib/assets/. Lives in tool/ (.pubignore'd) rather than lib/assets/ because it is DEVELOPMENT knowledge: consumers used to download it with the package and it told them nothing actionable. See docs/contributor/testing-runbook.md for why a git diff on the blob is uninformative.",
+  "_source_sha256_comment": "sha256 over native/src/**.rs, native/Cargo.{toml,lock} and js/src/**.js -- the INPUTS to the committed assets. The assets themselves are not byte-reproducible, so hashing them proves nothing; hashing what they are built from proves everything that matters. Updated by tool/prebuild.sh.",
   "assets": {
     "dart_monty_core_bridge.js": {
       "bytes": 19034,
@@ -15,5 +16,6 @@
     }
   },
   "monty_tag": "v0.0.19",
-  "native_commit": "f5610574158839b6e1c4fcb89d0b358ccc248a06"
+  "native_commit": "f5610574158839b6e1c4fcb89d0b358ccc248a06",
+  "source_sha256": "be501790caf9130363d3c03f05bef46b8e30e7efdb087ac06dec491fe80cfd9d"
 }

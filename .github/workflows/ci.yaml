@@ -106,6 +106,13 @@ jobs:
         run: |
           dart format --line-length=80 --set-exit-if-changed \
             lib/ test/ hook/ tool/
+      - name: Committed assets are not stale
+        # The wasm build is not byte-reproducible, so `git diff` on the blob
+        # cannot detect staleness. This hashes the SOURCES instead. Unlike
+        # WIRE_FORMAT_VERSION, which is hand-bumped, it is derived -- so it
+        # catches 'encoding changed, nobody bumped, nobody rebuilt', which
+        # the version handshake is blind to.
+        run: bash tool/check_asset_freshness.sh
       - name: Fixture corpus matches the pinned monty version
         # The corpus is a symlink into a monty checkout, so it silently drifts
         # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus

@@ -44,6 +44,12 @@ if [ -n "$CACHED" ] && [ -n "$(find native/src native/Cargo.toml -newer "$CACHED
   dart pub get >/dev/null 2>&1
 fi
 
+# The committed assets in lib/assets/ are build artefacts of native/src and
+# js/src, and the wasm build is NOT byte-reproducible, so `git diff` on the blob
+# cannot detect staleness. This hashes the SOURCES instead. It is the only layer
+# here that needs no human discipline: WIRE_FORMAT_VERSION is hand-bumped, so it
+# is blind to "encoding changed, nobody bumped, nobody rebuilt".
+s  asset_fresh   bash tool/check_asset_freshness.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
