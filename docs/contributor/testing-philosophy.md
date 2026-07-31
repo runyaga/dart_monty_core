@@ -34,6 +34,12 @@ suite now defends it. `Ellipsis` collapsed onto the string `"..."`, and tests
 asserted that collapse **as correct** — so the encoder was "right" by
 construction, and the defect outlived every one of 1062 passing fixtures.
 
+**At least six tests in this repo have done this**, and four still do:
+`rt_bigint_large_stays_lossy`, `rt_function_becomes_string`,
+`rt_exception_becomes_string`, `rt_repr_becomes_string`, plus the two `Ellipsis`
+assertions since inverted. This is a different and worse failure than a test that
+checks nothing: a silent test proves nothing, but these actively defend the bug.
+
 Expected values must come from somewhere the code cannot reach: the language
 spec, upstream's own output, a hand-computed constant.
 
@@ -65,9 +71,15 @@ here, monty's own `repr()`, computed upstream before our encoding runs.
 
 ### Why the bar is here
 
-Of **1593** registered fixture tests, **646 (41%)** asserted nothing at all: a
-bare `return` in the harness produced a passing test. One harness advertised 531
-green tests on the strength of 34 real assertions.
+Two distinct failures, and they need different responses.
+
+**Silence.** Of **1593** registered fixture tests, **646 (41%)** asserted nothing
+at all: a bare `return` in the harness produced a passing test. One harness
+advertised 531 green tests on the strength of 34 real assertions.
+
+**Inversion.** At least six tests asserted a known defect *as correct*. That is
+not a coverage gap — it is the suite treating a bug as the specification, and it
+is why fixing one required inverting tests rather than adding them.
 
 None of that was carelessness. Each was a reasonable-looking test that nobody
 had watched fail, checked the provenance of, or asked what its reference shared
