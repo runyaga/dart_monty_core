@@ -34,7 +34,13 @@ use monty_types::MontyObject;
 /// History:
 ///   1  0.19.0 — `Ellipsis` gained `{"__type":"ellipsis"}`; dict insertion
 ///                order preserved (core#129).
-pub const WIRE_FORMAT_VERSION: u32 = 1;
+///   2  0.19.0 — Tier 1: EVERY dict is a tagged envelope
+///                (`{"__type":"dict","value":{…}}`, or `"entries"` for
+///                non-string keys), and the decoder REJECTS both an untagged
+///                object and an unknown `__type` instead of guessing a dict.
+///                Closes core#136: a bare object was byte-identical to an
+///                envelope, so sandboxed Python could mint any host type.
+pub const WIRE_FORMAT_VERSION: u32 = 2;
 
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
@@ -79,7 +85,8 @@ use serde_json::{Number, Value, json};
 /// - `Float` → number
 /// - `String` → string
 /// - `List` → array
-/// - `Dict` → object (string keys) or array of `[k, v]` pairs
+/// - `Dict` → `{"__type": "dict", "value": {…}}` (string keys), or
+///   `{"__type": "dict", "entries": [[k, v], …]}` for any other key type
 /// - `Ellipsis` → `{"__type": "ellipsis"}`
 ///
 /// Types with no native JSON counterpart use a tagged envelope,
@@ -207,175 +214,223 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
     }
 }
 
+/// Message for an object arriving at a value position with no `__type`.
+///
+/// Kept as a constant because both this and the Dart decoder are asserted
+/// against it: after Tier 1 an untagged object is a protocol violation, not a
+/// dict, and a test that greps for the word "dict" in a passing decode would
+/// otherwise not notice the rule being quietly restored.
+const UNTAGGED_OBJECT_ERR: &str = "untagged JSON object at a value position: after wire format v2 every object \
+     carries a __type, and a dict is {\"__type\":\"dict\",\"value\":{...}}";
+
+/// Read `field` as a JSON array of values, defaulting to empty when absent.
+///
+/// Extracted because four arms (`tuple`, `set`, `frozenset`, `namedtuple`) had
+/// the identical `.as_array().map(...).unwrap_or_default()` block, and each now
+/// needs to propagate a decode failure rather than swallow it.
+fn json_array_to_objects(field: Option<&Value>) -> Result<Vec<MontyObject>, String> {
+    match field.and_then(|v| v.as_array()) {
+        Some(arr) => arr.iter().map(json_to_monty_object).collect(),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Decode the `dict` envelope's payload into pairs.
+///
+/// The whole of the core#136 fix lives in the two loops below: keys come from
+/// the payload's own key positions and values recurse, but the payload object is
+/// NEVER handed back to the `__type` dispatch. So a user dict containing the key
+/// `"__type"` is just a dict with an odd key, which is what Python said it was.
+fn dict_payload_to_pairs(map: &serde_json::Map<String, Value>) -> Result<MontyObject, String> {
+    if let Some(obj) = map.get("value").and_then(|v| v.as_object()) {
+        let pairs = obj
+            .iter()
+            .map(|(k, v)| Ok((MontyObject::String(k.clone()), json_to_monty_object(v)?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        return Ok(MontyObject::dict(pairs));
+    }
+
+    if let Some(arr) = map.get("entries").and_then(|v| v.as_array()) {
+        let mut pairs = Vec::with_capacity(arr.len());
+        for entry in arr {
+            match entry.as_array().map(std::vec::Vec::as_slice) {
+                Some([k, v]) => pairs.push((json_to_monty_object(k)?, json_to_monty_object(v)?)),
+                _ => {
+                    return Err(format!(
+                        "dict entries must each be a [key, value] pair, got {entry}"
+                    ));
+                }
+            }
+        }
+        return Ok(MontyObject::dict(pairs));
+    }
+
+    Err("dict envelope needs either \"value\" (string keys) or \"entries\" (any keys)".to_string())
+}
+
 /// Convert a JSON `Value` back to a `MontyObject` (for resume values).
-pub fn json_to_monty_object(val: &Value) -> MontyObject {
-    match val {
+///
+/// Fallible since wire format v2. It previously decoded an untagged object AND an
+/// unknown `__type` as a dict, which are the same forgery-shaped hole core#136
+/// describes, pointing the other way: anything the decoder does not recognise
+/// became a plausible value instead of a rejection. Rule R4 — the decoder rejects
+/// what it does not understand.
+pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
+    Ok(match val {
         Value::Null => MontyObject::None,
         Value::Bool(b) => MontyObject::Bool(*b),
         Value::Number(n) => number_to_monty_object(n),
         Value::String(s) => MontyObject::String(s.clone()),
-        Value::Array(items) => MontyObject::List(items.iter().map(json_to_monty_object).collect()),
+        Value::Array(items) => MontyObject::List(
+            items
+                .iter()
+                .map(json_to_monty_object)
+                .collect::<Result<Vec<_>, String>>()?,
+        ),
         Value::Object(map) => {
-            if let Some(type_str) = map.get("__type").and_then(|v| v.as_str()) {
-                match type_str {
-                    "date" => MontyObject::Date(monty_types::MontyDate {
-                        year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                        month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                        day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    }),
-                    "datetime" => MontyObject::DateTime(monty_types::MontyDateTime {
-                        year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                        month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                        day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                        hour: map["hour"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                        minute: map["minute"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                        second: map["second"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                        microsecond: map["microsecond"]
-                            .as_u64()
-                            .unwrap_or(0)
-                            .try_into()
-                            .unwrap_or(0),
-                        offset_seconds: map
-                            .get("offset_seconds")
-                            .and_then(serde_json::Value::as_i64)
-                            .map(|v| v.try_into().unwrap_or(0)),
-                        timezone_name: map
-                            .get("timezone_name")
-                            .and_then(|v| v.as_str())
-                            .map(std::string::ToString::to_string),
-                    }),
-                    "timedelta" => MontyObject::TimeDelta(monty_types::MontyTimeDelta {
-                        days: map["days"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                        seconds: map["seconds"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                        microseconds: map["microseconds"]
-                            .as_i64()
-                            .unwrap_or(0)
-                            .try_into()
-                            .unwrap_or(0),
-                    }),
-                    "timezone" => MontyObject::TimeZone(monty_types::MontyTimeZone {
-                        offset_seconds: map["offset_seconds"]
-                            .as_i64()
-                            .unwrap_or(0)
-                            .try_into()
-                            .unwrap_or(0),
-                        name: map
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .map(std::string::ToString::to_string),
-                    }),
-                    "path" => MontyObject::Path(map["value"].as_str().unwrap_or("").to_string()),
-                    "bytes" => MontyObject::Bytes(
-                        map["value"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .map(|v| v.as_u64().unwrap_or(0).try_into().unwrap_or(0))
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    ),
-                    "tuple" => MontyObject::Tuple(
-                        map["value"]
-                            .as_array()
-                            .map(|arr| arr.iter().map(json_to_monty_object).collect())
-                            .unwrap_or_default(),
-                    ),
-                    "set" => MontyObject::Set(
-                        map["value"]
-                            .as_array()
-                            .map(|arr| arr.iter().map(json_to_monty_object).collect())
-                            .unwrap_or_default(),
-                    ),
-                    "frozenset" => MontyObject::FrozenSet(
-                        map["value"]
-                            .as_array()
-                            .map(|arr| arr.iter().map(json_to_monty_object).collect())
-                            .unwrap_or_default(),
-                    ),
-                    "namedtuple" => MontyObject::NamedTuple {
-                        type_name: map["type_name"].as_str().unwrap_or("").to_string(),
-                        field_names: map["field_names"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .map(|v| v.as_str().unwrap_or("").to_string())
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                        values: map["values"]
-                            .as_array()
-                            .map(|arr| arr.iter().map(json_to_monty_object).collect())
-                            .unwrap_or_default(),
-                    },
-                    "dataclass" => MontyObject::Dataclass {
-                        name: map["name"].as_str().unwrap_or("").to_string(),
-                        type_id: map["type_id"].as_u64().unwrap_or(0),
-                        field_names: map["field_names"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .map(|v| v.as_str().unwrap_or("").to_string())
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                        attrs: match json_to_monty_object(
-                            &map.get("attrs").cloned().unwrap_or_else(|| json!({})),
-                        ) {
-                            MontyObject::Dict(pairs) => pairs,
-                            _ => vec![].into(),
-                        },
-                        frozen: map
-                            .get("frozen")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false),
-                    },
-                    "filehandle" => {
-                        // Host (OS handler) returns this for an `Open` call; the
-                        // interpreter turns it into the `OpenFile` heap wrapper.
-                        // Mode is the canonical open() string (`r`/`rb`/`w`/…);
-                        // the engine only ever emits modes that round-trip, so a
-                        // parse failure falls back to read-only text.
-                        let path = map
-                            .get("path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let position = map
-                            .get("position")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0);
-                        let mode = map
-                            .get("mode")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| s.parse::<monty_types::FileMode>().ok())
-                            .unwrap_or(monty_types::FileMode::Read(false));
-                        MontyObject::FileHandle(monty_types::MontyFileHandle {
-                            path,
-                            mode,
-                            position,
+            let Some(type_str) = map.get("__type").and_then(|v| v.as_str()) else {
+                return Err(UNTAGGED_OBJECT_ERR.to_string());
+            };
+            match type_str {
+                "dict" => dict_payload_to_pairs(map)?,
+                "date" => MontyObject::Date(monty_types::MontyDate {
+                    year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
+                    month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                }),
+                "datetime" => MontyObject::DateTime(monty_types::MontyDateTime {
+                    year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
+                    month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    hour: map["hour"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    minute: map["minute"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    second: map["second"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    microsecond: map["microsecond"]
+                        .as_u64()
+                        .unwrap_or(0)
+                        .try_into()
+                        .unwrap_or(0),
+                    offset_seconds: map
+                        .get("offset_seconds")
+                        .and_then(serde_json::Value::as_i64)
+                        .map(|v| v.try_into().unwrap_or(0)),
+                    timezone_name: map
+                        .get("timezone_name")
+                        .and_then(|v| v.as_str())
+                        .map(std::string::ToString::to_string),
+                }),
+                "timedelta" => MontyObject::TimeDelta(monty_types::MontyTimeDelta {
+                    days: map["days"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
+                    seconds: map["seconds"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
+                    microseconds: map["microseconds"]
+                        .as_i64()
+                        .unwrap_or(0)
+                        .try_into()
+                        .unwrap_or(0),
+                }),
+                "timezone" => MontyObject::TimeZone(monty_types::MontyTimeZone {
+                    offset_seconds: map["offset_seconds"]
+                        .as_i64()
+                        .unwrap_or(0)
+                        .try_into()
+                        .unwrap_or(0),
+                    name: map
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .map(std::string::ToString::to_string),
+                }),
+                "path" => MontyObject::Path(map["value"].as_str().unwrap_or("").to_string()),
+                "bytes" => MontyObject::Bytes(
+                    map["value"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|v| v.as_u64().unwrap_or(0).try_into().unwrap_or(0))
+                                .collect()
                         })
-                    }
-                    "ellipsis" => MontyObject::Ellipsis,
-                    _ => {
-                        // Unknown __type — fall through to dict
-                        let pairs: Vec<(MontyObject, MontyObject)> = map
-                            .iter()
-                            .map(|(k, v)| (MontyObject::String(k.clone()), json_to_monty_object(v)))
-                            .collect();
-                        MontyObject::dict(pairs)
-                    }
+                        .unwrap_or_default(),
+                ),
+                "tuple" => MontyObject::Tuple(json_array_to_objects(map.get("value"))?),
+                "set" => MontyObject::Set(json_array_to_objects(map.get("value"))?),
+                "frozenset" => MontyObject::FrozenSet(json_array_to_objects(map.get("value"))?),
+                "namedtuple" => MontyObject::NamedTuple {
+                    type_name: map["type_name"].as_str().unwrap_or("").to_string(),
+                    field_names: map["field_names"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|v| v.as_str().unwrap_or("").to_string())
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    values: json_array_to_objects(map.get("values"))?,
+                },
+                "dataclass" => MontyObject::Dataclass {
+                    name: map["name"].as_str().unwrap_or("").to_string(),
+                    type_id: map["type_id"].as_u64().unwrap_or(0),
+                    field_names: map["field_names"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|v| v.as_str().unwrap_or("").to_string())
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    // `attrs` is itself a dict envelope, because the encoder
+                    // routes it through dict_to_json. That uniformity is the
+                    // point: R1 holds with no "except inside dataclass" carve-out.
+                    attrs: match map.get("attrs") {
+                        Some(a) => match json_to_monty_object(a)? {
+                            MontyObject::Dict(pairs) => pairs,
+                            other => {
+                                return Err(format!(
+                                    "dataclass attrs must be a dict envelope, got {other:?}"
+                                ));
+                            }
+                        },
+                        None => vec![].into(),
+                    },
+                    frozen: map
+                        .get("frozen")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false),
+                },
+                "filehandle" => {
+                    // Host (OS handler) returns this for an `Open` call; the
+                    // interpreter turns it into the `OpenFile` heap wrapper.
+                    // Mode is the canonical open() string (`r`/`rb`/`w`/…);
+                    // the engine only ever emits modes that round-trip, so a
+                    // parse failure falls back to read-only text.
+                    let path = map
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let position = map
+                        .get("position")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
+                    let mode = map
+                        .get("mode")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<monty_types::FileMode>().ok())
+                        .unwrap_or(monty_types::FileMode::Read(false));
+                    MontyObject::FileHandle(monty_types::MontyFileHandle {
+                        path,
+                        mode,
+                        position,
+                    })
                 }
-            } else {
-                // No __type key — treat as dict (existing behavior)
-                let pairs: Vec<(MontyObject, MontyObject)> = map
-                    .iter()
-                    .map(|(k, v)| (MontyObject::String(k.clone()), json_to_monty_object(v)))
-                    .collect();
-                MontyObject::dict(pairs)
+                "ellipsis" => MontyObject::Ellipsis,
+                unknown => {
+                    return Err(format!(
+                        "unknown __type {unknown:?}: the decoder rejects what it does not \
+                         understand rather than guessing a dict (rule R4)"
+                    ));
+                }
             }
         }
-    }
+    })
 }
 
 fn bigint_to_json(n: &BigInt) -> Value {
@@ -409,6 +464,23 @@ fn number_to_monty_object(n: &Number) -> MontyObject {
     }
 }
 
+/// Encode a dict as a TAGGED envelope — never as a bare object or array.
+///
+/// This is rule R1 of `WIRE-CONTRACT.md`, and it is what closes core#136. A bare
+/// object was byte-identical to a tagged envelope, so sandboxed Python returning
+/// the plain dict `{"__type": "path", "value": "x"}` arrived in Dart as a genuine
+/// `MontyPath` — untrusted code choosing its own host type. Now user keys live
+/// inside `value`/`entries`, which the decoder reads as dict CONTENTS and never
+/// re-dispatches, so no arrangement of user data can name a type.
+///
+/// Two payload shapes, because Python dict keys are not restricted to strings:
+///
+/// - `{"__type": "dict", "value": {k: v}}`   — all keys are `str` (the common case)
+/// - `{"__type": "dict", "entries": [[k, v]]}` — any other key type
+///
+/// The `entries` form preserves key TYPES, which the old bare-array form also did
+/// — but that array decoded as a `MontyList`, silently turning a dict into a
+/// sequence. It now decodes as `MontyPairsDict`.
 fn dict_to_json(pairs: &monty_types::DictPairs) -> Value {
     // Collect pairs via the &DictPairs IntoIterator impl.
     let items: Vec<&(MontyObject, MontyObject)> = pairs.into_iter().collect();
@@ -427,14 +499,17 @@ fn dict_to_json(pairs: &monty_types::DictPairs) -> Value {
                 (key, monty_object_to_json(v))
             })
             .collect();
-        Value::Object(map)
+        json!({ "__type": "dict", "value": Value::Object(map) })
     } else {
-        Value::Array(
-            items
-                .into_iter()
-                .map(|(k, v)| json!([monty_object_to_json(k), monty_object_to_json(v)]))
-                .collect(),
-        )
+        json!({
+            "__type": "dict",
+            "entries": Value::Array(
+                items
+                    .into_iter()
+                    .map(|(k, v)| json!([monty_object_to_json(k), monty_object_to_json(v)]))
+                    .collect(),
+            ),
+        })
     }
 }
 
@@ -538,8 +613,10 @@ mod tests {
         ];
         let dict = MontyObject::dict(pairs);
         let val = monty_object_to_json(&dict);
-        assert_eq!(val["a"], json!(1));
-        assert_eq!(val["b"], json!(2));
+        // Wire v2: the tag belongs to the ENVELOPE and user keys live under
+        // `value`. Asserted on the whole object, not field-by-field, so a
+        // regression to a bare object cannot pass.
+        assert_eq!(val, json!({"__type": "dict", "value": {"a": 1, "b": 2}}));
     }
 
     #[test]
@@ -550,7 +627,12 @@ mod tests {
         ];
         let dict = MontyObject::dict(pairs);
         let val = monty_object_to_json(&dict);
-        assert_eq!(val, json!([[1, "a"], [2, "b"]]));
+        // Wire v2: was a bare array, which decoded as a MontyList — a dict
+        // silently becoming a sequence. Now tagged, and decodes as a dict.
+        assert_eq!(
+            val,
+            json!({"__type": "dict", "entries": [[1, "a"], [2, "b"]]})
+        );
     }
 
     #[test]
@@ -584,28 +666,28 @@ mod tests {
     fn test_round_trip_null() {
         let original = MontyObject::None;
         let json = monty_object_to_json(&original);
-        let back = json_to_monty_object(&json);
+        let back = json_to_monty_object(&json).expect("round-trip decode");
         assert!(matches!(back, MontyObject::None));
     }
 
     #[test]
     fn test_round_trip_bool() {
         let json = monty_object_to_json(&MontyObject::Bool(true));
-        let back = json_to_monty_object(&json);
+        let back = json_to_monty_object(&json).expect("round-trip decode");
         assert!(matches!(back, MontyObject::Bool(true)));
     }
 
     #[test]
     fn test_round_trip_int() {
         let json = monty_object_to_json(&MontyObject::Int(42));
-        let back = json_to_monty_object(&json);
+        let back = json_to_monty_object(&json).expect("round-trip decode");
         assert!(matches!(back, MontyObject::Int(42)));
     }
 
     #[test]
     fn test_round_trip_string() {
         let json = monty_object_to_json(&MontyObject::String("hello".into()));
-        let back = json_to_monty_object(&json);
+        let back = json_to_monty_object(&json).expect("round-trip decode");
         assert!(matches!(back, MontyObject::String(ref s) if s == "hello"));
     }
 
@@ -613,7 +695,7 @@ mod tests {
     fn test_round_trip_list() {
         let list = MontyObject::List(vec![MontyObject::Int(1), MontyObject::None]);
         let json = monty_object_to_json(&list);
-        let back = json_to_monty_object(&json);
+        let back = json_to_monty_object(&json).expect("round-trip decode");
         match back {
             MontyObject::List(items) => {
                 assert_eq!(items.len(), 2);
@@ -624,16 +706,102 @@ mod tests {
         }
     }
 
+    /// An untagged object is REJECTED as of wire format v2.
+    ///
+    /// This test previously asserted the opposite — that `{"key": "value"}`
+    /// decoded to a dict — and that behaviour is exactly core#136 pointed the
+    /// other way: anything unrecognised became a plausible value. Inverted
+    /// deliberately, not deleted, so the change of contract is visible in the
+    /// history of the test that used to pin it.
     #[test]
-    fn test_json_to_monty_object_object() {
-        let val = json!({"key": "value"});
-        let obj = json_to_monty_object(&val);
+    fn test_untagged_object_is_rejected() {
+        let err = json_to_monty_object(&json!({"key": "value"}))
+            .expect_err("an untagged object must not decode");
+        assert!(err.contains("untagged"), "unhelpful message: {err}");
+    }
+
+    #[test]
+    fn test_unknown_type_tag_is_rejected() {
+        let err = json_to_monty_object(&json!({"__type": "nope", "value": 1}))
+            .expect_err("an unknown __type must not decode");
+        assert!(err.contains("unknown __type"), "unhelpful message: {err}");
+    }
+
+    #[test]
+    fn test_dict_envelope_string_keys() {
+        let obj = json_to_monty_object(&json!({"__type": "dict", "value": {"key": "value"}}))
+            .expect("decode dict envelope");
         match obj {
             MontyObject::Dict(pairs) => {
                 let items: Vec<_> = pairs.into_iter().collect::<Vec<_>>();
                 assert_eq!(items.len(), 1);
             }
-            _ => panic!("expected dict"),
+            other => panic!("expected dict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_dict_envelope_entries_preserves_key_types() {
+        let obj = json_to_monty_object(&json!({
+            "__type": "dict",
+            "entries": [[1, "a"], [{"__type": "tuple", "value": [1, 2]}, "b"]],
+        }))
+        .expect("decode entries envelope");
+        match obj {
+            MontyObject::Dict(pairs) => {
+                let items: Vec<_> = pairs.into_iter().collect::<Vec<_>>();
+                assert_eq!(items.len(), 2);
+                assert!(matches!(items[0].0, MontyObject::Int(1)));
+                assert!(matches!(items[1].0, MontyObject::Tuple(_)));
+            }
+            other => panic!("expected dict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_malformed_dict_envelope_is_rejected() {
+        let err = json_to_monty_object(&json!({"__type": "dict"}))
+            .expect_err("a dict envelope with no payload must not decode");
+        assert!(
+            err.contains("value") && err.contains("entries"),
+            "msg: {err}"
+        );
+
+        let err = json_to_monty_object(&json!({"__type": "dict", "entries": [[1]]}))
+            .expect_err("a 1-element entry is not a [key, value] pair");
+        assert!(err.contains("pair"), "unhelpful message: {err}");
+    }
+
+    /// core#136, in the encoder's own terms: a Python dict whose KEYS spell a
+    /// type envelope must round-trip as a dict.
+    ///
+    /// Before Tier 1 the encoder emitted this dict as a bare object that was
+    /// byte-identical to a real `path` envelope, so the value changed type in
+    /// transit. Now the user's keys sit inside the payload, which the decoder
+    /// reads as contents and never re-dispatches.
+    #[test]
+    fn test_forged_type_envelope_stays_a_dict() {
+        let forged = MontyObject::dict(vec![
+            (
+                MontyObject::String("__type".into()),
+                MontyObject::String("path".into()),
+            ),
+            (
+                MontyObject::String("value".into()),
+                MontyObject::String("/etc/passwd".into()),
+            ),
+        ]);
+
+        let json = monty_object_to_json(&forged);
+        assert_eq!(json["__type"], "dict", "the ENVELOPE must own the tag");
+        assert_eq!(json["value"]["__type"], "path", "user keys stay in payload");
+
+        match json_to_monty_object(&json).expect("decode forged dict") {
+            MontyObject::Dict(pairs) => {
+                let items: Vec<_> = pairs.into_iter().collect::<Vec<_>>();
+                assert_eq!(items.len(), 2, "both user keys survive");
+            }
+            other => panic!("FORGERY: decoded as {other:?} instead of a dict"),
         }
     }
 
@@ -671,7 +839,9 @@ mod tests {
         let val = monty_object_to_json(&dc);
         assert_eq!(val["__type"], json!("dataclass"));
         assert_eq!(val["name"], json!("MyClass"));
-        assert_eq!(val["attrs"]["a"], json!(42));
+        // `attrs` is a dict, so it carries the dict envelope like any other —
+        // there is no "except inside dataclass" carve-out to remember.
+        assert_eq!(val["attrs"], json!({"__type": "dict", "value": {"a": 42}}));
     }
 
     #[test]
@@ -719,7 +889,7 @@ mod tests {
     #[test]
     fn test_json_to_monty_float() {
         let val = json!(3.125);
-        let obj = json_to_monty_object(&val);
+        let obj = json_to_monty_object(&val).expect("decode float");
         match obj {
             MontyObject::Float(f) => assert!((f - 3.125).abs() < f64::EPSILON),
             _ => panic!("expected Float"),
@@ -737,7 +907,7 @@ mod tests {
     /// Helper: serialize to JSON then deserialize back.
     fn round_trip(obj: &MontyObject) -> MontyObject {
         let json = monty_object_to_json(obj);
-        json_to_monty_object(&json)
+        json_to_monty_object(&json).expect("round-trip decode")
     }
 
     // --- Lossless round-trips (these work correctly) ---

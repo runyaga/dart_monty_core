@@ -96,45 +96,39 @@ Object? _dispatch(
   // get_list() → [1, 2, 3]
   'get_list' => [1, 2, 3],
   // make_point() → frozen Point(x=1, y=2)
-  'make_point' => {
-    '__type': 'dataclass',
-    'name': 'Point',
-    'type_id': 0,
-    'field_names': ['x', 'y'],
-    'attrs': {'x': 1, 'y': 2},
-    'frozen': true,
-  },
+  'make_point' => const MontyDataclass(
+    name: 'Point',
+    typeId: 0,
+    fieldNames: ['x', 'y'],
+    attrs: {'x': MontyInt(1), 'y': MontyInt(2)},
+    frozen: true,
+  ),
   // make_mutable_point() → mutable MutablePoint(x=1, y=2)
-  'make_mutable_point' => {
-    '__type': 'dataclass',
-    'name': 'MutablePoint',
-    'type_id': 0,
-    'field_names': ['x', 'y'],
-    'attrs': {'x': 1, 'y': 2},
-    'frozen': false,
-  },
+  'make_mutable_point' => const MontyDataclass(
+    name: 'MutablePoint',
+    typeId: 0,
+    fieldNames: ['x', 'y'],
+    attrs: {'x': MontyInt(1), 'y': MontyInt(2)},
+  ),
   // make_user(name: str) → frozen User(name=name, active=True)
   // Frozen so that hash(user) works (the fixture asserts hashability).
-  'make_user' => {
-    '__type': 'dataclass',
-    'name': 'User',
-    'type_id': 0,
-    'field_names': ['name', 'active'],
-    'attrs': {
-      'name': (args.first as MontyString).value,
-      'active': true,
+  'make_user' => MontyDataclass(
+    name: 'User',
+    typeId: 0,
+    fieldNames: const ['name', 'active'],
+    attrs: {
+      'name': args.first as MontyString,
+      'active': const MontyBool(true),
     },
-    'frozen': true,
-  },
+    frozen: true,
+  ),
   // make_empty() → mutable Empty() with no fields
-  'make_empty' => {
-    '__type': 'dataclass',
-    'name': 'Empty',
-    'type_id': 0,
-    'field_names': <String>[],
-    'attrs': <String, Object?>{},
-    'frozen': false,
-  },
+  'make_empty' => const MontyDataclass(
+    name: 'Empty',
+    typeId: 0,
+    fieldNames: [],
+    attrs: {},
+  ),
   // --- dataclass method calls (arguments[0] is self) ---
 
   // sum(self) → self.x + self.y
@@ -149,34 +143,32 @@ Object? _dispatch(
     final self = args.first as MontyDataclass;
     final dx = (args[1] as MontyInt).value;
     final dy = (args[2] as MontyInt).value;
-    return {
-      '__type': 'dataclass',
-      'name': self.name,
-      'type_id': self.typeId,
-      'field_names': ['x', 'y'],
-      'attrs': {
-        'x': (self.attrs['x']! as MontyInt).value + dx,
-        'y': (self.attrs['y']! as MontyInt).value + dy,
+    return MontyDataclass(
+      name: self.name,
+      typeId: self.typeId,
+      fieldNames: const ['x', 'y'],
+      attrs: {
+        'x': MontyInt((self.attrs['x']! as MontyInt).value + dx),
+        'y': MontyInt((self.attrs['y']! as MontyInt).value + dy),
       },
-      'frozen': self.frozen,
-    };
+      frozen: self.frozen,
+    );
   }(),
 
   // scale(self, factor) → new dataclass(x=self.x*factor, y=self.y*factor)
   'scale' => () {
     final self = args.first as MontyDataclass;
     final factor = (args[1] as MontyInt).value;
-    return {
-      '__type': 'dataclass',
-      'name': self.name,
-      'type_id': self.typeId,
-      'field_names': ['x', 'y'],
-      'attrs': {
-        'x': (self.attrs['x']! as MontyInt).value * factor,
-        'y': (self.attrs['y']! as MontyInt).value * factor,
+    return MontyDataclass(
+      name: self.name,
+      typeId: self.typeId,
+      fieldNames: const ['x', 'y'],
+      attrs: {
+        'x': MontyInt((self.attrs['x']! as MontyInt).value * factor),
+        'y': MontyInt((self.attrs['y']! as MontyInt).value * factor),
       },
-      'frozen': self.frozen,
-    };
+      frozen: self.frozen,
+    );
   }(),
 
   // describe(self, label) or describe(self, label=label)
@@ -301,7 +293,7 @@ final class _VirtualFs {
     return out;
   }
 
-  Map<String, Object?> stat(String p) {
+  MontyNamedTuple stat(String p) {
     int mode;
     int size;
     if (_files.containsKey(p)) {
@@ -320,10 +312,9 @@ final class _VirtualFs {
       );
     }
 
-    return {
-      '__type': 'namedtuple',
-      'type_name': 'os.stat_result',
-      'field_names': [
+    return MontyNamedTuple(
+      typeName: 'os.stat_result',
+      fieldNames: const [
         'st_mode',
         'st_ino',
         'st_dev',
@@ -335,8 +326,19 @@ final class _VirtualFs {
         'st_mtime',
         'st_ctime',
       ],
-      'values': [mode, 1, 1, 1, 0, 0, size, 0, 0, 0],
-    };
+      values: [
+        MontyInt(mode),
+        const MontyInt(1),
+        const MontyInt(1),
+        const MontyInt(1),
+        const MontyInt(0),
+        const MontyInt(0),
+        MontyInt(size),
+        const MontyInt(0),
+        const MontyInt(0),
+        const MontyInt(0),
+      ],
+    );
   }
 
   /// Writes text to [p] and returns the number of Unicode codepoints written.
@@ -385,7 +387,7 @@ final class _VirtualFs {
   /// existing file; `w`/`wb` truncate (creating if missing); `a`/`ab` create
   /// if missing, preserving content. The engine then drives reads/writes via
   /// `Path.read_text`/`write_text`/`append_text`.
-  Map<String, Object?> open(String p, String mode) {
+  MontyFileHandle open(String p, String mode) {
     if (_dirs.contains(p)) {
       throw _OsError(
         "[Errno 21] Is a directory: '$p'",
@@ -415,7 +417,7 @@ final class _VirtualFs {
       }
     }
 
-    return {'__type': 'filehandle', 'path': p, 'mode': mode, 'position': 0};
+    return MontyFileHandle(path: p, mode: mode);
   }
 
   /// Appends text to [p], returning the number of codepoints written.
@@ -674,38 +676,32 @@ Object? _osDispatch(
 
     // ---- datetime ----
     case 'date.today':
-      return {'__type': 'date', 'year': 2024, 'month': 1, 'day': 15};
+      return const MontyDate(year: 2024, month: 1, day: 15);
 
     case 'datetime.now':
       final tz = args.isNotEmpty ? args.first : const MontyNone();
       if (tz is MontyTimeZone) {
-        return {
-          '__type': 'datetime',
-          'year': 2024,
-          'month': 1,
-          'day': 15,
-          'hour': 10,
-          'minute': 30,
-          'second': 0,
-          'microsecond': 0,
-          'offset_seconds': tz.offsetSeconds,
-          'timezone_name': tz.name,
-        };
+        return MontyDateTime(
+          year: 2024,
+          month: 1,
+          day: 15,
+          hour: 10,
+          minute: 30,
+          second: 0,
+          offsetSeconds: tz.offsetSeconds,
+          timezoneName: tz.name,
+        );
       }
 
       // Naive datetime (no tz arg, or MontyNone)
-      return {
-        '__type': 'datetime',
-        'year': 2024,
-        'month': 1,
-        'day': 15,
-        'hour': 10,
-        'minute': 30,
-        'second': 0,
-        'microsecond': 0,
-        'offset_seconds': null,
-        'timezone_name': null,
-      };
+      return const MontyDateTime(
+        year: 2024,
+        month: 1,
+        day: 15,
+        hour: 10,
+        minute: 30,
+        second: 0,
+      );
 
     // ---- os.getenv ----
     case 'os.getenv':
@@ -786,7 +782,7 @@ Object? _osDispatch(
       // on-disk UTF-8 bytes (e.g. β → 0xCE 0xB2, not the UTF-16 unit 946).
       final b = c is String ? utf8.encode(c) : c as List<int>;
 
-      return {'__type': 'bytes', 'value': b};
+      return MontyBytes(b);
 
     // ---- Path write / mutate ----
     case 'Path.write_text':
@@ -861,21 +857,18 @@ Object? _osDispatch(
 
     // ---- Path iterdir ----
     case 'Path.iterdir':
-      return vfs
-          .iterdir(_pathStr(args.first))
-          .map((e) => {'__type': 'path', 'value': e})
-          .toList();
+      return vfs.iterdir(_pathStr(args.first)).map(MontyPath.new).toList();
 
     // ---- Path rename ----
     case 'Path.rename':
       final dst = vfs.rename(_pathStr(args.first), _pathStr(args[1]));
 
-      return {'__type': 'path', 'value': dst};
+      return MontyPath(dst);
 
     // ---- Path resolve / absolute ----
     case 'Path.resolve':
     case 'Path.absolute':
-      return {'__type': 'path', 'value': _pathStr(args.first)};
+      return MontyPath(_pathStr(args.first));
 
     default:
       throw StateError('Unsupported OS call: $op');

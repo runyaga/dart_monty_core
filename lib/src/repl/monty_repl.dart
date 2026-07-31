@@ -276,9 +276,12 @@ class MontyRepl {
   /// Resumes a paused execution with [returnValue].
   Future<MontyProgress> resume(Object? returnValue) async {
     _checkNotDisposed();
-    final json = returnValue != null ? jsonEncode(returnValue) : 'null';
+    // The null special-case is gone: fromDart(null) is MontyNone, whose
+    // toJson() is null, which encodes to the same 'null'.
 
-    return _translateProgress(await _bindings.resume(json));
+    return _translateProgress(
+      await _bindings.resume(MontyValue.encodeForWire(returnValue)),
+    );
   }
 
   /// Resumes a paused execution by raising [errorMessage] in Python.
@@ -343,8 +346,14 @@ class MontyRepl {
     Map<int, String>? errors,
   }) async {
     _checkNotDisposed();
+    // The OUTER map is protocol framing (call_id -> value), so it stays a bare
+    // JSON object; each VALUE goes through the encoder like any other. This was
+    // the sixth raw-encode site, found by the strict decoder rejecting what it
+    // sent rather than by reading the code.
     final resultsJson = jsonEncode(
-      results.map((k, v) => MapEntry(k.toString(), v)),
+      results.map(
+        (k, v) => MapEntry(k.toString(), MontyValue.fromDart(v).toJson()),
+      ),
     );
     final errorsJson = errors != null
         ? jsonEncode(errors.map((k, v) => MapEntry(k.toString(), v)))

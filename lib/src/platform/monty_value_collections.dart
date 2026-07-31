@@ -106,12 +106,33 @@ final class MontyDict extends MontyValue {
   /// Creates a [MontyDict] with the given [entries].
   const MontyDict(this.entries);
 
+  factory MontyDict._fromMap(Map<String, dynamic> map) {
+    final payload = map['value'];
+    if (payload is! Map<String, dynamic>) {
+      throw FormatException(
+        'a dict envelope needs an object under "value"; got '
+        '${payload.runtimeType}. Non-string keys travel under "entries" and '
+        'decode as MontyPairsDict.',
+        json.encode(map),
+      );
+    }
+
+    // The payload's keys are DATA. They are read as dict keys and never
+    // dispatched on, which is the whole of the core#136 fix: a Python dict
+    // containing the key `__type` is a dict with an odd key, not a mint.
+    return MontyDict(
+      payload.map((k, v) => MapEntry(k, MontyValue.fromJson(v))),
+    );
+  }
+
   /// The map of string keys to [MontyValue] values.
   final Map<String, MontyValue> entries;
 
   @override
-  Map<String, Object?> toJson() =>
-      entries.map((k, v) => MapEntry(k, v.toJson()));
+  Map<String, Object?> toJson() => {
+    '__type': 'dict',
+    'value': entries.map((k, v) => MapEntry(k, v.toJson())),
+  };
 
   @override
   Map<String, Object?> get dartValue =>
@@ -127,6 +148,65 @@ final class MontyDict extends MontyValue {
 
   @override
   String toString() => 'MontyDict(${entries.length} entries)';
+}
+
+/// Represents a Python `dict` whose keys are not all strings.
+///
+/// Python allows any hashable key; JSON objects allow only strings. Such a dict
+/// travels as `{"__type": "dict", "entries": [[k, v], …]}` and arrives with
+/// both halves of every pair fully typed.
+///
+/// A separate variant rather than a widening of [MontyDict], so code already
+/// written against `Map<String, MontyValue>` keeps compiling and keeps its
+/// cheap key lookup. Before wire format v2 this shape was a bare JSON array
+/// and decoded as a [MontyList] — a dict silently became a sequence, with keys
+/// indistinguishable from values.
+@immutable
+final class MontyPairsDict extends MontyValue {
+  /// Creates a [MontyPairsDict] with the given [pairs], in insertion order.
+  const MontyPairsDict(this.pairs);
+
+  factory MontyPairsDict._fromEntries(List<dynamic> raw) => MontyPairsDict([
+    for (final entry in raw)
+      if (entry case [final k, final v])
+        (MontyValue.fromJson(k), MontyValue.fromJson(v))
+      else
+        throw FormatException(
+          'each dict entry must be a [key, value] pair; got $entry',
+          json.encode(raw),
+        ),
+  ]);
+
+  /// The (key, value) pairs, in Python insertion order.
+  final List<(MontyValue, MontyValue)> pairs;
+
+  @override
+  Map<String, Object?> toJson() => {
+    '__type': 'dict',
+    'entries': [
+      for (final (k, v) in pairs) [k.toJson(), v.toJson()],
+    ],
+  };
+
+  /// The pairs as a list of two-element lists.
+  ///
+  /// Deliberately not a `Map`: two distinct Python keys can share a Dart
+  /// `toString`, so collapsing them into a map would silently drop entries.
+  @override
+  List<Object?> get dartValue => [
+    for (final (k, v) in pairs) [k.dartValue, v.dartValue],
+  ];
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyPairsDict && _deepEq.equals(other.pairs, pairs));
+
+  @override
+  int get hashCode => _deepEq.hash(pairs);
+
+  @override
+  String toString() => 'MontyPairsDict(${pairs.length} pairs)';
 }
 
 /// Represents a Python `set` value.

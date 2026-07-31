@@ -228,7 +228,13 @@ impl MontyReplHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
 
         let state = std::mem::replace(&mut self.state, ReplHandleState::Consumed);
         match state {
@@ -420,7 +426,15 @@ impl MontyReplHandle {
         let mut resolved = Vec::new();
         for (id_str, val) in &results_map {
             if let Ok(id) = id_str.parse::<u32>() {
-                resolved.push((id, ExtFunctionResult::Return(json_to_monty_object(val))));
+                // Reported rather than skipped: dropping the entry would leave
+                // the future unresolved and the REPL waiting forever, which is
+                // a worse failure than a named error. The state has already been
+                // taken above, so the handle is Consumed either way.
+                let obj = match json_to_monty_object(val) {
+                    Ok(o) => o,
+                    Err(e) => return (MontyProgressTag::Error, Some(e)),
+                };
+                resolved.push((id, ExtFunctionResult::Return(obj)));
             }
         }
         for (id_str, val) in &errors_map {

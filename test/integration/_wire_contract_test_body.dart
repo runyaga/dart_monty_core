@@ -66,9 +66,8 @@ class _Row {
 /// Every constructible row of the contract table.
 ///
 /// Rows 10 (`NamedTuple`), 19 (`FileHandle`) and 20 (`Dataclass`) are absent,
-/// and that is reported as a skip below rather than passed over: `collections`
-/// and
-/// `dataclasses` are not importable in this build (measured:
+/// and that is reported as a skip below rather than passed over. `collections`
+/// and `dataclasses` are not importable in this build (measured:
 /// `ModuleNotFoundError`), and a file handle needs a mounted filesystem. Their
 /// Dart types exist and are reached by other paths, so the gap is in THIS
 /// instrument, not in the encoder.
@@ -111,21 +110,14 @@ const _rows = [
   _Row(8, '[1, 2]', 'list'),
   _Row(9, '(1, 2)', 'tuple'),
   _Row(11, '{"a": 1}', 'dict'),
-  // The forgery. A plain dict naming a host type must stay a dict; today it
-  // becomes that type, so untrusted Python chooses its own Dart class.
-  _Row(
-    11,
-    '{"__type": "path", "value": "x"}',
-    'dict',
-    pending:
-        'a plain dict decodes as the tagged type it names — core#136 (Tier 1)',
-  ),
-  _Row(
-    11,
-    '{1: "a"}',
-    'dict',
-    pending: 'non-string-key dicts arrive as MontyList — Tier 2',
-  ),
+  // THE FORGERY, now asserted rather than pending — core#136 CLOSED by Tier 1.
+  // A dict whose keys spell a type envelope is a dict. It used to arrive as a
+  // genuine MontyPath, letting sandboxed Python choose its own host class.
+  _Row(11, '{"__type": "path", "value": "x"}', 'dict'),
+  // Non-string keys: was a bare array decoding as MontyList (a dict silently
+  // becoming a sequence). Now the `entries` envelope, decoding as
+  // MontyPairsDict — which carries the same wire tag, so the same row.
+  _Row(11, '{1: "a"}', 'dict'),
   _Row(12, '{1, 2}', 'set'),
   _Row(13, 'frozenset([1])', 'frozenset'),
   _Row(14, 'import datetime\ndatetime.date(2020, 1, 1)', 'date'),

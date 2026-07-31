@@ -9,6 +9,64 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **Sandbox escape fixed: sandboxed Python could mint any host type (#136).**
+  Returning the plain dict `{"__type": "path", "value": "/etc/passwd"}` from
+  Python arrived in Dart as a genuine `MontyPath` — untrusted code choosing its
+  own host class by writing a dict key. Verified end to end, on both backends.
+
+  The cause: only 13 of 27 value types carried a `__type` envelope, so a Python
+  dict and a type envelope were **byte-identical on the wire**. Now every dict is
+  tagged, and its contents live in a payload the decoder never re-dispatches:
+
+  ```
+  {"a": 1}                          →  {"__type":"dict","value":{"a":1}}
+  {1: "a"}   (non-string keys)      →  {"__type":"dict","entries":[[1,"a"]]}
+  ```
+
+  `MontyValue.toJson()` output changes shape accordingly. If you persisted it, or
+  wrote your own decoder against it, both need updating. `WIRE_FORMAT_VERSION` is
+  now 2 and is asserted at init, so a stale committed asset fails loudly rather
+  than mis-decoding.
+
+- **`MontyValue.fromJson` now throws `FormatException` on an untagged object or
+  an unknown `__type`.** Both used to decode as a dict, and that guess is what
+  turned a forged type into a real one. `fromJson` is a deserializer; it now has
+  the same contract as `json.decode`.
+
+- **Non-string-key dicts are `MontyPairsDict`, not `MontyList`.** They used to
+  travel as a bare JSON array, so a dict silently became a sequence with keys
+  indistinguishable from values. `MontyPairsDict` exposes
+  `List<(MontyValue, MontyValue)> pairs` in Python insertion order.
+
+  **This adds a variant to the sealed `MontyValue` hierarchy**, so exhaustive
+  switches stop compiling until they gain an arm — loud, and the analyzer points
+  at each one.
+
+- **A hand-built `{'__type': ...}` Dart `Map` is no longer honoured as that
+  type — it is a dict.** THIS ONE FAILS QUIETLY. If an OS-call handler or
+  external function returns a map spelling an envelope by hand, the interpreter
+  now receives a dict and your code stops working with no error at the boundary.
+
+  ```dart
+  // was: interpreted as a dataclass
+  (args, _) async => {'__type': 'dataclass', 'name': 'User', 'attrs': {…}}
+
+  // now: say it with the type
+  (args, _) async => MontyDataclass(
+        name: 'User', typeId: 1, fieldNames: ['name'], attrs: {…},
+      )
+  ```
+
+  This is the same defect as #136 pointing from the host into the sandbox: any
+  `Map` whose keys happened to spell an envelope became that type. Three test
+  fixtures in this repo relied on it, which is how it was found.
+
+  Six call sites also built wire JSON with a raw `json.encode(value)`, bypassing
+  the encoder entirely — `resume`, `resumeNameLookup`, `MontyRepl.resume`, and
+  all three `resolveFutures` implementations. They now route through
+  `MontyValue.encodeForWire`, so host values and interpreter values are encoded
+  by the same code.
+
 - **Python's `Ellipsis` (`...`) is now `MontyEllipsis`, not `MontyString('...')`.**
   It travels as `{"__type": "ellipsis"}` rather than the bare string `"..."`, so
   `...` and the actual string `"..."` are finally distinguishable — previously

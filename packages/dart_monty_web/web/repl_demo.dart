@@ -236,10 +236,7 @@ def host_upper(s: str) -> str:
         return;
       }
       try {
-        final raw = await Monty.typeCheck(
-          code,
-          prefixCode: externalsPrefix,
-        );
+        final raw = await Monty.typeCheck(code, prefixCode: externalsPrefix);
         final errors = raw
             .where((e) => e.line == null || e.line! > prefixLines)
             .toList(growable: false);
@@ -956,6 +953,11 @@ String _fmt(MontyValue v) => switch (v) {
   MontyTuple(:final items) => '(${items.map(_fmt).join(', ')})',
   MontyDict(:final entries) =>
     '{${entries.entries.take(20).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 20 ? ', …' : ''}}',
+  // A dict with non-string keys (wire v2's `entries` envelope). Rendered like
+  // any other dict, with the KEYS formatted rather than stringified — the whole
+  // point of the variant is that they are typed values, not labels.
+  MontyPairsDict(:final pairs) =>
+    '{${pairs.take(20).map((p) => '${_fmt(p.$1)}: ${_fmt(p.$2)}').join(', ')}${pairs.length > 20 ? ', …' : ''}}',
   MontySet(:final items) => '{${items.map(_fmt).join(', ')}}',
   MontyFrozenSet(:final items) => 'frozenset({${items.map(_fmt).join(', ')}})',
   MontyDate(:final year, :final month, :final day) => '$year-$month-$day',
@@ -971,8 +973,7 @@ String _fmt(MontyValue v) => switch (v) {
   MontyTimeZone(:final offsetSeconds, :final name) =>
     name ?? '${offsetSeconds}s',
   MontyPath(:final value) => 'Path("$value")',
-  MontyFileHandle(:final path, :final mode) =>
-    "<file '$path' mode '$mode'>",
+  MontyFileHandle(:final path, :final mode) => "<file '$path' mode '$mode'>",
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
   MontyDataclass(:final name, :final attrs) =>

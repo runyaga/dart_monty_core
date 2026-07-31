@@ -57,11 +57,11 @@ const _expressions = [
   // bytes
   'b""',
   'b"hi"',
-  // ---- WIRE-CONTRACT.md rows that are LOSSY today -----------------------
-  // Each is a known divergence below. They are here so the instrument that
-  // enforces the contract can actually see them: before this, the differential
-  // could not observe the forgery or the exception collapse at all.
-  '{"__type": "path", "value": "x"}', // row 11 — forgery (#136)
+  // ---- WIRE-CONTRACT.md rows -------------------------------------------
+  // Rows 11 are now ASSERTED (Tier 1 closed core#136); the rest are still
+  // known divergences below. All are listed here so the instrument that
+  // enforces the contract can actually see them.
+  '{"__type": "path", "value": "x"}', // row 11 — forgery, FIXED (#136)
   'ValueError("boom")', // row 22 — exception
   'int', // row 23 — Type
   'abs', // row 25 — BuiltinFunction
@@ -83,14 +83,11 @@ const _knownDivergences = {
   // WIRE-CONTRACT.md rows still lossy. Recorded as skips with an issue, never
   // asserted as correct — asserting current-but-wrong behaviour is what made
   // core#129 permanent. Each flips to a real assertion as its tier lands.
-  '{"__type": "path", "value": "x"}':
-      'a plain dict decodes as the tagged type it names — core#136 (Tier 1)',
   'ValueError("boom")':
       'exceptions collapse onto a bare string, indistinguishable from '
       'the string "ValueError: boom" — Tier 2',
   'int': 'Type collapses onto a bare string — Tier 2',
   'abs': 'BuiltinFunction encodes as Rust {:?} ("Abs") — Tier 2',
-  '{1: "a"}': 'non-string-key dicts arrive as MontyList — Tier 2',
   '"NaN"': 'the string "NaN" decodes as MontyFloat(NaN) — Tier 2',
 };
 

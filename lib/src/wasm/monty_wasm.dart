@@ -6,6 +6,7 @@ import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_snapshot_capable.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings_js_stub.dart'
     if (dart.library.js_interop) 'package:dart_monty_core/src/wasm/wasm_bindings_js.dart';
@@ -81,8 +82,12 @@ class MontyWasm extends BaseMontyPlatform
   }) async {
     assertNotDisposed('resolveFutures');
     assertActive('resolveFutures');
+    // The OUTER map is protocol framing (call_id -> value), so it stays a bare
+    // JSON object; each VALUE goes through the encoder like any other.
     final resultsJson = json.encode(
-      results.map((k, v) => MapEntry(k.toString(), v)),
+      results.map(
+        (k, v) => MapEntry(k.toString(), MontyValue.fromDart(v).toJson()),
+      ),
     );
     final errorsJson = errors != null
         ? json.encode(errors.map((k, v) => MapEntry(k.toString(), v)))

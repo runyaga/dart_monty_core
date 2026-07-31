@@ -143,7 +143,9 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertNotDisposed('resume');
     assertActive('resume');
     try {
-      final progress = await _bindings.resume(json.encode(returnValue));
+      final progress = await _bindings.resume(
+        MontyValue.encodeForWire(returnValue),
+      );
 
       return translateProgress(progress);
     } catch (e) {
@@ -340,7 +342,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertActive('resumeNameLookup');
     try {
       final progress = await _bindings.resumeNameLookupValue(
-        json.encode(value),
+        MontyValue.encodeForWire(value),
       );
 
       return translateProgress(progress);

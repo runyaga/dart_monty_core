@@ -45,6 +45,10 @@ String montyRepr(MontyValue v) => switch (v) {
   MontyFrozenSet(:final items) =>
     'frozenset({${items.map(montyRepr).join(', ')}})',
   MontyDict(:final entries) => _dictRepr(entries),
+  // Non-string-key dicts (the `entries` envelope, Tier 1). CPython renders them
+  // exactly like any other dict — `{1: 'a'}` — so the keys go through the same
+  // renderer as the values rather than being stringified.
+  MontyPairsDict(:final pairs) => '{${_pairsRepr(pairs)}}',
   // Rendered so the differential can SEE a forged type. monty reports
   // `{"__type":"path","value":"x"}` as a dict; if our pipeline decodes it to a
   // MontyPath, the strings differ and the test goes red — which is how the
@@ -112,3 +116,7 @@ String _bytesRepr(List<int> bytes) {
 
   return buf.toString();
 }
+
+/// Renders `(key, value)` pairs the way CPython renders a dict body.
+String _pairsRepr(List<(MontyValue, MontyValue)> pairs) =>
+    pairs.map((p) => '${montyRepr(p.$1)}: ${montyRepr(p.$2)}').join(', ');

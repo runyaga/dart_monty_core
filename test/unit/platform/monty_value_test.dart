@@ -270,10 +270,17 @@ void main() {
       expect(a, b);
     });
 
-    test('toJson preserves the entry shape (no __type)', () {
+    test('toJson wraps the entries in a dict envelope', () {
+      // Was: 'preserves the entry shape (no __type)', asserting {'k': 1}.
+      // That shape IS core#136 — a bare object was byte-identical to a type
+      // envelope, so a dict could name a host type. Inverted rather than
+      // deleted so the contract change is visible where the old one was pinned.
       expect(
         const MontyDict({'k': MontyInt(1), 's': MontyString('x')}).toJson(),
-        {'k': 1, 's': 'x'},
+        {
+          '__type': 'dict',
+          'value': {'k': 1, 's': 'x'},
+        },
       );
     });
 
@@ -687,21 +694,109 @@ void main() {
       expect(got, const MontyList([MontyInt(1), MontyString('x')]));
     });
 
-    test('Map without __type → MontyDict', () {
-      final got = MontyValue.fromJson(<String, dynamic>{'k': 1});
-      expect(got, const MontyDict({'k': MontyInt(1)}));
+    test('Map without __type is REJECTED', () {
+      // Was: 'Map without __type → MontyDict'. That fall-through is core#136:
+      // a Python dict and a type envelope were the same shape on the wire.
+      expect(
+        () => MontyValue.fromJson(<String, dynamic>{'k': 1}),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('untagged'),
+          ),
+        ),
+      );
     });
 
-    test('Map with unknown __type falls back to MontyDict', () {
-      // Defensive path: a future Rust-side type unknown to this Dart
-      // version should still surface as a structurally-valid dict
-      // rather than throwing. The whole map (including __type) is
-      // wrapped — that's the documented contract of _parseMap.
+    test('Map with unknown __type is REJECTED', () {
+      // Was: 'falls back to MontyDict', justified as a defensive path for a
+      // future Rust type. It is the opposite of defensive: guessing a dict is
+      // how an unrecognised tag became a plausible value. `fromJson` is a
+      // deserializer, and rejecting what it cannot represent is the same
+      // contract `json.decode` has (rule R4).
+      expect(
+        () => MontyValue.fromJson(<String, dynamic>{
+          '__type': 'unknown_future_type',
+          'value': 1,
+        }),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('unknown __type'),
+          ),
+        ),
+      );
+    });
+
+    test('a dict whose KEYS spell a type envelope stays a dict', () {
+      // core#136 end to end, in the shape the encoder now produces. Before
+      // Tier 1 the inner object arrived untagged and decoded as MontyPath.
       final got = MontyValue.fromJson(<String, dynamic>{
-        '__type': 'unknown_future_type',
-        'value': 1,
+        '__type': 'dict',
+        'value': {'__type': 'path', 'value': '/etc/passwd'},
       });
+
       expect(got, isA<MontyDict>());
+      expect(
+        got,
+        const MontyDict({
+          '__type': MontyString('path'),
+          'value': MontyString('/etc/passwd'),
+        }),
+        reason: 'both user keys must survive as ordinary dict entries',
+      );
+    });
+
+    test('a dict with non-string keys decodes as MontyPairsDict', () {
+      final got = MontyValue.fromJson(<String, dynamic>{
+        '__type': 'dict',
+        'entries': [
+          [1, 'a'],
+          ['k', 2],
+        ],
+      });
+
+      expect(
+        got,
+        const MontyPairsDict([
+          (MontyInt(1), MontyString('a')),
+          (MontyString('k'), MontyInt(2)),
+        ]),
+      );
+    });
+
+    test('a malformed dict entry is REJECTED', () {
+      expect(
+        () => MontyValue.fromJson(<String, dynamic>{
+          '__type': 'dict',
+          'entries': [
+            [1],
+          ],
+        }),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('MontyPairsDict round-trips through toJson', () {
+      const original = MontyPairsDict([
+        (MontyInt(1), MontyString('a')),
+        (MontyTuple([MontyInt(1), MontyInt(2)]), MontyInt(3)),
+      ]);
+
+      expect(MontyValue.fromJson(original.toJson()), original);
+    });
+
+    test('encodeForWire gives a host Map the dict envelope', () {
+      // The five raw json.encode call sites used to send a bare object here,
+      // which the strict Rust decoder now rejects. This is the shared path
+      // that makes host values and interpreter values agree.
+      expect(
+        MontyValue.encodeForWire({'k': 1}),
+        '{"__type":"dict","value":{"k":1}}',
+      );
+      expect(MontyValue.encodeForWire(null), 'null');
     });
 
     test('throws for unsupported runtime types', () {

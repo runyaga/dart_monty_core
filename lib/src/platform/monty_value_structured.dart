@@ -207,9 +207,16 @@ final class MontyDataclass extends MontyValue {
   });
 
   factory MontyDataclass._fromMap(Map<String, dynamic> map) {
+    // `attrs` is a dict, so since wire format v2 it carries the dict envelope
+    // like every other object — there is no "except inside dataclass"
+    // carve-out. The encoder gets this for free by routing attrs through
+    // dict_to_json, which is a good sign the uniform rule is the right one.
     final rawAttrs = map['attrs'];
-    final parsedAttrs = rawAttrs is Map<String, dynamic>
-        ? rawAttrs.map((k, v) => MapEntry(k, MontyValue.fromJson(v)))
+    final attrsPayload = rawAttrs is Map<String, dynamic>
+        ? rawAttrs['value']
+        : null;
+    final parsedAttrs = attrsPayload is Map<String, dynamic>
+        ? attrsPayload.map((k, v) => MapEntry(k, MontyValue.fromJson(v)))
         : const <String, MontyValue>{};
 
     return MontyDataclass(
@@ -276,7 +283,7 @@ final class MontyDataclass extends MontyValue {
     'name': name,
     'type_id': typeId,
     'field_names': fieldNames,
-    'attrs': attrs.map((k, v) => MapEntry(k, v.toJson())),
+    'attrs': MontyDict(attrs).toJson(),
     'frozen': frozen,
   };
 

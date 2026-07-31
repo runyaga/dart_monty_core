@@ -209,7 +209,13 @@ impl MontyHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
         let result = ExtFunctionResult::Return(obj);
         self.resume_with_result(result)
     }
@@ -323,7 +329,10 @@ impl MontyHandle {
                     );
                 }
             };
-            let obj = json_to_monty_object(val);
+            let obj = match json_to_monty_object(val) {
+                Ok(o) => o,
+                Err(e) => return (MontyProgressTag::Error, Some(e)),
+            };
             ext_results.push((call_id, ExtFunctionResult::Return(obj)));
         }
 
@@ -423,7 +432,13 @@ impl MontyHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
         let state = std::mem::replace(&mut self.state, HandleState::Consumed);
         match state {
             HandleState::NameLookup { lookup, .. } => {
