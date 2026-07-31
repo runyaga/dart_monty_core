@@ -25,9 +25,9 @@ Future<void> main() async {
   // in the next — no serialisation boilerplate required.
   final squares = await Monty('[x**2 for x in range(10)]').run();
 
-  final total = await Monty('sum(squares)').run(
-    inputs: {'squares': squares.value.dartValue},
-  );
+  final total = await Monty(
+    'sum(squares)',
+  ).run(inputs: {'squares': squares.value.dartValue});
   print('sum of squares 0–9² = ${total.value.dartValue}'); // 285
 
   // ── 3. Externals ────────────────────────────────────────────────────────────
@@ -42,15 +42,16 @@ Future<void> main() async {
 
   // externalAsyncFunctions: Python can `await` the Dart callback directly.
   // asyncio.gather over multiple calls runs them concurrently in Dart.
-  final async_ = await Monty('''
+  final async_ =
+      await Monty('''
 import asyncio
 a, b = await asyncio.gather(fetch(1), fetch(2))
 a + b
 ''').run(
-    externalAsyncFunctions: {
-      'fetch': (args, _) async => (args[0] as int) * 10,
-    },
-  );
+        externalAsyncFunctions: {
+          'fetch': (args, _) async => (args[0] as int) * 10,
+        },
+      );
   print(async_.value.dartValue); // 30  (10 + 20)
 
   // ── 4. Stateful REPL ────────────────────────────────────────────────────────

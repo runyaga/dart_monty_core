@@ -21,7 +21,7 @@ check is what found those seven, and nothing else would have.
 bash tool/gate.sh
 ```
 
-That is the answer for **every** change. It runs all sixteen steps, and a red
+That is the answer for **every** change. It runs all seventeen steps, and a red
 step means do not commit — including when it looks unrelated to what you touched.
 
 The table below is for **fast feedback while developing**, not a substitute. It
@@ -220,7 +220,7 @@ bash tool/prebuild.sh           # ONLY if you changed native/ or js/ (see Traps)
 bash tool/gate.sh               # read-only; never rebuilds, never restores
 ```
 
-Runs all sixteen steps and prints `GATE GREEN` or `GATE RED`, with per-step
+Runs all seventeen steps and prints `GATE GREEN` or `GATE RED`, with per-step
 logs. **A red matrix means do not commit** — including when the failing step
 looks unrelated to your change. It has caught genuine defects in changes that
 "obviously" could not have broken anything.

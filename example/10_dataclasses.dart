@@ -40,22 +40,27 @@ class Order {
   String toString() => 'Order(id=$id, total=$total)';
 }
 
-// ── Helper: build the dataclass JSON envelope returned from a Dart callback.
+// ── Helper: build the dataclass a Dart callback returns to Python.
 // ─────────────────────────────────────────────────────────────────────────────
+// Return the TYPE, not a hand-spelled `{'__type': 'dataclass', …}` map. Until
+// 0.19.0 such a map was honoured as the type it named, which is the same defect
+// as core#136 pointing from the host into the sandbox: any Map whose keys
+// happened to spell an envelope became that type. A Map is now a dict, so a
+// hand-built envelope reaches Python as a dict and your code stops working with
+// no error at the boundary. This example used to teach the old way.
 
-Map<String, Object?> _dataclass({
+MontyDataclass _dataclass({
   required String name,
   required int typeId,
-  required Map<String, Object?> attrs,
+  required Map<String, MontyValue> attrs,
   bool frozen = false,
-}) => {
-  '__type': 'dataclass',
-  'name': name,
-  'type_id': typeId,
-  'field_names': attrs.keys.toList(),
-  'attrs': attrs,
-  'frozen': frozen,
-};
+}) => MontyDataclass(
+  name: name,
+  typeId: typeId,
+  fieldNames: attrs.keys.toList(),
+  attrs: attrs,
+  frozen: frozen,
+);
 
 Future<void> main() async {
   await _readingFields();
@@ -75,7 +80,10 @@ Future<void> _readingFields() async {
       'make_user': (args, _) async => _dataclass(
         name: 'User',
         typeId: 1,
-        attrs: {'name': args[0]! as String, 'age': args[1]! as int},
+        attrs: {
+          'name': MontyString(args[0]! as String),
+          'age': MontyInt(args[1]! as int),
+        },
       ),
     },
   );
@@ -100,7 +108,10 @@ Future<void> _hydrateOne() async {
       'make_user': (args, _) async => _dataclass(
         name: 'User',
         typeId: 1,
-        attrs: {'name': args[0]! as String, 'age': args[1]! as int},
+        attrs: {
+          'name': MontyString(args[0]! as String),
+          'age': MontyInt(args[1]! as int),
+        },
       ),
     },
   );
@@ -130,10 +141,16 @@ Future<void> _hydrateRegistry() async {
   }
 
   final externalFunctions = <String, MontyCallback>{
-    'make_user': (_, _) async =>
-        _dataclass(name: 'User', typeId: 1, attrs: {'name': 'carol', 'age': 7}),
-    'make_order': (_, _) async =>
-        _dataclass(name: 'Order', typeId: 2, attrs: {'id': 99, 'total': 12.5}),
+    'make_user': (_, _) async => _dataclass(
+      name: 'User',
+      typeId: 1,
+      attrs: {'name': const MontyString('carol'), 'age': const MontyInt(7)},
+    ),
+    'make_order': (_, _) async => _dataclass(
+      name: 'Order',
+      typeId: 2,
+      attrs: {'id': const MontyInt(99), 'total': const MontyFloat(12.5)},
+    ),
   };
 
   final ru = await Monty(

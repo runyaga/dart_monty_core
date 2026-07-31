@@ -70,6 +70,12 @@ ns cargo_deny    cargo deny check
 # excluded here; it is retired in P1b since monty 0.19 dropped `_test_cm()`.
 s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart | grep -v with_cm) --run-skipped --tags=ffi -p vm
 s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi
+# The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
+# them. CI has run this since forever; the gate did not, so a change that broke
+# every example could pass here and fail there — which it just did. Tier 1 made
+# a hand-built `{'__type': …}` map decode as a dict, and example/10 taught
+# exactly that pattern.
+s  examples      dart test test/integration/example_smoke_test.dart -p vm --run-skipped --tags=example
 # --skip-build is deliberate and load-bearing: without it this step REBUILDS
 # lib/assets/*.wasm, i.e. the gate would test an artefact that is not the one
 # being committed. It cost us a red CI once already (see the note at the foot of
