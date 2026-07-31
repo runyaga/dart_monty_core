@@ -113,6 +113,13 @@ jobs:
         # catches 'encoding changed, nobody bumped, nobody rebuilt', which
         # the version handshake is blind to.
         run: bash tool/check_asset_freshness.sh
+      - name: Wire-format version agrees between the crate and Dart
+        # WIRE_FORMAT_VERSION in convert.rs is the source of truth and the JS
+        # side reads it out of the wasm, but expectedWireFormatVersion has to be
+        # a Dart compile-time constant, so it is a hand-kept copy. That makes the
+        # handshake itself depend on someone remembering to bump two files
+        # together -- the same unenforced-invariant class it exists to replace.
+        run: bash tool/check_wire_version.sh
       - name: Fixture corpus matches the pinned monty version
         # The corpus is a symlink into a monty checkout, so it silently drifts
         # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus

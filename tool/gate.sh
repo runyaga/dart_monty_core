@@ -54,6 +54,9 @@ fi
 # here that needs no human discipline: WIRE_FORMAT_VERSION is hand-bumped, so it
 # is blind to "encoding changed, nobody bumped, nobody rebuilt".
 s  asset_fresh   bash tool/check_asset_freshness.sh
+# The complement to asset_fresh: that one catches "sources moved, nobody
+# rebuilt"; this one catches "the encoding was versioned on one side only".
+s  wire_version  bash tool/check_wire_version.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/

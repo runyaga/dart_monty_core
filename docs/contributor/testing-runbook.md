@@ -21,7 +21,7 @@ check is what found those seven, and nothing else would have.
 bash tool/gate.sh
 ```
 
-That is the answer for **every** change. It runs all fourteen steps, and a red
+That is the answer for **every** change. It runs all sixteen steps, and a red
 step means do not commit — including when it looks unrelated to what you touched.
 
 The table below is for **fast feedback while developing**, not a substitute. It
@@ -220,7 +220,7 @@ bash tool/prebuild.sh           # ONLY if you changed native/ or js/ (see Traps)
 bash tool/gate.sh               # read-only; never rebuilds, never restores
 ```
 
-Runs all fourteen steps and prints `GATE GREEN` or `GATE RED`, with per-step
+Runs all sixteen steps and prints `GATE GREEN` or `GATE RED`, with per-step
 logs. **A red matrix means do not commit** — including when the failing step
 looks unrelated to your change. It has caught genuine defects in changes that
 "obviously" could not have broken anything.
@@ -303,6 +303,13 @@ caught by `tool/check_asset_freshness.sh` (gate step 1), which hashes the
 **sources** rather than the non-reproducible output. When you rebuild, also
 regenerate `tool/wasm-provenance.json` (sizes, sha256s, and the commit `native/`
 was at).
+
+Its complement is `tool/check_wire_version.sh` (gate step 2). `WIRE_FORMAT_VERSION`
+lives in `native/src/convert.rs` and the JS side reads it out of the wasm at
+runtime, but `expectedWireFormatVersion` must be a Dart compile-time constant, so
+it is a hand-kept copy — and the handshake would otherwise depend on someone
+remembering to bump two files together. Freshness catches "sources moved, nobody
+rebuilt"; this catches "the encoding was versioned on one side only".
 
 That record lives in `tool/` — which is `.pubignore`d — and **not** in
 `lib/assets/`, which ships. It used to ship: every consumer downloaded a file
