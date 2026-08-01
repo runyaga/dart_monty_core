@@ -869,6 +869,23 @@ void _initExamples() {
   }.toJS;
 }
 
+/// Formats a float the way Python prints it.
+///
+/// `value.toString()` is NOT enough on this page: dart2js has one number type,
+/// so `4.0.toString()` is `"4"` — and the demo would render an int where the
+/// value really is a float, reproducing the APPEARANCE of core#128a on the very
+/// page that demonstrates it being fixed. The value itself is correct; only this
+/// rendering was wrong. Verified in Chrome against the deployed artefact.
+String _fmtFloat(double value) {
+  if (value.isNaN) return 'nan';
+  if (value.isInfinite) return value > 0 ? 'inf' : '-inf';
+
+  final text = value.toString();
+  if (!text.contains('.') && !text.contains('e')) return '$text.0';
+
+  return text;
+}
+
 web.HTMLDivElement _buildSampleCard(_Sample sample) {
   final card = web.document.createElement('div') as web.HTMLDivElement
     ..className = 'sample-card';
@@ -937,12 +954,7 @@ String _fmt(MontyValue v) => switch (v) {
   MontyEllipsis() => 'Ellipsis',
   MontyBool(:final value) => value.toString(),
   MontyInt(:final value) => value.toString(),
-  MontyFloat(:final value) =>
-    value.isNaN
-        ? 'nan'
-        : value.isInfinite
-        ? (value > 0 ? 'inf' : '-inf')
-        : value.toString(),
+  MontyFloat(:final value) => _fmtFloat(value),
   MontyString(:final value) => '"$value"',
   MontyBytes(:final value) => 'b[${value.length}]',
   // Show up to 20 items — enough for demo punchlines like
