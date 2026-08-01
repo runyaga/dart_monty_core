@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 
 /// Internal bindings interface for REPL operations.
 ///
@@ -30,8 +31,11 @@ abstract class ReplBindings {
   /// Starts iterative execution. Pauses at external function calls.
   Future<CoreProgressResult> feedStart(String code);
 
-  /// Resumes with a JSON-encoded return value.
-  Future<CoreProgressResult> resume(String valueJson);
+  /// Resumes with [value] as the pending call's return value.
+  ///
+  /// Typed [WireJson] rather than `String` because this is the method the
+  /// self-driven drive loop calls, and the loop is where core#136 lived.
+  Future<CoreProgressResult> resume(WireJson value);
 
   /// Resumes by raising an error in Python.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
@@ -65,13 +69,13 @@ abstract class ReplBindings {
 
   /// Resolves outstanding REPL futures with their results and/or errors.
   ///
-  /// [resultsJson] is a JSON object mapping `callId.toString()` to the
-  /// resolved value. [errorsJson] is a JSON object mapping
-  /// `callId.toString()` to an error message string (each becomes a
-  /// RuntimeError in Python). Pass an empty `'{}'` when no errors occurred.
+  /// [results] frames `callId -> resolved value`; [errors] frames
+  /// `callId -> message` (each becomes a RuntimeError in Python). Build them
+  /// with [WireJson.callResults] and [WireJson.callErrors] — an absent error
+  /// map frames as `{}`.
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   );
 
   /// Serialises the REPL heap to postcard bytes.

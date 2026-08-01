@@ -8,6 +8,7 @@ import 'package:dart_monty_core/src/ffi/native_bindings.dart';
 import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 
 /// GC safety net for Rust MontyHandle pointers.
 ///
@@ -103,9 +104,9 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
     final handle = _requireHandle('resume');
-    final progress = _bindings.resume(handle, valueJson);
+    final progress = _bindings.resume(handle, value.encoded);
 
     return _translateProgressResult(handle, progress);
   }
@@ -151,17 +152,21 @@ class FfiCoreBindings implements MontyCoreBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     final handle = _requireHandle('resolveFutures');
-    final progress = _bindings.resolveFutures(handle, resultsJson, errorsJson);
+    final progress = _bindings.resolveFutures(
+      handle,
+      results.encoded,
+      errors.encoded,
+    );
 
     return _translateProgressResult(handle, progress);
   }
 
   @override
-  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) {
+  Future<CoreProgressResult> resumeNameLookupValue(WireJson value) {
     throw UnimplementedError(
       'resumeNameLookupValue is not supported by the FFI backend',
     );

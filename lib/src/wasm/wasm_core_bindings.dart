@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
 /// Error type string sent by the Worker when a Rust panic occurs.
@@ -77,9 +78,12 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
     final sw = Stopwatch()..start();
-    final progress = await _bindings.resume(valueJson, sessionId: _sessionId);
+    final progress = await _bindings.resume(
+      value.encoded,
+      sessionId: _sessionId,
+    );
     sw.stop();
 
     return _translateProgressResult(progress, sw.elapsedMilliseconds);
@@ -136,13 +140,13 @@ class WasmCoreBindings implements MontyCoreBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     final sw = Stopwatch()..start();
     final progress = await _bindings.resolveFutures(
-      resultsJson,
-      errorsJson,
+      results.encoded,
+      errors.encoded,
       sessionId: _sessionId,
     );
     sw.stop();
@@ -224,10 +228,10 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
+  Future<CoreProgressResult> resumeNameLookupValue(WireJson value) async {
     final sw = Stopwatch()..start();
     final progress = await _bindings.resumeNameLookupValue(
-      valueJson,
+      value.encoded,
       sessionId: _sessionId,
     );
     sw.stop();

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
@@ -16,6 +15,7 @@ import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 import 'package:dart_monty_core/src/repl/repl_factory.dart' as repl_factory;
 
@@ -297,7 +297,7 @@ class MontyRepl {
     // toJson() is null, which encodes to the same 'null'.
 
     return _translateProgress(
-      await _bindings.resume(MontyValue.encodeForWire(returnValue)),
+      await _bindings.resume(WireJson.value(returnValue)),
     );
   }
 
@@ -363,21 +363,12 @@ class MontyRepl {
     Map<int, String>? errors,
   }) async {
     _checkNotDisposed();
-    // The OUTER map is protocol framing (call_id -> value), so it stays a bare
-    // JSON object; each VALUE goes through the encoder like any other. This was
-    // the sixth raw-encode site, found by the strict decoder rejecting what it
-    // sent rather than by reading the code.
-    final resultsJson = jsonEncode(
-      results.map(
-        (k, v) => MapEntry(k.toString(), MontyValue.fromDart(v).toJson()),
-      ),
-    );
-    final errorsJson = errors != null
-        ? jsonEncode(errors.map((k, v) => MapEntry(k.toString(), v)))
-        : '{}';
 
     return _translateProgress(
-      await _bindings.resolveFutures(resultsJson, errorsJson),
+      await _bindings.resolveFutures(
+        WireJson.callResults(results),
+        WireJson.callErrors(errors),
+      ),
     );
   }
 
@@ -509,7 +500,7 @@ class MontyRepl {
                 );
                 final res = await cb(cbArgs, cbKwargs);
                 progress = _translateProgress(
-                  await _bindings.resume(jsonEncode(res)),
+                  await _bindings.resume(WireJson.value(res)),
                 );
               } on Object catch (e) {
                 progress = _translateProgress(
@@ -523,7 +514,9 @@ class MontyRepl {
             if (pendingFutures.isEmpty) {
               // No async callbacks were registered — nothing to resolve.
               // Resume with null so the engine can advance.
-              progress = _translateProgress(await _bindings.resume('null'));
+              progress = _translateProgress(
+                await _bindings.resume(WireJson.value(null)),
+              );
               break;
             }
             final results = <int, Object?>{};
@@ -543,12 +536,8 @@ class MontyRepl {
             }
             progress = _translateProgress(
               await _bindings.resolveFutures(
-                jsonEncode(
-                  results.map((k, v) => MapEntry(k.toString(), v)),
-                ),
-                jsonEncode(
-                  errors.map((k, v) => MapEntry(k.toString(), v)),
-                ),
+                WireJson.callResults(results),
+                WireJson.callErrors(errors),
               ),
             );
           case MontyNameLookup():
@@ -624,7 +613,7 @@ class MontyRepl {
       final result = await handler(call.operationName, args, kwargs);
 
       return _translateProgress(
-        await _bindings.resume(jsonEncode(result)),
+        await _bindings.resume(WireJson.value(result)),
       );
     } on OsCallNotHandledException catch (e) {
       return _translateProgress(

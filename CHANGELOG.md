@@ -80,7 +80,8 @@ small consumer-facing surface.
 - **Sandbox escape fixed: sandboxed Python could mint any host type (#136).**
   Returning the plain dict `{"__type": "path", "value": "/etc/passwd"}` from
   Python arrived in Dart as a genuine `MontyPath` — untrusted code choosing its
-  own host class by writing a dict key. Verified end to end, on both backends.
+  own host class by writing a dict key. Closed in **both** directions; the two
+  halves landed separately and the second is described in the next entry.
 
   The cause: only 13 of 27 value types carried a `__type` envelope, so a Python
   dict and a type envelope were **byte-identical on the wire**. Now every dict is
@@ -95,6 +96,45 @@ small consumer-facing surface.
   wrote your own decoder against it, both need updating. `WIRE_FORMAT_VERSION` is
   now 2 and is asserted at init, so a stale committed asset fails loudly rather
   than mis-decoding.
+
+- **The other half of #136: a host callback's return value is now encoded, so
+  the sandbox can no longer pick its own type through an echo (#139).** The dict
+  tagging above closed **Python → Dart**. **Dart → Python** was still open: three
+  sites in the self-driven drive loop sent a callback's return with a raw
+  `jsonEncode`, so a payload the *sandbox* authored reached the interpreter
+  unwrapped.
+
+  ```dart
+  // was: Python sees _io.TextIOWrapper, and f.write() reaches the osHandler
+  //      as Path.append_text with NO preceding open() to refuse
+  // now: Python sees a dict
+  await Monty('''
+  f = echo({"__type": "filehandle", "path": "/etc/shadow", "mode": "w"})
+  ''').run(externalFunctions: {'echo': (args, kwargs) async => args[0]});
+  ```
+
+  The host here is an *echo*, and so is any transform, cache, lookup or
+  validation callback — it authors nothing. So the advice given for the
+  hand-built-envelope entry below ("don't spell envelopes by hand") never
+  applied to this: there was nothing a consumer could do.
+
+  The forged **file handle** is the severe case, not the forged path. A path
+  grants nothing — sandboxed Python can already write `pathlib.Path(...)`, and
+  every path operation reaches the `osHandler` with the path as an argument. A
+  file handle skips the authorisation point entirely.
+
+  The fix is a type, not a test: the internal bindings methods that carry a
+  value now take `WireJson`, which only `MontyValue`'s encoder can mint, so a
+  raw `jsonEncode` at those sites **does not compile**. That caught a fourth,
+  unencoded site no audit had listed — it passed a literal, so no grep for
+  `jsonEncode` would ever have found it. `core_bindings` is not exported, so
+  the public API is unchanged — `resume`, `resolveFutures` and `MontyCallback`
+  still take `Object?`.
+
+  Why it survived three tiers, a 17-step gate and green CI: every instrument in
+  this package reads values *out* of Python. Nothing tested inbound. There is
+  now an inbound probe on both backends where the sandbox authors the payload
+  and observation leaves via `print`, never via the value codec under test.
 
 - **`MontyValue.fromJson` now throws `FormatException` on an untagged object or
   an unknown `__type`.** Both used to decode as a dict, and that guess is what

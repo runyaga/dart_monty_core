@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
@@ -78,11 +79,11 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = await _bindings.replResume(valueJson, replId: _replId);
+    final result = await _bindings.replResume(value.encoded, replId: _replId);
 
     return _translateWasmProgressResult(result);
   }
@@ -155,15 +156,15 @@ class WasmReplBindings implements ReplBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
     final result = await _bindings.replResolveFutures(
-      resultsJson,
-      errorsJson,
+      results.encoded,
+      errors.encoded,
       replId: _replId,
     );
 

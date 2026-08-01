@@ -12,6 +12,7 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
 import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:meta/meta.dart';
 
 typedef _ErrorInfo = ({
@@ -148,7 +149,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertActive('resume');
     try {
       final progress = await _bindings.resume(
-        MontyValue.encodeForWire(returnValue),
+        WireJson.value(returnValue),
       );
 
       return translateProgress(progress);
@@ -346,7 +347,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertActive('resumeNameLookup');
     try {
       final progress = await _bindings.resumeNameLookupValue(
-        MontyValue.encodeForWire(value),
+        WireJson.value(value),
       );
 
       return translateProgress(progress);
