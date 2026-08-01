@@ -32,7 +32,18 @@ class WasmReplBindings implements ReplBindings {
   bool _created = false;
 
   @override
-  Future<void> create({String? scriptName}) async {
+  Future<void> create({String? scriptName, String? limitsJson}) async {
+    // The web backend does not carry session limits yet — the JS bridge and
+    // worker would both need the parameter. Rejected loudly rather than
+    // dropped silently, which is the defect this whole change is about
+    // (core#138). Tracked in core#140.
+    if (limitsJson != null) {
+      throw UnsupportedError(
+        'Session resource limits are not supported on the web backend yet '
+        '(core#140). They work on FFI. Construct MontyRepl without limits, '
+        'or run on the VM.',
+      );
+    }
     await _bindings.replCreate(scriptName: scriptName, replId: _replId);
     _created = true;
   }

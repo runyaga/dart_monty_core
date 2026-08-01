@@ -3,11 +3,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
+import 'package:dart_monty_core/src/platform/base_monty_platform.dart'
+    show encodeLimitsJson;
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/inputs_encoder.dart'
     as inputs_encoder;
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
+import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
@@ -97,25 +100,39 @@ class MontyRepl {
   /// Creates a [MontyRepl] with auto-detected backend (FFI or WASM).
   ///
   /// [preamble] is Python code fed into the REPL before any user calls.
+  ///
+  /// [limits] applies SESSION-scoped resource limits, mirroring upstream's
+  /// Python API where `checkout(limits=…)` configures a REPL session rather
+  /// than an individual feed. A tracker is chosen when the session is created
+  /// and cannot be swapped afterwards, which is why this is not a per-feed
+  /// argument. Null means unbounded — what every REPL got before (core#138).
+  ///
+  /// Not yet supported on the web backend; passing limits there throws rather
+  /// than silently ignoring them (core#140).
   MontyRepl({
     String? scriptName,
     String? preamble,
+    MontyLimits? limits,
   }) : _bindings = repl_factory.createReplBindings(),
        _scriptName = scriptName,
-       _preamble = preamble;
+       _preamble = preamble,
+       _limits = limits;
 
   /// Creates a [MontyRepl] with explicit [bindings].
   MontyRepl.withBindings({
     required ReplBindings bindings,
     String? scriptName,
     String? preamble,
+    MontyLimits? limits,
   }) : _bindings = bindings,
        _scriptName = scriptName,
-       _preamble = preamble;
+       _preamble = preamble,
+       _limits = limits;
 
   ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;
+  final MontyLimits? _limits;
   bool _created = false;
   bool _disposed = false;
   bool _pending = false;
@@ -631,7 +648,10 @@ class MontyRepl {
 
   Future<void> _ensureCreated() async {
     if (!_created) {
-      await _bindings.create(scriptName: _scriptName);
+      await _bindings.create(
+        scriptName: _scriptName,
+        limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+      );
       _created = true;
       final preamble = _preamble;
       if (preamble != null && preamble.isNotEmpty) {

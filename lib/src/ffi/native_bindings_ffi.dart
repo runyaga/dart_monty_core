@@ -356,14 +356,19 @@ class NativeBindingsFfi extends NativeBindings {
   // ---------------------------------------------------------------------------
 
   @override
-  int replCreate({String? scriptName}) {
-    final cScriptName = scriptName != null
-        ? scriptName.toNativeUtf8().cast<Char>()
-        : nullptr.cast<Char>();
+  int replCreate({String? scriptName, String? limitsJson}) {
+    final nullStr = nullptr.cast<Char>();
+    final cScriptName = scriptName?.toNativeUtf8().cast<Char>() ?? nullStr;
+    final cLimits = limitsJson?.toNativeUtf8().cast<Char>() ?? nullStr;
     final outError = calloc<Pointer<Char>>();
 
     try {
-      final handle = ffi_native.monty_repl_create(cScriptName, outError);
+      final handle = _createReplHandle(
+        cScriptName,
+        cLimits,
+        outError,
+        limitsJson != null,
+      );
       if (handle == nullptr) {
         final errorMsg =
             _readAndFreeString(outError.value) ?? 'monty_repl_create failed';
@@ -373,6 +378,7 @@ class NativeBindingsFfi extends NativeBindings {
       return handle.address;
     } finally {
       if (scriptName != null) calloc.free(cScriptName);
+      if (limitsJson != null) calloc.free(cLimits);
       calloc.free(outError);
     }
   }
@@ -812,4 +818,19 @@ class NativeBindingsFfi extends NativeBindings {
 
     return null;
   }
+
+  /// Picks the create export.
+  ///
+  /// Two exports rather than one with a NULL argument, so an existing caller's
+  /// behaviour is bit-for-bit unchanged: limits are session-scoped and chosen
+  /// when the session is created, which is when the tracker is built and after
+  /// which it cannot be swapped.
+  static Pointer<ffi_native.MontyReplHandle> _createReplHandle(
+    Pointer<Char> scriptName,
+    Pointer<Char> limits,
+    Pointer<Pointer<Char>> outError,
+    bool withLimits,
+  ) => withLimits
+      ? ffi_native.monty_repl_create_with_limits(scriptName, limits, outError)
+      : ffi_native.monty_repl_create(scriptName, outError);
 }

@@ -562,6 +562,36 @@ external ffi.Pointer<MontyReplHandle> monty_repl_create(
   ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
 );
 
+/// Create a REPL handle with SESSION-scoped resource limits.
+///
+/// Additive sibling of monty_repl_create(), which stays unbounded so existing
+/// callers are unaffected. Limits belong to the session rather than to an
+/// individual feed, mirroring upstream's Python API where checkout(limits=...)
+/// configures a REPL session.
+///
+/// @param script_name  NUL-terminated script name for tracebacks, or NULL
+/// for the default ("repl.py").
+/// @param limits_json  NUL-terminated JSON object, or NULL for an unbounded
+/// session. Shape:
+/// {"memory_bytes":N,"stack_depth":N,"timeout_ms":N}.
+/// Absent fields mean no limit on that axis. Malformed
+/// JSON is an ERROR, not a silent fallback to unbounded.
+/// @param out_error    On failure, receives a heap-allocated error message.
+/// Caller frees with monty_string_free(). May be NULL.
+/// @return             Heap-allocated REPL handle, or NULL on error.
+@ffi.Native<
+  ffi.Pointer<MontyReplHandle> Function(
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>()
+external ffi.Pointer<MontyReplHandle> monty_repl_create_with_limits(
+  ffi.Pointer<ffi.Char> script_name,
+  ffi.Pointer<ffi.Char> limits_json,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
+);
+
 /// Free a REPL handle. Safe to call with NULL or an already-freed handle.
 @ffi.Native<ffi.Void Function(ffi.Pointer<MontyReplHandle>)>()
 external void monty_repl_free(

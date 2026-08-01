@@ -214,7 +214,7 @@ abstract class NativeBindings {
   /// Creates a REPL handle with empty interpreter state.
   ///
   /// Returns the handle address as an `int`, or throws on error.
-  int replCreate({String? scriptName});
+  int replCreate({String? scriptName, String? limitsJson});
 
   /// Frees a REPL handle. Safe to call with `0`.
   void replFree(int handle);

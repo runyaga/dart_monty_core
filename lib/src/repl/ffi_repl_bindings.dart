@@ -39,11 +39,14 @@ class FfiReplBindings implements ReplBindings {
   Object? _detachToken;
 
   @override
-  Future<void> create({String? scriptName}) async {
+  Future<void> create({String? scriptName, String? limitsJson}) async {
     if (_replHandle != null) {
       await dispose();
     }
-    final handle = _bindings.replCreate(scriptName: scriptName);
+    final handle = _bindings.replCreate(
+      scriptName: scriptName,
+      limitsJson: limitsJson,
+    );
     _replHandle = handle;
 
     // Attach GC finalizer as safety net.

@@ -4,7 +4,9 @@ use monty::{
     MontyRepl, ReplFunctionCall, ReplOsCall, ReplProgress, ReplResolveFutures, ReplStartError,
     detect_repl_continuation_mode,
 };
-use monty_types::{ExtFunctionResult, MontyObject, NameLookupResult, NoLimitTracker, PrintWriter};
+use monty_types::{
+    ExtFunctionResult, LimitedTracker, MontyObject, NameLookupResult, PrintWriter, ResourceLimits,
+};
 use serde_json::Value;
 
 use crate::convert::{json_to_monty_object, monty_object_to_json};
@@ -13,10 +15,52 @@ use crate::handle::{MontyProgressTag, MontyResultTag};
 
 /// The concrete tracker type used for REPL execution.
 ///
-/// REPLs use `NoLimitTracker` by default — no time, memory, or stack
-/// limits. Interactive sessions should not be bounded by default.
-/// Callers can add limits later via a dedicated API if needed.
-type Tracker = NoLimitTracker;
+/// Was `NoLimitTracker`, with a note that "callers can add limits later via a
+/// dedicated API if needed". That API is now `monty_repl_create_with_limits`,
+/// and this is the type that lets it do anything: a tracker is chosen when the
+/// session is created and cannot be swapped afterwards.
+///
+/// **An unbounded session is still the default** — `ResourceLimits::default()`
+/// has every field `None`, so `LimitedTracker` with no limits set behaves as
+/// `NoLimitTracker` did. Interactive sessions stay unbounded unless asked.
+///
+/// Limits are SESSION-scoped, mirroring upstream's Python API, where
+/// `checkout(limits=…)` configures a REPL session rather than an individual
+/// feed (`monty-python/src/pool.rs`).
+type Tracker = LimitedTracker;
+
+/// Parses the limits JSON Dart sends into `ResourceLimits`.
+///
+/// Shape matches `_encodeLimitsJson` in `base_monty_platform.dart`, which is
+/// already what the web backend sends for one-shot runs:
+///
+/// ```json
+/// {"memory_bytes": 268435456, "stack_depth": 1000, "timeout_ms": 5000}
+/// ```
+///
+/// Absent or null fields mean "no limit on this axis", so `{}` and a null
+/// pointer both yield an unbounded session. Unparseable JSON is an ERROR rather
+/// than a silent fallback to unbounded: a caller who asked for a limit and got
+/// none is precisely the failure core#138 was about.
+pub fn parse_limits_json(json: &str) -> Result<ResourceLimits, String> {
+    let v: Value = serde_json::from_str(json).map_err(|e| format!("invalid limits JSON: {e}"))?;
+    let Some(map) = v.as_object() else {
+        return Err(format!("limits JSON must be an object, got {v}"));
+    };
+
+    let mut limits = ResourceLimits::default();
+    if let Some(bytes) = map.get("memory_bytes").and_then(Value::as_u64) {
+        limits.max_memory = Some(usize::try_from(bytes).unwrap_or(usize::MAX));
+    }
+    if let Some(depth) = map.get("stack_depth").and_then(Value::as_u64) {
+        limits.max_recursion_depth = Some(usize::try_from(depth).unwrap_or(usize::MAX));
+    }
+    if let Some(ms) = map.get("timeout_ms").and_then(Value::as_u64) {
+        limits.max_duration = Some(std::time::Duration::from_millis(ms));
+    }
+
+    Ok(limits)
+}
 
 /// Integer codes returned by `monty_repl_detect_continuation`.
 ///
@@ -101,12 +145,15 @@ impl std::fmt::Debug for MontyReplHandle {
 
 impl MontyReplHandle {
     /// Creates a new REPL handle with an empty interpreter state.
+    ///
+    /// Pass `ResourceLimits::default()` for an unbounded session, which is what
+    /// every caller got before limits existed here.
     #[must_use]
-    pub fn new(script_name: &str) -> Self {
+    pub fn new(script_name: &str, limits: ResourceLimits) -> Self {
         Self {
             state: ReplHandleState::Idle(MontyRepl::new(
                 script_name,
-                NoLimitTracker,
+                Tracker::new(limits),
                 crate::convert::compile_options(),
             )),
             ext_fn_names: HashSet::new(),
@@ -797,7 +844,7 @@ mod tests {
 
     #[test]
     fn repl_handle_basic_state_persistence() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, _, _) = repl.feed_run("x = 42");
         assert_eq!(tag, MontyResultTag::Ok);
 
@@ -809,7 +856,7 @@ mod tests {
 
     #[test]
     fn repl_handle_function_persistence() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.feed_run("def f():\n    return 99");
 
         let (tag, json, _) = repl.feed_run("f()");
@@ -820,7 +867,7 @@ mod tests {
 
     #[test]
     fn repl_handle_survives_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, _, _) = repl.feed_run("x = 10");
         assert_eq!(tag, MontyResultTag::Ok);
 
@@ -835,7 +882,7 @@ mod tests {
 
     #[test]
     fn repl_handle_print_output() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, json, _) = repl.feed_run("print('hello')");
         assert_eq!(tag, MontyResultTag::Ok);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -872,7 +919,7 @@ mod tests {
 
     #[test]
     fn feed_start_with_ext_fn_pauses() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["get_temp".into()]);
 
         let (tag, _) = repl.feed_start("result = get_temp()");
@@ -883,7 +930,7 @@ mod tests {
 
     #[test]
     fn feed_start_resume_completes() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["get_temp".into()]);
 
         let (tag, _) = repl.feed_start("result = get_temp()\nresult");
@@ -900,7 +947,7 @@ mod tests {
 
     #[test]
     fn feed_start_state_persists_after_resume() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["get_temp".into()]);
 
         // Use feed_start to set a variable via external function
@@ -919,7 +966,7 @@ mod tests {
 
     #[test]
     fn feed_start_multiple_ext_fn_calls() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["get_a".into(), "get_b".into()]);
 
         let (tag, _) = repl.feed_start("a = get_a()\nb = get_b()\na + b");
@@ -945,7 +992,7 @@ mod tests {
 
     #[test]
     fn feed_start_resume_with_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["fetch".into()]);
 
         let (tag, _) = repl.feed_start(
@@ -968,7 +1015,7 @@ mod tests {
 
     #[test]
     fn feed_start_error_recovers_repl() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.feed_run("x = 42");
 
         // feed_start with code that raises immediately
@@ -985,7 +1032,7 @@ mod tests {
 
     #[test]
     fn feed_start_unknown_fn_yields_pending() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         // Without ext_fns registered, an unknown function call still
         // yields Pending — the host decides how to respond.
         let (tag, _) = repl.feed_start("unknown_fn()");
@@ -1001,7 +1048,7 @@ mod tests {
 
     #[test]
     fn resume_wrong_state_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, err) = repl.resume("42");
         assert_eq!(tag, MontyProgressTag::Error);
         assert!(err.is_some());
@@ -1009,7 +1056,7 @@ mod tests {
 
     #[test]
     fn feed_run_after_feed_start_cycle() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["get_val".into()]);
 
         // feed_start cycle
@@ -1029,7 +1076,7 @@ mod tests {
 
     #[test]
     fn pending_args_and_kwargs_accessors() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["add".into()]);
 
         let (tag, _) = repl.feed_start("add(1, 2)");
@@ -1054,7 +1101,7 @@ mod tests {
 
     #[test]
     fn accessors_return_none_in_wrong_state() {
-        let repl = MontyReplHandle::new("test.py");
+        let repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         // Idle state — all state-specific accessors return None
         assert!(repl.pending_fn_name().is_none());
         assert!(repl.pending_fn_args_json().is_none());
@@ -1080,7 +1127,7 @@ mod tests {
 
     #[test]
     fn snapshot_restore_preserves_state() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, _, _) = repl.feed_run("x = 42");
         assert_eq!(tag, MontyResultTag::Ok);
 
@@ -1098,7 +1145,7 @@ mod tests {
 
     #[test]
     fn snapshot_mid_execution_returns_err() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["f".into()]);
         repl.feed_start("f()");
         // Handle is now Paused — snapshot must fail
@@ -1106,8 +1153,62 @@ mod tests {
     }
 
     #[test]
+    fn parse_limits_json_reads_all_three_axes() {
+        let l =
+            parse_limits_json(r#"{"memory_bytes": 1048576, "stack_depth": 64, "timeout_ms": 250}"#)
+                .expect("valid limits");
+        assert_eq!(l.max_memory, Some(1_048_576));
+        assert_eq!(l.max_recursion_depth, Some(64));
+        assert_eq!(l.max_duration, Some(std::time::Duration::from_millis(250)));
+    }
+
+    #[test]
+    fn parse_limits_json_treats_absent_fields_as_unbounded() {
+        let l = parse_limits_json("{}").expect("empty object is valid");
+        assert_eq!(l.max_memory, None);
+        assert_eq!(l.max_recursion_depth, None);
+        assert_eq!(l.max_duration, None);
+    }
+
+    #[test]
+    fn parse_limits_json_rejects_garbage_rather_than_falling_back() {
+        // A caller who asks for a limit and silently receives none is core#138.
+        assert!(parse_limits_json("not json").is_err());
+        assert!(parse_limits_json("[1,2]").is_err());
+    }
+
+    /// The regression core#138 is about: a limit that is set must actually bite.
+    #[test]
+    fn a_recursion_limit_stops_runaway_recursion() {
+        let limits = ResourceLimits {
+            max_recursion_depth: Some(16),
+            ..Default::default()
+        };
+        let mut h = MontyReplHandle::new("repl.py", limits);
+
+        let (tag, _json, _err) = h.feed_run("def f(n):\n    return f(n + 1)\nf(0)");
+
+        // Without a limit this recurses until the process dies; with one it must
+        // come back as an error instead.
+        assert_eq!(
+            tag,
+            MontyResultTag::Error,
+            "unbounded recursion should have been stopped by max_recursion_depth"
+        );
+    }
+
+    #[test]
+    fn an_unbounded_session_still_runs_ordinary_code() {
+        // LimitedTracker with ResourceLimits::default() must behave as
+        // NoLimitTracker did — every existing caller depends on it.
+        let mut h = MontyReplHandle::new("repl.py", ResourceLimits::default());
+        let (tag, _json, _err) = h.feed_run("sum(range(1000))");
+        assert_eq!(tag, MontyResultTag::Ok);
+    }
+
+    #[test]
     fn restore_isolates_from_original() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.feed_run("x = 1");
 
         let bytes = repl.snapshot().unwrap();
@@ -1125,7 +1226,7 @@ mod tests {
 
     #[test]
     fn debug_fmt_does_not_panic() {
-        let repl = MontyReplHandle::new("test.py");
+        let repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let s = format!("{repl:?}");
         assert!(s.contains("MontyReplHandle"));
     }
@@ -1136,7 +1237,7 @@ mod tests {
 
     #[test]
     fn resume_invalid_json_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["f".into()]);
         repl.feed_start("f()");
 
@@ -1147,7 +1248,7 @@ mod tests {
 
     #[test]
     fn resume_with_error_wrong_state_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         // Idle state — not paused
         let (tag, err) = repl.resume_with_error("boom");
         assert_eq!(tag, MontyProgressTag::Error);
@@ -1156,7 +1257,7 @@ mod tests {
 
     #[test]
     fn resume_as_future_wrong_state_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, err) = repl.resume_as_future();
         assert_eq!(tag, MontyProgressTag::Error);
         assert!(err.unwrap().contains("Paused"));
@@ -1164,7 +1265,7 @@ mod tests {
 
     #[test]
     fn resume_futures_wrong_state_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, err) = repl.resume_futures("{}", "{}");
         assert_eq!(tag, MontyProgressTag::Error);
         assert!(err.unwrap().contains("Futures"));
@@ -1172,7 +1273,7 @@ mod tests {
 
     #[test]
     fn feed_run_while_paused_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["f".into()]);
         repl.feed_start("f()");
 
@@ -1184,7 +1285,7 @@ mod tests {
 
     #[test]
     fn feed_start_while_paused_returns_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["f".into()]);
         repl.feed_start("f()");
 
@@ -1200,7 +1301,7 @@ mod tests {
 
     #[test]
     fn os_call_flow_resume_with_value() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, _) = repl.feed_start("import os\nos.getenv('FOO')");
 
         if tag != MontyProgressTag::OsCall {
@@ -1222,7 +1323,7 @@ mod tests {
 
     #[test]
     fn os_call_flow_resume_with_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, _) = repl.feed_start(
             "import os\ntry:\n    os.getenv('FOO')\nexcept Exception as e:\n    str(e)",
         );
@@ -1241,7 +1342,7 @@ mod tests {
 
     #[test]
     fn resume_not_found_raises_name_error() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["missing_fn".into()]);
         let (tag, _) = repl.feed_start("missing_fn(1)");
         assert_eq!(tag, MontyProgressTag::Pending);
@@ -1263,7 +1364,7 @@ mod tests {
 
     #[test]
     fn resume_not_found_caught_in_python() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["missing_fn".into()]);
         let (tag, _) = repl.feed_start(
             "try:\n    missing_fn()\nexcept NameError as e:\n    result = 'caught'\nresult",
@@ -1279,7 +1380,7 @@ mod tests {
 
     #[test]
     fn resume_not_found_wrong_state() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         let (tag, err) = repl.resume_not_found("foo");
         assert_eq!(tag, MontyProgressTag::Error);
         assert!(err.is_some());
@@ -1287,7 +1388,7 @@ mod tests {
 
     #[test]
     fn resume_as_future_then_resolve() {
-        let mut repl = MontyReplHandle::new("test.py");
+        let mut repl = MontyReplHandle::new("test.py", ResourceLimits::default());
         repl.set_ext_fns(vec!["fetch".into()]);
 
         let (tag, _) = repl.feed_start(

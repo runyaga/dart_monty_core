@@ -8,7 +8,11 @@ import 'package:dart_monty_core/src/platform/core_bindings.dart';
 /// a unified contract across native FFI and web WASM backends.
 abstract class ReplBindings {
   /// Creates a persistent REPL session.
-  Future<void> create({String? scriptName});
+  ///
+  /// [limitsJson] applies SESSION-scoped resource limits, mirroring
+  /// upstream's `checkout(limits=…)`. Null means an unbounded session, which
+  /// is what every REPL got before limits existed here.
+  Future<void> create({String? scriptName, String? limitsJson});
 
   /// Feeds a Python snippet and runs to completion.
   ///

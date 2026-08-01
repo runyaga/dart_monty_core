@@ -744,7 +744,76 @@ pub unsafe extern "C" fn monty_repl_create(
         }
     };
 
-    match catch_ffi_panic(|| MontyReplHandle::new(&name)) {
+    match catch_ffi_panic(|| MontyReplHandle::new(&name, monty_types::ResourceLimits::default())) {
+        Ok(handle) => {
+            let ptr = Box::into_raw(Box::new(handle));
+            LIVE_REPL_HANDLES
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(ptr as usize);
+            ptr
+        }
+        Err(panic_msg) => {
+            if !out_error.is_null() {
+                // SAFETY: out_error is non-null (just checked), writing panic error message
+                unsafe { *out_error = to_c_string(&panic_msg) };
+            }
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Create a REPL handle with SESSION-scoped resource limits.
+///
+/// Additive sibling of `monty_repl_create`, which stays unbounded so existing
+/// callers are unaffected. Limits belong to the session, not to an individual
+/// feed — mirroring upstream's Python API, where `checkout(limits=…)` configures
+/// a REPL session (`monty-python/src/pool.rs`).
+///
+/// `limits_json` accepts the same shape the web backend already sends:
+/// `{"memory_bytes":…,"stack_depth":…,"timeout_ms":…}`. A NULL pointer means an
+/// unbounded session. Malformed JSON is an error rather than a silent fallback:
+/// a caller who asks for a limit and quietly receives none is core#138.
+///
+/// # Safety
+/// `script_name` and `limits_json` must be NUL-terminated C strings or NULL.
+/// `out_error` must be a valid pointer to a `*mut c_char` or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn monty_repl_create_with_limits(
+    script_name: *const c_char,
+    limits_json: *const c_char,
+    out_error: *mut *mut c_char,
+) -> *mut MontyReplHandle {
+    let name = if script_name.is_null() {
+        "repl.py".to_string()
+    } else {
+        // SAFETY: script_name is non-null (just checked), NUL-terminated C string from Dart FFI
+        match unsafe { parse_c_str(script_name, "script_name", out_error) } {
+            Ok(s) => s.to_string(),
+            Err(()) => return ptr::null_mut(),
+        }
+    };
+
+    let limits = if limits_json.is_null() {
+        monty_types::ResourceLimits::default()
+    } else {
+        // SAFETY: limits_json is non-null (just checked), NUL-terminated C string from Dart FFI
+        let Ok(raw) = (unsafe { parse_c_str(limits_json, "limits_json", out_error) }) else {
+            return ptr::null_mut();
+        };
+        match crate::repl_handle::parse_limits_json(raw) {
+            Ok(l) => l,
+            Err(e) => {
+                if !out_error.is_null() {
+                    // SAFETY: out_error is non-null (just checked)
+                    unsafe { *out_error = to_c_string(&e) };
+                }
+                return ptr::null_mut();
+            }
+        }
+    };
+
+    match catch_ffi_panic(|| MontyReplHandle::new(&name, limits)) {
         Ok(handle) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_REPL_HANDLES
