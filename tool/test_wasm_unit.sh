@@ -15,9 +15,32 @@
 # COOP/COEP headers are NOT required — the bridge does not use
 # SharedArrayBuffer or Atomics, so the default dart-test browser server works.
 #
-# Usage: bash tool/test_wasm_unit.sh [-- <extra dart test args>]
+# Usage: bash tool/test_wasm_unit.sh [--dart2wasm] [-- <extra dart test args>]
+#
+#   --dart2wasm  Compile the Dart TEST CODE with dart2wasm instead of dart2js.
+#
+# Two different things are called "wasm" here, and conflating them hides bugs:
+#
+#   1. The ENGINE — the Rust crate built for wasm32-wasip1 and loaded by the JS
+#      worker. Every test in this suite drives it, whichever compiler is used.
+#      That is what makes them `wasm`-tagged.
+#   2. The DART COMPILE TARGET — dart2js or dart2wasm. This flag picks that.
+#
+# Axis 2 matters on its own: dart2js has a single number type, so `4.0 is int`
+# is true and integral doubles collapse to ints; dart2wasm has real doubles and
+# does not. Code can therefore pass on one and fail on the other while driving
+# an identical engine. Passing extra args after `--` does NOT work for this:
+# they land after the positional file list and `dart test` reads them as paths.
 # =============================================================================
 set -euo pipefail
+
+COMPILER=()
+LABEL="dart2js"
+if [ "${1:-}" = "--dart2wasm" ]; then
+  COMPILER=(-c dart2wasm)
+  LABEL="dart2wasm"
+  shift
+fi
 
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 INTEG="$PKG/test/integration"
@@ -104,9 +127,10 @@ fi
 echo "  all listed"
 
 echo ""
-echo "--- Running dart test -p chrome --tags=wasm ---"
+echo "--- Running dart test -p chrome ($LABEL) --tags=wasm ---"
 dart test \
   -p chrome \
+  "${COMPILER[@]}" \
   --run-skipped \
   --tags=wasm \
   --exclude-tags=pending-futures \

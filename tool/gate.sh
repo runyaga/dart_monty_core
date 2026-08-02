@@ -65,6 +65,14 @@ s  breaking_rec  bash tool/check_breaking_recorded.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
 s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example
+# The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
+# dart2js has one number type, so `4.0 is int` is true and integral doubles
+# collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
+# the VM and be unreachable-or-wrong on the web -- measured: a fix for
+# inputs_encoder compiled, analysed clean and passed on the VM while doing
+# nothing at all, because the arm it added was dead on the only backend with the
+# bug. `vm-only` is excluded because those files cannot COMPILE for the web.
+s  unit_web      dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
 s  dcm_ratchet   bash tool/dcm_ratchet.sh
 ns cargo_fmt     cargo fmt --check
 ns cargo_clippy  cargo clippy --all-targets -- -D warnings
@@ -93,6 +101,12 @@ s  wasm_full     bash tool/test_wasm.sh --skip-build
 # "FFI and WASM both" rule was enforced only by CI. Added 2026-07-30 after two
 # new 0.19 suites shipped with FFI runners and no WASM counterpart.
 s  wasm_unit     bash tool/test_wasm_unit.sh
+# Same suite, same WASM ENGINE, different DART compile target. Two things get
+# called "wasm" here: the Rust engine (driven by every test above regardless of
+# compiler) and the Dart target. Only this step covers the second. CI already
+# ran dart2wasm for the fixture corpus; the gate never did, so every local
+# "green" was dart2js-only on the web side.
+s  wasm_unit_w   bash tool/test_wasm_unit.sh --dart2wasm
 # Separate gate from wasm_full on purpose: different artefact (the assembled
 # Pages site vs the test harness) and different failure modes (stale asset
 # copies, COOP/COEP, relative paths under /repl/).

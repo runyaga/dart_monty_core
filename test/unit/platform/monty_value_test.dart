@@ -84,32 +84,11 @@ void main() {
       _expectRoundTrip(const MontyInt(9007199254740992));
     });
 
-    test('past 2^53 it encodes as a bigint and decodes as MontyBigInt', () {
-      // Tier 3 / core#128b. On dart2js `int` IS a double, so beyond 2^53 an
-      // integer cannot be a MontyInt there at all — `JSON.parse` measurably
-      // returns 9007199254740992 for 9007199254740993. Rather than let the TYPE
-      // depend on the backend (which would break invariant I1), it is a
-      // MontyBigInt on ALL backends past the boundary.
-      // Written as an expression, not a literal: the literal itself trips
-      // avoid_js_rounded_ints, because it is precisely a value JavaScript
-      // cannot hold — which is the defect under test.
-      const past = MontyInt((1 << 53) + 1);
-      expect(past.toJson(), {
-        '__type': 'bigint',
-        'value': '9007199254740993',
-      });
-      expect(
-        MontyValue.fromJson(past.toJson()),
-        MontyBigInt(BigInt.parse('9007199254740993')),
-        reason: 'the value survives; the Dart type deliberately changes',
-      );
-
-      // i64 max, comfortably past the boundary.
-      expect(
-        MontyValue.fromJson(const MontyInt(0x7FFFFFFFFFFFFFFF).toJson()),
-        MontyBigInt(BigInt.parse('9223372036854775807')),
-      );
-    });
+    // The past-2^53 cases live in monty_value_int64_vm_test.dart. They cannot
+    // be here: an `int` beyond 2^53 is unrepresentable on dart2js, and
+    // `0x7FFFFFFFFFFFFFFF` is a dart2js COMPILE error — which would take this
+    // whole file down with it, and a `skip:` cannot help because the failure
+    // happens before any test runs.
   });
 
   group('MontyFloat', () {
