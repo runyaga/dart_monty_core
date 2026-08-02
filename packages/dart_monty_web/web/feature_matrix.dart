@@ -645,16 +645,35 @@ SkipKind? _skipReason(_Fixture f) {
         : null;
   }
 
+  // `# mount-fs` fixtures want a pre-populated filesystem bound to `root`.
+  // The panel supplies one with the PUBLIC memoryMountedOsHandler — notably
+  // without the ~400-line private VFS the WASM corpus runner carries.
+  if (fixtureMountsFs(f.source)) {
+    return parseFixture(f.source, skipMountFs: false, skipWasm: true) == null
+        ? SkipKind.noDirective
+        : null;
+  }
+
   if (parseFixture(f.source, skipWasm: true) == null) {
-    // What is left genuinely needs a host the panel does not yet stand up:
-    // `# mount-fs` wants a pre-populated virtual filesystem bound to `root`.
-    return fixtureMountsFs(f.source)
-        ? SkipKind.needsHost
-        : SkipKind.noDirective;
+    return SkipKind.noDirective;
   }
 
   return null;
 }
+
+/// The filesystem a `# mount-fs` fixture expects to find at `root`.
+///
+/// The contents are upstream's, not ours — the fixtures assert exact sizes
+/// (`hello.txt` is 12 bytes, `readonly.txt` is 16), so this is a contract, not
+/// a convenience.
+const _mountFsSeed = <String, String>{
+  '/mnt/hello.txt': 'hello world\n',
+  '/mnt/empty.txt': '',
+  '/mnt/data.bin': '\x00\x01\x02\x03',
+  '/mnt/readonly.txt': 'readonly content',
+  '/mnt/subdir/nested.txt': 'nested content',
+  '/mnt/subdir/deep/file.txt': 'deep file',
+};
 
 /// Runs one fixture exactly as `wasm_fixture_test.dart` does, and reports
 /// whether upstream's own directive held.
@@ -700,6 +719,37 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
   MontyResult? result;
   String? thrownExcType;
   try {
+    if (fixtureMountsFs(f.source)) {
+      // The fixtures document that `root` is injected by the test runner, so
+      // injecting it is part of honouring the directive, not a cheat.
+      final r =
+          await Monty(
+            "from pathlib import Path as _P\nroot = _P('/mnt')\n${f.source}",
+          ).run(
+            osHandler: memoryMountedOsHandler(
+              mounts: const [MountDir(virtualPath: '/mnt')],
+              vfs: Map.of(_mountFsSeed),
+            ),
+          );
+
+      // A red row must say why. These two currently fail on FB-11 (a missing
+      // file INSIDE a mount reports PermissionError instead of
+      // FileNotFoundError), and leaving them red rather than relabelling them
+      // is deliberate: the library really does fail them.
+      if (r.error != null)
+        _skipNotes[f.name] = r.error!.message.split('\n').first;
+
+      return switch (expectation) {
+        ExpectNoException() => r.error == null ? 'PASS' : 'FAIL',
+        ExpectReturn(value: final want) =>
+          r.error == null && r.value == MontyValue.fromDart(want)
+              ? 'PASS'
+              : 'FAIL',
+        ExpectRaise(:final excType) =>
+          r.error?.excType == excType ? 'PASS' : 'FAIL',
+      };
+    }
+
     result = await platform.run(f.source, scriptName: f.name);
     thrownExcType = result.error?.excType;
   } on MontyScriptError catch (e) {
@@ -881,6 +931,7 @@ Future<void> _runCorpus() async {
         f.source,
         skipCallExternal: false,
         skipRunAsync: false,
+        skipMountFs: false,
         skipWasm: true,
       )!;
       final status = await _runFixture(f, expectation);

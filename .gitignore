@@ -55,3 +55,10 @@ site/
 
 # tool/gate.sh step logs
 .gate-logs/
+
+# Agent scratch: worktrees and transient probe scripts. Untracked and NOT
+# ignored, a subagent's throwaway probes were swept into a commit by a
+# `git add -A` -- four of them shipped in what became 0aa5a63 before being
+# pulled back out.
+.claude/
+probe*.dart

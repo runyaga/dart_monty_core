@@ -110,13 +110,19 @@ switch (result.value) {
 }
 ```
 
-19 subtypes — scalars (`MontyInt`, `MontyFloat`, `MontyString`, `MontyBool`,
-`MontyNone`), collections (`MontyList`, `MontyTuple`, `MontyDict`, `MontySet`,
-`MontyFrozenSet`, `MontyBytes`), datetime (`MontyDate`, `MontyDateTime`,
-`MontyTimeDelta`, `MontyTimeZone`), and structured (`MontyPath`,
-`MontyNamedTuple`, `MontyDataclass`, `MontyFileHandle`).
-`MontyDataclass.hydrate(factory)` turns a Python `@dataclass` into your
-own Dart class:
+24 subtypes — scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`,
+`MontyBool`, `MontyNone`, `MontyEllipsis`), collections (`MontyList`,
+`MontyTuple`, `MontyDict`, `MontyPairsDict`, `MontySet`, `MontyFrozenSet`,
+`MontyBytes`), datetime (`MontyDate`, `MontyDateTime`, `MontyTimeDelta`,
+`MontyTimeZone`), and structured (`MontyPath`, `MontyNamedTuple`,
+`MontyDataclass`, `MontyFileHandle`, `MontyExceptionValue`, `MontyOpaque`).
+
+`MontyDataclass.hydrate(factory)` turns a dataclass **the host supplied** into
+your own Dart class. Note the direction: sandboxed Python cannot write
+`@dataclass` — there is no `dataclasses` module and no such builtin — so a
+`MontyDataclass` always originates host-side, typically as the return value of
+an external function. A class defined *inside* the sandbox comes back as
+`MontyOpaque(repr, …)`, not a `MontyDataclass`.
 
 ```dart
 final user = (result.value as MontyDataclass).hydrate(User.fromAttrs);
