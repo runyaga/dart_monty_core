@@ -100,21 +100,13 @@ OsCallHandler memoryMountedOsHandler({
     );
   }
 
-  /// Rejects a write whose parent directory does not exist.
-  ///
-  /// The flat map has no notion of a parent, so `write_text` into
-  /// `/mnt/typo/file.txt` would cheerfully create the key and invent the
-  /// directory — a mistyped path silently "worked" and the file appeared
-  /// somewhere the caller never named. CPython raises, and
-  /// mount_fs__errors.py:141-155 asserts the exact message.
-  void requireParentDir(String path) {
-    if (!_dirExists(vfs, _parentPath(path), normalizedMounts)) {
-      throw OsCallException(
-        "[Errno 2] No such file or directory: '$path'",
-        pythonExceptionType: 'FileNotFoundError',
-      );
-    }
-  }
+  // A parent-directory check for write_text/write_bytes lived here and was
+  // REVERTED. It is correct in principle — without it a typo'd path silently
+  // creates a file in a directory nobody named — but it is unsafe while
+  // `mkdir` is a no-op: the parent it demands can never come into existence,
+  // so `mkdir` followed by writing into that directory failed. See the
+  // "mkdir then write into it" test, and reinstate this in Phase 1 once
+  // directories are first-class (~/dev/plans/monty-0.19-upgrade/vfs-design.md).
 
   return (op, args, kwargs) async {
     // Carries [path, mode]; reads and writes then arrive separately as
@@ -183,7 +175,6 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.write_text':
         _requireWritable(mount, path);
-        requireParentDir(path);
         final value = args.elementAtOrNull(1);
         if (value is! String) {
           throw OsCallException(
@@ -198,7 +189,6 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.write_bytes':
         _requireWritable(mount, path);
-        requireParentDir(path);
         final value = args.elementAtOrNull(1);
         final List<int> bytes;
         if (value is List) {

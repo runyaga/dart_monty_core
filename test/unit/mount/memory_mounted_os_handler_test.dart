@@ -567,38 +567,47 @@ void main() {
     // mount_fs__errors.py:141-155. A write into a directory that does not
     // exist must fail; the flat map would happily create the key and invent
     // the parent, which is how a typo'd path silently "worked".
-    test('write_text/write_bytes with a missing parent raise', () {
-      final handler = memoryMountedOsHandler(
-        mounts: const [MountDir(virtualPath: '/mnt')],
-        vfs: const {},
-      );
+    // SKIPPED, deliberately. This pins the parent-directory check that was
+    // reverted: correct in principle, unsafe while `mkdir` is a no-op (it broke
+    // mkdir-then-write). Kept rather than deleted so the requirement stays
+    // visible — Phase 1 makes directories first-class and this goes green.
+    // See ~/dev/plans/monty-0.19-upgrade/vfs-design.md.
+    test(
+      'write_text/write_bytes with a missing parent raise',
+      skip: 'reverted with requireParentDir; restored in Phase 1',
+      () {
+        final handler = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/mnt')],
+          vfs: const {},
+        );
 
-      Matcher missing(String p) => throwsA(
-        isA<OsCallException>()
-            .having(
-              (e) => e.pythonExceptionType,
-              'excType',
-              'FileNotFoundError',
-            )
-            .having(
-              (e) => e.message,
-              'message',
-              "[Errno 2] No such file or directory: '$p'",
-            ),
-      );
+        Matcher missing(String p) => throwsA(
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'excType',
+                'FileNotFoundError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                "[Errno 2] No such file or directory: '$p'",
+              ),
+        );
 
-      expect(
-        () => handler('Path.write_text', ['/mnt/nope/child.txt', 'x'], null),
-        missing('/mnt/nope/child.txt'),
-      );
-      expect(
-        () => handler('Path.write_bytes', [
-          '/mnt/nope/child.bin',
-          [1, 2, 3],
-        ], null),
-        missing('/mnt/nope/child.bin'),
-      );
-    });
+        expect(
+          () => handler('Path.write_text', ['/mnt/nope/child.txt', 'x'], null),
+          missing('/mnt/nope/child.txt'),
+        );
+        expect(
+          () => handler('Path.write_bytes', [
+            '/mnt/nope/child.bin',
+            [1, 2, 3],
+          ], null),
+          missing('/mnt/nope/child.bin'),
+        );
+      },
+    );
 
     test('writing directly into a mount root still works', () async {
       final vfs = <String, String>{};
@@ -636,6 +645,32 @@ void main() {
               ),
         ),
       );
+    });
+
+    // mkdir, then write into what you just created. The most ordinary
+    // filesystem sequence there is, and mount_fs__errors.py:209-212 depends on
+    // it to set up its rename case.
+    //
+    // b289207 broke this: it added a parent-directory check to write_text and
+    // write_bytes. The check is right in PRINCIPLE — without it a typo'd path
+    // silently creates a file in a directory that was never named — but it is
+    // unsafe while `mkdir` is a no-op, because the parent it demands can never
+    // come into existence. The gate was green because nothing covered the
+    // sequence; this test is that cover.
+    //
+    // The check comes back in Phase 1, once directories are first-class and
+    // `mkdir` actually creates one.
+    test('mkdir then write into it — the sequence must work', () async {
+      final vfs = <String, String>{};
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/m')],
+        vfs: vfs,
+      );
+
+      await handler('Path.mkdir', ['/m/d'], null);
+      await handler('Path.write_text', ['/m/d/f.txt', 'moved'], null);
+
+      expect(await handler('Path.read_text', ['/m/d/f.txt'], null), 'moved');
     });
 
     test('rmdir of a nonexistent path raises FileNotFoundError', () {
