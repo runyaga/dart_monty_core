@@ -190,6 +190,32 @@ small consumer-facing surface.
   `.wasm`. Only `replCreate` does not take the parameter. #140 is JS plumbing,
   not new engine work.
 
+- **A malformed typed envelope is now a decode error, not a panic and not a
+  silently-substituted zero.** Two defects sat on the same lines of
+  `native/src/convert.rs`: `map["key"]` is Rust's panicking index, and
+  `.unwrap_or(0)` swallowed a wrong-typed field.
+
+  Measured in Chrome against the shipped wasm, driving the JS bridge directly:
+
+  | envelope | was | now |
+  |---|---|---|
+  | `{"__type":"date","year":2020}` | `error: "unreachable"` — a wasm trap | `date envelope is missing required field "month"` |
+  | `{"__type":"datetime",…,"hour":"XX",…}` | `ok:true`, `datetime(2020,1,1,0,0)` — hour silently `0` | `datetime envelope field "hour" must be an integer, got "XX"` |
+
+  The same treatment covers `timedelta`, `timezone`, `path`, `bytes`,
+  `namedtuple` and `dataclass`, which had the identical shape. An *absent*
+  optional field is still absent; a *present but wrong-typed* one is now an
+  error, because a caller who supplied the key meant something by it.
+
+  Reachable only through the JS bridge, which is not gated by the internal
+  `WireJson` type — the Dart API never could produce these, and since #139
+  neither can sandboxed Python, whose maps arrive as dicts.
+
+  **Not fixed, and worth knowing:** a rejected resume still leaves that REPL
+  session unusable (`handle not in Idle or Complete state`). The trap is gone
+  and the error now says what was wrong, but recovery still means disposing the
+  session.
+
 - **An `inputs` key must now be a valid Python identifier, and it is enforced
   (#137).** The doc always said so; nothing checked, and each key was
   interpolated into Python source raw — so a key was a working code-injection

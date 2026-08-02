@@ -297,6 +297,111 @@ fn dict_payload_to_pairs(map: &serde_json::Map<String, Value>) -> Result<MontyOb
 /// unknown `__type` as a dict, which are the same forgery-shaped hole core#136
 /// describes, pointing the other way: anything the decoder does not recognise
 /// became a plausible value instead of a rejection. Rule R4 — the decoder rejects
+/// Reads a REQUIRED integer field out of a typed envelope.
+///
+/// Replaces `map["key"].as_i64().unwrap_or(0).try_into().unwrap_or(0)`, which
+/// carried two defects on one line:
+///
+/// - `map["key"]` is the panicking `Index` impl. A missing key aborted the
+///   process. Measured in Chrome against the shipped wasm: a `{"__type":
+///   "date", "year": 2020}` envelope with no `month`/`day` returned
+///   `error: "unreachable"` — the wasm trap — and left the REPL session
+///   permanently in `handle not in Idle or Complete state`, so every later feed
+///   on that session failed with an error naming neither a panic nor a cause.
+///   A fresh session still worked, so this destroys a session, not the module.
+/// - `.unwrap_or(0)` silently substituted zero for a field of the wrong type.
+///   Measured: `{"__type": "datetime", …, "hour": "XX", …}` decoded happily to
+///   `datetime.datetime(2020, 1, 1, 0, 0)` — `ok: true`, hour silently 0. That
+///   is a G2 violation ("never fail silently") sitting inside a decoder.
+///
+/// Both are now decode errors naming the tag, the field and what was wrong.
+fn envelope_int<T>(map: &serde_json::Map<String, Value>, tag: &str, key: &str) -> Result<T, String>
+where
+    T: TryFrom<i64>,
+{
+    let Some(raw) = map.get(key) else {
+        return Err(format!(
+            "{tag} envelope is missing required field \"{key}\""
+        ));
+    };
+    let Some(n) = raw.as_i64() else {
+        return Err(format!(
+            "{tag} envelope field \"{key}\" must be an integer, got {raw}"
+        ));
+    };
+    T::try_from(n).map_err(|_| format!("{tag} envelope field \"{key}\" is out of range: {n}"))
+}
+
+/// Reads an OPTIONAL integer field. Absent is `None`; present-but-wrong is an
+/// error, because a caller that supplied the key meant something by it.
+fn envelope_opt_int<T>(
+    map: &serde_json::Map<String, Value>,
+    tag: &str,
+    key: &str,
+) -> Result<Option<T>, String>
+where
+    T: TryFrom<i64>,
+{
+    match map.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => envelope_int(map, tag, key).map(Some),
+    }
+}
+
+/// Reads a REQUIRED string field. Same reasoning as [`envelope_int`]:
+/// `map["value"].as_str().unwrap_or("")` turned a malformed envelope into an
+/// empty path rather than an error.
+fn envelope_str(
+    map: &serde_json::Map<String, Value>,
+    tag: &str,
+    key: &str,
+) -> Result<String, String> {
+    let Some(raw) = map.get(key) else {
+        return Err(format!(
+            "{tag} envelope is missing required field \"{key}\""
+        ));
+    };
+    raw.as_str()
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| format!("{tag} envelope field \"{key}\" must be a string, got {raw}"))
+}
+
+/// Reads a REQUIRED array field. Same reasoning as [`envelope_int`]: the
+/// `map["field_names"].as_array().…unwrap_or_default()` shape both panicked on
+/// an absent key and turned a wrong-typed one into an empty list.
+fn envelope_array<'a>(
+    map: &'a serde_json::Map<String, Value>,
+    tag: &str,
+    key: &str,
+) -> Result<&'a Vec<Value>, String> {
+    let Some(raw) = map.get(key) else {
+        return Err(format!(
+            "{tag} envelope is missing required field \"{key}\""
+        ));
+    };
+    raw.as_array()
+        .ok_or_else(|| format!("{tag} envelope field \"{key}\" must be an array, got {raw}"))
+}
+
+/// Reads an array of strings, rejecting a non-string element rather than
+/// substituting `""` for it.
+fn envelope_str_array(
+    map: &serde_json::Map<String, Value>,
+    tag: &str,
+    key: &str,
+) -> Result<Vec<String>, String> {
+    envelope_array(map, tag, key)?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(std::string::ToString::to_string)
+                .ok_or_else(|| {
+                    format!("{tag} envelope field \"{key}\" must contain only strings, got {v}")
+                })
+        })
+        .collect()
+}
+
 /// what it does not understand.
 pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
     Ok(match val {
@@ -317,88 +422,65 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
             match type_str {
                 "dict" => dict_payload_to_pairs(map)?,
                 "date" => MontyObject::Date(monty_types::MontyDate {
-                    year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                    month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
+                    year: envelope_int(map, "date", "year")?,
+                    month: envelope_int(map, "date", "month")?,
+                    day: envelope_int(map, "date", "day")?,
                 }),
                 "datetime" => MontyObject::DateTime(monty_types::MontyDateTime {
-                    year: map["year"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                    month: map["month"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    day: map["day"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    hour: map["hour"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    minute: map["minute"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    second: map["second"].as_u64().unwrap_or(0).try_into().unwrap_or(0),
-                    microsecond: map["microsecond"]
-                        .as_u64()
-                        .unwrap_or(0)
-                        .try_into()
-                        .unwrap_or(0),
-                    offset_seconds: map
-                        .get("offset_seconds")
-                        .and_then(serde_json::Value::as_i64)
-                        .map(|v| v.try_into().unwrap_or(0)),
+                    year: envelope_int(map, "datetime", "year")?,
+                    month: envelope_int(map, "datetime", "month")?,
+                    day: envelope_int(map, "datetime", "day")?,
+                    hour: envelope_int(map, "datetime", "hour")?,
+                    minute: envelope_int(map, "datetime", "minute")?,
+                    second: envelope_int(map, "datetime", "second")?,
+                    microsecond: envelope_int(map, "datetime", "microsecond")?,
+                    offset_seconds: envelope_opt_int(map, "datetime", "offset_seconds")?,
                     timezone_name: map
                         .get("timezone_name")
                         .and_then(|v| v.as_str())
                         .map(std::string::ToString::to_string),
                 }),
                 "timedelta" => MontyObject::TimeDelta(monty_types::MontyTimeDelta {
-                    days: map["days"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                    seconds: map["seconds"].as_i64().unwrap_or(0).try_into().unwrap_or(0),
-                    microseconds: map["microseconds"]
-                        .as_i64()
-                        .unwrap_or(0)
-                        .try_into()
-                        .unwrap_or(0),
+                    days: envelope_int(map, "timedelta", "days")?,
+                    seconds: envelope_int(map, "timedelta", "seconds")?,
+                    microseconds: envelope_int(map, "timedelta", "microseconds")?,
                 }),
                 "timezone" => MontyObject::TimeZone(monty_types::MontyTimeZone {
-                    offset_seconds: map["offset_seconds"]
-                        .as_i64()
-                        .unwrap_or(0)
-                        .try_into()
-                        .unwrap_or(0),
+                    offset_seconds: envelope_int(map, "timezone", "offset_seconds")?,
                     name: map
                         .get("name")
                         .and_then(|v| v.as_str())
                         .map(std::string::ToString::to_string),
                 }),
-                "path" => MontyObject::Path(map["value"].as_str().unwrap_or("").to_string()),
+                "path" => MontyObject::Path(envelope_str(map, "path", "value")?),
                 "bytes" => MontyObject::Bytes(
-                    map["value"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .map(|v| v.as_u64().unwrap_or(0).try_into().unwrap_or(0))
-                                .collect()
+                    envelope_array(map, "bytes", "value")?
+                        .iter()
+                        .map(|v| {
+                            v.as_u64()
+                                .and_then(|n| u8::try_from(n).ok())
+                                .ok_or_else(|| {
+                                    format!("bytes envelope must contain only 0..=255, got {v}")
+                                })
                         })
-                        .unwrap_or_default(),
+                        .collect::<Result<Vec<u8>, String>>()?,
                 ),
                 "tuple" => MontyObject::Tuple(json_array_to_objects(map.get("value"))?),
                 "set" => MontyObject::Set(json_array_to_objects(map.get("value"))?),
                 "frozenset" => MontyObject::FrozenSet(json_array_to_objects(map.get("value"))?),
                 "namedtuple" => MontyObject::NamedTuple {
-                    type_name: map["type_name"].as_str().unwrap_or("").to_string(),
-                    field_names: map["field_names"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .map(|v| v.as_str().unwrap_or("").to_string())
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    type_name: envelope_str(map, "namedtuple", "type_name")?,
+                    field_names: envelope_str_array(map, "namedtuple", "field_names")?,
                     values: json_array_to_objects(map.get("values"))?,
                 },
                 "dataclass" => MontyObject::Dataclass {
-                    name: map["name"].as_str().unwrap_or("").to_string(),
-                    type_id: map["type_id"].as_u64().unwrap_or(0),
-                    field_names: map["field_names"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .map(|v| v.as_str().unwrap_or("").to_string())
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    name: envelope_str(map, "dataclass", "name")?,
+                    type_id: envelope_int::<i64>(map, "dataclass", "type_id")?
+                        .try_into()
+                        .map_err(|_| {
+                            "dataclass envelope field \"type_id\" must not be negative".to_string()
+                        })?,
+                    field_names: envelope_str_array(map, "dataclass", "field_names")?,
                     // `attrs` is itself a dict envelope, because the encoder
                     // routes it through dict_to_json. That uniformity is the
                     // point: R1 holds with no "except inside dataclass" carve-out.
@@ -2077,6 +2159,89 @@ mod tests {
         assert!(
             !parsed.contains_key("__type") || parsed.len() > 1,
             "plain dict should not gain extra __type wrapper"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // A malformed envelope is a DECODE ERROR, never a panic and never a
+    // silently-substituted zero (core A2).
+    //
+    // Both defects lived on one line each: `map["key"]` is the panicking
+    // `Index` impl, and `.unwrap_or(0)` swallowed a wrong-typed field.
+    //
+    // Measured in Chrome against the shipped wasm BEFORE this fix, driving the
+    // bridge directly (which is not WireJson-gated):
+    //
+    //   {"__type":"date","year":2020}                  -> error "unreachable",
+    //       and the REPL session was left permanently in
+    //       "handle not in Idle or Complete state" — bricked, with an error
+    //       naming neither a panic nor a cause. A fresh session still worked,
+    //       so this destroys a session rather than the module.
+    //   {"__type":"datetime",...,"hour":"XX",...}      -> ok:true,
+    //       datetime.datetime(2020, 1, 1, 0, 0). Silently zeroed.
+    // -------------------------------------------------------------------
+
+    fn decode_err(json: &str) -> String {
+        let v: Value = serde_json::from_str(json).expect("test json parses");
+        json_to_monty_object(&v).expect_err("expected a decode error")
+    }
+
+    #[test]
+    fn missing_envelope_field_is_an_error_not_a_panic() {
+        let err = decode_err(r#"{"__type":"date","year":2020}"#);
+        assert!(err.contains("date"), "{err}");
+        assert!(err.contains("month"), "names the missing field: {err}");
+    }
+
+    #[test]
+    fn wrong_typed_field_is_an_error_not_a_silent_zero() {
+        let err = decode_err(
+            r#"{"__type":"datetime","year":2020,"month":1,"day":1,
+                "hour":"XX","minute":0,"second":0,"microsecond":0}"#,
+        );
+        assert!(err.contains("hour"), "names the field: {err}");
+        assert!(err.contains("integer"), "says what was expected: {err}");
+    }
+
+    #[test]
+    fn out_of_range_field_is_an_error() {
+        let err = decode_err(r#"{"__type":"date","year":2020,"month":99999999999,"day":1}"#);
+        assert!(err.contains("month"), "{err}");
+    }
+
+    #[test]
+    fn a_present_but_wrong_typed_optional_is_still_an_error() {
+        // Absent is fine; present-and-wrong is not. A caller who supplied the
+        // key meant something by it.
+        let err = decode_err(
+            r#"{"__type":"datetime","year":2020,"month":1,"day":1,"hour":0,
+                "minute":0,"second":0,"microsecond":0,"offset_seconds":"XX"}"#,
+        );
+        assert!(err.contains("offset_seconds"), "{err}");
+    }
+
+    #[test]
+    fn a_well_formed_envelope_still_decodes() {
+        let v: Value =
+            serde_json::from_str(r#"{"__type":"date","year":2020,"month":1,"day":2}"#).unwrap();
+        match json_to_monty_object(&v).expect("well-formed date decodes") {
+            MontyObject::Date(d) => {
+                assert_eq!((d.year, d.month, d.day), (2020, 1, 2));
+            }
+            other => panic!("expected a date, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_bytes_and_names_are_errors_too() {
+        assert!(decode_err(r#"{"__type":"bytes","value":[1,999]}"#).contains("255"));
+        assert!(
+            decode_err(r#"{"__type":"path"}"#).contains("value"),
+            "a path with no value names the field"
+        );
+        assert!(
+            decode_err(r#"{"__type":"namedtuple","type_name":"P","values":[]}"#)
+                .contains("field_names")
         );
     }
 }
