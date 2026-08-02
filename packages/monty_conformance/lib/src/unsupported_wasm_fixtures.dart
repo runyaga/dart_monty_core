@@ -72,30 +72,52 @@ const alwaysUnsupportedWasmFixtures = <String>{
   // end to end on FFI and on both web targets.
 };
 
+/// Fixtures that call `sys.setrecursionlimit` themselves.
+///
+/// `sys.setrecursionlimit` exists only under the testing-only `test-hooks`
+/// cargo feature (monty/src/modules/sys.rs:86). Nothing else is required of the
+/// host — each of these calls it at the top of the file, and without the
+/// feature the call raises
+/// `AttributeError: module 'sys' has no attribute 'setrecursionlimit'`.
+///
+/// **The gate is the CARGO FEATURE, not the backend.** These are a subset of
+/// [testHooksWasmFixtures], which is named for the web because that is where
+/// they were first skipped, but they fail identically on native FFI — measured
+/// 2026-08-02 by running the corpus through the REPL handle against the
+/// fixtures' own `# Return=` / `# Raise=` directives
+/// (test/integration/ffi_repl_corpus_test.dart). It is invisible to
+/// `oracle_ffi_test.dart` only because that harness is DIFFERENTIAL: the oracle
+/// binary is built without the feature too, so both sides raise the same
+/// AttributeError and agree.
+///
+/// So any harness asserting against the STATIC directives — on either backend —
+/// must skip these unless it was built with `--features test-hooks`.
+///
+/// They used to sit in [alwaysUnsupportedWasmFixtures] — never run ANYWHERE —
+/// on a recorded reason that was half false: it said our REPL path constructs
+/// `NoLimitTracker` so the limit could not be lowered. Verified 2026-08-02:
+/// both handles construct `LimitedTracker` (native/src/repl_handle.rs:30,
+/// native/src/handle.rs:19). That ValueError is unreachable. Only the cargo
+/// feature was ever the blocker, and `tool/test_cm_wasm.sh` supplies it.
+///
+/// They stay skipped in the SHIPPED demo, which is correct: enabling
+/// test-hooks there would ship `sys.setrecursionlimit` into the sandbox
+/// (native/Cargo.toml:37 — "NEVER enabled in shipped builds").
+const setRecursionLimitFixtures = {
+  'recursion__deep_repr.py',
+  'recursion__limit_depth.py',
+  'json__dumps_recursion.py',
+};
+
 /// Fixtures that need monty's synthetic `_test_cm()` context manager, which
 /// only exists under the testing-only `test-hooks` cargo feature. They run on
 /// the corpus runners ONLY when compiled with `-DMONTY_TEST_HOOKS=true` against
 /// a test-hooks WASM binary (see tool/test_cm_wasm.sh) — never in the shipped
 /// build. Real `with open(...)` is covered by with__all.py on both backends.
-const testHooksWasmFixtures = {
-  // Gated ONLY by the `test-hooks` cargo feature, which is what supplies
-  // `sys.setrecursionlimit` (monty/src/modules/sys.rs:86). Each of these calls
-  // it themselves at the top of the file; nothing else is required of the host.
-  //
-  // They used to sit in [alwaysUnsupportedWasmFixtures] — never run ANYWHERE —
-  // on a recorded reason that was half false: it said our REPL path constructs
-  // `NoLimitTracker` so the limit could not be lowered. Verified 2026-08-02:
-  // both handles construct `LimitedTracker` (native/src/repl_handle.rs:30,
-  // native/src/handle.rs:19), and the corpus never uses the REPL at all — it
-  // runs one-shot through handle.rs. That ValueError is unreachable. Only the
-  // cargo feature was ever the blocker, and `tool/test_cm_wasm.sh` supplies it.
-  //
-  // They stay skipped in the SHIPPED demo, which is correct: enabling
-  // test-hooks there would ship `sys.setrecursionlimit` into the sandbox
-  // (native/Cargo.toml:37 — "NEVER enabled in shipped builds").
-  'recursion__deep_repr.py',
-  'recursion__limit_depth.py',
-  'json__dumps_recursion.py',
+///
+/// Split from [setRecursionLimitFixtures] because the two need DIFFERENT things
+/// from the same cargo feature, and only one of them fails on native as well.
+const testCmFixtures = {
   // with__cm_behaviors.py was here and DOES NOT EXIST UPSTREAM — the 0.19
   // corpus has 531 fixtures and that is not one of them. A dead skip entry is
   // not inert: ffi_with_cm_test.dart drove the same hardcoded list and crashed
@@ -106,6 +128,15 @@ const testHooksWasmFixtures = {
   'with__cm_exit_raises_normal_exit_traceback.py',
   'with__cm_nested_body_raises_traceback.py',
   'with__cm_traceback.py',
+};
+
+/// Everything gated behind the `test-hooks` cargo feature on the WASM runners.
+///
+/// Unchanged in membership — the two halves above are the same eight names, and
+/// every existing consumer of this constant keeps its previous behaviour.
+const Set<String> testHooksWasmFixtures = {
+  ...setRecursionLimitFixtures,
+  ...testCmFixtures,
 };
 
 /// Union of both — fixtures skipped under a normal (no-test-hooks) WASM build.
