@@ -23,7 +23,10 @@ PKG="$(cd "$(dirname "$0")/.." && pwd)"
 WEB_PKG="$PKG/packages/dart_monty_web"
 WEB_DIR="$WEB_PKG/web"
 JS_DIR="$PKG/js"
-ASSETS_DIR="$PKG/assets"
+# lib/assets is the only directory that receives build output (Mode A).
+# This said "$PKG/assets", a pre-Mode-A path, so the script could not find
+# what js/build.js had just produced.
+ASSETS_DIR="$PKG/lib/assets"
 SERVE_PORT=8098
 SKIP_BUILD=false
 DART2WASM=false
@@ -46,9 +49,10 @@ if [ "$SKIP_BUILD" = false ]; then
   echo "--- Building WASM binary (cargo wasm32-wasip1) ---"
   cd "$PKG/native"
   cargo build --target wasm32-wasip1 --release
-  mkdir -p "$ASSETS_DIR"
-  cp target/wasm32-wasip1/release/dart_monty_core_native.wasm "$ASSETS_DIR/"
-  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
+  # Deliberately NOT copied here. js/build.js places it in lib/assets and runs
+  # wasm-opt (14.5 MB -> 12.7 MB); copying the raw artefact over the top would
+  # both undo that and dirty a committed asset.
+  echo "  WASM binary: OK ($(du -sh target/wasm32-wasip1/release/dart_monty_core_native.wasm | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"
 fi
@@ -70,7 +74,11 @@ if [ "$SKIP_BUILD" = false ]; then
     exit 1
   fi
   cd "$JS_DIR"
-  npm install --silent
+  # --force bypasses EBADPLATFORM on arm64 hosts: @pydantic/monty-wasm32-wasi
+  # declares cpu: wasm32. tool/test_wasm.sh and tool/test_wasm_unit.sh already
+  # pass it; this script did not, so the demo could not be served on an Apple
+  # Silicon machine at all.
+  npm install --force --silent
   node build.js
   echo "  JS bridge: OK"
 else

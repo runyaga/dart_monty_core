@@ -159,11 +159,36 @@ small consumer-facing surface.
   behaviour. Malformed limits JSON is now an error rather than a silent fallback
   to unbounded — the same defect one layer up.
 
-- **On the web, `limits:` now throws `UnsupportedError` instead of being
-  ignored (#140).** This deliberately breaks the FFI-and-WASM-both rule for one
-  feature, and does it loudly at the boundary rather than quietly at runtime: a
-  cap that is silently absent is worse than one that refuses to be set. The WASM
-  implementation is tracked in #140.
+- **On the web, `MontyRepl(limits:)` — and therefore `Monty.run(limits:)` —
+  throws `UnsupportedError` instead of being ignored (#140).** Loud at the
+  boundary rather than quiet at runtime: a cap that is silently absent is worse
+  than one that refuses to be set.
+
+  **What is missing on web is session scoping, not limits.** Verified in Chrome
+  against the shipped WASM asset: all three limits are enforced on the one-shot
+  path, which the exported `MontyPlatform` reaches.
+
+  | limit | web behaviour, measured |
+  |---|---|
+  | `timeout_ms: 50` | `TimeoutError: time limit exceeded: 50.005ms > 50ms`, at 51 ms (266 ms unlimited) |
+  | `memory_bytes: 1 MiB` | `MemoryError: memory limit exceeded: 800000032 bytes > 1048576 bytes` |
+  | `stack_depth: 32` | `RecursionError: maximum recursion depth exceeded` |
+
+  So on web today:
+
+  ```dart
+  // throws UnsupportedError
+  await Monty(code).run(limits: MontyLimits(timeoutMs: 50));
+
+  // works — one-shot, limits enforced
+  final platform = createMontyPlatform();
+  await platform.run(code, limits: MontyLimits(timeoutMs: 50));
+  ```
+
+  The gap is narrow: the JS bridge already threads limits through `run` and
+  `start`, and `monty_repl_create_with_limits` is already present in the shipped
+  `.wasm`. Only `replCreate` does not take the parameter. #140 is JS plumbing,
+  not new engine work.
 
 - **An `inputs` key must now be a valid Python identifier, and it is enforced
   (#137).** The doc always said so; nothing checked, and each key was
