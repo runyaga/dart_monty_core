@@ -31,9 +31,6 @@ const alwaysUnsupportedWasmFixtures = {
   // `recursion_limit_override`
   // lives on `LimitedTracker`. Unblocked by core#124 (FB-1), not by anything in
   // the 0.19 upgrade.
-  'recursion__deep_repr.py',
-  'recursion__limit_depth.py',
-  'json__dumps_recursion.py',
   // Same family, added 2026-08-02. Two self-referential dicts compared for
   // equality must raise RecursionError rather than panic. Measured: PASSES on
   // FFI (ok, no exception), fails in the browser panel. Recursion depth is a
@@ -58,7 +55,29 @@ const alwaysUnsupportedWasmFixtures = {
 /// a test-hooks WASM binary (see tool/test_cm_wasm.sh) — never in the shipped
 /// build. Real `with open(...)` is covered by with__all.py on both backends.
 const testHooksWasmFixtures = {
-  'with__cm_behaviors.py',
+  // Gated ONLY by the `test-hooks` cargo feature, which is what supplies
+  // `sys.setrecursionlimit` (monty/src/modules/sys.rs:86). Each of these calls
+  // it themselves at the top of the file; nothing else is required of the host.
+  //
+  // They used to sit in [alwaysUnsupportedWasmFixtures] — never run ANYWHERE —
+  // on a recorded reason that was half false: it said our REPL path constructs
+  // `NoLimitTracker` so the limit could not be lowered. Verified 2026-08-02:
+  // both handles construct `LimitedTracker` (native/src/repl_handle.rs:30,
+  // native/src/handle.rs:19), and the corpus never uses the REPL at all — it
+  // runs one-shot through handle.rs. That ValueError is unreachable. Only the
+  // cargo feature was ever the blocker, and `tool/test_cm_wasm.sh` supplies it.
+  //
+  // They stay skipped in the SHIPPED demo, which is correct: enabling
+  // test-hooks there would ship `sys.setrecursionlimit` into the sandbox
+  // (native/Cargo.toml:37 — "NEVER enabled in shipped builds").
+  'recursion__deep_repr.py',
+  'recursion__limit_depth.py',
+  'json__dumps_recursion.py',
+  // with__cm_behaviors.py was here and DOES NOT EXIST UPSTREAM — the 0.19
+  // corpus has 531 fixtures and that is not one of them. A dead skip entry is
+  // not inert: ffi_with_cm_test.dart drove the same hardcoded list and crashed
+  // on `fixtureCorpus[name]!` for the missing key, which is B3, and is why CI
+  // excludes that file (ci.yaml:439).
   'with__cm_context_expr_raises_traceback.py',
   'with__cm_enter_raises_traceback.py',
   'with__cm_exit_raises_normal_exit_traceback.py',

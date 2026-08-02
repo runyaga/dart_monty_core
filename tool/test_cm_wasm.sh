@@ -128,7 +128,7 @@ rm -f "$CHROME_LOG"
 
 echo ""
 echo "$DONE"
-echo "with__cm fixtures executed: $CM_RUN (expected 6)"
+echo "with__cm fixtures executed: $CM_RUN (expected 5)"
 
 if [ -z "$DONE" ]; then echo "FAILED: no FIXTURE_DONE (Chrome crashed/timed out)"; exit 1; fi
 if [ "$FAILURES" -gt 0 ]; then
@@ -136,9 +136,24 @@ if [ "$FAILURES" -gt 0 ]; then
   echo "$RESULTS" | grep '"ok":false' | sed 's/^.*FIXTURE_RESULT:/  /'
   exit 1
 fi
-if [ "$CM_RUN" -lt 6 ]; then
-  echo "FAILED: expected 6 with__cm fixtures to run, saw $CM_RUN"
+# FIVE, not six. `with__cm_behaviors.py` was in the skip list but does NOT
+# exist in the 0.19 corpus (531 fixtures; that is not one of them), so it could
+# never run and the guard could never be satisfied. The dead name also crashed
+# ffi_with_cm_test.dart on `fixtureCorpus[name]!` — that is B3, and why CI
+# excluded that file.
+if [ "$CM_RUN" -lt 5 ]; then
+  echo "FAILED: expected 5 with__cm fixtures to run, saw $CM_RUN"
   echo "  (is the runner compiled with -DMONTY_TEST_HOOKS=true?)"
+  exit 1
+fi
+
+# The three recursion fixtures are gated only by test-hooks, so this build is
+# the one place they run. Guard them the same way, or a silent re-bucketing
+# would take them out of circulation again.
+REC_RUN=$(echo "$RESULTS" | grep -cE 'recursion__deep_repr|recursion__limit_depth|json__dumps_recursion')
+echo "test-hooks recursion fixtures executed: $REC_RUN (expected 3)"
+if [ "$REC_RUN" -lt 3 ]; then
+  echo "FAILED: expected 3 recursion fixtures to run, saw $REC_RUN"
   exit 1
 fi
 

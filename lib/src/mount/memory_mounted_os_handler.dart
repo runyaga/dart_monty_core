@@ -100,6 +100,22 @@ OsCallHandler memoryMountedOsHandler({
     );
   }
 
+  /// Rejects a write whose parent directory does not exist.
+  ///
+  /// The flat map has no notion of a parent, so `write_text` into
+  /// `/mnt/typo/file.txt` would cheerfully create the key and invent the
+  /// directory — a mistyped path silently "worked" and the file appeared
+  /// somewhere the caller never named. CPython raises, and
+  /// mount_fs__errors.py:141-155 asserts the exact message.
+  void requireParentDir(String path) {
+    if (!_dirExists(vfs, _parentPath(path), normalizedMounts)) {
+      throw OsCallException(
+        "[Errno 2] No such file or directory: '$path'",
+        pythonExceptionType: 'FileNotFoundError',
+      );
+    }
+  }
+
   return (op, args, kwargs) async {
     // Carries [path, mode]; reads and writes then arrive separately as
     // `Path.read_text`/`write_text`/`append_text`, handled below.
@@ -167,6 +183,7 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.write_text':
         _requireWritable(mount, path);
+        requireParentDir(path);
         final value = args.elementAtOrNull(1);
         if (value is! String) {
           throw OsCallException(
@@ -181,6 +198,7 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.write_bytes':
         _requireWritable(mount, path);
+        requireParentDir(path);
         final value = args.elementAtOrNull(1);
         final List<int> bytes;
         if (value is List) {
@@ -310,8 +328,11 @@ OsCallHandler memoryMountedOsHandler({
         }
         final parentOfTarget = _parentPath(path);
         if (!parents && !_dirExists(vfs, parentOfTarget, normalizedMounts)) {
+          // CPython names the TARGET, not the missing parent, and prefixes the
+          // errno — mount_fs__errors.py:129-137 asserts the exact string. This
+          // said `No such directory: <parent>`, which was wrong twice.
           throw OsCallException(
-            'No such directory: $parentOfTarget',
+            "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
           );
         }
@@ -334,7 +355,22 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'OSError',
           );
         }
-        // Empty/non-existent under the flat-map model — no key to drop.
+        // No key, no children, not a mount root: the path does not exist.
+        // This used to return success, but CPython raises and
+        // mount_fs__errors.py:110-115 asserts the exact message.
+        //
+        // The flat-map model cannot represent an EMPTY directory — `mkdir`
+        // inserts nothing and `Path.exists` on a freshly-created one already
+        // reports False. So "no key and no children" genuinely means absent
+        // here, and raising is the answer consistent with what `exists()` says
+        // about the very same path. A mount root is the one path that exists
+        // without a key.
+        if (!_isMountRoot(path, normalizedMounts)) {
+          throw OsCallException(
+            "[Errno 2] No such file or directory: '$path'",
+            pythonExceptionType: 'FileNotFoundError',
+          );
+        }
 
         return null;
 

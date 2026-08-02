@@ -558,12 +558,119 @@ void main() {
       );
     });
 
-    test('rmdir on empty/non-existent path is a no-op success', () async {
+    // Was "a no-op success". CPython raises, and mount_fs__errors.py:110-115
+    // asserts the exact message. Under the flat-map model an empty directory
+    // is not representable at all -- `Path.exists` on a freshly mkdir'd one
+    // already returns False -- so a path with no key and no children IS
+    // nonexistent, and raising is the answer consistent with what exists()
+    // reports about the very same path.
+    // mount_fs__errors.py:141-155. A write into a directory that does not
+    // exist must fail; the flat map would happily create the key and invent
+    // the parent, which is how a typo'd path silently "worked".
+    test('write_text/write_bytes with a missing parent raise', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/mnt')],
+        vfs: const {},
+      );
+
+      Matcher missing(String p) => throwsA(
+        isA<OsCallException>()
+            .having(
+              (e) => e.pythonExceptionType,
+              'excType',
+              'FileNotFoundError',
+            )
+            .having(
+              (e) => e.message,
+              'message',
+              "[Errno 2] No such file or directory: '$p'",
+            ),
+      );
+
+      expect(
+        () => handler('Path.write_text', ['/mnt/nope/child.txt', 'x'], null),
+        missing('/mnt/nope/child.txt'),
+      );
+      expect(
+        () => handler('Path.write_bytes', [
+          '/mnt/nope/child.bin',
+          [1, 2, 3],
+        ], null),
+        missing('/mnt/nope/child.bin'),
+      );
+    });
+
+    test('writing directly into a mount root still works', () async {
+      final vfs = <String, String>{};
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/mnt')],
+        vfs: vfs,
+      );
+
+      await handler('Path.write_text', ['/mnt/top.txt', 'ok'], null);
+      expect(vfs['/mnt/top.txt'], 'ok');
+    });
+
+    // mount_fs__errors.py:129-137 asserts CPython's exact wording, and names
+    // the TARGET, not the missing parent. We said `No such directory: <parent>`
+    // — wrong format and wrong path.
+    test('mkdir with a missing parent names the target, CPython-style', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/mnt')],
+        vfs: const {},
+      );
+
+      expect(
+        () => handler('Path.mkdir', ['/mnt/missing_parent/child'], null),
+        throwsA(
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'excType',
+                'FileNotFoundError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                "[Errno 2] No such file or directory: '/mnt/missing_parent/child'",
+              ),
+        ),
+      );
+    });
+
+    test('rmdir of a nonexistent path raises FileNotFoundError', () {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         vfs: const {},
       );
-      final r = await handler('Path.rmdir', ['/sandbox/empty'], null);
+
+      expect(
+        () => handler('Path.rmdir', ['/sandbox/empty'], null),
+        throwsA(
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'excType',
+                'FileNotFoundError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                "[Errno 2] No such file or directory: '/sandbox/empty'",
+              ),
+        ),
+      );
+    });
+
+    test('rmdir of a mount root does not claim it is missing', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/sandbox')],
+        vfs: const {},
+      );
+
+      // The mount root exists by definition, so this must not be
+      // FileNotFoundError even though the flat map holds no key for it.
+      final r = await handler('Path.rmdir', ['/sandbox'], null);
       expect(r, isNull);
     });
 
