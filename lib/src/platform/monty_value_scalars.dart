@@ -152,21 +152,12 @@ final class MontyFloat extends MontyValue {
   };
 
   /// Renders so the type and the sign survive: `4.0`, not `4`; `-0.0`, not `0`.
-  static String _exactText(double v) {
-    if (v == 0 && v.isNegative) return '-0.0';
-
-    final text = '$v';
-    // On dart2js `int` and `double` are one type, so `'${4.0}'` is `"4"` — the
-    // same int/float collapse this envelope exists to prevent, appearing in
-    // Dart's own rendering. Without this the web would emit
-    // {"__type":"float","value":"4"}: still decoded as a float because the TAG
-    // carries the type, but the text would disagree with what the Rust encoder
-    // writes for the identical value, and the two sides must agree byte for
-    // byte or the differential is comparing different things.
-    if (!text.contains('.') && !text.contains('e')) return '$text.0';
-
-    return text;
-  }
+  // Delegates to the shared rule. Without it the web would emit
+  // {"__type":"float","value":"4"} for 4.0: still decoded as a float because
+  // the TAG carries the type, but the text would disagree with what the Rust
+  // encoder writes for the identical value, and the two sides must agree byte
+  // for byte or the differential is comparing different things.
+  static String _exactText(double v) => exactDoubleText(v);
 }
 
 /// Represents a Python `str` value.

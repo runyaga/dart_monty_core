@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
+import 'package:dart_monty_core/src/platform/double_text.dart';
 import 'package:meta/meta.dart';
 
 part 'monty_value_scalars.dart';

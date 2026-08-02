@@ -136,6 +136,50 @@ small consumer-facing surface.
   now an inbound probe on both backends where the sandbox authors the payload
   and observation leaves via `print`, never via the value codec under test.
 
+- **An `inputs` key must now be a valid Python identifier, and it is enforced
+  (#137).** The doc always said so; nothing checked, and each key was
+  interpolated into Python source raw — so a key was a working code-injection
+  primitive:
+
+  ```dart
+  // executed as Python, before this release:
+  Monty(code).run(inputs: {'ignored = 0\nanswer = "INJECTED"\nz': 1});
+  ```
+
+  Now `ArgumentError`. Rejecting rather than sanitising is deliberate: a key
+  that is not an identifier cannot express what you meant, so rewriting it
+  would substitute our guess for your intent. Non-ASCII identifiers still
+  work — Python accepts `café`, so an ASCII-only rule would have been a
+  regression dressed up as a fix.
+
+  **This is a guard, not a boundary.** Inputs are still rendered as Python
+  source, so an escaping bug here would be a code-execution bug. And a bound
+  name shadows what it collides with — `{'print': 1}` makes `print("x")` raise
+  `TypeError`. That second one is not a bug we can encode away: shadowing is
+  what binding a name means, and `print = 1` is legal Python.
+
+- **An infinite `inputs` value produced invalid Python on the web.** Fixed.
+
+  ```dart
+  Monty(code).run(inputs: {'f': double.infinity});
+  // was, on dart2js:  f = Infinity   → NameError in Python
+  // now, everywhere:  f = float('inf')
+  ```
+
+  Cause: on dart2js `double.infinity is int` is **true** — the runtime check is
+  effectively `Math.floor(x) === x`, which holds for the infinities — so the
+  `int` branch claimed the value before the non-finite branch could. The VM was
+  never affected.
+
+  **A related case is NOT fixed, and is now reported rather than hidden.** On
+  dart2js `4.0 is int` is also true, so `inputs: {'x': 4.0}` still binds a
+  Python `int` on that backend, where the VM and dart2wasm bind a `float`.
+  Unlike the infinities, this is not recoverable inside the library: the
+  parameter is `Object?`, and dart2js destroys the `4` / `4.0` distinction
+  before the call is entered. Only a typed input can carry it. Tracked as
+  **#137**; the test row is live on the VM and dart2wasm and skipped on dart2js
+  with that reference, rather than asserting the wrong answer.
+
 - **`MontyValue.fromJson` now throws `FormatException` on an untagged object or
   an unknown `__type`.** Both used to decode as a dict, and that guess is what
   turned a forged type into a real one. `fromJson` is a deserializer; it now has
