@@ -58,6 +58,10 @@ s  asset_fresh   bash tool/check_asset_freshness.sh
 # rebuilt"; this one catches "the encoding was versioned on one side only".
 s  wire_version  bash tool/check_wire_version.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
+# The record, checked the same way the code is. A `!` commit touching lib/ must
+# reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
+# that should have caught it had been performed and gone stale within a day.
+s  breaking_rec  bash tool/check_breaking_recorded.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
 s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example

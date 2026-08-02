@@ -136,6 +136,35 @@ small consumer-facing surface.
   now an inbound probe on both backends where the sandbox authors the payload
   and observation leaves via `print`, never via the value codec under test.
 
+- **`Monty.run(limits:)` was silently ignored, and `MontyLimits` is
+  session-scoped (#138).** Measured before: `timeoutMs: 50` on
+  `sum(range(20000000))` completed in **483 ms with `error == null`**. In a
+  sandboxing library that is the wrong direction to fail — the caller who asks
+  for a cap is exactly the caller who believes they have one. Now:
+  `TimeoutError: time limit exceeded`.
+
+  Limits attach to a **session**, not a call, because upstream's do:
+  `monty-python`'s `checkout(limits=…)` configures a REPL session and `feed_run`
+  takes no limits. So the constructor is where they go:
+
+  ```dart
+  // one-shot: unchanged, and now actually enforced
+  await Monty(code).run(limits: MontyLimits(timeoutMs: 50));
+
+  // a session: limits are fixed when it is created
+  final repl = MontyRepl(limits: MontyLimits(timeoutMs: 50));
+  ```
+
+  An omitted `limits:` is still fully unbounded, so no existing caller changes
+  behaviour. Malformed limits JSON is now an error rather than a silent fallback
+  to unbounded — the same defect one layer up.
+
+- **On the web, `limits:` now throws `UnsupportedError` instead of being
+  ignored (#140).** This deliberately breaks the FFI-and-WASM-both rule for one
+  feature, and does it loudly at the boundary rather than quietly at runtime: a
+  cap that is silently absent is worse than one that refuses to be set. The WASM
+  implementation is tracked in #140.
+
 - **An `inputs` key must now be a valid Python identifier, and it is enforced
   (#137).** The doc always said so; nothing checked, and each key was
   interpolated into Python source raw — so a key was a working code-injection
@@ -307,6 +336,38 @@ small consumer-facing surface.
   `compact_str` major than `ruff_python_ast` used, and the build failed inside a
   dependency neither we nor you control. If you vendor or patch transitive Rust
   dependencies, you now inherit our pins.
+
+- **`TimeoutError` is now part of the `OSError` hierarchy, and
+  `UnicodeEncodeError` exists (#522 et al.).** Upstream moved it, so sandboxed
+  Python that does `except OSError:` now also catches `TimeoutError`, where
+  before it did not. **Silent** — the handler simply starts firing for a case it
+  never saw.
+
+- **`open()` modes with no action are now rejected (#612).** A mode string that
+  requests neither reading nor writing (e.g. `'b'`) used to be accepted and do
+  something unhelpful; it now raises. If you passed a mode through from user
+  input without validating it, that call site changes from quietly wrong to
+  loud.
+
+- **`encode` / `decode` codec coverage changed, and with it which encodings
+  raise `LookupError` (#523).** Some names that used to fail now work, and the
+  error type for an unknown codec is now consistent. Code that branched on the
+  failure of a specific encoding needs rechecking.
+
+### Added — capabilities 0.19 brings that this package now passes through
+
+These were previously unsupported by the engine. They are **handled, not
+surfaced**: no new Dart API, and values still marshal through the existing
+`MontyValue` contract. Documented here because our own docs asserted they did
+not work.
+
+- **User-defined classes and class decorators (#515, #582).** Sandboxed Python
+  can now define and use classes. Note the marshalling limit: an instance
+  crosses to Dart through `repr_or_error`, so it arrives as
+  `MontyOpaque(repr, …)` rather than a structured value. A richer surface is
+  blocked upstream.
+
+- **`unicodedata` (#522).** The module is available to sandboxed code.
 
 ### Deliberately unchanged
 

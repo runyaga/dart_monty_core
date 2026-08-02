@@ -45,6 +45,25 @@ jobs:
               - '!**.md'
 
   # ---------------------------------------------------------------------------
+  # The record, checked mechanically
+  # ---------------------------------------------------------------------------
+  # Deliberately NOT behind `needs: [changes]`. That filter excludes `**.md`, and
+  # this job's whole subject is CHANGELOG.md — gating it would mean deleting a
+  # CHANGELOG entry skips the check that the entry exists.
+  #
+  # fetch-depth: 0 is required: the check diffs against the merge-base with main,
+  # and the default shallow clone has no merge-base to find.
+  breaking-recorded:
+    name: Breaking changes announced
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash tool/check_breaking_recorded.sh
+
+  # ---------------------------------------------------------------------------
   # FFI binding generation
   # ---------------------------------------------------------------------------
   ffigen:

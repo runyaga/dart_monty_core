@@ -1,0 +1,21 @@
+# Breaking changes to the CONSUMER SURFACE, and where each is announced.
+#
+# One row per commit that (a) carries the conventional-commit `!` marker and
+# (b) touches lib/. tool/check_breaking_recorded.sh enforces the mapping in both
+# directions: no such commit may be missing a row, and no row may name an
+# anchor that has fallen out of CHANGELOG.md.
+#
+# The anchor is a distinctive phrase that must appear VERBATIM in CHANGELOG.md.
+# It is deliberately a phrase and not a heading: headings get reworded, and a
+# check that only survives careful editing is not a check.
+#
+# WHY: `43366ba fix(limits)!` shipped with no CHANGELOG entry and no ledger row,
+# including the part where web went from silently ignoring `limits:` to throwing
+# UnsupportedError. The prose cross-check that should have caught it ("19 rows,
+# 19 in the CHANGELOG") had been run, and went stale within a day.
+#
+# Format: <short-sha>\t<anchor phrase that must appear in CHANGELOG.md>
+43366ba	`MontyLimits` is session-scoped
+c7f10eb	The `open()` OS-call op is now `'open'`, was `'Open'`
+623c578	a host callback's return value is now encoded
+e677396	must now be a valid Python identifier
