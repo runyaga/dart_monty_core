@@ -184,6 +184,25 @@ jobs:
         run: |
           dart test --exclude-tags=ffi,wasm,integration,ladder --coverage=coverage \
           || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
+      - name: Test (web, unit only — dart2js + dart2wasm)
+        # The SAME pure-Dart suite, on both web compilers. Not redundant with the
+        # JIT step above: dart2js has a single number type, so `4.0 is int` is
+        # true and integral doubles collapse to ints, while dart2wasm has real
+        # doubles. A numeric defect can pass on the VM and be wrong — or the fix
+        # for it unreachable — on the web. That is not hypothetical: a fix to
+        # inputs_encoder compiled, analysed clean and passed on the VM while
+        # doing nothing at all, because the arm it added was dead on dart2js,
+        # the only backend with the bug. Until this step existed, test/unit/ ran
+        # on NO web target in CI.
+        #
+        # `vm-only` is excluded because those files cannot COMPILE for the web
+        # (0x7FFFFFFFFFFFFFFF is a dart2js compile error), and that failure
+        # happens before any test runs, so a `skip:` cannot contain it.
+        run: |
+          dart test \
+            --exclude-tags=ffi,wasm,integration,ladder,example,vm-only \
+            -p chrome -c dart2js -c dart2wasm
+
       - name: Generate LCOV
         # Skip if no coverage data was collected (no unit tests yet).
         run: |
@@ -696,8 +715,17 @@ jobs:
           cd js
           npm install --force
 
-      - name: Run WASM unit-style tests
+      - name: Run WASM unit-style tests (dart2js)
         run: bash tool/test_wasm_unit.sh
+
+      - name: Run WASM unit-style tests (dart2wasm)
+        # Same suite, same WASM ENGINE, different DART compile target. Two things
+        # are called "wasm" here: the Rust engine (driven by every test in this
+        # suite whichever compiler is used) and the Dart target. Only this step
+        # covers the second. CI already built dart2wasm for the fixture corpus
+        # (job `test-wasm`), so the corpus had dart2wasm coverage while the
+        # package:test suites did not.
+        run: bash tool/test_wasm_unit.sh --dart2wasm
 
   # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
