@@ -8,7 +8,7 @@
 /// import 'package:dart_monty_core/dart_monty_core.dart';
 ///
 /// // One-shot execution
-/// final platform = createMontyPlatform();
+/// final platform = createPlatformMonty();
 /// final result = await platform.run('1 + 1');
 /// print(result.value); // MontyInt(2)
 ///

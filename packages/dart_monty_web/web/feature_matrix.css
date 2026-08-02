@@ -1,0 +1,114 @@
+/* Shared by matrix_js.html and matrix_wasm.html — the two pages must look
+   identical apart from the backend badge, so a reader comparing them sees only
+   the differences that matter. */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  line-height: 1.5;
+}
+
+header {
+  background: #333;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #444;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+h1 { margin: 0; font-size: 1.05rem; color: #4ec9b0; }
+
+.head-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.navlink { color: #9cdcfe; text-decoration: none; font-size: 0.8rem; }
+.navlink:hover { text-decoration: underline; }
+
+.badge {
+  background: #007acc; color: #fff;
+  padding: 3px 10px; border-radius: 4px;
+  font-size: 0.75rem; font-weight: 700;
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.intro { padding: 16px 20px 4px; max-width: 88ch; }
+.intro p { margin: 0 0 10px; font-size: 0.88rem; }
+.muted { color: #999; font-size: 0.82rem; }
+
+.controls { display: flex; align-items: center; gap: 12px; margin: 14px 0 4px; flex-wrap: wrap; }
+
+.btn {
+  background: #0e639c; color: #fff; border: none;
+  padding: 6px 16px; border-radius: 4px; cursor: pointer;
+  font-size: 0.8rem; font-weight: 700;
+}
+.btn:hover:not(:disabled) { background: #1177bb; }
+.btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+#summary { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.took { color: #888; font-size: 0.75rem; font-family: 'Consolas', monospace; }
+
+table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+
+thead th {
+  text-align: left; padding: 8px 20px;
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #888; border-bottom: 1px solid #444; background: #252526;
+  position: sticky; top: 57px;
+}
+
+tbody tr { border-bottom: 1px solid #2d2d2d; }
+tbody tr:hover { background: #232323; }
+
+td { padding: 14px 20px; vertical-align: top; }
+
+.c-verdict { width: 108px; }
+.c-what { width: 46%; }
+
+.pill {
+  display: inline-block; padding: 3px 9px; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+/* Not colour alone: each state also reads as a word, for anyone who cannot
+   distinguish these hues. */
+.v-pass { background: #1c3a24; color: #6fcf7f; border: 1px solid #2e5c3a; }
+.v-fail { background: #3d1f1f; color: #f07070; border: 1px solid #6b2f2f; }
+.v-gap  { background: #3d3417; color: #e2c15c; border: 1px solid #6b5a24; }
+.v-run  { background: #2a2a2a; color: #888;    border: 1px solid #3d3d3d; }
+
+.title { color: #4ec9b0; font-weight: 700; font-size: 0.92rem; margin-bottom: 4px; }
+.proves { color: #b0b0b0; font-size: 0.8rem; margin-bottom: 8px; max-width: 62ch; }
+
+.src {
+  margin: 0; background: #111; border-radius: 4px; padding: 7px 9px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.75rem; color: #9cdcfe;
+  white-space: pre-wrap; word-break: break-word;
+  border-left: 2px solid #0e639c;
+}
+
+.want { color: #777; font-size: 0.76rem; margin-bottom: 6px; }
+.got {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.8rem; color: #b5cea8;
+  white-space: pre-wrap; word-break: break-word;
+}
+.got-bad { color: #e2c15c; }
+.note { color: #888; font-size: 0.72rem; margin-top: 5px; font-family: inherit; }
+
+.booting { color: #6a9955; font-style: italic; padding: 24px 20px; }
+
+@media (max-width: 900px) {
+  .c-what { width: auto; }
+  td { padding: 12px 14px; }
+  thead th { padding: 8px 14px; }
+}

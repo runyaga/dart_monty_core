@@ -6,6 +6,13 @@ repl_demo.mjs
 repl_demo.support.js
 repl_demo.wasm
 repl_demo.wasm.map
+feature_matrix.dart.js
+feature_matrix.dart.js.deps
+feature_matrix.dart.js.map
+feature_matrix.mjs
+feature_matrix.support.js
+feature_matrix.wasm
+feature_matrix.wasm.map
 
 # Bridge assets — copied from js/ build output, never committed
 dart_monty_core_bridge.js

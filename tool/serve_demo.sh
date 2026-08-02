@@ -121,20 +121,28 @@ dart pub get
 
 if [ "$SKIP_BUILD" = false ]; then
   echo ""
-  echo "--- Compiling repl_demo.dart → JS (dart2js) ---"
-  dart compile js \
-    "$WEB_PKG/web/repl_demo.dart" \
-    -o "$WEB_DIR/repl_demo.dart.js" \
-    --no-minify
-  echo "  dart2js: OK"
+  # Two entry points: repl_demo (the playground) and feature_matrix (the
+  # self-verifying feature list). The matrix exists to be compiled BOTH ways —
+  # dart2js and dart2wasm differ on number identity, and the page reports the
+  # difference — so --dart2wasm is worth passing when working on it.
+  for entry in repl_demo feature_matrix; do
+    echo "--- Compiling $entry.dart → JS (dart2js) ---"
+    dart compile js \
+      "$WEB_PKG/web/$entry.dart" \
+      -o "$WEB_DIR/$entry.dart.js" \
+      --no-minify
+    echo "  dart2js: OK"
+  done
 
   if [ "$DART2WASM" = true ]; then
-    echo ""
-    echo "--- Compiling repl_demo.dart → WASM (dart2wasm) ---"
-    dart compile wasm \
-      "$WEB_PKG/web/repl_demo.dart" \
-      -o "$WEB_DIR/repl_demo.wasm"
-    echo "  dart2wasm: OK"
+    for entry in repl_demo feature_matrix; do
+      echo ""
+      echo "--- Compiling $entry.dart → WASM (dart2wasm) ---"
+      dart compile wasm \
+        "$WEB_PKG/web/$entry.dart" \
+        -o "$WEB_DIR/$entry.wasm"
+      echo "  dart2wasm: OK"
+    done
   fi
 else
   echo "--- Skipping dart compile (--skip-build) ---"
@@ -156,7 +164,14 @@ cleanup() {
     "$WEB_DIR/repl_demo.mjs" \
     "$WEB_DIR/repl_demo.support.js" \
     "$WEB_DIR/repl_demo.wasm" \
-    "$WEB_DIR/repl_demo.wasm.map"
+    "$WEB_DIR/repl_demo.wasm.map" \
+    "$WEB_DIR/feature_matrix.dart.js" \
+    "$WEB_DIR/feature_matrix.dart.js.deps" \
+    "$WEB_DIR/feature_matrix.dart.js.map" \
+    "$WEB_DIR/feature_matrix.mjs" \
+    "$WEB_DIR/feature_matrix.support.js" \
+    "$WEB_DIR/feature_matrix.wasm" \
+    "$WEB_DIR/feature_matrix.wasm.map"
   rm -rf "$WEB_DIR/@pydantic"
 }
 trap cleanup EXIT
@@ -197,7 +212,7 @@ echo "  Server: http://127.0.0.1:$SERVE_PORT"
 # ---------------------------------------------------------------------------
 # Step 6: Open browser
 # ---------------------------------------------------------------------------
-URL="http://127.0.0.1:$SERVE_PORT/index_js.html"
+URL="http://127.0.0.1:$SERVE_PORT/matrix_js.html"
 echo "  Opening: $URL"
 echo ""
 echo "Press Ctrl-C to stop the server."

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monty Feature Matrix (dart2wasm)</title>
+  <link rel="stylesheet" href="feature_matrix.css">
+</head>
+<body>
+  <header>
+    <h1>dart_monty_core — feature matrix</h1>
+    <div class="head-right">
+      <a class="navlink" href="matrix_js.html">compare dart2js →</a>
+      <a class="navlink" href="index_wasm.html">playground</a>
+      <span class="badge" id="backend">…</span>
+    </div>
+  </header>
+
+  <div class="intro">
+    <p>
+      Every row below runs for real, in this browser, against the sandboxed
+      Python interpreter — then checks its own answer. Nothing here is a
+      screenshot or a recording.
+    </p>
+    <p class="muted">
+      <strong>KNOWN GAP</strong> is a third state on purpose. Two rows are
+      knowingly wrong on one backend; they are shown, named and linked rather
+      than hidden. Regression testing lives in the repo's gate and CI — this
+      page exists to be read.
+    </p>
+    <div class="controls">
+      <button id="rerun" class="btn" disabled>Re-run</button>
+      <span id="summary"></span>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Verdict</th><th>Guarantee</th><th>Result</th></tr>
+    </thead>
+    <tbody id="rows">
+      <tr><td colspan="3" class="booting">Booting the interpreter…</td></tr>
+    </tbody>
+  </table>
+
+  <!-- Bridge must load before the Dart runner. -->
+  <script src="dart_monty_core_bridge.js"></script>
+  <script type="module">
+    import { compileStreaming } from './feature_matrix.mjs';
+    try {
+      const app = await compileStreaming(fetch('./feature_matrix.wasm'));
+      (await app.instantiate({})).invokeMain();
+    } catch (e) {
+      console.error('Failed to run the dart2wasm feature matrix:', e);
+      document.getElementById('rows').innerHTML =
+        '<tr><td colspan="3" class="booting">' +
+        'Failed to load the WASM module: ' + e + '</td></tr>';
+    }
+  </script>
+</body>
+</html>
