@@ -603,6 +603,12 @@ class _FailSel extends _Selection {
   const _FailSel();
 }
 
+/// Every fixture, whatever happened to it. The counts above answer "how many";
+/// this answers "which", which is the question a reader actually has.
+class _AllSel extends _Selection {
+  const _AllSel();
+}
+
 _Selection? _selection;
 
 final List<_Fixture> _corpus =
@@ -800,6 +806,16 @@ void _renderCorpusOverview() {
   final breakdown = _doc.getElementById('corpus-breakdown');
   if (breakdown != null) {
     breakdown.textContent = '';
+    final all = _el(
+      'button',
+      cls: 'pill v-run pill-btn',
+      text: 'all ${_corpus.length}',
+    );
+    (all as web.HTMLButtonElement).onclick = (web.MouseEvent _) {
+      _selection = _selection is _AllSel ? null : const _AllSel();
+      _renderGroupDetail();
+    }.toJS;
+    breakdown.append(all);
     for (final k in SkipKind.values) {
       final n = reasons[k] ?? 0;
       if (n == 0) continue;
@@ -864,6 +880,7 @@ void _renderGroupDetail() {
       _corpus.where((f) => _fixtureStatus[f.name] == 'FAIL').toList(),
       'failing',
     ),
+    _AllSel() => (_corpus, 'every fixture'),
   };
 
   host.append(
@@ -982,8 +999,18 @@ Future<void> _runCorpus() async {
     _renderGroupDetail();
   }.toJS;
 
+  final passPill = _el(
+    'button',
+    cls: 'pill v-pass pill-btn',
+    text: '$passed PASS',
+  );
+  (passPill as web.HTMLButtonElement).onclick = (web.MouseEvent _) {
+    _selection = const _AllSel();
+    _renderGroupDetail();
+  }.toJS;
+
   status
-    ?..append(_el('span', cls: 'pill v-pass', text: '$passed PASS'))
+    ?..append(passPill)
     ..append(failPill)
     ..append(skipPill)
     ..append(_el('span', cls: 'took', text: '${took.inMilliseconds} ms'))
