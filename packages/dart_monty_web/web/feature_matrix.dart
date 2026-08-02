@@ -895,7 +895,15 @@ void _renderGroupDetail() {
       'FAIL' => 'v-fail',
       _ => 'v-run',
     };
-    final expectation = parseFixture(f.source, skipWasm: false);
+    // Same flags the runner uses. Computing this with the DEFAULTS made rows
+    // show a contradictory second label -- "web divergence" as the status and
+    // "no directive" as the expectation -- for fixtures that plainly have one.
+    final expectation = parseFixture(
+      f.source,
+      skipCallExternal: false,
+      skipRunAsync: false,
+      skipMountFs: false,
+    );
     final want = switch (expectation) {
       ExpectReturn(:final value) => 'Return= $value',
       ExpectRaise(:final excType, :final message) =>
@@ -952,7 +960,24 @@ Future<void> _runCorpus() async {
         skipMountFs: false,
         skipWasm: true,
       )!;
-      final status = await _runFixture(f, expectation);
+      // A per-fixture guard. Without it ONE fixture that throws instead of
+      // returning kills the whole run: the corpus stopped at ~374 of 531 and
+      // reported 350 passing, which reads as a catastrophic regression rather
+      // than one bad row. A harness that cannot survive its own subject is not
+      // a harness.
+      String status;
+      final broken = knownBrokenExtFixtures[f.name];
+      if (broken != null) {
+        status = 'known broken';
+        _skipNotes[f.name] = broken;
+      } else {
+        try {
+          status = await _runFixture(f, expectation);
+        } on Object catch (e) {
+          status = 'FAIL';
+          _skipNotes[f.name] = e.toString().split('\n').first;
+        }
+      }
       _fixtureStatus[f.name] = status;
       switch (status) {
         case 'PASS':

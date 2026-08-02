@@ -1,6 +1,7 @@
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 import 'package:monty_conformance/src/fixture_externals.dart';
+import 'package:monty_conformance/src/fixture_os_handler.dart';
 
 /// What running a `# call-external` fixture produced.
 class DispatchOutcome {
@@ -51,6 +52,7 @@ Future<DispatchOutcome> runCallExternalFixture(
   /// delivers it when the engine asks, which is what lets several coroutines in
   /// one `asyncio.gather` be in flight at once.
   final pendingResults = <int, Object?>{};
+  final osHandler = conformanceOsHandler();
 
   MontyProgress? progress;
   try {
@@ -58,6 +60,12 @@ Future<DispatchOutcome> runCallExternalFixture(
       source,
       // `async_call` is not in the dispatch table on purpose: it returns
       // nothing directly, it goes down the futures path below.
+      // `async_fail` is deliberately absent. An AWAITED host failure is not
+      // the same as `raise_error`'s immediate one -- resuming with an
+      // exception straight away does not satisfy async__ext_exc.py, and no
+      // existing runner models it either (wasm_runner.dart has no async_fail
+      // branch). Reporting "not modelled" is honest; guessing an
+      // implementation and shipping a red row is not.
       externalFunctions: [...conformanceExtFns, 'async_call'],
       scriptName: scriptName,
     );
@@ -160,11 +168,26 @@ Future<DispatchOutcome> runCallExternalFixture(
           return DispatchOutcome(excType: e.excType);
         }
 
-      case MontyOsCall():
-        return const DispatchOutcome(
-          skipped: true,
-          skipReason: 'needs an OS-call handler',
-        );
+      case MontyOsCall(:final operationName, :final args, :final kwargs):
+        // Answer it rather than skipping: the corpus's os/pathlib/datetime
+        // fixtures are exactly the host-mediated behaviour worth demonstrating.
+        try {
+          final ret = await osHandler(
+            operationName,
+            args.map((v) => v.dartValue).toList(),
+            kwargs?.map((k, v) => MapEntry(k, v.dartValue)),
+          );
+          progress = await platform.resume(ret);
+        } on OsCallException catch (e) {
+          progress = e.pythonExceptionType != null
+              ? await platform.resumeWithException(
+                  e.pythonExceptionType!,
+                  e.message,
+                )
+              : await platform.resumeWithError(e.message);
+        } on MontyScriptError catch (e) {
+          return DispatchOutcome(excType: e.excType);
+        }
     }
   }
 

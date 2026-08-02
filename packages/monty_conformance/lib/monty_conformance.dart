@@ -19,5 +19,6 @@ library;
 export 'src/fixture_corpus.dart';
 export 'src/fixture_dispatch.dart';
 export 'src/fixture_externals.dart';
+export 'src/fixture_os_handler.dart';
 export 'src/fixture_parser.dart';
 export 'src/unsupported_wasm_fixtures.dart';

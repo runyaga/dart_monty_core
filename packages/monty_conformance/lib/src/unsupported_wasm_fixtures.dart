@@ -47,6 +47,12 @@ const alwaysUnsupportedWasmFixtures = {
   'recursion__deep_repr.py',
   'recursion__limit_depth.py',
   'json__dumps_recursion.py',
+  // Same family, added 2026-08-02. Two self-referential dicts compared for
+  // equality must raise RecursionError rather than panic. Measured: PASSES on
+  // FFI (ok, no exception), fails in the browser panel. Recursion depth is a
+  // property of the host stack, and the web worker's differs -- it is the
+  // recursion-limit gap (core#124), not a new defect.
+  'dict__eq_self_referential.py',
   // Also listed in [knownBrokenExtFixtures] — it fails on FFI too, so the WASM
   // list alone is not enough.
   // CORRECTED 2026-08-02. The old reason -- "needs an external (`make_point`)
@@ -87,6 +93,15 @@ const Set<String> unsupportedWasmFixtures = {
 /// Conflating them is how `dataclass__basic.py` sat behind a stale
 /// web-only skip while nothing ran it on FFI either.
 const Map<String, String> knownBrokenExtFixtures = {
+  'pathlib__os.py':
+      "FB-11: Path('/nonexistent').exists() should be False, but "
+      'memoryMountedOsHandler raises "Path is outside any mount" for anything '
+      'it does not mount. A query about a path is not an access of it.',
+  'pathlib__os_read_error.py': 'FB-11, same cause as pathlib__os.py.',
+  'datetime__core.py':
+      'The frozen clock the harness supplies (2024-01-15 10:30) does not match '
+      'every value this fixture asserts. Needs the exact upstream values, not '
+      'a plausible-looking date.',
   'dataclass__basic.py':
       "FB-10: a host-supplied frozen MontyDataclass fails the fixture's own "
       "`repr(point) == 'Point(x=1, y=2)'` assertion on FFI. Measured; root "
