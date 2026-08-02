@@ -33,6 +33,7 @@ import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 import 'package:web/web.dart' as web;
 
 /// How a probe turned out.
@@ -527,6 +528,276 @@ String _float(double d) {
 
 final _doc = web.document;
 
+// ---------------------------------------------------------------------------
+// The conformance panel
+// ---------------------------------------------------------------------------
+//
+// The 16 probes above cover the HOST surface — externals, limits, the VFS,
+// snapshots — because that is dart_monty_core's own contribution and no corpus
+// can test it. This panel covers the other surface: what sandboxed Python can
+// actually do, and for that the honest source is not rows I invented but
+// monty's OWN conformance corpus.
+//
+// All 531 fixtures ship in `package:monty_conformance` (one copy, shared with
+// this repo's oracle and WASM harnesses — Dart cannot import another package's
+// test/, which is why it is a package at all). Each carries a `# Return=` or
+// `# Raise=` directive that IS the expected answer, written upstream, not by
+// us. This panel runs them in your browser and checks them the same way
+// `wasm_fixture_test.dart` does.
+
+/// Why a fixture is not asserted here.
+enum SkipKind {
+  /// Needs the host to answer: `# call-external`, `# mount-fs`, `# run-async`.
+  /// Not a gap in the engine — these are the probes above, in fixture form.
+  needsHost('needs a host'),
+
+  /// Known to diverge on the web transport (core#128), or needs a `test-hooks`
+  /// build that is never shipped.
+  divergent('web divergence'),
+
+  /// The fixture asserts nothing to check against.
+  noDirective('no directive');
+
+  const SkipKind(this.label);
+
+  final String label;
+}
+
+class _Fixture {
+  _Fixture(this.name, this.source)
+    : group = name.contains('__') ? name.split('__').first : 'misc';
+
+  final String name;
+  final String source;
+  final String group;
+}
+
+/// Per-fixture outcome, filled in by [_runCorpus] and read by the drill-down.
+/// Empty until the corpus is run; the skip reasons are known without running.
+final Map<String, String> _fixtureStatus = {};
+
+/// Which group's fixture list is currently expanded, if any.
+String? _openGroup;
+
+final List<_Fixture> _corpus =
+    (fixtureCorpus.entries.map((e) => _Fixture(e.key, e.value)).toList()
+      ..sort((a, b) => a.name.compareTo(b.name)));
+
+/// Classifies a fixture without running it, so the page can show the shape of
+/// the corpus instantly and only pay for execution on demand.
+SkipKind? _skipReason(_Fixture f) {
+  if (unsupportedWasmFixtures.contains(f.name)) return SkipKind.divergent;
+  if (parseFixture(f.source, skipWasm: true) == null) {
+    // parseFixture returns null for call-external / mount-fs / run-async /
+    // xfail=wasm. Distinguish "needs a host" from "asserts nothing", because
+    // they mean very different things to a reader.
+    return fixtureIsCallExternal(f.source) ||
+            fixtureMountsFs(f.source) ||
+            fixtureIsRunAsync(f.source)
+        ? SkipKind.needsHost
+        : SkipKind.noDirective;
+  }
+
+  return null;
+}
+
+/// Runs one fixture exactly as `wasm_fixture_test.dart` does, and reports
+/// whether upstream's own directive held.
+Future<bool> _runFixture(_Fixture f, FixtureExpectation expectation) async {
+  final platform = createPlatformMonty();
+  MontyResult? result;
+  String? thrownExcType;
+  try {
+    result = await platform.run(f.source, scriptName: f.name);
+    thrownExcType = result.error?.excType;
+  } on MontyScriptError catch (e) {
+    thrownExcType = e.excType;
+  } on Object {
+    return false;
+  } finally {
+    await platform.dispose();
+  }
+
+  return switch (expectation) {
+    ExpectNoException() => thrownExcType == null,
+    ExpectReturn(value: final want) =>
+      thrownExcType == null && result?.value == MontyValue.fromDart(want),
+    ExpectRaise(:final excType) => thrownExcType == excType,
+  };
+}
+
+void _renderCorpusOverview() {
+  final host = _doc.getElementById('corpus-groups');
+  if (host == null) return;
+  host.textContent = '';
+
+  final byGroup = <String, List<_Fixture>>{};
+  for (final f in _corpus) {
+    byGroup.putIfAbsent(f.group, () => []).add(f);
+  }
+  final groups = byGroup.keys.toList()..sort();
+
+  var runnable = 0;
+  for (final f in _corpus) {
+    if (_skipReason(f) == null) runnable++;
+  }
+  _doc.getElementById('corpus-headline')?.textContent =
+      '$runnable of ${_corpus.length} upstream fixtures assert in this browser';
+
+  // Why the rest are not asserted — the question the counts alone provoke.
+  final reasons = <SkipKind, int>{};
+  for (final f in _corpus) {
+    final r = _skipReason(f);
+    if (r != null) reasons[r] = (reasons[r] ?? 0) + 1;
+  }
+  final breakdown = _doc.getElementById('corpus-breakdown');
+  if (breakdown != null) {
+    breakdown.textContent = '';
+    for (final k in SkipKind.values) {
+      final n = reasons[k] ?? 0;
+      if (n == 0) continue;
+      breakdown.append(_el('span', cls: 'pill v-run', text: '$n ${k.label}'));
+    }
+  }
+
+  for (final g in groups) {
+    final all = byGroup[g]!;
+    final n = all.where((f) => _skipReason(f) == null).length;
+    final chip = _el('button', cls: 'chip${n == 0 ? ' chip-none' : ''}')
+      ..append(_el('span', cls: 'chip-name', text: g))
+      ..append(_el('span', cls: 'chip-n', text: '$n/${all.length}'))
+      ..id = 'grp-$g';
+    (chip as web.HTMLButtonElement).onclick = (web.MouseEvent _) {
+      _openGroup = _openGroup == g ? null : g;
+      _renderGroupDetail();
+    }.toJS;
+    host.append(chip);
+  }
+  _renderGroupDetail();
+}
+
+/// Lists every fixture in the open group: its name, what happened to it (or
+/// why it was not asserted), and the Python that ran. Without this the panel
+/// reports a score and hides the evidence, which is the failure mode the whole
+/// page exists to avoid.
+void _renderGroupDetail() {
+  final host = _doc.getElementById('corpus-detail');
+  if (host == null) return;
+  host.textContent = '';
+  final g = _openGroup;
+  if (g == null) {
+    host.append(
+      _el(
+        'p',
+        cls: 'muted',
+        text:
+            'Pick a group above to see its fixtures, their sources, and '
+            'exactly why any of them are not asserted.',
+      ),
+    );
+
+    return;
+  }
+
+  final members = _corpus.where((f) => f.group == g).toList();
+  host.append(
+    _el('h3', cls: 'detail-h', text: '$g — ${members.length} fixture(s)'),
+  );
+
+  for (final f in members) {
+    final skip = _skipReason(f);
+    final status = _fixtureStatus[f.name] ?? (skip?.label ?? 'not run yet');
+    final cls = switch (status) {
+      'PASS' => 'v-pass',
+      'FAIL' => 'v-fail',
+      _ => 'v-run',
+    };
+    final expectation = parseFixture(f.source, skipWasm: false);
+    final want = switch (expectation) {
+      ExpectReturn(:final value) => 'Return= $value',
+      ExpectRaise(:final excType, :final message) =>
+        'Raise= $excType: $message',
+      ExpectNoException() => 'must not raise',
+      null => 'no directive',
+    };
+
+    host.append(
+      _el('div', cls: 'fx')
+        ..append(_el('span', cls: 'pill $cls', text: status))
+        ..append(_el('span', cls: 'fx-name', text: f.name))
+        ..append(_el('span', cls: 'fx-want', text: want))
+        ..append(_el('pre', cls: 'src', text: f.source.trimRight())),
+    );
+  }
+}
+
+Future<void> _runCorpus() async {
+  final btn = _doc.getElementById('run-corpus') as web.HTMLButtonElement?;
+  btn?.disabled = true;
+  final status = _doc.getElementById('corpus-status');
+  final started = DateTime.now();
+
+  var passed = 0;
+  var failed = 0;
+  var skipped = 0;
+  final failures = <String>[];
+
+  for (var i = 0; i < _corpus.length; i++) {
+    final f = _corpus[i];
+    final skip = _skipReason(f);
+    if (skip != null) {
+      skipped++;
+      _fixtureStatus[f.name] = skip.label;
+    } else {
+      final expectation = parseFixture(f.source, skipWasm: true)!;
+      final ok = await _runFixture(f, expectation);
+      _fixtureStatus[f.name] = ok ? 'PASS' : 'FAIL';
+      if (ok) {
+        passed++;
+      } else {
+        failed++;
+        if (failures.length < 12) failures.add(f.name);
+      }
+    }
+    // Yield to the event loop so the browser can paint progress; without this
+    // the page freezes for the whole run and looks hung.
+    if (i % 25 == 0) {
+      status?.textContent =
+          '$i / ${_corpus.length} — $passed passed, $failed failed';
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  final took = DateTime.now().difference(started);
+  status?.textContent = '';
+  status
+    ?..append(_el('span', cls: 'pill v-pass', text: '$passed PASS'))
+    ..append(
+      _el(
+        'span',
+        cls: 'pill ${failed == 0 ? 'v-run' : 'v-fail'}',
+        text: '$failed FAIL',
+      ),
+    )
+    ..append(_el('span', cls: 'pill v-run', text: '$skipped not asserted'))
+    ..append(_el('span', cls: 'took', text: '${took.inMilliseconds} ms'))
+    ..append(
+      _el(
+        'span',
+        cls: 'took',
+        text: '· ${DateTime.now().toIso8601String().substring(0, 19)}',
+      ),
+    );
+
+  if (failures.isNotEmpty) {
+    status?.append(
+      _el('div', cls: 'note', text: 'failing: ${failures.join(', ')}'),
+    );
+  }
+  _renderGroupDetail();
+  btn?.disabled = false;
+}
+
 web.Element _el(String tag, {String? cls, String? text}) {
   final e = _doc.createElement(tag);
   if (cls != null) e.className = cls;
@@ -634,5 +905,10 @@ void main() {
     rerun.disabled = true;
     unawaited(_runAll());
   }.toJS;
+  final runCorpus = _doc.getElementById('run-corpus') as web.HTMLButtonElement?;
+  runCorpus?.onclick = (web.MouseEvent _) {
+    unawaited(_runCorpus());
+  }.toJS;
+  _renderCorpusOverview();
   unawaited(_runAll());
 }

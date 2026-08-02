@@ -112,3 +112,36 @@ td { padding: 14px 20px; vertical-align: top; }
   td { padding: 12px 14px; }
   thead th { padding: 8px 14px; }
 }
+
+/* ── conformance panel ─────────────────────────────────────────────────── */
+.corpus { padding: 26px 20px 40px; max-width: 100ch; border-top: 1px solid #333; margin-top: 8px; }
+.corpus h2 { font-size: 0.95rem; color: #4ec9b0; margin: 0 0 10px; }
+.corpus p { font-size: 0.85rem; margin: 0 0 10px; }
+.corpus code { background: #111; padding: 1px 5px; border-radius: 3px; font-size: 0.78rem; color: #9cdcfe; }
+#corpus-headline { color: #b5cea8; font-family: 'Consolas', monospace; font-size: 0.85rem; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 14px; }
+.chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  background: #232323; border: 1px solid #3a3a3a; border-radius: 4px;
+  padding: 3px 8px; font-size: 0.72rem;
+}
+.chip-name { color: #9cdcfe; font-family: 'Consolas', monospace; }
+.chip-n { color: #777; font-family: 'Consolas', monospace; }
+#corpus-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.chip { cursor: pointer; font-family: inherit; }
+.chip:hover { border-color: #0e639c; background: #262626; }
+.chip-none .chip-n { color: #e2c15c; }
+
+.detail { margin-top: 6px; }
+.detail-h { font-size: 0.82rem; color: #4ec9b0; margin: 10px 0 8px; font-family: 'Consolas', monospace; }
+.fx {
+  display: grid; grid-template-columns: 108px minmax(180px, 22%) 1fr;
+  gap: 8px 12px; align-items: start;
+  padding: 8px 0; border-bottom: 1px solid #2a2a2a;
+}
+.fx-name { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #9cdcfe; word-break: break-all; }
+.fx-want { font-family: 'Consolas', monospace; font-size: 0.72rem; color: #777; }
+.fx .src { grid-column: 2 / -1; margin-top: 2px; max-height: 15em; overflow: auto; }
+@media (max-width: 900px) { .fx { grid-template-columns: 1fr; } .fx .src { grid-column: 1; } }
