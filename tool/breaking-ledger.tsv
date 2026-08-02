@@ -20,4 +20,4 @@ c7f10eb	The `open()` OS-call op is now `'open'`, was `'Open'`
 623c578	a host callback's return value is now encoded
 e677396	must now be a valid Python identifier
 12bca03	A malformed typed envelope is now a decode error
-2491a02	`memoryMountedOsHandler`'s errors now read like CPython's
+99a7d49	`memoryMountedOsHandler`'s errors now read like CPython's
