@@ -62,6 +62,9 @@ s  corpus_check  bash tool/check_fixture_corpus.sh
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
 # that should have caught it had been performed and gone stale within a day.
 s  breaking_rec  bash tool/check_breaking_recorded.sh
+# The demo links every fixture to pydantic/monty at a pinned tag; a crate bump
+# that missed the constant would show the wrong source with no error.
+s  fixture_links bash tool/check_fixture_links.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
 s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example

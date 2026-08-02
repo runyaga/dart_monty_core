@@ -141,7 +141,15 @@ td { padding: 14px 20px; vertical-align: top; }
   gap: 8px 12px; align-items: start;
   padding: 8px 0; border-bottom: 1px solid #2a2a2a;
 }
-.fx-name { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #9cdcfe; word-break: break-all; }
+/* Fixture names link to their upstream source at the pinned monty tag. Keep the
+   monospace/colour treatment of the surrounding code text — only the hover
+   underline marks it as a link, so the column does not turn into blue soup. */
+.fx-name {
+  font-family: 'Consolas', monospace; font-size: 0.76rem; color: #9cdcfe;
+  word-break: break-all; text-decoration: none;
+}
+a.fx-name:hover, a.fx-name:focus-visible { text-decoration: underline; color: #c8e6ff; }
+a.fx-name:visited { color: #9cdcfe; }
 .fx-want { font-family: 'Consolas', monospace; font-size: 0.72rem; color: #777; }
 .fx .src { grid-column: 2 / -1; margin-top: 2px; max-height: 15em; overflow: auto; }
 @media (max-width: 900px) { .fx { grid-template-columns: 1fr; } .fx .src { grid-column: 1; } }

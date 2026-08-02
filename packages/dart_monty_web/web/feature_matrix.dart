@@ -608,6 +608,17 @@ final List<_Fixture> _corpus =
     (fixtureCorpus.entries.map((e) => _Fixture(e.key, e.value)).toList()
       ..sort((a, b) => a.name.compareTo(b.name)));
 
+/// Upstream source for every fixture name shown in the drill-down. Appending a
+/// fixture file name to this yields its file on GitHub.
+///
+/// The tag in this URL MUST track the `monty` git pin in `native/Cargo.toml`
+/// (currently `tag = "v0.0.19"`). It is pinned, not `main`, so the source the
+/// reader opens is the source these fixtures were vendored from — an upgrade
+/// that bumps Cargo.toml without bumping this would silently show the wrong
+/// file, which is worse than no link at all.
+const _fixtureSourceBase =
+    'https://github.com/pydantic/monty/blob/v0.0.19/crates/monty/test_cases/';
+
 /// Classifies a fixture without running it, so the page can show the shape of
 /// the corpus instantly and only pay for execution on demand.
 SkipKind? _skipReason(_Fixture f) {
@@ -618,22 +629,15 @@ SkipKind? _skipReason(_Fixture f) {
   // them in its demo would be the strangest possible omission. The panel
   // supplies the externals they ask for (package:monty_conformance) and drives
   // the pending/resume loop.
-  if (fixtureIsCallExternal(f.source)) {
-    return parseFixture(f.source, skipCallExternal: false, skipWasm: true) ==
-            null
-        ? SkipKind.noDirective
-        : null;
-  }
-
-  // `# run-async` is NOT a skip either. Measured: a pure-Python async fixture
-  // (async def, top-level await, asyncio.gather) completes through a plain
-  // `platform.run()` with no host involvement at all — the directive exists for
-  // upstream's native oracle, not for us.
-  if (fixtureIsRunAsync(f.source)) {
+  // Both flags off: a fixture can be call-external AND run-async
+  // (async__ext_call.py is), and leaving skipRunAsync on here made parseFixture
+  // return null for it, which this then mislabelled "no directive". It has
+  // internal asserts — running it without raising IS the assertion.
+  if (fixtureIsCallExternal(f.source) || fixtureIsRunAsync(f.source)) {
     return parseFixture(
               f.source,
-              skipRunAsync: false,
               skipCallExternal: false,
+              skipRunAsync: false,
               skipWasm: true,
             ) ==
             null
@@ -835,7 +839,12 @@ void _renderGroupDetail() {
     host.append(
       _el('div', cls: 'fx')
         ..append(_el('span', cls: 'pill $cls', text: status))
-        ..append(_el('span', cls: 'fx-name', text: f.name))
+        ..append(
+          _el('a', cls: 'fx-name', text: f.name)
+            ..setAttribute('href', '$_fixtureSourceBase${f.name}')
+            ..setAttribute('target', '_blank')
+            ..setAttribute('rel', 'noopener'),
+        )
         ..append(
           _el(
             'span',

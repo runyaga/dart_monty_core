@@ -46,11 +46,19 @@ Future<DispatchOutcome> runCallExternalFixture(
   String? excType;
   MontyValue? value;
 
+  /// Echo values held between `resumeAsFuture` and `resolveFutures`, keyed by
+  /// callId. This is the async-external path: the host promises a value now and
+  /// delivers it when the engine asks, which is what lets several coroutines in
+  /// one `asyncio.gather` be in flight at once.
+  final pendingResults = <int, Object?>{};
+
   MontyProgress? progress;
   try {
     progress = await platform.start(
       source,
-      externalFunctions: conformanceExtFns.toList(),
+      // `async_call` is not in the dispatch table on purpose: it returns
+      // nothing directly, it goes down the futures path below.
+      externalFunctions: [...conformanceExtFns, 'async_call'],
       scriptName: scriptName,
     );
   } on MontyScriptError catch (e) {
@@ -65,7 +73,29 @@ Future<DispatchOutcome> runCallExternalFixture(
           value: result.value,
         );
 
-      case MontyPending(:final functionName, :final args, :final kwargs):
+      case MontyPending(
+        :final functionName,
+        :final args,
+        :final kwargs,
+        :final callId,
+      ):
+        if (functionName == 'async_call') {
+          // Echo: stash the argument and hand the engine a future, so it can
+          // keep running other coroutines before asking for the value.
+          pendingResults[callId] = args.first.dartValue;
+          if (platform is! MontyFutureCapable) {
+            return const DispatchOutcome(
+              skipped: true,
+              skipReason: 'backend does not implement the futures path',
+            );
+          }
+          try {
+            progress = await platform.resumeAsFuture();
+          } on MontyScriptError catch (e) {
+            return DispatchOutcome(excType: e.excType);
+          }
+          continue;
+        }
         if (!conformanceExtFns.contains(functionName)) {
           return DispatchOutcome(
             skipped: true,
@@ -121,10 +151,19 @@ Future<DispatchOutcome> runCallExternalFixture(
           }
         }
 
-      case MontyOsCall() || MontyResolveFutures():
+      case MontyResolveFutures(:final pendingCallIds):
+        try {
+          progress = await (platform as MontyFutureCapable).resolveFutures({
+            for (final id in pendingCallIds) id: pendingResults.remove(id),
+          });
+        } on MontyScriptError catch (e) {
+          return DispatchOutcome(excType: e.excType);
+        }
+
+      case MontyOsCall():
         return const DispatchOutcome(
           skipped: true,
-          skipReason: 'needs OS calls or the futures path',
+          skipReason: 'needs an OS-call handler',
         );
     }
   }
