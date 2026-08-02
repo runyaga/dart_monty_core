@@ -70,9 +70,27 @@ OsCallHandler memoryMountedOsHandler({
     Map<String, Object?>? kwargs,
   ) async {
     if (fallthrough != null) return fallthrough(op, args, kwargs);
+
+    // Mirror upstream's `OsFunctionCall::on_no_handler`
+    // (monty-types/src/os.rs:260-274) rather than inventing wording. It splits
+    // on whether the call is a filesystem operation, and this one message did
+    // not: it raised `PermissionError: Path is outside any mount: <arg>` for
+    // everything, which called `os.getenv`'s variable name a path, rendered
+    // `null` for calls that carry no path, and claimed a file that provably
+    // exists inside a mount was outside it (this is also reached from :355,
+    // which sits AFTER the mount check, so "outside any mount" cannot be true
+    // there).
+    //
+    // Emulated here rather than delegated because there is no way to decline:
+    // upstream's JS calls a dedicated `resumeNotHandled`, we have no such
+    // binding, and `OsCallNotHandledException` routes to `resumeNotFound`,
+    // which reports a bare NAME and yields `NameError: name 'Path.read_text'
+    // is not defined` — measured. Declining that way would turn a sandbox
+    // refusal into a missing-function message.
+    final noHandler = osCallNoHandlerDefault(op, args);
     throw OsCallException(
-      'Path is outside any mount: ${args.firstOrNull}',
-      pythonExceptionType: 'PermissionError',
+      noHandler.message,
+      pythonExceptionType: noHandler.excType,
     );
   }
 

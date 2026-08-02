@@ -21,3 +21,4 @@ c7f10eb	The `open()` OS-call op is now `'open'`, was `'Open'`
 e677396	must now be a valid Python identifier
 12bca03	A malformed typed envelope is now a decode error
 99a7d49	`memoryMountedOsHandler`'s errors now read like CPython's
+99b6dc5	Declining an OS call now raises the call's own default, not `NameError`

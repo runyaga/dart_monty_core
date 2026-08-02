@@ -9,6 +9,29 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **Declining an OS call now raises the call's own default, not `NameError`.**
+  `OsCallNotHandledException` was routed through the *external-function* "not
+  found" verb, so declining `Path.read_text` produced
+
+      NameError: name 'Path.read_text' is not defined
+
+  which turned a sandbox refusal into a missing-function message. It now raises
+  what upstream raises for an unhandled call
+  (`OsFunctionCall::on_no_handler`): `PermissionError: Permission denied:
+  '<path>'` for a filesystem operation, and `RuntimeError: '<op>' is not
+  supported in this environment` for anything else.
+
+  `memoryMountedOsHandler` used the same wording for every unserved call —
+  `PermissionError: Path is outside any mount: <arg>` — which was wrong three
+  ways: it called `os.getenv`'s variable name a path, printed `null` for calls
+  carrying no path, and claimed a file that provably *existed inside* a mount
+  was outside it (that message is raised after the mount check, so it could
+  never be true there). It now reports the same defaults, which also stops
+  disclosing mount topology to sandboxed code.
+
+  Migration: catch the same exception classes; only the message text and, for
+  non-filesystem operations, the class (`NameError` → `RuntimeError`) change.
+
 - **The web backends no longer lose numbers (#128).** Three distinct defects,
   all from the same cause — a JSON number's *text* is where the information
   lives, and the JS bridge reparses it:

@@ -607,8 +607,10 @@ class MontyRepl {
         ),
       );
     }
+    // Hoisted: the decline path below needs the args to build the call's
+    // no-handler default (a filesystem op names its path).
+    final args = call.args.map((v) => v.dartValue).toList();
     try {
-      final args = call.args.map((v) => v.dartValue).toList();
       final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
       final result = await handler(call.operationName, args, kwargs);
 
@@ -616,8 +618,19 @@ class MontyRepl {
         await _bindings.resume(WireJson.value(result)),
       );
     } on OsCallNotHandledException catch (e) {
+      // NOT `resumeNotFound`. That is the external-function verb: it reports a
+      // bare NAME, so declining `Path.read_text` produced
+      //   NameError: name 'Path.read_text' is not defined
+      // which turns a sandbox refusal into a missing-function message.
+      // Declining an OS call means the call's own default instead — see
+      // [osCallNoHandlerDefault].
+      final fallback = osCallNoHandlerDefault(
+        e.fnName ?? call.operationName,
+        args,
+      );
+
       return _translateProgress(
-        await _bindings.resumeNotFound(e.fnName ?? call.operationName),
+        await _bindings.resumeWithException(fallback.excType, fallback.message),
       );
     } on OsCallException catch (e) {
       // Deliver the requested Python exception class so scripts can catch it

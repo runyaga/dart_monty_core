@@ -313,6 +313,19 @@ maxRecursionDepth:)`.
 | `MontyWasm` | `dart.library.js_interop` present (web) |
 | `createPlatformMonty()` | Auto-pick at compile time |
 
+> **The FFI backend has no crash isolation.** The interpreter runs in your
+> process, so a memory fault inside sandboxed Python — a stack-overflow or
+> allocator abort — terminates the **host application**, not just the sandbox.
+> Such aborts cannot be caught, and Dart isolates do not contain them (they
+> share one OS process). Resource limits (`timeoutMs`, `stackDepth`,
+> `memoryBytes`) are engine-enforced and do cover the ordinary runaway cases.
+> The web backend is unaffected: wasm traps are contained and the Worker can be
+> terminated. If you need isolation on FFI today, run this package in a separate
+> OS process you control.
+>
+> Full rationale, and why upstream's bindings differ:
+> [`docs/reference/execution-model.md`](docs/reference/execution-model.md).
+
 ## Installation
 
 > **This package builds the native FFI binary from source on `dart pub get`.**

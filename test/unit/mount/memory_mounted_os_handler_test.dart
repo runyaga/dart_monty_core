@@ -209,6 +209,75 @@ void main() {
       );
     });
 
+    // The handler used to answer all of these with one invented message,
+    // `PermissionError: Path is outside any mount: <arg>`. It was wrong in a
+    // different way each time: it called an env-var name a path, it printed
+    // `null` for calls that carry no path at all, and it claimed a file that
+    // exists inside the mount was outside it.
+    //
+    // It now raises the call's own no-handler default, computed by
+    // [osCallNoHandlerDefault] to match upstream's `on_no_handler`
+    // (monty-types/src/os.rs:260-268) — a permission failure naming the path
+    // for a filesystem op, `Permission denied: '<path>'` with no errno prefix.
+    test('unserved filesystem op reports Permission denied with the path', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        vfs: const {'/data/hello.txt': 'hi'},
+      );
+
+      // Path.stat is unimplemented, and this path EXISTS inside the mount, so
+      // the old "Path is outside any mount" could never have been true here.
+      expect(
+        () => handler('Path.stat', ['/data/hello.txt'], null),
+        throwsA(
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'excType',
+                'PermissionError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                "Permission denied: '/data/hello.txt'",
+              ),
+        ),
+      );
+    });
+
+    // A non-filesystem op is not a path question at all. The old message
+    // called os.getenv's variable name a path and rendered "... : null" for
+    // calls carrying no argument.
+    test('unserved non-filesystem op reports RuntimeError, not a path', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        vfs: const {},
+      );
+
+      Matcher unsupported(String name) => throwsA(
+        isA<OsCallException>()
+            .having((e) => e.pythonExceptionType, 'excType', 'RuntimeError')
+            .having(
+              (e) => e.message,
+              'message',
+              "'$name' is not supported in this environment",
+            ),
+      );
+
+      expect(
+        () => handler('os.getenv', ['HOME'], null),
+        unsupported('os.getenv'),
+      );
+      expect(
+        () => handler('os.environ', const [], null),
+        unsupported('os.environ'),
+      );
+      expect(
+        () => handler('datetime.now', const [], null),
+        unsupported('datetime.now'),
+      );
+    });
+
     test('non-Path operations fall through cleanly', () async {
       var fallthroughOp = '';
       final handler = memoryMountedOsHandler(
