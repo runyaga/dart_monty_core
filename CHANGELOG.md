@@ -9,6 +9,15 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **A write no longer requires its parent directory to exist — added and
+  reverted within this unreleased cycle.** Relative to 0.18 nothing changed, so
+  there is no migration; it is recorded because the behaviour moved twice inside
+  the branch and a bisect would otherwise be confusing. The check rejected
+  `write_text('/mnt/typo/file.txt')` when `/mnt/typo` did not exist, which is
+  correct in principle, but the in-memory VFS cannot represent an empty
+  directory: `mkdir` inserts nothing, so `mkdir` followed by writing into that
+  directory failed. It returns once directories are first-class.
+
 - **Declining an OS call now raises the call's own default, not `NameError`.**
   `OsCallNotHandledException` was routed through the *external-function* "not
   found" verb, so declining `Path.read_text` produced
