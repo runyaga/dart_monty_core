@@ -29,105 +29,29 @@ import 'package:test/test.dart';
 // subset of ext fns actually called by fixtures in this corpus. Kept minimal
 // on purpose — extend as new fixtures require new ext fns.
 
-const _supportedExtFns = {
-  'add_ints',
-  'concat_strings',
-  'return_value',
-  'get_list',
-};
-
-Object? _dispatch(String name, List<MontyValue> args) => switch (name) {
-  'add_ints' => (args[0].dartValue! as int) + (args[1].dartValue! as int),
-  'concat_strings' => '${args[0].dartValue}${args[1].dartValue}',
-  'return_value' => args[0].dartValue,
-  'get_list' => [1, 2, 3],
-  _ => throw StateError('unsupported ext fn: $name'),
-};
-
-const _nameConstants = <String, Object?>{
-  'CONST_INT': 42,
-  'CONST_STR': 'hello',
-  'CONST_FLOAT': 3.14,
-  'CONST_BOOL': true,
-  'CONST_LIST': [1, 2, 3],
-  'CONST_NONE': null,
-};
-
 // ---------------------------------------------------------------------------
 // Dispatch loop — minimal version of wasm_runner.dart's for FFI.
 // ---------------------------------------------------------------------------
 
-/// Returns `(thrownExcType, resultValue, skipped)`.
+/// Runs a `# call-external` fixture through the SHARED dispatch loop.
 ///
-/// Skipped is true when the fixture uses an ext fn outside [_supportedExtFns].
+/// This file used to carry its own copy of the loop and its own 4-function
+/// table, while `wasm_runner.dart` carried a 15-function one. The two had
+/// drifted, so FFI silently asserted fewer fixtures than the browser did.
+/// Both backends implement `MontyPlatform`, so there was never a reason for
+/// two loops — see package:monty_conformance.
 Future<(String?, MontyValue?, bool)> _runDispatch(
   String source,
   String key,
 ) async {
   final platform = MontyFfi();
-  String? thrownExcType;
-  MontyValue? resultValue;
-  var skipped = false;
-
   try {
-    MontyProgress? progress;
-    try {
-      progress = await platform.start(
-        source,
-        externalFunctions: _supportedExtFns.toList(),
-        scriptName: key,
-      );
-    } on MontyScriptError catch (e) {
-      thrownExcType = e.excType;
-    }
+    final o = await runCallExternalFixture(platform, source, scriptName: key);
 
-    dispatchLoop:
-    while (progress != null) {
-      switch (progress) {
-        case MontyComplete(:final result):
-          thrownExcType = result.error?.excType;
-          resultValue = result.value;
-          break dispatchLoop;
-
-        case MontyPending(:final functionName, :final args):
-          if (!_supportedExtFns.contains(functionName)) {
-            skipped = true;
-            break dispatchLoop;
-          }
-          try {
-            final ret = _dispatch(functionName, args);
-            progress = await platform.resume(ret);
-          } on MontyScriptError catch (e) {
-            thrownExcType = e.excType;
-            break dispatchLoop;
-          }
-
-        case MontyNameLookup(:final variableName):
-          // FFI does not implement resumeNameLookupValue (constant injection
-          // is WASM-only today). Fixtures that rely on injecting a named
-          // constant are skipped here — they are covered by the WASM runner.
-          if (_nameConstants.containsKey(variableName)) {
-            skipped = true;
-            break dispatchLoop;
-          }
-          try {
-            progress = await platform.resumeNameLookupUndefined(variableName);
-          } on MontyScriptError catch (e) {
-            thrownExcType = e.excType;
-            break dispatchLoop;
-          }
-
-        case MontyOsCall() || MontyResolveFutures():
-          // Out of scope for this narrow test — skip.
-          skipped = true;
-          break dispatchLoop;
-      }
-    }
+    return (o.excType, o.value, o.skipped);
   } finally {
     await platform.dispose();
   }
-
-  return (thrownExcType, resultValue, skipped);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +96,13 @@ void main() {
         );
         if (expectation == null) {
           markTestSkipped('no Return=/Raise= directive to assert against');
+
+          return;
+        }
+
+        final broken = knownBrokenExtFixtures[key];
+        if (broken != null) {
+          markTestSkipped(broken);
 
           return;
         }

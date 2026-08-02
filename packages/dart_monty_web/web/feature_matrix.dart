@@ -576,8 +576,33 @@ class _Fixture {
 /// Empty until the corpus is run; the skip reasons are known without running.
 final Map<String, String> _fixtureStatus = {};
 
-/// Which group's fixture list is currently expanded, if any.
-String? _openGroup;
+/// Why a host-backed fixture could not be completed, when that happens — shown
+/// in the drill-down rather than folded into a bare FAIL.
+final Map<String, String> _skipNotes = {};
+
+/// What the drill-down is currently showing: a group, a skip reason, or the
+/// failures. Every count on this panel is clickable, because a number the
+/// reader cannot open is a number they have to take on trust.
+sealed class _Selection {
+  const _Selection();
+}
+
+class _GroupSel extends _Selection {
+  const _GroupSel(this.group);
+  final String group;
+}
+
+class _SkipSel extends _Selection {
+  /// [kind] null means "every fixture that was not asserted, for any reason".
+  const _SkipSel(this.kind);
+  final SkipKind? kind;
+}
+
+class _FailSel extends _Selection {
+  const _FailSel();
+}
+
+_Selection? _selection;
 
 final List<_Fixture> _corpus =
     (fixtureCorpus.entries.map((e) => _Fixture(e.key, e.value)).toList()
@@ -587,13 +612,39 @@ final List<_Fixture> _corpus =
 /// the corpus instantly and only pay for execution on demand.
 SkipKind? _skipReason(_Fixture f) {
   if (unsupportedWasmFixtures.contains(f.name)) return SkipKind.divergent;
+
+  // `# call-external` is NOT a skip here. Those fixtures are the host↔sandbox
+  // round trip, which is the whole point of this package — refusing to run
+  // them in its demo would be the strangest possible omission. The panel
+  // supplies the externals they ask for (package:monty_conformance) and drives
+  // the pending/resume loop.
+  if (fixtureIsCallExternal(f.source)) {
+    return parseFixture(f.source, skipCallExternal: false, skipWasm: true) ==
+            null
+        ? SkipKind.noDirective
+        : null;
+  }
+
+  // `# run-async` is NOT a skip either. Measured: a pure-Python async fixture
+  // (async def, top-level await, asyncio.gather) completes through a plain
+  // `platform.run()` with no host involvement at all — the directive exists for
+  // upstream's native oracle, not for us.
+  if (fixtureIsRunAsync(f.source)) {
+    return parseFixture(
+              f.source,
+              skipRunAsync: false,
+              skipCallExternal: false,
+              skipWasm: true,
+            ) ==
+            null
+        ? SkipKind.noDirective
+        : null;
+  }
+
   if (parseFixture(f.source, skipWasm: true) == null) {
-    // parseFixture returns null for call-external / mount-fs / run-async /
-    // xfail=wasm. Distinguish "needs a host" from "asserts nothing", because
-    // they mean very different things to a reader.
-    return fixtureIsCallExternal(f.source) ||
-            fixtureMountsFs(f.source) ||
-            fixtureIsRunAsync(f.source)
+    // What is left genuinely needs a host the panel does not yet stand up:
+    // `# mount-fs` wants a pre-populated virtual filesystem bound to `root`.
+    return fixtureMountsFs(f.source)
         ? SkipKind.needsHost
         : SkipKind.noDirective;
   }
@@ -603,7 +654,44 @@ SkipKind? _skipReason(_Fixture f) {
 
 /// Runs one fixture exactly as `wasm_fixture_test.dart` does, and reports
 /// whether upstream's own directive held.
-Future<bool> _runFixture(_Fixture f, FixtureExpectation expectation) async {
+/// `'PASS'`, `'FAIL'`, or a reason the harness could not assert it.
+///
+/// The distinction matters: "monty got this wrong" and "this demo does not
+/// model the external the fixture asks for" are completely different claims,
+/// and collapsing them into FAIL would slander the library.
+Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
+  if (fixtureIsCallExternal(f.source)) {
+    final platform = createPlatformMonty();
+    try {
+      final o = await runCallExternalFixture(
+        platform,
+        f.source,
+        scriptName: f.name,
+      );
+      if (o.skipped) {
+        _skipNotes[f.name] = o.skipReason ?? 'skipped';
+
+        return o.skipReason ?? 'not modelled';
+      }
+
+      final ok = switch (expectation) {
+        ExpectNoException() => o.excType == null,
+        ExpectReturn(value: final want) =>
+          o.excType == null && o.value == MontyValue.fromDart(want),
+        ExpectRaise(:final excType) => o.excType == excType,
+      };
+
+      return ok ? 'PASS' : 'FAIL';
+    } on StateError catch (e) {
+      // conformanceDispatch throws this for an external it does not model.
+      _skipNotes[f.name] = e.message;
+
+      return 'not modelled';
+    } finally {
+      await platform.dispose();
+    }
+  }
+
   final platform = createPlatformMonty();
   MontyResult? result;
   String? thrownExcType;
@@ -612,18 +700,22 @@ Future<bool> _runFixture(_Fixture f, FixtureExpectation expectation) async {
     thrownExcType = result.error?.excType;
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;
-  } on Object {
-    return false;
+  } on Object catch (e) {
+    _skipNotes[f.name] = e.toString();
+
+    return 'FAIL';
   } finally {
     await platform.dispose();
   }
 
-  return switch (expectation) {
+  final ok = switch (expectation) {
     ExpectNoException() => thrownExcType == null,
     ExpectReturn(value: final want) =>
       thrownExcType == null && result?.value == MontyValue.fromDart(want),
     ExpectRaise(:final excType) => thrownExcType == excType,
   };
+
+  return ok ? 'PASS' : 'FAIL';
 }
 
 void _renderCorpusOverview() {
@@ -668,7 +760,8 @@ void _renderCorpusOverview() {
       ..append(_el('span', cls: 'chip-n', text: '$n/${all.length}'))
       ..id = 'grp-$g';
     (chip as web.HTMLButtonElement).onclick = (web.MouseEvent _) {
-      _openGroup = _openGroup == g ? null : g;
+      final cur = _selection;
+      _selection = (cur is _GroupSel && cur.group == g) ? null : _GroupSel(g);
       _renderGroupDetail();
     }.toJS;
     host.append(chip);
@@ -684,8 +777,8 @@ void _renderGroupDetail() {
   final host = _doc.getElementById('corpus-detail');
   if (host == null) return;
   host.textContent = '';
-  final g = _openGroup;
-  if (g == null) {
+  final sel = _selection;
+  if (sel == null) {
     host.append(
       _el(
         'p',
@@ -699,9 +792,27 @@ void _renderGroupDetail() {
     return;
   }
 
-  final members = _corpus.where((f) => f.group == g).toList();
+  final (members, heading) = switch (sel) {
+    _GroupSel(:final group) => (
+      _corpus.where((f) => f.group == group).toList(),
+      group,
+    ),
+    _SkipSel(kind: final k?) => (
+      _corpus.where((f) => _skipReason(f) == k).toList(),
+      'not asserted — ${k.label}',
+    ),
+    _SkipSel(kind: null) => (
+      _corpus.where((f) => _skipReason(f) != null).toList(),
+      'not asserted — every reason',
+    ),
+    _FailSel() => (
+      _corpus.where((f) => _fixtureStatus[f.name] == 'FAIL').toList(),
+      'failing',
+    ),
+  };
+
   host.append(
-    _el('h3', cls: 'detail-h', text: '$g — ${members.length} fixture(s)'),
+    _el('h3', cls: 'detail-h', text: '$heading — ${members.length} fixture(s)'),
   );
 
   for (final f in members) {
@@ -725,7 +836,15 @@ void _renderGroupDetail() {
       _el('div', cls: 'fx')
         ..append(_el('span', cls: 'pill $cls', text: status))
         ..append(_el('span', cls: 'fx-name', text: f.name))
-        ..append(_el('span', cls: 'fx-want', text: want))
+        ..append(
+          _el(
+            'span',
+            cls: 'fx-want',
+            text: _skipNotes[f.name] == null
+                ? want
+                : '$want  ·  ${_skipNotes[f.name]}',
+          ),
+        )
         ..append(_el('pre', cls: 'src', text: f.source.trimRight())),
     );
   }
@@ -749,14 +868,23 @@ Future<void> _runCorpus() async {
       skipped++;
       _fixtureStatus[f.name] = skip.label;
     } else {
-      final expectation = parseFixture(f.source, skipWasm: true)!;
-      final ok = await _runFixture(f, expectation);
-      _fixtureStatus[f.name] = ok ? 'PASS' : 'FAIL';
-      if (ok) {
-        passed++;
-      } else {
-        failed++;
-        if (failures.length < 12) failures.add(f.name);
+      final expectation = parseFixture(
+        f.source,
+        skipCallExternal: false,
+        skipRunAsync: false,
+        skipWasm: true,
+      )!;
+      final status = await _runFixture(f, expectation);
+      _fixtureStatus[f.name] = status;
+      switch (status) {
+        case 'PASS':
+          passed++;
+        case 'FAIL':
+          failed++;
+          if (failures.length < 12) failures.add(f.name);
+        default:
+          // The harness could not assert it — not a library failure.
+          skipped++;
       }
     }
     // Yield to the event loop so the browser can paint progress; without this
@@ -770,16 +898,33 @@ Future<void> _runCorpus() async {
 
   final took = DateTime.now().difference(started);
   status?.textContent = '';
+  final failPill = _el(
+    'button',
+    cls: 'pill pill-btn ${failed == 0 ? 'v-run' : 'v-fail'}',
+    text: '$failed FAIL',
+  );
+  (failPill as web.HTMLButtonElement).onclick = (web.MouseEvent _) {
+    _selection = const _FailSel();
+    _renderGroupDetail();
+  }.toJS;
+
+  final skipPill = _el(
+    'button',
+    cls: 'pill v-run pill-btn',
+    text: '$skipped not asserted',
+  );
+  (skipPill as web.HTMLButtonElement).onclick = (web.MouseEvent _) {
+    final cur = _selection;
+    _selection = (cur is _SkipSel && cur.kind == null)
+        ? null
+        : const _SkipSel(null);
+    _renderGroupDetail();
+  }.toJS;
+
   status
     ?..append(_el('span', cls: 'pill v-pass', text: '$passed PASS'))
-    ..append(
-      _el(
-        'span',
-        cls: 'pill ${failed == 0 ? 'v-run' : 'v-fail'}',
-        text: '$failed FAIL',
-      ),
-    )
-    ..append(_el('span', cls: 'pill v-run', text: '$skipped not asserted'))
+    ..append(failPill)
+    ..append(skipPill)
     ..append(_el('span', cls: 'took', text: '${took.inMilliseconds} ms'))
     ..append(
       _el(

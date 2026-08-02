@@ -145,3 +145,7 @@ td { padding: 14px 20px; vertical-align: top; }
 .fx-want { font-family: 'Consolas', monospace; font-size: 0.72rem; color: #777; }
 .fx .src { grid-column: 2 / -1; margin-top: 2px; max-height: 15em; overflow: auto; }
 @media (max-width: 900px) { .fx { grid-template-columns: 1fr; } .fx .src { grid-column: 1; } }
+
+/* Any count that can be opened looks openable. */
+.pill-btn { cursor: pointer; font-family: inherit; }
+.pill-btn:hover { filter: brightness(1.35); }

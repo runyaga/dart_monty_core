@@ -47,9 +47,16 @@ const alwaysUnsupportedWasmFixtures = {
   'recursion__deep_repr.py',
   'recursion__limit_depth.py',
   'json__dumps_recursion.py',
-  // Needs an external function (`make_point`) supplied by the harness — the
-  // fixture is marked `# call-external`. Same class of gap as core#125: the
-  // harness does not provide the capabilities some fixtures require.
+  // Also listed in [knownBrokenExtFixtures] — it fails on FFI too, so the WASM
+  // list alone is not enough.
+  // CORRECTED 2026-08-02. The old reason -- "needs an external (`make_point`)
+  // the harness does not supply" -- went stale the moment the shared ext-fn
+  // table landed: it DOES supply make_point. Unskipping it revealed the real
+  // behaviour, which is worse than a missing harness capability: with a
+  // correctly-built frozen MontyDataclass returned from the host, the fixture's
+  // own `assert repr(point) == 'Point(x=1, y=2)'` fails on FFI with
+  // AssertionError. Measured, not inferred. Root cause not yet found -- see
+  // FB-10 -- so it stays skipped, but now for the reason that is true.
   'dataclass__basic.py',
 };
 
@@ -71,4 +78,17 @@ const testHooksWasmFixtures = {
 const Set<String> unsupportedWasmFixtures = {
   ...alwaysUnsupportedWasmFixtures,
   ...testHooksWasmFixtures,
+};
+
+/// Call-external fixtures that fail on EVERY backend, with the reason.
+///
+/// Separate from [unsupportedWasmFixtures] because that set means "the web
+/// diverges here"; this one means "we are wrong everywhere and know it".
+/// Conflating them is how `dataclass__basic.py` sat behind a stale
+/// web-only skip while nothing ran it on FFI either.
+const Map<String, String> knownBrokenExtFixtures = {
+  'dataclass__basic.py':
+      "FB-10: a host-supplied frozen MontyDataclass fails the fixture's own "
+      "`repr(point) == 'Point(x=1, y=2)'` assertion on FFI. Measured; root "
+      'cause not yet found.',
 };
