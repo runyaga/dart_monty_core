@@ -22,6 +22,12 @@ dependencies:
 dev_dependencies:
   ffigen: ^20.1.1
   file: ^7.0.1
+  # The conformance corpus + directive parser, extracted to a package because
+  # Dart cannot import another package's test/ — see packages/monty_conformance.
+  # A path dev_dependency does NOT block publishing (verified with
+  # `dart pub publish --dry-run`: the only warning was an unrelated dirty tree).
+  monty_conformance:
+    path: packages/monty_conformance
   test: ^1.25.0
   very_good_analysis: ^10.0.0
 

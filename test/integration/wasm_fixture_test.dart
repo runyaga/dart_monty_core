@@ -14,11 +14,8 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
-
-import '_fixture_corpus.dart';
-import '_fixture_parser.dart';
-import '_unsupported_wasm_fixtures.dart';
 
 void main() {
   group('wasm_fixture', () {

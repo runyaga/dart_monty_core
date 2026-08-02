@@ -18,22 +18,39 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
+/// What a fixture's directives say must happen when it runs.
 sealed class FixtureExpectation {
+  /// Creates a [FixtureExpectation].
   const FixtureExpectation();
 }
 
+/// The fixture declared `# Return=<repr>`: it must complete with that value.
 final class ExpectReturn extends FixtureExpectation {
+  /// Creates an [ExpectReturn] expecting [value].
   const ExpectReturn(this.value);
+
+  /// The parsed Python repr, as a plain Dart value. Compare against a real
+  /// result with `MontyValue.fromDart(value)`.
   final Object? value;
 }
 
+/// The fixture declared `# Raise=<ExcType>: <message>`, or carried a
+/// `TRACEBACK:` docstring, so running it must raise.
 final class ExpectRaise extends FixtureExpectation {
+  /// Creates an [ExpectRaise].
   const ExpectRaise({required this.excType, required this.message});
+
+  /// The Python exception class name, e.g. `ValueError`.
   final String excType;
+
+  /// The exception message. Not every harness asserts on this — the excType
+  /// is the stable part.
   final String message;
 }
 
+/// The fixture declared no outcome directive: it must simply not raise.
 final class ExpectNoException extends FixtureExpectation {
+  /// Creates an [ExpectNoException].
   const ExpectNoException();
 }
 

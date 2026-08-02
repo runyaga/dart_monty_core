@@ -24,10 +24,7 @@ import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-
-import '_fixture_corpus.dart';
-import '_fixture_parser.dart';
-import '_unsupported_wasm_fixtures.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 
 @JS('console.log')
 external void _consoleLog(JSAny? message);

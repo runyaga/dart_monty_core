@@ -13,10 +13,9 @@ library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/monty_ffi.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
 
-import '_fixture_corpus.dart';
-import '_fixture_parser.dart';
 import '_oracle_runner.dart';
 
 void main() {

@@ -17,7 +17,7 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 CORPUS_LINK=test/fixtures/test_cases
-EMBEDDED=test/integration/_fixture_corpus.dart
+EMBEDDED=packages/monty_conformance/lib/src/fixture_corpus.dart
 
 # --- what does the crate build against? --------------------------------------
 WANT_TAG=$(grep -m1 '^monty = ' native/Cargo.toml | sed -E 's/.*tag = "([^"]+)".*/\1/')
