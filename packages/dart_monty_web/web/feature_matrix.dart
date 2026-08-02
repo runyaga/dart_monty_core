@@ -1023,6 +1023,22 @@ Future<void> _runCorpus() async {
   }
 
   final took = DateTime.now().difference(started);
+
+  // Restate the headline from what the run actually did.
+  //
+  // The pre-run number is a PREDICTION: `_skipReason` classifies without
+  // executing, so it cannot know about fixtures the dispatch loop declines at
+  // run time (an external we do not model, or a verb a backend lacks — FB-5's
+  // name-lookup is wired on web and not on FFI, so the two backends genuinely
+  // differ here). It claimed 520 while the run reported 517 assertable.
+  //
+  // Predicting is fine; leaving the prediction on screen next to a run that
+  // contradicts it is not. Once the corpus has run, the measured count is
+  // strictly better information, so it replaces the estimate.
+  _doc.getElementById('corpus-headline')?.textContent =
+      '${passed + failed} of ${_corpus.length} upstream fixtures asserted in '
+      'this browser — $passed passed';
+
   status?.textContent = '';
   final failPill = _el(
     'button',
