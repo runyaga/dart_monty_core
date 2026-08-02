@@ -8,6 +8,15 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+/// Reads a `StatResult` field by NAME. Indexing by position would also trip
+/// DCM's unsafe-collection rule, and a positional read says nothing about
+/// which field it meant.
+MontyValue? _stat(MontyNamedTuple t, String field) {
+  final i = t.fieldNames.indexOf(field);
+
+  return i < 0 ? null : t.values.elementAtOrNull(i);
+}
+
 void main() {
   group('memoryMountedOsHandler', () {
     test('reads a file via Path.read_text', () async {
@@ -225,10 +234,13 @@ void main() {
         vfs: const {'/data/hello.txt': 'hi'},
       );
 
-      // Path.stat is unimplemented, and this path EXISTS inside the mount, so
-      // the old "Path is outside any mount" could never have been true here.
+      // This handler now implements all 19 upstream filesystem ops, so the
+      // example has to be a hypothetical one. The property under test is
+      // structural and survives any future op: the throw sits AFTER the
+      // mount check, so the path is inside a mount by construction and
+      // "outside any mount" could never be true here.
       expect(
-        () => handler('Path.stat', ['/data/hello.txt'], null),
+        () => handler('Path.chmod', ['/data/hello.txt'], null),
         throwsA(
           isA<OsCallException>()
               .having(
@@ -275,6 +287,82 @@ void main() {
       expect(
         () => handler('datetime.now', const [], null),
         unsupported('datetime.now'),
+      );
+    });
+
+    // Path.stat was unimplemented, so it fell through and reported
+    // "Path is outside any mount" for a file that was demonstrably inside one.
+    // Shape mirrors upstream's StatResult exactly (monty-types/src/os.rs:487):
+    // ten fields, first seven int, last three float; synthetic 0o644 / 0o755
+    // modes with type bits OR'd in; directories report size 4096 and nlink 2.
+    test('stat of a file returns a 10-field StatResult', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        vfs: {'/data/hello.txt': 'readonly content'},
+      );
+
+      final st =
+          (await handler('Path.stat', ['/data/hello.txt'], null))!
+              as MontyNamedTuple;
+
+      expect(st.typeName, 'StatResult');
+      expect(st.fieldNames, const [
+        'st_mode',
+        'st_ino',
+        'st_dev',
+        'st_nlink',
+        'st_uid',
+        'st_gid',
+        'st_size',
+        'st_atime',
+        'st_mtime',
+        'st_ctime',
+      ]);
+      // 16 bytes -- the same value mount_fs__ops.py:52 asserts.
+      expect(_stat(st, 'st_size'), const MontyInt(16));
+      // 0o644 with the regular-file type bits (0o100000) OR'd in.
+      expect(_stat(st, 'st_mode'), const MontyInt(0x81A4));
+      expect(_stat(st, 'st_nlink'), const MontyInt(1));
+      // Times are floats, not ints -- the wire distinguishes them.
+      expect(_stat(st, 'st_atime'), isA<MontyFloat>());
+    });
+
+    test('stat of a directory reports 4096 and nlink 2', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        vfs: {'/data/sub/x.txt': 'hi'},
+      );
+
+      final st =
+          (await handler('Path.stat', ['/data/sub'], null))! as MontyNamedTuple;
+
+      expect(_stat(st, 'st_size'), const MontyInt(4096));
+      expect(_stat(st, 'st_nlink'), const MontyInt(2));
+      // 0o755 with the directory type bits (0o40000) OR'd in.
+      expect(_stat(st, 'st_mode'), const MontyInt(0x41ED));
+    });
+
+    test('stat of a missing path inside a mount is FileNotFoundError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        vfs: const {},
+      );
+
+      expect(
+        () => handler('Path.stat', ['/data/nope.txt'], null),
+        throwsA(
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'excType',
+                'FileNotFoundError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                "[Errno 2] No such file or directory: '/data/nope.txt'",
+              ),
+        ),
       );
     });
 

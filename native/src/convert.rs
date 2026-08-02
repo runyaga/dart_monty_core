@@ -534,17 +534,28 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                         .map_err(|e| format!("bad bigint {text:?}: {e}"))?
                 }
                 "float" => {
-                    // Only the non-finite forms travel tagged; a finite float is
-                    // a JSON number and never reaches this arm.
+                    // Three groups of floats arrive tagged, and this arm used to
+                    // accept only the first:
+                    //
+                    //   1. non-finite — no JSON number representation at all;
+                    //   2. integral (`2.0`) — a JSON number reparses it as `2`;
+                    //   3. negative zero — `JSON.stringify(-0)` is `"0"`.
+                    //
+                    // Groups 2 and 3 are Tier 3 (core#128): the text is the only
+                    // place the distinction survives the web transport, so the
+                    // Dart encoder sends them tagged (monty_value_scalars.dart).
+                    // The encoder moved and this decoder did not, so a host
+                    // callback returning a plain `2.0` was rejected outright.
+                    //
+                    // `f64::from_str` handles all three, including "NaN",
+                    // "Infinity" and "-Infinity", and preserves the sign of
+                    // "-0.0". Parsing rather than matching is also what keeps
+                    // the two directions from drifting again.
                     let text = map.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                    match text {
-                        "NaN" => MontyObject::Float(f64::NAN),
-                        "Infinity" => MontyObject::Float(f64::INFINITY),
-                        "-Infinity" => MontyObject::Float(f64::NEG_INFINITY),
-                        other => {
-                            return Err(format!(
-                                "a tagged float carries only NaN/Infinity/-Infinity, got {other:?}"
-                            ));
+                    match text.parse::<f64>() {
+                        Ok(value) => MontyObject::Float(value),
+                        Err(e) => {
+                            return Err(format!("bad float {text:?}: {e}"));
                         }
                     }
                 }

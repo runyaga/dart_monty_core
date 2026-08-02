@@ -34,11 +34,17 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// - **Per-write byte limit** (writes exceeding `writeBytesLimit` raise
 ///   `OSError`); cumulative tracking across calls is a follow-up.
 ///
-/// Supported operations: `Path.read_text`, `Path.read_bytes`,
-/// `Path.write_text`, `Path.write_bytes`, `Path.exists`, `Path.is_file`,
-/// `Path.is_dir`, `Path.is_symlink`, `Path.unlink`, `Path.iterdir`,
-/// `Path.absolute`, `Path.resolve`, `Path.mkdir`, `Path.rmdir`,
-/// `Path.rename`. Unsupported ops fall through.
+/// Serves **all 19 filesystem operations** the engine can issue (the
+/// `is_filesystem` set at monty-types/src/os.rs:178): `open`, `Path.read_text`,
+/// `Path.read_bytes`, `Path.write_text`, `Path.write_bytes`,
+/// `Path.append_text`, `Path.append_bytes`, `Path.exists`, `Path.is_file`,
+/// `Path.is_dir`, `Path.is_symlink`, `Path.stat`, `Path.unlink`,
+/// `Path.iterdir`, `Path.absolute`, `Path.resolve`, `Path.mkdir`,
+/// `Path.rmdir`, `Path.rename`.
+///
+/// Anything else — a non-filesystem call such as `os.getenv`, or a path
+/// outside every mount — goes to [fallthrough], or raises the call's own
+/// no-handler default when no fallthrough is configured.
 ///
 /// Directories are implicit in the flat `Map<String, String>` model: a
 /// path is a directory iff some key with that prefix exists, or the path
@@ -233,6 +239,22 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.is_symlink':
         return false;
+
+      case 'Path.stat':
+        final content = vfs[path];
+        final isDir =
+            content == null &&
+            (_hasChildren(vfs, path) || _isMountRoot(path, normalizedMounts));
+        if (content == null && !isDir) {
+          throw OsCallException(
+            "[Errno 2] No such file or directory: '$path'",
+            pythonExceptionType: 'FileNotFoundError',
+          );
+        }
+
+        return isDir
+            ? _dirStat()
+            : _fileStat(utf8.encode(content ?? '').length);
 
       case 'Path.unlink':
         _requireWritable(mount, path);
@@ -470,3 +492,57 @@ String _parentPath(String normalized) {
 
   return normalized.substring(0, i);
 }
+
+/// Field order of Python's `os.stat_result`, mirroring upstream's
+/// `STAT_RESULT_FIELDS` (monty-types/src/os.rs:487-490). The first seven are
+/// ints and the last three floats; the wire distinguishes them, so a caller
+/// reading `st_mtime` gets a float as CPython gives.
+const _statFields = [
+  'st_mode',
+  'st_ino',
+  'st_dev',
+  'st_nlink',
+  'st_uid',
+  'st_gid',
+  'st_size',
+  'st_atime',
+  'st_mtime',
+  'st_ctime',
+];
+
+/// Builds a `StatResult` the way upstream's `stat_result` does
+/// (monty-types/src/os.rs:460-486).
+///
+/// `ino`, `dev`, `uid` and `gid` are zero and the three timestamps are equal:
+/// an in-memory store has no inode, no device and no owner, and inventing
+/// plausible-looking values would be worse than reporting none. Upstream's own
+/// mount handler does the same.
+MontyNamedTuple _statResult({
+  required int mode,
+  required int nlink,
+  required int size,
+  double mtime = 0,
+}) => MontyNamedTuple(
+  typeName: 'StatResult',
+  fieldNames: _statFields,
+  values: [
+    MontyInt(mode),
+    const MontyInt(0),
+    const MontyInt(0),
+    MontyInt(nlink),
+    const MontyInt(0),
+    const MontyInt(0),
+    MontyInt(size),
+    MontyFloat(mtime),
+    MontyFloat(mtime),
+    MontyFloat(mtime),
+  ],
+);
+
+/// A regular file: mode `0o644` with the file type bits OR'd in, one link.
+MontyNamedTuple _fileStat(int size) =>
+    _statResult(mode: 0x81A4, nlink: 1, size: size);
+
+/// A directory: mode `0o755` with the directory type bits OR'd in, two links
+/// (`.` and the parent's entry), and the conventional 4096-byte size.
+MontyNamedTuple _dirStat() => _statResult(mode: 0x41ED, nlink: 2, size: 4096);
