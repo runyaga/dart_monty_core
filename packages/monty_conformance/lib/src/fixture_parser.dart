@@ -240,7 +240,14 @@ Object? _parseScalarRepr(String raw) {
   if (asInt != null) return asInt;
 
   final asDouble = double.tryParse(raw);
-  if (asDouble != null) return asDouble;
+  if (asDouble != null) {
+    // Typed, not a bare Dart double. The directive's TEXT is the only place the
+    // int/float distinction reliably survives: on dart2js `2.0 is int` is true,
+    // so by the time a caller reaches MontyValue.fromDart the double is
+    // indistinguishable from an int and yields MontyInt(2). MontyValue.fromDart
+    // passes a MontyValue through unchanged, so no call site changes.
+    return MontyFloat(asDouble);
+  }
 
   if ((raw.startsWith("'") && raw.endsWith("'")) ||
       (raw.startsWith('"') && raw.endsWith('"'))) {
