@@ -216,6 +216,20 @@ small consumer-facing surface.
   and the error now says what was wrong, but recovery still means disposing the
   session.
 
+- **`memoryMountedOsHandler`'s errors now read like CPython's.** They were
+  ad-hoc:
+
+  ```
+  was:  No such file: /mnt/x.txt
+  now:  [Errno 2] No such file or directory: '/mnt/x.txt'
+  ```
+
+  Also `[Errno 17] File exists`, `[Errno 20] Not a directory` and
+  `[Errno 39] Directory not empty`. Sandboxed Python that matched on the old
+  text will stop matching — but that code was matching on a string CPython
+  never produces. Found because monty's own `mount_fs__errors.py` asserts the
+  CPython wording verbatim, so the fixtures were right and we were not.
+
 - **An `inputs` key must now be a valid Python identifier, and it is enforced
   (#137).** The doc always said so; nothing checked, and each key was
   interpolated into Python source raw — so a key was a working code-injection

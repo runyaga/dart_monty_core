@@ -121,7 +121,7 @@ OsCallHandler memoryMountedOsHandler({
         final content = vfs[path];
         if (content == null) {
           throw OsCallException(
-            'No such file: $path',
+            "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
           );
         }
@@ -132,7 +132,7 @@ OsCallHandler memoryMountedOsHandler({
         final content = vfs[path];
         if (content == null) {
           throw OsCallException(
-            'No such file: $path',
+            "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
           );
         }
@@ -220,7 +220,7 @@ OsCallHandler memoryMountedOsHandler({
         _requireWritable(mount, path);
         if (!vfs.containsKey(path)) {
           throw OsCallException(
-            'No such file: $path',
+            "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
           );
         }
@@ -254,7 +254,7 @@ OsCallHandler memoryMountedOsHandler({
           // A file occupies the path. exist_ok only applies to existing
           // directories — Python raises FileExistsError here regardless.
           throw OsCallException(
-            'File exists at $path',
+            "[Errno 17] File exists: '$path'",
             pythonExceptionType: 'FileExistsError',
           );
         }
@@ -284,13 +284,13 @@ OsCallHandler memoryMountedOsHandler({
         _requireWritable(mount, path);
         if (vfs.containsKey(path)) {
           throw OsCallException(
-            'Not a directory: $path',
+            "[Errno 20] Not a directory: '$path'",
             pythonExceptionType: 'NotADirectoryError',
           );
         }
         if (_hasChildren(vfs, path)) {
           throw OsCallException(
-            'Directory not empty: $path',
+            "[Errno 39] Directory not empty: '$path'",
             pythonExceptionType: 'OSError',
           );
         }
@@ -347,7 +347,7 @@ OsCallHandler memoryMountedOsHandler({
           return null;
         }
         throw OsCallException(
-          'No such file or directory: $path',
+          "[Errno 2] No such file or directory: '$path'",
           pythonExceptionType: 'FileNotFoundError',
         );
     }
