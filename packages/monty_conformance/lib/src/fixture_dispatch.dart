@@ -105,6 +105,28 @@ Future<DispatchOutcome> runCallExternalFixture(
           continue;
         }
         if (!conformanceExtFns.contains(functionName)) {
+          // A method call on a host-supplied dataclass whose name we do not
+          // model is not an unmodelled external -- it is the receiver saying
+          // it has no such attribute, and fixtures call missing methods ON
+          // PURPOSE to assert that. `resumeNotFound` is the wrong verb here:
+          // it reports the bare name, so the sandbox raises
+          //   NameError: name 'nonexistent_method' is not defined
+          // where the fixture requires
+          //   AttributeError: 'Point' object has no attribute '...'
+          // Anything NOT called on a dataclass is still an honest skip.
+          if (args.isNotEmpty && args.first is MontyDataclass) {
+            final self = args.first as MontyDataclass;
+            try {
+              progress = await platform.resumeWithException(
+                'AttributeError',
+                "'${self.name}' object has no attribute '$functionName'",
+              );
+              continue;
+            } on MontyScriptError catch (e) {
+              return DispatchOutcome(excType: e.excType);
+            }
+          }
+
           return DispatchOutcome(
             skipped: true,
             skipReason: 'needs an external we do not model: $functionName',

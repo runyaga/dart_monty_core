@@ -40,17 +40,16 @@ const alwaysUnsupportedWasmFixtures = {
   // property of the host stack, and the web worker's differs -- it is the
   // recursion-limit gap (core#124), not a new defect.
   'dict__eq_self_referential.py',
-  // Also listed in [knownBrokenExtFixtures] — it fails on FFI too, so the WASM
-  // list alone is not enough.
-  // CORRECTED 2026-08-02. The old reason -- "needs an external (`make_point`)
-  // the harness does not supply" -- went stale the moment the shared ext-fn
-  // table landed: it DOES supply make_point. Unskipping it revealed the real
-  // behaviour, which is worse than a missing harness capability: with a
-  // correctly-built frozen MontyDataclass returned from the host, the fixture's
-  // own `assert repr(point) == 'Point(x=1, y=2)'` fails on FFI with
-  // AssertionError. Measured, not inferred. Root cause not yet found -- see
-  // FB-10 -- so it stays skipped, but now for the reason that is true.
-  'dataclass__basic.py',
+  // dataclass__basic.py was here. It is NOT skipped any more -- see FB-10.
+  // Both reasons it carried were wrong. It never needed an external the
+  // harness withholds, and it never failed its `repr()` assert; repr was
+  // correct all along. The two real causes were both in this harness:
+  // every host dataclass was built with `typeId: 0`, so `Point` and
+  // `MutablePoint` compared equal and `assert point != mut_point` (line 55)
+  // failed; and an undeclared method call was answered with `resumeNotFound`,
+  // which raises NameError where the fixture requires AttributeError.
+  // Fixed in fixture_externals.dart and fixture_dispatch.dart; it now passes
+  // end to end on FFI and on both web targets.
 };
 
 /// Fixtures that need monty's synthetic `_test_cm()` context manager, which
@@ -89,8 +88,4 @@ const Map<String, String> knownBrokenExtFixtures = {
       'The frozen clock the harness supplies (2024-01-15 10:30) does not match '
       'every value this fixture asserts. Needs the exact upstream values, not '
       'a plausible-looking date.',
-  'dataclass__basic.py':
-      "FB-10: a host-supplied frozen MontyDataclass fails the fixture's own "
-      "`repr(point) == 'Point(x=1, y=2)'` assertion on FFI. Measured; root "
-      'cause not yet found.',
 };

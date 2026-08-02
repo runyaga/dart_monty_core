@@ -8,14 +8,18 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 /// host↔sandbox round trip, and it only runs if someone supplies `add_ints`
 /// and friends. That is why a demo without them shows `ext_call 0/36`.
 ///
-/// It lives here because it had been written twice and the two copies had
-/// **already diverged**: `oracle_ffi_ext_test.dart` modelled 4 functions while
-/// `wasm_runner.dart` modelled 15, so the FFI harness silently asserted fewer
-/// fixtures than the web one. This is the richer table, now shared by both and
-/// by the browser demo.
+/// **Every consumer must use this table — there are no local copies.** All
+/// four harnesses read it: `oracle_ffi_ext_test.dart`, both WASM corpus
+/// runners (`wasm_runner.dart`, `wasm_runner_wasm.dart`) and the browser demo.
+///
+/// Duplicating it has silently broken conformance twice. First the FFI oracle
+/// modelled 4 functions while `wasm_runner.dart` modelled 15, so FFI asserted
+/// fewer fixtures than the web. Then the WASM runners kept `typeId: 0` on
+/// every dataclass after this table gave each class its own, so
+/// `dataclass__basic.py` passed on FFI and failed on WASM (FB-10). A copy
+/// does not stay a copy.
 ///
 /// Dependency-light on purpose so it compiles for the browser.
-
 const conformanceExtFns = {
   'add_ints',
   'concat_strings',
@@ -33,6 +37,19 @@ const conformanceExtFns = {
   'describe', // Point.describe(label) → '{label}({x}, {y})'
   'greeting', // User.greeting() → 'Hello, {name}!'
 };
+
+/// Class identity for host-supplied dataclasses. `typeId` is what the engine
+/// compares to decide whether two dataclasses are the same class, so each
+/// class needs its own — sharing one makes distinct classes indistinguishable.
+///
+/// All four of these were `0`. `dataclass__basic.py` asserts
+/// `point != mut_point` precisely because Point and MutablePoint hold
+/// identical field names and values, and with a shared id they compared equal.
+/// The values themselves are arbitrary; only their distinctness matters.
+const _pointTypeId = 1;
+const _mutablePointTypeId = 2;
+const _userTypeId = 3;
+const _emptyTypeId = 4;
 
 /// Answers a call to one of [conformanceExtFns].
 ///
@@ -54,7 +71,7 @@ Object? conformanceDispatch(
   // make_point() → frozen Point(x=1, y=2)
   'make_point' => const MontyDataclass(
     name: 'Point',
-    typeId: 0,
+    typeId: _pointTypeId,
     fieldNames: ['x', 'y'],
     attrs: {'x': MontyInt(1), 'y': MontyInt(2)},
     frozen: true,
@@ -62,7 +79,7 @@ Object? conformanceDispatch(
   // make_mutable_point() → mutable MutablePoint(x=1, y=2)
   'make_mutable_point' => const MontyDataclass(
     name: 'MutablePoint',
-    typeId: 0,
+    typeId: _mutablePointTypeId,
     fieldNames: ['x', 'y'],
     attrs: {'x': MontyInt(1), 'y': MontyInt(2)},
   ),
@@ -70,7 +87,7 @@ Object? conformanceDispatch(
   // Frozen so that hash(user) works (the fixture asserts hashability).
   'make_user' => MontyDataclass(
     name: 'User',
-    typeId: 0,
+    typeId: _userTypeId,
     fieldNames: const ['name', 'active'],
     attrs: {
       'name': args.first as MontyString,
@@ -81,7 +98,7 @@ Object? conformanceDispatch(
   // make_empty() → mutable Empty() with no fields
   'make_empty' => const MontyDataclass(
     name: 'Empty',
-    typeId: 0,
+    typeId: _emptyTypeId,
     fieldNames: [],
     attrs: {},
   ),
