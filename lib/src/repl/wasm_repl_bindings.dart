@@ -34,15 +34,23 @@ class WasmReplBindings implements ReplBindings {
 
   @override
   Future<void> create({String? scriptName, String? limitsJson}) async {
-    // The web backend does not carry session limits yet — the JS bridge and
-    // worker would both need the parameter. Rejected loudly rather than
-    // dropped silently, which is the defect this whole change is about
-    // (core#138). Tracked in core#140.
+    // SESSION-scoped limits only. The web backend enforces limits perfectly
+    // well on the one-shot path — `monty_set_memory_limit` and friends are
+    // wired through `bridge.js` and `worker_src.js`, and measured in Chrome:
+    // timeout, memory and stack all fire. What is missing is `replCreate`
+    // taking the parameter, so a SESSION cannot carry them. Tracked in
+    // core#140; `monty_repl_create_with_limits` is already in the shipped wasm,
+    // so it is JS plumbing rather than engine work.
+    //
+    // Rejected loudly rather than dropped silently, which is the defect this
+    // whole change is about (core#138).
     if (limitsJson != null) {
       throw UnsupportedError(
-        'Session resource limits are not supported on the web backend yet '
-        '(core#140). They work on FFI. Construct MontyRepl without limits, '
-        'or run on the VM.',
+        'Session-scoped resource limits are not supported on the web backend '
+        'yet (core#140). Limits DO work on web for one-shot execution: use '
+        'createPlatformMonty().run(code, limits: …). Note that '
+        'Monty(code).run(limits: …) builds a MontyRepl, so it reaches this '
+        'same limitation. On the VM, session limits work as normal.',
       );
     }
     await _bindings.replCreate(scriptName: scriptName, replId: _replId);

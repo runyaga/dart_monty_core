@@ -301,12 +301,38 @@ type(f).__name__
   ),
 
   Probe(
+    title: 'The convenience API inherits the session limitation',
+    proves:
+        'The trap worth knowing: Monty(code).run() builds a MontyRepl '
+        'internally, so passing limits: to the one-line entry point hits the '
+        'session restriction above even though the underlying engine enforces '
+        'limits perfectly well. Use createPlatformMonty() when you need a cap '
+        'on the web.',
+    source: "Monty('1 + 1').run(limits: MontyLimits(timeoutMs: 50))",
+    expected: 'the same UnsupportedError — not a silently dropped cap',
+    run: () async {
+      try {
+        await Monty('1 + 1').run(limits: const MontyLimits(timeoutMs: 50));
+
+        return Outcome.bad(
+          'accepted — either the cap was dropped, or this no longer routes '
+          'through MontyRepl and the error message needs updating',
+        );
+      } on UnsupportedError catch (e) {
+        return Outcome.ok(_firstLine(e.toString()), note: 'core#140');
+      }
+    },
+  ),
+
+  Probe(
     title: 'Session limits refuse loudly on the web',
     proves:
-        'Limits attach to a session, and the web worker does not carry them '
-        'yet. Rather than accept and ignore — the exact defect being fixed '
-        'elsewhere in this list — the constructor refuses. The one-shot path '
-        'above still enforces them, so the capability is available today.',
+        'Read this together with the two rows above, which show limits being '
+        'enforced on this very page. What is missing on the web is not limits '
+        '— it is SESSION-scoped limits: the JS replCreate takes no limits '
+        'parameter, so a persistent session cannot carry one. Rather than '
+        'accept and ignore it (the exact defect fixed elsewhere in this list) '
+        'the constructor refuses.',
     source: 'MontyRepl(limits: MontyLimits(timeoutMs: 50))',
     expected: 'UnsupportedError, not silent acceptance',
     run: () async {
@@ -560,6 +586,15 @@ void _summarise(Map<Verdict, int> counts, Duration took) {
     el.append(_el('span', cls: 'pill ${v.css}', text: '$n ${v.label}'));
   }
   el.append(_el('span', cls: 'took', text: '${took.inMilliseconds} ms'));
+  // Stamped on purpose. A claim in a README is only as good as the day it was
+  // written; every row above was re-derived against this build, just now.
+  el.append(
+    _el(
+      'span',
+      cls: 'took',
+      text: '· measured ${DateTime.now().toIso8601String().substring(0, 19)}',
+    ),
+  );
 }
 
 Future<void> _runAll() async {
