@@ -84,8 +84,4 @@ const Map<String, String> knownBrokenExtFixtures = {
       'memoryMountedOsHandler raises "Path is outside any mount" for anything '
       'it does not mount. A query about a path is not an access of it.',
   'pathlib__os_read_error.py': 'FB-11, same cause as pathlib__os.py.',
-  'datetime__core.py':
-      'The frozen clock the harness supplies (2024-01-15 10:30) does not match '
-      'every value this fixture asserts. Needs the exact upstream values, not '
-      'a plausible-looking date.',
 };

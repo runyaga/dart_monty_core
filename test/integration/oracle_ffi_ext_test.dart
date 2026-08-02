@@ -40,7 +40,7 @@ import 'package:test/test.dart';
 /// drifted, so FFI silently asserted fewer fixtures than the browser did.
 /// Both backends implement `MontyPlatform`, so there was never a reason for
 /// two loops — see package:monty_conformance.
-Future<(String?, MontyValue?, bool)> _runDispatch(
+Future<(String?, MontyValue?, bool, MontyException?)> _runDispatch(
   String source,
   String key,
 ) async {
@@ -48,7 +48,7 @@ Future<(String?, MontyValue?, bool)> _runDispatch(
   try {
     final o = await runCallExternalFixture(platform, source, scriptName: key);
 
-    return (o.excType, o.value, o.skipped);
+    return (o.excType, o.value, o.skipped, o.exception);
   } finally {
     await platform.dispose();
   }
@@ -107,7 +107,12 @@ void main() {
           return;
         }
 
-        final (thrownExcType, resultValue, skipped) = await _runDispatch(
+        final (
+          thrownExcType,
+          resultValue,
+          skipped,
+          thrownException,
+        ) = await _runDispatch(
           value,
           key,
         );
@@ -119,9 +124,17 @@ void main() {
 
         switch (expectation) {
           case ExpectNoException():
-            expect(thrownExcType, isNull, reason: 'unexpected error in $key');
+            expect(
+              thrownExcType,
+              isNull,
+              reason: describeFixtureFailure(key, thrownException),
+            );
           case ExpectReturn(value: final expected):
-            expect(thrownExcType, isNull, reason: 'unexpected error in $key');
+            expect(
+              thrownExcType,
+              isNull,
+              reason: describeFixtureFailure(key, thrownException),
+            );
             expect(
               resultValue,
               equals(MontyValue.fromDart(expected)),

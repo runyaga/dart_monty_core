@@ -61,7 +61,11 @@ void main() {
           );
         } else {
           // Both should succeed with the same value.
-          expect(ffiResult?.error, isNull, reason: 'unexpected error in $key');
+          expect(
+            ffiResult?.error,
+            isNull,
+            reason: describeFixtureFailure(key, ffiResult?.error),
+          );
           expect(
             ffiResult?.value,
             equals(oracleResult.value),

@@ -945,7 +945,10 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
       final expected = MontyValue.fromDart(fixtureValue);
       if (thrownExcType == null && resultValue == expected) return (true, '');
       if (thrownExcType != null) {
-        return (false, 'unexpected error: $thrownExcType');
+        // Say what was expected as well as what happened. "unexpected error:
+        // X" told a reader neither which value the fixture wanted nor where it
+        // died, and this runner's output IS the CI diagnostic (core#145).
+        return (false, 'expected $expected, got error $thrownExcType');
       }
 
       return (false, 'value mismatch: expected $expected, got $resultValue');

@@ -79,7 +79,11 @@ void main() {
             reason: 'excType mismatch for $name',
           );
         } else {
-          expect(ffiResult?.error, isNull, reason: 'unexpected error in $name');
+          expect(
+            ffiResult?.error,
+            isNull,
+            reason: describeFixtureFailure(name, ffiResult?.error),
+          );
           expect(
             ffiResult?.value,
             equals(oracleResult.value),

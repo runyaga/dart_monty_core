@@ -35,11 +35,14 @@ void main() {
         final platform = createPlatformMonty();
         MontyResult? result;
         String? thrownExcType;
+        MontyException? thrownException;
         try {
           result = await platform.run(value, scriptName: key);
           thrownExcType = result.error?.excType;
+          thrownException = result.error;
         } on MontyScriptError catch (e) {
           thrownExcType = e.excType;
+          thrownException = e.exception;
         } on MontyResourceError {
           thrownExcType = 'MemoryLimitExceeded';
         } finally {
@@ -51,13 +54,13 @@ void main() {
             expect(
               thrownExcType,
               isNull,
-              reason: 'unexpected error in $key',
+              reason: describeFixtureFailure(key, thrownException),
             );
           case ExpectReturn(value: final fixtureValue):
             expect(
               thrownExcType,
               isNull,
-              reason: 'unexpected error in $key',
+              reason: describeFixtureFailure(key, thrownException),
             );
             expect(
               result?.value,

@@ -11,10 +11,21 @@ class DispatchOutcome {
     this.value,
     this.skipped = false,
     this.skipReason,
+    this.exception,
   });
 
   /// The Python exception type raised, if any.
   final String? excType;
+
+  /// The FULL exception, when the backend supplied one.
+  ///
+  /// [excType] alone is what this class used to carry, and it is not enough to
+  /// act on: `MontyException` also has the message, the line number, the source
+  /// line and the traceback, and dropping them here is why a failing fixture
+  /// could only be reported as "unexpected error" (core#145). It is also why
+  /// FB-10 took three wrong write-ups — the failing line number was available
+  /// the whole time and thrown away at this boundary.
+  final MontyException? exception;
 
   /// The value the fixture evaluated to, when it completed.
   final MontyValue? value;
@@ -70,7 +81,7 @@ Future<DispatchOutcome> runCallExternalFixture(
       scriptName: scriptName,
     );
   } on MontyScriptError catch (e) {
-    return DispatchOutcome(excType: e.excType);
+    return DispatchOutcome(excType: e.excType, exception: e.exception);
   }
 
   while (progress != null) {
@@ -78,6 +89,7 @@ Future<DispatchOutcome> runCallExternalFixture(
       case MontyComplete(:final result):
         return DispatchOutcome(
           excType: result.error?.excType,
+          exception: result.error,
           value: result.value,
         );
 
@@ -100,7 +112,7 @@ Future<DispatchOutcome> runCallExternalFixture(
           try {
             progress = await platform.resumeAsFuture();
           } on MontyScriptError catch (e) {
-            return DispatchOutcome(excType: e.excType);
+            return DispatchOutcome(excType: e.excType, exception: e.exception);
           }
           continue;
         }
@@ -123,7 +135,10 @@ Future<DispatchOutcome> runCallExternalFixture(
               );
               continue;
             } on MontyScriptError catch (e) {
-              return DispatchOutcome(excType: e.excType);
+              return DispatchOutcome(
+                excType: e.excType,
+                exception: e.exception,
+              );
             }
           }
 
@@ -146,7 +161,7 @@ Future<DispatchOutcome> runCallExternalFixture(
             );
           }
         } on MontyScriptError catch (e) {
-          return DispatchOutcome(excType: e.excType);
+          return DispatchOutcome(excType: e.excType, exception: e.exception);
           // conformanceDispatch signals an unmodelled external this way;
           // reporting it as a skip is the point.
           // ignore: avoid_catching_errors
@@ -171,13 +186,13 @@ Future<DispatchOutcome> runCallExternalFixture(
               skipReason: 'backend cannot inject a named constant (FB-5)',
             );
           } on MontyScriptError catch (e) {
-            return DispatchOutcome(excType: e.excType);
+            return DispatchOutcome(excType: e.excType, exception: e.exception);
           }
         } else {
           try {
             progress = await platform.resumeNameLookupUndefined(variableName);
           } on MontyScriptError catch (e) {
-            return DispatchOutcome(excType: e.excType);
+            return DispatchOutcome(excType: e.excType, exception: e.exception);
           }
         }
 
@@ -187,7 +202,7 @@ Future<DispatchOutcome> runCallExternalFixture(
             for (final id in pendingCallIds) id: pendingResults.remove(id),
           });
         } on MontyScriptError catch (e) {
-          return DispatchOutcome(excType: e.excType);
+          return DispatchOutcome(excType: e.excType, exception: e.exception);
         }
 
       case MontyOsCall(:final operationName, :final args, :final kwargs):
@@ -208,7 +223,7 @@ Future<DispatchOutcome> runCallExternalFixture(
                 )
               : await platform.resumeWithError(e.message);
         } on MontyScriptError catch (e) {
-          return DispatchOutcome(excType: e.excType);
+          return DispatchOutcome(excType: e.excType, exception: e.exception);
         }
     }
   }

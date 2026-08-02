@@ -1,8 +1,13 @@
-// Standalone WASM fixture runner for headless-Chrome CI.
+// Standalone WASM fixture runner for headless-Chrome CI — the dart2wasm twin
+// of wasm_runner.dart.
 //
-// Compile with:
-//   dart compile js test/integration/wasm_runner.dart \
-//     -o test/integration/web/wasm_runner.dart.js
+// Compile with (this file, and dart2wasm — the header was a copy of its
+// dart2js sibling's and named the wrong file AND the wrong compiler, which is
+// the sort of instruction that only fails for whoever follows it):
+//   dart compile wasm test/integration/wasm_runner_wasm.dart \
+//     -o test/integration/web/wasm_runner.wasm
+//
+// That is what CI runs — .github/workflows/ci.yaml:583.
 //
 // Runs every fixture from the compile-time corpus through MontyWasm,
 // prints one JSON line per fixture, then a summary line.
@@ -947,7 +952,10 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
       final expected = MontyValue.fromDart(fixtureValue);
       if (thrownExcType == null && resultValue == expected) return (true, '');
       if (thrownExcType != null) {
-        return (false, 'unexpected error: $thrownExcType');
+        // Say what was expected as well as what happened. "unexpected error:
+        // X" told a reader neither which value the fixture wanted nor where it
+        // died, and this runner's output IS the CI diagnostic (core#145).
+        return (false, 'expected $expected, got error $thrownExcType');
       }
 
       return (false, 'value mismatch: expected $expected, got $resultValue');
