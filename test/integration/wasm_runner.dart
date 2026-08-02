@@ -987,7 +987,6 @@ Future<void> main() async {
     if (fixtureIsRunAsync(value)) {
       final expectation = parseFixture(
         value,
-        skipWasm: true,
         skipRunAsync: false,
         skipCallExternal: false, // async+ext fixtures are handled here too
       );
@@ -1043,7 +1042,6 @@ Future<void> main() async {
     if (fixtureMountsFs(value)) {
       final expectation = parseFixture(
         value,
-        skipWasm: true,
         skipMountFs: false,
       );
       if (expectation == null) {
@@ -1109,7 +1107,6 @@ Future<void> main() async {
       // (run-async / mount-fs still cause a skip via parseFixture).
       final expectation = parseFixture(
         value,
-        skipWasm: true,
         skipCallExternal: false,
       );
       if (expectation == null) {
@@ -1158,7 +1155,7 @@ Future<void> main() async {
       // -----------------------------------------------------------------------
       // Path B — normal: platform.run() (no external calls needed)
       // -----------------------------------------------------------------------
-      final expectation = parseFixture(value, skipWasm: true);
+      final expectation = parseFixture(value);
       if (expectation == null) {
         skipped++;
         continue;

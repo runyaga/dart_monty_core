@@ -23,7 +23,7 @@ void main() {
       test(key, () async {
         // v0.0.18 features not yet wired into the WASM binding.
         if (unsupportedWasmFixtures.contains(key)) return;
-        final expectation = parseFixture(value, skipWasm: true);
+        final expectation = parseFixture(value);
         if (expectation == null) {
           // Was a bare `return`: the test asserted nothing and reported
           // GREEN. Reporting a skip is the honest signal (core#130).

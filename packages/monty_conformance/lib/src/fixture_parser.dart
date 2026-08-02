@@ -116,7 +116,6 @@ bool fixtureMountsFs(String source) {
 /// `# xfail=cpython` is NOT a skip — monty supports these cases.
 FixtureExpectation? parseFixture(
   String source, {
-  bool skipWasm = false,
   bool skipCallExternal = true,
   bool skipMountFs = true,
   bool skipRunAsync = true,
@@ -133,8 +132,17 @@ FixtureExpectation? parseFixture(
 
     if (directive.startsWith('xfail=')) {
       final targets = directive.substring('xfail='.length).trim().toLowerCase();
+      // `xfail=monty` means upstream expects MONTY to fail, so there is
+      // nothing here for us to assert.
+      //
+      // There was also a `skipWasm` flag gating `targets.contains('wasm')`.
+      // The 0.19 corpus contains ZERO `xfail=wasm` fixtures (9 are
+      // `xfail=cpython`, 1 is `xfail=monty`), so that branch could never fire
+      // — while the flag was threaded through 13 call sites looking as though
+      // it meant "skip what does not work on wasm". A parameter that cannot
+      // change any outcome is worse than absent: it invites callers to believe
+      // they have opted into something.
       if (targets.contains('monty')) return null;
-      if (skipWasm && targets.contains('wasm')) return null;
       continue;
     }
 

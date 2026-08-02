@@ -557,7 +557,18 @@ enum SkipKind {
   divergent('web divergence'),
 
   /// The fixture asserts nothing to check against.
-  noDirective('no directive');
+  noDirective('no directive'),
+
+  /// We get this wrong on EVERY backend and know it — [knownBrokenExtFixtures]
+  /// carries the reason. Distinct from [divergent], which means "the web
+  /// transport differs here": this one is our defect, not a platform's.
+  knownBroken('known broken'),
+
+  /// Upstream marked it `# xfail=monty` — monty is EXPECTED to fail it, so
+  /// there is nothing for us to assert. Previously binned as
+  /// [noDirective], which was wrong: it has a directive, and that directive
+  /// says the fixture is not a claim about us.
+  expectedFailure('upstream xfail');
 
   const SkipKind(this.label);
 
@@ -631,6 +642,20 @@ const _fixtureSourceBase =
 SkipKind? _skipReason(_Fixture f) {
   if (unsupportedWasmFixtures.contains(f.name)) return SkipKind.divergent;
 
+  // Counted here, not only at run time. The headline is derived from this
+  // function, so omitting a skip source made the page CLAIM more coverage than
+  // it delivers: it read "520 of 531 assert" while the run beneath it reported
+  // only 517 assertable. A number that disagrees with the run under it is
+  // worse than no number.
+  if (knownBrokenExtFixtures.containsKey(f.name)) return SkipKind.knownBroken;
+
+  // `# xfail=monty` — parseFixture returns null for it, which used to land in
+  // the noDirective bucket and read as "the fixture asserts nothing". It
+  // asserts plenty; upstream has simply declared monty expected to fail.
+  if (RegExp(r'^#\s*xfail=.*monty', multiLine: true).hasMatch(f.source)) {
+    return SkipKind.expectedFailure;
+  }
+
   // `# call-external` is NOT a skip here. Those fixtures are the host↔sandbox
   // round trip, which is the whole point of this package — refusing to run
   // them in its demo would be the strangest possible omission. The panel
@@ -645,7 +670,6 @@ SkipKind? _skipReason(_Fixture f) {
               f.source,
               skipCallExternal: false,
               skipRunAsync: false,
-              skipWasm: true,
             ) ==
             null
         ? SkipKind.noDirective
@@ -656,12 +680,12 @@ SkipKind? _skipReason(_Fixture f) {
   // The panel supplies one with the PUBLIC memoryMountedOsHandler — notably
   // without the ~400-line private VFS the WASM corpus runner carries.
   if (fixtureMountsFs(f.source)) {
-    return parseFixture(f.source, skipMountFs: false, skipWasm: true) == null
+    return parseFixture(f.source, skipMountFs: false) == null
         ? SkipKind.noDirective
         : null;
   }
 
-  if (parseFixture(f.source, skipWasm: true) == null) {
+  if (parseFixture(f.source) == null) {
     return SkipKind.noDirective;
   }
 
@@ -958,7 +982,6 @@ Future<void> _runCorpus() async {
         skipCallExternal: false,
         skipRunAsync: false,
         skipMountFs: false,
-        skipWasm: true,
       )!;
       // A per-fixture guard. Without it ONE fixture that throws instead of
       // returning kills the whole run: the corpus stopped at ~374 of 531 and
