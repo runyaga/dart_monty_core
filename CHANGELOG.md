@@ -265,14 +265,15 @@ small consumer-facing surface.
   `int` branch claimed the value before the non-finite branch could. The VM was
   never affected.
 
-  **A related case is NOT fixed, and is now reported rather than hidden.** On
-  dart2js `4.0 is int` is also true, so `inputs: {'x': 4.0}` still binds a
-  Python `int` on that backend, where the VM and dart2wasm bind a `float`.
-  Unlike the infinities, this is not recoverable inside the library: the
-  parameter is `Object?`, and dart2js destroys the `4` / `4.0` distinction
-  before the call is entered. Only a typed input can carry it. Tracked as
-  **#137**; the test row is live on the VM and dart2wasm and skipped on dart2js
-  with that reference, rather than asserting the wrong answer.
+  **A related case is deliberately NOT fixed.** On dart2js `4.0 is int` is also
+  true, so `inputs: {'x': 4.0}` binds a Python `int` there, where the VM and
+  dart2wasm bind a `float`. It is not recoverable inside the library — the
+  parameter is `Object?` and dart2js destroys the distinction before the call
+  is entered — and **upstream monty does not preserve it on JS either**. Since
+  this package mirrors upstream, that settles it: parity, not a gap awaiting a
+  fix. Documented rather than chased. The test row is live on the VM and
+  dart2wasm and skipped on dart2js against **#137**, so the decision stays
+  visible instead of silently passing.
 
 - **`MontyValue.fromJson` now throws `FormatException` on an untagged object or
   an unknown `__type`.** Both used to decode as a dict, and that guess is what

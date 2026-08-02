@@ -221,9 +221,10 @@ type(f).__name__
     title: 'A double input stays a float',
     proves:
         'dart2js has one number type, so `4.0 is int` is true there and the '
-        'distinction is destroyed before the library is entered. Not fixable '
-        'inside the package — only a typed input could carry it. dart2wasm has '
-        'real doubles and gets this right.',
+        'distinction is destroyed before the library is entered. Upstream '
+        'monty does not preserve it on JS either, and matching upstream is the '
+        'standing rule — so this is deliberate parity, not a defect awaiting a '
+        'fix. dart2wasm has real doubles and gets it right for free.',
     source: "inputs: {'x': 4.0}  →  type(x).__name__",
     expected: "'float'",
     run: () async {
@@ -234,7 +235,7 @@ type(f).__name__
       return _isJs
           ? Outcome.knownGap(
               '$got — dart2js erases 4.0 vs 4',
-              note: 'core#137 · not reachable from inside the library',
+              note: 'core#137 · parity with upstream monty on JS, by decision',
             )
           : Outcome.bad(got);
     },
