@@ -8,6 +8,16 @@
 # Options:
 #   --skip-build   Skip npm + cargo + dart compile steps (use existing assets).
 #   --dart2wasm    Compile Dart → WASM (dart2wasm) in addition to dart2js.
+#   --test-hooks   Build a test-hooks engine into a scratch CARGO_TARGET_DIR and
+#                  serve the matrix against it, so the eight fixtures that need
+#                  `sys.setrecursionlimit` actually RUN in the page instead of
+#                  showing "needs test-hooks build".
+#
+#                  LOCAL ONLY. This is deliberately not what deploy-pages.yml
+#                  builds: a shipped test-hooks engine would expose
+#                  `sys.setrecursionlimit` inside a public sandbox
+#                  (native/Cargo.toml:36-38). The engine it stages is written
+#                  into $WEB_DIR, which is gitignored build output.
 #
 # What it does:
 #   1. Build the Rust WASM binary (cargo, wasm32-wasip1)
@@ -30,11 +40,14 @@ ASSETS_DIR="$PKG/lib/assets"
 SERVE_PORT=8098
 SKIP_BUILD=false
 DART2WASM=false
+# LOCAL INSPECTION ONLY — never deployed. See the guard below.
+TEST_HOOKS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=true; shift ;;
     --dart2wasm)  DART2WASM=true;  shift ;;
+    --test-hooks) TEST_HOOKS=true;  shift ;;
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
 done
@@ -103,6 +116,22 @@ cp "$ASSETS_DIR/dart_monty_core_bridge.js"   "$WEB_DIR/"
 cp "$ASSETS_DIR/dart_monty_core_worker.js"   "$WEB_DIR/"
 cp "$ASSETS_DIR/dart_monty_core_native.wasm" "$WEB_DIR/"
 
+if [ "$TEST_HOOKS" = true ]; then
+  # Own CARGO_TARGET_DIR so this never lands in
+  # native/target/wasm32-wasip1/release/, which is the path other scripts copy
+  # into lib/assets/. A stray test-hooks engine there would be shipped.
+  echo ""
+  echo "--- Building test-hooks engine (scratch target dir) ---"
+  ( cd "$PKG/native" \
+      && CARGO_TARGET_DIR="$PKG/native/target/test-hooks" \
+         cargo build --target wasm32-wasip1 --release --features test-hooks ) \
+    || { echo "FATAL: test-hooks build failed"; exit 1; }
+  TH_WASM="$PKG/native/target/test-hooks/wasm32-wasip1/release/dart_monty_core_native.wasm"
+  [ -f "$TH_WASM" ] || { echo "FATAL: missing $TH_WASM"; exit 1; }
+  cp "$TH_WASM" "$WEB_DIR/dart_monty_core_native.wasm"
+  echo "  staged test-hooks engine (LOCAL ONLY — not the shipped asset)"
+fi
+
 # WASI runtime for the Worker (needed when running dart2wasm)
 WASI_PKG="$JS_DIR/node_modules/@pydantic/monty-wasm32-wasi"
 if [ -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
@@ -119,6 +148,9 @@ echo "--- dart pub get ---"
 cd "$PKG"
 dart pub get
 
+DEFINES=""
+if [ "$TEST_HOOKS" = true ]; then DEFINES="-DMONTY_TEST_HOOKS=true"; fi
+
 if [ "$SKIP_BUILD" = false ]; then
   echo ""
   # Two entry points: repl_demo (the playground) and feature_matrix (the
@@ -128,6 +160,7 @@ if [ "$SKIP_BUILD" = false ]; then
   for entry in repl_demo feature_matrix; do
     echo "--- Compiling $entry.dart → JS (dart2js) ---"
     dart compile js \
+      $DEFINES \
       "$WEB_PKG/web/$entry.dart" \
       -o "$WEB_DIR/$entry.dart.js" \
       --no-minify
@@ -139,6 +172,7 @@ if [ "$SKIP_BUILD" = false ]; then
       echo ""
       echo "--- Compiling $entry.dart → WASM (dart2wasm) ---"
       dart compile wasm \
+        $DEFINES \
         "$WEB_PKG/web/$entry.dart" \
         -o "$WEB_DIR/$entry.wasm"
       echo "  dart2wasm: OK"

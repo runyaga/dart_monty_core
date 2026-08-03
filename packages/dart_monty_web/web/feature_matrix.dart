@@ -568,8 +568,11 @@ enum SkipKind {
   divergent('web divergence'),
 
   /// Needs an engine built with `--features test-hooks`, which is never
-  /// shipped (native/Cargo.toml:37). NOT a divergence: it is a statement about
-  /// the build, not about behaviour, so running the fixture cannot falsify it.
+  /// shipped (native/Cargo.toml:36-38). NOT a divergence: it is a statement
+  /// about the build, not about behaviour, so running the fixture here cannot
+  /// falsify it — but running it THERE can, and does. All eight pass under
+  /// test-hooks on both compilers (528/531 vs 520/531 with the feature off),
+  /// so this bucket means "excluded by a shipping decision", not "unknown".
   ///
   /// Folding this into [divergent] is what the retired `unsupportedWasmFixtures`
   /// union did, and it mislabelled five `with__cm_*` fixtures as web
@@ -602,6 +605,41 @@ class _Fixture {
   final String name;
   final String source;
   final String group;
+}
+
+/// A one-line summary of a Python failure that is worth reading.
+///
+/// Two earlier versions were wrong in instructive ways. The first used
+/// `message.split('\n').first`, which on a traceback is "Traceback (most
+/// recent call last):" — true and worthless. The second assumed `message` was
+/// a multi-line traceback at all; it is not. [MontyException] is STRUCTURED —
+/// `lineNumber`, `traceback` frames with `startLine` and `previewLine` — and
+/// stringifying it gave `[object Object]` on dart2js.
+///
+/// The line number is the whole point: `range__ops.py` is 278 assertions, and
+/// "AssertionError" without a line does not tell you which one.
+String _describeError(MontyException e) {
+  // Drop a message that carries nothing. A bare `assert x == y` has an EMPTY
+  // message in CPython and on FFI — but the WEB path yields the literal string
+  // "[object Object]", a JS object stringified somewhere in the decode. That
+  // is a real bug and is filed; printing it here would just be noise on top of
+  // the line number, which is the part that matters.
+  final msg = e.message.trim();
+  final useful = msg.isNotEmpty && msg != '[object Object]';
+  final head = switch ((e.excType, useful)) {
+    (final t?, true) => '$t: $msg',
+    (final t?, false) => t,
+    (null, true) => msg,
+    (null, false) => 'error',
+  };
+  final frame = e.traceback.isNotEmpty ? e.traceback.last : null;
+  final line = frame?.startLine ?? e.lineNumber;
+  final preview = frame?.previewLine?.trim();
+
+  final where = line == null ? '' : ' — line $line';
+  final what = preview == null || preview.isEmpty ? '' : ': $preview';
+
+  return '$head$where$what';
 }
 
 /// Per-fixture outcome, filled in by [_runCorpus] and read by the drill-down.
@@ -659,11 +697,36 @@ const _fixtureSourceBase =
 
 /// Classifies a fixture without running it, so the page can show the shape of
 /// the corpus instantly and only pay for execution on demand.
+/// True only when compiled with `-DMONTY_TEST_HOOKS=true` against an engine
+/// built `--features test-hooks`.
+///
+/// **Never true in the deployed page.** `tool/serve_demo.sh --test-hooks` is a
+/// LOCAL inspection mode: it builds a test-hooks engine into a scratch
+/// CARGO_TARGET_DIR and stages it beside the served files. Nothing in
+/// `.github/workflows/deploy-pages.yml` passes the define, and shipping one
+/// would put `sys.setrecursionlimit` inside a public sandbox
+/// (native/Cargo.toml:36-38, "NEVER enabled in shipped builds").
+const bool _testHooks = bool.fromEnvironment('MONTY_TEST_HOOKS');
+
 SkipKind? _skipReason(_Fixture f) {
   if (alwaysUnsupportedWasmFixtures.contains(f.name)) {
     return SkipKind.divergent;
   }
-  if (testHooksWasmFixtures.contains(f.name)) return SkipKind.needsTestHooks;
+  if (!_testHooks && testHooksWasmFixtures.contains(f.name)) {
+    // Not a gap, and not unknown: measured 2026-08-03, all eight PASS under a
+    // test-hooks build on BOTH compilers — 528/531 via tool/test_cm_wasm.sh
+    // and its --dart2wasm twin, against 520/531 with the feature off. They are
+    // absent HERE because this page runs the shipped engine, and shipping
+    // test-hooks would put `sys.setrecursionlimit` inside the sandbox
+    // (native/Cargo.toml:36-38, "NEVER enabled in shipped builds").
+    _skipNotes[f.name] =
+        'Passes under a test-hooks engine build, on dart2js and dart2wasm '
+        'alike (gate steps corpus_cm_js / corpus_cm_w). Absent here because '
+        'this page runs the SHIPPED engine, and shipping test-hooks would put '
+        'sys.setrecursionlimit inside the sandbox.';
+
+    return SkipKind.needsTestHooks;
+  }
 
   // Counted here, not only at run time. The headline is derived from this
   // function, so omitting a skip source made the page CLAIM more coverage than
@@ -792,8 +855,7 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
       // file INSIDE a mount reports PermissionError instead of
       // FileNotFoundError), and leaving them red rather than relabelling them
       // is deliberate: the library really does fail them.
-      if (r.error != null)
-        _skipNotes[f.name] = r.error!.message.split('\n').first;
+      if (r.error != null) _skipNotes[f.name] = _describeError(r.error!);
 
       return switch (expectation) {
         ExpectNoException() => r.error == null ? 'PASS' : 'FAIL',
@@ -808,8 +870,20 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
 
     result = await platform.run(f.source, scriptName: f.name);
     thrownExcType = result.error?.excType;
+    // The plain path recorded nothing, so a FAIL here arrived with no reason
+    // at all — which is how `range__ops.py` could be "confirmed failing" with
+    // no way to see which of its 278 assertions did it.
+    if (result.error != null)
+      _skipNotes[f.name] = _describeError(result.error!);
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;
+    // Also here: a fixture that RAISES arrives on this branch, not the one
+    // above, so recording only there still lost the reason for exactly the
+    // failures worth reading.
+    final ex = e.exception;
+    _skipNotes[f.name] = ex == null
+        ? '${e.excType}: ${e.message}'
+        : _describeError(ex);
   } on Object catch (e) {
     _skipNotes[f.name] = e.toString();
 
@@ -1024,6 +1098,12 @@ Future<void> _runCorpus() async {
         skipped++;
         _fixtureStatus[f.name] = SkipKind.divergent.label;
       } else {
+        // Clear FIRST. _skipNotes persists across runs, so re-running the
+        // corpus wrapped the previous run's sentence in this run's — the note
+        // read "Confirmed web divergence, still failing here: Confirmed web
+        // divergence — run here, still failing." Accumulating prose is how a
+        // note stops being read.
+        _skipNotes.remove(f.name);
         String outcome;
         try {
           outcome = await _runFixture(f, expectation);
@@ -1041,8 +1121,15 @@ Future<void> _runCorpus() async {
         } else {
           failed++;
           _fixtureStatus[f.name] = 'FAIL';
-          _skipNotes[f.name] =
-              'Confirmed web divergence — run here, still failing.';
+          // KEEP whatever _runFixture recorded. The first version of this
+          // block overwrote it with a fixed sentence, which threw away the
+          // only thing that makes a confirmed divergence actionable: WHICH
+          // assertion failed, with its line. "Still failing" is not a
+          // diagnosis, and this page exists to be read.
+          final detail = _skipNotes[f.name];
+          _skipNotes[f.name] = detail == null || detail.isEmpty
+              ? 'Confirmed web divergence — run here, still failing.'
+              : 'Confirmed web divergence, still failing here: $detail';
           failures.add('${f.name} (confirmed web divergence)');
         }
       }
