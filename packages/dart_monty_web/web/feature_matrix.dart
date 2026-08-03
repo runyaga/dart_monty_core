@@ -21,10 +21,18 @@
 //   FAIL       it does not — something is broken, and the diff is shown
 //   KNOWN GAP  it does not, we know, and the row names the issue
 //
-// The third state exists because two rows are genuinely and knowingly wrong on
-// one backend (core#137, FB-9). Hiding them would make the page a lie; painting
-// them red would say "this package is broken" when what is true is "this
-// package knows exactly where its edges are".
+// The third state exists because some rows are genuinely and knowingly wrong on
+// one backend. Hiding them would make the page a lie; painting them red would
+// say "this package is broken" when what is true is "this package knows exactly
+// where its edges are".
+//
+// HOW MANY there are, and which issues they name, is deliberately NOT recorded
+// here. It was — "two rows … (core#137, FB-9)" — and it was wrong within weeks:
+// FB-9 was fixed, FB-9 appears nowhere else in this repo, and the count stayed
+// at two in this comment and in both HTML shells. A status claim in a comment
+// has an expiry date. `_renderGapNote` derives the count, the pluralisation and
+// the issue IDs from the gaps that actually occurred, so the page cannot
+// disagree with itself and there is nothing here to keep in sync.
 //
 // Compiled twice from this one source — dart2js and dart2wasm — because that is
 // the axis where the two backends actually differ: dart2js has a single number
@@ -851,10 +859,13 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
             ),
           );
 
-      // A red row must say why. These two currently fail on FB-11 (a missing
-      // file INSIDE a mount reports PermissionError instead of
-      // FileNotFoundError), and leaving them red rather than relabelling them
-      // is deliberate: the library really does fail them.
+      // A red row must say why, so whatever the engine actually reported is
+      // captured and shown next to the row.
+      //
+      // No list of which fixtures are currently red lives here. One did — two
+      // mount-fs rows, blamed on FB-11 — and FB-11 was fixed while the comment
+      // stayed, so the page's own source claimed a failure the page was not
+      // showing. The reason travels with the failure instead.
       if (r.error != null) _skipNotes[f.name] = _describeError(r.error!);
 
       return switch (expectation) {
@@ -1328,6 +1339,49 @@ void _summarise(Map<Verdict, int> counts, Duration took) {
   );
 }
 
+/// Writes the KNOWN-GAP paragraph from the gaps that actually occurred.
+///
+/// This used to be hand-written prose in `matrix_js.html` and
+/// `matrix_wasm.html` — the same sentence in both — claiming "Two rows are
+/// knowingly wrong on one backend". It was one row by the time anyone looked,
+/// because the other was fixed and nobody edited the copy. A page whose whole
+/// pitch is "nothing here is a claim copied from a README" cannot afford a
+/// hand-maintained count, so the count, the pluralisation and the issue IDs are
+/// all derived from [gapNotes].
+///
+/// At zero gaps this renders NOTHING, which is the property that matters most:
+/// fixing the last gap deletes the paragraph instead of leaving it lying. That
+/// is why the two backends disagree here on purpose — dart2wasm has no gaps and
+/// shows no paragraph at all.
+void _renderGapNote(List<String> gapNotes) {
+  final el = _doc.getElementById('gap-note');
+  if (el == null) return;
+  el.textContent = '';
+  if (gapNotes.isEmpty) return;
+
+  // Notes are written `'<issue> · <why>'`, so the issue IDs come from the gap
+  // outcomes rather than from a comment someone has to remember to update.
+  final issues = gapNotes
+      .map((n) => n.split(' · ').first.trim())
+      .toSet()
+      .toList();
+  final n = gapNotes.length;
+
+  el.append(_el('strong', text: 'KNOWN GAP'));
+  el.append(
+    _el(
+      'span',
+      text:
+          ' is a third state on purpose. '
+          '${n == 1 ? 'One row is' : '$n rows are'} knowingly wrong on this '
+          'backend (${issues.join(', ')}); '
+          '${n == 1 ? 'it is' : 'they are'} shown and named rather than '
+          'hidden. Regression testing lives in the repo\'s gate and CI — this '
+          'page exists to be read.',
+    ),
+  );
+}
+
 Future<void> _runAll() async {
   final probes = _probes();
   final tbody = _doc.getElementById('rows')!..textContent = '';
@@ -1336,6 +1390,7 @@ Future<void> _runAll() async {
   }
 
   final counts = <Verdict, int>{};
+  final gapNotes = <String>[];
   final started = DateTime.now();
 
   for (var i = 0; i < probes.length; i++) {
@@ -1351,10 +1406,14 @@ Future<void> _runAll() async {
       outcome = Outcome(Verdict.crash, _firstLine(e.toString()));
     }
     counts[outcome.verdict] = (counts[outcome.verdict] ?? 0) + 1;
+    if (outcome.verdict == Verdict.gap && outcome.note != null) {
+      gapNotes.add(outcome.note!);
+    }
     _paint(i, outcome);
   }
 
   _summarise(counts, DateTime.now().difference(started));
+  _renderGapNote(gapNotes);
   (_doc.getElementById('rerun') as web.HTMLButtonElement?)?.disabled = false;
 }
 

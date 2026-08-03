@@ -192,7 +192,7 @@ OsCallHandler memoryMountedOsHandler({
   // `mkdir` is a no-op: the parent it demands can never come into existence,
   // so `mkdir` followed by writing into that directory failed. See the
   // "mkdir then write into it" test, and reinstate this in Phase 1 once
-  // directories are first-class (~/dev/plans/monty-0.19-upgrade/vfs-design.md).
+  // directories are first-class (docs/contributor/vfs-phases.md, Phase 1b).
 
   return (op, args, kwargs) async {
     // Carries [path, mode]; reads and writes then arrive separately as

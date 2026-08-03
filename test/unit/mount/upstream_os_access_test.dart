@@ -5,7 +5,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 /// Behaviours pinned by upstream's Python `OSAccess` suite that **no corpus
-/// fixture reaches** (`vfs-design.md` §6c).
+/// fixture reaches** (`docs/contributor/vfs-phases.md`, §6c).
 ///
 /// The 531-fixture oracle corpus is not the only spec: upstream's
 /// `crates/monty-python/tests/test_os_access.py` covers directory and mode
