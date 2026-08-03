@@ -31,12 +31,22 @@ const alwaysUnsupportedWasmFixtures = {
   // `recursion_limit_override`
   // lives on `LimitedTracker`. Unblocked by core#124 (FB-1), not by anything in
   // the 0.19 upgrade.
-  // Same family, added 2026-08-02. Two self-referential dicts compared for
-  // equality must raise RecursionError rather than panic. Measured: PASSES on
-  // FFI (ok, no exception), fails in the browser panel. Recursion depth is a
-  // property of the host stack, and the web worker's differs -- it is the
-  // recursion-limit gap (core#124), not a new defect.
-  'dict__eq_self_referential.py',
+  // dict__eq_self_referential.py was here, added 2026-08-02 on the claim that
+  // it "fails in the browser panel". Removed 2026-08-03: the claim was stale
+  // and nothing re-checked it, because a skipped fixture is a fixture nobody
+  // runs. Measured with it un-skipped, both backends, 0 failures:
+  //     dart2js    519 -> 520 passed, 12 -> 11 skipped
+  //     dart2wasm  519 -> 520 passed, 12 -> 11 skipped
+  // That is the second entry in this file whose stated reason did not survive
+  // being tested -- see dataclass__basic.py below, where BOTH reasons were
+  // wrong. A skip needs a re-check date or a test, not a rationale.
+  //
+  // Its real subject is still open, and is NOT a web divergence: the fixture's
+  // comment says "Monty must not panic", and on FFI `Monty(code).run()` exits
+  // 132 (SIGILL) on this input while `MontyFfi().run()` raises RecursionError
+  // correctly. The one-line API builds a MontyRepl, and the REPL path uses
+  // NoLimitTracker. Tracked separately; it is a host-process-death bug, not a
+  // conformance skip.
   // dataclass__basic.py was here. It is NOT skipped any more -- see FB-10.
   // Both reasons it carried were wrong. It never needed an external the
   // harness withholds, and it never failed its `repr()` assert; repr was
