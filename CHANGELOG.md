@@ -9,6 +9,20 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **Writing to a directory raises instead of destroying it.** This was silent
+  data loss: `write_text` on a directory path succeeded, replacing the
+  directory node with a file and discarding everything beneath it.
+
+      files: [MontyMemoryFile('/m/d/keep.txt', 'precious')]
+      Path.write_text('/m/d', 'clobber')   // returned 7
+      Path.read_text('/m/d/keep.txt')      // FileNotFoundError
+
+  `read_text`, `read_bytes`, `write_text`, `write_bytes`, `append_text`,
+  `append_bytes` and `open(dir, 'w')` now all raise
+  `IsADirectoryError: [Errno 21] Is a directory: '<path>'`. Reads of a
+  directory previously reported `FileNotFoundError`, which named an existing
+  path as missing.
+
 - **Directories are real, and that changes two things consumers can see.**
   The mount's store is a tree (`VfsNode` = `VfsDir` | `VfsFile`) rather than a
   flat path map, so an empty directory exists: `mkdir` creates one and
