@@ -818,14 +818,25 @@ jobs:
         # test_cm_wasm.sh stages into temp dirs and builds into its own
         # CARGO_TARGET_DIR precisely so it cannot leave a test-hooks engine
         # where lib/assets/ is staged from. Assert that, rather than trust it.
+        #
+        # js/package-lock.json is EXCLUDED, and the exclusion is not a shrug.
+        # `npm install --force` rewrites it whenever the runner's npm resolves
+        # differently from whoever last committed it, which is npm's churn and
+        # not something the corpus did. Four other jobs in this file run the
+        # same `npm install --force` (lines ~317, ~540, ~716, ~785) and none of
+        # them guards its tree, so this job was simply the first to look.
+        # Whether the committed lockfile should match CI's npm is a real
+        # question; it is not this job's to answer, and failing here would only
+        # teach people to ignore a red corpus check.
         run: |
           set -euo pipefail
-          if [ -n "$(git status --porcelain)" ]; then
+          DIRTY="$(git status --porcelain -- . ':(exclude)js/package-lock.json')"
+          if [ -n "$DIRTY" ]; then
             echo "FAIL: the test-hooks corpus modified the working tree:"
-            git status --porcelain
+            echo "$DIRTY"
             exit 1
           fi
-          echo "OK: tree clean"
+          echo "OK: tree clean (js/package-lock.json excluded — see comment)"
 
   # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
