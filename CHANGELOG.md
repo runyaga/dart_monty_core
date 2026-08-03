@@ -9,6 +9,40 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **`memoryMountedOsHandler` takes `files:`, not a `vfs:` map.** The parameter
+  `vfs: Map<String, String>` is replaced by `files: List<VfsFile>`, matching
+  upstream's `OSAccess([MemoryFile(...)])`. There is no compatibility shim.
+
+      // before
+      final vfs = <String, String>{'/data/in.txt': 'hello'};
+      final h = memoryMountedOsHandler(mounts: [...], vfs: vfs);
+      ...
+      print(vfs['/data/out.txt']);
+
+      // after
+      final out = MontyMemoryFile('/data/out.txt', '');
+      final h = memoryMountedOsHandler(
+        mounts: [...],
+        files: [MontyMemoryFile('/data/in.txt', 'hello'), out],
+      );
+      ...
+      print(out.content.text);
+
+  A write updates the `VfsFile` you passed in rather than replacing it, so the
+  reference you hold stays live — that is upstream's documented contract for
+  `MemoryFile`. Reading back a file you did NOT seed is not supported, by
+  design and in upstream too; assert through `Path.exists` / `Path.read_text`
+  instead.
+
+  Two behaviour changes come with it, both fixes:
+
+  - **Binary content survives a round trip.** The old store held a `String` and
+    decoded at write time with `allowMalformed: true`, so `write_bytes([0xFF])`
+    stored U+FFFD and `read_bytes` returned three bytes, not one. Content is now
+    a sealed `VfsText | VfsBytes` and bytes are stored verbatim.
+  - **`read_text` can now raise `UnicodeDecodeError`.** It previously could not,
+    even in principle, because invalid bytes were destroyed before any read.
+
 - **A write no longer requires its parent directory to exist — added and
   reverted within this unreleased cycle.** Relative to 0.18 nothing changed, so
   there is no migration; it is recorded because the behaviour moved twice inside
