@@ -33,4 +33,4 @@ b418cae	CPython path semantics: name length, codepoint counts, `resolve` returns
 51e4e8e	`ReplPlatform` now rejects per-call `limits` and `scriptName`
 f8c530a	`open()` parses its mode, and rejects a malformed one
 7be9680	A `rename` TARGET outside every mount is absent too, not denied
-70e24e4	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
+a21f47d	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
