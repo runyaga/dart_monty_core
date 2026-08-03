@@ -205,11 +205,63 @@ what POSIX means, which would hand a non-rooted string to the mount check.
 
 ## Phase 4 — converge the duplicate
 
-- [ ] `wasm_runner.dart` uses the shipped handler; its private ~400-line
+- [x] `wasm_runner.dart` uses the shipped handler; its private ~400-line
       `_VirtualFs` deleted
-- [ ] `bash tool/test_cm_wasm.sh` still reports **527/531, 0 failures** — that is
+- [x] `bash tool/test_cm_wasm.sh` still reports **527/531, 0 failures** — that is
       the equivalence proof
-- [ ] regression script green · gate green
+- [x] regression script green · gate green
+
+### It was not one duplicate, it was five
+
+The checklist named `_VirtualFs`. Deleting only that would have left the two
+runners at ~800 duplicated lines each, so the next drift had somewhere to
+happen. `wasm_runner.dart` and `wasm_runner_wasm.dart` also each carried their
+own copy of the corpus loop, the dispatch loop, the expectation evaluator and
+the name-lookup constants — and the copies had **already** drifted:
+
+- the `MontyOsCall` and `MontyResolveFutures` arms sat in opposite orders
+- the dart2wasm twin emitted a `"ms"` field its sibling did not
+- `_nameConstants` was a third copy of `conformanceNameConstants`
+- `tool/check_vfs_regression.sh` held a third mount-fs seed, writing `data.bin`
+  as the Dart STRING `'\x00\x01\x02\x03'` where upstream writes the BYTES
+  `b'\x00\x01\x02\x03'` — equal only because U+0000..U+0003 are single-byte in
+  UTF-8, and wrong the moment a byte above 0x7F appears
+
+The whole body now lives in `monty_conformance/src/fixture_runner.dart`. Both
+runners are ~40 lines: a header and `main() => runFixtureCorpus(log: …)`. The
+logging shim is the only thing either file may legitimately own.
+
+`"ms"` was dropped rather than added to both: nothing parses it, the documented
+protocol in `tool/test_wasm.sh` does not include it, and a timing field makes
+the `FIXTURE_DONE` line differ run to run, which is exactly what the
+equivalence check compares.
+
+### No local script builds the dart2wasm twin
+
+Worth knowing before trusting a green local run: `tool/test_wasm.sh` and
+`tool/test_cm_wasm.sh` both compile `wasm_runner.dart` with `dart compile js`,
+despite the names. `wasm_runner_wasm.dart` is compiled **only** by CI
+(`.github/workflows/ci.yaml:583`). That asymmetry is the FB-10 mechanism
+itself — the backend nobody runs locally is the one that ships broken — and it
+is why the equivalence proof below was taken on both targets by hand.
+
+### The proof
+
+Per-fixture, not just the summary counts: all 519 `FIXTURE_RESULT` lines are
+byte-identical before and after, on dart2js AND dart2wasm, and the two backends
+now produce identical output as each other.
+
+```
+tool/test_cm_wasm.sh        before & after  {"total":531,"passed":527,"failed":0,"skipped":4}
+tool/test_wasm.sh --skip-build  before & after  {"total":531,"passed":519,"failed":0,"skipped":12}
+```
+
+Ten fixtures actually exercise the OS path and every one of them passes on both
+sides of the change: `mount_fs__ops`, `mount_fs__errors`, `open__fs`,
+`open__fs_windows`, `with__all` (mount-fs, `/mnt`), and `datetime__core`,
+`import__os`, `os__environ`, `pathlib__os`, `pathlib__os_read_error`
+(call-external, `/virtual`). The 12 skips are unchanged and none is a
+filesystem fixture.
 
 ## Phase 5 — FFI local files · STOP, needs review
 
