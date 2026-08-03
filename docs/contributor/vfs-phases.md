@@ -272,15 +272,75 @@ filesystem fixture.
       an exit code — `test_cm_wasm.sh:222` exits 0 when Chrome is missing.
 - [x] regression script green · gate green
 
-## Phase 5 — FFI local files · STOP, needs review
+## Phase 5 — host-reaching files · reviewed, shipped
 
-**Do not automate.** A sandbox-escape surface.
+- [x] `VfsCallbackFile` in a **separate library**
+      (`package:dart_monty_core/unsafe_callback_file.dart`), so importing it is
+      an affirmative act visible in review
+- [x] ~~The default entry point cannot accept one without that import~~
+      **DELETED — the guarantee does not exist.** See below.
+- [x] Upstream's warning repeated verbatim (`os_access.py:684-706`, Python
+      example translated to Dart)
+- [x] Own branch, own review
+- [x] The callback receives the **seeded** path, never the live one
+- [x] regression script green · gate green
 
-- [ ] `VfsCallbackFile` in a **separate library**, so importing it is an
-      affirmative act visible in review
-- [ ] The default entry point cannot accept one without that import
-- [ ] Upstream's warning repeated verbatim
-- [ ] Own branch, own review
+### Box 2 was never true, and deleting it is the point
+
+The box asked for something Dart cannot express, and — worse — for a property
+this library never had.
+
+Not expressible: `VfsFile` is an `abstract interface class` (`vfs_node.dart:37`)
+and the entry point takes `List<VfsFile>` (`memory_mounted_os_handler.dart:64`),
+so any `VfsFile` satisfies it. The import gates **construction**, not
+**passing**.
+
+Never true, which is the part that matters. **A host-reaching `VfsFile` is
+constructible today from the shipped public API, with no Phase 5 code and no
+special import.** Measured: a separate package with a path dependency,
+importing only `package:dart_monty_core/dart_monty_core.dart`, ~20 lines —
+
+```dart
+class HostFile implements VfsFile {
+  @override
+  VfsContent get content => VfsText(File(hostPath).readAsStringSync());
+  // …path, permissions
+}
+```
+
+— analysed clean and read host content out through `Path.read_text`.
+
+So a checkbox promising the entry point *cannot* accept an unsafe file would
+teach a reviewer that the `files:` list needs no scrutiny, which is exactly
+backwards. A guarantee you advertise but cannot enforce is worse than none,
+because it displaces the manual control doing the real work.
+
+**The honest rule, which replaces the box: audit every `VfsFile` that is not a
+`MontyMemoryFile`.** `unsafe_callback_file.dart` makes the common case
+greppable; it does not make the unlabelled route unavailable.
+
+Reviewed adversarially by two model families independently (Gemini 3.6 and
+Claude), both of which killed the alternative designs — a sealed marker
+supertype, a runtime whitelist, and a declared `reachesHost` bit on the
+interface. Full disposition ledger:
+`~/dev/plans/monty-0.19-upgrade/artifacts/phase5/LEDGER.md`.
+
+### Why the callback gets the seeded path
+
+A rename rewrites the live `path` of every file in the moved subtree
+(`vfs_tree.dart:168`). Handing that to the callback would let sandboxed Python
+choose the argument the host receives, just by renaming inside the mount —
+demonstrated red before the fix, in `vfs_callback_file_test.dart`. Upstream has
+the same exposure via directory rename (`os_access.py:1128-1136`); we had it via
+file rename too, because our `move()` rewrites both.
+
+`VfsCallbackFile` freezes `seededPath` at construction and hands the callback
+that. `path` still tracks the tree, so `resolve` and `iterdir` stay correct.
+
+Two bounds worth recording, both measured: sandboxed code **cannot leave the
+mount** (the clamp at `vfs_path.dart` plus "outside a mount means absent"), and
+**cannot mint a callback file** — every file Monty creates is a
+`MontyMemoryFile` (`vfs_tree.dart:126`, mirroring `os_access.py:967`).
 
 ## Phase 6 — deferred
 

@@ -7,6 +7,28 @@ it went from 1321 to 306 public items and most of what this package uses moved t
 the new `monty-types` crate — so this is a substantial internal change with a
 small consumer-facing surface.
 
+### Added
+
+- **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
+  files.** `VfsCallbackFile(path, read:, write:)` backs a virtual file with
+  host callbacks, mirroring upstream's `CallbackFile` (`os_access.py:676`). It
+  ships in a **separate library** because importing it is a security decision:
+  the callbacks run on the host with full access to the filesystem, network and
+  every other system resource, and one that touches the real filesystem breaks
+  the Monty sandbox. Upstream's warning is repeated on the class.
+
+  The callback always receives the path the file was **seeded** at, never its
+  live `path`. A rename rewrites the live path of every file in the moved
+  subtree, so passing that to the callback would let sandboxed Python choose the
+  argument the host receives simply by renaming inside the mount.
+
+  **This separation is a signal, not a boundary, and the distinction is worth
+  your attention.** `VfsFile` is an open interface, so a host-reaching backing
+  can be written against the main library with no import at all — that was true
+  before this release and remains true. The reviewer's rule is *audit every
+  `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
+  greppable and does not replace that rule.
+
 ### Breaking
 
 - **A path outside every mount is reported as absent, not denied.**

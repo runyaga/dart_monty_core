@@ -8,6 +8,7 @@ import 'package:dart_monty_core/src/mount/mount_mode.dart';
 import 'package:dart_monty_core/src/mount/open_call.dart';
 import 'package:dart_monty_core/src/mount/vfs_content.dart';
 import 'package:dart_monty_core/src/mount/vfs_node.dart';
+import 'package:dart_monty_core/src/mount/vfs_path.dart';
 import 'package:dart_monty_core/src/mount/vfs_tree.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 
@@ -67,7 +68,7 @@ OsCallHandler memoryMountedOsHandler({
   final normalizedMounts = mounts
       .map(
         (m) => MountDir(
-          virtualPath: _normalizePath(m.virtualPath),
+          virtualPath: normalizeVfsPath(m.virtualPath),
           mode: m.mode,
           writeBytesLimit: m.writeBytesLimit,
         ),
@@ -79,7 +80,7 @@ OsCallHandler memoryMountedOsHandler({
   // special case in every existence question.
   final vfs = VfsTree(
     files: [
-      for (final f in files) f..path = _normalizePath(f.path),
+      for (final f in files) f..path = normalizeVfsPath(f.path),
     ],
     mountRoots: normalizedMounts.map((m) => m.virtualPath),
   );
@@ -189,7 +190,7 @@ OsCallHandler memoryMountedOsHandler({
     if (op == 'open') {
       final rawPath = args.firstOrNull;
       if (rawPath is! String) return notMine(op, args, kwargs);
-      final path = _normalizePath(rawPath);
+      final path = normalizeVfsPath(rawPath);
       final mount = _findMount(path, normalizedMounts);
       if (mount == null) {
         // Same premise as the Path.* ops below: outside every mount, the file
@@ -231,7 +232,7 @@ OsCallHandler memoryMountedOsHandler({
 
     final rawPath = args.firstOrNull;
     if (rawPath is! String) return notMine(op, args, kwargs);
-    final path = _normalizePath(rawPath);
+    final path = normalizeVfsPath(rawPath);
     final mount = _findMount(path, normalizedMounts);
     if (mount == null) {
       // FB-11 P5. A QUERY about a path is not an ACCESS of it. CPython
@@ -505,7 +506,7 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'TypeError',
           );
         }
-        final target = _normalizePath(rawTarget);
+        final target = normalizeVfsPath(rawTarget);
         final targetMount = _findMount(target, normalizedMounts);
         if (targetMount == null) {
           return notMine(op, [target], kwargs);
@@ -562,43 +563,6 @@ OsCallHandler memoryMountedOsHandler({
 
     return notMine(op, args, kwargs);
   };
-}
-
-/// Collapses `.`, `..` and empty segments, CLAMPING at the root.
-///
-/// Deliberately hand-rolled rather than `package:path`'s `p.posix.normalize`,
-/// which is a correct POSIX normaliser and therefore the wrong tool here.
-/// Measured, on the cases that matter:
-///
-///     input                       p.posix.normalize   this
-///     /mnt/../../../etc/passwd    /etc/passwd         /etc/passwd
-///     ../escape.txt               ../escape.txt       /escape.txt
-///     '' (empty)                  .                   /
-///
-/// This is a clamp, not a normalisation: every path is treated as absolute and
-/// `..` can never survive, so no input can produce a result that is not rooted
-/// before `_findMount` sees it. `p.posix.normalize` preserves a leading `..`
-/// because that is what POSIX means, and it would hand a relative string to
-/// the mount check.
-///
-/// (Dart has no first-class `Path` type to lean on — `package:path` is
-/// functions over `String` by design, and `MontyPath` is a wire value, not a
-/// path library.)
-String _normalizePath(String path) {
-  if (path.isEmpty) return '/';
-  final isAbs = path.startsWith('/');
-  final segments = <String>[];
-  for (final part in path.split('/')) {
-    if (part.isEmpty || part == '.') continue;
-    if (part == '..') {
-      if (segments.isNotEmpty) segments.removeLast();
-      continue;
-    }
-    segments.add(part);
-  }
-  final joined = segments.join('/');
-
-  return isAbs ? '/$joined' : joined;
 }
 
 MountDir? _findMount(String normalized, List<MountDir> mounts) {
