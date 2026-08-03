@@ -37,8 +37,16 @@ MontyFileHandle resolveOpenCall(
   bool Function(String path) isDirectory = _alwaysFalse,
   void Function(String path)? ensureWritable,
 }) {
-  final readOnly = mode == 'r' || mode == 'rb';
-  if (readOnly) {
+  // Parse the mode BEFORE any side effect. Upstream builds its handle first
+  // for exactly this reason (`os_access.py:870-876`): "a malformed `mode`
+  // raises `ValueError` without touching the filesystem. Direct callers (not
+  // routed through Monty, which pre-validates) could otherwise pass e.g.
+  // `'wxyz'` and silently trigger the truncate/create branch."
+  //
+  // We had the mirror-image bug: every unrecognised mode fell through to
+  // [createIfMissing], so `open(p, 'wxyz')` silently CREATED a file.
+  final action = _openAction(mode);
+  if (action == 'r') {
     // Two INDEPENDENT checks, not nested. Upstream states them as one
     // sentence — "verify the file exists and is not a directory"
     // (os_access.py:851-853) — and the distinction only became visible when
@@ -60,7 +68,7 @@ MontyFileHandle resolveOpenCall(
     }
   } else {
     ensureWritable?.call(path);
-    if (mode == 'w' || mode == 'wb') {
+    if (action == 'w') {
       truncate(path);
     } else {
       createIfMissing(path);
@@ -69,5 +77,52 @@ MontyFileHandle resolveOpenCall(
 
   return MontyFileHandle(path: path, mode: mode);
 }
+
+/// The open-time action for [mode] — `r`, `w` or `a` — or a Python
+/// `ValueError` if [mode] is malformed.
+///
+/// `b`/`t`/`+` are orthogonal to the open-time effect: only the leading action
+/// decides whether we check existence, truncate, or create-if-missing. That is
+/// upstream's split too (`os_access.py:878-882`), which is why `r+` is a read
+/// action and does not truncate.
+///
+/// Rejecting rather than defaulting is the point. `x` (exclusive create) is
+/// deliberately NOT accepted: upstream's own code asserts the action is one of
+/// `r`/`w`/`a` (`os_access.py:896`), so silently treating `x` as append would
+/// invent a semantic neither side implements.
+String _openAction(String mode) {
+  var action = '';
+  var binary = false;
+  var text = false;
+  var plus = false;
+
+  for (final c in mode.split('')) {
+    switch (c) {
+      case 'r' || 'w' || 'a':
+        if (action.isNotEmpty) throw _invalidMode(mode);
+        action = c;
+      case 'b':
+        if (binary) throw _invalidMode(mode);
+        binary = true;
+      case 't':
+        if (text) throw _invalidMode(mode);
+        text = true;
+      case '+':
+        if (plus) throw _invalidMode(mode);
+        plus = true;
+      default:
+        throw _invalidMode(mode);
+    }
+  }
+
+  // No action character at all (`''`, `'+'`, `'b'`), or the contradictory
+  // `bt` pair, which CPython also rejects.
+  if (action.isEmpty || (binary && text)) throw _invalidMode(mode);
+
+  return action;
+}
+
+OsCallException _invalidMode(String mode) =>
+    OsCallException("invalid mode: '$mode'", pythonExceptionType: 'ValueError');
 
 bool _alwaysFalse(String path) => false;

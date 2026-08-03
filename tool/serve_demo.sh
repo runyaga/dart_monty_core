@@ -3,7 +3,9 @@
 # dart_monty_core — build and serve the REPL web demo locally
 #
 # Usage:
-#   bash tool/serve_demo.sh [--skip-build] [--dart2wasm]
+#   bash tool/serve_demo.sh [--skip-build] [--dart2wasm] [--test-hooks]
+#
+#   --test-hooks and --skip-build are MUTUALLY EXCLUSIVE — see the guard below.
 #
 # Options:
 #   --skip-build   Skip npm + cargo + dart compile steps (use existing assets).
@@ -51,6 +53,33 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
 done
+
+# --test-hooks needs BOTH halves rebuilt, so it cannot be combined with
+# --skip-build. Two independent axes have to agree:
+#
+#   the engine   built with the `test-hooks` cargo feature
+#   the Dart     compiled with -DMONTY_TEST_HOOKS=true (line ~152)
+#
+# --skip-build reuses whatever is staged in web/, and `tool/check_pages.sh`
+# legitimately overwrites both — it copies the SHIPPED engine from lib/assets/
+# and recompiles the Dart without the define. So after any gate run, a
+# --skip-build --test-hooks serve silently downgrades: the matrix reports
+# "8 needs test-hooks build" and 521/531 instead of 529/531, with nothing
+# saying why. Measured 2026-08-03; it cost real debugging time.
+#
+# Refusing is better than warning: the flag's whole purpose is to make those
+# eight fixtures RUN, and honouring it while not doing so is the worst outcome.
+if [ "$TEST_HOOKS" = true ] && [ "$SKIP_BUILD" = true ]; then
+  echo "ERROR: --test-hooks cannot be combined with --skip-build." >&2
+  echo "" >&2
+  echo "  --test-hooks needs a test-hooks ENGINE and Dart compiled with" >&2
+  echo "  -DMONTY_TEST_HOOKS=true. --skip-build reuses whatever is in" >&2
+  echo "  packages/dart_monty_web/web/, which tool/check_pages.sh overwrites" >&2
+  echo "  with the shipped engine and a no-define compile." >&2
+  echo "" >&2
+  echo "  Drop --skip-build (a test-hooks cargo build takes ~2-3 min)." >&2
+  exit 1
+fi
 
 echo "=== dart_monty_core REPL demo ==="
 echo ""

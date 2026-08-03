@@ -21,10 +21,18 @@
 //   FAIL       it does not — something is broken, and the diff is shown
 //   KNOWN GAP  it does not, we know, and the row names the issue
 //
-// The third state exists because two rows are genuinely and knowingly wrong on
-// one backend (core#137, FB-9). Hiding them would make the page a lie; painting
-// them red would say "this package is broken" when what is true is "this
-// package knows exactly where its edges are".
+// The third state exists because some rows are genuinely and knowingly wrong on
+// one backend. Hiding them would make the page a lie; painting them red would
+// say "this package is broken" when what is true is "this package knows exactly
+// where its edges are".
+//
+// HOW MANY there are, and which issues they name, is deliberately NOT recorded
+// here. It was — "two rows … (core#137, FB-9)" — and it was wrong within weeks:
+// FB-9 was fixed, FB-9 appears nowhere else in this repo, and the count stayed
+// at two in this comment and in both HTML shells. A status claim in a comment
+// has an expiry date. `_renderGapNote` derives the count, the pluralisation and
+// the issue IDs from the gaps that actually occurred, so the page cannot
+// disagree with itself and there is nothing here to keep in sync.
 //
 // Compiled twice from this one source — dart2js and dart2wasm — because that is
 // the axis where the two backends actually differ: dart2js has a single number
@@ -708,6 +716,49 @@ const _fixtureSourceBase =
 /// (native/Cargo.toml:36-38, "NEVER enabled in shipped builds").
 const bool _testHooks = bool.fromEnvironment('MONTY_TEST_HOOKS');
 
+/// Whether the ENGINE actually has the `test-hooks` cargo feature, probed at
+/// runtime rather than assumed from [_testHooks].
+///
+/// `null` until [_probeEngineTestHooks] has run.
+bool? _engineHasTestHooks;
+
+/// Asks the engine whether it has test-hooks, by doing the thing only a
+/// test-hooks engine can do.
+///
+/// **Why this exists.** [_testHooks] is a *Dart compile-time define* and the
+/// engine's feature is a *separate cargo build*. Two independent axes, and
+/// nothing checked that they agree. Both mismatches are reachable:
+///
+/// - **define off, engine on** — eight fixtures are skipped that would have
+///   passed. Under-reports, harmless but confusing: the page says 521/531 where
+///   it could say 529/531.
+/// - **define on, engine off** — the eight are NOT skipped. They run, and they
+///   FAIL, and the page shows eight red rows that look exactly like a
+///   regression. This is the dangerous one, and it is the reason a probe beats
+///   a warning: nothing else in the repo would tell you.
+///
+/// Measured 2026-08-03: a gate run silently produces the first case, because
+/// `tool/check_pages.sh` copies the shipped engine over `web/` and recompiles
+/// the Dart without the define. `tool/serve_demo.sh` now refuses
+/// `--test-hooks --skip-build` for the same reason, but that guard only covers
+/// the one entry point; this covers the page however it was built.
+Future<void> _probeEngineTestHooks() async {
+  try {
+    // `sys.setrecursionlimit` is the discriminator, and deliberately so: the
+    // repo records (unsupported_wasm_fixtures.dart) that `testCmFixtures` pass
+    // on web WITHOUT a test-hooks build while `setRecursionLimitFixtures`
+    // genuinely need it. Probing with the wrong half would answer yes on a
+    // shipped engine.
+    final r = await Monty(
+      'import sys\nsys.setrecursionlimit(100)\nTrue',
+    ).run().timeout(const Duration(seconds: 20));
+    _engineHasTestHooks = r.error == null;
+  } on Object {
+    // A throw is an answer too: the capability is absent.
+    _engineHasTestHooks = false;
+  }
+}
+
 SkipKind? _skipReason(_Fixture f) {
   if (alwaysUnsupportedWasmFixtures.contains(f.name)) {
     return SkipKind.divergent;
@@ -851,10 +902,13 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
             ),
           );
 
-      // A red row must say why. These two currently fail on FB-11 (a missing
-      // file INSIDE a mount reports PermissionError instead of
-      // FileNotFoundError), and leaving them red rather than relabelling them
-      // is deliberate: the library really does fail them.
+      // A red row must say why, so whatever the engine actually reported is
+      // captured and shown next to the row.
+      //
+      // No list of which fixtures are currently red lives here. One did — two
+      // mount-fs rows, blamed on FB-11 — and FB-11 was fixed while the comment
+      // stayed, so the page's own source claimed a failure the page was not
+      // showing. The reason travels with the failure instead.
       if (r.error != null) _skipNotes[f.name] = _describeError(r.error!);
 
       return switch (expectation) {
@@ -1328,7 +1382,93 @@ void _summarise(Map<Verdict, int> counts, Duration took) {
   );
 }
 
+/// Writes the KNOWN-GAP paragraph from the gaps that actually occurred.
+///
+/// This used to be hand-written prose in `matrix_js.html` and
+/// `matrix_wasm.html` — the same sentence in both — claiming "Two rows are
+/// knowingly wrong on one backend". It was one row by the time anyone looked,
+/// because the other was fixed and nobody edited the copy. A page whose whole
+/// pitch is "nothing here is a claim copied from a README" cannot afford a
+/// hand-maintained count, so the count, the pluralisation and the issue IDs are
+/// all derived from [gapNotes].
+///
+/// At zero gaps this renders NOTHING, which is the property that matters most:
+/// fixing the last gap deletes the paragraph instead of leaving it lying. That
+/// is why the two backends disagree here on purpose — dart2wasm has no gaps and
+/// shows no paragraph at all.
+void _renderGapNote(List<String> gapNotes) {
+  final el = _doc.getElementById('gap-note');
+  if (el == null) return;
+  el.textContent = '';
+  if (gapNotes.isEmpty) return;
+
+  // Notes are written `'<issue> · <why>'`, so the issue IDs come from the gap
+  // outcomes rather than from a comment someone has to remember to update.
+  final issues = gapNotes
+      .map((n) => n.split(' · ').first.trim())
+      .toSet()
+      .toList();
+  final n = gapNotes.length;
+
+  el.append(_el('strong', text: 'KNOWN GAP'));
+  el.append(
+    _el(
+      'span',
+      text:
+          ' is a third state on purpose. '
+          '${n == 1 ? 'One row is' : '$n rows are'} knowingly wrong on this '
+          'backend (${issues.join(', ')}); '
+          '${n == 1 ? 'it is' : 'they are'} shown and named rather than '
+          'hidden. Regression testing lives in the repo\'s gate and CI — this '
+          'page exists to be read.',
+    ),
+  );
+}
+
+/// Renders a banner when the Dart define and the engine's feature disagree.
+///
+/// Nothing at all when they agree, which is the same rule `_renderGapNote`
+/// follows: a message that is always present teaches people to stop reading it.
+void _renderTestHooksMismatch() {
+  final el = _doc.getElementById('engine-note');
+  if (el == null) return;
+  el.textContent = '';
+  el.className = 'muted';
+
+  final engine = _engineHasTestHooks;
+  if (engine == null || engine == _testHooks) return;
+
+  final n = testHooksWasmFixtures.length;
+  el.className = 'v-fail';
+  el.append(_el('strong', text: 'BUILD MISMATCH'));
+  el.append(
+    _el(
+      'span',
+      text: _testHooks
+          // The dangerous direction: the eight are not skipped, so they run
+          // against an engine that cannot serve them and go red.
+          ? ' — this page was compiled with MONTY_TEST_HOOKS=true but the '
+                'engine it loaded does NOT have the test-hooks cargo feature. '
+                'The $n fixtures that need `sys.setrecursionlimit` are being '
+                'RUN rather than skipped, so any red among them is this '
+                'mismatch and not a regression. Rebuild with '
+                '`bash tool/serve_demo.sh --test-hooks`.'
+          // The under-reporting direction.
+          : ' — the engine HAS the test-hooks feature but this page was '
+                'compiled without MONTY_TEST_HOOKS, so $n fixtures are being '
+                'skipped that would pass. The corpus count below is lower than '
+                'this build can actually achieve. Rebuild with '
+                '`bash tool/serve_demo.sh --test-hooks`.',
+    ),
+  );
+}
+
 Future<void> _runAll() async {
+  // Before the probes, because _skipReason consults the define and the banner
+  // has to be able to contradict it.
+  await _probeEngineTestHooks();
+  _renderTestHooksMismatch();
+
   final probes = _probes();
   final tbody = _doc.getElementById('rows')!..textContent = '';
   for (var i = 0; i < probes.length; i++) {
@@ -1336,6 +1476,7 @@ Future<void> _runAll() async {
   }
 
   final counts = <Verdict, int>{};
+  final gapNotes = <String>[];
   final started = DateTime.now();
 
   for (var i = 0; i < probes.length; i++) {
@@ -1351,10 +1492,14 @@ Future<void> _runAll() async {
       outcome = Outcome(Verdict.crash, _firstLine(e.toString()));
     }
     counts[outcome.verdict] = (counts[outcome.verdict] ?? 0) + 1;
+    if (outcome.verdict == Verdict.gap && outcome.note != null) {
+      gapNotes.add(outcome.note!);
+    }
     _paint(i, outcome);
   }
 
   _summarise(counts, DateTime.now().difference(started));
+  _renderGapNote(gapNotes);
   (_doc.getElementById('rerun') as web.HTMLButtonElement?)?.disabled = false;
 }
 

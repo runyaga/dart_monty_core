@@ -24,12 +24,15 @@
       next to the summary is when these results were produced, which is
       moments ago.
     </p>
-    <p class="muted">
-      <strong>KNOWN GAP</strong> is a third state on purpose. Two rows are
-      knowingly wrong on one backend; they are shown, named and linked rather
-      than hidden. Regression testing lives in the repo's gate and CI — this
-      page exists to be read.
-    </p>
+    <!-- Filled in by feature_matrix.dart from the gaps that actually
+         occurred: the count, the pluralisation and the issue IDs are derived,
+         and at zero gaps this stays empty. The sentence used to be hardcoded
+         here in BOTH matrix shells and went stale. -->
+    <p class="muted" id="gap-note"></p>
+    <!-- Filled in by feature_matrix.dart ONLY when the Dart define
+         MONTY_TEST_HOOKS disagrees with the engine's actual cargo
+         feature, probed at runtime. Empty when they agree. -->
+    <p class="muted" id="engine-note"></p>
     <div class="controls">
       <button id="rerun" class="btn" disabled>Re-run</button>
       <span id="summary"></span>

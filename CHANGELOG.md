@@ -7,7 +7,144 @@ it went from 1321 to 306 public items and most of what this package uses moved t
 the new `monty-types` crate — so this is a substantial internal change with a
 small consumer-facing surface.
 
+### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
+
+Three behaviours that were true but documented nowhere. None is a change; all
+three surprise people, and one of them differs from upstream's default.
+
+- **Our default mount mode is `readWrite`. Upstream's is `overlay`.** Pass no
+  `mode` and writes **persist** for the life of the handler. Upstream's
+  `MountDir(mode='overlay')` — its default (`_monty.pyi:90`) — captures writes
+  in memory and **discards them at feed end**. We have no overlay mode
+  (`MountMode` is `readOnly | readWrite`) because upstream's overlay falls
+  through to a real host directory and our mounts have no host path: our tree
+  *is* the filesystem, so there is nothing to fall through to.
+
+  In practice the two are **indistinguishable within one feed over a mount with
+  nothing underneath it** — which is why both of upstream's own
+  `OverlayMemory`-generated `mount_fs` fixtures pass green against our
+  `readWrite` tree.
+
+- **Mount state is scoped to the HANDLER, not to a feed.** Upstream discards by
+  dropping a per-feed mount table; our equivalent is dropping the handler.
+  Because `osHandler` is a per-feed parameter, **constructing a fresh handler
+  over fresh files per feed reproduces upstream's overlay behaviour exactly**,
+  with no extra API. Reusing one handler across feeds gives persistence.
+
+- **Seeded `VfsFile` objects are mutated IN PLACE by sandboxed code.** This is
+  upstream's contract (`os_access.py:608`, *"When Monty code writes to this
+  file, the content attribute is updated"*) and it is what makes output capture
+  work: seed `MontyMemoryFile('/out.txt', '')`, run, read `.content` back.
+
+  The consequence to know about: a fresh handler over **reused** seed objects
+  gives a *half* discard — files the sandbox created are gone, but your own
+  objects stay rewritten. If you want a clean slate, construct fresh
+  `MontyMemoryFile`s, not just a fresh handler. Pinned by
+  `memory_mounted_os_handler_test.dart`, "a fresh handler over REUSED seeds
+  half-discards, on purpose".
+
+### Added
+
+- **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
+  files.** `VfsCallbackFile(path, read:, write:)` backs a virtual file with
+  host callbacks, mirroring upstream's `CallbackFile` (`os_access.py:676`). It
+  ships in a **separate library** because importing it is a security decision:
+  the callbacks run on the host with full access to the filesystem, network and
+  every other system resource, and one that touches the real filesystem breaks
+  the Monty sandbox. Upstream's warning is repeated on the class.
+
+  The callback always receives the path the file was **seeded** at, never its
+  live `path`. A rename rewrites the live path of every file in the moved
+  subtree, so passing that to the callback would let sandboxed Python choose the
+  argument the host receives simply by renaming inside the mount.
+
+  **This separation is a signal, not a boundary, and the distinction is worth
+  your attention.** `VfsFile` is an open interface, so a host-reaching backing
+  can be written against the main library with no import at all — that was true
+  before this release and remains true. The reviewer's rule is *audit every
+  `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
+  greppable and does not replace that rule.
+
 ### Breaking
+
+- **`open()` parses its mode, and rejects a malformed one.**
+  `resolveOpenCall` string-compared the mode and treated *everything*
+  unrecognised as append: `open(p, 'wxyz')`, `open(p, 'x')` and even
+  `open(p, '')` fell through to create-if-missing. It now parses the mode
+  before any side effect and raises `ValueError: invalid mode: '<mode>'`,
+  which is what upstream does and for the reason upstream states
+  (`os_access.py:870-876`) — a direct caller must not be able to trigger the
+  truncate/create branch with a mode that was never valid.
+
+  Two consequences beyond the rejection. `b`, `t` and `+` are now understood as
+  orthogonal to the open-time action, so `r+`, `rt` and `rb+` are read actions
+  that check existence instead of silently creating, and `w+`/`wt`/`wb+`
+  truncate. And `x` (exclusive create) is rejected rather than treated as
+  append — upstream's own code asserts the action is one of `r`/`w`/`a`
+  (`os_access.py:896`), so accepting it would invent a semantic neither side
+  implements.
+
+  Found by porting upstream's `test_os_access.py`, whose own test for this is a
+  named data-loss regression guard.
+
+- **`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write.** It capped a
+  single call, which bounds nothing an attacker cares about:
+  `write_bytes(b'x' * limit)` in a loop passed every check and exhausted host
+  memory. Measured against the old code, a limit of 100 bytes let **all ten** of
+  ten 30-byte writes through.
+
+  Upstream's parameter of the same name has always been cumulative — *"Cap on
+  cumulative bytes written through the mount within one feed"*
+  (`_monty.pyi:111-113`) — so the old behaviour was a silent contract mismatch
+  for anyone porting from `pydantic_monty`. It is monotonic: deleting a file
+  does not buy budget back, because the bytes were still written.
+
+  The message now matches upstream's too:
+  `OSError: disk write limit of 10 bytes exceeded` (was
+  `Write exceeds mount limit (100 > 10 bytes): /path`).
+
+- **New: `MountDir.memoryUsageLimit`, defaulting to 100 MB.** Bounds the bytes
+  a mount **currently retains**, where `writeBytesLimit` bounds what has flowed
+  through. Deleting refunds this one. Exceeding it raises
+  `MemoryError: mount memory usage limit of 100 MB exceeded`.
+
+  Ported from upstream rather than invented: the default matches
+  `DEFAULT_MEMORY_USAGE_LIMIT` (`monty-fs/src/mount_table.rs:18`), and each node
+  is charged `entryMemoryUsage` (256 bytes) plus its content, matching
+  `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:21`). The per-entry
+  charge is what stops a million empty files, which cost no content bytes and a
+  great deal of real memory.
+
+  Two deliberate scoping choices, both documented on `VfsAccountant`: content
+  **seeded** through `files:` is not charged, because the budget exists to bound
+  what untrusted code makes us retain rather than what the consumer handed us;
+  and a host-reaching file's content is never charged *or measured*, since
+  asking it for a size would fire a host callback — accounting must not have
+  side effects.
+
+  Because we have no feed boundary to hang state on, both limits are scoped to
+  the handler instance. For a one-shot `run()` that is identical to upstream;
+  for a long-lived REPL it is stricter.
+
+- **A `rename` TARGET outside every mount is absent too, not denied.** The rule
+  below was never carried through to the second path of a two-path call. A
+  target outside every mount declined instead, which with no fallthrough
+  surfaced as `PermissionError: Permission denied: '<target>'` — so sandboxed
+  code could map the sandbox by comparing exceptions: `PermissionError` meant
+  "outside your mounts", `FileNotFoundError` meant "just missing". It now
+  raises `FileNotFoundError: [Errno 2] No such file or directory: '<target>'`,
+  the same message a target whose parent is simply missing already gets, which
+  is what makes the two indistinguishable.
+
+  Upstream does not pin this case — `route_call` propagates "no mount" as a
+  non-answer (`monty-fs/src/mount_table.rs:125`) and upstream's own security
+  test accepts either outcome outright (`monty-fs/tests/fs_security.rs:1078`:
+  `None => {} // Also acceptable`).
+
+  Also fixed in the same place: declining to a `fallthrough` rewrote the call to
+  a single argument, so a fallthrough handler received `Path.rename` with its
+  **source dropped**. It now forwards both. (Upstream's `on_no_handler` names
+  the source for a rename, never the target — `monty-types/src/os.rs:241`.)
 
 - **A path outside every mount is reported as absent, not denied.**
   `memoryMountedOsHandler` raised `PermissionError` for anything it does not

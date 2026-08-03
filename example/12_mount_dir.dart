@@ -10,7 +10,8 @@
 //  - Sandbox boundary — `..` traversal that escapes raises
 //    PermissionError.
 //  - MountMode (readOnly rejects writes).
-//  - Per-write writeBytesLimit (cumulative tracking is a follow-up).
+//  - Cumulative writeBytesLimit (total bytes through the mount) and
+//    memoryUsageLimit (bytes currently retained; 100 MB by default).
 //
 // Compared to a hand-rolled OsCallHandler (see example 03), MountDir
 // declares the policy once and lets the helper enforce it.
@@ -75,8 +76,9 @@ Future<void> _readOnly() async {
   print('write:  error="${fail.error?.message}"');
 }
 
-// ── writeBytesLimit caps per-call write size ─────────────────────────────────
-// Useful when accepting writes from Python you don't fully trust.
+// ── writeBytesLimit caps CUMULATIVE bytes through the mount ──────────────────
+// Monotonic: deleting does not buy budget back. memoryUsageLimit is the
+// companion that bounds the live tree instead, and IS refunded on delete.
 Future<void> _writeLimit() async {
   print('\n── writeBytesLimit ──');
 

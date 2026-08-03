@@ -6,8 +6,10 @@ import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/mount_mode.dart';
 import 'package:dart_monty_core/src/mount/open_call.dart';
+import 'package:dart_monty_core/src/mount/vfs_accountant.dart';
 import 'package:dart_monty_core/src/mount/vfs_content.dart';
 import 'package:dart_monty_core/src/mount/vfs_node.dart';
+import 'package:dart_monty_core/src/mount/vfs_path.dart';
 import 'package:dart_monty_core/src/mount/vfs_tree.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 
@@ -15,8 +17,11 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// from an in-memory virtual filesystem.
 ///
 /// `mounts` declare which path prefixes Python can reach. `files` seeds the
-/// backing store. Paths outside every mount fall through to [fallthrough] (or
-/// raise `PermissionError` in Python if no fallthrough is given).
+/// backing store. Paths outside every mount fall through to [fallthrough] (or,
+/// with no fallthrough, are reported as **absent** — `FileNotFoundError`, and
+/// `false` from the existence queries. Not `PermissionError`: saying a path is
+/// both denied and non-existent contradicts itself, and "denied" confirms the
+/// path was worth denying. That holds for a `rename` target too).
 ///
 /// ```dart
 /// final handler = memoryMountedOsHandler(
@@ -35,8 +40,13 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 ///   `PermissionError`)
 /// - **Mode** (writes against a [MountMode.readOnly] mount raise
 ///   `PermissionError`)
-/// - **Per-write byte limit** (writes exceeding `writeBytesLimit` raise
-///   `OSError`); cumulative tracking across calls is a follow-up.
+/// - **Cumulative write limit** — bytes written through a mount, totalled
+///   across calls, capped by `MountDir.writeBytesLimit` (`OSError`)
+/// - **Retained-memory budget** — bytes the sandbox currently holds under a
+///   mount, capped by `MountDir.memoryUsageLimit`, 100 MB by default
+///   (`MemoryError`). Deleting gives budget back; the write limit is monotonic
+///   and does not. A `write_bytes` loop is caught by the first, a large live
+///   tree by the second.
 ///
 /// Serves **all 19 filesystem operations** the engine can issue (the
 /// `is_filesystem` set at monty-types/src/os.rs:178): `open`, `Path.read_text`,
@@ -67,9 +77,10 @@ OsCallHandler memoryMountedOsHandler({
   final normalizedMounts = mounts
       .map(
         (m) => MountDir(
-          virtualPath: _normalizePath(m.virtualPath),
+          virtualPath: normalizeVfsPath(m.virtualPath),
           mode: m.mode,
           writeBytesLimit: m.writeBytesLimit,
+          memoryUsageLimit: m.memoryUsageLimit,
         ),
       )
       .toList(growable: false);
@@ -79,10 +90,15 @@ OsCallHandler memoryMountedOsHandler({
   // special case in every existence question.
   final vfs = VfsTree(
     files: [
-      for (final f in files) f..path = _normalizePath(f.path),
+      for (final f in files) f..path = normalizeVfsPath(f.path),
     ],
     mountRoots: normalizedMounts.map((m) => m.virtualPath),
   );
+
+  // Per-mount byte accounting. Seeded content is deliberately NOT charged —
+  // see [VfsAccountant] — so the budget bounds what the sandbox makes us
+  // retain, not what the consumer handed us.
+  final accountant = VfsAccountant();
 
   /// Requires that [path]'s parent directory exists before a file is created
   /// there, per upstream's `_write_file` (os_access.py:964-970).
@@ -176,7 +192,7 @@ OsCallHandler memoryMountedOsHandler({
   // `mkdir` is a no-op: the parent it demands can never come into existence,
   // so `mkdir` followed by writing into that directory failed. See the
   // "mkdir then write into it" test, and reinstate this in Phase 1 once
-  // directories are first-class (~/dev/plans/monty-0.19-upgrade/vfs-design.md).
+  // directories are first-class (docs/contributor/vfs-phases.md, Phase 1b).
 
   return (op, args, kwargs) async {
     // Carries [path, mode]; reads and writes then arrive separately as
@@ -189,7 +205,7 @@ OsCallHandler memoryMountedOsHandler({
     if (op == 'open') {
       final rawPath = args.firstOrNull;
       if (rawPath is! String) return notMine(op, args, kwargs);
-      final path = _normalizePath(rawPath);
+      final path = normalizeVfsPath(rawPath);
       final mount = _findMount(path, normalizedMounts);
       if (mount == null) {
         // Same premise as the Path.* ops below: outside every mount, the file
@@ -220,9 +236,17 @@ OsCallHandler memoryMountedOsHandler({
         // stale semantics — a false green, which is worse than a red.
         isDirectory: (p) => vfs.lookup(p) is VfsDir,
         ensureWritable: (p) => _requireWritable(mount, p),
-        truncate: (p) => putContent(p, VfsText('')),
+        // `open(p, 'w')` and `open(p, 'a')` create nodes, so they are charged
+        // the per-entry cost even though they write no content — a million
+        // `open(..., 'w')` calls is exactly the exhaustion the budget bounds.
+        truncate: (p) {
+          accountant.recordWrite(mount, p, wrote: 0, retains: 0);
+          putContent(p, VfsText(''));
+        },
         createIfMissing: (p) {
-          if (!vfs.exists(p)) putContent(p, VfsText(''));
+          if (vfs.exists(p)) return;
+          accountant.recordWrite(mount, p, wrote: 0, retains: 0);
+          putContent(p, VfsText(''));
         },
       );
     }
@@ -231,7 +255,7 @@ OsCallHandler memoryMountedOsHandler({
 
     final rawPath = args.firstOrNull;
     if (rawPath is! String) return notMine(op, args, kwargs);
-    final path = _normalizePath(rawPath);
+    final path = normalizeVfsPath(rawPath);
     final mount = _findMount(path, normalizedMounts);
     if (mount == null) {
       // FB-11 P5. A QUERY about a path is not an ACCESS of it. CPython
@@ -297,7 +321,13 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'TypeError',
           );
         }
-        _enforceLimit(mount, path, utf8.encode(value).length);
+        final wroteText = utf8.encode(value).length;
+        accountant.recordWrite(
+          mount,
+          path,
+          wrote: wroteText,
+          retains: wroteText,
+        );
         putContent(path, VfsText(value));
 
         return _codepointCount(value);
@@ -314,7 +344,12 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'TypeError',
           );
         }
-        _enforceLimit(mount, path, bytes.length);
+        accountant.recordWrite(
+          mount,
+          path,
+          wrote: bytes.length,
+          retains: bytes.length,
+        );
         putContent(path, VfsBytes(Uint8List.fromList(bytes)));
 
         return bytes.length;
@@ -328,13 +363,20 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'TypeError',
           );
         }
-        _enforceLimit(mount, path, utf8.encode(value).length);
         refuseDirectory(path);
         final existing = vfs.fileAt(path);
         final head = existing == null
             ? ''
             : _decodeUtf8(existing.content.bytes);
-        putContent(path, VfsText('$head$value'));
+        final combined = '$head$value';
+        // An append WROTE only the new bytes but RETAINS the whole file.
+        accountant.recordWrite(
+          mount,
+          path,
+          wrote: utf8.encode(value).length,
+          retains: utf8.encode(combined).length,
+        );
+        putContent(path, VfsText(combined));
 
         return _codepointCount(value);
 
@@ -350,13 +392,16 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'TypeError',
           );
         }
-        _enforceLimit(mount, path, bytes.length);
         refuseDirectory(path);
         final prior = vfs.fileAt(path);
-        putContent(
+        final joined = Uint8List.fromList([...?prior?.content.bytes, ...bytes]);
+        accountant.recordWrite(
+          mount,
           path,
-          VfsBytes(Uint8List.fromList([...?prior?.content.bytes, ...bytes])),
+          wrote: bytes.length,
+          retains: joined.length,
         );
+        putContent(path, VfsBytes(joined));
 
         return bytes.length;
 
@@ -389,6 +434,7 @@ OsCallHandler memoryMountedOsHandler({
         // one that carries a message worth reading.
         requireFile(path);
         vfs.remove(path);
+        accountant.recordRemove(mount, path);
 
         return null;
 
@@ -460,8 +506,9 @@ OsCallHandler memoryMountedOsHandler({
               pythonExceptionType: 'FileNotFoundError',
             );
           }
-          _mkdirParents(vfs, path);
+          _mkdirParents(vfs, path, accountant, mount);
         }
+        accountant.recordMkdir(mount, path);
         vfs.mkdir(path);
 
         return null;
@@ -484,7 +531,10 @@ OsCallHandler memoryMountedOsHandler({
             // An empty directory is now a real, removable node — including a
             // mount root, which the flat model had to exempt because it could
             // not tell one from an absent path.
-            if (!_isMountRoot(path, normalizedMounts)) vfs.remove(path);
+            if (!_isMountRoot(path, normalizedMounts)) {
+              vfs.remove(path);
+              accountant.recordRemove(mount, path);
+            }
 
             return null;
           case null:
@@ -505,10 +555,39 @@ OsCallHandler memoryMountedOsHandler({
             pythonExceptionType: 'TypeError',
           );
         }
-        final target = _normalizePath(rawTarget);
+        final target = normalizeVfsPath(rawTarget);
         final targetMount = _findMount(target, normalizedMounts);
         if (targetMount == null) {
-          return notMine(op, [target], kwargs);
+          // FB-11 P5 again, and it was never carried through to here. A TARGET
+          // outside every mount used to decline, which with no fallthrough
+          // surfaced as `PermissionError: Permission denied: '<target>'` — the
+          // exact secret the source path at :237-264 was changed to stop
+          // telling. Sandboxed code could distinguish "outside my mounts" from
+          // "fine" by which exception came back.
+          //
+          // Upstream does not pin this case: `route_call` propagates `None` for
+          // an unmounted dst (monty-fs/src/mount_table.rs:125) and its own
+          // security test accepts either outcome outright —
+          // `None => {} // Also acceptable — dst doesn't match any mount.`
+          // (monty-fs/tests/fs_security.rs:1078). So this is our call, and our
+          // own stated reasoning already answers it.
+          //
+          // FileNotFoundError naming the target also makes an out-of-mount
+          // target indistinguishable from one whose parent is simply missing,
+          // which `requireParentDir` already reports with this same message.
+          if (fallthrough == null) {
+            throw OsCallException(
+              "[Errno 2] No such file or directory: '$target'",
+              pythonExceptionType: 'FileNotFoundError',
+            );
+          }
+
+          // `args`, not `[target]`. Declining used to rewrite the call to a
+          // single argument, so a fallthrough handler received `Path.rename`
+          // with its source dropped — and upstream's own `on_no_handler` names
+          // the SOURCE for a rename (monty-types/src/os.rs:241,
+          // `Self::Rename(a) => Some(a.src.as_str())`), never the target.
+          return notMine(op, args, kwargs);
         }
         _requireWritable(targetMount, target);
         // CPython's rename is four errors and one SILENT OVERWRITE,
@@ -554,7 +633,11 @@ OsCallHandler memoryMountedOsHandler({
             // Everything left over is a move: onto nothing, onto a file it
             // replaces, or onto an empty directory it takes the place of.
             requireParentDir(target);
+            // A rename onto an existing file destroys it, so release the
+            // target's charge before the source takes its key.
+            accountant.recordRemove(targetMount, target);
             vfs.move(path, target);
+            accountant.recordMove(mount, path, targetMount, target);
 
             return null;
         }
@@ -562,43 +645,6 @@ OsCallHandler memoryMountedOsHandler({
 
     return notMine(op, args, kwargs);
   };
-}
-
-/// Collapses `.`, `..` and empty segments, CLAMPING at the root.
-///
-/// Deliberately hand-rolled rather than `package:path`'s `p.posix.normalize`,
-/// which is a correct POSIX normaliser and therefore the wrong tool here.
-/// Measured, on the cases that matter:
-///
-///     input                       p.posix.normalize   this
-///     /mnt/../../../etc/passwd    /etc/passwd         /etc/passwd
-///     ../escape.txt               ../escape.txt       /escape.txt
-///     '' (empty)                  .                   /
-///
-/// This is a clamp, not a normalisation: every path is treated as absolute and
-/// `..` can never survive, so no input can produce a result that is not rooted
-/// before `_findMount` sees it. `p.posix.normalize` preserves a leading `..`
-/// because that is what POSIX means, and it would hand a relative string to
-/// the mount check.
-///
-/// (Dart has no first-class `Path` type to lean on — `package:path` is
-/// functions over `String` by design, and `MontyPath` is a wire value, not a
-/// path library.)
-String _normalizePath(String path) {
-  if (path.isEmpty) return '/';
-  final isAbs = path.startsWith('/');
-  final segments = <String>[];
-  for (final part in path.split('/')) {
-    if (part.isEmpty || part == '.') continue;
-    if (part == '..') {
-      if (segments.isNotEmpty) segments.removeLast();
-      continue;
-    }
-    segments.add(part);
-  }
-  final joined = segments.join('/');
-
-  return isAbs ? '/$joined' : joined;
 }
 
 MountDir? _findMount(String normalized, List<MountDir> mounts) {
@@ -636,16 +682,6 @@ void _requireWritable(MountDir mount, String path) {
   }
 }
 
-void _enforceLimit(MountDir mount, String path, int bytes) {
-  final limit = mount.writeBytesLimit;
-  if (limit != null && bytes > limit) {
-    throw OsCallException(
-      'Write exceeds mount limit ($bytes > $limit bytes): $path',
-      pythonExceptionType: 'OSError',
-    );
-  }
-}
-
 /// Creates the missing directories above [path], for `mkdir(parents=True)`.
 ///
 /// A FILE in the way stops it: `mkdir -p /mnt/hello.txt/sub` cannot succeed
@@ -653,7 +689,12 @@ void _enforceLimit(MountDir mount, String path, int bytes) {
 /// rather than the `StateError` the tree throws when asked to insert under a
 /// non-directory. That StateError is a bug report for us, not an answer for
 /// Python.
-void _mkdirParents(VfsTree vfs, String path) {
+void _mkdirParents(
+  VfsTree vfs,
+  String path,
+  VfsAccountant accountant,
+  MountDir mount,
+) {
   final components = VfsTree.splitPath(path);
   final walked = StringBuffer();
   for (final component in components.sublist(0, components.length - 1)) {
@@ -668,6 +709,11 @@ void _mkdirParents(VfsTree vfs, String path) {
       case VfsDir():
         continue;
       case null:
+        // Charged BEFORE the mkdir, so a budget refusal leaves the tree as it
+        // was. `parents: true` is inherently partial on failure anyway —
+        // upstream tolerates that (os_access.py:988-995) — but a node we
+        // refused to charge must never exist.
+        accountant.recordMkdir(mount, soFar);
         vfs.mkdir(soFar);
     }
   }
