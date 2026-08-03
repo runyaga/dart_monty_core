@@ -9,6 +9,137 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **A path outside every mount is reported as absent, not denied.**
+  `memoryMountedOsHandler` raised `PermissionError` for anything it does not
+  mount, which made `Path('/nonexistent').exists()` unusable.
+
+  - `exists`, `is_file`, `is_dir`, `is_symlink` return `false`.
+  - Every other operation raises
+    `FileNotFoundError: [Errno 2] No such file or directory: '<path>'`.
+
+  The second half is the part to notice if you relied on the old wording. It
+  is deliberate: reporting `exists() == False` and `PermissionError` about the
+  same path contradicts itself, and `Permission denied` leaks more — it
+  confirms the path is worth denying. A configured `fallthrough` still gets
+  first refusal, and a handler that *declines* with
+  `OsCallNotHandledException` is unaffected: it still gets upstream's
+  `on_no_handler` wording.
+
+- **CPython path semantics: name length, codepoint counts, `resolve` returns a
+  Path.** With these, both `mount_fs__ops.py` and `mount_fs__errors.py` pass.
+
+  - Paths with a component over **255 bytes**, or a total over **4096 bytes**,
+    raise `OSError: [Errno 36] File name too long: '<path>'` from
+    read/write/append/stat/mkdir/open. `exists`, `is_file`, `is_dir` and
+    `is_symlink` swallow it and return `false`, as CPython does. Bytes, not
+    characters.
+  - `write_text` and `append_text` return **codepoints**. They returned Dart's
+    `String.length`, i.e. UTF-16 code units, so a single emoji reported 2.
+  - `resolve` and `absolute` return a `MontyPath`. They returned a bare
+    `String`, so Python received a `str` and `.name` raised `AttributeError`.
+  - `mkdir(parents=True)` through a file raises `NotADirectoryError` rather
+    than surfacing an internal `StateError` as `RuntimeError: Bad state:`.
+
+- **`rename` follows CPython's full matrix.** It had two behaviours; there are
+  six, and which one applies depends on what is at *both* ends.
+
+  | source | destination | result |
+  | --- | --- | --- |
+  | missing | — | `FileNotFoundError`, naming the source |
+  | file | missing | move |
+  | file | file | **overwrites silently** (POSIX) |
+  | file | directory | `IsADirectoryError` `[Errno 21]` |
+  | directory | file | `NotADirectoryError` `[Errno 20]` |
+  | directory | non-empty directory | `OSError` `[Errno 39]` |
+  | directory | empty directory | move, replacing it |
+
+  Previously any existing destination was refused with
+  `Rename target already exists: <path>`, which was neither CPython's wording
+  nor its behaviour.
+
+- **`iterdir`, `unlink` and `mkdir` answer directory questions honestly.**
+
+  - `iterdir` of a **missing** path raised nothing and returned an empty list,
+    which is indistinguishable from a successful listing of an empty
+    directory. It now raises `FileNotFoundError`. Of a **file**, it now raises
+    `NotADirectoryError: [Errno 20] Not a directory: '<path>'`.
+  - `unlink` of a **directory** raised `FileNotFoundError`, naming a path that
+    exists. It now raises `IsADirectoryError`.
+  - `mkdir` on an existing **directory** said `Directory exists: <path>`. It
+    now says `[Errno 17] File exists: '<path>'` — CPython uses one message for
+    both the file and directory cases.
+
+- **Writing to a directory raises instead of destroying it.** This was silent
+  data loss: `write_text` on a directory path succeeded, replacing the
+  directory node with a file and discarding everything beneath it.
+
+      files: [MontyMemoryFile('/m/d/keep.txt', 'precious')]
+      Path.write_text('/m/d', 'clobber')   // returned 7
+      Path.read_text('/m/d/keep.txt')      // FileNotFoundError
+
+  `read_text`, `read_bytes`, `write_text`, `write_bytes`, `append_text`,
+  `append_bytes` and `open(dir, 'w')` now all raise
+  `IsADirectoryError: [Errno 21] Is a directory: '<path>'`. Reads of a
+  directory previously reported `FileNotFoundError`, which named an existing
+  path as missing.
+
+- **Directories are real, and that changes two things consumers can see.**
+  The mount's store is a tree (`VfsNode` = `VfsDir` | `VfsFile`) rather than a
+  flat path map, so an empty directory exists: `mkdir` creates one and
+  `Path.exists` reports `true` before anything is written into it. Previously
+  it reported `false` until a child appeared.
+
+  - `VfsFile` moved from `vfs_file.dart` to `vfs_node.dart` and gained a
+    `path` **setter** — renaming a directory rewrites the path of every file
+    beneath it, so a caller holding one sees the new path. `MontyMemoryFile`
+    is now in `monty_memory_file.dart`. Both are still exported from
+    `package:dart_monty_core/dart_monty_core.dart`, so only direct
+    `src/`-path imports break.
+  - `resolveOpenCall`'s `exists` callback now means **"a node is here"**, not
+    "a file is here", and `isDirectory` is checked independently rather than
+    only when `exists` is false. A custom handler passing a file-only
+    `exists` still behaves correctly; one that relied on the old nesting to
+    report `IsADirectoryError` must supply `isDirectory`.
+
+  Writing a file whose parent directory does not exist raises
+  `FileNotFoundError` again. That check was added and reverted earlier in this
+  same unreleased cycle because `mkdir` could not create the parent it
+  demanded; it can now.
+
+- **`memoryMountedOsHandler` takes `files:`, not a `vfs:` map.** The parameter
+  `vfs: Map<String, String>` is replaced by `files: List<VfsFile>`, matching
+  upstream's `OSAccess([MemoryFile(...)])`. There is no compatibility shim.
+
+      // before
+      final vfs = <String, String>{'/data/in.txt': 'hello'};
+      final h = memoryMountedOsHandler(mounts: [...], vfs: vfs);
+      ...
+      print(vfs['/data/out.txt']);
+
+      // after
+      final out = MontyMemoryFile('/data/out.txt', '');
+      final h = memoryMountedOsHandler(
+        mounts: [...],
+        files: [MontyMemoryFile('/data/in.txt', 'hello'), out],
+      );
+      ...
+      print(out.content.text);
+
+  A write updates the `VfsFile` you passed in rather than replacing it, so the
+  reference you hold stays live — that is upstream's documented contract for
+  `MemoryFile`. Reading back a file you did NOT seed is not supported, by
+  design and in upstream too; assert through `Path.exists` / `Path.read_text`
+  instead.
+
+  Two behaviour changes come with it, both fixes:
+
+  - **Binary content survives a round trip.** The old store held a `String` and
+    decoded at write time with `allowMalformed: true`, so `write_bytes([0xFF])`
+    stored U+FFFD and `read_bytes` returned three bytes, not one. Content is now
+    a sealed `VfsText | VfsBytes` and bytes are stored verbatim.
+  - **`read_text` can now raise `UnicodeDecodeError`.** It previously could not,
+    even in principle, because invalid bytes were destroyed before any read.
+
 - **A write no longer requires its parent directory to exist — added and
   reverted within this unreleased cycle.** Relative to 0.18 nothing changed, so
   there is no migration; it is recorded because the behaviour moved twice inside
@@ -451,6 +582,33 @@ small consumer-facing surface.
   raise `LookupError` (#523).** Some names that used to fail now work, and the
   error type for an unknown codec is now consistent. Code that branched on the
   failure of a specific encoding needs rechecking.
+
+- **`ReplPlatform` now rejects per-call `limits` and `scriptName`.** Both are
+  part of the `MontyPlatform` signature and both were accepted and **silently
+  dropped**, because on a REPL each is session-scoped: the resource tracker is
+  chosen when the Rust handle is created and cannot be swapped, and the script
+  name is baked in at `monty_repl_create`. That is the FB-1 / core#124 defect
+  shape — a caller who asked for a memory cap got an unbounded session and no
+  signal. `run(code, limits: …)` and `start(code, scriptName: …)` now throw
+  `ArgumentError` naming the constructor that does honour the argument:
+
+  ```dart
+  // was: silently unbounded
+  ReplPlatform(repl: MontyRepl()).run(code, limits: MontyLimits(stackDepth: 10));
+  // now:
+  ReplPlatform(repl: MontyRepl(limits: MontyLimits(stackDepth: 10))).run(code);
+  ```
+
+  Note what this does **not** fix: a bare `MontyRepl()` is still UNBOUNDED,
+  while every one-shot run is bounded at 256 MB / depth 1000
+  (`native/src/handle.rs`'s `default_limits()`). Measured on this release:
+  `recurse(2000)` returns `2000` on a bare REPL session and raises
+  `RecursionError` on a one-shot run. Pass `MontyRepl(limits: …)` explicitly.
+
+  `ReplPlatform.resumeNameLookup` / `resumeNameLookupUndefined` now throw
+  `UnimplementedError` where they threw `UnsupportedError`. Harnesses that drive
+  a `MontyPlatform` catch `UnimplementedError` to record a capability gap as a
+  skip; an `UnsupportedError` went through that catch and aborted the run.
 
 ### Added — capabilities 0.19 brings that this package now passes through
 

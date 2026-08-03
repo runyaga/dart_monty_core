@@ -64,13 +64,14 @@ a + b
   await repl.dispose();
 
   // ── 5. VFS — sandboxed in-memory filesystem ──────────────────────────────────
-  // Pre-populate a Dart Map, mount it at /data, then let Python read and
-  // write through pathlib.Path. The backing Map is ordinary Dart — inspect
-  // or update it from either side with no serialisation needed.
-  final vfs = <String, String>{'/data/input.txt': 'hello from Dart'};
+  // Hand the mount some files, mount them at /data, then let Python read and
+  // write through pathlib.Path. Writes update the very objects you passed in,
+  // so you inspect the result from Dart with no serialisation.
+  final input = MontyMemoryFile('/data/input.txt', 'hello from Dart');
+  final output = MontyMemoryFile('/data/output.txt', '');
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: vfs,
+    files: [input, output],
   );
 
   await Monty('''
@@ -79,5 +80,5 @@ text = Path("/data/input.txt").read_text()
 Path("/data/output.txt").write_text(text.upper())
 ''').run(osHandler: handler);
 
-  print(vfs['/data/output.txt']); // HELLO FROM DART
+  print(output.content.text); // HELLO FROM DART
 }

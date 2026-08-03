@@ -208,20 +208,38 @@ Future<DispatchOutcome> runCallExternalFixture(
       case MontyOsCall(:final operationName, :final args, :final kwargs):
         // Answer it rather than skipping: the corpus's os/pathlib/datetime
         // fixtures are exactly the host-mediated behaviour worth demonstrating.
+        //
+        // TWO try blocks, deliberately. The resume calls have to sit outside
+        // the catch that produced the error: `resumeWithException` throws
+        // MontyScriptError when Python does not catch the exception, and a
+        // throw from inside a catch clause is NOT covered by that same try.
+        // With them nested, a fixture whose whole point is an UNCAUGHT OS
+        // error — pathlib__os_read_error.py — blew out of the harness with a
+        // stack trace instead of being compared against its expected
+        // traceback. It only stayed hidden because that fixture was skipped.
+        // This is the shape wasm_runner.dart already uses.
+        Object? osRet;
+        OsCallException? osErr;
         try {
-          final ret = await osHandler(
+          osRet = await osHandler(
             operationName,
             args.map((v) => v.dartValue).toList(),
             kwargs?.map((k, v) => MapEntry(k, v.dartValue)),
           );
-          progress = await platform.resume(ret);
         } on OsCallException catch (e) {
-          progress = e.pythonExceptionType != null
-              ? await platform.resumeWithException(
-                  e.pythonExceptionType!,
-                  e.message,
-                )
-              : await platform.resumeWithError(e.message);
+          osErr = e;
+        }
+        try {
+          if (osErr == null) {
+            progress = await platform.resume(osRet);
+          } else if (osErr.pythonExceptionType case final excType?) {
+            progress = await platform.resumeWithException(
+              excType,
+              osErr.message,
+            );
+          } else {
+            progress = await platform.resumeWithError(osErr.message);
+          }
         } on MontyScriptError catch (e) {
           return DispatchOutcome(excType: e.excType, exception: e.exception);
         }

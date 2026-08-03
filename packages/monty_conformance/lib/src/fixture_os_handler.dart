@@ -12,12 +12,71 @@ const conformanceEnv = <String, String>{
 };
 
 /// The filesystem the non-`# mount-fs` path fixtures expect under `/virtual`.
-const conformanceVfs = <String, String>{
-  '/virtual/file.txt': 'hello from virtual fs',
-  '/virtual/empty.txt': '',
-  '/virtual/subdir/nested.txt': 'nested content',
-  '/virtual/subdir/deep/file.txt': 'deep',
-};
+///
+/// A function, not a constant: files are mutable, so every handler must get
+/// its own set or a write in one fixture would be visible to the next.
+///
+/// **Every entry is declared by `pathlib__os.py`, and the content is not
+/// arbitrary.** That fixture asserts, among others:
+///
+///     Path('/virtual/file.txt').read_text() == 'hello world\n'
+///     Path('/virtual/file.txt').stat().st_size == 12
+///     Path('/virtual/data.bin').read_bytes() == b'\x00\x01\x02\x03'
+///     len(list(Path('/virtual').iterdir())) == 5
+///
+/// `link.txt` exists to make that count five — it is otherwise unread, and
+/// deleting it as dead weight would break the listing assertion.
+///
+/// This seed previously held `'hello from virtual fs'` in `file.txt` and
+/// omitted `data.bin` and `link.txt`, a string that appears in NO fixture. It
+/// did not matter only because `pathlib__os.py` was skipped on FFI for an
+/// unrelated reason (FB-11 P5), so nothing checked it. The WASM runner's own
+/// copy of the store had the right values all along, which is how the two
+/// drifted apart.
+List<VfsFile> conformanceVfs() => [
+  MontyMemoryFile('/virtual/file.txt', 'hello world\n'),
+  MontyMemoryFile('/virtual/empty.txt', ''),
+  MontyMemoryFile('/virtual/data.bin', const [0, 1, 2, 3]),
+  MontyMemoryFile('/virtual/link.txt', 'link'),
+  MontyMemoryFile('/virtual/subdir/nested.txt', 'nested content'),
+  MontyMemoryFile('/virtual/subdir/deep/file.txt', 'deep'),
+];
+
+/// The filesystem the `# mount-fs` fixtures expect under `/mnt`.
+///
+/// A mirror of upstream's `create_mount_fs_tempdir`
+/// (monty-datatest/src/main.rs:371-382), which is what those fixtures are
+/// written against — `hello.txt` is 12 bytes, `readonly.txt` is 16, and
+/// `mount_fs__ops.py` asserts both through `stat().st_size`.
+///
+/// **`data.bin` is BYTES, not a string.** Upstream writes it as
+/// `b"\x00\x01\x02\x03"`. `tool/check_vfs_regression.sh` used to seed the Dart
+/// string `'\x00\x01\x02\x03'` instead, which happens to encode to the same
+/// four bytes only because U+0000..U+0003 are single-byte in UTF-8 — the two
+/// forms diverge the moment a byte above 0x7F appears, and the fixture asserts
+/// `read_bytes()`. Naming the bytes is both correct and self-documenting.
+///
+/// A function, not a constant, for the same reason as [conformanceVfs]: files
+/// are mutable, so every handler needs its own set.
+List<VfsFile> conformanceMountFsVfs() => [
+  MontyMemoryFile('/mnt/hello.txt', 'hello world\n'),
+  MontyMemoryFile('/mnt/empty.txt', ''),
+  MontyMemoryFile('/mnt/data.bin', const [0, 1, 2, 3]),
+  MontyMemoryFile('/mnt/readonly.txt', 'readonly content'),
+  MontyMemoryFile('/mnt/subdir/nested.txt', 'nested content'),
+  MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
+];
+
+/// An [OsCallHandler] for the `# mount-fs` fixtures, serving [
+/// conformanceMountFsVfs] under a `/mnt` mount.
+///
+/// Filesystem only — those fixtures ask nothing of the clock or the
+/// environment, and answering questions they do not pose would be inventing
+/// contract. The non-filesystem ops live in [conformanceOsHandler].
+OsCallHandler conformanceMountFsOsHandler() => memoryMountedOsHandler(
+  mounts: const [MountDir(virtualPath: '/mnt')],
+  files: conformanceMountFsVfs(),
+);
 
 /// The instant `datetime__core.py` is written against: 1700000000 UTC, i.e.
 /// 2023-11-14 22:13:20 UTC. The virtual local zone is UTC+02:00, so a NAIVE
@@ -44,7 +103,7 @@ const _fixtureEpochSeconds = 1700000000;
 OsCallHandler conformanceOsHandler() {
   final fs = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/virtual')],
-    vfs: Map.of(conformanceVfs),
+    files: conformanceVfs(),
   );
 
   return (operation, args, kwargs) async {

@@ -149,6 +149,7 @@ dart test \
   test/integration/wasm_float_roundtrip_test.dart \
   test/integration/wasm_multi_repl_test.dart \
   test/integration/wasm_print_callback_test.dart \
+  test/integration/wasm_repl_corpus_test.dart \
   test/integration/wasm_repl_extfns_lifecycle_test.dart \
   test/integration/wasm_repl_futures_test.dart \
   test/integration/wasm_repl_snapshot_lifecycle_test.dart \

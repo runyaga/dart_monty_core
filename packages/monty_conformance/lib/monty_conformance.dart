@@ -22,4 +22,5 @@ export 'src/fixture_externals.dart';
 export 'src/fixture_failure.dart';
 export 'src/fixture_os_handler.dart';
 export 'src/fixture_parser.dart';
+export 'src/fixture_runner.dart';
 export 'src/unsupported_wasm_fixtures.dart';

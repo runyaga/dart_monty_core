@@ -32,6 +32,13 @@ mkdir -p "$OUT"; : > "$OUT/SUMMARY.txt"
 echo "core $(git rev-parse --short HEAD) on $(git branch --show-current)" >> "$OUT/SUMMARY.txt"
 echo "monty pin: $(grep -m1 '^monty = ' native/Cargo.toml)" >> "$OUT/SUMMARY.txt"
 echo "" >> "$OUT/SUMMARY.txt"
+
+# Snapshot the working tree so the read-only promise in the header can be
+# CHECKED rather than merely asserted. Every past violation of that promise was
+# a step that wrote a build artefact and was believed not to — the belief is
+# what failed, so stop relying on it. Compared again at the foot of this file.
+TREE_BEFORE="$(git status --porcelain)"
+
 s(){ n="$1"; shift; t=$SECONDS
   if "$@" >"$OUT/$n.log" 2>&1; then echo "PASS  $n  ($((SECONDS-t))s)"; else echo "FAIL  $n  ($((SECONDS-t))s)"; fi >> "$OUT/SUMMARY.txt"; }
 ns(){ n="$1"; shift; t=$SECONDS
@@ -97,23 +104,60 @@ s  examples      dart test test/integration/example_smoke_test.dart -p vm --run-
 # being committed. It cost us a red CI once already (see the note at the foot of
 # this file). With it, the gate exercises the committed asset — the same thing
 # CI and every web consumer load — and touches nothing.
-s  wasm_full     bash tool/test_wasm.sh --skip-build
-# wasm_full drives the FIXTURE CORPUS through a bespoke fixtures.html harness.
-# It does NOT run the package:test suites on chrome — those are a different
-# mechanism (`dart test -p chrome --tags=wasm`, via tool/test_wasm_unit.sh) and
-# were absent from this matrix entirely, so the chrome half of the standing
-# "FFI and WASM both" rule was enforced only by CI. Added 2026-07-30 after two
-# new 0.19 suites shipped with FFI runners and no WASM counterpart.
+#
+# RENAMED from `wasm_full` on 2026-08-02. That name claimed the widest possible
+# coverage ("full") for the NARROWER of the two web compilers, and the gap below
+# hid behind it for as long as it existed: everything here runs on the WASM
+# engine, so "wasm" in a step name never distinguished anything, and nobody
+# reading a green `wasm_full` had a reason to ask which Dart target it used.
+# The pair is now named after the axis that actually varies.
+s  corpus_js     bash tool/test_wasm.sh --skip-build
+# The SAME 531 fixtures, the same WASM engine, compiled with dart2wasm instead.
+# This step is new (2026-08-02) and closes the last CI-only gap: CI has run the
+# dart2wasm corpus since ci.yaml:583/:669, the gate never did, so every local
+# "GATE GREEN" was dart2js-only on the corpus and a dart2wasm-only regression
+# could only be caught after pushing. The compilers are not interchangeable —
+# dart2js has one number type, dart2wasm has real doubles — which is the same
+# reason `unit_web` runs both, and is exactly the class of bug that made
+# `unit_web` necessary.
+#
+# It does NOT rebuild anything in the tree: the dart2wasm output is staged in a
+# temp dir, because `dart compile wasm -o test/integration/web/wasm_runner.wasm`
+# (what CI runs) writes three TRACKED files and the gate is read-only.
+s  corpus_wasm   bash tool/test_wasm.sh --skip-build --dart2wasm
+# The two steps above run the SHIPPED engine, which has test-hooks off, so they
+# skip eight fixtures: five with__cm_* (they need monty's synthetic `_test_cm()`)
+# and three recursion ones (they need `sys.setrecursionlimit`). Measured on
+# dart2wasm: 520 passed / 11 skipped without the feature, 528 / 3 with it.
+# Those eight are therefore covered by NO step above, on either compiler — the
+# only thing that has ever run them is tool/test_cm_wasm.sh, which the gate did
+# not call, and which until now only had a dart2js path. So the eight had never
+# executed on dart2wasm anywhere, locally or in CI.
+#
+# Both variants are cheap here because they share one cargo cache: the pair adds
+# ~30s warm. Cold (or after native/src changes) the first of them pays a
+# test-hooks rebuild.
+#
+# Neither writes to the tree. The engine they build has test-hooks ON, which is
+# NEVER shipped, so test_cm_wasm.sh stages it in a temp dir and builds it in its
+# own target dir (native/target/test-hooks) — otherwise it would sit at exactly
+# the path tool/test_wasm.sh copies into lib/assets/ without --skip-build, and
+# the next reader would load a sandbox-escaping engine believing it was ours.
+s  corpus_cm_js  bash tool/test_cm_wasm.sh
+s  corpus_cm_w   bash tool/test_cm_wasm.sh --dart2wasm
+# Neither corpus step runs the package:test suites on chrome — those are a
+# different mechanism (`dart test -p chrome --tags=wasm`, via
+# tool/test_wasm_unit.sh) and were absent from this matrix entirely, so the
+# chrome half of the standing "FFI and WASM both" rule was enforced only by CI.
+# Added 2026-07-30 after two new 0.19 suites shipped with FFI runners and no
+# WASM counterpart.
 s  wasm_unit     bash tool/test_wasm_unit.sh
-# Same suite, same WASM ENGINE, different DART compile target. Two things get
-# called "wasm" here: the Rust engine (driven by every test above regardless of
-# compiler) and the Dart target. Only this step covers the second. CI already
-# ran dart2wasm for the fixture corpus; the gate never did, so every local
-# "green" was dart2js-only on the web side.
+# Same suite, same WASM ENGINE, different DART compile target — the unit-test
+# counterpart of corpus_js/corpus_wasm above.
 s  wasm_unit_w   bash tool/test_wasm_unit.sh --dart2wasm
-# Separate gate from wasm_full on purpose: different artefact (the assembled
-# Pages site vs the test harness) and different failure modes (stale asset
-# copies, COOP/COEP, relative paths under /repl/).
+# Separate gate from the corpus steps on purpose: different artefact (the
+# assembled Pages site vs the test harness) and different failure modes (stale
+# asset copies, COOP/COEP, relative paths under /repl/).
 s  pages_render  bash tool/check_pages.sh
 
 # -----------------------------------------------------------------------------
@@ -144,6 +188,32 @@ if ! git diff --quiet -- lib/assets/ 2>/dev/null; then
   echo "" >> "$OUT/SUMMARY.txt"
   echo "note: lib/assets/ is dirty and was NOT touched — the gate tested exactly" >> "$OUT/SUMMARY.txt"
   echo "      these bytes, so commit them with this change or CI will load others." >> "$OUT/SUMMARY.txt"
+fi
+
+# The read-only promise, enforced. This compares the tree to the snapshot taken
+# before step 1: it flags what THIS RUN changed, not what was already dirty when
+# you started, so it stays quiet on a work-in-progress tree and speaks only when
+# the gate itself wrote something.
+#
+# The trap it exists for: `dart compile wasm -o test/integration/web/wasm_runner.wasm`
+# — the command CI runs and the one wasm_runner_wasm.dart's header tells you to
+# run — overwrites three TRACKED files. Add the dart2wasm corpus the obvious way
+# and every gate run leaves a meaningless diff behind; worse, the same shape of
+# mistake with a test-hooks build (tool/test_cm_wasm.sh) would leave a dylib
+# that is NOT the shipped one for the next `dart test` to load silently.
+# corpus_wasm stages into a temp dir for exactly this reason. This check is what
+# notices if some future step forgets.
+TREE_AFTER="$(git status --porcelain)"
+if [ "$TREE_BEFORE" != "$TREE_AFTER" ]; then
+  {
+    echo ""
+    echo "FAIL  read_only_tree  (the gate MODIFIED the working tree)"
+    echo "      The gate must validate the tree as it stands. Paths that changed"
+    echo "      during this run:"
+    diff <(printf '%s\n' "$TREE_BEFORE") <(printf '%s\n' "$TREE_AFTER") \
+      | grep -E '^[<>]' | sed 's/^/        /'
+    echo "      Fix the step that wrote them — stage build output outside the repo."
+  } >> "$OUT/SUMMARY.txt"
 fi
 
 echo "" >> "$OUT/SUMMARY.txt"; echo "done $(date -u +%FT%TZ)" >> "$OUT/SUMMARY.txt"

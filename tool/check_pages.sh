@@ -40,12 +40,20 @@ if [ "$SKIP_BUILD" = "0" ]; then
      "$WEB/@pydantic/monty-wasm32-wasi/" 2>/dev/null \
      || echo "  note: wasi-worker-browser.mjs not staged (npm not installed?)"
 
-  echo "--- dart2js ---"
-  dart compile js "$WEB/repl_demo.dart" -o "$WEB/repl_demo.dart.js" --no-source-maps \
-    >/dev/null || fail "dart2js build"
-  echo "--- dart2wasm ---"
-  dart compile wasm "$WEB/repl_demo.dart" -o "$WEB/repl_demo.wasm" \
-    >/dev/null || fail "dart2wasm build"
+  # BOTH entry points, both compilers. feature_matrix was omitted here, and
+  # `packages/dart_monty_web/**` is excluded in analysis_options.yaml, so
+  # nothing in the gate looked at it: it sat broken — `files:` still being
+  # handed the old `Map<String, String>` seed — through a green 22/22 gate.
+  # A file no tool compiles is a file with no coverage, whatever the summary
+  # says.
+  for entry in repl_demo feature_matrix; do
+    echo "--- dart2js: $entry ---"
+    dart compile js "$WEB/$entry.dart" -o "$WEB/$entry.dart.js" --no-source-maps \
+      >/dev/null || fail "dart2js build ($entry)"
+    echo "--- dart2wasm: $entry ---"
+    dart compile wasm "$WEB/$entry.dart" -o "$WEB/$entry.wasm" \
+      >/dev/null || fail "dart2wasm build ($entry)"
+  done
 
   echo "--- Assembling site/ (mirrors deploy-pages.yml) ---"
   rm -rf site 2>/dev/null; mkdir -p site/repl

@@ -728,6 +728,106 @@ jobs:
         run: bash tool/test_wasm_unit.sh --dart2wasm
 
   # ---------------------------------------------------------------------------
+  # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
+  #
+  # These need an engine built `--features test-hooks`, which is NEVER shipped
+  # (native/Cargo.toml:36-38). Without it the corpus reports 520/531 and skips
+  # them; with it, 528/531. Until this job existed CI ran NEITHER variant, so
+  # those eight were verified only by whoever happened to run tool/gate.sh
+  # locally — and on dart2wasm they had never executed anywhere at all.
+  #
+  # Cost is a ~3 min cargo build for the test-hooks engine, shared by both
+  # steps. That is why this is its own job rather than steps bolted onto
+  # test-wasm: a feature-flag rebuild would evict test-wasm's cache and make
+  # every other WASM job pay for it.
+  # ---------------------------------------------------------------------------
+  test-hooks-corpus:
+    name: test-hooks corpus (dart2js + dart2wasm)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          # Its own cache key. The test-hooks build is a DIFFERENT feature set
+          # and lands in its own CARGO_TARGET_DIR; sharing a key with the
+          # release jobs would thrash both.
+          key: test-hooks
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('js/package.json') }}
+          restore-keys: npm-
+
+      - run: dart pub get
+
+      - name: Install WASI runtime (npm)
+        run: |
+          set -euo pipefail
+          cd js
+          npm install --force
+
+      # Both steps PIN THE RESULT rather than trusting the exit code.
+      # tool/test_cm_wasm.sh:222 does `exit 0` when it cannot find Chrome —
+      # "WARN: Chrome not found" and a green job that ran nothing. ubuntu-latest
+      # ships Chrome today, but a runner image change would turn this job into a
+      # rubber stamp silently, which is the exact failure mode these eight
+      # fixtures already spent months in.
+      #
+      # 528 = 531 total - 3 that stay skipped even with test-hooks
+      # (the upstream xfail, and two with no assertable directive).
+      - name: test-hooks corpus (dart2js)
+        run: |
+          set -euo pipefail
+          bash tool/test_cm_wasm.sh 2>&1 | tee /tmp/cm_js.log
+          grep -q 'FIXTURE_DONE:{"total":531,"passed":528,"failed":0' /tmp/cm_js.log \
+            || { echo "FAIL: dart2js test-hooks corpus did not report 528/531 passing."; \
+                 grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_js.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
+                 exit 1; }
+
+      - name: test-hooks corpus (dart2wasm)
+        # The compile target, not the engine — both steps drive the same
+        # test-hooks WASM engine. This is the only place the dart2wasm twin of
+        # the corpus runner is exercised with test-hooks on.
+        run: |
+          set -euo pipefail
+          bash tool/test_cm_wasm.sh --dart2wasm 2>&1 | tee /tmp/cm_w.log
+          grep -q 'FIXTURE_DONE:{"total":531,"passed":528,"failed":0' /tmp/cm_w.log \
+            || { echo "FAIL: dart2wasm test-hooks corpus did not report 528/531 passing."; \
+                 grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_w.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
+                 exit 1; }
+
+      - name: The tree must be unchanged
+        # test_cm_wasm.sh stages into temp dirs and builds into its own
+        # CARGO_TARGET_DIR precisely so it cannot leave a test-hooks engine
+        # where lib/assets/ is staged from. Assert that, rather than trust it.
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "FAIL: the test-hooks corpus modified the working tree:"
+            git status --porcelain
+            exit 1
+          fi
+          echo "OK: tree clean"
+
+  # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
   # ---------------------------------------------------------------------------
   patch-coverage:
