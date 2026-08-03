@@ -10,7 +10,7 @@ Branch: `feat/vfs-019`.
 
 ```bash
 bash tool/check_vfs_regression.sh   # inner loop, seconds — did I break what worked?
-bash tool/gate.sh                   # commit gate, 22 steps — read EXIT CODE and VERDICT LINE
+bash tool/gate.sh                   # commit gate, 23 steps — read EXIT CODE and VERDICT LINE
 ```
 
 `check_vfs_regression.sh` is *not* a substitute for the gate: it drives the FFI

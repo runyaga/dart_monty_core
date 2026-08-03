@@ -7,7 +7,13 @@
 //   dart compile wasm test/integration/wasm_runner_wasm.dart \
 //     -o test/integration/web/wasm_runner.wasm
 //
-// That is what CI runs — .github/workflows/ci.yaml:583.
+// That is what CI runs — .github/workflows/ci.yaml:583 — and it is fine THERE,
+// on a throwaway checkout. Do not run it verbatim in a working tree: that `-o`
+// overwrites three TRACKED files (wasm_runner.wasm, wasm_runner.mjs and
+// wasm_runner.wasm.map), and the output is not byte-reproducible, so it leaves
+// a dirty tree whose diff means nothing. Locally use
+// `bash tool/test_wasm.sh --skip-build --dart2wasm`, which stages into a temp
+// dir; that is also how the gate's `corpus_wasm` step runs it.
 //
 // Runs every fixture from the compile-time corpus through MontyWasm,
 // prints one JSON line per fixture, then a summary line.
