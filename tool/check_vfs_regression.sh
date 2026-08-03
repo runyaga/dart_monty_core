@@ -30,17 +30,17 @@ trap 'rm -f "$PROBE"' EXIT
 cat > "$PROBE" <<'DART'
 import 'dart:io';
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 
-// Upstream's create_mount_fs_tempdir (monty-datatest/src/main.rs:371-382),
-// which is what the fixtures are written against.
-List<VfsFile> _seed() => [
-  MontyMemoryFile('/mnt/hello.txt', 'hello world\n'),
-  MontyMemoryFile('/mnt/empty.txt', ''),
-  MontyMemoryFile('/mnt/data.bin', '\x00\x01\x02\x03'),
-  MontyMemoryFile('/mnt/readonly.txt', 'readonly content'),
-  MontyMemoryFile('/mnt/subdir/nested.txt', 'nested content'),
-  MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
-];
+// The seed is `conformanceMountFsVfs()` from package:monty_conformance, NOT a
+// copy — the corpus runners answer the same fixtures from the same bytes, and
+// a probe seeded differently from the thing it is guarding proves nothing.
+//
+// This file used to hold its own copy, which wrote `data.bin` as the Dart
+// STRING '\x00\x01\x02\x03' where upstream writes the BYTES b'\x00\x01\x02\x03'.
+// It agreed by luck: U+0000..U+0003 are single-byte in UTF-8. A byte above
+// 0x7F in that fixture would have made the two disagree on read_bytes() and
+// st_size, and only one of them would have been right.
 
 const _mustStayGreen = [
   'open__fs.py',
@@ -60,7 +60,7 @@ Future<String?> _run(String name) async {
   ).run(
     osHandler: memoryMountedOsHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
-      files: _seed(),
+      files: conformanceMountFsVfs(),
     ),
   );
   if (r.error == null) return null;
