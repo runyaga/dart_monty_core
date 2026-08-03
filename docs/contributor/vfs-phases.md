@@ -262,11 +262,15 @@ sides of the change: `mount_fs__ops`, `mount_fs__errors`, `open__fs`,
 `import__os`, `os__environ`, `pathlib__os`, `pathlib__os_read_error`
 (call-external, `/virtual`). The 12 skips are unchanged and none is a
 filesystem fixture.
-- [ ] `bash tool/test_cm_wasm.sh` **and** `bash tool/test_cm_wasm.sh --dart2wasm`
+- [x] `bash tool/test_cm_wasm.sh` **and** `bash tool/test_cm_wasm.sh --dart2wasm`
       still report **528/531, 0 failures, 3 skipped** — that is the equivalence
-      proof. Run both: the dart2js half alone was the proof until 2026-08-03,
-      and the eight test-hooks fixtures had never executed on dart2wasm at all.
-- [ ] regression script green · gate green
+      proof. Confirmed in gate `20260803T042142Z`, both steps, identical.
+      Run both: the dart2js half alone was the proof until 2026-08-03, and
+      the eight test-hooks fixtures had never executed on dart2wasm at all.
+      Both are gate steps now (`corpus_cm_js`, `corpus_cm_w`) AND a CI job
+      (`test-hooks-corpus`), which pins the expected line rather than trusting
+      an exit code — `test_cm_wasm.sh:222` exits 0 when Chrome is missing.
+- [x] regression script green · gate green
 
 ## Phase 5 — FFI local files · STOP, needs review
 
