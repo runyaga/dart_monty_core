@@ -9,6 +9,29 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **Directories are real, and that changes two things consumers can see.**
+  The mount's store is a tree (`VfsNode` = `VfsDir` | `VfsFile`) rather than a
+  flat path map, so an empty directory exists: `mkdir` creates one and
+  `Path.exists` reports `true` before anything is written into it. Previously
+  it reported `false` until a child appeared.
+
+  - `VfsFile` moved from `vfs_file.dart` to `vfs_node.dart` and gained a
+    `path` **setter** — renaming a directory rewrites the path of every file
+    beneath it, so a caller holding one sees the new path. `MontyMemoryFile`
+    is now in `monty_memory_file.dart`. Both are still exported from
+    `package:dart_monty_core/dart_monty_core.dart`, so only direct
+    `src/`-path imports break.
+  - `resolveOpenCall`'s `exists` callback now means **"a node is here"**, not
+    "a file is here", and `isDirectory` is checked independently rather than
+    only when `exists` is false. A custom handler passing a file-only
+    `exists` still behaves correctly; one that relied on the old nesting to
+    report `IsADirectoryError` must supply `isDirectory`.
+
+  Writing a file whose parent directory does not exist raises
+  `FileNotFoundError` again. That check was added and reverted earlier in this
+  same unreleased cycle because `mkdir` could not create the parent it
+  demanded; it can now.
+
 - **`memoryMountedOsHandler` takes `files:`, not a `vfs:` map.** The parameter
   `vfs: Map<String, String>` is replaced by `files: List<VfsFile>`, matching
   upstream's `OSAccess([MemoryFile(...)])`. There is no compatibility shim.
