@@ -29,9 +29,9 @@ small consumer-facing surface.
   `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
   greppable and does not replace that rule.
 
-### Fixed
+### Breaking
 
-- **`open()` with a malformed mode raised nothing and created a file.**
+- **`open()` parses its mode, and rejects a malformed one.**
   `resolveOpenCall` string-compared the mode and treated *everything*
   unrecognised as append: `open(p, 'wxyz')`, `open(p, 'x')` and even
   `open(p, '')` fell through to create-if-missing. It now parses the mode
@@ -50,8 +50,6 @@ small consumer-facing surface.
 
   Found by porting upstream's `test_os_access.py`, whose own test for this is a
   named data-loss regression guard.
-
-### Breaking
 
 - **A path outside every mount is reported as absent, not denied.**
   `memoryMountedOsHandler` raised `PermissionError` for anything it does not
