@@ -150,10 +150,19 @@ it.
 
 ## Phase 2 — directory-aware policy
 
-- [ ] `iterdir` → `FileNotFoundError` when missing, `NotADirectoryError` on a file
-- [ ] `rmdir` distinguishes absent / empty / non-empty
-- [ ] `unlink` of a directory → `IsADirectoryError`
-- [ ] regression script green · gate green
+- [x] `iterdir` → `FileNotFoundError` when missing, `NotADirectoryError` on a
+      file. It previously returned an EMPTY LIST for a missing path, which is
+      the worst of the three answers: indistinguishable from a successful
+      listing of an empty directory.
+- [x] `rmdir` distinguishes absent / empty / non-empty
+- [x] `unlink` of a directory → `IsADirectoryError`
+- [x] `mkdir` on an existing directory says `[Errno 17] File exists: '<path>'`.
+      CPython uses ONE message for "a file is there" and "a directory is
+      there"; we had invented `Directory exists: <path>` for the second.
+- [x] regression script green · gate green
+
+`mount_fs__errors.py` walked forward three assertions during this phase and now
+stops at `Rename target already exists: /mnt/rename_dst_dir` — Phase 3.3.
 
 ## Phase 3 — remaining CPython semantics · RELEASE MILESTONE
 

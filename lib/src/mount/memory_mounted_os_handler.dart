@@ -329,22 +329,32 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.unlink':
         _requireWritable(mount, path);
-        if (vfs.fileAt(path) == null) {
-          throw OsCallException(
-            "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
-          );
-        }
+        // CPython raises IsADirectoryError on Linux and PermissionError on
+        // macOS; mount_fs__errors.py accepts either. IsADirectoryError is the
+        // one that carries a message worth reading.
+        requireFile(path);
         vfs.remove(path);
 
         return null;
 
       case 'Path.iterdir':
-        // Directory-vs-file and missing-path errors are Phase 2; today an
-        // absent path still yields an empty listing, as it did before.
-        return (vfs.childPathsOf(path) ?? const <String>[])
-            .map(MontyPath.new)
-            .toList();
+        // Three distinct answers. Returning an empty list for a path that is
+        // not there was the worst of them: indistinguishable from a
+        // successful listing of an empty directory.
+        return switch (vfs.lookup(path)) {
+          final VfsDir d => [
+            for (final name in d.children.keys)
+              MontyPath(path == '/' ? '/$name' : '$path/$name'),
+          ],
+          VfsFile() => throw OsCallException(
+            "[Errno 20] Not a directory: '$path'",
+            pythonExceptionType: 'NotADirectoryError',
+          ),
+          null => throw OsCallException(
+            "[Errno 2] No such file or directory: '$path'",
+            pythonExceptionType: 'FileNotFoundError',
+          ),
+        };
 
       case 'Path.absolute':
       case 'Path.resolve':
@@ -364,8 +374,11 @@ OsCallHandler memoryMountedOsHandler({
             );
           case VfsDir():
             if (!existOk) {
+              // Same message as the file case: CPython does not distinguish,
+              // and mount_fs__errors.py asserts the exact string for BOTH
+              // plain mkdir() and mkdir(parents=True, exist_ok=False).
               throw OsCallException(
-                'Directory exists: $path',
+                "[Errno 17] File exists: '$path'",
                 pythonExceptionType: 'FileExistsError',
               );
             }
