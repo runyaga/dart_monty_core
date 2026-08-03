@@ -58,13 +58,15 @@ test/unit/                    pure-Dart unit tests (functional)
 test/integration/             FFI + WASM integration + oracle conformance
   ├── ffi_*_test.dart         FFI feature tests
   ├── wasm_*_test.dart        WASM feature tests (mirror of ffi_*)
-  ├── oracle_ffi_*_test.dart  oracle conformance (464 fixtures)
+  ├── oracle_ffi_*_test.dart  oracle conformance (531 fixtures)
   ├── wasm_runner*.dart       WASM corpus runners (dart2js + dart2wasm)
   └── repros/                 xfail repros + _xfail.dart helper
 test/fixtures/                test data (corpus symlink + side-loadable .py repros)
 packages/dart_monty_web/      browser REPL demo (pure Dart web)
 tool/                         maintainer scripts (prebuild, test_wasm, …)
-.github/workflows/            ci.yaml, publish.yaml, deploy-pages.yml
+.github/workflows/            ci.yaml, publish.yaml, deploy-pages.yml,
+                              pr-labeler.yml, trufflehog.yaml,
+                              upstream-monty-check.yaml
 ```
 
 ## Build
@@ -90,67 +92,34 @@ cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
 If you change `native/include/dart_monty.h`, regenerate bindings:
 `bash tool/generate_bindings.sh`.
 
-## Tests — three categories
+## Tests
 
-**Functional (`test/unit/`)** — pure Dart, no interpreter, ~50ms.
-Covers `MontyValue` (18 subtypes), `MontyResult`, `MontyException`,
-the `MontyError` hierarchy, mount handler, REPL metadata.
+**Before you write a test**, you must be able to name three things — the break
+you applied and saw go red, where the expected value came from, and what your
+reference shares with the code it checks (the answer must be nothing).
+[`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
+says why each one has bitten this repo, **and is the canonical version** — the
+three lines above are a cache. If they disagree, the philosophy doc wins.
 
-```bash
-dart test --exclude-tags=ffi,wasm,integration,ladder,example
-```
+**Before you run tests**, read
+[`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md):
+nine mechanisms, what each verifies, what each *cannot* verify, and the traps
+that make a green run meaningless.
 
-**Integration (`test/integration/{ffi,wasm}_*_test.dart`)** —
-exercises the real interpreter through one of the two backends. Each
-feature usually has `ffi_<feature>_test.dart` and
-`wasm_<feature>_test.dart` sharing a `_<feature>_test_body.dart`.
+The commit gate is `bash tool/gate.sh` — a red step means do not commit, even
+when it looks unrelated to your change.
 
-```bash
-# FFI
-cd native && cargo build --release && cd ..
-dart test test/integration/ffi_*_test.dart -p vm --run-skipped --tags=ffi
-
-# WASM (full pipeline; --skip-build to reuse assets)
-bash tool/test_wasm.sh
-```
-
-**Oracle conformance (`test/integration/oracle_ffi_*_test.dart`)** —
-464 Python fixtures × Rust oracle binary vs Dart FFI. Outputs must
-match exactly. The same corpus is replayed through WASM via
-`wasm_runner.dart` (dart2js) and `wasm_runner_wasm.dart` (dart2wasm),
-both driven by `tool/test_wasm.sh`.
-
-```bash
-cd native && cargo build --bin oracle && cd ..
-dart test test/integration/oracle_ffi_test.dart \
-          test/integration/oracle_ffi_ext_test.dart \
-  -p vm --run-skipped --tags=ffi
-```
-
-**Repros (`test/integration/repros/`)** — side-loadable `.py` + xfail
-Dart test pair for each upstream-blocked bug. `xfail()` inverts the
-assertion: today the inner expectation fails (bug reproduces), test
-passes. When upstream fixes it, `xfail()` raises and CI flags the
-test for promotion. Removing the wrapper is the only change needed.
+Test layout: `test/unit/` is pure Dart. `test/integration/{ffi,wasm}_*_test.dart`
+pair up per feature and share a `_<feature>_test_body.dart`, so a new feature
+needs **both** runners — a missing one runs nowhere, which has happened twice.
 
 ## Static checks
 
-```bash
-dart analyze --fatal-infos
-dart format --line-length=80 --set-exit-if-changed lib/ test/ hook/ tool/
-
-cd native
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo deny check
-cargo llvm-cov --summary-only --ignore-filename-regex 'src/bin/'   # ≥60% gate
-cd ..
-dcm analyze lib test                                               # code metrics + custom rules
-```
-
-DCM (code metrics + custom rules) is a local step — run it before pushing.
-It is not wired into CI yet. The `dcm analyze` command runs without a licence
-key; only the paid rules tier needs one.
+Commands and the DCM-ratchet rationale live in the runbook
+([mechanisms 7 and 8](docs/contributor/testing-runbook.md)). In short: `dcm`
+has a known non-zero baseline, so a clean run was never the bar —
+`tool/dcm_ratchet.sh` fails on any *new* issue above `tool/dcm-baseline.json`,
+and `--update` is a deliberate act that belongs in its own commit with a reason.
 
 ## Demos
 
@@ -169,10 +138,15 @@ belong in `dart_monty`.
 
 ## CI
 
-- `ci.yaml` — analyze, format, FFI feature + oracle, WASM (dart2js +
-  dart2wasm), Rust fmt/clippy/deny/coverage, patch-coverage 70%
-  gate. Runs on PRs and `main`. (DCM is not in CI — run it locally; see
-  Static checks.)
+- `ci.yaml` — analyze, format, **DCM ratchet**, FFI feature + oracle, WASM
+  (dart2js + dart2wasm), Rust fmt/clippy/deny/coverage, patch-coverage 70%
+  gate. Runs on PRs and `main`.
+- **The Dart SDK is pinned** (`sdk: 3.11.4`) in `ci.yaml` and `publish.yaml`.
+  It was `stable`, which floats: `dart format` passed in June and failed later
+  on the *same commit* because a newer Dart reformatted the ffigen output. A
+  gate whose inputs float cannot tell "we broke it" from "the world moved".
+  Bump the pin deliberately, as its own commit. (`deploy-pages.yml` stays on
+  `stable` — docs build, not a gate.)
 - `publish.yaml` — fires on tag push matching
   `v[0-9]+.[0-9]+.[0-9]+*`; analyze → dry-run → `pub publish --force`
   via OIDC.
@@ -183,11 +157,14 @@ Artifact hand-offs: `ffigen` → `dart_monty_bindings.dart`; `build-wasm`
 
 ## Releasing
 
-Versioning: `0.X.0 ↔ monty v0.0.X`. When upstream ships `monty v0.0.18`,
-bump `native/Cargo.toml`'s git tag, verify conformance, then ship
-`dart_monty_core 0.18.0`. Patch releases (`0.X.Y`, Y>0) are reserved
+Versioning: `0.X.0 ↔ monty v0.0.X`. When upstream ships `monty v0.0.N`,
+bump the git tag on all three `monty*` deps in `native/Cargo.toml`
+(they must move together), verify conformance, then ship
+`dart_monty_core 0.N.0`. Patch releases (`0.X.Y`, Y>0) are reserved
 for our own fixes between upstream bumps. Pre-1.0: consumers pin exact
-(`dart_monty_core: 0.17.0`, not `^0.17.0`).
+(`dart_monty_core: 0.19.0`, not `^0.19.0`).
+
+Current: `0.19.0 ↔ monty v0.0.19`.
 
 **First publish of a new package must be manual** — pub.dev rejects
 OIDC for packages that don't yet exist:
@@ -202,7 +179,7 @@ After the first publish, tag pushes auto-publish via `publish.yaml`:
 
 ```bash
 # Bump pubspec.yaml version + CHANGELOG, commit, push, then:
-git tag v0.18.0 && git push origin v0.18.0
+git tag v0.19.0 && git push origin v0.19.0
 ```
 
 ## Common failure modes

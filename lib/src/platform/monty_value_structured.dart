@@ -1,6 +1,43 @@
 part of 'monty_value.dart';
 
 // ---------------------------------------------------------------------------
+// Ellipsis
+// ---------------------------------------------------------------------------
+
+/// Python's `Ellipsis` (`...`).
+///
+/// It has exactly one value, so this is a singleton with no payload.
+///
+/// Before 0.19.0 `...` was serialized as the bare string `"..."`, which made it
+/// indistinguishable from the actual string `"..."` — both arrived as
+/// [MontyString]. It now travels as `{"__type": "ellipsis"}` (core#129).
+@immutable
+final class MontyEllipsis extends MontyValue {
+  /// Creates the [MontyEllipsis] singleton value.
+  const MontyEllipsis();
+
+  factory MontyEllipsis._fromMap(Map<String, dynamic> _) =>
+      const MontyEllipsis();
+
+  @override
+  Map<String, Object?> toJson() => {'__type': 'ellipsis'};
+
+  /// There is no Dart equivalent of `...`, so the sentinel represents itself.
+  @override
+  Object? get dartValue => this;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is MontyEllipsis;
+
+  @override
+  int get hashCode => (MontyEllipsis).hashCode;
+
+  @override
+  String toString() => 'MontyEllipsis()';
+}
+
+// ---------------------------------------------------------------------------
 // Path
 // ---------------------------------------------------------------------------
 
@@ -40,11 +77,11 @@ final class MontyPath extends MontyValue {
 /// Represents an open file object (`_io.TextIOWrapper` / `BufferedReader` /
 /// …) produced by Python's `open()`.
 ///
-/// The interpreter never holds a live OS handle: an `Open` OS-call returns
+/// The interpreter never holds a live OS handle: an `open` OS-call returns
 /// one of these (carrying the virtual [path], canonical open() [mode], and
 /// byte/char [position]), and the engine drives subsequent reads/writes
 /// through `Path.read_text`/`write_text`/… OS-calls. An `OsCallHandler`
-/// servicing `Open` returns a [MontyFileHandle] to satisfy the call.
+/// servicing `open` returns a [MontyFileHandle] to satisfy the call.
 @immutable
 final class MontyFileHandle extends MontyValue {
   /// Creates a [MontyFileHandle] for [path] opened in [mode] at [position].
@@ -170,9 +207,16 @@ final class MontyDataclass extends MontyValue {
   });
 
   factory MontyDataclass._fromMap(Map<String, dynamic> map) {
+    // `attrs` is a dict, so since wire format v2 it carries the dict envelope
+    // like every other object — there is no "except inside dataclass"
+    // carve-out. The encoder gets this for free by routing attrs through
+    // dict_to_json, which is a good sign the uniform rule is the right one.
     final rawAttrs = map['attrs'];
-    final parsedAttrs = rawAttrs is Map<String, dynamic>
-        ? rawAttrs.map((k, v) => MapEntry(k, MontyValue.fromJson(v)))
+    final attrsPayload = rawAttrs is Map<String, dynamic>
+        ? rawAttrs['value']
+        : null;
+    final parsedAttrs = attrsPayload is Map<String, dynamic>
+        ? attrsPayload.map((k, v) => MapEntry(k, MontyValue.fromJson(v)))
         : const <String, MontyValue>{};
 
     return MontyDataclass(
@@ -239,7 +283,7 @@ final class MontyDataclass extends MontyValue {
     'name': name,
     'type_id': typeId,
     'field_names': fieldNames,
-    'attrs': attrs.map((k, v) => MapEntry(k, v.toJson())),
+    'attrs': MontyDict(attrs).toJson(),
     'frozen': frozen,
   };
 
@@ -267,4 +311,98 @@ final class MontyDataclass extends MontyValue {
 
   @override
   String toString() => 'MontyDataclass($name, ${attrs.length} attrs)';
+}
+
+/// What kind of host-side rendering a [MontyOpaque] carries.
+///
+/// A typed enum rather than the raw wire string, so `switch` over it is
+/// exhaustive and a typo is a compile error. It also keeps the door open: if
+/// one of these later deserves its own [MontyValue] variant, the split is a
+/// Dart-side change with no wire movement.
+enum MontyOpaqueKind {
+  /// A Python class, e.g. `int` — wire tag `type`.
+  type('type'),
+
+  /// A user-defined function — wire tag `function`.
+  function('function'),
+
+  /// A built-in function, e.g. `abs` — wire tag `builtin`.
+  builtin('builtin'),
+
+  /// An object's `repr()`, for values with no richer representation.
+  repr('repr'),
+
+  /// A marker standing in for a cycle in a self-referential structure.
+  cycle('cycle')
+  ;
+
+  const MontyOpaqueKind(this.wireTag);
+
+  /// The `__type` value this kind travels under.
+  final String wireTag;
+
+  /// The kind for [tag], or `null` when unrecognised.
+  static MontyOpaqueKind? fromWireTag(String tag) {
+    for (final k in values) {
+      if (k.wireTag == tag) return k;
+    }
+
+    return null;
+  }
+}
+
+/// Represents a value the host can see but cannot reconstruct.
+///
+/// Five Python things have no faithful Dart representation: a class, a
+/// function, a builtin, a bare `repr()`, and a cycle marker. What crosses the
+/// wire is a rendering of each — `<function f at 0x…>`, `int`, `abs`, `[...]` —
+/// and this variant says so instead of pretending otherwise.
+///
+/// All five used to arrive as bare [MontyString]s (core#134's siblings), so
+/// they were indistinguishable from each other AND from ordinary Python
+/// strings. `abs` was worse than lossy: it arrived as `"Abs"`, Rust's `Debug`
+/// rendering of an internal enum, where a reader expects the Python name.
+///
+/// **Sending one back into the interpreter is an error.** A rendering of a
+/// callable is not a callable, and a cycle marker names a position in a graph
+/// that does not exist on this side. The one exception is
+/// [MontyOpaqueKind.builtin], which round-trips exactly because its Python
+/// name identifies it.
+@immutable
+final class MontyOpaque extends MontyValue {
+  /// Creates a [MontyOpaque] of [kind] carrying [text].
+  const MontyOpaque(this.kind, this.text);
+
+  factory MontyOpaque._fromMap(Map<String, dynamic> map) {
+    final tag = map['__type'] as String? ?? '';
+    final kind = MontyOpaqueKind.fromWireTag(tag);
+    if (kind == null) {
+      throw FormatException('not an opaque wire tag: "$tag"', json.encode(map));
+    }
+
+    return MontyOpaque(kind, map['text'] as String? ?? '');
+  }
+
+  /// Which of the five this is.
+  final MontyOpaqueKind kind;
+
+  /// The host-visible rendering.
+  final String text;
+
+  @override
+  Map<String, Object?> toJson() => {'__type': kind.wireTag, 'text': text};
+
+  @override
+  String get dartValue => text;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyOpaque && other.kind == kind && other.text == text);
+
+  @override
+  int get hashCode => Object.hash(kind, text);
+
+  @override
+  String toString() => 'MontyOpaque(${kind.name}, $text)';
 }

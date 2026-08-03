@@ -24,7 +24,8 @@
 
 use std::io::{self, Read};
 
-use monty::{MontyException, MontyRun, NoLimitTracker, PrintWriter};
+use monty::MontyRun;
+use monty_types::{MontyException, NoLimitTracker, PrintWriter};
 use serde_json::{Value, json};
 
 // Re-use the crate's MontyObject → JSON conversion directly.
@@ -48,14 +49,19 @@ fn main() {
 
 fn run_oracle(code: &str) -> Value {
     let mut print_buf = String::new();
-    let runner = match MontyRun::new(code.to_owned(), "oracle.py", vec![]) {
+    let runner = match MontyRun::new(
+        code.to_owned(),
+        "oracle.py",
+        vec![],
+        convert::compile_options(),
+    ) {
         Ok(r) => r,
         Err(e) => return build_error_json(&e, &print_buf),
     };
     match runner.run(
         vec![],
         NoLimitTracker,
-        PrintWriter::CollectString(&mut print_buf),
+        PrintWriter::CollectString(&mut print_buf, convert::PRINT_COLLECT_LIMIT),
     ) {
         Ok(value) => {
             let mut result = json!({

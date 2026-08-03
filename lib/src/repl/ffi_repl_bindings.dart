@@ -7,6 +7,7 @@ import 'package:dart_monty_core/src/ffi/generated/dart_monty_bindings.dart'
 import 'package:dart_monty_core/src/ffi/native_bindings.dart';
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 
 /// GC safety net for Rust MontyReplHandle pointers.
@@ -39,11 +40,14 @@ class FfiReplBindings implements ReplBindings {
   Object? _detachToken;
 
   @override
-  Future<void> create({String? scriptName}) async {
+  Future<void> create({String? scriptName, String? limitsJson}) async {
     if (_replHandle != null) {
       await dispose();
     }
-    final handle = _bindings.replCreate(scriptName: scriptName);
+    final handle = _bindings.replCreate(
+      scriptName: scriptName,
+      limitsJson: limitsJson,
+    );
     _replHandle = handle;
 
     // Attach GC finalizer as safety net.
@@ -113,12 +117,12 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
     final handle = _replHandle;
     if (handle == null) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = _bindings.replResume(handle, valueJson);
+    final result = _bindings.replResume(handle, value.encoded);
 
     return _translateProgressResult(result);
   }
@@ -183,8 +187,8 @@ class FfiReplBindings implements ReplBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     final handle = _replHandle;
     if (handle == null) {
@@ -192,8 +196,8 @@ class FfiReplBindings implements ReplBindings {
     }
     final result = _bindings.replResolveFutures(
       handle,
-      resultsJson,
-      errorsJson,
+      results.encoded,
+      errors.encoded,
     );
 
     return _translateProgressResult(result);

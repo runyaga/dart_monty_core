@@ -9,4 +9,6 @@ environment:
 dependencies:
   dart_monty_core:
     path: ../..
+  monty_conformance:
+    path: ../monty_conformance
   web: ^1.1.0

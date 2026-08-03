@@ -18,13 +18,15 @@ library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/monty_ffi.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
 
-import '_fixture_corpus.dart';
 import '_oracle_runner.dart';
 
+// with__cm_behaviors.py is deliberately absent: it does not exist in the 0.19
+// corpus. `fixtureCorpus[name]!` on a missing key is a null-check crash, which
+// is what made this file red all session (B3).
 const _fixtureNames = [
-  'with__cm_behaviors.py',
   'with__cm_context_expr_raises_traceback.py',
   'with__cm_enter_raises_traceback.py',
   'with__cm_exit_raises_normal_exit_traceback.py',
@@ -79,7 +81,11 @@ void main() {
             reason: 'excType mismatch for $name',
           );
         } else {
-          expect(ffiResult?.error, isNull, reason: 'unexpected error in $name');
+          expect(
+            ffiResult?.error,
+            isNull,
+            reason: describeFixtureFailure(name, ffiResult?.error),
+          );
           expect(
             ffiResult?.value,
             equals(oracleResult.value),

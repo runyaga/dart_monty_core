@@ -72,6 +72,46 @@ final class ProgressResult {
   final String? variableName;
 }
 
+/// The value-encoding wire format version this Dart code expects.
+///
+/// Must equal `WIRE_FORMAT_VERSION` in `native/src/convert.rs`. Bump both in
+/// the SAME commit as any change to what the encoder emits or the decoder
+/// accepts.
+///
+/// **Scope: the VALUE encoding only** — what `monty_object_to_json` emits and
+/// `json_to_monty_object` accepts. It does **not** cover the protocol frames
+/// (`callId`, `methodCall`, `errorType`, `args`, `kwargs`, `architecture`,
+/// `diagnosticsJson`, …), which today have **no** versioning of any kind —
+/// verified, not assumed. Do not read this constant as covering "the wire".
+/// A protocol-frame change can still skew silently; that gap is real and
+/// unclosed.
+///
+/// This exists because `lib/assets/*.wasm` and the JS bridge are COMMITTED
+/// build artefacts and the wasm build is not byte-reproducible — an unchanged
+/// tree yields different bytes — so `git diff` on the blob cannot tell you
+/// whether the asset matches the crate. A version integer can, and a mismatch
+/// then fails loudly at init instead of mis-decoding values later.
+const int expectedWireFormatVersion = 4;
+
+/// Thrown at init when the native library's wire format does not match
+/// [expectedWireFormatVersion].
+class WireFormatMismatch implements Exception {
+  /// Creates a [WireFormatMismatch].
+  const WireFormatMismatch(this.expected, this.actual);
+
+  /// What this Dart code was built against.
+  final int expected;
+
+  /// What the loaded native library reports.
+  final int actual;
+
+  @override
+  String toString() =>
+      'WireFormatMismatch: this build expects wire format v$expected but the '
+      'loaded native library emits v$actual. The committed assets in '
+      'lib/assets/ are stale relative to native/ — run tool/prebuild.sh.';
+}
+
 /// Abstract interface over the 17 native C functions.
 ///
 /// Uses `int` handles (the pointer address) instead of `Pointer<T>` types
@@ -174,7 +214,7 @@ abstract class NativeBindings {
   /// Creates a REPL handle with empty interpreter state.
   ///
   /// Returns the handle address as an `int`, or throws on error.
-  int replCreate({String? scriptName});
+  int replCreate({String? scriptName, String? limitsJson});
 
   /// Frees a REPL handle. Safe to call with `0`.
   void replFree(int handle);

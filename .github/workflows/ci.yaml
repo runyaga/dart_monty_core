@@ -45,6 +45,25 @@ jobs:
               - '!**.md'
 
   # ---------------------------------------------------------------------------
+  # The record, checked mechanically
+  # ---------------------------------------------------------------------------
+  # Deliberately NOT behind `needs: [changes]`. That filter excludes `**.md`, and
+  # this job's whole subject is CHANGELOG.md — gating it would mean deleting a
+  # CHANGELOG entry skips the check that the entry exists.
+  #
+  # fetch-depth: 0 is required: the check diffs against the merge-base with main,
+  # and the default shallow clone has no merge-base to find.
+  breaking-recorded:
+    name: Breaking changes announced
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash tool/check_breaking_recorded.sh
+
+  # ---------------------------------------------------------------------------
   # FFI binding generation
   # ---------------------------------------------------------------------------
   ffigen:
@@ -57,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -86,7 +105,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -106,16 +125,93 @@ jobs:
         run: |
           dart format --line-length=80 --set-exit-if-changed \
             lib/ test/ hook/ tool/
+      - name: Committed assets are not stale
+        # The wasm build is not byte-reproducible, so `git diff` on the blob
+        # cannot detect staleness. This hashes the SOURCES instead. Unlike
+        # WIRE_FORMAT_VERSION, which is hand-bumped, it is derived -- so it
+        # catches 'encoding changed, nobody bumped, nobody rebuilt', which
+        # the version handshake is blind to.
+        run: bash tool/check_asset_freshness.sh
+      - name: Wire-format version agrees between the crate and Dart
+        # WIRE_FORMAT_VERSION in convert.rs is the source of truth and the JS
+        # side reads it out of the wasm, but expectedWireFormatVersion has to be
+        # a Dart compile-time constant, so it is a hand-kept copy. That makes the
+        # handshake itself depend on someone remembering to bump two files
+        # together -- the same unenforced-invariant class it exists to replace.
+        run: bash tool/check_wire_version.sh
+      - name: Fixture corpus matches the pinned monty version
+        # The corpus is a symlink into a monty checkout, so it silently drifts
+        # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus
+        # against a v0.0.19 interpreter reported all-green having never seen the
+        # 49 fixtures upstream added for 0.19.
+        run: bash tool/check_fixture_corpus.sh
+      - name: Install DCM
+        # dcm is NOT a pub package — `dart pub global activate dcm` cannot work.
+        # An earlier version of this workflow did exactly that with `|| true`,
+        # which meant the ratchet below skipped on every single run: a green tick
+        # that checked nothing. The official action is the supported install, and
+        # tool/dcm_ratchet.sh now FAILS rather than skips when dcm is absent, so
+        # this breaking again cannot go unnoticed.
+        uses: CQLabs/setup-dcm@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # PINNED, and it must match whatever generated tool/dcm-baseline.json.
+          # setup-dcm installs the latest by default: CI ran 1.38.3 against a
+          # baseline produced by 1.37.0. A ratchet compares per-rule counts, so a
+          # different analyzer version silently changes the thing being compared
+          # -- the same floating-input problem as `sdk: stable`, where a gate
+          # cannot tell 'we broke it' from 'the world moved'.
+          # Bump this and regenerate the baseline in the SAME commit.
+          version: 1.37.0
+      - name: DCM ratchet (no new issues above baseline)
+        # `dcm analyze` is chronically red (206 issues at 0.18.1), so gating on a
+        # clean run is not achievable and gating on the raw count is useless — 5
+        # new issues move 206 -> 211 unnoticed, and fixing 10 old ones masks new
+        # ones behind a net improvement. The ratchet fails on any new rule, any
+        # per-rule increase, or any new file. Baseline: tool/dcm-baseline.json.
+        env:
+          # DCM is commercial and refuses to run on CI unlicensed: exit 64,
+          # "Both CI key and purchase email should be provided to run on CI."
+          # That -- not the version float -- is why this ratchet has never once
+          # executed in CI. Both secrets already exist on this repo, and the
+          # sibling dart_monty repo already passes them; this job never did.
+          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
+          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
+        run: bash tool/dcm_ratchet.sh
       - name: Test (JIT, unit only)
         # Exit 79 = no tests found; acceptable until unit tests exist alongside
         # the integration suite. Coverage will be empty but that is tolerated.
         run: |
           dart test --exclude-tags=ffi,wasm,integration,ladder --coverage=coverage \
           || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
+      - name: Test (web, unit only — dart2js + dart2wasm)
+        # The SAME pure-Dart suite, on both web compilers. Not redundant with the
+        # JIT step above: dart2js has a single number type, so `4.0 is int` is
+        # true and integral doubles collapse to ints, while dart2wasm has real
+        # doubles. A numeric defect can pass on the VM and be wrong — or the fix
+        # for it unreachable — on the web. That is not hypothetical: a fix to
+        # inputs_encoder compiled, analysed clean and passed on the VM while
+        # doing nothing at all, because the arm it added was dead on dart2js,
+        # the only backend with the bug. Until this step existed, test/unit/ ran
+        # on NO web target in CI.
+        #
+        # `vm-only` is excluded because those files cannot COMPILE for the web
+        # (0x7FFFFFFFFFFFFFFF is a dart2js compile error), and that failure
+        # happens before any test runs, so a `skip:` cannot contain it.
+        run: |
+          dart test \
+            --exclude-tags=ffi,wasm,integration,ladder,example,vm-only \
+            -p chrome -c dart2js -c dart2wasm
+
       - name: Generate LCOV
         # Skip if no coverage data was collected (no unit tests yet).
         run: |
-          if compgen -G "coverage/*.json" > /dev/null 2>&1; then
+          # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
+          # coverage/*.json. The old glob never matched, so an EMPTY lcov was
+          # written every run and the 70% patch-coverage gate short-circuited to
+          # exit 0 -- it has never once been enforced (core#130).
+          shopt -s globstar nullglob
+          if compgen -G "coverage/**/*.json" > /dev/null 2>&1; then
             dart pub global activate coverage
             dart pub global run coverage:format_coverage \
               --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
@@ -151,7 +247,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -171,11 +267,60 @@ jobs:
             --platform vm \
             --compiler=kernel \
           || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
-      - name: Run compiled AOT snapshot (if available)
-        run: echo "AOT kernel test completed via dart test --compiler=kernel"
+      # This job did NOT exercise AOT: `--compiler=kernel` is the JIT default,
+      # and the step here was a literal `echo` claiming success (core#130).
+      #
+      # It now really compiles an AOT executable, so the step can fail.
+      #
+      # It deliberately does NOT RUN the result. Verified locally: the binary
+      # compiles, then dies at startup with
+      #   "Couldn't resolve native function 'monty_repl_create' ...
+      #    No available native assets."
+      # `dart compile exe` does not bundle this package's native asset, so the
+      # package cannot currently be used from an AOT executable at all. That is
+      # a real limitation this fake gate was hiding; tracked in its own issue
+      # (same family as #98). Running the probe here would just pin a known
+      # failure red. When the asset gap is fixed, drop the comment and add
+      #   ./aot_probe
+      # as the next line -- tool/aot_probe.dart already asserts its own result.
+      - name: Compile an AOT executable (compilation only -- see note)
+        run: dart compile exe tool/aot_probe.dart -o aot_probe
 
   # ---------------------------------------------------------------------------
-  # Rust: fmt + clippy + tests + llvm-cov coverage (≥80% line coverage)
+  # GitHub Pages render gate — the deployed site must load in a real browser
+  # ---------------------------------------------------------------------------
+  # https://runyaga.github.io/dart_monty_core/ serves the web REPL against the
+  # SAME committed lib/assets/ bundle consumers get, so this is the only check
+  # that the published artefacts resolve and wire up in a browser. A green WASM
+  # fixture corpus does not cover it: that drives a test harness, not the
+  # deployed page.
+  pages:
+    name: Pages site renders
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.4
+      - uses: actions/setup-node@v4
+        with:
+          # 22, not 20: tool/pages_drive.mjs drives Chrome over CDP using the
+          # GLOBAL WebSocket, stable from Node 22. On 20 this gate died with
+          # `ReferenceError: WebSocket is not defined`, and it only surfaced
+          # the first time CI ever ran the gate.
+          node-version: 22
+      - name: Install WASI runtime dep
+        working-directory: js
+        run: npm install --force
+      - run: dart pub get
+      - name: Pages render gate
+        run: bash tool/check_pages.sh
+
+  # ---------------------------------------------------------------------------
+  # Rust: fmt + clippy + tests + llvm-cov coverage (≥60% line coverage)
   # ---------------------------------------------------------------------------
   rust:
     name: Rust (fmt + clippy + test + coverage)
@@ -258,7 +403,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -281,21 +426,26 @@ jobs:
         run: cargo build --bin oracle
       - run: dart pub get
       - name: Run FFI integration tests
+        # GLOB, not a hand-maintained list. The previous explicit list named 7
+        # of the 19 ffi_*_test.dart files on disk, so twelve suites ran in no CI
+        # job at all -- including ffi_open_test, mounts, snapshot/restore,
+        # typeCheck, and ffi_monty_019_semantics_test, which was written for the
+        # 0.19 upgrade itself (core#130). The local matrix always globbed, so
+        # those suites passed locally and were simply never run in CI.
+        #
+        # ffi_with_cm_test.dart is the one deliberate exclusion: it needs
+        # `--features test-hooks`, which is never shipped (see tool/test_cm.sh).
         run: |
+          FFI_TESTS=$(ls test/integration/ffi_*_test.dart | grep -v with_cm)
+          echo "Running $(echo "$FFI_TESTS" | wc -l | tr -d ' ') FFI suites:"
+          echo "$FFI_TESTS" | sed 's/^/  /'
           dart test \
+            $FFI_TESTS \
             test/integration/oracle_ffi_test.dart \
             test/integration/oracle_ffi_ext_test.dart \
-            test/integration/ffi_datetime_oscall_test.dart \
-            test/integration/ffi_feedrun_async_matrix_test.dart \
-            test/integration/ffi_monty_async_inputs_test.dart \
-            test/integration/ffi_multi_repl_test.dart \
-            test/integration/ffi_repl_futures_test.dart \
-            test/integration/ffi_repl_oscall_test.dart \
-            test/integration/ffi_run_async_matrix_test.dart \
             test/integration/repros \
             -p vm --run-skipped --tags=ffi --exclude-tags=pending-futures \
             --reporter=expanded
-
   # ---------------------------------------------------------------------------
   # Example smoke tests — every example/*.dart must compile and exit 0.
   # `dart analyze` only checks types; this is the only thing exercising the
@@ -312,7 +462,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -362,7 +512,7 @@ jobs:
           node-version: '20'
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -545,7 +695,7 @@ jobs:
           node-version: '20'
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.11.4
       - uses: actions/cache@v4
         with:
           path: ~/.pub-cache
@@ -565,8 +715,117 @@ jobs:
           cd js
           npm install --force
 
-      - name: Run WASM unit-style tests
+      - name: Run WASM unit-style tests (dart2js)
         run: bash tool/test_wasm_unit.sh
+
+      - name: Run WASM unit-style tests (dart2wasm)
+        # Same suite, same WASM ENGINE, different DART compile target. Two things
+        # are called "wasm" here: the Rust engine (driven by every test in this
+        # suite whichever compiler is used) and the Dart target. Only this step
+        # covers the second. CI already built dart2wasm for the fixture corpus
+        # (job `test-wasm`), so the corpus had dart2wasm coverage while the
+        # package:test suites did not.
+        run: bash tool/test_wasm_unit.sh --dart2wasm
+
+  # ---------------------------------------------------------------------------
+  # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
+  #
+  # These need an engine built `--features test-hooks`, which is NEVER shipped
+  # (native/Cargo.toml:36-38). Without it the corpus reports 520/531 and skips
+  # them; with it, 528/531. Until this job existed CI ran NEITHER variant, so
+  # those eight were verified only by whoever happened to run tool/gate.sh
+  # locally — and on dart2wasm they had never executed anywhere at all.
+  #
+  # Cost is a ~3 min cargo build for the test-hooks engine, shared by both
+  # steps. That is why this is its own job rather than steps bolted onto
+  # test-wasm: a feature-flag rebuild would evict test-wasm's cache and make
+  # every other WASM job pay for it.
+  # ---------------------------------------------------------------------------
+  test-hooks-corpus:
+    name: test-hooks corpus (dart2js + dart2wasm)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          # Its own cache key. The test-hooks build is a DIFFERENT feature set
+          # and lands in its own CARGO_TARGET_DIR; sharing a key with the
+          # release jobs would thrash both.
+          key: test-hooks
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('js/package.json') }}
+          restore-keys: npm-
+
+      - run: dart pub get
+
+      - name: Install WASI runtime (npm)
+        run: |
+          set -euo pipefail
+          cd js
+          npm install --force
+
+      # Both steps PIN THE RESULT rather than trusting the exit code.
+      # tool/test_cm_wasm.sh:222 does `exit 0` when it cannot find Chrome —
+      # "WARN: Chrome not found" and a green job that ran nothing. ubuntu-latest
+      # ships Chrome today, but a runner image change would turn this job into a
+      # rubber stamp silently, which is the exact failure mode these eight
+      # fixtures already spent months in.
+      #
+      # 528 = 531 total - 3 that stay skipped even with test-hooks
+      # (the upstream xfail, and two with no assertable directive).
+      - name: test-hooks corpus (dart2js)
+        run: |
+          set -euo pipefail
+          bash tool/test_cm_wasm.sh 2>&1 | tee /tmp/cm_js.log
+          grep -q 'FIXTURE_DONE:{"total":531,"passed":528,"failed":0' /tmp/cm_js.log \
+            || { echo "FAIL: dart2js test-hooks corpus did not report 528/531 passing."; \
+                 grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_js.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
+                 exit 1; }
+
+      - name: test-hooks corpus (dart2wasm)
+        # The compile target, not the engine — both steps drive the same
+        # test-hooks WASM engine. This is the only place the dart2wasm twin of
+        # the corpus runner is exercised with test-hooks on.
+        run: |
+          set -euo pipefail
+          bash tool/test_cm_wasm.sh --dart2wasm 2>&1 | tee /tmp/cm_w.log
+          grep -q 'FIXTURE_DONE:{"total":531,"passed":528,"failed":0' /tmp/cm_w.log \
+            || { echo "FAIL: dart2wasm test-hooks corpus did not report 528/531 passing."; \
+                 grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_w.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
+                 exit 1; }
+
+      - name: The tree must be unchanged
+        # test_cm_wasm.sh stages into temp dirs and builds into its own
+        # CARGO_TARGET_DIR precisely so it cannot leave a test-hooks engine
+        # where lib/assets/ is staged from. Assert that, rather than trust it.
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "FAIL: the test-hooks corpus modified the working tree:"
+            git status --porcelain
+            exit 1
+          fi
+          echo "OK: tree clean"
 
   # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
@@ -599,7 +858,13 @@ jobs:
             echo "Coverage tracefile is empty — skipping patch coverage gate until unit tests exist."
             exit 0
           fi
-          lcov --remove coverage/lcov.info \
+          # --ignore-errors unused: these exclusions are DEFENSIVE. A file the
+          # unit tests never import has no entry in the tracefile, so its
+          # pattern matches nothing and lcov exits 25 -- which is exactly how
+          # this gate died the first time it ever ran. The patterns must stay
+          # (the files exist and should be excluded when present); the
+          # not-present case must not be fatal.
+          lcov --ignore-errors unused --remove coverage/lcov.info \
             '*/ffi/generated/*' \
             '*/native_bindings_ffi.dart' \
             '*/native_isolate_bindings_impl.dart' \

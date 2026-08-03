@@ -12,6 +12,7 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
 import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:meta/meta.dart';
 
 typedef _ErrorInfo = ({
@@ -36,7 +37,11 @@ List<MontyValue> _parseArgList(List<dynamic>? args) =>
 Map<String, MontyValue>? _parseKwargMap(Map<String, dynamic>? kwargs) =>
     kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v)));
 
-String _encodeLimitsJson(MontyLimits? limits) {
+/// Encodes [limits] as the JSON the native and web backends both accept.
+///
+/// Shared with `MontyRepl`, which applies limits at session creation, so the
+/// two paths cannot disagree about the shape.
+String encodeLimitsJson(MontyLimits? limits) {
   return json.encode({
     'memory_bytes': limits?.memoryBytes ?? BaseMontyPlatform.defaultMemoryBytes,
     'stack_depth': limits?.stackDepth ?? BaseMontyPlatform.defaultStackDepth,
@@ -102,7 +107,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final result = await _bindings.run(
         code,
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -127,7 +132,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       final progress = await _bindings.start(
         code,
         extFnsJson: _encodeExternalFunctionsJson(externalFunctions),
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -143,7 +148,9 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertNotDisposed('resume');
     assertActive('resume');
     try {
-      final progress = await _bindings.resume(json.encode(returnValue));
+      final progress = await _bindings.resume(
+        WireJson.value(returnValue),
+      );
 
       return translateProgress(progress);
     } catch (e) {
@@ -248,7 +255,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final result = await _bindings.runPrecompiled(
         compiled,
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -271,7 +278,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final progress = await _bindings.startPrecompiled(
         compiled,
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -340,7 +347,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertActive('resumeNameLookup');
     try {
       final progress = await _bindings.resumeNameLookupValue(
-        json.encode(value),
+        WireJson.value(value),
       );
 
       return translateProgress(progress);

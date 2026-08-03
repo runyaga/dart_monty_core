@@ -16,22 +16,41 @@
 //
 // Returns null when the fixture must be skipped.
 
+import 'package:dart_monty_core/dart_monty_core.dart';
+
+/// What a fixture's directives say must happen when it runs.
 sealed class FixtureExpectation {
+  /// Creates a [FixtureExpectation].
   const FixtureExpectation();
 }
 
+/// The fixture declared `# Return=<repr>`: it must complete with that value.
 final class ExpectReturn extends FixtureExpectation {
+  /// Creates an [ExpectReturn] expecting [value].
   const ExpectReturn(this.value);
+
+  /// The parsed Python repr, as a plain Dart value. Compare against a real
+  /// result with `MontyValue.fromDart(value)`.
   final Object? value;
 }
 
+/// The fixture declared `# Raise=<ExcType>: <message>`, or carried a
+/// `TRACEBACK:` docstring, so running it must raise.
 final class ExpectRaise extends FixtureExpectation {
+  /// Creates an [ExpectRaise].
   const ExpectRaise({required this.excType, required this.message});
+
+  /// The Python exception class name, e.g. `ValueError`.
   final String excType;
+
+  /// The exception message. Not every harness asserts on this — the excType
+  /// is the stable part.
   final String message;
 }
 
+/// The fixture declared no outcome directive: it must simply not raise.
 final class ExpectNoException extends FixtureExpectation {
+  /// Creates an [ExpectNoException].
   const ExpectNoException();
 }
 
@@ -97,7 +116,6 @@ bool fixtureMountsFs(String source) {
 /// `# xfail=cpython` is NOT a skip — monty supports these cases.
 FixtureExpectation? parseFixture(
   String source, {
-  bool skipWasm = false,
   bool skipCallExternal = true,
   bool skipMountFs = true,
   bool skipRunAsync = true,
@@ -114,8 +132,17 @@ FixtureExpectation? parseFixture(
 
     if (directive.startsWith('xfail=')) {
       final targets = directive.substring('xfail='.length).trim().toLowerCase();
+      // `xfail=monty` means upstream expects MONTY to fail, so there is
+      // nothing here for us to assert.
+      //
+      // There was also a `skipWasm` flag gating `targets.contains('wasm')`.
+      // The 0.19 corpus contains ZERO `xfail=wasm` fixtures (9 are
+      // `xfail=cpython`, 1 is `xfail=monty`), so that branch could never fire
+      // — while the flag was threaded through 13 call sites looking as though
+      // it meant "skip what does not work on wasm". A parameter that cannot
+      // change any outcome is worse than absent: it invites callers to believe
+      // they have opted into something.
       if (targets.contains('monty')) return null;
-      if (skipWasm && targets.contains('wasm')) return null;
       continue;
     }
 
@@ -199,10 +226,9 @@ ExpectRaise? _parseTracebackDocstring(String source) {
 Object? _parseReturnValue(String raw) {
   final trimmed = raw.trim();
 
-  // Nested list/dict reprs (only the cyclic fixtures use these). A bracket
-  // pair containing just `...` is the cycle marker, which the engine
-  // serialises as the placeholder string `[...]` / `{...}` — so parsing it to
-  // that same string makes structural comparison match.
+  // Nested list/dict reprs (only the cyclic fixtures use these). A bracket pair
+  // containing just `...` is the cycle marker, which the engine serialises as a
+  // tagged `cycle` envelope, so it parses to the matching typed value.
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     final parser = _ReprParser(trimmed);
     final value = parser.tryParse();
@@ -222,7 +248,14 @@ Object? _parseScalarRepr(String raw) {
   if (asInt != null) return asInt;
 
   final asDouble = double.tryParse(raw);
-  if (asDouble != null) return asDouble;
+  if (asDouble != null) {
+    // Typed, not a bare Dart double. The directive's TEXT is the only place the
+    // int/float distinction reliably survives: on dart2js `2.0 is int` is true,
+    // so by the time a caller reaches MontyValue.fromDart the double is
+    // indistinguishable from an int and yields MontyInt(2). MontyValue.fromDart
+    // passes a MontyValue through unchanged, so no call site changes.
+    return MontyFloat(asDouble);
+  }
 
   if ((raw.startsWith("'") && raw.endsWith("'")) ||
       (raw.startsWith('"') && raw.endsWith('"'))) {
@@ -234,7 +267,8 @@ Object? _parseScalarRepr(String raw) {
 
 /// Minimal recursive-descent parser for the Python-repr subset used in
 /// `# Return=` directives: nested lists/dicts, scalars, and the cycle
-/// markers `[...]` / `{...}` (emitted as their placeholder strings).
+/// markers `[...]` / `{...}`, which become `MontyOpaque(cycle, …)` since wire
+/// format v3 gave the cycle marker its own type.
 class _ReprParser {
   _ReprParser(this._s);
 
@@ -270,12 +304,16 @@ class _ReprParser {
     _i++; // consume the already-matched opening bracket
     _skipSpace();
     if (_peek() == '.') {
-      // `...` cycle marker → placeholder string.
+      // `...` is the cycle marker. Since wire format v3 the engine sends it as
+      // `{"__type":"cycle","text":"[...]"}` rather than the bare string
+      // `[...]`, so the expectation must be the typed value, or comparison
+      // fails with two values that PRINT identically — how this was found:
+      //   "expected MontyList(1 items), got MontyList(1 items)"
       if (!_consume('...')) return null;
       _skipSpace();
       if (!_consume(close)) return null;
 
-      return marker;
+      return MontyOpaque(MontyOpaqueKind.cycle, marker);
     }
     final list = <Object?>[];
     final map = <String, Object?>{};

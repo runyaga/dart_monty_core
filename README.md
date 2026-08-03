@@ -110,13 +110,19 @@ switch (result.value) {
 }
 ```
 
-18 subtypes — scalars (`MontyInt`, `MontyFloat`, `MontyString`, `MontyBool`,
-`MontyBytes`, `MontyNone`), collections (`MontyList`, `MontyTuple`,
-`MontyDict`, `MontySet`, `MontyFrozenSet`), datetime (`MontyDate`,
-`MontyDateTime`, `MontyTimeDelta`, `MontyTimeZone`), and structured
-(`MontyPath`, `MontyNamedTuple`, `MontyDataclass`).
-`MontyDataclass.hydrate(factory)` turns a Python `@dataclass` into your
-own Dart class:
+24 subtypes — scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`,
+`MontyBool`, `MontyNone`, `MontyEllipsis`), collections (`MontyList`,
+`MontyTuple`, `MontyDict`, `MontyPairsDict`, `MontySet`, `MontyFrozenSet`,
+`MontyBytes`), datetime (`MontyDate`, `MontyDateTime`, `MontyTimeDelta`,
+`MontyTimeZone`), and structured (`MontyPath`, `MontyNamedTuple`,
+`MontyDataclass`, `MontyFileHandle`, `MontyExceptionValue`, `MontyOpaque`).
+
+`MontyDataclass.hydrate(factory)` turns a dataclass **the host supplied** into
+your own Dart class. Note the direction: sandboxed Python cannot write
+`@dataclass` — there is no `dataclasses` module and no such builtin — so a
+`MontyDataclass` always originates host-side, typically as the return value of
+an external function. A class defined *inside* the sandbox comes back as
+`MontyOpaque(repr, …)`, not a `MontyDataclass`.
 
 ```dart
 final user = (result.value as MontyDataclass).hydrate(User.fromAttrs);
@@ -219,7 +225,13 @@ one of those raises `TypeError`.
 For the cell-by-cell contract across every API layer × backend, see
 [`docs/deep-dives/async-matrix.md`][async-matrix].
 
+Architecture references: [`docs/reference/native-crate.md`][native-crate] (the
+Rust C-FFI layer) and [`docs/reference/bridge-integration.md`][bridge-integration]
+(how Dart, the JS bridge and the WASM Worker fit together in a browser tab).
+
 [async-matrix]: docs/deep-dives/async-matrix.md
+[native-crate]: docs/reference/native-crate.md
+[bridge-integration]: docs/reference/bridge-integration.md
 
 ### External functions
 
@@ -255,8 +267,15 @@ and `asyncio.gather` over multiple such calls runs them concurrently.
 
 ### OS calls
 
-`pathlib`, `os.getenv`, `datetime.now`, `time.time` pause and call your
-`OsCallHandler`. Optional — provide only when the script touches the OS.
+`pathlib`, `open()`, `os.getenv`, `os.environ`, `date.today` and
+`datetime.now` pause and call your `OsCallHandler`. Optional — provide only
+when the script touches the OS.
+
+There are 23 ops. The name you match on is the Python-visible one:
+`Path.read_text`, `os.getenv`, `datetime.now` — and `open`, which is the
+only undotted name. **`open` is lowercase as of 0.19.0** (it was `'Open'`);
+see the CHANGELOG, because a handler switching on the old spelling stops
+matching silently rather than failing.
 
 ```dart
 await Monty('os.getenv("HOME")').run(
@@ -294,9 +313,22 @@ maxRecursionDepth:)`.
 | `MontyWasm` | `dart.library.js_interop` present (web) |
 | `createPlatformMonty()` | Auto-pick at compile time |
 
+> **The FFI backend has no crash isolation.** The interpreter runs in your
+> process, so a memory fault inside sandboxed Python — a stack-overflow or
+> allocator abort — terminates the **host application**, not just the sandbox.
+> Such aborts cannot be caught, and Dart isolates do not contain them (they
+> share one OS process). Resource limits (`timeoutMs`, `stackDepth`,
+> `memoryBytes`) are engine-enforced and do cover the ordinary runaway cases.
+> The web backend is unaffected: wasm traps are contained and the Worker can be
+> terminated. If you need isolation on FFI today, run this package in a separate
+> OS process you control.
+>
+> Full rationale, and why upstream's bindings differ:
+> [`docs/reference/execution-model.md`](docs/reference/execution-model.md).
+
 ## Installation
 
-> **0.17.0 builds the native FFI binary from source on `dart pub get`.**
+> **This package builds the native FFI binary from source on `dart pub get`.**
 > Every FFI consumer needs a Rust toolchain, including Flutter consumers
 > coming in via [`dart_monty`](https://github.com/runyaga/dart_monty).
 
@@ -310,7 +342,7 @@ Or pin in `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  dart_monty_core: ^0.17.0
+  dart_monty_core: 0.19.0
 ```
 
 To track unreleased fixes on `main`, use a `git:` dependency
@@ -335,7 +367,7 @@ on the consumer's machine during `pub get`. Required toolchain:
   - **Linux**: `sudo apt install build-essential` / `dnf install gcc` / equivalent
   - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with the C++ workload
 
-Supported FFI host triples in v0.17.0: `aarch64-apple-darwin`,
+Supported FFI host triples: `aarch64-apple-darwin`,
 `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`,
 `x86_64-unknown-linux-gnu`, `aarch64-pc-windows-msvc`,
 `x86_64-pc-windows-msvc`. **Mobile (iOS, Android) is not handled by this

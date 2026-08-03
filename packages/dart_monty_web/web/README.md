@@ -31,9 +31,19 @@ dart compile wasm \
 
 ## Serving
 
-The demo requires COOP/COEP headers for `SharedArrayBuffer` support in the WASM
-Worker. Use the `tool/serve_demo.sh` script from the repo root, or run the
-Python server manually:
+Use the `tool/serve_demo.sh` script from the repo root, or run the Python server
+manually:
+
+> **On COOP/COEP.** `serve_demo.sh` sends them, but that is a local-dev
+> convenience — it is not how the deployed site gets isolated. Measured inside
+> each page with no `Cross-Origin-*` response headers: `index_js.html` has
+> `crossOriginIsolated === false` and no `SharedArrayBuffer` at all, and works
+> anyway; `index_wasm.html` has `crossOriginIsolated === true` because
+> **`coi-serviceworker.js` injects the headers client-side**.
+>
+> That service worker is therefore **load-bearing for the dart2wasm page** — do
+> not remove it. It is the supported way to obtain isolation on hosts that cannot
+> set response headers, such as GitHub Pages.
 
 ```bash
 python3 - <<'EOF'

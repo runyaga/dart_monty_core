@@ -23,27 +23,31 @@ class _Order {
   final double total;
 }
 
-Map<String, Object?> _userDataclass({required String name, required int age}) =>
-    {
-      '__type': 'dataclass',
-      'name': 'User',
-      'type_id': 1,
-      'field_names': ['name', 'age'],
-      'attrs': {'name': name, 'age': age},
-      'frozen': false,
-    };
+// These used to be hand-spelled `{'__type': 'dataclass', …}` maps, and the
+// interpreter honoured them — which is core#136 pointing from the host into the
+// sandbox: any Dart Map whose keys happened to spell an envelope became that
+// type. Since wire format v2 a Map is a dict, full stop, so a host that means
+// "dataclass" says so with the type. That is a BREAKING change for consumers
+// returning hand-built envelopes from an OS-call or external function.
+MontyDataclass _userDataclass({
+  required String name,
+  required int age,
+  bool frozen = false,
+}) => MontyDataclass(
+  name: 'User',
+  typeId: 1,
+  fieldNames: const ['name', 'age'],
+  attrs: {'name': MontyString(name), 'age': MontyInt(age)},
+  frozen: frozen,
+);
 
-Map<String, Object?> _orderDataclass({
-  required int id,
-  required double total,
-}) => {
-  '__type': 'dataclass',
-  'name': 'Order',
-  'type_id': 2,
-  'field_names': ['id', 'total'],
-  'attrs': {'id': id, 'total': total},
-  'frozen': false,
-};
+MontyDataclass _orderDataclass({required int id, required double total}) =>
+    MontyDataclass(
+      name: 'Order',
+      typeId: 2,
+      fieldNames: const ['id', 'total'],
+      attrs: {'id': MontyInt(id), 'total': MontyFloat(total)},
+    );
 
 void runDataclassHydrateTests() {
   group('MontyDataclass hydration via external function', () {
@@ -107,13 +111,14 @@ void runDataclassHydrateTests() {
       () async {
         final r = await Monty('make_user("frank", 20)').run(
           externalFunctions: {
-            'make_user': (args, _) async => {
-              ..._userDataclass(
-                name: args[0]! as String,
-                age: args[1]! as int,
-              ),
-              'frozen': true,
-            },
+            // Was a map spread overriding 'frozen'. A typed value takes the
+            // flag as a named argument, which is also how a consumer would now
+            // have to write it.
+            'make_user': (args, _) async => _userDataclass(
+              name: args[0]! as String,
+              age: args[1]! as int,
+              frozen: true,
+            ),
           },
         );
 

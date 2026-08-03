@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monty Feature Matrix (dart2js)</title>
+  <link rel="stylesheet" href="feature_matrix.css">
+</head>
+<body>
+  <header>
+    <h1>dart_monty_core — feature matrix</h1>
+    <div class="head-right">
+      <a class="navlink" href="matrix_wasm.html">compare dart2wasm →</a>
+      <a class="navlink" href="index_js.html">playground</a>
+      <span class="badge" id="backend">…</span>
+    </div>
+  </header>
+
+  <div class="intro">
+    <p>
+      Every row below runs for real, in this browser, against the sandboxed
+      Python interpreter — then checks its own answer. Nothing here is a
+      screenshot, a recording, or a claim copied from a README. The timestamp
+      next to the summary is when these results were produced, which is
+      moments ago.
+    </p>
+    <p class="muted">
+      <strong>KNOWN GAP</strong> is a third state on purpose. Two rows are
+      knowingly wrong on one backend; they are shown, named and linked rather
+      than hidden. Regression testing lives in the repo's gate and CI — this
+      page exists to be read.
+    </p>
+    <div class="controls">
+      <button id="rerun" class="btn" disabled>Re-run</button>
+      <span id="summary"></span>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Verdict</th><th>Guarantee</th><th>Result</th></tr>
+    </thead>
+    <tbody id="rows">
+      <tr><td colspan="3" class="booting">Booting the interpreter…</td></tr>
+    </tbody>
+  </table>
+
+  <section class="corpus">
+    <h2>monty's own conformance corpus</h2>
+    <p>
+      The rows above cover what <em>this package</em> adds — externals, limits,
+      the virtual filesystem, snapshots. They cannot tell you what the sandboxed
+      Python itself can do, and rows written by us would only prove we can write
+      rows. So this panel runs <strong>monty's own conformance suite</strong>:
+      531 fixtures, each carrying a <code>Return=</code> or <code>Raise=</code>
+      directive written upstream, checked here the same way the repository's
+      test harness checks them.
+    </p>
+    <p class="muted" id="corpus-headline">…</p>
+    <div id="corpus-breakdown" class="chips"></div>
+    <div id="corpus-groups" class="chips"></div>
+    <div id="corpus-detail" class="detail"></div>
+    <p class="muted">
+      Click any group to see its fixtures, their sources, and the exact reason
+      any of them is not asserted.
+    </p>
+    <p class="muted">
+      The ones that do not assert here are not engine gaps: most need a host to
+      answer a call (<code>call-external</code>, <code>mount-fs</code>,
+      <code>run-async</code>) — which is precisely what the probes above
+      demonstrate — and a small set is a known web-transport divergence
+      (core#128).
+    </p>
+    <div class="controls">
+      <button id="run-corpus" class="btn">Run the corpus</button>
+      <span id="corpus-status" class="muted">not run yet</span>
+    </div>
+  </section>
+
+  <!-- Bridge must load before the Dart runner. -->
+  <script src="dart_monty_core_bridge.js"></script>
+  <script src="feature_matrix.dart.js" defer></script>
+</body>
+</html>

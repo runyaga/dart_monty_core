@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/src/ffi/native_bindings.dart'
+    show WireFormatMismatch, expectedWireFormatVersion;
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
 /// JS interop extension type for the raw snapshot result object.
@@ -80,6 +82,16 @@ external JSPromise<JSString> _jsResolveFutures(
   JSString errorsJson, [
   JSNumber? sessionId,
 ]);
+
+/// The value-encoding wire format the loaded wasm reports, or `null` when the
+/// committed asset predates the symbol.
+///
+/// Asserted at init so a STALE `lib/assets/*.wasm` fails loudly rather than
+/// mis-decoding values later. `git diff` on the blob cannot detect staleness —
+/// the wasm build is not byte-reproducible, so an unchanged tree yields
+/// different bytes.
+@JS('DartMontyBridge.getWireFormatVersion')
+external JSNumber? _jsWireFormatVersion();
 
 @JS('DartMontyBridge.snapshot')
 external JSPromise<JSAny> _jsSnapshot([JSNumber? sessionId]);
@@ -810,8 +822,39 @@ class WasmBindingsJs extends WasmBindings {
   Future<void> _ensureInit() async {
     if (_initialized) return;
     await _jsInit().toDart;
+    _assertWireFormat();
     _initialized = true;
   }
+
+  /// Rejects a stale committed WASM asset at init.
+  ///
+  /// `lib/assets/dart_monty_core_native.wasm` is a committed build artefact and
+  /// the build is not byte-reproducible, so `git diff` on the blob cannot tell
+  /// you whether it matches `native/`. This can. A `null` version means the
+  /// asset predates the symbol entirely, which is treated as a mismatch rather
+  /// than as "no opinion" — otherwise an old asset would silently opt out of
+  /// the very check that exists to catch it.
+  void _assertWireFormat() {
+    final reported = _jsWireFormatVersion()?.toDartInt;
+    if (reported != expectedWireFormatVersion) {
+      throw WireFormatMismatch(expectedWireFormatVersion, reported ?? -1);
+    }
+  }
+
+  /// The wire-format version the loaded WASM asset reports, or `null` when the
+  /// asset predates the export entirely.
+  ///
+  /// The handshake itself lives in [_assertWireFormat] and runs at init, which
+  /// means a stale asset surfaces on the web as *every* value-carrying test
+  /// failing at once — 519 identical failures, once, in CI. Reading the
+  /// version directly lets `wasm_wire_format_test.dart` state the same fact as
+  /// one named test, so the WASM half of the handshake is checked by something
+  /// other than the collapse of everything else.
+  ///
+  /// Only meaningful after [init]: the version is recorded per session by the
+  /// JS bridge when the worker reports ready, so before that there is no
+  /// session to read it from and the answer is `null`.
+  int? get reportedWireFormatVersion => _jsWireFormatVersion()?.toDartInt;
 
   WasmProgressResult _decodeProgress(String jsonStr) {
     final map = json.decode(jsonStr) as Map<String, dynamic>;

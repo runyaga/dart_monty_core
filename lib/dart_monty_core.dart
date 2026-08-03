@@ -8,7 +8,7 @@
 /// import 'package:dart_monty_core/dart_monty_core.dart';
 ///
 /// // One-shot execution
-/// final platform = createMontyPlatform();
+/// final platform = createPlatformMonty();
 /// final result = await platform.run('1 + 1');
 /// print(result.value); // MontyInt(2)
 ///
@@ -25,9 +25,12 @@ export 'src/externals.dart';
 export 'src/monty.dart';
 export 'src/monty_factory.dart';
 export 'src/mount/memory_mounted_os_handler.dart';
+export 'src/mount/monty_memory_file.dart';
 export 'src/mount/mount_dir.dart';
 export 'src/mount/mount_mode.dart';
 export 'src/mount/open_call.dart';
+export 'src/mount/vfs_content.dart';
+export 'src/mount/vfs_node.dart';
 export 'src/platform/code_capture.dart';
 export 'src/platform/inputs_encoder.dart';
 export 'src/platform/monty_error.dart';

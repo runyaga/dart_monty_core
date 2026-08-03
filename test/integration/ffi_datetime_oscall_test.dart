@@ -141,7 +141,7 @@ void main() {
     });
 
     test(
-      'OsCallNotHandledException surfaces Python NameError (not RuntimeError)',
+      'declining an OS call raises its no-handler default, not NameError',
       () async {
         final repl = MontyRepl();
         addTearDown(repl.dispose);
@@ -155,8 +155,16 @@ void main() {
           osHandler: notHandled(),
         );
         expect(result.error, isNotNull);
-        expect(result.error?.excType, 'NameError');
-        expect(result.error?.message, contains('date.today'));
+        // Was NameError. Declining an OS call is a refusal to perform an
+        // operation, not a claim that the name is undefined -- it now raises
+        // the call's own no-handler default, matching upstream
+        // (monty-types/src/os.rs:260). `date.today` is not a filesystem op, so
+        // that default is RuntimeError naming the operation.
+        expect(result.error?.excType, 'RuntimeError');
+        expect(
+          result.error?.message,
+          "'date.today' is not supported in this environment",
+        );
       },
     );
 

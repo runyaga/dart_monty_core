@@ -66,6 +66,19 @@ MontyHandle *monty_create(const char *code,
 /**
  * Free a handle. Safe to call with NULL.
  */
+/**
+ * Returns the value-encoding wire format version this library emits.
+ *
+ * The Dart decoder asserts this at init. A mismatch means the committed
+ * WASM/JS assets in lib/assets/ are stale relative to the crate -- a case
+ * `git diff` cannot detect, because the wasm build is not byte-reproducible
+ * (an unchanged tree yields different bytes).
+ *
+ * Bump WIRE_FORMAT_VERSION in convert.rs in the SAME commit as any change to
+ * what the encoder emits or the decoder accepts.
+ */
+uint32_t monty_wire_format_version(void);
+
 void monty_free(MontyHandle *handle);
 
 /* ------------------------------------------------------------------ */
@@ -383,6 +396,29 @@ typedef struct MontyReplHandle MontyReplHandle;
  */
 MontyReplHandle *monty_repl_create(const char *script_name,
                                     char **out_error);
+
+/**
+ * Create a REPL handle with SESSION-scoped resource limits.
+ *
+ * Additive sibling of monty_repl_create(), which stays unbounded so existing
+ * callers are unaffected. Limits belong to the session rather than to an
+ * individual feed, mirroring upstream's Python API where checkout(limits=...)
+ * configures a REPL session.
+ *
+ * @param script_name  NUL-terminated script name for tracebacks, or NULL
+ *                     for the default ("repl.py").
+ * @param limits_json  NUL-terminated JSON object, or NULL for an unbounded
+ *                     session. Shape:
+ *                     {"memory_bytes":N,"stack_depth":N,"timeout_ms":N}.
+ *                     Absent fields mean no limit on that axis. Malformed
+ *                     JSON is an ERROR, not a silent fallback to unbounded.
+ * @param out_error    On failure, receives a heap-allocated error message.
+ *                     Caller frees with monty_string_free(). May be NULL.
+ * @return             Heap-allocated REPL handle, or NULL on error.
+ */
+MontyReplHandle *monty_repl_create_with_limits(const char *script_name,
+                                                const char *limits_json,
+                                                char **out_error);
 
 /**
  * Free a REPL handle. Safe to call with NULL or an already-freed handle.

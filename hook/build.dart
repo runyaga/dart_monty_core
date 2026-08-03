@@ -46,8 +46,16 @@ void main(List<String> args) async {
       final testHooks = testHooksMarker.existsSync()
           ? ['--features', 'test-hooks']
           : <String>[];
+      // `--locked` makes the committed native/Cargo.lock authoritative: cargo
+      // fails rather than silently re-resolving if the lockfile is missing or
+      // out of date. Without it a consumer whose archive lacked the lockfile
+      // would re-resolve and hit a known-broken combination (a get-size2 whose
+      // GetSize impl targets a different compact_str major than
+      // ruff_python_ast uses), failing deep inside a dependency they do not
+      // control. Failing here instead names the real problem.
       final result = await Process.run('cargo', [
         'build',
+        '--locked',
         '--release',
         '--lib',
         ...targetArgs,

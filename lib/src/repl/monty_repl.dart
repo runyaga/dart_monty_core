@@ -1,18 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/externals.dart';
+import 'package:dart_monty_core/src/platform/base_monty_platform.dart'
+    show encodeLimitsJson;
 import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/inputs_encoder.dart'
     as inputs_encoder;
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
+import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 import 'package:dart_monty_core/src/repl/repl_factory.dart' as repl_factory;
 
@@ -97,25 +100,39 @@ class MontyRepl {
   /// Creates a [MontyRepl] with auto-detected backend (FFI or WASM).
   ///
   /// [preamble] is Python code fed into the REPL before any user calls.
+  ///
+  /// [limits] applies SESSION-scoped resource limits, mirroring upstream's
+  /// Python API where `checkout(limits=…)` configures a REPL session rather
+  /// than an individual feed. A tracker is chosen when the session is created
+  /// and cannot be swapped afterwards, which is why this is not a per-feed
+  /// argument. Null means unbounded — what every REPL got before (core#138).
+  ///
+  /// Not yet supported on the web backend; passing limits there throws rather
+  /// than silently ignoring them (core#140).
   MontyRepl({
     String? scriptName,
     String? preamble,
+    MontyLimits? limits,
   }) : _bindings = repl_factory.createReplBindings(),
        _scriptName = scriptName,
-       _preamble = preamble;
+       _preamble = preamble,
+       _limits = limits;
 
   /// Creates a [MontyRepl] with explicit [bindings].
   MontyRepl.withBindings({
     required ReplBindings bindings,
     String? scriptName,
     String? preamble,
+    MontyLimits? limits,
   }) : _bindings = bindings,
        _scriptName = scriptName,
-       _preamble = preamble;
+       _preamble = preamble,
+       _limits = limits;
 
   ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;
+  final MontyLimits? _limits;
   bool _created = false;
   bool _disposed = false;
   bool _pending = false;
@@ -276,9 +293,12 @@ class MontyRepl {
   /// Resumes a paused execution with [returnValue].
   Future<MontyProgress> resume(Object? returnValue) async {
     _checkNotDisposed();
-    final json = returnValue != null ? jsonEncode(returnValue) : 'null';
+    // The null special-case is gone: fromDart(null) is MontyNone, whose
+    // toJson() is null, which encodes to the same 'null'.
 
-    return _translateProgress(await _bindings.resume(json));
+    return _translateProgress(
+      await _bindings.resume(WireJson.value(returnValue)),
+    );
   }
 
   /// Resumes a paused execution by raising [errorMessage] in Python.
@@ -343,15 +363,12 @@ class MontyRepl {
     Map<int, String>? errors,
   }) async {
     _checkNotDisposed();
-    final resultsJson = jsonEncode(
-      results.map((k, v) => MapEntry(k.toString(), v)),
-    );
-    final errorsJson = errors != null
-        ? jsonEncode(errors.map((k, v) => MapEntry(k.toString(), v)))
-        : '{}';
 
     return _translateProgress(
-      await _bindings.resolveFutures(resultsJson, errorsJson),
+      await _bindings.resolveFutures(
+        WireJson.callResults(results),
+        WireJson.callErrors(errors),
+      ),
     );
   }
 
@@ -483,7 +500,7 @@ class MontyRepl {
                 );
                 final res = await cb(cbArgs, cbKwargs);
                 progress = _translateProgress(
-                  await _bindings.resume(jsonEncode(res)),
+                  await _bindings.resume(WireJson.value(res)),
                 );
               } on Object catch (e) {
                 progress = _translateProgress(
@@ -497,7 +514,9 @@ class MontyRepl {
             if (pendingFutures.isEmpty) {
               // No async callbacks were registered — nothing to resolve.
               // Resume with null so the engine can advance.
-              progress = _translateProgress(await _bindings.resume('null'));
+              progress = _translateProgress(
+                await _bindings.resume(WireJson.value(null)),
+              );
               break;
             }
             final results = <int, Object?>{};
@@ -517,12 +536,8 @@ class MontyRepl {
             }
             progress = _translateProgress(
               await _bindings.resolveFutures(
-                jsonEncode(
-                  results.map((k, v) => MapEntry(k.toString(), v)),
-                ),
-                jsonEncode(
-                  errors.map((k, v) => MapEntry(k.toString(), v)),
-                ),
+                WireJson.callResults(results),
+                WireJson.callErrors(errors),
               ),
             );
           case MontyNameLookup():
@@ -592,17 +607,30 @@ class MontyRepl {
         ),
       );
     }
+    // Hoisted: the decline path below needs the args to build the call's
+    // no-handler default (a filesystem op names its path).
+    final args = call.args.map((v) => v.dartValue).toList();
     try {
-      final args = call.args.map((v) => v.dartValue).toList();
       final kwargs = call.kwargs?.map((k, v) => MapEntry(k, v.dartValue));
       final result = await handler(call.operationName, args, kwargs);
 
       return _translateProgress(
-        await _bindings.resume(jsonEncode(result)),
+        await _bindings.resume(WireJson.value(result)),
       );
     } on OsCallNotHandledException catch (e) {
+      // NOT `resumeNotFound`. That is the external-function verb: it reports a
+      // bare NAME, so declining `Path.read_text` produced
+      //   NameError: name 'Path.read_text' is not defined
+      // which turns a sandbox refusal into a missing-function message.
+      // Declining an OS call means the call's own default instead — see
+      // [osCallNoHandlerDefault].
+      final fallback = osCallNoHandlerDefault(
+        e.fnName ?? call.operationName,
+        args,
+      );
+
       return _translateProgress(
-        await _bindings.resumeNotFound(e.fnName ?? call.operationName),
+        await _bindings.resumeWithException(fallback.excType, fallback.message),
       );
     } on OsCallException catch (e) {
       // Deliver the requested Python exception class so scripts can catch it
@@ -622,7 +650,10 @@ class MontyRepl {
 
   Future<void> _ensureCreated() async {
     if (!_created) {
-      await _bindings.create(scriptName: _scriptName);
+      await _bindings.create(
+        scriptName: _scriptName,
+        limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+      );
       _created = true;
       final preamble = _preamble;
       if (preamble != null && preamble.isNotEmpty) {

@@ -33,11 +33,10 @@ Future<void> main() async {
 Future<void> _readWrite() async {
   print('\n── read / write ──');
 
-  final vfs = <String, String>{'/data/hello.txt': 'Hello from VFS!'};
-
+  final newFile = MontyMemoryFile('/data/new.txt', '');
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: vfs,
+    files: [MontyMemoryFile('/data/hello.txt', 'Hello from VFS!'), newFile],
   );
 
   final read = await Monty(
@@ -49,7 +48,7 @@ Future<void> _readWrite() async {
     'import pathlib\n'
     'pathlib.Path("/data/new.txt").write_text("written from Python")',
   ).run(osHandler: handler);
-  print('wrote:  ${vfs["/data/new.txt"]}');
+  print('wrote:  ${newFile.content.text}');
 }
 
 // ── readOnly mounts reject writes from Python ────────────────────────────────
@@ -59,7 +58,7 @@ Future<void> _readOnly() async {
 
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/secrets', mode: MountMode.readOnly)],
-    vfs: {'/secrets/api_key.txt': 'sk-12345'},
+    files: [MontyMemoryFile('/secrets/api_key.txt', 'sk-12345')],
   );
 
   // Reads succeed.
@@ -83,7 +82,7 @@ Future<void> _writeLimit() async {
 
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/tmp', writeBytesLimit: 16)],
-    vfs: <String, String>{},
+    files: const [],
   );
 
   final small = await Monty(
@@ -121,7 +120,7 @@ Future<void> _fallthrough() async {
 
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: {'/data/hello.txt': 'Hello!'},
+    files: [MontyMemoryFile('/data/hello.txt', 'Hello!')],
     fallthrough: envHandler,
   );
 

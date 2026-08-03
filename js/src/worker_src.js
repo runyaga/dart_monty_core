@@ -32,8 +32,20 @@ let wasm = null;
 async function initWasm() {
   const wasmUrl = new URL('./dart_monty_core_native.wasm', import.meta.url);
   wasm = await instantiateMonty(wasmUrl);
+  // Report the value-encoding wire format the wasm actually emits, so the Dart
+  // side can reject a STALE committed asset at init instead of mis-decoding
+  // values later. lib/assets/*.wasm is a committed build artefact and the build
+  // is not byte-reproducible, so `git diff` on the blob cannot detect staleness
+  // — this can. Absent on assets built before the symbol existed, which the
+  // Dart side treats as a mismatch rather than as "no opinion".
+  const wireFormatVersion =
+    typeof wasm.monty_wire_format_version === 'function'
+      ? wasm.monty_wire_format_version()
+      : null;
+
   self.postMessage({
     type: 'ready',
+    wireFormatVersion,
     exports: Object.keys(wasm).filter((k) => k.startsWith('monty_')),
   });
 }

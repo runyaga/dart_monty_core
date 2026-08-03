@@ -4,6 +4,7 @@ import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 
 /// Intermediate result from [MontyCoreBindings.run].
 ///
@@ -160,9 +161,14 @@ final class CoreProgressResult {
 /// [CoreRunResult] / [CoreProgressResult] into domain types
 /// ([MontyResult], [MontyProgress], [MontyException]).
 ///
-/// Methods accept JSON-level data (strings for limits, external functions,
-/// resume values) — adapters handle serialization details specific to
-/// their transport (FFI handles vs WASM Worker messages).
+/// Methods accept JSON-level data — adapters handle serialization details
+/// specific to their transport (FFI handles vs WASM Worker messages).
+///
+/// Anything carrying a **value** into the interpreter is typed [WireJson], not
+/// `String`, so it cannot be built with a raw `jsonEncode`. See that type for
+/// what went wrong when it could be. Limits, external-function names, script
+/// names and error messages stay `String`: they are not values and never reach
+/// the value decoder.
 abstract class MontyCoreBindings {
   /// Initializes the backend (Isolate, Worker, etc.).
   ///
@@ -184,8 +190,8 @@ abstract class MontyCoreBindings {
     String? scriptName,
   });
 
-  /// Resumes execution with [valueJson] as the return value.
-  Future<CoreProgressResult> resume(String valueJson);
+  /// Resumes execution with [value] as the return value.
+  Future<CoreProgressResult> resume(WireJson value);
 
   /// Resumes execution, injecting [errorMessage] as a Python exception.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
@@ -209,14 +215,14 @@ abstract class MontyCoreBindings {
   /// Resumes execution, converting the pending call into a future.
   Future<CoreProgressResult> resumeAsFuture();
 
-  /// Resolves pending futures with [resultsJson] and optional [errorsJson].
+  /// Resolves pending futures with [results] and accompanying [errors].
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   );
 
-  /// Resumes a name lookup by providing [valueJson] for the looked-up name.
-  Future<CoreProgressResult> resumeNameLookupValue(String valueJson);
+  /// Resumes a name lookup by providing [value] for the looked-up name.
+  Future<CoreProgressResult> resumeNameLookupValue(WireJson value);
 
   /// Resumes a name lookup by indicating the name is undefined.
   ///

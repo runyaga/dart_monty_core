@@ -8,6 +8,16 @@
 # Options:
 #   --skip-build   Skip npm + cargo + dart compile steps (use existing assets).
 #   --dart2wasm    Compile Dart → WASM (dart2wasm) in addition to dart2js.
+#   --test-hooks   Build a test-hooks engine into a scratch CARGO_TARGET_DIR and
+#                  serve the matrix against it, so the eight fixtures that need
+#                  `sys.setrecursionlimit` actually RUN in the page instead of
+#                  showing "needs test-hooks build".
+#
+#                  LOCAL ONLY. This is deliberately not what deploy-pages.yml
+#                  builds: a shipped test-hooks engine would expose
+#                  `sys.setrecursionlimit` inside a public sandbox
+#                  (native/Cargo.toml:36-38). The engine it stages is written
+#                  into $WEB_DIR, which is gitignored build output.
 #
 # What it does:
 #   1. Build the Rust WASM binary (cargo, wasm32-wasip1)
@@ -23,15 +33,21 @@ PKG="$(cd "$(dirname "$0")/.." && pwd)"
 WEB_PKG="$PKG/packages/dart_monty_web"
 WEB_DIR="$WEB_PKG/web"
 JS_DIR="$PKG/js"
-ASSETS_DIR="$PKG/assets"
+# lib/assets is the only directory that receives build output (Mode A).
+# This said "$PKG/assets", a pre-Mode-A path, so the script could not find
+# what js/build.js had just produced.
+ASSETS_DIR="$PKG/lib/assets"
 SERVE_PORT=8098
 SKIP_BUILD=false
 DART2WASM=false
+# LOCAL INSPECTION ONLY — never deployed. See the guard below.
+TEST_HOOKS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=true; shift ;;
     --dart2wasm)  DART2WASM=true;  shift ;;
+    --test-hooks) TEST_HOOKS=true;  shift ;;
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
 done
@@ -46,9 +62,10 @@ if [ "$SKIP_BUILD" = false ]; then
   echo "--- Building WASM binary (cargo wasm32-wasip1) ---"
   cd "$PKG/native"
   cargo build --target wasm32-wasip1 --release
-  mkdir -p "$ASSETS_DIR"
-  cp target/wasm32-wasip1/release/dart_monty_core_native.wasm "$ASSETS_DIR/"
-  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
+  # Deliberately NOT copied here. js/build.js places it in lib/assets and runs
+  # wasm-opt (14.5 MB -> 12.7 MB); copying the raw artefact over the top would
+  # both undo that and dirty a committed asset.
+  echo "  WASM binary: OK ($(du -sh target/wasm32-wasip1/release/dart_monty_core_native.wasm | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"
 fi
@@ -70,7 +87,11 @@ if [ "$SKIP_BUILD" = false ]; then
     exit 1
   fi
   cd "$JS_DIR"
-  npm install --silent
+  # --force bypasses EBADPLATFORM on arm64 hosts: @pydantic/monty-wasm32-wasi
+  # declares cpu: wasm32. tool/test_wasm.sh and tool/test_wasm_unit.sh already
+  # pass it; this script did not, so the demo could not be served on an Apple
+  # Silicon machine at all.
+  npm install --force --silent
   node build.js
   echo "  JS bridge: OK"
 else
@@ -95,6 +116,22 @@ cp "$ASSETS_DIR/dart_monty_core_bridge.js"   "$WEB_DIR/"
 cp "$ASSETS_DIR/dart_monty_core_worker.js"   "$WEB_DIR/"
 cp "$ASSETS_DIR/dart_monty_core_native.wasm" "$WEB_DIR/"
 
+if [ "$TEST_HOOKS" = true ]; then
+  # Own CARGO_TARGET_DIR so this never lands in
+  # native/target/wasm32-wasip1/release/, which is the path other scripts copy
+  # into lib/assets/. A stray test-hooks engine there would be shipped.
+  echo ""
+  echo "--- Building test-hooks engine (scratch target dir) ---"
+  ( cd "$PKG/native" \
+      && CARGO_TARGET_DIR="$PKG/native/target/test-hooks" \
+         cargo build --target wasm32-wasip1 --release --features test-hooks ) \
+    || { echo "FATAL: test-hooks build failed"; exit 1; }
+  TH_WASM="$PKG/native/target/test-hooks/wasm32-wasip1/release/dart_monty_core_native.wasm"
+  [ -f "$TH_WASM" ] || { echo "FATAL: missing $TH_WASM"; exit 1; }
+  cp "$TH_WASM" "$WEB_DIR/dart_monty_core_native.wasm"
+  echo "  staged test-hooks engine (LOCAL ONLY — not the shipped asset)"
+fi
+
 # WASI runtime for the Worker (needed when running dart2wasm)
 WASI_PKG="$JS_DIR/node_modules/@pydantic/monty-wasm32-wasi"
 if [ -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
@@ -111,22 +148,35 @@ echo "--- dart pub get ---"
 cd "$PKG"
 dart pub get
 
+DEFINES=""
+if [ "$TEST_HOOKS" = true ]; then DEFINES="-DMONTY_TEST_HOOKS=true"; fi
+
 if [ "$SKIP_BUILD" = false ]; then
   echo ""
-  echo "--- Compiling repl_demo.dart → JS (dart2js) ---"
-  dart compile js \
-    "$WEB_PKG/web/repl_demo.dart" \
-    -o "$WEB_DIR/repl_demo.dart.js" \
-    --no-minify
-  echo "  dart2js: OK"
+  # Two entry points: repl_demo (the playground) and feature_matrix (the
+  # self-verifying feature list). The matrix exists to be compiled BOTH ways —
+  # dart2js and dart2wasm differ on number identity, and the page reports the
+  # difference — so --dart2wasm is worth passing when working on it.
+  for entry in repl_demo feature_matrix; do
+    echo "--- Compiling $entry.dart → JS (dart2js) ---"
+    dart compile js \
+      $DEFINES \
+      "$WEB_PKG/web/$entry.dart" \
+      -o "$WEB_DIR/$entry.dart.js" \
+      --no-minify
+    echo "  dart2js: OK"
+  done
 
   if [ "$DART2WASM" = true ]; then
-    echo ""
-    echo "--- Compiling repl_demo.dart → WASM (dart2wasm) ---"
-    dart compile wasm \
-      "$WEB_PKG/web/repl_demo.dart" \
-      -o "$WEB_DIR/repl_demo.wasm"
-    echo "  dart2wasm: OK"
+    for entry in repl_demo feature_matrix; do
+      echo ""
+      echo "--- Compiling $entry.dart → WASM (dart2wasm) ---"
+      dart compile wasm \
+        $DEFINES \
+        "$WEB_PKG/web/$entry.dart" \
+        -o "$WEB_DIR/$entry.wasm"
+      echo "  dart2wasm: OK"
+    done
   fi
 else
   echo "--- Skipping dart compile (--skip-build) ---"
@@ -148,7 +198,14 @@ cleanup() {
     "$WEB_DIR/repl_demo.mjs" \
     "$WEB_DIR/repl_demo.support.js" \
     "$WEB_DIR/repl_demo.wasm" \
-    "$WEB_DIR/repl_demo.wasm.map"
+    "$WEB_DIR/repl_demo.wasm.map" \
+    "$WEB_DIR/feature_matrix.dart.js" \
+    "$WEB_DIR/feature_matrix.dart.js.deps" \
+    "$WEB_DIR/feature_matrix.dart.js.map" \
+    "$WEB_DIR/feature_matrix.mjs" \
+    "$WEB_DIR/feature_matrix.support.js" \
+    "$WEB_DIR/feature_matrix.wasm" \
+    "$WEB_DIR/feature_matrix.wasm.map"
   rm -rf "$WEB_DIR/@pydantic"
 }
 trap cleanup EXIT
@@ -189,7 +246,7 @@ echo "  Server: http://127.0.0.1:$SERVE_PORT"
 # ---------------------------------------------------------------------------
 # Step 6: Open browser
 # ---------------------------------------------------------------------------
-URL="http://127.0.0.1:$SERVE_PORT/index_js.html"
+URL="http://127.0.0.1:$SERVE_PORT/matrix_js.html"
 echo "  Opening: $URL"
 echo ""
 echo "Press Ctrl-C to stop the server."

@@ -66,7 +66,11 @@ class Monty {
     OsCallHandler? osHandler,
     void Function(String stream, String text)? printCallback,
   }) async {
-    final repl = MontyRepl(scriptName: _scriptName);
+    // core#138: `limits` used to be accepted here and silently dropped —
+    // measured at `timeoutMs: 50` completing in 483 ms with no error. It is
+    // session-scoped, so it belongs on the constructor: the tracker is chosen
+    // when the session is created and cannot be swapped afterwards.
+    final repl = MontyRepl(scriptName: _scriptName, limits: limits);
     try {
       return await repl.feedRun(
         _code,

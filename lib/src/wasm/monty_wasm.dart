@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
@@ -6,6 +5,7 @@ import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_snapshot_capable.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings_js_stub.dart'
     if (dart.library.js_interop) 'package:dart_monty_core/src/wasm/wasm_bindings_js.dart';
@@ -81,13 +81,10 @@ class MontyWasm extends BaseMontyPlatform
   }) async {
     assertNotDisposed('resolveFutures');
     assertActive('resolveFutures');
-    final resultsJson = json.encode(
-      results.map((k, v) => MapEntry(k.toString(), v)),
+    final progress = await coreBindings.resolveFutures(
+      WireJson.callResults(results),
+      WireJson.callErrors(errors),
     );
-    final errorsJson = errors != null
-        ? json.encode(errors.map((k, v) => MapEntry(k.toString(), v)))
-        : '{}';
-    final progress = await coreBindings.resolveFutures(resultsJson, errorsJson);
 
     return translateProgress(progress);
   }

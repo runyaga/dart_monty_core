@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use monty::{
-    ExtFunctionResult, FunctionCall, LimitedTracker, MontyException, MontyObject, MontyRun,
-    NameLookup, NameLookupResult, OsCall, PrintWriter, ResolveFutures, ResourceLimits, RunProgress,
+use monty::{FunctionCall, MontyRun, NameLookup, OsCall, ResolveFutures, RunProgress};
+use monty_types::{
+    ExtFunctionResult, LimitedTracker, MontyException, MontyObject, NameLookupResult, PrintWriter,
+    ResourceLimits,
 };
 use serde_json::Value;
 
@@ -123,7 +124,7 @@ impl MontyHandle {
         script_name: Option<String>,
     ) -> Result<Self, MontyException> {
         let name = script_name.unwrap_or_else(|| "<input>".into());
-        let compiled = MontyRun::new(code, &name, vec![])?;
+        let compiled = MontyRun::new(code, &name, vec![], crate::convert::compile_options())?;
 
         Ok(Self {
             state: HandleState::Ready(compiled),
@@ -149,7 +150,11 @@ impl MontyHandle {
         let mut buf = String::new();
         let limits = self.limits.clone().unwrap_or_else(default_limits);
         let tracker = Tracker::new(limits);
-        let result = compiled.run(vec![], tracker, PrintWriter::CollectString(&mut buf));
+        let result = compiled.run(
+            vec![],
+            tracker,
+            PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
+        );
 
         self.print_output.push_str(&buf);
 
@@ -204,7 +209,13 @@ impl MontyHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
         let result = ExtFunctionResult::Return(obj);
         self.resume_with_result(result)
     }
@@ -212,7 +223,7 @@ impl MontyHandle {
     /// Resume with an error message.
     pub fn resume_with_error(&mut self, error_message: &str) -> (MontyProgressTag, Option<String>) {
         let exc = MontyException::new(
-            monty::ExcType::RuntimeError,
+            monty_types::ExcType::RuntimeError,
             Some(error_message.to_string()),
         );
         let result = ExtFunctionResult::Error(exc);
@@ -229,8 +240,8 @@ impl MontyHandle {
         error_message: &str,
     ) -> (MontyProgressTag, Option<String>) {
         let exc_kind = exc_type
-            .parse::<monty::ExcType>()
-            .unwrap_or(monty::ExcType::RuntimeError);
+            .parse::<monty_types::ExcType>()
+            .unwrap_or(monty_types::ExcType::RuntimeError);
         let exc = MontyException::new(exc_kind, Some(error_message.to_string()));
         let result = ExtFunctionResult::Error(exc);
         self.resume_with_result(result)
@@ -318,7 +329,10 @@ impl MontyHandle {
                     );
                 }
             };
-            let obj = json_to_monty_object(val);
+            let obj = match json_to_monty_object(val) {
+                Ok(o) => o,
+                Err(e) => return (MontyProgressTag::Error, Some(e)),
+            };
             ext_results.push((call_id, ExtFunctionResult::Return(obj)));
         }
 
@@ -333,7 +347,7 @@ impl MontyHandle {
                 }
             };
             let msg = val.as_str().unwrap_or("unknown error").to_string();
-            let exc = MontyException::new(monty::ExcType::RuntimeError, Some(msg));
+            let exc = MontyException::new(monty_types::ExcType::RuntimeError, Some(msg));
             ext_results.push((call_id, ExtFunctionResult::Error(exc)));
         }
 
@@ -418,7 +432,13 @@ impl MontyHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
         let state = std::mem::replace(&mut self.state, HandleState::Consumed);
         match state {
             HandleState::NameLookup { lookup, .. } => {
@@ -549,7 +569,10 @@ impl MontyHandle {
         f: impl FnOnce(PrintWriter) -> Result<RunProgress<Tracker>, MontyException>,
     ) -> (MontyProgressTag, Option<String>) {
         let mut buf = String::new();
-        let result = f(PrintWriter::CollectString(&mut buf));
+        let result = f(PrintWriter::CollectString(
+            &mut buf,
+            crate::convert::PRINT_COLLECT_LIMIT,
+        ));
         self.print_output.push_str(&buf);
         match result {
             Ok(progress) => self.process_progress(progress),
@@ -626,7 +649,10 @@ impl MontyHandle {
                                 name,
                                 docstring: None,
                             }),
-                            PrintWriter::CollectString(&mut buf),
+                            PrintWriter::CollectString(
+                                &mut buf,
+                                crate::convert::PRINT_COLLECT_LIMIT,
+                            ),
                         );
                         self.print_output.push_str(&buf);
                         match result {
@@ -639,10 +665,17 @@ impl MontyHandle {
                         return (MontyProgressTag::NameLookup, None);
                     }
                 }
-                RunProgress::OsCall(mut call) => {
+                RunProgress::OsCall(call) => {
                     let os_fn_name = call.function_call.name().to_string();
                     let call_id = call.call_id;
-                    let (args, kwargs) = call.take_function_call().to_args();
+                    // #583 removed `take_function_call()`: the OS-call payload is now RETAINED in the
+                    // suspended state instead of being moved out (the `OsFunctionCall::Used`
+                    // placeholder is gone). We read a clone here because the payload is needed
+                    // NOW, to build the metadata handed to Dart, while the resume happens in a
+                    // LATER FFI call — so upstream's `resume_with(.., FnOnce(OsFunctionCall))`,
+                    // which supplies the payload at resume time, does not fit this flow. The
+                    // original stays intact for the eventual `resume()`.
+                    let (args, kwargs) = call.function_call.clone().to_args();
                     let meta = OsCallMeta {
                         os_fn_name,
                         args_json: serde_json::to_string(
@@ -694,8 +727,8 @@ impl MontyHandle {
 /// Build a `PendingMeta` from a `FunctionCall` variant's fields.
 fn build_pending_meta(
     function_name: String,
-    args: &[monty::MontyObject],
-    kwargs: &[(monty::MontyObject, monty::MontyObject)],
+    args: &[monty_types::MontyObject],
+    kwargs: &[(monty_types::MontyObject, monty_types::MontyObject)],
     call_id: u32,
     method_call: bool,
 ) -> PendingMeta {
@@ -709,7 +742,7 @@ fn build_pending_meta(
         let map: serde_json::Map<String, Value> = kwargs
             .iter()
             .map(|(k, v)| {
-                let key = if let monty::MontyObject::String(s) = k {
+                let key = if let monty_types::MontyObject::String(s) = k {
                     s.clone()
                 } else {
                     format!("{k}")
@@ -1221,6 +1254,71 @@ result
     }
 
     // --- Accessor tests ---
+
+    /// core#130: the OS-call kwargs branch was entirely uncovered. Mutating it
+    /// to always emit `"{}"` — i.e. silently dropping every keyword argument on
+    /// the way to an OS handler — left all 193 Rust tests green, because
+    /// `handle.rs` had NO OS-call tests at all and `os_call_kwargs_json()` was a
+    /// public accessor nothing called.
+    ///
+    /// `Path.mkdir(parents=..., exist_ok=...)` is dispatched as an OS call and
+    /// carries its flags as keyword arguments, so it reaches the branch.
+    #[test]
+    fn os_call_kwargs_are_actually_serialized() {
+        let code = "from pathlib import Path\nPath('/tmp/x').mkdir(parents=True, exist_ok=True)";
+        let mut handle = MontyHandle::new(code.into(), vec![], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(
+            tag,
+            MontyProgressTag::OsCall,
+            "mkdir must suspend as an OS call"
+        );
+        assert_eq!(handle.os_call_fn_name(), Some("Path.mkdir"));
+
+        let raw = handle
+            .os_call_kwargs_json()
+            .expect("an OS call must expose its kwargs");
+        let parsed: Value = serde_json::from_str(raw).expect("kwargs must be valid JSON");
+
+        assert_eq!(
+            parsed["parents"], true,
+            "keyword argument `parents` was dropped: got {raw}"
+        );
+        assert_eq!(
+            parsed["exist_ok"], true,
+            "keyword argument `exist_ok` was dropped: got {raw}"
+        );
+    }
+
+    /// core#130: the kwargs `else` branch — the one that actually SERIALIZES
+    /// keyword arguments — had no test. `test_pending_kwargs_empty` only covers
+    /// the `kwargs.is_empty()` arm, so replacing the whole expression with
+    /// `"{}"` (i.e. silently dropping every keyword argument passed from Python
+    /// to a host function) left the suite green.
+    ///
+    /// This is that mutation's red test.
+    #[test]
+    fn pending_kwargs_are_actually_serialized() {
+        let code = "result = ext_fn(1, k=2, name='x')\nresult";
+        let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let raw = handle
+            .pending_fn_kwargs_json()
+            .expect("paused call must expose kwargs");
+        let parsed: Value = serde_json::from_str(raw).expect("kwargs must be valid JSON");
+
+        assert_eq!(
+            parsed["k"], 2,
+            "keyword argument `k` was dropped: got {raw}"
+        );
+        assert_eq!(
+            parsed["name"], "x",
+            "keyword argument `name` was dropped: got {raw}"
+        );
+        assert_ne!(raw, "{}", "kwargs collapsed to empty: got {raw}");
+    }
 
     #[test]
     fn test_pending_kwargs_empty() {

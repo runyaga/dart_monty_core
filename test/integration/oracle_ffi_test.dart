@@ -13,10 +13,9 @@ library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/monty_ffi.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
 
-import '_fixture_corpus.dart';
-import '_fixture_parser.dart';
 import '_oracle_runner.dart';
 
 void main() {
@@ -24,7 +23,13 @@ void main() {
     for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
       test(key, () async {
         final expectation = parseFixture(value);
-        if (expectation == null) return; // skipped fixture
+        if (expectation == null) {
+          // Was a bare `return`: the test asserted nothing and reported
+          // GREEN. Reporting a skip is the honest signal (core#130).
+          markTestSkipped('no Return=/Raise= directive to assert against');
+
+          return;
+        }
 
         // Run the oracle to get the authoritative expected result.
         final oracleJson = await runOracle(value);
@@ -56,7 +61,11 @@ void main() {
           );
         } else {
           // Both should succeed with the same value.
-          expect(ffiResult?.error, isNull, reason: 'unexpected error in $key');
+          expect(
+            ffiResult?.error,
+            isNull,
+            reason: describeFixtureFailure(key, ffiResult?.error),
+          );
           expect(
             ffiResult?.value,
             equals(oracleResult.value),

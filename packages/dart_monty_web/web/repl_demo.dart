@@ -62,12 +62,18 @@ Future<Object?> _vfsOsHandler(
     case 'Path.unlink':
       _vfs.remove(args.first! as String);
       return null;
-    // open() (monty 0.0.18) — the interpreter emits the prefix-less `Open`,
-    // takes the returned handle, then drives writes through `append_text`.
-    // resolveOpenCall (owned by dart_monty_core) maps mode → effect and
-    // raises the typed FileNotFoundError for a missing 'r' target; this
-    // map-backed VFS only supplies the filesystem facts.
-    case 'Open':
+    // open() — the interpreter emits the prefix-less `open`, takes the returned
+    // handle, then drives writes through `append_text`. resolveOpenCall (owned by
+    // dart_monty_core) maps mode → effect and raises the typed FileNotFoundError
+    // for a missing 'r' target; this map-backed VFS only supplies the filesystem
+    // facts.
+    //
+    // monty v0.0.19 renamed this op from 'Open' to 'open' (#576). This demo is a
+    // CONSUMER of dart_monty_core, and it broke exactly the way the CHANGELOG
+    // warns consumers it will: the case stopped matching, the call fell through to
+    // `default`, and the VFS example failed with "open not supported in this demo"
+    // — with no compile error anywhere.
+    case 'open':
       return resolveOpenCall(
         args[0]! as String,
         args[1]! as String,
@@ -230,10 +236,7 @@ def host_upper(s: str) -> str:
         return;
       }
       try {
-        final raw = await Monty.typeCheck(
-          code,
-          prefixCode: externalsPrefix,
-        );
+        final raw = await Monty.typeCheck(code, prefixCode: externalsPrefix);
         final errors = raw
             .where((e) => e.line == null || e.line! > prefixLines)
             .toList(growable: false);
@@ -606,11 +609,12 @@ class _Sample {
 const _kSamples = <_Sample>[
   _Sample(
     num: 1,
-    title: 'Typed values across FFI',
+    title: 'Typed values across the host boundary',
     panel: 'a',
     desc:
-        'Every Python value crosses the FFI boundary as a typed MontyValue '
-        'subtype — MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. '
+        'Every Python value crosses into Dart as a typed MontyValue subtype — '
+        'MontyInt, MontyFloat, MontyList, MontyDict, MontyBool, etc. This page '
+        'runs the WASM backend; the same types come back over FFI on native. '
         'Submit this dict to see each field typed individually.',
     steps: [
       _Step(
@@ -711,9 +715,10 @@ const _kSamples = <_Sample>[
     title: 'Kwargs in the callback map',
     panel: 'b',
     desc:
-        'Positional args arrive as _0, _1, … in MontyCallback\'s args map; '
-        'kwargs appear by their Python name. format_currency(19.99, code="EUR") '
-        'fires the callback with {_0: 19.99, code: "EUR"}.',
+        'MontyCallback receives (args, kwargs) as two separate values: '
+        'positional arguments as a list, keyword arguments as a map keyed by '
+        'their Python name. format_currency(19.99, code="EUR") fires the '
+        'callback with args = [19.99] and kwargs = {code: "EUR"}.',
     steps: [
       _Step(label: '→ Externals', code: 'format_currency(19.99, code="EUR")'),
     ],
@@ -864,6 +869,23 @@ void _initExamples() {
   }.toJS;
 }
 
+/// Formats a float the way Python prints it.
+///
+/// `value.toString()` is NOT enough on this page: dart2js has one number type,
+/// so `4.0.toString()` is `"4"` — and the demo would render an int where the
+/// value really is a float, reproducing the APPEARANCE of core#128a on the very
+/// page that demonstrates it being fixed. The value itself is correct; only this
+/// rendering was wrong. Verified in Chrome against the deployed artefact.
+String _fmtFloat(double value) {
+  if (value.isNaN) return 'nan';
+  if (value.isInfinite) return value > 0 ? 'inf' : '-inf';
+
+  final text = value.toString();
+  if (!text.contains('.') && !text.contains('e')) return '$text.0';
+
+  return text;
+}
+
 web.HTMLDivElement _buildSampleCard(_Sample sample) {
   final card = web.document.createElement('div') as web.HTMLDivElement
     ..className = 'sample-card';
@@ -925,18 +947,14 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 }
 
 // ---------------------------------------------------------------------------
-// Value formatter — exhaustive over all 19 MontyValue subtypes
+// Value formatter — exhaustive over all 20 MontyValue subtypes
 // ---------------------------------------------------------------------------
 String _fmt(MontyValue v) => switch (v) {
   MontyNone() => 'None',
+  MontyEllipsis() => 'Ellipsis',
   MontyBool(:final value) => value.toString(),
   MontyInt(:final value) => value.toString(),
-  MontyFloat(:final value) =>
-    value.isNaN
-        ? 'nan'
-        : value.isInfinite
-        ? (value > 0 ? 'inf' : '-inf')
-        : value.toString(),
+  MontyFloat(:final value) => _fmtFloat(value),
   MontyString(:final value) => '"$value"',
   MontyBytes(:final value) => 'b[${value.length}]',
   // Show up to 20 items — enough for demo punchlines like
@@ -947,6 +965,18 @@ String _fmt(MontyValue v) => switch (v) {
   MontyTuple(:final items) => '(${items.map(_fmt).join(', ')})',
   MontyDict(:final entries) =>
     '{${entries.entries.take(20).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 20 ? ', …' : ''}}',
+  // A dict with non-string keys (wire v2's `entries` envelope). Rendered like
+  // any other dict, with the KEYS formatted rather than stringified — the whole
+  // point of the variant is that they are typed values, not labels.
+  MontyPairsDict(:final pairs) =>
+    '{${pairs.take(20).map((p) => '${_fmt(p.$1)}: ${_fmt(p.$2)}').join(', ')}${pairs.length > 20 ? ', …' : ''}}',
+  // ---- Tier 2 variants (wire v3) ----------------------------------------
+  // These five all used to arrive as MontyString, so the demo rendered them
+  // without knowing what they were.
+  MontyBigInt(:final value) => '$value',
+  MontyExceptionValue(:final excType, :final message) =>
+    message == null ? '$excType()' : '$excType($message)',
+  MontyOpaque(:final text) => text,
   MontySet(:final items) => '{${items.map(_fmt).join(', ')}}',
   MontyFrozenSet(:final items) => 'frozenset({${items.map(_fmt).join(', ')}})',
   MontyDate(:final year, :final month, :final day) => '$year-$month-$day',
@@ -962,8 +992,7 @@ String _fmt(MontyValue v) => switch (v) {
   MontyTimeZone(:final offsetSeconds, :final name) =>
     name ?? '${offsetSeconds}s',
   MontyPath(:final value) => 'Path("$value")',
-  MontyFileHandle(:final path, :final mode) =>
-    "<file '$path' mode '$mode'>",
+  MontyFileHandle(:final path, :final mode) => "<file '$path' mode '$mode'>",
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
   MontyDataclass(:final name, :final attrs) =>

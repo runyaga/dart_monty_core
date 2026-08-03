@@ -1,0 +1,33 @@
+# Breaking changes to the CONSUMER SURFACE, and where each is announced.
+#
+# One row per commit that (a) carries the conventional-commit `!` marker and
+# (b) touches lib/. tool/check_breaking_recorded.sh enforces the mapping in both
+# directions: no such commit may be missing a row, and no row may name an
+# anchor that has fallen out of CHANGELOG.md.
+#
+# The anchor is a distinctive phrase that must appear VERBATIM in CHANGELOG.md.
+# It is deliberately a phrase and not a heading: headings get reworded, and a
+# check that only survives careful editing is not a check.
+#
+# WHY: `43366ba fix(limits)!` shipped with no CHANGELOG entry and no ledger row,
+# including the part where web went from silently ignoring `limits:` to throwing
+# UnsupportedError. The prose cross-check that should have caught it ("19 rows,
+# 19 in the CHANGELOG") had been run, and went stale within a day.
+#
+# Format: <short-sha>\t<anchor phrase that must appear in CHANGELOG.md>
+43366ba	`MontyLimits` is session-scoped
+c7f10eb	The `open()` OS-call op is now `'open'`, was `'Open'`
+623c578	a host callback's return value is now encoded
+e677396	must now be a valid Python identifier
+12bca03	A malformed typed envelope is now a decode error
+99a7d49	`memoryMountedOsHandler`'s errors now read like CPython's
+cf9864b	Declining an OS call now raises the call's own default, not `NameError`
+11bd4a8	A write no longer requires its parent directory to exist
+dd5470a	`memoryMountedOsHandler` takes `files:`, not a `vfs:` map
+db7d76b	Directories are real, and that changes two things consumers can see
+6f3bbda	Writing to a directory raises instead of destroying it
+fa8af8c	`iterdir`, `unlink` and `mkdir` answer directory questions honestly
+cb6a997	`rename` follows CPython's full matrix
+b418cae	CPython path semantics: name length, codepoint counts, `resolve` returns a Path
+430779f	A path outside every mount is reported as absent, not denied
+51e4e8e	`ReplPlatform` now rejects per-call `limits` and `scriptName`
