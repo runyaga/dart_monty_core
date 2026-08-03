@@ -9,6 +9,21 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **CPython path semantics: name length, codepoint counts, `resolve` returns a
+  Path.** With these, both `mount_fs__ops.py` and `mount_fs__errors.py` pass.
+
+  - Paths with a component over **255 bytes**, or a total over **4096 bytes**,
+    raise `OSError: [Errno 36] File name too long: '<path>'` from
+    read/write/append/stat/mkdir/open. `exists`, `is_file`, `is_dir` and
+    `is_symlink` swallow it and return `false`, as CPython does. Bytes, not
+    characters.
+  - `write_text` and `append_text` return **codepoints**. They returned Dart's
+    `String.length`, i.e. UTF-16 code units, so a single emoji reported 2.
+  - `resolve` and `absolute` return a `MontyPath`. They returned a bare
+    `String`, so Python received a `str` and `.name` raised `AttributeError`.
+  - `mkdir(parents=True)` through a file raises `NotADirectoryError` rather
+    than surfacing an internal `StateError` as `RuntimeError: Bad state:`.
+
 - **`rename` follows CPython's full matrix.** It had two behaviours; there are
   six, and which one applies depends on what is at *both* ends.
 
