@@ -30,3 +30,4 @@ fa8af8c	`iterdir`, `unlink` and `mkdir` answer directory questions honestly
 cb6a997	`rename` follows CPython's full matrix
 b418cae	CPython path semantics: name length, codepoint counts, `resolve` returns a Path
 430779f	A path outside every mount is reported as absent, not denied
+51e4e8e	`ReplPlatform` now rejects per-call `limits` and `scriptName`
