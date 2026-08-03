@@ -583,6 +583,33 @@ small consumer-facing surface.
   error type for an unknown codec is now consistent. Code that branched on the
   failure of a specific encoding needs rechecking.
 
+- **`ReplPlatform` now rejects per-call `limits` and `scriptName`.** Both are
+  part of the `MontyPlatform` signature and both were accepted and **silently
+  dropped**, because on a REPL each is session-scoped: the resource tracker is
+  chosen when the Rust handle is created and cannot be swapped, and the script
+  name is baked in at `monty_repl_create`. That is the FB-1 / core#124 defect
+  shape — a caller who asked for a memory cap got an unbounded session and no
+  signal. `run(code, limits: …)` and `start(code, scriptName: …)` now throw
+  `ArgumentError` naming the constructor that does honour the argument:
+
+  ```dart
+  // was: silently unbounded
+  ReplPlatform(repl: MontyRepl()).run(code, limits: MontyLimits(stackDepth: 10));
+  // now:
+  ReplPlatform(repl: MontyRepl(limits: MontyLimits(stackDepth: 10))).run(code);
+  ```
+
+  Note what this does **not** fix: a bare `MontyRepl()` is still UNBOUNDED,
+  while every one-shot run is bounded at 256 MB / depth 1000
+  (`native/src/handle.rs`'s `default_limits()`). Measured on this release:
+  `recurse(2000)` returns `2000` on a bare REPL session and raises
+  `RecursionError` on a one-shot run. Pass `MontyRepl(limits: …)` explicitly.
+
+  `ReplPlatform.resumeNameLookup` / `resumeNameLookupUndefined` now throw
+  `UnimplementedError` where they threw `UnsupportedError`. Harnesses that drive
+  a `MontyPlatform` catch `UnimplementedError` to record a capability gap as a
+  skip; an `UnsupportedError` went through that catch and aborted the run.
+
 ### Added — capabilities 0.19 brings that this package now passes through
 
 These were previously unsupported by the engine. They are **handled, not
