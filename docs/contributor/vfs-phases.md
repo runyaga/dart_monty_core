@@ -207,8 +207,10 @@ what POSIX means, which would hand a non-rooted string to the mount check.
 
 - [ ] `wasm_runner.dart` uses the shipped handler; its private ~400-line
       `_VirtualFs` deleted
-- [ ] `bash tool/test_cm_wasm.sh` still reports **527/531, 0 failures** — that is
-      the equivalence proof
+- [ ] `bash tool/test_cm_wasm.sh` **and** `bash tool/test_cm_wasm.sh --dart2wasm`
+      still report **528/531, 0 failures, 3 skipped** — that is the equivalence
+      proof. Run both: the dart2js half alone was the proof until 2026-08-03,
+      and the eight test-hooks fixtures had never executed on dart2wasm at all.
 - [ ] regression script green · gate green
 
 ## Phase 5 — FFI local files · STOP, needs review
