@@ -9,6 +9,22 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **A path outside every mount is reported as absent, not denied.**
+  `memoryMountedOsHandler` raised `PermissionError` for anything it does not
+  mount, which made `Path('/nonexistent').exists()` unusable.
+
+  - `exists`, `is_file`, `is_dir`, `is_symlink` return `false`.
+  - Every other operation raises
+    `FileNotFoundError: [Errno 2] No such file or directory: '<path>'`.
+
+  The second half is the part to notice if you relied on the old wording. It
+  is deliberate: reporting `exists() == False` and `PermissionError` about the
+  same path contradicts itself, and `Permission denied` leaks more — it
+  confirms the path is worth denying. A configured `fallthrough` still gets
+  first refusal, and a handler that *declines* with
+  `OsCallNotHandledException` is unaffected: it still gets upstream's
+  `on_no_handler` wording.
+
 - **CPython path semantics: name length, codepoint counts, `resolve` returns a
   Path.** With these, both `mount_fs__ops.py` and `mount_fs__errors.py` pass.
 
