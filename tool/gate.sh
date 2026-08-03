@@ -125,6 +125,26 @@ s  corpus_js     bash tool/test_wasm.sh --skip-build
 # temp dir, because `dart compile wasm -o test/integration/web/wasm_runner.wasm`
 # (what CI runs) writes three TRACKED files and the gate is read-only.
 s  corpus_wasm   bash tool/test_wasm.sh --skip-build --dart2wasm
+# The two steps above run the SHIPPED engine, which has test-hooks off, so they
+# skip eight fixtures: five with__cm_* (they need monty's synthetic `_test_cm()`)
+# and three recursion ones (they need `sys.setrecursionlimit`). Measured on
+# dart2wasm: 520 passed / 11 skipped without the feature, 528 / 3 with it.
+# Those eight are therefore covered by NO step above, on either compiler — the
+# only thing that has ever run them is tool/test_cm_wasm.sh, which the gate did
+# not call, and which until now only had a dart2js path. So the eight had never
+# executed on dart2wasm anywhere, locally or in CI.
+#
+# Both variants are cheap here because they share one cargo cache: the pair adds
+# ~30s warm. Cold (or after native/src changes) the first of them pays a
+# test-hooks rebuild.
+#
+# Neither writes to the tree. The engine they build has test-hooks ON, which is
+# NEVER shipped, so test_cm_wasm.sh stages it in a temp dir and builds it in its
+# own target dir (native/target/test-hooks) — otherwise it would sit at exactly
+# the path tool/test_wasm.sh copies into lib/assets/ without --skip-build, and
+# the next reader would load a sandbox-escaping engine believing it was ours.
+s  corpus_cm_js  bash tool/test_cm_wasm.sh
+s  corpus_cm_w   bash tool/test_cm_wasm.sh --dart2wasm
 # Neither corpus step runs the package:test suites on chrome — those are a
 # different mechanism (`dart test -p chrome --tags=wasm`, via
 # tool/test_wasm_unit.sh) and were absent from this matrix entirely, so the

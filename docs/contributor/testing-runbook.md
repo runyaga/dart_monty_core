@@ -151,6 +151,42 @@ corpus regression passed locally and failed in CI. Both are gate steps now
 tracked file, and so are the `.mjs` and `.wasm.map` emitted beside it, so an
 in-place compile would leave every gate run with a dirty tree.
 
+### 4b. The eight fixtures the shipped engine cannot run
+
+`tool/test_wasm.sh` builds with test-hooks **off**, as shipped, so it skips
+eight fixtures on both targets: five `with__cm_*` (they need monty's synthetic
+`_test_cm()`) and `recursion__deep_repr`, `recursion__limit_depth`,
+`json__dumps_recursion` (they need `sys.setrecursionlimit`). Both live in
+`testHooksWasmFixtures`. `tool/test_cm_wasm.sh` is the only thing that runs
+them: it builds a test-hooks engine and compiles the runner with
+`-DMONTY_TEST_HOOKS=true`, which is what stops the runner skipping them.
+
+```bash
+bash tool/test_cm_wasm.sh             # test-hooks corpus, dart2js
+bash tool/test_cm_wasm.sh --dart2wasm # test-hooks corpus, dart2wasm
+```
+
+Both report `531 total, 528 passed, 0 failed, 3 skipped` — against `520/11` for
+the same corpus without the feature, i.e. the eight move from skipped to passed.
+
+**The `--dart2wasm` half is new (2026-08-03), and before it those eight fixtures
+had never executed on dart2wasm anywhere** — not locally and not in CI, because
+this script was the only harness that could run them and it only had a
+`dart compile js` path. They pass there; that had never been checked.
+
+`-D` is spelled identically for `dart compile wasm` and `dart compile js`.
+Losing it would not fail the compile — the runner would just silently skip the
+eight again and report a green `520/11` — so the script asserts the executed
+counts (`with__cm fixtures executed: 5`, `recursion fixtures executed: 3`) and
+pins the total to `tool/fixture-corpus.json`.
+
+Both are gate steps (`corpus_cm_js`, `corpus_cm_w`) and both stage into a temp
+dir, with the cargo build in its own target dir (`native/target/test-hooks`).
+That is not tidiness. A test-hooks engine exposes `sys.setrecursionlimit` and is
+**never shipped**; building it into the default target dir would leave it at
+precisely the path `tool/test_wasm.sh` copies into `lib/assets/` when run
+without `--skip-build`.
+
 Its expectations come from `# Return=` / `# Raise=` directives authored in
 upstream monty's `test_cases/`, so unlike mechanism 3 it is **not** circular.
 It is still blind to dict ordering for a different reason: exactly one of the 531

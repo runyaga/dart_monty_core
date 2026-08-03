@@ -262,6 +262,11 @@ sides of the change: `mount_fs__ops`, `mount_fs__errors`, `open__fs`,
 `import__os`, `os__environ`, `pathlib__os`, `pathlib__os_read_error`
 (call-external, `/virtual`). The 12 skips are unchanged and none is a
 filesystem fixture.
+- [ ] `bash tool/test_cm_wasm.sh` **and** `bash tool/test_cm_wasm.sh --dart2wasm`
+      still report **528/531, 0 failures, 3 skipped** — that is the equivalence
+      proof. Run both: the dart2js half alone was the proof until 2026-08-03,
+      and the eight test-hooks fixtures had never executed on dart2wasm at all.
+- [ ] regression script green · gate green
 
 ## Phase 5 — FFI local files · STOP, needs review
 

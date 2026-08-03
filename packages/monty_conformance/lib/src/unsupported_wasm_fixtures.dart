@@ -127,6 +127,18 @@ const setRecursionLimitFixtures = {
 /// a test-hooks WASM binary (see tool/test_cm_wasm.sh) — never in the shipped
 /// build. Real `with open(...)` is covered by with__all.py on both backends.
 ///
+/// MEASURED 2026-08-03 on BOTH web compilers, all eight passing:
+///
+///     test-hooks off   520 passed / 11 skipped   (tool/test_wasm.sh)
+///     test-hooks on    528 passed /  3 skipped   (tool/test_cm_wasm.sh)
+///
+/// dart2js and dart2wasm agree exactly. Worth recording because until
+/// `tool/test_cm_wasm.sh --dart2wasm` existed these eight had never executed on
+/// dart2wasm anywhere — that script was the only harness that could run them
+/// and it had only a `dart compile js` path, so "runs on the corpus runners"
+/// was true of one of the two. Both are gate steps now (`corpus_cm_js`,
+/// `corpus_cm_w`).
+///
 /// Split from [setRecursionLimitFixtures] because the two need DIFFERENT things
 /// from the same cargo feature, and only one of them fails on native as well.
 const testCmFixtures = {

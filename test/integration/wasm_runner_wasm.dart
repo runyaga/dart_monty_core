@@ -19,6 +19,10 @@
 // local script built the dart2wasm twin at all. That is the FB-10 mechanism,
 // and it is the reason the body below is shared rather than copied: a second
 // copy is a second thing that only CI can contradict.
+// That run has test-hooks OFF, as shipped, so it skips the eight fixtures in
+// `testHooksWasmFixtures`. To run those on this compiler use
+// `bash tool/test_cm_wasm.sh --dart2wasm` (gate step `corpus_cm_w`), which
+// builds a test-hooks engine and passes `-DMONTY_TEST_HOOKS=true` below.
 //
 // Runs every fixture from the compile-time corpus through MontyWasm,
 // prints one JSON line per fixture, then a summary line.
