@@ -44,13 +44,30 @@ TARGETS (red)     mount_fs__ops.py · mount_fs__errors.py
 Split out so the ~69 call sites move **exactly once**. Nothing about behaviour
 changes here, so a red result can only be a migration slip.
 
-- [ ] `MontyMemoryFile` + a `files:` constructor, mirroring upstream's
+- [x] `MontyMemoryFile` + a `files:` constructor, mirroring upstream's
       `OSAccess([MemoryFile(...)])`
-- [ ] Content is a sealed ADT — `TextContent | BytesContent` with polymorphic
+- [x] Content is a sealed ADT — `VfsText | VfsBytes` with polymorphic
       `byteLength`, `late final` cached so `stat()` is not O(n)
-- [ ] All ~69 call sites migrated
-- [ ] Old `vfs:` map parameter and `vfsText` removed (no backwards compatibility)
-- [ ] regression script green · gate green
+- [x] All call sites migrated
+- [x] Old `vfs:` map parameter and `vfsText` removed (no backwards compatibility)
+- [x] regression script green · gate green
+
+Two things settled while doing it, both worth carrying into 1b:
+
+- **Writes mutate the caller's file in place.** Upstream's `_write_file`
+  (`os_access.py:955-970`) calls `entry.write_content(data)` rather than
+  replacing the node, and `MemoryFile`'s own docstring states the contract:
+  *"When Monty code writes to this file, the content attribute is updated"*
+  (`os_access.py:606-607`). So a caller who seeds `MontyMemoryFile('/out.txt',
+  '')` and reads `.content` back afterwards is using the API as designed, not
+  working around a missing one. `VfsText`/`VfsBytes` have value equality so that
+  assertion reads `expect(file.content, VfsText('…'))`.
+- **No store-observation API was added, on purpose.** A caller cannot see a file
+  Monty created that they did not seed — and neither can an upstream caller.
+  Unit tests that used to assert `vfs.containsKey(...)` now assert through
+  `Path.exists` / `Path.read_text`, which is both a contract-level assertion and
+  the reason they will not need touching again when 1b swaps the flat map for a
+  tree.
 
 ## Phase 1b — tree interior + `open()`'s closures, SAME COMMIT
 

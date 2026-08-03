@@ -12,12 +12,15 @@ const conformanceEnv = <String, String>{
 };
 
 /// The filesystem the non-`# mount-fs` path fixtures expect under `/virtual`.
-const conformanceVfs = <String, String>{
-  '/virtual/file.txt': 'hello from virtual fs',
-  '/virtual/empty.txt': '',
-  '/virtual/subdir/nested.txt': 'nested content',
-  '/virtual/subdir/deep/file.txt': 'deep',
-};
+///
+/// A function, not a constant: files are mutable, so every handler must get
+/// its own set or a write in one fixture would be visible to the next.
+List<VfsFile> conformanceVfs() => [
+  MontyMemoryFile('/virtual/file.txt', 'hello from virtual fs'),
+  MontyMemoryFile('/virtual/empty.txt', ''),
+  MontyMemoryFile('/virtual/subdir/nested.txt', 'nested content'),
+  MontyMemoryFile('/virtual/subdir/deep/file.txt', 'deep'),
+];
 
 /// The instant `datetime__core.py` is written against: 1700000000 UTC, i.e.
 /// 2023-11-14 22:13:20 UTC. The virtual local zone is UTC+02:00, so a NAIVE
@@ -44,7 +47,7 @@ const _fixtureEpochSeconds = 1700000000;
 OsCallHandler conformanceOsHandler() {
   final fs = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/virtual')],
-    vfs: Map.of(conformanceVfs),
+    files: conformanceVfs(),
   );
 
   return (operation, args, kwargs) async {

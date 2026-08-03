@@ -13,7 +13,7 @@ void runOpenTests() {
     test('text read returns full file content', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/m')],
-        vfs: {'/m/a.txt': 'hello world\n'},
+        files: [MontyMemoryFile('/m/a.txt', 'hello world\n')],
       );
 
       final r = await Monty(
@@ -30,7 +30,7 @@ void runOpenTests() {
     test('TextIOWrapper type and mode are reported', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/m')],
-        vfs: {'/m/a.txt': 'x'},
+        files: [MontyMemoryFile('/m/a.txt', 'x')],
       );
 
       final r = await Monty(
@@ -50,10 +50,10 @@ void runOpenTests() {
     });
 
     test('write truncates then appends; returns char counts', () async {
-      final vfs = <String, String>{};
+      final out = MontyMemoryFile('/m/out.txt', '');
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/m')],
-        vfs: vfs,
+        files: [out],
       );
 
       final r = await Monty(
@@ -66,14 +66,14 @@ void runOpenTests() {
 
       expect(r.error, isNull);
       expect(r.value.dartValue, [5, 4]);
-      expect(vfs['/m/out.txt'], 'alphabeta');
+      expect(out.content, VfsText('alphabeta'));
     });
 
     test('append mode preserves existing content', () async {
-      final vfs = <String, String>{'/m/log.txt': 'seed-'};
+      final log = MontyMemoryFile('/m/log.txt', 'seed-');
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/m')],
-        vfs: vfs,
+        files: [log],
       );
 
       final r = await Monty(
@@ -85,14 +85,14 @@ void runOpenTests() {
 
       expect(r.error, isNull);
       expect(r.value.dartValue, 'seed-X');
-      expect(vfs['/m/log.txt'], 'seed-X');
+      expect(log.content, VfsText('seed-X'));
     });
 
     test('with open(...) closes the file at block exit', () async {
-      final vfs = <String, String>{};
+      final written = MontyMemoryFile('/m/w.txt', '');
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/m')],
-        vfs: vfs,
+        files: [written],
       );
 
       final r = await Monty(
@@ -105,7 +105,7 @@ void runOpenTests() {
 
       expect(r.error, isNull);
       expect(r.value.dartValue, [5, false, true]);
-      expect(vfs['/m/w.txt'], 'hello');
+      expect(written.content, VfsText('hello'));
     });
 
     test(
@@ -113,7 +113,7 @@ void runOpenTests() {
       () async {
         final handler = memoryMountedOsHandler(
           mounts: const [MountDir(virtualPath: '/m')],
-          vfs: const {},
+          files: const [],
         );
 
         final r = await Monty(

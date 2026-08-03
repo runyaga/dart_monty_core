@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/mount_mode.dart';
 import 'package:dart_monty_core/src/mount/open_call.dart';
+import 'package:dart_monty_core/src/mount/vfs_content.dart';
+import 'package:dart_monty_core/src/mount/vfs_file.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 
 /// Builds an [OsCallHandler] that serves Python `pathlib.Path` operations
@@ -57,9 +61,13 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// that need first-class empty directories should use a richer handler.
 OsCallHandler memoryMountedOsHandler({
   required List<MountDir> mounts,
-  required Map<String, String> vfs,
+  required List<VfsFile> files,
   OsCallHandler? fallthrough,
 }) {
+  // Keyed by normalised path. Still FLAT in this phase — the tree lands in 1b.
+  final vfs = <String, VfsFile>{
+    for (final f in files) _normalizePath(f.path): f,
+  };
   final normalizedMounts = mounts
       .map(
         (m) => MountDir(
@@ -69,6 +77,23 @@ OsCallHandler memoryMountedOsHandler({
         ),
       )
       .toList(growable: false);
+
+  /// Stores [content] at [path], mirroring upstream's `_write_file`
+  /// (os_access.py:955-970): if a file is already there, MUTATE it rather than
+  /// replacing the node.
+  ///
+  /// That distinction is not cosmetic. A caller holds the `VfsFile` objects it
+  /// passed in, so replacing the entry would silently detach their reference
+  /// and any later inspection would read a stale object.
+  void putContent(String path, VfsContent content) {
+    final existing = vfs[path];
+    if (existing != null) {
+      existing.content = content;
+
+      return;
+    }
+    vfs[path] = MontyMemoryFile.withContent(path, content);
+  }
 
   Future<Object?> notMine(
     String op,
@@ -135,8 +160,9 @@ OsCallHandler memoryMountedOsHandler({
         isDirectory: (p) =>
             _hasChildren(vfs, p) || _isMountRoot(p, normalizedMounts),
         ensureWritable: (p) => _requireWritable(mount, p),
-        truncate: (p) => vfs[p] = '',
-        createIfMissing: (p) => vfs.putIfAbsent(p, () => ''),
+        truncate: (p) => putContent(p, VfsText('')),
+        createIfMissing: (p) =>
+            vfs.putIfAbsent(p, () => MontyMemoryFile(p, '')),
       );
     }
 
@@ -150,19 +176,19 @@ OsCallHandler memoryMountedOsHandler({
 
     switch (op) {
       case 'Path.read_text':
-        final content = vfs[path];
-        if (content == null) {
+        final file = vfs[path];
+        if (file == null) {
           throw OsCallException(
             "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
           );
         }
 
-        return content;
+        return _decodeUtf8(file.content.bytes);
 
       case 'Path.read_bytes':
-        final content = vfs[path];
-        if (content == null) {
+        final file = vfs[path];
+        if (file == null) {
           throw OsCallException(
             "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
@@ -170,8 +196,9 @@ OsCallHandler memoryMountedOsHandler({
         }
 
         // Return a typed bytes value (not a bare List, which would decode as
-        // a Python list and break binary `open(...).read()` buffering).
-        return MontyBytes(utf8.encode(content));
+        // a Python list and break binary `open(...).read()` buffering). No
+        // re-encode: the store holds the bytes as written.
+        return MontyBytes(file.content.bytes);
 
       case 'Path.write_text':
         _requireWritable(mount, path);
@@ -183,7 +210,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, utf8.encode(value).length);
-        vfs[path] = value;
+        putContent(path, VfsText(value));
 
         return value.length;
 
@@ -200,7 +227,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, bytes.length);
-        vfs[path] = utf8.decode(bytes, allowMalformed: true);
+        putContent(path, VfsBytes(Uint8List.fromList(bytes)));
 
         return bytes.length;
 
@@ -214,7 +241,11 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, utf8.encode(value).length);
-        vfs[path] = '${vfs[path] ?? ''}$value';
+        final existing = vfs[path];
+        final head = existing == null
+            ? ''
+            : _decodeUtf8(existing.content.bytes);
+        putContent(path, VfsText('$head$value'));
 
         return value.length;
 
@@ -231,8 +262,11 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, bytes.length);
-        final decoded = utf8.decode(bytes, allowMalformed: true);
-        vfs[path] = '${vfs[path] ?? ''}$decoded';
+        final prior = vfs[path];
+        putContent(
+          path,
+          VfsBytes(Uint8List.fromList([...?prior?.content.bytes, ...bytes])),
+        );
 
         return bytes.length;
 
@@ -262,7 +296,7 @@ OsCallHandler memoryMountedOsHandler({
 
         return isDir
             ? _dirStat()
-            : _fileStat(utf8.encode(content ?? '').length);
+            : _fileStat(vfs[path]?.content.byteLength ?? 0);
 
       case 'Path.unlink':
         _requireWritable(mount, path);
@@ -484,7 +518,7 @@ void _enforceLimit(MountDir mount, String path, int bytes) {
   }
 }
 
-bool _hasChildren(Map<String, String> vfs, String path) {
+bool _hasChildren(Map<String, VfsFile> vfs, String path) {
   final prefix = path.endsWith('/') ? path : '$path/';
   for (final key in vfs.keys) {
     if (key.startsWith(prefix)) return true;
@@ -502,7 +536,7 @@ bool _isMountRoot(String normalized, List<MountDir> mounts) {
 }
 
 bool _dirExists(
-  Map<String, String> vfs,
+  Map<String, VfsFile> vfs,
   String normalized,
   List<MountDir> mounts,
 ) {
@@ -572,3 +606,36 @@ MontyNamedTuple _fileStat(int size) =>
 /// A directory: mode `0o755` with the directory type bits OR'd in, two links
 /// (`.` and the parent's entry), and the conventional 4096-byte size.
 MontyNamedTuple _dirStat() => _statResult(mode: 0x41ED, nlink: 2, size: 4096);
+
+/// Decodes stored bytes as UTF-8, raising the way CPython does when they are
+/// not valid UTF-8.
+///
+/// This is the payoff of storing content rather than a `String`. The previous
+/// store decoded at WRITE time with `allowMalformed: true`, replacing every
+/// invalid byte with U+FFFD — so by the time anything read the file the
+/// offending bytes no longer existed and `read_text` could not fail even in
+/// principle. Upstream decodes at the surface and lets it fail
+/// (monty-fs/src/common.rs:102, :343).
+///
+/// Message shape follows upstream's `unicode_decode_error_msg`
+/// (monty-types/src/exceptions.rs:765-779): the single-byte form names the byte
+/// and its position, and the reason distinguishes an invalid START byte from an
+/// invalid CONTINUATION byte — 0xC2..=0xF4 begins a multi-byte sequence,
+/// anything else in the high range cannot start one.
+String _decodeUtf8(Uint8List bytes) {
+  try {
+    return utf8.decode(bytes);
+  } on FormatException catch (e) {
+    final pos = e.offset ?? 0;
+    final byte = bytes.elementAtOrNull(pos) ?? 0;
+    final hex = '0x${byte.toRadixString(16).padLeft(2, '0')}';
+    final reason = byte >= 0xC2 && byte <= 0xF4
+        ? 'invalid continuation byte'
+        : 'invalid start byte';
+
+    throw OsCallException(
+      "'utf-8' codec can't decode byte $hex in position $pos: $reason",
+      pythonExceptionType: 'UnicodeDecodeError',
+    );
+  }
+}

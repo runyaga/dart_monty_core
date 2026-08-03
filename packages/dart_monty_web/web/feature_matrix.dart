@@ -413,7 +413,12 @@ type(f).__name__
           ).run(
             osHandler: memoryMountedOsHandler(
               mounts: const [MountDir(virtualPath: '/data')],
-              vfs: {'/data/hello.txt': 'Hello from a virtual filesystem!'},
+              files: [
+                MontyMemoryFile(
+                  '/data/hello.txt',
+                  'Hello from a virtual filesystem!',
+                ),
+              ],
             ),
           );
       final got = _render(r.value);
@@ -438,7 +443,12 @@ type(f).__name__
           ).run(
             osHandler: memoryMountedOsHandler(
               mounts: const [MountDir(virtualPath: '/data')],
-              vfs: {'/data/hello.txt': 'Hello from a virtual filesystem!'},
+              files: [
+                MontyMemoryFile(
+                  '/data/hello.txt',
+                  'Hello from a virtual filesystem!',
+                ),
+              ],
             ),
           );
 
@@ -759,7 +769,7 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
           ).run(
             osHandler: memoryMountedOsHandler(
               mounts: const [MountDir(virtualPath: '/mnt')],
-              vfs: Map.of(_mountFsSeed),
+              files: _mountFsSeed,
             ),
           );
 

@@ -33,14 +33,14 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 
 // Upstream's create_mount_fs_tempdir (monty-datatest/src/main.rs:371-382),
 // which is what the fixtures are written against.
-const _seed = <String, String>{
-  '/mnt/hello.txt': 'hello world\n',
-  '/mnt/empty.txt': '',
-  '/mnt/data.bin': '\x00\x01\x02\x03',
-  '/mnt/readonly.txt': 'readonly content',
-  '/mnt/subdir/nested.txt': 'nested content',
-  '/mnt/subdir/deep/file.txt': 'deep file',
-};
+List<VfsFile> _seed() => [
+  MontyMemoryFile('/mnt/hello.txt', 'hello world\n'),
+  MontyMemoryFile('/mnt/empty.txt', ''),
+  MontyMemoryFile('/mnt/data.bin', '\x00\x01\x02\x03'),
+  MontyMemoryFile('/mnt/readonly.txt', 'readonly content'),
+  MontyMemoryFile('/mnt/subdir/nested.txt', 'nested content'),
+  MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
+];
 
 const _mustStayGreen = [
   'open__fs.py',
@@ -60,7 +60,7 @@ Future<String?> _run(String name) async {
   ).run(
     osHandler: memoryMountedOsHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
-      vfs: Map.of(_seed),
+      files: _seed(),
     ),
   );
   if (r.error == null) return null;
