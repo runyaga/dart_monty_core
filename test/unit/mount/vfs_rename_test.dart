@@ -125,5 +125,96 @@ void main() {
       expect(await h('Path.read_text', ['/mnt/src/moved.txt'], null), 'moved');
       expect(await h('Path.read_text', ['/mnt/full/a.txt'], null), 'a');
     });
+
+    // A TARGET outside every mount used to decline, which with no fallthrough
+    // surfaced as `PermissionError: Permission denied: '<target>'` — telling
+    // sandboxed code exactly which paths lie outside the sandbox, the secret
+    // the SOURCE path was changed to stop telling (FB-11 P5). Upstream does
+    // not pin this: monty-fs/tests/fs_security.rs:1078 accepts either outcome.
+    group('a target outside every mount is absent, not denied', () {
+      test('it raises FileNotFoundError, never PermissionError', () async {
+        final h = handler();
+
+        await expectLater(
+          () => h('Path.rename', ['/mnt/hello.txt', '/etc/passwd'], null),
+          raises(
+            'FileNotFoundError',
+            "[Errno 2] No such file or directory: '/etc/passwd'",
+          ),
+        );
+      });
+
+      test('a `..` escape normalises and gets the same answer', () async {
+        final h = handler();
+
+        await expectLater(
+          () => h('Path.rename', [
+            '/mnt/hello.txt',
+            '/mnt/../../../etc/passwd',
+          ], null),
+          raises(
+            'FileNotFoundError',
+            "[Errno 2] No such file or directory: '/etc/passwd'",
+          ),
+        );
+      });
+
+      // The point of the change: outside-a-mount and merely-missing must be
+      // INDISTINGUISHABLE, or the exception itself maps the sandbox.
+      test('it is indistinguishable from a missing parent inside', () async {
+        final h = handler();
+
+        Future<Object?> err(String target) async {
+          try {
+            await h('Path.rename', ['/mnt/hello.txt', target], null);
+
+            return 'no throw';
+          } on OsCallException catch (e) {
+            return '${e.pythonExceptionType}|${e.message}';
+          }
+        }
+
+        // Identical modulo the path itself, which is the whole property: one
+        // target is outside all mounts, the other is inside a mount but under
+        // a directory that does not exist, and nothing in the answer says
+        // which.
+        String sameExcept(String p) =>
+            "FileNotFoundError|[Errno 2] No such file or directory: '$p'";
+
+        expect(await err('/outside/x.txt'), sameExcept('/outside/x.txt'));
+        expect(await err('/mnt/nope/x.txt'), sameExcept('/mnt/nope/x.txt'));
+      });
+
+      test('the source is left untouched', () async {
+        final h = handler();
+
+        await expectLater(
+          () => h('Path.rename', ['/mnt/hello.txt', '/etc/passwd'], null),
+          throwsA(isA<OsCallException>()),
+        );
+        expect(await h('Path.read_text', ['/mnt/hello.txt'], null), 'hi');
+      });
+
+      // Declining used to rewrite the call to `[target]`, so a fallthrough
+      // handler received Path.rename with its SOURCE dropped.
+      test('declining to a fallthrough keeps BOTH arguments', () async {
+        final seen = <List<Object?>>[];
+        final h = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/mnt')],
+          files: [MontyMemoryFile('/mnt/hello.txt', 'hi')],
+          fallthrough: (op, args, kwargs) async {
+            seen.add(args);
+
+            return null;
+          },
+        );
+
+        await h('Path.rename', ['/mnt/hello.txt', '/etc/passwd'], null);
+
+        expect(seen, [
+          ['/mnt/hello.txt', '/etc/passwd'],
+        ]);
+      });
+    });
   });
 }

@@ -16,8 +16,11 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// from an in-memory virtual filesystem.
 ///
 /// `mounts` declare which path prefixes Python can reach. `files` seeds the
-/// backing store. Paths outside every mount fall through to [fallthrough] (or
-/// raise `PermissionError` in Python if no fallthrough is given).
+/// backing store. Paths outside every mount fall through to [fallthrough] (or,
+/// with no fallthrough, are reported as **absent** — `FileNotFoundError`, and
+/// `false` from the existence queries. Not `PermissionError`: saying a path is
+/// both denied and non-existent contradicts itself, and "denied" confirms the
+/// path was worth denying. That holds for a `rename` target too).
 ///
 /// ```dart
 /// final handler = memoryMountedOsHandler(
@@ -509,7 +512,36 @@ OsCallHandler memoryMountedOsHandler({
         final target = normalizeVfsPath(rawTarget);
         final targetMount = _findMount(target, normalizedMounts);
         if (targetMount == null) {
-          return notMine(op, [target], kwargs);
+          // FB-11 P5 again, and it was never carried through to here. A TARGET
+          // outside every mount used to decline, which with no fallthrough
+          // surfaced as `PermissionError: Permission denied: '<target>'` — the
+          // exact secret the source path at :237-264 was changed to stop
+          // telling. Sandboxed code could distinguish "outside my mounts" from
+          // "fine" by which exception came back.
+          //
+          // Upstream does not pin this case: `route_call` propagates `None` for
+          // an unmounted dst (monty-fs/src/mount_table.rs:125) and its own
+          // security test accepts either outcome outright —
+          // `None => {} // Also acceptable — dst doesn't match any mount.`
+          // (monty-fs/tests/fs_security.rs:1078). So this is our call, and our
+          // own stated reasoning already answers it.
+          //
+          // FileNotFoundError naming the target also makes an out-of-mount
+          // target indistinguishable from one whose parent is simply missing,
+          // which `requireParentDir` already reports with this same message.
+          if (fallthrough == null) {
+            throw OsCallException(
+              "[Errno 2] No such file or directory: '$target'",
+              pythonExceptionType: 'FileNotFoundError',
+            );
+          }
+
+          // `args`, not `[target]`. Declining used to rewrite the call to a
+          // single argument, so a fallthrough handler received `Path.rename`
+          // with its source dropped — and upstream's own `on_no_handler` names
+          // the SOURCE for a rename (monty-types/src/os.rs:241,
+          // `Self::Rename(a) => Some(a.src.as_str())`), never the target.
+          return notMine(op, args, kwargs);
         }
         _requireWritable(targetMount, target);
         // CPython's rename is four errors and one SILENT OVERWRITE,

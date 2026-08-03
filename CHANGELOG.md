@@ -51,6 +51,26 @@ small consumer-facing surface.
   Found by porting upstream's `test_os_access.py`, whose own test for this is a
   named data-loss regression guard.
 
+- **A `rename` TARGET outside every mount is absent too, not denied.** The rule
+  below was never carried through to the second path of a two-path call. A
+  target outside every mount declined instead, which with no fallthrough
+  surfaced as `PermissionError: Permission denied: '<target>'` — so sandboxed
+  code could map the sandbox by comparing exceptions: `PermissionError` meant
+  "outside your mounts", `FileNotFoundError` meant "just missing". It now
+  raises `FileNotFoundError: [Errno 2] No such file or directory: '<target>'`,
+  the same message a target whose parent is simply missing already gets, which
+  is what makes the two indistinguishable.
+
+  Upstream does not pin this case — `route_call` propagates "no mount" as a
+  non-answer (`monty-fs/src/mount_table.rs:125`) and upstream's own security
+  test accepts either outcome outright (`monty-fs/tests/fs_security.rs:1078`:
+  `None => {} // Also acceptable`).
+
+  Also fixed in the same place: declining to a `fallthrough` rewrote the call to
+  a single argument, so a fallthrough handler received `Path.rename` with its
+  **source dropped**. It now forwards both. (Upstream's `on_no_handler` names
+  the source for a rename, never the target — `monty-types/src/os.rs:241`.)
+
 - **A path outside every mount is reported as absent, not denied.**
   `memoryMountedOsHandler` raised `PermissionError` for anything it does not
   mount, which made `Path('/nonexistent').exists()` unusable.
