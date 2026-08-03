@@ -9,6 +9,18 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **`iterdir`, `unlink` and `mkdir` answer directory questions honestly.**
+
+  - `iterdir` of a **missing** path raised nothing and returned an empty list,
+    which is indistinguishable from a successful listing of an empty
+    directory. It now raises `FileNotFoundError`. Of a **file**, it now raises
+    `NotADirectoryError: [Errno 20] Not a directory: '<path>'`.
+  - `unlink` of a **directory** raised `FileNotFoundError`, naming a path that
+    exists. It now raises `IsADirectoryError`.
+  - `mkdir` on an existing **directory** said `Directory exists: <path>`. It
+    now says `[Errno 17] File exists: '<path>'` — CPython uses one message for
+    both the file and directory cases.
+
 - **Writing to a directory raises instead of destroying it.** This was silent
   data loss: `write_text` on a directory path succeeded, replacing the
   directory node with a file and discarding everything beneath it.
