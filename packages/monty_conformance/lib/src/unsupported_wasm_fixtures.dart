@@ -30,20 +30,22 @@ const alwaysUnsupportedWasmFixtures = <String>{
   // MontyValue.fromDart(2.0), which is MontyInt(2) on dart2js, so a right
   // answer was checked against a broken yardstick. Fixed in the parser (#142).
   // ---- added with the monty v0.0.19 corpus (531 fixtures, was 482) --------
-  // These four arrived when the corpus symlink was repointed from v0.0.18 to
-  // v0.0.19. All four fail IDENTICALLY on the 0.18 reference oracle and on
-  // 0.19, so none is a 0.19 regression — they are pre-existing harness gaps
-  // that the larger corpus made visible.
+  // Four names were added to THIS set when the corpus symlink was repointed
+  // from v0.0.18 to v0.0.19. None of them is still here: the three
+  // `sys.setrecursionlimit` fixtures moved to [setRecursionLimitFixtures]
+  // below, because the gate is the cargo feature and not the backend, and
+  // dict__eq_self_referential.py was removed outright (see the next note).
   //
-  // Three need `sys.setrecursionlimit`, which is gated behind the
-  // `test-hooks` cargo feature AND requires a tracker exposing a settable
-  // recursion limit. Under a test-hooks build they get as far as
-  //   ValueError: sys.setrecursionlimit: this runtime does not expose a
-  //               settable recursion limit
-  // because our REPL path constructs `NoLimitTracker`;
-  // `recursion_limit_override`
-  // lives on `LimitedTracker`. Unblocked by core#124 (FB-1), not by anything in
-  // the 0.19 upgrade.
+  // The reason those three carried is recorded as REFUTED rather than deleted,
+  // because it is still repeated elsewhere: it said the blocker was that "our
+  // REPL path constructs `NoLimitTracker`" while `recursion_limit_override`
+  // lives on `LimitedTracker`. The source says otherwise — BOTH handles use
+  // `LimitedTracker` (`native/src/repl_handle.rs:30`, `native/src/handle.rs:19`,
+  // and repl_handle.rs:18 records that it "was `NoLimitTracker`"). What is
+  // actually unbounded is the DEFAULT: `ResourceLimits::default()` has every
+  // field `None`, so a REPL session created without limits behaves as
+  // `NoLimitTracker` did (repl_handle.rs:23-25). Same symptom, different cause,
+  // and the difference decides the fix — a tracker swap would be wasted work.
   // dict__eq_self_referential.py was here, added 2026-08-02 on the claim that
   // it "fails in the browser panel". Removed 2026-08-03: the claim was stale
   // and nothing re-checked it, because a skipped fixture is a fixture nobody
@@ -57,9 +59,19 @@ const alwaysUnsupportedWasmFixtures = <String>{
   // Its real subject is still open, and is NOT a web divergence: the fixture's
   // comment says "Monty must not panic", and on FFI `Monty(code).run()` exits
   // 132 (SIGILL) on this input while `MontyFfi().run()` raises RecursionError
-  // correctly. The one-line API builds a MontyRepl, and the REPL path uses
-  // NoLimitTracker. Tracked separately; it is a host-process-death bug, not a
-  // conformance skip.
+  // correctly. The one-line API builds a MontyRepl with NO limits, and an
+  // unlimited REPL session is unbounded — not because of the tracker TYPE (see
+  // the refuted note above) but because `ResourceLimits::default()` sets no
+  // limits at all.
+  //
+  // It is also not alone. Sweeping all 531 fixtures through a bare
+  // `MontyRepl()` on 2026-08-03 found FIVE that kill the host process —
+  // list__eq_self_referential.py, recursion__deep_hash.py,
+  // recursion__deep_isinstance.py and traceback__recursion_error.py (exit 137,
+  // memory) alongside this one. All five pass on a BOUNDED session and all
+  // five pass one-shot. Tracked separately; it is a host-process-death bug,
+  // not a conformance skip. See the blast-radius note in
+  // test/integration/ffi_repl_corpus_test.dart.
   // dataclass__basic.py was here. It is NOT skipped any more -- see FB-10.
   // Both reasons it carried were wrong. It never needed an external the
   // harness withholds, and it never failed its `repr()` assert; repr was

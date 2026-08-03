@@ -231,6 +231,30 @@ void main() {
         // resource control that reports success. If a future change gives
         // `MontyRepl()` the one-shot defaults, THIS TEST GOES RED — that is the
         // signal to delete it and drop `_replSessionLimits`.
+        //
+        // THE BLAST RADIUS IS PROCESS DEATH, NOT A WRONG ANSWER. Measured
+        // 2026-08-03 by feeding all 531 fixtures to a bare `MontyRepl()` in a
+        // subprocess and resuming past each death — 526 survived and FIVE
+        // killed the host process outright:
+        //
+        //     dict__eq_self_referential.py     exit 132 (SIGILL)
+        //     list__eq_self_referential.py     exit 132 (SIGILL)
+        //     recursion__deep_hash.py          exit 132 (SIGILL)
+        //     recursion__deep_isinstance.py    exit 132 (SIGILL)
+        //     traceback__recursion_error.py    exit 137 (SIGKILL, memory)
+        //
+        // All five pass on the BOUNDED session this runner uses, and all five
+        // pass one-shot, which is always bounded. So the unbounded default is
+        // the whole of the defect, and `Monty(code).run()` — the documented
+        // one-line API — is the way a consumer reaches it: it builds
+        // `MontyRepl(limits: null)` (lib/src/monty.dart). Untrusted Python can
+        // therefore terminate the host, and FFI has no crash isolation to
+        // absorb it.
+        //
+        // Not enumerated as test cases here on purpose: a fixture that raises
+        // SIGILL cannot be asserted in-process — it would take the suite with
+        // it, and 530 results would vanish behind one crash. The CAUSE is what
+        // this test pins, and fixing the cause fixes all five at once.
         const src =
             'def recurse(n):\n'
             '    if n == 0:\n'
