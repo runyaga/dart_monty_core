@@ -193,6 +193,8 @@ OsCallHandler memoryMountedOsHandler({
       final mount = _findMount(path, normalizedMounts);
       if (mount == null) return notMine(op, args, kwargs);
 
+      if (_pathTooLong(path)) throw _nameTooLong(path);
+
       final modeArg = args.elementAtOrNull(1);
       final mode = modeArg is String ? modeArg : 'r';
 
@@ -222,6 +224,24 @@ OsCallHandler memoryMountedOsHandler({
     final mount = _findMount(path, normalizedMounts);
     if (mount == null) return notMine(op, args, kwargs);
 
+    // A name too long for the OS is checked BEFORE the store is consulted,
+    // because it is a property of the path rather than of what is there.
+    //
+    // The predicates SWALLOW it: CPython's `exists`/`is_file`/`is_dir` catch
+    // OSError and answer False, on the reasoning that an unopenable name is
+    // not there and that is all the caller asked. Everything else raises.
+    if (_pathTooLong(path)) {
+      if (const {
+        'Path.exists',
+        'Path.is_file',
+        'Path.is_dir',
+        'Path.is_symlink',
+      }.contains(op)) {
+        return false;
+      }
+      throw _nameTooLong(path);
+    }
+
     switch (op) {
       case 'Path.read_text':
         return _decodeUtf8(requireFile(path).content.bytes);
@@ -245,7 +265,7 @@ OsCallHandler memoryMountedOsHandler({
         _enforceLimit(mount, path, utf8.encode(value).length);
         putContent(path, VfsText(value));
 
-        return value.length;
+        return _codepointCount(value);
 
       case 'Path.write_bytes':
         _requireWritable(mount, path);
@@ -281,7 +301,7 @@ OsCallHandler memoryMountedOsHandler({
             : _decodeUtf8(existing.content.bytes);
         putContent(path, VfsText('$head$value'));
 
-        return value.length;
+        return _codepointCount(value);
 
       case 'Path.append_bytes':
         _requireWritable(mount, path);
@@ -358,7 +378,15 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.absolute':
       case 'Path.resolve':
-        return path;
+        // A Path, not a str. Returning the bare String meant Python got a
+        // `str`, and mount_fs__ops.py's `.name` on the result raised
+        // AttributeError.
+        //
+        // `path` is already normalised, so `..` and `.` are collapsed.
+        // Upstream's Python host does NOT do this and its comment claims it
+        // does; CPython's resolve() does, and CPython is what the fixtures
+        // are written against.
+        return MontyPath(path);
 
       case 'Path.mkdir':
         _requireWritable(mount, path);
@@ -501,6 +529,26 @@ OsCallHandler memoryMountedOsHandler({
   };
 }
 
+/// Collapses `.`, `..` and empty segments, CLAMPING at the root.
+///
+/// Deliberately hand-rolled rather than `package:path`'s `p.posix.normalize`,
+/// which is a correct POSIX normaliser and therefore the wrong tool here.
+/// Measured, on the cases that matter:
+///
+///     input                       p.posix.normalize   this
+///     /mnt/../../../etc/passwd    /etc/passwd         /etc/passwd
+///     ../escape.txt               ../escape.txt       /escape.txt
+///     '' (empty)                  .                   /
+///
+/// This is a clamp, not a normalisation: every path is treated as absolute and
+/// `..` can never survive, so no input can produce a result that is not rooted
+/// before `_findMount` sees it. `p.posix.normalize` preserves a leading `..`
+/// because that is what POSIX means, and it would hand a relative string to
+/// the mount check.
+///
+/// (Dart has no first-class `Path` type to lean on — `package:path` is
+/// functions over `String` by design, and `MontyPath` is a wire value, not a
+/// path library.)
 String _normalizePath(String path) {
   if (path.isEmpty) return '/';
   final isAbs = path.startsWith('/');
@@ -564,15 +612,67 @@ void _enforceLimit(MountDir mount, String path, int bytes) {
 }
 
 /// Creates the missing directories above [path], for `mkdir(parents=True)`.
+///
+/// A FILE in the way stops it: `mkdir -p /mnt/hello.txt/sub` cannot succeed
+/// when `hello.txt` is a file, and `mount_fs__ops.py` requires an OSError
+/// rather than the `StateError` the tree throws when asked to insert under a
+/// non-directory. That StateError is a bug report for us, not an answer for
+/// Python.
 void _mkdirParents(VfsTree vfs, String path) {
   final components = VfsTree.splitPath(path);
   final walked = StringBuffer();
   for (final component in components.sublist(0, components.length - 1)) {
     walked.write('/$component');
     final soFar = walked.toString();
-    if (!vfs.exists(soFar)) vfs.mkdir(soFar);
+    switch (vfs.lookup(soFar)) {
+      case VfsFile():
+        throw OsCallException(
+          "[Errno 20] Not a directory: '$soFar'",
+          pythonExceptionType: 'NotADirectoryError',
+        );
+      case VfsDir():
+        continue;
+      case null:
+        vfs.mkdir(soFar);
+    }
   }
 }
+
+/// The number of Unicode CODEPOINTS in [text] — what CPython's `len(str)`
+/// returns, and therefore what `write_text`/`append_text` must report.
+///
+/// Dart's `String.length` counts UTF-16 code units, so an astral-plane
+/// character such as an emoji counts twice. The three lengths in play here
+/// agree for ASCII, which is exactly why the divergence hid: `write_text`
+/// returns codepoints, `stat().st_size` returns UTF-8 bytes, and
+/// `String.length` is neither.
+int _codepointCount(String text) => text.runes.length;
+
+/// The longest a single path component may be, in BYTES. Linux's `NAME_MAX`.
+const _nameMaxBytes = 255;
+
+/// The longest a whole path may be, in BYTES. Linux's `PATH_MAX`.
+const _pathMaxBytes = 4096;
+
+/// Whether [path] exceeds `NAME_MAX` in any component or `PATH_MAX` overall.
+///
+/// BYTES, not characters — 'é' is one character and two bytes, so 128 of them
+/// make an illegal 256-byte component. Counting `String.length` would accept
+/// it, and would also count an astral-plane character twice.
+bool _pathTooLong(String path) {
+  if (utf8.encode(path).length > _pathMaxBytes) return true;
+  for (final component in path.split('/')) {
+    if (utf8.encode(component).length > _nameMaxBytes) return true;
+  }
+
+  return false;
+}
+
+/// CPython names the FULL path here, not the offending component.
+OsCallException _nameTooLong(String path) => OsCallException(
+  "[Errno 36] File name too long: '$path'",
+  pythonExceptionType: 'OSError',
+);
 
 bool _isMountRoot(String normalized, List<MountDir> mounts) {
   for (final m in mounts) {

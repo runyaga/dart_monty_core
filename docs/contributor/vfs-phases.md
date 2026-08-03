@@ -166,21 +166,42 @@ stops at `Rename target already exists: /mnt/rename_dst_dir` — Phase 3.3.
 
 ## Phase 3 — remaining CPython semantics · RELEASE MILESTONE
 
-- [ ] `resolve`/`absolute` return `MontyPath`, and **normalise `..`**
-      (upstream's Python host does not, and its comment wrongly claims it does)
-- [ ] `write_text` returns **codepoints**, not UTF-16 units
+- [x] `resolve`/`absolute` return `MontyPath`, and **normalise `..`**
+      (upstream's Python host does not, and its comment wrongly claims it does).
+      They returned a bare `String`, so Python got a `str` and `.name` on the
+      result raised `AttributeError`.
+- [x] `write_text`/`append_text` return **codepoints**, not UTF-16 units.
+      Three lengths are in play and they agree only for ASCII, which is why
+      this hid: codepoints (`write_text`), UTF-8 bytes (`st_size`), and Dart's
+      `String.length`, which is UTF-16 code units and is neither.
 - [x] `rename`: file→dir `IsADirectoryError`, dir→file `NotADirectoryError`,
       dir→non-empty `[Errno 39]`, dir→**empty** dir succeeds, and
       **file→existing file OVERWRITES silently** — the one that looks like a
       bug and is not. Descendant path rewrite landed in 1b.
-- [ ] Errno 39 for both rmdir and rename (upstream's 66 is an inconsistency they
-      snapshotted)
-- [ ] `Errno 36`: >255-**byte** component, >4096-**byte** total; applied to
+- [x] Errno 39 for both rmdir and rename (upstream's 66 is macOS's ENOTEMPTY,
+      an inconsistency they snapshotted)
+- [x] `Errno 36`: >255-**byte** component, >4096-**byte** total; applied to
       read/write/append/stat/mkdir/open but **NOT** to
-      `exists`/`is_file`/`is_dir`, which swallow it and return False
-- [ ] **`mount_fs__ops.py` and `mount_fs__errors.py` GREEN** — the demo's last
+      `exists`/`is_file`/`is_dir`/`is_symlink`, which swallow it and return
+      False. Checked before the store is consulted, since it is a property of
+      the path rather than of what is there.
+- [x] `mkdir(parents=True)` through a FILE raises `NotADirectoryError` instead
+      of leaking the tree's `StateError` as `RuntimeError: Bad state:`
+- [x] **`mount_fs__ops.py` and `mount_fs__errors.py` GREEN** — the demo's last
       two red rows
-- [ ] regression script green · gate green
+- [x] regression script green · gate green
+
+### On `package:path`
+
+Asked during this phase: does Dart have a first-class `Path`? No, and not by
+oversight — `package:path` is functions over `String` by design, `dart:io`'s
+pre-1.0 `Path` was removed, and `MontyPath` here is a *wire value* that tells
+the interpreter "this is a `pathlib.Path`, not a `str`", not a path library.
+
+`_normalizePath` stays hand-rolled on purpose, and the reason is recorded at
+the function. It is a **clamp**, not a normaliser: `p.posix.normalize`
+preserves a leading `..` (`../escape.txt` → `../escape.txt`) because that is
+what POSIX means, which would hand a non-rooted string to the mount check.
 
 ## Phase 4 — converge the duplicate
 
