@@ -4,12 +4,25 @@
 /// Fixtures that never run on the WASM corpus runners, regardless of build:
 /// the shared monty wasm32 engine diverges from native here, so it's an
 /// upstream concern, not a host-binding gap.
-const alwaysUnsupportedWasmFixtures = {
-  // Pure-Python range membership at `2**63` (beyond i64). Passes on native FFI;
-  // diverges on the web backend — very likely the same JS-boundary precision
-  // loss
-  // as edge__int_float_mod below (core#128), not an engine difference. Re-check
-  // when that is fixed; this may simply start passing.
+const alwaysUnsupportedWasmFixtures = <String>{
+  // Range arithmetic at the i64 boundary. RE-CHECKED 2026-08-03, un-skipped and
+  // run on both web backends — the skip is real, but the reason it carried was
+  // wrong, so the evidence is recorded here instead of a hypothesis.
+  //
+  //     FFI (native)   PASSES   (oracle_ffi +361 -> +362)
+  //     dart2js        FAILS    "expected no error, got AssertionError"
+  //     dart2wasm      FAILS    identically, same reason string
+  //
+  // The old note guessed "very likely the same JS-boundary precision loss as
+  // edge__int_float_mod (core#128)". That is refuted: core#128 is fixed in 0.19
+  // and dart2wasm has real 64-bit ints, so a JS-boundary explanation predicts
+  // dart2wasm PASSES. It fails identically. What both web backends share is the
+  // wasm32 engine, not a Dart number representation — so this is the upstream
+  // wasm32 build, as this set's docstring says, and NOT core#128.
+  //
+  // Note the fixture EXPECTS an OverflowError at lines 99-103 and catches it;
+  // that arm is correct behaviour on FFI and is not the failure. Which of the
+  // ~278 assertions diverges has not been bisected in-browser yet.
   'range__ops.py',
   // edge__int_float_mod.py was here, blamed on the web backend. It was never
   // the backend: `run('7 % 2.5')` returns {"__type":"float","value":"2.0"} over
