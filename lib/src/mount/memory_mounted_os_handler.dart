@@ -448,31 +448,52 @@ OsCallHandler memoryMountedOsHandler({
           return notMine(op, [target], kwargs);
         }
         _requireWritable(targetMount, target);
-        // The full CPython matrix — file onto dir, dir onto file, dir onto
-        // non-empty dir, file OVERWRITING an existing file — is Phase 3. This
-        // keeps exactly the behaviour the flat store had, on the tree.
-        switch (vfs.lookup(path)) {
-          case VfsFile():
-            requireParentDir(target);
-            vfs.move(path, target);
-
-            return null;
-          case final VfsDir d when d.children.isNotEmpty:
-            if (vfs.exists(target)) {
-              throw OsCallException(
-                'Rename target already exists: $target',
-                pythonExceptionType: 'OSError',
-              );
-            }
-            requireParentDir(target);
-            vfs.move(path, target);
-
-            return null;
-          case _:
+        // CPython's rename is four errors and one SILENT OVERWRITE,
+        // depending on what sits at each end. mount_fs__errors.py asserts
+        // each message verbatim.
+        //
+        //   src      dst              result
+        //   ------   --------------   ------------------------------------
+        //   missing  -                FileNotFoundError, naming the SOURCE
+        //   file     missing          move
+        //   file     file             OVERWRITE, silently — POSIX semantics
+        //   file     directory        IsADirectoryError
+        //   dir      file             NotADirectoryError
+        //   dir      non-empty dir    [Errno 39] Directory not empty
+        //   dir      empty dir        move, replacing the empty directory
+        final source = vfs.lookup(path);
+        if (source == null) {
+          throw OsCallException(
+            "[Errno 2] No such file or directory: '$path'",
+            pythonExceptionType: 'FileNotFoundError',
+          );
+        }
+        switch ((source, vfs.lookup(target))) {
+          case (VfsFile(), VfsDir()):
             throw OsCallException(
-              "[Errno 2] No such file or directory: '$path'",
-              pythonExceptionType: 'FileNotFoundError',
+              "[Errno 21] Is a directory: '$target'",
+              pythonExceptionType: 'IsADirectoryError',
             );
+          case (VfsDir(), VfsFile()):
+            throw OsCallException(
+              "[Errno 20] Not a directory: '$target'",
+              pythonExceptionType: 'NotADirectoryError',
+            );
+          case (VfsDir(), final VfsDir dst) when dst.children.isNotEmpty:
+            // Upstream snapshotted errno 66 here, which is macOS's ENOTEMPTY
+            // number; the fixture accepts 66 or 39 off-monty but pins 39 for
+            // us, and 39 is what Linux CPython reports.
+            throw OsCallException(
+              "[Errno 39] Directory not empty: '$target'",
+              pythonExceptionType: 'OSError',
+            );
+          case _:
+            // Everything left over is a move: onto nothing, onto a file it
+            // replaces, or onto an empty directory it takes the place of.
+            requireParentDir(target);
+            vfs.move(path, target);
+
+            return null;
         }
     }
 

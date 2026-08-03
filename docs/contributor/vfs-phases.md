@@ -169,9 +169,10 @@ stops at `Rename target already exists: /mnt/rename_dst_dir` — Phase 3.3.
 - [ ] `resolve`/`absolute` return `MontyPath`, and **normalise `..`**
       (upstream's Python host does not, and its comment wrongly claims it does)
 - [ ] `write_text` returns **codepoints**, not UTF-16 units
-- [ ] `rename`: four paths — file→dir `IsADirectoryError`, dir→file
-      `NotADirectoryError`, dir→non-empty ENOTEMPTY, **file→existing file
-      OVERWRITES**; plus descendant path rewrite
+- [x] `rename`: file→dir `IsADirectoryError`, dir→file `NotADirectoryError`,
+      dir→non-empty `[Errno 39]`, dir→**empty** dir succeeds, and
+      **file→existing file OVERWRITES silently** — the one that looks like a
+      bug and is not. Descendant path rewrite landed in 1b.
 - [ ] Errno 39 for both rmdir and rename (upstream's 66 is an inconsistency they
       snapshotted)
 - [ ] `Errno 36`: >255-**byte** component, >4096-**byte** total; applied to
