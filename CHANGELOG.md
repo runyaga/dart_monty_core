@@ -51,6 +51,45 @@ small consumer-facing surface.
   Found by porting upstream's `test_os_access.py`, whose own test for this is a
   named data-loss regression guard.
 
+- **`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write.** It capped a
+  single call, which bounds nothing an attacker cares about:
+  `write_bytes(b'x' * limit)` in a loop passed every check and exhausted host
+  memory. Measured against the old code, a limit of 100 bytes let **all ten** of
+  ten 30-byte writes through.
+
+  Upstream's parameter of the same name has always been cumulative — *"Cap on
+  cumulative bytes written through the mount within one feed"*
+  (`_monty.pyi:111-113`) — so the old behaviour was a silent contract mismatch
+  for anyone porting from `pydantic_monty`. It is monotonic: deleting a file
+  does not buy budget back, because the bytes were still written.
+
+  The message now matches upstream's too:
+  `OSError: disk write limit of 10 bytes exceeded` (was
+  `Write exceeds mount limit (100 > 10 bytes): /path`).
+
+- **New: `MountDir.memoryUsageLimit`, defaulting to 100 MB.** Bounds the bytes
+  a mount **currently retains**, where `writeBytesLimit` bounds what has flowed
+  through. Deleting refunds this one. Exceeding it raises
+  `MemoryError: mount memory usage limit of 100 MB exceeded`.
+
+  Ported from upstream rather than invented: the default matches
+  `DEFAULT_MEMORY_USAGE_LIMIT` (`monty-fs/src/mount_table.rs:18`), and each node
+  is charged `entryMemoryUsage` (256 bytes) plus its content, matching
+  `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:22`). The per-entry
+  charge is what stops a million empty files, which cost no content bytes and a
+  great deal of real memory.
+
+  Two deliberate scoping choices, both documented on `VfsAccountant`: content
+  **seeded** through `files:` is not charged, because the budget exists to bound
+  what untrusted code makes us retain rather than what the consumer handed us;
+  and a host-reaching file's content is never charged *or measured*, since
+  asking it for a size would fire a host callback — accounting must not have
+  side effects.
+
+  Because we have no feed boundary to hang state on, both limits are scoped to
+  the handler instance. For a one-shot `run()` that is identical to upstream;
+  for a long-lived REPL it is stricter.
+
 - **A `rename` TARGET outside every mount is absent too, not denied.** The rule
   below was never carried through to the second path of a two-path call. A
   target outside every mount declined instead, which with no fallthrough

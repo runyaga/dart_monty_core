@@ -83,6 +83,11 @@ void main() {
       );
     });
 
+    // This asserted only the exception TYPE, which both a per-write and a
+    // cumulative cap satisfy — so it could not tell the two apart, and did not
+    // notice when `writeBytesLimit` was per-write and therefore bounded
+    // nothing. It now pins the message too. The semantics themselves live in
+    // vfs_limits_test.dart.
     test('writeBytesLimit rejects oversize writes with OSError', () {
       final handler = memoryMountedOsHandler(
         mounts: const [
@@ -98,11 +103,17 @@ void main() {
           null,
         ),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
-            'OSError',
-          ),
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'pythonExceptionType',
+                'OSError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                'disk write limit of 10 bytes exceeded',
+              ),
         ),
       );
     });

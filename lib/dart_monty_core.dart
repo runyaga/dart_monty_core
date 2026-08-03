@@ -30,6 +30,11 @@ export 'src/mount/mount_dir.dart';
 export 'src/mount/mount_mode.dart';
 export 'src/mount/open_call.dart';
 export 'src/mount/vfs_content.dart';
+// `VfsAccountant` (src/mount/vfs_accountant.dart) is deliberately NOT exported: it is the handler's internal
+// bookkeeping, and exposing it would make the accounting model — which nothing
+// outside depends on — public API.
+export 'src/mount/vfs_limits.dart'
+    show defaultMemoryUsageLimit, entryMemoryUsage, formatBytesPretty;
 export 'src/mount/vfs_node.dart';
 export 'src/platform/code_capture.dart';
 export 'src/platform/inputs_encoder.dart';
