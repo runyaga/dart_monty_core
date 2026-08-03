@@ -15,9 +15,29 @@ const conformanceEnv = <String, String>{
 ///
 /// A function, not a constant: files are mutable, so every handler must get
 /// its own set or a write in one fixture would be visible to the next.
+///
+/// **Every entry is declared by `pathlib__os.py`, and the content is not
+/// arbitrary.** That fixture asserts, among others:
+///
+///     Path('/virtual/file.txt').read_text() == 'hello world\n'
+///     Path('/virtual/file.txt').stat().st_size == 12
+///     Path('/virtual/data.bin').read_bytes() == b'\x00\x01\x02\x03'
+///     len(list(Path('/virtual').iterdir())) == 5
+///
+/// `link.txt` exists to make that count five — it is otherwise unread, and
+/// deleting it as dead weight would break the listing assertion.
+///
+/// This seed previously held `'hello from virtual fs'` in `file.txt` and
+/// omitted `data.bin` and `link.txt`, a string that appears in NO fixture. It
+/// did not matter only because `pathlib__os.py` was skipped on FFI for an
+/// unrelated reason (FB-11 P5), so nothing checked it. The WASM runner's own
+/// copy of the store had the right values all along, which is how the two
+/// drifted apart.
 List<VfsFile> conformanceVfs() => [
-  MontyMemoryFile('/virtual/file.txt', 'hello from virtual fs'),
+  MontyMemoryFile('/virtual/file.txt', 'hello world\n'),
   MontyMemoryFile('/virtual/empty.txt', ''),
+  MontyMemoryFile('/virtual/data.bin', const [0, 1, 2, 3]),
+  MontyMemoryFile('/virtual/link.txt', 'link'),
   MontyMemoryFile('/virtual/subdir/nested.txt', 'nested content'),
   MontyMemoryFile('/virtual/subdir/deep/file.txt', 'deep'),
 ];

@@ -97,10 +97,4 @@ const Set<String> unsupportedWasmFixtures = {
 /// diverges here"; this one means "we are wrong everywhere and know it".
 /// Conflating them is how `dataclass__basic.py` sat behind a stale
 /// web-only skip while nothing ran it on FFI either.
-const Map<String, String> knownBrokenExtFixtures = {
-  'pathlib__os.py':
-      "FB-11: Path('/nonexistent').exists() should be False, but "
-      'memoryMountedOsHandler raises "Path is outside any mount" for anything '
-      'it does not mount. A query about a path is not an access of it.',
-  'pathlib__os_read_error.py': 'FB-11, same cause as pathlib__os.py.',
-};
+const Map<String, String> knownBrokenExtFixtures = {};

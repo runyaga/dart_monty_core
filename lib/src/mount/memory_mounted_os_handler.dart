@@ -191,7 +191,18 @@ OsCallHandler memoryMountedOsHandler({
       if (rawPath is! String) return notMine(op, args, kwargs);
       final path = _normalizePath(rawPath);
       final mount = _findMount(path, normalizedMounts);
-      if (mount == null) return notMine(op, args, kwargs);
+      if (mount == null) {
+        // Same premise as the Path.* ops below: outside every mount, the file
+        // is not there.
+        if (fallthrough == null) {
+          throw OsCallException(
+            "[Errno 2] No such file or directory: '$path'",
+            pythonExceptionType: 'FileNotFoundError',
+          );
+        }
+
+        return notMine(op, args, kwargs);
+      }
 
       if (_pathTooLong(path)) throw _nameTooLong(path);
 
@@ -222,7 +233,38 @@ OsCallHandler memoryMountedOsHandler({
     if (rawPath is! String) return notMine(op, args, kwargs);
     final path = _normalizePath(rawPath);
     final mount = _findMount(path, normalizedMounts);
-    if (mount == null) return notMine(op, args, kwargs);
+    if (mount == null) {
+      // FB-11 P5. A QUERY about a path is not an ACCESS of it. CPython
+      // answers False for a path that is not there, and the sandbox's answer
+      // for a path it does not mount is the same: it is not there. Raising
+      // PermissionError told the caller a secret it did not ask for and made
+      // `Path('/nonexistent').exists()` unusable.
+      //
+      // A configured fallthrough still gets first refusal — a host that DOES
+      // serve those paths must not be shadowed by our answer.
+      if (fallthrough == null) {
+        if (_isQuery(op)) return false;
+
+        // And the same premise, carried through: if the sandbox's answer to
+        // "is it there" is no, its answer to "read it" must be "it is not
+        // there", not "you may not". Saying `exists() == False` and
+        // `PermissionError` about the SAME path is self-contradictory, it is
+        // what pathlib__os_read_error.py rejects, and `Permission denied`
+        // actually leaks more — it confirms the path is meaningful enough to
+        // be worth denying.
+        //
+        // This is NOT the decline path. A handler that throws
+        // OsCallNotHandledException still gets upstream's
+        // `on_no_handler` wording (monty-types/src/os.rs:260), because
+        // declining and answering are different acts.
+        throw OsCallException(
+          "[Errno 2] No such file or directory: '$path'",
+          pythonExceptionType: 'FileNotFoundError',
+        );
+      }
+
+      return notMine(op, args, kwargs);
+    }
 
     // A name too long for the OS is checked BEFORE the store is consulted,
     // because it is a property of the path rather than of what is there.
@@ -231,14 +273,7 @@ OsCallHandler memoryMountedOsHandler({
     // OSError and answer False, on the reasoning that an unopenable name is
     // not there and that is all the caller asked. Everything else raises.
     if (_pathTooLong(path)) {
-      if (const {
-        'Path.exists',
-        'Path.is_file',
-        'Path.is_dir',
-        'Path.is_symlink',
-      }.contains(op)) {
-        return false;
-      }
+      if (_isQuery(op)) return false;
       throw _nameTooLong(path);
     }
 
@@ -647,6 +682,20 @@ void _mkdirParents(VfsTree vfs, String path) {
 /// returns codepoints, `stat().st_size` returns UTF-8 bytes, and
 /// `String.length` is neither.
 int _codepointCount(String text) => text.runes.length;
+
+/// Whether [op] merely ASKS about a path rather than accessing it.
+///
+/// These four answer `false` instead of raising, in two situations: a name too
+/// long for the OS, and a path outside every mount. CPython does the same —
+/// `Path.exists` catches `OSError` and reports absence — and the reasoning is
+/// the same in both cases: the caller asked whether something is there, and
+/// the answer is no.
+bool _isQuery(String op) => const {
+  'Path.exists',
+  'Path.is_file',
+  'Path.is_dir',
+  'Path.is_symlink',
+}.contains(op);
 
 /// The longest a single path component may be, in BYTES. Linux's `NAME_MAX`.
 const _nameMaxBytes = 255;

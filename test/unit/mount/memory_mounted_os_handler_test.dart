@@ -107,26 +107,39 @@ void main() {
       );
     });
 
-    test('rejects "../" traversal that escapes the mount', () {
+    // The security property is that the content does not come back, and that
+    // is what this asserts — not which exception carries the refusal.
+    //
+    // It reports FileNotFoundError, not PermissionError, even though the file
+    // is right there in the store. That is deliberate and it is the safer of
+    // the two: `PermissionError` would CONFIRM that `/etc/passwd` exists and
+    // is worth denying, which is precisely what a traversal probe is fishing
+    // for. It also keeps one story — `exists()` on the same path answers
+    // False, and a refusal that contradicts it would be its own leak.
+    test('"../" traversal that escapes the mount leaks nothing', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [MontyMemoryFile('/etc/passwd', 'root:x:0:0')],
       );
 
-      expect(
-        () => handler(
-          'Path.read_text',
-          ['/sandbox/../etc/passwd'],
-          null,
-        ),
+      await expectLater(
+        () => handler('Path.read_text', ['/sandbox/../etc/passwd'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
-            'PermissionError',
-          ),
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'pythonExceptionType',
+                'FileNotFoundError',
+              )
+              // The refusal must not quote the content, nor admit the file is
+              // there by any other wording.
+              .having((e) => e.message, 'message', isNot(contains('root:x'))),
         ),
       );
+
+      // And the sandbox tells the same story to every question about it.
+      expect(await handler('Path.exists', ['/etc/passwd'], null), false);
+      expect(await handler('Path.is_file', ['/etc/passwd'], null), false);
     });
 
     test('exists / is_file / is_dir reflect the vfs structure', () async {
@@ -202,7 +215,10 @@ void main() {
       expect(fallthroughCalled, 1);
     });
 
-    test('paths outside mounts raise PermissionError without fallthrough', () {
+    // Was PermissionError. A path the sandbox does not mount is, as far as the
+    // sandbox is concerned, not there — and pathlib__os_read_error.py asserts
+    // CPython's FileNotFoundError for exactly this.
+    test('paths outside mounts report not-there without fallthrough', () {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
@@ -211,11 +227,17 @@ void main() {
       expect(
         () => handler('Path.read_text', ['/etc/passwd'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
-            'PermissionError',
-          ),
+          isA<OsCallException>()
+              .having(
+                (e) => e.pythonExceptionType,
+                'pythonExceptionType',
+                'FileNotFoundError',
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                "[Errno 2] No such file or directory: '/etc/passwd'",
+              ),
         ),
       );
     });

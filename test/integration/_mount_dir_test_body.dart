@@ -60,23 +60,24 @@ void runMountDirTests() {
       expect(r.error?.message, contains('/data/x.txt'));
     });
 
-    test(
-      'Python sees a path outside every mount as a PermissionError',
-      () async {
-        final handler = memoryMountedOsHandler(
-          mounts: const [MountDir(virtualPath: '/data')],
-          files: const [],
-        );
+    // Was PermissionError. A path the sandbox does not mount is, as far as
+    // the sandbox is concerned, not there — the same answer `exists()` gives
+    // about it. `PermissionError` contradicted that and leaked more, by
+    // confirming the path was worth denying.
+    test('Python sees a path outside every mount as not there', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        files: const [],
+      );
 
-        final r = await Monty(
-          'import pathlib\npathlib.Path("/etc/passwd").read_text()',
-        ).run(osHandler: handler);
+      final r = await Monty(
+        'import pathlib\npathlib.Path("/etc/passwd").read_text()',
+      ).run(osHandler: handler);
 
-        expect(r.error, isNotNull);
-        expect(r.error?.excType, 'PermissionError');
-        expect(r.error?.message, contains('/etc/passwd'));
-      },
-    );
+      expect(r.error, isNotNull);
+      expect(r.error?.excType, 'FileNotFoundError');
+      expect(r.error?.message, contains('/etc/passwd'));
+    });
 
     test('Python can catch the typed OS exception with except', () async {
       final handler = memoryMountedOsHandler(
