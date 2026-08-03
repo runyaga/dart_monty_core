@@ -707,14 +707,16 @@ SkipKind? _skipReason(_Fixture f) {
 /// The contents are upstream's, not ours — the fixtures assert exact sizes
 /// (`hello.txt` is 12 bytes, `readonly.txt` is 16), so this is a contract, not
 /// a convenience.
-const _mountFsSeed = <String, String>{
-  '/mnt/hello.txt': 'hello world\n',
-  '/mnt/empty.txt': '',
-  '/mnt/data.bin': '\x00\x01\x02\x03',
-  '/mnt/readonly.txt': 'readonly content',
-  '/mnt/subdir/nested.txt': 'nested content',
-  '/mnt/subdir/deep/file.txt': 'deep file',
-};
+/// A function, not a constant: files are mutable now, so each fixture run
+/// must get its own set or one fixture's write would be visible to the next.
+List<VfsFile> _mountFsSeed() => [
+  MontyMemoryFile('/mnt/hello.txt', 'hello world\n'),
+  MontyMemoryFile('/mnt/empty.txt', ''),
+  MontyMemoryFile('/mnt/data.bin', const [0, 1, 2, 3]),
+  MontyMemoryFile('/mnt/readonly.txt', 'readonly content'),
+  MontyMemoryFile('/mnt/subdir/nested.txt', 'nested content'),
+  MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
+];
 
 /// Runs one fixture exactly as `wasm_fixture_test.dart` does, and reports
 /// whether upstream's own directive held.
@@ -769,7 +771,7 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
           ).run(
             osHandler: memoryMountedOsHandler(
               mounts: const [MountDir(virtualPath: '/mnt')],
-              files: _mountFsSeed,
+              files: _mountFsSeed(),
             ),
           );
 
