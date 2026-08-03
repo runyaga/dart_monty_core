@@ -567,21 +567,17 @@ void main() {
 
     // Was "a no-op success". CPython raises, and mount_fs__errors.py:110-115
     // asserts the exact message. Under the flat-map model an empty directory
-    // is not representable at all -- `Path.exists` on a freshly mkdir'd one
-    // already returns False -- so a path with no key and no children IS
-    // nonexistent, and raising is the answer consistent with what exists()
-    // reports about the very same path.
+    // is now a real node, so "absent" and "empty" are distinguishable and
+    // this raises for the first reason rather than by coincidence.
     // mount_fs__errors.py:141-155. A write into a directory that does not
     // exist must fail; the flat map would happily create the key and invent
     // the parent, which is how a typo'd path silently "worked".
-    // SKIPPED, deliberately. This pins the parent-directory check that was
-    // reverted: correct in principle, unsafe while `mkdir` is a no-op (it broke
-    // mkdir-then-write). Kept rather than deleted so the requirement stays
-    // visible — Phase 1 makes directories first-class and this goes green.
-    // See ~/dev/plans/monty-0.19-upgrade/vfs-design.md.
+    // Was skipped while `mkdir` was a no-op: the check is correct in
+    // principle, but the parent it demanded could never come into existence,
+    // so it broke mkdir-then-write. Directories are real nodes now, so the
+    // check is back and this is green.
     test(
       'write_text/write_bytes with a missing parent raise',
-      skip: 'reverted with requireParentDir; restored in Phase 1',
       () {
         final handler = memoryMountedOsHandler(
           mounts: const [MountDir(virtualPath: '/mnt')],

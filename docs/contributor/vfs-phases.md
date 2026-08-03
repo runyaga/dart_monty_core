@@ -71,20 +71,61 @@ Two things settled while doing it, both worth carrying into 1b:
 
 ## Phase 1b — tree interior + `open()`'s closures, SAME COMMIT
 
-- [ ] `sealed class VfsNode` → `VfsDir(Map<String, VfsNode>)` | `VfsFile(AbstractFile)`;
+- [x] `sealed class VfsNode` → `VfsDir(Map<String, VfsNode>)` | `VfsFile`;
       composition, so "closed set of node kinds" and "open set of content
       backings" stay separate axes
-- [ ] Lookup walks components and returns `null` when an intermediate is a
+- [x] Lookup walks components and returns `null` when an intermediate is a
       **file** — that is where `ENOTDIR` comes from
-- [ ] **`open()`'s injected `isDirectory` closure updated in this commit.**
-      Otherwise the 649-line `open__fs.py` passes with stale semantics — a false
-      green, worse than a red
-- [ ] Every write routes through ONE `_writeFile`
-- [ ] Do **not** add a `deleted` flag yet — upstream's lookup ignores it; it is
+- [x] **`open()`'s injected `isDirectory` closure updated in this commit.**
+- [x] Every write routes through ONE `putContent`, which calls
+      `requireParentDir` — the check reverted in `11bd4a8`, correct all along
+      and only unsafe while `mkdir` had nowhere to record a directory. Its test
+      is un-skipped.
+- [x] Do **not** add a `deleted` flag yet — upstream's lookup ignores it; it is
       an overlay concern (Phase 6)
-- [ ] Empty directories exist; `mkdir`-then-write works; `exists`/`is_dir` true
+- [x] Empty directories exist; `mkdir`-then-write works; `exists`/`is_dir` true
       after `mkdir`
-- [ ] regression script green · gate green
+- [x] Seeding auto-creates parents; `/a.txt` + `/a.txt/b.txt` is an
+      `ArgumentError` at construction (`os_access.py:837-838`)
+- [x] Mount roots are seeded as directories, so `_isMountRoot` stops being a
+      special case in every existence question
+- [x] regression script green · gate green
+
+### The trap sprang — in the direction not predicted
+
+The checklist warned that leaving `isDirectory` stale would make `open__fs.py`
+pass on old semantics. What actually happened was the mirror image, and only the
+regression harness caught it.
+
+`resolveOpenCall` had the two read-mode checks **nested**:
+
+```dart
+if (!exists(path)) {
+  if (isDirectory(path)) throw IsADirectoryError;
+  throw FileNotFoundError;
+}
+```
+
+That is only correct while `exists` means *"a file is here"* — which is what the
+flat map's `containsKey` meant. With a tree, a directory answers `true` to
+`exists`, so the whole block was skipped and `open('/mnt', 'r')` returned a
+handle instead of raising. Upstream states them as one sentence — "verify the
+file exists **and** is not a directory" (`os_access.py:851-853`) — i.e. two
+independent checks. `open_call.dart` now does that, and its doc says explicitly
+that `exists` means "a node is here", not "a file is here".
+
+The lesson generalises past this phase: **a store swap silently changes what
+every injected predicate means.** Grep for the predicates, not just the store.
+
+### Where the two targets stand now
+
+Both moved deeper, which is the useful signal — neither is blocked on the store
+any more:
+
+```
+mount_fs__ops.py     write_text emoji returns char count not byte count: 2   -> Phase 3.2
+mount_fs__errors.py  expected FileNotFoundError on iterdir nonexistent       -> Phase 2
+```
 
 ## Phase 1c — `IsADirectoryError` on writes
 

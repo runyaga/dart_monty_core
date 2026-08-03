@@ -7,21 +7,21 @@ import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/mount_mode.dart';
 import 'package:dart_monty_core/src/mount/open_call.dart';
 import 'package:dart_monty_core/src/mount/vfs_content.dart';
-import 'package:dart_monty_core/src/mount/vfs_file.dart';
+import 'package:dart_monty_core/src/mount/vfs_node.dart';
+import 'package:dart_monty_core/src/mount/vfs_tree.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 
 /// Builds an [OsCallHandler] that serves Python `pathlib.Path` operations
 /// from an in-memory virtual filesystem.
 ///
-/// `mounts` declare which path prefixes Python can reach. `vfs` is the
-/// backing store: keys are normalized absolute paths, values are file
-/// contents. Paths outside every mount fall through to [fallthrough] (or
+/// `mounts` declare which path prefixes Python can reach. `files` seeds the
+/// backing store. Paths outside every mount fall through to [fallthrough] (or
 /// raise `PermissionError` in Python if no fallthrough is given).
 ///
 /// ```dart
 /// final handler = memoryMountedOsHandler(
 ///   mounts: const [MountDir(virtualPath: '/data')],
-///   vfs: {'/data/hello.txt': 'Hello!'},
+///   files: [MontyMemoryFile('/data/hello.txt', 'Hello!')],
 /// );
 /// final r = await Monty('pathlib.Path("/data/hello.txt").read_text()')
 ///     .run(osHandler: handler);
@@ -50,24 +50,20 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// outside every mount — goes to [fallthrough], or raises the call's own
 /// no-handler default when no fallthrough is configured.
 ///
-/// Directories are implicit in the flat `Map<String, String>` model: a
-/// path is a directory iff some key with that prefix exists, or the path
-/// itself is a mount root. `Path.mkdir` therefore performs the relevant
-/// error checks (parent missing, target already a file, target already
-/// a non-empty directory under `exist_ok=False`) but does not insert
-/// anything into the map on success — `Path.exists` against a freshly
-/// `mkdir`'d empty directory returns `False` until a child is written.
-/// This matches the trade-off of the flat-map backing store; consumers
-/// that need first-class empty directories should use a richer handler.
+/// Directories are real nodes ([VfsDir]), so an empty one exists: `mkdir`
+/// inserts it and `Path.exists` says `true` before anything is written into
+/// it. Seeding a nested file creates its parent directories, and every mount
+/// root is a directory whether or not it has contents.
+///
+/// Seeding two files where one's path runs through the other — `/a.txt` and
+/// `/a.txt/b.txt` — throws [ArgumentError] at construction, as it does
+/// upstream (`os_access.py:837-838`); it is not representable and there is no
+/// useful runtime behaviour to fall back on.
 OsCallHandler memoryMountedOsHandler({
   required List<MountDir> mounts,
   required List<VfsFile> files,
   OsCallHandler? fallthrough,
 }) {
-  // Keyed by normalised path. Still FLAT in this phase — the tree lands in 1b.
-  final vfs = <String, VfsFile>{
-    for (final f in files) _normalizePath(f.path): f,
-  };
   final normalizedMounts = mounts
       .map(
         (m) => MountDir(
@@ -78,21 +74,36 @@ OsCallHandler memoryMountedOsHandler({
       )
       .toList(growable: false);
 
-  /// Stores [content] at [path], mirroring upstream's `_write_file`
-  /// (os_access.py:955-970): if a file is already there, MUTATE it rather than
-  /// replacing the node.
-  ///
-  /// That distinction is not cosmetic. A caller holds the `VfsFile` objects it
-  /// passed in, so replacing the entry would silently detach their reference
-  /// and any later inspection would read a stale object.
-  void putContent(String path, VfsContent content) {
-    final existing = vfs[path];
-    if (existing != null) {
-      existing.content = content;
+  // Mount roots are seeded as directories so a mount with nothing in it is
+  // still a real directory, which is what lets `_isMountRoot` stop being a
+  // special case in every existence question.
+  final vfs = VfsTree(
+    files: [
+      for (final f in files) f..path = _normalizePath(f.path),
+    ],
+    mountRoots: normalizedMounts.map((m) => m.virtualPath),
+  );
 
-      return;
+  /// Requires that [path]'s parent directory exists before a file is created
+  /// there, per upstream's `_write_file` (os_access.py:964-970).
+  ///
+  /// This check was added and then REVERTED in 11bd4a8, because while `mkdir`
+  /// was a no-op the parent it demanded could never come into existence and
+  /// `mkdir`-then-write failed. Directories are real now, so it returns.
+  void requireParentDir(String path) {
+    if (vfs.parentDirOf(path) == null) {
+      throw OsCallException(
+        "[Errno 2] No such file or directory: '$path'",
+        pythonExceptionType: 'FileNotFoundError',
+      );
     }
-    vfs[path] = MontyMemoryFile.withContent(path, content);
+  }
+
+  /// The single write path. Every content-producing op routes through here so
+  /// the checks cannot drift apart between `write_text` and `open(..., 'w')`.
+  void putContent(String path, VfsContent content) {
+    requireParentDir(path);
+    vfs.putContent(path, content);
   }
 
   Future<Object?> notMine(
@@ -156,13 +167,16 @@ OsCallHandler memoryMountedOsHandler({
       return resolveOpenCall(
         path,
         mode,
-        exists: vfs.containsKey,
-        isDirectory: (p) =>
-            _hasChildren(vfs, p) || _isMountRoot(p, normalizedMounts),
+        exists: vfs.exists,
+        // Must move with the store, in this same commit. Left reading
+        // `_hasChildren`, the 649-line open__fs.py would keep passing on
+        // stale semantics — a false green, which is worse than a red.
+        isDirectory: (p) => vfs.lookup(p) is VfsDir,
         ensureWritable: (p) => _requireWritable(mount, p),
         truncate: (p) => putContent(p, VfsText('')),
-        createIfMissing: (p) =>
-            vfs.putIfAbsent(p, () => MontyMemoryFile(p, '')),
+        createIfMissing: (p) {
+          if (!vfs.exists(p)) putContent(p, VfsText(''));
+        },
       );
     }
 
@@ -176,7 +190,7 @@ OsCallHandler memoryMountedOsHandler({
 
     switch (op) {
       case 'Path.read_text':
-        final file = vfs[path];
+        final file = vfs.fileAt(path);
         if (file == null) {
           throw OsCallException(
             "[Errno 2] No such file or directory: '$path'",
@@ -187,7 +201,7 @@ OsCallHandler memoryMountedOsHandler({
         return _decodeUtf8(file.content.bytes);
 
       case 'Path.read_bytes':
-        final file = vfs[path];
+        final file = vfs.fileAt(path);
         if (file == null) {
           throw OsCallException(
             "[Errno 2] No such file or directory: '$path'",
@@ -241,7 +255,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, utf8.encode(value).length);
-        final existing = vfs[path];
+        final existing = vfs.fileAt(path);
         final head = existing == null
             ? ''
             : _decodeUtf8(existing.content.bytes);
@@ -262,7 +276,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, bytes.length);
-        final prior = vfs[path];
+        final prior = vfs.fileAt(path);
         putContent(
           path,
           VfsBytes(Uint8List.fromList([...?prior?.content.bytes, ...bytes])),
@@ -271,36 +285,30 @@ OsCallHandler memoryMountedOsHandler({
         return bytes.length;
 
       case 'Path.exists':
-        return vfs.containsKey(path) || _hasChildren(vfs, path);
+        return vfs.exists(path);
 
       case 'Path.is_file':
-        return vfs.containsKey(path);
+        return vfs.lookup(path) is VfsFile;
 
       case 'Path.is_dir':
-        return !vfs.containsKey(path) && _hasChildren(vfs, path);
+        return vfs.lookup(path) is VfsDir;
 
       case 'Path.is_symlink':
         return false;
 
       case 'Path.stat':
-        final content = vfs[path];
-        final isDir =
-            content == null &&
-            (_hasChildren(vfs, path) || _isMountRoot(path, normalizedMounts));
-        if (content == null && !isDir) {
-          throw OsCallException(
+        return switch (vfs.lookup(path)) {
+          VfsDir() => _dirStat(),
+          final VfsFile f => _fileStat(f.content.byteLength),
+          null => throw OsCallException(
             "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
-          );
-        }
-
-        return isDir
-            ? _dirStat()
-            : _fileStat(vfs[path]?.content.byteLength ?? 0);
+          ),
+        };
 
       case 'Path.unlink':
         _requireWritable(mount, path);
-        if (!vfs.containsKey(path)) {
+        if (vfs.fileAt(path) == null) {
           throw OsCallException(
             "[Errno 2] No such file or directory: '$path'",
             pythonExceptionType: 'FileNotFoundError',
@@ -311,18 +319,11 @@ OsCallHandler memoryMountedOsHandler({
         return null;
 
       case 'Path.iterdir':
-        final prefix = path.endsWith('/') ? path : '$path/';
-        final children = <String>{};
-        for (final key in vfs.keys) {
-          if (!key.startsWith(prefix)) continue;
-          final tail = key.substring(prefix.length);
-          final firstSlash = tail.indexOf('/');
-          children.add(
-            firstSlash == -1 ? key : '$prefix${tail.substring(0, firstSlash)}',
-          );
-        }
-
-        return children.map(MontyPath.new).toList();
+        // Directory-vs-file and missing-path errors are Phase 2; today an
+        // absent path still yields an empty listing, as it did before.
+        return (vfs.childPathsOf(path) ?? const <String>[])
+            .map(MontyPath.new)
+            .toList();
 
       case 'Path.absolute':
       case 'Path.resolve':
@@ -332,71 +333,70 @@ OsCallHandler memoryMountedOsHandler({
         _requireWritable(mount, path);
         final parents = (kwargs?['parents'] as bool?) ?? false;
         final existOk = (kwargs?['exist_ok'] as bool?) ?? false;
-        if (vfs.containsKey(path)) {
-          // A file occupies the path. exist_ok only applies to existing
-          // directories — Python raises FileExistsError here regardless.
-          throw OsCallException(
-            "[Errno 17] File exists: '$path'",
-            pythonExceptionType: 'FileExistsError',
-          );
-        }
-        if (_hasChildren(vfs, path) || _isMountRoot(path, normalizedMounts)) {
-          if (!existOk) {
+        switch (vfs.lookup(path)) {
+          case VfsFile():
+            // A file occupies the path. exist_ok only applies to existing
+            // directories — Python raises FileExistsError here regardless.
             throw OsCallException(
-              'Directory exists: $path',
+              "[Errno 17] File exists: '$path'",
               pythonExceptionType: 'FileExistsError',
             );
-          }
+          case VfsDir():
+            if (!existOk) {
+              throw OsCallException(
+                'Directory exists: $path',
+                pythonExceptionType: 'FileExistsError',
+              );
+            }
 
-          return null;
+            return null;
+          case null:
+            break;
         }
-        final parentOfTarget = _parentPath(path);
-        if (!parents && !_dirExists(vfs, parentOfTarget, normalizedMounts)) {
-          // CPython names the TARGET, not the missing parent, and prefixes the
-          // errno — mount_fs__errors.py:129-137 asserts the exact string. This
-          // said `No such directory: <parent>`, which was wrong twice.
-          throw OsCallException(
-            "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
-          );
+        if (vfs.parentDirOf(path) == null) {
+          if (!parents) {
+            // CPython names the TARGET, not the missing parent, and prefixes
+            // the errno — mount_fs__errors.py:129-137 asserts the exact
+            // string. This said `No such directory: <parent>`, wrong twice.
+            throw OsCallException(
+              "[Errno 2] No such file or directory: '$path'",
+              pythonExceptionType: 'FileNotFoundError',
+            );
+          }
+          _mkdirParents(vfs, path);
         }
-        // No-op: directories are implicit. The target becomes "exists"
-        // the moment a child key is written under it.
+        vfs.mkdir(path);
 
         return null;
 
       case 'Path.rmdir':
         _requireWritable(mount, path);
-        if (vfs.containsKey(path)) {
-          throw OsCallException(
-            "[Errno 20] Not a directory: '$path'",
-            pythonExceptionType: 'NotADirectoryError',
-          );
-        }
-        if (_hasChildren(vfs, path)) {
-          throw OsCallException(
-            "[Errno 39] Directory not empty: '$path'",
-            pythonExceptionType: 'OSError',
-          );
-        }
-        // No key, no children, not a mount root: the path does not exist.
-        // This used to return success, but CPython raises and
-        // mount_fs__errors.py:110-115 asserts the exact message.
-        //
-        // The flat-map model cannot represent an EMPTY directory — `mkdir`
-        // inserts nothing and `Path.exists` on a freshly-created one already
-        // reports False. So "no key and no children" genuinely means absent
-        // here, and raising is the answer consistent with what `exists()` says
-        // about the very same path. A mount root is the one path that exists
-        // without a key.
-        if (!_isMountRoot(path, normalizedMounts)) {
-          throw OsCallException(
-            "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
-          );
-        }
+        switch (vfs.lookup(path)) {
+          case VfsFile():
+            throw OsCallException(
+              "[Errno 20] Not a directory: '$path'",
+              pythonExceptionType: 'NotADirectoryError',
+            );
+          case final VfsDir d:
+            if (d.children.isNotEmpty) {
+              throw OsCallException(
+                "[Errno 39] Directory not empty: '$path'",
+                pythonExceptionType: 'OSError',
+              );
+            }
+            // An empty directory is now a real, removable node — including a
+            // mount root, which the flat model had to exempt because it could
+            // not tell one from an absent path.
+            if (!_isMountRoot(path, normalizedMounts)) vfs.remove(path);
 
-        return null;
+            return null;
+          case null:
+            // CPython raises; mount_fs__errors.py:110-115 asserts the message.
+            throw OsCallException(
+              "[Errno 2] No such file or directory: '$path'",
+              pythonExceptionType: 'FileNotFoundError',
+            );
+        }
 
       case 'Path.rename':
         _requireWritable(mount, path);
@@ -414,42 +414,32 @@ OsCallHandler memoryMountedOsHandler({
           return notMine(op, [target], kwargs);
         }
         _requireWritable(targetMount, target);
-        final srcContent = vfs[path];
-        if (srcContent != null) {
-          // File rename: re-key.
-          vfs.remove(path);
-          vfs[target] = srcContent;
+        // The full CPython matrix — file onto dir, dir onto file, dir onto
+        // non-empty dir, file OVERWRITING an existing file — is Phase 3. This
+        // keeps exactly the behaviour the flat store had, on the tree.
+        switch (vfs.lookup(path)) {
+          case VfsFile():
+            requireParentDir(target);
+            vfs.move(path, target);
 
-          return null;
-        }
-        if (_hasChildren(vfs, path)) {
-          // Directory rename: re-prefix every child key. Targeting a
-          // non-empty directory is rejected to avoid silent merges.
-          if (_hasChildren(vfs, target) || vfs.containsKey(target)) {
-            throw OsCallException(
-              'Rename target already exists: $target',
-              pythonExceptionType: 'OSError',
-            );
-          }
-          final oldPrefix = path.endsWith('/') ? path : '$path/';
-          final newPrefix = target.endsWith('/') ? target : '$target/';
-          final moves = <String, String>{};
-          for (final key in vfs.keys) {
-            if (key.startsWith(oldPrefix)) {
-              moves[key] = '$newPrefix${key.substring(oldPrefix.length)}';
+            return null;
+          case final VfsDir d when d.children.isNotEmpty:
+            if (vfs.exists(target)) {
+              throw OsCallException(
+                'Rename target already exists: $target',
+                pythonExceptionType: 'OSError',
+              );
             }
-          }
-          for (final entry in moves.entries) {
-            final value = vfs.remove(entry.key);
-            if (value != null) vfs[entry.value] = value;
-          }
+            requireParentDir(target);
+            vfs.move(path, target);
 
-          return null;
+            return null;
+          case _:
+            throw OsCallException(
+              "[Errno 2] No such file or directory: '$path'",
+              pythonExceptionType: 'FileNotFoundError',
+            );
         }
-        throw OsCallException(
-          "[Errno 2] No such file or directory: '$path'",
-          pythonExceptionType: 'FileNotFoundError',
-        );
     }
 
     return notMine(op, args, kwargs);
@@ -518,13 +508,15 @@ void _enforceLimit(MountDir mount, String path, int bytes) {
   }
 }
 
-bool _hasChildren(Map<String, VfsFile> vfs, String path) {
-  final prefix = path.endsWith('/') ? path : '$path/';
-  for (final key in vfs.keys) {
-    if (key.startsWith(prefix)) return true;
+/// Creates the missing directories above [path], for `mkdir(parents=True)`.
+void _mkdirParents(VfsTree vfs, String path) {
+  final components = VfsTree.splitPath(path);
+  final walked = StringBuffer();
+  for (final component in components.sublist(0, components.length - 1)) {
+    walked.write('/$component');
+    final soFar = walked.toString();
+    if (!vfs.exists(soFar)) vfs.mkdir(soFar);
   }
-
-  return false;
 }
 
 bool _isMountRoot(String normalized, List<MountDir> mounts) {
@@ -533,24 +525,6 @@ bool _isMountRoot(String normalized, List<MountDir> mounts) {
   }
 
   return false;
-}
-
-bool _dirExists(
-  Map<String, VfsFile> vfs,
-  String normalized,
-  List<MountDir> mounts,
-) {
-  if (_isMountRoot(normalized, mounts)) return true;
-
-  return _hasChildren(vfs, normalized);
-}
-
-String _parentPath(String normalized) {
-  if (normalized == '/' || normalized.isEmpty) return '/';
-  final i = normalized.lastIndexOf('/');
-  if (i <= 0) return '/';
-
-  return normalized.substring(0, i);
 }
 
 /// Field order of Python's `os.stat_result`, mirroring upstream's

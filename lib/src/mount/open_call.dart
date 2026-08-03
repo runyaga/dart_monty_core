@@ -17,9 +17,11 @@ import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 /// `open` call itself.
 ///
 /// Semantics (the only modes monty emits):
-/// - `r` / `rb` — the file must already exist; otherwise throws a typed
-///   `FileNotFoundError`, or `IsADirectoryError` when [isDirectory] reports a
-///   directory at [path].
+/// - `r` / `rb` — [isDirectory] must be false and [exists] must be true;
+///   otherwise throws a typed `IsADirectoryError` or `FileNotFoundError`
+///   respectively. [exists] means "a node is here", NOT "a file is here" — a
+///   store where directories exist must answer `true` for them and let
+///   [isDirectory] make the distinction.
 /// - `w` / `wb` — [ensureWritable] then [truncate] (create empty / overwrite).
 /// - `a` / `ab` — [ensureWritable] then [createIfMissing] (preserve content).
 ///
@@ -37,13 +39,20 @@ MontyFileHandle resolveOpenCall(
 }) {
   final readOnly = mode == 'r' || mode == 'rb';
   if (readOnly) {
+    // Two INDEPENDENT checks, not nested. Upstream states them as one
+    // sentence — "verify the file exists and is not a directory"
+    // (os_access.py:851-853) — and the distinction only became visible when
+    // the store gained real directories: while [exists] effectively meant "is
+    // a file", a directory answered `false` and fell into the nested branch by
+    // accident. With a tree, a directory answers `true` to [exists] and
+    // opening one for read returned a handle.
+    if (isDirectory(path)) {
+      throw OsCallException(
+        "[Errno 21] Is a directory: '$path'",
+        pythonExceptionType: 'IsADirectoryError',
+      );
+    }
     if (!exists(path)) {
-      if (isDirectory(path)) {
-        throw OsCallException(
-          "[Errno 21] Is a directory: '$path'",
-          pythonExceptionType: 'IsADirectoryError',
-        );
-      }
       throw OsCallException(
         "[Errno 2] No such file or directory: '$path'",
         pythonExceptionType: 'FileNotFoundError',
