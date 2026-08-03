@@ -108,16 +108,25 @@ const testHooksWasmFixtures = {
   'with__cm_traceback.py',
 };
 
-/// Union of both — fixtures skipped under a normal (no-test-hooks) WASM build.
-const Set<String> unsupportedWasmFixtures = {
-  ...alwaysUnsupportedWasmFixtures,
-  ...testHooksWasmFixtures,
-};
+// The `unsupportedWasmFixtures` UNION was here and is deleted.
+//
+// It merged two claims that need different handling, and the merge produced
+// wrong answers rather than merely vague ones:
+//
+//   alwaysUnsupportedWasmFixtures  "diverges on web"  -> falsifiable: RUN it
+//   testHooksWasmFixtures          "needs an unshipped cargo feature"
+//                                                     -> not falsifiable by
+//                                                        running it at all
+//
+// Measured 2026-08-03: with the union driving the expectation, the five
+// with__cm_* fixtures reported as STALE web divergences, because they pass on
+// web with no test-hooks build. They are not divergences and never were — the
+// union just could not say so. Consumers now name the set they mean.
 
 /// Call-external fixtures that fail on EVERY backend, with the reason.
 ///
-/// Separate from [unsupportedWasmFixtures] because that set means "the web
-/// diverges here"; this one means "we are wrong everywhere and know it".
+/// Separate from [alwaysUnsupportedWasmFixtures] because that set means "the
+/// web diverges here"; this one means "we are wrong everywhere and know it".
 /// Conflating them is how `dataclass__basic.py` sat behind a stale
 /// web-only skip while nothing ran it on FFI either.
 const Map<String, String> knownBrokenExtFixtures = {};

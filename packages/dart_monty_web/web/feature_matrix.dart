@@ -562,9 +562,19 @@ enum SkipKind {
   /// Not a gap in the engine — these are the probes above, in fixture form.
   needsHost('needs a host'),
 
-  /// Known to diverge on the web transport (core#128), or needs a `test-hooks`
-  /// build that is never shipped.
+  /// Measured to fail on the web backends. A CLAIM, and therefore checked:
+  /// the corpus panel RUNS these and reports FAIL, or STALE SKIP if one has
+  /// started passing. See [alwaysUnsupportedWasmFixtures].
   divergent('web divergence'),
+
+  /// Needs an engine built with `--features test-hooks`, which is never
+  /// shipped (native/Cargo.toml:37). NOT a divergence: it is a statement about
+  /// the build, not about behaviour, so running the fixture cannot falsify it.
+  ///
+  /// Folding this into [divergent] is what the retired `unsupportedWasmFixtures`
+  /// union did, and it mislabelled five `with__cm_*` fixtures as web
+  /// divergences when they in fact PASS on web without test-hooks.
+  needsTestHooks('needs test-hooks build'),
 
   /// The fixture asserts nothing to check against.
   noDirective('no directive'),
@@ -650,7 +660,10 @@ const _fixtureSourceBase =
 /// Classifies a fixture without running it, so the page can show the shape of
 /// the corpus instantly and only pay for execution on demand.
 SkipKind? _skipReason(_Fixture f) {
-  if (unsupportedWasmFixtures.contains(f.name)) return SkipKind.divergent;
+  if (alwaysUnsupportedWasmFixtures.contains(f.name)) {
+    return SkipKind.divergent;
+  }
+  if (testHooksWasmFixtures.contains(f.name)) return SkipKind.needsTestHooks;
 
   // Counted here, not only at run time. The headline is derived from this
   // function, so omitting a skip source made the page CLAIM more coverage than
@@ -928,7 +941,7 @@ void _renderGroupDetail() {
     final status = _fixtureStatus[f.name] ?? (skip?.label ?? 'not run yet');
     final cls = switch (status) {
       'PASS' => 'v-pass',
-      'FAIL' => 'v-fail',
+      'FAIL' || 'STALE SKIP' => 'v-fail',
       _ => 'v-run',
     };
     // Same flags the runner uses. Computing this with the DEFAULTS made rows
@@ -985,6 +998,57 @@ Future<void> _runCorpus() async {
   for (var i = 0; i < _corpus.length; i++) {
     final f = _corpus[i];
     final skip = _skipReason(f);
+
+    // A DIVERGENCE IS A CLAIM, SO MEASURE IT. This used to take
+    // SkipKind.divergent straight from a hardcoded list and print "web
+    // divergence" without running anything — while the banner above promised
+    // "Nothing here is a screenshot, a recording, or a claim copied from a
+    // README". For those rows it was exactly a claim copied from a list.
+    //
+    // Two entries were checked on 2026-08-03 and both were wrong:
+    // dict__eq_self_referential.py had gone stale and passed on both web
+    // backends, and range__ops.py genuinely failed but for a different cause
+    // than the one recorded. Neither could surface while nothing ran them.
+    //
+    // So run it and report what happened. A confirmed divergence shows FAIL,
+    // which is honest — it IS failing. One that has started passing shows
+    // STALE SKIP, which is actionable: delete the entry.
+    if (skip == SkipKind.divergent) {
+      final expectation = parseFixture(
+        f.source,
+        skipCallExternal: false,
+        skipRunAsync: false,
+        skipMountFs: false,
+      );
+      if (expectation == null) {
+        skipped++;
+        _fixtureStatus[f.name] = SkipKind.divergent.label;
+      } else {
+        String outcome;
+        try {
+          outcome = await _runFixture(f, expectation);
+        } on Object catch (e) {
+          outcome = 'FAIL';
+          _skipNotes[f.name] = '$e';
+        }
+        if (outcome == 'PASS') {
+          failed++;
+          _fixtureStatus[f.name] = 'STALE SKIP';
+          _skipNotes[f.name] =
+              'Listed as a web divergence, but it PASSES here. The entry is '
+              'stale — remove it from alwaysUnsupportedWasmFixtures.';
+          failures.add('${f.name} (stale skip: now passes)');
+        } else {
+          failed++;
+          _fixtureStatus[f.name] = 'FAIL';
+          _skipNotes[f.name] =
+              'Confirmed web divergence — run here, still failing.';
+          failures.add('${f.name} (confirmed web divergence)');
+        }
+      }
+      continue;
+    }
+
     if (skip != null) {
       skipped++;
       _fixtureStatus[f.name] = skip.label;
