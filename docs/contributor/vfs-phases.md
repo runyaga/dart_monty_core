@@ -342,11 +342,47 @@ mount** (the clamp at `vfs_path.dart` plus "outside a mount means absent"), and
 **cannot mint a callback file** — every file Monty creates is a
 `MontyMemoryFile` (`vfs_tree.dart:126`, mirroring `os_access.py:967`).
 
-## Phase 6 — deferred
+## §6c — port upstream's `OSAccess` suite · done
 
-- [ ] overlay mode + `deleted` tombstones
-- [ ] boundary-enforced host mounts (`MountDir.hostPath` + a Dart
-      `path_security`) — own branch, own adversarial suite
+The 531-fixture corpus is not the only spec. `test_os_access.py` pins
+directory and mode semantics no fixture reaches, and the design doc flagged it
+as worth mining. It was, immediately:
+
+- [x] `iterdir` of an **empty** directory lists as empty and does not raise —
+      distinct from a missing path, which does
+- [x] `append_text` returns **characters** where `append_bytes` returns
+      **bytes**: `'αβγ'` is 3 and 6, so the two calls must disagree
+- [x] root is a directory, lists its children, and is not a file
+- [x] **`open()` rejects a malformed mode before any side effect** — this one
+      found a live defect, see below
+- [x] regression script green · gate green
+
+### The defect it found
+
+`resolveOpenCall` string-compared the mode and sent *everything* unrecognised
+to `createIfMissing`, so `open(p, 'wxyz')`, `open(p, 'x')` and `open(p, '')`
+silently created a file instead of raising. `open_call.dart` is exported, so a
+direct caller reached it. Upstream's own test for this is a named data-loss
+regression guard (`os_access.py:870-876`).
+
+The fix parses the mode first. That also made `b`/`t`/`+` orthogonal to the
+action, as upstream has them — `r+` is a *read* action and no longer creates.
+
+## Phase 6 — deferred, and deliberately so
+
+Neither item is "not done yet"; both are decisions already taken.
+
+- [ ] **overlay mode + `deleted` tombstones** — "only if a consumer needs it",
+      and the VFS API currently has **no downstream consumer at all**
+      (measured: zero hits for `VfsFile`/`memoryMountedOsHandler` across
+      `dart_monty`, `dart_monty_labs` and every `soliplex*` repo). Building it
+      now would be speculative.
+- [ ] **boundary-enforced host mounts** (`MountDir.hostPath` + a Dart
+      `path_security`) — **settled against.** A solo-maintained Dart
+      re-derivation of upstream's Rust boundary module, tested against one
+      person's adversarial imagination, is more dangerous than a callback the
+      consumer deliberately wrote. Challenged in review and the objection was
+      withdrawn.
 
 ## Open decisions (owner, not implementer)
 

@@ -29,6 +29,28 @@ small consumer-facing surface.
   `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
   greppable and does not replace that rule.
 
+### Fixed
+
+- **`open()` with a malformed mode raised nothing and created a file.**
+  `resolveOpenCall` string-compared the mode and treated *everything*
+  unrecognised as append: `open(p, 'wxyz')`, `open(p, 'x')` and even
+  `open(p, '')` fell through to create-if-missing. It now parses the mode
+  before any side effect and raises `ValueError: invalid mode: '<mode>'`,
+  which is what upstream does and for the reason upstream states
+  (`os_access.py:870-876`) — a direct caller must not be able to trigger the
+  truncate/create branch with a mode that was never valid.
+
+  Two consequences beyond the rejection. `b`, `t` and `+` are now understood as
+  orthogonal to the open-time action, so `r+`, `rt` and `rb+` are read actions
+  that check existence instead of silently creating, and `w+`/`wt`/`wb+`
+  truncate. And `x` (exclusive create) is rejected rather than treated as
+  append — upstream's own code asserts the action is one of `r`/`w`/`a`
+  (`os_access.py:896`), so accepting it would invent a semantic neither side
+  implements.
+
+  Found by porting upstream's `test_os_access.py`, whose own test for this is a
+  named data-loss regression guard.
+
 ### Breaking
 
 - **A path outside every mount is reported as absent, not denied.**
