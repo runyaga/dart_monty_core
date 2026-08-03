@@ -29,6 +29,10 @@
          and at zero gaps this stays empty. The sentence used to be hardcoded
          here in BOTH matrix shells and went stale. -->
     <p class="muted" id="gap-note"></p>
+    <!-- Filled in by feature_matrix.dart ONLY when the Dart define
+         MONTY_TEST_HOOKS disagrees with the engine's actual cargo
+         feature, probed at runtime. Empty when they agree. -->
+    <p class="muted" id="engine-note"></p>
     <div class="controls">
       <button id="rerun" class="btn" disabled>Re-run</button>
       <span id="summary"></span>

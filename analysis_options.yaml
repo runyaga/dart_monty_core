@@ -20,6 +20,23 @@ analyzer:
     # analysing it would double-report that package's issues. `.gitignore`
     # does not help here — the analyzer does not consult it.
     - 'site/**'
+    # Agent worktrees (`git worktree add .claude/worktrees/...`). Each is a
+    # FULL checkout of this package nested inside it, so without this the
+    # analyzer walks N extra copies of lib/ and test/ — and reports their
+    # issues against THIS package, at paths that do not exist on this branch.
+    #
+    # THE COMPENSATING STEP IS THAT THERE IS NOTHING TO COMPENSATE FOR: unlike
+    # a normal exclusion, this hides no code from analysis. Every file under a
+    # worktree is the same package analysed in its own root, by its own
+    # `dart analyze` / gate run, against its own branch. Excluding it here
+    # removes duplicate reporting, not coverage.
+    #
+    # Measured 2026-08-03: a worktree agent's gate went red with
+    # `Error when reading 'lib/src/mount/vfs_limits.dart': No such file or
+    # directory` — a file that exists on one branch and not another, surfaced
+    # because two checkouts were in one analysis scope. Five stale worktrees
+    # were live at the time.
+    - '.claude/worktrees/**'
 
   language:
     strict-casts: true

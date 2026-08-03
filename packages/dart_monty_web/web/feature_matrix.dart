@@ -716,6 +716,49 @@ const _fixtureSourceBase =
 /// (native/Cargo.toml:36-38, "NEVER enabled in shipped builds").
 const bool _testHooks = bool.fromEnvironment('MONTY_TEST_HOOKS');
 
+/// Whether the ENGINE actually has the `test-hooks` cargo feature, probed at
+/// runtime rather than assumed from [_testHooks].
+///
+/// `null` until [_probeEngineTestHooks] has run.
+bool? _engineHasTestHooks;
+
+/// Asks the engine whether it has test-hooks, by doing the thing only a
+/// test-hooks engine can do.
+///
+/// **Why this exists.** [_testHooks] is a *Dart compile-time define* and the
+/// engine's feature is a *separate cargo build*. Two independent axes, and
+/// nothing checked that they agree. Both mismatches are reachable:
+///
+/// - **define off, engine on** — eight fixtures are skipped that would have
+///   passed. Under-reports, harmless but confusing: the page says 521/531 where
+///   it could say 529/531.
+/// - **define on, engine off** — the eight are NOT skipped. They run, and they
+///   FAIL, and the page shows eight red rows that look exactly like a
+///   regression. This is the dangerous one, and it is the reason a probe beats
+///   a warning: nothing else in the repo would tell you.
+///
+/// Measured 2026-08-03: a gate run silently produces the first case, because
+/// `tool/check_pages.sh` copies the shipped engine over `web/` and recompiles
+/// the Dart without the define. `tool/serve_demo.sh` now refuses
+/// `--test-hooks --skip-build` for the same reason, but that guard only covers
+/// the one entry point; this covers the page however it was built.
+Future<void> _probeEngineTestHooks() async {
+  try {
+    // `sys.setrecursionlimit` is the discriminator, and deliberately so: the
+    // repo records (unsupported_wasm_fixtures.dart) that `testCmFixtures` pass
+    // on web WITHOUT a test-hooks build while `setRecursionLimitFixtures`
+    // genuinely need it. Probing with the wrong half would answer yes on a
+    // shipped engine.
+    final r = await Monty(
+      'import sys\nsys.setrecursionlimit(100)\nTrue',
+    ).run().timeout(const Duration(seconds: 20));
+    _engineHasTestHooks = r.error == null;
+  } on Object {
+    // A throw is an answer too: the capability is absent.
+    _engineHasTestHooks = false;
+  }
+}
+
 SkipKind? _skipReason(_Fixture f) {
   if (alwaysUnsupportedWasmFixtures.contains(f.name)) {
     return SkipKind.divergent;
@@ -1382,7 +1425,50 @@ void _renderGapNote(List<String> gapNotes) {
   );
 }
 
+/// Renders a banner when the Dart define and the engine's feature disagree.
+///
+/// Nothing at all when they agree, which is the same rule `_renderGapNote`
+/// follows: a message that is always present teaches people to stop reading it.
+void _renderTestHooksMismatch() {
+  final el = _doc.getElementById('engine-note');
+  if (el == null) return;
+  el.textContent = '';
+  el.className = 'muted';
+
+  final engine = _engineHasTestHooks;
+  if (engine == null || engine == _testHooks) return;
+
+  final n = testHooksWasmFixtures.length;
+  el.className = 'v-fail';
+  el.append(_el('strong', text: 'BUILD MISMATCH'));
+  el.append(
+    _el(
+      'span',
+      text: _testHooks
+          // The dangerous direction: the eight are not skipped, so they run
+          // against an engine that cannot serve them and go red.
+          ? ' — this page was compiled with MONTY_TEST_HOOKS=true but the '
+                'engine it loaded does NOT have the test-hooks cargo feature. '
+                'The $n fixtures that need `sys.setrecursionlimit` are being '
+                'RUN rather than skipped, so any red among them is this '
+                'mismatch and not a regression. Rebuild with '
+                '`bash tool/serve_demo.sh --test-hooks`.'
+          // The under-reporting direction.
+          : ' — the engine HAS the test-hooks feature but this page was '
+                'compiled without MONTY_TEST_HOOKS, so $n fixtures are being '
+                'skipped that would pass. The corpus count below is lower than '
+                'this build can actually achieve. Rebuild with '
+                '`bash tool/serve_demo.sh --test-hooks`.',
+    ),
+  );
+}
+
 Future<void> _runAll() async {
+  // Before the probes, because _skipReason consults the define and the banner
+  // has to be able to contradict it.
+  await _probeEngineTestHooks();
+  _renderTestHooksMismatch();
+
   final probes = _probes();
   final tbody = _doc.getElementById('rows')!..textContent = '';
   for (var i = 0; i < probes.length; i++) {
