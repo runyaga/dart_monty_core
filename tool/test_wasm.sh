@@ -2,9 +2,22 @@
 # =============================================================================
 # dart_monty_core — WASM fixture conformance test
 # =============================================================================
-# Builds the JS bridge from js/src/ (npm + esbuild), compiles wasm_runner.dart
-# to JS, then serves everything with COOP/COEP headers and runs headless Chrome
-# to exercise the fixture corpus tests.
+# Builds the JS bridge from js/src/ (npm + esbuild), compiles the corpus runner
+# for a web target, then serves everything with COOP/COEP headers and runs
+# headless Chrome to exercise the fixture corpus tests.
+#
+# TWO DART TARGETS, ONE WASM ENGINE. Everything here drives the same Rust
+# engine (lib/assets/dart_monty_core_native.wasm). What --dart2wasm changes is
+# the compiler used for the DART side of the harness:
+#
+#   default      dart compile js   test/integration/wasm_runner.dart
+#   --dart2wasm  dart compile wasm test/integration/wasm_runner_wasm.dart
+#
+# They are not interchangeable. dart2js has a single number type, so `4.0 is
+# int` is true and integral doubles collapse to ints, while dart2wasm has real
+# doubles — a corpus fixture can pass on one and fail on the other. CI has run
+# both since ci.yaml:583/:669; the gate only ever ran the dart2js half, so a
+# dart2wasm-only corpus regression reached CI unchallenged.
 #
 # Prerequisites:
 #   - node / npm (for building js/src/ → assets)
@@ -12,10 +25,21 @@
 #   - dart
 #   - Chrome / Chromium
 #
-# Usage: bash tool/test_wasm.sh [--skip-build]
+# Usage: bash tool/test_wasm.sh [--skip-build] [--dart2wasm]
 #
 #   --skip-build   Skip the npm + cargo build steps (use existing assets).
 #                  Useful when you've already built and just want to re-run tests.
+#   --dart2wasm    Compile the runner with dart2wasm instead of dart2js.
+#                  Mirrors the flag tool/test_wasm_unit.sh already takes.
+#
+# --dart2wasm STAGES INTO A TEMP DIR, and that is load-bearing rather than
+# tidiness. `dart compile wasm -o test/integration/web/wasm_runner.wasm` — what
+# CI runs, and what the file's own header tells you to run — writes three
+# TRACKED files: wasm_runner.wasm, wasm_runner.mjs and wasm_runner.wasm.map.
+# The gate is read-only, and dart2wasm output is no more byte-reproducible than
+# the Rust wasm, so compiling in place would leave the tree dirty after every
+# gate run with a diff that means nothing. Serving a temp dir keeps the gate's
+# "never writes to the working tree" guarantee literally true.
 #
 # Output protocol (parsed from Chrome stderr):
 #   FIXTURE_RESULT:{"name":"<file>","ok":<bool>}
@@ -27,17 +51,55 @@ PKG="$(cd "$(dirname "$0")/.." && pwd)"
 JS_DIR="$PKG/js"
 ASSETS_DIR="$PKG/lib/assets"
 INTEG_WEB="$PKG/test/integration/web"
-SERVE_PORT=8097
 SKIP_BUILD=false
+DART2WASM=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-build) SKIP_BUILD=true; shift ;;
+    --dart2wasm)  DART2WASM=true;  shift ;;
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
 done
 
-echo "=== dart_monty_core WASM fixture tests ==="
+# Distinct base ports so a dart2js and a dart2wasm run can overlap without one
+# silently serving the other's staging dir. The port is then probed, because a
+# hardcoded one is not actually available: 8098 was already held by an unrelated
+# process on the first machine this ran on, the backgrounded server died on
+# EADDRINUSE, and -- since `set -e` does not see a background failure -- the run
+# went on to spend the whole Chrome timeout loading nothing and blamed Chrome.
+if [ "$DART2WASM" = true ]; then
+  PORT_BASE=8098
+  TARGET="dart2wasm"
+else
+  PORT_BASE=8097
+  TARGET="dart2js"
+fi
+
+SERVE_PORT=""
+for offset in 0 10 20 30 40 50 60 70 80 90; do
+  candidate=$((PORT_BASE + offset))
+  if python3 -c "
+import socket, sys
+s = socket.socket()
+try:
+    s.bind(('127.0.0.1', $candidate))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+" 2>/dev/null; then
+    SERVE_PORT="$candidate"
+    break
+  fi
+  echo "  port $candidate busy, trying next"
+done
+if [ -z "$SERVE_PORT" ]; then
+  echo "ERROR: no free port near $PORT_BASE" >&2
+  exit 1
+fi
+
+echo "=== dart_monty_core WASM fixture tests ($TARGET) ==="
 echo ""
 
 # -------------------------------------------------------
@@ -93,34 +155,30 @@ for f in dart_monty_core_bridge.js dart_monty_core_worker.js; do
 done
 
 # -------------------------------------------------------
-# Step 3: Compile wasm_runner.dart → JS
+# Step 3: Choose the serve dir, then compile the runner into it
 # -------------------------------------------------------
 echo ""
 echo "--- dart pub get ---"
 cd "$PKG"
 dart pub get
 
-echo ""
-echo "--- Compiling wasm_runner.dart → JS ---"
-mkdir -p "$INTEG_WEB"
-dart compile js \
-  test/integration/wasm_runner.dart \
-  -o "$INTEG_WEB/wasm_runner.dart.js" \
-  --no-source-maps
-echo "  Compile: OK"
+STAGE=""
+if [ "$DART2WASM" = true ]; then
+  # Compile OUTSIDE the repo. See the header: -o into test/integration/web/
+  # would overwrite three tracked files.
+  STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dmc-wasm-corpus.XXXXXX")"
+  SERVE_DIR="$STAGE"
+  ENTRY="wasm_runner_wasm.html"
+  cp "$INTEG_WEB/$ENTRY" "$STAGE/"
+else
+  SERVE_DIR="$INTEG_WEB"
+  ENTRY="fixtures.html"
+  mkdir -p "$INTEG_WEB"
+fi
 
 # -------------------------------------------------------
-# Step 4: Copy assets into test/integration/web/
-# -------------------------------------------------------
-echo ""
-echo "--- Copying assets to test web dir ---"
-cp "$ASSETS_DIR/dart_monty_core_bridge.js"   "$INTEG_WEB/"
-cp "$ASSETS_DIR/dart_monty_core_worker.js"   "$INTEG_WEB/"
-cp "$ASSETS_DIR/dart_monty_core_native.wasm" "$INTEG_WEB/"
-echo "  Assets: OK"
-
-# -------------------------------------------------------
-# Cleanup trap
+# Cleanup trap — installed BEFORE the first write so an aborted compile cannot
+# strand staged assets in test/integration/web/.
 # -------------------------------------------------------
 SERVE_PID=""
 
@@ -128,6 +186,11 @@ cleanup() {
   if [ -n "$SERVE_PID" ]; then
     kill "$SERVE_PID" 2>/dev/null || true
     wait "$SERVE_PID" 2>/dev/null || true
+  fi
+  # The temp dir holds every dart2wasm artefact; nothing to prune in the repo.
+  if [ -n "$STAGE" ]; then
+    rm -rf "$STAGE"
+    return
   fi
   rm -f "$INTEG_WEB/dart_monty_core_bridge.js" \
         "$INTEG_WEB/dart_monty_core_worker.js" \
@@ -137,13 +200,39 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [ "$DART2WASM" = true ]; then
+  echo ""
+  echo "--- Compiling wasm_runner_wasm.dart → WASM (dart2wasm) ---"
+  dart compile wasm \
+    test/integration/wasm_runner_wasm.dart \
+    -o "$STAGE/wasm_runner.wasm"
+else
+  echo ""
+  echo "--- Compiling wasm_runner.dart → JS (dart2js) ---"
+  dart compile js \
+    test/integration/wasm_runner.dart \
+    -o "$INTEG_WEB/wasm_runner.dart.js" \
+    --no-source-maps
+fi
+echo "  Compile: OK"
+
+# -------------------------------------------------------
+# Step 4: Copy bridge assets next to the runner
+# -------------------------------------------------------
+echo ""
+echo "--- Copying assets to serve dir ($SERVE_DIR) ---"
+cp "$ASSETS_DIR/dart_monty_core_bridge.js"   "$SERVE_DIR/"
+cp "$ASSETS_DIR/dart_monty_core_worker.js"   "$SERVE_DIR/"
+cp "$ASSETS_DIR/dart_monty_core_native.wasm" "$SERVE_DIR/"
+echo "  Assets: OK"
+
 # -------------------------------------------------------
 # Step 5: Start COOP/COEP HTTP server
 # -------------------------------------------------------
 echo ""
 echo "--- Starting COOP/COEP server on :$SERVE_PORT ---"
 
-python3 - "$INTEG_WEB" "$SERVE_PORT" <<'PYEOF' &
+python3 - "$SERVE_DIR" "$SERVE_PORT" <<'PYEOF' &
 import sys, http.server, functools
 
 directory = sys.argv[1]
@@ -167,8 +256,24 @@ http.server.HTTPServer(('127.0.0.1', port), handler).serve_forever()
 PYEOF
 
 SERVE_PID=$!
-sleep 1
-echo "  Server PID=$SERVE_PID"
+
+# Confirm the server is actually serving the entry point before handing the URL
+# to Chrome. Without this a bind failure is invisible for the whole Chrome
+# timeout and then reported as "Chrome may have crashed", which sends you
+# debugging the browser instead of the port.
+READY=false
+for _ in $(seq 1 20); do
+  if curl -fsS -o /dev/null "http://127.0.0.1:$SERVE_PORT/$ENTRY" 2>/dev/null; then
+    READY=true
+    break
+  fi
+  sleep 0.5
+done
+if [ "$READY" != true ]; then
+  echo "ERROR: server on :$SERVE_PORT never served /$ENTRY" >&2
+  exit 1
+fi
+echo "  Server PID=$SERVE_PID on :$SERVE_PORT (serving $ENTRY)"
 
 # -------------------------------------------------------
 # Step 6: Detect Chrome
@@ -197,19 +302,40 @@ echo "  Chrome: $CHROME"
 # Step 7: Run headless Chrome
 # -------------------------------------------------------
 echo ""
-echo "--- Running WASM fixture tests ---"
+echo "--- Running WASM fixture tests ($TARGET, $ENTRY) ---"
 
 CHROME_LOG=$(mktemp)
 
-timeout 120 "$CHROME" \
+# Poll the log for FIXTURE_DONE rather than waiting on Chrome. Headless Chrome
+# does NOT exit when the page finishes, so the previous `timeout 120` burned the
+# full two minutes on every run, pass or fail — most of this step's 123s in the
+# gate was a browser sitting idle after the corpus had already finished. CI has
+# used this poll since ci.yaml's run_test(); the ceiling below is the real
+# timeout, and a run that never prints FIXTURE_DONE still fails at step 8.
+CHROME_TIMEOUT=240
+"$CHROME" \
   --headless=new \
   --disable-gpu \
   --no-sandbox \
   --disable-dev-shm-usage \
   --enable-logging=stderr \
   --v=0 \
-  "http://127.0.0.1:$SERVE_PORT/fixtures.html" \
-  2>"$CHROME_LOG" || true
+  "http://127.0.0.1:$SERVE_PORT/$ENTRY" \
+  2>"$CHROME_LOG" &
+CHROME_PID=$!
+
+ELAPSED=0
+while [ "$ELAPSED" -lt "$CHROME_TIMEOUT" ]; do
+  if grep -q 'FIXTURE_DONE:' "$CHROME_LOG" 2>/dev/null; then break; fi
+  # Chrome dying early is a result too — stop waiting for a log line that can
+  # no longer arrive.
+  if ! kill -0 "$CHROME_PID" 2>/dev/null; then break; fi
+  sleep 1
+  ELAPSED=$((ELAPSED + 1))
+done
+kill "$CHROME_PID" 2>/dev/null || true
+wait "$CHROME_PID" 2>/dev/null || true
+echo "  Chrome run: ${ELAPSED}s"
 
 # -------------------------------------------------------
 # Step 8: Parse results
@@ -247,6 +373,23 @@ fi
 
 echo "$FIXTURE_DONE"
 
+# "0 failed" is not the same as "the corpus ran". A runner that registered
+# nothing prints FIXTURE_DONE:{"total":0,...} and every check above is happy —
+# the same shape as trap 6 in the testing runbook, and as the gap this flag was
+# added to close. Pin the total to the provenance file, which is regenerated
+# with the corpus and already verified by tool/check_fixture_corpus.sh.
+EXPECTED_TOTAL=$(python3 -c \
+  "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
+ACTUAL_TOTAL=$(echo "$FIXTURE_DONE" | sed -n 's/.*"total":\([0-9]*\).*/\1/p')
+if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
+  echo ""
+  echo "=== FAILED: corpus size mismatch ==="
+  echo "  tool/fixture-corpus.json says $EXPECTED_TOTAL fixtures; the $TARGET run"
+  echo "  reported $ACTUAL_TOTAL. Either the corpus was regenerated without"
+  echo "  updating the provenance file, or the runner registered nothing."
+  exit 1
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   echo ""
   echo "=== FAILED: $FAILURES fixture(s) failed ==="
@@ -254,4 +397,4 @@ if [ "$FAILURES" -gt 0 ]; then
 fi
 
 echo ""
-echo "=== PASSED: all WASM fixture tests ==="
+echo "=== PASSED: all WASM fixture tests ($TARGET) ==="

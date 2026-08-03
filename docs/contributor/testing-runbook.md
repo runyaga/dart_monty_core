@@ -121,16 +121,35 @@ Known divergences are listed in the body and reported as **skips with an issue
 link**, never asserted as correct — see `_knownDivergences` and #134 (integers
 outside i64 arrive as `MontyString`).
 
-## 4. WASM fixture corpus — dart2js through a browser
+## 4. WASM fixture corpus — dart2js *and* dart2wasm through a browser
 
 ```bash
-bash tool/test_wasm.sh              # full build + run
-bash tool/test_wasm.sh --skip-build # reuse current assets
+bash tool/test_wasm.sh                          # full build + run (dart2js)
+bash tool/test_wasm.sh --skip-build             # reuse current assets
+bash tool/test_wasm.sh --skip-build --dart2wasm # same corpus, dart2wasm
 ```
 
-**Verifies:** the 531 fixtures against the WASM engine, compiled to JS and driven
-in headless Chrome through `fixtures.html`.
-**Not** `dart test`. It is a bespoke harness that parses `FIXTURE_RESULT` lines.
+**Verifies:** the 531 fixtures against the WASM engine, driven in headless
+Chrome. **Not** `dart test`. It is a bespoke harness that parses
+`FIXTURE_RESULT` lines.
+
+**Run both targets.** One WASM engine, two Dart compilers:
+
+| flag | compiles | entry page |
+|---|---|---|
+| *(none)* | `dart compile js` of `wasm_runner.dart` | `fixtures.html` |
+| `--dart2wasm` | `dart compile wasm` of `wasm_runner_wasm.dart` | `wasm_runner_wasm.html` |
+
+They are not interchangeable — dart2js has a single number type, dart2wasm has
+real doubles — which is the same reason mechanism 1 runs `-c dart2js -c
+dart2wasm`. Until 2026-08-02 the gate ran only the first, so a dart2wasm-only
+corpus regression passed locally and failed in CI. Both are gate steps now
+(`corpus_js`, `corpus_wasm`).
+
+`--dart2wasm` stages its build into a temp dir. Do **not** "simplify" it to
+`-o test/integration/web/wasm_runner.wasm` the way CI does: that path is a
+tracked file, and so are the `.mjs` and `.wasm.map` emitted beside it, so an
+in-place compile would leave every gate run with a dirty tree.
 
 Its expectations come from `# Return=` / `# Raise=` directives authored in
 upstream monty's `test_cases/`, so unlike mechanism 3 it is **not** circular.
@@ -220,10 +239,19 @@ bash tool/prebuild.sh           # ONLY if you changed native/ or js/ (see Traps)
 bash tool/gate.sh               # read-only; never rebuilds, never restores
 ```
 
-Runs all seventeen steps and prints `GATE GREEN` or `GATE RED`, with per-step
-logs. **A red matrix means do not commit** — including when the failing step
-looks unrelated to your change. It has caught genuine defects in changes that
-"obviously" could not have broken anything.
+Runs every step in this runbook and prints `GATE GREEN` or `GATE RED`, with
+per-step logs. **A red matrix means do not commit** — including when the failing
+step looks unrelated to your change. It has caught genuine defects in changes
+that "obviously" could not have broken anything.
+
+**Read the exit code and the verdict line, not the tail of the summary.** A
+`FAIL` in the middle of `SUMMARY.txt` is invisible to `tail`; see trap 5.
+
+The gate also checks its own read-only promise: it snapshots `git status
+--porcelain` before step 1 and compares afterwards, and reports
+`FAIL read_only_tree` if the run modified anything. It compares against the
+snapshot rather than against a clean tree, so a work-in-progress tree does not
+trip it.
 
 ---
 
@@ -297,8 +325,8 @@ working tree**:
 | `bash tool/prebuild.sh` | writes `lib/assets/`. You run it, you commit the result. |
 | `bash tool/gate.sh` | reads `lib/assets/`. Never rebuilds, never restores. |
 
-`tool/gate.sh` therefore runs `tool/test_wasm.sh --skip-build`, so its web steps
-exercise the exact bytes you are about to commit. Forgetting `prebuild.sh` is
+`tool/gate.sh` therefore runs `tool/test_wasm.sh --skip-build` (both targets), so
+its web steps exercise the exact bytes you are about to commit. Forgetting `prebuild.sh` is
 caught by `tool/check_asset_freshness.sh` (gate step 1), which hashes the
 **sources** rather than the non-reproducible output. When you rebuild, also
 regenerate `tool/wasm-provenance.json` (sizes, sha256s, and the commit `native/`
