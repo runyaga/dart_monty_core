@@ -99,9 +99,43 @@ OsCallHandler memoryMountedOsHandler({
     }
   }
 
+  /// Rejects an operation aimed at a directory, the way CPython does
+  /// (`os_access.py:950-951`, `:960`).
+  ///
+  /// One guard rather than a check per op. Without it, writing to a directory
+  /// SUCCEEDED: the store saw the existing node was not a file and replaced
+  /// it, taking the directory and everything under it with it — silent data
+  /// loss rather than a wrong message.
+  void refuseDirectory(String path) {
+    if (vfs.lookup(path) is VfsDir) {
+      throw OsCallException(
+        "[Errno 21] Is a directory: '$path'",
+        pythonExceptionType: 'IsADirectoryError',
+      );
+    }
+  }
+
+  /// Reads the file at [path], distinguishing "is a directory" from "is not
+  /// there" — reporting a directory as missing is wrong twice, because the
+  /// path plainly exists and a caller told a file is absent will try to
+  /// create it.
+  VfsFile requireFile(String path) {
+    refuseDirectory(path);
+    final file = vfs.fileAt(path);
+    if (file == null) {
+      throw OsCallException(
+        "[Errno 2] No such file or directory: '$path'",
+        pythonExceptionType: 'FileNotFoundError',
+      );
+    }
+
+    return file;
+  }
+
   /// The single write path. Every content-producing op routes through here so
   /// the checks cannot drift apart between `write_text` and `open(..., 'w')`.
   void putContent(String path, VfsContent content) {
+    refuseDirectory(path);
     requireParentDir(path);
     vfs.putContent(path, content);
   }
@@ -190,29 +224,14 @@ OsCallHandler memoryMountedOsHandler({
 
     switch (op) {
       case 'Path.read_text':
-        final file = vfs.fileAt(path);
-        if (file == null) {
-          throw OsCallException(
-            "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
-          );
-        }
-
-        return _decodeUtf8(file.content.bytes);
+        return _decodeUtf8(requireFile(path).content.bytes);
 
       case 'Path.read_bytes':
-        final file = vfs.fileAt(path);
-        if (file == null) {
-          throw OsCallException(
-            "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
-          );
-        }
 
         // Return a typed bytes value (not a bare List, which would decode as
         // a Python list and break binary `open(...).read()` buffering). No
         // re-encode: the store holds the bytes as written.
-        return MontyBytes(file.content.bytes);
+        return MontyBytes(requireFile(path).content.bytes);
 
       case 'Path.write_text':
         _requireWritable(mount, path);
@@ -255,6 +274,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, utf8.encode(value).length);
+        refuseDirectory(path);
         final existing = vfs.fileAt(path);
         final head = existing == null
             ? ''
@@ -276,6 +296,7 @@ OsCallHandler memoryMountedOsHandler({
           );
         }
         _enforceLimit(mount, path, bytes.length);
+        refuseDirectory(path);
         final prior = vfs.fileAt(path);
         putContent(
           path,

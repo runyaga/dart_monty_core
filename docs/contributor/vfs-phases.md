@@ -129,14 +129,24 @@ mount_fs__errors.py  expected FileNotFoundError on iterdir nonexistent       -> 
 
 ## Phase 1c — `IsADirectoryError` on writes
 
-The P0: writing to a directory currently **succeeds and destroys the directory
-entry**. Silent data loss, not a wrong message.
+The P0: writing to a directory **succeeded and destroyed the directory entry**.
+Silent data loss, not a wrong message — `putContent` saw the existing node was
+not a `VfsFile` and replaced it, taking every file beneath it along.
 
-- [ ] `read_text`/`read_bytes`/`write_text`/`write_bytes` on a directory raise
-      `[Errno 21] Is a directory: '<path>'`
-- [ ] Reinstate the write parent-dir check reverted in `11bd4a8`, and un-skip
-      its test
-- [ ] regression script green · gate green
+- [x] `read_text`/`read_bytes`/`write_text`/`write_bytes`/`append_text`/
+      `append_bytes` on a directory raise `[Errno 21] Is a directory: '<path>'`
+- [x] `open(dir, 'w')` too — it routes through `truncate` → `putContent`, so
+      one guard covers it
+- [x] Reinstated the write parent-dir check reverted in `11bd4a8` and un-skipped
+      its test (done in 1b, once directories became real)
+- [x] regression script green · gate green
+
+Implemented as **one guard at the store boundary**, `refuseDirectory`, rather
+than a check per operation — eight call sites cannot drift apart if they share
+the guard. Reads go through `requireFile`, which distinguishes *is a directory*
+from *is not there*: reporting a directory as missing is wrong twice, because
+the path plainly exists and a caller told a file is absent will try to create
+it.
 
 ## Phase 2 — directory-aware policy
 
