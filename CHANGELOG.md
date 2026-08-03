@@ -9,6 +9,23 @@ small consumer-facing surface.
 
 ### Breaking
 
+- **`rename` follows CPython's full matrix.** It had two behaviours; there are
+  six, and which one applies depends on what is at *both* ends.
+
+  | source | destination | result |
+  | --- | --- | --- |
+  | missing | — | `FileNotFoundError`, naming the source |
+  | file | missing | move |
+  | file | file | **overwrites silently** (POSIX) |
+  | file | directory | `IsADirectoryError` `[Errno 21]` |
+  | directory | file | `NotADirectoryError` `[Errno 20]` |
+  | directory | non-empty directory | `OSError` `[Errno 39]` |
+  | directory | empty directory | move, replacing it |
+
+  Previously any existing destination was refused with
+  `Rename target already exists: <path>`, which was neither CPython's wording
+  nor its behaviour.
+
 - **`iterdir`, `unlink` and `mkdir` answer directory questions honestly.**
 
   - `iterdir` of a **missing** path raised nothing and returned an empty list,

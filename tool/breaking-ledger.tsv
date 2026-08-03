@@ -27,3 +27,4 @@ dd5470a	`memoryMountedOsHandler` takes `files:`, not a `vfs:` map
 db7d76b	Directories are real, and that changes two things consumers can see
 6f3bbda	Writing to a directory raises instead of destroying it
 fa8af8c	`iterdir`, `unlink` and `mkdir` answer directory questions honestly
+cb6a997	`rename` follows CPython's full matrix
