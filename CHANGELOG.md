@@ -7,6 +7,42 @@ it went from 1321 to 306 public items and most of what this package uses moved t
 the new `monty-types` crate — so this is a substantial internal change with a
 small consumer-facing surface.
 
+### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
+
+Three behaviours that were true but documented nowhere. None is a change; all
+three surprise people, and one of them differs from upstream's default.
+
+- **Our default mount mode is `readWrite`. Upstream's is `overlay`.** Pass no
+  `mode` and writes **persist** for the life of the handler. Upstream's
+  `MountDir(mode='overlay')` — its default (`_monty.pyi:90`) — captures writes
+  in memory and **discards them at feed end**. We have no overlay mode
+  (`MountMode` is `readOnly | readWrite`) because upstream's overlay falls
+  through to a real host directory and our mounts have no host path: our tree
+  *is* the filesystem, so there is nothing to fall through to.
+
+  In practice the two are **indistinguishable within one feed over a mount with
+  nothing underneath it** — which is why both of upstream's own
+  `OverlayMemory`-generated `mount_fs` fixtures pass green against our
+  `readWrite` tree.
+
+- **Mount state is scoped to the HANDLER, not to a feed.** Upstream discards by
+  dropping a per-feed mount table; our equivalent is dropping the handler.
+  Because `osHandler` is a per-feed parameter, **constructing a fresh handler
+  over fresh files per feed reproduces upstream's overlay behaviour exactly**,
+  with no extra API. Reusing one handler across feeds gives persistence.
+
+- **Seeded `VfsFile` objects are mutated IN PLACE by sandboxed code.** This is
+  upstream's contract (`os_access.py:608`, *"When Monty code writes to this
+  file, the content attribute is updated"*) and it is what makes output capture
+  work: seed `MontyMemoryFile('/out.txt', '')`, run, read `.content` back.
+
+  The consequence to know about: a fresh handler over **reused** seed objects
+  gives a *half* discard — files the sandbox created are gone, but your own
+  objects stay rewritten. If you want a clean slate, construct fresh
+  `MontyMemoryFile`s, not just a fresh handler. Pinned by
+  `memory_mounted_os_handler_test.dart`, "a fresh handler over REUSED seeds
+  half-discards, on purpose".
+
 ### Added
 
 - **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
@@ -75,7 +111,7 @@ small consumer-facing surface.
   Ported from upstream rather than invented: the default matches
   `DEFAULT_MEMORY_USAGE_LIMIT` (`monty-fs/src/mount_table.rs:18`), and each node
   is charged `entryMemoryUsage` (256 bytes) plus its content, matching
-  `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:22`). The per-entry
+  `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:21`). The per-entry
   charge is what stops a million empty files, which cost no content bytes and a
   great deal of real memory.
 

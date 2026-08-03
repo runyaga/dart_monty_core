@@ -63,6 +63,56 @@ void main() {
       expect(read, 'written');
     });
 
+    // The consequence of the test above, across handlers — pinned because it
+    // SURPRISES, not because it is wrong.
+    //
+    // Mount state lives in the handler closure, so a fresh handler starts with
+    // a fresh tree and anything the sandbox CREATED is gone. But a seeded file
+    // is the caller's own object, mutated in place, so its content SURVIVES.
+    // Reusing seed objects across handlers therefore gives a half-discard:
+    // created files vanish, seeded content does not.
+    //
+    // That is deliberate. In-place mutation is upstream's contract
+    // (`os_access.py:608`, "When Monty code writes to this file, the content
+    // attribute is updated") and it is what makes the output-capture pattern
+    // work — seed `MontyMemoryFile('/out.txt', '')`, run, read `.content`. A
+    // copy-on-write "fix" would silently break every caller doing that, which
+    // is why this is a test and not a bug report. Anyone tempted to make writes
+    // replace the node instead of mutating it has to delete this test first,
+    // and read this comment to do so.
+    test(
+      'a fresh handler over REUSED seeds half-discards, on purpose',
+      () async {
+        final seed = MontyMemoryFile('/tmp/seeded.txt', 'ORIGINAL');
+
+        final first = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/tmp')],
+          files: [seed],
+        );
+        await first('Path.write_text', [
+          '/tmp/scratch.txt',
+          'FROM-RUN-1',
+        ], null);
+        await first('Path.write_text', ['/tmp/seeded.txt', 'MUTATED'], null);
+
+        // A NEW handler over the SAME seed object — the natural thing to do,
+        // since `files:` takes objects the caller constructed and still holds.
+        final second = memoryMountedOsHandler(
+          mounts: const [MountDir(virtualPath: '/tmp')],
+          files: [seed],
+        );
+
+        // Created-by-sandbox: gone, because the tree is new.
+        expect(await second('Path.exists', ['/tmp/scratch.txt'], null), false);
+        // Seeded: NOT gone, because the object itself was rewritten.
+        expect(
+          await second('Path.read_text', ['/tmp/seeded.txt'], null),
+          'MUTATED',
+        );
+        expect(seed.content, VfsText('MUTATED'));
+      },
+    );
+
     test('readOnly mount rejects writes with PermissionError', () {
       final handler = memoryMountedOsHandler(
         mounts: const [

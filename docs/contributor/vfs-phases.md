@@ -377,11 +377,41 @@ action, as upstream has them — `r+` is a *read* action and no longer creates.
 
 Neither item is "not done yet"; both are decisions already taken.
 
-- [ ] **overlay mode + `deleted` tombstones** — "only if a consumer needs it",
-      and the VFS API currently has **no downstream consumer at all**
-      (measured: zero hits for `VfsFile`/`memoryMountedOsHandler` across
-      `dart_monty`, `dart_monty_labs` and every `soliplex*` repo). Building it
-      now would be speculative.
+- [x] ~~**overlay mode + `deleted` tombstones**~~ — **SETTLED AGAINST, and the
+      two were wrongly bundled.** Bundling them made the feature look ~4× more
+      expensive than its useful part, which hid the real answer.
+
+      Upstream's overlay separates into three independent ingredients, and only
+      the first is intrinsically about a host directory:
+
+      1. an **immutable lower layer** — the one property we genuinely lack;
+      2. an **in-memory upper layer with tombstones** — needed *only because
+         upstream cannot unlink a host file*. We can delete from our tree, so
+         tombstones are a consequence of (1), not of overlay;
+      3. **discard at feed end** — **already reachable today.** `osHandler` is a
+         per-feed parameter, so a fresh handler over fresh files reproduces
+         upstream's overlay observable exactly, with no new API.
+
+      Two measurements decided it. Both of upstream's own
+      `OverlayMemory`-generated `mount_fs` fixtures pass green against our
+      `readWrite` tree — within one feed, over a mount with nothing underneath,
+      overlay and read-write are **observationally identical**, which is why the
+      missing mode has never shown up. And `overlay.rs` is 1221 lines that exist
+      to reconcile a *real directory* with an in-memory diff; we have no real
+      directory, so porting the diff machinery would be building the expensive
+      half of a feature whose cheap half already works.
+
+      It is also a **lifetime, not a mode**: `MountDir` is a `const` value object
+      while the thing being scoped is mutable per-feed state. Upstream gets away
+      with `OverlayMemory(OverlayState)` only because Rust enums carry payloads
+      and its `Mount` is rebuilt per feed.
+
+      If a consumer ever needs an immutable lower layer, the variant to build is
+      **`fallthrough` as the lower layer** — its "host" is a consumer-written
+      callback, which is *consistent with* the host-mount decision below rather
+      than a reversal of it. Note it would re-scope an existing public
+      parameter: `fallthrough` is consulted today only for paths outside every
+      mount, never for a path inside one that is merely absent.
 - [ ] **boundary-enforced host mounts** (`MountDir.hostPath` + a Dart
       `path_security`) — **settled against.** A solo-maintained Dart
       re-derivation of upstream's Rust boundary module, tested against one
@@ -426,9 +456,17 @@ Neither item is "not done yet"; both are decisions already taken.
       3. **The engine passes `..` through verbatim.** Probed:
          `ENGINE PASSED: Path.read_text /data/../../etc/passwd` — it collapses
          `.` only. Our clamp is load-bearing, not belt-and-braces.
-      4. **Phase 6 changes `lookup`.** The `deleted` flag goes on the node, so
+      4. ~~**Phase 6 changes `lookup`.** The `deleted` flag goes on the node, so
          publishing `lookup` now turns a planned internal change into a breaking
-         one.
+         one.~~ **STRUCK — the premise was not upstream's shape.** Upstream's
+         tombstone is a **peer variant in a flat, per-feed map** (`Deleted`
+         alongside `File`/`RealFileRef`/`Directory`, `overlay_state.rs:207-223`),
+         not a bool on a tree node — and a bool on `VfsFile` could not express a
+         tombstoned *directory*, which `rmdir` needs (`overlay.rs:705`). Under a
+         Rust-shaped design the tombstone lives beside `VfsTree`, the merge
+         happens in the handler, and `lookup` does not change at all. The
+         decision to keep `VfsTree` internal stands on 1–3; 2 was always the
+         strong one.
       If this is ever reversed, the minimum bill is: mark it `final class` (it
       currently has no modifier, so exporting publishes ten *overridable*
       methods), export `normalizeVfsPath` with a note about `..`, and say in the

@@ -6,7 +6,7 @@ const int defaultMemoryUsageLimit = 100000000;
 
 /// Bookkeeping charge for each node the sandbox creates, on top of its content.
 ///
-/// Mirrors upstream's `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:22`),
+/// Mirrors upstream's `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:21`),
 /// which describes it as covering "the map node, key allocation, and entry
 /// metadata", with variable-size contents charged separately. Without it a
 /// sandbox can exhaust host memory with a million empty files, each of which
