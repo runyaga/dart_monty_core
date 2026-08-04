@@ -67,6 +67,31 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+- **The FFI backend asserts the wire-format handshake, and a stale dylib now
+  throws instead of mis-decoding.** `NativeBindingsFfi()` reads
+  `monty_wire_format_version()` out of the loaded library and throws
+  `WireFormatMismatch` unless it equals `expectedWireFormatVersion`. Before, the
+  FFI backend performed this comparison **nowhere at runtime** — only
+  `ffi_wire_format_test.dart` and `tool/check_wire_version.sh` caught skew, and
+  both run in *our* gate, which a consumer of the published package never runs.
+  They build the crate through `hook/build.dart` and `.dart_tool/hooks_runner`
+  caches the result, so a stale artefact is a cache hit away rather than
+  hypothetical, and its failure mode was silently wrong *values* — the
+  wire format is what decides whether `2**60` is an int or a string.
+
+  Loud by design, and it can newly throw where a stale build previously
+  appeared to work. Remedy: `tool/prebuild.sh`, or delete
+  `.dart_tool/hooks_runner` to force a rebuild. A correct build is unaffected —
+  the check is latched, so repeated construction costs one FFI call per process.
+
+  The comparison itself moved into a shared `assertWireFormatVersion(int?)` that
+  **both** backends call; WASM's inline copy was collapsed onto it. It had been
+  written out once and omitted once, which is how the two backends came to
+  disagree about whether the handshake existed at all. A `null` reading — an
+  artefact predating the symbol — counts as a mismatch reporting `-1`, not as
+  "no opinion", so an old artefact cannot opt out of the check that exists to
+  catch it.
+
 - **`open()` parses its mode, and rejects a malformed one.**
   `resolveOpenCall` string-compared the mode and treated *everything*
   unrecognised as append: `open(p, 'wxyz')`, `open(p, 'x')` and even

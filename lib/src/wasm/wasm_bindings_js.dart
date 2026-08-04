@@ -3,7 +3,7 @@ import 'dart:js_interop';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/ffi/native_bindings.dart'
-    show WireFormatMismatch, expectedWireFormatVersion;
+    show assertWireFormatVersion;
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
 /// JS interop extension type for the raw snapshot result object.
@@ -830,15 +830,13 @@ class WasmBindingsJs extends WasmBindings {
   ///
   /// `lib/assets/dart_monty_core_native.wasm` is a committed build artefact and
   /// the build is not byte-reproducible, so `git diff` on the blob cannot tell
-  /// you whether it matches `native/`. This can. A `null` version means the
-  /// asset predates the symbol entirely, which is treated as a mismatch rather
-  /// than as "no opinion" — otherwise an old asset would silently opt out of
-  /// the very check that exists to catch it.
+  /// you whether it matches `native/`. This can.
+  ///
+  /// The comparison itself is [assertWireFormatVersion], shared with the FFI
+  /// backend — including the `null`-means-mismatch rule, which is documented
+  /// there.
   void _assertWireFormat() {
-    final reported = _jsWireFormatVersion()?.toDartInt;
-    if (reported != expectedWireFormatVersion) {
-      throw WireFormatMismatch(expectedWireFormatVersion, reported ?? -1);
-    }
+    assertWireFormatVersion(_jsWireFormatVersion()?.toDartInt);
   }
 
   /// The wire-format version the loaded WASM asset reports, or `null` when the

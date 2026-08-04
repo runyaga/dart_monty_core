@@ -112,6 +112,25 @@ class WireFormatMismatch implements Exception {
       'lib/assets/ are stale relative to native/ — run tool/prebuild.sh.';
 }
 
+/// Throws [WireFormatMismatch] unless [reported] equals
+/// [expectedWireFormatVersion].
+///
+/// One predicate for both backends, deliberately. The comparison used to be
+/// written out twice — once in the WASM init, and not at all on FFI — which is
+/// how the two backends came to disagree about whether the handshake existed.
+/// A single function means a change to what counts as agreement cannot land on
+/// one backend only.
+///
+/// A `null` [reported] means the loaded artefact predates the version symbol
+/// entirely. That is treated as a **mismatch**, not as "no opinion": an old
+/// artefact would otherwise silently opt out of the check that exists to catch
+/// it. It surfaces as `actual: -1`, a version nothing has ever emitted.
+void assertWireFormatVersion(int? reported) {
+  if (reported != expectedWireFormatVersion) {
+    throw WireFormatMismatch(expectedWireFormatVersion, reported ?? -1);
+  }
+}
+
 /// Abstract interface over the 17 native C functions.
 ///
 /// Uses `int` handles (the pointer address) instead of `Pointer<T>` types

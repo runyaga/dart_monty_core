@@ -20,7 +20,29 @@ class NativeBindingsFfi extends NativeBindings {
   ///
   /// With native asset hooks, the library is resolved automatically by the
   /// Dart runtime. No manual path resolution is needed.
-  NativeBindingsFfi();
+  ///
+  /// Asserts the wire-format handshake, which is what construction has that
+  /// FFI otherwise lacks: there is no `init()` to hang it on, because symbol
+  /// resolution is implicit. Without this, the only thing standing between a
+  /// stale dylib and silently mis-decoded values was
+  /// `ffi_wire_format_test.dart` running in OUR gate — which a consumer of the
+  /// published package never runs. They build the crate via `hook/build.dart`,
+  /// and
+  /// `.dart_tool/hooks_runner` caches the result, so a stale artefact is a
+  /// cache-hit away rather than hypothetical.
+  NativeBindingsFfi() {
+    _assertWireFormatOnce();
+  }
+
+  /// Latches the handshake so repeated construction costs one FFI call total.
+  ///
+  /// Static, not per-instance: the answer cannot change within a process — the
+  /// dylib is resolved once by the runtime and cannot be swapped underneath us.
+  ///
+  /// The latch lives here and the check itself at the bottom of the class only
+  /// because DCM's `member-ordering` wants private fields before private
+  /// methods; they are one mechanism.
+  static bool _wireFormatAsserted = false;
 
   @override
   int create(String code, {String? externalFunctions, String? scriptName}) {
@@ -833,4 +855,12 @@ class NativeBindingsFfi extends NativeBindings {
   ) => withLimits
       ? ffi_native.monty_repl_create_with_limits(scriptName, limits, outError)
       : ffi_native.monty_repl_create(scriptName, outError);
+
+  static void _assertWireFormatOnce() {
+    if (_wireFormatAsserted) return;
+    // Read from the loaded library, never from a Dart constant — a handshake
+    // that compares a constant to itself passes vacuously.
+    assertWireFormatVersion(ffi_native.monty_wire_format_version());
+    _wireFormatAsserted = true;
+  }
 }
