@@ -34,7 +34,7 @@ String montyTypeName(MontyValue v) => switch (v) {
   // Both dict shapes carry the SAME wire tag; only the payload key differs
   // (`value` vs `entries`). This reports the contract tag, so the string-key
   // and any-key forms share one arm — row 11 is one row, not two.
-  MontyDict() || MontyPairsDict() => 'dict',
+  MontyDict() => 'dict',
   MontySet() => 'set',
   MontyFrozenSet() => 'frozenset',
   MontyDate() => 'date',

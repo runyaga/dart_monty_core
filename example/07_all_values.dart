@@ -84,7 +84,9 @@ Future<void> _collections() async {
   final tup = (await repl.feedRun('(1, 2, 3)')).value as MontyTuple;
   print('tuple: ${tup.items.map((v) => v.dartValue)}');
 
-  // MontyDict — str keys only (Monty restriction)
+  // MontyDict — keys are MontyValues, so `{1: 'a'}` works as well as `{"a": 1}`.
+  // The comment here used to claim "str keys only (Monty restriction)". There
+  // was no such restriction in Monty; the restriction was ours, in the Dart type.
   final d = (await repl.feedRun('{"a": 1, "b": [2, 3]}')).value as MontyDict;
   print('dict keys: ${d.entries.keys.toList()}');
   print(

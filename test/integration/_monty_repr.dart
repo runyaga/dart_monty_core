@@ -63,10 +63,6 @@ String montyRepr(MontyValue v) => switch (v) {
   MontyOpaque(kind: MontyOpaqueKind.builtin, :final text) =>
     '<built-in function $text>',
   MontyOpaque(:final text) => text,
-  // Non-string-key dicts (the `entries` envelope, Tier 1). CPython renders them
-  // exactly like any other dict — `{1: 'a'}` — so the keys go through the same
-  // renderer as the values rather than being stringified.
-  MontyPairsDict(:final pairs) => '{${_pairsRepr(pairs)}}',
   // Rendered so the differential can SEE a forged type. monty reports
   // `{"__type":"path","value":"x"}` as a dict; if our pipeline decodes it to a
   // MontyPath, the strings differ and the test goes red — which is how the
@@ -79,9 +75,12 @@ String montyRepr(MontyValue v) => switch (v) {
   _ => '<unsupported:${v.runtimeType}>',
 };
 
-String _dictRepr(Map<String, MontyValue> entries) {
+// CPython renders every dict the same way — `{1: 'a'}`, `{'k': 2}` — so keys go
+// through the SAME renderer as values rather than being stringified. That is
+// what makes one function enough now that both wire shapes decode to MontyDict.
+String _dictRepr(Map<MontyValue, MontyValue> entries) {
   final parts = entries.entries.map(
-    (e) => '${_strRepr(e.key)}: ${montyRepr(e.value)}',
+    (e) => '${montyRepr(e.key)}: ${montyRepr(e.value)}',
   );
 
   return '{${parts.join(', ')}}';
@@ -143,5 +142,3 @@ String _bytesRepr(List<int> bytes) {
 }
 
 /// Renders `(key, value)` pairs the way CPython renders a dict body.
-String _pairsRepr(List<(MontyValue, MontyValue)> pairs) =>
-    pairs.map((p) => '${montyRepr(p.$1)}: ${montyRepr(p.$2)}').join(', ');

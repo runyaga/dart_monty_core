@@ -283,7 +283,7 @@ final class MontyDataclass extends MontyValue {
     'name': name,
     'type_id': typeId,
     'field_names': fieldNames,
-    'attrs': MontyDict(attrs).toJson(),
+    'attrs': MontyDict.ofStrings(attrs).toJson(),
     'frozen': frozen,
   };
 

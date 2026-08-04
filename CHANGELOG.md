@@ -67,6 +67,57 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+- **`MontyPairsDict` is gone; `MontyDict` now keys on `MontyValue`.** One Python
+  dict is one Dart type again, whatever its keys.
+
+  ```dart
+  // before                                  // after
+  MontyDict({'a': MontyInt(1)})              MontyDict.ofStrings({'a': MontyInt(1)})
+  MontyPairsDict([(MontyInt(1), v)])         MontyDict({MontyInt(1): v})
+  d.entries['name']                          d.entries[MontyString('name')]
+  ```
+
+  The wire is **unchanged** — `toJson()` still emits `value` when every key is a
+  string and `entries` otherwise, chosen by the keys rather than by the Dart
+  type — so no wire-format bump and no fixture churn.
+
+  Four defects went with the split:
+
+  - **The Dart type depended on the DATA.** `{'a': 1}` was a `MontyDict` and
+    `{'a': 1, 2: 'b'}` a `MontyPairsDict`, so adding one non-string key changed
+    the class of the whole value with nothing in the type system marking the
+    boundary. A consumer whose Python had only ever produced string keys would
+    silently start getting a different type.
+  - **One Python dict had two unequal Dart spellings.** The pairs form of
+    `{'a': 1}` was never `==` to the map form, and each round-tripped to itself,
+    so nothing normalised them.
+  - **Equality contradicted Python.** Pairs were a `List`, so `==` was
+    order-sensitive: `{1:'a',2:'b'}` and `{2:'b',1:'a'}` compared unequal where
+    Python says they are equal — and the corpus already pinned Python's answer in
+    `dict__ops.py`. Both suites passed because no fixture reordered a
+    non-string-key dict. Insertion order is still preserved for iteration; it is
+    just no longer part of equality.
+  - **It could express dicts Python cannot hold.** A `List` accepted the same key
+    twice; a `Map` deduplicates, last write wins.
+
+  Two consequences worth knowing before you upgrade:
+
+  - **`const MontyDict({…})` no longer compiles when populated.** Dart forbids
+    `const` map keys whose class overrides `==`/`hashCode`, and every
+    `MontyValue` does. Use `final`, or `MontyDict.ofStrings(const {…})` where the
+    keys are strings. `const MontyDict({})` is still fine.
+  - **`dartValue` now returns `Map<Object?, Object?>` and throws `StateError`
+    rather than silently merging two keys** that are distinct as `MontyValue`s
+    but equal as plain Dart values — `MontyInt(1)` and `MontyFloat(1)`, since
+    `1 == 1.0` in Dart. Unreachable for values off the wire, because the
+    interpreter collapses such keys before encoding.
+
+- **`MontyValue.fromDart` keeps non-string map keys' types.** It ran every key
+  through `k.toString()`, so a host `{1: 'a'}` reached Python as `{'1': 'a'}` —
+  an `int` key silently retyped to `str`. Keys now convert through `fromDart`
+  exactly as values do. This was unrepresentable while `MontyDict` had `String`
+  keys; it is simply a fix now that it does not.
+
 - **The FFI backend asserts the wire-format handshake, and a stale dylib now
   throws instead of mis-decoding.** `NativeBindingsFfi()` reads
   `monty_wire_format_version()` out of the loaded library and throws

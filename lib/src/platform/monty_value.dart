@@ -32,8 +32,8 @@ sealed class MontyValue {
   /// - Scalars: null, bool, int, double, String
   /// - Collections: List (→ [MontyList])
   /// - Typed wrappers: every object carries `__type`, which selects the class.
-  ///   A dict is `{"__type": "dict", "value": {…}}` (→ [MontyDict]) or
-  ///   `{"__type": "dict", "entries": […]}` (→ [MontyPairsDict]).
+  ///   A dict is `{"__type": "dict", "value": {…}}` (string keys) or
+  ///   `{"__type": "dict", "entries": […]}` (any keys); both → [MontyDict].
   ///
   /// Throws [FormatException] on an object with no `__type` or an unrecognised
   /// one. Both used to decode as a dict, which is what let sandboxed Python
@@ -79,9 +79,15 @@ sealed class MontyValue {
       microsecond: dt.toUtc().microsecond,
     ),
     final List<dynamic> l => MontyList(l.map(MontyValue.fromDart).toList()),
-    final Map<dynamic, dynamic> m => MontyDict(
-      m.map((k, v) => MapEntry(k.toString(), MontyValue.fromDart(v))),
-    ),
+    // Keys convert through `fromDart` like values do. They used to go through
+    // `k.toString()`, which silently retyped every non-string key: a host
+    // `{1: 'a'}` arrived in Python as `{'1': 'a'}`, an int key turned into a
+    // string one. That was unrepresentable before — `MontyDict` only had string
+    // keys — and is simply correct now.
+    final Map<dynamic, dynamic> m => MontyDict({
+      for (final MapEntry(:key, :value) in m.entries)
+        MontyValue.fromDart(key): MontyValue.fromDart(value),
+    }),
     _ => throw ArgumentError(
       'Cannot convert ${value.runtimeType} to MontyValue',
     ),
@@ -176,12 +182,20 @@ sealed class MontyValue {
     return MontyFloat(parsed);
   }
 
-  /// Dispatches the two dict payload shapes.
+  /// Dispatches the two dict payload shapes onto the one [MontyDict] type.
   ///
   /// `entries` (any key type) wins if present; otherwise `value` (string keys).
+  ///
+  /// Rust checks these in the OPPOSITE order — `value` first
+  /// (`convert.rs:268`) — so a payload carrying BOTH keys would decode
+  /// differently on the two sides. Neither encoder emits both, and now that
+  /// both shapes land on one Dart type the disagreement can only pick a
+  /// different set of ENTRIES, not a different type. Left as-is rather than
+  /// silently reconciled: whichever order is canonical should be decided for
+  /// both sides at once, in a change that can say so.
   static MontyValue _dictFromMap(Map<String, dynamic> map) {
     final entries = map['entries'];
-    if (entries is List<dynamic>) return MontyPairsDict._fromEntries(entries);
+    if (entries is List<dynamic>) return MontyDict._fromEntries(entries);
 
     return MontyDict._fromMap(map);
   }

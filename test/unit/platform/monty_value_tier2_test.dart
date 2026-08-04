@@ -141,19 +141,16 @@ void main() {
     });
   });
 
-  group('MontyPairsDict', () {
-    const pairs = MontyPairsDict([
-      (MontyInt(1), MontyString('a')),
-      (MontyString('k'), MontyInt(2)),
-    ]);
+  group('MontyDict with non-string keys', () {
+    final pairs = MontyDict({
+      const MontyInt(1): const MontyString('a'),
+      const MontyString('k'): const MontyInt(2),
+    });
 
     test('round-trips with key TYPES intact', () {
       _expectRoundTrip(pairs);
-      final back = MontyValue.fromJson(pairs.toJson()) as MontyPairsDict;
-      expect(back.pairs.map((p) => p.$1), [
-        const MontyInt(1),
-        const MontyString('k'),
-      ]);
+      final back = MontyValue.fromJson(pairs.toJson()) as MontyDict;
+      expect(back.entries.keys, [const MontyInt(1), const MontyString('k')]);
     });
 
     test('travels under the dict tag with an entries payload', () {
@@ -166,39 +163,84 @@ void main() {
       });
     });
 
-    test('preserves insertion order, and order is part of equality', () {
-      const reversed = MontyPairsDict([
-        (MontyString('k'), MontyInt(2)),
-        (MontyInt(1), MontyString('a')),
-      ]);
-      expect(pairs, isNot(reversed));
+    test('an all-string-keyed dict still travels under `value`', () {
+      // The payload shape follows the KEYS, not the Dart type. This is what
+      // lets one type serve both wire forms without a version bump, and it is
+      // why every existing fixture keeps passing.
+      expect(MontyDict.ofStrings(const {'a': MontyInt(1)}).toJson(), {
+        '__type': 'dict',
+        'value': {'a': 1},
+      });
     });
 
-    test('dartValue is a list of pairs, not a Map', () {
-      // Deliberately not a Map: two distinct Python keys can share a Dart
-      // toString, so collapsing them would silently drop entries.
-      expect(pairs.dartValue, [
-        [1, 'a'],
-        ['k', 2],
+    test('preserves insertion order, but order is NOT part of equality', () {
+      // Python compares dicts by content: `{1:'a','k':2} == {'k':2,1:'a'}` is
+      // True, and dict__ops.py pins that on the Python side. The old
+      // MontyPairsDict stored a List, so `==` was order-sensitive and
+      // contradicted it -- a green test asserting the wrong answer, invisible
+      // because no fixture reordered a non-string-key dict.
+      final reversed = MontyDict({
+        const MontyString('k'): const MontyInt(2),
+        const MontyInt(1): const MontyString('a'),
+      });
+      expect(pairs, reversed);
+      expect(pairs.hashCode, reversed.hashCode);
+      expect(pairs.entries.keys, [const MontyInt(1), const MontyString('k')]);
+      expect(reversed.entries.keys, [
+        const MontyString('k'),
+        const MontyInt(1),
       ]);
+    });
+
+    test('a duplicated key in an entries payload deduplicates', () {
+      // The old List-backed pairs form accepted the same key twice, which no
+      // Python dict can hold -- so the Dart type could express a value the
+      // interpreter cannot. Decoding is the path such a payload arrives by,
+      // and a Map deduplicates by MontyValue equality with last-write-wins,
+      // matching Python's own `{'a': 1, 'a': 2}`.
+      final got =
+          MontyValue.fromJson(<String, dynamic>{
+                '__type': 'dict',
+                'entries': [
+                  ['a', 1],
+                  ['a', 2],
+                ],
+              })
+              as MontyDict;
+
+      expect(got.entries, hasLength(1));
+      expect(got.entries[const MontyString('a')], const MontyInt(2));
+    });
+
+    test('dartValue unwraps to a Map, and refuses to merge distinct keys', () {
+      expect(pairs.dartValue, {1: 'a', 'k': 2});
+      // MontyValue equality is type-aware; Dart's is not. `1 == 1.0` in Dart,
+      // so unwrapping these two distinct keys would drop one entry. Throwing
+      // beats dropping.
+      final collides = MontyDict({
+        const MontyInt(1): const MontyString('int'),
+        const MontyFloat(1): const MontyString('float'),
+      });
+      expect(collides.entries, hasLength(2));
+      expect(() => collides.dartValue, throwsStateError);
     });
 
     test('equality, hashCode and toString', () {
       expect(
         pairs,
-        const MontyPairsDict([
-          (MontyInt(1), MontyString('a')),
-          (MontyString('k'), MontyInt(2)),
-        ]),
+        MontyDict({
+          const MontyInt(1): const MontyString('a'),
+          const MontyString('k'): const MontyInt(2),
+        }),
       );
-      expect(pairs.toString(), 'MontyPairsDict(2 pairs)');
-      expect(const MontyPairsDict([]).toString(), 'MontyPairsDict(0 pairs)');
+      expect(pairs.toString(), 'MontyDict(2 entries)');
+      expect(const MontyDict({}).toString(), 'MontyDict(0 entries)');
     });
 
     test('nested values decode recursively', () {
-      const nested = MontyPairsDict([
-        (MontyInt(1), MontyList([MontyInt(2), MontyString('x')])),
-      ]);
+      final nested = MontyDict({
+        const MontyInt(1): const MontyList([MontyInt(2), MontyString('x')]),
+      });
       _expectRoundTrip(nested);
     });
 
