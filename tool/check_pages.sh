@@ -22,11 +22,87 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 WEB=packages/dart_monty_web/web
-PORT=${PAGES_PORT:-8231}
 SKIP_BUILD=0
 [ "${1:-}" = "--skip-build" ] && SKIP_BUILD=1
 
 fail() { echo "FAIL: $*"; exit 1; }
+
+# ---------------------------------------------------------------- concurrency
+# This script MUTATES SHARED PATHS in the working tree: it stages assets into
+# packages/dart_monty_web/web, writes four compiler outputs there, and does
+# `rm -rf site` before reassembling. None of that is per-run state, so two
+# concurrent runs in one clone corrupt each other.
+#
+# Measured 2026-08-03, two agent sessions running the gate in this repo:
+#   - run B could not bind 8231 and died instantly (loud, obviously bogus);
+#   - run B's `rm -rf site` deleted run A's server cwd mid-flight, so
+#     `os.getcwd()` raised FileNotFoundError inside the handler and every
+#     asset request after that point failed. Run A reported
+#     "index_js.html was never fetched with 200 — the page did not wire up",
+#     which reads exactly like a real wiring defect in the published site.
+# The second one is the dangerous shape: a red that names the wrong cause.
+#
+# A lock, not per-run temp dirs, because the paths above are what the gate is
+# meant to test — staging elsewhere would test something that never ships.
+# Serialising costs a wait; getting a phantom red costs an investigation.
+LOCK_TIMEOUT=${PAGES_LOCK_TIMEOUT:-900}
+LOCKDIR="${TMPDIR:-/tmp}/dmc-check-pages-$(git rev-parse --show-toplevel \
+  | shasum -a 256 | cut -c1-12).lock"
+LOCK_HELD=""
+
+# mkdir is the atomic primitive available everywhere; macOS has no flock(1).
+acquire_lock() {
+  local waited=0 other announced=0
+  while ! mkdir "$LOCKDIR" 2>/dev/null; do
+    other=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
+    # A crashed run must not block the repo forever.
+    if [ -n "$other" ] && ! kill -0 "$other" 2>/dev/null; then
+      echo "  note: clearing stale lock left by dead pid $other"
+      rm -rf "$LOCKDIR"
+      continue
+    fi
+    if [ "$announced" = 0 ]; then
+      echo "--- waiting for another check_pages.sh (pid ${other:-?}) ---"
+      announced=1
+    fi
+    sleep 5
+    waited=$((waited + 5))
+    [ "$waited" -ge "$LOCK_TIMEOUT" ] \
+      && fail "waited ${LOCK_TIMEOUT}s for $LOCKDIR — is a run wedged?"
+  done
+  LOCK_HELD=1
+  echo $$ > "$LOCKDIR/pid"
+}
+
+# One cleanup, one trap. There used to be two `trap ... EXIT` lines and the
+# second silently replaced the first, so whichever resources the first owned
+# were only ever freed by luck. Killing $! also missed the python server: `$!`
+# of `( cd site && python3 … ) &` is the SUBSHELL, so the grandchild survived
+# and held the port until something noticed.
+SERVER_PID=""
+CDP_PID=""
+cleanup() {
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+  [ -n "$CDP_PID" ] && kill "$CDP_PID" 2>/dev/null
+  [ -n "$LOCK_HELD" ] && rm -rf "$LOCKDIR"
+  return 0
+}
+trap cleanup EXIT
+
+acquire_lock
+
+# Ask the kernel for a free port rather than hardcoding one. The lock already
+# stops US colliding with ourselves; this also stops us colliding with whatever
+# else happens to hold 8231/9334 on a developer machine. Both stay overridable.
+free_port() {
+  python3 -c 'import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()'
+}
+PORT=${PAGES_PORT:-$(free_port)}
+CDP_PORT=${PAGES_CDP_PORT:-$(free_port)}
 
 # ---------------------------------------------------------------- build
 if [ "$SKIP_BUILD" = "0" ]; then
@@ -88,7 +164,16 @@ import http.server, socketserver, sys
 # the one component we fully control, so it records what was actually requested
 # and with what status; the assertions below are made against that.
 ACCESS = sys.argv[2]
+# Serve an ABSOLUTE root instead of inheriting the cwd. SimpleHTTPRequestHandler
+# calls os.getcwd() per request when it has no `directory=`, so a run whose cwd
+# was removed underneath it raised FileNotFoundError inside the handler and
+# answered nothing further -- the assertions then blamed the PAGE for not
+# wiring up. Pinning the root makes the server survive churn beneath it and
+# report the truth: 404s for files that are genuinely absent.
+ROOT = sys.argv[3]
 class H(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, directory=ROOT, **kw)
     def send_response(self, code, message=None):
         super().send_response(code, message)
         with open(ACCESS, 'a') as f:
@@ -99,9 +184,8 @@ with socketserver.TCPServer(("127.0.0.1", int(sys.argv[1])), H) as s:
     s.serve_forever()
 PY
 ACCESS_LOG=$(mktemp)
-( cd site && python3 "$SRV" "$PORT" "$ACCESS_LOG" ) &
+python3 "$SRV" "$PORT" "$ACCESS_LOG" "$PWD/site" &
 SERVER_PID=$!
-trap 'kill $SERVER_PID 2>/dev/null' EXIT
 sleep 2
 
 for path in "/" "/repl/"; do
@@ -184,13 +268,11 @@ done
 # computed result. The REPL initialises its WASM engine on click, so without this
 # a totally broken engine still passes.
 echo "--- Chrome (CDP): does the demo actually execute Python? ---"
-CDP_PORT=${PAGES_CDP_PORT:-9334}
 CDP_PROFILE=$(mktemp -d)
 "$CHROME" --headless=new --disable-gpu --no-sandbox --disable-dev-shm-usage \
   --user-data-dir="$CDP_PROFILE" --remote-debugging-port="$CDP_PORT" about:blank \
   >/dev/null 2>&1 &
 CDP_PID=$!
-trap 'kill $SERVER_PID $CDP_PID 2>/dev/null' EXIT
 sleep 6
 
 DRIVE_LOG=$(mktemp)
