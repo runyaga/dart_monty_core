@@ -35,3 +35,4 @@ f8c530a	`open()` parses its mode, and rejects a malformed one
 7be9680	A `rename` TARGET outside every mount is absent too, not denied
 a21f47d	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
 82469ec	The FFI backend asserts the wire-format handshake
+45fdb1f	`MontyPairsDict` is gone; `MontyDict` now keys on `MontyValue`
