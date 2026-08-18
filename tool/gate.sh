@@ -73,8 +73,16 @@ s  breaking_rec  bash tool/check_breaking_recorded.sh
 # that missed the constant would show the wrong source with no error.
 s  fixture_links bash tool/check_fixture_links.sh
 s  vague_errors bash tool/check_no_vague_errors.sh
+# lib/ is compiled by dart2js and dart2wasm too. A `dart.library.io` arm would
+# compile on the VM, be skipped by the web compilers, and leave every test
+# green while the invariant is gone — so it cannot be caught by running tests.
+s  no_dart_io   bash tool/check_no_dart_io_in_lib.sh
 s  dart_analyze  dart analyze --fatal-infos
-s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
+# `bin/` is in this list because `bin/monty_worker.dart` ships in the package
+# and is compiled by consumers via `dart build cli`. A directory absent from
+# here is not merely unformatted — it is unchecked, and `dart analyze` covering
+# it is what made that easy to miss.
+s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/ bin/
 s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles

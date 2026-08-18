@@ -39,6 +39,11 @@ dcm:
           - "lib/src/platform/mock_monty_platform.dart"
           # Guarded by isEmpty/isNotEmpty/length checks before access
           - "lib/src/monty_session.dart"
+          # Byte scan for the frame marker: both indices are bounded by the
+          # enclosing loops and by an up-front length check. elementAtOrNull
+          # would allocate a nullable per byte compared and hide the bound
+          # that makes the scan correct.
+          - "lib/src/pool/frame_codec.dart"
     - avoid-missing-completer-stack-trace
     - avoid-uncaught-future-errors
     - avoid-recursive-calls
@@ -120,11 +125,24 @@ dcm:
           - "lib/src/wasm/wasm_bindings_js_stub.dart"
           # MockCallHistory helper class defined before MockMontyPlatform
           - "lib/src/platform/mock_monty_platform.dart"
+          # Worker channel: each file is named for the concept it defines — a
+          # framing codec, a protocol — and both open with the type a reader
+          # needs first (the error the codec throws; the request hierarchy).
+          # Renaming them after their first declaration would name a codec
+          # after an exception and a protocol after one of its messages.
+          - "lib/src/pool/frame_codec.dart"
+          - "lib/src/pool/worker_protocol.dart"
     - prefer-immediate-return
     - prefer-commenting-analyzer-ignores
     - prefer-conditional-expressions
     - prefer-trailing-comma
-    - prefer-moving-to-variable
+    - prefer-moving-to-variable:
+        exclude:
+          # The respawn test spawns a worker, crashes it, and spawns a SECOND
+          # one. The two `MontyWorkerHandle.spawn()` calls are the subject
+          # under test — hoisting them to one variable would reuse the dead
+          # handle and assert nothing.
+          - "test/integration/ffi_pool_spike_test.dart"
     - newline-before-return
     - no-boolean-literal-compare
     - no-empty-block:
@@ -251,4 +269,13 @@ dcm:
 
     # --- Testing ---
     - prefer-test-matcher
-    - prefer-correct-test-file-name
+    - prefer-correct-test-file-name:
+        exclude:
+          # Not a test: a probe binary that ffi_pool_spike_test.dart
+          # SPAWNS. It proves the in-process host dies on a sandboxed stack
+          # overflow, and a process that aborts reports nothing to a test
+          # runner — its exit code is the only channel left, so the assertion
+          # has to live in the parent and the subject has to be a program.
+          # Naming it `*_test.dart` would make the runner execute it directly
+          # and kill the run.
+          - "test/integration/pool/inprocess_overflow.dart"

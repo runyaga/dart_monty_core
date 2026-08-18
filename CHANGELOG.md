@@ -45,6 +45,55 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Added
 
+- **Crash-isolation decision and spike (M1) —
+  [`docs/adr/0001-ffi-crash-isolation.md`](docs/adr/0001-ffi-crash-isolation.md).**
+  No public API yet; this milestone exists to make the decision checkable.
+
+  **The defect, measured 2026-08-16.** With the interpreter in the caller's own
+  process, `def f(n): return f(n + 1)` under `MontyLimits(stackDepth: 100000)`
+  kills the **Dart host** with exit 132 — SIGILL from Rust's `abort`. No Dart
+  exception, no `MontyResult.error`, and `catch_ffi_panic`
+  (`native/src/lib.rs:34`) does not fire, because it guards Rust *panics* and an
+  abort is not a panic. The default `stackDepth` of 1000 makes ordinary
+  recursion a clean `RecursionError`; the defect is reachable because the limit
+  is caller-supplied.
+
+  **The decision:** the interpreter will run in a **worker process** that Dart
+  spawns and can lose, with the deadline held on the parent and enforced by
+  `SIGKILL`. Rejected: linking `monty-pool` and letting Rust fork under FFI
+  (SIGCHLD races Dart's own signal handling); running the wasm module in a
+  native wasm runtime (feasible — `wasmtime` loads
+  `lib/assets/dart_monty_core_native.wasm` and calls into it — but it changes
+  what the FFI backend *is*, and the WASM backend already offers that trade);
+  and documenting the gap instead of closing it.
+
+  **Measured cost**, since upstream publishes none: **40 µs** per call of IPC
+  tax on the AOT path (56 µs out of process vs 16 µs in), a 50 µs empty round
+  trip, and **12.3 ms** worker prewarm paid once per worker rather than per
+  call. Reproduce with `dart run tool/pool_bench.dart [--aot]`.
+
+  **Demonstrated in CI**, red-first, in
+  `test/integration/ffi_pool_spike_test.dart`: the in-process host dies; the
+  same Python in a worker kills only the worker; the pool respawns; a request
+  after the crash fails as a typed error rather than hanging; the parent-side
+  deadline SIGKILLs a hang the in-VM limits cannot see; and Dart's own
+  child-reaping and the worker do not interfere in either direction.
+
+  **The value wire is unchanged** — `WIRE_FORMAT_VERSION` stays **4**. What is
+  new is transport framing (`lib/src/pool/frame_codec.dart`) and a typed message
+  layer (`lib/src/pool/worker_protocol.dart`), both internal, both independent
+  of the value encoding. The framing and protocol are backend-neutral pure Dart
+  and are tested on the VM, dart2js **and** dart2wasm
+  (`test/unit/frame_codec_test.dart`), because the pool must serve all three
+  backends and a 32-bit length prefix is exactly where dart2js's signed-bitwise
+  coercion would bite. `lib/` still contains zero `dart:io`.
+
+  Two things found by building it rather than designing it: `dart run` writes
+  `Running build hooks...` to the **child's stdout** before the child's `main()`,
+  so the frame stream needs a one-time sync marker; and concurrent `dart run`
+  invocations race on the shared `.dart_tool/` native-asset staging. Neither
+  affects the shipping AOT path.
+
 - **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
   files.** `VfsCallbackFile(path, read:, write:)` backs a virtual file with
   host callbacks, mirroring upstream's `CallbackFile` (`os_access.py:676`). It

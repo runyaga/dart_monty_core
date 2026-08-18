@@ -124,7 +124,7 @@ jobs:
         # so it is safe to include lib/ without exclusions.
         run: |
           dart format --line-length=80 --set-exit-if-changed \
-            lib/ test/ hook/ tool/
+            lib/ test/ hook/ tool/ bin/
       - name: Committed assets are not stale
         # The wasm build is not byte-reproducible, so `git diff` on the blob
         # cannot detect staleness. This hashes the SOURCES instead. Unlike
@@ -139,6 +139,14 @@ jobs:
         # handshake itself depend on someone remembering to bump two files
         # together -- the same unenforced-invariant class it exists to replace.
         run: bash tool/check_wire_version.sh
+      - name: lib/ does not import dart:io
+        # Cannot be caught by running tests. A `dart.library.io` arm compiles on
+        # the VM and is skipped by dart2js/dart2wasm, so the suite stays green
+        # on every backend while the invariant that makes lib/ web-compilable
+        # is gone. It breaks for a consumer, not here. See
+        # docs/adr/0001-ffi-crash-isolation.md for the work that introduces the
+        # code able to break it.
+        run: bash tool/check_no_dart_io_in_lib.sh
       - name: Fixture corpus matches the pinned monty version
         # The corpus is a symlink into a monty checkout, so it silently drifts
         # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus
