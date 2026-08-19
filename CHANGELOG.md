@@ -128,6 +128,11 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+Pinning to monty v0.0.21 breaks three things at once: recursion is bounded even
+with no limits set, every persisted snapshot becomes unreadable, and the value
+wire moves to 5. Each is unavoidable given upstream's changes; each is below
+with its before/after.
+
 - **Recursion is now bounded even when you ask for no limits.** monty v0.0.21
   (#613) changed `ResourceLimits.max_recursion_depth` from `Option<usize>` to
   `usize`, so "unbounded" is no longer expressible anywhere in the stack.

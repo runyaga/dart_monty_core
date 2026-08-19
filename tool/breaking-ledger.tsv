@@ -36,3 +36,4 @@ f8c530a	`open()` parses its mode, and rejects a malformed one
 a21f47d	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
 82469ec	The FFI backend asserts the wire-format handshake
 45fdb1f	`MontyPairsDict` is gone; `MontyDict` now keys on `MontyValue`
+004b8d2	Pinning to monty v0.0.21 breaks three things at once
