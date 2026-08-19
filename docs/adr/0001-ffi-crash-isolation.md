@@ -312,6 +312,51 @@ So this retires the *stated* objection to A′ and replaces it with a smaller,
 concrete one: two platforms and a hook change. It does not choose A′ — that
 remains open alongside A″ and E.
 
+### CORRECTION 2026-08-19 (later): the in-process cdylib CAN enforce a real budget
+
+Supersedes the framing of the two probes below, which assumed enforcement
+required a process we own the entry point of. **Measured, it does not.**
+
+The v0.0.21 plan rejected in-process arming on upstream's line that "only a
+binary or a wasm module may declare a `#[global_allocator]`". Our cdylib
+declares one and it is **live**:
+
+| 80 MB allocated as | without `monty-alloc` | with it armed in the cdylib |
+|---|---|---|
+| one 80 MB list | `MemoryError` | `MemoryError` |
+| 800 x 100 KB | **passes freely** | `MemoryError` at 1,231,154 B |
+| 8 000 x 10 KB | **passes freely** | `MemoryError` at 1,052,566 B |
+| small, under limit | OK | OK — no false positive |
+
+Against a 1 MB limit, so accounting lands within ~5% of the budget. The wasm32
+build is live too (both re-checked with `wasmtime --invoke`).
+
+**A probe that answers before allocating anything is worthless here, and this
+nearly produced the opposite conclusion.** `set_limit` reports "not installed"
+by testing `LIVE_MEMORY == 0`, which on a fresh instance is *also* the correct
+value for an installed-but-unused allocator. The first run of this probe
+returned `Err` on both targets and looked like proof the claim held. Allocating
+4 MB first flips both to `Ok`. The measurement, not the mechanism, was wrong.
+
+**The hard-abort path was not reachable** from four hostile programs — a 50 MB
+string multiply, 400 MB accumulated in 40 000 pieces, doubling list growth, and
+a 60 MB `bytes()`. All four returned a catchable `MemoryError` with the host at
+exit 0, because the interpreter's own checks fire before the allocator's hard
+ceiling (soft + 4 MB). Four shapes is not a proof of unreachability.
+
+**Unresolved, and the reason this is not yet a decision:**
+
+- `monty-alloc`'s state is **process-global statics** (`SOFT_LIMIT`,
+  `HARD_LIMIT`, `BASELINE_MEMORY`). Sequential sessions with different limits do
+  not interfere — a 1 MB session refused 80 MB and a 512 MB session accepted it
+  immediately after — but **concurrent** sessions across isolates are untested,
+  and this library supports them.
+- `BASELINE_MEMORY` is set with `fetch_min`, so it only ever falls. Over a
+  long-lived host the baseline drifts toward the smallest live figure ever
+  observed, which tightens every later budget. Not characterised.
+- macOS arm64 only. The breach path is `process::abort()` with `exit-code` off,
+  so being wrong about reachability costs the consumer's process.
+
 ### Feasibility probes 2026-08-19 for the v0.0.21 memory question (P4b, P4c)
 
 Two mechanisms measured in a scratch worktree, neither implemented here. They
