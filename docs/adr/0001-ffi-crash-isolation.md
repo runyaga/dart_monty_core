@@ -266,6 +266,52 @@ The pool API must work on **FFI, dart2js and dart2wasm** — it is the isolation
   — the API must **say so** rather than degrade quietly. A safety feature the
   caller wrongly believes in is worse than none.
 
+### Falsifier run 2026-08-19: a consumer CAN locate and spawn a hook-built executable
+
+Recorded here because the monty v0.0.21 plan makes this a gate: option **A′**
+(replace the Dart worker with a Rust one, so the worker process can arm
+`monty-alloc` and enforce a real memory budget) was to be rejected unless a
+consumer could locate and spawn an executable from a *normally installed*
+dependency. Its stated primary risk was that "Dart's native-assets API is
+oriented at `CodeAsset`/dylibs".
+
+**Measured: the risk does not bind, because A′ does not need that API at all.**
+
+The build hook already shells out to `cargo` with the *installed package
+directory* as its working directory, and that directory is writable — even in
+the pub cache. So a `--bin` target lands beside the dylib at a path a consumer
+derives exactly the way `resolveWorkerScript()` already derives the Dart
+worker's: `Isolate.resolvePackageUri` → package root → known subpath.
+
+Run against a **git dependency resolved into the pub cache**, not a path
+dependency (`rootUri` = `file:///Users/.../.pub-cache/git/dart_monty_core-<sha>/`):
+
+```
+LOCATE : <pub-cache>/dart_monty_core-<sha>/native/target/aarch64-apple-darwin/release/oracle
+SPAWN  : exit=0
+OUTPUT : {"value":42,"usage":{...}}
+```
+
+`oracle` was used as the vehicle because it is an existing `[[bin]]`; nothing
+about the mechanism is specific to it. The hook passes `--lib` today, so no bin
+is built for consumers — A′ would add one, which is a one-line change, not an
+API problem.
+
+**What this does NOT establish, and must not be read as establishing:**
+
+- **macOS arm64 only.** The gate asks for Linux too. Untested here.
+- **A git dependency, not a pub.dev hosted one.** Hosted packages land in
+  `.pub-cache/hosted/…`; the same writability is likely and unverified.
+- **The hook was not modified.** The bin was built by hand at the path the hook
+  would use, so this proves the *locate-and-spawn* half, not that
+  `hook/build.dart` emits it correctly.
+- **`dart compile exe` is unaffected by this result.** The note above still
+  stands for AOT consumers.
+
+So this retires the *stated* objection to A′ and replaces it with a smaller,
+concrete one: two platforms and a hook change. It does not choose A′ — that
+remains open alongside A″ and E.
+
 ### A constraint on the dev spawn path, found by building it
 
 Two facts the prior design did not have, both measured:
