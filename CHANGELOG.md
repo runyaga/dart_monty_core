@@ -11,13 +11,38 @@ surface. v0.0.21 then removed the resource-tracker generic, replaced the two
 snapshot formats with one session dump, made the type checker stateful, and
 added a value variant. The conformance corpus grows 531 → 566.
 
-**One capability regressed and it is not visible in a compiler error.** v0.0.21
-moved memory accounting out of the interpreter and into a global allocator
-(`monty-alloc`), which a shared library may not install. `MontyLimits.memoryBytes`
-therefore has no effect on the FFI backend at this pin — upstream: *"without it
-usage always reads as zero and the limit is silently not enforced."* `timeoutMs`
-and `stackDepth` are unaffected. Tracked as the remaining release blocker; see
-`docs/adr/0001-ffi-crash-isolation.md`.
+**`MontyLimits.memoryBytes` now bounds a SINGLE allocation, not total memory.**
+Read this if you rely on it.
+
+v0.0.21 moved memory accounting out of the interpreter and into a global
+allocator (`monty-alloc`), which a shared library may not install. Without it
+`probe_memory()` reads zero, so upstream's check
+
+```rust
+let used = probe_memory().saturating_add(additional);   // = 0 + additional
+if used > limit { /* MemoryError */ }
+```
+
+degrades from "total exceeds the budget" to "this one allocation exceeds the
+budget". Measured 2026-08-19 against a **1 MB** limit, allocating **80 MB** four
+different ways:
+
+| how the 80 MB is allocated | outcome |
+|---|---|
+| one 80 MB list | `MemoryError` |
+| 800 × 100 KB | **no error** |
+| 8 000 × 10 KB | **no error** |
+| 80 000 × 1 KB | **no error** |
+
+So it is not "silently not enforced", as upstream's own note suggests, and it is
+not a working budget either: one oversized allocation is caught, and the bypass
+is a `for` loop. Nothing in the suite went red because fixtures allocate in
+single large chunks.
+
+`timeoutMs` and `stackDepth` are unaffected and still work. Pinned by
+`memory_limit_is_per_allocation_not_cumulative` so the gap is asserted rather
+than assumed; that test goes red when a real budget lands. Tracked as the
+remaining release blocker; see `docs/adr/0001-ffi-crash-isolation.md`.
 
 ### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
 

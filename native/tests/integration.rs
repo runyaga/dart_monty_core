@@ -1398,6 +1398,63 @@ fn memory_limit_exceeded_via_ffi() {
     unsafe { monty_free(handle) };
 }
 
+/// `max_memory` bounds ONE allocation at this pin, not total memory.
+///
+/// Not a test of desired behaviour — a test of the CURRENT behaviour, so the
+/// gap is visible in CI instead of living in a comment. It goes red when a real
+/// cumulative budget lands, which is the signal to delete it.
+///
+/// v0.0.21 moved accounting to a global allocator (`monty-alloc`) that a cdylib
+/// may not install, so `probe_memory()` reads zero and upstream's check,
+/// `probe_memory().saturating_add(additional) > limit`, collapses to
+/// `additional > limit`. One oversized allocation is caught; the same total
+/// split across smaller ones is not, and splitting it is a `for` loop.
+///
+/// Measured 2026-08-19: 80 MB against a 1 MB limit raises when taken in one
+/// chunk and passes silently at 800 x 100 KB, 8 000 x 10 KB and 80 000 x 1 KB.
+/// Two of those are asserted here; the pair is what makes the point, since
+/// either alone looks like a working limit or a broken one.
+#[test]
+fn memory_limit_is_per_allocation_not_cumulative() {
+    fn run_with_1mb_limit(src: &str) -> MontyResultTag {
+        let code = c(src);
+        let mut create_error: *mut c_char = ptr::null_mut();
+        let handle =
+            unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_error) };
+        assert!(!handle.is_null());
+        unsafe { monty_set_memory_limit(handle, 1024 * 1024) };
+
+        let mut result_json: *mut c_char = ptr::null_mut();
+        let mut error_msg: *mut c_char = ptr::null_mut();
+        let tag = unsafe { monty_run(handle, &mut result_json, &mut error_msg) };
+        if !result_json.is_null() {
+            unsafe { monty_string_free(result_json) };
+        }
+        if !error_msg.is_null() {
+            unsafe { monty_string_free(error_msg) };
+        }
+        unsafe { monty_free(handle) };
+        tag
+    }
+
+    // ~80 MB in ONE allocation: caught, because 80 MB > 1 MB on its own.
+    assert_eq!(
+        run_with_1mb_limit("x = [0] * 5000000\nlen(x)"),
+        MontyResultTag::Error,
+        "a single allocation larger than max_memory must still be refused"
+    );
+
+    // The SAME ~80 MB, in 100 KB pieces: not caught, because no individual
+    // allocation exceeds 1 MB and nothing sums them.
+    assert_eq!(
+        run_with_1mb_limit("acc = []\nfor i in range(800):\n    acc.append([0] * 12500)\nlen(acc)"),
+        MontyResultTag::Ok,
+        "THIS IS THE GAP: 80 MB allocated 100 KB at a time under a 1 MB limit. \
+         If this is now Error, a cumulative budget landed -- delete this test \
+         and the CHANGELOG note that points at it."
+    );
+}
+
 #[test]
 fn time_limit_exceeded_via_ffi() {
     let code = c("i = 0\nwhile True:\n    i += 1\ni");
