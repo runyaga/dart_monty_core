@@ -72,6 +72,31 @@ void main() {
 
           return;
         }
+
+        // A THIRD claim, and the one that cannot be checked in place at all.
+        // "Diverges on web" is falsifiable by running; "needs a cargo feature"
+        // is not, but is harmless to attempt. These END THE RUN: on the VM the
+        // host process dies (SIGILL) and on web the module traps and poisons
+        // the shared instance, so the next 390 fixtures fail with the trap's
+        // message rather than their own. Running one to prove it still kills
+        // would destroy the evidence for everything after it.
+        //
+        // NOT web-gated: unlike a divergence, this reproduces on BOTH backends
+        // — that is what makes it one defect rather than a web quirk.
+        final kills = runtimeKillingFixtures[key];
+        if (kills != null) {
+          markTestSkipped('kills the runtime — $kills');
+
+          return;
+        }
+
+        if (gcModuleFixtures.contains(key)) {
+          // Same category as testHooksWasmFixtures directly above: upstream
+          // ships the `gc` module only under that feature.
+          markTestSkipped('needs a --features test-hooks engine build for gc');
+
+          return;
+        }
         final expectation = parseFixture(value);
         if (expectation == null) {
           // Was a bare `return`: the test asserted nothing and reported

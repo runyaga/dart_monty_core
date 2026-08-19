@@ -108,6 +108,7 @@ sealed class MontyValue {
     'namedtuple': MontyNamedTuple._fromMap,
     'dataclass': MontyDataclass._fromMap,
     'ellipsis': MontyEllipsis._fromMap,
+    'notimplemented': MontyNotImplemented._fromMap,
     // Both dict shapes share one tag: `value` for all-string keys,
     // `entries` for anything else. The tag names the TYPE; the payload key
     // names how the keys are encoded.

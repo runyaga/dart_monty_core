@@ -16,7 +16,7 @@ use std::ffi::{CStr, c_char, c_int};
 use std::ptr;
 
 use error::{catch_ffi_panic, parse_c_str, to_c_string};
-use monty_type_checking::{SourceFile, type_check};
+use monty_type_checking::{SourceFile, TypeChecker};
 
 /// Common FFI wrapper for functions returning `MontyProgressTag`.
 /// Handles: handle null check, panic boundary, error out-parameter.
@@ -1583,12 +1583,25 @@ pub unsafe extern "C" fn monty_type_check(
 
     let outcome = catch_ffi_panic(|| {
         let source = SourceFile::new(&effective_code, script_str);
-        match type_check(&source, None) {
+        // 0.21 replaced the free `type_check()` with a stateful `TypeChecker`,
+        // and the output format moved from `format_from_str("json")` on the
+        // diagnostics to a `TypeCheckingConfig` passed into `run` -- the
+        // diagnostics now BORROW the checker, so they cannot outlive it and
+        // cannot be re-formatted after the fact.
+        //
+        // A checker per call is deliberate for now: upstream deleted the
+        // `MemoryDb` pool that used to amortise construction, making reuse the
+        // caller's job. Reuse across FFI calls needs a lock (`run` takes
+        // `&mut self`) and `reset()` between calls to stop one session's stubs
+        // resolving in the next, so it is a measured decision, not a default.
+        let config = monty_types::TypeCheckingConfig {
+            format: monty_types::TypeCheckingFormat::Json,
+            color: false,
+        };
+        let mut checker = TypeChecker::default();
+        match checker.run(&source, None, config) {
             Ok(None) => Ok(None),
-            Ok(Some(diagnostics)) => diagnostics
-                .format_from_str("json")
-                .map(|d| Some(d.to_string()))
-                .map_err(|e| format!("format_from_str: {e}")),
+            Ok(Some(diagnostics)) => Ok(Some(diagnostics.to_string())),
             Err(e) => Err(e),
         }
     });

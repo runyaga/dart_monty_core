@@ -183,10 +183,22 @@ close.
 
 ## Consequences
 
-### The value wire is unchanged
+### The value wire is unchanged *by this decision*
 
-`WIRE_FORMAT_VERSION` is **4** (`native/src/convert.rs:50`) and stays 4. Values
-cross the FFI boundary inside the worker in exactly the encoding they do today.
+> **Amended 2026-08-19, at the monty v0.0.21 pin.** The wire is now **5**, and
+> the sentence below saying it "stays 4" was written against the v0.0.19 pin.
+> It is corrected rather than deleted, because what it was actually claiming is
+> still true and still load-bearing: *crash isolation does not touch the value
+> encoding.* That remains the case — the bump came from upstream adding a value
+> variant (`MontyObject::NotImplemented`, monty #567), not from anything in this
+> ADR. Read every "4" below as "the version at the time"; the invariant being
+> asserted is that the pool leaves the encoding alone, not that the integer
+> never moves. `tool/check_wire_version.sh` is still what enforces it, and it
+> passes at 5.
+
+`WIRE_FORMAT_VERSION` was **4** (`native/src/convert.rs`) when this was written
+and this decision does not change it. Values cross the FFI boundary inside the
+worker in exactly the encoding they do outside it.
 
 That claim is **enforced, not merely stated**: `tool/check_wire_version.sh` runs
 in the gate and in CI and fails if the crate's constant and Dart's

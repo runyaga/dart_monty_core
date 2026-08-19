@@ -947,11 +947,12 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 }
 
 // ---------------------------------------------------------------------------
-// Value formatter — exhaustive over all 20 MontyValue subtypes
+// Value formatter — exhaustive over every MontyValue subtype
 // ---------------------------------------------------------------------------
 String _fmt(MontyValue v) => switch (v) {
   MontyNone() => 'None',
   MontyEllipsis() => 'Ellipsis',
+  MontyNotImplemented() => 'NotImplemented',
   MontyBool(:final value) => value.toString(),
   MontyInt(:final value) => value.toString(),
   MontyFloat(:final value) => _fmtFloat(value),

@@ -55,7 +55,13 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
     // Engine-level divergences are always skipped; test-hooks fixtures run
     // only under a `-DMONTY_TEST_HOOKS=true` build against a test-hooks WASM.
+    // `runtimeKillingFixtures` must be skipped BEFORE anything runs it: a trap
+    // poisons the shared instance, so one of these does not fail alone, it
+    // fails every fixture after it.
     if (alwaysUnsupportedWasmFixtures.contains(key) ||
+        runtimeKillingFixtures.containsKey(key) ||
+        gcModuleFixtures.contains(key) ||
+        (_testHooks && testHooksStackOverflowFixtures.contains(key)) ||
         (!_testHooks && testHooksWasmFixtures.contains(key))) {
       skipped++;
       continue;

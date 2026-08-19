@@ -37,6 +37,42 @@ final class MontyEllipsis extends MontyValue {
   String toString() => 'MontyEllipsis()';
 }
 
+/// Python's `NotImplemented` singleton.
+///
+/// Distinct from [MontyNone]: Python returns `NotImplemented` from a rich
+/// comparison to mean "I do not know how to compare these, ask the other
+/// operand", and returning `None` instead would be a different answer.
+///
+/// Reachable from ordinary sandboxed code — a user-defined `__eq__` that
+/// returns it sends it straight across the boundary — so it is not a
+/// host-only concern. New in monty v0.0.21 (upstream #567).
+@immutable
+final class MontyNotImplemented extends MontyValue {
+  /// Creates the [MontyNotImplemented] singleton value.
+  const MontyNotImplemented();
+
+  factory MontyNotImplemented._fromMap(Map<String, dynamic> _) =>
+      const MontyNotImplemented();
+
+  @override
+  Map<String, Object?> toJson() => {'__type': 'notimplemented'};
+
+  /// Dart has no equivalent sentinel, so it represents itself — the same
+  /// choice [MontyEllipsis] makes, and for the same reason.
+  @override
+  Object? get dartValue => this;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is MontyNotImplemented;
+
+  @override
+  int get hashCode => (MontyNotImplemented).hashCode;
+
+  @override
+  String toString() => 'MontyNotImplemented()';
+}
+
 // ---------------------------------------------------------------------------
 // Path
 // ---------------------------------------------------------------------------

@@ -2,10 +2,22 @@
 
 ## Unreleased (0.19.0)
 
-Requires `monty` v0.0.19. The `monty` crate's public surface was split in 0.19 —
-it went from 1321 to 306 public items and most of what this package uses moved to
-the new `monty-types` crate — so this is a substantial internal change with a
-small consumer-facing surface.
+Requires `monty` **v0.0.21**. The pin skips v0.0.19 and v0.0.20.
+
+The `monty` crate's public surface was split in 0.19 — it went from 1321 to 306
+public items and most of what this package uses moved to the new `monty-types`
+crate — so this is a substantial internal change with a small consumer-facing
+surface. v0.0.21 then removed the resource-tracker generic, replaced the two
+snapshot formats with one session dump, made the type checker stateful, and
+added a value variant. The conformance corpus grows 531 → 566.
+
+**One capability regressed and it is not visible in a compiler error.** v0.0.21
+moved memory accounting out of the interpreter and into a global allocator
+(`monty-alloc`), which a shared library may not install. `MontyLimits.memoryBytes`
+therefore has no effect on the FFI backend at this pin — upstream: *"without it
+usage always reads as zero and the limit is silently not enforced."* `timeoutMs`
+and `stackDepth` are unaffected. Tracked as the remaining release blocker; see
+`docs/adr/0001-ffi-crash-isolation.md`.
 
 ### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
 
@@ -115,6 +127,99 @@ three surprise people, and one of them differs from upstream's default.
   greppable and does not replace that rule.
 
 ### Breaking
+
+- **Recursion is now bounded even when you ask for no limits.** monty v0.0.21
+  (#613) changed `ResourceLimits.max_recursion_depth` from `Option<usize>` to
+  `usize`, so "unbounded" is no longer expressible anywhere in the stack.
+
+  ```
+  // before                              // after
+  MontyRepl(limits: null)                MontyRepl(limits: null)
+    -> recursion unbounded                 -> recursion capped at 1000
+  ```
+
+  Only REPL sessions are affected: `Monty.run` already defaulted to
+  `stackDepth: 1000`. A session that previously recursed until the host process
+  died now raises `RecursionError` instead, which is the better outcome, but it
+  is a behaviour change for any caller that relied on deep recursion without
+  setting a limit.
+
+  **This does NOT make the default safe, and one case got worse.** Measured on
+  this pin: `dict__eq_self_referential.py` from the conformance corpus kills the
+  host process with SIGILL (exit 132) at `stackDepth: 1000` — our default — and
+  at 750. It survives at 500 and below. At v0.0.19 the same fixture passed at
+  `stackDepth: 1000`; the whole 531-fixture corpus ran green through a bounded
+  session, and does not on v0.0.21. The other four fixtures that were known to
+  kill an *unbounded* host (`list__eq_self_referential`, `recursion__deep_hash`,
+  `recursion__deep_isinstance`, `traceback__recursion_error`) all still survive
+  at 1000, so this is one fixture, not a class-wide regression — but it is a
+  reachable host kill through documented defaults.
+
+  The likely cause is upstream moving the binary operators and `py_contains`
+  onto `PyTrait` (#568, #625), which changes how much native stack each Python
+  frame costs; 1000 Python frames now exceed what the native stack survives for
+  self-referential dict equality. This is exactly the case
+  `docs/adr/0001-ffi-crash-isolation.md` exists for — a caller-supplied bound
+  the interpreter cannot check against its own stack — and it strengthens, not
+  weakens, the argument for running the interpreter in a process we can lose.
+
+  **No pre-existing test caught this.** The one named for it,
+  `an_unbounded_session_still_runs_ordinary_code`, exercises `sum(range(1000))`
+  — iterative, not recursive — so it passed straight through the change. Now
+  asserted by `a_session_with_no_explicit_limits_still_bounds_recursion`.
+
+- **Every persisted snapshot from an earlier version is unreadable.** Both
+  snapshot paths changed format, and both now reject old blobs by their header
+  rather than mis-decoding them.
+
+  - **REPL snapshots** (`MontyRepl.snapshot()` / `.restore()`) move onto
+    upstream's single session dump format (#692): magic bytes plus
+    `DUMP_VERSION = 5`, checked **before** postcard sees the payload. Restore
+    also recovers `script_name`, which it previously dropped.
+  - **Run snapshots** keep their own framing. v0.0.21 deleted
+    `MontyRun::dump`/`load`, and the session format that replaced them has no
+    variant for a *compiled-but-unstarted* run — which is what a run snapshot
+    is, a bytecode cache rather than a session. It now carries an eight-byte
+    `MONTYRUN` prefix and a `u16` version.
+
+  The header is not ceremony. The v0.0.19 payload for `2 + 2` is still a
+  structurally valid postcard encoding of a `MontyRun`, and one instruction byte
+  inside it changed — so feeding an old blob to postcard is not guaranteed to
+  fail, only to be wrong. Pinned by
+  `a_pre_0_21_snapshot_is_rejected_not_misdecoded`, which restores a real
+  v0.0.19 blob kept as a fixture.
+
+- **Conformance corpus 531 → 566, and three fixtures are now skipped because
+  they destroy the runtime.** +35 new fixtures (collections, itertools, native
+  `@dataclass`, function decorators, `os.listdir`), 39 modified, 0 deleted.
+  551/566 pass on both web backends and 556/566 under a test-hooks build, with
+  zero failures on either.
+
+  The skips are recorded as defects, not accommodations, in
+  `monty_conformance`'s `runtimeKillingFixtures` and
+  `testHooksStackOverflowFixtures`. Two are described above; the third,
+  `collections__deque.py`, is new coverage. Each names the measurement that
+  would retire it.
+
+  **A caveat for anyone reading a failure list from these runners.** A fixture
+  that traps poisons the shared WASM instance, so every fixture after it fails
+  with the trap's message rather than its own. The raw test-hooks run showed
+  **150 failures of which 3 were real** — the rest were alphabetically
+  downstream of the first trap. Read such a list as "find the first one", not
+  as a count of defects.
+
+- **Wire format 4 → 5: `NotImplemented` travels as
+  `{"__type": "notimplemented"}` and decodes as `MontyNotImplemented`.** A new
+  upstream variant (#567) returned by user-defined `__eq__`, so it reaches the
+  boundary from ordinary sandboxed code rather than from anything the host does.
+
+  Tagged for the same reason `Ellipsis` was at version 1: a bare form is
+  indistinguishable from a real value. Since version 2 the decoder rejects
+  unknown tags outright, so an un-bumped decoder would refuse the value rather
+  than mis-read it — the bump buys a clear error instead of a confusing one.
+
+  This supersedes the sentence in `docs/adr/0001-ffi-crash-isolation.md` saying
+  the wire "stays 4"; that ADR is amended rather than left standing.
 
 - **`MontyPairsDict` is gone; `MontyDict` now keys on `MontyValue`.** One Python
   dict is one Dart type again, whatever its keys.

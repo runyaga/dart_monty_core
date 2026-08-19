@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
 use monty::{
-    MontyRepl, ReplFunctionCall, ReplOsCall, ReplProgress, ReplResolveFutures, ReplStartError,
-    detect_repl_continuation_mode,
+    Dump, MontyRepl, ReplFunctionCall, ReplOsCall, ReplProgress, ReplResolveFutures,
+    ReplStartError, Session, SessionRef, detect_repl_continuation_mode, dump,
 };
 use monty_types::{
-    ExtFunctionResult, LimitedTracker, MontyObject, NameLookupResult, PrintWriter, ResourceLimits,
+    ExtFunctionResult, MontyObject, NameLookupResult, PrintWriter, ResourceLimits, ResourceTracker,
 };
 use serde_json::Value;
 
@@ -13,21 +13,21 @@ use crate::convert::{json_to_monty_object, monty_object_to_json};
 use crate::error::monty_exception_to_json;
 use crate::handle::{MontyProgressTag, MontyResultTag};
 
-/// The concrete tracker type used for REPL execution.
-///
-/// Was `NoLimitTracker`, with a note that "callers can add limits later via a
-/// dedicated API if needed". That API is now `monty_repl_create_with_limits`,
-/// and this is the type that lets it do anything: a tracker is chosen when the
-/// session is created and cannot be swapped afterwards.
-///
-/// **An unbounded session is still the default** — `ResourceLimits::default()`
-/// has every field `None`, so `LimitedTracker` with no limits set behaves as
-/// `NoLimitTracker` did. Interactive sessions stay unbounded unless asked.
-///
-/// Limits are SESSION-scoped, mirroring upstream's Python API, where
-/// `checkout(limits=…)` configures a REPL session rather than an individual
-/// feed (`monty-python/src/pool.rs`).
-type Tracker = LimitedTracker;
+// ---------------------------------------------------------------------------
+// REPL resource limits
+// ---------------------------------------------------------------------------
+// A tracker is chosen when the session is created and cannot be swapped
+// afterwards, which is what makes `monty_repl_create_with_limits` meaningful.
+// Limits are SESSION-scoped, mirroring upstream's Python API, where
+// `checkout(limits=…)` configures a REPL session rather than an individual feed
+// (`monty-python/src/pool.rs`).
+//
+// RECURSION IS BOUNDED EVEN WHEN NOTHING IS ASKED FOR. This block used to say
+// an unbounded session was the default, because `ResourceLimits::default()` had
+// every field `None` and `NoLimitTracker` bounded nothing. Since monty v0.0.21
+// (#613) `max_recursion_depth` is a `usize`, so unbounded recursion is not
+// expressible at all and the default carries `DEFAULT_MAX_RECURSION_DEPTH`.
+// Memory and time are still unbounded unless asked.
 
 /// Parses the limits JSON Dart sends into `ResourceLimits`.
 ///
@@ -53,7 +53,7 @@ pub fn parse_limits_json(json: &str) -> Result<ResourceLimits, String> {
         limits.max_memory = Some(usize::try_from(bytes).unwrap_or(usize::MAX));
     }
     if let Some(depth) = map.get("stack_depth").and_then(Value::as_u64) {
-        limits.max_recursion_depth = Some(usize::try_from(depth).unwrap_or(usize::MAX));
+        limits.max_recursion_depth = usize::try_from(depth).unwrap_or(usize::MAX);
     }
     if let Some(ms) = map.get("timeout_ms").and_then(Value::as_u64) {
         limits.max_duration = Some(std::time::Duration::from_millis(ms));
@@ -100,25 +100,22 @@ struct OsCallMeta {
 /// the `MontyRepl` is recovered so subsequent feeds can execute.
 enum ReplHandleState {
     /// REPL is idle, ready for `feed_run()` or `feed_start()`.
-    Idle(MontyRepl<Tracker>),
+    Idle(MontyRepl),
     /// Paused at an external function call.
     Paused {
-        call: ReplFunctionCall<Tracker>,
+        call: ReplFunctionCall,
         meta: PendingMeta,
     },
     /// Paused at an OS call.
-    OsCall {
-        call: ReplOsCall<Tracker>,
-        meta: OsCallMeta,
-    },
+    OsCall { call: ReplOsCall, meta: OsCallMeta },
     /// Awaiting async future resolution.
     Futures {
-        futures: ReplResolveFutures<Tracker>,
+        futures: ReplResolveFutures,
         call_ids_json: String,
     },
     /// Snippet completed; REPL recovered and result available.
     Complete {
-        repl: MontyRepl<Tracker>,
+        repl: MontyRepl,
         result_json: String,
         is_error: bool,
     },
@@ -133,6 +130,10 @@ enum ReplHandleState {
 /// `feed_start()`/`resume()` (iterative, pauses at external function calls).
 pub struct MontyReplHandle {
     state: ReplHandleState,
+    /// Kept because `monty::dump` requires it and `MontyRepl` does not expose
+    /// it: `script_name` is private with no accessor. Upstream carries it in
+    /// the dump precisely so a restored session does not lose its tracebacks.
+    script_name: String,
     ext_fn_names: HashSet<String>,
     print_output: String,
 }
@@ -153,9 +154,10 @@ impl MontyReplHandle {
         Self {
             state: ReplHandleState::Idle(MontyRepl::new(
                 script_name,
-                Tracker::new(limits),
+                ResourceTracker::new(limits),
                 crate::convert::compile_options(),
             )),
+            script_name: script_name.to_owned(),
             ext_fn_names: HashSet::new(),
             print_output: String::new(),
         }
@@ -167,15 +169,20 @@ impl MontyReplHandle {
     /// accessible). Returns `Err` if the REPL is mid-execution (`Paused`,
     /// `OsCall`, `Futures`).
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
-        match &self.state {
-            ReplHandleState::Idle(repl) => repl
-                .dump()
-                .map_err(|e| format!("repl snapshot failed: {e}")),
-            ReplHandleState::Complete { repl, .. } => repl
-                .dump()
-                .map_err(|e| format!("repl snapshot failed: {e}")),
-            _ => Err("can only snapshot an idle or complete REPL (not mid-execution)".into()),
-        }
+        // `type_check` is None because type checking is a separate FFI entry
+        // point over source text (`monty_type_check`), not a session mode --
+        // there is no per-session state for the dump to carry.
+        let repl = match &self.state {
+            ReplHandleState::Idle(repl) => repl,
+            ReplHandleState::Complete { repl, .. } => repl,
+            _ => {
+                return Err(
+                    "can only snapshot an idle or complete REPL (not mid-execution)".into(),
+                );
+            }
+        };
+        dump(&self.script_name, None, SessionRef::Idle(repl))
+            .map_err(|e| format!("repl snapshot failed: {e}"))
     }
 
     /// Restores a `MontyReplHandle` from postcard bytes produced by `snapshot`.
@@ -183,9 +190,19 @@ impl MontyReplHandle {
     /// On success, the returned handle is in `Idle` state with the restored
     /// interpreter state. `ext_fn_names` and `print_output` are reset to defaults.
     pub fn restore(bytes: &[u8]) -> Result<Self, String> {
-        let repl = MontyRepl::load(bytes).map_err(|e| format!("repl restore failed: {e}"))?;
+        // `Dump::load` checks magic bytes and `DUMP_VERSION` BEFORE postcard
+        // sees the payload, so a stale snapshot is a typed `VersionMismatch`
+        // rather than a mis-decode. These bytes are caller-supplied, so that
+        // ordering is the point, not a detail.
+        let loaded = Dump::load(bytes).map_err(|e| format!("repl restore failed: {e}"))?;
+        let Session::Idle(repl) = loaded.state else {
+            // We only ever write `SessionRef::Idle`, so anything else came
+            // from a different producer. Naming the shape beats a decode error.
+            return Err("repl restore failed: dump is not an idle REPL session".into());
+        };
         Ok(Self {
-            state: ReplHandleState::Idle(repl),
+            state: ReplHandleState::Idle(*repl),
+            script_name: loaded.script_name,
             ext_fn_names: HashSet::new(),
             print_output: String::new(),
         })
@@ -629,7 +646,7 @@ impl MontyReplHandle {
     ///
     /// Sets state to `Consumed` temporarily. The caller must store a new
     /// state before returning to the C API.
-    fn take_repl(&mut self) -> Result<MontyRepl<Tracker>, String> {
+    fn take_repl(&mut self) -> Result<MontyRepl, String> {
         let state = std::mem::replace(&mut self.state, ReplHandleState::Consumed);
         match state {
             ReplHandleState::Idle(repl) | ReplHandleState::Complete { repl, .. } => Ok(repl),
@@ -646,7 +663,7 @@ impl MontyReplHandle {
     /// `NameLookup` variants are auto-resolved in a loop using `ext_fn_names`.
     fn process_repl_progress(
         &mut self,
-        mut progress: ReplProgress<Tracker>,
+        mut progress: ReplProgress,
     ) -> (MontyProgressTag, Option<String>) {
         loop {
             match progress {
@@ -755,7 +772,7 @@ impl MontyReplHandle {
     /// Handles a `ReplStartError` — recovers the REPL and stores the error.
     fn handle_repl_start_error(
         &mut self,
-        err: ReplStartError<Tracker>,
+        err: ReplStartError,
     ) -> (MontyProgressTag, Option<String>) {
         let err_json = monty_exception_to_json(&err.error);
         let msg = err.error.summary();
@@ -1158,16 +1175,44 @@ mod tests {
             parse_limits_json(r#"{"memory_bytes": 1048576, "stack_depth": 64, "timeout_ms": 250}"#)
                 .expect("valid limits");
         assert_eq!(l.max_memory, Some(1_048_576));
-        assert_eq!(l.max_recursion_depth, Some(64));
+        assert_eq!(l.max_recursion_depth, 64);
         assert_eq!(l.max_duration, Some(std::time::Duration::from_millis(250)));
     }
 
+    /// Renamed at the monty v0.0.21 pin. It was
+    /// `parse_limits_json_treats_absent_fields_as_unbounded`, and asserted
+    /// `max_recursion_depth == None`. Two of the three axes still work that
+    /// way; recursion no longer can. `max_recursion_depth` is a `usize`, not an
+    /// `Option<usize>` (#613), so "no limit" is no longer expressible and
+    /// `ResourceLimits::default()` carries `DEFAULT_MAX_RECURSION_DEPTH`.
     #[test]
-    fn parse_limits_json_treats_absent_fields_as_unbounded() {
+    fn parse_limits_json_leaves_absent_fields_at_their_defaults() {
         let l = parse_limits_json("{}").expect("empty object is valid");
-        assert_eq!(l.max_memory, None);
-        assert_eq!(l.max_recursion_depth, None);
-        assert_eq!(l.max_duration, None);
+        assert_eq!(l.max_memory, None, "memory is still unbounded by default");
+        assert_eq!(l.max_duration, None, "time is still unbounded by default");
+        assert_eq!(
+            l.max_recursion_depth,
+            monty_types::DEFAULT_MAX_RECURSION_DEPTH,
+            "recursion is bounded even when the caller asks for nothing"
+        );
+    }
+
+    /// The floor the v0.0.21 pin introduced, asserted rather than assumed.
+    ///
+    /// This is the one behaviour change in the pin that NO pre-existing test
+    /// caught: `an_unbounded_session_still_runs_ordinary_code` exercises
+    /// `sum(range(1000))`, which is iterative, so it passed straight through
+    /// the change. A session created with no explicit `stack_depth` used to
+    /// recurse until the process died; it now raises instead.
+    #[test]
+    fn a_session_with_no_explicit_limits_still_bounds_recursion() {
+        let mut h = MontyReplHandle::new("repl.py", ResourceLimits::default());
+        let (tag, _json, _err) = h.feed_run("def f(n):\n    return f(n + 1)\n\nf(0)");
+        assert_eq!(
+            tag,
+            MontyResultTag::Error,
+            "recursion must be bounded even though the caller set no limit"
+        );
     }
 
     #[test]
@@ -1181,7 +1226,7 @@ mod tests {
     #[test]
     fn a_recursion_limit_stops_runaway_recursion() {
         let limits = ResourceLimits {
-            max_recursion_depth: Some(16),
+            max_recursion_depth: 16,
             ..Default::default()
         };
         let mut h = MontyReplHandle::new("repl.py", limits);
@@ -1199,7 +1244,7 @@ mod tests {
 
     #[test]
     fn an_unbounded_session_still_runs_ordinary_code() {
-        // LimitedTracker with ResourceLimits::default() must behave as
+        // ResourceTracker with ResourceLimits::default() must behave as
         // NoLimitTracker did — every existing caller depends on it.
         let mut h = MontyReplHandle::new("repl.py", ResourceLimits::default());
         let (tag, _json, _err) = h.feed_run("sum(range(1000))");

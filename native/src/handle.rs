@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use monty::{FunctionCall, MontyRun, NameLookup, OsCall, ResolveFutures, RunProgress};
 use monty_types::{
-    ExtFunctionResult, LimitedTracker, MontyException, MontyObject, NameLookupResult, PrintWriter,
-    ResourceLimits,
+    ExtFunctionResult, MontyException, MontyObject, NameLookupResult, PrintWriter, ResourceLimits,
+    ResourceTracker,
 };
 use serde_json::Value;
 
@@ -12,11 +12,13 @@ use crate::convert::{json_to_monty_object, monty_object_to_json};
 use crate::error::monty_exception_to_json;
 
 // ---------------------------------------------------------------------------
-// Single tracker type — always LimitedTracker with generous defaults
+// Resource limits
 // ---------------------------------------------------------------------------
-
-/// The concrete tracker type used for all execution. No variant doubling.
-type Tracker = LimitedTracker;
+// There used to be a `Tracker` alias here, existing so the crate picked ONE of
+// monty's two tracker types and never doubled the variants. monty v0.0.21
+// (#613) deleted the choice: `ResourceTracker` is a concrete struct and the
+// tracker generic is gone, so the alias documented a decision upstream now
+// enforces, and using the real name is one less indirection.
 
 /// Default resource limits when none are explicitly configured.
 ///
@@ -26,11 +28,34 @@ type Tracker = LimitedTracker;
 /// a default timeout actively harmful. Callers who need a time limit
 /// can set `MontyLimits(timeoutMs: N)` explicitly.
 fn default_limits() -> ResourceLimits {
-    let mut limits = ResourceLimits::new();
-    limits.max_memory = Some(256 * 1024 * 1024); // 256 MB
-    limits.max_recursion_depth = Some(1000);
-    limits
+    ResourceLimits {
+        max_memory: Some(256 * 1024 * 1024), // 256 MB
+        // Stated, not inherited. It coincides with upstream's
+        // `DEFAULT_MAX_RECURSION_DEPTH`, but it is OUR policy and must match the
+        // Dart-side default in `base_monty_platform.dart`; reading upstream's
+        // constant here would let that pair drift apart silently on a pin bump.
+        max_recursion_depth: 1000,
+        ..ResourceLimits::default()
+    }
 }
+
+/// Magic prefix for a run snapshot.
+///
+/// Deliberately NOT upstream's `MONTY\0`: a run snapshot is a compiled-bytecode
+/// cache, not a session, so upstream's `Session` enum cannot express it and
+/// `Dump::load` must not appear to accept one. Distinct magic makes a session
+/// dump fed to `monty_restore` a clean `not a run snapshot` instead of a
+/// version mismatch that implies the two formats are otherwise interchangeable.
+const RUN_SNAPSHOT_MAGIC: &[u8; 8] = b"MONTYRUN";
+
+/// Framing version for a run snapshot.
+///
+/// Bump whenever the postcard payload's shape can change — which includes every
+/// monty pin bump, because the payload is upstream's `MontyRun` and its private
+/// fields are not ours to track. Starts at 1: the 0.19 format had no header at
+/// all, so there is no earlier version to be compatible with, and a 0.19 blob is
+/// rejected by the magic check rather than mis-decoded.
+const RUN_SNAPSHOT_VERSION: u16 = 1;
 
 /// Result tag for `monty_run` — matches `MontyResultTag` in the C header.
 #[repr(C)]
@@ -72,23 +97,23 @@ struct OsCallMeta {
 
 /// Internal state of a running handle.
 ///
-/// Single tracker type (`LimitedTracker`) — no variant doubling.
+/// Single tracker type (`ResourceTracker`) — no variant doubling.
 enum HandleState {
     Ready(MontyRun),
     Paused {
-        call: FunctionCall<Tracker>,
+        call: FunctionCall,
         meta: PendingMeta,
     },
     OsCall {
-        call: OsCall<Tracker>,
+        call: OsCall,
         meta: OsCallMeta,
     },
     Futures {
-        futures: ResolveFutures<Tracker>,
+        futures: ResolveFutures,
         call_ids_json: String,
     },
     NameLookup {
-        lookup: NameLookup<Tracker>,
+        lookup: NameLookup,
         name: String,
     },
     Complete {
@@ -149,7 +174,7 @@ impl MontyHandle {
 
         let mut buf = String::new();
         let limits = self.limits.clone().unwrap_or_else(default_limits);
-        let tracker = Tracker::new(limits);
+        let tracker = ResourceTracker::new(limits);
         let result = compiled.run(
             vec![],
             tracker,
@@ -199,7 +224,7 @@ impl MontyHandle {
         };
 
         let limits = self.limits.clone().unwrap_or_else(default_limits);
-        let tracker = Tracker::new(limits);
+        let tracker = ResourceTracker::new(limits);
         self.run_snapshot_op(|print| compiled.start(vec![], tracker, print))
     }
 
@@ -523,17 +548,42 @@ impl MontyHandle {
 
     /// Serialize the compiled code to bytes (snapshot).
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
-        match &self.state {
-            HandleState::Ready(compiled) => {
-                compiled.dump().map_err(|e| format!("snapshot failed: {e}"))
-            }
-            _ => Err("can only snapshot in Ready state".into()),
-        }
+        let HandleState::Ready(compiled) = &self.state else {
+            return Err("can only snapshot in Ready state".into());
+        };
+        let payload =
+            postcard::to_allocvec(compiled).map_err(|e| format!("snapshot failed: {e}"))?;
+        let mut bytes =
+            Vec::with_capacity(RUN_SNAPSHOT_MAGIC.len() + size_of::<u16>() + payload.len());
+        bytes.extend_from_slice(RUN_SNAPSHOT_MAGIC);
+        bytes.extend_from_slice(&RUN_SNAPSHOT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&payload);
+        Ok(bytes)
     }
 
     /// Restore a handle from serialized bytes.
     pub fn restore(bytes: &[u8]) -> Result<Self, String> {
-        let compiled = MontyRun::load(bytes).map_err(|e| format!("restore failed: {e}"))?;
+        // The header is checked BEFORE postcard sees anything. These bytes are
+        // caller-supplied, and postcard on a wrong-shaped payload is a decode
+        // error at best and a plausible-but-wrong `MontyRun` at worst.
+        const HEADER_LEN: usize = RUN_SNAPSHOT_MAGIC.len() + size_of::<u16>();
+        let Some(header) = bytes.get(..HEADER_LEN) else {
+            return Err("restore failed: not a run snapshot".into());
+        };
+        if &header[..RUN_SNAPSHOT_MAGIC.len()] != RUN_SNAPSHOT_MAGIC {
+            return Err("restore failed: not a run snapshot".into());
+        }
+        let version = u16::from_le_bytes([
+            header[RUN_SNAPSHOT_MAGIC.len()],
+            header[RUN_SNAPSHOT_MAGIC.len() + 1],
+        ]);
+        if version != RUN_SNAPSHOT_VERSION {
+            return Err(format!(
+                "restore failed: run snapshot version {version}, this build reads {RUN_SNAPSHOT_VERSION}"
+            ));
+        }
+        let compiled: MontyRun = postcard::from_bytes(&bytes[HEADER_LEN..])
+            .map_err(|e| format!("restore failed: {e}"))?;
 
         Ok(Self {
             state: HandleState::Ready(compiled),
@@ -546,27 +596,27 @@ impl MontyHandle {
 
     /// Set memory limit in bytes.
     pub fn set_memory_limit(&mut self, bytes: usize) {
-        let limits = self.limits.get_or_insert_with(ResourceLimits::new);
+        let limits = self.limits.get_or_insert_with(ResourceLimits::default);
         limits.max_memory = Some(bytes);
     }
 
     /// Set time limit in milliseconds.
     pub fn set_time_limit_ms(&mut self, ms: u64) {
-        let limits = self.limits.get_or_insert_with(ResourceLimits::new);
+        let limits = self.limits.get_or_insert_with(ResourceLimits::default);
         limits.max_duration = Some(Duration::from_millis(ms));
     }
 
     /// Set stack depth limit.
     pub fn set_stack_limit(&mut self, depth: usize) {
-        let limits = self.limits.get_or_insert_with(ResourceLimits::new);
-        limits.max_recursion_depth = Some(depth);
+        let limits = self.limits.get_or_insert_with(ResourceLimits::default);
+        limits.max_recursion_depth = depth;
     }
 
     // --- private helpers ---
 
     fn run_snapshot_op(
         &mut self,
-        f: impl FnOnce(PrintWriter) -> Result<RunProgress<Tracker>, MontyException>,
+        f: impl FnOnce(PrintWriter) -> Result<RunProgress, MontyException>,
     ) -> (MontyProgressTag, Option<String>) {
         let mut buf = String::new();
         let result = f(PrintWriter::CollectString(
@@ -605,7 +655,7 @@ impl MontyHandle {
 
     fn process_progress(
         &mut self,
-        mut progress: RunProgress<Tracker>,
+        mut progress: RunProgress,
     ) -> (MontyProgressTag, Option<String>) {
         loop {
             match progress {

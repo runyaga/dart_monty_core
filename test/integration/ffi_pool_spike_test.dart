@@ -31,6 +31,8 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/ffi/native_bindings.dart'
+    show expectedWireFormatVersion;
 import 'package:dart_monty_core/src/pool/worker_protocol.dart';
 import 'package:test/test.dart';
 
@@ -143,7 +145,11 @@ void main() {
       final worker = await MontyWorkerHandle.spawn();
       addTearDown(worker.kill);
 
-      expect(worker.wireFormatVersion, 4);
+      // Read, not literal. The point of the assertion is that the WORKER
+      // agrees with this build, so hardcoding the number tests the literal
+      // instead — and went red on its own at the v0.0.21 pin when the wire
+      // moved to 5, while the worker and the parent in fact agreed.
+      expect(worker.wireFormatVersion, expectedWireFormatVersion);
       expect(worker.pid, greaterThan(0));
 
       // The process the parent can signal IS the process running the

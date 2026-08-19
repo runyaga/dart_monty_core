@@ -9,7 +9,7 @@ use std::ptr;
 
 use dart_monty_core_native::*;
 use monty::{MontyRun, ResolveFutures, RunProgress};
-use monty_types::{ExtFunctionResult, MontyObject, NameLookupResult, NoLimitTracker, PrintWriter};
+use monty_types::{ExtFunctionResult, MontyObject, NameLookupResult, PrintWriter, ResourceTracker};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -814,9 +814,11 @@ fn create_with_non_utf8_script_name_null_out_error() {
 /// Drive execution through FunctionCalls, returning Future for each,
 /// until we reach ResolveFutures. Returns the FutureSnapshot and
 /// collected (call_id, function_name) pairs.
-fn drive_to_resolve_futures<T: monty_types::ResourceTracker>(
-    mut progress: RunProgress<T>,
-) -> (ResolveFutures<T>, Vec<(u32, String)>) {
+// Was generic over a `ResourceTracker` TRAIT bound. v0.0.21 made
+// `ResourceTracker` a concrete struct and dropped the tracker generic from
+// `RunProgress`/`ResolveFutures` (#613), so there is nothing left to be
+// generic over.
+fn drive_to_resolve_futures(mut progress: RunProgress) -> (ResolveFutures, Vec<(u32, String)>) {
     let mut collected = Vec::new();
 
     loop {
@@ -868,7 +870,7 @@ await main()
     .unwrap();
 
     let progress = runner
-        .start(vec![], NoLimitTracker, PrintWriter::Stdout)
+        .start(vec![], ResourceTracker::default(), PrintWriter::Stdout)
         .unwrap();
 
     let (state, call_ids) = drive_to_resolve_futures(progress);
@@ -906,7 +908,7 @@ await main()
     .unwrap();
 
     let progress = runner
-        .start(vec![], NoLimitTracker, PrintWriter::Stdout)
+        .start(vec![], ResourceTracker::default(), PrintWriter::Stdout)
         .unwrap();
 
     let (state, call_ids) = drive_to_resolve_futures(progress);
@@ -949,7 +951,7 @@ await main()
     .unwrap();
 
     let progress = runner
-        .start(vec![], NoLimitTracker, PrintWriter::Stdout)
+        .start(vec![], ResourceTracker::default(), PrintWriter::Stdout)
         .unwrap();
 
     let (state, call_ids) = drive_to_resolve_futures(progress);
@@ -999,7 +1001,7 @@ await main()
     .unwrap();
 
     let progress = runner
-        .start(vec![], NoLimitTracker, PrintWriter::Stdout)
+        .start(vec![], ResourceTracker::default(), PrintWriter::Stdout)
         .unwrap();
 
     let (state, call_ids) = drive_to_resolve_futures(progress);
@@ -1043,7 +1045,7 @@ await main()
     .unwrap();
 
     let progress = runner
-        .start(vec![], NoLimitTracker, PrintWriter::Stdout)
+        .start(vec![], ResourceTracker::default(), PrintWriter::Stdout)
         .unwrap();
 
     let (state, call_ids) = drive_to_resolve_futures(progress);
@@ -1241,15 +1243,63 @@ fn snapshot_round_trip_via_ffi() {
 /// v0.0.18 → v0.0.19 changed it once more, 60 → 59 bytes: serialized sessions
 /// now carry `CompileOptions` (upstream #556 — the assert-annotation truncation
 /// limit is applied at runtime, so it travels with the session).
+/// v0.0.19 → v0.0.21 changed BOTH halves. The payload is still 59 bytes but one
+/// instruction byte differs (0x66 → 0x65), and it is now preceded by a 10-byte
+/// `MONTYRUN` + u16 version header: v0.0.21 deleted `MontyRun::dump`/`load`
+/// with the session dump format (#692), whose `Session` enum has no variant for
+/// a compiled-but-unstarted run, so this path carries its own framing. The
+/// payload change is exactly why the header is worth having — without it a
+/// v0.0.19 blob would reach postcard with a silently different shape.
 /// Snapshots are NOT portable across these upgrades — consumers persisting
 /// snapshots must migrate.
 #[rustfmt::skip]
 const PINNED_SNAPSHOT_2_PLUS_2: &[u8] = &[
+    0x4D, 0x4F, 0x4E, 0x54, 0x59, 0x52, 0x55, 0x4E, 0x01, 0x00, 0x00, 0x06, 0x08, 0x02, 0x08, 0x02,
+    0x17, 0x65, 0x00, 0x04, 0x00, 0x90, 0x4E, 0x00, 0x01, 0x00, 0x02, 0x90, 0x4E, 0x04, 0x05, 0x00,
+    0x04, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x05, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02, 0x00,
+    0x01, 0x07, 0x3C, 0x69, 0x6E, 0x70, 0x75, 0x74, 0x3E, 0x00, 0x00, 0x00, 0x05, 0x32, 0x20, 0x2B,
+    0x20, 0x32, 0x00, 0x00, 0x00,
+];
+
+/// A real v0.0.19 run snapshot, kept so the rejection path has a genuine
+/// artefact rather than a hand-made one. It is the previous value of
+/// `PINNED_SNAPSHOT_2_PLUS_2`: a bare postcard payload with no header, which is
+/// precisely what a consumer who persisted a snapshot before this pin holds.
+#[rustfmt::skip]
+const V0_19_SNAPSHOT_2_PLUS_2: &[u8] = &[
     0x00, 0x06, 0x08, 0x02, 0x08, 0x02, 0x17, 0x66, 0x00, 0x04, 0x00, 0x90, 0x4E, 0x00, 0x01, 0x00,
     0x02, 0x90, 0x4E, 0x04, 0x05, 0x00, 0x04, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x05, 0x90, 0x4E, 0x00,
     0x05, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x07, 0x3C, 0x69, 0x6E, 0x70, 0x75, 0x74, 0x3E, 0x00,
     0x00, 0x00, 0x05, 0x32, 0x20, 0x2B, 0x20, 0x32, 0x00, 0x00, 0x00,
 ];
+
+/// A pre-v0.0.21 snapshot must be REFUSED, not mis-decoded.
+///
+/// This is the failure the header exists for. The v0.0.19 payload is still a
+/// structurally valid postcard encoding of a `MontyRun`, and one instruction
+/// byte inside it changed, so feeding it to `postcard::from_bytes` is not
+/// guaranteed to fail — it can decode into a plausible-but-wrong program.
+/// Rejecting on the magic bytes makes the outcome deterministic.
+#[test]
+fn a_pre_0_21_snapshot_is_rejected_not_misdecoded() {
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe {
+        monty_restore(
+            V0_19_SNAPSHOT_2_PLUS_2.as_ptr(),
+            V0_19_SNAPSHOT_2_PLUS_2.len(),
+            &mut err,
+        )
+    };
+    assert!(handle.is_null(), "a v0.0.19 snapshot must not restore");
+    assert!(!err.is_null(), "rejection must report a reason");
+    let msg = unsafe { CStr::from_ptr(err) }
+        .to_string_lossy()
+        .into_owned();
+    assert!(
+        msg.contains("not a run snapshot"),
+        "expected the magic-byte rejection, got: {msg}"
+    );
+}
 
 #[test]
 fn snapshot_format_pinning() {

@@ -90,6 +90,22 @@ void main() {
 
     for (final MapEntry(:key, :value) in callExternalFixtures.entries) {
       test(key, () async {
+        // Skipped before anything runs it: these end the process rather
+        // than returning a result, so one of them does not fail alone — it
+        // takes every fixture after it in this file with it.
+        final kills = runtimeKillingFixtures[key];
+        if (kills != null) {
+          markTestSkipped('kills the runtime — $kills');
+
+          return;
+        }
+
+        if (gcModuleFixtures.contains(key)) {
+          markTestSkipped('needs a --features test-hooks engine build for gc');
+
+          return;
+        }
+
         final expectation = parseFixture(
           value,
           skipCallExternal: false,

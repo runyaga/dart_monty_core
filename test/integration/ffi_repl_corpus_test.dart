@@ -220,19 +220,21 @@ void main() {
     });
 
     test(
-      'a bare MontyRepl() is UNBOUNDED — why this runner passes limits',
+      'a bare MontyRepl() is BOUNDED — the v0.0.21 pin closed the divergence',
       () async {
-        // The measurement behind [_replSessionLimits], kept executable so it
-        // cannot rot into a comment. `recursion__function_depth.py` recurses
-        // 2000 deep and declares `# Raise=RecursionError`; the one-shot handle
-        // always produces it, a bare REPL session silently returns 2000.
+        // This test used to assert the OPPOSITE, and carried its own
+        // instruction for this moment: "If a future change gives
+        // `MontyRepl()` the one-shot defaults, THIS TEST GOES RED — that is
+        // the signal to delete it". It went red at the monty v0.0.21 pin. It
+        // is rewritten rather than deleted, because the PROPERTY is worth
+        // keeping under test; only the expected answer flipped.
         //
-        // This is the FB-1 / core#124 shape, still live on this branch: a
-        // resource control that reports success. If a future change gives
-        // `MontyRepl()` the one-shot defaults, THIS TEST GOES RED — that is the
-        // signal to delete it and drop `_replSessionLimits`.
+        // What it used to record: `recursion__function_depth.py` recurses 2000
+        // deep and declares `# Raise=RecursionError`. The one-shot handle
+        // always produced it; a bare REPL session silently returned 2000,
+        // because `ResourceLimits::default()` had `max_recursion_depth: None`.
         //
-        // THE BLAST RADIUS IS PROCESS DEATH, NOT A WRONG ANSWER. Measured
+        // THE BLAST RADIUS WAS PROCESS DEATH, NOT A WRONG ANSWER. Measured
         // 2026-08-03 by feeding all 531 fixtures to a bare `MontyRepl()` in a
         // subprocess and resuming past each death — 526 survived and FIVE
         // killed the host process outright:
@@ -243,18 +245,18 @@ void main() {
         //     recursion__deep_isinstance.py    exit 132 (SIGILL)
         //     traceback__recursion_error.py    exit 137 (SIGKILL, memory)
         //
-        // All five pass on the BOUNDED session this runner uses, and all five
-        // pass one-shot, which is always bounded. So the unbounded default is
-        // the whole of the defect, and `Monty(code).run()` — the documented
-        // one-line API — is the way a consumer reaches it: it builds
-        // `MontyRepl(limits: null)` (lib/src/monty.dart). Untrusted Python can
-        // therefore terminate the host, and FFI has no crash isolation to
-        // absorb it.
+        // `Monty(code).run()` — the documented one-line API — builds
+        // `MontyRepl(limits: null)` (lib/src/monty.dart), so untrusted Python
+        // could terminate the host through the shortest path in the docs.
         //
-        // Not enumerated as test cases here on purpose: a fixture that raises
-        // SIGILL cannot be asserted in-process — it would take the suite with
-        // it, and 530 results would vanish behind one crash. The CAUSE is what
-        // this test pins, and fixing the cause fixes all five at once.
+        // monty v0.0.21 (#613) closed it upstream: `max_recursion_depth` is a
+        // `usize`, so "unbounded" is not expressible and the default carries
+        // `DEFAULT_MAX_RECURSION_DEPTH`. A bare session now RAISES.
+        //
+        // This does NOT retire ADR 0001. A caller may still set a bound higher
+        // than the native stack survives, which is the case the crash-isolation
+        // work exists for; what is gone is reaching process death by asking for
+        // nothing at all.
         const src =
             'def recurse(n):\n'
             '    if n == 0:\n'
@@ -268,16 +270,16 @@ void main() {
           final r = await bare.feedRun(src);
           expect(
             r.error?.excType,
-            isNull,
+            equals('RecursionError'),
             reason:
-                'a bare MontyRepl() is now bounded — delete this test and '
-                '_replSessionLimits, the divergence is fixed',
+                'a bare MontyRepl() must bound recursion since v0.0.21; '
+                'if this is null again the default regressed to unbounded',
           );
-          expect(r.value, equals(const MontyInt(2000)));
         } finally {
           await bare.dispose();
         }
 
+        // Still true, and still the configuration this runner uses.
         final bounded = MontyRepl(limits: _replSessionLimits);
         try {
           final r = await bounded.feedRun(src);
@@ -366,9 +368,31 @@ void main() {
           return;
         }
 
+        final kills = runtimeKillingFixtures[key];
+        if (kills != null) {
+          // Skipped rather than asserted because running it ends the process:
+          // the remaining fixtures' results would vanish behind one crash, and
+          // a test runner cannot report on a process that is no longer there.
+          markTestSkipped('kills the host process — $kills');
+
+          return;
+        }
+
         final broken = knownBrokenExtFixtures[key];
         if (broken != null) {
           markTestSkipped(broken);
+
+          return;
+        }
+
+        if (gcModuleFixtures.contains(key)) {
+          // Same cargo-feature blocker as the set below, different mechanism:
+          // upstream ships the `gc` module only under `test-hooks`, so the
+          // stock build raises ModuleNotFoundError. Runs under
+          // tool/test_cm_wasm.sh.
+          markTestSkipped(
+            'needs the test-hooks cargo feature for the gc module',
+          );
 
           return;
         }

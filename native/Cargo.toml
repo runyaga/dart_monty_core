@@ -24,9 +24,15 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # `monty-fs` is deliberately NOT a dependency: mounting moved host-side in 0.19
 # (upstream #576), but this shim never used `monty::fs` — mounts are implemented
 # on our side via OS-call handlers.
-monty = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
-monty-type-checking = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
-monty-types = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
+monty = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.21" }
+monty-type-checking = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.21" }
+monty-types = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.21" }
+# Named directly only since v0.0.21: `MontyRun::dump`/`load` were removed with
+# the session dump format (#692), whose `Session` enum has no variant for a
+# COMPILED-but-unstarted run. The run snapshot is a bytecode cache, not a
+# session, so it keeps its own framing (see handle.rs RUN_SNAPSHOT_MAGIC).
+# Already in the tree transitively via monty -- this adds no new code.
+postcard = { version = "1", features = ["alloc"] }
 num-bigint = "0.4"
 num-traits = "0.2"
 serde_json = { version = "1", features = ["preserve_order"] }

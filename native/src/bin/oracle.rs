@@ -19,13 +19,22 @@
 //! }
 //! ```
 //!
-//! `NoLimitTracker` is used so the oracle never diverges from Dart's default
-//! execution (which uses its own resource tracker independently).
+//! `ResourceTracker::default()` is used so the oracle never diverges from
+//! Dart's default execution (which uses its own resource tracker
+//! independently).
+//!
+//! This was `NoLimitTracker`, which monty v0.0.21 deleted (#613). The default
+//! tracker is not a like-for-like replacement -- it bounds recursion at
+//! `DEFAULT_MAX_RECURSION_DEPTH` (1000) where `NoLimitTracker` bounded nothing.
+//! For this binary that is a closer match, not a regression: Dart's own default
+//! is `stackDepth: 1000` (`base_monty_platform.dart`), so the oracle now shares
+//! the ceiling it is supposed to be a reference for. A fixture recursing past
+//! 1000 changes expected output; that is corpus work, not a tracker bug.
 
 use std::io::{self, Read};
 
 use monty::MontyRun;
-use monty_types::{MontyException, NoLimitTracker, PrintWriter};
+use monty_types::{MontyException, PrintWriter, ResourceTracker};
 use serde_json::{Value, json};
 
 // Re-use the crate's MontyObject → JSON conversion directly.
@@ -60,7 +69,7 @@ fn run_oracle(code: &str) -> Value {
     };
     match runner.run(
         vec![],
-        NoLimitTracker,
+        ResourceTracker::default(),
         PrintWriter::CollectString(&mut print_buf, convert::PRINT_COLLECT_LIMIT),
     ) {
         Ok(value) => {

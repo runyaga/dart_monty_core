@@ -16,6 +16,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:dart_monty_core/src/ffi/native_bindings.dart'
+    show expectedWireFormatVersion;
 import 'package:dart_monty_core/src/pool/frame_codec.dart';
 import 'package:dart_monty_core/src/pool/worker_protocol.dart';
 
@@ -161,13 +163,19 @@ final class MontyWorkerHandle {
 
   /// Spawns a worker and waits for its ready handshake.
   ///
+  /// The expected wire version is READ from `native_bindings.dart`, never
+  /// passed in. It used to be a parameter defaulting to a literal `4`, which
+  /// went silently wrong the moment the value wire moved to 5 at the monty
+  /// v0.0.21 pin: the worker announced v5 and the parent rejected it, two
+  /// halves of the SAME build disagreeing. A handshake whose expected value is
+  /// duplicated cannot detect drift — it manufactures it.
+  ///
   /// [executable]/[arguments] default to running this repo's own
   /// `bin/monty_worker.dart` under the current Dart SDK — the dev/JIT path,
   /// which needs no build step. An AOT bundle is passed explicitly instead.
   static Future<MontyWorkerHandle> spawn({
     String? executable,
     List<String>? arguments,
-    int expectedWireFormatVersion = 4,
     Duration readyTimeout = const Duration(seconds: 60),
   }) async {
     final exe = executable ?? Platform.resolvedExecutable;

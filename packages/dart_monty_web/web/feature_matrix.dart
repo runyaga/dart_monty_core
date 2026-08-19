@@ -701,7 +701,7 @@ final List<_Fixture> _corpus =
 /// that bumps Cargo.toml without bumping this would silently show the wrong
 /// file, which is worse than no link at all.
 const _fixtureSourceBase =
-    'https://github.com/pydantic/monty/blob/v0.0.19/crates/monty/test_cases/';
+    'https://github.com/pydantic/monty/blob/v0.0.21/crates/monty/test_cases/';
 
 /// Classifies a fixture without running it, so the page can show the shape of
 /// the corpus instantly and only pay for execution on demand.

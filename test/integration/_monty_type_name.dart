@@ -45,6 +45,7 @@ String montyTypeName(MontyValue v) => switch (v) {
   MontyFileHandle() => 'filehandle',
   MontyDataclass() => 'dataclass',
   MontyEllipsis() => 'ellipsis',
+  MontyNotImplemented() => 'notimplemented',
   MontyExceptionValue() => 'exception',
   // The five opaque kinds each keep their own contract tag, which is why the
   // variant carries a typed kind rather than collapsing them.

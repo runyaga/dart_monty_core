@@ -47,7 +47,15 @@ use monty_types::MontyObject;
 ///   4  0.19.0 — Tier 3: integral floats, -0.0 and ints past 2^53 travel as
 ///                tagged TEXT, because a JSON number's text is what the web
 ///                transport reparses. Closes core#128 on all three backends.
-pub const WIRE_FORMAT_VERSION: u32 = 4;
+///   5  0.21.0 — `NotImplemented` gained `{"__type":"notimplemented"}`.
+///                New upstream variant (monty #567), returned by user-defined
+///                `__eq__`, so it reaches the boundary from ordinary sandboxed
+///                code rather than from anything the host does. Same reasoning
+///                as `Ellipsis` at version 1: a bare form would be
+///                indistinguishable from a real value, and since version 2 the
+///                decoder rejects unknown tags, so an un-bumped decoder would
+///                reject it outright rather than mis-read it.
+pub const WIRE_FORMAT_VERSION: u32 = 5;
 
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
@@ -95,6 +103,7 @@ use serde_json::{Number, Value, json};
 /// - `Dict` → `{"__type": "dict", "value": {…}}` (string keys), or
 ///   `{"__type": "dict", "entries": [[k, v], …]}` for any other key type
 /// - `Ellipsis` → `{"__type": "ellipsis"}`
+/// - `NotImplemented` → `{"__type": "notimplemented"}`
 ///
 /// Types with no native JSON counterpart use a tagged envelope,
 /// `{"__type": <tag>, ...}`, which `json_to_monty_object` reads back so the
@@ -136,6 +145,9 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
         // It used to serialize as the bare string "...", which is
         // indistinguishable from the actual string "..." (core#129).
         MontyObject::Ellipsis => json!({ "__type": "ellipsis" }),
+        // Tagged for the same reason as `Ellipsis`: `NotImplemented` is a
+        // singleton whose bare rendering collides with an ordinary value.
+        MontyObject::NotImplemented => json!({ "__type": "notimplemented" }),
         MontyObject::Bytes(bytes) => json!({
             "__type": "bytes",
             "value": bytes,
@@ -527,6 +539,7 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                     })
                 }
                 "ellipsis" => MontyObject::Ellipsis,
+                "notimplemented" => MontyObject::NotImplemented,
                 "bigint" => {
                     let text = map.get("value").and_then(|v| v.as_str()).unwrap_or("");
                     text.parse::<BigInt>()

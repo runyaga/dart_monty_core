@@ -108,9 +108,11 @@ const alwaysUnsupportedWasmFixtures = <String>{
 /// They used to sit in [alwaysUnsupportedWasmFixtures] — never run ANYWHERE —
 /// on a recorded reason that was half false: it said our REPL path constructs
 /// `NoLimitTracker` so the limit could not be lowered. Verified 2026-08-02:
-/// both handles construct `LimitedTracker` (native/src/repl_handle.rs:30,
-/// native/src/handle.rs:19). That ValueError is unreachable. Only the cargo
-/// feature was ever the blocker, and `tool/test_cm_wasm.sh` supplies it.
+/// both handles construct a LIMITED tracker. That ValueError is unreachable.
+/// Only the cargo feature was ever the blocker, and `tool/test_cm_wasm.sh`
+/// supplies it. (The type was `LimitedTracker` when that was measured; monty
+/// v0.0.21 #613 deleted the two-type split and left one concrete
+/// `ResourceTracker`, which does not change the conclusion.)
 ///
 /// They stay skipped in the SHIPPED demo, which is correct: enabling
 /// test-hooks there would ship `sys.setrecursionlimit` into the sandbox
@@ -119,6 +121,106 @@ const setRecursionLimitFixtures = {
   'recursion__deep_repr.py',
   'recursion__limit_depth.py',
   'json__dumps_recursion.py',
+};
+
+/// Fixtures importing the `gc` module, which upstream ships ONLY under the
+/// testing-only `test-hooks` cargo feature — *"Implementation of Python's `gc`
+/// module — only available under the `test-hooks` feature"*
+/// (`crates/monty/src/modules/gc.rs:1` at v0.0.21).
+///
+/// Kept separate from [setRecursionLimitFixtures] even though both are
+/// "needs test-hooks": that set is named for `sys.setrecursionlimit`, and
+/// folding a different mechanism into it would make the name lie. The skip
+/// REASON a reader sees should be the one that is true.
+///
+/// New at the v0.0.21 corpus (upstream #632/#635 added itertools). Like the
+/// recursion set, these stay skipped in the shipped demo — enabling test-hooks
+/// there would ship the `gc` module into the sandbox.
+const gcModuleFixtures = {'itertools__gc.py'};
+
+/// Fixtures that DESTROY THE RUNTIME rather than returning a result.
+///
+/// Different in kind from every other set here. Those record a fixture whose
+/// *answer* differs; these produce no answer at all and take the run with them:
+///
+///   * on FFI the host process dies — SIGILL, exit 132, so the test runner is
+///     gone and every remaining fixture's result vanishes with it;
+///   * on WASM the module traps ("memory access out of bounds") and POISONS
+///     THE SHARED INSTANCE, so every fixture after it fails with the same
+///     message. Measured 2026-08-19: skipping these two turned ~390 spurious
+///     failures into passes. A cascade is the reason to skip, not evidence of
+///     390 defects.
+///
+/// One list for both backends on purpose. It is one defect wearing two
+/// costumes — a Python recursion depth we permit that exceeds what the
+/// underlying stack survives — so two lists could only drift apart.
+///
+/// Each entry is a DEFECT, not an accommodation, and names the measurement
+/// that would retire it. See docs/adr/0001-ffi-crash-isolation.md: this is the
+/// class that crash isolation exists to absorb.
+/// Fixtures that exhaust the WASM stack ONLY under a `test-hooks` build.
+///
+/// Not a divergence and not a general defect: `sys.setrecursionlimit` exists
+/// only under that cargo feature, so in the shipped build these fixtures raise
+/// `AttributeError` and never recurse deep enough to matter. Give them the
+/// ability to raise the limit and they exceed what the wasm32 stack survives.
+///
+/// The first one to trap with "memory access out of bounds" POISONS THE SHARED
+/// INSTANCE, after which every remaining fixture fails with that same message.
+/// Measured 2026-08-19: the raw run showed **150 failures, of which 3 were
+/// real** — everything else was alphabetically downstream of
+/// `recursion__deep_hash.py`. Adding just these three took the run to
+/// 556 passed / 0 failed. So a missing entry here does not cost one failure,
+/// it costs the tail of the run, and a long failure list here should be read
+/// as "find the first one" rather than as a count of defects.
+///
+/// Kept as small as it can be, deliberately. `tool/test_cm_wasm.sh` asserts
+/// that 3 recursion fixtures and 5 `with__cm_*` fixtures actually EXECUTE —
+/// skipping a cascade victim would silently defeat the reason that build
+/// exists, and the script fails rather than letting that pass.
+///
+/// NEW at the v0.0.21 pin. `tool/test_cm_wasm.sh` reported 528/531 with ZERO
+/// failures at v0.0.19, so every entry is something the pin changed. Same
+/// underlying cause as [runtimeKillingFixtures] — more native stack per Python
+/// frame — just reached through a raised limit instead of the default one.
+const testHooksStackOverflowFixtures = <String>{
+  'collections__deque.py',
+  'list__eq_self_referential.py',
+  'recursion__deep_hash.py',
+};
+
+/// Fixtures that DESTROY THE RUNTIME rather than returning a result.
+///
+/// Different in kind from every other set here. Those record a fixture whose
+/// *answer* differs; these produce no answer at all and take the run with them:
+///
+///   * on FFI the host process dies — SIGILL, exit 132, so the test runner is
+///     gone and every remaining fixture's result vanishes with it;
+///   * on WASM the module traps and poisons the shared instance.
+///
+/// One list for both backends on purpose. It is one defect wearing two
+/// costumes — a Python recursion depth we permit that exceeds what the
+/// underlying stack survives — so two lists could only drift apart.
+///
+/// Each entry is a DEFECT, not an accommodation, and names the measurement
+/// that would retire it. See docs/adr/0001-ffi-crash-isolation.md: this is the
+/// class that crash isolation exists to absorb.
+const runtimeKillingFixtures = <String, String>{
+  'dict__eq_self_referential.py':
+      'REGRESSION at the monty v0.0.21 pin, measured 2026-08-19. SIGILL '
+      '(exit 132) on FFI at stackDepth 1000 -- both the corpus runner limit '
+      'and the shipped default -- and "memory access out of bounds" on '
+      'both web backends. Bisected on FFI: survives at 500, dies at 750 and '
+      '1000. It PASSED at v0.0.19 under the same stackDepth 1000: the '
+      '`ffi_features` gate step was green at commit 324d2f4 with this fixture '
+      'in the corpus, same machine, only the pin changed.',
+  'dataclass__repr_eq.py':
+      'NOT a regression -- this fixture is NEW at v0.0.21 (upstream #626, '
+      'native @dataclass), so it is newly exposed coverage of a gap that was '
+      'always there. SIGILL on FFI and "Maximum call stack size exceeded" on '
+      'dart2js at stackDepth 1000; bisected, survives at 750. That is a '
+      'higher ceiling than dict__eq_self_referential.py, so same class, '
+      'lesser severity.',
 };
 
 /// Fixtures that need monty's synthetic `_test_cm()` context manager, which

@@ -140,6 +140,10 @@ const _rows = [
   _Row(25, 'abs', 'builtin'),
   _Row(26, 'class C:\n    pass\nC()', 'repr'),
   _Row(27, 'a = []\na.append(a)\na', 'cycle', inner: true),
+  // New at the monty v0.0.21 pin (upstream #567). Reachable from ordinary
+  // sandboxed code, not just as a bare global: a user-defined `__eq__` may
+  // return it, so it crosses the boundary the same way any value does.
+  _Row(28, 'NotImplemented', 'notimplemented'),
 ];
 
 void runWireContractTests() {
