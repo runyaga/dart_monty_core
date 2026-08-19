@@ -312,6 +312,49 @@ So this retires the *stated* objection to A′ and replaces it with a smaller,
 concrete one: two platforms and a hook change. It does not choose A′ — that
 remains open alongside A″ and E.
 
+### Feasibility probes 2026-08-19 for the v0.0.21 memory question (P4b, P4c)
+
+Two mechanisms measured in a scratch worktree, neither implemented here. They
+narrow the memory decision without pre-empting it.
+
+**P4b — the wasm build CAN arm the allocator.** Adding `monty-alloc` behind
+`cfg(target_arch = "wasm32")` and declaring
+
+```rust
+#[global_allocator]
+static ALLOC: monty_alloc::LimitedAllocator = monty_alloc::LimitedAllocator;
+```
+
+compiles clean for `wasm32-wasip1` (`cargo build --release --target
+wasm32-wasip1`, exit 0). Only a binary or a wasm module may declare a global
+allocator; our wasm artifact is a wasm module, and with the `exit-code` feature
+OFF a hard breach is `abort()` → a trap, which `js/src/worker_src.js` already
+catches and treats as a dead instance. The native failure mode — a process that
+exits under the host — does not exist on this backend.
+
+Compiling is not enforcing: nothing calls `set_limit` yet, so this establishes
+the mechanism is available, not that a budget is applied.
+
+**P4c — "cannot enforce" is DETECTABLE at runtime, not merely documentable.**
+`monty_alloc::set_limit` begins by reading `LIVE_MEMORY` and returns
+`Err("monty-alloc is not installed as the global allocator")` when it is zero.
+Measured by exporting a probe from the ordinary in-process cdylib and calling
+it:
+
+```
+set_limit on the in-process cdylib -> Err (NOT installed)
+```
+
+That matters because it changes P4c's shape. The choice was framed as
+silently-ignore / document-the-gap / refuse-loudly, with refusing treated as the
+principled-but-costly option. It is neither costly nor a guess: the library can
+*ask* whether a budget is enforceable and refuse `memoryBytes` at the boundary
+when the answer is no — the same call that arms a real budget where the
+allocator IS installed. No dependency on which of A′/A″/E wins.
+
+Neither probe is a decision, and neither is committed. The worktree that
+produced them was discarded.
+
 ### A constraint on the dev spawn path, found by building it
 
 Two facts the prior design did not have, both measured:
