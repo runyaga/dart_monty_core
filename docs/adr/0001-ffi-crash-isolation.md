@@ -373,6 +373,52 @@ defects are orthogonal:
 
 They are complementary. Adopting one is not an argument for dropping the other.
 
+### The full matrix, measured 2026-08-20: safe on web, FATAL on FFI
+
+The open question was whether `monty-alloc`'s **process-global** statics
+(`SOFT_LIMIT`, `HARD_LIMIT`, `BASELINE_MEMORY`) survive concurrency. They do on
+web and they do not on FFI, and the FFI failure is not a wrong answer — it is a
+dead host.
+
+80 MB accumulated in 800 x 100 KB pieces, against the budget named:
+
+| backend | unarmed | armed, sequential | armed, 4 CONCURRENT sessions |
+|---|---|---|---|
+| FFI (VM isolates) | passes freely | caught @ 1,224,091 B | **exit 134 — SIGABRT, host dead** |
+| dart2js | passes freely | caught @ 1,224,091 B | isolated and correct |
+| dart2wasm | passes freely | caught @ 1,224,091 B | isolated and correct |
+
+The two web backends agree to the byte. The unarmed column is the control and it
+is what ships today: the cumulative case passes freely on every backend, and
+four concurrent tight sessions all returned `OK`.
+
+**Why FFI dies and web does not.** Dart isolates share one process and therefore
+one loaded dylib and one set of those statics. A 1 MB session arms
+`HARD_LIMIT = baseline + 1 MB + 4 MB`; a concurrent 512 MB session then
+allocates past it and `monty-alloc` aborts the process, because a breach below
+the interpreter cannot raise. On web each session gets its own Worker and its
+own wasm instance, so the statics are per-instance by construction.
+
+Two distinct FFI failure modes were seen, and neither is acceptable in a
+library:
+
+- 4 x 512 MB concurrently -> **all four returned `MemoryError`** although each
+  was far inside its own budget. Wrong answers.
+- mixed 512 MB / 1 MB concurrently -> **exit 134**. Dead host.
+- the same mix run **serially** -> `[OK, MemoryError, OK, MemoryError]`, exactly
+  right. So concurrency is the whole of the defect.
+
+**What this settles.** Arming on web (P4b) is what the plan called it: nearly
+free and strictly an improvement, now with a measured before/after. Arming
+in-process on FFI is only safe where one process holds one session — which is
+the worker this ADR already chose. So `monty-alloc` does not weaken the case for
+Option A; **it needs Option A to be usable on FFI at all**, and Option A needs
+`monty-alloc` to enforce a real budget. They are the same decision.
+
+One backend difference worth recording, and it predates this work: on web a
+resource breach arrives as a thrown `MontyScriptError`, on FFI as
+`result.error`. Same enforcement, different surface.
+
 **Unresolved, and the reason this is not yet a decision:**
 
 - `monty-alloc`'s state is **process-global statics** (`SOFT_LIMIT`,
