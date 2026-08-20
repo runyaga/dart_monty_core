@@ -344,6 +344,35 @@ a 60 MB `bytes()`. All four returned a catchable `MemoryError` with the host at
 exit 0, because the interpreter's own checks fire before the allocator's hard
 ceiling (soft + 4 MB). Four shapes is not a proof of unreachability.
 
+**This ADR's premise SURVIVES. `monty-alloc` does not replace the worker.**
+
+Tested directly, Dart-to-Dart, with the allocator armed on **both** the
+`MontyRun` and `MontyRepl` paths — the second matters because `Monty.run()`
+goes through the REPL, and arming only `handle.rs` measures a path the API does
+not use:
+
+| armed, `stackDepth: 100000` | 1 MB | 16 MB | 256 MB (our default) |
+|---|---|---|---|
+| accumulate 200 MB | `MemoryError`, exit 0 | `MemoryError`, exit 0 | `MemoryError`, exit 0 |
+| `def f(n): return f(n+1)` | survived | **exit 132** | **exit 132** |
+
+`test/integration/pool/inprocess_overflow.dart` — whose own docstring says that
+printing `SURVIVED` means this ADR must be revisited — still dies at **exit
+132** with the allocator armed. It does not print `SURVIVED`.
+
+The 1 MB survival is not protection and must not be read as such: a budget that
+small catches the per-frame heap allocations before the native stack runs out.
+At 16 MB and above, including the shipped 256 MB default, the host dies exactly
+as before. Heap accounting cannot see native stack consumption, so the two
+defects are orthogonal:
+
+- **`monty-alloc` in-process** answers the *memory* budget, and answers it well.
+- **The worker** answers *stack-overflow abort containment*, which nothing else
+  here does — and it would additionally make `monty-alloc`'s own hard-ceiling
+  abort survivable, since that breach would land in a process we can lose.
+
+They are complementary. Adopting one is not an argument for dropping the other.
+
 **Unresolved, and the reason this is not yet a decision:**
 
 - `monty-alloc`'s state is **process-global statics** (`SOFT_LIMIT`,
