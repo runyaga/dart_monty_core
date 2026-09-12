@@ -26,10 +26,11 @@ type Tracker = ResourceTracker;
 /// a default timeout actively harmful. Callers who need a time limit
 /// can set `MontyLimits(timeoutMs: N)` explicitly.
 fn default_limits() -> ResourceLimits {
-    let mut limits = ResourceLimits::default();
-    limits.max_memory = Some(256 * 1024 * 1024); // 256 MB
-    limits.max_recursion_depth = 1000;
-    limits
+    ResourceLimits {
+        max_memory: Some(256 * 1024 * 1024), // 256 MB
+        max_recursion_depth: 1000,
+        ..Default::default()
+    }
 }
 
 /// Result tag for `monty_run` — matches `MontyResultTag` in the C header.
@@ -988,7 +989,7 @@ result
         let (tag, err) = handle.start();
         assert_eq!(tag, MontyProgressTag::Error);
         assert!(err.is_some());
-        assert!(handle.complete_is_error() == Some(true));
+        assert_eq!(handle.complete_is_error(), Some(true));
     }
 
     #[test]

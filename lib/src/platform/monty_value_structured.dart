@@ -333,8 +333,7 @@ enum MontyOpaqueKind {
   repr('repr'),
 
   /// A marker standing in for a cycle in a self-referential structure.
-  cycle('cycle')
-  ;
+  cycle('cycle');
 
   const MontyOpaqueKind(this.wireTag);
 

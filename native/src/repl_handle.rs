@@ -107,10 +107,7 @@ enum ReplHandleState {
         meta: PendingMeta,
     },
     /// Paused at an OS call.
-    OsCall {
-        call: ReplOsCall,
-        meta: OsCallMeta,
-    },
+    OsCall { call: ReplOsCall, meta: OsCallMeta },
     /// Awaiting async future resolution.
     Futures {
         futures: ReplResolveFutures,
@@ -1150,7 +1147,10 @@ mod tests {
     fn parse_limits_json_treats_absent_fields_as_unbounded() {
         let l = parse_limits_json("{}").expect("empty object is valid");
         assert_eq!(l.max_memory, None);
-        assert_eq!(l.max_recursion_depth, monty_types::DEFAULT_MAX_RECURSION_DEPTH);
+        assert_eq!(
+            l.max_recursion_depth,
+            monty_types::DEFAULT_MAX_RECURSION_DEPTH
+        );
         assert_eq!(l.max_duration, None);
     }
 

@@ -815,9 +815,7 @@ fn create_with_non_utf8_script_name_null_out_error() {
 /// Drive execution through FunctionCalls, returning Future for each,
 /// until we reach ResolveFutures. Returns the FutureSnapshot and
 /// collected (call_id, function_name) pairs.
-fn drive_to_resolve_futures(
-    mut progress: RunProgress,
-) -> (ResolveFutures, Vec<(u32, String)>) {
+fn drive_to_resolve_futures(mut progress: RunProgress) -> (ResolveFutures, Vec<(u32, String)>) {
     let mut collected = Vec::new();
 
     loop {

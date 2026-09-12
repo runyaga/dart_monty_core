@@ -521,9 +521,39 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                     },
                 })),
                 // Back-compat for older payloads.
-                "dataclass" => {
-                    return Err("dataclass envelope is no longer supported; use class_instance".into());
-                }
+                //
+                // dart_monty_core still exposes `MontyDataclass` as a host-side
+                // value type for external function / OS handler returns. monty
+                // v0.0.23 uses `MontyObject::ClassInstance` for dataclasses on
+                // the interpreter side, but the JSON envelope `{"__type":
+                // "dataclass", ...}` remains a convenient host interchange.
+                //
+                // Map it into a `ClassInstance` whose class_type carries the
+                // dataclass flags/field_names.
+                "dataclass" => MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
+                    class_type: monty_types::MontyClassType {
+                        name: envelope_str(map, "dataclass", "name")?,
+                        id: monty_types::MontyUuid::from_random_bytes([1u8; 16]),
+                        host_defined: true,
+                        is_dataclass: true,
+                        // TODO(monty): the dump/transfer format currently
+                        // doesn't carry a dataclass frozen flag; only the
+                        // `is_dataclass` bit is preserved in `MontyClassType`.
+                        attrs: vec![].into(),
+                    },
+                    instance_id: monty_types::MontyUuid::from_random_bytes([0u8; 16]),
+                    attrs: match map.get("attrs") {
+                        Some(a) => match json_to_monty_object(a)? {
+                            MontyObject::Dict(pairs) => pairs,
+                            other => {
+                                return Err(format!(
+                                    "dataclass attrs must be a dict envelope, got {other:?}"
+                                ));
+                            }
+                        },
+                        None => vec![].into(),
+                    },
+                })),
 
                 "filehandle" => {
                     // Host (OS handler) returns this for an `Open` call; the
@@ -1909,7 +1939,10 @@ mod tests {
             instance_id: monty_types::MontyUuid::from_random_bytes([3u8; 16]),
             attrs: vec![
                 (MontyObject::String("x".into()), MontyObject::Int(42)),
-                (MontyObject::String("y".into()), MontyObject::String("hello".into())),
+                (
+                    MontyObject::String("y".into()),
+                    MontyObject::String("hello".into()),
+                ),
             ]
             .into(),
         }));

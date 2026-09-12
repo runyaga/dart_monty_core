@@ -1585,7 +1585,14 @@ pub unsafe extern "C" fn monty_type_check(
     let outcome = catch_ffi_panic(|| {
         let source = SourceFile::new(&effective_code, script_str);
         let mut checker = TypeChecker::default();
-        match checker.run(&source, None, TypeCheckingConfig::default()) {
+        match checker.run(
+            &source,
+            None,
+            TypeCheckingConfig {
+                format: monty_types::TypeCheckingFormat::Json,
+                ..Default::default()
+            },
+        ) {
             Ok(None) => Ok(None),
             Ok(Some(diagnostics)) => Ok(Some(diagnostics.to_string())),
             Err(e) => Err(e),
