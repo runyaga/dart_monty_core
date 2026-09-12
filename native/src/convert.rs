@@ -154,21 +154,26 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
             "__type": "path",
             "value": p,
         }),
-        MontyObject::Dataclass {
-            name,
-            type_id,
-            field_names,
-            attrs,
-            frozen,
-        } => {
-            let attrs_json = dict_to_json(attrs);
+        MontyObject::NotImplemented => json!({ "__type": "not_implemented" }),
+        MontyObject::Time(t) => json!({
+            "__type": "time",
+            "hour": t.hour,
+            "minute": t.minute,
+            "second": t.second,
+            "microsecond": t.microsecond,
+            "offset_seconds": t.offset_seconds,
+            "timezone_name": t.timezone_name,
+            "fold": t.fold,
+        }),
+        MontyObject::ClassInstance(inst) => {
+            // v0.0.23 removed the dedicated Dataclass variant; dataclasses are
+            // represented as ClassInstance at the host boundary.
+            let attrs_json = dict_to_json(&inst.attrs);
             json!({
-                "__type": "dataclass",
-                "name": name,
-                "type_id": type_id,
-                "field_names": field_names,
+                "__type": "class_instance",
+                "class_type": inst.class_type,
+                "instance_id": inst.instance_id,
                 "attrs": attrs_json,
-                "frozen": frozen,
             })
         }
         // Tier 2, rule R2: a bare JSON string means Python `str` and nothing
@@ -453,6 +458,27 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                         .map(std::string::ToString::to_string),
                 }),
                 "path" => MontyObject::Path(envelope_str(map, "path", "value")?),
+                "not_implemented" => MontyObject::NotImplemented,
+                "time" => MontyObject::Time(monty_types::MontyTime {
+                    hour: envelope_int::<u8>(map, "time", "hour")?,
+                    minute: envelope_int::<u8>(map, "time", "minute")?,
+                    second: envelope_int::<u8>(map, "time", "second")?,
+                    microsecond: envelope_int::<u32>(map, "time", "microsecond")?,
+                    offset_seconds: envelope_opt_int::<i32>(map, "time", "offset_seconds")?,
+                    timezone_name: map
+                        .get("timezone_name")
+                        .map(|v| {
+                            v.as_str()
+                                .map(std::string::ToString::to_string)
+                                .ok_or_else(|| {
+                                    format!(
+                                        "time envelope field \"timezone_name\" must be a string, got {v}"
+                                    )
+                                })
+                        })
+                        .transpose()?,
+                    fold: envelope_int::<u8>(map, "time", "fold")?,
+                }),
                 "bytes" => MontyObject::Bytes(
                     envelope_array(map, "bytes", "value")?
                         .iter()
@@ -473,33 +499,32 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                     field_names: envelope_str_array(map, "namedtuple", "field_names")?,
                     values: json_array_to_objects(map.get("values"))?,
                 },
-                "dataclass" => MontyObject::Dataclass {
-                    name: envelope_str(map, "dataclass", "name")?,
-                    type_id: envelope_int::<i64>(map, "dataclass", "type_id")?
-                        .try_into()
-                        .map_err(|_| {
-                            "dataclass envelope field \"type_id\" must not be negative".to_string()
-                        })?,
-                    field_names: envelope_str_array(map, "dataclass", "field_names")?,
-                    // `attrs` is itself a dict envelope, because the encoder
-                    // routes it through dict_to_json. That uniformity is the
-                    // point: R1 holds with no "except inside dataclass" carve-out.
+                "class_instance" => MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
+                    class_type: serde_json::from_value(map.get("class_type").cloned().ok_or_else(|| {
+                        "class_instance envelope missing field \"class_type\"".to_string()
+                    })?)
+                    .map_err(|e| format!("class_instance class_type: {e}"))?,
+                    instance_id: serde_json::from_value(map.get("instance_id").cloned().ok_or_else(|| {
+                        "class_instance envelope missing field \"instance_id\"".to_string()
+                    })?)
+                    .map_err(|e| format!("class_instance instance_id: {e}"))?,
                     attrs: match map.get("attrs") {
                         Some(a) => match json_to_monty_object(a)? {
                             MontyObject::Dict(pairs) => pairs,
                             other => {
                                 return Err(format!(
-                                    "dataclass attrs must be a dict envelope, got {other:?}"
+                                    "class_instance attrs must be a dict envelope, got {other:?}"
                                 ));
                             }
                         },
                         None => vec![].into(),
                     },
-                    frozen: map
-                        .get("frozen")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false),
-                },
+                })),
+                // Back-compat for older payloads.
+                "dataclass" => {
+                    return Err("dataclass envelope is no longer supported; use class_instance".into());
+                }
+
                 "filehandle" => {
                     // Host (OS handler) returns this for an `Open` call; the
                     // interpreter turns it into the `OpenFile` heap wrapper.
@@ -1066,19 +1091,20 @@ mod tests {
     }
 
     #[test]
-    fn test_dataclass() {
-        let dc = MontyObject::Dataclass {
-            name: "MyClass".into(),
-            type_id: 1,
-            field_names: vec!["a".into()],
+    fn test_class_instance() {
+        let obj = MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
+            class_type: monty_types::MontyClassType {
+                name: "MyClass".into(),
+                id: monty_types::MontyUuid::from_random_bytes([0u8; 16]),
+                host_defined: true,
+                is_dataclass: true,
+                attrs: vec![].into(),
+            },
+            instance_id: monty_types::MontyUuid::from_random_bytes([1u8; 16]),
             attrs: vec![(MontyObject::String("a".into()), MontyObject::Int(42))].into(),
-            frozen: false,
-        };
-        let val = monty_object_to_json(&dc);
-        assert_eq!(val["__type"], json!("dataclass"));
-        assert_eq!(val["name"], json!("MyClass"));
-        // `attrs` is a dict, so it carries the dict envelope like any other —
-        // there is no "except inside dataclass" carve-out to remember.
+        }));
+        let val = monty_object_to_json(&obj);
+        assert_eq!(val["__type"], json!("class_instance"));
         assert_eq!(val["attrs"], json!({"__type": "dict", "value": {"a": 42}}));
     }
 
@@ -1868,56 +1894,31 @@ mod tests {
         }
     }
 
-    // --- Dataclass ---
+    // --- ClassInstance (dataclasses cross the boundary this way now) ---
 
     #[test]
-    fn rt_dataclass() {
-        let obj = MontyObject::Dataclass {
-            name: "MyClass".into(),
-            type_id: 1,
-            field_names: vec!["x".into(), "y".into()],
+    fn rt_class_instance() {
+        let obj = MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
+            class_type: monty_types::MontyClassType {
+                name: "MyClass".into(),
+                id: monty_types::MontyUuid::from_random_bytes([2u8; 16]),
+                host_defined: true,
+                is_dataclass: true,
+                attrs: vec![].into(),
+            },
+            instance_id: monty_types::MontyUuid::from_random_bytes([3u8; 16]),
             attrs: vec![
                 (MontyObject::String("x".into()), MontyObject::Int(42)),
-                (
-                    MontyObject::String("y".into()),
-                    MontyObject::String("hello".into()),
-                ),
+                (MontyObject::String("y".into()), MontyObject::String("hello".into())),
             ]
             .into(),
-            frozen: false,
-        };
+        }));
         match round_trip(&obj) {
-            MontyObject::Dataclass {
-                name,
-                type_id,
-                field_names,
-                frozen,
-                ..
-            } => {
-                assert_eq!(name, "MyClass");
-                assert_eq!(type_id, 1);
-                assert_eq!(field_names, vec!["x", "y"]);
-                assert!(!frozen);
+            MontyObject::ClassInstance(inst) => {
+                assert_eq!(inst.class_type.name, "MyClass");
+                assert!(inst.class_type.is_dataclass);
             }
-            other => panic!("expected Dataclass, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn rt_dataclass_frozen() {
-        let obj = MontyObject::Dataclass {
-            name: "Frozen".into(),
-            type_id: 99,
-            field_names: vec!["a".into()],
-            attrs: vec![(MontyObject::String("a".into()), MontyObject::Bool(true))].into(),
-            frozen: true,
-        };
-        match round_trip(&obj) {
-            MontyObject::Dataclass { name, frozen, .. } => {
-                assert_eq!(name, "Frozen");
-                assert!(frozen);
-            }
-            other => panic!("expected frozen Dataclass, got {other:?}"),
+            other => panic!("expected ClassInstance, got {other:?}"),
         }
     }
 
