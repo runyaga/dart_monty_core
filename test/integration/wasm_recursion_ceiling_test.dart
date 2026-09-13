@@ -46,7 +46,7 @@ import 'package:test/test.dart';
 void main() {
   // The same shapes as the FFI test, so a divergence between backends is
   // visible as one failing where the other passes.
-  const shapes = <String, String>{
+  const shapes = {
     // Worst case on native. If a backend regresses, expect this one first.
     'cyclic dict': '''
 a = {}

@@ -52,7 +52,7 @@ import 'package:test/test.dart';
 /// and `ulimit -s` cannot change that: 8MB, 64MB and unlimited all segfault
 /// identically, because the isolate thread's stack is fixed at creation.
 void main() {
-  const shapes = <String, String>{
+  const shapes = {
     // Worst case measured. If a platform regresses, expect this one first.
     'cyclic dict': '''
 a = {}
