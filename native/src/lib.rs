@@ -16,7 +16,8 @@ use std::ffi::{CStr, c_char, c_int};
 use std::ptr;
 
 use error::{catch_ffi_panic, parse_c_str, to_c_string};
-use monty_type_checking::{SourceFile, type_check};
+use monty_type_checking::{SourceFile, TypeChecker};
+use monty_types::TypeCheckingConfig;
 
 /// Common FFI wrapper for functions returning `MontyProgressTag`.
 /// Handles: handle null check, panic boundary, error out-parameter.
@@ -1583,12 +1584,17 @@ pub unsafe extern "C" fn monty_type_check(
 
     let outcome = catch_ffi_panic(|| {
         let source = SourceFile::new(&effective_code, script_str);
-        match type_check(&source, None) {
+        let mut checker = TypeChecker::default();
+        match checker.run(
+            &source,
+            None,
+            TypeCheckingConfig {
+                format: monty_types::TypeCheckingFormat::Json,
+                ..Default::default()
+            },
+        ) {
             Ok(None) => Ok(None),
-            Ok(Some(diagnostics)) => diagnostics
-                .format_from_str("json")
-                .map(|d| Some(d.to_string()))
-                .map_err(|e| format!("format_from_str: {e}")),
+            Ok(Some(diagnostics)) => Ok(Some(diagnostics.to_string())),
             Err(e) => Err(e),
         }
     });

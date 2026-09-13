@@ -25,7 +25,7 @@
 use std::io::{self, Read};
 
 use monty::MontyRun;
-use monty_types::{MontyException, NoLimitTracker, PrintWriter};
+use monty_types::{MontyException, PrintWriter, ResourceTracker};
 use serde_json::{Value, json};
 
 // Re-use the crate's MontyObject → JSON conversion directly.
@@ -60,7 +60,7 @@ fn run_oracle(code: &str) -> Value {
     };
     match runner.run(
         vec![],
-        NoLimitTracker,
+        ResourceTracker::default(),
         PrintWriter::CollectString(&mut print_buf, convert::PRINT_COLLECT_LIMIT),
     ) {
         Ok(value) => {

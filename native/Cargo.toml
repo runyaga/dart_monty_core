@@ -24,9 +24,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # `monty-fs` is deliberately NOT a dependency: mounting moved host-side in 0.19
 # (upstream #576), but this shim never used `monty::fs` — mounts are implemented
 # on our side via OS-call handlers.
-monty = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
-monty-type-checking = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
-monty-types = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.19" }
+monty = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.23" }
+monty-type-checking = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.23" }
+monty-types = { git = "https://github.com/pydantic/monty.git", tag = "v0.0.23" }
 num-bigint = "0.4"
 num-traits = "0.2"
 serde_json = { version = "1", features = ["preserve_order"] }

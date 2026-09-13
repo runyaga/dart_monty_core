@@ -696,12 +696,12 @@ final List<_Fixture> _corpus =
 /// fixture file name to this yields its file on GitHub.
 ///
 /// The tag in this URL MUST track the `monty` git pin in `native/Cargo.toml`
-/// (currently `tag = "v0.0.19"`). It is pinned, not `main`, so the source the
+/// (currently `tag = "v0.0.23"`). It is pinned, not `main`, so the source the
 /// reader opens is the source these fixtures were vendored from — an upgrade
 /// that bumps Cargo.toml without bumping this would silently show the wrong
 /// file, which is worse than no link at all.
 const _fixtureSourceBase =
-    'https://github.com/pydantic/monty/blob/v0.0.19/crates/monty/test_cases/';
+    'https://github.com/pydantic/monty/blob/v0.0.23/crates/monty/test_cases/';
 
 /// Classifies a fixture without running it, so the page can show the shape of
 /// the corpus instantly and only pay for execution on demand.

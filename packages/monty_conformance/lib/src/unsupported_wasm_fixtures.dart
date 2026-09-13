@@ -186,4 +186,15 @@ const Set<String> testHooksWasmFixtures = {
 /// web diverges here"; this one means "we are wrong everywhere and know it".
 /// Conflating them is how `dataclass__basic.py` sat behind a stale
 /// web-only skip while nothing ran it on FFI either.
-const Map<String, String> knownBrokenExtFixtures = {};
+const Map<String, String> knownBrokenExtFixtures = {
+  // monty v0.0.23 regression: dataclass attribute errors are not surfaced as
+  // exceptions through the external-function dispatch path.
+  // Observed in dart_monty_core gate (oracle_ffi_ext_test.dart):
+  // excType is null.
+  'dataclass__call_field_error.py':
+      'monty v0.0.23: calling a dataclass field does not raise '
+      'TypeError (excType is null)',
+  'dataclass__get_missing_attr_error.py':
+      'monty v0.0.23: missing dataclass attribute does not raise '
+      'AttributeError (excType is null)',
+};

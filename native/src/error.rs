@@ -190,7 +190,7 @@ mod tests {
     fn test_monty_exception_to_json_with_traceback() {
         // Run code that produces a multi-frame traceback through monty
         use monty::MontyRun;
-        use monty_types::{NoLimitTracker, PrintWriter};
+        use monty_types::{PrintWriter, ResourceTracker};
 
         let code = "def inner():\n    1/0\n\ndef outer():\n    inner()\n\nouter()";
         let compiled = MontyRun::new(
@@ -201,7 +201,7 @@ mod tests {
         )
         .unwrap();
         let err = compiled
-            .run(vec![], NoLimitTracker, PrintWriter::Disabled)
+            .run(vec![], ResourceTracker::default(), PrintWriter::Disabled)
             .unwrap_err();
 
         let json = monty_exception_to_json(&err);
