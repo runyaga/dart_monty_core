@@ -18,12 +18,17 @@
 // DCM: this is a standalone repro entrypoint (manual execution), so printing
 // protocol lines is the point.
 // ignore_for_file: prefer-correct-test-file-name
+// ignore_for_file: prefer-correct-test-file-name
 // ignore_for_file: avoid_print
+
+@Tags(['integration', 'wasm'])
+library;
 
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/monty_conformance.dart';
+import 'package:test/test.dart';
 
 Future<void> main() async {
   const name = 'list__eq_self_referential.py';

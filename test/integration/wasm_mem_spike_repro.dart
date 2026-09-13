@@ -1,11 +1,16 @@
+@Tags(['integration', 'wasm'])
+library;
+
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/monty_conformance.dart';
+import 'package:test/test.dart';
 
 // DCM: this is a standalone repro entrypoint (manual execution), so printing
 // protocol lines is the point.
 // ignore_for_file: avoid_print, lines_longer_than_80_chars
+// ignore_for_file: prefer-correct-test-file-name
 
 /// Minimal reproduction for the WASM corpus poisoning:
 ///
@@ -23,7 +28,7 @@ import 'package:monty_conformance/monty_conformance.dart';
 /// In CI/harness we rely on `make test-wasm` for the actual Chrome execution;
 /// this file is committed as the standalone guard requested by TASK.md.
 Future<void> main() async {
-  final fixtures = <String>[
+  final fixtures = [
     'refcount__gather_detached_sibling.py',
     'refcount__gather_exception.py',
   ];
