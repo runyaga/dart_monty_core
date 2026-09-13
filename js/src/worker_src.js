@@ -92,11 +92,28 @@ function adaptResultForDart(cabiResultJson, isError) {
  */
 function excTypeFromMsg(msg) {
   if (!msg) return null;
+
+  // Most runtime errors are formatted as:
+  //   "NameError: name 'x' is not defined"
+  // but some code paths (notably NameLookup failures and certain reused-session
+  // paths) can emit just the message text without the "Type:" prefix.
+  //
+  // The conformance fixtures embed the traceback with a final line starting
+  // with "<TypeError>: ...". If we fail to extract a prefix, we still want to
+  // preserve the exception type for Dart's `excType` matching.
   const colon = msg.indexOf(':');
-  if (colon <= 0) return null;
-  const prefix = msg.substring(0, colon).trim();
-  // Sanity-check: exception type names are PascalCase identifiers.
-  return /^[A-Z][A-Za-z]+$/.test(prefix) ? prefix : null;
+  if (colon > 0) {
+    const prefix = msg.substring(0, colon).trim();
+    if (/^[A-Z][A-Za-z]+$/.test(prefix)) return prefix;
+  }
+
+  // Fallback: scan for a traceback final line containing "<ExcType>:".
+  // (both Monty and Python tracebacks end with a "<Type>: <message>" line)
+  const candidates = msg.match(/(^|\n)\s*([A-Z][A-Za-z]+):\s/gm);
+  if (!candidates) return null;
+  const last = candidates[candidates.length - 1];
+  const m = /([A-Z][A-Za-z]+):\s/.exec(last);
+  return m ? m[1] : null;
 }
 
 // ---------------------------------------------------------------------------

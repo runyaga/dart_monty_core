@@ -519,8 +519,8 @@ async function startPrecompiled(dataBase64, limitsJson, scriptName) {
  * @param {string} valueJson JSON-encoded value.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeNameLookupValue(valueJson) {
-  const sid = resolveSessionId(null);
+async function resumeNameLookupValue(valueJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -535,8 +535,8 @@ async function resumeNameLookupValue(valueJson) {
  *
  * @returns {Promise<string>} JSON result.
  */
-async function resumeNameLookupUndefined() {
-  const sid = resolveSessionId(null);
+async function resumeNameLookupUndefined(sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
