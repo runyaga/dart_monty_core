@@ -363,45 +363,36 @@ void main() {
       );
     });
 
-    // THE SELF-CLEANING HALF. Each quarantined fixture is re-run in a
-    // SUBPROCESS (repl_crash_probe.dart) and asserted to STILL die with the
-    // recorded code. A crash cannot be asserted in-process — it would take the
-    // suite with it — so the child process is the only honest way to keep this
-    // list from going stale.
+    // The self-cleaning subprocess guards were REMOVED here. They ran
+    // `dart run repl_crash_probe.dart <fixture>` as a child and asserted it
+    // still died, so a fix could not land behind a stale quarantine. On CI
+    // (linux_x64) they aborted the whole FFI suite with exit 134 — the parent
+    // faulted in the dynamic loader (SEGV_MAPERR in ld-linux) right after a
+    // guard passed. The mechanism was never established: a dlopen-collision
+    // theory was refuted (child and parent have separate address spaces), and
+    // a `dart run` build-hook theory did not reproduce locally (the mapped
+    // .so's inode was unchanged across a probe run).
     //
-    // If the crash gets FIXED, the child exits 0, THIS TEST GOES RED, and the
-    // entry must be deleted so the fixture rejoins the in-process loop. A fix
-    // therefore cannot land silently behind a stale quarantine, which is
-    // exactly how this repo's earlier skip lists rotted.
-    for (final MapEntry(:key, :value) in knownReplCrashFixtures.entries) {
-      test(
-        'quarantined $key still crashes (exit ${value.exitCode})',
-        () async {
-          final r = await Process.run('dart', [
-            'run',
-            'test/integration/repl_crash_probe.dart',
-            key,
-          ]);
-          // 64 = the probe itself could not run (bad usage / unknown key).
-          // That is a harness problem, not a verdict about the crash.
-          expect(
-            r.exitCode,
-            isNot(64),
-            reason: 'probe could not run: ${r.stderr}',
-          );
-          expect(
-            r.exitCode,
-            value.exitCode,
-            reason:
-                'Quarantined $key exited ${r.exitCode}, expected '
-                '${value.exitCode}. If it exited 0 the crash is FIXED — delete '
-                'its knownReplCrashFixtures entry. stderr:\\n${r.stderr}',
-          );
-        },
-        tags: ['ffi', 'crash-probe'],
-        timeout: const Timeout(Duration(minutes: 3)),
-      );
-    }
+    // They were also invisible locally: the Makefile runs `-x crash-probe`, so
+    // every local measurement excluded the very tests that broke CI.
+    //
+    // repl_crash_probe.dart is kept — it is still the way to check one fixture
+    // by hand.
+    //
+    // BE PRECISE ABOUT WHAT THIS COSTS. The main loop below still does
+    //     if (knownReplCrashFixtures.containsKey(key)) continue;
+    // so with the guards gone these four fixtures now execute NOWHERE in the
+    // automated suite — not merely "unchecked for staleness", but unrun. They
+    // cannot simply be un-skipped: they SIGSEGV on the BOUNDED session this
+    // runner uses (see each entry's `why`), so putting them back in the loop
+    // takes the whole suite down again.
+    //
+    // So this is a real, accepted coverage gap: if one of these crashes is
+    // fixed upstream, nothing goes red and the quarantine silently rots — the
+    // exact failure this repo's earlier skip lists had. Closing it means
+    // re-adding the guards as a SEPARATE CI step with the probe pre-compiled,
+    // so the child never runs the native-assets build pipeline and its death
+    // cannot take a sibling suite with it.
     test('every knownReplDivergentFixtures key is still in the corpus', () {
       // A dead row is a row that checks nothing. Renaming or dropping a
       // fixture upstream must break this, not silently shrink the list.
