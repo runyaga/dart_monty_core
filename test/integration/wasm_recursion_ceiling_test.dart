@@ -2,12 +2,15 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+// BaseMontyPlatform is internal: the default lives with the code that
+// substitutes it, so there is ONE source of truth rather than a copy here.
+import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
 import 'package:test/test.dart';
 
 /// The WASM half of the recursion-ceiling guard. Its FFI twin is
 /// `test/integration/ffi_recursion_ceiling_test.dart`; the two exist so that
-/// [MontyLimits.defaultStackDepth] is proven survivable on EVERY backend, not
-/// just the one that happened to be measured.
+/// [BaseMontyPlatform.defaultStackDepth] is proven survivable on EVERY
+/// backend, not just the one that happened to be measured.
 ///
 /// WHY BOTH HALVES ARE REQUIRED. The corpus is a CONFORMANCE suite: the same
 /// fixtures run on native FFI, dart2js and dart2wasm, and the whole point is
@@ -93,7 +96,7 @@ a == b
               src,
               limits: const MontyLimits(
                 memoryBytes: 256 * 1024 * 1024,
-                stackDepth: MontyLimits.defaultStackDepth,
+                stackDepth: BaseMontyPlatform.defaultStackDepth,
               ),
               scriptName: 'ceiling_$name.py',
             );
@@ -115,8 +118,8 @@ a == b
             outcome,
             isNot(contains('WASM trap')),
             reason:
-                'WASM TRAP: MontyLimits.defaultStackDepth '
-                '(${MontyLimits.defaultStackDepth}) is deeper than this '
+                'WASM TRAP: BaseMontyPlatform.defaultStackDepth '
+                '(${BaseMontyPlatform.defaultStackDepth}) is deeper than this '
                 'backend '
                 'can sustain for "$name". The wasm32 stack (which lives in '
                 'linear memory) overflowed before monty could raise '
@@ -141,7 +144,7 @@ a == b
                 'PROVED NOTHING: "$name" did not surface excType '
                 '"RecursionError", so it never stressed the recursion guard '
                 'and says nothing about whether '
-                '${MontyLimits.defaultStackDepth} is survivable here. '
+                '${BaseMontyPlatform.defaultStackDepth} is survivable here. '
                 'Got excType=$excType rendered=$outcome',
           );
         },

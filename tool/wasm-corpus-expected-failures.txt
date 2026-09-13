@@ -13,8 +13,16 @@
 # here rather than passing unnoticed.
 #
 # Format: <fixture>  <TAB or spaces>  <reason>
+#
+# REMOVED 2026-09-13: dict__eq_self_referential.py. It was listed as an UPSTREAM
+# monty trap. It was not — it was our own default recursion limit. Monty's guard
+# is a counter; reaching it costs native stack; BaseMontyPlatform.defaultStackDepth
+# was 1000 ("matches CPython"), deeper than an in-process embedding can sustain,
+# so the stack blew before the counter tripped. At 512 the fixture raises the
+# RecursionError it expects and PASSES. This gate is what caught it: it went red
+# with "STALE: declared-expected fixture(s) now PASS", which is the whole point
+# of declaring the set rather than demanding zero.
 
 dataclass__basic.py              expected no error, got AssertionError. Pre-existing: fails identically at a0dd284, before any of the session-reuse work. Not yet diagnosed; the harness reports only the stringified reason, not which of the ~200 asserts failed.
-dict__eq_self_referential.py     MontyPanicError: WASM trap. UPSTREAM pydantic/monty bug — self-referential equality recurses without a cycle check and hard-traps the wasm32 engine at ~8.7MB. The same fixture kills the native FFI backend (SIGSEGV/SIGILL). See UPSTREAM-MONTY-BUG.md. NOT fixable in this repo.
 functools__gc.py                 expected no error, got ModuleNotFoundError. Pre-existing at a0dd284.
 itertools__gc.py                 expected no error, got ModuleNotFoundError. Pre-existing at a0dd284.

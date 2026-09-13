@@ -2,11 +2,14 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+// BaseMontyPlatform is internal: the default lives with the code that
+// substitutes it, so there is ONE source of truth rather than a copy here.
+import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
 import 'package:test/test.dart';
 
 /// The FFI half of the recursion-ceiling guard. Its twin is
 /// `test/integration/wasm_recursion_ceiling_test.dart`; both exist so
-/// [MontyLimits.defaultStackDepth] is proven survivable on EVERY backend.
+/// [BaseMontyPlatform.defaultStackDepth] is proven survivable on EVERY backend.
 ///
 /// WHY BOTH HALVES. The corpus is a CONFORMANCE suite — the same fixtures run
 /// on native FFI, dart2js and dart2wasm, and the point is that they agree. A
@@ -28,7 +31,7 @@ import 'package:test/test.dart';
 /// quarantine's crash-probe guards did it (removed in 181351a), and it
 /// returned the moment this test reintroduced the pattern. So: no children.
 ///
-/// What that costs, stated plainly: if [MontyLimits.defaultStackDepth] ever
+/// What that costs, stated plainly: if the default stack depth ever
 /// becomes too deep for a platform, this test cannot report it cleanly — the
 /// stack overflow takes the whole suite down with a bare exit 139. That is
 /// still a loud failure, just an ugly one, and it is the same way the corpus
@@ -94,7 +97,7 @@ a == b
           final repl = MontyRepl(
             limits: const MontyLimits(
               memoryBytes: 256 * 1024 * 1024,
-              stackDepth: MontyLimits.defaultStackDepth,
+              stackDepth: BaseMontyPlatform.defaultStackDepth,
             ),
           );
           String? excType;
@@ -127,7 +130,7 @@ a == b
                 '"RecursionError", so it never stressed the recursion '
                 'guard and '
                 'says nothing about whether '
-                '${MontyLimits.defaultStackDepth} is survivable here. '
+                '${BaseMontyPlatform.defaultStackDepth} is survivable here. '
                 'Got excType=$excType rendered=$rendered',
           );
         },
