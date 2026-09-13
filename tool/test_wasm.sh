@@ -181,8 +181,29 @@ fi
 # strand staged assets in test/integration/web/.
 # -------------------------------------------------------
 SERVE_PID=""
+CHROME_LOG=""
 
 cleanup() {
+  # Chrome's log is disposed of HERE rather than near the bottom of the file,
+  # because step 8b exits 0 the moment the expected-failure set matches: a line
+  # down there runs on red runs and never on green ones, so every green run
+  # leaked a temp file. It goes at the TOP of cleanup() because the $STAGE
+  # branch below returns early.
+  #
+  # And it is folded into THIS function rather than given a trap of its own:
+  # bash REPLACES an EXIT trap, it does not chain them. A second
+  # `trap ... EXIT` silently disarms this one, which is how a first draft of
+  # this change stopped the server from ever being killed -- the orphaned
+  # server held the pipeline's stdout open and the run hung forever instead of
+  # failing.
+  if [ -n "$CHROME_LOG" ]; then
+    if [ "${KEEP_CHROME_LOG:-}" = "1" ]; then
+      echo ""
+      echo "  Kept Chrome log at: $CHROME_LOG"
+    else
+      rm -f "$CHROME_LOG"
+    fi
+  fi
   if [ -n "$SERVE_PID" ]; then
     kill "$SERVE_PID" 2>/dev/null || true
     wait "$SERVE_PID" 2>/dev/null || true
@@ -369,6 +390,90 @@ if [ -n "$FIXTURE_RESULTS" ]; then
   echo "  Results: $PASSED/$TOTAL passed"
 fi
 
+dump_debug() {
+  if [ -n "$FIXTURE_BEGIN" ]; then
+    echo ""
+    echo "  FIXTURE_BEGIN (debug):"
+    # Print the first few and the last few so we can see the cutoff point when
+    # the run gets poisoned.
+    #
+    # Read into an array rather than `echo "$X" | head -5`. Under
+    # `set -euo pipefail` that pipeline is a landmine: head exits after 5
+    # lines, echo dies of SIGPIPE, pipefail reports 141, and set -e kills the
+    # script THERE -- before the caller's `exit 1`, and without running the
+    # EXIT trap. Measured 2026-09-13: a dart2wasm falsification run printed the
+    # "corpus size mismatch" banner, then exited 141 instead of 1, truncated
+    # mid-dump, and leaked its Chrome log. Whether it fires at all depends on
+    # how much fits in the pipe buffer, so it is intermittent -- the dart2js
+    # run of the same pair exited 1 correctly. No pipe, no signal.
+    local -a _lines=()
+    local _l
+    while IFS= read -r _l; do _lines+=("$_l"); done <<< "$FIXTURE_BEGIN"
+    local _n=${#_lines[@]}
+    local _i
+    for ((_i = 0; _i < _n && _i < 5; _i++)); do
+      echo "    ${_lines[_i]#*FIXTURE_BEGIN:}"
+    done
+    if [ "$_n" -gt 10 ]; then
+      echo "    ..."
+      for ((_i = _n - 5; _i < _n; _i++)); do
+        echo "    ${_lines[_i]#*FIXTURE_BEGIN:}"
+      done
+    fi
+  fi
+
+  if [ -n "$WASM_INIT_FAIL" ]; then
+    echo ""
+    echo "  First WASM init failed line (debug):"
+    echo "    $WASM_INIT_FAIL"
+  fi
+}
+
+# -------------------------------------------------------
+# Step 8a: the corpus must be the SIZE the manifest says
+#
+# This check used to sit at the bottom of the file, below step 8b -- which
+# meant it never ran on a green run, because step 8b exits 0 the moment the
+# expected-failure set matches. Measured 2026-09-13: deleting ONE PASSING
+# fixture from packages/monty_conformance/lib/src/fixture_corpus.dart took the
+# corpus to 589, and this gate still exited 0, printing "574/577 passed" and
+# "Expected-failure set matches exactly". The expected-failure comparison can
+# only notice a fixture that vanishes from the FAILING set; a passing fixture
+# that stops existing is invisible to it, and "574" is not a number anyone
+# reads as wrong.
+#
+# So the size check runs FIRST, ahead of any path that can claim green.
+# "0 failures" is not the same as "the corpus ran": a runner that registered
+# nothing prints FIXTURE_DONE:{"total":0,...} and every later check is happy.
+# Pin the total to the provenance file, which is regenerated with the corpus
+# and already verified by tool/check_fixture_corpus.sh.
+# -------------------------------------------------------
+if [ -z "$FIXTURE_DONE" ]; then
+  echo ""
+  echo "=== FAILED: no FIXTURE_DONE line captured ==="
+  echo "  Chrome may have crashed or timed out before the corpus finished."
+  dump_debug
+  exit 1
+fi
+
+echo "  $FIXTURE_DONE"
+
+EXPECTED_TOTAL=$(python3 -c \
+  "import json;print(json.load(open('$PKG/tool/fixture-corpus.json'))['fixture_count'])")
+ACTUAL_TOTAL=$(echo "$FIXTURE_DONE" | sed -n 's/.*"total":\([0-9]*\).*/\1/p')
+if [ -n "${MONTY_DEBUG_ONE_FIXTURE:-}" ]; then
+  EXPECTED_TOTAL="$ACTUAL_TOTAL"
+fi
+if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
+  echo ""
+  echo "=== FAILED: corpus size mismatch ==="
+  echo "  tool/fixture-corpus.json says $EXPECTED_TOTAL fixtures; the $TARGET run"
+  echo "  reported $ACTUAL_TOTAL. Either the corpus was regenerated without"
+  echo "  updating the provenance file, or the runner registered nothing."
+  dump_debug
+  exit 1
+fi
+
 # -------------------------------------------------------
 # Step 8b: compare against the DECLARED expected-failure set
 #
@@ -403,6 +508,7 @@ if [ -f "$EXPECTED_FILE" ] && [ -n "$FIXTURE_RESULTS" ]; then
     echo "=== STALE: declared-expected fixture(s) now PASS — delete their entries ==="
     echo "$NOW_PASSING" | sed 's/^/    /'
   fi
+  dump_debug
   exit 1
 fi
 
@@ -415,64 +521,7 @@ if [ "$FAILURES" -gt 0 ]; then
   done
 fi
 
-if [ -n "$FIXTURE_BEGIN" ]; then
-  echo ""
-  echo "  FIXTURE_BEGIN (debug):"
-  # Print the first few and the last few so we can see the cutoff point when
-  # the run gets poisoned.
-  echo "$FIXTURE_BEGIN" | head -5 | while IFS= read -r line; do
-    json="${line#*FIXTURE_BEGIN:}"
-    echo "    $json"
-  done
-  if [ "$(echo "$FIXTURE_BEGIN" | wc -l | tr -d ' ')" -gt 10 ]; then
-    echo "    ..."
-    echo "$FIXTURE_BEGIN" | tail -5 | while IFS= read -r line; do
-      json="${line#*FIXTURE_BEGIN:}"
-      echo "    $json"
-    done
-  fi
-fi
-
-if [ -n "$WASM_INIT_FAIL" ]; then
-  echo ""
-  echo "  First WASM init failed line (debug):"
-  echo "    $WASM_INIT_FAIL"
-fi
-
-if [ "${KEEP_CHROME_LOG:-}" != "1" ]; then
-  rm -f "$CHROME_LOG"
-else
-  echo ""
-  echo "  Kept Chrome log at: $CHROME_LOG"
-fi
-
-echo ""
-if [ -z "$FIXTURE_DONE" ]; then
-  echo "WARN: No FIXTURE_DONE line captured. Chrome may have crashed or timed out."
-  exit 1
-fi
-
-echo "$FIXTURE_DONE"
-
-# "0 failed" is not the same as "the corpus ran". A runner that registered
-# nothing prints FIXTURE_DONE:{"total":0,...} and every check above is happy —
-# the same shape as trap 6 in the testing runbook, and as the gap this flag was
-# added to close. Pin the total to the provenance file, which is regenerated
-# with the corpus and already verified by tool/check_fixture_corpus.sh.
-EXPECTED_TOTAL=$(python3 -c \
-  "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
-ACTUAL_TOTAL=$(echo "$FIXTURE_DONE" | sed -n 's/.*"total":\([0-9]*\).*/\1/p')
-if [ -n "${MONTY_DEBUG_ONE_FIXTURE:-}" ]; then
-  EXPECTED_TOTAL="$ACTUAL_TOTAL"
-fi
-if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
-  echo ""
-  echo "=== FAILED: corpus size mismatch ==="
-  echo "  tool/fixture-corpus.json says $EXPECTED_TOTAL fixtures; the $TARGET run"
-  echo "  reported $ACTUAL_TOTAL. Either the corpus was regenerated without"
-  echo "  updating the provenance file, or the runner registered nothing."
-  exit 1
-fi
+dump_debug
 
 if [ "$FAILURES" -gt 0 ]; then
   echo ""
