@@ -36,6 +36,20 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   var failed = 0;
   var skipped = 0;
 
+  const isWasm = bool.fromEnvironment('dart.library.js_interop');
+  MontyPlatform? sharedPlatform;
+
+  // Belt-and-braces recycle: even without an explicit trap, long runs can
+  // accrete state in the JS worker / WASM runtime. Recycle periodically.
+  //
+  // Important: recycling means *creating a new Worker+WASM instance*.
+  // That creation itself can OOM if Chrome's process does not return memory to
+  // the OS quickly enough. The primary fix for leg 10 is recycling on trap
+  // only; periodic recycling is kept but set high enough to avoid provoking
+  // repeated instantiation under memory pressure.
+  var fixturesSinceRecycle = 0;
+  const recycleEvery = 10_000;
+
   /// Emits one result line and moves the matching counter.
   ///
   /// A [reason] of `null` means the fixture passed — the two are one decision,
@@ -59,7 +73,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
     // Chrome's stderr so tool/test_wasm.sh can surface it.
     //
     // Keep the exact prefix stable: tool/test_wasm.sh greps it.
-    print('FIXTURE_BEGIN:{"name":"$key"}');
+    log('FIXTURE_BEGIN:{"name":"$key"}');
     // Engine-level divergences are always skipped; test-hooks fixtures run
     // only under a `-DMONTY_TEST_HOOKS=true` build against a test-hooks WASM.
     if (alwaysUnsupportedWasmFixtures.contains(key) ||
@@ -84,7 +98,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       }
 
       final extFns = fixtureIsCallExternal(value) ? ['async_call'] : <String>[];
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
@@ -101,8 +115,29 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         }
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
       continue;
     }
@@ -125,7 +160,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       // import at the top is harmless in Python.
       final source = "from pathlib import Path\nroot = Path('/mnt')\n$value";
 
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
@@ -141,8 +176,29 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         }
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
       continue;
     }
@@ -162,7 +218,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         continue;
       }
 
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
@@ -179,8 +235,29 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         }
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
     } else {
       // ---------------------------------------------------------------------
@@ -192,7 +269,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         continue;
       }
 
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         MontyResult? result;
         String? thrownExcType;
@@ -215,11 +292,34 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         report(key, _evaluate(expectation, thrownExcType, result?.value));
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
     }
   }
+
+  await sharedPlatform?.dispose();
 
   log(
     'FIXTURE_DONE:{'

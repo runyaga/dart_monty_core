@@ -360,6 +360,16 @@ function handleRun(id, code, limits, scriptName) {
   }
 }
 
+function handleIdle(id) {
+  // Abandon any active execution and return to IDLE without recycling
+  // the worker or wasm instance.
+  if (activeHandle) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+  }
+  self.postMessage({ type: 'result', id, ok: true });
+}
+
 function handleStart(id, code, extFns, limits, scriptName) {
   // Free any abandoned execution before starting a new one.
   if (activeHandle) {
@@ -1750,6 +1760,9 @@ self.onmessage = (e) => {
         break;
       case 'dispose':
         handleDispose(id);
+        break;
+      case 'idle':
+        handleIdle(id);
         break;
       case 'typeCheck':
         handleTypeCheck(id, code, prefixCode, scriptName);

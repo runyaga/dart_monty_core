@@ -136,6 +136,9 @@ external JSPromise<JSString> _jsStartPrecompiled(
 @JS('DartMontyBridge.discover')
 external JSString _jsDiscover();
 
+@JS('DartMontyBridge.idle')
+external JSPromise<JSString> _jsIdle([JSNumber? sessionId]);
+
 @JS('DartMontyBridge.dispose')
 external JSPromise<JSString> _jsDispose([JSNumber? sessionId]);
 
@@ -278,6 +281,11 @@ class WasmBindingsJs extends WasmBindings {
   @override
   Future<void> disposeSession(int sessionId) async {
     _jsDisposeSession(sessionId.toJS);
+  }
+
+  @override
+  Future<void> idleSession(int sessionId) async {
+    await _jsIdle(sessionId.toJS).toDart;
   }
 
   @override

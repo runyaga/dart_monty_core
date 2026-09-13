@@ -236,8 +236,8 @@ async function init() {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<string>} JSON result.
  */
-async function run(code, limitsJson, scriptName) {
-  const sid = resolveSessionId(null);
+async function run(code, limitsJson, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -260,8 +260,8 @@ async function run(code, limitsJson, scriptName) {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<string>} JSON result.
  */
-async function start(code, extFnsJson, limitsJson, scriptName) {
-  const sid = resolveSessionId(null);
+async function start(code, extFnsJson, limitsJson, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -589,6 +589,36 @@ async function cancel() {
 }
 
 /**
+ * Abandon the current execution and return the session to IDLE.
+ *
+ * Unlike [cancel], this keeps the Worker and WASM instance alive.
+ * Any pending in-flight request promises are rejected with the
+ * MontyCancelled prefix.
+ *
+ * Idempotent — safe to call if no session exists.
+ *
+ * @returns {Promise<string>} JSON result.
+ */
+async function idle() {
+  const sid = resolveSessionId(null);
+  if (sid == null || !sessions.has(sid)) {
+    return JSON.stringify({ ok: true });
+  }
+  const session = sessions.get(sid);
+
+  // Reject any in-flight requests so Dart can unblock.
+  for (const req of session.pending.values()) {
+    if (req.timer) clearTimeout(req.timer);
+    req.reject(new Error('MontyCancelled: execution idled'));
+  }
+  session.pending.clear();
+
+  // Tell the worker to abandon any active handle.
+  const result = await callWorker(sid, { type: 'idle' }, 5000);
+  return JSON.stringify(result);
+}
+
+/**
  * Dispose the default Worker session.
  *
  * @returns {Promise<string>} JSON result.
@@ -791,6 +821,7 @@ window.DartMontyBridge = {
   startPrecompiled,
   discover,
   cancel,
+  idle,
   dispose,
   // Phase 2 multi-session API
   createSession,

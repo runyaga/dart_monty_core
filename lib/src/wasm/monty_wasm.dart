@@ -41,7 +41,26 @@ class MontyWasm extends BaseMontyPlatform
   }) : _wasmBindings = wasmBindings,
        super(bindings: coreBindings);
 
+  /// Returns the underlying Worker/WASM session to IDLE.
+  ///
+  /// This is primarily for test runners that want to reuse one session across
+  /// many fixtures without paying the cost (and memory growth) of creating a
+  /// fresh Worker per fixture.
   final WasmBindings _wasmBindings;
+
+  /// Returns the underlying Worker/WASM session to IDLE.
+  ///
+  /// This is primarily for test runners that want to reuse one session across
+  /// many fixtures without paying the cost (and memory growth) of creating a
+  /// fresh Worker per fixture.
+  Future<void> idle() async {
+    assertNotDisposed('idle');
+    final sid = (coreBindings as WasmCoreBindings).sessionId;
+    if (sid != null) {
+      await _wasmBindings.idleSession(sid);
+    }
+    markIdle();
+  }
 
   @override
   String get backendName => 'MontyWasm';

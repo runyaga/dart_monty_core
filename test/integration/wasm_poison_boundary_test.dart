@@ -15,7 +15,10 @@
 //   # then serve test/integration/web and open in Chrome like other wasm tests.
 //
 // DCM: this is a compiled entry-point, not a unit test.
+// DCM: this is a standalone repro entrypoint (manual execution), so printing
+// protocol lines is the point.
 // ignore_for_file: prefer-correct-test-file-name
+// ignore_for_file: avoid_print
 
 import 'dart:convert';
 

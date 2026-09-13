@@ -16,6 +16,9 @@
 // Exits:  0        the fixture ran to completion (crash is GONE)
 //         139 etc. killed by a signal — the crash is still present
 //         64       usage / unknown key (a test-harness problem, not a verdict)
+// DCM: this is a compiled entry-point, not a unit test.
+// ignore_for_file: prefer-correct-test-file-name
+
 import 'dart:io';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
@@ -26,6 +29,8 @@ Future<void> main(List<String> args) async {
     stderr.writeln('usage: repl_crash_probe.dart <fixture-key>');
     exit(64);
   }
+  // DCM: args is length-checked above; `.single` is safe here.
+  // ignore: avoid-unsafe-collection-methods
   final key = args.single;
   final src = fixtureCorpus[key];
   if (src == null) {

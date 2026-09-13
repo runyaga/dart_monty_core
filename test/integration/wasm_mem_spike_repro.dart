@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/monty_conformance.dart';
 
+// DCM: this is a standalone repro entrypoint (manual execution), so printing
+// protocol lines is the point.
+// ignore_for_file: avoid_print, lines_longer_than_80_chars
+
 /// Minimal reproduction for the WASM corpus poisoning:
 ///
 /// The full corpus run shows a hard boundary at:
