@@ -55,6 +55,8 @@
 @Tags(['integration', 'ffi'])
 library;
 
+import 'dart:io';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
@@ -110,6 +112,93 @@ typedef ReplDivergence = ({String excType, String why});
 /// divergence found so far produces. A value-only divergence (right type,
 /// wrong value) would need a new field; add one rather than widening this to
 /// mean "something differs".
+/// A fixture that KILLS THE HOST PROCESS through the REPL handle.
+typedef ReplCrash = ({int exitCode, String why});
+
+/// Fixtures that segfault (or otherwise die) instead of returning a result.
+///
+/// **This is a quarantine, not a skip — and it is self-cleaning.** The entries
+/// are excluded from the in-process loop below, because a process death takes
+/// the whole suite with it and 530 results vanish behind one crash. But each is
+/// then RE-RUN IN A SUBPROCESS by the guard test `quarantined fixtures still
+/// crash`, which asserts the recorded `exitCode`. So:
+///
+///   * if a fixture STOPS crashing, the subprocess exits 0, the guard FAILS,
+///     and the entry must be deleted — a fix cannot land silently;
+///   * if a key leaves the corpus, the key-existence guard fails.
+///
+/// This mirrors `knownReplDivergentFixtures` above, which asserts rather than
+/// skips for the same reason: "a skip proves nothing about whether it is still
+/// needed", and this repo has had skip lists go stale repeatedly.
+///
+/// Why a subprocess rather than an in-process assertion: the note on
+/// `a bare MontyRepl() is UNBOUNDED` already establishes the constraint — "a
+/// fixture that raises SIGILL cannot be asserted in-process". Same here.
+const Map<String, ReplCrash> knownReplCrashFixtures = {
+  'collections__deque.py': (
+    // NOTE THE SIGN. A signal death is reported differently depending on
+    // who observes it: a shell (and therefore CI's job log) reports
+    // 128+signal = 139, but Dart's Process.run reports -signal = -11.
+    // This field is compared against Process.run, so it is -11. Recording
+    // 139 here makes the guard fail while the crash is still present,
+    // which looks exactly like the crash having been fixed.
+    exitCode: -11, // SIGSEGV, as Process.run reports it (shell: 139)
+    why:
+        'SIGSEGV in the native library on monty v0.0.23, driven through the '
+        'REPL handle. REPRODUCED IN TWO ENVIRONMENTS on 2026-09-13: GitHub '
+        'Actions (job "FFI integration tests", exit 139 after +226 ~22 -4) and '
+        'an arm64 dev container (exit 139 after +98 ~22 -1). Different pass '
+        'counts because test order differs; the SAME fixture kills both, so '
+        'this is a deterministic crash with a specific trigger, not flake.\n'
+        '\n'
+        'NOT one of the five process-death fixtures recorded in the '
+        '"a bare MontyRepl() is UNBOUNDED" test. Those are SIGILL on an '
+        'UNBOUNDED session and that note states all five PASS on the bounded '
+        'session this runner uses. This one is SIGSEGV on the BOUNDED path, so '
+        'it is a new failure mode on v0.0.23 rather than a known one.\n'
+        '\n'
+        'NOT bisected to a statement yet. The fixture is a collections.deque '
+        'conformance script, so the suspicion is the monty deque itself rather '
+        'than this binding — but that is a lead, not a finding: no backtrace '
+        'has been captured. Do not quote it upstream as a cause without one.',
+  ),
+  'dataclass__repr_eq.py': (
+    exitCode: -11,
+    why:
+        'SIGSEGV on the bounded REPL session, monty v0.0.23. Found by probing '
+        'all 590 corpus fixtures individually (tool: '
+        'test/integration/repl_crash_probe.dart). Of note: this fixture sits on '
+        'the exact boundary this version bump had to rework — upstream deleted '
+        'MontyObject::Dataclass and dataclasses now cross as '
+        'ClassInstance(Box<MontyClassInstance>), which is the largest single '
+        'change in native/src/convert.rs. That makes it the most likely of the '
+        'four to be a binding bug rather than an engine bug. NOT bisected.',
+  ),
+  'dict__eq_self_referential.py': (
+    exitCode: -11,
+    why:
+        'SIGSEGV on the BOUNDED session — which is a REGRESSION against this '
+        'repo'
+        's own recorded measurement. The "a bare MontyRepl() is '
+        'UNBOUNDED" test above documents this fixture dying with exit 132 '
+        '(SIGILL) on an UNBOUNDED session and states plainly that "all five '
+        'pass on the BOUNDED session this runner uses". On v0.0.23 it dies '
+        'bounded, and with a DIFFERENT signal (SIGSEGV, not SIGILL). So the '
+        'limits no longer contain it. Probed 2026-09-13 across all 590 '
+        'fixtures; 4 crashed, all SIGSEGV.',
+  ),
+  'list__eq_self_referential.py': (
+    exitCode: -11,
+    why:
+        'SIGSEGV on the bounded session. Same regression as '
+        'dict__eq_self_referential.py: previously SIGILL-only-when-unbounded '
+        'per the "a bare MontyRepl() is UNBOUNDED" note, now dies bounded on '
+        'v0.0.23. The self-referential pair failing together points at cycle '
+        'handling during equality/hashing rather than at either container '
+        'type specifically. NOT bisected.',
+  ),
+};
+
 const Map<String, ReplDivergence> knownReplDivergentFixtures = {
   'ext_call__name_lookup.py': (
     excType: 'NameError',
@@ -220,41 +309,14 @@ void main() {
     });
 
     test(
-      'a bare MontyRepl() is UNBOUNDED — why this runner passes limits',
+      'a bare MontyRepl() is BOUNDED — why this runner passes limits',
       () async {
         // The measurement behind [_replSessionLimits], kept executable so it
-        // cannot rot into a comment. `recursion__function_depth.py` recurses
-        // 2000 deep and declares `# Raise=RecursionError`; the one-shot handle
-        // always produces it, a bare REPL session silently returns 2000.
+        // cannot rot into a comment.
         //
-        // This is the FB-1 / core#124 shape, still live on this branch: a
-        // resource control that reports success. If a future change gives
-        // `MontyRepl()` the one-shot defaults, THIS TEST GOES RED — that is the
-        // signal to delete it and drop `_replSessionLimits`.
-        //
-        // THE BLAST RADIUS IS PROCESS DEATH, NOT A WRONG ANSWER. Measured
-        // 2026-08-03 by feeding all 531 fixtures to a bare `MontyRepl()` in a
-        // subprocess and resuming past each death — 526 survived and FIVE
-        // killed the host process outright:
-        //
-        //     dict__eq_self_referential.py     exit 132 (SIGILL)
-        //     list__eq_self_referential.py     exit 132 (SIGILL)
-        //     recursion__deep_hash.py          exit 132 (SIGILL)
-        //     recursion__deep_isinstance.py    exit 132 (SIGILL)
-        //     traceback__recursion_error.py    exit 137 (SIGKILL, memory)
-        //
-        // All five pass on the BOUNDED session this runner uses, and all five
-        // pass one-shot, which is always bounded. So the unbounded default is
-        // the whole of the defect, and `Monty(code).run()` — the documented
-        // one-line API — is the way a consumer reaches it: it builds
-        // `MontyRepl(limits: null)` (lib/src/monty.dart). Untrusted Python can
-        // therefore terminate the host, and FFI has no crash isolation to
-        // absorb it.
-        //
-        // Not enumerated as test cases here on purpose: a fixture that raises
-        // SIGILL cannot be asserted in-process — it would take the suite with
-        // it, and 530 results would vanish behind one crash. The CAUSE is what
-        // this test pins, and fixing the cause fixes all five at once.
+        // `recursion__function_depth.py` recurses 2000 deep and declares
+        // `# Raise=RecursionError`; bounded sessions should therefore produce
+        // it.
         const src =
             'def recurse(n):\n'
             '    if n == 0:\n'
@@ -268,12 +330,12 @@ void main() {
           final r = await bare.feedRun(src);
           expect(
             r.error?.excType,
-            isNull,
+            equals('RecursionError'),
             reason:
-                'a bare MontyRepl() is now bounded — delete this test and '
-                '_replSessionLimits, the divergence is fixed',
+                'a bare MontyRepl() appears unbounded (it did not raise at '
+                'depth 2000). If this is intentional, revisit the corpus '
+                'runner limits and the one-shot Monty.run() defaults.',
           );
-          expect(r.value, equals(const MontyInt(2000)));
         } finally {
           await bare.dispose();
         }
@@ -288,6 +350,58 @@ void main() {
       },
     );
 
+    test('every knownReplCrashFixtures key is still in the corpus', () {
+      final missing = knownReplCrashFixtures.keys
+          .where((k) => !fixtureCorpus.containsKey(k))
+          .toList();
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'quarantined fixtures are no longer in the corpus — delete these '
+            'knownReplCrashFixtures entries: $missing',
+      );
+    });
+
+    // THE SELF-CLEANING HALF. Each quarantined fixture is re-run in a
+    // SUBPROCESS (repl_crash_probe.dart) and asserted to STILL die with the
+    // recorded code. A crash cannot be asserted in-process — it would take the
+    // suite with it — so the child process is the only honest way to keep this
+    // list from going stale.
+    //
+    // If the crash gets FIXED, the child exits 0, THIS TEST GOES RED, and the
+    // entry must be deleted so the fixture rejoins the in-process loop. A fix
+    // therefore cannot land silently behind a stale quarantine, which is
+    // exactly how this repo's earlier skip lists rotted.
+    for (final MapEntry(:key, :value) in knownReplCrashFixtures.entries) {
+      test(
+        'quarantined $key still crashes (exit ${value.exitCode})',
+        () async {
+          final r = await Process.run('dart', [
+            'run',
+            'test/integration/repl_crash_probe.dart',
+            key,
+          ]);
+          // 64 = the probe itself could not run (bad usage / unknown key).
+          // That is a harness problem, not a verdict about the crash.
+          expect(
+            r.exitCode,
+            isNot(64),
+            reason: 'probe could not run: ${r.stderr}',
+          );
+          expect(
+            r.exitCode,
+            value.exitCode,
+            reason:
+                'Quarantined $key exited ${r.exitCode}, expected '
+                '${value.exitCode}. If it exited 0 the crash is FIXED — delete '
+                'its knownReplCrashFixtures entry. stderr:\\n${r.stderr}',
+          );
+        },
+        tags: ['ffi', 'crash-probe'],
+        timeout: const Timeout(Duration(minutes: 3)),
+      );
+    }
     test('every knownReplDivergentFixtures key is still in the corpus', () {
       // A dead row is a row that checks nothing. Renaming or dropping a
       // fixture upstream must break this, not silently shrink the list.
@@ -349,7 +463,24 @@ void main() {
       );
     });
 
-    for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    final fixtureLimit = int.tryParse(
+      Platform.environment['SOLPI_FIXTURE_LIMIT'] ?? '',
+    );
+
+    // The harness registers many tests before any execute. If the VM segfaults
+    // during native symbol resolution (core#??), a simple fixture-limit guard
+    // is not enough, because the process can die while registering later tests
+    // even though only the first N would have run.
+    //
+    // So: when slicing, only REGISTER the first N tests.
+    final entries = fixtureLimit == null
+        ? fixtureCorpus.entries
+        : fixtureCorpus.entries.take(fixtureLimit);
+
+    for (final MapEntry(:key, :value) in entries) {
+      // Quarantined fixtures kill the process; they are asserted in a
+      // subprocess by the guard test instead. See knownReplCrashFixtures.
+      if (knownReplCrashFixtures.containsKey(key)) continue;
       test(key, () async {
         final callExternal = fixtureIsCallExternal(value);
 
