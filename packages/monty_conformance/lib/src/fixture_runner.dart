@@ -496,10 +496,30 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
           } on MontyResourceError {
             thrownExcType = 'MemoryLimitExceeded';
             break dispatchLoop;
-          } on Object catch (_) {
-            shouldSkip = true;
-            break dispatchLoop;
           }
+        // NO `on Object catch` HERE, DELIBERATELY. It used to swallow ANY
+        // unexpected error into `shouldSkip = true`, and a skip emits NO
+        // FIXTURE_RESULT line at all — so the fixture vanished from the
+        // corpus rather than failing. `total` stayed self-consistent
+        // (total = passed + failed + skipped) and the expected-failure gate
+        // only inspects `"ok":false` lines, so the run reported GREEN.
+        //
+        // MEASURED, by throwing unconditionally on this path:
+        //     clean      Results: 575/578 passed   gate exit 0
+        //     injected   Results: 565/568 passed   gate exit 0
+        // Ten fixtures disappeared from the corpus and nothing went red.
+        //
+        // MontyScriptError and MontyResourceError are handled above — those
+        // are the EXPECTED failure shapes. Anything else is a genuine
+        // surprise, and it now propagates to the outer handler in
+        // `runFixtures`, which calls `report(key, '$e')` and makes it a
+        // visible FAILURE. A conformance run must never be able to lose a
+        // fixture silently; failing loudly on an unknown error is the only
+        // honest default.
+        //
+        // Verified this path does not fire today: instrumenting both
+        // `shouldSkip = true` sites and running the full corpus produced no
+        // hits, so nothing that passes now turns red.
 
         case MontyResolveFutures(:final pendingCallIds):
           // Resolve all pending futures with their stored echo values.
