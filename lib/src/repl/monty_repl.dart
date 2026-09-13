@@ -493,20 +493,37 @@ class MontyRepl {
               _suppressFutureErrors(fut);
               progress = _translateProgress(await _bindings.resumeAsFuture());
             } else {
+              // The try covers ONLY the callback. It used to cover the
+              // `_bindings.resume` below it as well, and that is a masking
+              // bug: if resume (or _translateProgress) throws, the catch calls
+              // resumeWithError on a handle that has ALREADY left Paused, so
+              // the engine rejects it with "handle not in Paused or OsCall
+              // state" and THAT replaces the real exception. The genuine
+              // fault is discarded and every caller sees a state-machine
+              // message instead.
+              Object? cbResult;
+              WireJson? cbWire;
+              Object? cbError;
               try {
                 final cbArgs = progress.args.map((v) => v.dartValue).toList();
                 final cbKwargs = progress.kwargs?.map(
                   (k, v) => MapEntry(k, v.dartValue),
                 );
-                final res = await cb(cbArgs, cbKwargs);
-                progress = _translateProgress(
-                  await _bindings.resume(WireJson.value(res)),
-                );
+                cbResult = await cb(cbArgs, cbKwargs);
+                // Serialising the RESULT stays inside the try. A value the
+                // wire cannot carry is a fault in what the callback returned,
+                // so Python should see it as that callback failing -- which is
+                // what it saw before this narrowing. Only the BINDING calls
+                // below move out.
+                cbWire = WireJson.value(cbResult);
               } on Object catch (e) {
-                progress = _translateProgress(
-                  await _bindings.resumeWithError(e.toString()),
-                );
+                cbError = e;
               }
+              progress = _translateProgress(
+                cbError == null
+                    ? await _bindings.resume(cbWire!)
+                    : await _bindings.resumeWithError(cbError.toString()),
+              );
             }
           case MontyOsCall():
             progress = await _handleOsCall(progress, osHandler);
