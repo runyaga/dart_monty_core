@@ -1,0 +1,20 @@
+# Fixtures the WASM corpus is EXPECTED to fail, with the reason each is genuine.
+#
+# tool/test_wasm.sh compares the actual failing set against this list and fails
+# the gate on ANY difference in EITHER direction:
+#
+#   * a fixture fails that is not listed  -> a real regression
+#   * a listed fixture PASSES             -> this list is stale, delete the entry
+#
+# The second direction is the point. A plain "0 failures" gate can never go
+# green while a genuine upstream bug exists, so the gate gets ignored or the
+# fixture gets quarantined out of the corpus. Declaring the expected set keeps
+# the corpus honest: every fixture still RUNS, and a fix shows up as a failure
+# here rather than passing unnoticed.
+#
+# Format: <fixture>  <TAB or spaces>  <reason>
+
+dataclass__basic.py              expected no error, got AssertionError. Pre-existing: fails identically at a0dd284, before any of the session-reuse work. Not yet diagnosed; the harness reports only the stringified reason, not which of the ~200 asserts failed.
+dict__eq_self_referential.py     MontyPanicError: WASM trap. UPSTREAM pydantic/monty bug — self-referential equality recurses without a cycle check and hard-traps the wasm32 engine at ~8.7MB. The same fixture kills the native FFI backend (SIGSEGV/SIGILL). See UPSTREAM-MONTY-BUG.md. NOT fixable in this repo.
+functools__gc.py                 expected no error, got ModuleNotFoundError. Pre-existing at a0dd284.
+itertools__gc.py                 expected no error, got ModuleNotFoundError. Pre-existing at a0dd284.

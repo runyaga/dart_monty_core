@@ -364,6 +364,43 @@ if [ -n "$FIXTURE_RESULTS" ]; then
   echo "  Results: $PASSED/$TOTAL passed"
 fi
 
+# -------------------------------------------------------
+# Step 8b: compare against the DECLARED expected-failure set
+#
+# A plain "0 failures" gate can never go green while a genuine upstream bug
+# exists (dict__eq_self_referential.py hard-traps the wasm32 engine). That
+# leaves two bad options: ignore a permanently-red gate, or quarantine the
+# fixture out of the corpus so it stops running. Declaring the expected set
+# avoids both — every fixture still RUNS, and the gate fails on any difference
+# in EITHER direction, including a listed fixture that starts PASSING.
+# -------------------------------------------------------
+EXPECTED_FILE="$PKG/tool/wasm-corpus-expected-failures.txt"
+if [ -f "$EXPECTED_FILE" ] && [ -n "$FIXTURE_RESULTS" ]; then
+  EXPECTED=$(grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_FILE" | awk '{print $1}' | sort -u)
+  ACTUAL=$(echo "$FIXTURE_RESULTS" | grep '"ok":false' \
+           | sed -E 's/.*"name":"([^"]+)".*/\1/' | sort -u)
+  UNEXPECTED=$(comm -13 <(echo "$EXPECTED") <(echo "$ACTUAL"))
+  NOW_PASSING=$(comm -23 <(echo "$EXPECTED") <(echo "$ACTUAL"))
+
+  if [ -z "$UNEXPECTED" ] && [ -z "$NOW_PASSING" ]; then
+    echo ""
+    echo "  Expected-failure set matches exactly ($(echo "$EXPECTED" | wc -l | tr -d ' ') fixtures)."
+    echo "  See tool/wasm-corpus-expected-failures.txt for why each is genuine."
+    exit 0
+  fi
+
+  echo ""
+  if [ -n "$UNEXPECTED" ]; then
+    echo "=== REGRESSION: fixture(s) failing that are NOT declared expected ==="
+    echo "$UNEXPECTED" | sed 's/^/    /'
+  fi
+  if [ -n "$NOW_PASSING" ]; then
+    echo "=== STALE: declared-expected fixture(s) now PASS — delete their entries ==="
+    echo "$NOW_PASSING" | sed 's/^/    /'
+  fi
+  exit 1
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
   echo ""
   echo "  FAILURES:"
