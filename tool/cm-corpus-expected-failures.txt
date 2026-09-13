@@ -20,3 +20,5 @@
 #
 # Format: <fixture>  <TAB or spaces>  <reason>
 
+
+dataclass__basic.py              expected no error, got AssertionError. The SAME failure declared in tool/wasm-corpus-expected-failures.txt — test-hooks does not change it. Pre-existing at a0dd284, before any of the session-reuse work. Not yet diagnosed; the harness reports only the stringified reason, not which of the ~200 asserts failed.
