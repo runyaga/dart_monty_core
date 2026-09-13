@@ -49,10 +49,17 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       failed++;
       final escaped = reason.replaceAll('"', r'\"');
       log('FIXTURE_RESULT:{"name":"$key","ok":false,"reason":"$escaped"}');
+
+      // (no early-abort here; fixture runs must be exhaustive)
     }
   }
 
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    // Human-only progress marker: this is NOT consumed by CI, but is logged to
+    // Chrome's stderr so tool/test_wasm.sh can surface it.
+    //
+    // Keep the exact prefix stable: tool/test_wasm.sh greps it.
+    print('FIXTURE_BEGIN:{"name":"$key"}');
     // Engine-level divergences are always skipped; test-hooks fixtures run
     // only under a `-DMONTY_TEST_HOOKS=true` build against a test-hooks WASM.
     if (alwaysUnsupportedWasmFixtures.contains(key) ||
@@ -190,7 +197,14 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         MontyResult? result;
         String? thrownExcType;
         try {
-          result = await platform.run(value, scriptName: key);
+          // Untrusted fixture corpus: cap memory so a single runaway (or a
+          // backend leak) cannot poison the rest of the run by growing the WASM
+          // linear memory to the 4GiB ceiling.
+          result = await platform.run(
+            value,
+            scriptName: key,
+            limits: const MontyLimits(memoryBytes: 256 * 1024 * 1024),
+          );
           thrownExcType = result.error?.excType;
         } on MontyScriptError catch (e) {
           thrownExcType = e.excType;
@@ -247,6 +261,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
       source,
       externalFunctions: externalFunctions,
       scriptName: key,
+      limits: const MontyLimits(memoryBytes: 256 * 1024 * 1024),
     );
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;

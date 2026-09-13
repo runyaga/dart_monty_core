@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>dart_monty_core wasm mem spike repro</title>
+  </head>
+  <body>
+    <script src="dart_monty_core_bridge.js"></script>
+    <script>
+      async function run(name, code) {
+        console.log('DBG_BEGIN:' + name);
+        try {
+          const r = await DartMontyBridge.run(code, null, name);
+          console.log('DBG_OK:' + name + ' ' + JSON.stringify(r));
+        } catch (e) {
+          console.log('DBG_ERR:' + name + ' ' + (e && e.message ? e.message : String(e)));
+        }
+      }
+
+      // From fixtureCorpus entry refcount__gather_detached_sibling.py
+      const detached = `# Test that a sibling left running by a failing gather balances its references\n# once it finishes. The sibling outlives the gather that spawned it, so nothing\n# but its own completion path is left to release its coroutine and results.\nimport asyncio\n\ncompleted = 0\n\n\nasync def leaf():\n    return [1, 2, 3]\n\n\nasync def survivor():\n    global completed\n    for _ in range(2):\n        await asyncio.gather(leaf(), leaf())\n    completed += 1\n\n\nasync def task_fail():\n    raise ValueError('outer task failed')\n\n\ntry:\n    await asyncio.gather(survivor(), task_fail())  # pyright: ignore\nexcept ValueError:\n    pass\n\n# The detached sibling only advances while something else suspends, so drive it\n# with top-level awaits until it reports completion instead of a fixed turn count.\nfor _ in range(20):\n    if completed:\n        break\n    await asyncio.gather(leaf())  # pyright: ignore\n\n# The loop above is bounded, so assert the sibling really ran: a scheduler change\n# that stops driving it should fail here, not as an unexplained ref-count leak.\nassert completed == 1\n# ref-counts={'asyncio': 1}\n`;
+
+      // From fixtureCorpus entry list__eq_self_referential.py
+      const listSelf = `# Two different self-referential lists compared for equality.\n# CPython raises RecursionError; Monty must not panic.\na = [1, 2, 3]\nb = [1, 2, 3]\na.append(a)\nb.append(b)\ntry:\n    a == b\n    assert False, 'should have raised RecursionError'\nexcept RecursionError:\n    pass\n`;
+
+      (async () => {
+        await run('list__eq_self_referential.py', listSelf);
+        await run('refcount__gather_detached_sibling.py', detached);
+      })();
+    </script>
+  </body>
+</html>

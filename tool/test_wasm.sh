@@ -192,11 +192,13 @@ cleanup() {
     rm -rf "$STAGE"
     return
   fi
-  rm -f "$INTEG_WEB/dart_monty_core_bridge.js" \
-        "$INTEG_WEB/dart_monty_core_worker.js" \
-        "$INTEG_WEB/dart_monty_core_native.wasm" \
-        "$INTEG_WEB/wasm_runner.dart.js" \
-        "$INTEG_WEB/wasm_runner.dart.js.deps"
+  if [ "${KEEP_WEB_ASSETS:-}" != "1" ]; then
+    rm -f "$INTEG_WEB/dart_monty_core_bridge.js" \
+          "$INTEG_WEB/dart_monty_core_worker.js" \
+          "$INTEG_WEB/dart_monty_core_native.wasm" \
+          "$INTEG_WEB/wasm_runner.dart.js" \
+          "$INTEG_WEB/wasm_runner.dart.js.deps"
+  fi
 }
 trap cleanup EXIT
 
@@ -342,6 +344,9 @@ echo "  Chrome run: ${ELAPSED}s"
 # -------------------------------------------------------
 FIXTURE_RESULTS=$(grep -o 'FIXTURE_RESULT:{.*}' "$CHROME_LOG" 2>/dev/null || true)
 FIXTURE_DONE=$(grep -o 'FIXTURE_DONE:{.*}' "$CHROME_LOG" 2>/dev/null | head -1 || true)
+# Human-only debugging protocol lines (not part of CI grep):
+FIXTURE_BEGIN=$(grep -o 'FIXTURE_BEGIN:{.*}' "$CHROME_LOG" 2>/dev/null || true)
+WASM_INIT_FAIL=$(grep -n 'Session .* init error' "$CHROME_LOG" 2>/dev/null | head -1 || true)
 
 FAILURES=0
 if [ -n "$FIXTURE_RESULTS" ]; then
@@ -363,7 +368,36 @@ if [ "$FAILURES" -gt 0 ]; then
   done
 fi
 
-rm -f "$CHROME_LOG"
+if [ -n "$FIXTURE_BEGIN" ]; then
+  echo ""
+  echo "  FIXTURE_BEGIN (debug):"
+  # Print the first few and the last few so we can see the cutoff point when
+  # the run gets poisoned.
+  echo "$FIXTURE_BEGIN" | head -5 | while IFS= read -r line; do
+    json="${line#*FIXTURE_BEGIN:}"
+    echo "    $json"
+  done
+  if [ "$(echo "$FIXTURE_BEGIN" | wc -l | tr -d ' ')" -gt 10 ]; then
+    echo "    ..."
+    echo "$FIXTURE_BEGIN" | tail -5 | while IFS= read -r line; do
+      json="${line#*FIXTURE_BEGIN:}"
+      echo "    $json"
+    done
+  fi
+fi
+
+if [ -n "$WASM_INIT_FAIL" ]; then
+  echo ""
+  echo "  First WASM init failed line (debug):"
+  echo "    $WASM_INIT_FAIL"
+fi
+
+if [ "${KEEP_CHROME_LOG:-}" != "1" ]; then
+  rm -f "$CHROME_LOG"
+else
+  echo ""
+  echo "  Kept Chrome log at: $CHROME_LOG"
+fi
 
 echo ""
 if [ -z "$FIXTURE_DONE" ]; then
