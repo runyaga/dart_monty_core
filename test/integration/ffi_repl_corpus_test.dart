@@ -58,6 +58,7 @@ library;
 import 'dart:io';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
 import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
 
@@ -82,8 +83,8 @@ import 'package:test/test.dart';
 /// The numbers are pinned to the one-shot constants below rather than
 /// retyped — see `repl session limits match the one-shot defaults`.
 const _replSessionLimits = MontyLimits(
-  memoryBytes: 256 * 1024 * 1024,
-  stackDepth: 1000,
+  memoryBytes: BaseMontyPlatform.defaultMemoryBytes,
+  stackDepth: BaseMontyPlatform.defaultStackDepth,
 );
 
 // ---------------------------------------------------------------------------
@@ -134,70 +135,38 @@ typedef ReplCrash = ({int exitCode, String why});
 /// Why a subprocess rather than an in-process assertion: the note on
 /// `a bare MontyRepl() is UNBOUNDED` already establishes the constraint — "a
 /// fixture that raises SIGILL cannot be asserted in-process". Same here.
-const Map<String, ReplCrash> knownReplCrashFixtures = {
-  'collections__deque.py': (
-    // NOTE THE SIGN. A signal death is reported differently depending on
-    // who observes it: a shell (and therefore CI's job log) reports
-    // 128+signal = 139, but Dart's Process.run reports -signal = -11.
-    // This field is compared against Process.run, so it is -11. Recording
-    // 139 here makes the guard fail while the crash is still present,
-    // which looks exactly like the crash having been fixed.
-    exitCode: -11, // SIGSEGV, as Process.run reports it (shell: 139)
-    why:
-        'SIGSEGV in the native library on monty v0.0.23, driven through the '
-        'REPL handle. REPRODUCED IN TWO ENVIRONMENTS on 2026-09-13: GitHub '
-        'Actions (job "FFI integration tests", exit 139 after +226 ~22 -4) and '
-        'an arm64 dev container (exit 139 after +98 ~22 -1). Different pass '
-        'counts because test order differs; the SAME fixture kills both, so '
-        'this is a deterministic crash with a specific trigger, not flake.\n'
-        '\n'
-        'NOT one of the five process-death fixtures recorded in the '
-        '"a bare MontyRepl() is UNBOUNDED" test. Those are SIGILL on an '
-        'UNBOUNDED session and that note states all five PASS on the bounded '
-        'session this runner uses. This one is SIGSEGV on the BOUNDED path, so '
-        'it is a new failure mode on v0.0.23 rather than a known one.\n'
-        '\n'
-        'NOT bisected to a statement yet. The fixture is a collections.deque '
-        'conformance script, so the suspicion is the monty deque itself rather '
-        'than this binding — but that is a lead, not a finding: no backtrace '
-        'has been captured. Do not quote it upstream as a cause without one.',
-  ),
-  'dataclass__repr_eq.py': (
-    exitCode: -11,
-    why:
-        'SIGSEGV on the bounded REPL session, monty v0.0.23. Found by probing '
-        'all 590 corpus fixtures individually (tool: '
-        'test/integration/repl_crash_probe.dart). Of note: this fixture sits on '
-        'the exact boundary this version bump had to rework — upstream deleted '
-        'MontyObject::Dataclass and dataclasses now cross as '
-        'ClassInstance(Box<MontyClassInstance>), which is the largest single '
-        'change in native/src/convert.rs. That makes it the most likely of the '
-        'four to be a binding bug rather than an engine bug. NOT bisected.',
-  ),
-  'dict__eq_self_referential.py': (
-    exitCode: -11,
-    why:
-        'SIGSEGV on the BOUNDED session — which is a REGRESSION against this '
-        'repo'
-        's own recorded measurement. The "a bare MontyRepl() is '
-        'UNBOUNDED" test above documents this fixture dying with exit 132 '
-        '(SIGILL) on an UNBOUNDED session and states plainly that "all five '
-        'pass on the BOUNDED session this runner uses". On v0.0.23 it dies '
-        'bounded, and with a DIFFERENT signal (SIGSEGV, not SIGILL). So the '
-        'limits no longer contain it. Probed 2026-09-13 across all 590 '
-        'fixtures; 4 crashed, all SIGSEGV.',
-  ),
-  'list__eq_self_referential.py': (
-    exitCode: -11,
-    why:
-        'SIGSEGV on the bounded session. Same regression as '
-        'dict__eq_self_referential.py: previously SIGILL-only-when-unbounded '
-        'per the "a bare MontyRepl() is UNBOUNDED" note, now dies bounded on '
-        'v0.0.23. The self-referential pair failing together points at cycle '
-        'handling during equality/hashing rather than at either container '
-        'type specifically. NOT bisected.',
-  ),
-};
+/// Fixtures quarantined because they KILLED THE HOST PROCESS.
+///
+/// EMPTIED 2026-09-13. The reason matters more than the list.
+///
+/// Four fixtures lived here — collections__deque.py, dataclass__repr_eq.py,
+/// dict__eq_self_referential.py and list__eq_self_referential.py. All four are
+/// cyclic-structure comparisons, all four SIGSEGV'd the host, and all four were
+/// recorded as suspected UPSTREAM monty bugs.
+///
+/// They were not upstream bugs. They were this runner's own recursion limit.
+///
+/// Monty's guard is a COUNTER — RecursionError after N nested frames — and
+/// reaching N costs real native stack. Upstream runs the engine in SUBPROCESS
+/// WORKERS with a full main-thread stack, so its default of 1000 suits it;
+/// this binding runs it IN-PROCESS on a Dart isolate thread, where the stack
+/// overflows before the counter trips. `_replSessionLimits` hardcoded 1000
+/// even after the shared default moved to 512, so this runner kept testing at
+/// a depth that kills the host while every other caller had been fixed. Both
+/// now reference BaseMontyPlatform.defaultStackDepth.
+///
+/// With that corrected, all four run to completion and PASS: the suite went
+/// +556 ~34 -3 to +560 ~34 -3, same failures, no crash.
+///
+/// Proof it was never upstream: `pydantic-monty 0.0.23` — the exact tag
+/// native/Cargo.toml pins — raises RecursionError on these scripts and its
+/// parent process survives.
+///
+/// If a fixture kills the host again, add it back WITH its exit code
+/// (`Process.run` reports -signal, so SIGSEGV is -11, NOT 139) and a reason
+/// naming what was MEASURED rather than what was suspected. And check the
+/// recursion limit first — that is what this list was compensating for.
+const Map<String, ReplCrash> knownReplCrashFixtures = <String, ReplCrash>{};
 
 const Map<String, ReplDivergence> knownReplDivergentFixtures = {
   'ext_call__name_lookup.py': (
@@ -304,8 +273,20 @@ void main() {
       // HANDLE. If these drift from `handle.rs`'s `default_limits()` the
       // comparison is against a different configuration and means less than it
       // appears to.
-      expect(_replSessionLimits.memoryBytes, 256 * 1024 * 1024);
-      expect(_replSessionLimits.stackDepth, 1000);
+      // Pin the EQUALITY, not the numbers. These used to be literals — 256MB
+      // and 1000 — retyped from handle.rs. When the one-shot default moved to
+      // 512 (see BaseMontyPlatform.defaultStackDepth) the literals did not,
+      // so this runner silently kept testing at a depth that KILLS THE HOST,
+      // while every other caller had been fixed. That is precisely the drift
+      // this test exists to catch, and asserting literals could not catch it.
+      expect(
+        _replSessionLimits.memoryBytes,
+        BaseMontyPlatform.defaultMemoryBytes,
+      );
+      expect(
+        _replSessionLimits.stackDepth,
+        BaseMontyPlatform.defaultStackDepth,
+      );
     });
 
     test(
