@@ -164,6 +164,7 @@ dart test \
   test/integration/wasm_wire_contract_test.dart \
   test/integration/wasm_inbound_forgery_test.dart \
   test/integration/wasm_envelope_decode_test.dart \
+  test/integration/wasm_recursion_ceiling_test.dart \
   test/integration/wasm_mem_spike_repro.dart \
   test/integration/wasm_poison_boundary_test.dart \
   "$@"

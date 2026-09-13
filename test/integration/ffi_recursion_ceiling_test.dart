@@ -1,43 +1,56 @@
 @Tags(['ffi'])
 library;
 
-import 'dart:io';
-
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
-/// Guards [MontyLimits.defaultStackDepth] against the ONE failure it exists to
-/// prevent: a recursion limit set deeper than the native stack can sustain, so
-/// the stack overflows before monty's counter trips and the HOST PROCESS
-/// SEGFAULTS. There is no exception to catch when that happens — the process
-/// is gone, and every suite sharing it dies with a partial result.
+/// The FFI half of the recursion-ceiling guard. Its twin is
+/// `test/integration/wasm_recursion_ceiling_test.dart`; both exist so
+/// [MontyLimits.defaultStackDepth] is proven survivable on EVERY backend.
 ///
-/// Monty itself is not at fault and this is not an upstream bug: the same
-/// engine raises RecursionError correctly at any depth it can actually reach.
-/// Verified against `pydantic-monty 0.0.23` (the tag native/Cargo.toml pins),
-/// which survives these same scripts because upstream runs the engine in
-/// SUBPROCESS WORKERS with a full main-thread stack, while an FFI call runs on
-/// a Dart isolate's thread with far less.
+/// WHY BOTH HALVES. The corpus is a CONFORMANCE suite — the same fixtures run
+/// on native FFI, dart2js and dart2wasm, and the point is that they agree. A
+/// recursion limit safe on one backend and not another would make a fixture
+/// raise RecursionError on one and succeed on another: a divergence produced
+/// by our configuration rather than by the engine.
 ///
-/// Each case runs in a CHILD PROCESS. A crash cannot be asserted in-process —
-/// it would take this suite with it — so the child's exit code is the verdict:
+/// WHY THIS ASSERTS IN-PROCESS, WITH NO CHILD PROBE. An earlier version ran
+/// each case as a `dart run` CHILD so a crash could be observed rather than
+/// taken. That pattern is unusable here, twice proven on GitHub's linux_x64
+/// runners and never reproducible on arm64:
 ///
-///     exit 0   -> monty raised RecursionError, the guard won      (PASS)
-///     exit 139 -> SIGSEGV, the limit is deeper than this platform
-///                 can sustain and the default is UNSAFE HERE      (FAIL)
+///     ===== CRASH =====
+///     si_signo=Segmentation fault(11), si_code=SEGV_MAPERR(1), si_addr=0x103c
+///     -> Aborted (exit 134)
 ///
-/// Cost per frame is NOT uniform. A cyclic dict comparison burns far more
-/// native stack per level than a Python call frame, so the bound is the
-/// minimum across shapes. Measured on linux/arm64, monty v0.0.23:
+/// Spawning a `dart run` child from inside this suite kills the PARENT in the
+/// dynamic loader. The same signature took out the whole FFI job when the
+/// quarantine's crash-probe guards did it (removed in 181351a), and it
+/// returned the moment this test reintroduced the pattern. So: no children.
 ///
-///     cyclic dict == dict     safe 534 / SIGSEGV 539   <-- worst case
-///     cyclic deque == deque   safe 765 / SIGSEGV 781
+/// What that costs, stated plainly: if [MontyLimits.defaultStackDepth] ever
+/// becomes too deep for a platform, this test cannot report it cleanly — the
+/// stack overflow takes the whole suite down with a bare exit 139. That is
+/// still a loud failure, just an ugly one, and it is the same way the corpus
+/// itself would fail. The WASM half CAN report cleanly, because a wasm32
+/// stack overflow is a contained trap rather than a process death.
 ///
-/// CI runs amd64, where frame sizes differ. This test re-measures on whatever
-/// platform it runs on rather than trusting those numbers.
+/// MEASURED, monty v0.0.23, by bisecting each shape's crash point on
+/// linux/arm64 (`safe / SIGSEGV`):
+///
+///     cyclic dict == dict     534 / 539   <-- worst case, sets the bound
+///     cyclic deque == deque   765 / 781
+///     cyclic list, deep repr, deep hash, heavy Python frames   >= 765
+///
+/// Not an upstream bug: `pydantic-monty 0.0.23` — the tag native/Cargo.toml
+/// pins — raises RecursionError on these same scripts and its parent survives,
+/// because upstream runs the engine in SUBPROCESS WORKERS with a full
+/// main-thread stack. An FFI call runs on a Dart isolate thread with far less,
+/// and `ulimit -s` cannot change that: 8MB, 64MB and unlimited all segfault
+/// identically, because the isolate thread's stack is fixed at creation.
 void main() {
   const shapes = <String, String>{
-    // The worst shape measured. If any case fails, expect this one first.
+    // Worst case measured. If a platform regresses, expect this one first.
     'cyclic dict': '''
 a = {}
 b = {}
@@ -60,10 +73,10 @@ a.append(b)
 b.append(a)
 a == b
 ''',
-    // Two SEPARATE but structurally identical cyclic graphs. Comparing a
-    // cycle against a fresh literal terminates early on the first difference
-    // and never recurses — an earlier version of this case did exactly that
-    // and passed while proving nothing.
+    // Two SEPARATE but structurally identical cyclic graphs. Comparing a cycle
+    // against a fresh literal terminates on the first difference and never
+    // recurses — an earlier version did exactly that and passed while proving
+    // nothing.
     'mixed cycle': '''
 a = {}
 b = {}
@@ -76,95 +89,47 @@ a == b
   group('defaultStackDepth is survivable on this platform', () {
     for (final MapEntry(key: name, value: src) in shapes.entries) {
       test(
-        '$name at defaultStackDepth raises, does not crash',
+        '$name raises RecursionError at defaultStackDepth',
         () async {
-          // The child MUST live inside the package. Written to systemTemp it
-          // cannot resolve `package:dart_monty_core`, exits 254 on a compile
-          // error, and never runs the code under test — which made an earlier
-          // version of this test pass at a depth that segfaults.
-          final dir = Directory(
-            '${Directory.current.path}/.dart_tool/recursion_ceiling',
-          )..createSync(recursive: true);
+          final repl = MontyRepl(
+            limits: const MontyLimits(
+              memoryBytes: 256 * 1024 * 1024,
+              stackDepth: MontyLimits.defaultStackDepth,
+            ),
+          );
+          String? excType;
+          String rendered;
           try {
-            // The Python is written to a FILE, never embedded in the child's
-            // source. Embedding meant escaping ($, quotes, newlines) could
-            // silently alter the script, so the child ran DIFFERENT code than
-            // intended — it reported "proved nothing" for a case that segfaults
-            // when the same Python is run by hand.
-            final pyFile = File('${dir.path}/case.py')..writeAsStringSync(src);
-            final script = File('${dir.path}/case.dart')
-              ..writeAsStringSync('''
-import 'dart:io';
-import 'package:dart_monty_core/dart_monty_core.dart';
-
-Future<void> main() async {
-  final repl = MontyRepl(
-    limits: const MontyLimits(
-      memoryBytes: 256 * 1024 * 1024,
-      stackDepth: MontyLimits.defaultStackDepth,
-    ),
-  );
-  var verdict = 3; // 3 = ran but proved nothing
-  try {
-    final r = await repl.feedRun(File(r'${pyFile.path}').readAsStringSync());
-    // An error RETURNED (not thrown) is the normal shape here.
-    final err = '\${(r as dynamic).error}';
-    verdict = err.contains('RecursionError') ? 0 : 3;
-  } on Object catch (e) {
-    // A THROWN RecursionError is equally correct; anything else is not.
-    verdict = '\$e'.contains('RecursionError') ? 0 : 3;
-  } finally {
-    repl.dispose();
-  }
-  // 0 ONLY when monty's guard demonstrably fired. Exiting 0 merely because
-  // nothing crashed would make this test pass while proving nothing — the
-  // failure mode that made an earlier version of it worthless.
-  exit(verdict);
-}
-''');
-            final r = await Process.run('dart', ['run', script.path]);
-            // Assert the child RAN, not merely that it avoided one exit code.
-            // `isNot(139)` alone is satisfied by a child that failed to compile
-            // (exit 254) and therefore proved nothing.
-            expect(
-              r.exitCode,
-              isNot(254),
-              reason:
-                  'the probe child failed to COMPILE, so this case proved '
-                  'nothing. It must sit inside the package to resolve '
-                  'package:dart_monty_core. stderr:\n${r.stderr}',
-            );
-            expect(
-              r.exitCode,
-              // 0 ONLY if the child saw a RecursionError; 3 = proved nothing.
-              0,
-              // Process.run reports a signal death as -signal (SIGSEGV = -11).
-              // Only a SHELL reports 128+signal (139). This repo has been
-              // caught
-              // by that before — knownReplCrashFixtures records exitCode: -11.
-              reason: (r.exitCode == -11 || r.exitCode == 139)
-                  ? 'SIGSEGV: MontyLimits.defaultStackDepth '
-                        '(${MontyLimits.defaultStackDepth}) is deeper than '
-                        'this '
-                        "platform's FFI thread stack can sustain for "
-                        '"$name". '
-                        'The native stack overflowed before monty could raise '
-                        'RecursionError, killing the process. LOWER '
-                        'defaultStackDepth — do not quarantine the fixture '
-                        'that '
-                        'exposed it. stderr:\n${r.stderr}'
-                  : 'PROVED NOTHING: "$name" ran to completion without a '
-                        'RecursionError, so it never stressed the recursion '
-                        'guard and says nothing about whether '
-                        '${MontyLimits.defaultStackDepth} is survivable. Fix '
-                        'the '
-                        'script so it actually recurses — comparing a cycle '
-                        'against a fresh literal terminates early. '
-                        'stdout:\n${r.stdout}',
-            );
+            final r = await repl.feedRun(src);
+            // An error RETURNED rather than thrown is the normal shape here.
+            excType = r.error?.excType;
+            rendered = '${r.error}';
+          } on MontyScriptError catch (e) {
+            excType = e.excType;
+            rendered = '$e';
+          } on Object catch (e) {
+            rendered = '$e';
           } finally {
-            dir.deleteSync(recursive: true);
+            await repl.dispose();
           }
+
+          // Assert on excType, NOT toString(). MontyScriptError is THROWN when
+          // the interpreter hits a Python-level exception and CARRIES the
+          // structured MontyException, whose `excType` names it. The renderings
+          // differ by backend — FFI "MontyException: RecursionError: ...",
+          // WASM "MontyScriptError: maximum recursion depth exceeded" — so text
+          // matching would fail a backend that behaved CORRECTLY.
+          expect(
+            excType,
+            'RecursionError',
+            reason:
+                'PROVED NOTHING: "$name" did not surface excType '
+                '"RecursionError", so it never stressed the recursion '
+                'guard and '
+                'says nothing about whether '
+                '${MontyLimits.defaultStackDepth} is survivable here. '
+                'Got excType=$excType rendered=$rendered',
+          );
         },
         timeout: const Timeout(Duration(minutes: 2)),
       );
