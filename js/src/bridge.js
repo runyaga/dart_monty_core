@@ -282,8 +282,8 @@ async function start(code, extFnsJson, limitsJson, scriptName, sessionId) {
  * @param {string} valueJson JSON-encoded value to return to Python.
  * @returns {Promise<string>} JSON result.
  */
-async function resume(valueJson) {
-  const sid = resolveSessionId(null);
+async function resume(valueJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -298,8 +298,8 @@ async function resume(valueJson) {
  * @param {string} errorJson JSON-encoded error message string.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeWithError(errorJson) {
-  const sid = resolveSessionId(null);
+async function resumeWithError(errorJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -315,8 +315,8 @@ async function resumeWithError(errorJson) {
  * @param {string} errorJson   JSON-encoded error message string.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeWithException(excTypeJson, errorJson) {
-  const sid = resolveSessionId(null);
+async function resumeWithException(excTypeJson, errorJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);

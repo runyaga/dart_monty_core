@@ -211,7 +211,12 @@ if [ "$DART2WASM" = true ]; then
 else
   echo ""
   echo "--- Compiling wasm_runner.dart → JS (dart2js) ---"
+  DART_DEFINES=()
+  if [ -n "${MONTY_DEBUG_ONE_FIXTURE:-}" ]; then
+    DART_DEFINES+=("-DMONTY_DEBUG_ONE_FIXTURE=${MONTY_DEBUG_ONE_FIXTURE}")
+  fi
   dart compile js \
+    "${DART_DEFINES[@]}" \
     test/integration/wasm_runner.dart \
     -o "$INTEG_WEB/wasm_runner.dart.js" \
     --no-source-maps
@@ -415,6 +420,9 @@ echo "$FIXTURE_DONE"
 EXPECTED_TOTAL=$(python3 -c \
   "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
 ACTUAL_TOTAL=$(echo "$FIXTURE_DONE" | sed -n 's/.*"total":\([0-9]*\).*/\1/p')
+if [ -n "${MONTY_DEBUG_ONE_FIXTURE:-}" ]; then
+  EXPECTED_TOTAL="$ACTUAL_TOTAL"
+fi
 if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
   echo ""
   echo "=== FAILED: corpus size mismatch ==="

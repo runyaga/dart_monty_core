@@ -37,6 +37,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   var skipped = 0;
 
   const isWasm = bool.fromEnvironment('dart.library.js_interop');
+  const debugOneFixture = String.fromEnvironment('MONTY_DEBUG_ONE_FIXTURE');
   MontyPlatform? sharedPlatform;
 
   // Belt-and-braces recycle: even without an explicit trap, long runs can
@@ -44,11 +45,14 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   //
   // Important: recycling means *creating a new Worker+WASM instance*.
   // That creation itself can OOM if Chrome's process does not return memory to
-  // the OS quickly enough. The primary fix for leg 10 is recycling on trap
-  // only; periodic recycling is kept but set high enough to avoid provoking
-  // repeated instantiation under memory pressure.
+  // the OS quickly enough.
+  //
+  // This runner now uses one shared session for the whole corpus and recycles
+  // only on WASM trap/panic (the only mechanism that fires in normal runs).
+  // Keeping a periodic recycle counter here would be dead code and suggests a
+  // safety net that does not exist.
   var fixturesSinceRecycle = 0;
-  const recycleEvery = 10_000;
+  const recycleEvery = 10_000; // intentionally unreachable
 
   /// Emits one result line and moves the matching counter.
   ///
@@ -69,6 +73,9 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   }
 
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    if (debugOneFixture.isNotEmpty && key != debugOneFixture) {
+      continue;
+    }
     // Human-only progress marker: this is NOT consumed by CI, but is logged to
     // Chrome's stderr so tool/test_wasm.sh can surface it.
     //
@@ -329,6 +336,10 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
     '"skipped":$skipped'
     '}',
   );
+
+  if (debugOneFixture.isNotEmpty) {
+    log('MONTY_DEBUG_ONE_FIXTURE_DONE:{"name":"$debugOneFixture"}');
+  }
 }
 
 /// Set by `-DMONTY_TEST_HOOKS=true` (tool/test_cm_wasm.sh), paired with a
