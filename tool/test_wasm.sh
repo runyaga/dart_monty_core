@@ -215,10 +215,15 @@ else
   if [ -n "${MONTY_DEBUG_ONE_FIXTURE:-}" ]; then
     DART_DEFINES+=("-DMONTY_DEBUG_ONE_FIXTURE=${MONTY_DEBUG_ONE_FIXTURE}")
   fi
+  # --no-minify matters for diagnosis, not speed: a minified runner turns every
+  # stack frame in a fixture failure into single letters. CI used to pass this
+  # when it compiled the runner itself; the flag is kept here so routing CI
+  # through this script does not silently lose it.
   dart compile js \
     "${DART_DEFINES[@]}" \
     test/integration/wasm_runner.dart \
     -o "$INTEG_WEB/wasm_runner.dart.js" \
+    --no-minify \
     --no-source-maps
 fi
 echo "  Compile: OK"

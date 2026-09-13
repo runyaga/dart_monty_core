@@ -572,109 +572,23 @@ jobs:
 
       - run: dart pub get
 
-      - name: Compile WASM runner to JS
-        run: |
-          dart compile js test/integration/wasm_runner.dart \
-            -o test/integration/web/wasm_runner.dart.js \
-            --no-minify
+      # The two "Compile WASM runner to ..." steps that used to sit here are
+      # gone: tool/test_wasm.sh compiles the runner itself on every invocation,
+      # so they were redundant — and the dart2wasm one compiled with
+      #     -o test/integration/web/wasm_runner.wasm
+      # which is a TRACKED file. The script compiles into a mktemp dir
+      # precisely to avoid that (tool/test_wasm.sh: "would overwrite three
+      # tracked files"), so keeping the CI step defeated its own protection.
+      - name: Corpus in headless Chrome (dart2js)
+        run: bash tool/test_wasm.sh --skip-build
 
-      - name: Compile WASM runner to WASM
-        run: |
-          dart compile wasm test/integration/wasm_runner_wasm.dart \
-            -o test/integration/web/wasm_runner.wasm
-
-      - name: Serve and run in headless Chrome
-        run: |
-          WEB_DIR="test/integration/web"
-          SERVE_PORT=8099
-
-          # Python server with COOP/COEP headers required for SharedArrayBuffer
-          python3 << 'PYEOF' &
-          import http.server, functools, os
-          class H(http.server.SimpleHTTPRequestHandler):
-              def end_headers(self):
-                  self.send_header("Cross-Origin-Opener-Policy", "same-origin")
-                  self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
-                  self.send_header("Access-Control-Allow-Origin", "*")
-                  self.send_header("Cache-Control", "no-store")
-                  super().end_headers()
-              def guess_type(self, path):
-                  if str(path).endswith(".mjs"): return "application/javascript"
-                  if str(path).endswith(".wasm"): return "application/wasm"
-                  return super().guess_type(path)
-              def log_message(self, fmt, *args): pass
-          handler = functools.partial(H, directory=os.environ["WEB_DIR"])
-          http.server.HTTPServer(("127.0.0.1", 8099), handler).serve_forever()
-          PYEOF
-          sleep 2
-
-          CHROME="google-chrome-stable"
-          TOTAL_FAILURES=0
-
-          run_test() {
-            local url=$1
-            local label=$2
-            local log=$(mktemp)
-            echo "--- Running $label test ---"
-
-            # Run Chrome in the background and stream stderr to the log file.
-            # Poll the log for FIXTURE_DONE instead of waiting for Chrome to
-            # exit — headless Chrome never exits on its own, so without this
-            # we burn the full 300s timeout on every run.
-            "$CHROME" \
-              --headless \
-              --disable-gpu \
-              --no-sandbox \
-              --disable-dev-shm-usage \
-              --enable-logging=stderr \
-              --v=0 \
-              "$url" \
-              2>"$log" &
-            local chrome_pid=$!
-
-            local elapsed=0
-            while [ $elapsed -lt 300 ]; do
-              if grep -q 'FIXTURE_DONE:' "$log" 2>/dev/null; then
-                break
-              fi
-              sleep 1
-              elapsed=$((elapsed + 1))
-            done
-            kill "$chrome_pid" 2>/dev/null || true
-            wait "$chrome_pid" 2>/dev/null || true
-
-            DONE_LINE=$(grep -o 'FIXTURE_DONE:{[^}]*}' "$log" || true)
-            if [ -z "$DONE_LINE" ]; then
-              echo "ERROR ($label): No FIXTURE_DONE line captured after ${elapsed}s. Chrome output:"
-              grep -i "CONSOLE\|FIXTURE\|ERROR" "$log" | head -60 || true
-              rm -f "$log"
-              TOTAL_FAILURES=$((TOTAL_FAILURES + 1))
-              return
-            fi
-
-            echo "$label: $DONE_LINE (${elapsed}s)"
-            FAILURES=$(grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | wc -l || echo 0)
-            if [ "$FAILURES" -gt 0 ]; then
-              echo "ERROR ($label): $FAILURES fixtures failed"
-              echo "  --- failed fixtures ---"
-              grep -o 'FIXTURE_RESULT:{[^}]*}' "$log" | grep '"ok":false' | while IFS= read -r line; do
-                echo "    ${line#*FIXTURE_RESULT:}"
-              done
-              TOTAL_FAILURES=$((TOTAL_FAILURES + FAILURES))
-            fi
-            rm -f "$log"
-          }
-
-          run_test "http://127.0.0.1:$SERVE_PORT/wasm_runner.html" "dart2js"
-          run_test "http://127.0.0.1:$SERVE_PORT/wasm_runner_wasm.html" "dart2wasm"
-
-          if [ "$TOTAL_FAILURES" -gt 0 ]; then
-            echo "WASM integration tests: $TOTAL_FAILURES TOTAL FAILURES"
-            exit 1
-          fi
-          echo "WASM integration tests: ALL PASSED"
-        env:
-          WEB_DIR: test/integration/web
+      - name: Corpus in headless Chrome (dart2wasm)
+        # success() || failure(), NOT always(): the intent is only that a
+        # dart2js failure must not hide the dart2wasm result. always() would
+        # also fire after a CANCELLED workflow or a failed setup step, running
+        # the corpus in a half-built tree and reporting confusing errors.
+        if: success() || failure()
+        run: bash tool/test_wasm.sh --skip-build --dart2wasm
 
 
   # ---------------------------------------------------------------------------
