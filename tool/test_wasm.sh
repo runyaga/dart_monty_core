@@ -485,12 +485,35 @@ fi
 # in EITHER direction, including a listed fixture that starts PASSING.
 # -------------------------------------------------------
 EXPECTED_FILE="$PKG/tool/wasm-corpus-expected-failures.txt"
-if [ -f "$EXPECTED_FILE" ] && [ -n "$FIXTURE_RESULTS" ]; then
-  EXPECTED=$(grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_FILE" | awk '{print $1}' | sort -u)
-  ACTUAL=$(echo "$FIXTURE_RESULTS" | grep '"ok":false' \
-           | sed -E 's/.*"name":"([^"]+)".*/\1/' | sort -u)
-  UNEXPECTED=$(comm -13 <(echo "$EXPECTED") <(echo "$ACTUAL"))
-  NOW_PASSING=$(comm -23 <(echo "$EXPECTED") <(echo "$ACTUAL"))
+# A MISSING declaration file is an error, not a reason to skip. This used to be
+# `if [ -f "$EXPECTED_FILE" ] && ...`, so deleting the file silently disabled
+# the entire comparison and the gate fell through to a plain failure count --
+# the same "a green tick that checked nothing" shape as the 531 pin and the
+# shadowed size check. tool/test_cm_wasm.sh hard-fails here; so does this now.
+if [ ! -f "$EXPECTED_FILE" ]; then
+  echo ""
+  echo "=== FAILED: missing $EXPECTED_FILE ==="
+  echo "  Without it the gate cannot tell a regression from a known failure."
+  dump_debug
+  exit 1
+fi
+if [ -n "$FIXTURE_RESULTS" ]; then
+  # `|| true` on BOTH, and neither is decoration. Under `set -euo pipefail`
+  # grep exits 1 when it matches NOTHING, which kills the script -- and the
+  # no-match case here is the SUCCESS case:
+  #   * EXPECTED empty  = every declared failure got fixed (file is all comments)
+  #   * ACTUAL   empty  = the corpus is fully green
+  # So the day this repo fixes its last expected failure, the gate would have
+  # died with a bare `exit 1`, printing no banner and no reason, and the STALE
+  # detection that is supposed to tell you to delete the entry would never run.
+  # Measured 2026-09-13: deleting the sole entry from the declared file exited 1
+  # with NO output past the fixture counts.
+  EXPECTED=$({ grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_FILE" || true; } \
+           | awk '{print $1}' | LC_ALL=C sort -u)
+  ACTUAL=$({ echo "$FIXTURE_RESULTS" | grep '"ok":false' || true; } \
+         | sed -E 's/.*"name":"([^"]+)".*/\1/' | LC_ALL=C sort -u)
+  UNEXPECTED=$(LC_ALL=C comm -13 <(echo "$EXPECTED") <(echo "$ACTUAL"))
+  NOW_PASSING=$(LC_ALL=C comm -23 <(echo "$EXPECTED") <(echo "$ACTUAL"))
 
   if [ -z "$UNEXPECTED" ] && [ -z "$NOW_PASSING" ]; then
     echo ""

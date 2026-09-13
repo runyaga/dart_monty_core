@@ -261,23 +261,72 @@ echo "with__cm fixtures executed: $CM_RUN (expected 5)"
 echo "test-hooks recursion fixtures executed: $REC_RUN (expected 3)"
 
 if [ -z "$DONE" ]; then echo "FAILED: no FIXTURE_DONE (Chrome crashed/timed out)"; exit 1; fi
-if [ "$FAILURES" -gt 0 ]; then
-  echo "FAILED: $FAILURES fixture(s) failed:"
-  echo "$RESULTS" | grep '"ok":false' | sed 's/^.*FIXTURE_RESULT:/  /'
-  exit 1
-fi
 
-# "0 failed" is not the same as "the corpus ran": a runner that registered
-# nothing prints total:0 and every check above is happy. Pin the total to the
-# provenance file, which is regenerated with the corpus and already verified by
+# SIZE FIRST, ahead of the failing-set comparison. "0 failed" is not the same
+# as "the corpus ran": a runner that registered nothing prints total:0 and
+# every check below is happy. It also goes first because when both are wrong,
+# the size is the one that EXPLAINS the other -- a shrunken corpus produces a
+# failing set that differs from the declared one for a reason that has nothing
+# to do with any fixture regressing. Pin the total to the provenance file,
+# which is regenerated with the corpus and verified by
 # tool/check_fixture_corpus.sh.
 EXPECTED_TOTAL=$(python3 -c \
-  "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
+  "import json;print(json.load(open('$PKG/tool/fixture-corpus.json'))['fixture_count'])")
 ACTUAL_TOTAL=$(echo "$DONE" | sed -n 's/.*"total":\([0-9]*\).*/\1/p')
 if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
   echo "FAILED: corpus size mismatch — provenance says $EXPECTED_TOTAL, $TARGET ran $ACTUAL_TOTAL"
   exit 1
 fi
+
+# Compare against the DECLARED expected-failure set, exactly as
+# tool/test_wasm.sh does for the shipped engine.
+#
+# This used to be `FAILURES -gt 0 -> exit 1`. dataclass__basic.py has failed
+# since a0dd284 and is already declared expected on the plain WASM corpus, so
+# this gate could only ever be red -- and CI compounded it by grepping for
+# `FIXTURE_DONE:{"total":531,"passed":528,"failed":0`, a pin left over from the
+# 531-fixture v0.0.19 corpus. Against a 590-fixture corpus that string is
+# arithmetically unreachable: the job could not pass, no matter what the code
+# did. A gate that cannot go green teaches people to ignore it.
+#
+# The declared set fails on a difference in EITHER direction, so a fixture that
+# starts PASSING is a failure too -- that is what stops the list going stale.
+# The test-hooks set is its own file because it is genuinely different: gc is
+# enabled here, so functools__gc.py and itertools__gc.py pass.
+EXPECTED_FILE="$PKG/tool/cm-corpus-expected-failures.txt"
+if [ ! -f "$EXPECTED_FILE" ]; then
+  echo "FAILED: missing $EXPECTED_FILE — cannot tell a regression from a known failure"
+  exit 1
+fi
+  # `|| true` on BOTH, and neither is decoration. Under `set -euo pipefail`
+# grep exits 1 when it matches NOTHING, which kills the script -- and the
+# no-match case here is the SUCCESS case:
+#   * EXPECTED empty  = every declared failure got fixed (file is all comments)
+#   * ACTUAL   empty  = the corpus is fully green
+# So the day this repo fixes its last expected failure, the gate would have
+# died with a bare `exit 1`, printing no banner and no reason, and the STALE
+# detection that is supposed to tell you to delete the entry would never run.
+# Measured 2026-09-13: deleting the sole entry from the declared file exited 1
+# with NO output past the fixture counts.
+EXPECTED=$({ grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_FILE" || true; } \
+         | awk '{print $1}' | LC_ALL=C sort -u)
+ACTUAL=$({ echo "$RESULTS" | grep '"ok":false' || true; } \
+       | sed -E 's/.*"name":"([^"]+)".*/\1/' | LC_ALL=C sort -u)
+UNEXPECTED=$(LC_ALL=C comm -13 <(echo "$EXPECTED") <(echo "$ACTUAL"))
+NOW_PASSING=$(LC_ALL=C comm -23 <(echo "$EXPECTED") <(echo "$ACTUAL"))
+if [ -n "$UNEXPECTED" ] || [ -n "$NOW_PASSING" ]; then
+  echo ""
+  if [ -n "$UNEXPECTED" ]; then
+    echo "=== REGRESSION: fixture(s) failing that are NOT declared expected ==="
+    echo "$UNEXPECTED" | sed 's/^/    /'
+  fi
+  if [ -n "$NOW_PASSING" ]; then
+    echo "=== STALE: declared-expected fixture(s) now PASS — delete their entries ==="
+    echo "$NOW_PASSING" | sed 's/^/    /'
+  fi
+  exit 1
+fi
+echo "Expected-failure set matches exactly ($(echo "$EXPECTED" | wc -l | tr -d ' ') fixtures)."
 
 # FIVE, not six. `with__cm_behaviors.py` was in the skip list but does NOT
 # exist in the 0.19 corpus (531 fixtures; that is not one of them), so it could

@@ -662,8 +662,14 @@ jobs:
   # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
   #
   # These need an engine built `--features test-hooks`, which is NEVER shipped
-  # (native/Cargo.toml:36-38). Without it the corpus reports 520/531 and skips
-  # them; with it, 528/531. Until this job existed CI ran NEITHER variant, so
+  # (native/Cargo.toml:36-38). Without it the corpus skips them; with it they
+  # run. Measured 2026-09-13 on the 590-fixture v0.0.23 corpus, identical on
+  # amd64 and arm64 and on both compile targets:
+  #   shipped engine   575 passed / 3 failed / 12 skipped
+  #   test-hooks       585 passed / 1 failed /  4 skipped
+  # The ten extra passes are the eight setrecursionlimit fixtures plus
+  # functools__gc.py and itertools__gc.py, which need the gc module test-hooks
+  # enables. Until this job existed CI ran NEITHER variant, so
   # those eight were verified only by whoever happened to run tool/gate.sh
   # locally — and on dart2wasm they had never executed anywhere at all.
   #
@@ -716,20 +722,33 @@ jobs:
           npm install --force
 
       # Both steps PIN THE RESULT rather than trusting the exit code.
-      # tool/test_cm_wasm.sh:222 does `exit 0` when it cannot find Chrome —
+      # tool/test_cm_wasm.sh does `exit 0` when it cannot find Chrome —
       # "WARN: Chrome not found" and a green job that ran nothing. ubuntu-latest
       # ships Chrome today, but a runner image change would turn this job into a
       # rubber stamp silently, which is the exact failure mode these eight
-      # fixtures already spent months in.
+      # fixtures already spent months in. So the pin stays; what it pins changed.
       #
-      # 528 = 531 total - 3 that stay skipped even with test-hooks
-      # (the upstream xfail, and two with no assertable directive).
+      # It used to grep for `{"total":531,"passed":528,"failed":0`. That was the
+      # v0.0.19 corpus. The corpus is 590 now, so the string became unreachable
+      # and this job could not go green no matter what the code did — measured
+      # 2026-09-13, both backends and both architectures:
+      #   {"total":590,"passed":585,"failed":1,"skipped":4}
+      # the single failure being dataclass__basic.py, which has failed since
+      # a0dd284 and is declared in tool/cm-corpus-expected-failures.txt.
+      #
+      # Pinning a pass COUNT was the mistake: it has to be hand-edited every
+      # time upstream adds a fixture, and when it drifts it fails in the
+      # direction that looks like a code regression. Pin the corpus SIZE to the
+      # provenance file instead — that is the part a rubber-stamp run cannot
+      # fake — and let the script's declared expected-failure set judge which
+      # fixtures may fail.
       - name: test-hooks corpus (dart2js)
         run: |
           set -euo pipefail
           bash tool/test_cm_wasm.sh 2>&1 | tee /tmp/cm_js.log
-          grep -q 'FIXTURE_DONE:{"total":531,"passed":528,"failed":0' /tmp/cm_js.log \
-            || { echo "FAIL: dart2js test-hooks corpus did not report 528/531 passing."; \
+          want=$(python3 -c "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
+          grep -q "FIXTURE_DONE:{\"total\":$want," /tmp/cm_js.log \
+            || { echo "FAIL: dart2js test-hooks corpus did not report $want fixtures."; \
                  grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_js.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
                  exit 1; }
 
@@ -740,8 +759,9 @@ jobs:
         run: |
           set -euo pipefail
           bash tool/test_cm_wasm.sh --dart2wasm 2>&1 | tee /tmp/cm_w.log
-          grep -q 'FIXTURE_DONE:{"total":531,"passed":528,"failed":0' /tmp/cm_w.log \
-            || { echo "FAIL: dart2wasm test-hooks corpus did not report 528/531 passing."; \
+          want=$(python3 -c "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
+          grep -q "FIXTURE_DONE:{\"total\":$want," /tmp/cm_w.log \
+            || { echo "FAIL: dart2wasm test-hooks corpus did not report $want fixtures."; \
                  grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_w.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
                  exit 1; }
 
