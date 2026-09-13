@@ -145,6 +145,23 @@ jobs:
         # against a v0.0.19 interpreter reported all-green having never seen the
         # 49 fixtures upstream added for 0.19.
         run: bash tool/check_fixture_corpus.sh
+      - name: Demo fixture links point at the monty version we build
+        # Local-only until now: tool/gate.sh:74 ran it, ci.yaml ran nothing, so
+        # the invariant held only for people who ran the gate before pushing.
+        # The conformance panel links each fixture to its source in
+        # pydantic/monty at a hand-written tag; an upgrade that bumps the crate
+        # leaves every link silently showing the WRONG source, which is worse
+        # than a dead link -- a reader who clicks through sees plausible code
+        # and has no reason to suspect the link.
+        run: bash tool/check_fixture_links.sh
+      - name: No harness reports a bare "unexpected error"
+        # Local-only until now: tool/gate.sh:75. MontyException carries
+        # excType, lineNumber, columnNumber, sourceCode and traceback, and six
+        # separate sites used to discard all of it to print the word
+        # "unexpected" (core#145). This package exists so a model can generate
+        # Monty Python and RETRY on failure; "unexpected error" gives it
+        # nothing to localise or act on.
+        run: bash tool/check_no_vague_errors.sh
       - name: Install DCM
         # dcm is NOT a pub package — `dart pub global activate dcm` cannot work.
         # An earlier version of this workflow did exactly that with `|| true`,
