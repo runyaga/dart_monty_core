@@ -2277,3 +2277,143 @@ fn repl_restore_error_paths_report_a_reason() {
     };
     expect_refused_with_reason("malformed limits", h, e);
 }
+
+// ---------------------------------------------------------------------------
+// Invalid UTF-8 through parse_c_str, on the REPL half
+// ---------------------------------------------------------------------------
+// R6 from the C ABI review: all three existing UTF-8 tests are ONE-SHOT
+// (`create_with_non_utf8_code` :494, `resume_with_non_utf8_value` :546,
+// `resume_with_error_non_utf8_message` :576). The REPL half had none, so
+// `parse_c_str`'s invalid-UTF-8 arm (error.rs:44-49) was never reached through
+// any monty_repl_* entry point.
+//
+// WHY THIS IS WORTH TESTING, stated accurately after getting it wrong once.
+//
+// An earlier draft of this comment claimed a Dart caller reaches this arm by
+// passing an unpaired surrogate. That is FALSE. It was checked rather than
+// argued, and the correction is recorded here because the wrong version is the
+// more plausible-sounding one.
+//
+// The premises hold. Dart strings ARE UTF-16
+// (dart-sdk/lib/core/string.dart:7, "A sequence of UTF-16 code units") and a
+// lone surrogate IS constructible (string.dart:144, "Creating a [String] with
+// one half of a surrogate pair is allowed"). The conclusion does not, because
+// package:ffi documents the substitution (ffi-2.2.0/lib/src/utf8.dart:73-76):
+//
+//     "Unpaired surrogate code points in this [String] will be encoded as
+//      replacement characters (U+FFFD, encoded as the bytes 0xEF 0xBF 0xBD)
+//      in the UTF-8 encoded result."
+//
+// Measured, Dart 3.11.4 against ffi-2.2.0:
+//
+//     "a\u{D800}b".codeUnits  ->  [97, 55296, 98]
+//     toNativeUtf8 bytes       ->  61 ef bf bd 62 00
+//
+// That is valid UTF-8, so CStr::to_str() at error.rs:43 returns Ok and this arm
+// is skipped. All 29 char* sites in lib/src/ffi/native_bindings_ffi.dart go
+// through toNativeUtf8, so the package's own Dart layer cannot reach it at all.
+//
+// The guard is still a real contract, and that is the honest justification:
+// native/include/dart_monty.h:5 publishes "All strings are NUL-terminated
+// UTF-8" to every C-ABI consumer, and nothing in the C type system enforces it.
+// Any caller that builds a char* itself -- C, C++, Go, Zig, or Dart via raw
+// dart:ffi byte writes -- can hand these entry points a valid C string that is
+// invalid UTF-8. The branch exists, was unexecuted, and unexecuted error
+// branches are where this project has repeatedly found real defects.
+//
+// The "names the argument" half is the load-bearing assertion:
+// resume_with_exception takes TWO string parameters, so a bare "not valid
+// UTF-8" would leave the caller guessing which one was wrong.
+//
+// parse_c_str runs immediately after the NULL-handle check in each of these, so
+// no suspended REPL state is required to reach it.
+// Hoisted to module scope: clippy's `items_after_statements` rejects a fn
+// declared after statements inside a test body.
+fn expect_named(label: &str, arg: &str, tag: MontyProgressTag, e: *mut c_char) {
+    assert_eq!(tag, MontyProgressTag::Error, "{label}: expected Error");
+    assert!(!e.is_null(), "{label}: invalid UTF-8 must be reported");
+    let msg = unsafe { read_c_string(e) };
+    assert!(
+        msg.contains("not valid UTF-8"),
+        "{label}: message should say what was wrong, got {msg:?}"
+    );
+    assert!(
+        msg.contains(arg),
+        "{label}: message should name the argument {arg:?}, got {msg:?}"
+    );
+}
+
+#[test]
+fn repl_invalid_utf8_is_reported_and_names_the_argument() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    // Lone continuation byte: valid as C (NUL-terminated), invalid as UTF-8.
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+    let bad_ptr = bad.as_ptr().cast::<c_char>();
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_start(handle, bad_ptr, &mut e) };
+    expect_named("feed_start", "code", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume(handle, bad_ptr, &mut e) };
+    expect_named("resume", "value_json", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_with_error(handle, bad_ptr, &mut e) };
+    expect_named("resume_with_error", "error_message", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_not_found(handle, bad_ptr, &mut e) };
+    expect_named("resume_not_found", "fn_name", tag, e);
+
+    // Two string args: the FIRST bad one must be the one named.
+    let ok = CString::new("ValueError").unwrap();
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_with_exception(handle, bad_ptr, ok.as_ptr(), &mut e) };
+    expect_named("resume_with_exception/exc_type", "exc_type", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_with_exception(handle, ok.as_ptr(), bad_ptr, &mut e) };
+    expect_named("resume_with_exception/message", "error_message", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_futures(handle, bad_ptr, ok.as_ptr(), &mut e) };
+    expect_named("resume_futures/results", "results_json", tag, e);
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// The same arm with a NULL out_error: parse_c_str must not write through it.
+// Separate test because the assertion is "the process survives", and mixing
+// that with content assertions hides which one failed.
+#[test]
+fn repl_invalid_utf8_tolerates_null_out_error() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+    let bad_ptr = bad.as_ptr().cast::<c_char>();
+
+    let t = unsafe { monty_repl_feed_start(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+    let t = unsafe { monty_repl_resume(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+    let t = unsafe { monty_repl_resume_with_error(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+    let t = unsafe { monty_repl_resume_not_found(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+
+    unsafe { monty_repl_free(handle) };
+}
