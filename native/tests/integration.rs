@@ -2105,6 +2105,12 @@ fn repl_null_out_params_with_a_valid_handle() {
 // feed_run has TWO out-params, and they are not interchangeable: result_json
 // carries success, error_msg carries failure. A NULL for either must be
 // tolerated rather than dereferenced.
+//
+// BOTH BRANCHES, and the first version of this test only reached one. Feeding
+// `1+1` always SUCCEEDS, which exercises only `None => *error_msg = null`
+// (lib.rs:928) and never `Some(ref msg) => *error_msg = to_c_string(msg)`
+// (lib.rs:926) -- the branch that actually WRITES through the pointer, and so
+// the only one that can fault on a NULL. Failing code is required to reach it.
 #[test]
 fn repl_feed_run_tolerates_null_out_params() {
     let name = CString::new("repl.py").unwrap();
@@ -2115,28 +2121,40 @@ fn repl_feed_run_tolerates_null_out_params() {
         "repl_create failed: cannot run this test"
     );
 
-    let code = CString::new("1+1").unwrap();
+    let ok_code = CString::new("1+1").unwrap();
+    let bad_code = CString::new("1/0").unwrap();
 
-    // NULL result_json, real error_msg.
+    // --- SUCCESS path, NULL result_json ------------------------------------
     let mut e: *mut c_char = ptr::null_mut();
-    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), ptr::null_mut(), &mut e) };
-    let _ = tag;
-    if !e.is_null() {
-        unsafe { monty_string_free(e) };
-    }
+    let tag = unsafe { monty_repl_feed_run(handle, ok_code.as_ptr(), ptr::null_mut(), &mut e) };
+    assert_eq!(tag, MontyResultTag::Ok, "1+1 should succeed");
+    assert!(
+        e.is_null(),
+        "success must CLEAR error_msg, not leave it stale"
+    );
 
-    // Real result_json, NULL error_msg.
+    // --- ERROR path, NULL error_msg: the branch that writes ------------------
+    // This is the case the first version of this test missed entirely.
     let mut out: *mut c_char = ptr::null_mut();
-    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut out, ptr::null_mut()) };
-    let _ = tag;
+    let tag = unsafe { monty_repl_feed_run(handle, bad_code.as_ptr(), &mut out, ptr::null_mut()) };
+    assert_eq!(tag, MontyResultTag::Error, "1/0 should fail");
     if !out.is_null() {
         unsafe { monty_string_free(out) };
     }
 
-    // Both NULL. The caller wants neither; the callee must not write anyway.
+    // --- ERROR path, BOTH NULL ----------------------------------------------
     let tag =
-        unsafe { monty_repl_feed_run(handle, code.as_ptr(), ptr::null_mut(), ptr::null_mut()) };
-    let _ = tag;
+        unsafe { monty_repl_feed_run(handle, bad_code.as_ptr(), ptr::null_mut(), ptr::null_mut()) };
+    assert_eq!(
+        tag,
+        MontyResultTag::Error,
+        "the tag is the only channel left"
+    );
+
+    // --- SUCCESS path, BOTH NULL --------------------------------------------
+    let tag =
+        unsafe { monty_repl_feed_run(handle, ok_code.as_ptr(), ptr::null_mut(), ptr::null_mut()) };
+    assert_eq!(tag, MontyResultTag::Ok);
 
     unsafe { monty_repl_free(handle) };
 }
