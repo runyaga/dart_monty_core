@@ -36,7 +36,7 @@ const _skipReasons = {
   //     "snapshot is not supported on the one-shot handle: monty's SessionRef
   //      has no variant for an un-started MontyRun ... Use MontyRepl."
   // So every Monty.compile() call throws Bad state on FFI. Not tracked by any
-  // of the 47 open issues as of 2026-09-14.
+  // of the 47 open issues as of 2026-09-14. Now filed as core#152.
   'example/06_compile_and_platform.dart':
       'BLOCKED on a library defect: Monty.compile() throws "snapshot is not '
       'supported on the one-shot handle" — compileCode snapshots a one-shot '
