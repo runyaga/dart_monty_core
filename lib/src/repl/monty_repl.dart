@@ -501,7 +501,9 @@ class MontyRepl {
               // state" and THAT replaces the real exception. The genuine
               // fault is discarded and every caller sees a state-machine
               // message instead.
-              Object? cbResult;
+              // `cbWire` doubles as the discriminator below, so the
+              // success path needs no non-null assertion: a null wire means
+              // the try did not reach the end, which means cbError was set.
               WireJson? cbWire;
               Object? cbError;
               try {
@@ -509,20 +511,20 @@ class MontyRepl {
                 final cbKwargs = progress.kwargs?.map(
                   (k, v) => MapEntry(k, v.dartValue),
                 );
-                cbResult = await cb(cbArgs, cbKwargs);
                 // Serialising the RESULT stays inside the try. A value the
                 // wire cannot carry is a fault in what the callback returned,
                 // so Python should see it as that callback failing -- which is
                 // what it saw before this narrowing. Only the BINDING calls
                 // below move out.
-                cbWire = WireJson.value(cbResult);
+                cbWire = WireJson.value(await cb(cbArgs, cbKwargs));
               } on Object catch (e) {
                 cbError = e;
               }
+              final wire = cbWire;
               progress = _translateProgress(
-                cbError == null
-                    ? await _bindings.resume(cbWire!)
-                    : await _bindings.resumeWithError(cbError.toString()),
+                wire == null
+                    ? await _bindings.resumeWithError('$cbError')
+                    : await _bindings.resume(wire),
               );
             }
           case MontyOsCall():
