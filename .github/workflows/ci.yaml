@@ -794,7 +794,7 @@ jobs:
           dart test test/integration/example_smoke_test.dart \
             -p vm --run-skipped --tags=example \
             --reporter=expanded 2>&1 | tee /tmp/example-test.log
-          bash tool/assert_test_count.sh /tmp/example-test.log 12 example
+          bash tool/assert_test_count.sh /tmp/example-test.log 14 example
 
       # Compile-only smoke for the Pages demo. Catches API drift between
       # `Monty`/`MontyRepl` refactors and packages/dart_monty_web at PR time

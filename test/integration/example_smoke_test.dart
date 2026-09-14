@@ -42,10 +42,16 @@ const _skipReasons = {
       'supported on the one-shot handle" — compileCode snapshots a one-shot '
       'handle (ffi_core_bindings.dart:186-191 vs '
       'native_bindings_ffi.dart:297).',
-  'example/08_all_errors.dart':
-      'TODO: hangs in the MontyResourceError (timeout) section.',
-  'example/09_limits_and_code_capture.dart':
-      'TODO: hangs after the MontyLimits banner.',
+  // 08 and 09 were skipped for "hangs". Measured 2026-09-14: NEITHER HANGS.
+  // Both run to completion and exit 0. That was the last of four stale skip
+  // reasons in this map -- all four named a cause that was no longer true, and
+  // two of them hid live defects (core#152, and the one below).
+  //
+  // They are unskipped because they meet this harness's bar: compile and exit
+  // 0. Be clear about what that bar does NOT cover -- both examples print a
+  // section banner and then nothing, because `Monty.exec()` does not throw and
+  // their `on MontyResourceError catch` blocks are dead code. Tracked
+  // separately; a smoke test that only checks the exit code cannot see it.
 };
 
 void main() {
