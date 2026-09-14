@@ -95,6 +95,11 @@ s  breaking_rec  bash tool/check_breaking_recorded.sh
 # The demo links every fixture to pydantic/monty at a pinned tag; a crate bump
 # that missed the constant would show the wrong source with no error.
 s  fixture_links bash tool/check_fixture_links.sh
+# Same shape as fixture_links, one level up: the published pages state which
+# build they are, and nothing compiles an HTML shell, so the string rots
+# silently on the next version bump. The deployed site is the one artefact a
+# reader meets without a pubspec in front of them.
+s  page_versions bash tool/check_page_versions.sh
 s  vague_errors bash tool/check_no_vague_errors.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/

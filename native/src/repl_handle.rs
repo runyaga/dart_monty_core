@@ -247,8 +247,15 @@ impl MontyReplHandle {
     /// dump faithfully restores the limits of the session that was DUMPED.
     /// That is wrong for a caller who asked for their own:
     ///
-    ///     let b = MontyRepl(limits: stackDepth 5);
-    ///     b.restore(bytes_from_an_unbounded_session);
+    /// ```text
+    /// let b = MontyRepl(limits: stackDepth 5);
+    /// b.restore(bytes_from_an_unbounded_session);
+    /// ```
+    ///
+    /// (Fenced as `text`, not left indented. A 4-space indented block in a
+    /// doc comment is a RUST doctest to rustdoc, and this sketch is Dart --
+    /// so `cargo test` tried to compile it and failed, which is how it was
+    /// found. `cargo test --lib` does not run doctests and stayed green.)
     ///
     /// MEASURED before this parameter existed: `rec(50)` SUCCEEDED on `b`,
     /// while an identical un-restored session with the same limit raised
