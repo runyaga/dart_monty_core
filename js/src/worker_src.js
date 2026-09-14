@@ -795,11 +795,16 @@ function handleSnapshot(id) {
   }
 
   const outLen = allocOutPtr();
+  // monty_snapshot now carries its reason. It used to return a bare NULL and
+  // this handler invented "monty_snapshot returned null" -- a guess, made one
+  // frame above the code that knew the answer.
+  const outError = allocOutPtr();
   let ptr;
   try {
-    ptr = wasm.monty_snapshot(activeHandle, outLen.ptr);
+    ptr = wasm.monty_snapshot(activeHandle, outLen.ptr, outError.ptr);
   } catch (e) {
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
       error: e.message || String(e),
@@ -809,10 +814,12 @@ function handleSnapshot(id) {
   }
 
   if (ptr === 0) {
+    const errMsg = readAndFreeCString(outError.read());
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
-      error: 'monty_snapshot returned null',
+      error: errMsg || 'monty_snapshot returned null without a reason',
       errorType: 'StateError',
     });
     return;
@@ -820,6 +827,7 @@ function handleSnapshot(id) {
 
   const len = outLen.read();
   outLen.free();
+  outError.free();
 
   // Copy bytes out of WASM memory before freeing.
   // try/finally ensures WASM buffer is freed even if slice() OOMs.
@@ -929,12 +937,18 @@ function handleCompile(id, code, scriptName) {
 
   // Snapshot the compiled (pre-execution) handle — captures bytecode only.
   // Does NOT set activeHandle; handle is freed after snapshotting.
+  //
+  // REUSES the `outError` binding from the create above, which was freed on the
+  // line before. A second `const outError` here is a redeclaration in the same
+  // scope -- esbuild rejects it outright, which is how this was caught.
   const outLen = allocOutPtr();
+  outError = allocOutPtr();
   let ptr;
   try {
-    ptr = wasm.monty_snapshot(handle, outLen.ptr);
+    ptr = wasm.monty_snapshot(handle, outLen.ptr, outError.ptr);
   } catch (e) {
     outLen.free();
+    outError.free();
     wasm.monty_free(handle);
     self.postMessage({
       type: 'result', id, ok: false,
@@ -946,10 +960,12 @@ function handleCompile(id, code, scriptName) {
   wasm.monty_free(handle);
 
   if (ptr === 0) {
+    const errMsg = readAndFreeCString(outError.read());
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
-      error: 'monty_snapshot returned null after compile',
+      error: errMsg || 'monty_snapshot returned null after compile, without a reason',
       errorType: 'StateError',
     });
     return;
@@ -957,6 +973,7 @@ function handleCompile(id, code, scriptName) {
 
   const len = outLen.read();
   outLen.free();
+  outError.free();
 
   const wasmBytes = new Uint8Array(wasm.memory.buffer, ptr, len);
   let copy;

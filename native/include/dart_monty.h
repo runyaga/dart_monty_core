@@ -351,7 +351,8 @@ MontyProgressTag monty_resume_name_lookup_undefined(MontyHandle *handle,
  * @return         Heap-allocated byte buffer, or NULL. Caller frees with monty_bytes_free().
  */
 uint8_t *monty_snapshot(const MontyHandle *handle,
-                         size_t *out_len);
+                        size_t *out_len,
+                        char **out_error);
 
 /**
  * Restore a handle from a snapshot byte buffer.

@@ -497,11 +497,13 @@ MontyProgressTag monty_resume_name_lookup_undefined(
   ffi.Pointer<ffi.Uint8> Function(
     ffi.Pointer<MontyHandle>,
     ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
   )
 >()
 external ffi.Pointer<ffi.Uint8> monty_snapshot(
   ffi.Pointer<MontyHandle> handle,
   ffi.Pointer<ffi.Size> out_len,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_error,
 );
 
 /// Restore a handle from a snapshot byte buffer.

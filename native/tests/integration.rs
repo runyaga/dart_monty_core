@@ -141,16 +141,23 @@ fn null_safety() {
 
     // monty_snapshot with NULL
     let mut len: usize = 0;
-    let p = unsafe { monty_snapshot(ptr::null(), &mut len) };
+    let mut ne: *mut c_char = ptr::null_mut();
+    let p = unsafe { monty_snapshot(ptr::null(), &mut len, &mut ne) };
     assert!(p.is_null());
+    // Even the NULL-handle guard reports now; it used to return a bare NULL.
+    assert!(!ne.is_null(), "NULL handle must still say so");
+    unsafe { monty_string_free(ne) };
 
     // monty_snapshot with NULL out_len
     let code2 = CString::new("1+1").unwrap();
     let mut ce2: *mut c_char = ptr::null_mut();
     let h2 = unsafe { monty_create(code2.as_ptr(), ptr::null(), ptr::null(), &mut ce2) };
     if !h2.is_null() {
-        let p = unsafe { monty_snapshot(h2, ptr::null_mut()) };
+        let mut le: *mut c_char = ptr::null_mut();
+        let p = unsafe { monty_snapshot(h2, ptr::null_mut(), &mut le) };
         assert!(p.is_null());
+        assert!(!le.is_null(), "NULL out_len must still say so");
+        unsafe { monty_string_free(le) };
         unsafe { monty_free(h2) };
     }
 
@@ -1562,6 +1569,77 @@ fn restore_tolerates_trailing_garbage_or_says_why() {
             unsafe { monty_string_free(err) };
         }
     }
+}
+
+// F1: monty_snapshot must REPORT why it failed.
+//
+// It used to be `Ok(Err(_)) | Err(_) => ptr::null_mut()` with no out_error
+// parameter at all, so the reason was discarded and there was nowhere to put it
+// anyway. Its sibling monty_repl_snapshot was given one during M3 and this was
+// left behind, so the two disagreed about whether a snapshot failure is
+// explicable. Dart then invented "monty_snapshot returned null" and the JS
+// worker invented its own variant — two guesses made one frame above the code
+// that knew the answer.
+//
+// A STRUCTURAL check (does the signature have an out_error?) cannot catch this:
+// a signature can carry the parameter and still never write it. Adversarial
+// review made exactly that objection, so this is behavioural — it provokes a
+// real failure and reads what comes back.
+//
+// Provoking one is easy and will stay easy: MontyHandle::snapshot() is a
+// structural dead end on the one-shot handle (handle.rs), so EVERY call fails.
+// If that ever changes this test starts failing, which is the correct signal —
+// it means the case it pins no longer exists.
+#[test]
+fn snapshot_failure_reports_its_reason() {
+    let code = c("2 + 2");
+    let mut create_err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_err) };
+    assert!(!handle.is_null(), "monty_create failed");
+
+    let mut snap_len: usize = 0;
+    let mut snap_err: *mut c_char = ptr::null_mut();
+    let ptr_out = unsafe { monty_snapshot(handle, &mut snap_len, &mut snap_err) };
+
+    assert!(
+        ptr_out.is_null(),
+        "the one-shot handle cannot snapshot; if this now succeeds, delete this \
+         test and pin the new behaviour instead"
+    );
+    assert!(
+        !snap_err.is_null(),
+        "monty_snapshot returned NULL without writing out_error. That is the F1 \
+         defect: the caller cannot tell an unsupported handle from a corrupt \
+         heap from an allocation failure, so Dart and the JS worker each invent \
+         a reason."
+    );
+
+    let msg = unsafe { read_c_string(snap_err) };
+    assert!(
+        msg.contains("not supported on the one-shot handle"),
+        "the reported reason must be the one Rust produced, not a placeholder. \
+         Got: {msg}"
+    );
+
+    unsafe { monty_free(handle) };
+}
+
+#[test]
+fn snapshot_tolerates_a_null_out_error() {
+    // Bounds the test above. `out_error` is optional by contract — a caller who
+    // does not want the detail passes NULL and must not be punished for it.
+    // Without this, the obvious "fix" to the assertion above is to make
+    // out_error mandatory, which would break every caller that passes NULL.
+    let code = c("2 + 2");
+    let mut create_err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_err) };
+    assert!(!handle.is_null());
+
+    let mut snap_len: usize = 0;
+    let ptr_out = unsafe { monty_snapshot(handle, &mut snap_len, ptr::null_mut()) };
+    assert!(ptr_out.is_null(), "still fails, just without reporting");
+
+    unsafe { monty_free(handle) };
 }
 
 #[test]

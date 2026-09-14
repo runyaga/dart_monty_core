@@ -285,11 +285,19 @@ class NativeBindingsFfi extends NativeBindings {
   Uint8List snapshot(int handle) {
     final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
     final outLen = calloc<Size>();
+    final outError = calloc<Pointer<Char>>();
 
     try {
-      final buf = ffi_native.monty_snapshot(ptr, outLen);
+      final buf = ffi_native.monty_snapshot(ptr, outLen, outError);
       if (buf == nullptr) {
-        throw StateError('monty_snapshot returned null');
+        // `monty_snapshot returned null` was a GUESS, made one frame above the
+        // code that knew the answer. Rust discarded the reason on both the
+        // error and panic arms and had no out_error to put it in; that is
+        // fixed, so report what it says.
+        throw StateError(
+          _readAndFreeString(outError.value) ??
+              'monty_snapshot returned null without a reason',
+        );
       }
       final len = outLen.value;
       final bytes = Uint8List.fromList(buf.cast<Uint8>().asTypedList(len));
@@ -297,7 +305,9 @@ class NativeBindingsFfi extends NativeBindings {
 
       return bytes;
     } finally {
-      calloc.free(outLen);
+      calloc
+        ..free(outLen)
+        ..free(outError);
     }
   }
 

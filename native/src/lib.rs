@@ -613,8 +613,24 @@ pub unsafe extern "C" fn monty_resume_name_lookup_undefined(
 pub unsafe extern "C" fn monty_snapshot(
     handle: *const MontyHandle,
     out_len: *mut usize,
+    out_error: *mut *mut c_char,
 ) -> *mut u8 {
-    if handle.is_null() || out_len.is_null() {
+    // Helper so every early return REPORTS WHY. `out_error` may itself be NULL
+    // for a caller that does not want the detail -- that is their choice, not a
+    // reason for this function to have nothing to say.
+    let report = |msg: &str| {
+        if !out_error.is_null() {
+            // SAFETY: out_error is non-null (just checked)
+            unsafe { *out_error = to_c_string(msg) };
+        }
+    };
+
+    if handle.is_null() {
+        report("monty_snapshot: handle is NULL");
+        return ptr::null_mut();
+    }
+    if out_len.is_null() {
+        report("monty_snapshot: out_len is NULL");
         return ptr::null_mut();
     }
     // SAFETY: handle is non-null (checked above) and was created by monty_create via Box::into_raw
@@ -629,7 +645,21 @@ pub unsafe extern "C" fn monty_snapshot(
             unsafe { *out_len = len };
             ptr
         }
-        Ok(Err(_)) | Err(_) => ptr::null_mut(),
+        // WAS: `Ok(Err(_)) | Err(_) => ptr::null_mut()`. Both arms threw the
+        // reason away, and the function had no out_error to put it in anyway.
+        // Its sibling monty_repl_snapshot was given one during M3 and this was
+        // left behind, so the two disagreed about whether a snapshot failure
+        // is explicable. Dart then invented "monty_snapshot returned null" and
+        // the JS worker invented its own variant -- two guesses where the real
+        // answer already existed one frame down.
+        Ok(Err(msg)) => {
+            report(&msg);
+            ptr::null_mut()
+        }
+        Err(panic_msg) => {
+            report(&panic_msg);
+            ptr::null_mut()
+        }
     }
 }
 
