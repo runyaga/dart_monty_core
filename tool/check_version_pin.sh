@@ -54,3 +54,40 @@ if [ "$PUB_MINOR" != "$MONTY_PATCH" ]; then
 fi
 
 echo "PASS — pubspec $PUB_VER tracks the monty pin v$CARGO_TAG."
+
+# ---------------------------------------------------------------------------
+# The same number, in the provenance record for the committed binary assets.
+# ---------------------------------------------------------------------------
+# tool/wasm-provenance.json records which monty produced lib/assets/*.wasm.
+# tool/check_asset_freshness.sh opens that file but reads only source_sha256,
+# so its `monty_tag` was decorative -- and it sat at v0.0.19 while Cargo.toml
+# pinned v0.0.23, wrong for four upstream releases with nothing to notice.
+#
+# Snapshots are not portable across monty upgrades, so "which monty built this
+# asset" is the one fact the file exists to state. A provenance record that is
+# silently wrong is worse than no record: it is believed.
+# Parsed as JSON, not by regex. The first attempt at this used
+#   grep -oE '"monty_tag"..."v[0-9.]+"' | grep -oE '[0-9.]+$'
+# which never matched, because the captured text ends in a QUOTE, not a digit.
+# Under `set -euo pipefail` that emptied the variable and killed the script on a
+# clean tree -- a gate that fails to run, which is the one failure mode this
+# file exists to prevent. json.load cannot be fooled by punctuation.
+PROV_TAG="$(python3 -c "import json;print(json.load(open('tool/wasm-provenance.json')).get('monty_tag','').lstrip('v'))")"
+
+[ -n "$PROV_TAG" ] || { echo "FATAL: no monty_tag in tool/wasm-provenance.json"; exit 2; }
+
+if [ "$PROV_TAG" != "$CARGO_TAG" ]; then
+  echo "FAIL: provenance/pin drift."
+  echo "      tool/wasm-provenance.json monty_tag: v$PROV_TAG"
+  echo "      native/Cargo.toml pin              : v$CARGO_TAG"
+  echo ""
+  echo "  The provenance record names the monty that built the committed"
+  echo "  lib/assets/*.wasm. Snapshots are not portable across monty upgrades,"
+  echo "  so a wrong tag here misinforms anyone auditing the binary."
+  echo ""
+  echo "  Set monty_tag to v${CARGO_TAG}, and re-run tool/prebuild.sh if the"
+  echo "  assets themselves were not rebuilt against this pin."
+  exit 1
+fi
+
+echo "PASS — wasm-provenance monty_tag v$PROV_TAG tracks the pin."
