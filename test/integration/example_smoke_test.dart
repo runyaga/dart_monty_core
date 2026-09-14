@@ -22,11 +22,26 @@ import 'package:test/test.dart';
 /// regression to fix; once fixed, remove the entry so the test enforces
 /// the example.
 const _skipReasons = {
+  // REASON CORRECTED 2026-09-14. It previously blamed resumeNameLookupValue
+  // being unsupported on FFI. That was fixed (06da3ba) and the file now holds
+  // zero UnimplementedError, so the stale reason was hiding the real cause
+  // TWICE over: the example also failed to COMPILE on a duplicate `repl`
+  // declaration, which masked the runtime fault behind it.
+  //
+  // The compile error is fixed. What remains is a LIBRARY defect, not an
+  // example defect: Monty.compile() is broken on the FFI backend.
+  //   FfiCoreBindings.compileCode (ffi_core_bindings.dart:186-191) calls
+  //   _bindings.snapshot() on a handle from _bindings.create(), i.e. a
+  //   ONE-SHOT handle, and native_bindings_ffi.dart:297 refuses exactly that:
+  //     "snapshot is not supported on the one-shot handle: monty's SessionRef
+  //      has no variant for an un-started MontyRun ... Use MontyRepl."
+  // So every Monty.compile() call throws Bad state on FFI. Not tracked by any
+  // of the 47 open issues as of 2026-09-14.
   'example/06_compile_and_platform.dart':
-      'TODO: UnimplementedError — resumeNameLookupValue is not supported by '
-      'the FFI backend (FfiCoreBindings:165). Binding gap, not docs rot.',
-  'example/07_all_values.dart':
-      'TODO: type cast error at line 157 — MontyNone vs MontyNamedTuple.',
+      'BLOCKED on a library defect: Monty.compile() throws "snapshot is not '
+      'supported on the one-shot handle" — compileCode snapshots a one-shot '
+      'handle (ffi_core_bindings.dart:186-191 vs '
+      'native_bindings_ffi.dart:297).',
   'example/08_all_errors.dart':
       'TODO: hangs in the MontyResourceError (timeout) section.',
   'example/09_limits_and_code_capture.dart':

@@ -93,14 +93,14 @@ Future<void> _snapshotCapable() async {
   repl.dispose();
 
   // Low-level: MontyRepl.snapshot() / MontyRepl.restore()
-  final repl = MontyRepl();
-  await repl.feedRun('n = 7');
-  final snap3 = await repl.snapshot();
+  final repl2 = MontyRepl();
+  await repl2.feedRun('n = 7');
+  final snap3 = await repl2.snapshot();
   print('MontyRepl snapshot: ${snap3.length} bytes');
-  await repl.feedRun('n = 0');
-  await repl.restore(snap3);
-  print('MontyRepl restore → n = ${(await repl.feedRun("n")).value}'); // 7
-  await repl.dispose();
+  await repl2.feedRun('n = 0');
+  await repl2.restore(snap3);
+  print('MontyRepl restore → n = ${(await repl2.feedRun("n")).value}'); // 7
+  await repl2.dispose();
 }
 
 // ── MontyFutureCapable ────────────────────────────────────────────────────────
