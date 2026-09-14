@@ -226,11 +226,24 @@ jobs:
           DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
         run: bash tool/dcm_ratchet.sh
       - name: Test (JIT, unit only)
-        # Exit 79 = no tests found; acceptable until unit tests exist alongside
-        # the integration suite. Coverage will be empty but that is tolerated.
+        # The exit-79 tolerance is GONE. It said "no tests found is acceptable
+        # until unit tests exist"; 457 of them exist, so all it could do now was
+        # turn a runner that registered nothing into a green tick -- the
+        # skip-but-green shape this repo has already paid for once (8dbdd59,
+        # "646 of 1593 registered tests" asserting nothing). A floor on the test
+        # count replaces it: raise the floor when the suite grows, never lower
+        # it to make a run pass.
         run: |
-          dart test --exclude-tags=ffi,wasm,integration,ladder --coverage=coverage \
-          || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
+          set -o pipefail
+          dart test --exclude-tags=ffi,wasm,integration,ladder \
+            --coverage=coverage 2>&1 | tee /tmp/unit-test.log
+          N=$(grep -oE '\+[0-9]+' /tmp/unit-test.log | tail -1 | tr -d '+')
+          echo "unit tests run: ${N:-0}"
+          if [ "${N:-0}" -lt 400 ]; then
+            echo "FAIL: expected at least 400 unit tests, saw ${N:-0}."
+            echo "  A suite that registers nothing exits 0 and prints success."
+            exit 1
+          fi
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -251,22 +264,34 @@ jobs:
             -p chrome -c dart2js -c dart2wasm
 
       - name: Generate LCOV
-        # Skip if no coverage data was collected (no unit tests yet).
         run: |
           # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
           # coverage/*.json. The old glob never matched, so an EMPTY lcov was
           # written every run and the 70% patch-coverage gate short-circuited to
           # exit 0 -- it has never once been enforced (core#130).
+          #
+          # The `else` branch that wrote an EMPTY tracefile is gone with it. It
+          # was the second half of the same defect: having detected that no
+          # coverage existed, it manufactured a file that made every downstream
+          # gate pass. "No data" is now a failure, which is what it always was.
           shopt -s globstar nullglob
-          if compgen -G "coverage/**/*.json" > /dev/null 2>&1; then
-            dart pub global activate coverage
-            dart pub global run coverage:format_coverage \
-              --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
-          else
-            echo "No coverage data — writing empty lcov tracefile"
-            mkdir -p coverage
-            touch coverage/lcov.info
+          if ! compgen -G "coverage/**/*.json" > /dev/null 2>&1; then
+            echo "FAIL: no coverage data under coverage/ after a 400+ test run."
+            exit 1
           fi
+          # `dart run`, not `dart pub global activate`: coverage is a declared
+          # dev_dependency now, so this uses the pinned resolution instead of
+          # whatever pub.dev serves today.
+          dart run coverage:format_coverage \
+            --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+      - name: Honest coverage report (every lib/ file in the denominator)
+        # Dart's collector reports only LOADED libraries, so a file no test
+        # imports is ABSENT from lcov.info, not 0% -- 22 of lib/'s 68 files
+        # were, and the reported 40.2% could be RAISED by deleting an import.
+        # This rebuilds the denominator from every lib/**/*.dart and fails if a
+        # file is unaccounted for. Expect the printed lib-wide number to be far
+        # below the loaded-files one; that gap is the finding, not a break.
+        run: bash tool/coverage_report.sh --out-dir coverage coverage/lcov.info
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
@@ -277,7 +302,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lcov-dart
-          path: coverage/lcov.info
+          # The whole directory: lcov.info (raw, loaded files only),
+          # merged.info (exclusions applied, real lines only — what diff-cover
+          # gets) and honest.info (every lib/ file — what humans get).
+          path: |
+            coverage/lcov.info
+            coverage/merged.info
+            coverage/honest.info
           retention-days: 1
 
   # ---------------------------------------------------------------------------

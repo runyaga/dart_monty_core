@@ -109,7 +109,21 @@ s  version_pin   bash tool/check_version_pin.sh
 s  vague_errors bash tool/check_no_vague_errors.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
-s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example
+# --coverage is not decoration: it is the input to cov_report below, and the
+# collection is nearly free here -- measured in the build container, 457 tests
+# in 5s with it on. (CI's 5m53s for the same step is the runner, not the
+# instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
+# still writes nothing the read-only check can see.
+s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example --coverage="$OUT/cov"
+# The coverage number, made to mean something. Dart's collector reports only
+# LOADED libraries, so a file no test imports is absent from the tracefile
+# rather than 0% -- 22 of lib/'s 68 files were, and ~1,200 coverable lines were
+# simply not in the denominator. The reported figure could therefore be RAISED
+# by deleting an import, which is the wrong direction for a quality metric.
+# cov_report rebuilds the denominator from every lib/**/*.dart and fails if any
+# file is unaccounted for. It reports two numbers on purpose (loaded-files and
+# lib-wide) so nobody can quietly switch to whichever flatters.
+s  cov_report    bash tool/coverage_report.sh --out-dir "$OUT/coverage" "$OUT/cov"
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
