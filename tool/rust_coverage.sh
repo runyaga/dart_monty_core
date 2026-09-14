@@ -72,7 +72,54 @@ run_target() {
 run_target lib         --lib
 run_target integration --test integration
 
-read -r HIT FOUND PCT < <(python3 "$PKG/tool/lcov_union.py" \
+# DERIVE the roots from the tracefiles; do not guess them.
+#
+# The same source file appears under more than one absolute root because the
+# tree is bind-mounted and an rlib compiled on the host keeps the path it was
+# compiled with. An earlier version hardcoded the candidates, which failed the
+# moment it ran somewhere with a different $HOME: inside the container $HOME is
+# /home/klangk, so the macOS spelling /Users/runyaga/... never matched and the
+# paths stayed split -- 51.27% against a 74% floor, a false red.
+#
+# A prefix is accepted as a root ONLY if EVERY ONE of this crate's source files
+# appears beneath it in the tracefiles. One shared filename is a coincidence;
+# the complete set is this package. That is what stops a dependency's own
+# native/src/lib.rs from being mistaken for ours and merged into it.
+# Same exclusion as the coverage runs themselves ($IGNORE): a source the runs
+# never instrument cannot appear in a tracefile, and requiring it here would
+# reject every candidate root. These two must not drift apart.
+mapfile -t SRC_FILES < <(cd "$PKG" && find native/src -name '*.rs' | grep -vE "$IGNORE" | sort)
+[ "${#SRC_FILES[@]}" -gt 0 ] || { echo "FAIL: no native/src/*.rs found under $PKG."; exit 1; }
+
+ROOTS=()
+while read -r prefix; do
+  [ -n "$prefix" ] || continue
+  all=1
+  for f in "${SRC_FILES[@]}"; do
+    grep -qF "SF:$prefix/$f" "$OUT/lib.info" "$OUT/integration.info" || { all=0; break; }
+  done
+  [ "$all" = "1" ] && ROOTS+=(--root "$prefix")
+done < <(grep -h '^SF:' "$OUT/lib.info" "$OUT/integration.info" \
+         | sed 's|^SF:||' | grep -oE '^.*(?=/native/src/)' -P 2>/dev/null \
+         | sort -u || true)
+
+# Fallback for greps without -P: strip the suffix textually.
+if [ "${#ROOTS[@]}" -eq 0 ]; then
+  while read -r prefix; do
+    [ -n "$prefix" ] || continue
+    all=1
+    for f in "${SRC_FILES[@]}"; do
+      grep -qF "SF:$prefix/$f" "$OUT/lib.info" "$OUT/integration.info" || { all=0; break; }
+    done
+    [ "$all" = "1" ] && ROOTS+=(--root "$prefix")
+  done < <(grep -h '^SF:' "$OUT/lib.info" "$OUT/integration.info" \
+           | sed 's|^SF:||; s|/native/src/.*$||' | sort -u)
+fi
+
+[ "${#ROOTS[@]}" -gt 0 ] || { echo "FAIL: no source root matched all ${#SRC_FILES[@]} crate sources."; exit 1; }
+printf "source roots:"; for r in "${ROOTS[@]}"; do [ "$r" = "--root" ] || printf " %s" "$r"; done; echo
+
+read -r HIT FOUND PCT < <(python3 "$PKG/tool/lcov_union.py" "${ROOTS[@]}" \
   "$OUT/merged.info" "$OUT/lib.info" "$OUT/integration.info")
 
 [ -n "${PCT:-}" ] || { echo "FAIL: the union produced no percentage."; exit 1; }
@@ -81,7 +128,10 @@ read -r HIT FOUND PCT < <(python3 "$PKG/tool/lcov_union.py" \
 # broken -- which is the exact failure this script exists to correct, so it
 # must not be able to reintroduce it silently.
 for t in lib integration; do
-  read -r _ _ SOLO < <(python3 "$PKG/tool/lcov_union.py" "$OUT/solo.info" "$OUT/$t.info")
+  # stderr silenced: the duplicate-path warning is real, but the main union
+  # above already printed it. Repeating it once per solo check is noise.
+  read -r _ _ SOLO < <(python3 "$PKG/tool/lcov_union.py" "${ROOTS[@]}" \
+    "$OUT/solo.info" "$OUT/$t.info" 2>/dev/null)
   if awk -v u="$PCT" -v s="$SOLO" 'BEGIN{exit !(u < s - 0.01)}'; then
     echo "FAIL: union (${PCT}%) is BELOW '$t' alone (${SOLO}%). The merge is wrong."
     exit 1
