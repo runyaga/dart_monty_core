@@ -55,6 +55,61 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Added
 
+- **Wire format v5, and the value types monty v0.0.23 actually sends.**
+  `WIRE_FORMAT_VERSION` is 5. Four public types are new:
+
+  | Type | What it is |
+  |---|---|
+  | `MontyClassInstance` | any class instance the sandbox returns — dataclass or not |
+  | `MontyClassType` | the class identity carried on an instance: name, stable uuid, `hostDefined`, `isDataclass`, class-level attrs |
+  | `MontyTime` | `datetime.time`, with `offsetSeconds`, `timezoneName` and `fold` |
+  | `MontyNotImplemented` | Python's `NotImplemented` singleton |
+
+  **`MontyDataclass` is now ENCODE-ONLY** (`monty_value_structured.dart:490`).
+  v0.0.23 removed the dedicated dataclass variant upstream, so a class instance
+  now arrives as `MontyClassInstance` whether or not it is a dataclass — read
+  `isDataclass` on its `classType` when you need to tell. `MontyDataclass`
+  still encodes, so host→sandbox code is unaffected.
+
+  Every one of the 25 wire tags now has an inbound-forgery test proving
+  sandboxed Python cannot forge it into a privileged host type, and
+  `tool/check_forgery_coverage.sh` fails if a new tag is added without one. The
+  suite previously covered 11 of 25.
+
+- **`docs/WIRE-CONTRACT.md` exists.** Ten sites cited it as normative —
+  including a test that prints `WIRE-CONTRACT.md row N requires ...` on failure
+  — and it had never been written. Its row table is DERIVED from the assertions
+  that actually execute on all three backends, not authored, and
+  `tool/check_wire_contract.sh` keeps it that way in three directions: cited
+  rules must be documented, no row may be invented, and no executed row may be
+  omitted.
+
+- **`MontyRepl.snapshot()` and `.restore()` work.** `restore()` was previously a
+  silent no-op on the FFI path — it called through and never set the created
+  flag, so the session carried on with its old heap and reported success.
+  Restore now also carries the caller's **limits** and **external functions**
+  rather than dropping them: a snapshot cannot contain `ext_fn_names`, and
+  inheriting the snapshot's limits meant whoever supplied the bytes chose the
+  resource bounds.
+
+  On the **web backend** `restore(limitsJson:)` and `restore(extFns:)` throw
+  `UnsupportedError` instead of accepting and ignoring them, because the Worker
+  cannot yet carry either across the message boundary. Refusing loudly beats a
+  restored session that is silently unbounded, or one whose external calls fail
+  later as unknown names far from the restore that caused it.
+
+- **`FfiCoreBindings.resumeNameLookupValue` is implemented.** It threw
+  `UnimplementedError` saying the FFI backend did not support it, while the Rust
+  export, the C header and the generated binding all existed — the capability
+  was unwired, not absent. `tool/check_backend_parity.sh` now fails if either
+  backend refuses a `CoreBindings` method the other implements.
+
+- **`monty_alloc` / `monty_dealloc` are declared in the C header.** Both were
+  exported and called 49 times by the Worker while being absent from the public
+  header, so no Dart binding was generated and a C consumer had no way to know
+  they existed. `tool/check_exports_declared.sh` now requires every exported
+  symbol to be declared.
+
 - **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
   files.** `VfsCallbackFile(path, read:, write:)` backs a virtual file with
   host callbacks, mirroring upstream's `CallbackFile` (`os_access.py:676`). It
@@ -76,6 +131,20 @@ three surprise people, and one of them differs from upstream's default.
   greppable and does not replace that rule.
 
 ### Internal
+
+- **The web restore fix that nothing could have caught.** `monty_repl_restore`
+  grew from three C parameters to five so a restored session could carry limits
+  and ext fns. The Worker kept calling it with three. **JS does not throw on a
+  short WebAssembly call** — it pads the missing arguments with `0` — so
+  `outError.ptr` silently bound to the `limits_json` slot, an out-pointer read
+  as a C string, and `out_error` became NULL. Every WASM restore failed with no
+  reported cause while the entire FFI suite stayed green.
+
+  `tool/check_wasm_arity.mjs` now parses the shipped `.wasm` for each export's
+  real parameter count and compares it against all 167 `wasm.*()` call sites in
+  the Worker. No compiler, linter or type-checker covers that boundary:
+  `dart analyze` sees the FFI half of the ABI and nothing at all saw the JS
+  half.
 
 - **`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`.**
   No consumer surface changes — the old name was a Rust-crate convenience
