@@ -540,7 +540,18 @@ final class MontyDataclass extends MontyValue {
 
     return MontyDataclass(
       name: map['name'] as String? ?? '',
-      typeId: (map['type_id'] as num?)?.toInt() ?? 0,
+      // NOT `?? 0`. The Rust decoder now REQUIRES type_id — it derives the
+      // class identity from it (convert.rs: "dataclass envelope missing field
+      // \"type_id\": cannot derive a stable class identity") — so defaulting
+      // here produced a value Dart accepts and Rust rejects. Review caught the
+      // mismatch. Absent is an error on both sides now.
+      typeId: switch (map['type_id']) {
+        final num n => n.toInt(),
+        final other => throw FormatException(
+          'dataclass: type_id must be a number, got ${other.runtimeType}',
+          json.encode(map),
+        ),
+      },
       fieldNames:
           (map['field_names'] as List<dynamic>?)?.cast<String>().toList() ??
           const [],

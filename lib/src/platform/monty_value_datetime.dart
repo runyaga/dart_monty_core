@@ -291,15 +291,55 @@ final class MontyTime extends MontyValue {
     this.fold = 0,
   });
 
-  factory MontyTime._fromMap(Map<String, dynamic> map) => MontyTime(
-    hour: (map['hour'] as num?)?.toInt() ?? 0,
-    minute: (map['minute'] as num?)?.toInt() ?? 0,
-    second: (map['second'] as num?)?.toInt() ?? 0,
-    microsecond: (map['microsecond'] as num?)?.toInt() ?? 0,
-    offsetSeconds: (map['offset_seconds'] as num?)?.toInt(),
-    timezoneName: map['timezone_name'] as String?,
-    fold: (map['fold'] as num?)?.toInt() ?? 0,
-  );
+  factory MontyTime._fromMap(Map<String, dynamic> map) {
+    // REQUIRED fields are required. This was `?? 0` on every one of them, and
+    // review caught it: a malformed `time` envelope silently parsed as
+    // MIDNIGHT. That is the exact silent-default hazard removed from the Rust
+    // decoder and then from MontyClassInstance earlier the same day — written
+    // straight back into new code. Absent, wrong-typed and zero are three
+    // different things and must not collapse into one.
+    //
+    // The Rust encoder emits all five unconditionally (convert.rs:174-182), so
+    // an envelope missing any of them did not come from this encoder.
+    int req(String key) {
+      final v = map[key];
+      if (v is num) return v.toInt();
+
+      throw FormatException(
+        'time: $key must be a number, got ${v.runtimeType}',
+        json.encode(map),
+      );
+    }
+
+    // These two ARE legitimately nullable — a naive time carries neither —
+    // but present-and-wrong-typed is still an error.
+    final rawOffset = map['offset_seconds'];
+    if (rawOffset != null && rawOffset is! num) {
+      throw FormatException(
+        'time: offset_seconds must be a number or null, '
+        'got ${rawOffset.runtimeType}',
+        json.encode(map),
+      );
+    }
+    final rawTzName = map['timezone_name'];
+    if (rawTzName != null && rawTzName is! String) {
+      throw FormatException(
+        'time: timezone_name must be a string or null, '
+        'got ${rawTzName.runtimeType}',
+        json.encode(map),
+      );
+    }
+
+    return MontyTime(
+      hour: req('hour'),
+      minute: req('minute'),
+      second: req('second'),
+      microsecond: req('microsecond'),
+      offsetSeconds: (rawOffset as num?)?.toInt(),
+      timezoneName: rawTzName as String?,
+      fold: req('fold'),
+    );
+  }
 
   /// Hour, 0-23.
   final int hour;
