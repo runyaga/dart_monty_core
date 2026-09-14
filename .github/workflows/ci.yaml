@@ -330,7 +330,7 @@ jobs:
   # Skipped until the codebase has unit tests separate from integration tests.
   # ---------------------------------------------------------------------------
   test-aot:
-    name: Dart test (AOT)
+    name: AOT compile check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [ffigen]
@@ -350,14 +350,21 @@ jobs:
           name: ffi-bindings
           path: lib/src/ffi/generated
       - run: dart pub get
-      - name: Build native test kernel
-        # All current tests are integration tests; exit 79 (no tests found)
-        # is acceptable until unit tests are added alongside the integration suite.
-        run: |
-          dart test --exclude-tags=ffi,wasm,integration,ladder \
-            --platform vm \
-            --compiler=kernel \
-          || EXIT=$?; [ "${EXIT:-0}" -eq 79 ] && echo "No unit tests yet (exit 79 OK)" || exit "${EXIT:-0}"
+      # The `Build native test kernel` step that used to sit here is GONE. It ran
+      #   dart test --exclude-tags=... --platform vm --compiler=kernel
+      # and `--compiler=kernel` IS the JIT default, so it re-ran the same 457
+      # tests the `test` job had already run on the same engine — both logged an
+      # identical "457 tests passed". Measured on run 34847818587: 331s of this
+      # job's 353s, almost all of it the hidden native rebuild that precedes any
+      # `dart test` here.
+      #
+      # Its exit-79 tolerance was also stale twice over: it said "no tests found
+      # is acceptable until unit tests are added", and 457 of them exist.
+      #
+      # What is KEPT is the step below, which is 2s and is the only thing in this
+      # repo that compiles AOT at all. Deleting the whole job — as an earlier
+      # analysis proposed — would have saved 22 more seconds and removed that.
+      #
       # This job did NOT exercise AOT: `--compiler=kernel` is the JIT default,
       # and the step here was a literal `echo` claiming success (core#130).
       #
