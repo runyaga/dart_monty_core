@@ -450,10 +450,17 @@ jobs:
         # 0.19 upgrade itself (core#130). The local matrix always globbed, so
         # those suites passed locally and were simply never run in CI.
         #
-        # ffi_with_cm_test.dart is the one deliberate exclusion: it needs
-        # `--features test-hooks`, which is never shipped (see tool/test_cm.sh).
+        # ffi_with_cm_test.dart USED TO BE excluded here, on the grounds that
+        # it needs `--features test-hooks`. That stopped being true upstream:
+        # `_test_cm()` does not exist in monty v0.0.23 (`grep -rn "_test_cm"
+        # crates/monty/src/` at rev 302e0f2 -> 0 hits) and the with__cm_*
+        # fixtures use an ordinary Python `class CM:` now. Measured
+        # 2026-09-13 on a NORMAL build, no test-hooks anything: 5/5 pass.
+        # So five tests were excluded from CI for a requirement that no longer
+        # exists, and tool/test_cm.sh -- the only thing that ran them -- is
+        # referenced nowhere but comments. Glob them in.
         run: |
-          FFI_TESTS=$(ls test/integration/ffi_*_test.dart | grep -v with_cm)
+          FFI_TESTS=$(ls test/integration/ffi_*_test.dart)
           echo "Running $(echo "$FFI_TESTS" | wc -l | tr -d ' ') FFI suites:"
           echo "$FFI_TESTS" | sed 's/^/  /'
           dart test \

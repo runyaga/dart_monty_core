@@ -2,6 +2,29 @@
 # =============================================================================
 # dart_monty_core — with__cm_* conformance (test-hooks build)
 # =============================================================================
+# YOU ALMOST CERTAINLY DO NOT NEED THIS SCRIPT ANY MORE. Read this first.
+#
+# `_test_cm()` — the synthetic context manager the with__cm_* fixtures were
+# named for — DOES NOT EXIST in monty v0.0.23. `grep -rn "_test_cm"
+# crates/monty/src/` at the pinned rev 302e0f2 returns ZERO hits, and the
+# fixtures now use an ordinary Python `class CM:`. Measured 2026-09-13:
+# ffi_with_cm_test.dart passes 5/5 on a NORMAL build with no test-hooks
+# anything.
+#
+# So test/integration/ffi_with_cm_test.dart is globbed into the ordinary FFI
+# suites in BOTH .github/workflows/ci.yaml and tool/gate.sh now. Nothing
+# invokes this script; before that change nothing invoked it either, and it
+# was the only thing that ran those five tests, so they ran NOWHERE.
+#
+# It is kept, not deleted, because it still documents how to force a
+# test-hooks FFI build if a future fixture needs one. But note what it does to
+# get there: it `touch`es native/.test-hooks, which hook/build.dart honours by
+# adding `--features test-hooks` to the dylib build (hook/build.dart:45-47).
+# That feature is NEVER shipped. An EXIT trap removes the marker and the hook
+# cache, so a normal run leaves nothing behind -- but if this script is killed
+# hard enough to skip the trap, subsequent local FFI runs use a test-hooks
+# dylib until you delete native/.test-hooks by hand.
+# =============================================================================
 # The `with__cm_*` fixtures exercise the `with` machinery through monty's
 # synthetic `_test_cm()` context manager, which only exists when the native
 # crate is built with the `test-hooks` cargo feature. That feature is

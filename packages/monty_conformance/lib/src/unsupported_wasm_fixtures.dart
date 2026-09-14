@@ -196,8 +196,27 @@ const gcModuleFixtures = {
 /// apart is what makes that difference sayable.
 const Set<String> testHooksWasmFixtures = {
   ...setRecursionLimitFixtures,
-  ...testCmFixtures,
   ...gcModuleFixtures,
+  // testCmFixtures IS NOT HERE ANY MORE, and the reason is upstream.
+  //
+  // `_test_cm()` — the synthetic context manager those five fixtures were
+  // named for — DOES NOT EXIST in monty v0.0.23: `grep -rn "_test_cm"
+  // crates/monty/src/` at the pinned rev 302e0f2 returns 0 hits, and the
+  // fixtures now use an ordinary Python `class CM:`. Nothing about them needs
+  // a test-hooks build any more.
+  //
+  // This file ALREADY said they pass without one ("measured on 2026-08-03,
+  // testCmFixtures PASS on web with no test-hooks build"), and the union
+  // skipped them anyway. Measured 2026-09-13, removing them:
+  //     shipped dart2js    575 passed / 14 skipped -> 580 / 9   rc=0
+  //     shipped dart2wasm  575 passed / 14 skipped -> 580 / 9   rc=0
+  //     WASM unit suite    +719 ~90 -8 -> +724 ~85 -8
+  //     test-hooks gates   585 / 1 / 4              UNCHANGED
+  // Five fixtures were skipped for nothing, on both backends.
+  //
+  // This is the failure this file warns about three times over: a skip whose
+  // REASON went stale while the skip stayed. "A skip needs a re-check date or
+  // a test, not a rationale" — and the re-check is what found it.
 };
 
 // The `unsupportedWasmFixtures` UNION was here and is DELETED.

@@ -89,9 +89,14 @@ ns cargo_fmt     cargo fmt --check
 ns cargo_clippy  cargo clippy --all-targets -- -D warnings
 ns cargo_test    cargo test
 ns cargo_deny    cargo deny check
-# NOTE: ffi_with_cm_test.dart needs `--features test-hooks` (tool/test_cm.sh) and is
-# excluded here; it is retired in P1b since monty 0.19 dropped `_test_cm()`.
-s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart | grep -v with_cm) --run-skipped --tags=ffi -p vm
+# ffi_with_cm_test.dart is INCLUDED again. The note here said it needs
+# `--features test-hooks` and was "retired in P1b since monty 0.19 dropped
+# `_test_cm()`". The second half is right and the first half stopped being
+# true because of it: with `_test_cm()` gone (0 hits in monty v0.0.23) the
+# with__cm_* fixtures use a plain Python `class CM:`, and the test passes 5/5
+# on a normal build. The exclusion outlived its reason on BOTH sides -- CI had
+# the same one (ci.yaml) -- so the suite ran nowhere at all.
+s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart) --run-skipped --tags=ffi -p vm
 s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
