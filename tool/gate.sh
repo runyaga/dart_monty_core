@@ -100,6 +100,12 @@ s  fixture_links bash tool/check_fixture_links.sh
 # silently on the next version bump. The deployed site is the one artefact a
 # reader meets without a pubspec in front of them.
 s  page_versions bash tool/check_page_versions.sh
+# The source of the number those pages print. The monty pin moved 0.19 -> 0.23
+# in e1e4eda and pubspec.yaml did not follow, so the package called itself
+# 0.19.0 while pinning v0.0.23 -- and since snapshots are not portable across
+# monty upgrades, that told every consumer the wrong thing about compatibility.
+# Nothing compared the two until a human read the version off the demo page.
+s  version_pin   bash tool/check_version_pin.sh
 s  vague_errors bash tool/check_no_vague_errors.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/

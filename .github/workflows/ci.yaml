@@ -162,6 +162,36 @@ jobs:
         # Monty Python and RETRY on failure; "unexpected error" gives it
         # nothing to localise or act on.
         run: bash tool/check_no_vague_errors.sh
+      - name: Worker and wasm agree on every export's arity
+        # Local-only until now: tool/gate.sh. JS does NOT throw when a
+        # WebAssembly export is called with the wrong number of arguments -- it
+        # pads missing ones with 0 and drops extras -- so a Rust signature
+        # change is a SILENT miscompile on the web backend. `dart analyze`
+        # covers the FFI half of the ABI and nothing at all covered the JS half.
+        # Measured: monty_repl_restore grew from 3 parameters to 5, the Worker
+        # kept passing 3, out_error bound to the limits_json slot (an
+        # out-pointer parsed as a C string), and every WASM restore failed with
+        # no cause while the full FFI suite stayed green.
+        run: node tool/check_wasm_arity.mjs
+      - name: Package version tracks the monty pin
+        # Local-only until now. This package's MINOR version equals the monty
+        # PATCH it pins (v0.0.17 -> 0.17.x, v0.0.19 -> 0.19.0), and that is not
+        # decorative: snapshots are not portable across monty upgrades, so the
+        # version is how a consumer knows which format they hold. e1e4eda moved
+        # the pin 0.19 -> 0.23 without touching pubspec.yaml, so the package
+        # called itself 0.19.0 while pinning v0.0.23 -- and nothing compared the
+        # two until a human read the version off the deployed demo page.
+        run: bash tool/check_version_pin.sh
+      - name: Published pages state the versions they were built from
+        # Local-only until now. The deployed site is the one artefact a reader
+        # meets without a pubspec in front of them, and nothing compiles an HTML
+        # shell -- so a hand-written version string rots silently on the next
+        # bump. The expected string is assembled from pubspec.yaml,
+        # native/Cargo.toml and convert.rs, and every published page must carry
+        # it. Note this gate runs BEFORE deploy-pages.yml can publish anything:
+        # deploy triggers only on push to main, so a wrong badge caught here
+        # never reaches the site.
+        run: bash tool/check_page_versions.sh
       - name: Install DCM
         # dcm is NOT a pub package — `dart pub global activate dcm` cannot work.
         # An earlier version of this workflow did exactly that with `|| true`,

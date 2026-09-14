@@ -1,11 +1,21 @@
 # Changelog
 
-## Unreleased (0.19.0)
+## Unreleased (0.23.0)
 
-Requires `monty` v0.0.19. The `monty` crate's public surface was split in 0.19 —
-it went from 1321 to 306 public items and most of what this package uses moved to
-the new `monty-types` crate — so this is a substantial internal change with a
-small consumer-facing surface.
+Requires `monty` v0.0.23.
+
+This package's minor version tracks the monty patch it pins: v0.0.17 -> 0.17.x,
+v0.0.18 -> 0.18.1, v0.0.19 -> 0.19.0. This section opened as 0.19.0 and the pin
+moved to v0.0.23 inside the unreleased window (`e1e4eda`) without the version
+following, so it was renumbered to 0.23.0 when that drift was noticed. The
+0.19-era notes below are kept as written: they describe changes that really did
+land, and renumbering the heading does not make them untrue.
+`tool/check_version_pin.sh` now makes this class of drift impossible to repeat.
+
+The `monty` crate's public surface was split in 0.19 — it went from 1321 to 306
+public items and most of what this package uses moved to the new `monty-types`
+crate — so this is a substantial internal change with a small consumer-facing
+surface.
 
 ### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
 
