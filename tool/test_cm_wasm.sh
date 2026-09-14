@@ -218,7 +218,17 @@ for c in "google-chrome-stable" "google-chrome" \
   "chromium" "chromium-browser"; do
   if command -v "$c" &>/dev/null 2>&1 || [ -f "$c" ]; then CHROME="$c"; break; fi
 done
-[ -n "$CHROME" ] || { echo "WARN: Chrome not found; cannot run WASM tests."; exit 0; }
+# Was `exit 0` -- a missing browser reported PASS having run zero tests. See
+# the long note in tool/test_wasm.sh; same defect, same remedy.
+if [ -z "$CHROME" ]; then
+  echo "FAIL: Chrome not found; cannot run the test-hooks WASM corpus."
+  echo "  Set CHROME_EXECUTABLE, or ALLOW_NO_CHROME=1 to skip deliberately."
+  if [ "${ALLOW_NO_CHROME:-0}" = "1" ]; then
+    echo "  ALLOW_NO_CHROME=1 -- SKIPPING, and this is a SKIP, not a pass."
+    exit 0
+  fi
+  exit 1
+fi
 
 echo "--- Running corpus (test-hooks, $TARGET, $ENTRY) in headless Chrome ---"
 CHROME_LOG=$(mktemp)

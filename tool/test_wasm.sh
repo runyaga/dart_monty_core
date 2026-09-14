@@ -326,8 +326,20 @@ done
 
 if [ -z "$CHROME" ]; then
   echo ""
-  echo "WARN: Chrome not found. Cannot run WASM integration tests."
-  exit 0
+  echo "FAIL: Chrome not found. Cannot run WASM integration tests."
+  echo "  This used to `exit 0` -- a missing browser reported PASS having run"
+  echo "  ZERO tests. Measured on tool/gate.sh with no browser present: four"
+  echo "  gates failed honestly and four MORE reported PASS having run nothing,"
+  echo "  so 8 of 25 told you nothing, half of them while showing green."
+  echo ""
+  echo "  Set CHROME_EXECUTABLE, or run this suite where a browser exists."
+  echo "  To skip DELIBERATELY, set ALLOW_NO_CHROME=1 -- which says so out loud"
+  echo "  and is the only way a skip can be told from a pass."
+  if [ "${ALLOW_NO_CHROME:-0}" = "1" ]; then
+    echo "  ALLOW_NO_CHROME=1 -- SKIPPING, and this is a SKIP, not a pass."
+    exit 0
+  fi
+  exit 1
 fi
 echo "  Chrome: $CHROME"
 
