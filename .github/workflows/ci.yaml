@@ -439,7 +439,13 @@ jobs:
         run: cargo fmt --check
       - name: cargo clippy
         working-directory: native
-        run: cargo clippy -- -D warnings
+        # --all-targets MATTERS, and CI was missing it while tool/gate.sh had it.
+        # Without it clippy lints the lib only: tests, benches, examples and
+        # src/bin are never looked at. Proven 2026-09-14 by planting a
+        # `needless_range_loop` in native/tests/integration.rs --
+        # `cargo clippy -- -D warnings` PASSED, `--all-targets` reported 3
+        # errors. Every lint this project added to tests was unenforced in CI.
+        run: cargo clippy --all-targets -- -D warnings
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
       - name: cargo deny check

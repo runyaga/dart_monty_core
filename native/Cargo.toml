@@ -40,6 +40,14 @@ test-hooks = ["monty/test-hooks"]
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
 missing_debug_implementations = "warn"
+# unused_crate_dependencies was TRIED HERE AND REMOVED, 2026-09-14. It fires
+# PER TARGET, so a dependency the lib uses is reported unused by the `oracle`
+# bin and by tests/integration.rs — and the gate runs
+# `cargo clippy --all-targets -- -D warnings`, which turns that into a build
+# failure on legitimate deps (`num_traits`, among others). Silencing it needs a
+# `use x as _;` in every target that does not use each dep, which is more noise
+# than the lint removes. Unused-dependency detection for a multi-target crate
+# wants cargo-udeps or cargo-machete, not this lint.
 
 [lints.clippy]
 # Enable all pedantic lints, then allow specific exceptions
