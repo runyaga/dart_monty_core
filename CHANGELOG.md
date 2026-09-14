@@ -77,6 +77,23 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+- **A negative or wrong-typed resource limit is now an error.** `parse_limits_json` read each axis with
+  `map.get(k).and_then(Value::as_u64)`, and `as_u64()` yields `None` for
+  anything that is not a non-negative integer. So a `MontyLimits` that reached
+  the engine carrying `-1` — or a string, float, bool, array or object — took
+  the "absent" branch, left that limit UNSET, and ran **unbounded** while
+  returning success. `{"memory_bytes": -1}` is well-formed JSON; there was
+  nothing to fail on.
+
+  A caller who asks for a limit and gets none is precisely the failure
+  core#138 was about, and the doc comment on that function had said so all
+  along. Absent and explicit `null` still mean "no limit on this axis" — those
+  are real requests. A value that is PRESENT and unusable is now an `Err`
+  naming the field and the value.
+
+  **What changes for you:** a call that silently ran unbounded now fails
+  loudly. If you see this error, you were not getting the limit you asked for.
+
 - **`open()` parses its mode, and rejects a malformed one.**
   `resolveOpenCall` string-compared the mode and treated *everything*
   unrecognised as append: `open(p, 'wxyz')`, `open(p, 'x')` and even

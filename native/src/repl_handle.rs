@@ -263,11 +263,33 @@ impl MontyReplHandle {
     /// handle starts with an EMPTY set. A caller that restores and then
     /// resumes an external call MUST call [`Self::set_ext_fns`] first, or the
     /// name will not resolve. That is why `restore_with_ext_fns` exists.
-    pub fn restore(bytes: &[u8]) -> Result<Self, String> {
+    /// THE NAME IS THE WARNING. This was `restore(bytes)`, and it passed
+    /// `limits: None` — which means "keep whatever the snapshot carried"
+    /// (see `restore_with_ext_fns`). So WHOEVER SUPPLIES THE BYTES CHOOSES THE
+    /// RESOURCE LIMITS, and a caller reading `restore(bytes)` had no reason to
+    /// suspect it.
+    ///
+    /// That is FB-1 / core#124 again: "a dropped limit is a security control
+    /// that reports success". The defect was fixed at the C ABI during M3 —
+    /// `monty_repl_restore` takes `limits_json` and applies it
+    /// (`native/src/lib.rs`) — and the convenience wrapper ten lines away was
+    /// left alone, which is exactly what made it easy to believe the whole
+    /// path was covered.
+    ///
+    /// Renamed rather than deleted because inheriting the snapshot's limits is
+    /// legitimate when the bytes are YOUR OWN — restoring a session you
+    /// snapshotted a moment ago, with limits you already chose. It is only
+    /// dangerous when the bytes came from somewhere else. A name that says so
+    /// makes the caller decide, which a defaulted argument never did.
+    ///
+    /// If the bytes are not yours, use
+    /// [`Self::restore_with_ext_fns`] and pass the limits you want.
+    pub fn restore_keeping_snapshot_limits(bytes: &[u8]) -> Result<Self, String> {
         Self::restore_with_ext_fns(bytes, Vec::new(), None)
     }
 
-    /// [`Self::restore`], re-establishing the external function names.
+    /// [`Self::restore_keeping_snapshot_limits`], re-establishing the external
+    /// function names and taking explicit limits.
     ///
     /// The two-argument form is the one to prefer: a snapshot cannot carry
     /// `ext_fn_names` (see above), so restoring without re-supplying them
@@ -1291,7 +1313,8 @@ mod tests {
             "a snapshot of real state cannot be empty"
         );
 
-        let mut restored = MontyReplHandle::restore(&bytes).expect("restore");
+        let mut restored =
+            MontyReplHandle::restore_keeping_snapshot_limits(&bytes).expect("restore");
 
         // The VALUE survived.
         let (tag, json, _) = restored.feed_run("x");
@@ -1327,7 +1350,7 @@ mod tests {
 
         let bytes = repl.snapshot().expect("snapshot");
 
-        let bare = MontyReplHandle::restore(&bytes).expect("restore");
+        let bare = MontyReplHandle::restore_keeping_snapshot_limits(&bytes).expect("restore");
         assert!(
             bare.ext_fn_names.is_empty(),
             "a snapshot cannot carry ext_fn_names; if this ever passes them \
@@ -1382,6 +1405,44 @@ mod tests {
         drop(kept);
     }
 
+    /// F5: the convenience wrapper INHERITS the snapshot's limits, and its name
+    /// now says so.
+    ///
+    /// It was `restore(bytes)` passing `limits: None`, so whoever supplied the
+    /// bytes chose the resource limits and nothing in the call site hinted at
+    /// it. The behaviour is legitimate for your OWN bytes and dangerous for
+    /// anyone else's, so it was renamed rather than deleted — the caller now
+    /// has to type the consequence.
+    ///
+    /// This test pins the INHERITANCE, not the safety. If someone later
+    /// "fixes" this wrapper to apply default limits, restoring a bounded
+    /// snapshot would silently widen it, and that is the opposite defect from
+    /// the same family.
+    #[test]
+    fn restore_keeping_snapshot_limits_really_does_keep_them() {
+        let tight = ResourceLimits {
+            max_recursion_depth: 5,
+            ..ResourceLimits::default()
+        };
+        let mut bounded = MontyReplHandle::new("keep.py", tight);
+        let (tag, _, _) = bounded.feed_run("x = 1");
+        assert_eq!(tag, MontyResultTag::Ok);
+        let bytes = bounded.snapshot().expect("snapshot");
+
+        let mut restored = MontyReplHandle::restore_keeping_snapshot_limits(&bytes)
+            .expect("restore keeping snapshot limits");
+
+        let (tag, json, _) =
+            restored.feed_run("def rec(n):\n    return 1 if n <= 0 else rec(n - 1)\nrec(50)\n");
+        assert!(
+            tag != MontyResultTag::Ok || json.contains("RecursionError"),
+            "the snapshot was taken with stackDepth 5 and the restored session \
+             ran rec(50) to completion — the wrapper did NOT keep the \
+             snapshot's limits, which is what its name promises: tag={tag:?} \
+             json={json}"
+        );
+    }
+
     /// Pin the dump format version we built against.
     ///
     /// `Dump::load` distinguishes `DumpError::VersionMismatch` from a payload
@@ -1408,7 +1469,8 @@ mod tests {
             .expect("snapshot should succeed in Idle state");
         assert!(!bytes.is_empty());
 
-        let mut restored = MontyReplHandle::restore(&bytes).expect("restore should succeed");
+        let mut restored = MontyReplHandle::restore_keeping_snapshot_limits(&bytes)
+            .expect("restore should succeed");
         let (tag, json, _) = restored.feed_run("x");
         assert_eq!(tag, MontyResultTag::Ok);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1541,7 +1603,7 @@ mod tests {
         repl.feed_run("x = 1");
 
         let bytes = repl.snapshot().unwrap();
-        let mut restored = MontyReplHandle::restore(&bytes).unwrap();
+        let mut restored = MontyReplHandle::restore_keeping_snapshot_limits(&bytes).unwrap();
 
         // Modify original
         repl.feed_run("x = 99");
