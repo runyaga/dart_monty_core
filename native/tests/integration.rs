@@ -2573,3 +2573,180 @@ fn repl_create_with_limits_refuses_malformed_json() {
         unsafe { monty_repl_create_with_limits(name.as_ptr(), limits.as_ptr(), ptr::null_mut()) };
     assert!(h.is_null());
 }
+
+// ---------------------------------------------------------------------------
+// monty_type_check — the entry point behind Monty.typeCheck
+// ---------------------------------------------------------------------------
+// `grep -n monty_type_check native/tests/integration.rs` returned NOTHING before
+// this. The README promotes `Monty.typeCheck(code)` as "the supported
+// development loop" -- run it before execute to catch subset violations as
+// typed errors -- and the C entry point it rests on had no Rust-side test at
+// all. It was the largest uncovered block left in lib.rs.
+//
+// Four outcome arms, each asserted separately so a failure names which one:
+//   Ok(Ok(None))       clean code, no diagnostics  -> Ok  + NULL diagnostics
+//   Ok(Ok(Some(json))) diagnostics produced        -> Ok  + JSON
+//   parse failure      bad code/script_name        -> Error + reason
+//   NULL out-params    caller wants no detail      -> must not write
+#[test]
+fn type_check_clean_code_reports_no_diagnostics() {
+    let code = CString::new("x = 1\ny = x + 1\n").unwrap();
+    let name = CString::new("t.py").unwrap();
+    let mut diag: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+
+    let tag = unsafe {
+        monty_type_check(
+            code.as_ptr(),
+            ptr::null(),
+            name.as_ptr(),
+            &mut diag,
+            &mut err,
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Ok, "clean code must type-check");
+    assert!(err.is_null(), "a clean check must leave out_error NULL");
+    // Clean code yields NO diagnostics. If a future checker starts emitting
+    // advisory output for correct code this fires, which is the right place to
+    // notice it.
+    assert!(
+        diag.is_null(),
+        "clean code produced diagnostics: {:?}",
+        unsafe { read_c_string(diag) }
+    );
+}
+
+#[test]
+fn type_check_reports_diagnostics_as_json() {
+    // A type error the checker should catch: str + int.
+    let code = CString::new("x: int = \"not an int\"\n").unwrap();
+    let name = CString::new("t.py").unwrap();
+    let mut diag: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+
+    let tag = unsafe {
+        monty_type_check(
+            code.as_ptr(),
+            ptr::null(),
+            name.as_ptr(),
+            &mut diag,
+            &mut err,
+        )
+    };
+    // Diagnostics are a SUCCESSFUL check that found something -- Ok, not Error.
+    // Error is reserved for the check failing to run. Getting this backwards
+    // would make a type error indistinguishable from a broken type checker.
+    assert_eq!(
+        tag,
+        MontyResultTag::Ok,
+        "finding a type error is not a failure to check"
+    );
+    assert!(
+        err.is_null(),
+        "out_error is for infrastructure failure, not diagnostics"
+    );
+    assert!(!diag.is_null(), "a type error must produce diagnostics");
+
+    let json = unsafe { read_c_string(diag) };
+    assert!(!json.is_empty(), "diagnostics must not be empty");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("diagnostics must be valid JSON");
+    assert!(
+        parsed.is_array() || parsed.is_object(),
+        "diagnostics should be a JSON array or object, got {json}"
+    );
+}
+
+#[test]
+fn type_check_applies_prefix_code() {
+    // prefix_code is prepended before checking, so a name defined ONLY in the
+    // prefix must resolve. Without the prefix the same code should complain --
+    // that contrast is what proves the prefix was actually used rather than
+    // silently dropped.
+    let code = CString::new("y = helper_value + 1\n").unwrap();
+    let prefix = CString::new("helper_value = 41\n").unwrap();
+    let name = CString::new("t.py").unwrap();
+
+    let mut diag: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag = unsafe {
+        monty_type_check(
+            code.as_ptr(),
+            prefix.as_ptr(),
+            name.as_ptr(),
+            &mut diag,
+            &mut err,
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Ok);
+    assert!(err.is_null());
+    if !diag.is_null() {
+        let json = unsafe { read_c_string(diag) };
+        panic!("prefix_code was not applied; undefined-name diagnostics: {json}");
+    }
+}
+
+#[test]
+fn type_check_rejects_bad_strings_and_tolerates_null_out_params() {
+    let name = CString::new("t.py").unwrap();
+    let ok = CString::new("x = 1\n").unwrap();
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+    let bad_ptr = bad.as_ptr().cast::<c_char>();
+
+    // Invalid UTF-8 code: refused, and the message names the argument.
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag = unsafe {
+        monty_type_check(
+            bad_ptr,
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            &mut err,
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Error);
+    assert!(!err.is_null(), "invalid UTF-8 must be reported");
+    let msg = unsafe { read_c_string(err) };
+    assert!(
+        msg.contains("code"),
+        "message should name the argument, got {msg:?}"
+    );
+
+    // Invalid UTF-8 script_name: same, different argument named.
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag =
+        unsafe { monty_type_check(ok.as_ptr(), ptr::null(), bad_ptr, ptr::null_mut(), &mut err) };
+    assert_eq!(tag, MontyResultTag::Error);
+    assert!(!err.is_null());
+    let msg = unsafe { read_c_string(err) };
+    assert!(
+        msg.contains("script_name"),
+        "message should name script_name, got {msg:?}"
+    );
+
+    // Both out-params NULL on the ERROR path: the caller wants no detail and
+    // must not be punished for it. Forced through the failing branch, not the
+    // succeeding one -- a NULL out-param on the success path proves nothing.
+    let tag = unsafe {
+        monty_type_check(
+            bad_ptr,
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Error);
+
+    // And on the success path.
+    let tag = unsafe {
+        monty_type_check(
+            ok.as_ptr(),
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Ok);
+}
