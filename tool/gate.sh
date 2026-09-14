@@ -144,6 +144,14 @@ s  page_versions bash tool/check_page_versions.sh
 # Nothing compared the two until a human read the version off the demo page.
 s  version_pin   bash tool/check_version_pin.sh
 s  vague_errors bash tool/check_no_vague_errors.sh
+# The two backends implement one shared contract, so a consumer picks a backend
+# without picking a feature set. `throw UnimplementedError` breaks that
+# silently: at the call site it is indistinguishable from a real platform
+# limit. Measured -- FfiCoreBindings.resumeNameLookupValue claimed the FFI
+# backend did not support it while the Rust export, the header AND the
+# generated binding all existed. The message was false and it reached a shipped
+# example.
+s  backend_parity bash tool/check_backend_parity.sh
 s  dart_analyze  dart analyze --fatal-infos
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
 # --coverage is not decoration: it is the input to cov_report below, and the

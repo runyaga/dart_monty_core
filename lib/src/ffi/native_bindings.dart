@@ -167,6 +167,14 @@ abstract class NativeBindings {
   /// Resumes by creating a future for the pending call.
   ProgressResult resumeAsFuture(int handle);
 
+  /// Resumes a name lookup by supplying [valueJson] for the looked-up name.
+  ///
+  /// The sibling of [resumeNameLookupUndefined]. Both wrap C ABI functions that
+  /// have existed since the name-lookup protocol landed; this one had no Dart
+  /// binding at all, so `FfiCoreBindings.resumeNameLookupValue` threw
+  /// `UnimplementedError` claiming the FFI backend did not support it. It does.
+  ProgressResult resumeNameLookupValue(int handle, String valueJson);
+
   /// Resumes from a NameLookup by indicating the variable is undefined.
   ///
   /// The engine raises NameError in Python.

@@ -166,10 +166,11 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<CoreProgressResult> resumeNameLookupValue(WireJson value) {
-    throw UnimplementedError(
-      'resumeNameLookupValue is not supported by the FFI backend',
-    );
+  Future<CoreProgressResult> resumeNameLookupValue(WireJson value) async {
+    final handle = _requireHandle('resumeNameLookupValue');
+    final progress = _bindings.resumeNameLookupValue(handle, value.encoded);
+
+    return _translateProgressResult(handle, progress);
   }
 
   @override
