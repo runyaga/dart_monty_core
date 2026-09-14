@@ -87,7 +87,7 @@ jobs:
       - name: Generate bindings
         run: bash tool/generate_bindings.sh
       - name: Upload bindings
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ffi-bindings
           path: lib/src/ffi/generated/dart_monty_bindings.dart
@@ -112,7 +112,7 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - name: Download FFI bindings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ffi-bindings
           path: lib/src/ffi/generated
@@ -304,7 +304,7 @@ jobs:
       # check_wire_version.sh and check_fixture_links.sh already exist for.
       - name: Upload lcov artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-dart
           # lcov.info (raw, loaded files only), merged.info (exclusions applied,
@@ -345,7 +345,7 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - name: Download FFI bindings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ffi-bindings
           path: lib/src/ffi/generated
@@ -490,7 +490,7 @@ jobs:
         working-directory: native
         run: cargo build --release --target wasm32-wasip1
       - name: Upload WASM binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-binary
           path: native/target/wasm32-wasip1/release/dart_monty_core_native.wasm
@@ -535,7 +535,7 @@ jobs:
           # release jobs cold.
           shared-key: native-amd64
       - name: Download FFI bindings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ffi-bindings
           path: lib/src/ffi/generated
@@ -609,7 +609,7 @@ jobs:
             --lcov --in=coverage-ffi --out=coverage-ffi/lcov.info \
             --report-on=lib
       - name: Upload FFI lcov artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-ffi
           path: coverage-ffi/lcov.info
@@ -656,7 +656,7 @@ jobs:
           # release jobs cold.
           shared-key: native-amd64
       - name: Download FFI bindings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ffi-bindings
           path: lib/src/ffi/generated
@@ -1011,12 +1011,12 @@ jobs:
       # this repo -- "an EMPTY lcov was written every run and the gate
       # short-circuited to exit 0".
       - name: Download unit tracefile + zero baseline
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: lcov-dart
           path: coverage
       - name: Download FFI tracefile
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: lcov-ffi
           path: coverage-ffi
@@ -1056,7 +1056,7 @@ jobs:
           fi
           bash tool/coverage_ratchet.sh coverage/honest.info
       - name: Upload merged coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-merged
           path: |
@@ -1089,7 +1089,7 @@ jobs:
       - name: Install diff-cover
         run: pip install diff-cover
       - name: Download merged tracefile
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: lcov-merged
           path: coverage
