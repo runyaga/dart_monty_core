@@ -2158,3 +2158,122 @@ fn repl_feed_run_tolerates_null_out_params() {
 
     unsafe { monty_repl_free(handle) };
 }
+
+// ---------------------------------------------------------------------------
+// monty_repl_restore: every error path, with a NULL out_error
+// ---------------------------------------------------------------------------
+// The one-shot twin has had this since early on (`restore_invalid_with_null_out_error`,
+// integration.rs:428). The REPL version had NOT: the bit-flip fuzz at :1506 and
+// the trailing-garbage case at :1561 both pass a REAL `&mut err`, so every
+// `!out_error.is_null()` guard in this function was reached only on its TRUE
+// branch. A missing guard would be invisible to them.
+//
+// This is the highest-risk NULL-out_error case in the ABI because restore is
+// the only entry point that parses UNTRUSTED BINARY. A caller that does not
+// want the detail still must not be punished for saying so.
+//
+// Four guards, four paths (lib.rs at the time of writing):
+//     :1563  data is NULL
+//     :1591  limits_json fails to parse
+//     :1626  restore returns Err
+//     :1633  restore panics, caught by catch_ffi_panic
+#[test]
+fn repl_restore_error_paths_tolerate_null_out_error() {
+    // --- data is NULL --------------------------------------------------------
+    // `len` is deliberately NON-ZERO. If the guard were removed, the code would
+    // reach `slice::from_raw_parts(NULL, 8)`, which is undefined behaviour --
+    // so this also pins that the guard runs BEFORE the slice is built.
+    let h =
+        unsafe { monty_repl_restore(ptr::null(), 8, ptr::null(), ptr::null(), ptr::null_mut()) };
+    assert!(h.is_null(), "NULL data must not produce a handle");
+
+    // --- garbage bytes: restore returns Err ----------------------------------
+    let garbage: [u8; 16] = [0xAB; 16];
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            ptr::null(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    assert!(h.is_null(), "garbage must not restore");
+
+    // --- malformed limits_json -----------------------------------------------
+    // Reaches a different guard from the two above: the payload never gets
+    // parsed because limits parsing fails first.
+    let bad_limits = CString::new("{not json").unwrap();
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            bad_limits.as_ptr(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    assert!(h.is_null(), "malformed limits must not restore");
+
+    // --- zero length ---------------------------------------------------------
+    // A valid (non-NULL) pointer with len 0 is a legal empty slice, so this
+    // exercises the decode path rather than a pointer guard.
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    assert!(h.is_null(), "an empty payload must not restore");
+}
+
+// The same four paths WITH an out_error, asserting each actually reports.
+// Separate test so a failure says which half broke: silence-on-NULL is a crash,
+// silence-on-non-NULL is F1's defect returning.
+#[test]
+fn repl_restore_error_paths_report_a_reason() {
+    fn expect_refused_with_reason(label: &str, h: *mut MontyReplHandle, err: *mut c_char) {
+        assert!(h.is_null(), "{label}: expected refusal");
+        assert!(!err.is_null(), "{label}: refused without a reason");
+        // read_c_string TAKES OWNERSHIP -- it calls monty_string_free itself
+        // (integration.rs:25). Freeing again here is a double free, and it
+        // aborts the whole test binary with "free(): double free detected in
+        // tcache 2" rather than failing one test.
+        let msg = unsafe { read_c_string(err) };
+        assert!(!msg.is_empty(), "{label}: empty reason");
+    }
+
+    let garbage: [u8; 16] = [0xAB; 16];
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe { monty_repl_restore(ptr::null(), 8, ptr::null(), ptr::null(), &mut e) };
+    expect_refused_with_reason("NULL data", h, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            ptr::null(),
+            ptr::null(),
+            &mut e,
+        )
+    };
+    expect_refused_with_reason("garbage bytes", h, e);
+
+    let bad_limits = CString::new("{not json").unwrap();
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            bad_limits.as_ptr(),
+            ptr::null(),
+            &mut e,
+        )
+    };
+    expect_refused_with_reason("malformed limits", h, e);
+}
