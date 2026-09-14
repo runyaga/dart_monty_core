@@ -77,7 +77,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
@@ -106,7 +106,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
@@ -339,7 +339,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
@@ -511,7 +511,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
@@ -632,7 +632,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
@@ -720,13 +720,13 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ hashFiles('js/package.json') }}
@@ -817,12 +817,12 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ hashFiles('js/package.json') }}
@@ -892,12 +892,12 @@ jobs:
           # and lands in its own CARGO_TARGET_DIR; sharing a key with the
           # release jobs would thrash both.
           key: test-hooks
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ hashFiles('js/package.json') }}
