@@ -224,7 +224,19 @@ jobs:
           # sibling dart_monty repo already passes them; this job never did.
           DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
           DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
-        run: bash tool/dcm_ratchet.sh
+        # Same base-ref guard as the coverage ratchet: the baseline a PR is
+        # measured against must not be one the PR can edit. This one also
+        # refuses to compare across dcm versions -- a PR that legitimately
+        # bumps the analyzer AND regenerates the baseline would otherwise be
+        # judged against the OLD baseline with the NEW dcm, which is the
+        # cross-version comparison the version pin above exists to prevent.
+        env:
+          RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          if [ -n "${RATCHET_BASE_REF:-}" ]; then
+            git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
+          fi
+          bash tool/dcm_ratchet.sh
       - name: Test (JIT, unit only)
         # The exit-79 tolerance is GONE. It said "no tests found is acceptable
         # until unit tests exist"; 457 of them exist, so all it could do now was
@@ -989,7 +1001,23 @@ jobs:
         # grow to match, and per-file coverage slides back invisibly because the
         # project total is dominated by files nobody is changing. Same shape and
         # same discipline as tool/dcm_ratchet.sh.
-        run: bash tool/coverage_ratchet.sh coverage/honest.info
+        #
+        # RATCHET_BASE_REF is what stops a PR lowering its own bar. Without it
+        # the ratchet reads the baseline from the PR's own working copy, so
+        # `--update` plus a lowered baseline committed next to the regression it
+        # excuses passes green -- reproduced 2026-09-14: a 228-hit regression in
+        # monty_repl.dart with a matching baseline edit returned "PASS -- no file
+        # below its baseline", exit 0. With the base ref set, the same pair fails
+        # naming both the FILE and TOTAL decrease. Empty on a push (no base to
+        # compare), which leaves the old behaviour and is why the fallback says
+        # so out loud rather than skipping silently.
+        env:
+          RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          if [ -n "${RATCHET_BASE_REF:-}" ]; then
+            git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
+          fi
+          bash tool/coverage_ratchet.sh coverage/honest.info
       - name: Upload merged coverage
         uses: actions/upload-artifact@v4
         with:

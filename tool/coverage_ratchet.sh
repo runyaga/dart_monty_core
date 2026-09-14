@@ -63,6 +63,42 @@ if [ ! -s "$TRACEFILE" ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# THE BASELINE A PR IS MEASURED AGAINST MUST NOT BE ONE THE PR CAN EDIT.
+# ---------------------------------------------------------------------------
+# Independent review (agy, 2026-09-14) rated this Severity 4 and it was
+# accepted: `--update` rewrites the baseline and exits 0, so a contributor can
+# commit a lowered baseline ALONGSIDE the regression it excuses and CI goes
+# green. Its phrasing was exact -- "a strict lock, but the key handed to the
+# person trying to get past it". tool/dcm_ratchet.sh has the identical shape;
+# this work inherited the pattern rather than inventing it.
+#
+# The fix is not to remove --update, which the commit that legitimately
+# justifies a change still needs. It is to read the COMPARISON baseline from the
+# BASE BRANCH. A PR then cannot lower its own bar: the baseline it ships governs
+# the NEXT PR, not itself.
+#
+# RATCHET_BASE_REF selects it. CI sets it to origin/$GITHUB_BASE_REF on a pull
+# request. Unset -- every local run -- behaves exactly as before, because a
+# local run has no base to compare against and blocking it would just train
+# people to skip the gate.
+if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  BASE_COPY="$(mktemp)"
+  if git show "${RATCHET_BASE_REF}:${BASELINE}" > "$BASE_COPY" 2>/dev/null; then
+    echo "note: comparing against ${RATCHET_BASE_REF}:${BASELINE}, not the"
+    echo "      working copy -- a PR cannot lower its own bar."
+    BASELINE="$BASE_COPY"
+  else
+    # A first PR that INTRODUCES the baseline has none on the base branch. That
+    # is legitimate and must not fail; say so out loud rather than silently
+    # falling back, because silence here is indistinguishable from the hole
+    # this block exists to close.
+    rm -f "$BASE_COPY"
+    echo "note: no ${BASELINE} on ${RATCHET_BASE_REF} -- this PR introduces it."
+    echo "      Comparing against the working copy. Review the baseline itself."
+  fi
+fi
+
 BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
 import json, os, sys
 

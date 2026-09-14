@@ -18,6 +18,39 @@ cd "$(git rev-parse --show-toplevel)"
 BASELINE="${1:-tool/dcm-baseline.json}"
 if [ "${1:-}" = "--update" ]; then BASELINE=tool/dcm-baseline.json; UPDATE=1; else UPDATE=0; fi
 
+# THE BASELINE A PR IS MEASURED AGAINST MUST NOT BE ONE THE PR CAN EDIT.
+# Same hole, same fix as tool/coverage_ratchet.sh -- see the long comment there.
+# `--update` rewrites this file and exits 0, so a lowered baseline committed
+# next to the regression it excuses passes CI. Reading the COMPARISON copy from
+# the base branch means a PR cannot lower its own bar; the baseline it ships
+# governs the next PR instead. RATCHET_BASE_REF unset (every local run) is
+# unchanged behaviour.
+if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  BASE_COPY="$(mktemp)"
+  if git show "${RATCHET_BASE_REF}:${BASELINE}" > "$BASE_COPY" 2>/dev/null; then
+    # ...but ONLY if it was produced by the same dcm. A ratchet compares
+    # per-rule counts, so a different analyzer version silently changes the
+    # thing being compared -- the exact hazard the version pin below exists
+    # for. A PR that legitimately bumps dcm AND regenerates the baseline would
+    # otherwise be measured against the OLD baseline with the NEW analyzer,
+    # which is a cross-version comparison this file already warns about.
+    BASE_V=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('_dcm_version',''))" "$BASE_COPY" 2>/dev/null)
+    CUR_V=$(python3 -c "import json;print(json.load(open('tool/dcm-baseline.json')).get('_dcm_version',''))" 2>/dev/null)
+    if [ -n "$BASE_V" ] && [ "$BASE_V" != "$CUR_V" ]; then
+      rm -f "$BASE_COPY"
+      echo "note: ${RATCHET_BASE_REF} baseline was made by dcm $BASE_V, this tree"
+      echo "      expects $CUR_V. Comparing across analyzer versions is meaningless,"
+      echo "      so falling back to the working copy. REVIEW THE BASELINE DIFF."
+    else
+      echo "note: comparing against ${RATCHET_BASE_REF}:${BASELINE}, not the working copy."
+      BASELINE="$BASE_COPY"
+    fi
+  else
+    rm -f "$BASE_COPY"
+    echo "note: no ${BASELINE} on ${RATCHET_BASE_REF} -- this PR introduces it."
+  fi
+fi
+
 # A gate that silently skips is not a gate. Skipping is allowed ONLY when the
 # caller opts in explicitly (local runs on a machine without dcm); anywhere the
 # ratchet is relied upon — CI above all — a missing dcm must FAIL, because the
