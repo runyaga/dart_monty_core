@@ -292,11 +292,11 @@ jobs:
         # file is unaccounted for. Expect the printed lib-wide number to be far
         # below the loaded-files one; that gap is the finding, not a break.
         run: bash tool/coverage_report.sh --out-dir coverage coverage/lcov.info
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-
+      # The Codecov upload MOVED to the `coverage-merge` job below. It sat here,
+      # in a job that finishes before any FFI tracefile exists, so Codecov
+      # published the unit-only number while the gate used the merged one --
+      # two different figures for the same commit, which is the drift class
+      # check_wire_version.sh and check_fixture_links.sh already exist for.
       - name: Upload lcov artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -309,6 +309,7 @@ jobs:
             coverage/lcov.info
             coverage/merged.info
             coverage/honest.info
+            coverage/anchor.info
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -524,13 +525,47 @@ jobs:
           FFI_TESTS=$(ls test/integration/ffi_*_test.dart)
           echo "Running $(echo "$FFI_TESTS" | wc -l | tr -d ' ') FFI suites:"
           echo "$FFI_TESTS" | sed 's/^/  /'
+          set -o pipefail
           dart test \
             $FFI_TESTS \
             test/integration/oracle_ffi_test.dart \
             test/integration/oracle_ffi_ext_test.dart \
             test/integration/repros \
             -p vm --run-skipped --tags=ffi --exclude-tags=pending-futures \
-            --reporter=expanded
+            --coverage=coverage-ffi \
+            --reporter=expanded 2>&1 | tee /tmp/ffi-test.log
+          # skip-but-green: a runner that registers zero tests prints
+          # "All tests passed!" and exits 0. This suite is the single largest
+          # coverage input in the repo now, so a silent zero here would look
+          # like a 20-point coverage regression with no failing test to explain
+          # it. Raise the floor when the suite grows; never lower it.
+          N=$(grep -oE '\+[0-9]+' /tmp/ffi-test.log | tail -1 | tr -d '+')
+          echo "FFI tests run: ${N:-0}"
+          if [ "${N:-0}" -lt 1300 ]; then
+            echo "FAIL: expected at least 1300 FFI tests, saw ${N:-0}."
+            exit 1
+          fi
+      - name: Generate FFI LCOV
+        # 1,356 tests, ~12s, on a job that ALREADY built the native library and
+        # ALREADY ran this exact command. They drive ffi_core_bindings,
+        # native_bindings_ffi, monty_repl and ffi_repl_bindings -- which the
+        # unit-only measurement reported at 0.0%, 0.3%, 3.1% and 1.7%. The work
+        # was being done and the record thrown away.
+        run: |
+          shopt -s globstar nullglob
+          if ! compgen -G "coverage-ffi/**/*.json" > /dev/null 2>&1; then
+            echo "FAIL: --coverage=coverage-ffi produced no hitmap JSON."
+            exit 1
+          fi
+          dart run coverage:format_coverage \
+            --lcov --in=coverage-ffi --out=coverage-ffi/lcov.info \
+            --report-on=lib
+      - name: Upload FFI lcov artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-ffi
+          path: coverage-ffi/lcov.info
+          retention-days: 1
   # ---------------------------------------------------------------------------
   # Example smoke tests — every example/*.dart must compile and exit 0.
   # `dart analyze` only checks types; this is the only thing exercising the
@@ -566,10 +601,28 @@ jobs:
         working-directory: native
         run: cargo build --release
       - run: dart pub get
+      # NOT measured for coverage, and the reason is worth recording because
+      # the obvious assumption is wrong. This suite runs each example with
+      # `Process.run('dart', ['run', ex])` (example_smoke_test.dart:59) -- a
+      # separate PROCESS. `dart test --coverage` instruments the test isolate,
+      # so the tracefile it produces here is EMPTY: measured, 11 passing tests,
+      # one hitmap JSON, and `format_coverage --report-on=lib` writes 0 bytes.
+      # Adding --coverage would buy nothing and would break the merge, which
+      # treats an empty tracefile as a failure. Same structural cause as the
+      # spawned-isolate case in native_isolate_bindings_impl.dart, one level
+      # further out.
       - name: Run example smoke tests
         run: |
+          set -o pipefail
           dart test test/integration/example_smoke_test.dart \
-            -p vm --run-skipped --tags=example --reporter=expanded
+            -p vm --run-skipped --tags=example \
+            --reporter=expanded 2>&1 | tee /tmp/example-test.log
+          N=$(grep -oE '\+[0-9]+' /tmp/example-test.log | tail -1 | tr -d '+')
+          echo "example tests run: ${N:-0}"
+          if [ "${N:-0}" -lt 10 ]; then
+            echo "FAIL: expected at least 10 example tests, saw ${N:-0}."
+            exit 1
+          fi
 
       # Compile-only smoke for the Pages demo. Catches API drift between
       # `Monty`/`MontyRepl` refactors and packages/dart_monty_web at PR time
@@ -858,14 +911,88 @@ jobs:
           echo "OK: tree clean (js/package-lock.json excluded — see comment)"
 
   # ---------------------------------------------------------------------------
+  # Coverage: merge every measured suite, report lib-wide, ratchet
+  # ---------------------------------------------------------------------------
+  # Two suites produce a usable tracefile and both measure the SAME lib/. Until
+  # this job existed only the first was counted, so the published figure
+  # described 457 unit tests and silently discarded the 1,356-test FFI
+  # conformance suite that runs in this same workflow, in 12 seconds, over
+  # exactly the files the published figure reported at 0-3%.
+  #
+  # The example suite is deliberately NOT here -- see the note on it above: it
+  # runs each example in a separate process, so its tracefile is empty.
+  #
+  # No Dart SDK here on purpose: the zero baseline (coverage/anchor.info) is
+  # produced once in the `test` job, travels with the artifact, and is passed
+  # back in with --baseline. This job is checkout + python3.
+  coverage-merge:
+    name: Coverage (merged, lib-wide) + ratchet
+    needs: [changes, test, test-ffi]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # R5: each download FAILS if its artifact is absent, and
+      # tool/coverage_report.sh FAILS on an empty input. Silently merging fewer
+      # inputs and reporting a smaller number is the shape core#130 already cost
+      # this repo -- "an EMPTY lcov was written every run and the gate
+      # short-circuited to exit 0".
+      - name: Download unit tracefile + zero baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: lcov-dart
+          path: coverage
+      - name: Download FFI tracefile
+        uses: actions/download-artifact@v4
+        with:
+          name: lcov-ffi
+          path: coverage-ffi
+      - name: Merge and report
+        # R3: `lcov -a` needs identical absolute paths in every input. Every job
+        # here runs in /home/runner/work/dart_monty_core/dart_monty_core, and
+        # the merge resolves each SF against the repo root, so a tracefile from
+        # somewhere else lands in the "covers files that do not exist under
+        # lib/" branch and fails loudly rather than duplicating every file.
+        run: |
+          bash tool/coverage_report.sh \
+            --baseline coverage/anchor.info \
+            --out-dir coverage \
+            coverage/lcov.info \
+            coverage-ffi/lcov.info
+      - name: Coverage ratchet (no per-file decrease)
+        # The floor under the merge. Without it the reclassification is a
+        # one-off: new native code lands, the FFI conformance corpus does not
+        # grow to match, and per-file coverage slides back invisibly because the
+        # project total is dominated by files nobody is changing. Same shape and
+        # same discipline as tool/dcm_ratchet.sh.
+        run: bash tool/coverage_ratchet.sh coverage/honest.info
+      - name: Upload merged coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-merged
+          path: |
+            coverage/merged.info
+            coverage/honest.info
+          retention-days: 1
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/honest.info
+
+  # ---------------------------------------------------------------------------
   # Patch coverage gate — PRs must maintain >= 30% coverage on changed lines
   # ---------------------------------------------------------------------------
   patch-coverage:
     name: Patch coverage gate (30%)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [test]
+    needs: [changes, coverage-merge]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -875,28 +1002,40 @@ jobs:
           python-version: '3.12'
       - name: Install diff-cover
         run: pip install diff-cover
-      - name: Download lcov artifact
+      - name: Download merged tracefile
         uses: actions/download-artifact@v4
         with:
-          name: lcov-dart
+          name: lcov-merged
           path: coverage
       - name: Check patch coverage
         run: |
           sudo apt-get update && sudo apt-get install -y lcov
-          # Skip gate when tracefile is empty (no unit tests yet).
-          if [ ! -s coverage/lcov.info ]; then
-            echo "Coverage tracefile is empty — skipping patch coverage gate until unit tests exist."
-            exit 0
+          # The "tracefile is empty -> exit 0" escape hatch is GONE. It was
+          # core#130's other half: having found no coverage, it declared the
+          # gate passed. coverage_report.sh now fails before this job starts if
+          # any input is empty, so an empty file here means something is wrong,
+          # not that there is nothing to check.
+          if [ ! -s coverage/merged.info ]; then
+            echo "FAIL: merged.info is empty — the merge job produced nothing."
+            exit 1
           fi
-          # --ignore-errors unused: these exclusions are DEFENSIVE. A file the
-          # unit tests never import has no entry in the tracefile, so its
-          # pattern matches nothing and lcov exits 25 -- which is exactly how
-          # this gate died the first time it ever ran. The patterns must stay
-          # (the files exist and should be excluded when present); the
-          # not-present case must not be fatal.
-          lcov --ignore-errors unused --remove coverage/lcov.info \
-            '*/ffi/generated/*' \
-            '*/native_bindings_ffi.dart' \
+          # merged.info already has the two documented exclusions applied
+          # (ffi/generated, mock_monty_platform), so only ONE removal is left.
+          # `*/native_bindings_ffi.dart` is GONE from this list: it was excluded
+          # because it read 0.3%, and it now reads 76.8% because the FFI suite
+          # that always covered it is finally measured. Excluding a covered file
+          # only hides good news.
+          #
+          # native_isolate_bindings_impl.dart stays out, and not because it is
+          # red: it runs in a SPAWNED isolate and package:test collects with
+          # `isolateIds: {isolateId!}` (test_core .../vm/platform.dart), so no
+          # test that could ever be written for it would move this number.
+          # Charging a patch for lines the toolchain cannot observe is noise.
+          #
+          # --ignore-errors unused: the exclusion is DEFENSIVE and must not be
+          # fatal when the pattern matches nothing -- exactly how this gate died
+          # the first time it ever ran.
+          lcov --ignore-errors unused --remove coverage/merged.info \
             '*/native_isolate_bindings_impl.dart' \
             -o filtered-coverage.info
           diff-cover filtered-coverage.info \

@@ -115,15 +115,6 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
 # still writes nothing the read-only check can see.
 s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example --coverage="$OUT/cov"
-# The coverage number, made to mean something. Dart's collector reports only
-# LOADED libraries, so a file no test imports is absent from the tracefile
-# rather than 0% -- 22 of lib/'s 68 files were, and ~1,200 coverable lines were
-# simply not in the denominator. The reported figure could therefore be RAISED
-# by deleting an import, which is the wrong direction for a quality metric.
-# cov_report rebuilds the denominator from every lib/**/*.dart and fails if any
-# file is unaccounted for. It reports two numbers on purpose (loaded-files and
-# lib-wide) so nobody can quietly switch to whichever flatters.
-s  cov_report    bash tool/coverage_report.sh --out-dir "$OUT/coverage" "$OUT/cov"
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
@@ -144,14 +135,44 @@ ns cargo_deny    cargo deny check
 # with__cm_* fixtures use a plain Python `class CM:`, and the test passes 5/5
 # on a normal build. The exclusion outlived its reason on BOTH sides -- CI had
 # the same one (ci.yaml) -- so the suite ran nowhere at all.
-s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart) --run-skipped --tags=ffi -p vm
-s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi
+# test/integration/repros IS included now. CI's test-ffi job has globbed it in
+# since the job was written (ci.yaml, alongside the ffi_*_test.dart glob); the
+# gate named only the glob, so issue_32_listcomp_global_clobber_ffi_test.dart
+# ran in CI and nowhere else locally -- the same CI-only-gap shape that
+# `examples` and `corpus_wasm` were added to close. It also makes the gate's
+# coverage set identical to CI's, which is what lets ONE tool/coverage-baseline
+# .json serve both.
+s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart) test/integration/repros --run-skipped --tags=ffi -p vm --coverage="$OUT/cov"
+s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi --coverage="$OUT/cov"
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made
 # a hand-built `{'__type': …}` map decode as a dict, and example/10 taught
 # exactly that pattern.
+# No --coverage on this one, and the reason is not obvious: the suite runs each
+# example with `Process.run('dart', ['run', ex])` (example_smoke_test.dart:59),
+# a separate PROCESS, and --coverage instruments the TEST isolate. Measured: 11
+# passing tests, one hitmap JSON, and format_coverage --report-on=lib writes a
+# 0-byte tracefile. The planning document listed this suite as free coverage;
+# it is free, and it is zero.
 s  examples      dart test test/integration/example_smoke_test.dart -p vm --run-skipped --tags=example
+# Every measured suite above wrote its hitmap into ONE directory, so format_coverage
+# unions them and there is no LCOV merge to get wrong. That matters: the FFI
+# suite is 1,356 tests that drive ffi_core_bindings, native_bindings_ffi,
+# monty_repl and ffi_repl_bindings -- the four files the unit-only measurement
+# reported at 0.0-3.1% -- and it has been running in CI, untracked, the whole
+# time. This does not test anything new; it stops throwing away the record of
+# what was already tested.
+#
+# It reports two numbers on purpose (loaded-files and lib-wide) so nobody can
+# quietly switch to whichever flatters.
+s  cov_report    bash tool/coverage_report.sh --out-dir "$OUT/coverage" "$OUT/cov"
+# ...and a floor under them. Nothing else here stops the reclassified coverage
+# decaying: new native code lands, the conformance corpus does not grow to
+# match, and per-file coverage slides back invisibly because the project total
+# is dominated by files nobody is changing. Same mechanism as dcm_ratchet, same
+# rule about regenerating the baseline only in the commit that justifies it.
+s  cov_ratchet   bash tool/coverage_ratchet.sh "$OUT/coverage/honest.info"
 # --skip-build is deliberate and load-bearing: without it this step REBUILDS
 # lib/assets/*.wasm, i.e. the gate would test an artefact that is not the one
 # being committed. It cost us a red CI once already (see the note at the foot of

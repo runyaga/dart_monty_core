@@ -56,11 +56,19 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 OUT_DIR=coverage
+# A precomputed zero baseline (a previous run's anchor.info). The anchor needs a
+# Dart SDK and a native build; a job that only merges tracefiles has neither and
+# should not grow them just to re-derive a file both jobs agree on. Passing it
+# skips the anchor run -- and ONLY that: the per-file accounting and the
+# every-lib-file assertion still run, so a stale baseline shows up as a missing
+# file rather than as a quietly smaller denominator.
+BASELINE=""
 INPUTS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --out-dir) OUT_DIR="$2"; shift 2 ;;
-    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
+    --baseline) BASELINE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,54p' "$0"; exit 0 ;;
     -*) echo "FAIL: unknown option $1" >&2; exit 2 ;;
     *) INPUTS+=("$1"); shift ;;
   esac
@@ -130,6 +138,14 @@ VM_UNLOADABLE=(
 )
 
 READY_SENTINEL='coverage-anchor-compiled-and-ran'
+if [ -n "$BASELINE" ] && [ ! -s "$BASELINE" ]; then
+  echo "FAIL: --baseline '$BASELINE' is missing or empty."
+  echo "  Without it every unloaded lib/ file silently leaves the denominator,"
+  echo "  which is the exact defect this script exists to remove. Produce one"
+  echo "  with a plain run of this script (it writes <out-dir>/anchor.info)."
+  exit 1
+fi
+
 ANCHOR_DIR=.dart_tool/coverage_anchor
 rm -rf "$ANCHOR_DIR"
 mkdir -p "$ANCHOR_DIR/hitmap" "$OUT_DIR"
@@ -170,6 +186,11 @@ write_anchor() {  # $1 = output path, $2.. = lib/ paths to import
 write_anchor "$ANCHOR_DIR/anchor.dart" "${ANCHOR_FILES[@]}"
 
 # ---- run the anchor under the VM service and collect --------------------------
+# Everything between here and the matching `fi` is the anchor run, skipped
+# wholesale when --baseline hands us one that was produced earlier.
+if [ -n "$BASELINE" ]; then
+  cp "$BASELINE" "$ANCHOR_DIR/anchor.info"
+else
 # Port 0 = let the OS choose, then read the real URI back out of the log. A
 # hard-coded port makes this script fight any other VM service on the machine,
 # including a second copy of itself.
@@ -255,6 +276,7 @@ for f in "${VM_UNLOADABLE[@]}"; do
   fi
 done
 rm -f "$ANCHOR_DIR/probe.dart" "$ANCHOR_DIR/probe.log"
+fi  # end of the anchor run
 
 # ---- hitmap directories become tracefiles -------------------------------------
 ORIG_INPUTS="$(printf '%s\n' "${INPUTS[@]}")"
@@ -284,7 +306,7 @@ EXCLUDE="$(printf '%s\n' "${EXCLUDE[@]}")" \
 UNLOADABLE="$(printf '%s\n' "${VM_UNLOADABLE[@]}")" \
 INPUTS="$(printf '%s\n' "${INPUTS[@]}")" ORIG_INPUTS="$ORIG_INPUTS" \
 python3 - <<'PY'
-import os, re, sys
+import os, re, shutil, sys
 
 root = os.getcwd()
 out_dir = os.environ['OUT_DIR']
@@ -403,6 +425,10 @@ def write(path, data):
             fh.write('end_of_record\n')
 
 
+# anchor.info travels with the report so a later job can merge more tracefiles
+# in without a Dart SDK. See --baseline.
+shutil.copyfile(os.environ['ANCHOR'], os.path.join(out_dir, 'anchor.info'))
+
 write(os.path.join(out_dir, 'merged.info'), merged)
 write(os.path.join(out_dir, 'honest.info'), honest)
 
@@ -428,6 +454,7 @@ print(f'  of which synthesised   : {synth_lines} lines in '
       f'tool/coverage_report.sh')
 print(f'  wrote {out_dir}/merged.info (real lines only, for diff-cover)')
 print(f'  wrote {out_dir}/honest.info (every lib/ file, for humans and the ratchet)')
+print(f'  wrote {out_dir}/anchor.info (the zero baseline, for --baseline)')
 
 # --- M0's exit criterion, asserted mechanically -------------------------------
 missing = sorted(set(all_lib) - set(honest))

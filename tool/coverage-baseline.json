@@ -1,0 +1,340 @@
+{
+  "_note": "Per-file coverage floor. Regenerate ONLY in the commit that justifies the change: bash tool/coverage_ratchet.sh coverage/honest.info --update",
+  "by_file": {
+    "lib/dart_monty_core.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/externals.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/ffi/ffi_core_bindings.dart": {
+      "found": 211,
+      "hit": 148,
+      "pct": 70.14
+    },
+    "lib/src/ffi/monty_ffi.dart": {
+      "found": 34,
+      "hit": 6,
+      "pct": 17.65
+    },
+    "lib/src/ffi/monty_native.dart": {
+      "found": 71,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/ffi/native_bindings.dart": {
+      "found": 8,
+      "hit": 8,
+      "pct": 100.0
+    },
+    "lib/src/ffi/native_bindings_ffi.dart": {
+      "found": 327,
+      "hit": 251,
+      "pct": 76.76
+    },
+    "lib/src/ffi/native_isolate_bindings.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/ffi/native_isolate_bindings_impl.dart": {
+      "found": 201,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/monty.dart": {
+      "found": 24,
+      "hit": 16,
+      "pct": 66.67
+    },
+    "lib/src/monty_factory.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/monty_factory_native.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
+    "lib/src/monty_factory_stub.dart": {
+      "found": 2,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/monty_factory_web.dart": {
+      "found": 1,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/mount/memory_mounted_os_handler.dart": {
+      "found": 279,
+      "hit": 257,
+      "pct": 92.11
+    },
+    "lib/src/mount/monty_memory_file.dart": {
+      "found": 7,
+      "hit": 6,
+      "pct": 85.71
+    },
+    "lib/src/mount/mount_dir.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
+    "lib/src/mount/mount_mode.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/mount/open_call.dart": {
+      "found": 29,
+      "hit": 26,
+      "pct": 89.66
+    },
+    "lib/src/mount/vfs_accountant.dart": {
+      "found": 38,
+      "hit": 35,
+      "pct": 92.11
+    },
+    "lib/src/mount/vfs_callback_file.dart": {
+      "found": 7,
+      "hit": 7,
+      "pct": 100.0
+    },
+    "lib/src/mount/vfs_content.dart": {
+      "found": 22,
+      "hit": 14,
+      "pct": 63.64
+    },
+    "lib/src/mount/vfs_limits.dart": {
+      "found": 11,
+      "hit": 11,
+      "pct": 100.0
+    },
+    "lib/src/mount/vfs_node.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
+    "lib/src/mount/vfs_path.dart": {
+      "found": 11,
+      "hit": 11,
+      "pct": 100.0
+    },
+    "lib/src/mount/vfs_tree.dart": {
+      "found": 75,
+      "hit": 66,
+      "pct": 88.0
+    },
+    "lib/src/platform/base_monty_platform.dart": {
+      "found": 190,
+      "hit": 148,
+      "pct": 77.89
+    },
+    "lib/src/platform/code_capture.dart": {
+      "found": 47,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/platform/core_bindings.dart": {
+      "found": 2,
+      "hit": 2,
+      "pct": 100.0
+    },
+    "lib/src/platform/double_text.dart": {
+      "found": 5,
+      "hit": 5,
+      "pct": 100.0
+    },
+    "lib/src/platform/inputs_encoder.dart": {
+      "found": 33,
+      "hit": 33,
+      "pct": 100.0
+    },
+    "lib/src/platform/monty_error.dart": {
+      "found": 16,
+      "hit": 14,
+      "pct": 87.5
+    },
+    "lib/src/platform/monty_exception.dart": {
+      "found": 52,
+      "hit": 52,
+      "pct": 100.0
+    },
+    "lib/src/platform/monty_future_capable.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/platform/monty_internal_error.dart": {
+      "found": 3,
+      "hit": 1,
+      "pct": 33.33
+    },
+    "lib/src/platform/monty_limits.dart": {
+      "found": 26,
+      "hit": 9,
+      "pct": 34.62
+    },
+    "lib/src/platform/monty_platform.dart": {
+      "found": 26,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/platform/monty_progress.dart": {
+      "found": 113,
+      "hit": 7,
+      "pct": 6.19
+    },
+    "lib/src/platform/monty_resource_usage.dart": {
+      "found": 23,
+      "hit": 18,
+      "pct": 78.26
+    },
+    "lib/src/platform/monty_result.dart": {
+      "found": 29,
+      "hit": 29,
+      "pct": 100.0
+    },
+    "lib/src/platform/monty_snapshot_capable.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/platform/monty_stack_frame.dart": {
+      "found": 52,
+      "hit": 50,
+      "pct": 96.15
+    },
+    "lib/src/platform/monty_state_mixin.dart": {
+      "found": 18,
+      "hit": 14,
+      "pct": 77.78
+    },
+    "lib/src/platform/monty_typing_error.dart": {
+      "found": 28,
+      "hit": 26,
+      "pct": 92.86
+    },
+    "lib/src/platform/monty_value.dart": {
+      "found": 74,
+      "hit": 74,
+      "pct": 100.0
+    },
+    "lib/src/platform/monty_value_collections.dart": {
+      "found": 111,
+      "hit": 95,
+      "pct": 85.59
+    },
+    "lib/src/platform/monty_value_datetime.dart": {
+      "found": 183,
+      "hit": 106,
+      "pct": 57.92
+    },
+    "lib/src/platform/monty_value_scalars.dart": {
+      "found": 103,
+      "hit": 97,
+      "pct": 94.17
+    },
+    "lib/src/platform/monty_value_structured.dart": {
+      "found": 214,
+      "hit": 129,
+      "pct": 60.28
+    },
+    "lib/src/platform/os_call_exception.dart": {
+      "found": 12,
+      "hit": 7,
+      "pct": 58.33
+    },
+    "lib/src/platform/wire_json.dart": {
+      "found": 8,
+      "hit": 8,
+      "pct": 100.0
+    },
+    "lib/src/repl/ffi_repl_bindings.dart": {
+      "found": 176,
+      "hit": 143,
+      "pct": 81.25
+    },
+    "lib/src/repl/monty_repl.dart": {
+      "found": 228,
+      "hit": 187,
+      "pct": 82.02
+    },
+    "lib/src/repl/repl_bindings.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/repl/repl_factory.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/repl/repl_factory_native.dart": {
+      "found": 2,
+      "hit": 2,
+      "pct": 100.0
+    },
+    "lib/src/repl/repl_factory_stub.dart": {
+      "found": 1,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/repl/repl_factory_web.dart": {
+      "found": 2,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/repl/repl_platform.dart": {
+      "found": 36,
+      "hit": 18,
+      "pct": 50.0
+    },
+    "lib/src/repl/wasm_repl_bindings.dart": {
+      "found": 122,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/wasm/monty_wasm.dart": {
+      "found": 35,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/wasm/wasm_bindings.dart": {
+      "found": 4,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/wasm/wasm_bindings_js.dart": {
+      "found": 553,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/wasm/wasm_bindings_js_stub.dart": {
+      "found": 74,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/wasm/wasm_core_bindings.dart": {
+      "found": 158,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/unsafe_callback_file.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    }
+  },
+  "total": {
+    "found": 4120,
+    "hit": 2139,
+    "pct": 51.92
+  }
+}
