@@ -42,20 +42,55 @@ type Tracker = ResourceTracker;
 /// pointer both yield an unbounded session. Unparseable JSON is an ERROR rather
 /// than a silent fallback to unbounded: a caller who asked for a limit and got
 /// none is precisely the failure core#138 was about.
+fn u64_field(map: &serde_json::Map<String, Value>, key: &str) -> Result<Option<u64>, String> {
+    match map.get(key) {
+        // Absent and explicit null both mean "no limit on this axis",
+        // which is the documented contract and stays a silent default --
+        // it is the only one of the three that is a real request.
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().map(Some).ok_or_else(|| {
+            format!(
+                "limits.{key} must be a non-negative integer, got {v}. \
+                 Absent or null means no limit on this axis; a present but \
+                 unusable value is an ERROR rather than a silent fallback \
+                 to unbounded, because a dropped limit is a security \
+                 control that reports success (FB-1 / core#124, core#138)."
+            )
+        }),
+    }
+}
+
 pub fn parse_limits_json(json: &str) -> Result<ResourceLimits, String> {
     let v: Value = serde_json::from_str(json).map_err(|e| format!("invalid limits JSON: {e}"))?;
     let Some(map) = v.as_object() else {
         return Err(format!("limits JSON must be an object, got {v}"));
     };
 
+    // ABSENT, NULL and PRESENT-BUT-WRONG are three different things.
+    //
+    // This was `map.get(k).and_then(Value::as_u64)` on all three axes, and
+    // `as_u64()` returns None for anything that is not a non-negative integer.
+    // So `{"memory_bytes": -1}` -- well-formed JSON, nothing to fail on -- took
+    // the None branch, left the limit unset, and returned Ok(unbounded). The
+    // doc comment four lines above promises the opposite in as many words:
+    // "a caller who asked for a limit and got none is precisely the failure
+    // core#138 was about". A caller asking for -1 asked for a limit and got
+    // none. So did `"1000"`, `1e9`, and `true`.
+    //
+    // This is the SILENT-DEFAULT hazard for the fifth time in this codebase.
+    // The same shape was removed from unwrap_or(0) on type_id,
+    // unwrap_or(false) on host_defined, `as String? ?? ''` on the class name,
+    // and `?? 0` on every MontyTime field. Each time the reported instance was
+    // fixed and the class was not. `.and_then(as_u64)` is the same bug in
+    // different syntax.
     let mut limits = ResourceLimits::default();
-    if let Some(bytes) = map.get("memory_bytes").and_then(Value::as_u64) {
+    if let Some(bytes) = u64_field(map, "memory_bytes")? {
         limits.max_memory = Some(usize::try_from(bytes).unwrap_or(usize::MAX));
     }
-    if let Some(depth) = map.get("stack_depth").and_then(Value::as_u64) {
+    if let Some(depth) = u64_field(map, "stack_depth")? {
         limits.max_recursion_depth = usize::try_from(depth).unwrap_or(usize::MAX);
     }
-    if let Some(ms) = map.get("timeout_ms").and_then(Value::as_u64) {
+    if let Some(ms) = u64_field(map, "timeout_ms")? {
         limits.max_duration = Some(std::time::Duration::from_millis(ms));
     }
 
@@ -1397,6 +1432,60 @@ mod tests {
         assert_eq!(l.max_memory, Some(1_048_576));
         assert_eq!(l.max_recursion_depth, 64);
         assert_eq!(l.max_duration, Some(std::time::Duration::from_millis(250)));
+    }
+
+    // F8/F6: a PRESENT but unusable limit must ERROR, never silently unbound.
+    //
+    // These are the values that used to return Ok(unbounded) because
+    // `.and_then(Value::as_u64)` yields None for all of them. Each one is a
+    // caller who asked for a limit and would have got none -- the exact failure
+    // the doc comment on parse_limits_json says cannot happen.
+    #[test]
+    fn parse_limits_json_rejects_a_present_but_unusable_value() {
+        for (json, why) in [
+            (r#"{"memory_bytes": -1}"#, "negative"),
+            (r#"{"stack_depth": -1}"#, "negative"),
+            (r#"{"timeout_ms": -1}"#, "negative"),
+            (r#"{"memory_bytes": "1000"}"#, "string"),
+            (r#"{"stack_depth": 1.5}"#, "float"),
+            (r#"{"timeout_ms": true}"#, "bool"),
+            (r#"{"memory_bytes": []}"#, "array"),
+            (r#"{"stack_depth": {}}"#, "object"),
+        ] {
+            let got = parse_limits_json(json);
+            assert!(
+                got.is_err(),
+                "{json} ({why}) returned Ok -- a dropped limit is a security \
+                 control that reports success"
+            );
+            let msg = got.unwrap_err();
+            assert!(
+                msg.contains("non-negative integer"),
+                "{json}: the error must say what was wrong with the VALUE, so a \
+                 caller can fix it. Got: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_limits_json_accepts_explicit_null_as_unbounded() {
+        // Bounds the check above. `null` is a REAL request for "no limit on
+        // this axis" and must stay a silent default -- tightening the guard to
+        // reject anything non-integer would break every caller that serialises
+        // an absent Dart field as null.
+        let l = parse_limits_json(r#"{"memory_bytes": null, "stack_depth": 8}"#)
+            .expect("explicit null is a valid way to say unbounded");
+        assert_eq!(l.max_memory, None);
+        assert_eq!(l.max_recursion_depth, 8);
+    }
+
+    #[test]
+    fn parse_limits_json_accepts_zero() {
+        // Zero is a legitimate non-negative integer and must NOT be swept up
+        // with the rejections -- absent, zero and wrong-typed are three
+        // different things, which is the whole point of this change.
+        let l = parse_limits_json(r#"{"timeout_ms": 0}"#).expect("zero is a valid value");
+        assert_eq!(l.max_duration, Some(std::time::Duration::from_millis(0)));
     }
 
     #[test]
