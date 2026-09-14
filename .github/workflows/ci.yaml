@@ -409,7 +409,7 @@ jobs:
           # GLOBAL WebSocket, stable from Node 22. On 20 this gate died with
           # `ReferenceError: WebSocket is not defined`, and it only surfaced
           # the first time CI ever ran the gate.
-          node-version: 22
+          node-version: '24'
       - name: Install WASI runtime dep
         working-directory: js
         run: npm install --force
@@ -716,7 +716,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
@@ -813,7 +813,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
@@ -878,7 +878,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4

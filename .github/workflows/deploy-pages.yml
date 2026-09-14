@@ -27,7 +27,7 @@ jobs:
       # ── Toolchains ──────────────────────────────────────────────────────────
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - uses: dart-lang/setup-dart@v1
         with:
