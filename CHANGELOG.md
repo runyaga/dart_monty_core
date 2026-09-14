@@ -120,6 +120,46 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+#### `MontyPairsDict` is gone; `MontyDict` holds pairs
+
+A Python dict now decodes to ONE type whatever its keys are. `MontyPairsDict`
+is deleted and `MontyDict.entries` (`Map<String, MontyValue>`) is replaced by
+`MontyDict.pairs` (`List<(MontyValue, MontyValue)>`) — the shape monty itself
+uses (`DictPairs(Vec<(MontyObject, MontyObject)>)`).
+
+THE REASON IS A CORRECTNESS DEFECT, not tidiness. The two classes disagreed
+about what dict equality MEANS, and which one you got was decided by whether
+the keys happened to be strings:
+
+```
+{'x':1,'y':2} == {'y':2,'x':1}   ->  true    (MontyDict, compared as a Map)
+{1:'a',2:'b'} == {2:'b',1:'a'}   ->  false   (MontyPairsDict, compared as a List)
+```
+
+The sandbox answers `True` for both, so the second was wrong. Both behaviours
+were pinned by tests asserting opposite things about the same Python type.
+`MontyDict.==` is now order-insensitive for every key type, and `hashCode`
+folds commutatively to match.
+
+Porting:
+
+- `d.entries` -> `d.asStringMap` (returns `null` unless EVERY key is a string,
+  so the assumption is explicit) or iterate `d.pairs`.
+- `case MontyPairsDict(:final pairs)` -> fold into `case MontyDict(:final pairs)`.
+- `MontyDict({'a': v})` -> `MontyDict.ofStrings({'a': v})`, or
+  `MontyDict([(MontyString('a'), v)])`.
+- `d.length` / `d.isEmpty` / `d.keys` / `d.values` are available directly.
+
+UNCHANGED: the wire. Both envelope shapes are still emitted and accepted
+byte-identically (`value` for all-string keys, `entries` otherwise), so no
+native change was needed. `dartValue` also keeps its existing contract — a
+`Map` when every key is a string, a pair list otherwise.
+
+ALSO FIXED: `MontyValue.fromDart` forced every map key through `k.toString()`,
+silently turning the Dart map `{1: 'one'}` into the Python dict `{'1': 'one'}`.
+Keys now convert the same way values do.
+
+
 - **A negative or wrong-typed resource limit is now an error.**
   `parse_limits_json` read each axis with `and_then(Value::as_u64)`, which
   yields `None` for anything that is not a non-negative integer — so
