@@ -1386,6 +1386,190 @@ fn snapshot_format_pinning() {
     unsafe { monty_repl_free(handle) };
 }
 
+// ---------------------------------------------------------------------------
+// F8 — hostile values in a VALID snapshot
+// ---------------------------------------------------------------------------
+// Every negative test before these used bytes that never reach the decoder.
+// `[0xFF; 16]` and `[0xAB; 8]` both fail on the ASCII magic `MONTY` at byte 0,
+// so they prove "a non-snapshot is rejected" and nothing more. Measured
+// 2026-09-14: a real dump of `x = 42` is 100 bytes, of which roughly 95 had
+// never been given a hostile value by any test in this repo.
+//
+// That matters because restore DESERIALISES AN INTERPRETER HEAP from bytes the
+// caller supplies. It is the highest-value target in the codebase, and the one
+// place where a Rust panic is not recoverable: a stack overflow or allocator
+// abort inside the decoder is a SIGSEGV, and catch_unwind (error.rs) cannot
+// catch it.
+//
+// So these start from a snapshot the engine itself just produced and corrupt it
+// in ways a truncated file, a flipped bit, or a version skew actually produce.
+// The contract asserted is the same for every case:
+//   1. no handle
+//   2. a REPORTED reason -- not a NULL out_error (that is F1's defect)
+//   3. the process is still alive to run the next case, which is the real
+//      assertion: a panic or abort here would take the whole test binary down
+//      and no `assert!` would ever be reached.
+fn valid_snapshot_bytes() -> Vec<u8> {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(!handle.is_null(), "repl_create failed");
+
+    let code = c("x = 42");
+    let mut rj: *mut c_char = ptr::null_mut();
+    let mut em: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut rj, &mut em) };
+    assert_eq!(tag, MontyResultTag::Ok);
+    if !rj.is_null() {
+        unsafe { monty_string_free(rj) };
+    }
+
+    let mut len: usize = 0;
+    let mut serr: *mut c_char = ptr::null_mut();
+    let p = unsafe { monty_repl_snapshot(handle, &mut len, &mut serr) };
+    assert!(!p.is_null(), "snapshot failed");
+    let v = unsafe { std::slice::from_raw_parts(p, len) }.to_vec();
+    unsafe { monty_bytes_free(p, len) };
+    unsafe { monty_repl_free(handle) };
+    v
+}
+
+/// Restores `bytes` and asserts it is refused WITH a reason. Returns the
+/// message so a caller can assert on it.
+fn expect_restore_refused(bytes: &[u8], what: &str) -> String {
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe {
+        monty_repl_restore(
+            bytes.as_ptr(),
+            bytes.len(),
+            ptr::null(),
+            ptr::null(),
+            &mut err,
+        )
+    };
+    assert!(handle.is_null(), "{what}: must not produce a handle");
+    assert!(
+        !err.is_null(),
+        "{what}: refused WITHOUT a reason. A NULL out_error here is the defect \
+         monty_snapshot still has -- the caller cannot tell a corrupt snapshot \
+         from a version skew from an allocation failure."
+    );
+    unsafe { read_c_string(err) }
+}
+
+#[test]
+fn restore_rejects_a_truncated_snapshot() {
+    let good = valid_snapshot_bytes();
+    assert!(
+        good.len() > 16,
+        "snapshot too small to truncate meaningfully"
+    );
+
+    // Every prefix length that is not the whole thing. A truncated file is the
+    // single most likely real-world corruption -- an interrupted write, a
+    // partial download, a buffer cut short by a wrong length argument.
+    for cut in [1usize, 4, 7, 8, 16, good.len() / 2, good.len() - 1] {
+        let msg = expect_restore_refused(&good[..cut], &format!("truncated to {cut}"));
+        assert!(
+            !msg.is_empty(),
+            "truncated to {cut}: the reason must not be an empty string"
+        );
+    }
+}
+
+#[test]
+fn restore_rejects_a_corrupted_payload() {
+    let good = valid_snapshot_bytes();
+    let header = DUMP_MAGIC.len() + 2;
+
+    // Flip bits PAST the header, so the magic and version still match and the
+    // bytes reach the postcard decoder. This is the region no previous test
+    // had ever touched.
+    for offset in [header, header + 1, good.len() / 2, good.len() - 1] {
+        let mut bad = good.clone();
+        bad[offset] ^= 0xFF;
+        // A single flipped byte MAY still decode to something structurally
+        // valid -- postcard is not self-describing and has no checksum. So the
+        // assertion is NOT "this must fail"; it is "this must not take the
+        // process down, and if it fails it must say why". A restore that
+        // SUCCEEDS here is a legitimate outcome and is recorded, not asserted
+        // against.
+        let mut err: *mut c_char = ptr::null_mut();
+        let handle = unsafe {
+            monty_repl_restore(bad.as_ptr(), bad.len(), ptr::null(), ptr::null(), &mut err)
+        };
+        if handle.is_null() {
+            assert!(
+                !err.is_null(),
+                "byte {offset} flipped: refused without a reason"
+            );
+            let msg = unsafe { read_c_string(err) };
+            assert!(!msg.is_empty(), "byte {offset} flipped: empty reason");
+        } else {
+            // Survived. Free it and move on -- the point of this test is that
+            // the PROCESS survives, which reaching this line proves.
+            unsafe { monty_repl_free(handle) };
+            if !err.is_null() {
+                unsafe { monty_string_free(err) };
+            }
+        }
+    }
+}
+
+#[test]
+fn restore_rejects_a_version_skew() {
+    let mut bad = valid_snapshot_bytes();
+    // Corrupt the version byte the format-pinning test pins. A snapshot written
+    // by a different monty must be refused with a message that names the
+    // mismatch, because "rebuild or re-take the snapshot" and "these bytes are
+    // not a snapshot" need different actions from the caller.
+    bad[DUMP_MAGIC.len() + 1] = EXPECTED_DUMP_VERSION.wrapping_add(1);
+    let msg = expect_restore_refused(&bad, "version skew");
+    assert!(
+        msg.contains("dump format") || msg.contains("DUMP_VERSION") || msg.contains("version"),
+        "a version skew must SAY it is a version skew, so the caller knows to \
+         re-take the snapshot rather than hunt for corruption. Got: {msg}"
+    );
+}
+
+#[test]
+fn restore_rejects_a_corrupted_magic() {
+    let mut bad = valid_snapshot_bytes();
+    bad[0] ^= 0xFF;
+    let msg = expect_restore_refused(&bad, "corrupted magic");
+    assert!(!msg.is_empty(), "corrupted magic: empty reason");
+}
+
+#[test]
+fn restore_tolerates_trailing_garbage_or_says_why() {
+    let mut bad = valid_snapshot_bytes();
+    bad.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+
+    // Trailing bytes after a complete payload are the one case where either
+    // outcome is defensible: postcard may stop at the end of the struct and
+    // ignore the rest. Both are recorded; what is NOT acceptable is a crash, or
+    // a refusal with no reason.
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle =
+        unsafe { monty_repl_restore(bad.as_ptr(), bad.len(), ptr::null(), ptr::null(), &mut err) };
+    if handle.is_null() {
+        assert!(!err.is_null(), "trailing garbage: refused without a reason");
+        let msg = unsafe { read_c_string(err) };
+        assert!(!msg.is_empty(), "trailing garbage: empty reason");
+    } else {
+        unsafe { monty_repl_free(handle) };
+        if !err.is_null() {
+            unsafe { monty_string_free(err) };
+        }
+    }
+}
+
+#[test]
+fn restore_rejects_an_empty_buffer() {
+    let msg = expect_restore_refused(&[], "empty buffer");
+    assert!(!msg.is_empty(), "empty buffer: empty reason");
+}
+
 #[test]
 fn restore_garbage_bytes_returns_null() {
     let garbage = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, 0x01, 0x02];
