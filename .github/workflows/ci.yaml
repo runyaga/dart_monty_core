@@ -224,13 +224,12 @@ jobs:
           # sibling dart_monty repo already passes them; this job never did.
           DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
           DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
-        # Same base-ref guard as the coverage ratchet: the baseline a PR is
-        # measured against must not be one the PR can edit. This one also
-        # refuses to compare across dcm versions -- a PR that legitimately
-        # bumps the analyzer AND regenerates the baseline would otherwise be
-        # judged against the OLD baseline with the NEW dcm, which is the
-        # cross-version comparison the version pin above exists to prevent.
-        env:
+          # Same base-ref guard as the coverage ratchet: the baseline a PR is
+          # measured against must not be one the PR can edit. This one also
+          # refuses to compare across dcm versions -- a PR that legitimately
+          # bumps the analyzer AND regenerates the baseline would otherwise be
+          # judged against the OLD baseline with the NEW dcm, which is the
+          # cross-version comparison the version pin above exists to prevent.
           RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
         run: |
           if [ -n "${RATCHET_BASE_REF:-}" ]; then

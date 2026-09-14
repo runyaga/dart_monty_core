@@ -141,6 +141,11 @@ s  forgery_cov   bash tool/check_forgery_coverage.sh
 # the encoder is worse than none, because the tests cite it as authority. Its
 # row table is DERIVED from the executed assertions, and this keeps it derived.
 s  wire_contract bash tool/check_wire_contract.sh
+# A workflow GitHub cannot parse does not fail loudly: it records a 0-job run
+# and STOPS MATCHING ITS TRIGGERS, so the PR checks quietly cease. A duplicate
+# `env:` key took CI out for 13 commits here while `yaml.safe_load` passed the
+# whole time -- PyYAML keeps the last duplicate, GitHub rejects the document.
+s  workflows_ok bash tool/check_workflows_valid.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
