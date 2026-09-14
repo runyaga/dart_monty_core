@@ -59,11 +59,22 @@ ERR=$(mktemp)
 # CI it refuses with "Both CI key and purchase email should be provided to run
 # on CI." and exits 64 -- which is why this gate never ran there. Pass the
 # credentials when present; stay unlicensed when not, so local use is unchanged.
+#
+# AND `CI=true` MUST BE SET, or the credentials are ignored. Measured
+# 2026-09-14 with a valid CI key in a local container: `dcm analyze --ci-key=...
+# --email=...` printed "DCM is not activated ... run dcm activate" and exited 1,
+# while the SAME command with `CI=true` prefixed analysed 67 files and emitted
+# JSON. dcm only consults the CI credentials when it believes it is on CI, so
+# passing them without the flag is a no-op that reports an unrelated reason.
+# This gate therefore could not pass locally even when correctly configured --
+# it always looked like a missing licence rather than a missing env var.
 DCM_AUTH=()
+DCM_CI_ENV=()
 if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
   DCM_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
+  DCM_CI_ENV=(env CI=true)
 fi
-dcm analyze lib test --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
+"${DCM_CI_ENV[@]}" dcm analyze lib test --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
 DCM_RC=$?
 
 if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$TMP" 2>/dev/null; then
