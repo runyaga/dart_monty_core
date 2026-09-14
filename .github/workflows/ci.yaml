@@ -403,7 +403,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.11.4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # 22, not 20: tool/pages_drive.mjs drives Chrome over CDP using the
           # GLOBAL WebSocket, stable from Node 22. On 20 this gate died with
@@ -714,7 +714,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - uses: dart-lang/setup-dart@v1
@@ -811,7 +811,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - uses: dart-lang/setup-dart@v1
@@ -876,7 +876,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - uses: dart-lang/setup-dart@v1
