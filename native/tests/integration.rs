@@ -2489,3 +2489,87 @@ fn repl_usage_reports_real_elapsed_time() {
 
     unsafe { monty_repl_free(handle) };
 }
+
+// ---------------------------------------------------------------------------
+// REPL constructors: bad script_name, and the core#138 limits guarantee
+// ---------------------------------------------------------------------------
+// The one-shot constructor has both halves of the script_name case
+// (`create_with_non_utf8_script_name` :804, and its null_out_error twin :832).
+// The REPL constructors had neither.
+//
+// The limits half matters more. `monty_repl_create_with_limits`' own doc says:
+// "Malformed JSON is an error rather than a silent fallback: a caller who asks
+// for a limit and quietly receives none is core#138." Nothing tested that. A
+// regression there does not crash and does not fail loudly -- it hands back a
+// working handle with NO limits, which is precisely the defect core#138 was
+// filed for, and the caller cannot tell.
+#[test]
+fn repl_create_rejects_a_non_utf8_script_name() {
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe { monty_repl_create(bad.as_ptr().cast(), &mut e) };
+    assert!(
+        h.is_null(),
+        "a non-UTF-8 script_name must not produce a handle"
+    );
+    assert!(!e.is_null(), "it must say why");
+    let msg = unsafe { read_c_string(e) };
+    assert!(
+        msg.contains("script_name") && msg.contains("not valid UTF-8"),
+        "message should name the argument and the reason, got {msg:?}"
+    );
+
+    // Same path, NULL out_error: must refuse without writing anywhere.
+    let h = unsafe { monty_repl_create(bad.as_ptr().cast(), ptr::null_mut()) };
+    assert!(h.is_null());
+
+    // And through the limits constructor, which parses the same argument.
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe { monty_repl_create_with_limits(bad.as_ptr().cast(), ptr::null(), &mut e) };
+    assert!(h.is_null());
+    assert!(!e.is_null(), "the limits constructor must report it too");
+    unsafe { monty_string_free(e) };
+}
+
+// core#138, pinned: malformed limits must FAIL, not silently run unbounded.
+#[test]
+fn repl_create_with_limits_refuses_malformed_json() {
+    let name = CString::new("repl.py").unwrap();
+
+    // A NULL limits_json is documented as "unbounded session" and is legal.
+    // Asserted first so the negative cases below cannot be satisfied by a
+    // constructor that simply rejects everything.
+    let mut e: *mut c_char = ptr::null_mut();
+    let ok = unsafe { monty_repl_create_with_limits(name.as_ptr(), ptr::null(), &mut e) };
+    assert!(
+        !ok.is_null(),
+        "NULL limits_json is legal: an unbounded session"
+    );
+    unsafe { monty_repl_free(ok) };
+
+    // Each of these must be REFUSED. A handle here is the core#138 defect:
+    // the caller asked for limits and would receive none, silently.
+    for bad in ["{not json", "[]", "null", "{\"memory_bytes\": \"lots\"}"] {
+        let limits = CString::new(bad).unwrap();
+        let mut e: *mut c_char = ptr::null_mut();
+        let h = unsafe { monty_repl_create_with_limits(name.as_ptr(), limits.as_ptr(), &mut e) };
+        assert!(
+            h.is_null(),
+            "malformed limits {bad:?} produced a handle — that is an UNBOUNDED \
+             session the caller believes is limited (core#138)"
+        );
+        assert!(
+            !e.is_null(),
+            "malformed limits {bad:?}: refused without a reason"
+        );
+        let msg = unsafe { read_c_string(e) };
+        assert!(!msg.is_empty(), "malformed limits {bad:?}: empty reason");
+    }
+
+    // Refusal must also survive a NULL out_error rather than crashing.
+    let limits = CString::new("{not json").unwrap();
+    let h =
+        unsafe { monty_repl_create_with_limits(name.as_ptr(), limits.as_ptr(), ptr::null_mut()) };
+    assert!(h.is_null());
+}
