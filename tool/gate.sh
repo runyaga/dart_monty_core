@@ -135,6 +135,12 @@ s  exports_decl  bash tool/check_exports_declared.sh
 # tag and adding a forgery row are separate edits in separate languages; this
 # ties them together.
 s  forgery_cov   bash tool/check_forgery_coverage.sh
+# WIRE-CONTRACT.md is cited as normative by ten sites -- including a test that
+# prints "WIRE-CONTRACT.md row N requires ..." on failure -- and did not exist.
+# The risk in writing one is fabrication: a plausible spec that does not match
+# the encoder is worse than none, because the tests cite it as authority. Its
+# row table is DERIVED from the executed assertions, and this keeps it derived.
+s  wire_contract bash tool/check_wire_contract.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
