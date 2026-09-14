@@ -532,7 +532,18 @@ jobs:
           path: lib/src/ffi/generated
       - name: Build native library
         working-directory: native
-        run: cargo build --release
+        # --target MATCHES THE HOOK, and that is the whole point of the flag.
+        # hook/build.dart:36-37 computes `_rustTriple(os, arch)` and passes
+        # `--target <triple>`, so it builds into target/<triple>/release/. A bare
+        # `cargo build --release` builds into target/release/ instead -- a
+        # DIFFERENT directory that shares nothing. The result was the monty tree
+        # compiled twice per job: once here, once by the hook, neither reusing
+        # the other.
+        #
+        # `shared-key` (added in 5e25267) fixed the CACHE not warming between
+        # jobs; it did nothing about this, because both directories were being
+        # cached and both still had to be built. This is the other half.
+        run: cargo build --release --target x86_64-unknown-linux-gnu
       - name: Build oracle binary
         working-directory: native
         run: cargo build --bin oracle
@@ -642,7 +653,18 @@ jobs:
           path: lib/src/ffi/generated
       - name: Build native library
         working-directory: native
-        run: cargo build --release
+        # --target MATCHES THE HOOK, and that is the whole point of the flag.
+        # hook/build.dart:36-37 computes `_rustTriple(os, arch)` and passes
+        # `--target <triple>`, so it builds into target/<triple>/release/. A bare
+        # `cargo build --release` builds into target/release/ instead -- a
+        # DIFFERENT directory that shares nothing. The result was the monty tree
+        # compiled twice per job: once here, once by the hook, neither reusing
+        # the other.
+        #
+        # `shared-key` (added in 5e25267) fixed the CACHE not warming between
+        # jobs; it did nothing about this, because both directories were being
+        # cached and both still had to be built. This is the other half.
+        run: cargo build --release --target x86_64-unknown-linux-gnu
       - run: dart pub get
       # NOT measured for coverage, and the reason is worth recording because
       # the obvious assumption is wrong. This suite runs each example with
