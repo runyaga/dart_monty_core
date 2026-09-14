@@ -517,7 +517,7 @@ jobs:
         run: bash tool/check_pages.sh
 
   # ---------------------------------------------------------------------------
-  # Rust: fmt + clippy + tests + unioned llvm-cov coverage (≥74% line coverage)
+  # Rust: fmt + clippy + tests + unioned llvm-cov coverage (≥77% line coverage)
   # ---------------------------------------------------------------------------
   rust:
     name: Rust (fmt + clippy + test + coverage)
@@ -556,7 +556,7 @@ jobs:
         uses: taiki-e/install-action@v2.87.12
         with:
           tool: cargo-llvm-cov
-      - name: Run tests with coverage (≥74% line coverage)
+      - name: Run tests with coverage (≥77% line coverage)
         # NOT `cargo llvm-cov` directly. It merges by SYMBOL NAME, and lib.rs
         # holds 63 `#[unsafe(no_mangle)] pub extern "C"` functions whose symbols
         # therefore carry no hash disambiguator -- so the cfg(test) copy and the
@@ -571,7 +571,7 @@ jobs:
         # undercount cannot come back silently. Reverting this to a bare
         # `cargo llvm-cov` call reinstates the bug AND reads 71.02% against the
         # 74% floor below -- a false red, not a quiet pass.
-        run: bash tool/rust_coverage.sh --summary --fail-under 74
+        run: bash tool/rust_coverage.sh --summary --fail-under 77
 
   # ---------------------------------------------------------------------------
   # Build WASM binary (wasm32-wasip1)

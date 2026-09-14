@@ -1923,3 +1923,127 @@ fn os_call_datetime_now_naive_round_trip() {
 
     unsafe { monty_free(handle) };
 }
+
+// ---------------------------------------------------------------------------
+// NULL-handle guards on the REPL C ABI — every one of them
+// ---------------------------------------------------------------------------
+// The one-shot half of the ABI has had NULL tests since early on; the REPL half
+// had NONE. All 27 `monty_repl_*` entry points were unexercised on their guard
+// path, which is 638 of lib.rs's 999 lines and the bulk of its coverage gap.
+//
+// These are not make-work. A NULL handle is what Dart passes after a failed
+// create or a double free, and the guard is the only thing between that and a
+// dereference of address 0. The project has already paid for an unguarded FFI
+// path twice (core#130's fake gate, F1's discarded error), and each time the
+// test that would have caught it was cheap and absent.
+//
+// Every assertion here is the function's OWN documented sentinel, read off the
+// implementation: -1 for the c_int predicates, u32::MAX for the id getters,
+// NULL for the string getters, Error for the progress tags.
+#[test]
+fn repl_null_handle_guards() {
+    // --- c_int predicates: -1 -------------------------------------------------
+    assert_eq!(unsafe { monty_repl_complete_is_error(ptr::null()) }, -1);
+    assert_eq!(unsafe { monty_repl_pending_method_call(ptr::null()) }, -1);
+
+    // --- u32 id getters: u32::MAX --------------------------------------------
+    assert_eq!(unsafe { monty_repl_os_call_id(ptr::null()) }, u32::MAX);
+    assert_eq!(unsafe { monty_repl_pending_call_id(ptr::null()) }, u32::MAX);
+
+    // --- string getters: NULL, and no allocation to leak ---------------------
+    assert!(unsafe { monty_repl_complete_result_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_os_call_fn_name(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_os_call_args_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_os_call_kwargs_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_fn_name(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_fn_args_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_fn_kwargs_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_future_call_ids(ptr::null()) }.is_null());
+
+    // --- free must tolerate NULL, not abort ----------------------------------
+    unsafe { monty_repl_free(ptr::null_mut()) };
+
+    // --- set_ext_fns returns nothing; it must simply not crash ---------------
+    unsafe { monty_repl_set_ext_fns(ptr::null_mut(), ptr::null()) };
+
+    // --- detect_continuation takes SOURCE, not a handle ----------------------
+    // NULL source is documented as "treat as complete" -> 0. Included because a
+    // reader scanning this list would otherwise assume it takes a handle.
+    assert_eq!(unsafe { monty_repl_detect_continuation(ptr::null()) }, 0);
+}
+
+// Every REPL entry point that returns a MontyProgressTag must answer Error on a
+// NULL handle AND say why through out_error. Returning Error with a silent
+// out_error is the shape F1 was filed for: the caller gets a failure with no
+// cause and guesses.
+#[test]
+fn repl_null_handle_progress_tags_report_why() {
+    fn assert_reports(label: &str, tag: MontyProgressTag, err: *mut c_char) {
+        assert_eq!(tag, MontyProgressTag::Error, "{label}: expected Error");
+        assert!(
+            !err.is_null(),
+            "{label}: NULL handle must say so in out_error"
+        );
+        let msg = unsafe { CStr::from_ptr(err) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            msg.contains("NULL"),
+            "{label}: message should name the NULL handle, got {msg:?}"
+        );
+        unsafe { monty_string_free(err) };
+    }
+
+    let s = CString::new("x").unwrap();
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_feed_start(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("feed_start", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("resume", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_with_error(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("resume_with_error", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe {
+        monty_repl_resume_with_exception(ptr::null_mut(), s.as_ptr(), s.as_ptr(), &mut e)
+    };
+    assert_reports("resume_with_exception", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_not_found(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("resume_not_found", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_as_future(ptr::null_mut(), &mut e) };
+    assert_reports("resume_as_future", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_futures(ptr::null_mut(), s.as_ptr(), s.as_ptr(), &mut e) };
+    assert_reports("resume_futures", t, e);
+}
+
+// feed_run returns a MontyResultTag rather than a progress tag, and snapshot
+// returns a buffer. Separate test so a failure names which contract broke.
+#[test]
+fn repl_null_handle_feed_run_and_snapshot() {
+    let code = CString::new("1+1").unwrap();
+    let mut out: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(ptr::null_mut(), code.as_ptr(), &mut out, &mut err) };
+    assert_eq!(tag, MontyResultTag::Error);
+    assert!(out.is_null(), "no result JSON should be produced");
+    assert!(!err.is_null(), "NULL handle must say so");
+    unsafe { monty_string_free(err) };
+
+    let mut len: usize = 0;
+    let mut err: *mut c_char = ptr::null_mut();
+    let buf = unsafe { monty_repl_snapshot(ptr::null(), &mut len, &mut err) };
+    assert!(buf.is_null());
+    assert!(!err.is_null(), "NULL handle must still say so");
+    unsafe { monty_string_free(err) };
+}
