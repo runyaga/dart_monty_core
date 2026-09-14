@@ -48,9 +48,22 @@ ns(){ n="$1"; shift; t=$SECONDS
 # native/Cargo.toml changed, so dart test silently loaded a stale 0.18 dylib
 # against a 0.19 oracle. Clear the cache whenever native/ is newer than the
 # cached artifact.
-CACHED=$(find .dart_tool -name 'libdart_monty_core_native*.dylib' 2>/dev/null | head -1)
+# BOTH EXTENSIONS. This searched only for `*.dylib`, which hook/build.dart:15
+# produces on macOS ONLY — Linux gets `.so` (hook/build.dart:16). So on every
+# Linux machine, including CI-shaped ones, `CACHED` was always empty and this
+# guard NEVER FIRED. Measured in the workspace container: 0 dylib matches, 2
+# .so matches.
+#
+# That is not theoretical. It cost an hour this session: after a fix to the
+# class-uuid derivation the tests still failed identically, and the obvious
+# reading was that the diagnosis was wrong. It was a hooks_runner dylib from
+# the previous day. The guard written to prevent exactly that had been dead
+# the whole time.
+CACHED=$(find .dart_tool \
+  \( -name 'libdart_monty_core_native*.dylib' \
+     -o -name 'libdart_monty_core_native*.so' \) 2>/dev/null | head -1)
 if [ -n "$CACHED" ] && [ -n "$(find native/src native/Cargo.toml -newer "$CACHED" 2>/dev/null)" ]; then
-  echo "note: native/ is newer than the cached dylib — clearing hook cache" >&2
+  echo "note: native/ is newer than the cached native library — clearing hook cache" >&2
   rm -rf .dart_tool/hooks_runner .dart_tool/lib
   dart pub get >/dev/null 2>&1
 fi

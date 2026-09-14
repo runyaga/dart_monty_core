@@ -533,18 +533,46 @@ impl MontyHandle {
         }
     }
 
-    /// Serialize the compiled code to bytes (snapshot).
+    /// Snapshot is NOT SUPPORTED for the one-shot handle — and the reason
+    /// recorded here until 2026-09-14 was FALSE.
     ///
-    /// NOTE: monty v0.0.23 moved snapshotting behind a non-public API. Until
-    /// monty exposes a stable dump/load surface, dart_monty_core_native does not
-    /// support snapshot/restore.
+    /// It said "monty v0.0.23 moved snapshotting behind a non-public API.
+    /// Until monty exposes a stable dump/load surface...". That is wrong:
+    /// `dump`, `Dump`, `DumpError`, `Session` and `SessionRef` are all
+    /// publicly re-exported from monty's crate root (lib.rs:46-47), upstream
+    /// tests them (crates/monty/tests/repl.rs:48-70), and MontyReplHandle now
+    /// uses them. The same false claim blocked the REPL path for a release.
+    ///
+    /// THE REAL REASON, which is about SHAPE, not availability:
+    /// `SessionRef` has three variants — `Idle(&MontyRepl)`,
+    /// `Suspended(&ReplProgress)` and `Running(&RunProgress)`
+    /// (dump_format.rs). There is NO variant for a bare `MontyRun`, which is
+    /// what `HandleState::Ready` holds, so an un-started one-shot has nothing
+    /// to hand `dump`. And the paused states here destructure `RunProgress`
+    /// into `FunctionCall` / `OsCall` / `ResolveFutures` / `NameLookup`, so
+    /// they cannot supply the `&RunProgress` that `Running` wants either.
+    ///
+    /// Supporting it means keeping the whole `RunProgress` instead of its
+    /// parts — a real change to this state machine, not a missing API. Until
+    /// then this refuses, and says why.
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
-        Err("snapshot not supported on monty v0.0.23".into())
+        Err(
+            "snapshot is not supported on the one-shot handle: monty's SessionRef has no \
+             variant for an un-started MontyRun, and this handle destructures RunProgress \
+             into its parts so it cannot supply SessionRef::Running either. Use MontyRepl, \
+             which snapshots via SessionRef::Idle."
+                .into(),
+        )
     }
 
-    /// Restore a handle from serialized bytes.
+    /// Restore is NOT SUPPORTED here, for the same shape reason as
+    /// [`Self::snapshot`] — not because upstream lacks the API.
     pub fn restore(_bytes: &[u8]) -> Result<Self, String> {
-        Err("restore not supported on monty v0.0.23".into())
+        Err(
+            "restore is not supported on the one-shot handle; see snapshot() for why. \
+             Use MontyRepl::restore."
+                .into(),
+        )
     }
 
     /// Set memory limit in bytes.
@@ -853,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
+    #[ignore = "the one-shot handle cannot snapshot: SessionRef has no variant for an un-started MontyRun, and this handle destructures RunProgress. NOT an upstream API gap — see snapshot()."]
     fn test_snapshot_restore() {
         let handle = MontyHandle::new("2 + 2".into(), vec![], None).unwrap();
         let bytes = handle.snapshot().unwrap();

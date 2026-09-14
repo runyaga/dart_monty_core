@@ -220,7 +220,11 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
-  Future<void> restore(Uint8List bytes) async {
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) async {
     // Detach old finalizer to prevent double-free.
     final token = _detachToken;
     if (_guard != null && token != null) {
@@ -236,7 +240,11 @@ class FfiReplBindings implements ReplBindings {
     _detachToken = null;
 
     // Restore new handle from bytes.
-    final newHandle = _bindings.replRestore(bytes);
+    final newHandle = _bindings.replRestore(
+      bytes,
+      limitsJson: limitsJson,
+      extFns: extFns,
+    );
     _replHandle = newHandle;
 
     // Attach new finalizer.

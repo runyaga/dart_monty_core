@@ -594,12 +594,21 @@ class NativeBindingsFfi extends NativeBindings {
   Uint8List replSnapshot(int handle) {
     final ptr = Pointer<ffi_native.MontyReplHandle>.fromAddress(handle);
     final outLen = calloc<Size>();
+    final outError = calloc<Pointer<Char>>();
 
     try {
-      final buf = ffi_native.monty_repl_snapshot(ptr, outLen);
+      final buf = ffi_native.monty_repl_snapshot(ptr, outLen, outError);
       if (buf == nullptr) {
+        // REPORTS THE REAL REASON. This layer used to invent one — it said
+        // "REPL may be mid-execution" for every null, because the C boundary
+        // discarded the Rust error string. That guess outlived the bug it was
+        // masking: the true cause was a stubbed-out implementation, and the
+        // invented message sent diagnosis down the wrong path for a whole
+        // session. `monty_repl_snapshot` now carries `out_error`, following
+        // the same convention monty_create and monty_start already use.
         throw StateError(
-          'monty_repl_snapshot returned null — REPL may be mid-execution',
+          _readAndFreeString(outError.value) ??
+              'monty_repl_snapshot returned null without a reason',
         );
       }
       final len = outLen.value;
@@ -608,20 +617,38 @@ class NativeBindingsFfi extends NativeBindings {
 
       return bytes;
     } finally {
-      calloc.free(outLen);
+      calloc
+        ..free(outLen)
+        ..free(outError);
     }
   }
 
   @override
-  int replRestore(Uint8List data) {
+  int replRestore(
+    Uint8List data, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) {
     final cData = calloc<Uint8>(data.length);
     final outError = calloc<Pointer<Char>>();
+    // nullptr means "keep the snapshot's limits" and "no ext fns" on the C
+    // side. Passing the caller's limits here is what stops a
+    // MontyRepl(limits: ...) silently running under the SNAPSHOT's limits
+    // after a restore.
+    final cLimits = limitsJson == null
+        ? nullptr
+        : limitsJson.toNativeUtf8().cast<Char>();
+    final cExtFns = (extFns == null || extFns.isEmpty)
+        ? nullptr
+        : extFns.join(',').toNativeUtf8().cast<Char>();
 
     try {
       cData.asTypedList(data.length).setAll(0, data);
       final handle = ffi_native.monty_repl_restore(
         cData,
         data.length,
+        cLimits,
+        cExtFns,
         outError,
       );
       if (handle == nullptr) {
@@ -631,6 +658,8 @@ class NativeBindingsFfi extends NativeBindings {
 
       return handle.address;
     } finally {
+      if (cLimits != nullptr) calloc.free(cLimits);
+      if (cExtFns != nullptr) calloc.free(cExtFns);
       calloc
         ..free(cData)
         ..free(outError);

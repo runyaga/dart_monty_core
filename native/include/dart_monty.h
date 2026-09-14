@@ -529,21 +529,37 @@ char *monty_repl_pending_future_call_ids(const MontyReplHandle *handle);
 /**
  * Serialise a REPL handle's heap to postcard bytes.
  *
- * @param handle   Non-null REPL handle in Idle or Complete state.
- * @param out_len  Receives the byte count on success.
- * @return         Heap-allocated bytes (free with monty_bytes_free()), or NULL on error.
+ * @param handle     Non-null REPL handle in Idle or Complete state.
+ * @param out_len    Receives the byte count on success.
+ * @param out_error  On failure, receives error string (free with monty_string_free()).
+ *                   May be NULL if the caller does not want the reason.
+ * @return           Heap-allocated bytes (free with monty_bytes_free()), or NULL on error.
  */
-uint8_t *monty_repl_snapshot(const MontyReplHandle *handle, size_t *out_len);
+uint8_t *monty_repl_snapshot(const MontyReplHandle *handle,
+                             size_t *out_len,
+                             char **out_error);
 
 /**
  * Restore a REPL handle from postcard bytes produced by monty_repl_snapshot().
  *
- * @param data       Pointer to snapshot bytes (not consumed by this call).
- * @param len        Byte count.
- * @param out_error  On failure, receives error string (free with monty_string_free()).
- * @return           New REPL handle (free with monty_repl_free()), or NULL on error.
+ * @param data         Pointer to snapshot bytes (not consumed by this call).
+ * @param len          Byte count.
+ * @param limits_json  Limits to APPLY to the restored session, or NULL to keep
+ *                     whatever the snapshot carried. A snapshot restores the
+ *                     limits of the session it was taken from, so a caller who
+ *                     wants their own MUST pass them here — otherwise the
+ *                     restored session silently runs under the old ones.
+ * @param ext_fns      Comma-separated external function names to re-register,
+ *                     or NULL for none. A snapshot CANNOT carry these; they
+ *                     live on the handle, not in monty's MontyRepl.
+ * @param out_error    On failure, receives error string (free with monty_string_free()).
+ * @return             New REPL handle (free with monty_repl_free()), or NULL on error.
  */
-MontyReplHandle *monty_repl_restore(const uint8_t *data, size_t len, char **out_error);
+MontyReplHandle *monty_repl_restore(const uint8_t *data,
+                                    size_t len,
+                                    const char *limits_json,
+                                    const char *ext_fns,
+                                    char **out_error);
 
 /* ------------------------------------------------------------------ */
 /* Type checking (stateless static analysis)                          */

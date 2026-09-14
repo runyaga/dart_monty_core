@@ -189,7 +189,22 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
-  Future<void> restore(Uint8List bytes) async {
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) async {
+    // TODO(wasm): the worker's replRestore does not accept limits or ext fns
+    // yet. Until it does, a WASM restore keeps the SNAPSHOT's limits — the
+    // defect just fixed on FFI, where MontyRepl(limits:) + restore ran
+    // unbounded. Refusing loudly beats restoring with the wrong bound.
+    if (limitsJson != null) {
+      throw UnsupportedError(
+        'restore(limitsJson:) is not implemented on the WASM backend. The '
+        'restored session would silently keep the snapshot limits instead of '
+        'the ones requested, which is a security control reporting success.',
+      );
+    }
     // replRestore in the Worker frees the old handle and stores the new one
     // under the same replId — no explicit free needed here.
     await _bindings.replRestore(replId: _replId, data: bytes);

@@ -273,5 +273,9 @@ abstract class NativeBindings {
   ///
   /// Returns the new handle address. The caller must free the old handle
   /// via [replFree] before calling this.
-  int replRestore(Uint8List data);
+  /// [limitsJson] is APPLIED to the restored session (null keeps the
+  /// snapshot's own limits), and [extFns] re-registers external names, which a
+  /// snapshot cannot carry. Both were previously dropped, which let a
+  /// `MontyRepl(limits: ...)` restore an unbounded snapshot and run unbounded.
+  int replRestore(Uint8List data, {String? limitsJson, List<String>? extFns});
 }

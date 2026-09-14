@@ -1626,11 +1626,13 @@ function handleReplSnapshot(id, replId) {
   }
 
   const outLen = allocOutPtr();
+  const outError = allocOutPtr();
   let ptr;
   try {
-    ptr = wasm.monty_repl_snapshot(handle, outLen.ptr);
+    ptr = wasm.monty_repl_snapshot(handle, outLen.ptr, outError.ptr);
   } catch (e) {
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
       error: e.message || String(e),
@@ -1640,10 +1642,18 @@ function handleReplSnapshot(id, replId) {
   }
 
   if (ptr === 0) {
+    // REPORTS THE REAL REASON. This branch used to GUESS — it said "REPL may
+    // be mid-execution" for every null, because the C boundary discarded the
+    // Rust error string. The Dart side invented the identical guess
+    // independently, and both outlived the bug they were masking: the true
+    // cause was a stubbed-out implementation. monty_repl_snapshot carries
+    // out_error now, the same way monty_create already did right above.
+    const errMsg = readAndFreeCString(outError.read());
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
-      error: 'monty_repl_snapshot returned null — REPL may be mid-execution',
+      error: errMsg || 'monty_repl_snapshot returned null without a reason',
       errorType: 'StateError',
     });
     return;
@@ -1651,6 +1661,11 @@ function handleReplSnapshot(id, replId) {
 
   const len = outLen.read();
   outLen.free();
+  // Freed on the SUCCESS path too. The first attempt at this change freed
+  // outError on both error paths and leaked it here — in a long-lived
+  // worker that snapshots repeatedly. Found by checking every free-site
+  // rather than assuming the paths were symmetric.
+  outError.free();
 
   const wasmBytes = new Uint8Array(wasm.memory.buffer, ptr, len);
   let copy;

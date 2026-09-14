@@ -1443,14 +1443,46 @@ pub unsafe extern "C" fn monty_repl_pending_future_call_ids(
 /// - `handle`: non-null pointer to a `MontyReplHandle` in Idle or Complete state.
 /// - `out_len`: receives the byte count on success.
 ///
-/// Returns a heap-allocated byte buffer (free with `monty_bytes_free`),
-/// or NULL if the handle is mid-execution or `handle`/`out_len` is NULL.
+/// Returns a heap-allocated byte buffer (free with `monty_bytes_free`), or
+/// NULL on ANY failure. The caller cannot tell WHICH — see below.
+///
+/// NULL MEANS AT LEAST THREE DIFFERENT THINGS, and this doc used to list only
+/// one of them ("mid-execution or handle/out_len is NULL"), omitting the case
+/// that actually fired for a whole release: the operation being unsupported.
+/// Today the causes are:
+///   * `handle` or `out_len` is NULL;
+///   * the handle is mid-execution (Paused / OsCall / Futures), which
+///     `MontyReplHandle::snapshot` rejects with a message saying so;
+///   * `monty::dump` itself failed (a postcard error).
+///
+/// THE ERROR STRING IS DISCARDED HERE. `MontyReplHandle::snapshot` returns a
+/// `Result<_, String>` with a real explanation and this boundary throws it
+/// away, so `native_bindings_ffi.dart` and `js/src/worker_src.js` each INVENT
+/// a cause independently — both currently guess "REPL may be mid-execution".
+/// That guess is why a snapshot stub was misdiagnosed as a state-machine
+/// problem for an entire session.
+///
+/// Carrying the string across C needs a last-error channel (a thread-local
+/// plus a `monty_last_error()` getter, or an out-param), which is new ABI
+/// surface on both hosts. Tracked separately; NOT fixed here.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn monty_repl_snapshot(
     handle: *const MontyReplHandle,
     out_len: *mut usize,
+    out_error: *mut *mut c_char,
 ) -> *mut u8 {
+    // Helper so every early return reports WHY. `out_error` may itself be
+    // NULL for a caller that does not want the detail.
+    let report = |msg: &str| {
+        if !out_error.is_null() {
+            // SAFETY: out_error is non-null (just checked) and points at a
+            // caller-owned slot, per the same contract monty_start uses.
+            unsafe { *out_error = to_c_string(msg) };
+        }
+    };
+
     if handle.is_null() || out_len.is_null() {
+        report("monty_repl_snapshot: handle or out_len is NULL");
         return ptr::null_mut();
     }
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
@@ -1464,7 +1496,20 @@ pub unsafe extern "C" fn monty_repl_snapshot(
             unsafe { *out_len = len };
             ptr
         }
-        Ok(Err(_)) | Err(_) => ptr::null_mut(),
+        // THE ERROR STRING IS CARRIED NOW. `Ok(Err(_)) | Err(_) =>
+        // ptr::null_mut()` used to discard it, so both host layers invented a
+        // cause — both guessed "REPL may be mid-execution", which sent
+        // diagnosis of a stubbed-out implementation down the wrong path for a
+        // whole session. The two arms are also distinguished: a returned Err
+        // is a refusal with a reason, a panic is a bug.
+        Ok(Err(msg)) => {
+            report(&msg);
+            ptr::null_mut()
+        }
+        Err(panic_msg) => {
+            report(&format!("monty_repl_snapshot panicked: {panic_msg}"));
+            ptr::null_mut()
+        }
     }
 }
 
@@ -1480,6 +1525,8 @@ pub unsafe extern "C" fn monty_repl_snapshot(
 pub unsafe extern "C" fn monty_repl_restore(
     data: *const u8,
     len: usize,
+    limits_json: *const c_char,
+    ext_fns: *const c_char,
     out_error: *mut *mut c_char,
 ) -> *mut MontyReplHandle {
     if data.is_null() {
@@ -1489,9 +1536,54 @@ pub unsafe extern "C" fn monty_repl_restore(
         }
         return ptr::null_mut();
     }
+    // LIMITS AND EXT FNS ARE TAKEN HERE, not left to a follow-up call.
+    //
+    // Both were previously dropped on the floor: this called the one-argument
+    // `MontyReplHandle::restore`, so a restored session kept the SNAPSHOT's
+    // limits and had an EMPTY ext_fn_names set. The limits half is the
+    // serious one — measured before this change, a caller who built a REPL
+    // with stackDepth 5 and then restored an unbounded snapshot ran
+    // UNBOUNDED, while an identical un-restored session raised
+    // RecursionError. A dropped limit is a security control that reports
+    // success (FB-1 / core#124).
+    //
+    // NULL is allowed for both and means "do not override" / "none".
+    let limits = if limits_json.is_null() {
+        None
+    } else {
+        // SAFETY: limits_json is non-null (just checked), NUL-terminated
+        let Ok(raw) = (unsafe { parse_c_str(limits_json, "limits_json", out_error) }) else {
+            return ptr::null_mut();
+        };
+        match crate::repl_handle::parse_limits_json(raw) {
+            Ok(l) => Some(l),
+            Err(e) => {
+                if !out_error.is_null() {
+                    // SAFETY: out_error is non-null (just checked)
+                    unsafe { *out_error = to_c_string(&e) };
+                }
+                return ptr::null_mut();
+            }
+        }
+    };
+
+    let names: Vec<String> = if ext_fns.is_null() {
+        Vec::new()
+    } else {
+        // SAFETY: ext_fns is non-null (just checked), NUL-terminated
+        let Ok(raw) = (unsafe { parse_c_str(ext_fns, "ext_fns", out_error) }) else {
+            return ptr::null_mut();
+        };
+        raw.split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+
     // SAFETY: data is non-null (just checked) and len matches the snapshot buffer
     let bytes = unsafe { std::slice::from_raw_parts(data, len) };
-    match catch_ffi_panic(|| MontyReplHandle::restore(bytes)) {
+    match catch_ffi_panic(move || MontyReplHandle::restore_with_ext_fns(bytes, names, limits)) {
         Ok(Ok(handle)) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_REPL_HANDLES

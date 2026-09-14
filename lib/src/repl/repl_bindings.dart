@@ -87,7 +87,21 @@ abstract class ReplBindings {
   ///
   /// The old native handle is freed and replaced with a new one
   /// restored from [bytes].
-  Future<void> restore(Uint8List bytes);
+  /// Restores a session from [bytes].
+  ///
+  /// [limitsJson] is APPLIED to the restored session. A snapshot restores the
+  /// limits of the session it was taken from, so a caller who wants their own
+  /// must pass them — without this a `MontyRepl(limits: ...)` that restores an
+  /// unbounded snapshot runs UNBOUNDED, which is a security control reporting
+  /// success (FB-1 / core#124). Null keeps the snapshot's limits.
+  ///
+  /// [extFns] re-registers external function names. A snapshot cannot carry
+  /// them: they live on the native handle, not in monty's session.
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  });
 
   /// Disposes the REPL session.
   Future<void> dispose();
