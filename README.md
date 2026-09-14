@@ -35,7 +35,8 @@ code your app type-checks, runs in a sandbox, exposes only the external
 functions and OS calls you whitelist, and inspects the typed result. More
 flexible than a plug-in registry, safer than `eval` — Pydantic runs an
 active bug bounty at [hackmonty.com](https://hackmonty.com/) for the
-underlying interpreter.
+underlying interpreter, currently **$20,000** in Round 3, which puts Monty
+behind a production WebSocket service.
 
 ```dart
 final errors = await Monty.typeCheck(llmCode);
