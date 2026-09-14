@@ -400,6 +400,40 @@ void main() {
       expect(overlap, isEmpty, reason: 'listed twice: $overlap');
     });
 
+    test('the gc module is STILL gated upstream', () async {
+      // The skip in the per-fixture branch below would otherwise rot exactly
+      // as this file warns: "a skip proves nothing about whether it is still
+      // needed", and this repo has had skip lists go stale repeatedly -- two
+      // found stale in a single day.
+      //
+      // So the skip does not stand alone. This asserts the REASON still
+      // holds, mirroring `quarantined fixtures still crash`: the entries are
+      // excluded from the loop, and a guard then proves the exclusion is
+      // still earned. When monty ungates gc -- or someone runs this against a
+      // --features test-hooks dylib -- `import gc` stops raising, this test
+      // goes RED, and the skip must be deleted. A fix cannot land silently.
+      //
+      // In-process on purpose: no child `dart run`. Spawning one from this
+      // suite kills the PARENT on linux_x64 (SEGV_MAPERR), shipped and
+      // reverted twice. `import gc` raises; it does not crash.
+      final repl = MontyRepl();
+      addTearDown(repl.dispose);
+
+      final result = await repl.feedRun('import gc\n');
+
+      expect(
+        result.error?.excType,
+        'ModuleNotFoundError',
+        reason:
+            'gc no longer raises ModuleNotFoundError on the stock build. '
+            'monty gated it behind the test-hooks cargo feature '
+            '(crates/monty/src/modules/mod.rs, #[cfg(feature = "test-hooks")]) '
+            'and these fixtures are skipped on that basis. If that changed, '
+            'delete gcModuleFixtures and un-skip functools__gc.py / '
+            'itertools__gc.py.',
+      );
+    });
+
     test('the corpus still contains call-external fixtures', () {
       // Guards the per-fixture branch below: if a directive rename emptied the
       // call-external set, every suspension path in repl_handle.rs would stop
@@ -476,6 +510,31 @@ void main() {
           return;
         }
 
+        if (gcModuleFixtures.contains(key)) {
+          // Same shape as setRecursionLimitFixtures immediately below, and
+          // for the same reason: NOT a REPL divergence, a property of this
+          // harness. `import gc` needs the gc module, which monty registers
+          // under `#[cfg(feature = "test-hooks")]`
+          // (crates/monty/src/modules/mod.rs:136-137 at the pinned rev
+          // 302e0f2; modules/gc.rs:1 says so in its first line), and the
+          // stock build does not have it. Both handles raise
+          // ModuleNotFoundError, so `oracle_ffi_test.dart` reports these
+          // GREEN -- it compares against an oracle built the same way and the
+          // two agree. Asserting against the static directive here is what
+          // makes the gap visible.
+          //
+          // A first attempt put these in knownReplDivergentFixtures with a
+          // recorded excType. That map means "the REPL gets this wrong where
+          // the one-shot handle gets it right", and the one-shot handle does
+          // NOT get it right -- it has no gc module either. The entry would
+          // also have gone actively WRONG under a test-hooks build, where the
+          // fixtures pass. Wrong map; this is the right one.
+          markTestSkipped(
+            'needs the test-hooks cargo feature for the gc module',
+          );
+
+          return;
+        }
         if (setRecursionLimitFixtures.contains(key)) {
           // Not a REPL divergence — a property of THIS harness. These call
           // `sys.setrecursionlimit`, which the stock build does not have, so
