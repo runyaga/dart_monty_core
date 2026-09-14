@@ -408,6 +408,54 @@ fn envelope_str_array(
 }
 
 /// what it does not understand.
+/// Derive a STABLE 16-byte class identity from what the host declared.
+///
+/// D1 of the milestone plan: class uuids must be DETERMINISTIC, so the same
+/// host class yields the same id on every boot and in every process. That is
+/// what makes identity survive a snapshot/restore into a fresh worker — see
+/// upstream `crates/monty-types/src/object.rs:781-784`, "The sandbox keeps one
+/// type object per class id".
+///
+/// FNV-1a, hand-rolled ON PURPOSE. `std::hash::DefaultHasher` is explicitly NOT
+/// guaranteed stable across Rust releases, so using it here would silently
+/// change every class id on a toolchain bump and break exactly the restores
+/// this exists to protect.
+///
+/// Both `name` and `type_id` feed the hash: the name is the class identity a
+/// reader recognises, and `type_id` keeps two same-named host classes apart
+/// while that field still exists on the wire.
+fn derive_class_uuid(name: &str, type_id: i64) -> monty_types::MontyUuid {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut lo = OFFSET;
+    for b in name.as_bytes() {
+        lo ^= u64::from(*b);
+        lo = lo.wrapping_mul(PRIME);
+    }
+    let mut hi = OFFSET;
+    for b in type_id.to_le_bytes() {
+        hi ^= u64::from(b);
+        hi = hi.wrapping_mul(PRIME);
+    }
+    // Mix the name into the high half too, so a type_id collision alone cannot
+    // produce a duplicate id.
+    for b in name.as_bytes() {
+        hi ^= u64::from(*b);
+        hi = hi.wrapping_mul(PRIME);
+    }
+
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&lo.to_le_bytes());
+    bytes[8..].copy_from_slice(&hi.to_le_bytes());
+    // A zero id is what the BUG produced; never emit one by accident.
+    if bytes == [0u8; 16] {
+        bytes[0] = 1;
+    }
+
+    monty_types::MontyUuid::try_from_slice(&bytes).expect("16 bytes is always a valid MontyUuid")
+}
+
 pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
     Ok(match val {
         Value::Null => MontyObject::None,
@@ -533,7 +581,31 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                 "dataclass" => MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
                     class_type: monty_types::MontyClassType {
                         name: envelope_str(map, "dataclass", "name")?,
-                        id: monty_types::MontyUuid::from_random_bytes([1u8; 16]),
+                        // WAS: from_random_bytes([1u8; 16]) — the SAME id for
+                        // every host class, so Point and MutablePoint were one
+                        // class in-sandbox and `assert point != mut_point`
+                        // (dataclass__basic.py:41) failed. Isolated by
+                        // '_dataclass_hydrate_test_body.dart: two host classes
+                        // with distinct typeIds stay distinct in-sandbox'.
+                        id: derive_class_uuid(
+                            &envelope_str(map, "dataclass", "name")?,
+                            // REQUIRED, not defaulted. This was `.unwrap_or(0)`
+                            // and review caught it: two DIFFERENT host classes
+                            // sharing a name and omitting type_id would both
+                            // hash (name, 0) and collide again — the very bug
+                            // this function exists to fix, reached through a
+                            // different door. MontyDataclass always emits it
+                            // (monty_value_structured.dart:284), so an envelope
+                            // without it did not come from this encoder, and
+                            // inventing an identity for it is the "forged type"
+                            // hazard core#136 warns about.
+                            map.get("type_id")
+                                .and_then(serde_json::Value::as_i64)
+                                .ok_or_else(|| {
+                                    "dataclass envelope missing field \"type_id\": cannot derive a stable class identity"
+                                        .to_string()
+                                })?,
+                        ),
                         host_defined: true,
                         is_dataclass: true,
                         // TODO(monty): the dump/transfer format currently
@@ -2288,5 +2360,27 @@ mod tests {
             decode_err(r#"{"__type":"namedtuple","type_name":"P","values":[]}"#)
                 .contains("field_names")
         );
+    }
+}
+
+#[cfg(test)]
+mod m1_identity_tests {
+    use super::*;
+
+    #[test]
+    fn distinct_host_classes_get_distinct_uuids() {
+        let a = derive_class_uuid("User", 1);
+        let b = derive_class_uuid("Order", 2);
+        assert_ne!(a, b, "two host classes collapsed to one uuid");
+    }
+
+    #[test]
+    fn same_host_class_is_stable_across_calls() {
+        assert_eq!(derive_class_uuid("User", 1), derive_class_uuid("User", 1));
+    }
+
+    #[test]
+    fn same_name_different_type_id_still_differs() {
+        assert_ne!(derive_class_uuid("User", 1), derive_class_uuid("User", 2));
     }
 }

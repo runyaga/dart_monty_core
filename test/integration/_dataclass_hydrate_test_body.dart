@@ -106,6 +106,77 @@ void runDataclassHydrateTests() {
       expect((order! as _Order).total, 12.5);
     });
 
+    // M1 ISOLATION TEST — written BEFORE the fix, and it is EXPECTED TO FAIL
+    // until native/src/convert.rs stops hardcoding class identity.
+    //
+    // THE DEFECT. convert.rs:536 builds every host dataclass with
+    //     id: MontyUuid::from_random_bytes([1u8; 16])
+    // and :544 gives every instance
+    //     instance_id: MontyUuid::from_random_bytes([0u8; 16])
+    // so the `typeId` Dart computes (1 for User, 2 for Order above) is
+    // DISCARDED at the boundary. Upstream keeps "one type object per class id"
+    // (monty crates/monty-types/src/object.rs:781-784), so two host classes
+    // sharing an id ARE one class inside the sandbox.
+    //
+    // WHY THIS TEST AND NOT dataclass__basic.py. That fixture fails on
+    // `assert point != mut_point` (line 41), which is CONSISTENT with the
+    // collision but does not isolate it — a dozen other faults produce the same
+    // assertion failure. This drives the two classes directly and asks Python
+    // the one question that distinguishes them.
+    //
+    // CONTROL, measured 2026-09-14 against pydantic-monty 0.0.23 — the SAME
+    // version this crate pins — with two different host dataclasses:
+    //     type(a) is type(b) = False      <- identity PRESERVED
+    //     type(a) = <class 'Point'>  type(b) = <class 'MutablePoint'>
+    //     a != b  = True
+    // So the behaviour asserted below is what a correct implementation does.
+    // It is not aspirational.
+    test(
+      'two host classes with distinct typeIds stay distinct in-sandbox',
+      () async {
+        final r =
+            await Monty('''
+u = make_user()
+o = make_order()
+(type(u) is type(o), type(u).__name__, type(o).__name__)
+''').run(
+              externalFunctions: {
+                // Future.value, not `async =>`: MontyCallback's return type is
+                // already Future<Object?>, so the Future is REQUIRED by the
+                // signature and an async body just makes DCM's
+                // avoid-unnecessary-futures fire on a false positive.
+                'make_user': (_, _) =>
+                    Future.value(_userDataclass(name: 'eve', age: 9)),
+                'make_order': (_, _) =>
+                    Future.value(_orderDataclass(id: 99, total: 12.5)),
+              },
+            );
+
+        expect(r.error, isNull, reason: 'the script itself must run');
+
+        final got = r.value;
+        expect(got, isA<MontyTuple>(), reason: 'expected a 3-tuple, got $got');
+        // Destructured, not indexed: [] on a List is an unchecked throw,
+        // and the pattern states the arity the assertions rely on.
+        final [sameType, nameA, nameB] = (got as MontyTuple).items;
+
+        // THE assertion. `User` and `Order` are different Dart types with
+        // different typeIds; if the sandbox says they are the same type, the
+        // identity was destroyed in transit.
+        expect(
+          (sameType as MontyBool).value,
+          isFalse,
+          reason:
+              'type(User) is type(Order) came back TRUE — two distinct '
+              'host classes collapsed to one class in-sandbox. That is '
+              'convert.rs discarding the Dart typeId and substituting a '
+              'constant uuid. Fix the encoder, do not relax this test.',
+        );
+        expect((nameA as MontyString).value, 'User');
+        expect((nameB as MontyString).value, 'Order');
+      },
+    );
+
     test(
       'frozen flag and field_names round-trip through MontyDataclass',
       () async {
