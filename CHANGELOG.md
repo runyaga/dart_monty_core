@@ -75,6 +75,21 @@ three surprise people, and one of them differs from upstream's default.
   `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
   greppable and does not replace that rule.
 
+### Internal
+
+- **`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`.**
+  No consumer surface changes — the old name was a Rust-crate convenience
+  wrapper with no Dart binding, and every caller was in this repo's own tests.
+  It is recorded because the commit carries a `!` marker that, on reflection,
+  it should not have: the rename is internal, not consumer-visible.
+
+  The rename still matters to anyone embedding the crate directly. The wrapper
+  passed `limits: None`, which means "keep whatever the snapshot carried", so
+  **whoever supplied the bytes chose the resource limits** and the call site
+  gave no hint. Inheriting is fine for your own snapshot and dangerous for
+  someone else's, so the name now states the consequence. Pass limits
+  explicitly via `restore_with_ext_fns` when the bytes are not yours.
+
 ### Breaking
 
 - **A negative or wrong-typed resource limit is now an error.** `parse_limits_json` read each axis with

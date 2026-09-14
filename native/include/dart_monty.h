@@ -606,6 +606,36 @@ void monty_string_free(char *ptr);
 /** Free a byte buffer returned by monty_snapshot(). Safe with NULL. */
 void monty_bytes_free(uint8_t *ptr, size_t len);
 
+/*
+ * Allocate `size` bytes inside the module's own heap.
+ *
+ * These two were EXPORTED but UNDECLARED. The Worker calls them 49 times
+ * (js/src/worker_src.js) to move snapshot and JSON buffers across the wasm
+ * boundary, and they are part of the C ABI like everything else here — but a
+ * consumer reading this header had no way to know they existed, and ffigen
+ * generated no binding for them.
+ *
+ * That matters most for the pairing rule. monty_alloc without a DECLARED
+ * monty_dealloc invites a caller to reach for free(), which is wrong: the
+ * buffer belongs to the module's allocator, not the host's.
+ *
+ * @param size  Byte count to allocate. Zero returns NULL.
+ * @return      Pointer into the module heap, or NULL on failure. Caller MUST
+ *              pair with monty_dealloc(ptr, size) using the SAME size.
+ */
+uint8_t *monty_alloc(size_t size);
+
+/*
+ * Release a buffer obtained from monty_alloc().
+ *
+ * `size` must be the size passed to monty_alloc(). This is not a
+ * free()-compatible interface: the allocator needs the layout back.
+ *
+ * @param ptr   Pointer from monty_alloc(), or NULL (no-op).
+ * @param size  The SAME size passed to monty_alloc().
+ */
+void monty_dealloc(uint8_t *ptr, size_t size);
+
 #ifdef __cplusplus
 }
 #endif

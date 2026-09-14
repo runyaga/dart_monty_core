@@ -1029,6 +1029,17 @@ external void monty_bytes_free(
   int len,
 );
 
+@ffi.Native<ffi.Pointer<ffi.Uint8> Function(ffi.Size)>()
+external ffi.Pointer<ffi.Uint8> monty_alloc(
+  int size,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Size)>()
+external void monty_dealloc(
+  ffi.Pointer<ffi.Uint8> ptr,
+  int size,
+);
+
 final class MontyHandle extends ffi.Opaque {}
 
 /// Result tag for monty_run().

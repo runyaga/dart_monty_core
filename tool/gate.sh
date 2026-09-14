@@ -124,6 +124,11 @@ s  wire_version  bash tool/check_wire_version.sh
 # out_error bound to the limits_json slot, and every WASM restore failed with
 # no cause while the whole FFI suite stayed green.
 s  wasm_arity    node tool/check_wasm_arity.mjs
+# The complement of wasm_arity, which reads the SHIPPED WASM EXPORTS and never
+# opens the header -- so it can prove a call site matches the binary while the
+# header says nothing at all. Measured: monty_alloc and monty_dealloc were
+# exported, called 49 times by the Worker, and declared zero times.
+s  exports_decl  bash tool/check_exports_declared.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
