@@ -47,7 +47,22 @@ use monty_types::MontyObject;
 ///   4  0.19.0 — Tier 3: integral floats, -0.0 and ints past 2^53 travel as
 ///                tagged TEXT, because a JSON number's text is what the web
 ///                transport reparses. Closes core#128 on all three backends.
-pub const WIRE_FORMAT_VERSION: u32 = 4;
+///   5  0.23.0 — `class_instance` travels ENTIRELY in this wire format.
+///                monty v0.0.23 replaced the wire `Dataclass` variant with
+///                `ClassInstance` (upstream cf8246d7), and our envelope for it
+///                mixed two encodings: `attrs` was ours, while `class_type`
+///                and `instance_id` went out through monty's DERIVED serde —
+///                externally tagged (`{"Int": 42}`), which object.rs:48-53
+///                says is "for snapshots and binary transport, not for
+///                human-facing JSON". Both are ours now, and uuids travel as
+///                canonical STRINGS rather than 16 integers, matching monty's
+///                own JS boundary (monty-js/src/convert.rs:349, "JS has no
+///                128-bit integer type" — Dart has the same constraint).
+///                BUMPED because a v4 asset paired with a v5 Dart decoder
+///                throws a bare `_TypeError: List<dynamic> is not a subtype
+///                of String?` — loud, but meaningless. The handshake exists to
+///                turn that into a version mismatch the reader can act on.
+pub const WIRE_FORMAT_VERSION: u32 = 5;
 
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 

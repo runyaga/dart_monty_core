@@ -266,3 +266,104 @@ final class MontyTimeZone extends MontyValue {
   @override
   String toString() => 'MontyTimeZone(offset=$offsetSeconds, name=$name)';
 }
+
+/// Python's `datetime.time`.
+///
+/// ADDED 2026-09-14 after an encoder/decoder alignment audit. The Rust encoder
+/// has emitted `{"__type": "time", ...}` all along (native/src/convert.rs:174)
+/// and Dart had NO factory for it, so `datetime.time(12, 0)` crossing the
+/// boundary threw `FormatException: unknown __type "time"`. Same class of
+/// defect as the `class_instance` gap, found the same way: by enumerating what
+/// the encoder can emit rather than trusting the decoder's list.
+///
+/// Carries the same fields as the Rust arm, including the tz-aware ones — a
+/// `time` can hold a UTC offset and a fold flag exactly as a `datetime` can.
+@immutable
+final class MontyTime extends MontyValue {
+  /// Creates a [MontyTime].
+  const MontyTime({
+    required this.hour,
+    required this.minute,
+    required this.second,
+    required this.microsecond,
+    this.offsetSeconds,
+    this.timezoneName,
+    this.fold = 0,
+  });
+
+  factory MontyTime._fromMap(Map<String, dynamic> map) => MontyTime(
+    hour: (map['hour'] as num?)?.toInt() ?? 0,
+    minute: (map['minute'] as num?)?.toInt() ?? 0,
+    second: (map['second'] as num?)?.toInt() ?? 0,
+    microsecond: (map['microsecond'] as num?)?.toInt() ?? 0,
+    offsetSeconds: (map['offset_seconds'] as num?)?.toInt(),
+    timezoneName: map['timezone_name'] as String?,
+    fold: (map['fold'] as num?)?.toInt() ?? 0,
+  );
+
+  /// Hour, 0-23.
+  final int hour;
+
+  /// Minute, 0-59.
+  final int minute;
+
+  /// Second, 0-59.
+  final int second;
+
+  /// Microsecond, 0-999999.
+  final int microsecond;
+
+  /// UTC offset in seconds, or null for a naive time.
+  final int? offsetSeconds;
+
+  /// The tzinfo name, if the time carries one.
+  final String? timezoneName;
+
+  /// Python's `fold`, disambiguating a repeated wall-clock time.
+  final int fold;
+
+  @override
+  Map<String, Object?> toJson() => {
+    '__type': 'time',
+    'hour': hour,
+    'minute': minute,
+    'second': second,
+    'microsecond': microsecond,
+    'offset_seconds': offsetSeconds,
+    'timezone_name': timezoneName,
+    'fold': fold,
+  };
+
+  /// Dart has no time-of-day type in `dart:core`, so this represents itself
+  /// rather than lying about being a [DateTime] on an arbitrary date.
+  @override
+  Object? get dartValue => this;
+
+  @override
+  String toString() =>
+      'MontyTime($hour:$minute:$second.$microsecond'
+      '${offsetSeconds == null ? '' : ' offset=$offsetSeconds'})';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyTime &&
+          other.hour == hour &&
+          other.minute == minute &&
+          other.second == second &&
+          other.microsecond == microsecond &&
+          other.offsetSeconds == offsetSeconds &&
+          other.timezoneName == timezoneName &&
+          other.fold == fold);
+
+  @override
+  int get hashCode => Object.hash(
+    hour,
+    minute,
+    second,
+    microsecond,
+    offsetSeconds,
+    timezoneName,
+    fold,
+  );
+}

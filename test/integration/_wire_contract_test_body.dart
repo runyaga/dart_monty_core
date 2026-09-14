@@ -138,7 +138,18 @@ const _rows = [
   _Row(22, 'ValueError("boom")', 'exception'),
   _Row(23, 'int', 'type'),
   _Row(25, 'abs', 'builtin'),
-  _Row(26, 'class C:\n    pass\nC()', 'repr'),
+  // WAS 'repr'. On monty v0.0.19 a sandbox class instance had no structured
+  // representation and DEGRADED to a stringified Repr — `repr` is this
+  // table's fallback tag, not a designed destination (see row 24's note,
+  // where a function suffered the same fate). v0.0.23 added
+  // `ClassInstance` (upstream cf8246d7) and our decoder now reads it, so the
+  // instance arrives structured. This row records a capability GAINED
+  // upstream, not a relaxed expectation.
+  //
+  // Note the asymmetry, measured on pydantic-monty 0.0.23: an INSTANCE comes
+  // back structured, but a sandbox CLASS OBJECT still arrives as a plain
+  // string ("<class 'SbF'>"). Only `C()` is asserted here; `C` is not.
+  _Row(26, 'class C:\n    pass\nC()', 'class_instance'),
   _Row(27, 'a = []\na.append(a)\na', 'cycle', inner: true),
 ];
 
