@@ -546,12 +546,16 @@ jobs:
         # errors. Every lint this project added to tests was unenforced in CI.
         run: cargo clippy --all-targets -- -D warnings
       - name: Install cargo-deny
-        uses: taiki-e/install-action@cargo-deny
+        uses: taiki-e/install-action@v2.87.12
+        with:
+          tool: cargo-deny
       - name: cargo deny check
         working-directory: native
         run: cargo deny check
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@v2.87.12
+        with:
+          tool: cargo-llvm-cov
       - name: Run tests with coverage (≥74% line coverage)
         # NOT `cargo llvm-cov` directly. It merges by SYMBOL NAME, and lib.rs
         # holds 63 `#[unsafe(no_mangle)] pub extern "C"` functions whose symbols
