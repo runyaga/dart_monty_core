@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -43,6 +44,19 @@ jobs:
               - 'dart_test.yaml'
               - '.github/**'
               - '!**.md'
+            # Documentation is NOT "no CI". Three source-only checks are
+            # doc-sensitive and a docs-only change can break any of them:
+            #   check_page_versions.sh   5 published pages carry the version badge
+            #   check_wire_contract.sh   docs/WIRE-CONTRACT.md vs the encoder
+            #   check_fixture_links.sh   demo fixture links resolve
+            # Without this output a docs-only PR skipped `gate` along with
+            # everything else, so the checks most likely to catch a docs mistake
+            # were exactly the ones a docs change switched off.
+            docs:
+              - '**.md'
+              - 'docs/**'
+              - 'mkdocs.yml'
+              - 'mkdocs_docs/**'
 
   # ---------------------------------------------------------------------------
   # The record, checked mechanically
@@ -91,7 +105,8 @@ jobs:
   gate:
     name: "gate · source-only · no-browser"
     needs: [changes]
-    if: needs.changes.outputs.code == 'true'
+    # code OR docs. This is the one job a docs-only change must still run.
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
