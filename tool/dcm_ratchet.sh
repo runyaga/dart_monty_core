@@ -26,6 +26,24 @@ if [ "${1:-}" = "--update" ]; then BASELINE=tool/dcm-baseline.json; UPDATE=1; el
 # governs the next PR instead. RATCHET_BASE_REF unset (every local run) is
 # unchanged behaviour.
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  # THE REF ITSELF MUST RESOLVE FIRST. Same reasoning as tool/coverage_ratchet.sh:
+  # CI fetches the base with `|| true`, so a failed fetch leaves the ref absent,
+  # and `git show <missing-ref>:<file>` fails identically to
+  # `git show <present-ref>:<missing-file>`. Without this check the two are
+  # indistinguishable, and a failed fetch takes the "this PR introduces the
+  # baseline" path -- falling back to the PR's OWN copy, which is the laundering
+  # hole this block closes. A guard that degrades open on infrastructure failure
+  # still prints PASS, which is worse than not having it.
+  if ! git rev-parse --verify --quiet "${RATCHET_BASE_REF}^{commit}" >/dev/null; then
+    echo "FAIL: RATCHET_BASE_REF=${RATCHET_BASE_REF} does not resolve."
+    echo "  The baseline a PR is measured against must come from the BASE branch,"
+    echo "  and that ref is not present in this checkout. Refusing to fall back to"
+    echo "  the working copy: falling back silently would report PASS while"
+    echo "  measuring the PR against itself."
+    echo "  Fix the fetch (CI: git fetch --no-tags --depth=1 origin \$GITHUB_BASE_REF),"
+    echo "  or unset RATCHET_BASE_REF to run without a base comparison."
+    exit 1
+  fi
   BASE_COPY="$(mktemp)"
   if git show "${RATCHET_BASE_REF}:${BASELINE}" > "$BASE_COPY" 2>/dev/null; then
     # ...but ONLY if it was produced by the same dcm. A ratchet compares
