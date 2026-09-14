@@ -77,6 +77,16 @@ s  asset_fresh   bash tool/check_asset_freshness.sh
 # The complement to asset_fresh: that one catches "sources moved, nobody
 # rebuilt"; this one catches "the encoding was versioned on one side only".
 s  wire_version  bash tool/check_wire_version.sh
+# The third member of that family. asset_fresh catches "sources moved, nobody
+# rebuilt" and wire_version catches "the encoding was versioned on one side
+# only"; this catches the Worker and the .wasm disagreeing about a function's
+# ARITY, which no compiler on either side can see. JS fills missing wasm
+# arguments with 0 and drops extra ones instead of throwing, so a Rust signature
+# change is a silent miscompile on the web backend -- measured 2026-09-14:
+# monty_repl_restore went from 3 parameters to 5, the Worker kept passing 3,
+# out_error bound to the limits_json slot, and every WASM restore failed with
+# no cause while the whole FFI suite stayed green.
+s  wasm_arity    node tool/check_wasm_arity.mjs
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check

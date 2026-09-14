@@ -46,13 +46,18 @@ if [ "$SKIP_BUILD" = "0" ]; then
   # handed the old `Map<String, String>` seed — through a green 22/22 gate.
   # A file no tool compiles is a file with no coverage, whatever the summary
   # says.
+  # Capture instead of discarding. `dart compile js` prints its diagnostics to
+  # STDOUT, not stderr, so the previous `>/dev/null` threw away the compiler
+  # error and left the gate reporting only "FAIL: dart2js build (repl_demo)" --
+  # a gate that knows exactly what is wrong and refuses to say. The output is
+  # still hidden on success, which is the only reason it was redirected.
   for entry in repl_demo feature_matrix; do
     echo "--- dart2js: $entry ---"
-    dart compile js "$WEB/$entry.dart" -o "$WEB/$entry.dart.js" --no-source-maps \
-      >/dev/null || fail "dart2js build ($entry)"
+    out=$(dart compile js "$WEB/$entry.dart" -o "$WEB/$entry.dart.js" \
+      --no-source-maps 2>&1) || { echo "$out"; fail "dart2js build ($entry)"; }
     echo "--- dart2wasm: $entry ---"
-    dart compile wasm "$WEB/$entry.dart" -o "$WEB/$entry.wasm" \
-      >/dev/null || fail "dart2wasm build ($entry)"
+    out=$(dart compile wasm "$WEB/$entry.dart" -o "$WEB/$entry.wasm" 2>&1) \
+      || { echo "$out"; fail "dart2wasm build ($entry)"; }
   done
 
   echo "--- Assembling site/ (mirrors deploy-pages.yml) ---"

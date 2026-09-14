@@ -1711,7 +1711,13 @@ function handleReplRestore(id, replId, dataBase64) {
 
   let handle;
   try {
-    handle = wasm.monty_repl_restore(ptr, bytes.length, outError.ptr);
+    // All five parameters are passed explicitly. A short call does NOT throw:
+    // JS pads missing wasm args with 0, so passing three would bind
+    // outError.ptr to the limits_json slot (an out-pointer read as a C string)
+    // and leave out_error NULL — a silent miscompile the linters cannot see.
+    // limits_json and ext_fns are NULL because WasmReplBindings.restore
+    // refuses both rather than dropping them; see wasm_repl_bindings.dart.
+    handle = wasm.monty_repl_restore(ptr, bytes.length, 0, 0, outError.ptr);
   } catch (e) {
     outError.free();
     throw e;

@@ -195,14 +195,24 @@ class WasmReplBindings implements ReplBindings {
     List<String>? extFns,
   }) async {
     // TODO(wasm): the worker's replRestore does not accept limits or ext fns
-    // yet. Until it does, a WASM restore keeps the SNAPSHOT's limits — the
-    // defect just fixed on FFI, where MontyRepl(limits:) + restore ran
-    // unbounded. Refusing loudly beats restoring with the wrong bound.
+    // yet, so the Worker passes NULL for both (explicitly — see the arity note
+    // in worker_src.js). Until it does, a WASM restore keeps the SNAPSHOT's
+    // limits — the defect just fixed on FFI, where MontyRepl(limits:) +
+    // restore ran unbounded. Refusing loudly beats restoring with the wrong
+    // bound, and beats dropping ext fns into a session that cannot resolve
+    // them until the first external call fails somewhere unrelated.
     if (limitsJson != null) {
       throw UnsupportedError(
         'restore(limitsJson:) is not implemented on the WASM backend. The '
         'restored session would silently keep the snapshot limits instead of '
         'the ones requested, which is a security control reporting success.',
+      );
+    }
+    if (extFns != null && extFns.isNotEmpty) {
+      throw UnsupportedError(
+        'restore(extFns:) is not implemented on the WASM backend. The '
+        'restored session would carry no external functions, so the first '
+        'call to one would fail as an unknown name far from this call site.',
       );
     }
     // replRestore in the Worker frees the old handle and stores the new one
