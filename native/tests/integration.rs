@@ -2047,3 +2047,96 @@ fn repl_null_handle_feed_run_and_snapshot() {
     assert!(!err.is_null(), "NULL handle must still say so");
     unsafe { monty_string_free(err) };
 }
+
+// ---------------------------------------------------------------------------
+// NULL OUT-PARAMS on the REPL half, with a VALID handle
+// ---------------------------------------------------------------------------
+// The one-shot half tests this dimension (`monty_snapshot` with a NULL out_len,
+// integration.rs:151-160). The REPL half did not test it at all, and one case
+// is not reachable any other way:
+//
+//     lib.rs:1514   if handle.is_null() || out_len.is_null() {
+//
+// `||` SHORT-CIRCUITS. Every existing test passes a NULL handle, so the first
+// operand is always true and `out_len.is_null()` has never once been evaluated
+// — while the line reads as covered. Only a VALID handle with a NULL out_len
+// reaches it.
+//
+// The out_error cases test the promise the source makes at lib.rs:1504:
+// "`out_error` may itself be NULL for a caller that does not want the detail."
+// Nothing checked that. A function that dereferences a NULL out_error while
+// reporting an error would segfault precisely when something had already gone
+// wrong.
+#[test]
+fn repl_null_out_params_with_a_valid_handle() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    // --- the operand `||` has never evaluated --------------------------------
+    let mut e: *mut c_char = ptr::null_mut();
+    let buf = unsafe { monty_repl_snapshot(handle, ptr::null_mut(), &mut e) };
+    assert!(buf.is_null(), "NULL out_len must not produce a buffer");
+    assert!(!e.is_null(), "NULL out_len must be reported, not ignored");
+    unsafe { monty_string_free(e) };
+
+    // --- out_error itself NULL, ON AN ERROR PATH ----------------------------
+    // This must FORCE the failure, not merely pass NULL. A NULL out_error with
+    // otherwise-valid arguments takes the SUCCESS path, never calls report(),
+    // and so proves nothing -- verified: deleting the `!out_error.is_null()`
+    // guard leaves such a test green. Passing a NULL out_len as well drives the
+    // guard at lib.rs:1514 into report(), which must then tolerate having
+    // nowhere to write, exactly as lib.rs:1504 promises.
+    let buf = unsafe { monty_repl_snapshot(handle, ptr::null_mut(), ptr::null_mut()) };
+    assert!(buf.is_null(), "the error path must still return NULL");
+
+    // Same shape for a progress-tag function: a NULL code forces parse_c_str to
+    // report, with nowhere to report to.
+    let tag = unsafe { monty_repl_feed_start(handle, ptr::null(), ptr::null_mut()) };
+    assert_eq!(tag, MontyProgressTag::Error, "NULL code must still fail");
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// feed_run has TWO out-params, and they are not interchangeable: result_json
+// carries success, error_msg carries failure. A NULL for either must be
+// tolerated rather than dereferenced.
+#[test]
+fn repl_feed_run_tolerates_null_out_params() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    let code = CString::new("1+1").unwrap();
+
+    // NULL result_json, real error_msg.
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), ptr::null_mut(), &mut e) };
+    let _ = tag;
+    if !e.is_null() {
+        unsafe { monty_string_free(e) };
+    }
+
+    // Real result_json, NULL error_msg.
+    let mut out: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut out, ptr::null_mut()) };
+    let _ = tag;
+    if !out.is_null() {
+        unsafe { monty_string_free(out) };
+    }
+
+    // Both NULL. The caller wants neither; the callee must not write anyway.
+    let tag =
+        unsafe { monty_repl_feed_run(handle, code.as_ptr(), ptr::null_mut(), ptr::null_mut()) };
+    let _ = tag;
+
+    unsafe { monty_repl_free(handle) };
+}
