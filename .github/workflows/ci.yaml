@@ -489,7 +489,12 @@ jobs:
   pages:
     name: Pages site renders
     needs: [changes]
-    if: needs.changes.outputs.code == 'true'
+    # code OR docs, and the `docs` half is NOT optional. tool/check_pages.sh:66
+    # copies docs/index.html INTO the site it renders -- that file IS the
+    # published Pages content. Gating this job on `code` alone meant a PR that
+    # edited docs/index.html skipped the only check that the published page
+    # still loads in a browser. Caught in review, not by a failure.
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
