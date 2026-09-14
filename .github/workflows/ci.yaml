@@ -493,6 +493,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          # SHARED with the other native-amd64 release job. Swatinem defaults to
+          # a per-job key (add-job-id-key: true) and cache-on-failure: false, so
+          # a job that is red never saves and never warms. test-examples had
+          # been red for 10 runs and its key had never existed, which is why it
+          # spent 698s of a 736s job compiling what test-ffi built in 56s on a
+          # hit. A shared key lets the job that passes populate the cache the
+          # job that fails restores from.
+          #
+          # Scope is deliberate: build-wasm targets wasm32-wasip1 (different
+          # triple) and test-hooks-corpus documents its own key for a different
+          # feature set. Neither shares this one. The `rust` job is dev-profile
+          # and is left alone so it cannot win the write-once race and leave the
+          # release jobs cold.
+          shared-key: native-amd64
       - name: Download FFI bindings
         uses: actions/download-artifact@v4
         with:
@@ -589,6 +603,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          # SHARED with the other native-amd64 release job. Swatinem defaults to
+          # a per-job key (add-job-id-key: true) and cache-on-failure: false, so
+          # a job that is red never saves and never warms. test-examples had
+          # been red for 10 runs and its key had never existed, which is why it
+          # spent 698s of a 736s job compiling what test-ffi built in 56s on a
+          # hit. A shared key lets the job that passes populate the cache the
+          # job that fails restores from.
+          #
+          # Scope is deliberate: build-wasm targets wasm32-wasip1 (different
+          # triple) and test-hooks-corpus documents its own key for a different
+          # feature set. Neither shares this one. The `rust` job is dev-profile
+          # and is left alone so it cannot win the write-once race and leave the
+          # release jobs cold.
+          shared-key: native-amd64
       - name: Download FFI bindings
         uses: actions/download-artifact@v4
         with:
