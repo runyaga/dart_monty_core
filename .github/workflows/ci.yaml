@@ -64,6 +64,85 @@ jobs:
       - run: bash tool/check_breaking_recorded.sh
 
   # ---------------------------------------------------------------------------
+  # Stage 0 — the fast gate. Source-only invariants, no native build, no browser.
+  # ---------------------------------------------------------------------------
+  # WHY THIS JOB EXISTS. Fifteen of these checks are enforced by tool/gate.sh and
+  # FIVE OF THEM RAN NOWHERE IN CI:
+  #
+  #   check_backend_parity.sh     no method may be a stub on one backend only
+  #   check_exports_declared.sh   all 63 exported C symbols declared in the header
+  #   check_forgery_coverage.sh   all 25 emittable wire tags have a forgery test
+  #   check_wire_contract.sh      WIRE-CONTRACT.md matches the encoder, both ways
+  #   check_workflows_valid.sh    actionlint over .github/workflows/
+  #
+  # A contributor who does not run tool/gate.sh locally could break any of them
+  # and CI stayed green. The last one is the sharpest: it was ADDED because a
+  # duplicate `env:` key made GitHub reject ci.yaml, which stopped the workflow
+  # matching its own triggers -- thirteen commits with no CI at all, showing a
+  # red X indistinguishable from a job failure (4d624f8..c49477e). The check
+  # written to prevent a repeat was itself not running in CI.
+  #
+  # All sixteen are source-only. Measured in-container: the five above total
+  # 168ms. The job is dominated by SDK setup, not by the checks.
+  #
+  # This job deliberately does NOT gate the others with `needs:`. Serialising the
+  # happy path behind it would cost every green run ~35s to save a red run ~11
+  # minutes. Restructuring the stage graph is a separate, larger change.
+  gate:
+    name: "gate · source-only · no-browser"
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      # fetch-depth: 0 — check_breaking_recorded.sh diffs against the merge-base
+      # with main, and a shallow clone has no merge-base to find.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      - name: Sixteen source-only invariants
+        run: |
+          set -uo pipefail
+          RC=0; RAN=0
+          run(){ RAN=$((RAN+1)); if "$@"; then echo "OK:   $*"; else echo "FAIL: $*"; RC=1; fi; }
+
+          run dart analyze --fatal-infos
+          run dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
+          run bash tool/check_asset_freshness.sh
+          run bash tool/check_wire_version.sh
+          run node tool/check_wasm_arity.mjs
+          run bash tool/check_exports_declared.sh
+          run bash tool/check_forgery_coverage.sh
+          run bash tool/check_wire_contract.sh
+          run bash tool/check_workflows_valid.sh
+          run bash tool/check_fixture_corpus.sh
+          run bash tool/check_breaking_recorded.sh
+          run bash tool/check_fixture_links.sh
+          run bash tool/check_page_versions.sh
+          run bash tool/check_version_pin.sh
+          run bash tool/check_no_vague_errors.sh
+          run bash tool/check_backend_parity.sh
+
+          # The gate's own skip-but-green guard. A renamed or deleted script must
+          # be a RED, not a silently shorter list that still exits 0 -- which is
+          # the exact shape this repo has been bitten by twice.
+          [ "$RAN" -eq 16 ] || { echo "FAIL: expected 16 checks, ran $RAN"; RC=1; }
+          echo "ran $RAN checks, rc=$RC"
+          exit $RC
+
+  # ---------------------------------------------------------------------------
   # FFI binding generation
   # ---------------------------------------------------------------------------
   ffigen:
