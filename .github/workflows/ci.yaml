@@ -237,13 +237,7 @@ jobs:
           set -o pipefail
           dart test --exclude-tags=ffi,wasm,integration,ladder \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          N=$(grep -oE '\+[0-9]+' /tmp/unit-test.log | tail -1 | tr -d '+')
-          echo "unit tests run: ${N:-0}"
-          if [ "${N:-0}" -lt 400 ]; then
-            echo "FAIL: expected at least 400 unit tests, saw ${N:-0}."
-            echo "  A suite that registers nothing exits 0 and prints success."
-            exit 1
-          fi
+          bash tool/assert_test_count.sh /tmp/unit-test.log 400 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -302,14 +296,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lcov-dart
-          # The whole directory: lcov.info (raw, loaded files only),
-          # merged.info (exclusions applied, real lines only — what diff-cover
-          # gets) and honest.info (every lib/ file — what humans get).
+          # lcov.info (raw, loaded files only), merged.info (exclusions applied,
+          # real lines only — what diff-cover gets), honest.info (every lib/
+          # file — what humans get) and anchor.info (the zero baseline, which is
+          # what lets the merge job run with no Dart SDK).
           path: |
             coverage/lcov.info
             coverage/merged.info
             coverage/honest.info
             coverage/anchor.info
+          # NOT the default `warn`. With `if: always()` and a failed step above,
+          # this uploaded NOTHING and reported SUCCESS -- measured on run
+          # 34828230428, where the step is green and no lcov-dart artifact
+          # exists. A green upload of zero files is how a downstream job comes
+          # to merge fewer tracefiles than it believes it has.
+          if-no-files-found: error
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -537,14 +538,9 @@ jobs:
           # skip-but-green: a runner that registers zero tests prints
           # "All tests passed!" and exits 0. This suite is the single largest
           # coverage input in the repo now, so a silent zero here would look
-          # like a 20-point coverage regression with no failing test to explain
+          # like a 22-point coverage regression with no failing test to explain
           # it. Raise the floor when the suite grows; never lower it.
-          N=$(grep -oE '\+[0-9]+' /tmp/ffi-test.log | tail -1 | tr -d '+')
-          echo "FFI tests run: ${N:-0}"
-          if [ "${N:-0}" -lt 1300 ]; then
-            echo "FAIL: expected at least 1300 FFI tests, saw ${N:-0}."
-            exit 1
-          fi
+          bash tool/assert_test_count.sh /tmp/ffi-test.log 1300 FFI
       - name: Generate FFI LCOV
         # 1,356 tests, ~12s, on a job that ALREADY built the native library and
         # ALREADY ran this exact command. They drive ffi_core_bindings,
@@ -565,6 +561,7 @@ jobs:
         with:
           name: lcov-ffi
           path: coverage-ffi/lcov.info
+          if-no-files-found: error
           retention-days: 1
   # ---------------------------------------------------------------------------
   # Example smoke tests — every example/*.dart must compile and exit 0.
@@ -617,12 +614,7 @@ jobs:
           dart test test/integration/example_smoke_test.dart \
             -p vm --run-skipped --tags=example \
             --reporter=expanded 2>&1 | tee /tmp/example-test.log
-          N=$(grep -oE '\+[0-9]+' /tmp/example-test.log | tail -1 | tr -d '+')
-          echo "example tests run: ${N:-0}"
-          if [ "${N:-0}" -lt 10 ]; then
-            echo "FAIL: expected at least 10 example tests, saw ${N:-0}."
-            exit 1
-          fi
+          bash tool/assert_test_count.sh /tmp/example-test.log 10 example
 
       # Compile-only smoke for the Pages demo. Catches API drift between
       # `Monty`/`MontyRepl` refactors and packages/dart_monty_web at PR time
@@ -977,6 +969,7 @@ jobs:
           path: |
             coverage/merged.info
             coverage/honest.info
+          if-no-files-found: error
           retention-days: 1
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
