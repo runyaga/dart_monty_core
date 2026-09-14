@@ -837,7 +837,17 @@ jobs:
           npm install --force
 
       - name: Run WASM unit-style tests (dart2js)
-        run: bash tool/test_wasm_unit.sh
+        # The floor is the point. tool/test_wasm_unit.sh checks that every
+        # wasm_*_test.dart is LISTED, which catches a forgotten file -- it does
+        # not check that any test RAN. `dart test` prints success and exits 0
+        # on an empty run, so a staging failure that registered zero tests
+        # reported green here. Measured on run 34869641865: this step really
+        # runs `+751 ~85: All tests passed!`, and nothing asserted the 751.
+        # Raise the floor when the suite grows; never lower it to make a run pass.
+        run: |
+          set -o pipefail
+          bash tool/test_wasm_unit.sh 2>&1 | tee /tmp/wasm-unit-js.log
+          bash tool/assert_test_count.sh /tmp/wasm-unit-js.log 700 "WASM unit (dart2js)"
 
       - name: Run WASM unit-style tests (dart2wasm)
         # Same suite, same WASM ENGINE, different DART compile target. Two things
@@ -846,7 +856,10 @@ jobs:
         # covers the second. CI already built dart2wasm for the fixture corpus
         # (job `test-wasm`), so the corpus had dart2wasm coverage while the
         # package:test suites did not.
-        run: bash tool/test_wasm_unit.sh --dart2wasm
+        run: |
+          set -o pipefail
+          bash tool/test_wasm_unit.sh --dart2wasm 2>&1 | tee /tmp/wasm-unit-w.log
+          bash tool/assert_test_count.sh /tmp/wasm-unit-w.log 700 "WASM unit (dart2wasm)"
 
   # ---------------------------------------------------------------------------
   # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
