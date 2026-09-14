@@ -59,13 +59,50 @@ ns(){ n="$1"; shift; t=$SECONDS
 # reading was that the diagnosis was wrong. It was a hooks_runner dylib from
 # the previous day. The guard written to prevent exactly that had been dead
 # the whole time.
+#
+# IT COMPARES CONTENT, NOT MTIMES, and that is the whole of L4.
+#
+# The `find -newer` form this replaces fired on any mtime touch: a comment, a
+# `dart format` pass, a rebase, a `git checkout` rewriting a file to identical
+# bytes. Measured across four gate runs on an UNCHANGED tree: unit_tests 1s vs
+# 151s, corpus_cm_js 3s vs 138s, whole gate 163s vs 459s -- a 2.8x swing with no
+# source change. One trigger was reproduced exactly: bumping the version string
+# in pubspec.yaml, which touches no Rust at all, printed "native/ is newer than
+# the cached native library" and forced a full cold rebuild.
+#
+# `unit_tests` is PURE DART and was among the steps paying for it, which is the
+# sharper half of the finding: a pure-Dart step should never wait on a Rust
+# build. Clearing .dart_tool/hooks_runner made it re-resolve regardless.
+#
+# The hash is the same shape tool/check_asset_freshness.sh already uses over
+# these very files, and for the same stated reason: mtimes lie, content does
+# not. The stamp records WHICH SOURCE the cached library was built from, so the
+# cache is cleared when that source actually changes and left alone otherwise.
+STAMP=.dart_tool/.native-source-hash
+native_source_hash() {
+  {
+    find native/src -type f -name '*.rs' -print0 2>/dev/null
+    printf '%s\0' native/Cargo.toml native/Cargo.lock
+  } | tr '\0' '\n' | sort | while read -r f; do
+    [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
+  done | shasum -a 256 | awk '{print $1}'
+}
 CACHED=$(find .dart_tool \
   \( -name 'libdart_monty_core_native*.dylib' \
      -o -name 'libdart_monty_core_native*.so' \) 2>/dev/null | head -1)
-if [ -n "$CACHED" ] && [ -n "$(find native/src native/Cargo.toml -newer "$CACHED" 2>/dev/null)" ]; then
-  echo "note: native/ is newer than the cached native library — clearing hook cache" >&2
-  rm -rf .dart_tool/hooks_runner .dart_tool/lib
-  dart pub get >/dev/null 2>&1
+if [ -n "$CACHED" ]; then
+  NATIVE_NOW=$(native_source_hash)
+  NATIVE_WAS=$(cat "$STAMP" 2>/dev/null || echo '')
+  if [ "$NATIVE_NOW" != "$NATIVE_WAS" ]; then
+    # A missing stamp is treated as a miss ONCE, on the first run after this
+    # change. That is deliberate: the alternative is trusting a cache whose
+    # provenance is unknown, which is the exact bug the original guard was
+    # written for after a day-old dylib cost an hour of misdiagnosis.
+    echo "note: native/ SOURCE CHANGED (${NATIVE_WAS:0:8}… -> ${NATIVE_NOW:0:8}…) — clearing hook cache" >&2
+    rm -rf .dart_tool/hooks_runner .dart_tool/lib
+    dart pub get >/dev/null 2>&1
+    printf '%s' "$NATIVE_NOW" > "$STAMP"
+  fi
 fi
 
 # The committed assets in lib/assets/ are build artefacts of native/src and
