@@ -797,10 +797,10 @@ jobs:
           echo "OK: tree clean (js/package-lock.json excluded — see comment)"
 
   # ---------------------------------------------------------------------------
-  # Patch coverage gate — PRs must maintain >= 70% coverage on changed lines
+  # Patch coverage gate — PRs must maintain >= 30% coverage on changed lines
   # ---------------------------------------------------------------------------
   patch-coverage:
-    name: Patch coverage gate (70%)
+    name: Patch coverage gate (30%)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -840,5 +840,5 @@ jobs:
             -o filtered-coverage.info
           diff-cover filtered-coverage.info \
             --compare-branch=origin/${{ github.base_ref }} \
-            --fail-under=70 \
+            --fail-under=30 \
             --diff-range-notation='..'

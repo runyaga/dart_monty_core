@@ -126,8 +126,29 @@ if [ "$UNLISTED" = "1" ]; then
 fi
 echo "  all listed"
 
+# Concurrency: half the cores, capped at 4, floor of 2. Override with
+# WASM_TEST_CONCURRENCY.
+#
+# This was hardcoded to 2. On a GitHub runner (4 vCPU) the formula still yields
+# 2, so CI behaviour is UNCHANGED and this is not a CI tuning knob -- that is
+# deliberate, because a shared runner has no headroom to spend and raising it
+# there would trade throughput for flakiness.
+#
+# The cap is 4 because the gain stops there. Measured 2026-09-14 in a 12-core
+# container, dart2js variant: c=2 46s, c=4 31s, c=6 30s, c=8 28s. Everything
+# past 4 buys seconds for a linear rise in concurrent Chrome instances. The
+# dart2wasm variant barely moves at all (32s -> ~31s), so the honest saving on
+# a full local gate is ~13s of 163s, not the ~30s the dart2js number alone
+# suggests. Four runs at c=4 across both variants: +737 ~85, all green.
+CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+CONCURRENCY=$(( CORES / 2 ))
+[ "$CONCURRENCY" -gt 4 ] && CONCURRENCY=4
+[ "$CONCURRENCY" -lt 2 ] && CONCURRENCY=2
+CONCURRENCY=${WASM_TEST_CONCURRENCY:-$CONCURRENCY}
+
 echo ""
 echo "--- Running dart test -p chrome ($LABEL) --tags=wasm ---"
+echo "    ${CORES} cores detected -> --concurrency ${CONCURRENCY}"
 dart test \
   -p chrome \
   "${COMPILER[@]}" \
@@ -135,7 +156,7 @@ dart test \
   --tags=wasm \
   --exclude-tags=pending-futures \
   --reporter expanded \
-  --concurrency 2 \
+  --concurrency "$CONCURRENCY" \
   test/integration/wasm_dataclass_hydrate_test.dart \
   test/integration/wasm_datetime_oscall_test.dart \
   test/integration/wasm_feedrun_async_matrix_test.dart \
