@@ -793,6 +793,22 @@ fn build_pending_meta(
     }
 }
 
+/// The ONE-SHOT path still reports zeros, and it is not an oversight.
+///
+/// The REPL path reports a real `time_elapsed_ms` (repl_handle.rs), which makes
+/// the two asymmetric. Closing that gap here is NOT currently possible:
+/// `compiled.run(vec![], tracker, ...)` at :165-169 moves the tracker BY VALUE
+/// into monty, and `RunProgress::Complete(obj)` (monty/src/run_progress.rs:36-47)
+/// hands back only the object. There is no path from a completed one-shot run
+/// to its tracker in v0.0.23.
+///
+/// The available workaround -- wrapping the call in `Instant::now()` -- is
+/// deliberately NOT taken. That measures WALL time including host callbacks,
+/// while `ResourceTracker::elapsed()` measures interpreter time excluding them
+/// (monty-types/src/resource.rs:246-247). Reporting two different quantities
+/// under one field name is worse than reporting zero for one of them.
+///
+/// Tracked in core#155.
 fn default_usage_json() -> String {
     r#"{"memory_bytes_used":0,"time_elapsed_ms":0,"stack_depth_used":0}"#.into()
 }

@@ -2417,3 +2417,75 @@ fn repl_invalid_utf8_tolerates_null_out_error() {
 
     unsafe { monty_repl_free(handle) };
 }
+
+// ---------------------------------------------------------------------------
+// usage.time_elapsed_ms is REAL on the REPL path (core#155)
+// ---------------------------------------------------------------------------
+// Every MontyResult.usage in this package used to be
+// {"memory_bytes_used":0,"time_elapsed_ms":0,"stack_depth_used":0} on EVERY
+// path, success included. A consumer reading usage got zeros and no way to know
+// they were stubs.
+//
+// time_elapsed_ms now comes from ResourceTracker::elapsed(). The other two stay
+// zero because v0.0.23 exposes no accessor for them -- only the configured
+// maxima -- so they remain honestly unknown rather than falsely reported.
+//
+// The assertion is deliberately WEAK on magnitude and STRONG on non-zero: this
+// measures interpreter time, which is machine- and load-dependent, and a test
+// that pins a duration is a flake. What must hold is that a script doing real
+// work no longer reports zero.
+#[test]
+fn repl_usage_reports_real_elapsed_time() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    // Enough iterations to take more than a millisecond of INTERPRETER time.
+    let code = CString::new("total = 0\nfor i in range(400000):\n    total += i\ntotal").unwrap();
+    let mut out: *mut c_char = ptr::null_mut();
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut out, &mut e) };
+    assert_eq!(tag, MontyResultTag::Ok, "the loop should complete");
+    assert!(!out.is_null(), "a successful run must produce result JSON");
+
+    let json = unsafe { read_c_string(out) };
+    let v: serde_json::Value = serde_json::from_str(&json).expect("result JSON must parse");
+    let elapsed = v["usage"]["time_elapsed_ms"]
+        .as_u64()
+        .expect("usage.time_elapsed_ms must be a number");
+
+    assert!(
+        elapsed > 0,
+        "400k interpreter iterations must report >0ms, got {elapsed}ms in {json}"
+    );
+
+    // The other two are still stubs, and this PINS that fact rather than
+    // detecting a change upstream.
+    //
+    // An earlier version of this comment claimed the test "FAILS the day an
+    // accessor appears upstream". That is FALSE and a reviewer caught it: the
+    // JSON is built by hand in repl_handle.rs, so nothing upstream can move
+    // these numbers. The test fails only when a developer here wires a real
+    // value in -- it is a speed bump in front of that person, not a detector.
+    //
+    // Kept anyway, for the one thing it does do: it makes "these are zeros on
+    // purpose" executable rather than a comment, so a future reader cannot
+    // mistake a stub for a measurement. Whoever wires them up deletes two
+    // asserts, which is the correct amount of friction.
+    assert_eq!(
+        v["usage"]["memory_bytes_used"].as_u64(),
+        Some(0),
+        "stub pinned on purpose; delete this assert when wiring a real value"
+    );
+    assert_eq!(
+        v["usage"]["stack_depth_used"].as_u64(),
+        Some(0),
+        "stub pinned on purpose; delete this assert when wiring a real value"
+    );
+
+    unsafe { monty_repl_free(handle) };
+}

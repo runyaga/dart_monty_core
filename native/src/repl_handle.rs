@@ -394,15 +394,21 @@ impl MontyReplHandle {
         match result {
             Ok(obj) => {
                 let val = monty_object_to_json(&obj);
-                let result_json = build_repl_result_json(&val, None, &self.print_output);
+                let elapsed = elapsed_ms(repl.tracker());
+                let result_json = build_repl_result_json(&val, None, &self.print_output, elapsed);
                 self.print_output.clear();
                 self.state = ReplHandleState::Idle(repl);
                 (MontyResultTag::Ok, result_json, None)
             }
             Err(exc) => {
                 let err_json = monty_exception_to_json(&exc);
-                let result_json =
-                    build_repl_result_json(&Value::Null, Some(err_json), &self.print_output);
+                let elapsed = elapsed_ms(repl.tracker());
+                let result_json = build_repl_result_json(
+                    &Value::Null,
+                    Some(err_json),
+                    &self.print_output,
+                    elapsed,
+                );
                 let msg = exc.summary();
                 self.print_output.clear();
                 self.state = ReplHandleState::Idle(repl);
@@ -823,7 +829,9 @@ impl MontyReplHandle {
             match progress {
                 ReplProgress::Complete { repl, value } => {
                     let val = monty_object_to_json(&value);
-                    let result_json = build_repl_result_json(&val, None, &self.print_output);
+                    let elapsed = elapsed_ms(repl.tracker());
+                    let result_json =
+                        build_repl_result_json(&val, None, &self.print_output, elapsed);
                     self.print_output.clear();
                     self.state = ReplHandleState::Complete {
                         repl,
@@ -930,7 +938,9 @@ impl MontyReplHandle {
     ) -> (MontyProgressTag, Option<String>) {
         let err_json = monty_exception_to_json(&err.error);
         let msg = err.error.summary();
-        let result_json = build_repl_result_json(&Value::Null, Some(err_json), &self.print_output);
+        let elapsed = elapsed_ms(err.repl.tracker());
+        let result_json =
+            build_repl_result_json(&Value::Null, Some(err_json), &self.print_output, elapsed);
         self.print_output.clear();
         self.state = ReplHandleState::Complete {
             repl: err.repl,
@@ -983,13 +993,42 @@ fn build_pending_meta(
     }
 }
 
+/// Milliseconds of INTERPRETER execution, saturating rather than wrapping.
+///
+/// `as u64` on a u128 would silently wrap; a run long enough to overflow u64
+/// milliseconds is not reachable, but a silent wrap is the kind of thing this
+/// project has been bitten by, so it saturates instead.
+fn elapsed_ms(tracker: &Tracker) -> u64 {
+    u64::try_from(tracker.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
 /// Build result JSON in the same format as `MontyHandle::run` results.
-fn build_repl_result_json(value: &Value, error: Option<Value>, print_output: &str) -> String {
+///
+/// `time_elapsed_ms` is REAL; the other two fields are still zero, and that is
+/// an upstream limit rather than a shortcut. `ResourceTracker` exposes
+/// `elapsed()` (monty-types/src/resource.rs:250) and nothing else of this kind
+/// -- there is no public accessor for memory used or recursion depth used in
+/// v0.0.23, only the configured MAXIMA (`max_memory`, `max_duration`). Zeroing
+/// a field the host cannot observe is honest; zeroing one it can is not, which
+/// is why only this one changed. Tracked in core#155.
+///
+/// WHAT elapsed() MEASURES, and it is not wall time. Its own doc: "accumulated
+/// across runs/feeds, EXCLUDING time suspended on the host or idle between
+/// feeds." So a script that spends most of its life inside Dart callbacks
+/// reports a small number here even though the caller waited a long time. That
+/// is the same fact that makes `MontyLimits.timeoutMs` unable to bound a
+/// suspension loop (core#156) -- one measurement, two consequences.
+fn build_repl_result_json(
+    value: &Value,
+    error: Option<Value>,
+    print_output: &str,
+    time_elapsed_ms: u64,
+) -> String {
     let mut result = serde_json::json!({
         "value": value,
         "usage": {
             "memory_bytes_used": 0,
-            "time_elapsed_ms": 0,
+            "time_elapsed_ms": time_elapsed_ms,
             "stack_depth_used": 0,
         },
     });
