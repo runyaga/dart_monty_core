@@ -226,18 +226,50 @@ fn resume_with_error_null_message() {
 // 13. monty_restore with garbage bytes — covers restore Err path
 // ---------------------------------------------------------------------------
 
+// RETARGETED from monty_restore to monty_repl_restore.
+//
+// This was ignored with the reason "monty v0.0.23 no longer exposes a public
+// dump/load API", which was false: repl_handle.rs calls dump() and Dump::load()
+// against v0.0.23 and has since M3. The real reason it could not pass is that
+// it drove the ONE-SHOT handle, whose restore is a structural dead end --
+// handle.rs:570 returns Err unconditionally because monty's SessionRef has no
+// variant for an un-started MontyRun. Against that handle the call fails
+// identically for garbage and for a perfectly good snapshot, so the test
+// asserted nothing about decoding.
+//
+// Pointed at the REPL API it tests what its name claims: hostile bytes reach
+// Dump::load and come back as a reported error rather than a panic or a
+// silently-empty session.
 #[test]
-#[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
 fn restore_invalid_data() {
     let garbage: [u8; 16] = [0xFF; 16];
     let mut out_error: *mut c_char = ptr::null_mut();
 
-    let handle = unsafe { monty_restore(garbage.as_ptr(), garbage.len(), &mut out_error) };
-    assert!(handle.is_null());
-    assert!(!out_error.is_null());
+    let handle = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            ptr::null(),
+            ptr::null(),
+            &mut out_error,
+        )
+    };
+    assert!(handle.is_null(), "garbage must not produce a handle");
+    assert!(
+        !out_error.is_null(),
+        "the reason must reach the caller -- a NULL out_error here is the \
+         defect monty_snapshot still has (F1)"
+    );
 
+    // NOTE: read_c_string() frees the pointer (see its body) -- do NOT also
+    // call monty_string_free here. Doing so aborts the process with
+    // "free(): double free detected in tcache 2", which is how this comment
+    // came to exist.
     let err_str = unsafe { read_c_string(out_error) };
-    assert!(err_str.contains("restore failed"));
+    assert!(
+        err_str.contains("restore failed"),
+        "expected a restore failure message, got: {err_str}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1179,42 +1211,90 @@ fn resume_with_error_via_ffi() {
 // Validates monty_snapshot → monty_bytes_free → monty_restore → monty_run.
 // ---------------------------------------------------------------------------
 
+// RETARGETED from the one-shot handle to the REPL API, for the reason given on
+// restore_invalid_data above. The one-shot handle cannot snapshot at all
+// (handle.rs:558), so this test could never have passed there.
+//
+// It now round-trips real INTERPRETER STATE rather than a compiled program:
+// bind a variable, snapshot, free the session entirely, restore into a new one,
+// and read the variable back. A snapshot that restores but loses the heap would
+// pass the old shape of this test and fail this one.
 #[test]
-#[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
 fn snapshot_round_trip_via_ffi() {
-    let code = c("2 + 2");
-    let mut create_error: *mut c_char = ptr::null_mut();
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(!handle.is_null(), "repl_create failed");
 
-    let handle =
-        unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_error) };
-    assert!(!handle.is_null());
+    // Establish state worth losing.
+    let code = c("x = 42");
+    let mut rj: *mut c_char = ptr::null_mut();
+    let mut em: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut rj, &mut em) };
+    assert_eq!(tag, MontyResultTag::Ok, "seeding feed failed");
+    if !rj.is_null() {
+        unsafe { monty_string_free(rj) };
+    }
 
     let mut snap_len: usize = 0;
-    let snap_ptr = unsafe { monty_snapshot(handle, &mut snap_len) };
-    assert!(!snap_ptr.is_null());
-    assert!(snap_len > 0);
+    let mut snap_err: *mut c_char = ptr::null_mut();
+    let snap_ptr = unsafe { monty_repl_snapshot(handle, &mut snap_len, &mut snap_err) };
+    assert!(
+        !snap_ptr.is_null(),
+        "snapshot failed: {}",
+        if snap_err.is_null() {
+            "<no reason reported>".to_string()
+        } else {
+            unsafe { read_c_string(snap_err) }
+        }
+    );
+    assert!(snap_len > 0, "snapshot must not be empty");
 
-    unsafe { monty_free(handle) };
+    // Free the ORIGINAL session before restoring, so nothing can be served
+    // from it by accident.
+    unsafe { monty_repl_free(handle) };
 
-    let mut restore_error: *mut c_char = ptr::null_mut();
-    let restored = unsafe { monty_restore(snap_ptr, snap_len, &mut restore_error) };
-    assert!(!restored.is_null());
+    let mut restore_err: *mut c_char = ptr::null_mut();
+    let restored = unsafe {
+        monty_repl_restore(
+            snap_ptr,
+            snap_len,
+            ptr::null(),
+            ptr::null(),
+            &mut restore_err,
+        )
+    };
+    assert!(
+        !restored.is_null(),
+        "restore failed: {}",
+        if restore_err.is_null() {
+            "<no reason reported>".to_string()
+        } else {
+            unsafe { read_c_string(restore_err) }
+        }
+    );
 
     unsafe { monty_bytes_free(snap_ptr, snap_len) };
 
+    // The state, not just the session, must have survived.
+    let probe = c("x + 1");
     let mut result_json: *mut c_char = ptr::null_mut();
-    let mut error_msg: *mut c_char = ptr::null_mut();
-    let tag = unsafe { monty_run(restored, &mut result_json, &mut error_msg) };
-    assert_eq!(tag, MontyResultTag::Ok);
+    let mut run_err: *mut c_char = ptr::null_mut();
+    let tag =
+        unsafe { monty_repl_feed_run(restored, probe.as_ptr(), &mut result_json, &mut run_err) };
+    assert_eq!(tag, MontyResultTag::Ok, "restored session could not run");
 
     let json_str = unsafe { read_c_string(result_json) };
     let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    assert_eq!(parsed["value"], 4);
+    assert_eq!(
+        parsed["value"], 43,
+        "x did not survive the round trip; the session restored but the heap did not"
+    );
 
-    if !error_msg.is_null() {
-        unsafe { monty_string_free(error_msg) };
+    if !run_err.is_null() {
+        unsafe { monty_string_free(run_err) };
     }
-    unsafe { monty_free(restored) };
+    unsafe { monty_repl_free(restored) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,83 +1309,81 @@ fn snapshot_round_trip_via_ffi() {
 // incompatible. Document in CHANGELOG and bump version accordingly.
 // ---------------------------------------------------------------------------
 
-/// Hardcoded snapshot bytes for `"2 + 2"` compiled with `<input>` script name.
-/// Captured from pydantic/monty@v0.0.17 (rev 5c7cf2b).
-/// If this test fails, the upstream postcard format has changed — update the
-/// pinned bytes and document the breaking change in CHANGELOG.
+/// The snapshot format is pinned by its HEADER, not by a whole-blob byte
+/// comparison. The previous `PINNED_SNAPSHOT_2_PLUS_2` constant (captured from
+/// pydantic/monty@v0.0.17, three releases stale) has been deleted, for two
+/// independent reasons -- either one fatal.
 ///
-/// History: monty v0.0.14 → v0.0.17 changed the per-instruction encoding
-/// (the prefix-byte slot for sourcemap/source-line info shifted), shrinking
-/// the dump for `"2 + 2"` from 98 to 74 bytes. v0.0.17 → v0.0.18 changed the
-/// instruction encoding again, shrinking the same dump from 74 to 60 bytes.
-/// v0.0.18 → v0.0.19 changed it once more, 60 → 59 bytes: serialized sessions
-/// now carry `CompileOptions` (upstream #556 — the assert-annotation truncation
-/// limit is applied at runtime, so it travels with the session).
-/// Snapshots are NOT portable across these upgrades — consumers persisting
-/// snapshots must migrate.
-#[rustfmt::skip]
-const PINNED_SNAPSHOT_2_PLUS_2: &[u8] = &[
-    0x00, 0x06, 0x08, 0x02, 0x08, 0x02, 0x17, 0x66, 0x00, 0x04, 0x00, 0x90, 0x4E, 0x00, 0x01, 0x00,
-    0x02, 0x90, 0x4E, 0x04, 0x05, 0x00, 0x04, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x05, 0x90, 0x4E, 0x00,
-    0x05, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x07, 0x3C, 0x69, 0x6E, 0x70, 0x75, 0x74, 0x3E, 0x00,
-    0x00, 0x00, 0x05, 0x32, 0x20, 0x2B, 0x20, 0x32, 0x00, 0x00, 0x00,
-];
+/// 1. It was captured from the ONE-SHOT handle, which cannot snapshot at all
+///    (`native/src/handle.rs:558`). No value it held could be reproduced.
+///
+/// 2. **The dump is not byte-deterministic.** Measured 2026-09-14 through the
+///    REPL FFI: two snapshots of two freshly-created sessions that each ran the
+///    identical program `x = 42` are both 100 bytes and differ, first at byte
+///    91 of 100. So a whole-blob equality assertion could never have held, on
+///    any architecture, even against a correct implementation. It would have
+///    been a permanently red test or -- worse, and more likely -- a test kept
+///    green by being ignored.
+///
+/// What IS stable is the header, and it is the part that carries the
+/// compatibility contract. Measured across two runs of the same program and one
+/// run of a different program (`y = 'hello'; z = [1,2,3]`, 140 bytes), the first
+/// eight bytes were identical in all three: the ASCII magic `MONTY` followed by
+/// the dump version.
+///
+/// That is what this test pins. A format bump changes the version byte and this
+/// goes red; a silent re-encoding within a version is caught instead by the
+/// round-trip in `snapshot_round_trip_via_ffi`, which reads real state back.
+const DUMP_MAGIC: &[u8] = b"MONTY";
+
+/// `monty::DUMP_VERSION` at the pinned tag. Bumping the monty pin without
+/// bumping this is exactly the drift this test exists to catch.
+const EXPECTED_DUMP_VERSION: u8 = 8;
 
 #[test]
-#[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
 fn snapshot_format_pinning() {
-    // 1. Verify current dump matches the hardcoded pinned bytes.
-    let code = c("2 + 2");
+    let name = CString::new("repl.py").unwrap();
     let mut err: *mut c_char = ptr::null_mut();
-    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut err) };
-    assert!(!handle.is_null());
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(!handle.is_null(), "repl_create failed");
+
+    let code = c("x = 42");
+    let mut rj: *mut c_char = ptr::null_mut();
+    let mut em: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut rj, &mut em) };
+    assert_eq!(tag, MontyResultTag::Ok);
+    if !rj.is_null() {
+        unsafe { monty_string_free(rj) };
+    }
 
     let mut snap_len: usize = 0;
-    let snap_ptr = unsafe { monty_snapshot(handle, &mut snap_len) };
-    assert!(!snap_ptr.is_null());
-    let live_bytes = unsafe { std::slice::from_raw_parts(snap_ptr, snap_len) };
-    assert_eq!(
-        live_bytes, PINNED_SNAPSHOT_2_PLUS_2,
-        "snapshot format has changed — update PINNED_SNAPSHOT_2_PLUS_2 and document in CHANGELOG"
-    );
+    let mut snap_err: *mut c_char = ptr::null_mut();
+    let snap_ptr = unsafe { monty_repl_snapshot(handle, &mut snap_len, &mut snap_err) };
+    assert!(!snap_ptr.is_null(), "snapshot failed");
+    let bytes = unsafe { std::slice::from_raw_parts(snap_ptr, snap_len) };
 
-    // 2. Restore from the hardcoded pinned bytes (not from fresh dump).
-    let mut restore_err: *mut c_char = ptr::null_mut();
-    let restored = unsafe {
-        monty_restore(
-            PINNED_SNAPSHOT_2_PLUS_2.as_ptr(),
-            PINNED_SNAPSHOT_2_PLUS_2.len(),
-            &mut restore_err,
-        )
-    };
     assert!(
-        !restored.is_null(),
-        "pinned snapshot must restore successfully"
+        snap_len > DUMP_MAGIC.len() + 1,
+        "snapshot too short to carry a header: {snap_len} bytes"
     );
-    assert!(
-        restore_err.is_null(),
-        "pinned snapshot restore must not error"
-    );
-
-    // 3. Execute the restored handle and verify result.
-    let mut result_json: *mut c_char = ptr::null_mut();
-    let mut run_err: *mut c_char = ptr::null_mut();
-    let tag = unsafe { monty_run(restored, &mut result_json, &mut run_err) };
-    assert_eq!(tag, MontyResultTag::Ok);
-    let json_str = unsafe { read_c_string(result_json) };
-    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     assert_eq!(
-        parsed["value"], 4,
-        "restored pinned snapshot must produce same result"
+        &bytes[..DUMP_MAGIC.len()],
+        DUMP_MAGIC,
+        "dump magic changed -- the snapshot container format is not what this \
+         build expects. Update DUMP_MAGIC and document the break in CHANGELOG."
     );
 
-    // Cleanup.
+    let version = bytes[DUMP_MAGIC.len() + 1];
+    assert_eq!(
+        version, EXPECTED_DUMP_VERSION,
+        "DUMP_VERSION moved from {EXPECTED_DUMP_VERSION} to {version}. Snapshots \
+         written by the previous format will NOT load. Bump the monty pin \
+         deliberately, update EXPECTED_DUMP_VERSION, and document the break in \
+         CHANGELOG -- consumers persisting snapshots must migrate."
+    );
+
     unsafe { monty_bytes_free(snap_ptr, snap_len) };
-    if !run_err.is_null() {
-        unsafe { monty_string_free(run_err) };
-    }
-    unsafe { monty_free(handle) };
-    unsafe { monty_free(restored) };
+    unsafe { monty_repl_free(handle) };
 }
 
 #[test]
