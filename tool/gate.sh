@@ -129,6 +129,12 @@ s  wasm_arity    node tool/check_wasm_arity.mjs
 # header says nothing at all. Measured: monty_alloc and monty_dealloc were
 # exported, called 49 times by the Worker, and declared zero times.
 s  exports_decl  bash tool/check_exports_declared.sh
+# The inbound-forgery suite is the end-to-end proof of core#136/#139, and it was
+# HAND-LISTED, so it drifted: 11 tags attacked against 25 emitted, and three of
+# the gaps were types the wire-v5 work had added days earlier. Adding an encoder
+# tag and adding a forgery row are separate edits in separate languages; this
+# ties them together.
+s  forgery_cov   bash tool/check_forgery_coverage.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
