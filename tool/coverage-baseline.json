@@ -42,7 +42,7 @@
       "pct": 0.0
     },
     "lib/src/ffi/native_isolate_bindings_impl.dart": {
-      "found": 201,
+      "found": 203,
       "hit": 0,
       "pct": 0.0
     },
@@ -132,9 +132,9 @@
       "pct": 88.0
     },
     "lib/src/platform/base_monty_platform.dart": {
-      "found": 190,
-      "hit": 151,
-      "pct": 79.47
+      "found": 191,
+      "hit": 152,
+      "pct": 79.58
     },
     "lib/src/platform/code_capture.dart": {
       "found": 46,
@@ -312,7 +312,7 @@
       "pct": 0.0
     },
     "lib/src/wasm/wasm_bindings_js.dart": {
-      "found": 553,
+      "found": 558,
       "hit": 0,
       "pct": 0.0
     },
@@ -333,8 +333,8 @@
     }
   },
   "total": {
-    "found": 4154,
-    "hit": 2363,
-    "pct": 56.88
+    "found": 4162,
+    "hit": 2364,
+    "pct": 56.8
   }
 }

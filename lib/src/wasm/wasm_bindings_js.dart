@@ -11,6 +11,22 @@ import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 /// The bridge returns a plain JS object `{ ok, snapshotBuffer?, error? }`
 /// instead of a JSON string, because `JSON.stringify(ArrayBuffer)` returns
 /// `{}` — binary data would be silently lost.
+
+/// Unwraps a `_SnapshotResult`'s buffer, or says which contract broke.
+///
+/// NOT `result.snapshotBuffer!` at three call sites. This is the JS boundary:
+/// `ok` being true is the WORKER'S CLAIM, not proof the buffer arrived. A bare
+/// `!` on a null throws a TypeError naming nothing, indistinguishable from a
+/// Dart bug on our side. One helper also keeps the three sites from drifting.
+Uint8List _requireSnapshotBuffer(_SnapshotResult result) {
+  final buffer = result.snapshotBuffer;
+  if (buffer == null) {
+    throw StateError('worker reported ok but returned no snapshotBuffer');
+  }
+
+  return buffer.toDart.asUint8List();
+}
+
 extension type _SnapshotResult._(JSObject _) implements JSObject {
   external JSBoolean get ok;
   external JSString? get error;
@@ -423,7 +439,7 @@ class WasmBindingsJs extends WasmBindings {
       throw StateError(result.error?.toDart ?? 'Snapshot failed');
     }
 
-    return result.snapshotBuffer!.toDart.asUint8List();
+    return _requireSnapshotBuffer(result);
   }
 
   @override
@@ -455,7 +471,7 @@ class WasmBindingsJs extends WasmBindings {
       throw StateError(result.error?.toDart ?? 'compile failed');
     }
 
-    return result.snapshotBuffer!.toDart.asUint8List();
+    return _requireSnapshotBuffer(result);
   }
 
   @override
@@ -797,7 +813,7 @@ class WasmBindingsJs extends WasmBindings {
       throw StateError(result.error?.toDart ?? 'replSnapshot failed');
     }
 
-    return result.snapshotBuffer!.toDart.asUint8List();
+    return _requireSnapshotBuffer(result);
   }
 
   @override

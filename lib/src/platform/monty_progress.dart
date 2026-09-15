@@ -171,12 +171,16 @@ final class MontyPending extends MontyProgress {
 
   @override
   Map<String, dynamic> toJson() {
+    final kw = kwargs;
+
     return {
       'type': 'pending',
       'function_name': functionName,
       'arguments': args.map((e) => e.toJson()).toList(),
-      if (kwargs != null)
-        'kwargs': kwargs!.map((k, v) => MapEntry(k, v.toJson())),
+      // `kwargs` is a FIELD, so the collection-if cannot promote it and this
+      // used to read `kwargs!`. A local can be promoted, which is the same
+      // check without the assertion.
+      if (kw != null) 'kwargs': kw.map((k, v) => MapEntry(k, v.toJson())),
       if (callId != 0) 'call_id': callId,
       if (methodCall) 'method_call': methodCall,
     };
@@ -262,12 +266,16 @@ final class MontyOsCall extends MontyProgress {
 
   @override
   Map<String, dynamic> toJson() {
+    final kw = kwargs;
+
     return {
       'type': 'os_call',
       'operation_name': operationName,
       'arguments': args.map((e) => e.toJson()).toList(),
-      if (kwargs != null)
-        'kwargs': kwargs!.map((k, v) => MapEntry(k, v.toJson())),
+      // `kwargs` is a FIELD, so the collection-if cannot promote it and this
+      // used to read `kwargs!`. A local can be promoted, which is the same
+      // check without the assertion.
+      if (kw != null) 'kwargs': kw.map((k, v) => MapEntry(k, v.toJson())),
       if (callId != 0) 'call_id': callId,
     };
   }

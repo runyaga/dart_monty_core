@@ -227,8 +227,12 @@ class WasmCoreBindings implements MontyCoreBindings {
 
   @override
   Future<void> dispose() async {
-    if (_sessionId != null) {
-      await _bindings.disposeSession(_sessionId!);
+    // Read the field ONCE into a local. `_sessionId` is mutable, so the
+    // null-check could not promote it and the call needed `_sessionId!`; a
+    // local also cannot be reassigned out from under the dispose call.
+    final openSession = _sessionId;
+    if (openSession != null) {
+      await _bindings.disposeSession(openSession);
       _sessionId = null;
     }
   }

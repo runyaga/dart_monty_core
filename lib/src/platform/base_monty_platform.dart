@@ -42,10 +42,15 @@ Map<String, MontyValue>? _parseKwargMap(Map<String, dynamic>? kwargs) =>
 /// Shared with `MontyRepl`, which applies limits at session creation, so the
 /// two paths cannot disagree about the shape.
 String encodeLimitsJson(MontyLimits? limits) {
+  final timeoutMs = limits?.timeoutMs;
+
   return json.encode({
     'memory_bytes': limits?.memoryBytes ?? BaseMontyPlatform.defaultMemoryBytes,
     'stack_depth': limits?.stackDepth ?? BaseMontyPlatform.defaultStackDepth,
-    if (limits?.timeoutMs != null) 'timeout_ms': limits!.timeoutMs,
+    // WAS `if (limits?.timeoutMs != null) 'timeout_ms': limits!.timeoutMs`.
+    // The condition does not promote `limits`, which is why the assertion was
+    // there. The null-aware element says the same thing with neither.
+    'timeout_ms': ?timeoutMs,
   });
 }
 
