@@ -272,13 +272,21 @@ dcm:
           - "test/**"
     - avoid-non-null-assertion:
         exclude:
-          # test/** (75 issues). CLASSIFIED ALL 75, 2026-09-15 -- an earlier
-          # version of this comment generalised from three samples and got the
-          # dominant shape wrong. The real split:
+          # test/** (75 issues). CLASSIFIED ALL 75, 2026-09-15. Two earlier
+          # versions of this comment were wrong: the first generalised from
+          # three samples, the second counted with a 3-line lookback that
+          # pushed guarded sites into "other" whenever a multi-line `reason:`
+          # string sat between the expect() and the `!`. With a 10-line window
+          # and explicit `!= null` checks counted, verified by reading the
+          # residue:
           #
           #     43  `*OrNull!`  -- firstOrNull!/elementAtOrNull(n)!/singleOrNull!
-          #     17  a `!` immediately after the expect() that proves it
-          #     15  other
+          #     27  guarded -- an expect() or an `if (x != null)` above it
+          #      5  unguarded `!` on a call result, e.g.
+          #         `(await handler('Path.stat', ...))! as MontyNamedTuple`
+          #         -- a handler that does not handle the op yields a
+          #         TypeError instead of naming the op. Weakest group, still
+          #         only ever a test failure.
           #
           # THE 43 ARE AN ARTEFACT OF THIS CONFIG, not a style choice, and that
           # is the part worth knowing. avoid-unsafe-collection-methods IS
