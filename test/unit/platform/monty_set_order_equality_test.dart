@@ -84,6 +84,25 @@ void main() {
       expect(a, isNot(b));
     });
 
+    // MontyFrozenSet has its OWN operator== -- a separate copy of the same
+    // multiset walk -- and every negative above tests only MontySet. Nothing
+    // asserted that the frozen twin still says NO to anything.
+    // Falsifier: make MontyFrozenSet.== too PERMISSIVE -- drop the multiset
+    // walk and `return true` once lengths match; only these fail. (Not
+    // `removeAt(0)`: that makes == too STRICT, so it breaks the
+    // order-insensitivity tests above instead, which is a different defect.)
+    test('MontyFrozenSet: different MEMBERS are still unequal', () {
+      const a = MontyFrozenSet([MontyInt(1), MontyInt(2)]);
+      const b = MontyFrozenSet([MontyInt(1), MontyInt(3)]);
+      expect(a, isNot(b));
+    });
+
+    test('MontyFrozenSet: different LENGTHS are still unequal', () {
+      const a = MontyFrozenSet([MontyInt(1), MontyInt(2)]);
+      const b = MontyFrozenSet([MontyInt(1)]);
+      expect(a, isNot(b));
+    });
+
     test('a subset is NOT equal -- multiset consumption, not subset', () {
       const a = MontySet([MontyInt(1), MontyInt(1)]);
       const b = MontySet([MontyInt(1), MontyInt(2)]);

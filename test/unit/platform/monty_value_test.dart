@@ -412,7 +412,13 @@ void main() {
 
   group('MontySet', () {
     test(
-      'equality + hashCode (treated as ordered list under deep equality)',
+      // TITLE CORRECTED. It read 'treated as ordered list under deep equality',
+      // which 17b175f made the OPPOSITE of the truth: MontySet compares
+      // order-INSENSITIVELY now, matching the sandbox. The body never
+      // exercised order either way -- both operands are in the same order --
+      // so nothing failed when the implementation was inverted underneath it.
+      // The order property itself lives in monty_set_order_equality_test.dart.
+      'equal sets with identical contents compare and hash equally',
       () {
         const a = MontySet([MontyInt(1), MontyInt(2)]);
         const b = MontySet([MontyInt(1), MontyInt(2)]);
