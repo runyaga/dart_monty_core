@@ -165,6 +165,24 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+- **`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`**, was
+  `Future<Object?>`. Supplying a callback gets strictly easier: a
+  `Future`-returning function is still assignable, and one that simply computes
+  a value no longer has to be `async` to satisfy the signature. Every host
+  callback in this repo that had nothing to await has dropped it.
+
+  What breaks is CONSUMING the result as a Future. Code that calls a
+  typedef-typed callback and then `.then(...)`, `.catchError(...)`, or assigns
+  to a `Future<Object?>` variable no longer compiles; `await` is unaffected,
+  because awaiting a non-Future is valid. Failures from a now-synchronous
+  callback arrive as a synchronous throw rather than a rejected Future — both
+  dispatch paths in `monty_repl.dart` already catch both.
+
+  The old signature was a workaround wearing a contract: it forced asynchrony
+  on callbacks that had none, and the resulting `async` bodies were suppressed
+  from `avoid-unnecessary-futures` across nine test files as "false positives".
+  They were not false positives; the signature was wrong.
+
 #### `MontySet` and `MontyFrozenSet` compare and hash order-insensitively
 
 `MontySet([MontyInt(1), MontyInt(2)])` and `MontySet([MontyInt(2), MontyInt(1)])`

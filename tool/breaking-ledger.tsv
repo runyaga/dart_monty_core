@@ -38,3 +38,4 @@ a21f47d	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
 1b95a83	`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`
 edd9c41	`MontyPairsDict` is gone; `MontyDict` holds pairs
 17b175f	`MontySet` and `MontyFrozenSet` compare and hash order-insensitively
+8c6d20f	`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`
