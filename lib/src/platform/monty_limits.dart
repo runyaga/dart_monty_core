@@ -45,7 +45,34 @@ final class MontyLimits {
     stackDepth: maxRecursionDepth,
   );
 
-  /// Maximum memory in bytes, or `null` for unlimited.
+  /// Maximum size of a SINGLE object allocation in bytes, or `null` for
+  /// unlimited.
+  ///
+  /// **This is not a heap ceiling, and the distinction is security-relevant.**
+  /// It bounds how large one object may become. It does NOT bound the total
+  /// memory a program accumulates across many small objects.
+  ///
+  /// Measured on the FFI backend, every case under the SAME
+  /// `MontyLimits(memoryBytes: 100 * 1024)` — a 100 KB cap:
+  ///
+  /// CAUGHT (one object, ~20 MB each):
+  /// - `b"a" * 20971520`
+  /// - `"y" * 20971520`
+  /// - `s = ""` then `s += "y" * 100000` ×200
+  ///
+  /// NOT caught (many small objects):
+  /// - `a = []` then `a.append("y"*100 + str(i))` ×200,000 — ~20 MB
+  /// - the same ×3,000,000 — **~314 MB**, no error
+  ///
+  /// The third row is the control that makes the rule precise: it allocates
+  /// incrementally but concatenates into one growing object, and it IS caught.
+  /// So the discriminator is the size of an individual object, not whether
+  /// allocation happens incrementally.
+  ///
+  /// If you are sandboxing untrusted code and need a ceiling on TOTAL memory,
+  /// this field does not give you one, and neither does
+  /// `MontyResourceUsage.memoryBytesUsed`, which is always zero. Bound the
+  /// process instead. Tracked in core#160.
   final int? memoryBytes;
 
   /// Maximum execution time in milliseconds, or `null` for unlimited.
