@@ -246,6 +246,17 @@ final wireFixtures = {
     MontyFloat(4.0),
   ),
   // NaN and the infinities have no JSON spelling at all.
+  // A NEGATIVE, NON-INTEGRAL float travels BARE. Harvested: -1.5 -> -1.5,
+  // while -2.0 -> the envelope (integral). Found by a MECHANICAL mutation
+  // pass: flipping `value == 0 && value.isNegative` to `||` in
+  // monty_value_scalars.dart:130 tags EVERY negative float as text, and
+  // nothing in the suite noticed -- every float fixture was positive except
+  // -0.0, which is tagged either way.
+  'float_negative_non_integral': const WireFixture(
+    '-1.5',
+    '-1.5',
+    MontyFloat(-1.5),
+  ),
   'float_nan': const WireFixture(
     'float("nan")',
     '{"__type": "float", "value": "NaN"}',

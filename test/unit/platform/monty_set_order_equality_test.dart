@@ -25,6 +25,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 void main() {
+  nanInequality();
   group('set equality is order-insensitive', () {
     test('MontySet: {1, 2} == {2, 1}', () {
       const a = MontySet([MontyInt(1), MontyInt(2)]);
@@ -133,5 +134,30 @@ void main() {
       isNot(const MontySet([]).hashCode),
       reason: 'a duplicate-bearing set must not collide with the empty set',
     );
+  });
+}
+
+// NaN inequality. Found by a mechanical mutation pass: flipping
+// `value.isNaN && other.value.isNaN` to `||` at
+// monty_value_scalars.dart:147 makes NaN equal to EVERY other float, and the
+// suite stayed green -- the NaN fixtures added earlier only round-trip it,
+// they never assert what it is NOT equal to.
+void nanInequality() {
+  group('MontyFloat NaN equality is symmetric, not universal', () {
+    test('NaN == NaN', () {
+      expect(const MontyFloat(double.nan), const MontyFloat(double.nan));
+    });
+
+    test('NaN is NOT equal to an ordinary float', () {
+      expect(const MontyFloat(double.nan), isNot(const MontyFloat(1.5)));
+      expect(const MontyFloat(1.5), isNot(const MontyFloat(double.nan)));
+    });
+
+    test('NaN is NOT equal to infinity', () {
+      expect(
+        const MontyFloat(double.nan),
+        isNot(const MontyFloat(double.infinity)),
+      );
+    });
   });
 }
