@@ -40,7 +40,7 @@ import 'package:test/test.dart';
 /// drifted, so FFI silently asserted fewer fixtures than the browser did.
 /// Both backends implement `MontyPlatform`, so there was never a reason for
 /// two loops — see package:monty_conformance.
-Future<(String?, MontyValue?, bool, MontyException?)> _runDispatch(
+Future<(String?, MontyValue?, bool, MontyException?, String?)> _runDispatch(
   String source,
   String key,
 ) async {
@@ -48,7 +48,21 @@ Future<(String?, MontyValue?, bool, MontyException?)> _runDispatch(
   try {
     final o = await runCallExternalFixture(platform, source, scriptName: key);
 
-    return (o.excType, o.value, o.skipped, o.exception);
+    // skipReason is CARRIED OUT, not dropped. DispatchOutcome has always had
+    // the real reason; this record shape was what stopped it reaching the
+    // report, so every skip routed through the dispatch loop collapsed to
+    // "dispatch harness could not run this fixture" -- a message naming no
+    // fixture, no external and no cause, and identical whether the backend
+    // cannot do futures, cannot inject a named constant, or simply never
+    // modelled the function.
+    //
+    // Measured: 1 of the 9 skips took this path today (dataclass__basic.py,
+    // "needs an external we do not model: nonexistent_method"). The other 8
+    // come from different markTestSkipped sites and were already specific --
+    // 6 "no Return=/Raise= directive", 2 from the `broken` list. So this
+    // widens 1 message, not 9; the value is that the dispatch loop's THREE
+    // distinct reasons stop being indistinguishable as more fixtures land.
+    return (o.excType, o.value, o.skipped, o.exception, o.skipReason);
   } finally {
     await platform.dispose();
   }
@@ -112,12 +126,15 @@ void main() {
           resultValue,
           skipped,
           thrownException,
+          skipReason,
         ) = await _runDispatch(
           value,
           key,
         );
         if (skipped) {
-          markTestSkipped('dispatch harness could not run this fixture');
+          markTestSkipped(
+            skipReason ?? 'dispatch harness could not run this fixture',
+          );
 
           return;
         }

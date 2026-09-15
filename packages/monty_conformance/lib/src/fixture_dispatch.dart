@@ -142,6 +142,27 @@ Future<DispatchOutcome> runCallExternalFixture(
             }
           }
 
+          // DIVERGENCE FROM fixture_runner.dart, recorded 2026-09-15.
+          //
+          // fixture_runner.dart:416-433 (the WASM corpus) has a `methodCall`
+          // branch here: an unknown public METHOD on a host dataclass gets an
+          // AttributeError resumed into the sandbox, so the fixture keeps
+          // running. This loop has no such branch, so the same fixture SKIPS.
+          //
+          // That is why dataclass__basic.py is a declared expected-failure for
+          // WASM and reports "skipped" on FFI: one backend runs it and fails,
+          // the other never runs it. A skip is not a failure, so nothing goes
+          // red and the asymmetry is invisible in CI.
+          //
+          // Deliberately NOT fixed here yet. Adding the branch makes FFI run
+          // the fixture and fail it, which needs a declared-expected mechanism
+          // for this suite (tool/wasm-corpus-expected-failures.txt has no FFI
+          // counterpart) — and the real fix is to forward the receiver so the
+          // AttributeError can name its type at all. See
+          // artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
+          //
+          // This is the THIRD time these two loops have drifted; the header of
+          // fixture_externals.dart records the first two.
           return DispatchOutcome(
             skipped: true,
             skipReason: 'needs an external we do not model: $functionName',
