@@ -195,6 +195,86 @@ final wireFixtures = {
       (MontyInt(3), MontyString('c')),
     ]),
   ),
+  // ---------------------------------------------------------------------
+  // FLOAT ENVELOPE. Each of these IS already asserted Dart-side, and these
+  // rows are deliberately NOT a second copy of that claim:
+  //     monty_value_test.dart:116-136  asserts OUR encoder emits the envelope
+  //     these rows                     assert RUST emits the same bytes
+  // Nothing anywhere proved the two encoders agree, which is the only failure
+  // a Dart round trip structurally cannot see. Where a row adds nothing beyond
+  // the Dart-side test, it is not here.
+  // ---------------------------------------------------------------------
+  // `4.0` travels as the TEXT "4.0", never a bare `4`. That envelope is the
+  // whole defence against core#128a: a bare JSON `4` decodes as an int, and on
+  // dart2js -- one number type, `4.0 is int` is TRUE -- the float would be
+  // unrecoverable.
+  'float_integral': const WireFixture(
+    '4.0',
+    '{"__type": "float", "value": "4.0"}',
+    // Writing `4` here is what the fixture EXISTS to catch: it makes this a
+    // test of MontyFloat(4), i.e. the very collapse core#128a was about.
+    // ignore: prefer_int_literals
+    MontyFloat(4.0),
+  ),
+  // NaN and the infinities have no JSON spelling at all.
+  'float_nan': const WireFixture(
+    'float("nan")',
+    '{"__type": "float", "value": "NaN"}',
+    MontyFloat(double.nan),
+  ),
+  'float_infinity': const WireFixture(
+    'float("inf")',
+    '{"__type": "float", "value": "Infinity"}',
+    MontyFloat(double.infinity),
+  ),
+  'float_negative_infinity': const WireFixture(
+    'float("-inf")',
+    '{"__type": "float", "value": "-Infinity"}',
+    MontyFloat(double.negativeInfinity),
+  ),
+  // ---------------------------------------------------------------------
+  // THE INTEGER ESCALATION BOUNDARY IS 2^53, NOT 2^63 -- harvested, and not
+  // where the i64 in the Rust signature suggests:
+  //     9007199254740992   (2^53)     -> bare int
+  //     9007199254740993   (2^53+1)   -> bigint envelope
+  //     9223372036854775807 (i64 MAX) -> bigint envelope
+  // It is the JavaScript safe-integer limit, chosen so dart2js -- where every
+  // number is a double and precision dies past 2^53 -- can still receive an
+  // exact value.
+  //
+  // RELATIONSHIP TO monty_value_int64_vm_test.dart, so neither looks
+  // redundant: that file asserts DART's encoder escalates past 2^53, is VM
+  // ONLY (the literals are a dart2js COMPILE error that takes down the whole
+  // library), and round-trips through our own encoder. These rows assert RUST
+  // escalates at the same boundary, and run on all three targets because the
+  // large values are `BigInt.parse` STRINGS, not literals.
+  //
+  // The below-boundary side is pinned here for the first time: 2^53 itself
+  // must stay a BARE INT.
+  //
+  // WRITTEN AS A LITERAL, and NOT as `1 << 53`. That idiom is what
+  // monty_value_int64_vm_test.dart uses, and it is safe there only because
+  // that file is VM ONLY. MEASURED here on dart2js: `1 << 53` evaluates to
+  // **0** -- shifts are 32-bit on that backend, so the shift overflows to
+  // nothing and the fixture silently became a test of MontyInt(0), which duly
+  // failed against Rust's `9007199254740992`. The plain literal is correct
+  // because 2^53 IS exactly representable as a double; it is 2^53 + 1 that is
+  // not, which is why the rows past the boundary use `BigInt.parse` strings.
+  'int_at_2_53_stays_bare': const WireFixture(
+    '9007199254740992',
+    '9007199254740992',
+    MontyInt(9007199254740992),
+  ),
+  'bigint_just_past_2_53': WireFixture(
+    '9007199254740993',
+    '{"__type": "bigint", "value": "9007199254740993"}',
+    MontyBigInt(BigInt.parse('9007199254740993')),
+  ),
+  'bigint_at_i64_max': WireFixture(
+    '9223372036854775807',
+    '{"__type": "bigint", "value": "9223372036854775807"}',
+    MontyBigInt(BigInt.parse('9223372036854775807')),
+  ),
   'set': const WireFixture(
     '{1, 2}',
     '{"__type": "set", "value": [1, 2]}',
