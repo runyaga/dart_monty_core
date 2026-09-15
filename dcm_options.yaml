@@ -105,19 +105,36 @@ dcm:
     - prefer-match-file-name:
         exclude:
           - "test/**"
-          # Multiple typedefs + class — no single dominant name
-          # FFI/WASM binding abstractions
+          # Result types declared before the abstraction they belong to, so the
+          # FIRST class is never the file's name. VERIFIED 2026-09-15:
+          #   native_bindings.dart -> RunResult, ProgressResult,
+          #                           WireFormatMismatch, then NativeBindings
+          #   wasm_bindings.dart   -> WasmRunResult, WasmProgressResult,
+          #                           WasmDiscoverResult, then WasmBindings
+          # (The previous comment here said "Multiple typedefs + class".
+          # Neither file declares a single typedef — `grep -c '^typedef ' -> 0`
+          # on both. They are classes.)
           - "lib/**/native_bindings.dart"
           - "lib/**/wasm_bindings.dart"
-          # Part files: first type is a sealed subclass, not the file name
+          # Part files: first type is a sealed subclass, not the file name.
+          # VERIFIED: all four are `part of`, first types are MontyNone,
+          # MontyBytes, MontyDate, MontyEllipsis respectively.
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_datetime.dart"
           - "lib/src/platform/monty_value_structured.dart"
-          # Helper types/enums declared before the main class
+          # Helper types declared before the main class: CoreRunResult and
+          # CoreProgressResult precede MontyCoreBindings.
           - "lib/src/platform/core_bindings.dart"
+          # NOT the same reason, despite sitting under that heading until
+          # 2026-09-15. This file declares exactly ONE class and nothing
+          # precedes it. It is the VM half of a conditional import: it must be
+          # named `WasmBindingsJs` to stand in for wasm_bindings_js.dart (see
+          # monty_wasm.dart:10), and it must live at a DIFFERENT path because
+          # both halves coexist. Class name forced, file name forced, mismatch
+          # structural. This one can never be fixed, only excluded.
           - "lib/src/wasm/wasm_bindings_js_stub.dart"
-          # MockCallHistory helper class defined before MockMontyPlatform
+          # MockCallHistory (:17) is declared before MockMontyPlatform (:132).
           - "lib/src/platform/mock_monty_platform.dart"
     - prefer-immediate-return
     - prefer-commenting-analyzer-ignores
