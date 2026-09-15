@@ -32,7 +32,7 @@ final class _ThrowingBindings implements MontyCoreBindings {
   Future<void> dispose() async {}
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
+  Object? noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
 }
 

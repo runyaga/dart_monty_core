@@ -222,35 +222,7 @@ dcm:
           # deref deep in a test instead of a LateInitializationError naming the
           # field that setUp forgot).
           - "test/**"
-    - avoid-dynamic:
-        exclude:
-          # lib/ is CLEAN of `dynamic` in list positions as of 2026-09-15.
-          # Seven files were listed here; all 21 sites were `List<dynamic>` at
-          # JSON-decode boundaries and are now `List<Object?>`. That is not a
-          # cosmetic swap: `dynamic` silences static checking at every use of
-          # the element, while `Object?` keeps it and forces the cast to be
-          # written where the type is actually narrowed. The runtime behaviour
-          # is identical -- a List<dynamic> from json.decode satisfies
-          # `is List<Object?>` -- which is why `dart analyze` stayed clean
-          # without touching a single consumer.
-          #
-          # `Map<String, dynamic>` is NOT flagged by this rule and is left
-          # alone: it is the canonical json.decode return type and rewriting it
-          # would touch 39 sites for no checking benefit.
-          #
-          # test/** (3 issues, VERIFIED 2026-09-15 by reading all three) is a
-          # separate judgement from the lib/ cleanup above, and they are not
-          # one kind:
-          #   monty_value_test.dart:858   `MontyValue.fromJson(<dynamic>[1, 'x'])`
-          #   inputs_encoder_test.dart:88 `toPythonLiteral(<dynamic>[])`
-          #     Explicit type arguments on list literals whose elements really
-          #     ARE heterogeneous (or absent). `<Object?>[1, 'x']` would work
-          #     and say the same thing, so these two are fixable -- they are
-          #     simply not worth a churn commit on their own.
-          #   monty_compile_test.dart:35  `dynamic noSuchMethod(Invocation)`
-          #     NOT fixable. Dart imposes that signature; narrowing the return
-          #     type does not compile.
-          - "test/**"
+    - avoid-dynamic
     - avoid-non-null-assertion:
         exclude:
           # test/** (75 issues). CLASSIFIED ALL 75, 2026-09-15. Two earlier

@@ -855,7 +855,7 @@ void main() {
     });
 
     test('plain List → MontyList', () {
-      final got = MontyValue.fromJson(<dynamic>[1, 'x']);
+      final got = MontyValue.fromJson(<Object?>[1, 'x']);
       expect(got, const MontyList([MontyInt(1), MontyString('x')]));
     });
 

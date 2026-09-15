@@ -85,7 +85,7 @@ void main() {
     });
 
     test('empty list', () {
-      expect(toPythonLiteral(<dynamic>[]), '[]');
+      expect(toPythonLiteral(<Object?>[]), '[]');
     });
 
     test('nested list', () {
