@@ -304,6 +304,54 @@ final wireFixtures = {
     '{"__type": "bigint", "value": "9223372036854775807"}',
     MontyBigInt(BigInt.parse('9223372036854775807')),
   ),
+  // STRUCTURED, with NON-EMPTY nested attrs -- `attrs: {}` would leave the
+  // attribute traversal unexercised, the same hazard fixed in the samples.
+  // Note `class_type.attrs` is a dict envelope nested INSIDE another dict
+  // envelope; nothing else in this table exercises two levels of that.
+  'class_instance': const WireFixture(
+    'class C: self.x = 1; self.nested = [1.5]',
+    '{"__type": "class_instance", "class_type": {"name": "C", '
+        '"id": "7c0cead4-4931-4a3d-9a33-01bbbd5f27d8", "host_defined": false, '
+        '"is_dataclass": false, "attrs": {"__type": "dict", "value": {}}}, '
+        '"instance_id": "f73ec986-3063-4c7c-b639-a1de780edfdf", '
+        '"attrs": {"__type": "dict", "value": {"x": 1, "nested": [1.5]}}}',
+    MontyClassInstance(
+      classType: MontyClassType(
+        name: 'C',
+        id: '7c0cead4-4931-4a3d-9a33-01bbbd5f27d8',
+        hostDefined: false,
+        isDataclass: false,
+        attrs: {},
+      ),
+      instanceId: 'f73ec986-3063-4c7c-b639-a1de780edfdf',
+      attrs: {
+        'x': MontyInt(1),
+        'nested': MontyList([MontyFloat(1.5)]),
+      },
+    ),
+  ),
+  // A FROZEN dataclass, and this row exists to pin that it is NOT a
+  // MontyDataclass on the wire: it is a `class_instance` with
+  // `is_dataclass: true`, and the envelope carries no `frozen` field at all.
+  'dataclass_arrives_as_class_instance': const WireFixture(
+    '@dataclass(frozen=True) class D: f: int -> D(1)',
+    '{"__type": "class_instance", "class_type": {"name": "D", '
+        '"id": "d561690f-c54b-42c3-b32b-2e3fe42a0fce", "host_defined": false, '
+        '"is_dataclass": true, "attrs": {"__type": "dict", "value": {}}}, '
+        '"instance_id": "2553f4c5-db0c-4b18-a74e-b7ad9ce0e7d5", '
+        '"attrs": {"__type": "dict", "value": {"f": 1}}}',
+    MontyClassInstance(
+      classType: MontyClassType(
+        name: 'D',
+        id: 'd561690f-c54b-42c3-b32b-2e3fe42a0fce',
+        hostDefined: false,
+        isDataclass: true,
+        attrs: {},
+      ),
+      instanceId: '2553f4c5-db0c-4b18-a74e-b7ad9ce0e7d5',
+      attrs: {'f': MontyInt(1)},
+    ),
+  ),
   'set': const WireFixture(
     '{1, 2}',
     '{"__type": "set", "value": [1, 2]}',

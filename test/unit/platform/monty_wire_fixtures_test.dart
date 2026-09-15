@@ -23,16 +23,23 @@
 //
 // Harvested 2026-09-15 against monty v0.0.23 (tool/fixture-corpus.json).
 //
-// 24 of the 26 MontyValue subtypes. NOT covered here, stated so the count is
-// not mistaken for the hierarchy:
-//   - MontyClassInstance / MontyDataclass -- Rust emits a fresh `id` and
-//     `instance_id` UUID per run, so a verbatim literal is not reproducible.
-//     (A dataclass also arrives as `class_instance` with `is_dataclass: true`,
-//     not as its own tag.) Needs a fixture that normalises the two ids.
+// NOT covered here, stated so the count is not mistaken for the hierarchy:
 //   - MontyOpaque -- no single Python expression produces one; it is what the
 //     encoder falls back to.
 //   - MontyFileHandle -- `open(...)` returned a null value through the oracle,
 //     so nothing was harvested rather than guessed.
+//   - MontyDataclass -- harvested, but it does NOT arrive as itself: a Python
+//     dataclass comes over as `class_instance` with `is_dataclass: true`, so
+//     that fixture decodes to a MontyClassInstance. No wire shape produces a
+//     MontyDataclass from the current engine, and the wire carries no `frozen`
+//     field at all -- so MontyDataclass.frozen has no wire source.
+//
+// A PREVIOUS VERSION OF THIS NOTE WAS WRONG and is corrected rather than
+// quietly dropped: it claimed MontyClassInstance was unharvestable because
+// Rust emits a fresh `id` and `instance_id` UUID per run. The ids are ordinary
+// STRINGS in the literal, and a fixture pins the bytes it was harvested from
+// -- it never re-harvests, so per-run variation is irrelevant. Both rows now
+// exist.
 @TestOn('vm || browser')
 library;
 
