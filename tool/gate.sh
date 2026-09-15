@@ -167,6 +167,7 @@ s  page_versions bash tool/check_page_versions.sh
 # monty upgrades, that told every consumer the wrong thing about compatibility.
 # Nothing compared the two until a human read the version off the demo page.
 s  version_pin   bash tool/check_version_pin.sh
+s  dcm_excludes  bash tool/check_dcm_exclusions.sh
 s  vague_errors bash tool/check_no_vague_errors.sh
 # The two backends implement one shared contract, so a consumer picks a backend
 # without picking a feature set. `throw UnimplementedError` breaks that

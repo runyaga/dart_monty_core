@@ -90,10 +90,7 @@ dcm:
     - no-equal-nested-conditions
 
     # --- Common Anti-Patterns ---
-    - avoid-unused-parameters:
-        exclude:
-          # limits/scriptName kept for API compatibility; REPL ignores both
-          - "lib/src/monty_session.dart"
+    - avoid-unused-parameters
     - avoid-nested-conditional-expressions
     - avoid-missing-enum-constant-in-map
     - avoid-unnecessary-type-assertions
@@ -109,7 +106,6 @@ dcm:
         exclude:
           - "test/**"
           # Multiple typedefs + class — no single dominant name
-          - "lib/src/callbacks.dart"
           # FFI/WASM binding abstractions
           - "lib/**/native_bindings.dart"
           - "lib/**/wasm_bindings.dart"
@@ -120,7 +116,6 @@ dcm:
           - "lib/src/platform/monty_value_structured.dart"
           # Helper types/enums declared before the main class
           - "lib/src/platform/core_bindings.dart"
-          - "lib/src/repl/monty_repl.dart"
           - "lib/src/wasm/wasm_bindings_js_stub.dart"
           # MockCallHistory helper class defined before MockMontyPlatform
           - "lib/src/platform/mock_monty_platform.dart"
