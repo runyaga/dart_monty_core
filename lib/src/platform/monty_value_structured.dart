@@ -204,9 +204,7 @@ Map<String, MontyValue> _attrsFromEnvelope(Object? raw, String field) {
   final decoded = MontyValue.fromJson(raw);
 
   return switch (decoded) {
-    // One arm now. Both wire shapes decode to MontyDict, and _attrsFromPairs
-    // enforces the string attribute names Python guarantees -- which the old
-    // string-keyed arm got for free and so never checked.
+    // _attrsFromPairs enforces the string attribute names Python guarantees.
     MontyDict(:final pairs) => _attrsFromPairs(pairs, field, raw),
     _ => throw FormatException(
       '$field must be a dict envelope, got ${decoded.runtimeType}',

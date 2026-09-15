@@ -194,9 +194,7 @@ void main() {
     });
 
     test('dartValue is a list of pairs when a key is not a string', () {
-      // Deliberately not a Map here: two distinct Python keys can share a Dart
-      // toString, so collapsing them would silently drop entries. A dict whose
-      // keys are ALL strings projects to a Map instead.
+      // Deliberately not a Map here -- see the dartValue doc comment.
       expect(pairs.dartValue, [
         [1, 'a'],
         ['k', 2],

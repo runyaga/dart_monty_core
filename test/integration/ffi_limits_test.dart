@@ -78,9 +78,8 @@ void main() {
     });
 
     // ---- memoryBytes: BOTH halves, because only one of them works --------
-    // core#160. This file covered timeoutMs and stackDepth and never
-    // memoryBytes, so neither the working case nor the non-working one was
-    // guarded and a change in either direction would ship silently.
+    // core#160. A change in either direction must be visible, so both the
+    // working case and the non-working one are pinned.
 
     test('a single over-large allocation IS caught', () async {
       final r = await Monty(

@@ -26,14 +26,9 @@ if [ "${1:-}" = "--update" ]; then BASELINE=tool/dcm-baseline.json; UPDATE=1; el
 # governs the next PR instead. RATCHET_BASE_REF unset (every local run) is
 # unchanged behaviour.
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
-  # THE REF ITSELF MUST RESOLVE FIRST. Same reasoning as tool/coverage_ratchet.sh:
-  # CI fetches the base with `|| true`, so a failed fetch leaves the ref absent,
-  # and `git show <missing-ref>:<file>` fails identically to
-  # `git show <present-ref>:<missing-file>`. Without this check the two are
-  # indistinguishable, and a failed fetch takes the "this PR introduces the
-  # baseline" path -- falling back to the PR's OWN copy, which is the laundering
-  # hole this block closes. A guard that degrades open on infrastructure failure
-  # still prints PASS, which is worse than not having it.
+  # THE REF ITSELF MUST RESOLVE FIRST, or a failed fetch is indistinguishable
+  # from "this PR introduces the baseline" and we silently compare the PR
+  # against its own copy. Full reasoning in tool/coverage_ratchet.sh.
   if ! git rev-parse --verify --quiet "${RATCHET_BASE_REF}^{commit}" >/dev/null; then
     echo "FAIL: RATCHET_BASE_REF=${RATCHET_BASE_REF} does not resolve."
     echo "  The baseline a PR is measured against must come from the BASE branch,"

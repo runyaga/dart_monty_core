@@ -298,7 +298,7 @@ void main() {
       expect(a.hashCode, b.hashCode);
     });
 
-    test('key order does not affect equality, for ANY key type', () {
+    test('order-independent equality, any key type', () {
       // Order-insensitive, matching the sandbox, which answers True for both
       // shapes. This used to hold ONLY for string keys: a non-string-keyed
       // dict was a separate class comparing as a List, so the same Python dict
@@ -326,13 +326,13 @@ void main() {
       expect(c.hashCode, d.hashCode);
     });
 
-    test('unequal when a value differs, not just a key', () {
+    test('unequal when a value differs', () {
       const a = MontyDict([(MontyString('k'), MontyInt(1))]);
       const b = MontyDict([(MontyString('k'), MontyInt(2))]);
       expect(a, isNot(b));
     });
 
-    test('toJson uses the compact shape when every key is a string', () {
+    test('toJson: compact shape for all-string keys', () {
       // Was: 'preserves the entry shape (no __type)', asserting {'k': 1}.
       // That shape IS core#136 — a bare object was byte-identical to a type
       // envelope, so a dict could name a host type.
@@ -348,7 +348,7 @@ void main() {
       );
     });
 
-    test('toJson uses the entries shape when a key is not a string', () {
+    test('toJson: entries shape for non-string keys', () {
       expect(const MontyDict([(MontyInt(1), MontyString('a'))]).toJson(), {
         '__type': 'dict',
         'entries': [
@@ -376,10 +376,7 @@ void main() {
     });
 
     test('dartValue is a Map for string keys, pairs otherwise', () {
-      // Conditional on key type by design. This is a projection to plain Dart,
-      // not a type distinction: a Map is faithful exactly when the keys are
-      // strings, and lossy otherwise, because two distinct Python keys can
-      // share a Dart toString.
+      // Conditional on key type by design -- see the dartValue doc comment.
       expect(
         const MontyDict([
           (MontyString('a'), MontyInt(1)),
@@ -395,7 +392,7 @@ void main() {
       );
     });
 
-    test('asStringMap returns a map only when every key is a string', () {
+    test('asStringMap: null unless every key is a string', () {
       expect(
         const MontyDict([(MontyString('a'), MontyInt(1))]).asStringMap,
         {'a': const MontyInt(1)},
@@ -405,7 +402,7 @@ void main() {
       expect(const MontyDict([(MontyInt(1), MontyInt(2))]).asStringMap, isNull);
     });
 
-    test('ofStrings builds the same value as the pairs constructor', () {
+    test('ofStrings matches the pairs constructor', () {
       expect(
         MontyDict.ofStrings(const {'a': MontyInt(1)}),
         const MontyDict([(MontyString('a'), MontyInt(1))]),
