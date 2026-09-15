@@ -292,26 +292,55 @@ void main() {
 
   group('MontyDict', () {
     test('equality + hashCode (deep)', () {
-      const a = MontyDict({'k': MontyInt(1)});
-      const b = MontyDict({'k': MontyInt(1)});
+      const a = MontyDict([(MontyString('k'), MontyInt(1))]);
+      const b = MontyDict([(MontyString('k'), MontyInt(1))]);
       expect(a, b);
       expect(a.hashCode, b.hashCode);
     });
 
-    test('different key order on the same map is still equal', () {
-      // Dart Map equality semantics — same key/value pairs.
-      const a = MontyDict({'a': MontyInt(1), 'b': MontyInt(2)});
-      const b = MontyDict({'b': MontyInt(2), 'a': MontyInt(1)});
+    test('key order does not affect equality, for ANY key type', () {
+      // Order-insensitive, matching the sandbox, which answers True for both
+      // shapes. This used to hold ONLY for string keys: a non-string-keyed
+      // dict was a separate class comparing as a List, so the same Python dict
+      // compared UNEQUAL purely because its keys were not strings.
+      const a = MontyDict([
+        (MontyString('a'), MontyInt(1)),
+        (MontyString('b'), MontyInt(2)),
+      ]);
+      const b = MontyDict([
+        (MontyString('b'), MontyInt(2)),
+        (MontyString('a'), MontyInt(1)),
+      ]);
       expect(a, b);
+      expect(a.hashCode, b.hashCode);
+
+      const c = MontyDict([
+        (MontyInt(1), MontyString('a')),
+        (MontyInt(2), MontyString('b')),
+      ]);
+      const d = MontyDict([
+        (MontyInt(2), MontyString('b')),
+        (MontyInt(1), MontyString('a')),
+      ]);
+      expect(c, d);
+      expect(c.hashCode, d.hashCode);
     });
 
-    test('toJson wraps the entries in a dict envelope', () {
+    test('unequal when a value differs, not just a key', () {
+      const a = MontyDict([(MontyString('k'), MontyInt(1))]);
+      const b = MontyDict([(MontyString('k'), MontyInt(2))]);
+      expect(a, isNot(b));
+    });
+
+    test('toJson uses the compact shape when every key is a string', () {
       // Was: 'preserves the entry shape (no __type)', asserting {'k': 1}.
       // That shape IS core#136 — a bare object was byte-identical to a type
-      // envelope, so a dict could name a host type. Inverted rather than
-      // deleted so the contract change is visible where the old one was pinned.
+      // envelope, so a dict could name a host type.
       expect(
-        const MontyDict({'k': MontyInt(1), 's': MontyString('x')}).toJson(),
+        const MontyDict([
+          (MontyString('k'), MontyInt(1)),
+          (MontyString('s'), MontyString('x')),
+        ]).toJson(),
         {
           '__type': 'dict',
           'value': {'k': 1, 's': 'x'},
@@ -319,19 +348,67 @@ void main() {
       );
     });
 
-    test('round-trip via fromJson dispatcher (no __type → MontyDict)', () {
+    test('toJson uses the entries shape when a key is not a string', () {
+      expect(const MontyDict([(MontyInt(1), MontyString('a'))]).toJson(), {
+        '__type': 'dict',
+        'entries': [
+          [1, 'a'],
+        ],
+      });
+    });
+
+    test('round-trip via fromJson dispatcher — string keys', () {
       _expectRoundTrip(
-        const MontyDict({
-          'k': MontyInt(1),
-          'nested': MontyList([MontyInt(2), MontyInt(3)]),
-        }),
+        const MontyDict([
+          (MontyString('k'), MontyInt(1)),
+          (MontyString('nested'), MontyList([MontyInt(2), MontyInt(3)])),
+        ]),
       );
     });
 
-    test('dartValue recursively projects', () {
+    test('round-trip via fromJson dispatcher — mixed keys', () {
+      _expectRoundTrip(
+        const MontyDict([
+          (MontyInt(1), MontyString('a')),
+          (MontyTuple([MontyInt(3), MontyInt(4)]), MontyString('t')),
+        ]),
+      );
+    });
+
+    test('dartValue is a Map for string keys, pairs otherwise', () {
+      // Conditional on key type by design. This is a projection to plain Dart,
+      // not a type distinction: a Map is faithful exactly when the keys are
+      // strings, and lossy otherwise, because two distinct Python keys can
+      // share a Dart toString.
       expect(
-        const MontyDict({'a': MontyInt(1), 'b': MontyString('x')}).dartValue,
+        const MontyDict([
+          (MontyString('a'), MontyInt(1)),
+          (MontyString('b'), MontyString('x')),
+        ]).dartValue,
         {'a': 1, 'b': 'x'},
+      );
+      expect(
+        const MontyDict([(MontyInt(1), MontyString('x'))]).dartValue,
+        [
+          [1, 'x'],
+        ],
+      );
+    });
+
+    test('asStringMap returns a map only when every key is a string', () {
+      expect(
+        const MontyDict([(MontyString('a'), MontyInt(1))]).asStringMap,
+        {'a': const MontyInt(1)},
+      );
+      // Null rather than a throw: the string-key assumption becomes an
+      // explicit decision at the call site.
+      expect(const MontyDict([(MontyInt(1), MontyInt(2))]).asStringMap, isNull);
+    });
+
+    test('ofStrings builds the same value as the pairs constructor', () {
+      expect(
+        MontyDict.ofStrings(const {'a': MontyInt(1)}),
+        const MontyDict([(MontyString('a'), MontyInt(1))]),
       );
     });
   });
@@ -826,15 +903,15 @@ void main() {
       expect(got, isA<MontyDict>());
       expect(
         got,
-        const MontyDict({
-          '__type': MontyString('path'),
-          'value': MontyString('/etc/passwd'),
-        }),
+        const MontyDict([
+          (MontyString('__type'), MontyString('path')),
+          (MontyString('value'), MontyString('/etc/passwd')),
+        ]),
         reason: 'both user keys must survive as ordinary dict entries',
       );
     });
 
-    test('a dict with non-string keys decodes as MontyPairsDict', () {
+    test('a dict with non-string keys decodes as MontyDict', () {
       final got = MontyValue.fromJson(<String, dynamic>{
         '__type': 'dict',
         'entries': [
@@ -845,7 +922,7 @@ void main() {
 
       expect(
         got,
-        const MontyPairsDict([
+        const MontyDict([
           (MontyInt(1), MontyString('a')),
           (MontyString('k'), MontyInt(2)),
         ]),
@@ -864,8 +941,8 @@ void main() {
       );
     });
 
-    test('MontyPairsDict round-trips through toJson', () {
-      const original = MontyPairsDict([
+    test('a mixed-key dict round-trips through toJson', () {
+      const original = MontyDict([
         (MontyInt(1), MontyString('a')),
         (MontyTuple([MontyInt(1), MontyInt(2)]), MontyInt(3)),
       ]);
@@ -928,16 +1005,30 @@ void main() {
       );
     });
 
-    test('Dart Map → MontyDict with stringified keys + recursive values', () {
+    test('Dart Map → MontyDict, keys and values both converted', () {
       final got = MontyValue.fromDart({'k': 1, 'n': null});
-      expect(got, const MontyDict({'k': MontyInt(1), 'n': MontyNone()}));
+      expect(
+        got,
+        const MontyDict([
+          (MontyString('k'), MontyInt(1)),
+          (MontyString('n'), MontyNone()),
+        ]),
+      );
     });
 
-    test('Map with non-String keys coerces via toString()', () {
+    test('Map with non-String keys keeps the key TYPE', () {
+      // INVERTED. This used to assert the keys came back as the STRINGS '1'
+      // and '2', because fromDart forced every key through `k.toString()`.
+      // That silently turned the Dart map {1: 'one'} into the Python dict
+      // {'1': 'one'} — a different dict, with no error. Only string keys were
+      // expressible then; pairs carry any key monty accepts.
       final got = MontyValue.fromDart({1: 'one', 2: 'two'});
       expect(
         got,
-        const MontyDict({'1': MontyString('one'), '2': MontyString('two')}),
+        const MontyDict([
+          (MontyInt(1), MontyString('one')),
+          (MontyInt(2), MontyString('two')),
+        ]),
       );
     });
 
@@ -966,7 +1057,7 @@ void main() {
         MontyBytes([]),
         MontyList([]),
         MontyTuple([]),
-        MontyDict({}),
+        MontyDict([]),
         MontySet([]),
         MontyFrozenSet([]),
         MontyDate(year: 1, month: 1, day: 1),

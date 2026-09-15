@@ -204,8 +204,10 @@ Map<String, MontyValue> _attrsFromEnvelope(Object? raw, String field) {
   final decoded = MontyValue.fromJson(raw);
 
   return switch (decoded) {
-    MontyDict(:final entries) => entries,
-    MontyPairsDict(:final pairs) => _attrsFromPairs(pairs, field, raw),
+    // One arm now. Both wire shapes decode to MontyDict, and _attrsFromPairs
+    // enforces the string attribute names Python guarantees -- which the old
+    // string-keyed arm got for free and so never checked.
+    MontyDict(:final pairs) => _attrsFromPairs(pairs, field, raw),
     _ => throw FormatException(
       '$field must be a dict envelope, got ${decoded.runtimeType}',
       json.encode(raw),
@@ -376,7 +378,7 @@ final class MontyClassInstance extends MontyValue {
     // directly. A dict has TWO envelope shapes that share the `dict` tag:
     // `{"__type":"dict","value":{...}}` for string keys and
     // `{"__type":"dict","entries":[[k,v],...]}` for any keys
-    // (MontyPairsDict). Hand-reading `value` silently returned an EMPTY map
+    // (the entries shape). Hand-reading `value` silently returned an EMPTY map
     // for the `entries` form — data loss with no error, caught in review.
     // Decoding through the real decoder means this cannot drift from it again.
     // TWO arguments, deliberately: `key` is what to look up, `label` is what
@@ -462,10 +464,10 @@ final class MontyClassInstance extends MontyValue {
       'id': classType.id,
       'host_defined': classType.hostDefined,
       'is_dataclass': classType.isDataclass,
-      'attrs': MontyDict(classType.attrs).toJson(),
+      'attrs': MontyDict.ofStrings(classType.attrs).toJson(),
     },
     'instance_id': instanceId,
-    'attrs': MontyDict(attrs).toJson(),
+    'attrs': MontyDict.ofStrings(attrs).toJson(),
   };
 
   @override
@@ -613,7 +615,7 @@ final class MontyDataclass extends MontyValue {
     'name': name,
     'type_id': typeId,
     'field_names': fieldNames,
-    'attrs': MontyDict(attrs).toJson(),
+    'attrs': MontyDict.ofStrings(attrs).toJson(),
     'frozen': frozen,
   };
 

@@ -48,7 +48,7 @@ String montyRepr(MontyValue v) => switch (v) {
     items.isEmpty ? 'set()' : '{${items.map(montyRepr).join(', ')}}',
   MontyFrozenSet(:final items) =>
     'frozenset({${items.map(montyRepr).join(', ')}})',
-  MontyDict(:final entries) => _dictRepr(entries),
+  MontyDict(:final pairs) => '{${_pairsRepr(pairs)}}',
   // ---- Tier 2 variants ----------------------------------------------------
   // Each rendering was MEASURED against monty's own repr(), not guessed:
   //   repr(2**63)              = 9223372036854775808  (with MontyInt, above)
@@ -63,10 +63,6 @@ String montyRepr(MontyValue v) => switch (v) {
   MontyOpaque(kind: MontyOpaqueKind.builtin, :final text) =>
     '<built-in function $text>',
   MontyOpaque(:final text) => text,
-  // Non-string-key dicts (the `entries` envelope, Tier 1). CPython renders them
-  // exactly like any other dict — `{1: 'a'}` — so the keys go through the same
-  // renderer as the values rather than being stringified.
-  MontyPairsDict(:final pairs) => '{${_pairsRepr(pairs)}}',
   // Rendered so the differential can SEE a forged type. monty reports
   // `{"__type":"path","value":"x"}` as a dict; if our pipeline decodes it to a
   // MontyPath, the strings differ and the test goes red — which is how the
@@ -78,14 +74,6 @@ String montyRepr(MontyValue v) => switch (v) {
   // skip instead of dying.
   _ => '<unsupported:${v.runtimeType}>',
 };
-
-String _dictRepr(Map<String, MontyValue> entries) {
-  final parts = entries.entries.map(
-    (e) => '${_strRepr(e.key)}: ${montyRepr(e.value)}',
-  );
-
-  return '{${parts.join(', ')}}';
-}
 
 /// `4.0`, `inf`, `-0.0`, `1e+100`, `0.30000000000000004`.
 String _floatRepr(double d) {
