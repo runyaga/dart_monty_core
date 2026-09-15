@@ -28,7 +28,7 @@ void runReplExtFnsLifecycleTests() {
         final r1 = await repl.feedRun(
           'x = fetch(1)\nx',
           externalFunctions: {
-            'fetch': (args, _) async => (args.firstOrNull! as int) * 10,
+            'fetch': (args, _) => (args.firstOrNull! as int) * 10,
           },
         );
         expect(
@@ -87,7 +87,7 @@ void runReplExtFnsLifecycleTests() {
         await repl.feedRun(
           'r = a(5)',
           externalFunctions: {
-            'a': (args, _) async => (args.firstOrNull! as int) + 1,
+            'a': (args, _) => (args.firstOrNull! as int) + 1,
           },
         );
 
@@ -96,7 +96,7 @@ void runReplExtFnsLifecycleTests() {
         await repl.feedRun(
           'r = b(5)',
           externalFunctions: {
-            'b': (args, _) async => (args.firstOrNull! as int) * 2,
+            'b': (args, _) => (args.firstOrNull! as int) * 2,
           },
         );
 

@@ -14,7 +14,7 @@ Map<String, String> _makeVfs() => {
   '/data/config.txt': 'version=1.0\nenv=test',
 };
 
-OsCallHandler _vfsHandler(Map<String, String> vfs) => (op, args, kwargs) async {
+OsCallHandler _vfsHandler(Map<String, String> vfs) => (op, args, kwargs) {
   switch (op) {
     case 'Path.read_text':
       return vfs[args.firstOrNull!] ?? '';

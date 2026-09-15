@@ -38,7 +38,7 @@ MontyDateTime _fixedDateTime({int? offsetSeconds, String? timezoneName}) =>
       timezoneName: timezoneName,
     );
 
-OsCallHandler _datetimeHandler() => (op, args, kwargs) async {
+OsCallHandler _datetimeHandler() => (op, args, kwargs) {
   switch (op) {
     case 'date.today':
       return _fixedDate();

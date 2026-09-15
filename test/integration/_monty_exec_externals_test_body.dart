@@ -15,7 +15,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'add(3, 4)',
         externalFunctions: {
-          'add': (args, _) async =>
+          'add': (args, _) =>
               (args.firstOrNull! as int) + (args.elementAtOrNull(1)! as int),
         },
       );
@@ -28,7 +28,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'greet(name="World")',
         externalFunctions: {
-          'greet': (_, kwargs) async => 'Hello, ${kwargs!['name']}!',
+          'greet': (_, kwargs) => 'Hello, ${kwargs!['name']}!',
         },
       );
 
@@ -41,7 +41,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'double(double(double(1)))',
         externalFunctions: {
-          'double': (args, _) async {
+          'double': (args, _) {
             calls++;
 
             return (args.firstOrNull! as int) * 2;
@@ -58,7 +58,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'sum(get_numbers())',
         externalFunctions: {
-          'get_numbers': (_, _) async => [1, 2, 3, 4],
+          'get_numbers': (_, _) => [1, 2, 3, 4],
         },
       );
 

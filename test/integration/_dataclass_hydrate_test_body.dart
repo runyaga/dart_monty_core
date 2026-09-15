@@ -57,7 +57,7 @@ void runDataclassHydrateTests() {
       () async {
         final r = await Monty('make_user("alice", 30)').run(
           externalFunctions: {
-            'make_user': (args, _) async => _userDataclass(
+            'make_user': (args, _) => _userDataclass(
               name: args.firstOrNull! as String,
               age: args.elementAtOrNull(1)! as int,
             ),
@@ -95,8 +95,8 @@ void runDataclassHydrateTests() {
       Future<Object?> dispatchAndHydrate(String code) async {
         final r = await Monty(code).run(
           externalFunctions: {
-            'make_user': (_, _) async => _userDataclass(name: 'eve', age: 9),
-            'make_order': (_, _) async => _orderDataclass(id: 99, total: 12.5),
+            'make_user': (_, _) => _userDataclass(name: 'eve', age: 9),
+            'make_order': (_, _) => _orderDataclass(id: 99, total: 12.5),
           },
         );
         if (r.value is! MontyClassInstance) return r.value;
@@ -149,14 +149,16 @@ o = make_order()
 (type(u) is type(o), type(u).__name__, type(o).__name__)
 ''').run(
               externalFunctions: {
-                // Future.value, not `async =>`: MontyCallback's return type is
-                // already Future<Object?>, so the Future is REQUIRED by the
-                // signature and an async body just makes DCM's
-                // avoid-unnecessary-futures fire on a false positive.
-                'make_user': (_, _) =>
-                    Future.value(_userDataclass(name: 'eve', age: 9)),
-                'make_order': (_, _) =>
-                    Future.value(_orderDataclass(id: 99, total: 12.5)),
+                // These return the value directly. The Future.value wrappers
+                // that stood here were a workaround for MontyCallback's old
+                // `Future<Object?>` return type, which forced every callback
+                // to be asynchronous whether or not it had anything to await.
+                // The typedef is FutureOr<Object?> now, so a plain value is
+                // allowed and the wrapper is noise. (codex caught this comment
+                // still asserting "the Future is REQUIRED by the signature"
+                // after the signature changed.)
+                'make_user': (_, _) => _userDataclass(name: 'eve', age: 9),
+                'make_order': (_, _) => _orderDataclass(id: 99, total: 12.5),
               },
             );
 
