@@ -110,7 +110,7 @@ void main() {
         addTearDown(repl.dispose);
 
         OsCallHandler notHandled() =>
-            (op, args, kwargs) async => throw const OsCallNotHandledException();
+            (op, args, kwargs) => throw const OsCallNotHandledException();
 
         final handler = notHandled();
         await repl.feedRun('import datetime', osHandler: handler);
@@ -139,7 +139,7 @@ void main() {
         addTearDown(repl.dispose);
 
         OsCallHandler alwaysFails() =>
-            (op, args, kwargs) async =>
+            (op, args, kwargs) =>
                 throw const OsCallException('handler refused');
 
         final handler = alwaysFails();

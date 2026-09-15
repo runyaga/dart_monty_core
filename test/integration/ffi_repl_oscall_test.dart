@@ -177,7 +177,7 @@ void main() {
         String op,
         List<Object?> _,
         Map<String, Object?>? _,
-      ) async => throw OsCallException('handler rejected: $op');
+      ) => throw OsCallException('handler rejected: $op');
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
