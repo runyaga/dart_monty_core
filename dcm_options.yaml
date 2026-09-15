@@ -35,8 +35,6 @@ dcm:
         exclude:
           # Index access guarded by for-loop bounds and prior length checks
           - "lib/src/platform/code_capture.dart"
-          # Mock tracking lists: only accessed after recording calls
-          - "lib/src/platform/mock_monty_platform.dart"
           # Guarded by isEmpty/isNotEmpty/length checks before access
           - "lib/src/monty_session.dart"
     - avoid-missing-completer-stack-trace

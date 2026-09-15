@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
@@ -54,52 +55,43 @@ final class MockCallHistory {
   final List<Uint8List> restoreDataList = [];
 
   /// The most recent code passed to [MockMontyPlatform.run], or `null`.
-  String? get lastRunCode => runCodes.isEmpty ? null : runCodes.last;
+  String? get lastRunCode => runCodes.lastOrNull;
 
   /// The most recent limits passed to [MockMontyPlatform.run], or `null`.
-  MontyLimits? get lastRunLimits =>
-      runLimitsList.isEmpty ? null : runLimitsList.last;
+  MontyLimits? get lastRunLimits => runLimitsList.lastOrNull;
 
   /// The most recent script name passed to [MockMontyPlatform.run], or `null`.
-  String? get lastRunScriptName =>
-      runScriptNamesList.isEmpty ? null : runScriptNamesList.last;
+  String? get lastRunScriptName => runScriptNamesList.lastOrNull;
 
   /// The most recent code passed to [MockMontyPlatform.start], or `null`.
-  String? get lastStartCode => startCodes.isEmpty ? null : startCodes.last;
+  String? get lastStartCode => startCodes.lastOrNull;
 
   /// The most recent external functions passed to [MockMontyPlatform.start].
   List<String>? get lastStartExternalFunctions =>
-      startExternalFunctionsList.isEmpty
-      ? null
-      : startExternalFunctionsList.last;
+      startExternalFunctionsList.lastOrNull;
 
   /// The most recent limits passed to [MockMontyPlatform.start], or `null`.
-  MontyLimits? get lastStartLimits =>
-      startLimitsList.isEmpty ? null : startLimitsList.last;
+  MontyLimits? get lastStartLimits => startLimitsList.lastOrNull;
 
   /// The most recent script name passed to [MockMontyPlatform.start].
-  String? get lastStartScriptName =>
-      startScriptNamesList.isEmpty ? null : startScriptNamesList.last;
+  String? get lastStartScriptName => startScriptNamesList.lastOrNull;
 
   /// The most recent return value passed to [MockMontyPlatform.resume].
-  Object? get lastResumeReturnValue =>
-      resumeReturnValues.isEmpty ? null : resumeReturnValues.last;
+  Object? get lastResumeReturnValue => resumeReturnValues.lastOrNull;
 
   /// Most recent error message passed to [MockMontyPlatform.resumeWithError].
-  String? get lastResumeErrorMessage =>
-      resumeErrorMessages.isEmpty ? null : resumeErrorMessages.last;
+  String? get lastResumeErrorMessage => resumeErrorMessages.lastOrNull;
 
   /// The most recent results map passed to [MockMontyPlatform.resolveFutures].
   Map<int, Object?>? get lastResolveFuturesResults =>
-      resolveFuturesResultsList.isEmpty ? null : resolveFuturesResultsList.last;
+      resolveFuturesResultsList.lastOrNull;
 
   /// The most recent errors map passed to [MockMontyPlatform.resolveFutures].
   Map<int, String>? get lastResolveFuturesErrors =>
-      resolveFuturesErrorsList.isEmpty ? null : resolveFuturesErrorsList.last;
+      resolveFuturesErrorsList.lastOrNull;
 
   /// The most recent snapshot data passed to [MockMontyPlatform.restore].
-  Uint8List? get lastRestoreData =>
-      restoreDataList.isEmpty ? null : restoreDataList.last;
+  Uint8List? get lastRestoreData => restoreDataList.lastOrNull;
 
   /// Codes passed to [MockMontyPlatform.compileCode], in call order.
   final List<String> compileCodeList = [];
@@ -111,16 +103,14 @@ final class MockCallHistory {
   final List<Uint8List> startPrecompiledDataList = [];
 
   /// The most recent code passed to [MockMontyPlatform.compileCode].
-  String? get lastCompileCode =>
-      compileCodeList.isEmpty ? null : compileCodeList.last;
+  String? get lastCompileCode => compileCodeList.lastOrNull;
 
   /// The most recent data passed to [MockMontyPlatform.runPrecompiled].
-  Uint8List? get lastRunPrecompiledData =>
-      runPrecompiledDataList.isEmpty ? null : runPrecompiledDataList.last;
+  Uint8List? get lastRunPrecompiledData => runPrecompiledDataList.lastOrNull;
 
   /// The most recent data passed to [MockMontyPlatform.startPrecompiled].
   Uint8List? get lastStartPrecompiledData =>
-      startPrecompiledDataList.isEmpty ? null : startPrecompiledDataList.last;
+      startPrecompiledDataList.lastOrNull;
 }
 
 /// A mock implementation of [MontyPlatform] for testing.
