@@ -1,6 +1,13 @@
 name: CI
 
 on:
+  # Manual re-run, any branch. Without this the ONLY way to make CI evaluate a
+  # PR again is an artificial event -- a close/reopen, or an empty commit that
+  # pollutes the diff. Measured: #162/#163/#164 sat with zero ci.yaml jobs and a
+  # green tick because their base was outside the filter, and fixing the filter
+  # did NOT re-evaluate them; editing a base branch fires no PR event. Three
+  # close/reopens were needed to unstick them.
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
