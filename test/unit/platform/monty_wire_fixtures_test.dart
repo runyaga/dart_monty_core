@@ -41,22 +41,12 @@ import 'dart:convert';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
-/// A fixture: the Python that produced it, the literal Rust emitted, and the
-/// value it must mean.
-class _Wire {
-  const _Wire(this.python, this.json, this.value);
-
-  /// The Python evaluated through the oracle to produce [json].
-  final String python;
-
-  /// VERBATIM from the Rust encoder. Never regenerate this from Dart.
-  final String json;
-
-  /// What this package claims those bytes mean.
-  final MontyValue value;
-}
+import '_hierarchy_registry.dart';
 
 /// Canonical JSON: key order is not part of the contract, so compare sorted.
+///
+/// Lists are NOT sorted -- a dict's `entries` shape is a list, and its order is
+/// Python insertion order, which IS part of the contract.
 String _canon(Object? o) {
   if (o is Map) {
     final keys = o.keys.map((k) => k as String).toList()..sort();
@@ -69,148 +59,9 @@ String _canon(Object? o) {
   return json.encode(o);
 }
 
-final fixtures = {
-  'none': const _Wire('None', 'null', MontyNone()),
-  'bool': const _Wire('True', 'true', MontyBool(true)),
-  'int': const _Wire('42', '42', MontyInt(42)),
-  'str': const _Wire('"s"', '"s"', MontyString('s')),
-  'float': const _Wire('1.5', '1.5', MontyFloat(1.5)),
-  'list': const _Wire('[1]', '[1]', MontyList([MontyInt(1)])),
-  'bigint': _Wire(
-    '123456789012345678901234567890',
-    '{"__type": "bigint", "value": "123456789012345678901234567890"}',
-    MontyBigInt(BigInt.parse('123456789012345678901234567890')),
-  ),
-  // -0.0 travels as TEXT under a float envelope, while 1.5 travels bare. That
-  // asymmetry is the contract: `-0.0` cannot survive a bare JSON number.
-  'float_negative_zero': const _Wire(
-    '-0.0',
-    '{"__type": "float", "value": "-0.0"}',
-    // `-0` is the int zero and loses the sign. This fixture exists BECAUSE
-    // signed zero is fragile; taking the lint would silently turn it into a
-    // test of 0.0 -- the exact loss it was written to catch.
-    // ignore: prefer_int_literals
-    MontyFloat(-0.0),
-  ),
-  'bytes': const _Wire(
-    'b"abc"',
-    '{"__type": "bytes", "value": [97, 98, 99]}',
-    MontyBytes([97, 98, 99]),
-  ),
-  'tuple': const _Wire(
-    '(1,)',
-    '{"__type": "tuple", "value": [1]}',
-    MontyTuple([MontyInt(1)]),
-  ),
-  // Both dict shapes, from Rust. An all-string-keyed dict travels under
-  // `value`; any other key forces `entries`. Nothing else in the suite pins
-  // which shape Rust picks -- only that ours round-trips.
-  'dict_string_keys': const _Wire(
-    '{"a": 1}',
-    '{"__type": "dict", "value": {"a": 1}}',
-    MontyDict([(MontyString('a'), MontyInt(1))]),
-  ),
-  'dict_int_keys': const _Wire(
-    '{1: "a"}',
-    '{"__type": "dict", "entries": [[1, "a"]]}',
-    MontyDict([(MontyInt(1), MontyString('a'))]),
-  ),
-  // MULTI-KEY AND UNSORTED, on purpose. Every other dict fixture has ONE key,
-  // which makes insertion order unobservable: MEASURED, a decoder patched to
-  // reverse its entries left all 49 fixtures AND the 131-test matrix green.
-  // `MontyDict.==` is order-insensitive by design (it matches the sandbox), so
-  // only a representation-sensitive check can see order at all.
-  //
-  // It must be the `entries` shape, not `value`. `_canon` SORTS object keys --
-  // so under the `value` shape it would canonicalise `{"z":1,"a":2}` and
-  // `{"a":2,"z":1}` to the same text and see nothing. `entries` is a JSON
-  // LIST, and _canon preserves list order.
-  //
-  // Note the Rust output is NOT sorted: keys arrive 2, 1, 3, matching Python's
-  // insertion order. That is the property under test.
-  'dict_multi_key_unsorted': const _Wire(
-    '{2: "b", 1: "a", 3: "c"}',
-    '{"__type": "dict", "entries": [[2, "b"], [1, "a"], [3, "c"]]}',
-    MontyDict([
-      (MontyInt(2), MontyString('b')),
-      (MontyInt(1), MontyString('a')),
-      (MontyInt(3), MontyString('c')),
-    ]),
-  ),
-  'set': const _Wire(
-    '{1, 2}',
-    '{"__type": "set", "value": [1, 2]}',
-    MontySet([MontyInt(1), MontyInt(2)]),
-  ),
-  'frozenset': const _Wire(
-    'frozenset([1])',
-    '{"__type": "frozenset", "value": [1]}',
-    MontyFrozenSet([MontyInt(1)]),
-  ),
-  'ellipsis': const _Wire('...', '{"__type": "ellipsis"}', MontyEllipsis()),
-  'not_implemented': const _Wire(
-    'NotImplemented',
-    '{"__type": "not_implemented"}',
-    MontyNotImplemented(),
-  ),
-  'path': const _Wire(
-    'pathlib.Path("x")',
-    '{"__type": "path", "value": "x"}',
-    MontyPath('x'),
-  ),
-  'date': const _Wire(
-    'datetime.date(2020, 1, 2)',
-    '{"__type": "date", "year": 2020, "month": 1, "day": 2}',
-    MontyDate(year: 2020, month: 1, day: 2),
-  ),
-  'datetime': const _Wire(
-    'datetime.datetime(2020, 1, 2, 3, 4, 5, 6)',
-    '{"__type": "datetime", "year": 2020, "month": 1, "day": 2, "hour": 3, '
-        '"minute": 4, "second": 5, "microsecond": 6, "offset_seconds": null, '
-        '"timezone_name": null}',
-    MontyDateTime(
-      year: 2020,
-      month: 1,
-      day: 2,
-      hour: 3,
-      minute: 4,
-      second: 5,
-      microsecond: 6,
-    ),
-  ),
-  'time': const _Wire(
-    'datetime.time(1, 2, 3, 4)',
-    '{"__type": "time", "hour": 1, "minute": 2, "second": 3, '
-        '"microsecond": 4, "offset_seconds": null, "timezone_name": null, '
-        '"fold": 0}',
-    MontyTime(hour: 1, minute: 2, second: 3, microsecond: 4),
-  ),
-  'timedelta': const _Wire(
-    'datetime.timedelta(days=1, seconds=2)',
-    '{"__type": "timedelta", "days": 1, "seconds": 2, "microseconds": 0}',
-    MontyTimeDelta(days: 1, seconds: 2),
-  ),
-  'timezone': const _Wire(
-    'datetime.timezone.utc',
-    '{"__type": "timezone", "offset_seconds": 0, "name": null}',
-    MontyTimeZone(offsetSeconds: 0),
-  ),
-  'namedtuple': const _Wire(
-    'namedtuple("P", ["x"])(1)',
-    '{"__type": "namedtuple", "type_name": "P", "field_names": ["x"], '
-        '"values": [1]}',
-    MontyNamedTuple(typeName: 'P', fieldNames: ['x'], values: [MontyInt(1)]),
-  ),
-  'exception': const _Wire(
-    'ValueError("m")',
-    '{"__type": "exception", "exc_type": "ValueError", "message": "m"}',
-    MontyExceptionValue(excType: 'ValueError', message: 'm'),
-  ),
-};
-
 void main() {
   group('wire fixtures authored by Rust, not by us', () {
-    fixtures.forEach((name, f) {
+    wireFixtures.forEach((name, f) {
       test('$name: Rust bytes DECODE to the value we claim', () {
         final decoded = MontyValue.fromJson(json.decode(f.json));
         expect(decoded, f.value, reason: 'produced by: ${f.python}');
@@ -252,7 +103,7 @@ void main() {
     test('the fixtures are not silently empty', () {
       // A table-driven suite whose table is empty reports success. This repo
       // has paid for that shape before.
-      expect(fixtures.length, greaterThanOrEqualTo(24));
+      expect(wireFixtures.length, greaterThanOrEqualTo(24));
     });
   });
 }

@@ -13,65 +13,7 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
-/// One constructible sample per MontyValue subtype.
-final samples = <String, MontyValue>{
-  'MontyNone': const MontyNone(),
-  'MontyBool': const MontyBool(true),
-  'MontyInt': const MontyInt(42),
-  'MontyBigInt': MontyBigInt(BigInt.parse('123456789012345678901234567890')),
-  'MontyFloat': const MontyFloat(1.5),
-  'MontyString': const MontyString('s'),
-  'MontyBytes': const MontyBytes([1, 2, 3]),
-  'MontyList': const MontyList([MontyInt(1)]),
-  'MontyTuple': const MontyTuple([MontyInt(1)]),
-  'MontyDict': const MontyDict([(MontyString('k'), MontyInt(1))]),
-  'MontySet': const MontySet([MontyInt(1)]),
-  'MontyFrozenSet': const MontyFrozenSet([MontyInt(1)]),
-  'MontyEllipsis': const MontyEllipsis(),
-  'MontyNotImplemented': const MontyNotImplemented(),
-  'MontyPath': const MontyPath('/x'),
-  'MontyDate': const MontyDate(year: 2026, month: 1, day: 2),
-  'MontyDateTime': const MontyDateTime(
-    year: 2026,
-    month: 1,
-    day: 2,
-    hour: 3,
-    minute: 4,
-    second: 5,
-    microsecond: 6,
-  ),
-  'MontyTime': const MontyTime(hour: 1, minute: 2, second: 3, microsecond: 4),
-  'MontyTimeDelta': const MontyTimeDelta(days: 1, seconds: 2),
-  'MontyTimeZone': const MontyTimeZone(offsetSeconds: 0),
-  'MontyExceptionValue': const MontyExceptionValue(
-    excType: 'ValueError',
-    message: 'm',
-  ),
-  'MontyOpaque': const MontyOpaque(MontyOpaqueKind.repr, 'x'),
-  'MontyNamedTuple': const MontyNamedTuple(
-    typeName: 'P',
-    fieldNames: ['x'],
-    values: [MontyInt(1)],
-  ),
-  'MontyFileHandle': const MontyFileHandle(path: '/f', mode: 'r'),
-  'MontyClassInstance': const MontyClassInstance(
-    classType: MontyClassType(
-      name: 'C',
-      id: '1',
-      hostDefined: false,
-      isDataclass: false,
-      attrs: {},
-    ),
-    instanceId: 'i',
-    attrs: {},
-  ),
-  'MontyDataclass': const MontyDataclass(
-    name: 'D',
-    typeId: 1,
-    fieldNames: ['f'],
-    attrs: {'f': MontyInt(1)},
-  ),
-};
+import '_hierarchy_registry.dart';
 
 void main() {
   group('permutation matrix', () {
@@ -79,20 +21,22 @@ void main() {
       // The guard that stops this file rotting: adding a subtype without a
       // sample must fail here, not silently reduce coverage.
       expect(
-        samples.length,
+        hierarchySamples.length,
         26,
         reason:
             'a MontyValue subtype was added or removed; update `samples` '
             'so the matrix stays exhaustive',
       );
       expect(
-        samples.entries.every((e) => e.value.runtimeType.toString() == e.key),
+        hierarchySamples.entries.every(
+          (e) => e.value.runtimeType.toString() == e.key,
+        ),
         isTrue,
         reason: 'a sample does not match its key',
       );
     });
 
-    for (final entry in samples.entries) {
+    for (final entry in hierarchySamples.entries) {
       final name = entry.key;
       final v = entry.value;
 

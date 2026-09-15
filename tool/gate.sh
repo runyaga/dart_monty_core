@@ -135,6 +135,7 @@ s  exports_decl  bash tool/check_exports_declared.sh
 # tag and adding a forgery row are separate edits in separate languages; this
 # ties them together.
 s  forgery_cov   bash tool/check_forgery_coverage.sh
+s  hierarchy_reg bash tool/check_hierarchy_registry.sh
 # WIRE-CONTRACT.md is cited as normative by ten sites -- including a test that
 # prints "WIRE-CONTRACT.md row N requires ..." on failure -- and did not exist.
 # The risk in writing one is fabrication: a plausible spec that does not match
