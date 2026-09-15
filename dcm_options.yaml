@@ -123,9 +123,12 @@ dcm:
           # on both. They are classes.)
           - "lib/**/native_bindings.dart"
           - "lib/**/wasm_bindings.dart"
-          # Part files: first type is a sealed subclass, not the file name.
-          # VERIFIED: all four are `part of`, first types are MontyNone,
-          # MontyBytes, MontyDate, MontyEllipsis respectively.
+          # Part files (`part of 'monty_value.dart';` at line 1 of each). The
+          # first type is a subclass OF the sealed MontyValue -- the subclasses
+          # themselves are `final`, which codex flagged as ambiguous in the
+          # previous wording. VERIFIED, first types are MontyNone:9,
+          # MontyBytes:9, MontyDate:9, MontyEllipsis:15 respectively. None can
+          # match its file name, because one file holds several of them.
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_datetime.dart"
@@ -136,10 +139,19 @@ dcm:
           # NOT the same reason, despite sitting under that heading until
           # 2026-09-15. This file declares exactly ONE class and nothing
           # precedes it. It is the VM half of a conditional import: it must be
-          # named `WasmBindingsJs` to stand in for wasm_bindings_js.dart (see
-          # monty_wasm.dart:10), and it must live at a DIFFERENT path because
-          # both halves coexist. Class name forced, file name forced, mismatch
-          # structural. This one can never be fixed, only excluded.
+          # named `WasmBindingsJs` to stand in for wasm_bindings_js.dart
+          # (monty_wasm.dart:10-11), and the two halves must have distinct
+          # import paths because both coexist.
+          #
+          # An earlier version of this comment said the mismatch was
+          # "structural" and could "never be fixed". CODEX CORRECTED THAT,
+          # 2026-09-15, and it is right: distinct PATHS do not require distinct
+          # BASENAMES. Moving the pair to e.g. wasm/js/wasm_bindings_js.dart
+          # and wasm/stub/wasm_bindings_js.dart would satisfy the rule and keep
+          # the conditional import working, since monty_wasm.dart names full
+          # paths. So this is a deliberate layout choice, not an impossibility
+          # -- excluded because the move is not worth it, which is a weaker and
+          # truer claim.
           - "lib/src/wasm/wasm_bindings_js_stub.dart"
           # MockCallHistory (:17) is declared before MockMontyPlatform (:132).
           - "lib/src/platform/mock_monty_platform.dart"
@@ -333,11 +345,23 @@ dcm:
     - avoid-referencing-subclasses
     - match-getter-setter-field-names:
         exclude:
-          # dartValue getter intentionally wraps value field (sealed MontyValue API)
+          # `dartValue` is an @override of the sealed MontyValue API, so its
+          # name is fixed and can never match the backing field. VERIFIED
+          # 2026-09-15, all 8 sites read, independently confirmed by agy:
+          #   monty_value_scalars.dart:44,84,141,185,241  => value
+          #   monty_value_collections.dart:26             => value
+          #   monty_value_structured.dart:60  (MontyPath) => value
+          #   monty_value_structured.dart:726 (MontyOpaque) => TEXT, not value
+          #
+          # That last one is why this comment was rewritten. It used to say
+          # "wraps value field" flatly; MontyOpaque has no `value` field at all
+          # (its fields are `kind` and `text`), so the old wording was false for
+          # one of the three files it covered.
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_structured.dart"
-          # coreBindings getter wraps _bindings (protected API for subclasses)
+          # base_monty_platform.dart:128 `MontyCoreBindings get coreBindings =>
+          # _bindings;` -- protected accessor for subclasses. Verified.
           - "lib/src/platform/base_monty_platform.dart"
     - avoid-declaring-call-method
 
@@ -363,12 +387,28 @@ dcm:
           - private-methods
           - overridden-methods
         exclude:
-          # _fieldsEqual helper placed adjacent to operator== that uses it;
-          # strict re-ordering would harm readability
+          # MISATTRIBUTED UNTIL 2026-09-15. This said "_fieldsEqual helper
+          # placed adjacent to operator== that uses it". That fact is TRUE --
+          # monty_stack_frame.dart:95 `bool _fieldsEqual(MontyStackFrame o) =>`
+          # sits right under `operator ==` at :91 -- but it is NOT why the rule
+          # fires. The actual flagged sites are ordinary method-order
+          # violations against the `order:` above, which ends
+          # public-methods, private-methods, overridden-methods:
+          #
+          #   monty_value_datetime.dart:165   @override String toString()
+          #   monty_stack_frame.dart:119      @override String toString()
+          #   monty_stack_frame.dart:122      static List<..> listFromJson(..)
+          #
+          # i.e. an overridden toString() followed by a public static method.
+          # Reordering would split toString() from the == / hashCode / helper
+          # cluster it belongs with. Confirmed independently by agy.
           - "lib/src/platform/monty_value_datetime.dart"
           - "lib/src/platform/monty_stack_frame.dart"
-          # _nextReplId() is a constructor helper; grouping it with the
-          # counter field it mutates is clearer than moving it to the end
+          # VERIFIED and accurate: wasm_repl_bindings.dart:26
+          # `static String _nextReplId() => 'repl-${++_counter}';` precedes the
+          # private fields at :28, :30, :33, which is what those three are
+          # flagged for. Grouping the helper with the counter it mutates is
+          # clearer than moving it to the end.
           - "lib/src/repl/wasm_repl_bindings.dart"
 
     # --- Testing ---
