@@ -194,8 +194,7 @@ type(f).__name__
     run: () async {
       final r = await Monty('d = give_date()\ntype(d).__name__').run(
         externalFunctions: {
-          'give_date': (a, k) =>
-              const MontyDate(year: 2020, month: 1, day: 2),
+          'give_date': (a, k) => const MontyDate(year: 2020, month: 1, day: 2),
         },
       );
       final got = _render(r.value);

@@ -129,14 +129,16 @@ Object? conformanceDispatch(
   // than a missing binding -- refuse explicitly. StateError is already this
   // function's "unmodelled external" signal, so the caller reports a skip with
   // a reason instead of dying.
-  'sum' || 'add' || 'scale' || 'describe' || 'greeting'
-      when args.isEmpty =>
-    throw StateError(
-      'dataclass method "$functionName" needs its receiver, but monty v0.0.23 '
-      'sends an empty argument list and the receiver only as '
-      'FunctionCall.object_id, which native/src/repl_handle.rs:848 discards '
-      '(object_id.is_some()). Forward the receiver before re-enabling these.',
-    ),
+  'sum' ||
+  'add' ||
+  'scale' ||
+  'describe' ||
+  'greeting' when args.isEmpty => throw StateError(
+    'dataclass method "$functionName" needs its receiver, but monty v0.0.23 '
+    'sends an empty argument list and the receiver only as '
+    'FunctionCall.object_id, which native/src/repl_handle.rs:848 discards '
+    '(object_id.is_some()). Forward the receiver before re-enabling these.',
+  ),
 
   // sum(self) → self.x + self.y
   'sum' => () {

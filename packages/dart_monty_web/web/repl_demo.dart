@@ -1009,12 +1009,7 @@ String _fmt(MontyValue v) => switch (v) {
   MontyClassInstance(:final classType, :final attrs) =>
     '${classType.name}('
         '${attrs.entries.map((e) => '${e.key}=${_fmt(e.value)}').join(', ')})',
-  MontyTime(
-    :final hour,
-    :final minute,
-    :final second,
-    :final microsecond,
-  ) =>
+  MontyTime(:final hour, :final minute, :final second, :final microsecond) =>
     '$hour:$minute:$second'
         '${microsecond == 0 ? '' : '.$microsecond'}',
   MontyNotImplemented() => 'NotImplemented',

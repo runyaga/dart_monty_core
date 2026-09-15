@@ -178,7 +178,14 @@ s  vague_errors bash tool/check_no_vague_errors.sh
 # example.
 s  backend_parity bash tool/check_backend_parity.sh
 s  dart_analyze  dart analyze --fatal-infos
-s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
+# packages/ IS included, and was not until 2026-09-15. `dart analyze` walks
+# into the nested packages on its own (verified: a deliberate type error in
+# packages/monty_conformance/ fails the unscoped `dart analyze --fatal-infos`
+# above), but `dart format` only looks where it is pointed -- so two whole
+# packages went unformatted and unchecked. Three files had already drifted,
+# and 9d5d4c1 added a fourth: a regex edit to feature_matrix.dart left it
+# unformatted and this step reported green, because it never looked.
+s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/ packages/
 # --coverage is not decoration: it is the input to cov_report below, and the
 # collection is nearly free here -- measured in the build container, 457 tests
 # in 5s with it on. (CI's 5m53s for the same step is the runner, not the
