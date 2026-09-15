@@ -115,6 +115,28 @@ final fixtures = {
     '{"__type": "dict", "entries": [[1, "a"]]}',
     MontyDict([(MontyInt(1), MontyString('a'))]),
   ),
+  // MULTI-KEY AND UNSORTED, on purpose. Every other dict fixture has ONE key,
+  // which makes insertion order unobservable: MEASURED, a decoder patched to
+  // reverse its entries left all 49 fixtures AND the 131-test matrix green.
+  // `MontyDict.==` is order-insensitive by design (it matches the sandbox), so
+  // only a representation-sensitive check can see order at all.
+  //
+  // It must be the `entries` shape, not `value`. `_canon` SORTS object keys --
+  // so under the `value` shape it would canonicalise `{"z":1,"a":2}` and
+  // `{"a":2,"z":1}` to the same text and see nothing. `entries` is a JSON
+  // LIST, and _canon preserves list order.
+  //
+  // Note the Rust output is NOT sorted: keys arrive 2, 1, 3, matching Python's
+  // insertion order. That is the property under test.
+  'dict_multi_key_unsorted': const _Wire(
+    '{2: "b", 1: "a", 3: "c"}',
+    '{"__type": "dict", "entries": [[2, "b"], [1, "a"], [3, "c"]]}',
+    MontyDict([
+      (MontyInt(2), MontyString('b')),
+      (MontyInt(1), MontyString('a')),
+      (MontyInt(3), MontyString('c')),
+    ]),
+  ),
   'set': const _Wire(
     '{1, 2}',
     '{"__type": "set", "value": [1, 2]}',
@@ -190,10 +212,29 @@ void main() {
   group('wire fixtures authored by Rust, not by us', () {
     fixtures.forEach((name, f) {
       test('$name: Rust bytes DECODE to the value we claim', () {
+        final decoded = MontyValue.fromJson(json.decode(f.json));
+        expect(decoded, f.value, reason: 'produced by: ${f.python}');
+
+        // `==` ALONE IS NOT ENOUGH HERE, and that is the whole point of this
+        // second assertion. Every MontyValue `==` deliberately matches PYTHON
+        // semantics, so it compares an EQUIVALENCE CLASS, not a value:
+        //   MontyFloat(-0.0) == MontyFloat(0.0)   is true (Python agrees)
+        //   MontyDict / MontySet compare order-insensitively, by design
+        // so a decoder that dropped the sign of -0.0, or reordered a dict,
+        // satisfies the line above. MEASURED: making the decoder lose the sign
+        // (`double.tryParse(s)?.abs()` in _taggedFloatFromMap) left the
+        // equality assertion GREEN and the 131-test matrix GREEN.
+        //
+        // Re-encoding and comparing the TEXT is representation-sensitive, so it
+        // sees what `==` is built to ignore -- and it closes this for all 24
+        // fixtures at once rather than one hand-written probe per hazard.
         expect(
-          MontyValue.fromJson(json.decode(f.json)),
-          f.value,
-          reason: 'produced by: ${f.python}',
+          _canon(decoded.toJson()),
+          _canon(json.decode(f.json)),
+          reason:
+              'decoded to an EQUAL value that re-encodes differently: a '
+              'representation was lost that `==` is defined not to see.\n'
+              'produced by: ${f.python}',
         );
       });
 
