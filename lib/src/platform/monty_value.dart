@@ -32,8 +32,8 @@ sealed class MontyValue {
   /// - Scalars: null, bool, int, double, String
   /// - Collections: List (→ [MontyList])
   /// - Typed wrappers: every object carries `__type`, which selects the class.
-  ///   A dict is `{"__type": "dict", "value": {…}}` (→ [MontyDict]) or
-  ///   `{"__type": "dict", "entries": […]}` (→ [MontyPairsDict]).
+  ///   A dict is `{"__type": "dict", "value": {…}}` or
+  ///   `{"__type": "dict", "entries": […]}` — both → [MontyDict].
   ///
   /// Throws [FormatException] on an object with no `__type` or an unrecognised
   /// one. Both used to decode as a dict, which is what let sandboxed Python
@@ -79,9 +79,14 @@ sealed class MontyValue {
       microsecond: dt.toUtc().microsecond,
     ),
     final List<dynamic> l => MontyList(l.map(MontyValue.fromDart).toList()),
-    final Map<dynamic, dynamic> m => MontyDict(
-      m.map((k, v) => MapEntry(k.toString(), MontyValue.fromDart(v))),
-    ),
+    // Keys convert the same way values do. They used to be forced through
+    // `k.toString()`, which silently turned the Dart map {1: 'a'} into the
+    // Python dict {'1': 'a'} -- a different dict, with no error. Only string
+    // keys could be expressed then; pairs can carry any key monty accepts.
+    final Map<dynamic, dynamic> m => MontyDict([
+      for (final MapEntry(:key, :value) in m.entries)
+        (MontyValue.fromDart(key), MontyValue.fromDart(value)),
+    ]),
     _ => throw ArgumentError(
       'Cannot convert ${value.runtimeType} to MontyValue',
     ),
@@ -195,15 +200,13 @@ sealed class MontyValue {
     return MontyFloat(parsed);
   }
 
-  /// Dispatches the two dict payload shapes.
+  /// Decodes either dict payload shape.
   ///
   /// `entries` (any key type) wins if present; otherwise `value` (string keys).
-  static MontyValue _dictFromMap(Map<String, dynamic> map) {
-    final entries = map['entries'];
-    if (entries is List<dynamic>) return MontyPairsDict._fromEntries(entries);
-
-    return MontyDict._fromMap(map);
-  }
+  /// Both produce a [MontyDict] — the shape is a transport detail, not a
+  /// difference in the value.
+  static MontyValue _dictFromMap(Map<String, dynamic> map) =>
+      MontyDict._fromMap(map);
 
   // Returns different sealed subclasses based on __type, so it
   // cannot be a constructor.

@@ -1,4 +1,4 @@
-// Unit tests for the value variants Tiers 1 and 2 added: MontyPairsDict,
+// Unit tests for the value variants Tiers 1 and 2 added: mixed-key dicts,
 // MontyBigInt, MontyExceptionValue and MontyOpaque.
 //
 // Written because the patch-coverage gate reported them at 9.5%-67.7%. They
@@ -141,15 +141,15 @@ void main() {
     });
   });
 
-  group('MontyPairsDict', () {
-    const pairs = MontyPairsDict([
+  group('MontyDict with non-string keys', () {
+    const pairs = MontyDict([
       (MontyInt(1), MontyString('a')),
       (MontyString('k'), MontyInt(2)),
     ]);
 
     test('round-trips with key TYPES intact', () {
       _expectRoundTrip(pairs);
-      final back = MontyValue.fromJson(pairs.toJson()) as MontyPairsDict;
+      final back = MontyValue.fromJson(pairs.toJson()) as MontyDict;
       expect(back.pairs.map((p) => p.$1), [
         const MontyInt(1),
         const MontyString('k'),
@@ -166,17 +166,37 @@ void main() {
       });
     });
 
-    test('preserves insertion order, and order is part of equality', () {
-      const reversed = MontyPairsDict([
+    test('preserves insertion order in pairs, but NOT in equality', () {
+      // INVERTED, deliberately. This test used to assert
+      // `expect(pairs, isNot(reversed))` — order was part of equality for a
+      // non-string-keyed dict but not for a string-keyed one, so the same
+      // Python dict compared differently depending on its keys. The sandbox
+      // answers True for both, so order-insensitive is the correct semantics
+      // and the old assertion was pinning a defect.
+      const reversed = MontyDict([
         (MontyString('k'), MontyInt(2)),
         (MontyInt(1), MontyString('a')),
       ]);
-      expect(pairs, isNot(reversed));
+
+      // The DATA keeps Python's insertion order...
+      expect(pairs.pairs.map((p) => p.$1).toList(), [
+        const MontyInt(1),
+        const MontyString('k'),
+      ]);
+      expect(reversed.pairs.map((p) => p.$1).toList(), [
+        const MontyString('k'),
+        const MontyInt(1),
+      ]);
+
+      // ...while EQUALITY ignores it.
+      expect(pairs, reversed);
+      expect(pairs.hashCode, reversed.hashCode);
     });
 
-    test('dartValue is a list of pairs, not a Map', () {
-      // Deliberately not a Map: two distinct Python keys can share a Dart
-      // toString, so collapsing them would silently drop entries.
+    test('dartValue is a list of pairs when a key is not a string', () {
+      // Deliberately not a Map here: two distinct Python keys can share a Dart
+      // toString, so collapsing them would silently drop entries. A dict whose
+      // keys are ALL strings projects to a Map instead.
       expect(pairs.dartValue, [
         [1, 'a'],
         ['k', 2],
@@ -186,17 +206,24 @@ void main() {
     test('equality, hashCode and toString', () {
       expect(
         pairs,
-        const MontyPairsDict([
+        const MontyDict([
           (MontyInt(1), MontyString('a')),
           (MontyString('k'), MontyInt(2)),
         ]),
       );
-      expect(pairs.toString(), 'MontyPairsDict(2 pairs)');
-      expect(const MontyPairsDict([]).toString(), 'MontyPairsDict(0 pairs)');
+      expect(pairs.toString(), 'MontyDict(2 entries)');
+      expect(const MontyDict([]).toString(), 'MontyDict(0 entries)');
+    });
+
+    test('a different length is never equal', () {
+      // Guards the length short-circuit: a subset must not compare equal.
+      const shorter = MontyDict([(MontyInt(1), MontyString('a'))]);
+      expect(pairs, isNot(shorter));
+      expect(shorter, isNot(pairs));
     });
 
     test('nested values decode recursively', () {
-      const nested = MontyPairsDict([
+      const nested = MontyDict([
         (MontyInt(1), MontyList([MontyInt(2), MontyString('x')])),
       ]);
       _expectRoundTrip(nested);

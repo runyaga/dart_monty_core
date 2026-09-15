@@ -84,11 +84,14 @@ Future<void> _collections() async {
   final tup = (await repl.feedRun('(1, 2, 3)')).value as MontyTuple;
   print('tuple: ${tup.items.map((v) => v.dartValue)}');
 
-  // MontyDict — str keys only (Monty restriction)
+  // MontyDict — any hashable key, held as insertion-ordered pairs.
   final d = (await repl.feedRun('{"a": 1, "b": [2, 3]}')).value as MontyDict;
-  print('dict keys: ${d.entries.keys.toList()}');
+  print('dict keys: ${d.keys.map((k) => k.dartValue).toList()}');
+  // asStringMap is null unless EVERY key is a string, so the assumption is
+  // explicit rather than a cast that throws on {1: 'a'}.
+  final byName = d.asStringMap!;
   print(
-    'dict["b"]: ${(d.entries["b"] as MontyList).items.map((v) => v.dartValue)}',
+    'dict["b"]: ${(byName["b"]! as MontyList).items.map((v) => v.dartValue)}',
   );
 
   // MontySet

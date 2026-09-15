@@ -36,3 +36,4 @@ f8c530a	`open()` parses its mode, and rejects a malformed one
 a21f47d	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
 6d20815	A negative or wrong-typed resource limit is now an error
 1b95a83	`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`
+edd9c41	`MontyPairsDict` is gone; `MontyDict` holds pairs

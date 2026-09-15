@@ -77,7 +77,7 @@ void _printValue(String code, MontyValue v) {
     MontyTuple(:final items) => 'Tuple(${items.length})',
     MontySet(:final items) => 'Set{${items.length}}',
     MontyFrozenSet(:final items) => 'FrozenSet{${items.length}}',
-    MontyDict(:final entries) => 'Dict{${entries.length}}',
+    MontyDict(:final pairs) => 'Dict{${pairs.length}}',
     _ => v.toString(),
   };
   print('$code => $label');

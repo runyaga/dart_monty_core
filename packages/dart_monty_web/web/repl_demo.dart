@@ -970,12 +970,10 @@ String _fmt(MontyValue v) => switch (v) {
   MontyList(:final items) =>
     '[${items.take(20).map(_fmt).join(', ')}${items.length > 20 ? ', …(${items.length})' : ''}]',
   MontyTuple(:final items) => '(${items.map(_fmt).join(', ')})',
-  MontyDict(:final entries) =>
-    '{${entries.entries.take(20).map((e) => '"${e.key}": ${_fmt(e.value)}').join(', ')}${entries.length > 20 ? ', …' : ''}}',
-  // A dict with non-string keys (wire v2's `entries` envelope). Rendered like
-  // any other dict, with the KEYS formatted rather than stringified — the whole
-  // point of the variant is that they are typed values, not labels.
-  MontyPairsDict(:final pairs) =>
+  // One arm for every dict. The KEYS are formatted rather than stringified —
+  // they are typed values, not labels, and a dict with non-string keys renders
+  // like any other.
+  MontyDict(:final pairs) =>
     '{${pairs.take(20).map((p) => '${_fmt(p.$1)}: ${_fmt(p.$2)}').join(', ')}${pairs.length > 20 ? ', …' : ''}}',
   // ---- Tier 2 variants (wire v3) ----------------------------------------
   // These five all used to arrive as MontyString, so the demo rendered them

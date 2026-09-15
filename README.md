@@ -111,7 +111,7 @@ switch (result.value) {
   case MontyInt(:final value):     /* … */ ;
   case MontyString(:final value):  /* … */ ;
   case MontyList(:final items):    /* … */ ;
-  case MontyDict(:final entries):  /* … */ ;
+  case MontyDict(:final pairs):    /* … */ ;
   case MontyDate(:final year):     /* … */ ;
   case MontyNamedTuple(:final fieldNames, :final values): /* … */ ;
   case MontyClassInstance(:final classType, :final attrs): /* … */ ;
@@ -119,9 +119,9 @@ switch (result.value) {
 }
 ```
 
-27 subtypes — scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`,
+26 subtypes — scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`,
 `MontyBool`, `MontyNone`, `MontyEllipsis`, `MontyNotImplemented`), collections
-(`MontyList`, `MontyTuple`, `MontyDict`, `MontyPairsDict`, `MontySet`,
+(`MontyList`, `MontyTuple`, `MontyDict`, `MontySet`,
 `MontyFrozenSet`, `MontyBytes`), datetime (`MontyDate`, `MontyDateTime`,
 `MontyTime`, `MontyTimeDelta`, `MontyTimeZone`), and structured (`MontyPath`,
 `MontyNamedTuple`, `MontyClassInstance`, `MontyDataclass`, `MontyFileHandle`,
