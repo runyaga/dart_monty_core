@@ -80,4 +80,27 @@ else
   FAIL=1
 fi
 
-[ "$FAIL" = 0 ] && echo "PASS — the hook declares every input that changes the artefact." || exit 1
+# ---------------------------------------------------------------------------
+# The published artefact must be swapped, never truncated in place.
+# ---------------------------------------------------------------------------
+# `File.copySync` opens the destination O_TRUNC, shortening the EXISTING inode.
+# Linux permits that even for a `dlopen`ed library -- ETXTBSY guards only the
+# running executable -- so a concurrent reader sees a half-written file.
+# `rename(2)` swaps the directory entry instead.
+#
+# MEASURED 2026-09-15, by inode across a forced republish:
+#     temp + renameSync (shipped)  ->  inode 508038 -> 509596   CHANGED
+#     direct copySync   (mutant)   ->  inode 509596 -> 509596   UNCHANGED
+# and BOTH arms passed the test suite, so nothing else catches the mutant.
+if printf '%s' "$CODE" | grep -qF "tmp.renameSync(dest.path);" &&
+   printf '%s' "$CODE" | grep -qF "src.copySync(tmp.path);"; then
+  echo "  ok  publishes via a temp file + renameSync, not copy-over-dest"
+else
+  echo "FAIL: the hook no longer publishes atomically."
+  echo "      It must copy to a TEMP path then renameSync onto the destination."
+  echo "      A direct copySync onto the destination truncates the existing"
+  echo "      inode, which a concurrent reader can observe half-written."
+  FAIL=1
+fi
+
+[ "$FAIL" = 0 ] && echo "PASS — the hook declares every input, and publishes atomically." || exit 1
