@@ -202,7 +202,7 @@ void main() {
         final h = memoryMountedOsHandler(
           mounts: const [MountDir(virtualPath: '/mnt')],
           files: [MontyMemoryFile('/mnt/hello.txt', 'hi')],
-          fallthrough: (op, args, kwargs) async {
+          fallthrough: (op, args, kwargs) {
             seen.add(args);
 
             return null;

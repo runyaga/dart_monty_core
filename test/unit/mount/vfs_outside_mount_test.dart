@@ -69,7 +69,7 @@ void main() {
       final handler0 = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/virtual')],
         files: const [],
-        fallthrough: (op, args, kwargs) async {
+        fallthrough: (op, args, kwargs) {
           seen++;
 
           return true;

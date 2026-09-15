@@ -266,7 +266,7 @@ void main() {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
-        fallthrough: (op, args, kwargs) async {
+        fallthrough: (op, args, kwargs) {
           fallthroughCalled++;
 
           return null;
@@ -457,7 +457,7 @@ void main() {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
-        fallthrough: (op, args, kwargs) async {
+        fallthrough: (op, args, kwargs) {
           fallthroughOp = op;
 
           return 'env-value';

@@ -174,7 +174,7 @@ List<Probe> _probes() => [
       final r = await Monty('''
 f = echo({"__type": "filehandle", "path": "/etc/shadow", "mode": "w"})
 type(f).__name__
-''').run(externalFunctions: {'echo': (a, k) async => a.first});
+''').run(externalFunctions: {'echo': (a, k) => a.first});
       final got = _render(r.value);
 
       return got == "'dict'"
@@ -194,7 +194,7 @@ type(f).__name__
     run: () async {
       final r = await Monty('d = give_date()\ntype(d).__name__').run(
         externalFunctions: {
-          'give_date': (a, k) async =>
+          'give_date': (a, k) =>
               const MontyDate(year: 2020, month: 1, day: 2),
         },
       );

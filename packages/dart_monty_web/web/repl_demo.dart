@@ -171,7 +171,7 @@ void _initReplPanel() {
       final result = await repl.feedRun(
         code,
         externalFunctions: {
-          'host_upper': (args, _) async => (args[0] as String).toUpperCase(),
+          'host_upper': (args, _) => (args[0] as String).toUpperCase(),
         },
         osHandler: _vfsOsHandler,
       );
@@ -360,14 +360,14 @@ void _initExternalsPanel() {
 
   // Dart implementations of each external.
   final externals = <String, MontyCallback>{
-    'db_query': (args, kwargs) async {
+    'db_query': (args, kwargs) {
       final table = args[0] as String;
       final filter = kwargs?['filter'];
       final rows = _mockDb[table] ?? [];
       if (filter == null || filter == 'None' || filter == false) return rows;
       return rows.where((r) => r['active'] == true).toList();
     },
-    'compute': (args, _) async {
+    'compute': (args, _) {
       final op = args[0] as String;
       final a = args[1] as num;
       final b = args[2] as num;
@@ -378,12 +378,12 @@ void _initExternalsPanel() {
         _ => throw Exception('unknown op: $op'),
       };
     },
-    'format_currency': (args, kwargs) async {
+    'format_currency': (args, kwargs) {
       final amount = args[0] as num;
       final code = (kwargs?['code'] as String?) ?? 'USD';
       return '$code ${amount.toStringAsFixed(2)}';
     },
-    'now': (_, _) async => DateTime.now().toIso8601String(),
+    'now': (_, _) => DateTime.now().toIso8601String(),
   };
 
   Future<void> execute() async {
