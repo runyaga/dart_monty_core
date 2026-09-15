@@ -352,6 +352,33 @@ final wireFixtures = {
       attrs: {'f': MontyInt(1)},
     ),
   ),
+  // MontyFileHandle -- PROVENANCE IS DIFFERENT FROM EVERY OTHER ROW, and the
+  // difference is stated rather than glossed. The oracle CANNOT produce one:
+  // it runs with no OS handler, so `open()` raises
+  //     NotImplementedError: OS function 'open' not implemented with standard
+  //     execution
+  // A filehandle only exists after an Open OS-call is serviced by a handler.
+  //
+  // So this row was obtained by running the real engine through FFI with
+  // memoryMountedOsHandler and reading the returned value. Two independent
+  // sources agree on the shape:
+  //   native/src/convert.rs:274-279 -- the Rust encoder's arm, READ not
+  //     harvested: `__type`, `path`, `mode`, `position`, exactly these four.
+  //   the engine run itself -- `f = open("/m/a.txt", "rb"); f.read(3); f`
+  //     returned mode "rb", position 3.
+  // It is NOT byte-verbatim Rust output like the rest of this table, because
+  // the value was re-encoded by Dart on the way out. Weaker provenance, worth
+  // having, and labelled so nobody assumes otherwise.
+  //
+  // `position: 3` and `mode: "rb"` are deliberately NON-DEFAULT (the defaults
+  // are 0 and "r") -- a defaulted fixture cannot see a dropped field, per
+  // fdd7f47.
+  'filehandle': const WireFixture(
+    'f = open("/m/a.txt", "rb"); f.read(3); f   [via memoryMountedOsHandler]',
+    '{"__type": "filehandle", "path": "/m/a.txt", "mode": "rb", '
+        '"position": 3}',
+    MontyFileHandle(path: '/m/a.txt', mode: 'rb', position: 3),
+  ),
   'set': const WireFixture(
     '{1, 2}',
     '{"__type": "set", "value": [1, 2]}',

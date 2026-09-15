@@ -26,16 +26,11 @@
 // NOT covered here, stated so the count is not mistaken for the hierarchy:
 //   - MontyOpaque -- no single Python expression produces one; it is what the
 //     encoder falls back to.
-//   - MontyFileHandle -- NOT unharvestable, and the earlier note here said so
-//     only because it stopped at "the oracle returned null". The real reason,
-//     from the oracle's `error` field:
-//         NotImplementedError: OS function 'open' not implemented with
-//         standard execution
-//     The oracle runs with NO OS handler, so `open()` raises before any value
-//     exists. A filehandle IS emittable through a mounted-OS-handler path --
-//     see test/integration/ffi_mount_dir_test.dart -- which is where this row
-//     has to be harvested from. Left out rather than hand-written, because a
-//     Dart-authored literal would defeat the entire point of this file.
+//   - MontyFileHandle is NO LONGER excluded. It is now present, obtained
+//     through the engine via memoryMountedOsHandler rather than the oracle,
+//     and its row states that weaker provenance explicitly. The oracle cannot
+//     produce one: it runs with no OS handler, so `open()` raises
+//     NotImplementedError before any value exists.
 //
 // A HARVESTING TRAP, recorded because it nearly produced a silent wrong
 // fixture. The harvest read only the oracle's `value` field. On an exception
