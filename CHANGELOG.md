@@ -120,6 +120,30 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+#### `MontySet` and `MontyFrozenSet` compare and hash order-insensitively
+
+`MontySet([MontyInt(1), MontyInt(2)])` and `MontySet([MontyInt(2), MontyInt(1)])`
+were UNEQUAL and hashed differently. They are now equal, because they are the
+same Python set. Same for `MontyFrozenSet`.
+
+Breaking in the direction that matters: code relying on order-sensitive set
+comparison was relying on a defect, and any `Map` or `Set` keyed by a
+`MontySet`/`MontyFrozenSet` will now collide entries it previously kept apart —
+which is the correct behaviour, and worth checking if you keyed a cache that way.
+
+`operator==` compared `items` with `DeepCollectionEquality`, which compares a
+`List` IN ORDER. This is the same defect the two dict classes had, immediately
+above: `MontyDict` was fixed and the sets were left behind, so the file
+contradicted itself 20 lines apart. The sandbox settles it —
+`crates/monty/src/types/set.rs:412` compares with a length check plus a
+per-element `contains`, and `:1435` hashes a frozenset by XOR "so the hash is
+independent of insertion order".
+
+One deliberate divergence from upstream: hashes fold with `+`, not XOR. XOR
+cancels duplicates, so a forged `{"__type": "set", "value": [1, 1]}` would hash
+identically to the EMPTY set. Monty collapses equal elements before the wire so
+upstream never sees a duplicate; this decoder parses whatever arrives.
+
 #### `MontyPairsDict` is gone; `MontyDict` holds pairs
 
 A Python dict now decodes to ONE type whatever its keys are. `MontyPairsDict`
