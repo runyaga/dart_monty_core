@@ -91,10 +91,25 @@ final hierarchySamples = <String, MontyValue>{
     minute: 4,
     second: 5,
     microsecond: 6,
+    offsetSeconds: -18000,
+    timezoneName: 'EST',
   ),
-  'MontyTime': const MontyTime(hour: 1, minute: 2, second: 3, microsecond: 4),
+  // EVERY OPTIONAL FIELD CARRIES A NON-DEFAULT VALUE. A sample built from
+  // defaults cannot detect a DROPPED field: the decoder fills the same default
+  // back in, so the round trip compares equal. MEASURED -- deleting
+  // `'position': position` from MontyFileHandle.toJson left all 692 unit tests
+  // green. That is the rule for every sample below, not a note about this one.
+  'MontyTime': const MontyTime(
+    hour: 1,
+    minute: 2,
+    second: 3,
+    microsecond: 4,
+    offsetSeconds: 3600,
+    timezoneName: 'TZ',
+    fold: 1,
+  ),
   'MontyTimeDelta': const MontyTimeDelta(days: 1, seconds: 2),
-  'MontyTimeZone': const MontyTimeZone(offsetSeconds: 0),
+  'MontyTimeZone': const MontyTimeZone(offsetSeconds: 3600, name: 'TZ'),
   'MontyExceptionValue': const MontyExceptionValue(
     excType: 'ValueError',
     message: 'm',
@@ -105,23 +120,37 @@ final hierarchySamples = <String, MontyValue>{
     fieldNames: ['x'],
     values: [MontyInt(1)],
   ),
-  'MontyFileHandle': const MontyFileHandle(path: '/f', mode: 'r'),
+  'MontyFileHandle': const MontyFileHandle(
+    path: '/f',
+    mode: 'r',
+    position: 7,
+  ),
   'MontyClassInstance': const MontyClassInstance(
     classType: MontyClassType(
       name: 'C',
       id: '1',
       hostDefined: false,
       isDataclass: false,
-      attrs: {},
+      attrs: {'classAttr': MontyString('c')},
     ),
     instanceId: 'i',
-    attrs: {},
+    // NON-EMPTY, and nested: with `attrs: {}` the child-conversion traversal
+    // never runs, so a wrapper that forgot to convert its children stayed
+    // green.
+    attrs: {
+      'x': MontyInt(1),
+      'nested': MontyList([MontyFloat(1.5)]),
+    },
   ),
   'MontyDataclass': const MontyDataclass(
     name: 'D',
     typeId: 1,
     fieldNames: ['f'],
-    attrs: {'f': MontyInt(1)},
+    attrs: {
+      'f': MontyInt(1),
+      'nested': MontyTuple([MontyString('t')]),
+    },
+    frozen: true,
   ),
 };
 
