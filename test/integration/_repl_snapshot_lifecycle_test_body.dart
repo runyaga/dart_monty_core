@@ -9,6 +9,9 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+/// True when compiled for the web (dart2js or dart2wasm).
+const _isWeb = bool.fromEnvironment('dart.library.js_interop');
+
 void runReplSnapshotLifecycleTests() {
   group('MontyRepl snapshot/restore lifecycle', () {
     // WHY THIS TEST EXISTS. `ext_fn_names` lives on the Rust HANDLE, not on
@@ -163,6 +166,59 @@ void runReplSnapshotLifecycleTests() {
 
       final bytes = await repl.snapshot();
       expect(bytes, isNotEmpty);
+    });
+
+    // RESTORE + LIMITS, and the two backends DELIBERATELY differ. Both halves
+    // are pinned here, because a parity difference nobody asserts is
+    // indistinguishable from a parity defect.
+    //
+    // monty_repl.dart:434-438 documents the FFI defect and its measurement --
+    // "stackDepth 5 let rec(50) succeed after a restore while an identical
+    // un-restored session raised RecursionError" -- and NO TEST WAS EVER
+    // WRITTEN FOR IT. Found by a mechanical mutation pass: flipping
+    // `_limits == null ? null : encodeLimitsJson(_limits)` to `!= null` drops
+    // the limits on restore and the whole suite stayed green.
+    //
+    // On WASM, `restore(limitsJson:)` is not implemented and throws on
+    // purpose (core#140): silently keeping the snapshot's limits would be "a
+    // security control reporting success". That refusal is the contract, so
+    // this asserts the THROW rather than skipping the backend.
+    //
+    // Falsifier (vm): make that ternary flip; only this test fails.
+    // Falsifier (web): let WasmReplBindings.restore accept limitsJson
+    //                  silently; only this test fails.
+    test("restore keeps THIS repl's limits, not the snapshot's", () async {
+      final unlimited = MontyRepl();
+      addTearDown(unlimited.dispose);
+      await unlimited.feedRun('seed = 1');
+      final bytes = await unlimited.snapshot();
+
+      final limited = MontyRepl(limits: const MontyLimits(stackDepth: 5));
+      addTearDown(limited.dispose);
+
+      if (_isWeb) {
+        await expectLater(
+          limited.restore(bytes),
+          throwsUnsupportedError,
+          reason: 'web must REFUSE, not silently keep the snapshot limits',
+        );
+
+        return;
+      }
+
+      await limited.restore(bytes);
+      final r = await limited.feedRun(
+        'def rec(n):\n'
+        '    return 0 if n == 0 else rec(n - 1)\n'
+        'rec(50)',
+      );
+      expect(
+        r.error,
+        isNotNull,
+        reason:
+            'stackDepth 5 must refuse rec(50) AFTER a restore; a null error '
+            'means the restored session kept the SNAPSHOT limits instead',
+      );
     });
   });
 }
