@@ -8,6 +8,7 @@
 @Tags(['integration', 'ffi'])
 library;
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -44,9 +45,10 @@ OsCallHandler _datetimeHandler() => (op, args, kwargs) async {
     case 'datetime.now':
       // Single positional arg is the tz: MontyTimeZone (as JSON map via
       // dartValue) or null for a naive datetime.
-      final tzArg = args.isNotEmpty ? args.first : null;
+      final tzArg = args.firstOrNull;
       if (tzArg == null) return _fixedDateTime();
       final tz = tzArg as Map<String, Object?>;
+
       return _fixedDateTime(
         offsetSeconds: (tz['offset_seconds']! as num).toInt(),
         timezoneName: tz['name'] as String?,
@@ -66,10 +68,11 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final handler = _datetimeHandler();
+      await repl.feedRun('import datetime', osHandler: handler);
       final result = await repl.feedRun(
         'datetime.date.today()',
-        osHandler: _datetimeHandler(),
+        osHandler: handler,
       );
 
       expect(result.error, isNull);
@@ -83,10 +86,11 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final handler = _datetimeHandler();
+      await repl.feedRun('import datetime', osHandler: handler);
       final result = await repl.feedRun(
         'datetime.datetime.now().tzinfo is None',
-        osHandler: _datetimeHandler(),
+        osHandler: handler,
       );
 
       expect(result.error, isNull);
@@ -97,11 +101,12 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final handler = _datetimeHandler();
+      await repl.feedRun('import datetime', osHandler: handler);
       final result = await repl.feedRun(
         'datetime.datetime.now(datetime.timezone.utc)'
         '.tzinfo is datetime.timezone.utc',
-        osHandler: _datetimeHandler(),
+        osHandler: handler,
       );
 
       expect(result.error, isNull);
@@ -112,12 +117,13 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final handler = _datetimeHandler();
+      await repl.feedRun('import datetime', osHandler: handler);
       final result = await repl.feedRun(
         'plus_two = datetime.timezone(datetime.timedelta(hours=2))\n'
         'now = datetime.datetime.now(plus_two)\n'
         'now.tzinfo == plus_two',
-        osHandler: _datetimeHandler(),
+        osHandler: handler,
       );
 
       expect(result.error, isNull);
@@ -128,12 +134,13 @@ void main() {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
 
-      await repl.feedRun('import datetime', osHandler: _datetimeHandler());
+      final handler = _datetimeHandler();
+      await repl.feedRun('import datetime', osHandler: handler);
       final result = await repl.feedRun(
         'today = datetime.date.today()\n'
         'now = datetime.datetime.now()\n'
         'str(now).startswith(str(today))',
-        osHandler: _datetimeHandler(),
+        osHandler: handler,
       );
 
       expect(result.error, isNull);
@@ -149,10 +156,11 @@ void main() {
         OsCallHandler notHandled() =>
             (op, args, kwargs) async => throw const OsCallNotHandledException();
 
-        await repl.feedRun('import datetime', osHandler: notHandled());
+        final handler = notHandled();
+        await repl.feedRun('import datetime', osHandler: handler);
         final result = await repl.feedRun(
           'datetime.date.today()',
-          osHandler: notHandled(),
+          osHandler: handler,
         );
         expect(result.error, isNotNull);
         // Was NameError. Declining an OS call is a refusal to perform an
@@ -178,10 +186,11 @@ void main() {
             (op, args, kwargs) async =>
                 throw const OsCallException('handler refused');
 
-        await repl.feedRun('import datetime', osHandler: alwaysFails());
+        final handler = alwaysFails();
+        await repl.feedRun('import datetime', osHandler: handler);
         final result = await repl.feedRun(
           'datetime.date.today()',
-          osHandler: alwaysFails(),
+          osHandler: handler,
         );
         expect(result.error, isNotNull);
         expect(result.error?.excType, 'RuntimeError');

@@ -5,6 +5,7 @@
 // uses pathlib.Path against a mount, the handler resolves the request
 // through the in-memory vfs, and the result round-trips back to Dart.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -97,8 +98,8 @@ void runMountDirTests() {
 
       expect(r.error, isNull);
       final tuple = r.value.dartValue! as List<Object?>;
-      expect(tuple.first, 'caught');
-      expect(tuple[1], contains('/data/missing.txt'));
+      expect(tuple.firstOrNull, 'caught');
+      expect(tuple.elementAtOrNull(1), contains('/data/missing.txt'));
     });
 
     test('exists / is_file / is_dir reflect mount state', () async {

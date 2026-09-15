@@ -10,6 +10,7 @@
 // Both files call [runReplFuturesTests] so the assertions stay in sync
 // across FFI and WASM backends.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -93,7 +94,7 @@ result
               (p) => p.callId == id,
               orElse: () => fail('callId $id not in observed pendings'),
             );
-            final arg = pending.args.first.dartValue! as String;
+            final arg = pending.args.firstOrNull!.dartValue! as String;
             results[id] = 'value-for-$arg';
           }
 
@@ -104,7 +105,7 @@ result
       expect(result.result.error, isNull);
       expect(result.result.value.dartValue, 'value-for-token');
       expect(pendings, hasLength(1));
-      expect(pendings.first.functionName, 'fetch');
+      expect(pendings.firstOrNull!.functionName, 'fetch');
     });
 
     // --- Error path --------------------------------------------------------
@@ -139,8 +140,11 @@ out
 
         expect(result.result.error, isNull);
         final tuple = result.result.value.dartValue! as List<Object?>;
-        expect(tuple.first, 'err');
-        expect(tuple[1], contains('simulated upstream failure'));
+        expect(tuple.firstOrNull, 'err');
+        expect(
+          tuple.elementAtOrNull(1),
+          contains('simulated upstream failure'),
+        );
       },
     );
 
@@ -162,11 +166,11 @@ results
           // Every observed pending should have one int arg; record dispatch
           // order so we can assert all three fired before await yielded.
           for (final p in ps) {
-            dispatched.add(p.args.first.dartValue! as int);
+            dispatched.add(p.args.firstOrNull!.dartValue! as int);
           }
           final results = <int, Object?>{};
           for (final p in ps) {
-            results[p.callId] = (p.args.first.dartValue! as int) * 10;
+            results[p.callId] = (p.args.firstOrNull!.dartValue! as int) * 10;
           }
 
           return (results: results, errors: <int, String>{});
@@ -210,7 +214,7 @@ results
               final results = <int, Object?>{};
               final errors = <int, String>{};
               for (final p in ps) {
-                final n = p.args.first.dartValue! as int;
+                final n = p.args.firstOrNull!.dartValue! as int;
                 if (n == 2) {
                   errors[p.callId] = 'broken-$n';
                 } else {
@@ -244,7 +248,7 @@ b = await fetch(13)
             cycles++;
             final results = <int, Object?>{};
             for (final p in ps) {
-              results[p.callId] = (p.args.first.dartValue! as int) * 2;
+              results[p.callId] = (p.args.firstOrNull!.dartValue! as int) * 2;
             }
 
             return (results: results, errors: <int, String>{});
@@ -275,7 +279,7 @@ await doubled(21)
         resolver: (ids, ps) {
           final results = <int, Object?>{};
           for (final p in ps) {
-            results[p.callId] = p.args.first.dartValue;
+            results[p.callId] = p.args.firstOrNull!.dartValue;
           }
 
           return (results: results, errors: <int, String>{});
@@ -354,7 +358,7 @@ results = await asyncio.gather(fetch("int"), fetch("str"), fetch("list"), fetch(
         resolver: (ids, ps) {
           final results = <int, Object?>{};
           for (final p in ps) {
-            final tag = p.args.first.dartValue! as String;
+            final tag = p.args.firstOrNull!.dartValue! as String;
             results[p.callId] = switch (tag) {
               'int' => 42,
               'str' => 'hello',

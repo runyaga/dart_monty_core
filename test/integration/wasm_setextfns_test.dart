@@ -47,17 +47,18 @@ void main() {
     test(
       'feedStart with multiple external functions registers all names',
       () async {
+        final isPending = isA<MontyPending>();
         final progress = await repl.feedStart(
           'a = tool_a()\nb = tool_b()\na + b',
           externalFunctions: ['tool_a', 'tool_b'],
         );
 
-        expect(progress, isA<MontyPending>());
+        expect(progress, isPending);
         expect((progress as MontyPending).functionName, 'tool_a');
 
         // Resume tool_a
         final p2 = await repl.resume(10);
-        expect(p2, isA<MontyPending>());
+        expect(p2, isPending);
         expect((p2 as MontyPending).functionName, 'tool_b');
 
         // Resume tool_b

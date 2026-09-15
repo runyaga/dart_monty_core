@@ -2,6 +2,7 @@
 @Tags(['unit'])
 library;
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -27,7 +28,7 @@ void main() {
       final list = MontyTypingError.listFromJson(_singleDiagnosticJson);
       expect(list, hasLength(1));
 
-      final e = list.single;
+      final e = list.singleOrNull!;
       expect(e.code, 'invalid-assignment');
       expect(
         e.message,
@@ -42,7 +43,9 @@ void main() {
     });
 
     test('toString summarises with location and code', () {
-      final e = MontyTypingError.listFromJson(_singleDiagnosticJson).single;
+      final e = MontyTypingError.listFromJson(
+        _singleDiagnosticJson,
+      ).singleOrNull!;
       expect(
         e.toString(),
         'MontyTypingError(invalid-assignment at /main.py:114:12: '
@@ -54,7 +57,7 @@ void main() {
       const json = '''
       [{"code": "x", "message": "y"}]
       ''';
-      final e = MontyTypingError.listFromJson(json).single;
+      final e = MontyTypingError.listFromJson(json).singleOrNull!;
       expect(e.code, 'x');
       expect(e.message, 'y');
       expect(e.path, isNull);
@@ -81,7 +84,7 @@ void main() {
       const json = '[1, "string", null, {"code": "ok", "message": "kept"}]';
       final list = MontyTypingError.listFromJson(json);
       expect(list, hasLength(1));
-      expect(list.single.code, 'ok');
+      expect(list.singleOrNull!.code, 'ok');
     });
 
     test('preserves order of multiple diagnostics', () {

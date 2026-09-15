@@ -7,6 +7,7 @@
 // through the Rust handle, which is identical FFI/WASM, so both
 // backends share these scenarios.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -27,7 +28,7 @@ void runReplExtFnsLifecycleTests() {
         final r1 = await repl.feedRun(
           'x = fetch(1)\nx',
           externalFunctions: {
-            'fetch': (args, _) async => (args[0]! as int) * 10,
+            'fetch': (args, _) async => (args.firstOrNull! as int) * 10,
           },
         );
         expect(
@@ -60,7 +61,9 @@ void runReplExtFnsLifecycleTests() {
         // Iterative path: register `fetch`.
         await repl.feedRun(
           'x = fetch(7)',
-          externalFunctions: {'fetch': (args, _) => Future.value(args[0])},
+          externalFunctions: {
+            'fetch': (args, _) => Future.value(args.firstOrNull),
+          },
         );
 
         // Fast-path feed (no externalFunctions, no osHandler)
@@ -83,14 +86,18 @@ void runReplExtFnsLifecycleTests() {
         // Feed 1: register `a`.
         await repl.feedRun(
           'r = a(5)',
-          externalFunctions: {'a': (args, _) async => (args[0]! as int) + 1},
+          externalFunctions: {
+            'a': (args, _) async => (args.firstOrNull! as int) + 1,
+          },
         );
 
         // Feed 2: register `b` instead. `a` must no longer resolve
         // when referenced again.
         await repl.feedRun(
           'r = b(5)',
-          externalFunctions: {'b': (args, _) async => (args[0]! as int) * 2},
+          externalFunctions: {
+            'b': (args, _) async => (args.firstOrNull! as int) * 2,
+          },
         );
 
         final r = await repl.feedRun('r = a(5)');

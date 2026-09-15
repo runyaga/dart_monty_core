@@ -5,6 +5,7 @@
 // body pins the fix on both backends — Python code passed through the
 // static one-shot wrapper can call registered Dart callbacks.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -14,7 +15,8 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'add(3, 4)',
         externalFunctions: {
-          'add': (args, _) async => (args[0]! as int) + (args[1]! as int),
+          'add': (args, _) async =>
+              (args.firstOrNull! as int) + (args.elementAtOrNull(1)! as int),
         },
       );
 
@@ -41,7 +43,8 @@ void runMontyExecExternalsTests() {
         externalFunctions: {
           'double': (args, _) async {
             calls++;
-            return (args[0]! as int) * 2;
+
+            return (args.firstOrNull! as int) * 2;
           },
         },
       );

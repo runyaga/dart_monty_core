@@ -1,6 +1,7 @@
 @Tags(['integration', 'ffi'])
 library;
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -16,14 +17,16 @@ Map<String, String> _makeVfs() => {
 OsCallHandler _vfsHandler(Map<String, String> vfs) => (op, args, kwargs) async {
   switch (op) {
     case 'Path.read_text':
-      return vfs[args.first! as String] ?? '';
+      return vfs[args.firstOrNull!] ?? '';
     case 'Path.write_text':
-      vfs[args[0]! as String] = args[1]! as String;
+      vfs[args.firstOrNull! as String] = args.elementAtOrNull(1)! as String;
+
       return null;
     case 'Path.exists':
-      return vfs.containsKey(args.first! as String);
+      return vfs.containsKey(args.firstOrNull);
     case 'Path.unlink':
-      vfs.remove(args.first! as String);
+      vfs.remove(args.firstOrNull);
+
       return null;
     default:
       throw OsCallException('$op not supported');
@@ -172,8 +175,8 @@ void main() {
       // read_text that we know are real OS calls.
       Future<Object?> alwaysThrows(
         String op,
-        List<Object?> args,
-        Map<String, Object?>? kwargs,
+        List<Object?> _,
+        Map<String, Object?>? _,
       ) async => throw OsCallException('handler rejected: $op');
       final repl = MontyRepl();
       addTearDown(repl.dispose);

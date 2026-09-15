@@ -5,6 +5,7 @@
 // by the handler, which returns a MontyFileHandle), then drives buffered
 // reads/writes/appends through `Path.read_text`/`write_text`/`append_text`.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -127,8 +128,8 @@ void runOpenTests() {
 
         expect(r.error, isNull);
         final tuple = r.value.dartValue! as List<Object?>;
-        expect(tuple.first, 'caught');
-        expect(tuple[1], contains('/m/nope.txt'));
+        expect(tuple.firstOrNull, 'caught');
+        expect(tuple.elementAtOrNull(1), contains('/m/nope.txt'));
       },
     );
   });

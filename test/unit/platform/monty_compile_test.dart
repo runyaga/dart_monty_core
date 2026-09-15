@@ -16,7 +16,7 @@ import 'package:test/test.dart';
 // Throws [MontyScriptError] from compileCode with the given excType;
 // used to test SyntaxError promotion in BaseMontyPlatform.compileCode.
 final class _ThrowingBindings implements MontyCoreBindings {
-  _ThrowingBindings(this._excType);
+  const _ThrowingBindings(this._excType);
   final String _excType;
 
   @override
@@ -149,7 +149,7 @@ void main() {
   // -------------------------------------------------------------------------
   group('BaseMontyPlatform.compileCode error promotion', () {
     test('SyntaxError is promoted to MontySyntaxError', () async {
-      final platform = _StubPlatform(_ThrowingBindings('SyntaxError'));
+      final platform = _StubPlatform(const _ThrowingBindings('SyntaxError'));
       addTearDown(platform.dispose);
       await expectLater(
         platform.compileCode('bad code'),
@@ -158,7 +158,7 @@ void main() {
     });
 
     test('non-SyntaxError is rethrown as MontyScriptError', () async {
-      final platform = _StubPlatform(_ThrowingBindings('ValueError'));
+      final platform = _StubPlatform(const _ThrowingBindings('ValueError'));
       addTearDown(platform.dispose);
       await expectLater(
         platform.compileCode('bad code'),

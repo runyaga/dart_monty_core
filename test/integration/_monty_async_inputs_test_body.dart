@@ -15,6 +15,7 @@
 
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -83,7 +84,7 @@ result
                     fetchCallCount++;
                     await Future<void>.delayed(Duration.zero);
 
-                    return 'value-for-${args[0]}';
+                    return 'value-for-${args.firstOrNull}';
                   },
                 },
               );
@@ -116,7 +117,7 @@ result
                   fetchCallCount++;
                   await Future<void>.delayed(Duration.zero);
 
-                  return 'value-for-${args[0]}';
+                  return 'value-for-${args.firstOrNull}';
                 },
               },
             );
@@ -143,7 +144,7 @@ results
                 inputs: {'a': 1, 'b': 2, 'c': 3},
                 externalAsyncFunctions: {
                   'fetch': (args, _) async {
-                    final n = args[0]! as int;
+                    final n = args.firstOrNull! as int;
                     calls.add(n);
                     await Future<void>.delayed(Duration.zero);
 

@@ -254,15 +254,6 @@ class MontyRepl {
     }
   }
 
-  static void _emitPrintOutput(
-    void Function(String stream, String text)? cb,
-    String? text,
-  ) {
-    if (cb != null && text != null && text.isNotEmpty) {
-      cb('stdout', text);
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Iterative feed (caller drives the loop)
   // ---------------------------------------------------------------------------
@@ -478,6 +469,15 @@ class MontyRepl {
     if (_disposed) return;
     _disposed = true;
     await _bindings.dispose();
+  }
+
+  static void _emitPrintOutput(
+    void Function(String stream, String text)? cb,
+    String? text,
+  ) {
+    if (cb != null && text != null && text.isNotEmpty) {
+      cb('stdout', text);
+    }
   }
 
   // ---------------------------------------------------------------------------

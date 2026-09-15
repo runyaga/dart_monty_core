@@ -131,6 +131,9 @@ dcm:
         exclude:
           # Intentional no-op dispose on non-owning wrappers
           - "lib/src/platform/monty_platform.dart"
+          # _ThrowingBindings is a compile-error stub; dispose is
+          # deliberately a no-op to satisfy MontyCoreBindings
+          - "test/unit/platform/monty_compile_test.dart"
     - no-equal-then-else
     - prefer-first
     - prefer-last

@@ -6,6 +6,7 @@
 // trips it through Python, and Dart hydrates the returned MontyDataclass
 // into a user class via MontyDataclass.hydrate.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -57,8 +58,8 @@ void runDataclassHydrateTests() {
         final r = await Monty('make_user("alice", 30)').run(
           externalFunctions: {
             'make_user': (args, _) async => _userDataclass(
-              name: args[0]! as String,
-              age: args[1]! as int,
+              name: args.firstOrNull! as String,
+              age: args.elementAtOrNull(1)! as int,
             ),
           },
         );
@@ -209,8 +210,8 @@ o = make_order()
         externalFunctions: {
           'make_user': (args, _) => Future.value(
             _userDataclass(
-              name: args[0]! as String,
-              age: args[1]! as int,
+              name: args.firstOrNull! as String,
+              age: args.elementAtOrNull(1)! as int,
               frozen: true,
             ),
           ),
@@ -219,13 +220,14 @@ o = make_order()
 
       expect(r.error, isNull);
       final dc = r.value as MontyClassInstance;
+      final classId = dc.classType.id;
 
       // What SURVIVES.
       expect(dc.name, 'User');
       expect(dc.dartAttrs, {'name': 'frank', 'age': 20});
       expect(dc.isDataclass, isTrue);
       expect(
-        dc.classType.id,
+        classId,
         isNotEmpty,
         reason:
             'class identity must survive; it is what keeps two host '
@@ -259,7 +261,7 @@ o = make_order()
         reason: 'the host SET frozen: true and it did not come back',
       );
       expect(
-        dc.classType.id,
+        classId,
         isNotEmpty,
         reason: 'class identity is what DOES survive, and M1 depends on it',
       );
