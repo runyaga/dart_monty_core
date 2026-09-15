@@ -83,6 +83,26 @@ fi
 # local run has no base to compare against and blocking it would just train
 # people to skip the gate.
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  # THE REF ITSELF MUST RESOLVE FIRST, and this check is the difference between
+  # a gate and a suggestion. CI fetches the base with `|| true`, so a fetch that
+  # fails -- network, a shallow refspec that never creates origin/<base>, a
+  # renamed base branch -- leaves the ref absent. `git show <missing-ref>:<file>`
+  # and `git show <present-ref>:<missing-file>` BOTH just fail, so without this
+  # the two are indistinguishable and a failed fetch silently takes the
+  # "this PR introduces the baseline" path: the ratchet falls back to the PR's
+  # OWN copy, which is exactly the laundering hole this block exists to close.
+  # A guard that degrades open on infrastructure failure is worse than none,
+  # because the log still says PASS.
+  if ! git rev-parse --verify --quiet "${RATCHET_BASE_REF}^{commit}" >/dev/null; then
+    echo "FAIL: RATCHET_BASE_REF=${RATCHET_BASE_REF} does not resolve."
+    echo "  The baseline a PR is measured against must come from the BASE branch,"
+    echo "  and that ref is not present in this checkout. Refusing to fall back to"
+    echo "  the working copy: that is the hole this guard closes, and falling back"
+    echo "  silently would report PASS while measuring the PR against itself."
+    echo "  Fix the fetch (CI: git fetch --no-tags --depth=1 origin \$GITHUB_BASE_REF),"
+    echo "  or unset RATCHET_BASE_REF to run without a base comparison."
+    exit 1
+  fi
   BASE_COPY="$(mktemp)"
   if git show "${RATCHET_BASE_REF}:${BASELINE}" > "$BASE_COPY" 2>/dev/null; then
     echo "note: comparing against ${RATCHET_BASE_REF}:${BASELINE}, not the"
