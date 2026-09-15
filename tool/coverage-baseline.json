@@ -12,14 +12,14 @@
       "pct": 0.0
     },
     "lib/src/ffi/ffi_core_bindings.dart": {
-      "found": 211,
-      "hit": 148,
-      "pct": 70.14
+      "found": 213,
+      "hit": 152,
+      "pct": 71.36
     },
     "lib/src/ffi/monty_ffi.dart": {
       "found": 34,
-      "hit": 6,
-      "pct": 17.65
+      "hit": 7,
+      "pct": 20.59
     },
     "lib/src/ffi/monty_native.dart": {
       "found": 71,
@@ -32,9 +32,9 @@
       "pct": 100.0
     },
     "lib/src/ffi/native_bindings_ffi.dart": {
-      "found": 327,
-      "hit": 251,
-      "pct": 76.76
+      "found": 336,
+      "hit": 259,
+      "pct": 77.08
     },
     "lib/src/ffi/native_isolate_bindings.dart": {
       "found": 0,
@@ -73,8 +73,8 @@
     },
     "lib/src/mount/memory_mounted_os_handler.dart": {
       "found": 279,
-      "hit": 257,
-      "pct": 92.11
+      "hit": 264,
+      "pct": 94.62
     },
     "lib/src/mount/monty_memory_file.dart": {
       "found": 7,
@@ -133,8 +133,8 @@
     },
     "lib/src/platform/base_monty_platform.dart": {
       "found": 190,
-      "hit": 148,
-      "pct": 77.89
+      "hit": 151,
+      "pct": 79.47
     },
     "lib/src/platform/code_capture.dart": {
       "found": 47,
@@ -213,8 +213,8 @@
     },
     "lib/src/platform/monty_state_mixin.dart": {
       "found": 18,
-      "hit": 14,
-      "pct": 77.78
+      "hit": 17,
+      "pct": 94.44
     },
     "lib/src/platform/monty_typing_error.dart": {
       "found": 28,
@@ -222,29 +222,29 @@
       "pct": 92.86
     },
     "lib/src/platform/monty_value.dart": {
-      "found": 74,
-      "hit": 74,
+      "found": 73,
+      "hit": 73,
       "pct": 100.0
     },
     "lib/src/platform/monty_value_collections.dart": {
-      "found": 111,
-      "hit": 95,
-      "pct": 85.59
+      "found": 133,
+      "hit": 120,
+      "pct": 90.23
     },
     "lib/src/platform/monty_value_datetime.dart": {
       "found": 183,
-      "hit": 106,
-      "pct": 57.92
+      "hit": 165,
+      "pct": 90.16
     },
     "lib/src/platform/monty_value_scalars.dart": {
-      "found": 103,
-      "hit": 97,
-      "pct": 94.17
+      "found": 107,
+      "hit": 101,
+      "pct": 94.39
     },
     "lib/src/platform/monty_value_structured.dart": {
-      "found": 214,
-      "hit": 129,
-      "pct": 60.28
+      "found": 213,
+      "hit": 194,
+      "pct": 91.08
     },
     "lib/src/platform/os_call_exception.dart": {
       "found": 12,
@@ -333,8 +333,8 @@
     }
   },
   "total": {
-    "found": 4120,
-    "hit": 2139,
-    "pct": 51.92
+    "found": 4155,
+    "hit": 2317,
+    "pct": 55.76
   }
 }

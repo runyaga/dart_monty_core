@@ -166,6 +166,19 @@ if not os.path.exists(baseline_path):
 
 base = json.load(open(baseline_path))
 bt, br, bf = base['total'], base['by_rule'], base['by_file']
+
+# THE BASELINE MUST BE INTERNALLY CONSISTENT, or every check below it is
+# reasoning about a number nobody produced. MEASURED while falsifying this
+# file: hand-editing `total` to 170 while by_rule still summed to 171 reported
+# PASS -- the per-rule and per-file checks were all satisfied, and the TOTAL
+# was never compared to anything. A baseline that lies is worse than a high
+# one, because the gate agrees with it.
+if bt != sum(br.values()):
+    print(f"FATAL: {baseline_path} is inconsistent -- total {bt} but by_rule "
+          f"sums to {sum(br.values())}. Regenerate it: "
+          f"bash tool/dcm_ratchet.sh --update")
+    sys.exit(2)
+
 violations = []
 
 for rule, n in sorted(rules.items()):
@@ -192,11 +205,26 @@ if violations:
     print("\nFix them, or if intentional: bash tool/dcm_ratchet.sh --update")
     sys.exit(1)
 
+# A RATCHET THAT ONLY CLICKS ONE WAY IS NOT A RATCHET.
+#
+# This used to print "PASS — and N fewer than baseline. Consider: --update"
+# and exit 0. So an improvement was never CAPTURED: the baseline stayed where
+# it was, and the count could drift straight back up to it with the gate still
+# green. It blocked going above the number and permitted everything below --
+# which is how 171 issues sat unchanged while every run reported PASS.
+#
+# Now a drop FAILS, with the fix being to lower the baseline in the same
+# commit. That makes progress permanent: whatever you fixed can never come
+# back without a new violation.
 if current['total'] < bt:
-    print(f"PASS — and {bt - current['total']} fewer than baseline. "
-          f"Consider: bash tool/dcm_ratchet.sh --update")
-else:
-    print("PASS — no new issues above baseline")
+    print(f"\nFAIL — {bt - current['total']} FEWER issues than the baseline.")
+    print("  That is good news, and it has to be recorded or it is not kept:")
+    print("  a baseline left high lets these exact issues return with the gate")
+    print("  still green. Lower it IN THIS COMMIT:")
+    print("      bash tool/dcm_ratchet.sh --update")
+    sys.exit(1)
+
+print("PASS — no new issues above baseline")
 PY
 rc=$?
 rm -f "$TMP"

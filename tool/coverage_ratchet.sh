@@ -243,10 +243,18 @@ if violations:
     print(f'  bash tool/coverage_ratchet.sh {tracefile} --update')
     sys.exit(1)
 
+# Same one-way-ratchet defect as tool/dcm_ratchet.sh, same fix. Printing
+# "Consider: --update" and exiting 0 means a coverage GAIN is never captured:
+# the baseline stays low and the percentage can slide back down to it with the
+# gate green. A gain now FAILS until the baseline records it.
 if current['total']['pct'] > bt['pct']:
-    print(f"PASS — and {current['total']['pct'] - bt['pct']:.2f} points above "
-          f"baseline. Consider: bash tool/coverage_ratchet.sh {tracefile} "
-          f"--update")
-else:
-    print('PASS — no file below its baseline')
+    gain = current['total']['pct'] - bt['pct']
+    print(f"\nFAIL — coverage is {gain:.2f} points ABOVE the baseline.")
+    print("  Good news that has to be recorded or it is not kept: a baseline")
+    print("  left low lets coverage slide back with the gate still green.")
+    print("  Raise it IN THIS COMMIT:")
+    print(f"      bash tool/coverage_ratchet.sh {tracefile} --update")
+    sys.exit(1)
+
+print('PASS — no file below its baseline')
 PY
