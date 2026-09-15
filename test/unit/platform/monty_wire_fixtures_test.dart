@@ -26,8 +26,24 @@
 // NOT covered here, stated so the count is not mistaken for the hierarchy:
 //   - MontyOpaque -- no single Python expression produces one; it is what the
 //     encoder falls back to.
-//   - MontyFileHandle -- `open(...)` returned a null value through the oracle,
-//     so nothing was harvested rather than guessed.
+//   - MontyFileHandle -- NOT unharvestable, and the earlier note here said so
+//     only because it stopped at "the oracle returned null". The real reason,
+//     from the oracle's `error` field:
+//         NotImplementedError: OS function 'open' not implemented with
+//         standard execution
+//     The oracle runs with NO OS handler, so `open()` raises before any value
+//     exists. A filehandle IS emittable through a mounted-OS-handler path --
+//     see test/integration/ffi_mount_dir_test.dart -- which is where this row
+//     has to be harvested from. Left out rather than hand-written, because a
+//     Dart-authored literal would defeat the entire point of this file.
+//
+// A HARVESTING TRAP, recorded because it nearly produced a silent wrong
+// fixture. The harvest read only the oracle's `value` field. On an exception
+// the oracle emits `"value": null` PLUS an `error` object -- and `null` is
+// also the legitimate literal for MontyNone, so the two are indistinguishable
+// from `value` alone. Every fixture above was re-harvested 2026-09-15 with the
+// `error` field checked: 24 of 24 clean. Any future harvest must check
+// `error`, not just read `value`.
 //   - MontyDataclass -- harvested, but it does NOT arrive as itself: a Python
 //     dataclass comes over as `class_instance` with `is_dataclass: true`, so
 //     that fixture decodes to a MontyClassInstance. No wire shape produces a
