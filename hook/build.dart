@@ -202,9 +202,28 @@ void _declareInputs(
 /// second process (rc=0, silent), read a page past EOF -> `Bus error (core
 /// dumped)`, exit 135.
 ///
-/// WHY THIS IS NEEDED EVEN THOUGH THE RUNNER SERIALISES HOOKS. The runner
+/// SCOPE -- READ THIS BEFORE TRUSTING IT. This protects the file written HERE,
+/// under `outputDirectoryShared`. **That is not the file the VM `dlopen`s.**
+///
+/// Measured on this tree, three consecutive cached `dart test` runs:
+///
+///     run 1  .dart_tool/lib/...so   ino=467553  mtime=...385
+///     run 2  .dart_tool/lib/...so   ino=467553  mtime=...386
+///     run 3  .dart_tool/lib/...so   ino=467553  mtime=...386
+///     shared output                 ino=473399  unchanged
+///
+/// The mapped copy keeps the SAME inode and is rewritten in place on every
+/// `dart run`/`dart test`, including runs where this hook never executes --
+/// dartdev bundles native assets unconditionally and copies with an
+/// `O_TRUNC` open. So the `SIGBUS`/`BUS_ADRERR` hazard is NOT closed by this
+/// function; it lives one layer up, outside this repo's control. core#161.
+///
+/// Keep this anyway: it removes a truncation window on the file dartdev copies
+/// FROM, and the `$variant` keying above is independent of all of it.
+///
+/// WHY IT IS STILL NEEDED EVEN THOUGH THE RUNNER SERIALISES HOOKS. The runner
 /// serialises hook-against-hook. It does nothing for a process that finished
-/// its hook and is now EXECUTING the mapped library -- that lock was released
+/// its hook and is now EXECUTING a mapped library -- that lock was released
 /// long before its tests started. Deleting the artefact is safe (`unlink`
 /// leaves a mapped inode valid); overwriting it in place is not.
 ///
