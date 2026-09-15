@@ -25,7 +25,17 @@ final class MontyResourceUsage {
     );
   }
 
-  /// The number of bytes of memory used during execution.
+  /// Always `0` — memory use is not observable in monty v0.0.23.
+  ///
+  /// This is an upstream limit, not a shortcut here. `ResourceTracker` exposes
+  /// `elapsed()` and nothing else of this kind: there is no accessor for memory
+  /// used or recursion depth used, only the configured MAXIMA (`max_memory`,
+  /// `max_duration`). Every site that builds this struct writes a literal `0`
+  /// (`native/src/handle.rs`, `native/src/repl_handle.rs`), and zeroing a field
+  /// the host genuinely cannot observe is the honest option.
+  ///
+  /// Do not use this to impose your own memory ceiling — it will read `0` even
+  /// on a run that breached `MontyLimits.memoryBytes`. Tracked in core#155.
   final int memoryBytesUsed;
 
   /// The wall-clock time elapsed in milliseconds.
