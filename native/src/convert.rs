@@ -47,7 +47,22 @@ use monty_types::MontyObject;
 ///   4  0.19.0 — Tier 3: integral floats, -0.0 and ints past 2^53 travel as
 ///                tagged TEXT, because a JSON number's text is what the web
 ///                transport reparses. Closes core#128 on all three backends.
-pub const WIRE_FORMAT_VERSION: u32 = 4;
+///   5  0.23.0 — `class_instance` travels ENTIRELY in this wire format.
+///                monty v0.0.23 replaced the wire `Dataclass` variant with
+///                `ClassInstance` (upstream cf8246d7), and our envelope for it
+///                mixed two encodings: `attrs` was ours, while `class_type`
+///                and `instance_id` went out through monty's DERIVED serde —
+///                externally tagged (`{"Int": 42}`), which object.rs:48-53
+///                says is "for snapshots and binary transport, not for
+///                human-facing JSON". Both are ours now, and uuids travel as
+///                canonical STRINGS rather than 16 integers, matching monty's
+///                own JS boundary (monty-js/src/convert.rs:349, "JS has no
+///                128-bit integer type" — Dart has the same constraint).
+///                BUMPED because a v4 asset paired with a v5 Dart decoder
+///                throws a bare `_TypeError: List<dynamic> is not a subtype
+///                of String?` — loud, but meaningless. The handshake exists to
+///                turn that into a version mismatch the reader can act on.
+pub const WIRE_FORMAT_VERSION: u32 = 5;
 
 pub const PRINT_COLLECT_LIMIT: Option<usize> = Some(monty_types::DEFAULT_MAX_PRINT_COLLECT_BYTES);
 
@@ -168,11 +183,34 @@ pub fn monty_object_to_json(obj: &MontyObject) -> Value {
         MontyObject::ClassInstance(inst) => {
             // v0.0.23 removed the dedicated Dataclass variant; dataclasses are
             // represented as ClassInstance at the host boundary.
+            // EVERY field goes through OUR wire format. `class_type` and
+            // `instance_id` used to be handed straight to `json!`, which
+            // serialises them with monty's DERIVED impls — and upstream says
+            // what those produce (crates/monty-types/src/object.rs:48-53):
+            // externally tagged `{"Int": 42}`, "designed for snapshots and
+            // binary transport, not for human-facing JSON". So one envelope
+            // carried two incompatible encodings and the Dart decoder could
+            // not read half of it. Isolated by
+            // `class_instance_envelope_is_wire_format_throughout`, which the
+            // pre-existing `test_class_instance` could never catch because it
+            // gives class_type an EMPTY attrs list.
+            //
+            // Uuids go out as canonical STRINGS, matching monty's own JS host
+            // boundary (crates/monty-js/src/convert.rs:349) and for the same
+            // stated reason — "JS has no 128-bit integer type". Dart has the
+            // same constraint, and 16 loose integers are not an identity a
+            // reader can recognise.
             let attrs_json = dict_to_json(&inst.attrs);
             json!({
                 "__type": "class_instance",
-                "class_type": inst.class_type,
-                "instance_id": inst.instance_id,
+                "class_type": {
+                    "name": inst.class_type.name,
+                    "id": inst.class_type.id.to_string(),
+                    "host_defined": inst.class_type.host_defined,
+                    "is_dataclass": inst.class_type.is_dataclass,
+                    "attrs": dict_to_json(&inst.class_type.attrs),
+                },
+                "instance_id": inst.instance_id.to_string(),
                 "attrs": attrs_json,
             })
         }
@@ -408,6 +446,109 @@ fn envelope_str_array(
 }
 
 /// what it does not understand.
+/// Derive a STABLE 16-byte class identity from what the host declared.
+///
+/// D1 of the milestone plan: class uuids must be DETERMINISTIC, so the same
+/// host class yields the same id on every boot and in every process. That is
+/// what makes identity survive a snapshot/restore into a fresh worker — see
+/// upstream `crates/monty-types/src/object.rs:781-784`, "The sandbox keeps one
+/// type object per class id".
+///
+/// FNV-1a, hand-rolled ON PURPOSE. `std::hash::DefaultHasher` is explicitly NOT
+/// guaranteed stable across Rust releases, so using it here would silently
+/// change every class id on a toolchain bump and break exactly the restores
+/// this exists to protect.
+///
+/// Both `name` and `type_id` feed the hash: the name is the class identity a
+/// reader recognises, and `type_id` keeps two same-named host classes apart
+/// while that field still exists on the wire.
+/// Read a bool that may be ABSENT (meaning false) but must not be WRONG-TYPED.
+///
+/// `.and_then(as_bool).unwrap_or(false)` conflates those two: a payload saying
+/// `host_defined: 1` decodes as `false` and nothing reports it. A decoder that
+/// invents a value for malformed input is the hazard `envelope_int` in this
+/// file already guards against.
+fn wire_bool(v: Option<&serde_json::Value>, field: &str) -> Result<bool, String> {
+    match v {
+        None | Some(serde_json::Value::Null) => Ok(false),
+        Some(serde_json::Value::Bool(b)) => Ok(*b),
+        Some(other) => Err(format!("{field}: expected a bool, got {other}")),
+    }
+}
+
+/// Read a uuid the encoder wrote as a canonical STRING.
+///
+/// Also accepts the legacy 16-integer array that monty's DERIVED serde
+/// produces, because a snapshot or a payload built before this change still
+/// carries that shape and refusing it outright would break anything already on
+/// disk. New output is always a string.
+fn uuid_from_wire(
+    v: Option<&serde_json::Value>,
+    field: &str,
+) -> Result<monty_types::MontyUuid, String> {
+    let v = v.ok_or_else(|| format!("class_instance envelope missing field \"{field}\""))?;
+
+    if let Some(s) = v.as_str() {
+        return monty_types::MontyUuid::parse(s)
+            .ok_or_else(|| format!("{field}: not a canonical uuid string: {s:?}"));
+    }
+    if let Some(arr) = v.as_array() {
+        // STRICT. This was `filter_map`, which SILENTLY DROPPED anything that
+        // was not a byte — so `[1,..,16,"garbage"]` (17 elements) filtered down
+        // to exactly 16 and was accepted as a valid uuid. Measured; review
+        // caught it. Silently discarding part of an identity is worse than
+        // rejecting it, because the caller gets a DIFFERENT id and no error.
+        if arr.len() != 16 {
+            return Err(format!(
+                "{field}: legacy uuid array must have exactly 16 elements, got {}",
+                arr.len()
+            ));
+        }
+        let mut bytes = [0u8; 16];
+        for (i, n) in arr.iter().enumerate() {
+            bytes[i] = n
+                .as_u64()
+                .and_then(|u| u8::try_from(u).ok())
+                .ok_or_else(|| format!("{field}: element {i} is not a byte: {n}"))?;
+        }
+        return monty_types::MontyUuid::try_from_slice(&bytes)
+            .ok_or_else(|| format!("{field}: 16 bytes did not form a uuid"));
+    }
+    Err(format!("{field}: expected a uuid string, got {v}"))
+}
+
+fn derive_class_uuid(name: &str, type_id: i64) -> monty_types::MontyUuid {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    let mut lo = OFFSET;
+    for b in name.as_bytes() {
+        lo ^= u64::from(*b);
+        lo = lo.wrapping_mul(PRIME);
+    }
+    let mut hi = OFFSET;
+    for b in type_id.to_le_bytes() {
+        hi ^= u64::from(b);
+        hi = hi.wrapping_mul(PRIME);
+    }
+    // Mix the name into the high half too, so a type_id collision alone cannot
+    // produce a duplicate id.
+    for b in name.as_bytes() {
+        hi ^= u64::from(*b);
+        hi = hi.wrapping_mul(PRIME);
+    }
+
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&lo.to_le_bytes());
+    bytes[8..].copy_from_slice(&hi.to_le_bytes());
+    // A zero id is what the BUG produced; never emit one by accident.
+    if bytes == [0u8; 16] {
+        bytes[0] = 1;
+    }
+
+    monty_types::MontyUuid::try_from_slice(&bytes).expect("16 bytes is always a valid MontyUuid")
+}
+
 pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
     Ok(match val {
         Value::Null => MontyObject::None,
@@ -499,15 +640,60 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                     field_names: envelope_str_array(map, "namedtuple", "field_names")?,
                     values: json_array_to_objects(map.get("values"))?,
                 },
+                // Decoded field-by-field, NOT with serde_json::from_value.
+                // The encoder above now emits our wire format throughout, so
+                // handing these to the derived Deserialize would demand the
+                // externally-tagged shape it no longer produces. The
+                // round-trip test rt_class_instance is what caught that: a
+                // change to the encoder alone left encode and decode speaking
+                // different dialects.
                 "class_instance" => MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
-                    class_type: serde_json::from_value(map.get("class_type").cloned().ok_or_else(|| {
-                        "class_instance envelope missing field \"class_type\"".to_string()
-                    })?)
-                    .map_err(|e| format!("class_instance class_type: {e}"))?,
-                    instance_id: serde_json::from_value(map.get("instance_id").cloned().ok_or_else(|| {
-                        "class_instance envelope missing field \"instance_id\"".to_string()
-                    })?)
-                    .map_err(|e| format!("class_instance instance_id: {e}"))?,
+                    class_type: {
+                        let ct = map.get("class_type").and_then(serde_json::Value::as_object).ok_or_else(|| {
+                            "class_instance envelope missing object field \"class_type\"".to_string()
+                        })?;
+                        monty_types::MontyClassType {
+                            name: ct
+                                .get("name")
+                                .and_then(serde_json::Value::as_str)
+                                .ok_or_else(|| "class_type missing \"name\"".to_string())?
+                                .to_string(),
+                            id: uuid_from_wire(ct.get("id"), "class_type.id")?,
+                            // ABSENT is allowed and means false; PRESENT
+                            // BUT WRONG-TYPED is an error. This was
+                            // `.and_then(as_bool).unwrap_or(false)` for both,
+                            // which silently turned `host_defined: 1` or
+                            // `"true"` into false — and review was right to
+                            // call that the same silent-decode hazard this very
+                            // file rejects elsewhere (`envelope_int`), and the
+                            // same one I had just removed from `type_id`.
+                            host_defined: wire_bool(ct.get("host_defined"), "class_type.host_defined")?,
+                            is_dataclass: wire_bool(ct.get("is_dataclass"), "class_type.is_dataclass")?,
+                            attrs: match ct.get("attrs") {
+                                // A BARE ARRAY is the LEGACY shape: the old
+                                // encoder passed class_type through monty's
+                                // derived serde, which renders DictPairs as an
+                                // array of [key, value] with each side
+                                // externally tagged — and `[]` when empty.
+                                // Without this arm EVERY payload or snapshot
+                                // written before this change fails to load,
+                                // which review caught and a test now pins
+                                // (`legacy_payload_still_loads`).
+                                Some(a) if a.is_array() => serde_json::from_value(a.clone())
+                                    .map_err(|e| format!("class_type.attrs (legacy form): {e}"))?,
+                                Some(a) => match json_to_monty_object(a)? {
+                                    MontyObject::Dict(pairs) => pairs,
+                                    other => {
+                                        return Err(format!(
+                                            "class_type attrs must be a dict envelope, got {other:?}"
+                                        ));
+                                    }
+                                },
+                                None => vec![].into(),
+                            },
+                        }
+                    },
+                    instance_id: uuid_from_wire(map.get("instance_id"), "instance_id")?,
                     attrs: match map.get("attrs") {
                         Some(a) => match json_to_monty_object(a)? {
                             MontyObject::Dict(pairs) => pairs,
@@ -533,7 +719,31 @@ pub fn json_to_monty_object(val: &Value) -> Result<MontyObject, String> {
                 "dataclass" => MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
                     class_type: monty_types::MontyClassType {
                         name: envelope_str(map, "dataclass", "name")?,
-                        id: monty_types::MontyUuid::from_random_bytes([1u8; 16]),
+                        // WAS: from_random_bytes([1u8; 16]) — the SAME id for
+                        // every host class, so Point and MutablePoint were one
+                        // class in-sandbox and `assert point != mut_point`
+                        // (dataclass__basic.py:41) failed. Isolated by
+                        // '_dataclass_hydrate_test_body.dart: two host classes
+                        // with distinct typeIds stay distinct in-sandbox'.
+                        id: derive_class_uuid(
+                            &envelope_str(map, "dataclass", "name")?,
+                            // REQUIRED, not defaulted. This was `.unwrap_or(0)`
+                            // and review caught it: two DIFFERENT host classes
+                            // sharing a name and omitting type_id would both
+                            // hash (name, 0) and collide again — the very bug
+                            // this function exists to fix, reached through a
+                            // different door. MontyDataclass always emits it
+                            // (monty_value_structured.dart:284), so an envelope
+                            // without it did not come from this encoder, and
+                            // inventing an identity for it is the "forged type"
+                            // hazard core#136 warns about.
+                            map.get("type_id")
+                                .and_then(serde_json::Value::as_i64)
+                                .ok_or_else(|| {
+                                    "dataclass envelope missing field \"type_id\": cannot derive a stable class identity"
+                                        .to_string()
+                                })?,
+                        ),
                         host_defined: true,
                         is_dataclass: true,
                         // TODO(monty): the dump/transfer format currently
@@ -1136,6 +1346,72 @@ mod tests {
         let val = monty_object_to_json(&obj);
         assert_eq!(val["__type"], json!("class_instance"));
         assert_eq!(val["attrs"], json!({"__type": "dict", "value": {"a": 42}}));
+    }
+
+    /// M1/E ISOLATION — the envelope must be OUR wire format THROUGHOUT.
+    ///
+    /// `test_class_instance` above passes with the bug present, because it
+    /// gives `class_type` an EMPTY attrs list. Nothing is then encoded by the
+    /// derived impl and nothing can be wrong. This drives the case that
+    /// actually breaks: a class_type carrying values.
+    ///
+    /// THE DEFECT: `class_type` and `instance_id` are handed straight to
+    /// `json!`, so they serialise through monty's DERIVED serde. Upstream says
+    /// what that produces — crates/monty-types/src/object.rs:48-53: the
+    /// derived impls are "externally tagged (`{"Int": 42}` ...) ... designed
+    /// for snapshots and binary transport, not for human-facing JSON". Our
+    /// Dart decoder rejects that on sight (monty_value.dart:218), so half of
+    /// this envelope is unreadable by the only consumer it has.
+    ///
+    /// `instance_id` has the same problem in a different shape: a MontyUuid is
+    /// `[u8; 16]`, so derived serde emits SIXTEEN INTEGERS where monty's own
+    /// JS host boundary emits a canonical uuid STRING, and says why —
+    /// crates/monty-js/src/convert.rs:349, "JS has no 128-bit integer type".
+    /// Dart has the same constraint.
+    #[test]
+    fn class_instance_envelope_is_wire_format_throughout() {
+        let obj = MontyObject::ClassInstance(Box::new(monty_types::MontyClassInstance {
+            class_type: monty_types::MontyClassType {
+                name: "Configured".into(),
+                id: monty_types::MontyUuid::from_random_bytes([7u8; 16]),
+                host_defined: true,
+                is_dataclass: true,
+                // NON-EMPTY on purpose. This is the whole point of the test.
+                attrs: vec![(MontyObject::String("LIMIT".into()), MontyObject::Int(99))].into(),
+            },
+            instance_id: monty_types::MontyUuid::from_random_bytes([9u8; 16]),
+            attrs: vec![(MontyObject::String("a".into()), MontyObject::Int(42))].into(),
+        }));
+        let val = monty_object_to_json(&obj);
+
+        // The half that was already right.
+        assert_eq!(val["__type"], json!("class_instance"));
+        assert_eq!(val["attrs"], json!({"__type": "dict", "value": {"a": 42}}));
+
+        // A class attr must be OUR dict envelope, not `{"Int": 99}`.
+        assert_eq!(
+            val["class_type"]["attrs"],
+            json!({"__type": "dict", "value": {"LIMIT": 99}}),
+            "class_type.attrs left through monty's derived serde instead of \
+             dict_to_json — the Dart decoder cannot read it"
+        );
+
+        // A uuid must be a canonical string, not 16 integers.
+        assert!(
+            val["class_type"]["id"].is_string(),
+            "class_type.id must be a uuid STRING, got {}",
+            val["class_type"]["id"]
+        );
+        assert!(
+            val["instance_id"].is_string(),
+            "instance_id must be a uuid STRING, got {}",
+            val["instance_id"]
+        );
+
+        // The rest of the class_type, flat and readable.
+        assert_eq!(val["class_type"]["name"], json!("Configured"));
+        assert_eq!(val["class_type"]["host_defined"], json!(true));
+        assert_eq!(val["class_type"]["is_dataclass"], json!(true));
     }
 
     #[test]
@@ -2287,6 +2563,88 @@ mod tests {
         assert!(
             decode_err(r#"{"__type":"namedtuple","type_name":"P","values":[]}"#)
                 .contains("field_names")
+        );
+    }
+}
+
+#[cfg(test)]
+mod m1_identity_tests {
+    use super::*;
+
+    #[test]
+    fn distinct_host_classes_get_distinct_uuids() {
+        let a = derive_class_uuid("User", 1);
+        let b = derive_class_uuid("Order", 2);
+        assert_ne!(a, b, "two host classes collapsed to one uuid");
+    }
+
+    #[test]
+    fn same_host_class_is_stable_across_calls() {
+        assert_eq!(derive_class_uuid("User", 1), derive_class_uuid("User", 1));
+    }
+
+    #[test]
+    fn same_name_different_type_id_still_differs() {
+        assert_ne!(derive_class_uuid("User", 1), derive_class_uuid("User", 2));
+    }
+}
+
+/// Regression tests for three Severity-4 defects review found in the
+/// wire-format change, each verified failing before the fix.
+#[cfg(test)]
+mod wire_format_compat_tests {
+    use super::*;
+
+    /// Feed the decoder EXACTLY what the OLD encoder produced: class_type
+    /// through derived serde, so `attrs` is a bare array and uuids are 16
+    /// ints. Without the legacy arm this fails and every pre-existing payload
+    /// or snapshot stops loading.
+    #[test]
+    fn legacy_payload_still_loads() {
+        // class_type through derived serde: attrs is a bare array, uuid is 16 ints.
+        let legacy = json!({
+            "__type": "class_instance",
+            "class_type": {
+                "name": "Legacy",
+                "id": [7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],
+                "host_defined": true,
+                "is_dataclass": true,
+                "attrs": []
+            },
+            "instance_id": [9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],
+            "attrs": {"__type": "dict", "value": {"a": 1}}
+        });
+        let got = json_to_monty_object(&legacy);
+        assert!(got.is_ok(), "OLD payload no longer loads: {:?}", got.err());
+    }
+
+    #[test]
+    fn malformed_uuid_array_is_rejected() {
+        // agy's EXACT falsifier: 16 valid bytes + one string = 17 elements.
+        let v = json!([
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, "garbage"
+        ]);
+        let got = uuid_from_wire(Some(&v), "probe");
+        assert!(
+            got.is_err(),
+            "a 17-element array with junk was ACCEPTED as a uuid"
+        );
+    }
+
+    #[test]
+    fn wrong_typed_bool_is_rejected() {
+        let payload = json!({
+            "__type": "class_instance",
+            "class_type": {"name": "X", "id": "00000000-0000-0000-0000-000000000001",
+                           "host_defined": 1, "is_dataclass": true,
+                           "attrs": {"__type": "dict", "value": {}}},
+            "instance_id": "00000000-0000-0000-0000-000000000002",
+            "attrs": {"__type": "dict", "value": {}}
+        });
+        let got = json_to_monty_object(&payload);
+        assert!(
+            got.is_err(),
+            "host_defined:1 silently decoded instead of erroring"
         );
     }
 }

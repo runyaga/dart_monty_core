@@ -947,7 +947,14 @@ web.HTMLDivElement _buildSampleCard(_Sample sample) {
 }
 
 // ---------------------------------------------------------------------------
-// Value formatter — exhaustive over all 20 MontyValue subtypes
+// Value formatter — exhaustive over every MontyValue subtype.
+//
+// No fixed count here on purpose: the previous "all 20" was already wrong by
+// three. `MontyValue` is sealed, so the SWITCH is what enforces exhaustiveness
+// -- but only when something compiles this file, and `packages/dart_monty_web/**`
+// is excluded in analysis_options.yaml. `dart analyze` never reads it. The
+// only thing that does is tool/check_pages.sh, which is why adding a subtype
+// shows up as a Pages build failure rather than an analyzer error.
 // ---------------------------------------------------------------------------
 String _fmt(MontyValue v) => switch (v) {
   MontyNone() => 'None',
@@ -997,4 +1004,20 @@ String _fmt(MontyValue v) => switch (v) {
     '$typeName(${List.generate(fieldNames.length, (i) => '${fieldNames[i]}=${_fmt(values[i])}').join(', ')})',
   MontyDataclass(:final name, :final attrs) =>
     '$name(${attrs.entries.map((e) => '${e.key}=${_fmt(e.value)}').join(', ')})',
+  // ---- Tier 3 variants (wire v5) ----------------------------------------
+  // MontyClassInstance is what v0.0.23 actually sends for a class instance,
+  // dataclass or not; MontyDataclass above is now encode-only. Rendered with
+  // the CLASS TYPE's name, which is the half that survives a restore.
+  MontyClassInstance(:final classType, :final attrs) =>
+    '${classType.name}('
+        '${attrs.entries.map((e) => '${e.key}=${_fmt(e.value)}').join(', ')})',
+  MontyTime(
+    :final hour,
+    :final minute,
+    :final second,
+    :final microsecond,
+  ) =>
+    '$hour:$minute:$second'
+        '${microsecond == 0 ? '' : '.$microsecond'}',
+  MontyNotImplemented() => 'NotImplemented',
 };

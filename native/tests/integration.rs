@@ -141,16 +141,23 @@ fn null_safety() {
 
     // monty_snapshot with NULL
     let mut len: usize = 0;
-    let p = unsafe { monty_snapshot(ptr::null(), &mut len) };
+    let mut ne: *mut c_char = ptr::null_mut();
+    let p = unsafe { monty_snapshot(ptr::null(), &mut len, &mut ne) };
     assert!(p.is_null());
+    // Even the NULL-handle guard reports now; it used to return a bare NULL.
+    assert!(!ne.is_null(), "NULL handle must still say so");
+    unsafe { monty_string_free(ne) };
 
     // monty_snapshot with NULL out_len
     let code2 = CString::new("1+1").unwrap();
     let mut ce2: *mut c_char = ptr::null_mut();
     let h2 = unsafe { monty_create(code2.as_ptr(), ptr::null(), ptr::null(), &mut ce2) };
     if !h2.is_null() {
-        let p = unsafe { monty_snapshot(h2, ptr::null_mut()) };
+        let mut le: *mut c_char = ptr::null_mut();
+        let p = unsafe { monty_snapshot(h2, ptr::null_mut(), &mut le) };
         assert!(p.is_null());
+        assert!(!le.is_null(), "NULL out_len must still say so");
+        unsafe { monty_string_free(le) };
         unsafe { monty_free(h2) };
     }
 
@@ -226,18 +233,50 @@ fn resume_with_error_null_message() {
 // 13. monty_restore with garbage bytes — covers restore Err path
 // ---------------------------------------------------------------------------
 
+// RETARGETED from monty_restore to monty_repl_restore.
+//
+// This was ignored with the reason "monty v0.0.23 no longer exposes a public
+// dump/load API", which was false: repl_handle.rs calls dump() and Dump::load()
+// against v0.0.23 and has since M3. The real reason it could not pass is that
+// it drove the ONE-SHOT handle, whose restore is a structural dead end --
+// handle.rs:570 returns Err unconditionally because monty's SessionRef has no
+// variant for an un-started MontyRun. Against that handle the call fails
+// identically for garbage and for a perfectly good snapshot, so the test
+// asserted nothing about decoding.
+//
+// Pointed at the REPL API it tests what its name claims: hostile bytes reach
+// Dump::load and come back as a reported error rather than a panic or a
+// silently-empty session.
 #[test]
-#[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
 fn restore_invalid_data() {
     let garbage: [u8; 16] = [0xFF; 16];
     let mut out_error: *mut c_char = ptr::null_mut();
 
-    let handle = unsafe { monty_restore(garbage.as_ptr(), garbage.len(), &mut out_error) };
-    assert!(handle.is_null());
-    assert!(!out_error.is_null());
+    let handle = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            ptr::null(),
+            ptr::null(),
+            &mut out_error,
+        )
+    };
+    assert!(handle.is_null(), "garbage must not produce a handle");
+    assert!(
+        !out_error.is_null(),
+        "the reason must reach the caller -- a NULL out_error here is the \
+         defect monty_snapshot still has (F1)"
+    );
 
+    // NOTE: read_c_string() frees the pointer (see its body) -- do NOT also
+    // call monty_string_free here. Doing so aborts the process with
+    // "free(): double free detected in tcache 2", which is how this comment
+    // came to exist.
     let err_str = unsafe { read_c_string(out_error) };
-    assert!(err_str.contains("restore failed"));
+    assert!(
+        err_str.contains("restore failed"),
+        "expected a restore failure message, got: {err_str}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1179,42 +1218,90 @@ fn resume_with_error_via_ffi() {
 // Validates monty_snapshot → monty_bytes_free → monty_restore → monty_run.
 // ---------------------------------------------------------------------------
 
+// RETARGETED from the one-shot handle to the REPL API, for the reason given on
+// restore_invalid_data above. The one-shot handle cannot snapshot at all
+// (handle.rs:558), so this test could never have passed there.
+//
+// It now round-trips real INTERPRETER STATE rather than a compiled program:
+// bind a variable, snapshot, free the session entirely, restore into a new one,
+// and read the variable back. A snapshot that restores but loses the heap would
+// pass the old shape of this test and fail this one.
 #[test]
-#[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
 fn snapshot_round_trip_via_ffi() {
-    let code = c("2 + 2");
-    let mut create_error: *mut c_char = ptr::null_mut();
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(!handle.is_null(), "repl_create failed");
 
-    let handle =
-        unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_error) };
-    assert!(!handle.is_null());
+    // Establish state worth losing.
+    let code = c("x = 42");
+    let mut rj: *mut c_char = ptr::null_mut();
+    let mut em: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut rj, &mut em) };
+    assert_eq!(tag, MontyResultTag::Ok, "seeding feed failed");
+    if !rj.is_null() {
+        unsafe { monty_string_free(rj) };
+    }
 
     let mut snap_len: usize = 0;
-    let snap_ptr = unsafe { monty_snapshot(handle, &mut snap_len) };
-    assert!(!snap_ptr.is_null());
-    assert!(snap_len > 0);
+    let mut snap_err: *mut c_char = ptr::null_mut();
+    let snap_ptr = unsafe { monty_repl_snapshot(handle, &mut snap_len, &mut snap_err) };
+    assert!(
+        !snap_ptr.is_null(),
+        "snapshot failed: {}",
+        if snap_err.is_null() {
+            "<no reason reported>".to_string()
+        } else {
+            unsafe { read_c_string(snap_err) }
+        }
+    );
+    assert!(snap_len > 0, "snapshot must not be empty");
 
-    unsafe { monty_free(handle) };
+    // Free the ORIGINAL session before restoring, so nothing can be served
+    // from it by accident.
+    unsafe { monty_repl_free(handle) };
 
-    let mut restore_error: *mut c_char = ptr::null_mut();
-    let restored = unsafe { monty_restore(snap_ptr, snap_len, &mut restore_error) };
-    assert!(!restored.is_null());
+    let mut restore_err: *mut c_char = ptr::null_mut();
+    let restored = unsafe {
+        monty_repl_restore(
+            snap_ptr,
+            snap_len,
+            ptr::null(),
+            ptr::null(),
+            &mut restore_err,
+        )
+    };
+    assert!(
+        !restored.is_null(),
+        "restore failed: {}",
+        if restore_err.is_null() {
+            "<no reason reported>".to_string()
+        } else {
+            unsafe { read_c_string(restore_err) }
+        }
+    );
 
     unsafe { monty_bytes_free(snap_ptr, snap_len) };
 
+    // The state, not just the session, must have survived.
+    let probe = c("x + 1");
     let mut result_json: *mut c_char = ptr::null_mut();
-    let mut error_msg: *mut c_char = ptr::null_mut();
-    let tag = unsafe { monty_run(restored, &mut result_json, &mut error_msg) };
-    assert_eq!(tag, MontyResultTag::Ok);
+    let mut run_err: *mut c_char = ptr::null_mut();
+    let tag =
+        unsafe { monty_repl_feed_run(restored, probe.as_ptr(), &mut result_json, &mut run_err) };
+    assert_eq!(tag, MontyResultTag::Ok, "restored session could not run");
 
     let json_str = unsafe { read_c_string(result_json) };
     let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    assert_eq!(parsed["value"], 4);
+    assert_eq!(
+        parsed["value"], 43,
+        "x did not survive the round trip; the session restored but the heap did not"
+    );
 
-    if !error_msg.is_null() {
-        unsafe { monty_string_free(error_msg) };
+    if !run_err.is_null() {
+        unsafe { monty_string_free(run_err) };
     }
-    unsafe { monty_free(restored) };
+    unsafe { monty_repl_free(restored) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,83 +1316,336 @@ fn snapshot_round_trip_via_ffi() {
 // incompatible. Document in CHANGELOG and bump version accordingly.
 // ---------------------------------------------------------------------------
 
-/// Hardcoded snapshot bytes for `"2 + 2"` compiled with `<input>` script name.
-/// Captured from pydantic/monty@v0.0.17 (rev 5c7cf2b).
-/// If this test fails, the upstream postcard format has changed — update the
-/// pinned bytes and document the breaking change in CHANGELOG.
+/// The snapshot format is pinned by its HEADER, not by a whole-blob byte
+/// comparison. The previous `PINNED_SNAPSHOT_2_PLUS_2` constant (captured from
+/// pydantic/monty@v0.0.17, three releases stale) has been deleted, for two
+/// independent reasons -- either one fatal.
 ///
-/// History: monty v0.0.14 → v0.0.17 changed the per-instruction encoding
-/// (the prefix-byte slot for sourcemap/source-line info shifted), shrinking
-/// the dump for `"2 + 2"` from 98 to 74 bytes. v0.0.17 → v0.0.18 changed the
-/// instruction encoding again, shrinking the same dump from 74 to 60 bytes.
-/// v0.0.18 → v0.0.19 changed it once more, 60 → 59 bytes: serialized sessions
-/// now carry `CompileOptions` (upstream #556 — the assert-annotation truncation
-/// limit is applied at runtime, so it travels with the session).
-/// Snapshots are NOT portable across these upgrades — consumers persisting
-/// snapshots must migrate.
-#[rustfmt::skip]
-const PINNED_SNAPSHOT_2_PLUS_2: &[u8] = &[
-    0x00, 0x06, 0x08, 0x02, 0x08, 0x02, 0x17, 0x66, 0x00, 0x04, 0x00, 0x90, 0x4E, 0x00, 0x01, 0x00,
-    0x02, 0x90, 0x4E, 0x04, 0x05, 0x00, 0x04, 0x90, 0x4E, 0x00, 0x05, 0x00, 0x05, 0x90, 0x4E, 0x00,
-    0x05, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x07, 0x3C, 0x69, 0x6E, 0x70, 0x75, 0x74, 0x3E, 0x00,
-    0x00, 0x00, 0x05, 0x32, 0x20, 0x2B, 0x20, 0x32, 0x00, 0x00, 0x00,
-];
+/// 1. It was captured from the ONE-SHOT handle, which cannot snapshot at all
+///    (`native/src/handle.rs:558`). No value it held could be reproduced.
+///
+/// 2. **The dump is not byte-deterministic.** Measured 2026-09-14 through the
+///    REPL FFI: two snapshots of two freshly-created sessions that each ran the
+///    identical program `x = 42` are both 100 bytes and differ, first at byte
+///    91 of 100. So a whole-blob equality assertion could never have held, on
+///    any architecture, even against a correct implementation. It would have
+///    been a permanently red test or -- worse, and more likely -- a test kept
+///    green by being ignored.
+///
+/// What IS stable is the header, and it is the part that carries the
+/// compatibility contract. Measured across two runs of the same program and one
+/// run of a different program (`y = 'hello'; z = [1,2,3]`, 140 bytes), the first
+/// eight bytes were identical in all three: the ASCII magic `MONTY` followed by
+/// the dump version.
+///
+/// That is what this test pins. A format bump changes the version byte and this
+/// goes red; a silent re-encoding within a version is caught instead by the
+/// round-trip in `snapshot_round_trip_via_ffi`, which reads real state back.
+const DUMP_MAGIC: &[u8] = b"MONTY";
+
+/// `monty::DUMP_VERSION` at the pinned tag. Bumping the monty pin without
+/// bumping this is exactly the drift this test exists to catch.
+const EXPECTED_DUMP_VERSION: u8 = 8;
 
 #[test]
-#[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
 fn snapshot_format_pinning() {
-    // 1. Verify current dump matches the hardcoded pinned bytes.
-    let code = c("2 + 2");
+    let name = CString::new("repl.py").unwrap();
     let mut err: *mut c_char = ptr::null_mut();
-    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut err) };
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(!handle.is_null(), "repl_create failed");
+
+    let code = c("x = 42");
+    let mut rj: *mut c_char = ptr::null_mut();
+    let mut em: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut rj, &mut em) };
+    assert_eq!(tag, MontyResultTag::Ok);
+    if !rj.is_null() {
+        unsafe { monty_string_free(rj) };
+    }
+
+    let mut snap_len: usize = 0;
+    let mut snap_err: *mut c_char = ptr::null_mut();
+    let snap_ptr = unsafe { monty_repl_snapshot(handle, &mut snap_len, &mut snap_err) };
+    assert!(!snap_ptr.is_null(), "snapshot failed");
+    let bytes = unsafe { std::slice::from_raw_parts(snap_ptr, snap_len) };
+
+    assert!(
+        snap_len > DUMP_MAGIC.len() + 1,
+        "snapshot too short to carry a header: {snap_len} bytes"
+    );
+    assert_eq!(
+        &bytes[..DUMP_MAGIC.len()],
+        DUMP_MAGIC,
+        "dump magic changed -- the snapshot container format is not what this \
+         build expects. Update DUMP_MAGIC and document the break in CHANGELOG."
+    );
+
+    let version = bytes[DUMP_MAGIC.len() + 1];
+    assert_eq!(
+        version, EXPECTED_DUMP_VERSION,
+        "DUMP_VERSION moved from {EXPECTED_DUMP_VERSION} to {version}. Snapshots \
+         written by the previous format will NOT load. Bump the monty pin \
+         deliberately, update EXPECTED_DUMP_VERSION, and document the break in \
+         CHANGELOG -- consumers persisting snapshots must migrate."
+    );
+
+    unsafe { monty_bytes_free(snap_ptr, snap_len) };
+    unsafe { monty_repl_free(handle) };
+}
+
+// ---------------------------------------------------------------------------
+// F8 — hostile values in a VALID snapshot
+// ---------------------------------------------------------------------------
+// Every negative test before these used bytes that never reach the decoder.
+// `[0xFF; 16]` and `[0xAB; 8]` both fail on the ASCII magic `MONTY` at byte 0,
+// so they prove "a non-snapshot is rejected" and nothing more. Measured
+// 2026-09-14: a real dump of `x = 42` is 100 bytes, of which roughly 95 had
+// never been given a hostile value by any test in this repo.
+//
+// That matters because restore DESERIALISES AN INTERPRETER HEAP from bytes the
+// caller supplies. It is the highest-value target in the codebase, and the one
+// place where a Rust panic is not recoverable: a stack overflow or allocator
+// abort inside the decoder is a SIGSEGV, and catch_unwind (error.rs) cannot
+// catch it.
+//
+// So these start from a snapshot the engine itself just produced and corrupt it
+// in ways a truncated file, a flipped bit, or a version skew actually produce.
+// The contract asserted is the same for every case:
+//   1. no handle
+//   2. a REPORTED reason -- not a NULL out_error (that is F1's defect)
+//   3. the process is still alive to run the next case, which is the real
+//      assertion: a panic or abort here would take the whole test binary down
+//      and no `assert!` would ever be reached.
+fn valid_snapshot_bytes() -> Vec<u8> {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(!handle.is_null(), "repl_create failed");
+
+    let code = c("x = 42");
+    let mut rj: *mut c_char = ptr::null_mut();
+    let mut em: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut rj, &mut em) };
+    assert_eq!(tag, MontyResultTag::Ok);
+    if !rj.is_null() {
+        unsafe { monty_string_free(rj) };
+    }
+
+    let mut len: usize = 0;
+    let mut serr: *mut c_char = ptr::null_mut();
+    let p = unsafe { monty_repl_snapshot(handle, &mut len, &mut serr) };
+    assert!(!p.is_null(), "snapshot failed");
+    let v = unsafe { std::slice::from_raw_parts(p, len) }.to_vec();
+    unsafe { monty_bytes_free(p, len) };
+    unsafe { monty_repl_free(handle) };
+    v
+}
+
+/// Restores `bytes` and asserts it is refused WITH a reason. Returns the
+/// message so a caller can assert on it.
+fn expect_restore_refused(bytes: &[u8], what: &str) -> String {
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe {
+        monty_repl_restore(
+            bytes.as_ptr(),
+            bytes.len(),
+            ptr::null(),
+            ptr::null(),
+            &mut err,
+        )
+    };
+    assert!(handle.is_null(), "{what}: must not produce a handle");
+    assert!(
+        !err.is_null(),
+        "{what}: refused WITHOUT a reason. A NULL out_error here is the defect \
+         monty_snapshot still has -- the caller cannot tell a corrupt snapshot \
+         from a version skew from an allocation failure."
+    );
+    unsafe { read_c_string(err) }
+}
+
+#[test]
+fn restore_rejects_a_truncated_snapshot() {
+    let good = valid_snapshot_bytes();
+    assert!(
+        good.len() > 16,
+        "snapshot too small to truncate meaningfully"
+    );
+
+    // Every prefix length that is not the whole thing. A truncated file is the
+    // single most likely real-world corruption -- an interrupted write, a
+    // partial download, a buffer cut short by a wrong length argument.
+    for cut in [1usize, 4, 7, 8, 16, good.len() / 2, good.len() - 1] {
+        let msg = expect_restore_refused(&good[..cut], &format!("truncated to {cut}"));
+        assert!(
+            !msg.is_empty(),
+            "truncated to {cut}: the reason must not be an empty string"
+        );
+    }
+}
+
+#[test]
+fn restore_rejects_a_corrupted_payload() {
+    let good = valid_snapshot_bytes();
+    let header = DUMP_MAGIC.len() + 2;
+
+    // Flip bits PAST the header, so the magic and version still match and the
+    // bytes reach the postcard decoder. This is the region no previous test
+    // had ever touched.
+    for offset in [header, header + 1, good.len() / 2, good.len() - 1] {
+        let mut bad = good.clone();
+        bad[offset] ^= 0xFF;
+        // A single flipped byte MAY still decode to something structurally
+        // valid -- postcard is not self-describing and has no checksum. So the
+        // assertion is NOT "this must fail"; it is "this must not take the
+        // process down, and if it fails it must say why". A restore that
+        // SUCCEEDS here is a legitimate outcome and is recorded, not asserted
+        // against.
+        let mut err: *mut c_char = ptr::null_mut();
+        let handle = unsafe {
+            monty_repl_restore(bad.as_ptr(), bad.len(), ptr::null(), ptr::null(), &mut err)
+        };
+        if handle.is_null() {
+            assert!(
+                !err.is_null(),
+                "byte {offset} flipped: refused without a reason"
+            );
+            let msg = unsafe { read_c_string(err) };
+            assert!(!msg.is_empty(), "byte {offset} flipped: empty reason");
+        } else {
+            // Survived. Free it and move on -- the point of this test is that
+            // the PROCESS survives, which reaching this line proves.
+            unsafe { monty_repl_free(handle) };
+            if !err.is_null() {
+                unsafe { monty_string_free(err) };
+            }
+        }
+    }
+}
+
+#[test]
+fn restore_rejects_a_version_skew() {
+    let mut bad = valid_snapshot_bytes();
+    // Corrupt the version byte the format-pinning test pins. A snapshot written
+    // by a different monty must be refused with a message that names the
+    // mismatch, because "rebuild or re-take the snapshot" and "these bytes are
+    // not a snapshot" need different actions from the caller.
+    bad[DUMP_MAGIC.len() + 1] = EXPECTED_DUMP_VERSION.wrapping_add(1);
+    let msg = expect_restore_refused(&bad, "version skew");
+    assert!(
+        msg.contains("dump format") || msg.contains("DUMP_VERSION") || msg.contains("version"),
+        "a version skew must SAY it is a version skew, so the caller knows to \
+         re-take the snapshot rather than hunt for corruption. Got: {msg}"
+    );
+}
+
+#[test]
+fn restore_rejects_a_corrupted_magic() {
+    let mut bad = valid_snapshot_bytes();
+    bad[0] ^= 0xFF;
+    let msg = expect_restore_refused(&bad, "corrupted magic");
+    assert!(!msg.is_empty(), "corrupted magic: empty reason");
+}
+
+#[test]
+fn restore_tolerates_trailing_garbage_or_says_why() {
+    let mut bad = valid_snapshot_bytes();
+    bad.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+
+    // Trailing bytes after a complete payload are the one case where either
+    // outcome is defensible: postcard may stop at the end of the struct and
+    // ignore the rest. Both are recorded; what is NOT acceptable is a crash, or
+    // a refusal with no reason.
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle =
+        unsafe { monty_repl_restore(bad.as_ptr(), bad.len(), ptr::null(), ptr::null(), &mut err) };
+    if handle.is_null() {
+        assert!(!err.is_null(), "trailing garbage: refused without a reason");
+        let msg = unsafe { read_c_string(err) };
+        assert!(!msg.is_empty(), "trailing garbage: empty reason");
+    } else {
+        unsafe { monty_repl_free(handle) };
+        if !err.is_null() {
+            unsafe { monty_string_free(err) };
+        }
+    }
+}
+
+// F1: monty_snapshot must REPORT why it failed.
+//
+// It used to be `Ok(Err(_)) | Err(_) => ptr::null_mut()` with no out_error
+// parameter at all, so the reason was discarded and there was nowhere to put it
+// anyway. Its sibling monty_repl_snapshot was given one during M3 and this was
+// left behind, so the two disagreed about whether a snapshot failure is
+// explicable. Dart then invented "monty_snapshot returned null" and the JS
+// worker invented its own variant — two guesses made one frame above the code
+// that knew the answer.
+//
+// A STRUCTURAL check (does the signature have an out_error?) cannot catch this:
+// a signature can carry the parameter and still never write it. Adversarial
+// review made exactly that objection, so this is behavioural — it provokes a
+// real failure and reads what comes back.
+//
+// Provoking one is easy and will stay easy: MontyHandle::snapshot() is a
+// structural dead end on the one-shot handle (handle.rs), so EVERY call fails.
+// If that ever changes this test starts failing, which is the correct signal —
+// it means the case it pins no longer exists.
+#[test]
+fn snapshot_failure_reports_its_reason() {
+    let code = c("2 + 2");
+    let mut create_err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_err) };
+    assert!(!handle.is_null(), "monty_create failed");
+
+    let mut snap_len: usize = 0;
+    let mut snap_err: *mut c_char = ptr::null_mut();
+    let ptr_out = unsafe { monty_snapshot(handle, &mut snap_len, &mut snap_err) };
+
+    assert!(
+        ptr_out.is_null(),
+        "the one-shot handle cannot snapshot; if this now succeeds, delete this \
+         test and pin the new behaviour instead"
+    );
+    assert!(
+        !snap_err.is_null(),
+        "monty_snapshot returned NULL without writing out_error. That is the F1 \
+         defect: the caller cannot tell an unsupported handle from a corrupt \
+         heap from an allocation failure, so Dart and the JS worker each invent \
+         a reason."
+    );
+
+    let msg = unsafe { read_c_string(snap_err) };
+    assert!(
+        msg.contains("not supported on the one-shot handle"),
+        "the reported reason must be the one Rust produced, not a placeholder. \
+         Got: {msg}"
+    );
+
+    unsafe { monty_free(handle) };
+}
+
+#[test]
+fn snapshot_tolerates_a_null_out_error() {
+    // Bounds the test above. `out_error` is optional by contract — a caller who
+    // does not want the detail passes NULL and must not be punished for it.
+    // Without this, the obvious "fix" to the assertion above is to make
+    // out_error mandatory, which would break every caller that passes NULL.
+    let code = c("2 + 2");
+    let mut create_err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_create(code.as_ptr(), ptr::null(), ptr::null(), &mut create_err) };
     assert!(!handle.is_null());
 
     let mut snap_len: usize = 0;
-    let snap_ptr = unsafe { monty_snapshot(handle, &mut snap_len) };
-    assert!(!snap_ptr.is_null());
-    let live_bytes = unsafe { std::slice::from_raw_parts(snap_ptr, snap_len) };
-    assert_eq!(
-        live_bytes, PINNED_SNAPSHOT_2_PLUS_2,
-        "snapshot format has changed — update PINNED_SNAPSHOT_2_PLUS_2 and document in CHANGELOG"
-    );
+    let ptr_out = unsafe { monty_snapshot(handle, &mut snap_len, ptr::null_mut()) };
+    assert!(ptr_out.is_null(), "still fails, just without reporting");
 
-    // 2. Restore from the hardcoded pinned bytes (not from fresh dump).
-    let mut restore_err: *mut c_char = ptr::null_mut();
-    let restored = unsafe {
-        monty_restore(
-            PINNED_SNAPSHOT_2_PLUS_2.as_ptr(),
-            PINNED_SNAPSHOT_2_PLUS_2.len(),
-            &mut restore_err,
-        )
-    };
-    assert!(
-        !restored.is_null(),
-        "pinned snapshot must restore successfully"
-    );
-    assert!(
-        restore_err.is_null(),
-        "pinned snapshot restore must not error"
-    );
-
-    // 3. Execute the restored handle and verify result.
-    let mut result_json: *mut c_char = ptr::null_mut();
-    let mut run_err: *mut c_char = ptr::null_mut();
-    let tag = unsafe { monty_run(restored, &mut result_json, &mut run_err) };
-    assert_eq!(tag, MontyResultTag::Ok);
-    let json_str = unsafe { read_c_string(result_json) };
-    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-    assert_eq!(
-        parsed["value"], 4,
-        "restored pinned snapshot must produce same result"
-    );
-
-    // Cleanup.
-    unsafe { monty_bytes_free(snap_ptr, snap_len) };
-    if !run_err.is_null() {
-        unsafe { monty_string_free(run_err) };
-    }
     unsafe { monty_free(handle) };
-    unsafe { monty_free(restored) };
+}
+
+#[test]
+fn restore_rejects_an_empty_buffer() {
+    let msg = expect_restore_refused(&[], "empty buffer");
+    assert!(!msg.is_empty(), "empty buffer: empty reason");
 }
 
 #[test]
@@ -1582,4 +1922,831 @@ fn os_call_datetime_now_naive_round_trip() {
     assert!(result["value"]["timezone_name"].is_null());
 
     unsafe { monty_free(handle) };
+}
+
+// ---------------------------------------------------------------------------
+// NULL-handle guards on the REPL C ABI — every one of them
+// ---------------------------------------------------------------------------
+// The one-shot half of the ABI has had NULL tests since early on; the REPL half
+// had NONE. All 27 `monty_repl_*` entry points were unexercised on their guard
+// path, which is 638 of lib.rs's 999 lines and the bulk of its coverage gap.
+//
+// These are not make-work. A NULL handle is what Dart passes after a failed
+// create or a double free, and the guard is the only thing between that and a
+// dereference of address 0. The project has already paid for an unguarded FFI
+// path twice (core#130's fake gate, F1's discarded error), and each time the
+// test that would have caught it was cheap and absent.
+//
+// Every assertion here is the function's OWN documented sentinel, read off the
+// implementation: -1 for the c_int predicates, u32::MAX for the id getters,
+// NULL for the string getters, Error for the progress tags.
+#[test]
+fn repl_null_handle_guards() {
+    // --- c_int predicates: -1 -------------------------------------------------
+    assert_eq!(unsafe { monty_repl_complete_is_error(ptr::null()) }, -1);
+    assert_eq!(unsafe { monty_repl_pending_method_call(ptr::null()) }, -1);
+
+    // --- u32 id getters: u32::MAX --------------------------------------------
+    assert_eq!(unsafe { monty_repl_os_call_id(ptr::null()) }, u32::MAX);
+    assert_eq!(unsafe { monty_repl_pending_call_id(ptr::null()) }, u32::MAX);
+
+    // --- string getters: NULL, and no allocation to leak ---------------------
+    assert!(unsafe { monty_repl_complete_result_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_os_call_fn_name(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_os_call_args_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_os_call_kwargs_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_fn_name(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_fn_args_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_fn_kwargs_json(ptr::null()) }.is_null());
+    assert!(unsafe { monty_repl_pending_future_call_ids(ptr::null()) }.is_null());
+
+    // --- free must tolerate NULL, not abort ----------------------------------
+    unsafe { monty_repl_free(ptr::null_mut()) };
+
+    // --- set_ext_fns returns nothing; it must simply not crash ---------------
+    unsafe { monty_repl_set_ext_fns(ptr::null_mut(), ptr::null()) };
+
+    // --- detect_continuation takes SOURCE, not a handle ----------------------
+    // NULL source is documented as "treat as complete" -> 0. Included because a
+    // reader scanning this list would otherwise assume it takes a handle.
+    assert_eq!(unsafe { monty_repl_detect_continuation(ptr::null()) }, 0);
+}
+
+// Every REPL entry point that returns a MontyProgressTag must answer Error on a
+// NULL handle AND say why through out_error. Returning Error with a silent
+// out_error is the shape F1 was filed for: the caller gets a failure with no
+// cause and guesses.
+#[test]
+fn repl_null_handle_progress_tags_report_why() {
+    fn assert_reports(label: &str, tag: MontyProgressTag, err: *mut c_char) {
+        assert_eq!(tag, MontyProgressTag::Error, "{label}: expected Error");
+        assert!(
+            !err.is_null(),
+            "{label}: NULL handle must say so in out_error"
+        );
+        let msg = unsafe { CStr::from_ptr(err) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            msg.contains("NULL"),
+            "{label}: message should name the NULL handle, got {msg:?}"
+        );
+        unsafe { monty_string_free(err) };
+    }
+
+    let s = CString::new("x").unwrap();
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_feed_start(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("feed_start", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("resume", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_with_error(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("resume_with_error", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe {
+        monty_repl_resume_with_exception(ptr::null_mut(), s.as_ptr(), s.as_ptr(), &mut e)
+    };
+    assert_reports("resume_with_exception", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_not_found(ptr::null_mut(), s.as_ptr(), &mut e) };
+    assert_reports("resume_not_found", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_as_future(ptr::null_mut(), &mut e) };
+    assert_reports("resume_as_future", t, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let t = unsafe { monty_repl_resume_futures(ptr::null_mut(), s.as_ptr(), s.as_ptr(), &mut e) };
+    assert_reports("resume_futures", t, e);
+}
+
+// feed_run returns a MontyResultTag rather than a progress tag, and snapshot
+// returns a buffer. Separate test so a failure names which contract broke.
+#[test]
+fn repl_null_handle_feed_run_and_snapshot() {
+    let code = CString::new("1+1").unwrap();
+    let mut out: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(ptr::null_mut(), code.as_ptr(), &mut out, &mut err) };
+    assert_eq!(tag, MontyResultTag::Error);
+    assert!(out.is_null(), "no result JSON should be produced");
+    assert!(!err.is_null(), "NULL handle must say so");
+    unsafe { monty_string_free(err) };
+
+    let mut len: usize = 0;
+    let mut err: *mut c_char = ptr::null_mut();
+    let buf = unsafe { monty_repl_snapshot(ptr::null(), &mut len, &mut err) };
+    assert!(buf.is_null());
+    assert!(!err.is_null(), "NULL handle must still say so");
+    unsafe { monty_string_free(err) };
+}
+
+// ---------------------------------------------------------------------------
+// NULL OUT-PARAMS on the REPL half, with a VALID handle
+// ---------------------------------------------------------------------------
+// The one-shot half tests this dimension (`monty_snapshot` with a NULL out_len,
+// integration.rs:151-160). The REPL half did not test it at all, and one case
+// is not reachable any other way:
+//
+//     lib.rs:1514   if handle.is_null() || out_len.is_null() {
+//
+// `||` SHORT-CIRCUITS. Every existing test passes a NULL handle, so the first
+// operand is always true and `out_len.is_null()` has never once been evaluated
+// — while the line reads as covered. Only a VALID handle with a NULL out_len
+// reaches it.
+//
+// The out_error cases test the promise the source makes at lib.rs:1504:
+// "`out_error` may itself be NULL for a caller that does not want the detail."
+// Nothing checked that. A function that dereferences a NULL out_error while
+// reporting an error would segfault precisely when something had already gone
+// wrong.
+#[test]
+fn repl_null_out_params_with_a_valid_handle() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    // --- the operand `||` has never evaluated --------------------------------
+    let mut e: *mut c_char = ptr::null_mut();
+    let buf = unsafe { monty_repl_snapshot(handle, ptr::null_mut(), &mut e) };
+    assert!(buf.is_null(), "NULL out_len must not produce a buffer");
+    assert!(!e.is_null(), "NULL out_len must be reported, not ignored");
+    unsafe { monty_string_free(e) };
+
+    // --- out_error itself NULL, ON AN ERROR PATH ----------------------------
+    // This must FORCE the failure, not merely pass NULL. A NULL out_error with
+    // otherwise-valid arguments takes the SUCCESS path, never calls report(),
+    // and so proves nothing -- verified: deleting the `!out_error.is_null()`
+    // guard leaves such a test green. Passing a NULL out_len as well drives the
+    // guard at lib.rs:1514 into report(), which must then tolerate having
+    // nowhere to write, exactly as lib.rs:1504 promises.
+    let buf = unsafe { monty_repl_snapshot(handle, ptr::null_mut(), ptr::null_mut()) };
+    assert!(buf.is_null(), "the error path must still return NULL");
+
+    // Same shape for a progress-tag function: a NULL code forces parse_c_str to
+    // report, with nowhere to report to.
+    let tag = unsafe { monty_repl_feed_start(handle, ptr::null(), ptr::null_mut()) };
+    assert_eq!(tag, MontyProgressTag::Error, "NULL code must still fail");
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// feed_run has TWO out-params, and they are not interchangeable: result_json
+// carries success, error_msg carries failure. A NULL for either must be
+// tolerated rather than dereferenced.
+//
+// BOTH BRANCHES, and the first version of this test only reached one. Feeding
+// `1+1` always SUCCEEDS, which exercises only `None => *error_msg = null`
+// (lib.rs:928) and never `Some(ref msg) => *error_msg = to_c_string(msg)`
+// (lib.rs:926) -- the branch that actually WRITES through the pointer, and so
+// the only one that can fault on a NULL. Failing code is required to reach it.
+#[test]
+fn repl_feed_run_tolerates_null_out_params() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    let ok_code = CString::new("1+1").unwrap();
+    let bad_code = CString::new("1/0").unwrap();
+
+    // --- SUCCESS path, NULL result_json ------------------------------------
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, ok_code.as_ptr(), ptr::null_mut(), &mut e) };
+    assert_eq!(tag, MontyResultTag::Ok, "1+1 should succeed");
+    assert!(
+        e.is_null(),
+        "success must CLEAR error_msg, not leave it stale"
+    );
+
+    // --- ERROR path, NULL error_msg: the branch that writes ------------------
+    // This is the case the first version of this test missed entirely.
+    let mut out: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, bad_code.as_ptr(), &mut out, ptr::null_mut()) };
+    assert_eq!(tag, MontyResultTag::Error, "1/0 should fail");
+    if !out.is_null() {
+        unsafe { monty_string_free(out) };
+    }
+
+    // --- ERROR path, BOTH NULL ----------------------------------------------
+    let tag =
+        unsafe { monty_repl_feed_run(handle, bad_code.as_ptr(), ptr::null_mut(), ptr::null_mut()) };
+    assert_eq!(
+        tag,
+        MontyResultTag::Error,
+        "the tag is the only channel left"
+    );
+
+    // --- SUCCESS path, BOTH NULL --------------------------------------------
+    let tag =
+        unsafe { monty_repl_feed_run(handle, ok_code.as_ptr(), ptr::null_mut(), ptr::null_mut()) };
+    assert_eq!(tag, MontyResultTag::Ok);
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// ---------------------------------------------------------------------------
+// monty_repl_restore: every error path, with a NULL out_error
+// ---------------------------------------------------------------------------
+// The one-shot twin has had this since early on (`restore_invalid_with_null_out_error`,
+// integration.rs:428). The REPL version had NOT: the bit-flip fuzz at :1506 and
+// the trailing-garbage case at :1561 both pass a REAL `&mut err`, so every
+// `!out_error.is_null()` guard in this function was reached only on its TRUE
+// branch. A missing guard would be invisible to them.
+//
+// This is the highest-risk NULL-out_error case in the ABI because restore is
+// the only entry point that parses UNTRUSTED BINARY. A caller that does not
+// want the detail still must not be punished for saying so.
+//
+// Four guards, four paths (lib.rs at the time of writing):
+//     :1563  data is NULL
+//     :1591  limits_json fails to parse
+//     :1626  restore returns Err
+//     :1633  restore panics, caught by catch_ffi_panic
+#[test]
+fn repl_restore_error_paths_tolerate_null_out_error() {
+    // --- data is NULL --------------------------------------------------------
+    // `len` is deliberately NON-ZERO. If the guard were removed, the code would
+    // reach `slice::from_raw_parts(NULL, 8)`, which is undefined behaviour --
+    // so this also pins that the guard runs BEFORE the slice is built.
+    let h =
+        unsafe { monty_repl_restore(ptr::null(), 8, ptr::null(), ptr::null(), ptr::null_mut()) };
+    assert!(h.is_null(), "NULL data must not produce a handle");
+
+    // --- garbage bytes: restore returns Err ----------------------------------
+    let garbage: [u8; 16] = [0xAB; 16];
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            ptr::null(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    assert!(h.is_null(), "garbage must not restore");
+
+    // --- malformed limits_json -----------------------------------------------
+    // Reaches a different guard from the two above: the payload never gets
+    // parsed because limits parsing fails first.
+    let bad_limits = CString::new("{not json").unwrap();
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            bad_limits.as_ptr(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    assert!(h.is_null(), "malformed limits must not restore");
+
+    // --- zero length ---------------------------------------------------------
+    // A valid (non-NULL) pointer with len 0 is a legal empty slice, so this
+    // exercises the decode path rather than a pointer guard.
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            0,
+            ptr::null(),
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    assert!(h.is_null(), "an empty payload must not restore");
+}
+
+// The same four paths WITH an out_error, asserting each actually reports.
+// Separate test so a failure says which half broke: silence-on-NULL is a crash,
+// silence-on-non-NULL is F1's defect returning.
+#[test]
+fn repl_restore_error_paths_report_a_reason() {
+    fn expect_refused_with_reason(label: &str, h: *mut MontyReplHandle, err: *mut c_char) {
+        assert!(h.is_null(), "{label}: expected refusal");
+        assert!(!err.is_null(), "{label}: refused without a reason");
+        // read_c_string TAKES OWNERSHIP -- it calls monty_string_free itself
+        // (integration.rs:25). Freeing again here is a double free, and it
+        // aborts the whole test binary with "free(): double free detected in
+        // tcache 2" rather than failing one test.
+        let msg = unsafe { read_c_string(err) };
+        assert!(!msg.is_empty(), "{label}: empty reason");
+    }
+
+    let garbage: [u8; 16] = [0xAB; 16];
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe { monty_repl_restore(ptr::null(), 8, ptr::null(), ptr::null(), &mut e) };
+    expect_refused_with_reason("NULL data", h, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            ptr::null(),
+            ptr::null(),
+            &mut e,
+        )
+    };
+    expect_refused_with_reason("garbage bytes", h, e);
+
+    let bad_limits = CString::new("{not json").unwrap();
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe {
+        monty_repl_restore(
+            garbage.as_ptr(),
+            garbage.len(),
+            bad_limits.as_ptr(),
+            ptr::null(),
+            &mut e,
+        )
+    };
+    expect_refused_with_reason("malformed limits", h, e);
+}
+
+// ---------------------------------------------------------------------------
+// Invalid UTF-8 through parse_c_str, on the REPL half
+// ---------------------------------------------------------------------------
+// R6 from the C ABI review: all three existing UTF-8 tests are ONE-SHOT
+// (`create_with_non_utf8_code` :494, `resume_with_non_utf8_value` :546,
+// `resume_with_error_non_utf8_message` :576). The REPL half had none, so
+// `parse_c_str`'s invalid-UTF-8 arm (error.rs:44-49) was never reached through
+// any monty_repl_* entry point.
+//
+// WHY THIS IS WORTH TESTING, stated accurately after getting it wrong once.
+//
+// An earlier draft of this comment claimed a Dart caller reaches this arm by
+// passing an unpaired surrogate. That is FALSE. It was checked rather than
+// argued, and the correction is recorded here because the wrong version is the
+// more plausible-sounding one.
+//
+// The premises hold. Dart strings ARE UTF-16
+// (dart-sdk/lib/core/string.dart:7, "A sequence of UTF-16 code units") and a
+// lone surrogate IS constructible (string.dart:144, "Creating a [String] with
+// one half of a surrogate pair is allowed"). The conclusion does not, because
+// package:ffi documents the substitution (ffi-2.2.0/lib/src/utf8.dart:73-76):
+//
+//     "Unpaired surrogate code points in this [String] will be encoded as
+//      replacement characters (U+FFFD, encoded as the bytes 0xEF 0xBF 0xBD)
+//      in the UTF-8 encoded result."
+//
+// Measured, Dart 3.11.4 against ffi-2.2.0:
+//
+//     "a\u{D800}b".codeUnits  ->  [97, 55296, 98]
+//     toNativeUtf8 bytes       ->  61 ef bf bd 62 00
+//
+// That is valid UTF-8, so CStr::to_str() at error.rs:43 returns Ok and this arm
+// is skipped. All 29 char* sites in lib/src/ffi/native_bindings_ffi.dart go
+// through toNativeUtf8, so the package's own Dart layer cannot reach it at all.
+//
+// The guard is still a real contract, and that is the honest justification:
+// native/include/dart_monty.h:5 publishes "All strings are NUL-terminated
+// UTF-8" to every C-ABI consumer, and nothing in the C type system enforces it.
+// Any caller that builds a char* itself -- C, C++, Go, Zig, or Dart via raw
+// dart:ffi byte writes -- can hand these entry points a valid C string that is
+// invalid UTF-8. The branch exists, was unexecuted, and unexecuted error
+// branches are where this project has repeatedly found real defects.
+//
+// The "names the argument" half is the load-bearing assertion:
+// resume_with_exception takes TWO string parameters, so a bare "not valid
+// UTF-8" would leave the caller guessing which one was wrong.
+//
+// parse_c_str runs immediately after the NULL-handle check in each of these, so
+// no suspended REPL state is required to reach it.
+// Hoisted to module scope: clippy's `items_after_statements` rejects a fn
+// declared after statements inside a test body.
+fn expect_named(label: &str, arg: &str, tag: MontyProgressTag, e: *mut c_char) {
+    assert_eq!(tag, MontyProgressTag::Error, "{label}: expected Error");
+    assert!(!e.is_null(), "{label}: invalid UTF-8 must be reported");
+    let msg = unsafe { read_c_string(e) };
+    assert!(
+        msg.contains("not valid UTF-8"),
+        "{label}: message should say what was wrong, got {msg:?}"
+    );
+    assert!(
+        msg.contains(arg),
+        "{label}: message should name the argument {arg:?}, got {msg:?}"
+    );
+}
+
+#[test]
+fn repl_invalid_utf8_is_reported_and_names_the_argument() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    // Lone continuation byte: valid as C (NUL-terminated), invalid as UTF-8.
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+    let bad_ptr = bad.as_ptr().cast::<c_char>();
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_start(handle, bad_ptr, &mut e) };
+    expect_named("feed_start", "code", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume(handle, bad_ptr, &mut e) };
+    expect_named("resume", "value_json", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_with_error(handle, bad_ptr, &mut e) };
+    expect_named("resume_with_error", "error_message", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_not_found(handle, bad_ptr, &mut e) };
+    expect_named("resume_not_found", "fn_name", tag, e);
+
+    // Two string args: the FIRST bad one must be the one named.
+    let ok = CString::new("ValueError").unwrap();
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_with_exception(handle, bad_ptr, ok.as_ptr(), &mut e) };
+    expect_named("resume_with_exception/exc_type", "exc_type", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_with_exception(handle, ok.as_ptr(), bad_ptr, &mut e) };
+    expect_named("resume_with_exception/message", "error_message", tag, e);
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_resume_futures(handle, bad_ptr, ok.as_ptr(), &mut e) };
+    expect_named("resume_futures/results", "results_json", tag, e);
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// The same arm with a NULL out_error: parse_c_str must not write through it.
+// Separate test because the assertion is "the process survives", and mixing
+// that with content assertions hides which one failed.
+#[test]
+fn repl_invalid_utf8_tolerates_null_out_error() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+    let bad_ptr = bad.as_ptr().cast::<c_char>();
+
+    let t = unsafe { monty_repl_feed_start(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+    let t = unsafe { monty_repl_resume(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+    let t = unsafe { monty_repl_resume_with_error(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+    let t = unsafe { monty_repl_resume_not_found(handle, bad_ptr, ptr::null_mut()) };
+    assert_eq!(t, MontyProgressTag::Error);
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// ---------------------------------------------------------------------------
+// usage.time_elapsed_ms is REAL on the REPL path (core#155)
+// ---------------------------------------------------------------------------
+// Every MontyResult.usage in this package used to be
+// {"memory_bytes_used":0,"time_elapsed_ms":0,"stack_depth_used":0} on EVERY
+// path, success included. A consumer reading usage got zeros and no way to know
+// they were stubs.
+//
+// time_elapsed_ms now comes from ResourceTracker::elapsed(). The other two stay
+// zero because v0.0.23 exposes no accessor for them -- only the configured
+// maxima -- so they remain honestly unknown rather than falsely reported.
+//
+// The assertion is deliberately WEAK on magnitude and STRONG on non-zero: this
+// measures interpreter time, which is machine- and load-dependent, and a test
+// that pins a duration is a flake. What must hold is that a script doing real
+// work no longer reports zero.
+#[test]
+fn repl_usage_reports_real_elapsed_time() {
+    let name = CString::new("repl.py").unwrap();
+    let mut err: *mut c_char = ptr::null_mut();
+    let handle = unsafe { monty_repl_create(name.as_ptr(), &mut err) };
+    assert!(
+        !handle.is_null(),
+        "repl_create failed: cannot run this test"
+    );
+
+    // Enough iterations to take more than a millisecond of INTERPRETER time.
+    let code = CString::new("total = 0\nfor i in range(400000):\n    total += i\ntotal").unwrap();
+    let mut out: *mut c_char = ptr::null_mut();
+    let mut e: *mut c_char = ptr::null_mut();
+    let tag = unsafe { monty_repl_feed_run(handle, code.as_ptr(), &mut out, &mut e) };
+    assert_eq!(tag, MontyResultTag::Ok, "the loop should complete");
+    assert!(!out.is_null(), "a successful run must produce result JSON");
+
+    let json = unsafe { read_c_string(out) };
+    let v: serde_json::Value = serde_json::from_str(&json).expect("result JSON must parse");
+    let elapsed = v["usage"]["time_elapsed_ms"]
+        .as_u64()
+        .expect("usage.time_elapsed_ms must be a number");
+
+    assert!(
+        elapsed > 0,
+        "400k interpreter iterations must report >0ms, got {elapsed}ms in {json}"
+    );
+
+    // The other two are still stubs, and this PINS that fact rather than
+    // detecting a change upstream.
+    //
+    // An earlier version of this comment claimed the test "FAILS the day an
+    // accessor appears upstream". That is FALSE and a reviewer caught it: the
+    // JSON is built by hand in repl_handle.rs, so nothing upstream can move
+    // these numbers. The test fails only when a developer here wires a real
+    // value in -- it is a speed bump in front of that person, not a detector.
+    //
+    // Kept anyway, for the one thing it does do: it makes "these are zeros on
+    // purpose" executable rather than a comment, so a future reader cannot
+    // mistake a stub for a measurement. Whoever wires them up deletes two
+    // asserts, which is the correct amount of friction.
+    assert_eq!(
+        v["usage"]["memory_bytes_used"].as_u64(),
+        Some(0),
+        "stub pinned on purpose; delete this assert when wiring a real value"
+    );
+    assert_eq!(
+        v["usage"]["stack_depth_used"].as_u64(),
+        Some(0),
+        "stub pinned on purpose; delete this assert when wiring a real value"
+    );
+
+    unsafe { monty_repl_free(handle) };
+}
+
+// ---------------------------------------------------------------------------
+// REPL constructors: bad script_name, and the core#138 limits guarantee
+// ---------------------------------------------------------------------------
+// The one-shot constructor has both halves of the script_name case
+// (`create_with_non_utf8_script_name` :804, and its null_out_error twin :832).
+// The REPL constructors had neither.
+//
+// The limits half matters more. `monty_repl_create_with_limits`' own doc says:
+// "Malformed JSON is an error rather than a silent fallback: a caller who asks
+// for a limit and quietly receives none is core#138." Nothing tested that. A
+// regression there does not crash and does not fail loudly -- it hands back a
+// working handle with NO limits, which is precisely the defect core#138 was
+// filed for, and the caller cannot tell.
+#[test]
+fn repl_create_rejects_a_non_utf8_script_name() {
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe { monty_repl_create(bad.as_ptr().cast(), &mut e) };
+    assert!(
+        h.is_null(),
+        "a non-UTF-8 script_name must not produce a handle"
+    );
+    assert!(!e.is_null(), "it must say why");
+    let msg = unsafe { read_c_string(e) };
+    assert!(
+        msg.contains("script_name") && msg.contains("not valid UTF-8"),
+        "message should name the argument and the reason, got {msg:?}"
+    );
+
+    // Same path, NULL out_error: must refuse without writing anywhere.
+    let h = unsafe { monty_repl_create(bad.as_ptr().cast(), ptr::null_mut()) };
+    assert!(h.is_null());
+
+    // And through the limits constructor, which parses the same argument.
+    let mut e: *mut c_char = ptr::null_mut();
+    let h = unsafe { monty_repl_create_with_limits(bad.as_ptr().cast(), ptr::null(), &mut e) };
+    assert!(h.is_null());
+    assert!(!e.is_null(), "the limits constructor must report it too");
+    unsafe { monty_string_free(e) };
+}
+
+// core#138, pinned: malformed limits must FAIL, not silently run unbounded.
+#[test]
+fn repl_create_with_limits_refuses_malformed_json() {
+    let name = CString::new("repl.py").unwrap();
+
+    // A NULL limits_json is documented as "unbounded session" and is legal.
+    // Asserted first so the negative cases below cannot be satisfied by a
+    // constructor that simply rejects everything.
+    let mut e: *mut c_char = ptr::null_mut();
+    let ok = unsafe { monty_repl_create_with_limits(name.as_ptr(), ptr::null(), &mut e) };
+    assert!(
+        !ok.is_null(),
+        "NULL limits_json is legal: an unbounded session"
+    );
+    unsafe { monty_repl_free(ok) };
+
+    // Each of these must be REFUSED. A handle here is the core#138 defect:
+    // the caller asked for limits and would receive none, silently.
+    for bad in ["{not json", "[]", "null", "{\"memory_bytes\": \"lots\"}"] {
+        let limits = CString::new(bad).unwrap();
+        let mut e: *mut c_char = ptr::null_mut();
+        let h = unsafe { monty_repl_create_with_limits(name.as_ptr(), limits.as_ptr(), &mut e) };
+        assert!(
+            h.is_null(),
+            "malformed limits {bad:?} produced a handle — that is an UNBOUNDED \
+             session the caller believes is limited (core#138)"
+        );
+        assert!(
+            !e.is_null(),
+            "malformed limits {bad:?}: refused without a reason"
+        );
+        let msg = unsafe { read_c_string(e) };
+        assert!(!msg.is_empty(), "malformed limits {bad:?}: empty reason");
+    }
+
+    // Refusal must also survive a NULL out_error rather than crashing.
+    let limits = CString::new("{not json").unwrap();
+    let h =
+        unsafe { monty_repl_create_with_limits(name.as_ptr(), limits.as_ptr(), ptr::null_mut()) };
+    assert!(h.is_null());
+}
+
+// ---------------------------------------------------------------------------
+// monty_type_check — the entry point behind Monty.typeCheck
+// ---------------------------------------------------------------------------
+// `grep -n monty_type_check native/tests/integration.rs` returned NOTHING before
+// this. The README promotes `Monty.typeCheck(code)` as "the supported
+// development loop" -- run it before execute to catch subset violations as
+// typed errors -- and the C entry point it rests on had no Rust-side test at
+// all. It was the largest uncovered block left in lib.rs.
+//
+// Four outcome arms, each asserted separately so a failure names which one:
+//   Ok(Ok(None))       clean code, no diagnostics  -> Ok  + NULL diagnostics
+//   Ok(Ok(Some(json))) diagnostics produced        -> Ok  + JSON
+//   parse failure      bad code/script_name        -> Error + reason
+//   NULL out-params    caller wants no detail      -> must not write
+#[test]
+fn type_check_clean_code_reports_no_diagnostics() {
+    let code = CString::new("x = 1\ny = x + 1\n").unwrap();
+    let name = CString::new("t.py").unwrap();
+    let mut diag: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+
+    let tag = unsafe {
+        monty_type_check(
+            code.as_ptr(),
+            ptr::null(),
+            name.as_ptr(),
+            &mut diag,
+            &mut err,
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Ok, "clean code must type-check");
+    assert!(err.is_null(), "a clean check must leave out_error NULL");
+    // Clean code yields NO diagnostics. If a future checker starts emitting
+    // advisory output for correct code this fires, which is the right place to
+    // notice it.
+    assert!(
+        diag.is_null(),
+        "clean code produced diagnostics: {:?}",
+        unsafe { read_c_string(diag) }
+    );
+}
+
+#[test]
+fn type_check_reports_diagnostics_as_json() {
+    // A type error the checker should catch: str + int.
+    let code = CString::new("x: int = \"not an int\"\n").unwrap();
+    let name = CString::new("t.py").unwrap();
+    let mut diag: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+
+    let tag = unsafe {
+        monty_type_check(
+            code.as_ptr(),
+            ptr::null(),
+            name.as_ptr(),
+            &mut diag,
+            &mut err,
+        )
+    };
+    // Diagnostics are a SUCCESSFUL check that found something -- Ok, not Error.
+    // Error is reserved for the check failing to run. Getting this backwards
+    // would make a type error indistinguishable from a broken type checker.
+    assert_eq!(
+        tag,
+        MontyResultTag::Ok,
+        "finding a type error is not a failure to check"
+    );
+    assert!(
+        err.is_null(),
+        "out_error is for infrastructure failure, not diagnostics"
+    );
+    assert!(!diag.is_null(), "a type error must produce diagnostics");
+
+    let json = unsafe { read_c_string(diag) };
+    assert!(!json.is_empty(), "diagnostics must not be empty");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("diagnostics must be valid JSON");
+    assert!(
+        parsed.is_array() || parsed.is_object(),
+        "diagnostics should be a JSON array or object, got {json}"
+    );
+}
+
+#[test]
+fn type_check_applies_prefix_code() {
+    // prefix_code is prepended before checking, so a name defined ONLY in the
+    // prefix must resolve. Without the prefix the same code should complain --
+    // that contrast is what proves the prefix was actually used rather than
+    // silently dropped.
+    let code = CString::new("y = helper_value + 1\n").unwrap();
+    let prefix = CString::new("helper_value = 41\n").unwrap();
+    let name = CString::new("t.py").unwrap();
+
+    let mut diag: *mut c_char = ptr::null_mut();
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag = unsafe {
+        monty_type_check(
+            code.as_ptr(),
+            prefix.as_ptr(),
+            name.as_ptr(),
+            &mut diag,
+            &mut err,
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Ok);
+    assert!(err.is_null());
+    if !diag.is_null() {
+        let json = unsafe { read_c_string(diag) };
+        panic!("prefix_code was not applied; undefined-name diagnostics: {json}");
+    }
+}
+
+#[test]
+fn type_check_rejects_bad_strings_and_tolerates_null_out_params() {
+    let name = CString::new("t.py").unwrap();
+    let ok = CString::new("x = 1\n").unwrap();
+    let bad: &[u8] = &[0xFF, 0xFE, 0x00];
+    let bad_ptr = bad.as_ptr().cast::<c_char>();
+
+    // Invalid UTF-8 code: refused, and the message names the argument.
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag = unsafe {
+        monty_type_check(
+            bad_ptr,
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            &mut err,
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Error);
+    assert!(!err.is_null(), "invalid UTF-8 must be reported");
+    let msg = unsafe { read_c_string(err) };
+    assert!(
+        msg.contains("code"),
+        "message should name the argument, got {msg:?}"
+    );
+
+    // Invalid UTF-8 script_name: same, different argument named.
+    let mut err: *mut c_char = ptr::null_mut();
+    let tag =
+        unsafe { monty_type_check(ok.as_ptr(), ptr::null(), bad_ptr, ptr::null_mut(), &mut err) };
+    assert_eq!(tag, MontyResultTag::Error);
+    assert!(!err.is_null());
+    let msg = unsafe { read_c_string(err) };
+    assert!(
+        msg.contains("script_name"),
+        "message should name script_name, got {msg:?}"
+    );
+
+    // Both out-params NULL on the ERROR path: the caller wants no detail and
+    // must not be punished for it. Forced through the failing branch, not the
+    // succeeding one -- a NULL out-param on the success path proves nothing.
+    let tag = unsafe {
+        monty_type_check(
+            bad_ptr,
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Error);
+
+    // And on the success path.
+    let tag = unsafe {
+        monty_type_check(
+            ok.as_ptr(),
+            ptr::null(),
+            name.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(tag, MontyResultTag::Ok);
 }

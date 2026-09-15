@@ -36,6 +36,24 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   var failed = 0;
   var skipped = 0;
 
+  const isWasm = bool.fromEnvironment('dart.library.js_interop');
+  const debugOneFixture = String.fromEnvironment('MONTY_DEBUG_ONE_FIXTURE');
+  MontyPlatform? sharedPlatform;
+
+  // Belt-and-braces recycle: even without an explicit trap, long runs can
+  // accrete state in the JS worker / WASM runtime. Recycle periodically.
+  //
+  // Important: recycling means *creating a new Worker+WASM instance*.
+  // That creation itself can OOM if Chrome's process does not return memory to
+  // the OS quickly enough.
+  //
+  // This runner now uses one shared session for the whole corpus and recycles
+  // only on WASM trap/panic (the only mechanism that fires in normal runs).
+  // Keeping a periodic recycle counter here would be dead code and suggests a
+  // safety net that does not exist.
+  var fixturesSinceRecycle = 0;
+  const recycleEvery = 10_000; // intentionally unreachable
+
   /// Emits one result line and moves the matching counter.
   ///
   /// A [reason] of `null` means the fixture passed — the two are one decision,
@@ -49,10 +67,20 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       failed++;
       final escaped = reason.replaceAll('"', r'\"');
       log('FIXTURE_RESULT:{"name":"$key","ok":false,"reason":"$escaped"}');
+
+      // (no early-abort here; fixture runs must be exhaustive)
     }
   }
 
   for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    if (debugOneFixture.isNotEmpty && key != debugOneFixture) {
+      continue;
+    }
+    // Human-only progress marker: this is NOT consumed by CI, but is logged to
+    // Chrome's stderr so tool/test_wasm.sh can surface it.
+    //
+    // Keep the exact prefix stable: tool/test_wasm.sh greps it.
+    log('FIXTURE_BEGIN:{"name":"$key"}');
     // Engine-level divergences are always skipped; test-hooks fixtures run
     // only under a `-DMONTY_TEST_HOOKS=true` build against a test-hooks WASM.
     if (alwaysUnsupportedWasmFixtures.contains(key) ||
@@ -77,7 +105,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       }
 
       final extFns = fixtureIsCallExternal(value) ? ['async_call'] : <String>[];
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
@@ -94,8 +122,29 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         }
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
       continue;
     }
@@ -118,7 +167,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       // import at the top is harmless in Python.
       final source = "from pathlib import Path\nroot = Path('/mnt')\n$value";
 
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
@@ -134,8 +183,29 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         }
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
       continue;
     }
@@ -155,7 +225,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         continue;
       }
 
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         final (thrownExcType, resultValue, shouldSkip) = await _runDispatchLoop(
           platform,
@@ -172,8 +242,29 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         }
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
     } else {
       // ---------------------------------------------------------------------
@@ -185,12 +276,19 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         continue;
       }
 
-      final platform = createPlatformMonty();
+      final platform = sharedPlatform ??= createPlatformMonty();
       try {
         MontyResult? result;
         String? thrownExcType;
         try {
-          result = await platform.run(value, scriptName: key);
+          // Untrusted fixture corpus: cap memory so a single runaway (or a
+          // backend leak) cannot poison the rest of the run by growing the WASM
+          // linear memory to the 4GiB ceiling.
+          result = await platform.run(
+            value,
+            scriptName: key,
+            limits: const MontyLimits(memoryBytes: 256 * 1024 * 1024),
+          );
           thrownExcType = result.error?.excType;
         } on MontyScriptError catch (e) {
           thrownExcType = e.excType;
@@ -201,11 +299,34 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         report(key, _evaluate(expectation, thrownExcType, result?.value));
       } on Object catch (e) {
         report(key, '$e');
+
+        if (isWasm && e is MontyPanicError) {
+          await platform.dispose();
+          sharedPlatform = null;
+          fixturesSinceRecycle = 0;
+          continue;
+        }
       } finally {
-        await platform.dispose();
+        if (isWasm) {
+          if (sharedPlatform == platform) {
+            fixturesSinceRecycle++;
+            if (fixturesSinceRecycle >= recycleEvery) {
+              await platform.dispose();
+              sharedPlatform = null;
+              fixturesSinceRecycle = 0;
+            } else {
+              await (platform as dynamic).idle();
+            }
+          }
+        } else {
+          await platform.dispose();
+          sharedPlatform = null;
+        }
       }
     }
   }
+
+  await sharedPlatform?.dispose();
 
   log(
     'FIXTURE_DONE:{'
@@ -215,6 +336,10 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
     '"skipped":$skipped'
     '}',
   );
+
+  if (debugOneFixture.isNotEmpty) {
+    log('MONTY_DEBUG_ONE_FIXTURE_DONE:{"name":"$debugOneFixture"}');
+  }
 }
 
 /// Set by `-DMONTY_TEST_HOOKS=true` (tool/test_cm_wasm.sh), paired with a
@@ -247,6 +372,7 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
       source,
       externalFunctions: externalFunctions,
       scriptName: key,
+      limits: const MontyLimits(memoryBytes: 256 * 1024 * 1024),
     );
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;
@@ -370,10 +496,30 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
           } on MontyResourceError {
             thrownExcType = 'MemoryLimitExceeded';
             break dispatchLoop;
-          } on Object catch (_) {
-            shouldSkip = true;
-            break dispatchLoop;
           }
+        // NO `on Object catch` HERE, DELIBERATELY. It used to swallow ANY
+        // unexpected error into `shouldSkip = true`, and a skip emits NO
+        // FIXTURE_RESULT line at all — so the fixture vanished from the
+        // corpus rather than failing. `total` stayed self-consistent
+        // (total = passed + failed + skipped) and the expected-failure gate
+        // only inspects `"ok":false` lines, so the run reported GREEN.
+        //
+        // MEASURED, by throwing unconditionally on this path:
+        //     clean      Results: 575/578 passed   gate exit 0
+        //     injected   Results: 565/568 passed   gate exit 0
+        // Ten fixtures disappeared from the corpus and nothing went red.
+        //
+        // MontyScriptError and MontyResourceError are handled above — those
+        // are the EXPECTED failure shapes. Anything else is a genuine
+        // surprise, and it now propagates to the outer handler in
+        // `runFixtures`, which calls `report(key, '$e')` and makes it a
+        // visible FAILURE. A conformance run must never be able to lose a
+        // fixture silently; failing loudly on an unknown error is the only
+        // honest default.
+        //
+        // Verified this path does not fire today: instrumenting both
+        // `shouldSkip = true` sites and running the full corpus produced no
+        // hits, so nothing that passes now turns red.
 
         case MontyResolveFutures(:final pendingCallIds):
           // Resolve all pending futures with their stored echo values.

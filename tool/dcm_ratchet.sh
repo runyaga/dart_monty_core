@@ -18,6 +18,39 @@ cd "$(git rev-parse --show-toplevel)"
 BASELINE="${1:-tool/dcm-baseline.json}"
 if [ "${1:-}" = "--update" ]; then BASELINE=tool/dcm-baseline.json; UPDATE=1; else UPDATE=0; fi
 
+# THE BASELINE A PR IS MEASURED AGAINST MUST NOT BE ONE THE PR CAN EDIT.
+# Same hole, same fix as tool/coverage_ratchet.sh -- see the long comment there.
+# `--update` rewrites this file and exits 0, so a lowered baseline committed
+# next to the regression it excuses passes CI. Reading the COMPARISON copy from
+# the base branch means a PR cannot lower its own bar; the baseline it ships
+# governs the next PR instead. RATCHET_BASE_REF unset (every local run) is
+# unchanged behaviour.
+if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  BASE_COPY="$(mktemp)"
+  if git show "${RATCHET_BASE_REF}:${BASELINE}" > "$BASE_COPY" 2>/dev/null; then
+    # ...but ONLY if it was produced by the same dcm. A ratchet compares
+    # per-rule counts, so a different analyzer version silently changes the
+    # thing being compared -- the exact hazard the version pin below exists
+    # for. A PR that legitimately bumps dcm AND regenerates the baseline would
+    # otherwise be measured against the OLD baseline with the NEW analyzer,
+    # which is a cross-version comparison this file already warns about.
+    BASE_V=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('_dcm_version',''))" "$BASE_COPY" 2>/dev/null)
+    CUR_V=$(python3 -c "import json;print(json.load(open('tool/dcm-baseline.json')).get('_dcm_version',''))" 2>/dev/null)
+    if [ -n "$BASE_V" ] && [ "$BASE_V" != "$CUR_V" ]; then
+      rm -f "$BASE_COPY"
+      echo "note: ${RATCHET_BASE_REF} baseline was made by dcm $BASE_V, this tree"
+      echo "      expects $CUR_V. Comparing across analyzer versions is meaningless,"
+      echo "      so falling back to the working copy. REVIEW THE BASELINE DIFF."
+    else
+      echo "note: comparing against ${RATCHET_BASE_REF}:${BASELINE}, not the working copy."
+      BASELINE="$BASE_COPY"
+    fi
+  else
+    rm -f "$BASE_COPY"
+    echo "note: no ${BASELINE} on ${RATCHET_BASE_REF} -- this PR introduces it."
+  fi
+fi
+
 # A gate that silently skips is not a gate. Skipping is allowed ONLY when the
 # caller opts in explicitly (local runs on a machine without dcm); anywhere the
 # ratchet is relied upon — CI above all — a missing dcm must FAIL, because the
@@ -59,11 +92,22 @@ ERR=$(mktemp)
 # CI it refuses with "Both CI key and purchase email should be provided to run
 # on CI." and exits 64 -- which is why this gate never ran there. Pass the
 # credentials when present; stay unlicensed when not, so local use is unchanged.
+#
+# AND `CI=true` MUST BE SET, or the credentials are ignored. Measured
+# 2026-09-14 with a valid CI key in a local container: `dcm analyze --ci-key=...
+# --email=...` printed "DCM is not activated ... run dcm activate" and exited 1,
+# while the SAME command with `CI=true` prefixed analysed 67 files and emitted
+# JSON. dcm only consults the CI credentials when it believes it is on CI, so
+# passing them without the flag is a no-op that reports an unrelated reason.
+# This gate therefore could not pass locally even when correctly configured --
+# it always looked like a missing licence rather than a missing env var.
 DCM_AUTH=()
+DCM_CI_ENV=()
 if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
   DCM_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
+  DCM_CI_ENV=(env CI=true)
 fi
-dcm analyze lib test --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
+"${DCM_CI_ENV[@]}" dcm analyze lib test --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
 DCM_RC=$?
 
 if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$TMP" 2>/dev/null; then

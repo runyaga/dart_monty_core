@@ -1,6 +1,6 @@
 // The contract vocabulary for a decoded value.
 //
-// `WIRE-CONTRACT.md` names the 27 upstream `MontyObject` variants by their wire
+// `WIRE-CONTRACT.md` names the 29 upstream `MontyObject` variants by their wire
 // tag — `dict`, `bigint`, `exception` — and that is the vocabulary the type
 // identity invariant (I1) is written in. This maps a decoded `MontyValue` back
 // onto it.
@@ -43,6 +43,19 @@ String montyTypeName(MontyValue v) => switch (v) {
   MontyTimeZone() => 'timezone',
   MontyPath() => 'path',
   MontyFileHandle() => 'filehandle',
+  // BOTH ADDED 2026-09-14. An alignment audit found the Rust encoder emits
+  // these two (convert.rs:172, :174) while Dart had no factory for either, so
+  // `datetime.time(12, 0)` and the bare name `NotImplemented` each threw
+  // `unknown __type`. This file's own header claimed to cover "the 27 upstream
+  // MontyObject variants"; upstream has 29, and these were the missing two.
+  MontyTime() => 'time',
+  MontyNotImplemented() => 'not_implemented',
+  MontyClassInstance() => 'class_instance',
+  // Still here, and still 'dataclass'. monty v0.0.23 stopped EMITTING this
+  // tag (upstream cf8246d7 replaced the wire Dataclass variant), so nothing
+  // decodes into a MontyDataclass any more — but the type is still how a HOST
+  // sends one IN, and this file names the tag a value carries, not the tag
+  // the engine happens to produce today.
   MontyDataclass() => 'dataclass',
   MontyEllipsis() => 'ellipsis',
   MontyExceptionValue() => 'exception',

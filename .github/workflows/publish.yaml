@@ -12,7 +12,7 @@ jobs:
       id-token: write # OIDC token for pub.dev
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Assets are committed to git (Mode A). No rebuild or force-stage
       # step is needed — dart pub publish picks up whatever is in the

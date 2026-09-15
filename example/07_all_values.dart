@@ -171,13 +171,19 @@ class User:
 
 u = User("Alice", 30)
 ''');
-  final dc = (await repl.feedRun('u')).value as MontyDataclass;
-  print('dataclass: ${dc.name}  frozen=${dc.frozen}  typeId=${dc.typeId}');
-  print('  fields: ${dc.fieldNames}');
+  // WIRE v5: an in-sandbox class instance arrives as MontyClassInstance, NOT
+  // MontyDataclass. MontyDataclass still exists but is ENCODE-ONLY -- you can
+  // send one in, you will not get one back. The old shape carried `name`,
+  // `frozen`, `typeId` and `fieldNames`; the replacement carries a class, an
+  // instance id and attrs, and nothing else. `frozen` and `fieldNames` are gone
+  // from the wire, so an example cannot print them.
+  final inst = (await repl.feedRun('u')).value as MontyClassInstance;
+  print('class instance: ${inst.classType.name}  id=${inst.instanceId}');
+  print('  isDataclass: ${inst.classType.isDataclass}');
   print(
-    '  name=${dc.attrs["name"]!.dartValue}  age=${dc.attrs["age"]!.dartValue}',
+    '  name=${inst.attrs["name"]!.dartValue}  age=${inst.attrs["age"]!.dartValue}',
   );
-  print('  dartValue: ${dc.dartValue}');
+  print('  dartValue: ${inst.dartValue}');
 
   repl.dispose();
 }

@@ -10,6 +10,8 @@
 
 [Live Demo](https://runyaga.github.io/dart_monty_core/) | [GitHub](https://github.com/runyaga/dart_monty_core)
 
+**dart_monty_core v0.23.0 · monty v0.0.23 · wire format v5**
+
 Run Python in Dart. A thin binding for
 [pydantic/monty](https://github.com/pydantic/monty) — the sandboxed Python
 interpreter from Pydantic, written in Rust.
@@ -32,8 +34,9 @@ LLMs generate excellent Python. Let them script your Dart app — through
 code your app type-checks, runs in a sandbox, exposes only the external
 functions and OS calls you whitelist, and inspects the typed result. More
 flexible than a plug-in registry, safer than `eval` — Pydantic runs an
-active **$5,000 bug bounty** at [hackmonty.com](https://hackmonty.com/)
-for the underlying interpreter.
+active bug bounty at [hackmonty.com](https://hackmonty.com/) for the
+underlying interpreter, currently **$20,000** in Round 3, which puts Monty
+behind a production WebSocket service.
 
 ```dart
 final errors = await Monty.typeCheck(llmCode);
@@ -76,7 +79,7 @@ await repl.dispose();
 
 | | |
 |---|---|
-| `Monty(code, {scriptName})` | Hold source as a re-runnable program |
+| `Monty(code, {scriptName})` | Hold source as a re-runnable program (`scriptName` defaults to `main.py`) |
 | `run({inputs, externalFunctions, externalAsyncFunctions, limits, osHandler, printCallback})` | Run in a fresh interpreter |
 | `Monty.exec(code, {…})` | One-shot wrapper |
 | `Monty.compile(code)` / `Monty.runPrecompiled(bytes, {…})` | Pre-compile and replay |
@@ -86,14 +89,20 @@ await repl.dispose();
 
 | | |
 |---|---|
-| `MontyRepl({scriptName, preamble})` | Auto-detected backend |
+| `MontyRepl({scriptName, preamble, limits})` | Auto-detected backend |
 | `feedRun(code, {inputs, externalFunctions, externalAsyncFunctions, osHandler, printCallback})` | State persists |
-| `feedStart(code, {externalFunctions, externalAsyncFunctions, …}) + resume / resumeWithError` | Iterative externals + OS calls |
+| `feedStart(code, {…})` + `resume` / `resumeWithError` / `resumeWithException` / `resumeNotFound` | Iterative externals + OS calls |
+| `resumeAsFuture()` / `resolveFutures(results, errors)` | Manual futures dispatch (see the async matrix) |
 | `detectContinuation(code)` | `>>>` vs `...` mode |
 | `snapshot()` / `restore(bytes)` | Serialise / restore the heap |
 | `clearState()` / `dispose()` | Wipe / free |
 
 Multiple `MontyRepl`s coexist — each owns its own Rust heap.
+
+`limits:` on the constructor bounds every feed of that REPL. It is **not
+supported on the web backend**: passing it there throws rather than silently
+running unbounded (`lib/src/repl/monty_repl.dart:110`, core#140). Omitted,
+a REPL is unbounded.
 
 ### `MontyValue` — typed Python values
 
@@ -105,30 +114,59 @@ switch (result.value) {
   case MontyDict(:final entries):  /* … */ ;
   case MontyDate(:final year):     /* … */ ;
   case MontyNamedTuple(:final fieldNames, :final values): /* … */ ;
-  case MontyDataclass(:final name, :final attrs): /* … */ ;
+  case MontyClassInstance(:final classType, :final attrs): /* … */ ;
   case MontyNone(): /* … */ ;
 }
 ```
 
-24 subtypes — scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`,
-`MontyBool`, `MontyNone`, `MontyEllipsis`), collections (`MontyList`,
-`MontyTuple`, `MontyDict`, `MontyPairsDict`, `MontySet`, `MontyFrozenSet`,
-`MontyBytes`), datetime (`MontyDate`, `MontyDateTime`, `MontyTimeDelta`,
-`MontyTimeZone`), and structured (`MontyPath`, `MontyNamedTuple`,
-`MontyDataclass`, `MontyFileHandle`, `MontyExceptionValue`, `MontyOpaque`).
+27 subtypes — scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`,
+`MontyBool`, `MontyNone`, `MontyEllipsis`, `MontyNotImplemented`), collections
+(`MontyList`, `MontyTuple`, `MontyDict`, `MontyPairsDict`, `MontySet`,
+`MontyFrozenSet`, `MontyBytes`), datetime (`MontyDate`, `MontyDateTime`,
+`MontyTime`, `MontyTimeDelta`, `MontyTimeZone`), and structured (`MontyPath`,
+`MontyNamedTuple`, `MontyClassInstance`, `MontyDataclass`, `MontyFileHandle`,
+`MontyExceptionValue`, `MontyOpaque`). `MontyClassType` — the class an instance
+belongs to — is carried *by* `MontyClassInstance` and is not itself a
+`MontyValue`.
 
-`MontyDataclass.hydrate(factory)` turns a dataclass **the host supplied** into
-your own Dart class. Note the direction: sandboxed Python cannot write
-`@dataclass` — there is no `dataclasses` module and no such builtin — so a
-`MontyDataclass` always originates host-side, typically as the return value of
-an external function. A class defined *inside* the sandbox comes back as
-`MontyOpaque(repr, …)`, not a `MontyDataclass`.
+`MontyOpaque` is one type over five wire tags (`type`, `function`, `builtin`,
+`repr`, `cycle`): a host-visible rendering of something that has no Dart
+equivalent. Only `MontyOpaqueKind.builtin` round-trips back into the
+interpreter; sending any of the others back is an error
+(`lib/src/platform/monty_value_structured.dart:652-700`).
+
+#### Class instances and dataclasses
+
+**A class defined inside the sandbox comes back as `MontyClassInstance`**, with
+its `classType` naming the class. That is wire row 26 of
+[`docs/WIRE-CONTRACT.md`](docs/WIRE-CONTRACT.md).
 
 ```dart
-final user = (result.value as MontyDataclass).hydrate(User.fromAttrs);
+final v = result.value! as MontyClassInstance;
+v.classType.name;        // 'Point'
+v.classType.isDataclass; // true if dataclasses.is_dataclass(cls)
+final user = v.hydrate(User.fromAttrs);
 ```
 
+`MontyDataclass` is **encode-only as of monty v0.0.23**
+(`lib/src/platform/monty_value_structured.dart:490-516`). v0.0.23 dropped the
+dataclass wire variant, so nothing decodes to `MontyDataclass` any more — read
+`classType.isDataclass` on a `MontyClassInstance` to tell a dataclass from an
+ordinary class. `MontyDataclass` remains the way a **host** hands a dataclass
+*in*: `toJson()` still writes the `dataclass` envelope, and `hydrate(factory)`
+still works on one you constructed yourself.
+
+This is a breaking change for consumers who read `frozen` or `typeId` off a
+returned value. It is surfaced rather than papered over: mapping
+`class_instance` onto `MontyDataclass` would mean reporting `frozen: false` for
+a dataclass that was frozen.
+
 Build from Dart with `MontyValue.fromDart(value)`.
+
+The full tag-by-tag contract — what each Python expression decodes as, and the
+rules that make it unforgeable from inside the sandbox — is
+[`docs/WIRE-CONTRACT.md`](docs/WIRE-CONTRACT.md). It is normative and generated
+from assertions that run on all three targets.
 
 ### Errors
 
@@ -226,12 +264,15 @@ For the cell-by-cell contract across every API layer × backend, see
 [`docs/deep-dives/async-matrix.md`][async-matrix].
 
 Architecture references: [`docs/reference/native-crate.md`][native-crate] (the
-Rust C-FFI layer) and [`docs/reference/bridge-integration.md`][bridge-integration]
-(how Dart, the JS bridge and the WASM Worker fit together in a browser tab).
+Rust C-FFI layer), [`docs/reference/bridge-integration.md`][bridge-integration]
+(how Dart, the JS bridge and the WASM Worker fit together in a browser tab),
+and [`docs/reference/execution-model.md`][execution-model] (the fault
+boundary).
 
 [async-matrix]: docs/deep-dives/async-matrix.md
 [native-crate]: docs/reference/native-crate.md
 [bridge-integration]: docs/reference/bridge-integration.md
+[execution-model]: docs/reference/execution-model.md
 
 ### External functions
 
@@ -271,11 +312,13 @@ and `asyncio.gather` over multiple such calls runs them concurrently.
 `datetime.now` pause and call your `OsCallHandler`. Optional — provide only
 when the script touches the OS.
 
-There are 23 ops. The name you match on is the Python-visible one:
+The op name is a pass-through string from monty, not an enum this package
+defines (`native/src/handle.rs:79`), so the authoritative list lives upstream
+rather than here. Match on the Python-visible name:
 `Path.read_text`, `os.getenv`, `datetime.now` — and `open`, which is the
-only undotted name. **`open` is lowercase as of 0.19.0** (it was `'Open'`);
-see the CHANGELOG, because a handler switching on the old spelling stops
-matching silently rather than failing.
+only undotted name. **`open` is lowercase as of the v0.0.19 bump** (it was
+`'Open'`); see the [CHANGELOG](CHANGELOG.md), because a handler switching on
+the old spelling stops matching silently rather than failing.
 
 ```dart
 await Monty('os.getenv("HOME")').run(
@@ -288,7 +331,30 @@ await Monty('os.getenv("HOME")').run(
 ```
 
 `memoryMountedOsHandler` (`lib/src/mount/`) provides a ready-made in-memory
-VFS with mount-based sandboxing.
+VFS with mount-based sandboxing. Two things about it are worth knowing before
+you port from `pydantic_monty`, both covered in the CHANGELOG: our default
+mount mode is `readWrite` (upstream's default is `overlay`, which we do not
+have), and mount state is scoped to the **handler**, not to a feed — so a fresh
+handler over fresh `MontyMemoryFile`s per feed is what reproduces upstream's
+discard-at-feed-end behaviour.
+
+`MountDir` carries two independent budgets: `writeBytesLimit` (cumulative bytes
+written through the mount, monotonic — deleting does not refund) and
+`memoryUsageLimit` (bytes currently retained, default 100 MB, refunded on
+delete).
+
+#### Host-reaching virtual files
+
+`package:dart_monty_core/unsafe_callback_file.dart` is a **separate library**
+on purpose. `VfsCallbackFile(path, read:, write:)` backs a virtual file with
+host callbacks, and those callbacks run on the host with full access to the
+filesystem, network and every other system resource — one that touches the real
+filesystem breaks the sandbox. Importing it is a security decision, which is
+why it is not in the main library.
+
+The separation is a signal, not a boundary: `VfsFile` is an open interface, so
+a host-reaching backing can be written with no such import at all. The
+reviewer's rule is *audit every `VfsFile` that is not a `MontyMemoryFile`*.
 
 ### Resource limits
 
@@ -302,6 +368,10 @@ await Monty(code).run(
 );
 ```
 
+Each axis is nullable and absent means unbounded. A present-but-unusable value
+(negative, a string, a float) is now an error rather than silently leaving that
+axis unset.
+
 JS-aligned spelling: `MontyLimits.jsAligned(maxMemory:, maxDurationSecs:,
 maxRecursionDepth:)`.
 
@@ -312,6 +382,12 @@ maxRecursionDepth:)`.
 | `MontyFfi` | `dart.library.ffi` present (desktop / server / mobile) |
 | `MontyWasm` | `dart.library.js_interop` present (web) |
 | `createPlatformMonty()` | Auto-pick at compile time |
+
+Two platform classes, three build targets: the gate runs the suite on VM/FFI,
+`dart2js` and `dart2wasm` separately. `tool/check_backend_parity.sh` is a
+structural check that the two `CoreBindings` implementations declare the same
+supported method set, so choosing a backend is not also choosing a feature
+set.
 
 > **The FFI backend has no crash isolation.** The interpreter runs in your
 > process, so a memory fault inside sandboxed Python — a stack-overflow or
@@ -342,7 +418,7 @@ Or pin in `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  dart_monty_core: 0.19.0
+  dart_monty_core: 0.23.0
 ```
 
 To track unreleased fixes on `main`, use a `git:` dependency
@@ -411,17 +487,41 @@ External functions can't be called from inside iterator-consuming C
 builtins — `map(ext_fn, …)`, `filter(ext_fn, …)`, `sorted(…, key=ext_fn)`
 raise `RuntimeError` upstream. First-class references work everywhere else.
 
+Session snapshots are **not portable across a monty bump**. The canonical dump
+for `"2 + 2"` has been 98 → 74 → 60 → 59 bytes across upgrades; regenerate
+rather than restore across versions.
+
+## Contributing
+
+```bash
+bash tool/gate.sh     # the commit gate: 35 checks across FFI, dart2js, dart2wasm,
+                      # the Rust crate, the conformance corpus and the demo page
+```
+
+Read the **exit code** and the verdict line, not the tail of the summary.
+Rust line coverage is measured by `tool/rust_coverage.sh` (which unions each
+test target separately — a bare `cargo llvm-cov` understates this crate badly,
+for the reason documented at the top of that script), not by `cargo llvm-cov`
+alone.
+
+Further contributor docs:
+[`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
+(whether a test is worth running) and
+[`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md)
+(what to run).
+
 ## Stability and versioning
 
 This package does **not** follow semantic versioning. Breaking changes can
-land in any release. The [CHANGELOG](CHANGELOG.md) is kept up-to-date with
-every breaking change, so pin to a specific version and read the changelog
-before upgrading.
+land in any release. The minor version tracks the monty patch it pins —
+v0.0.17 → 0.17.x, v0.0.18 → 0.18.1, v0.0.23 → 0.23.0 — and
+`tool/check_version_pin.sh` enforces that. The [CHANGELOG](CHANGELOG.md) is
+kept up-to-date with every breaking change, so pin to a specific version and
+read the changelog before upgrading.
 
 We expect to stabilise the API and adopt semver when the package goes into
-production — roughly 1–3 months from now. If you are planning to depend on
-this package, please open an issue so we can factor your use-case into the
-stabilisation work.
+production. If you are planning to depend on this package, please open an
+issue so we can factor your use-case into the stabilisation work.
 
 ## License
 

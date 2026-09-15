@@ -181,6 +181,11 @@ abstract class WasmBindings {
   /// Disposes a session, terminating its Worker.
   Future<void> disposeSession(int sessionId);
 
+  /// Abandons any active execution and returns the session to IDLE.
+  ///
+  /// Unlike [disposeSession], this keeps the Worker and WASM instance alive.
+  Future<void> idleSession(int sessionId);
+
   /// Runs Python [code] to completion.
   ///
   /// If [limitsJson] is non-null, it is a JSON-encoded map of limits.

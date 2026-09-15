@@ -1,6 +1,6 @@
 name: dart_monty_core
 description: Sandboxed Python scripting for Dart. Low-level binding for pydantic/monty's interpreter.
-version: 0.19.0
+version: 0.23.0
 homepage: https://github.com/runyaga/dart_monty_core
 repository: https://github.com/runyaga/dart_monty_core
 topics:
@@ -20,6 +20,12 @@ dependencies:
   meta: ^1.11.0
 
 dev_dependencies:
+  # Declared, not inherited. `format_coverage` and `collect_coverage` already
+  # resolved here as a transitive dependency of package:test, so tool/
+  # coverage_report.sh worked by accident; a `test` upgrade that dropped the
+  # transitive would have broken the coverage gate with a "could not find
+  # package" that names neither this repo nor the reason.
+  coverage: ^1.15.1
   ffigen: ^20.1.1
   file: ^7.0.1
   # The conformance corpus + directive parser, extracted to a package because

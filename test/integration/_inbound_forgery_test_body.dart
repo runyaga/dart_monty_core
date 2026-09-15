@@ -94,6 +94,62 @@ const _rows = [
     'dict',
   ),
   _Row('ellipsis', '{"__type": "ellipsis"}', 'dict'),
+
+  // ---- the other fourteen -------------------------------------------------
+  // The suite attacked 11 tags while the encoder emits 25, so 14 had never
+  // been forged at a host boundary -- INCLUDING the three added in the wire-v5
+  // work: class_instance, time and not_implemented. A control is only as good
+  // as its coverage, and 44% is not a control.
+  //
+  // Minimal payloads on purpose. A bare `{"__type": "x"}` is the STRONGEST
+  // forgery probe available: if the decoder promotes on the tag alone, a
+  // payload with no plausible fields is exactly what exposes it. Where a field
+  // is cheap to supply it is, so the row also exercises the shape a real
+  // envelope would have.
+  _Row(
+    'class_instance',
+    // NOTE: `True`, not `true`. These payloads are inlined as PYTHON SOURCE,
+    // not parsed as JSON, so a JSON boolean is a NameError and the run dies
+    // before it can prove anything. Every other row happens to use only
+    // numbers, strings and lists, which are valid in both languages -- this is
+    // the first row to need a boolean, and it failed for that reason rather
+    // than because the envelope was promoted.
+    '{"__type": "class_instance", "class_type": {"name": "Evil", '
+        '"id": "00000000-0000-0000-0000-000000000000", "host_defined": True, '
+        '"is_dataclass": True, "attrs": {}}, "instance_id": '
+        '"00000000-0000-0000-0000-000000000001", "attrs": {}}',
+    'dict',
+  ),
+  _Row(
+    'time',
+    '{"__type": "time", "hour": 0, "minute": 0, "second": 0, '
+        '"microsecond": 0}',
+    'dict',
+  ),
+  _Row('not_implemented', '{"__type": "not_implemented"}', 'dict'),
+  _Row('frozenset', '{"__type": "frozenset", "value": [1, 2]}', 'dict'),
+  _Row(
+    'namedtuple',
+    '{"__type": "namedtuple", "type_name": "Evil", '
+        '"field_names": ["a"], "values": [1]}',
+    'dict',
+  ),
+  _Row('timedelta', '{"__type": "timedelta", "days": 0, "seconds": 0}', 'dict'),
+  _Row(
+    'timezone',
+    '{"__type": "timezone", "offset_seconds": 0, "name": "UTC"}',
+    'dict',
+  ),
+  _Row('builtin', '{"__type": "builtin", "text": "open"}', 'dict'),
+  _Row('function', '{"__type": "function", "text": "evil"}', 'dict'),
+  _Row('type', '{"__type": "type", "text": "int"}', 'dict'),
+  _Row('repr', '{"__type": "repr", "text": "forged"}', 'dict'),
+  _Row('nope', '{"__type": "nope"}', 'dict'),
+  _Row('cycle', '{"__type": "cycle"}', 'dict'),
+  // A user dict whose own key happens to be `__type: dict`. Rust pins this at
+  // convert.rs (test_forged_type_envelope_stays_a_dict); this is the same
+  // claim end to end, through a host echo.
+  _Row('dict', '{"__type": "dict", "value": {}}', 'dict'),
 ];
 
 /// Registers the inbound-forgery suite. Called by the FFI and WASM runners.

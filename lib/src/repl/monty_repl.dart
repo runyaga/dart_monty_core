@@ -283,9 +283,23 @@ class MontyRepl {
   }) async {
     _checkNotDisposed();
     await _ensureCreated();
-    if (externalFunctions != null && externalFunctions.isNotEmpty) {
-      await _bindings.setExtFns(externalFunctions);
-    }
+    // UNCONDITIONAL, matching feedRun. This was
+    // `if (externalFunctions != null && externalFunctions.isNotEmpty)`, so
+    // feedStart alone never CLEARED a stale set and never populated an empty
+    // one — while feedRun, twelve lines away, syncs every time and says why
+    // ("including clearing it when empty").
+    //
+    // Review found the asymmetry while checking a claim of mine that "every
+    // feed syncs unconditionally". That claim was FALSE: I had read feedRun
+    // and generalised. Review argued the gap makes a restored session's
+    // externals silently unresolvable; I could NOT reproduce that in two
+    // attempts, so the exploit is UNPROVEN and I am not claiming it.
+    //
+    // The asymmetry is still worth removing. Two feed paths that disagree
+    // about whether to sync is exactly the shape that makes a safety property
+    // accidental rather than guaranteed — and the argument for leaving it
+    // rested on a belief that was wrong.
+    await _bindings.setExtFns(externalFunctions ?? const []);
 
     return _translateProgress(await _bindings.feedStart(code));
   }
@@ -414,11 +428,31 @@ class MontyRepl {
   /// The current REPL handle is freed and replaced with a new one restored
   /// from [bytes]. Any in-flight operations must complete before calling
   /// this. Throws [StateError] if mid-execution.
-  Future<void> restore(Uint8List bytes) {
+  Future<void> restore(Uint8List bytes) async {
     _checkNotDisposed();
     _checkNotPending('restore');
 
-    return _bindings.restore(bytes);
+    // PASSES THIS REPL'S LIMITS. Without them the restored session keeps the
+    // SNAPSHOT's limits, so `MontyRepl(limits: ...)` + restore silently ran
+    // unbounded — measured: stackDepth 5 let rec(50) succeed after a restore
+    // while an identical un-restored session raised RecursionError.
+    await _bindings.restore(
+      bytes,
+      limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+    );
+
+    // MARKS THE SESSION CREATED, and without this restore silently did
+    // NOTHING. `_ensureCreated()` runs before every feed and, seeing
+    // `_created == false`, called `_bindings.create(...)` — which installs a
+    // BRAND-NEW EMPTY handle over the one restore had just put there. The
+    // restored state was discarded by the very next feed, with no error.
+    //
+    // This was invisible until the Rust snapshot stub was replaced: every
+    // test died on `snapshot()` first, so nothing ever exercised the path
+    // beyond it. Found by the test below that asserts state and an external
+    // survive a restore — which is why that test asserts on a FEED after the
+    // restore, not on the restore call itself.
+    _created = true;
   }
 
   // ---------------------------------------------------------------------------
@@ -493,20 +527,39 @@ class MontyRepl {
               _suppressFutureErrors(fut);
               progress = _translateProgress(await _bindings.resumeAsFuture());
             } else {
+              // The try covers ONLY the callback. It used to cover the
+              // `_bindings.resume` below it as well, and that is a masking
+              // bug: if resume (or _translateProgress) throws, the catch calls
+              // resumeWithError on a handle that has ALREADY left Paused, so
+              // the engine rejects it with "handle not in Paused or OsCall
+              // state" and THAT replaces the real exception. The genuine
+              // fault is discarded and every caller sees a state-machine
+              // message instead.
+              // `cbWire` doubles as the discriminator below, so the
+              // success path needs no non-null assertion: a null wire means
+              // the try did not reach the end, which means cbError was set.
+              WireJson? cbWire;
+              Object? cbError;
               try {
                 final cbArgs = progress.args.map((v) => v.dartValue).toList();
                 final cbKwargs = progress.kwargs?.map(
                   (k, v) => MapEntry(k, v.dartValue),
                 );
-                final res = await cb(cbArgs, cbKwargs);
-                progress = _translateProgress(
-                  await _bindings.resume(WireJson.value(res)),
-                );
+                // Serialising the RESULT stays inside the try. A value the
+                // wire cannot carry is a fault in what the callback returned,
+                // so Python should see it as that callback failing -- which is
+                // what it saw before this narrowing. Only the BINDING calls
+                // below move out.
+                cbWire = WireJson.value(await cb(cbArgs, cbKwargs));
               } on Object catch (e) {
-                progress = _translateProgress(
-                  await _bindings.resumeWithError(e.toString()),
-                );
+                cbError = e;
               }
+              final wire = cbWire;
+              progress = _translateProgress(
+                wire == null
+                    ? await _bindings.resumeWithError('$cbError')
+                    : await _bindings.resume(wire),
+              );
             }
           case MontyOsCall():
             progress = await _handleOsCall(progress, osHandler);

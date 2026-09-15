@@ -91,7 +91,7 @@ final class ProgressResult {
 /// tree yields different bytes — so `git diff` on the blob cannot tell you
 /// whether the asset matches the crate. A version integer can, and a mismatch
 /// then fails loudly at init instead of mis-decoding values later.
-const int expectedWireFormatVersion = 4;
+const int expectedWireFormatVersion = 5;
 
 /// Thrown at init when the native library's wire format does not match
 /// [expectedWireFormatVersion].
@@ -166,6 +166,14 @@ abstract class NativeBindings {
 
   /// Resumes by creating a future for the pending call.
   ProgressResult resumeAsFuture(int handle);
+
+  /// Resumes a name lookup by supplying [valueJson] for the looked-up name.
+  ///
+  /// The sibling of [resumeNameLookupUndefined]. Both wrap C ABI functions that
+  /// have existed since the name-lookup protocol landed; this one had no Dart
+  /// binding at all, so `FfiCoreBindings.resumeNameLookupValue` threw
+  /// `UnimplementedError` claiming the FFI backend did not support it. It does.
+  ProgressResult resumeNameLookupValue(int handle, String valueJson);
 
   /// Resumes from a NameLookup by indicating the variable is undefined.
   ///
@@ -273,5 +281,9 @@ abstract class NativeBindings {
   ///
   /// Returns the new handle address. The caller must free the old handle
   /// via [replFree] before calling this.
-  int replRestore(Uint8List data);
+  /// [limitsJson] is APPLIED to the restored session (null keeps the
+  /// snapshot's own limits), and [extFns] re-registers external names, which a
+  /// snapshot cannot carry. Both were previously dropped, which let a
+  /// `MontyRepl(limits: ...)` restore an unbounded snapshot and run unbounded.
+  int replRestore(Uint8List data, {String? limitsJson, List<String>? extFns});
 }

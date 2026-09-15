@@ -1,0 +1,24 @@
+# Fixtures the TEST-HOOKS corpus is EXPECTED to fail, with the reason each is
+# genuine. Read tool/wasm-corpus-expected-failures.txt first — this is the same
+# mechanism, for the `--features test-hooks` build.
+#
+# tool/test_cm_wasm.sh compares the actual failing set against this list and
+# fails the gate on ANY difference in EITHER direction:
+#
+#   * a fixture fails that is not listed  -> a real regression
+#   * a listed fixture PASSES             -> this list is stale, delete the entry
+#
+# WHY THIS LIST IS SHORTER THAN THE PLAIN WASM ONE. test-hooks turns on the gc
+# module, so functools__gc.py and itertools__gc.py — which fail with
+# ModuleNotFoundError on the shipped engine and are declared expected there —
+# PASS here. Declaring them in this file would make the gate red for the right
+# behaviour. The two lists are genuinely different sets and must stay separate.
+#
+# Measured 2026-09-13, both architectures, the same single failure:
+#   CI   amd64  dart2js  FIXTURE_DONE:{"total":590,"passed":585,"failed":1,"skipped":4}
+#   host arm64  dart2js  FIXTURE_DONE:{"total":590,"passed":585,"failed":1,"skipped":4}
+#
+# Format: <fixture>  <TAB or spaces>  <reason>
+
+
+dataclass__basic.py              expected no error, got AssertionError. The SAME failure declared in tool/wasm-corpus-expected-failures.txt — test-hooks does not change it. Pre-existing at a0dd284, before any of the session-reuse work. Not yet diagnosed; the harness reports only the stringified reason, not which of the ~200 asserts failed.

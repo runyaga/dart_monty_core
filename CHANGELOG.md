@@ -1,11 +1,21 @@
 # Changelog
 
-## Unreleased (0.19.0)
+## Unreleased (0.23.0)
 
-Requires `monty` v0.0.19. The `monty` crate's public surface was split in 0.19 —
-it went from 1321 to 306 public items and most of what this package uses moved to
-the new `monty-types` crate — so this is a substantial internal change with a
-small consumer-facing surface.
+Requires `monty` v0.0.23.
+
+This package's minor version tracks the monty patch it pins: v0.0.17 -> 0.17.x,
+v0.0.18 -> 0.18.1, v0.0.19 -> 0.19.0. This section opened as 0.19.0 and the pin
+moved to v0.0.23 inside the unreleased window (`e1e4eda`) without the version
+following, so it was renumbered to 0.23.0 when that drift was noticed. The
+0.19-era notes below are kept as written: they describe changes that really did
+land, and renumbering the heading does not make them untrue.
+`tool/check_version_pin.sh` now makes this class of drift impossible to repeat.
+
+The `monty` crate's public surface was split in 0.19 — it went from 1321 to 306
+public items and most of what this package uses moved to the new `monty-types`
+crate — so this is a substantial internal change with a small consumer-facing
+surface.
 
 ### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
 
@@ -45,6 +55,33 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Added
 
+- **Wire format v5.** `WIRE_FORMAT_VERSION` is 5. New public types:
+  `MontyClassInstance`, `MontyClassType`, `MontyTime`, `MontyNotImplemented`.
+
+- **`MontyDataclass` is encode-only.** v0.0.23 dropped the dataclass variant, so
+  every class instance now decodes as `MontyClassInstance` — read
+  `classType.isDataclass` to tell them apart. Encoding is unchanged.
+
+- **`MontyRepl.restore()` works.** It was a silent no-op on FFI: it never set
+  the created flag, so the session kept its old heap and reported success. It
+  now also applies the caller's limits and external functions instead of
+  inheriting the snapshot's.
+
+- **`FfiCoreBindings.resumeNameLookupValue` is implemented.** The stub claimed
+  the FFI backend did not support it; the Rust export, header and generated
+  binding all existed.
+
+- **`docs/WIRE-CONTRACT.md` exists.** Ten sites cited it as normative and it had
+  never been written. Its row table is generated from the assertions that run,
+  not authored.
+
+- **`monty_alloc` / `monty_dealloc` declared in the C header.** Exported and
+  called 49 times by the Worker while absent from the header, so ffigen
+  generated no binding for them.
+
+- **`monty_snapshot` reports why it failed** instead of returning a bare NULL
+  that left Dart and the Worker each inventing a reason.
+
 - **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
   files.** `VfsCallbackFile(path, read:, write:)` backs a virtual file with
   host callbacks, mirroring upstream's `CallbackFile` (`os_access.py:676`). It
@@ -65,7 +102,36 @@ three surprise people, and one of them differs from upstream's default.
   `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
   greppable and does not replace that rule.
 
+### Internal
+
+- **Every WASM restore was failing silently.** `monty_repl_restore` grew from
+  three C parameters to five; the Worker kept calling it with three. JS pads a
+  short WebAssembly call with `0` rather than throwing, so `outError.ptr` bound
+  to the `limits_json` slot and the error channel went NULL — invisible to every
+  compiler and linter, and green across the whole FFI suite.
+  `tool/check_wasm_arity.mjs` now checks all 167 Worker call sites against the
+  shipped wasm.
+
+- **`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`.**
+  Rust-crate only, no Dart binding, every caller in this repo's tests — so no
+  consumer surface moved and the commit's `!` marker should not have been there.
+  The old name passed `limits: None`, meaning whoever supplied the bytes chose
+  the resource limits.
+
 ### Breaking
+
+- **A negative or wrong-typed resource limit is now an error.**
+  `parse_limits_json` read each axis with `and_then(Value::as_u64)`, which
+  yields `None` for anything that is not a non-negative integer — so
+  `{"memory_bytes": -1}`, `"1000"`, `1.5` and `true` all left that limit UNSET
+  and ran **unbounded** while reporting success. Absent and `null` still mean
+  "no limit"; a present-but-unusable value now fails loudly. If you see this
+  error, you were not getting the limit you asked for.
+
+- **On the web, `restore(limitsJson:)` and `restore(extFns:)` throw
+  `UnsupportedError`** rather than accepting and ignoring them — the Worker
+  cannot carry either across the message boundary yet. A silently unbounded
+  restored session is worse than a refusal.
 
 - **`open()` parses its mode, and rejects a malformed one.**
   `resolveOpenCall` string-compared the mode and treated *everything*

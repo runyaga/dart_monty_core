@@ -27,6 +27,9 @@ class WasmBindingsJs extends WasmBindings {
   Future<void> disposeSession(int sessionId) => throw UnimplementedError();
 
   @override
+  Future<void> idleSession(int sessionId) => throw UnimplementedError();
+
+  @override
   Future<WasmRunResult> run(
     String code, {
     String? limitsJson,

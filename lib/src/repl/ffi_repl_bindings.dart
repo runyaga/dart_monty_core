@@ -88,7 +88,13 @@ class FfiReplBindings implements ReplBindings {
     if (_guard != null && token != null) {
       _replHandleFinalizer.detach(token);
     }
-    _bindings.replFree(handle);
+
+    // Ensure any per-handle state in Rust is torn down before freeing.
+    // The Rust REPL handle stores ext fn names and can also carry pending
+    // suspension state; clearing avoids use-after-free via stale pointers.
+    _bindings
+      ..replSetExtFns(handle, '')
+      ..replFree(handle);
     _replHandle = null;
     _guard = null;
     _detachToken = null;
@@ -214,7 +220,11 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
-  Future<void> restore(Uint8List bytes) async {
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) async {
     // Detach old finalizer to prevent double-free.
     final token = _detachToken;
     if (_guard != null && token != null) {
@@ -230,7 +240,11 @@ class FfiReplBindings implements ReplBindings {
     _detachToken = null;
 
     // Restore new handle from bytes.
-    final newHandle = _bindings.replRestore(bytes);
+    final newHandle = _bindings.replRestore(
+      bytes,
+      limitsJson: limitsJson,
+      extFns: extFns,
+    );
     _replHandle = newHandle;
 
     // Attach new finalizer.

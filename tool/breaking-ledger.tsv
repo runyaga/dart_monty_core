@@ -34,3 +34,5 @@ b418cae	CPython path semantics: name length, codepoint counts, `resolve` returns
 f8c530a	`open()` parses its mode, and rejects a malformed one
 7be9680	A `rename` TARGET outside every mount is absent too, not denied
 a21f47d	`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write
+6d20815	A negative or wrong-typed resource limit is now an error
+1b95a83	`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`

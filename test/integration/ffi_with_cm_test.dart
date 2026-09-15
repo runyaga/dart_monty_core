@@ -35,7 +35,11 @@ const _fixtureNames = [
 ];
 
 void main() {
-  group('with__cm (test-hooks)', () {
+  // NOT '(test-hooks)' any more. The name outlived the requirement, and a
+  // test named for a build it does not need is how this suite got excluded
+  // from CI and tool/gate.sh in the first place — for five tests that pass on
+  // a stock build.
+  group('with__cm', () {
     for (final name in _fixtureNames) {
       test(name, () async {
         final code = fixtureCorpus[name]!;
@@ -56,22 +60,21 @@ void main() {
           await platform.dispose();
         }
 
-        // `_test_cm` must have resolved on both sides — a NameError here means
-        // the binary was built without test-hooks (run via tool/test_cm.sh).
-        expect(
-          oracleResult.error?.excType,
-          isNot('NameError'),
-          reason:
-              '$name: oracle hit NameError — build with --features test-hooks '
-              '(use tool/test_cm.sh)',
-        );
-        expect(
-          ffiExcType,
-          isNot('NameError'),
-          reason:
-              '$name: FFI hit NameError — set DART_MONTY_TEST_HOOKS=1 and '
-              'rebuild (use tool/test_cm.sh)',
-        );
+        // TWO `isNot('NameError')` guards stood here and are GONE. They
+        // checked that `_test_cm` had resolved on both sides, because a
+        // NameError meant the binary lacked --features test-hooks.
+        //
+        // `_test_cm` does not exist in monty v0.0.23 — `grep -rn "_test_cm"
+        // crates/monty/src/` at the pinned rev 302e0f2 returns 0 hits, and
+        // these fixtures use an ordinary Python `class CM:`. So nothing can
+        // raise that NameError any more and neither guard could ever fail
+        // again: a guard that cannot fail is not a guard, it is decoration
+        // that reads like one. Their `reason` strings were worse than useless
+        // — they told a reader to run tool/test_cm.sh, which touches
+        // native/.test-hooks and rebuilds the dylib with a feature that is
+        // NEVER shipped.
+        //
+        // The differential below is the real contract and is untouched.
 
         // Oracle and FFI must agree (same conformance contract as oracle_ffi).
         if (oracleResult.error != null) {

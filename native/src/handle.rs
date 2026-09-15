@@ -28,7 +28,18 @@ type Tracker = ResourceTracker;
 fn default_limits() -> ResourceLimits {
     ResourceLimits {
         max_memory: Some(256 * 1024 * 1024), // 256 MB
-        max_recursion_depth: 1000,
+        // 512, NOT CPython's 1000. Monty's recursion guard is a counter and
+        // reaching it costs real native stack. Upstream runs the engine in
+        // SUBPROCESS WORKERS with a full main-thread stack, so monty's own
+        // ResourceLimits::default() of 1000 is right for them; this binding
+        // runs it IN-PROCESS on a Dart isolate thread, where the stack
+        // overflows first and the HOST PROCESS DIES.
+        //
+        // Measured worst case (cyclic dict == dict): safe 534 / SIGSEGV 539.
+        // Must stay equal to Dart's BaseMontyPlatform.defaultStackDepth —
+        // ffi_repl_corpus_test.dart's `repl session limits match the one-shot
+        // defaults` guards that equality.
+        max_recursion_depth: 512,
         ..Default::default()
     }
 }
@@ -522,18 +533,46 @@ impl MontyHandle {
         }
     }
 
-    /// Serialize the compiled code to bytes (snapshot).
+    /// Snapshot is NOT SUPPORTED for the one-shot handle — and the reason
+    /// recorded here until 2026-09-14 was FALSE.
     ///
-    /// NOTE: monty v0.0.23 moved snapshotting behind a non-public API. Until
-    /// monty exposes a stable dump/load surface, dart_monty_core_native does not
-    /// support snapshot/restore.
+    /// It said "monty v0.0.23 moved snapshotting behind a non-public API.
+    /// Until monty exposes a stable dump/load surface...". That is wrong:
+    /// `dump`, `Dump`, `DumpError`, `Session` and `SessionRef` are all
+    /// publicly re-exported from monty's crate root (lib.rs:46-47), upstream
+    /// tests them (crates/monty/tests/repl.rs:48-70), and MontyReplHandle now
+    /// uses them. The same false claim blocked the REPL path for a release.
+    ///
+    /// THE REAL REASON, which is about SHAPE, not availability:
+    /// `SessionRef` has three variants — `Idle(&MontyRepl)`,
+    /// `Suspended(&ReplProgress)` and `Running(&RunProgress)`
+    /// (dump_format.rs). There is NO variant for a bare `MontyRun`, which is
+    /// what `HandleState::Ready` holds, so an un-started one-shot has nothing
+    /// to hand `dump`. And the paused states here destructure `RunProgress`
+    /// into `FunctionCall` / `OsCall` / `ResolveFutures` / `NameLookup`, so
+    /// they cannot supply the `&RunProgress` that `Running` wants either.
+    ///
+    /// Supporting it means keeping the whole `RunProgress` instead of its
+    /// parts — a real change to this state machine, not a missing API. Until
+    /// then this refuses, and says why.
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
-        Err("snapshot not supported on monty v0.0.23".into())
+        Err(
+            "snapshot is not supported on the one-shot handle: monty's SessionRef has no \
+             variant for an un-started MontyRun, and this handle destructures RunProgress \
+             into its parts so it cannot supply SessionRef::Running either. Use MontyRepl, \
+             which snapshots via SessionRef::Idle."
+                .into(),
+        )
     }
 
-    /// Restore a handle from serialized bytes.
+    /// Restore is NOT SUPPORTED here, for the same shape reason as
+    /// [`Self::snapshot`] — not because upstream lacks the API.
     pub fn restore(_bytes: &[u8]) -> Result<Self, String> {
-        Err("restore not supported on monty v0.0.23".into())
+        Err(
+            "restore is not supported on the one-shot handle; see snapshot() for why. \
+             Use MontyRepl::restore."
+                .into(),
+        )
     }
 
     /// Set memory limit in bytes.
@@ -754,6 +793,22 @@ fn build_pending_meta(
     }
 }
 
+/// The ONE-SHOT path still reports zeros, and it is not an oversight.
+///
+/// The REPL path reports a real `time_elapsed_ms` (repl_handle.rs), which makes
+/// the two asymmetric. Closing that gap here is NOT currently possible:
+/// `compiled.run(vec![], tracker, ...)` at :165-169 moves the tracker BY VALUE
+/// into monty, and `RunProgress::Complete(obj)` (monty/src/run_progress.rs:36-47)
+/// hands back only the object. There is no path from a completed one-shot run
+/// to its tracker in v0.0.23.
+///
+/// The available workaround -- wrapping the call in `Instant::now()` -- is
+/// deliberately NOT taken. That measures WALL time including host callbacks,
+/// while `ResourceTracker::elapsed()` measures interpreter time excluding them
+/// (monty-types/src/resource.rs:246-247). Reporting two different quantities
+/// under one field name is worse than reporting zero for one of them.
+///
+/// Tracked in core#155.
 fn default_usage_json() -> String {
     r#"{"memory_bytes_used":0,"time_elapsed_ms":0,"stack_depth_used":0}"#.into()
 }
@@ -842,7 +897,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "monty v0.0.23 no longer exposes a public dump/load API; snapshot/restore currently unsupported"]
+    #[ignore = "the one-shot handle cannot snapshot: SessionRef has no variant for an un-started MontyRun, and this handle destructures RunProgress. NOT an upstream API gap — see snapshot()."]
     fn test_snapshot_restore() {
         let handle = MontyHandle::new("2 + 2".into(), vec![], None).unwrap();
         let bytes = handle.snapshot().unwrap();

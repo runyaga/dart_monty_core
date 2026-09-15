@@ -62,3 +62,4 @@ site/
 # pulled back out.
 .claude/
 probe*.dart
+__pycache__/

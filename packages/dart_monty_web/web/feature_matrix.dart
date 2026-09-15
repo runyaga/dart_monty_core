@@ -764,17 +764,30 @@ SkipKind? _skipReason(_Fixture f) {
     return SkipKind.divergent;
   }
   if (!_testHooks && testHooksWasmFixtures.contains(f.name)) {
-    // Not a gap, and not unknown: measured 2026-08-03, all eight PASS under a
-    // test-hooks build on BOTH compilers — 528/531 via tool/test_cm_wasm.sh
-    // and its --dart2wasm twin, against 520/531 with the feature off. They are
-    // absent HERE because this page runs the shipped engine, and shipping
-    // test-hooks would put `sys.setrecursionlimit` inside the sandbox
-    // (native/Cargo.toml:36-38, "NEVER enabled in shipped builds").
-    _skipNotes[f.name] =
-        'Passes under a test-hooks engine build, on dart2js and dart2wasm '
-        'alike (gate steps corpus_cm_js / corpus_cm_w). Absent here because '
-        'this page runs the SHIPPED engine, and shipping test-hooks would put '
-        'sys.setrecursionlimit inside the sandbox.';
+    // Not a gap, and not unknown: measured 2026-08-03 for the original eight
+    // and 2026-09-13 for the two gc fixtures, all ten PASS under a test-hooks
+    // build on BOTH compilers — 585/590 via tool/test_cm_wasm.sh and its
+    // --dart2wasm twin, against 575/590 with the feature off. They are absent
+    // HERE because this page runs the shipped engine.
+    //
+    // WHY is per-set, and saying the wrong why is worse than saying nothing.
+    // This note used to be one hardcoded string naming sys.setrecursionlimit,
+    // which is the reason for setRecursionLimitFixtures and testCmFixtures but
+    // NOT for the gc ones: `gc` is gated upstream
+    // (monty crates/monty/src/modules/mod.rs, `#[cfg(feature = "test-hooks")]`)
+    // and has nothing to do with the sandbox argument. Handing a reader that
+    // explanation for functools__gc.py would be a confident wrong answer on a
+    // shipped page.
+    _skipNotes[f.name] = gcModuleFixtures.contains(f.name)
+        ? 'Passes under a test-hooks engine build, on dart2js and dart2wasm '
+              'alike (gate steps corpus_cm_js / corpus_cm_w). Absent here '
+              'because monty gates the `gc` module behind that same feature, '
+              'so `import gc` raises ModuleNotFoundError on the shipped '
+              'engine.'
+        : 'Passes under a test-hooks engine build, on dart2js and dart2wasm '
+              'alike (gate steps corpus_cm_js / corpus_cm_w). Absent here '
+              'because this page runs the SHIPPED engine, and shipping '
+              'test-hooks would put sys.setrecursionlimit inside the sandbox.';
 
     return SkipKind.needsTestHooks;
   }

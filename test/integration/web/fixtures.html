@@ -7,6 +7,23 @@
 <body>
   <h1>dart_monty_core WASM Fixture Runner</h1>
   <pre id="output"></pre>
+  <script>
+    // Surface the actual uncaught exception (message + stack) to Chrome stderr.
+    // tool/test_wasm.sh only greps for FIXTURE_* lines, so this is purely
+    // diagnostic.
+    window.addEventListener('error', (e) => {
+      const err = e.error;
+      const msg = err?.message || e.message || String(e);
+      const stack = err?.stack || '';
+      console.error('WASM_RUNNER_UNCAUGHT_ERROR:' + msg + '\n' + stack);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const r = e.reason;
+      const msg = r?.message || String(r);
+      const stack = r?.stack || '';
+      console.error('WASM_RUNNER_UNHANDLED_REJECTION:' + msg + '\n' + stack);
+    });
+  </script>
   <script src="dart_monty_core_bridge.js"></script>
   <script src="wasm_runner.dart.js"></script>
 </body>

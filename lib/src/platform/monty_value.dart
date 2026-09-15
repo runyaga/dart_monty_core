@@ -100,6 +100,25 @@ sealed class MontyValue {
     'path': MontyPath._fromMap,
     'filehandle': MontyFileHandle._fromMap,
     'namedtuple': MontyNamedTuple._fromMap,
+    // BOTH ADDED 2026-09-14 by an encoder/decoder alignment audit. The Rust
+    // encoder has emitted these all along (convert.rs:172, :174) and nothing
+    // here could read them, so `datetime.time(12, 0)` and the bare name
+    // `NotImplemented` each threw `unknown __type`. Found by enumerating what
+    // the ENCODER can emit instead of trusting this list — which is also how
+    // `class_instance` was missed.
+    'time': MontyTime._fromMap,
+    'not_implemented': MontyNotImplemented._fromMap,
+    'class_instance': MontyClassInstance._fromMap,
+    // 'dataclass' is DEAD ON DECODE and kept deliberately. monty v0.0.23
+    // deleted the wire Dataclass variant (upstream cf8246d7), and
+    // `grep -n '"__type": "dataclass"' native/src/convert.rs` exits 1 — our
+    // encoder emits `class_instance` and nothing else, so this factory can no
+    // longer fire from the engine.
+    //
+    // It stays because the INBOUND path is still live: a host may hand us a
+    // MontyDataclass, `MontyDataclass.toJson()` still writes this envelope,
+    // and native/src/convert.rs still accepts it. Deleting the entry would
+    // make a value this library itself produces undecodable by this library.
     'dataclass': MontyDataclass._fromMap,
     'ellipsis': MontyEllipsis._fromMap,
     // Both dict shapes share one tag: `value` for all-string keys,

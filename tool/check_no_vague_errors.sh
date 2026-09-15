@@ -49,11 +49,28 @@ cd "$PKG"
 # tool/check_fixture_corpus.sh already guards it against drift.
 EXCLUDE_RE='(fixture_corpus\.dart|check_no_vague_errors\.sh)'
 
-# Comment lines are exempt: explaining the defect is not committing it.
-HITS="$(grep -rn --include='*.dart' 'unexpected error' \
+# Comment lines are exempt: explaining the defect is not committing it. That
+# means `//` AND `///` (dartdoc starts with `//`, so it was already covered)
+# AND block comments -- both `/* ... */` on one line and the ` * ...`
+# continuation lines inside one, which the `//` pattern alone did NOT catch.
+# Measured 2026-09-13, wiring this into CI: `/* block: unexpected error */`
+# failed the check. Locally that was a nuisance; in CI it is a red build for
+# writing a comment, so it had to go before the step shipped. There are zero
+# block-comment lines in the scanned directories today, so the exemption is
+# preventative and masks nothing that exists.
+#
+# The match is case-INSENSITIVE. `grep 'unexpected error'` let "Unexpected
+# error" through untouched -- the capital that starts a sentence. Verified
+# free: -i finds nothing new in the repo as it stands.
+#
+# Known and NOT fixed, because they are past what a grep can do: a message
+# built by interpolation ("unexpected ${e} error") or assembled from a
+# constant both evade this. The check is a ratchet against the SIX sites that
+# existed (core#145), not a proof of absence.
+HITS="$(grep -rni --include='*.dart' 'unexpected error' \
           lib test packages example tool 2>/dev/null \
         | grep -vE "$EXCLUDE_RE" \
-        | grep -vE ':[0-9]+:[[:space:]]*//' || true)"
+        | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' || true)"
 
 if [ -n "$HITS" ]; then
   echo "FAIL: these report that something failed without reporting WHAT:"

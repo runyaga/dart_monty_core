@@ -154,6 +154,40 @@ const testCmFixtures = {
   'with__cm_traceback.py',
 };
 
+/// Fixtures that `import gc`.
+///
+/// The `gc` module is gated behind the same testing-only `test-hooks` cargo
+/// feature, and the gate is in UPSTREAM MONTY, not in this binding:
+/// `crates/monty/src/modules/mod.rs:136-137` registers it under
+/// `#[cfg(feature = "test-hooks")]`, and `crates/monty/src/modules/gc.rs:1`
+/// says so in its first line — "only available under the `test-hooks`
+/// feature". Without it, `import gc` raises ModuleNotFoundError.
+///
+/// So this is the [setRecursionLimitFixtures] claim, not the
+/// [alwaysUnsupportedWasmFixtures] one: "needs a build we never ship" cannot
+/// be falsified by running the fixture, and it is NOT a web divergence — the
+/// shipped native engine has no `gc` either.
+///
+/// MEASURED 2026-09-13 on the v0.0.23 corpus, identical on dart2js and
+/// dart2wasm and on amd64 and arm64:
+///
+///     shipped engine    575 passed / 3 failed / 12 skipped
+///                       (the 3 = dataclass__basic.py + these two, as
+///                        ModuleNotFoundError)
+///     test-hooks on     585 passed / 1 failed /  4 skipped
+///                       (only dataclass__basic.py still fails; these two ran
+///                        and PASSED, since they were in no skip set)
+///
+/// Before this entry they were declared in
+/// tool/wasm-corpus-expected-failures.txt as plain expected failures, which
+/// said "we are wrong here" about something that is a deliberate upstream
+/// feature gate — and left them as hard failures in wasm_fixture_test.dart,
+/// which has no declared-expected mechanism at all.
+const gcModuleFixtures = {
+  'functools__gc.py',
+  'itertools__gc.py',
+};
+
 /// Everything gated behind the `test-hooks` cargo feature on the WASM runners.
 ///
 /// Composed of the two finer sets above, and the split is not cosmetic:
@@ -162,7 +196,27 @@ const testCmFixtures = {
 /// apart is what makes that difference sayable.
 const Set<String> testHooksWasmFixtures = {
   ...setRecursionLimitFixtures,
-  ...testCmFixtures,
+  ...gcModuleFixtures,
+  // testCmFixtures IS NOT HERE ANY MORE, and the reason is upstream.
+  //
+  // `_test_cm()` — the synthetic context manager those five fixtures were
+  // named for — DOES NOT EXIST in monty v0.0.23: `grep -rn "_test_cm"
+  // crates/monty/src/` at the pinned rev 302e0f2 returns 0 hits, and the
+  // fixtures now use an ordinary Python `class CM:`. Nothing about them needs
+  // a test-hooks build any more.
+  //
+  // This file ALREADY said they pass without one ("measured on 2026-08-03,
+  // testCmFixtures PASS on web with no test-hooks build"), and the union
+  // skipped them anyway. Measured 2026-09-13, removing them:
+  //     shipped dart2js    575 passed / 14 skipped -> 580 / 9   rc=0
+  //     shipped dart2wasm  575 passed / 14 skipped -> 580 / 9   rc=0
+  //     WASM unit suite    +719 ~90 -8 -> +724 ~85 -8
+  //     test-hooks gates   585 / 1 / 4              UNCHANGED
+  // Five fixtures were skipped for nothing, on both backends.
+  //
+  // This is the failure this file warns about three times over: a skip whose
+  // REASON went stale while the skip stayed. "A skip needs a re-check date or
+  // a test, not a rationale" — and the re-check is what found it.
 };
 
 // The `unsupportedWasmFixtures` UNION was here and is DELETED.
