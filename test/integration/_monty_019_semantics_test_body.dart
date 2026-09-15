@@ -109,7 +109,7 @@ void runMonty019SemanticsTests() {
     test('the open() OS-call is dispatched as op "open"', () async {
       final seen = <String>[];
       final r = await Monty('open("/m/a.txt", "r")\n').run(
-        osHandler: (op, args, kwargs) async {
+        osHandler: (op, args, kwargs) {
           seen.add(op);
           throw const OsCallException('stop', pythonExceptionType: 'OSError');
         },

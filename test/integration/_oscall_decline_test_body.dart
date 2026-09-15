@@ -25,7 +25,7 @@ import 'package:test/test.dart';
 
 /// Runs [code] against a handler that declines every call.
 Future<MontyResult> _declineAll(String code) => Monty(code).run(
-  osHandler: (op, args, kwargs) async => throw OsCallNotHandledException(op),
+  osHandler: (op, args, kwargs) => throw OsCallNotHandledException(op),
 );
 
 void runOsCallDeclineTests() {

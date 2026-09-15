@@ -193,7 +193,7 @@ except Exception as e:
     print("refused:", type(e).__name__)
 ''').run(
           externalFunctions: {'echo': _echo},
-          osHandler: (operation, args, kwargs) async {
+          osHandler: (operation, args, kwargs) {
             osCalls.add('$operation$args');
             throw OsCallNotHandledException(operation);
           },
