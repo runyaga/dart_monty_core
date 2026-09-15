@@ -191,51 +191,18 @@ void _declareInputs(
   output.dependencies.addAll(deps);
 }
 
-/// Publishes [src] to [dest] WITHOUT ever truncating [dest] in place.
+/// Publishes [src] to [dest] without truncating [dest] in place.
 ///
 /// `File.copySync` opens the destination `O_TRUNC`, shortening the EXISTING
-/// inode. Linux permits that even when the file is a `dlopen`ed library mapped
-/// `PROT_EXEC` -- `ETXTBSY` guards only the running executable. The truncation
-/// returns success, any process holding that inode mapped keeps a mapping whose
-/// pages no longer have backing, and its next touch dies with `SIGBUS` /
-/// `si_code=BUS_ADRERR`. REPRODUCED: dlopen, hold a mapping, truncate from a
-/// second process (rc=0, silent), read a page past EOF -> `Bus error (core
-/// dumped)`, exit 135.
+/// inode. Linux allows that even for a `dlopen`ed library — `ETXTBSY` guards
+/// only the running executable — so a concurrent reader of [dest] can see a
+/// half-written file. `rename(2)` swaps the directory entry instead, so a
+/// reader gets either the whole old file or the whole new one.
 ///
-/// SCOPE -- READ THIS BEFORE TRUSTING IT. This protects the file written HERE,
-/// under `outputDirectoryShared`. **That is not the file the VM `dlopen`s.**
-///
-/// Measured on this tree, three consecutive cached `dart test` runs:
-///
-///     run 1  .dart_tool/lib/...so   ino=467553  mtime=...385
-///     run 2  .dart_tool/lib/...so   ino=467553  mtime=...386
-///     run 3  .dart_tool/lib/...so   ino=467553  mtime=...386
-///     shared output                 ino=473399  unchanged
-///
-/// The mapped copy keeps the SAME inode and is rewritten in place on every
-/// `dart run`/`dart test`, including runs where this hook never executes --
-/// dartdev bundles native assets unconditionally and copies with an
-/// `O_TRUNC` open. So the `SIGBUS`/`BUS_ADRERR` hazard is NOT closed by this
-/// function; it lives one layer up, outside this repo's control. core#161.
-///
-/// Keep this anyway: it removes a truncation window on the file dartdev copies
-/// FROM, and the `$variant` keying above is independent of all of it.
-///
-/// WHY IT IS STILL NEEDED EVEN THOUGH THE RUNNER SERIALISES HOOKS. The runner
-/// serialises hook-against-hook. It does nothing for a process that finished
-/// its hook and is now EXECUTING a mapped library -- that lock was released
-/// long before its tests started. Deleting the artefact is safe (`unlink`
-/// leaves a mapped inode valid); overwriting it in place is not.
-///
-/// The exposure GREW when this hook started declaring dependencies:
-/// `dart build` and Flutter honour them, so they re-run the hook on a source
-/// change while the artefact still exists and may be mapped -- exactly the
-/// case `copySync` mishandles. (`dart test` does not honour them; measured.)
-///
-/// `rename(2)` swaps the DIRECTORY ENTRY rather than editing the inode, so a
-/// holder of the old inode keeps a complete mapping until it unmaps. The temp
-/// file is created in the destination's own directory because rename is atomic
-/// only within a filesystem. core#161.
+/// SCOPE: this is NOT the fix for core#161. The file the VM `dlopen`s is
+/// `.dart_tool/lib/…`, which dartdev rewrites in place on every `dart` command
+/// regardless of this hook (measured: same inode, new mtime, every run). This
+/// only protects the file dartdev copies FROM.
 void _publishAtomically(File src, File dest) {
   final tmp = File(
     '${dest.path}.tmp-$pid-${DateTime.now().microsecondsSinceEpoch}',
