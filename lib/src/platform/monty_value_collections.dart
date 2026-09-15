@@ -304,12 +304,35 @@ final class MontySet extends MontyValue {
   List<Object?> get dartValue => items.map((e) => e.dartValue).toList();
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is MontySet && _deepEq.equals(other.items, items));
+  // Order-insensitive, matching the sandbox. `crates/monty/src/types/set.rs`
+  // compares sets with a length check plus a per-element `contains` (:412),
+  // and hashes a frozenset by XORing element hashes because "XOR is
+  // commutative, so the hash is independent of insertion order" (:1435).
+  // Comparing `items` as a LIST contradicted both: `{1, 2}` and `{2, 1}` --
+  // the same set in Python -- were unequal, and hashed differently.
+  //
+  // This is the same defect the two dict classes had (see [MontyDict]); the
+  // sets were simply left behind when that one was fixed. Monty collapses
+  // equal elements before the value reaches the wire, so multiset equality is
+  // exactly set equality here.
+  //
+  // `+` rather than upstream's XOR on purpose: XOR cancels duplicates, so a
+  // forged `{"__type": "set", "value": [1, 1]}` would hash like the EMPTY set.
+  // Both are commutative; only one of them survives a hostile payload.
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! MontySet || other.items.length != items.length) return false;
+
+    final remaining = [...other.items];
+    for (final item in items) {
+      if (!remaining.remove(item)) return false;
+    }
+
+    return remaining.isEmpty;
+  }
 
   @override
-  int get hashCode => _deepEq.hash(items);
+  int get hashCode => items.fold(0, (acc, e) => acc + e.hashCode);
 
   @override
   String toString() => 'MontySet(${items.length} items)';
@@ -340,12 +363,37 @@ final class MontyFrozenSet extends MontyValue {
   List<Object?> get dartValue => items.map((e) => e.dartValue).toList();
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is MontyFrozenSet && _deepEq.equals(other.items, items));
+  // Order-insensitive, matching the sandbox. `crates/monty/src/types/set.rs`
+  // compares sets with a length check plus a per-element `contains` (:412),
+  // and hashes a frozenset by XORing element hashes because "XOR is
+  // commutative, so the hash is independent of insertion order" (:1435).
+  // Comparing `items` as a LIST contradicted both: `{1, 2}` and `{2, 1}` --
+  // the same set in Python -- were unequal, and hashed differently.
+  //
+  // This is the same defect the two dict classes had (see [MontyDict]); the
+  // sets were simply left behind when that one was fixed. Monty collapses
+  // equal elements before the value reaches the wire, so multiset equality is
+  // exactly set equality here.
+  //
+  // `+` rather than upstream's XOR on purpose: XOR cancels duplicates, so a
+  // forged `{"__type": "set", "value": [1, 1]}` would hash like the EMPTY set.
+  // Both are commutative; only one of them survives a hostile payload.
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! MontyFrozenSet || other.items.length != items.length) {
+      return false;
+    }
+
+    final remaining = [...other.items];
+    for (final item in items) {
+      if (!remaining.remove(item)) return false;
+    }
+
+    return remaining.isEmpty;
+  }
 
   @override
-  int get hashCode => _deepEq.hash(items);
+  int get hashCode => items.fold(0, (acc, e) => acc + e.hashCode);
 
   @override
   String toString() => 'MontyFrozenSet(${items.length} items)';
