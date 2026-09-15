@@ -345,6 +345,27 @@ jobs:
             git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
           fi
           bash tool/dcm_ratchet.sh
+      - name: DCM exclusions still hide something (--deep)
+        # tool/gate.sh runs this script WITHOUT --deep: the fast path only
+        # checks that each excluded path exists on disk, because --deep costs a
+        # second full `dcm analyze` and needs the CI credentials, which a local
+        # gate cannot assume.
+        #
+        # CI has both, and this is where the other rot shape gets caught: an
+        # exclusion naming a REAL file that nonetheless hides nothing, because
+        # the violation it was written for was fixed and nobody deleted the
+        # entry. `lib/src/repl/monty_repl.dart` sat like that until the
+        # 2026-09-15 sweep -- its first class already matched the file name, so
+        # the rule it excluded could not fire.
+        #
+        # Five such entries were found in one day across four rules, which is
+        # why this is a check and not a habit. The script swaps dcm_options.yaml
+        # and restores it from a trap; it refuses to start if that file is dirty
+        # (exit 2) and skips cleanly if the credentials are absent (exit 0).
+        env:
+          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
+          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
+        run: bash tool/check_dcm_exclusions.sh --deep
       - name: Test (JIT, unit only)
         # The exit-79 tolerance is GONE. It said "no tests found is acceptable
         # until unit tests exist"; 457 of them exist, so all it could do now was
