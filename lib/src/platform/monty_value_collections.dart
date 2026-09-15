@@ -11,7 +11,7 @@ final class MontyBytes extends MontyValue {
   const MontyBytes(this.value);
 
   factory MontyBytes._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<dynamic>? ?? const [];
+    final raw = map['value'] as List<Object?>? ?? const [];
 
     return MontyBytes(raw.cast<num>().map((n) => n.toInt()).toList());
   }
@@ -71,7 +71,7 @@ final class MontyTuple extends MontyValue {
   const MontyTuple(this.items);
 
   factory MontyTuple._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<dynamic>? ?? const [];
+    final raw = map['value'] as List<Object?>? ?? const [];
 
     return MontyTuple(raw.map(MontyValue.fromJson).toList());
   }
@@ -141,7 +141,7 @@ final class MontyDict extends MontyValue {
 
   factory MontyDict._fromMap(Map<String, dynamic> map) {
     final entries = map['entries'];
-    if (entries is List<dynamic>) return MontyDict._fromEntries(entries);
+    if (entries is List<Object?>) return MontyDict._fromEntries(entries);
 
     final payload = map['value'];
     if (payload is! Map<String, dynamic>) {
@@ -161,7 +161,7 @@ final class MontyDict extends MontyValue {
     ]);
   }
 
-  factory MontyDict._fromEntries(List<dynamic> raw) => MontyDict([
+  factory MontyDict._fromEntries(List<Object?> raw) => MontyDict([
     for (final entry in raw)
       if (entry case [final k, final v])
         (MontyValue.fromJson(k), MontyValue.fromJson(v))
@@ -286,7 +286,7 @@ final class MontySet extends MontyValue {
   const MontySet(this.items);
 
   factory MontySet._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<dynamic>? ?? const [];
+    final raw = map['value'] as List<Object?>? ?? const [];
 
     return MontySet(raw.map(MontyValue.fromJson).toList());
   }
@@ -345,7 +345,7 @@ final class MontyFrozenSet extends MontyValue {
   const MontyFrozenSet(this.items);
 
   factory MontyFrozenSet._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<dynamic>? ?? const [];
+    final raw = map['value'] as List<Object?>? ?? const [];
 
     return MontyFrozenSet(raw.map(MontyValue.fromJson).toList());
   }

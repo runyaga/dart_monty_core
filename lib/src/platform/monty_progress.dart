@@ -133,7 +133,7 @@ final class MontyPending extends MontyProgress {
   /// optional), `call_id` (int, defaults to 0), `method_call` (bool,
   /// defaults to false).
   factory MontyPending.fromJson(Map<String, dynamic> json) {
-    final rawArgs = json['arguments'] as List<dynamic>?;
+    final rawArgs = json['arguments'] as List<Object?>?;
     final rawKwargs = json['kwargs'] as Map<String, dynamic>?;
 
     return MontyPending(
@@ -239,7 +239,7 @@ final class MontyOsCall extends MontyProgress {
 
   /// Creates a [MontyOsCall] from a JSON map.
   factory MontyOsCall.fromJson(Map<String, dynamic> json) {
-    final rawArgs = json['arguments'] as List<dynamic>?;
+    final rawArgs = json['arguments'] as List<Object?>?;
     final rawKwargs = json['kwargs'] as Map<String, dynamic>?;
 
     return MontyOsCall(
@@ -329,7 +329,7 @@ final class MontyResolveFutures extends MontyProgress {
   /// Expected keys: `type` (must be `'resolve_futures'`),
   /// `pending_call_ids` (list of ints).
   factory MontyResolveFutures.fromJson(Map<String, dynamic> json) {
-    final rawIds = json['pending_call_ids'] as List<dynamic>;
+    final rawIds = json['pending_call_ids'] as List<Object?>;
 
     return MontyResolveFutures(pendingCallIds: List<int>.from(rawIds));
   }

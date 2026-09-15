@@ -18,20 +18,20 @@ import 'package:meta/meta.dart';
 typedef _ErrorInfo = ({
   String message,
   String? excType,
-  List<dynamic>? traceback,
+  List<Object?>? traceback,
   String? filename,
   int? lineNumber,
   int? columnNumber,
   String? sourceCode,
 });
 
-List<MontyStackFrame> _parseTraceback(List<dynamic>? traceback) {
+List<MontyStackFrame> _parseTraceback(List<Object?>? traceback) {
   if (traceback == null) return const [];
 
   return MontyStackFrame.listFromJson(traceback);
 }
 
-List<MontyValue> _parseArgList(List<dynamic>? args) =>
+List<MontyValue> _parseArgList(List<Object?>? args) =>
     args != null ? args.map(MontyValue.fromJson).toList() : const [];
 
 Map<String, MontyValue>? _parseKwargMap(Map<String, dynamic>? kwargs) =>
@@ -445,7 +445,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   MontyException? _buildError(
     String? error,
     String? excType,
-    List<dynamic>? traceback,
+    List<Object?>? traceback,
   ) {
     if (error == null) return null;
 

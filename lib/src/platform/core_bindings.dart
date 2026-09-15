@@ -47,7 +47,7 @@ final class CoreRunResult {
   final String? excType;
 
   /// Raw traceback frames (when [ok] is `false`).
-  final List<dynamic>? traceback;
+  final List<Object?>? traceback;
 
   /// Source filename (when [ok] is `false`).
   final String? filename;
@@ -136,7 +136,7 @@ final class CoreProgressResult {
   final String? excType;
 
   /// Raw traceback frames (when execution failed).
-  final List<dynamic>? traceback;
+  final List<Object?>? traceback;
 
   /// Source filename (when execution failed).
   final String? filename;

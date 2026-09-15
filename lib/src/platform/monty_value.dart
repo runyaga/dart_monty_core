@@ -47,7 +47,7 @@ sealed class MontyValue {
     // run through _parseSpecialFloat first, so the STRING "NaN" became
     // MontyFloat(NaN). Non-finite floats now carry the float envelope.
     final String s => MontyString(s),
-    final List<dynamic> l => MontyList(l.map(MontyValue.fromJson).toList()),
+    final List<Object?> l => MontyList(l.map(MontyValue.fromJson).toList()),
     final Map<String, dynamic> m => _parseMap(m),
     _ => throw ArgumentError(
       'Cannot deserialize ${json.runtimeType} to MontyValue',
@@ -78,7 +78,7 @@ sealed class MontyValue {
       second: dt.toUtc().second,
       microsecond: dt.toUtc().microsecond,
     ),
-    final List<dynamic> l => MontyList(l.map(MontyValue.fromDart).toList()),
+    final List<Object?> l => MontyList(l.map(MontyValue.fromDart).toList()),
     // Keys convert the same way values do. They used to be forced through
     // `k.toString()`, which silently turned the Dart map {1: 'a'} into the
     // Python dict {'1': 'a'} -- a different dict, with no error. Only string

@@ -214,16 +214,20 @@ dcm:
           - "test/**"
     - avoid-dynamic:
         exclude:
+          # lib/ is CLEAN of `dynamic` in list positions as of 2026-09-15.
+          # Seven files were listed here; all 21 sites were `List<dynamic>` at
+          # JSON-decode boundaries and are now `List<Object?>`. That is not a
+          # cosmetic swap: `dynamic` silences static checking at every use of
+          # the element, while `Object?` keeps it and forces the cast to be
+          # written where the type is actually narrowed. The runtime behaviour
+          # is identical -- a List<dynamic> from json.decode satisfies
+          # `is List<Object?>` -- which is why `dart analyze` stayed clean
+          # without touching a single consumer.
+          #
+          # `Map<String, dynamic>` is NOT flagged by this rule and is left
+          # alone: it is the canonical json.decode return type and rewriting it
+          # would touch 39 sites for no checking benefit.
           - "test/**"
-          # fromJson factories: Map<String, dynamic> is Dart JSON convention
-          - "lib/src/platform/monty_value.dart"
-          - "lib/src/platform/monty_value_collections.dart"
-          - "lib/src/platform/monty_value_structured.dart"
-          - "lib/src/platform/monty_progress.dart"
-          - "lib/src/platform/monty_exception.dart"
-          # JSON deserialization in SPI/base platform
-          - "lib/src/platform/base_monty_platform.dart"
-          - "lib/src/platform/core_bindings.dart"
     - avoid-non-null-assertion:
         exclude:
           - "test/**"

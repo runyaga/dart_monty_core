@@ -150,10 +150,10 @@ final class MontyNamedTuple extends MontyValue {
   factory MontyNamedTuple._fromMap(Map<String, dynamic> map) => MontyNamedTuple(
     typeName: map['type_name'] as String? ?? '',
     fieldNames:
-        (map['field_names'] as List<dynamic>?)?.cast<String>().toList() ??
+        (map['field_names'] as List<Object?>?)?.cast<String>().toList() ??
         const [],
     values:
-        (map['values'] as List<dynamic>?)?.map(MontyValue.fromJson).toList() ??
+        (map['values'] as List<Object?>?)?.map(MontyValue.fromJson).toList() ??
         const [],
   );
 
@@ -553,7 +553,7 @@ final class MontyDataclass extends MontyValue {
         ),
       },
       fieldNames:
-          (map['field_names'] as List<dynamic>?)?.cast<String>().toList() ??
+          (map['field_names'] as List<Object?>?)?.cast<String>().toList() ??
           const [],
       attrs: parsedAttrs,
       frozen: map['frozen'] as bool? ?? false,
