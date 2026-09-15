@@ -167,7 +167,38 @@ dcm:
     - prefer-return-await
     - avoid-type-casts
     - avoid-inferrable-type-arguments
-    - avoid-unnecessary-futures
+    - avoid-unnecessary-futures:
+        exclude:
+          # FALSE POSITIVES, and measured one at a time rather than assumed.
+          # MontyCallback and OsCallHandler (lib/src/externals.dart:12-32) both
+          # declare `Future<Object?> Function(...)`, NOT FutureOr. A callback
+          # that returns an ordinary value can only satisfy that with `async`:
+          # removing it gives "The returned type 'String' isn't returnable from
+          # a 'Future<Object?>' function".
+          #
+          # NOT a blanket claim about the rule. All 21 originally flagged sites
+          # were tested individually by removing only `async` and analysing:
+          # five COMPILED without it (throwing callbacks -- `throw` is `Never`,
+          # which satisfies Future<Object?> directly) and those five were FIXED
+          # in 92ff680. These sixteen are the ones that genuinely cannot be.
+          #
+          # The alternative remedy -- widening the typedefs to
+          # FutureOr<Object?> -- is a public API change to a published package
+          # to silence a lint. Rejected.
+          #
+          # WHAT THIS COSTS: a future genuinely-unnecessary Future in these
+          # nine files will not be reported. Per-site `// ignore:` was tried
+          # first and abandoned: DCM re-anchors the finding onto the comment
+          # line, so the suppression does not take.
+          - "test/integration/_dataclass_hydrate_test_body.dart"
+          - "test/integration/_monty_compile_run_test_body.dart"
+          - "test/integration/_monty_exec_externals_test_body.dart"
+          - "test/integration/_print_callback_test_body.dart"
+          - "test/integration/_repl_extfns_lifecycle_test_body.dart"
+          - "test/integration/ffi_datetime_oscall_test.dart"
+          - "test/integration/ffi_repl_oscall_test.dart"
+          - "test/integration/repros/issue_32_listcomp_global_clobber_ffi_test.dart"
+          - "test/integration/wasm_datetime_oscall_test.dart"
     - prefer-correct-future-return-type
     - avoid-future-tostring
     - avoid-nullable-tostring

@@ -1,17 +1,5 @@
 {
-  "by_file": {
-    "test/integration/_dataclass_hydrate_test_body.dart": 3,
-    "test/integration/_monty_compile_run_test_body.dart": 1,
-    "test/integration/_monty_exec_externals_test_body.dart": 4,
-    "test/integration/_print_callback_test_body.dart": 1,
-    "test/integration/_repl_extfns_lifecycle_test_body.dart": 3,
-    "test/integration/ffi_datetime_oscall_test.dart": 1,
-    "test/integration/ffi_repl_oscall_test.dart": 1,
-    "test/integration/repros/issue_32_listcomp_global_clobber_ffi_test.dart": 1,
-    "test/integration/wasm_datetime_oscall_test.dart": 1
-  },
-  "by_rule": {
-    "avoid-unnecessary-futures": 16
-  },
-  "total": 16
+  "by_file": {},
+  "by_rule": {},
+  "total": 0
 }
