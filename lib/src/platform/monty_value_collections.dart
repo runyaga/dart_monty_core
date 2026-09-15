@@ -232,11 +232,9 @@ final class MontyDict extends MontyValue {
   ///
   /// The shape is conditional on key type ON PURPOSE, and this is a projection
   /// to plain Dart, not a type distinction — the TYPE is the same either way.
-  /// Dart has no dict-with-arbitrary-keys, so a `Map` is the faithful
-  /// projection exactly when the keys are strings. It is NOT faithful
-  /// otherwise: two distinct Python keys can share a Dart `toString`, so
-  /// collapsing `{1: 'a'}` and `{'1': 'b'}` into one map would silently drop an
-  /// entry. Pairs preserve both.
+  /// Stringifying keys merges distinct Python keys: `{1: 'a'}` and `{'1': 'b'}`
+  /// would collapse into one map entry and silently lose the other. The pair
+  /// list preserves both.
   @override
   Object? get dartValue {
     final strings = asStringMap;

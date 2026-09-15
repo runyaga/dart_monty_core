@@ -85,7 +85,16 @@ final class MontyInt extends MontyValue {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || (other is MontyInt && other.value == value);
+      identical(this, other) ||
+      (other is MontyInt && other.value == value) ||
+      // Python has ONE int type; the MontyInt/MontyBigInt split is a Dart
+      // artifact for JS-safe integers. Two representations of the same integer
+      // must compare equal, or `1` from one path is unequal to `1` from
+      // another. Normalised toward the CHEAP side: this hashCode is unchanged,
+      // and MontyBigInt is the one that folds in-range values to int.hashCode.
+      (other is MontyBigInt &&
+          other.value.isValidInt &&
+          other.value.toInt() == value);
 
   @override
   int get hashCode => value.hashCode;
@@ -233,10 +242,17 @@ final class MontyBigInt extends MontyValue {
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || (other is MontyBigInt && other.value == value);
+      identical(this, other) ||
+      (other is MontyBigInt && other.value == value) ||
+      // Symmetric with MontyInt.==; see the note there.
+      (other is MontyInt && value.isValidInt && value.toInt() == other.value);
 
   @override
-  int get hashCode => value.hashCode;
+  // Folds an in-range value to the SAME hash MontyInt would produce, which is
+  // what keeps `a == b => a.hashCode == b.hashCode` true across the pair. Out
+  // of range, no MontyInt can be equal, so BigInt's own hash is correct.
+  int get hashCode =>
+      value.isValidInt ? value.toInt().hashCode : value.hashCode;
 
   @override
   String toString() => 'MontyBigInt($value)';
