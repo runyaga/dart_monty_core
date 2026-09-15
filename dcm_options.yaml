@@ -272,16 +272,35 @@ dcm:
           - "test/**"
     - avoid-non-null-assertion:
         exclude:
-          # test/** (75 issues, VERIFIED 2026-09-15). The dominant shape is a `!`
-          # immediately after the expectation that proves it, e.g.
-          # monty_typing_error_test.dart:29-31
-          #     expect(list, hasLength(1));
-          #     final e = list.singleOrNull!;
-          # If that `!` could fire, the `expect` above it already failed and the
-          # test is red either way -- so the assertion adds no risk a test does
-          # not already carry. This is the WEAKEST of the four test/** entries:
-          # 75 is a lot, and a `!` gives a TypeError where a checked access
-          # would name the field. Worth revisiting; not worth 75 edits today.
+          # test/** (75 issues). CLASSIFIED ALL 75, 2026-09-15 -- an earlier
+          # version of this comment generalised from three samples and got the
+          # dominant shape wrong. The real split:
+          #
+          #     43  `*OrNull!`  -- firstOrNull!/elementAtOrNull(n)!/singleOrNull!
+          #     17  a `!` immediately after the expect() that proves it
+          #     15  other
+          #
+          # THE 43 ARE AN ARTEFACT OF THIS CONFIG, not a style choice, and that
+          # is the part worth knowing. avoid-unsafe-collection-methods IS
+          # enforced in test/ (its only exclusion is one lib file), while
+          # avoid-non-null-assertion is NOT. So `args.first as int` is flagged
+          # and `args.firstOrNull! as int` is invisible -- and the invisible one
+          # is WORSE: on an empty list it throws "Null check operator used on a
+          # null value", naming nothing, where `.first` throws
+          # StateError("No element"), naming the problem.
+          #
+          # The evidence that the config drove this: test/ contains ZERO
+          # avoid-unsafe-collection-methods issues and 43 `*OrNull!`. Nobody
+          # chose the worse error message 43 times; the lint chose it for them.
+          #
+          # Left as-is deliberately. Fixing it is not 43 edits -- `.first`
+          # would then be flagged, so it also needs a decision about
+          # avoid-unsafe-collection-methods in test/ (where StateError("No
+          # element") is arguably exactly what a test should get). That is a
+          # policy call, not a cleanup.
+          #
+          # The 17 expect-guarded ones are genuinely fine: if the `!` could
+          # fire, the expect above it already failed.
           - "test/**"
           # The ONLY remaining `!` in lib/. assignmentPattern is
           # RegExp(r'^([a-zA-Z]\w*)\s*=[^=]') -- group 1 is not optional, so a
