@@ -39,6 +39,10 @@
 #
 #   That is not in the gate because it costs a second full `dcm analyze` and
 #   needs the CI credentials. Run it when touching dcm_options.yaml.
+#
+#   Exit codes: 0 clean (or skipped for missing credentials), 1 dormant entry
+#   found, 2 refused to run (config dirty, or dcm produced no output). Check
+#   the code, not the text -- piping this through `tail` discards it.
 # =============================================================================
 set -euo pipefail
 
@@ -115,11 +119,135 @@ fi
 
 echo "PASS — $CHECKED concrete exclusion path(s) exist ($TOTAL entries, $((TOTAL - CHECKED)) globs skipped)."
 
-if [ "$DEEP" = "1" ]; then
-  echo
-  echo "--deep: re-run DCM with exclusions stripped to find entries that hide"
-  echo "        nothing. Requires DCM_CI_KEY and DCM_EMAIL."
-  echo "        (Not implemented as an automated comparison yet: the one-shot"
-  echo "        measurement is recorded in the 2026-09-15 sweep. Re-derive with"
-  echo "        the transform in that commit if you need it again.)"
+[ "$DEEP" = "1" ] || exit 0
+
+# ---------------------------------------------------------------------------
+# --deep: an entry can name a real file and STILL hide nothing, because the
+# violation it was written for has been fixed. `lib/src/repl/monty_repl.dart`
+# was exactly that. Catching it needs DCM run with the exclusions stripped,
+# so this is opt-in: a full `dcm analyze` plus the CI credentials.
+#
+# DCM has no `--config <path>` -- it reads dcm_options.yaml from --root-folder.
+# So the file is SWAPPED and restored by a trap that fires on error and on
+# interrupt, not only on the happy path. It refuses to start if that file is
+# already dirty, so a kill can never eat uncommitted edits.
+# ---------------------------------------------------------------------------
+echo
+if [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; then
+  echo "SKIP --deep: needs DCM_CI_KEY and DCM_EMAIL. Without BOTH (and CI=true)"
+  echo "             dcm reports a licence error and exits nonzero for a reason"
+  echo "             that has nothing to do with exclusions."
+  exit 0
 fi
+if ! git diff --quiet -- "$CONFIG" 2>/dev/null; then
+  echo "REFUSING --deep: $CONFIG has uncommitted changes."
+  echo "  This mode swaps that file and restores it from a trap. Starting dirty"
+  echo "  risks losing your edits if the process is killed."
+  exit 2
+fi
+
+BACKUP="$(mktemp)"
+cp "$CONFIG" "$BACKUP"
+restore() { cp "$BACKUP" "$CONFIG"; rm -f "$BACKUP"; }
+trap restore EXIT INT TERM
+
+# Strip rule-level excludes. A rule whose ONLY config was its exclude list must
+# become `- rule`, NOT `- rule:` with an empty body -- DCM silently DROPS the
+# latter, which under-reports and reads like a clean sweep. That mistake turned
+# a real figure of 177 into 542 once already.
+python3 - "$CONFIG" <<'PY_STRIP'
+import re, sys
+path = sys.argv[1]
+lines = open(path).read().split('\n')
+out, i = [], 0
+while i < len(lines):
+    l = lines[i]
+    m = re.match(r'^(\s{4,})-\s*([a-z-]+):\s*$', l)
+    if m:
+        ind, rule = len(m.group(1)), m.group(2)
+        j, body = i + 1, []
+        while j < len(lines):
+            nl = lines[j]
+            if nl.strip() == '':
+                body.append(nl); j += 1; continue
+            if len(nl) - len(nl.lstrip()) <= ind:
+                break
+            body.append(nl); j += 1
+        rest, k = [], 0
+        while k < len(body):
+            b = body[k]
+            me = re.match(r'^(\s*)exclude:\s*$', b)
+            if me:
+                eind = len(me.group(1)); k += 1
+                while k < len(body):
+                    nb = body[k]
+                    if nb.strip() == '':
+                        k += 1; continue
+                    if len(nb) - len(nb.lstrip()) <= eind:
+                        break
+                    k += 1
+                continue
+            rest.append(b); k += 1
+        meaningful = [r for r in rest if r.strip() and not r.strip().startswith('#')]
+        if meaningful:
+            out.append(l); out.extend(rest)
+        else:
+            out.append(f'{m.group(1)}- {rule}')
+        i = j; continue
+    out.append(l); i += 1
+open(path, 'w').write('\n'.join(out))
+PY_STRIP
+
+REPORT="$(mktemp)"
+CI=true dcm analyze lib test --reporter=json \
+  --ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL" > "$REPORT" 2>/dev/null || true
+restore
+trap - EXIT INT TERM
+
+if [ ! -s "$REPORT" ]; then
+  echo "FAIL --deep: dcm produced no output. Config restored."
+  rm -f "$REPORT"
+  exit 2
+fi
+
+ENTRIES="$ENTRIES" python3 - "$REPORT" <<'PY_CHECK'
+import json, os, sys, fnmatch, collections
+d = json.load(open(sys.argv[1]))
+hits = collections.Counter()
+for r in d.get('analyzeResults', []):
+    p = r.get('path') or ''
+    for i in r.get('issues', []):
+        hits[(i['id'], p)] += 1
+
+def matches(pat, path):
+    if pat.endswith('/**'):
+        return path.startswith(pat[:-3] + '/')
+    if '**' in pat:
+        return fnmatch.fnmatch(path, pat.replace('**', '*'))
+    return path == pat
+
+dormant = []
+for line in os.environ['ENTRIES'].split('\n'):
+    if not line.strip():
+        continue
+    rule, pat = line.split('\t')
+    if not any(v for (rid, p), v in hits.items() if rid == rule and matches(pat, p)):
+        dormant.append((rule, pat))
+
+total = sum(hits.values())
+if dormant:
+    print(f'FAIL --deep: {len(dormant)} exclusion(s) hide nothing '
+          f'({total} issues surfaced with exclusions stripped):')
+    for rule, pat in dormant:
+        print(f'    {rule}: {pat}')
+    print()
+    print('  Each suppresses no violation today. Delete it -- and if the rule')
+    print('  was FIXED rather than excluded, that is still a delete.')
+    sys.exit(1)
+print(f'PASS --deep: all {len(os.environ["ENTRIES"].strip().splitlines())} '
+      f'exclusion(s) still hide at least one issue '
+      f'({total} surfaced with exclusions stripped).')
+PY_CHECK
+DEEP_RC=$?
+rm -f "$REPORT"
+exit $DEEP_RC
