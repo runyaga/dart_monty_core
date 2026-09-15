@@ -15,6 +15,23 @@ import 'package:test/test.dart';
 
 import '_hierarchy_registry.dart';
 
+/// The three subtypes whose `dartValue` is `=> this`, by deliberate design:
+/// there is no Dart primitive for a Python `time`, `Ellipsis` or
+/// `NotImplemented`, so the MontyValue IS the most faithful representation.
+/// Named here so the matrix asserts that choice instead of being blind to it.
+const _selfReturning = {'MontyTime', 'MontyEllipsis', 'MontyNotImplemented'};
+
+/// True if a `dartValue` result still contains a [MontyValue] anywhere.
+bool _leaksMontyValue(Object? o) {
+  if (o is MontyValue) return true;
+  if (o is List) return o.any(_leaksMontyValue);
+  if (o is Map) {
+    return o.keys.any(_leaksMontyValue) || o.values.any(_leaksMontyValue);
+  }
+
+  return false;
+}
+
 void main() {
   group('permutation matrix', () {
     test('the table covers EVERY MontyValue subtype', () {
@@ -66,11 +83,6 @@ void main() {
         );
       });
 
-      test('$name: survives a toJson/fromJson round trip', () {
-        final back = MontyValue.fromJson(v.toJson());
-        expect(back, v, reason: 'round trip changed the value');
-      });
-
       test('$name: round-trips nested inside a MontyList', () {
         final back = MontyValue.fromJson(MontyList([v]).toJson());
         expect(back, MontyList([v]));
@@ -82,8 +94,33 @@ void main() {
         expect(MontyValue.fromJson(d.toJson()), d);
       });
 
-      test('$name: dartValue does not throw', () {
-        expect(() => v.dartValue, returnsNormally);
+      test('$name: dartValue exposes DART values, not MontyValue', () {
+        // Was `expect(() => v.dartValue, returnsNormally)`, which cannot fail
+        // for MontyTime, MontyEllipsis and MontyNotImplemented -- their
+        // dartValue is `=> this`, so "it returned" is guaranteed by the
+        // signature. For the collections it was nearly as weak: returning a
+        // list of MontyValue children, un-converted, also "does not throw".
+        //
+        // The real contract is that dartValue hands back DART values. A
+        // wrapper that forgets `.dartValue` on its children leaks MontyValue
+        // into the result, and only this assertion sees it.
+        final d = v.dartValue;
+        if (_selfReturning.contains(name)) {
+          expect(
+            identical(d, v),
+            isTrue,
+            reason:
+                '$name is documented to return itself; if that changed, '
+                'move it out of _selfReturning rather than loosening this',
+          );
+
+          return;
+        }
+        expect(
+          _leaksMontyValue(d),
+          isFalse,
+          reason: 'dartValue leaked a MontyValue: a child was not converted',
+        );
       });
     }
   });

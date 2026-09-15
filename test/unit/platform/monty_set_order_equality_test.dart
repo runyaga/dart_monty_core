@@ -90,11 +90,10 @@ void main() {
       expect(a, isNot(b));
     });
 
-    test('MontySet is never equal to MontyFrozenSet', () {
-      const a = MontySet([MontyInt(1)]);
-      const b = MontyFrozenSet([MontyInt(1)]);
-      expect(a, isNot(b));
-    });
+    // `MontySet` vs `MontyFrozenSet` inequality is NOT asserted here: it is
+    // already asserted at monty_value_test.dart:438, which is the established
+    // home for MontySet basics. A second copy is how two files come to
+    // disagree.
   });
 
   test('a FORGED duplicate does not hash like the empty set', () {
