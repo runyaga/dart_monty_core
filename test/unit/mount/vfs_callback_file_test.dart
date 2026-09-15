@@ -116,7 +116,8 @@ void main() {
 
       // 'héllo' is 5 codepoints and 6 UTF-8 bytes; st_size is bytes.
       final st = await h('Path.stat', ['/mnt/live.txt'], null);
-      expect(_stat(st! as MontyNamedTuple, 'st_size'), const MontyInt(6));
+      if (st == null) fail('handler did not handle Path.stat');
+      expect(_stat(st as MontyNamedTuple, 'st_size'), const MontyInt(6));
       // Upstream does the same (os_access.py:1024): sizing means reading.
       expect(reads, 1);
     });

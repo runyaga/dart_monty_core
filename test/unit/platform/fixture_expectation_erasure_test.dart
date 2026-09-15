@@ -66,7 +66,10 @@ void main() {
     test('an integer expectation is still an int', () {
       // The fix must not overcorrect: `# Return=2` is an int on every backend.
       final expectation = parseFixture('x\n# Return=2\n');
-      final want = MontyValue.fromDart((expectation! as ExpectReturn).value);
+      if (expectation == null) {
+        fail('parseFixture returned null for `# Return=2`');
+      }
+      final want = MontyValue.fromDart((expectation as ExpectReturn).value);
 
       expect(want, isA<MontyInt>());
       expect(want, const MontyInt(2));

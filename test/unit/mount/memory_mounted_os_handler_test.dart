@@ -232,8 +232,9 @@ void main() {
         ],
       );
 
-      final children =
-          (await handler('Path.iterdir', ['/data'], null))! as List<MontyPath>;
+      final iterdir = await handler('Path.iterdir', ['/data'], null);
+      if (iterdir == null) fail('handler did not handle Path.iterdir');
+      final children = iterdir as List<MontyPath>;
       final paths = children.map((p) => p.value).toSet();
       expect(paths, {'/data/a.txt', '/data/b.txt', '/data/sub'});
     });
@@ -386,9 +387,9 @@ void main() {
         files: [MontyMemoryFile('/data/hello.txt', 'readonly content')],
       );
 
-      final st =
-          (await handler('Path.stat', ['/data/hello.txt'], null))!
-              as MontyNamedTuple;
+      final statResult = await handler('Path.stat', ['/data/hello.txt'], null);
+      if (statResult == null) fail('handler did not handle Path.stat');
+      final st = statResult as MontyNamedTuple;
 
       expect(st.typeName, 'StatResult');
       expect(st.fieldNames, const [

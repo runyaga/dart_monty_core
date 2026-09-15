@@ -82,8 +82,9 @@ void main() {
 
       await handler('Path.mkdir', ['/m/sub'], null);
       final listing = await handler('Path.iterdir', ['/m'], null);
+      if (listing == null) fail('handler did not handle Path.iterdir');
 
-      expect((listing! as List).map((p) => '$p'), contains(contains('/m/sub')));
+      expect((listing as List).map((p) => '$p'), contains(contains('/m/sub')));
     });
 
     test('rmdir removes an empty directory that mkdir created', () async {
