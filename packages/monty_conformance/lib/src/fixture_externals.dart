@@ -30,7 +30,25 @@ const conformanceExtFns = {
   'make_mutable_point',
   'make_user',
   'make_empty',
-  // Dataclass method calls (self is arguments[0])
+  // Dataclass method calls.
+  //
+  // STALE CONTRACT, corrected 2026-09-15: this said "self is arguments[0]".
+  // It is not, at monty v0.0.23. A method call on a HOST dataclass arrives
+  // with `arguments` EMPTY; the receiver travels as `FunctionCall.object_id`,
+  // a per-instance UUID. Measured against pydantic-monty 0.0.23 directly:
+  //     FunctionSnapshot fn='nonexistent_method'
+  //       object_id=UUID('dcae8e85-...') args=()
+  // and identically through our own FFI, for a PRESENT method (`sum`) as well
+  // as an absent one. `native/src/repl_handle.rs:848` reduces that UUID to
+  // `object_id.is_some()`, so it never reaches Dart and these five branches
+  // cannot find their receiver. They therefore THROW (see below) rather than
+  // crash with a bare "Bad state: No element".
+  //
+  // Only dataclass__basic.py reaches them, and it fails earlier (line 243).
+  // Verified the other four fixtures naming these method names --
+  // class__body_external, class__closures, class__name_error, class__scope --
+  // call them on SANDBOX-defined classes, not host dataclasses, and all four
+  // pass. See artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
   'sum', // Point/MutablePoint.sum() → x + y
   'add', // Point.add(dx, dy) → new Point(x=x+dx, y=y+dy)
   'scale', // Point.scale(factor) → new Point(x=x*factor, y=y*factor)
@@ -102,7 +120,23 @@ Object? conformanceDispatch(
     fieldNames: [],
     attrs: {},
   ),
-  // --- dataclass method calls (arguments[0] is self) ---
+  // --- dataclass method calls ---
+  //
+  // Each of these needs `self`, which monty v0.0.23 does NOT put in
+  // `arguments` (see the note on the name table above). Rather than let
+  // `args.first` throw a bare "Bad state: No element" from inside a switch
+  // arm -- which is what happened, and which reads like a harness bug rather
+  // than a missing binding -- refuse explicitly. StateError is already this
+  // function's "unmodelled external" signal, so the caller reports a skip with
+  // a reason instead of dying.
+  'sum' || 'add' || 'scale' || 'describe' || 'greeting'
+      when args.isEmpty =>
+    throw StateError(
+      'dataclass method "$functionName" needs its receiver, but monty v0.0.23 '
+      'sends an empty argument list and the receiver only as '
+      'FunctionCall.object_id, which native/src/repl_handle.rs:848 discards '
+      '(object_id.is_some()). Forward the receiver before re-enabling these.',
+    ),
 
   // sum(self) → self.x + self.y
   'sum' => () {

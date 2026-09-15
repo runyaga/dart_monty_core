@@ -417,6 +417,21 @@ Future<(String?, MontyValue?, bool)> _runDispatchLoop(
             if (methodCall) {
               // Unknown public method on external dataclass — raise
               // AttributeError so Python try/except blocks can catch it.
+              //
+              // `?? 'object'` ALWAYS fires, and the message is therefore
+              // wrong. monty v0.0.23 sends an EMPTY argument list for a method
+              // call (measured, both here and against pydantic-monty 0.0.23
+              // directly); the receiver travels as FunctionCall.object_id,
+              // which native/src/repl_handle.rs:848 reduces to
+              // `object_id.is_some()` before Dart ever sees it. So there is no
+              // receiver to name and this cannot do better today.
+              //
+              // This is the sole reason dataclass__basic.py is declared in
+              // tool/wasm-corpus-expected-failures.txt: it asserts
+              // "'Point' object has no attribute 'nonexistent_method'" and
+              // gets "'object' ...". The fixture is right and monty is right
+              // — the binding drops the identity. Forwarding object_id is the
+              // fix; see artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
               final typeName =
                   (args.firstOrNull as MontyDataclass?)?.name ?? 'object';
               try {

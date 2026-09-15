@@ -23,7 +23,7 @@
 # with "STALE: declared-expected fixture(s) now PASS", which is the whole point
 # of declaring the set rather than demanding zero.
 
-dataclass__basic.py              expected no error, got AssertionError. Pre-existing: fails identically at a0dd284, before any of the session-reuse work. Not yet diagnosed; the harness reports only the stringified reason, not which of the ~200 asserts failed.
+dataclass__basic.py              DIAGNOSED 2026-09-15 (artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md). Fails at fixture line 243: assert str(e) == "'Point' object has no attribute 'nonexistent_method'". The harness emits "'object' object has no attribute ..." because fixture_runner.dart:421 recovers the receiver type from args.firstOrNull, and monty v0.0.23 sends an EMPTY argument list for method calls -- the receiver travels as FunctionCall.object_id, which native/src/repl_handle.rs:848 reduces to object_id.is_some(). Validated against pydantic-monty 0.0.23: with the receiver resolved by object_id, the fixture's own assertions all pass, so the fixture and monty are both correct and OUR BINDING fails it. Not an upstream bug. Fixing it is a wire-format change (forward object_id, and give host instances distinct instance_ids -- convert.rs:754 stamps every one [0u8;16]).
 
 # REMOVED 2026-09-13: functools__gc.py and itertools__gc.py. They were declared
 # here as expected failures, which says "we are wrong here". They are not: the
