@@ -241,14 +241,35 @@ const Set<String> testHooksWasmFixtures = {
 /// Conflating them is how `dataclass__basic.py` sat behind a stale
 /// web-only skip while nothing ran it on FFI either.
 const Map<String, String> knownBrokenExtFixtures = {
-  // monty v0.0.23 regression: dataclass attribute errors are not surfaced as
-  // exceptions through the external-function dispatch path.
-  // Observed in dart_monty_core gate (oracle_ffi_ext_test.dart):
-  // excType is null.
-  'dataclass__call_field_error.py':
-      'monty v0.0.23: calling a dataclass field does not raise '
-      'TypeError (excType is null)',
-  'dataclass__get_missing_attr_error.py':
-      'monty v0.0.23: missing dataclass attribute does not raise '
-      'AttributeError (excType is null)',
+  // REMOVED 2026-09-15: dataclass__call_field_error.py and
+  // dataclass__get_missing_attr_error.py. Both were listed as a
+  // "monty v0.0.23 regression: dataclass attribute errors are not surfaced as
+  // exceptions through the external-function dispatch path ... excType is
+  // null". That blamed the engine. It was OUR dispatch loop.
+  //
+  // fixture_dispatch.dart had no `methodCall` branch, so an unknown method on
+  // a host dataclass produced a SKIP instead of the AttributeError these two
+  // fixtures are written to catch -- and excType was null because nothing ever
+  // raised. Adding the branch (which fixture_runner.dart has had all along)
+  // makes both PASS. The new "every knownBrokenExtFixtures entry STILL fails"
+  // test found them the moment it was written.
+  // DIAGNOSED 2026-09-15, and it belongs here rather than in the web-only set
+  // for the reason this doc comment already gave. It fails identically on FFI
+  // and WASM because the cause is in OUR BINDING, not either backend:
+  //
+  // The fixture asserts, at line 243,
+  //     "'Point' object has no attribute 'nonexistent_method'"
+  // and the harness can only say "'object' ...". monty v0.0.23 sends an EMPTY
+  // argument list for a method call and passes the receiver as
+  // FunctionCall.object_id; native/src/repl_handle.rs:848 reduces that to
+  // `object_id.is_some()`, so the receiver's type never reaches Dart.
+  //
+  // Validated against pydantic-monty 0.0.23 directly: with the receiver
+  // resolved by object_id, every assertion in the fixture passes. The fixture
+  // is right and monty is right. Fixing it is a wire change (forward
+  // object_id) -- see artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
+  'dataclass__basic.py':
+      'our binding drops the method receiver: monty v0.0.23 passes it as '
+      'FunctionCall.object_id, not in args, and repl_handle.rs:848 reduces '
+      'it to a bool -- so the AttributeError cannot name the receiver type',
 };

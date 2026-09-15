@@ -98,6 +98,7 @@ Future<DispatchOutcome> runCallExternalFixture(
         :final args,
         :final kwargs,
         :final callId,
+        :final methodCall,
       ):
         if (functionName == 'async_call') {
           // Echo: stash the argument and hand the engine a future, so it can
@@ -142,27 +143,41 @@ Future<DispatchOutcome> runCallExternalFixture(
             }
           }
 
-          // DIVERGENCE FROM fixture_runner.dart, recorded 2026-09-15.
+          // An unknown public METHOD on a host dataclass is not "we do not
+          // model this external" -- it is Python asking for an attribute that
+          // does not exist, and the right answer is AttributeError raised INTO
+          // the sandbox so a `try/except AttributeError` can catch it.
           //
-          // fixture_runner.dart:416-433 (the WASM corpus) has a `methodCall`
-          // branch here: an unknown public METHOD on a host dataclass gets an
-          // AttributeError resumed into the sandbox, so the fixture keeps
-          // running. This loop has no such branch, so the same fixture SKIPS.
+          // This branch existed only in fixture_runner.dart (the WASM corpus)
+          // until 2026-09-15, which is why dataclass__basic.py FAILED there and
+          // merely SKIPPED here: one backend ran it, the other never did. A
+          // skip is not a failure, so nothing went red and the asymmetry was
+          // invisible in CI. Both loops now answer the same way.
           //
-          // That is why dataclass__basic.py is a declared expected-failure for
-          // WASM and reports "skipped" on FFI: one backend runs it and fails,
-          // the other never runs it. A skip is not a failure, so nothing goes
-          // red and the asymmetry is invisible in CI.
-          //
-          // Deliberately NOT fixed here yet. Adding the branch makes FFI run
-          // the fixture and fail it, which needs a declared-expected mechanism
-          // for this suite (tool/wasm-corpus-expected-failures.txt has no FFI
-          // counterpart) — and the real fix is to forward the receiver so the
-          // AttributeError can name its type at all. See
-          // artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
-          //
-          // This is the THIRD time these two loops have drifted; the header of
-          // fixture_externals.dart records the first two.
+          // The typeName is 'object' rather than the receiver's class, and that
+          // is a known binding gap, not a shortcut: monty v0.0.23 sends an
+          // EMPTY argument list for a method call and passes the receiver as
+          // FunctionCall.object_id, which native/src/repl_handle.rs:848 reduces
+          // to `object_id.is_some()` before Dart sees it. Same text as
+          // fixture_runner.dart produces, so both backends stay identical.
+          // See artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
+          if (methodCall) {
+            final typeName =
+                (args.firstOrNull as MontyDataclass?)?.name ?? 'object';
+            try {
+              progress = await platform.resumeWithException(
+                'AttributeError',
+                "'$typeName' object has no attribute '$functionName'",
+              );
+              continue;
+            } on MontyScriptError catch (e) {
+              return DispatchOutcome(
+                excType: e.excType,
+                exception: e.exception,
+              );
+            }
+          }
+
           return DispatchOutcome(
             skipped: true,
             skipReason: 'needs an external we do not model: $functionName',

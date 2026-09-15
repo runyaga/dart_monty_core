@@ -102,6 +102,50 @@ void main() {
       );
     });
 
+    test('every knownBrokenExtFixtures entry STILL fails', () async {
+      // Without this, the set is write-only. An entry names a fixture we skip
+      // "because it is broken everywhere"; the day it gets FIXED the skip
+      // persists, the fixture silently stops running, and the entry's reason
+      // goes on describing something that is no longer true.
+      //
+      // That is not hypothetical here. dataclass__basic.py sat behind a stale
+      // WEB-ONLY skip while nothing ran it on FFI either -- the doc comment on
+      // knownBrokenExtFixtures says so in as many words -- and five dormant
+      // DCM exclusions of the same shape were deleted from this repo on
+      // 2026-09-15. A declared-broken list needs the same treatment the WASM
+      // corpus already gets from tool/wasm-corpus-expected-failures.txt, which
+      // fails in BOTH directions.
+      final stale = <String>[];
+      for (final MapEntry(:key, :value) in callExternalFixtures.entries) {
+        if (!knownBrokenExtFixtures.containsKey(key)) continue;
+        final expectation = parseFixture(value, skipCallExternal: false);
+        if (expectation == null) continue;
+
+        final (thrownExcType, resultValue, skipped, _, _) = await _runDispatch(
+          value,
+          key,
+        );
+        if (skipped) continue; // cannot run it, so cannot call it fixed
+
+        final met = switch (expectation) {
+          ExpectNoException() => thrownExcType == null,
+          ExpectReturn(value: final expected) =>
+            thrownExcType == null &&
+                resultValue == MontyValue.fromDart(expected),
+          ExpectRaise(excType: final want) => thrownExcType == want,
+        };
+        if (met) stale.add(key);
+      }
+      expect(
+        stale,
+        isEmpty,
+        reason:
+            'STALE: these are listed in knownBrokenExtFixtures but now MEET '
+            'their expectation: $stale. Delete the entry -- a fixture that '
+            'passes must not stay skipped, or it stops being tested.',
+      );
+    });
+
     for (final MapEntry(:key, :value) in callExternalFixtures.entries) {
       test(key, () async {
         final expectation = parseFixture(
