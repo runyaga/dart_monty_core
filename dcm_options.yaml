@@ -104,6 +104,13 @@ dcm:
     # --- Style & Formatting ---
     - prefer-match-file-name:
         exclude:
+          # test/** (6 issues, VERIFIED 2026-09-15). Test files are named for
+          # what they TEST, not for the first type they declare, and helpers
+          # declare support types first: _hierarchy_registry.dart:54 opens with
+          # `class WireFixture`, monty_compile_test.dart:18 with
+          # `final class _ThrowingBindings`. Renaming either to satisfy the rule
+          # would make the file harder to find, which is the opposite of what
+          # the rule exists for.
           - "test/**"
           # Result types declared before the abstraction they belong to, so the
           # FIRST class is never the file's name. VERIFIED 2026-09-15:
@@ -225,6 +232,14 @@ dcm:
     # --- Null Safety & Types ---
     - avoid-late-keyword:
         exclude:
+          # test/** (12 issues, VERIFIED 2026-09-15). Every one is the standard
+          # `late T x;` + `setUp(() { x = ...; })` pair -- e.g.
+          # repl_platform_args_test.dart:21-22. This one is not just tolerated,
+          # it is the RIGHT trade: dropping `late` means making the field
+          # nullable and writing `x!` at every use, which swaps this rule for
+          # avoid-non-null-assertion and makes the failure mode worse (a null
+          # deref deep in a test instead of a LateInitializationError naming the
+          # field that setUp forgot).
           - "test/**"
     - avoid-dynamic:
         exclude:
@@ -241,9 +256,32 @@ dcm:
           # `Map<String, dynamic>` is NOT flagged by this rule and is left
           # alone: it is the canonical json.decode return type and rewriting it
           # would touch 39 sites for no checking benefit.
+          #
+          # test/** (3 issues, VERIFIED 2026-09-15 by reading all three) is a
+          # separate judgement from the lib/ cleanup above, and they are not
+          # one kind:
+          #   monty_value_test.dart:858   `MontyValue.fromJson(<dynamic>[1, 'x'])`
+          #   inputs_encoder_test.dart:88 `toPythonLiteral(<dynamic>[])`
+          #     Explicit type arguments on list literals whose elements really
+          #     ARE heterogeneous (or absent). `<Object?>[1, 'x']` would work
+          #     and say the same thing, so these two are fixable -- they are
+          #     simply not worth a churn commit on their own.
+          #   monty_compile_test.dart:35  `dynamic noSuchMethod(Invocation)`
+          #     NOT fixable. Dart imposes that signature; narrowing the return
+          #     type does not compile.
           - "test/**"
     - avoid-non-null-assertion:
         exclude:
+          # test/** (75 issues, VERIFIED 2026-09-15). The dominant shape is a `!`
+          # immediately after the expectation that proves it, e.g.
+          # monty_typing_error_test.dart:29-31
+          #     expect(list, hasLength(1));
+          #     final e = list.singleOrNull!;
+          # If that `!` could fire, the `expect` above it already failed and the
+          # test is red either way -- so the assertion adds no risk a test does
+          # not already carry. This is the WEAKEST of the four test/** entries:
+          # 75 is a lot, and a `!` gives a TypeError where a checked access
+          # would name the field. Worth revisiting; not worth 75 edits today.
           - "test/**"
           # The ONLY remaining `!` in lib/. assignmentPattern is
           # RegExp(r'^([a-zA-Z]\w*)\s*=[^=]') -- group 1 is not optional, so a
