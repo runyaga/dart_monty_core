@@ -65,15 +65,12 @@ bool isExpression(String line) {
 (String, bool) captureLastExpression(String userCode) {
   final lines = userCode.split('\n');
 
-  // Find last non-empty, non-comment line index.
-  var lastIdx = -1;
-  for (var i = lines.length - 1; i >= 0; i--) {
-    final trimmed = lines[i].trim();
-    if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
-      lastIdx = i;
-      break;
-    }
-  }
+  // Find last non-empty, non-comment line index (-1 when there is none).
+  final lastIdx = lines.lastIndexWhere((line) {
+    final trimmed = line.trim();
+
+    return trimmed.isNotEmpty && !trimmed.startsWith('#');
+  });
 
   if (lastIdx < 0) return (userCode, false);
 

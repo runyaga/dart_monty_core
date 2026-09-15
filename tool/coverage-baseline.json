@@ -137,9 +137,9 @@
       "pct": 79.47
     },
     "lib/src/platform/code_capture.dart": {
-      "found": 47,
-      "hit": 0,
-      "pct": 0.0
+      "found": 46,
+      "hit": 46,
+      "pct": 100.0
     },
     "lib/src/platform/core_bindings.dart": {
       "found": 2,
@@ -333,8 +333,8 @@
     }
   },
   "total": {
-    "found": 4155,
-    "hit": 2317,
-    "pct": 55.76
+    "found": 4154,
+    "hit": 2363,
+    "pct": 56.88
   }
 }
