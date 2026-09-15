@@ -163,6 +163,24 @@ mapfile -t ANCHOR_FILES < <(
     | sort
 )
 
+# MAIN() MUST STAY EMPTY, and that is a SAFETY invariant, not a style choice.
+#
+# This anchor runs BACKGROUNDED (:197) and is still alive when
+# `dart run coverage:collect_coverage` starts (:226) -- it has to be, since
+# collect_coverage attaches to its VM service. So two `dart` processes are live
+# in the package root at once, and EVERY `dart run` re-bundles native assets,
+# rewriting `.dart_tool/lib/libdart_monty_core_native.so` IN PLACE with an
+# O_TRUNC copy (measured: same inode, new mtime, every invocation).
+#
+# Truncating a `dlopen`ed library is legal on Linux -- ETXTBSY guards only the
+# running executable -- and the holder's next page touch dies with
+# SIGBUS/BUS_ADRERR. Today the anchor is safe because importing a library does
+# NOT dlopen it; only an FFI CALL does, and main() is empty (measured: 19 mapped
+# .so in the anchor process, none of them ours).
+#
+# So: import freely, never CALL. If this ever executes an FFI function, the
+# concurrent truncation at :226 becomes an intermittent SIGBUS that reproduces
+# only under load. core#161; the real fix is upstream (dartbug.com/59668).
 write_anchor() {  # $1 = output path, $2.. = lib/ paths to import
   local out="$1"; shift
   {
