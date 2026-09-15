@@ -4,7 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, 'feat/**']
+    # EVERY branch a PR can target must be listed, or the PR silently runs NO
+    # ci.yaml jobs and shows green from `label` + `trufflehog` alone. Measured:
+    # #162/#163/#164 target `solpi/leg3-wip-...` and ran 0 test/analyze/ratchet
+    # jobs while presenting as passing -- worse than red, because a reviewer
+    # reads green as validated.
+    #
+    # The stack targets feat/** (#148, #150, #151) and main (#135), so those
+    # were covered; the gap was only the branches this session added.
+    branches: [main, 'feat/**', 'solpi/**', 'integration/**', 'fix/**']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
