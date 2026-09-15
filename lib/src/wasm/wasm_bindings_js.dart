@@ -27,7 +27,7 @@ Uint8List _requireSnapshotBuffer(_SnapshotResult result) {
   return buffer.toDart.asUint8List();
 }
 
-extension type _SnapshotResult._(JSObject _) implements JSObject {
+extension type const _SnapshotResult._(JSObject _) implements JSObject {
   external JSBoolean get ok;
   external JSString? get error;
   external JSArrayBuffer? get snapshotBuffer;

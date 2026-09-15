@@ -133,10 +133,14 @@ dcm:
     - no-boolean-literal-compare
     - no-empty-block:
         exclude:
-          # Intentional no-op dispose on non-owning wrappers
-          - "lib/src/platform/monty_platform.dart"
-          # _ThrowingBindings is a compile-error stub; dispose is
-          # deliberately a no-op to satisfy MontyCoreBindings
+          # _ThrowingBindings is a compile-error stub; dispose is deliberately
+          # a no-op to satisfy MontyCoreBindings.
+          #
+          # lib/src/platform/monty_platform.dart was listed here until
+          # 2026-09-15 for an "intentional no-op dispose". Measured: with the
+          # entry removed the rule reports ZERO issues in that file, so it was
+          # hiding nothing -- the same dormant-exclusion shape as the
+          # monty_session.dart entry deleted in 24a31da.
           - "test/unit/platform/monty_compile_test.dart"
     - no-equal-then-else
     - prefer-first
@@ -149,17 +153,15 @@ dcm:
     - avoid-unnecessary-parentheses
     - prefer-async-await:
         exclude:
-          # Isolate message dispatch and timeout-or-false chain
+          # VERIFIED 2026-09-15, both sites still earn it:
+          #   :538 `await f.timeout(5s).then((_) => true).onError((_,_) => false)`
+          #        -- a timeout-or-false chain; async/await needs an explicit
+          #        try/catch on TimeoutException to say the same thing.
+          #   :581 isolate message dispatch, returning completer.future.then(...)
+          #        from a non-async function.
           - "lib/src/ffi/native_isolate_bindings_impl.dart"
     - avoid-adjacent-strings
-    - prefer-declaring-const-constructor:
-        exclude:
-          # Extension types cannot have const constructors
-          - "lib/src/wasm/wasm_bindings_js.dart"
-          # NativeBindingsFfi has non-final fields (handle state)
-          - "lib/src/ffi/native_bindings_ffi.dart"
-          # Private constructor wraps MontySession which creates platform state
-          - "lib/src/monty.dart"
+    - prefer-declaring-const-constructor
     - format-comment
 
     # --- Immutability ---

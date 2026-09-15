@@ -20,7 +20,7 @@ class NativeBindingsFfi extends NativeBindings {
   ///
   /// With native asset hooks, the library is resolved automatically by the
   /// Dart runtime. No manual path resolution is needed.
-  NativeBindingsFfi();
+  const NativeBindingsFfi();
 
   @override
   int create(String code, {String? externalFunctions, String? scriptName}) {

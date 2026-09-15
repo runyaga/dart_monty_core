@@ -33,7 +33,7 @@ class Monty {
   factory Monty(String code, {String scriptName = 'main.py'}) =>
       Monty._(code: code, scriptName: scriptName);
 
-  Monty._({required String code, required String scriptName})
+  const Monty._({required String code, required String scriptName})
     : _code = code,
       _scriptName = scriptName;
 

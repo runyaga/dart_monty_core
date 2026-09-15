@@ -151,7 +151,7 @@ Future<void> _isolateMain(_InitMessage init) async {
   final receivePort = ReceivePort();
   init.mainSendPort.send(_ReadyMessage(receivePort.sendPort));
 
-  final nativeBindings = NativeBindingsFfi();
+  const nativeBindings = NativeBindingsFfi();
   final ffiCoreBindings = FfiCoreBindings(bindings: nativeBindings);
   var monty = MontyFfi.withCore(
     coreBindings: ffiCoreBindings,

@@ -17,9 +17,9 @@
       "pct": 71.36
     },
     "lib/src/ffi/monty_ffi.dart": {
-      "found": 34,
-      "hit": 7,
-      "pct": 20.59
+      "found": 33,
+      "hit": 6,
+      "pct": 18.18
     },
     "lib/src/ffi/monty_native.dart": {
       "found": 71,
@@ -42,7 +42,7 @@
       "pct": 0.0
     },
     "lib/src/ffi/native_isolate_bindings_impl.dart": {
-      "found": 203,
+      "found": 202,
       "hit": 0,
       "pct": 0.0
     },
@@ -333,8 +333,8 @@
     }
   },
   "total": {
-    "found": 4162,
-    "hit": 2364,
+    "found": 4160,
+    "hit": 2363,
     "pct": 56.8
   }
 }
