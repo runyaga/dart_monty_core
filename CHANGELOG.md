@@ -118,6 +118,51 @@ three surprise people, and one of them differs from upstream's default.
   The old name passed `limits: None`, meaning whoever supplied the bytes chose
   the resource limits.
 
+- **Two conformance fixtures were blamed on monty and were ours.**
+  `dataclass__call_field_error.py` and `dataclass__get_missing_attr_error.py`
+  were listed in `knownBrokenExtFixtures` as a "monty v0.0.23 regression:
+  dataclass attribute errors are not surfaced ... excType is null". The FFI
+  dispatch loop simply had no branch for an unknown METHOD on a host dataclass,
+  so it returned a SKIP where the WASM loop raised `AttributeError` — nothing
+  ever raised, hence the null. Both fixtures now run and pass on both backends
+  (`oracle_ffi_ext` +48 ~9 -> +51 ~7). The two loops answer identically; this
+  was the third time they had drifted.
+
+- **`dataclass__basic.py` diagnosed, and it stays declared.** It fails
+  identically on FFI and WASM because monty v0.0.23 sends an EMPTY argument
+  list for a method call and passes the receiver as `FunctionCall.object_id`,
+  which `repl_handle.rs:848` reduces to `object_id.is_some()` — so the
+  `AttributeError` cannot name the receiver's type. Validated against
+  `pydantic-monty` 0.0.23 directly: with the receiver resolved by `object_id`,
+  every assertion in the fixture passes. The fixture is correct and monty is
+  correct; fixing it is a wire change.
+
+- **Declared-failure lists are now checked in both directions.** A list saying
+  "skip this, it is broken" is write-only: the day the thing is fixed, the skip
+  persists and the fixture silently stops running. `oracle_ffi_ext_test.dart`
+  gains "every knownBrokenExtFixtures entry STILL fails", which found the two
+  stale entries above the moment it was written.
+
+- **`tool/check_dcm_exclusions.sh`** (gate, 0s): every `dcm_options.yaml`
+  exclusion naming a concrete path must exist on disk. Five dormant exclusions
+  were deleted across four rules — two of them naming
+  `lib/src/monty_session.dart`, removed in `22cbe08` months earlier and still
+  excluded, one of them carrying a comment about parameters of a file not in
+  the tree. `--deep` (CI only, needs the DCM credentials) additionally re-runs
+  the analyzer with exclusions stripped to catch entries that name a real file
+  but hide nothing.
+
+- **DCM is now enforced on `lib/` for three rules it had been excluded from.**
+  `avoid-non-null-assertion` (12 sites: field reads hoisted into promotable
+  locals, which is stricter than the `!` it replaces, plus an explicit error at
+  the JS boundary), `avoid-dynamic` (21 sites, all `List<dynamic>` at
+  json.decode boundaries, now `List<Object?>` — no public signature changed;
+  every site is a local, a switch pattern, or a private factory), and
+  `prefer-declaring-const-constructor` (whose three exclusions each rested on a
+  claim that turned out to be false — extension types *can* be const,
+  `NativeBindingsFfi` has no fields, and `Monty._` never touched
+  `MontySession`). The const constructors let three call sites become `const`.
+
 ### Breaking
 
 #### `MontySet` and `MontyFrozenSet` compare and hash order-insensitively
