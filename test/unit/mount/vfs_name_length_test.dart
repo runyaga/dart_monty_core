@@ -1,6 +1,8 @@
 @Tags(['unit'])
 library;
 
+import 'dart:convert';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -73,6 +75,47 @@ void main() {
 
     // BYTES, not characters: 'é' is one character and two bytes, so 128 of
     // them are 256 bytes and must be rejected.
+    // THE PATH BOUNDARY, which was unpinned. The COMPONENT boundary above
+    // asserts "exactly 255 is accepted"; nothing did the same for the 4096
+    // total-path limit, so `>` could become `>=` at
+    // memory_mounted_os_handler.dart:758 -- rejecting a path of exactly the
+    // maximum -- and the suite stayed green. Found by a mechanical mutation
+    // pass.
+    //
+    // MEASURED, with every ancestor created first so ENOENT cannot masquerade
+    // as the length rule (an earlier probe conflated the two):
+    //     4095 -> accepted
+    //     4096 -> accepted   <- this row
+    //     4097 -> [Errno 36] File name too long
+    //
+    // Falsifier: make that `>` a `>=`; only this test fails.
+    test('a total path of exactly 4096 bytes is accepted', () async {
+      final h = handler();
+
+      // Components must each stay within 255, so the path is built from
+      // 255-byte segments plus a final pad to land exactly on 4096.
+      final segs = <String>[];
+      var len = '/mnt'.length;
+      while (len + 1 + 255 <= 4096) {
+        segs.add('a' * 255);
+        len += 1 + 255;
+      }
+      final pad = 4096 - len - 1;
+      if (pad > 0) segs.add('a' * pad);
+
+      // Create every ancestor: this test is about the LENGTH rule, and a
+      // missing parent would reject the write for an unrelated reason.
+      final acc = StringBuffer('/mnt');
+      for (final seg in segs.take(segs.length - 1)) {
+        acc.write('/$seg');
+        await h('Path.mkdir', [acc.toString()], null);
+      }
+
+      final exact = '/mnt/${segs.join('/')}';
+      expect(utf8.encode(exact).length, 4096, reason: 'fixture must be exact');
+      expect(await h('Path.write_text', [exact, 'x'], null), 1);
+    });
+
     test('the limit counts bytes, not characters', () {
       final accented = '/mnt/${'é' * 128}';
 
