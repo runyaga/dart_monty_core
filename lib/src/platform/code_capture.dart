@@ -98,9 +98,15 @@ bool isExpression(String line) {
 String? _assignmentName(String segment) {
   final match = assignmentPattern.firstMatch(segment.trimLeft());
   if (match == null) return null;
-  final name = match.group(1)!;
+  // `group(1)` is String? because Match.group always is, even though group 1
+  // of `^([a-zA-Z]\w*)\s*=[^=]` cannot fail to participate in a successful
+  // match. This used to assert that with `!`. It does not need to: the
+  // function already returns null for "no assignment name here", so an
+  // impossible null folds into the contract instead of throwing.
+  final name = match.group(1);
+  if (name == null || name.startsWith('_')) return null;
 
-  return name.startsWith('_') ? null : name;
+  return name;
 }
 
 /// Extracts top-level assignment target names from [code].

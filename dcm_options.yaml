@@ -225,7 +225,9 @@ dcm:
     - avoid-dynamic
     - avoid-non-null-assertion:
         exclude:
-          # test/** (75 issues). CLASSIFIED ALL 75, 2026-09-15. Two earlier
+          # test/** (70 issues; was 75 before f96b0af fixed five). lib/ is
+          # now CLEAN of `!` and its entry is gone. CLASSIFIED ALL OF THEM,
+          # 2026-09-15. Two earlier
           # versions of this comment were wrong: the first generalised from
           # three samples, the second counted with a 3-line lookback that
           # pushed guarded sites into "other" whenever a multi-line `reason:`
@@ -263,19 +265,6 @@ dcm:
           # The 17 expect-guarded ones are genuinely fine: if the `!` could
           # fire, the expect above it already failed.
           - "test/**"
-          # The ONLY remaining `!` in lib/. assignmentPattern is
-          # RegExp(r'^([a-zA-Z]\w*)\s*=[^=]') -- group 1 is not optional, so a
-          # successful match always has it, and Match.group returns String?
-          # regardless. There is no form of this that drops the assertion.
-          #
-          # The other five files were listed here until 2026-09-15. Every `!`
-          # in them is gone: field reads hoisted into promotable locals
-          # (monty_progress, base_monty_platform, wasm_core_bindings,
-          # native_isolate_bindings_impl) and an explicit StateError at the JS
-          # boundary (wasm_bindings_js). Promotion is also STRICTER than the
-          # assertion was: a local cannot be reassigned between the null check
-          # and the use, which `_exitCompleter!` and `_sessionId!` both allowed.
-          - "lib/src/platform/code_capture.dart"
     - avoid-accessing-other-classes-private-members
     - avoid-default-tostring
     - prefer-abstract-final-static-class
