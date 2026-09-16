@@ -27,6 +27,7 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 /// True on dart2js, where `int` and `double` are one runtime type.
 bool get _isJs => identical(1, 1.0);
@@ -64,7 +65,7 @@ void runFloatRoundtripTests() {
       expect(r.error, isNull);
       // 0.0 == -0.0, so comparing values would pass on the very case this is
       // meant to catch. Check the sign bit.
-      expect((r.value.dartValue! as double).isNegative, isTrue);
+      expect(dartValueOf<double>(r.value).isNegative, isTrue);
     });
 
     test('non-finite floats still work', () async {

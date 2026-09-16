@@ -141,7 +141,7 @@ out
         );
 
         expect(result.result.error, isNull);
-        final tuple = result.result.value.dartValue! as List<Object?>;
+        final tuple = dartValueOf<List<Object?>>(result.result.value);
         expect(tuple.firstOrNull, 'err');
         expect(
           tuple.elementAtOrNull(1),
@@ -375,7 +375,7 @@ results = await asyncio.gather(fetch("int"), fetch("str"), fetch("list"), fetch(
       );
 
       expect(result.result.error, isNull);
-      final list = result.result.value.dartValue! as List;
+      final list = dartValueOf<List<Object?>>(result.result.value);
       // First four entries are the type names; last four are the values.
       expect(list.sublist(0, 4), ['int', 'str', 'list', 'dict']);
       expect(list.sublist(4), [

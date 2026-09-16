@@ -81,3 +81,21 @@ T montyArg<T>(List<MontyValue> args, int i) {
 
   return dart as T;
 }
+
+/// The Dart value behind a [MontyValue], as [T].
+///
+/// Replaces `someResult.value.dartValue! as T`. `dartValue` is `Object?`
+/// because MontyNone has no Dart counterpart, so the `!` was asserting "this
+/// result is not None" — a real claim, made silently. Stating it gives a
+/// failure that shows what the value actually was.
+///
+/// Distinct from [montyArg], which indexes a pending call's argument list and
+/// has TWO nulls to check. This one already has the MontyValue in hand.
+T dartValueOf<T>(MontyValue value) {
+  final dart = value.dartValue;
+  if (dart == null) {
+    fail('expected a $T, but this Monty value has no Dart value: $value');
+  }
+
+  return dart as T;
+}

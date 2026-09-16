@@ -8,6 +8,7 @@
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 void runMountDirTests() {
   group('MountDir + memoryMountedOsHandler', () {
@@ -97,7 +98,7 @@ void runMountDirTests() {
       ).run(osHandler: handler);
 
       expect(r.error, isNull);
-      final tuple = r.value.dartValue! as List<Object?>;
+      final tuple = dartValueOf<List<Object?>>(r.value);
       expect(tuple.firstOrNull, 'caught');
       expect(tuple.elementAtOrNull(1), contains('/data/missing.txt'));
     });
