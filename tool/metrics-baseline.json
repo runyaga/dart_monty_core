@@ -1,0 +1,33 @@
+{
+  "_dcm_version": "1.37.0",
+  "by_file": {
+    "lib/src/ffi/ffi_core_bindings.dart": 1,
+    "lib/src/ffi/native_bindings.dart": 1,
+    "lib/src/ffi/native_bindings_ffi.dart": 3,
+    "lib/src/ffi/native_isolate_bindings_impl.dart": 3,
+    "lib/src/monty.dart": 1,
+    "lib/src/mount/memory_mounted_os_handler.dart": 2,
+    "lib/src/mount/open_call.dart": 3,
+    "lib/src/platform/base_monty_platform.dart": 1,
+    "lib/src/platform/inputs_encoder.dart": 2,
+    "lib/src/platform/mock_monty_platform.dart": 1,
+    "lib/src/platform/monty_core_bindings.dart": 1,
+    "lib/src/platform/monty_value.dart": 1,
+    "lib/src/repl/ffi_repl_bindings.dart": 1,
+    "lib/src/repl/monty_repl.dart": 7,
+    "lib/src/repl/repl_platform.dart": 1,
+    "lib/src/repl/wasm_repl_bindings.dart": 1,
+    "lib/src/wasm/stub/wasm_bindings_js.dart": 1,
+    "lib/src/wasm/wasm_bindings.dart": 1,
+    "lib/src/wasm/wasm_bindings_js.dart": 1,
+    "lib/src/wasm/wasm_core_bindings.dart": 2
+  },
+  "by_metric": {
+    "cyclomatic-complexity": 6,
+    "lines-of-code": 11,
+    "maximum-nesting-level": 1,
+    "number-of-methods": 15,
+    "number-of-parameters": 2
+  },
+  "total": 35
+}

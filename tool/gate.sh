@@ -201,6 +201,7 @@ s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example --
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
 s  unit_web      dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
 s  dcm_ratchet   bash tool/dcm_ratchet.sh
+s  metrics_ratch bash tool/metrics_ratchet.sh
 ns cargo_fmt     cargo fmt --check
 ns cargo_clippy  cargo clippy --all-targets -- -D warnings
 ns cargo_test    cargo test

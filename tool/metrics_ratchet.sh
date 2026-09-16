@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# =============================================================================
+# DCM metrics ratchet — fail on any NEW complexity violation above the baseline
+# =============================================================================
+# `dcm calculate-metrics` was run by NOTHING. Measured 2026-09-15: zero hits for
+# "calculate-metrics" in tool/gate.sh and zero in .github/workflows/ci.yaml —
+# the only subcommand either used was `dcm analyze`. So 35 threshold breaches in
+# lib/ sat unenforced, including a 633-line function against a 50 threshold and
+# a cyclomatic complexity of 70 against 10.
+#
+# WORSE, AND THE REASON THIS IS A SEPARATE GATE: the inline suppressions do not
+# apply. `dcm analyze` honours `// ignore: lines-of-code`; `calculate-metrics`
+# does NOT. Measured: wasm_core_bindings.dart:337 carries
+# `// ignore: cyclomatic-complexity, lines-of-code` and the metrics report still
+# flags that method at 72 lines. Fourteen of the repo's twenty-two inline DCM
+# ignores name a metric, so they were annotations against a check that never
+# ran — which reads to a maintainer as "handled".
+#
+# Same ratchet shape as tool/dcm_ratchet.sh, and the same two properties that
+# make it hold:
+#   - a PR cannot lower its own bar (RATCHET_BASE_REF)
+#   - it clicks BOTH ways: an improvement must be captured, not pocketed
+#
+# Usage: bash tool/metrics_ratchet.sh [path/to/baseline.json]
+# Baseline default: tool/metrics-baseline.json  (regenerate with --update)
+# =============================================================================
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+BASELINE="${1:-tool/metrics-baseline.json}"
+if [ "${1:-}" = "--update" ]; then
+  BASELINE=tool/metrics-baseline.json; UPDATE=1
+else
+  UPDATE=0
+fi
+
+# THE BASELINE A PR IS MEASURED AGAINST MUST NOT BE ONE THE PR CAN EDIT.
+# `--update` rewrites this file and exits 0, so a lowered baseline committed
+# next to the regression it excuses would pass CI. Reading the COMPARISON copy
+# from the base branch means a PR cannot lower its own bar. See the longer
+# reasoning in tool/coverage_ratchet.sh.
+if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  # The ref must RESOLVE first: a failed fetch is otherwise indistinguishable
+  # from "this PR introduces the baseline", and we would silently compare the
+  # PR against its own copy while reporting PASS.
+  if ! git rev-parse --verify --quiet "${RATCHET_BASE_REF}^{commit}" >/dev/null; then
+    echo "FAIL: RATCHET_BASE_REF=${RATCHET_BASE_REF} does not resolve."
+    echo "  Refusing to fall back to the working copy — that would measure the"
+    echo "  PR against itself and report PASS."
+    echo "  Fix the fetch (CI: git fetch --no-tags --depth=1 origin \$GITHUB_BASE_REF),"
+    echo "  or unset RATCHET_BASE_REF to run without a base comparison."
+    exit 1
+  fi
+  BASE_COPY="$(mktemp)"
+  if git show "${RATCHET_BASE_REF}:${BASELINE}" > "$BASE_COPY" 2>/dev/null; then
+    BASE_V=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('_dcm_version',''))" "$BASE_COPY" 2>/dev/null)
+    CUR_V=$(python3 -c "import json;print(json.load(open('tool/metrics-baseline.json')).get('_dcm_version',''))" 2>/dev/null)
+    if [ -n "$BASE_V" ] && [ "$BASE_V" != "$CUR_V" ]; then
+      rm -f "$BASE_COPY"
+      echo "note: ${RATCHET_BASE_REF} baseline was made by dcm $BASE_V, this tree"
+      echo "      expects $CUR_V. Comparing across analyzer versions is meaningless,"
+      echo "      so falling back to the working copy. REVIEW THE BASELINE DIFF."
+    else
+      echo "note: comparing against ${RATCHET_BASE_REF}:${BASELINE}, not the working copy."
+      BASELINE="$BASE_COPY"
+    fi
+  else
+    rm -f "$BASE_COPY"
+    echo "note: no ${BASELINE} on ${RATCHET_BASE_REF} -- this PR introduces it."
+  fi
+fi
+
+# A gate that silently skips is not a gate. Skipping is allowed ONLY when the
+# caller opts in explicitly; anywhere this is relied upon, a missing dcm must
+# FAIL, because the alternative is a green tick that checked nothing.
+if ! command -v dcm >/dev/null 2>&1; then
+  if [ "${METRICS_RATCHET_ALLOW_MISSING:-0}" = "1" ]; then
+    echo "dcm not installed — SKIPPING (METRICS_RATCHET_ALLOW_MISSING=1)"
+    exit 0
+  fi
+  echo "FAIL: dcm is not installed, so the metrics ratchet cannot run."
+  echo "  Install:  brew tap CQLabs/dcm && brew install dcm"
+  echo "  To skip deliberately on a machine without it:"
+  echo "    METRICS_RATCHET_ALLOW_MISSING=1 bash tool/metrics_ratchet.sh"
+  exit 1
+fi
+
+# Thresholds live in dcm_options.yaml, so a baseline is only comparable to a
+# report from the same dcm. Same pin as tool/dcm_ratchet.sh.
+HAVE_V=$(dcm --version 2>&1 | tr -d '\r' | awk '{print $NF}')
+WANT_V=$(python3 -c "import json;print(json.load(open('tool/metrics-baseline.json')).get('_dcm_version',''))" 2>/dev/null)
+if [ -n "$WANT_V" ] && [ "$HAVE_V" != "$WANT_V" ]; then
+  echo "FAIL: dcm version mismatch — baseline was generated by $WANT_V, this is $HAVE_V."
+  echo "  Counts are not comparable across versions. Install $WANT_V, or bump the"
+  echo "  pin AND regenerate in the same commit: bash tool/metrics_ratchet.sh --update"
+  exit 1
+fi
+
+# DCM is commercial: on CI it refuses without credentials, and it only consults
+# them when it believes it is on CI — so CI=true is required alongside them, not
+# instead of them. Measured in tool/dcm_ratchet.sh's header.
+DCM_AUTH=()
+DCM_CI_ENV=()
+if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
+  DCM_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
+  DCM_CI_ENV=(env CI=true)
+fi
+
+TMP=$(mktemp)
+ERR=$(mktemp)
+# stderr is CAPTURED, not discarded: a gate that hides why it failed is barely
+# better than one that cannot fail.
+"${DCM_CI_ENV[@]}" dcm calculate-metrics lib --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
+DCM_RC=$?
+
+if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$TMP" 2>/dev/null; then
+  echo "FAIL: \`dcm calculate-metrics --reporter=json\` produced no parseable JSON (exit $DCM_RC)."
+  echo "  This is the gate failing to RUN, which is not the same as the gate passing."
+  echo "  dcm version: $(dcm --version 2>&1 | head -1)"
+  echo "  --- first 20 lines of stderr ---"
+  head -20 "$ERR" | sed 's/^/    /'
+  rm -f "$TMP" "$ERR"
+  exit 1
+fi
+rm -f "$ERR"
+
+BASELINE="$BASELINE" UPDATE="$UPDATE" TMP="$TMP" HAVE_V="$HAVE_V" python3 - <<'PY'
+import json, os, sys, collections
+
+tmp = os.environ['TMP']
+baseline_path = os.environ['BASELINE']
+update = os.environ['UPDATE'] == '1'
+
+d = json.load(open(tmp))
+metrics, files = collections.Counter(), collections.Counter()
+for r in d['metricResults']:
+    path = r['path'].split('dart_monty_core/')[-1]
+    for iss in r.get('issues', []):
+        metrics[iss['id']] += 1
+        files[path] += 1
+current = {
+    'total': sum(metrics.values()),
+    'by_metric': dict(metrics),
+    'by_file': dict(files),
+    '_dcm_version': os.environ['HAVE_V'],
+}
+
+if update:
+    json.dump(current, open(baseline_path, 'w'), indent=2, sort_keys=True)
+    print(f"baseline updated: {current['total']} violation(s), "
+          f"{len(metrics)} metric(s), {len(files)} file(s)")
+    sys.exit(0)
+
+if not os.path.exists(baseline_path):
+    print(f"FAIL: no baseline at {baseline_path} — run: bash tool/metrics_ratchet.sh --update")
+    sys.exit(1)
+
+base = json.load(open(baseline_path))
+bt, bm, bf = base['total'], base['by_metric'], base['by_file']
+
+# A BASELINE THAT LIES IS WORSE THAN A HIGH ONE, because the gate agrees with
+# it. tool/dcm_ratchet.sh measured exactly this: hand-editing `total` while
+# by_rule still summed to the old figure reported PASS, since the total was
+# never compared to anything.
+if bt != sum(bm.values()):
+    print(f"FATAL: {baseline_path} is inconsistent -- total {bt} but by_metric "
+          f"sums to {sum(bm.values())}. Regenerate: "
+          f"bash tool/metrics_ratchet.sh --update")
+    sys.exit(2)
+
+violations = []
+for metric, n in sorted(metrics.items()):
+    prev = bm.get(metric, 0)
+    if prev == 0:
+        violations.append(f"NEW METRIC      {metric}: {n} violation(s)")
+    elif n > prev:
+        violations.append(f"METRIC INCREASE {metric}: {prev} -> {n}")
+
+for path, n in sorted(files.items()):
+    prev = bf.get(path, 0)
+    if prev == 0:
+        violations.append(f"NEW FILE        {path}: {n} violation(s)")
+    elif n > prev:
+        violations.append(f"FILE INCREASE   {path}: {prev} -> {n}")
+
+print(f"metrics: {current['total']} violation(s) vs baseline {bt}  "
+      f"({len(metrics)} metrics / {len(files)} files vs {len(bm)} / {len(bf)})")
+
+if violations:
+    print(f"\nFAIL — {len(violations)} ratchet violation(s):")
+    for v in violations:
+        print(f"  {v}")
+    print("\nSplit the declaration, or if intentional: "
+          "bash tool/metrics_ratchet.sh --update")
+    sys.exit(1)
+
+# A RATCHET THAT ONLY CLICKS ONE WAY IS NOT A RATCHET. An improvement that is
+# not CAPTURED lets the count drift straight back up with the gate still green.
+if current['total'] < bt:
+    print(f"\nFAIL — {bt - current['total']} fewer violation(s) than baseline, "
+          f"and the baseline was not updated.")
+    print("  An improvement has to be recorded or it is not held: the count can")
+    print("  drift straight back to the old number with this gate still green.")
+    print("  Capture it:  bash tool/metrics_ratchet.sh --update")
+    sys.exit(1)
+
+print("PASS — no new complexity violations above baseline")
+PY
+RC=$?
+rm -f "$TMP"
+exit $RC

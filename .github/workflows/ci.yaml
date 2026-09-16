@@ -345,6 +345,29 @@ jobs:
             git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
           fi
           bash tool/dcm_ratchet.sh
+      - name: DCM metrics ratchet (complexity)
+        # `dcm calculate-metrics` was run by NOTHING until this step: zero hits
+        # for it in tool/gate.sh and zero here, while `dcm analyze` ran in both.
+        # 35 threshold breaches in lib/ sat unenforced, including a 633-line
+        # function against a 50 threshold and cyclomatic 70 against 10.
+        #
+        # It is a SEPARATE step from `dcm analyze` because the inline
+        # suppressions do not carry over: `analyze` honours
+        # `// ignore: lines-of-code`, `calculate-metrics` does not. Fourteen of
+        # this repo's twenty-two inline DCM ignores name a metric, so they were
+        # annotations against a check that never ran.
+        #
+        # RATCHET_BASE_REF, same as every other ratchet here, is what stops a PR
+        # lowering its own bar.
+        env:
+          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
+          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
+          RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          if [ -n "${RATCHET_BASE_REF:-}" ]; then
+            git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
+          fi
+          bash tool/metrics_ratchet.sh
       - name: DCM exclusions still hide something (--deep)
         # tool/gate.sh runs this script WITHOUT --deep: the fast path only
         # checks that each excluded path exists on disk, because --deep costs a
