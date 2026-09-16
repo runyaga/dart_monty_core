@@ -166,6 +166,7 @@ dart test \
   test/integration/wasm_monty_exec_externals_test.dart \
   test/integration/wasm_mount_dir_test.dart \
   test/integration/wasm_open_test.dart \
+  test/integration/wasm_output_depth_test.dart \
   test/integration/wasm_oscall_decline_test.dart \
   test/integration/wasm_float_roundtrip_test.dart \
   test/integration/wasm_multi_repl_test.dart \
