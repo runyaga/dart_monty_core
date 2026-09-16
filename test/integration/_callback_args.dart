@@ -21,18 +21,31 @@ import 'package:test/test.dart';
 /// test/** and the collection rule was not — so the config, not a judgement,
 /// picked the form.
 ///
-/// It also picked the worse failure. On a short `args` list `firstOrNull!`
-/// throws "Null check operator used on a null value", which names nothing;
-/// `.first` throws StateError("No element"), which names the problem but not
-/// the callback. This names both, and satisfies both rules: `elementAtOrNull`
-/// is the safe accessor, and `fail` returns `Never`, so no assertion is needed
-/// to promote the result.
+/// It also picked the worse failure message. Measured, same short-args case:
+///
+///     OLD -> RuntimeError: Null check operator used on a null value
+///     NEW -> RuntimeError: host callback needs an int at index 1,
+///                          got 1 argument(s): [41]
+///
+/// WHAT `fail` DOES AND DOES NOT DO HERE. `fail` returns `Never`, which is why
+/// `value` promotes and no `!` is needed — that part is why both rules stay
+/// quiet. But when the callback is invoked by the LIBRARY rather than by the
+/// test body, the TestFailure it throws does NOT fail the test directly: the
+/// dispatch loop catches it like any other callback error and delivers it to
+/// the sandbox as a Python RuntimeError. Measured 2026-09-16 — a test whose
+/// callback failed this way still reported "All tests passed".
+///
+/// That is NOT a regression from this helper: `args.firstOrNull! as T` was
+/// swallowed identically, and the probe above shows both arriving as
+/// RuntimeError. The difference is only the message, and the message is the
+/// whole value. Do not read `fail` here as a guarantee that a wrong arg count
+/// turns the suite red — assert on the run's result for that.
 T callbackArg<T>(List<Object?> args, int i) {
   final value = args.elementAtOrNull(i);
   if (value == null) {
     fail(
-      'host callback needed a $T at index $i, but got ${args.length} '
-      'argument(s): $args',
+      'host callback needs a value of type $T at index $i, '
+      'got ${args.length} argument(s): $args',
     );
   }
 

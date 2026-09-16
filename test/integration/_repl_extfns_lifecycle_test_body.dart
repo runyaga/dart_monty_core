@@ -84,22 +84,31 @@ void runReplExtFnsLifecycleTests() {
         final repl = MontyRepl();
         addTearDown(repl.dispose);
 
-        // Feed 1: register `a`.
-        await repl.feedRun(
-          'r = a(5)',
+        // Feed 1: register `a`. The result is ASSERTED, not discarded --
+        // codex found that dropping it lets the callback fail unnoticed. A
+        // failure inside a host callback does not fail the test on its own:
+        // monty_repl.dart:554 catches it and hands it to the sandbox as a
+        // script error, so the only way it becomes visible is to look at what
+        // the feed returned.
+        final feed1 = await repl.feedRun(
+          'r = a(5)\nr',
           externalFunctions: {
             'a': (args, _) => callbackArg<int>(args, 0) + 1,
           },
         );
+        expect(feed1.error, isNull, reason: 'feed 1 must not error');
+        expect(feed1.value, const MontyInt(6), reason: 'a(5) is 5 + 1');
 
         // Feed 2: register `b` instead. `a` must no longer resolve
-        // when referenced again.
-        await repl.feedRun(
-          'r = b(5)',
+        // when referenced again. Asserted for the same reason.
+        final feed2 = await repl.feedRun(
+          'r = b(5)\nr',
           externalFunctions: {
             'b': (args, _) => callbackArg<int>(args, 0) * 2,
           },
         );
+        expect(feed2.error, isNull, reason: 'feed 2 must not error');
+        expect(feed2.value, const MontyInt(10), reason: 'b(5) is 5 * 2');
 
         final r = await repl.feedRun('r = a(5)');
         expect(r.error?.excType, 'NameError');
