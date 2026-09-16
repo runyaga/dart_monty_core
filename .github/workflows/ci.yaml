@@ -50,6 +50,17 @@ jobs:
             code:
               - 'lib/**'
               - 'test/**'
+              # `example/**` IS CODE. Without it, editing only
+              # example/*.dart left `code` false and `test-examples` — the
+              # ONLY job that runs those programs — did not run at all. A
+              # broken example merged green, because the single check that
+              # could catch it was the one the change switched off.
+              #
+              # Exactly the failure the `docs:` output below was added for,
+              # one directory over. The examples are analysed and formatted
+              # by the gate job, so they are code by every other measure
+              # this workflow applies.
+              - 'example/**'
               - 'native/**'
               - 'hook/**'
               - 'tool/**'
