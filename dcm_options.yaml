@@ -136,23 +136,6 @@ dcm:
           # Helper types declared before the main class: CoreRunResult and
           # CoreProgressResult precede MontyCoreBindings.
           - "lib/src/platform/core_bindings.dart"
-          # NOT the same reason, despite sitting under that heading until
-          # 2026-09-15. This file declares exactly ONE class and nothing
-          # precedes it. It is the VM half of a conditional import: it must be
-          # named `WasmBindingsJs` to stand in for wasm_bindings_js.dart
-          # (monty_wasm.dart:10-11), and the two halves must have distinct
-          # import paths because both coexist.
-          #
-          # An earlier version of this comment said the mismatch was
-          # "structural" and could "never be fixed". CODEX CORRECTED THAT,
-          # 2026-09-15, and it is right: distinct PATHS do not require distinct
-          # BASENAMES. Moving the pair to e.g. wasm/js/wasm_bindings_js.dart
-          # and wasm/stub/wasm_bindings_js.dart would satisfy the rule and keep
-          # the conditional import working, since monty_wasm.dart names full
-          # paths. So this is a deliberate layout choice, not an impossibility
-          # -- excluded because the move is not worth it, which is a weaker and
-          # truer claim.
-          - "lib/src/wasm/wasm_bindings_js_stub.dart"
           # MockCallHistory (:17) is declared before MockMontyPlatform (:132).
           - "lib/src/platform/mock_monty_platform.dart"
     - prefer-immediate-return

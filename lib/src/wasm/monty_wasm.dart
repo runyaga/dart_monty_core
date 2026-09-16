@@ -6,9 +6,9 @@ import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_snapshot_capable.dart';
 import 'package:dart_monty_core/src/platform/wire_json.dart';
-import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
-import 'package:dart_monty_core/src/wasm/wasm_bindings_js_stub.dart'
+import 'package:dart_monty_core/src/wasm/stub/wasm_bindings_js.dart'
     if (dart.library.js_interop) 'package:dart_monty_core/src/wasm/wasm_bindings_js.dart';
+import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 import 'package:dart_monty_core/src/wasm/wasm_core_bindings.dart';
 
 /// Web WASM implementation of [MontyPlatform].

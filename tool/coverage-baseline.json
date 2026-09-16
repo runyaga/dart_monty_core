@@ -306,6 +306,11 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/src/wasm/stub/wasm_bindings_js.dart": {
+      "found": 74,
+      "hit": 0,
+      "pct": 0.0
+    },
     "lib/src/wasm/wasm_bindings.dart": {
       "found": 4,
       "hit": 0,
@@ -313,11 +318,6 @@
     },
     "lib/src/wasm/wasm_bindings_js.dart": {
       "found": 558,
-      "hit": 0,
-      "pct": 0.0
-    },
-    "lib/src/wasm/wasm_bindings_js_stub.dart": {
-      "found": 74,
       "hit": 0,
       "pct": 0.0
     },
