@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/platform/base_monty_platform.dart'
     show encodeLimitsJson;
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/inputs_encoder.dart'
     as inputs_encoder;
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';

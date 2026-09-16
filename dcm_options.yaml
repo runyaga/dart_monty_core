@@ -104,40 +104,31 @@ dcm:
     # --- Style & Formatting ---
     - prefer-match-file-name:
         exclude:
-          # test/** (6 issues, VERIFIED 2026-09-15). Test files are named for
-          # what they TEST, not for the first type they declare, and helpers
-          # declare support types first: _hierarchy_registry.dart:54 opens with
-          # `class WireFixture`, monty_compile_test.dart:18 with
-          # `final class _ThrowingBindings`. Renaming either to satisfy the rule
-          # would make the file harder to find, which is the opposite of what
-          # the rule exists for.
+          # test/** (6 issues). Test files are named for what they TEST, not
+          # for the first type they declare, and helpers declare support types
+          # first: _hierarchy_registry.dart:54 opens with `class WireFixture`,
+          # monty_compile_test.dart:18 with `final class _ThrowingBindings`.
+          # Renaming either to satisfy the rule would make the file harder to
+          # find, which is the opposite of what the rule exists for.
           - "test/**"
-          # Result types declared before the abstraction they belong to, so the
-          # FIRST class is never the file's name. VERIFIED 2026-09-15:
-          #   native_bindings.dart -> RunResult, ProgressResult,
-          #                           WireFormatMismatch, then NativeBindings
-          #   wasm_bindings.dart   -> WasmRunResult, WasmProgressResult,
-          #                           WasmDiscoverResult, then WasmBindings
-          # (The previous comment here said "Multiple typedefs + class".
-          # Neither file declares a single typedef — `grep -c '^typedef ' -> 0`
-          # on both. They are classes.)
-          - "lib/**/native_bindings.dart"
-          - "lib/**/wasm_bindings.dart"
           # Part files (`part of 'monty_value.dart';` at line 1 of each). The
           # first type is a subclass OF the sealed MontyValue -- the subclasses
-          # themselves are `final`, which codex flagged as ambiguous in the
-          # previous wording. VERIFIED, first types are MontyNone:9,
+          # themselves are `final`. VERIFIED, first types are MontyNone:9,
           # MontyBytes:9, MontyDate:9, MontyEllipsis:15 respectively. None can
-          # match its file name, because one file holds several of them.
+          # match its file name, because one file holds several of them, and
+          # the only fix would be 26 files for 26 MontyValue subtypes.
+          #
+          # Four sibling entries were deleted on 2026-09-16 because their files
+          # COULD be fixed, and were: native_bindings.dart, wasm_bindings.dart
+          # and mock_monty_platform.dart just needed their namesake class moved
+          # ahead of the result types it returns, and core_bindings.dart was
+          # renamed monty_core_bindings.dart to match MontyCoreBindings -- the
+          # same shape as its siblings wasm_core_bindings and ffi_core_bindings
+          # already had.
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_datetime.dart"
           - "lib/src/platform/monty_value_structured.dart"
-          # Helper types declared before the main class: CoreRunResult and
-          # CoreProgressResult precede MontyCoreBindings.
-          - "lib/src/platform/core_bindings.dart"
-          # MockCallHistory (:17) is declared before MockMontyPlatform (:132).
-          - "lib/src/platform/mock_monty_platform.dart"
     - prefer-immediate-return
     - prefer-commenting-analyzer-ignores
     - prefer-conditional-expressions

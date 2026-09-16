@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/wire_json.dart';

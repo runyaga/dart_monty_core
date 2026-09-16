@@ -1,117 +1,5 @@
 import 'dart:typed_data';
 
-/// Result of [NativeBindings.run].
-///
-/// Contains either a JSON result string or an error message.
-final class RunResult {
-  /// Creates a [RunResult].
-  const RunResult({required this.tag, this.resultJson, this.errorMessage});
-
-  /// `0` = OK, `1` = error.
-  final int tag;
-
-  /// JSON string with the execution result (when tag == 0).
-  final String? resultJson;
-
-  /// Error message (when tag == 1).
-  final String? errorMessage;
-}
-
-/// Result of [NativeBindings.start], [NativeBindings.resume], and
-/// [NativeBindings.resumeWithError].
-///
-/// Contains a progress tag and, depending on the tag, accessor data.
-final class ProgressResult {
-  /// Creates a [ProgressResult].
-  const ProgressResult({
-    required this.tag,
-    this.functionName,
-    this.argumentsJson,
-    this.kwargsJson,
-    this.callId,
-    this.methodCall,
-    this.resultJson,
-    this.isError,
-    this.errorMessage,
-    this.futureCallIdsJson,
-    this.variableName,
-  });
-
-  /// `0` = complete, `1` = pending, `2` = error, `3` = resolve_futures.
-  final int tag;
-
-  /// Pending external function name (when tag == 1).
-  final String? functionName;
-
-  /// Pending function arguments as JSON array (when tag == 1).
-  final String? argumentsJson;
-
-  /// Pending keyword arguments as JSON object (when tag == 1).
-  final String? kwargsJson;
-
-  /// Unique call identifier for this pending call (when tag == 1).
-  final int? callId;
-
-  /// Whether this is a method call (when tag == 1).
-  final bool? methodCall;
-
-  /// Completed result as JSON string (when tag == 0).
-  final String? resultJson;
-
-  /// Whether the completed result is an error: `1` = yes, `0` = no,
-  /// `-1` = not in complete state (when tag == 0).
-  final int? isError;
-
-  /// Error message from the C API (when tag == 2).
-  final String? errorMessage;
-
-  /// JSON array of pending future call IDs (when tag == 3).
-  final String? futureCallIdsJson;
-
-  /// Variable name being looked up (when tag == 5).
-  final String? variableName;
-}
-
-/// The value-encoding wire format version this Dart code expects.
-///
-/// Must equal `WIRE_FORMAT_VERSION` in `native/src/convert.rs`. Bump both in
-/// the SAME commit as any change to what the encoder emits or the decoder
-/// accepts.
-///
-/// **Scope: the VALUE encoding only** — what `monty_object_to_json` emits and
-/// `json_to_monty_object` accepts. It does **not** cover the protocol frames
-/// (`callId`, `methodCall`, `errorType`, `args`, `kwargs`, `architecture`,
-/// `diagnosticsJson`, …), which today have **no** versioning of any kind —
-/// verified, not assumed. Do not read this constant as covering "the wire".
-/// A protocol-frame change can still skew silently; that gap is real and
-/// unclosed.
-///
-/// This exists because `lib/assets/*.wasm` and the JS bridge are COMMITTED
-/// build artefacts and the wasm build is not byte-reproducible — an unchanged
-/// tree yields different bytes — so `git diff` on the blob cannot tell you
-/// whether the asset matches the crate. A version integer can, and a mismatch
-/// then fails loudly at init instead of mis-decoding values later.
-const int expectedWireFormatVersion = 5;
-
-/// Thrown at init when the native library's wire format does not match
-/// [expectedWireFormatVersion].
-class WireFormatMismatch implements Exception {
-  /// Creates a [WireFormatMismatch].
-  const WireFormatMismatch(this.expected, this.actual);
-
-  /// What this Dart code was built against.
-  final int expected;
-
-  /// What the loaded native library reports.
-  final int actual;
-
-  @override
-  String toString() =>
-      'WireFormatMismatch: this build expects wire format v$expected but the '
-      'loaded native library emits v$actual. The committed assets in '
-      'lib/assets/ are stale relative to native/ — run tool/prebuild.sh.';
-}
-
 /// Abstract interface over the 17 native C functions.
 ///
 /// Uses `int` handles (the pointer address) instead of `Pointer<T>` types
@@ -286,4 +174,116 @@ abstract class NativeBindings {
   /// snapshot cannot carry. Both were previously dropped, which let a
   /// `MontyRepl(limits: ...)` restore an unbounded snapshot and run unbounded.
   int replRestore(Uint8List data, {String? limitsJson, List<String>? extFns});
+}
+
+/// Result of [NativeBindings.run].
+///
+/// Contains either a JSON result string or an error message.
+final class RunResult {
+  /// Creates a [RunResult].
+  const RunResult({required this.tag, this.resultJson, this.errorMessage});
+
+  /// `0` = OK, `1` = error.
+  final int tag;
+
+  /// JSON string with the execution result (when tag == 0).
+  final String? resultJson;
+
+  /// Error message (when tag == 1).
+  final String? errorMessage;
+}
+
+/// Result of [NativeBindings.start], [NativeBindings.resume], and
+/// [NativeBindings.resumeWithError].
+///
+/// Contains a progress tag and, depending on the tag, accessor data.
+final class ProgressResult {
+  /// Creates a [ProgressResult].
+  const ProgressResult({
+    required this.tag,
+    this.functionName,
+    this.argumentsJson,
+    this.kwargsJson,
+    this.callId,
+    this.methodCall,
+    this.resultJson,
+    this.isError,
+    this.errorMessage,
+    this.futureCallIdsJson,
+    this.variableName,
+  });
+
+  /// `0` = complete, `1` = pending, `2` = error, `3` = resolve_futures.
+  final int tag;
+
+  /// Pending external function name (when tag == 1).
+  final String? functionName;
+
+  /// Pending function arguments as JSON array (when tag == 1).
+  final String? argumentsJson;
+
+  /// Pending keyword arguments as JSON object (when tag == 1).
+  final String? kwargsJson;
+
+  /// Unique call identifier for this pending call (when tag == 1).
+  final int? callId;
+
+  /// Whether this is a method call (when tag == 1).
+  final bool? methodCall;
+
+  /// Completed result as JSON string (when tag == 0).
+  final String? resultJson;
+
+  /// Whether the completed result is an error: `1` = yes, `0` = no,
+  /// `-1` = not in complete state (when tag == 0).
+  final int? isError;
+
+  /// Error message from the C API (when tag == 2).
+  final String? errorMessage;
+
+  /// JSON array of pending future call IDs (when tag == 3).
+  final String? futureCallIdsJson;
+
+  /// Variable name being looked up (when tag == 5).
+  final String? variableName;
+}
+
+/// The value-encoding wire format version this Dart code expects.
+///
+/// Must equal `WIRE_FORMAT_VERSION` in `native/src/convert.rs`. Bump both in
+/// the SAME commit as any change to what the encoder emits or the decoder
+/// accepts.
+///
+/// **Scope: the VALUE encoding only** — what `monty_object_to_json` emits and
+/// `json_to_monty_object` accepts. It does **not** cover the protocol frames
+/// (`callId`, `methodCall`, `errorType`, `args`, `kwargs`, `architecture`,
+/// `diagnosticsJson`, …), which today have **no** versioning of any kind —
+/// verified, not assumed. Do not read this constant as covering "the wire".
+/// A protocol-frame change can still skew silently; that gap is real and
+/// unclosed.
+///
+/// This exists because `lib/assets/*.wasm` and the JS bridge are COMMITTED
+/// build artefacts and the wasm build is not byte-reproducible — an unchanged
+/// tree yields different bytes — so `git diff` on the blob cannot tell you
+/// whether the asset matches the crate. A version integer can, and a mismatch
+/// then fails loudly at init instead of mis-decoding values later.
+const int expectedWireFormatVersion = 5;
+
+/// Thrown at init when the native library's wire format does not match
+/// [expectedWireFormatVersion].
+class WireFormatMismatch implements Exception {
+  /// Creates a [WireFormatMismatch].
+  const WireFormatMismatch(this.expected, this.actual);
+
+  /// What this Dart code was built against.
+  final int expected;
+
+  /// What the loaded native library reports.
+  final int actual;
+
+  @override
+  String toString() =>
+      'WireFormatMismatch: this build expects wire format v$expected but the '
+      'loaded native library emits v$actual. The committed assets in '
+      'lib/assets/ are stale relative to native/ — run tool/prebuild.sh.';
 }

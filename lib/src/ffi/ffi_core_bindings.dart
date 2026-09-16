@@ -6,7 +6,7 @@ import 'package:dart_monty_core/src/ffi/generated/dart_monty_bindings.dart'
     as ffi_native;
 import 'package:dart_monty_core/src/ffi/native_bindings.dart';
 import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
 import 'package:dart_monty_core/src/platform/wire_json.dart';
 

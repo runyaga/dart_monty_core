@@ -9,8 +9,8 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
 import 'package:dart_monty_core/src/platform/mock_monty_platform.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:test/test.dart';
 
 // Throws [MontyScriptError] from compileCode with the given excType;

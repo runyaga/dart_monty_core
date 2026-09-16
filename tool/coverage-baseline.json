@@ -141,7 +141,7 @@
       "hit": 46,
       "pct": 100.0
     },
-    "lib/src/platform/core_bindings.dart": {
+    "lib/src/platform/monty_core_bindings.dart": {
       "found": 2,
       "hit": 2,
       "pct": 100.0
