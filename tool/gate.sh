@@ -167,7 +167,17 @@ s  page_versions bash tool/check_page_versions.sh
 # monty upgrades, that told every consumer the wrong thing about compatibility.
 # Nothing compared the two until a human read the version off the demo page.
 s  version_pin   bash tool/check_version_pin.sh
-s  dcm_excludes  bash tool/check_dcm_exclusions.sh
+# --deep, not the fast path. The fast path only checks that each excluded PATH
+# still exists; --deep strips the exclusions, re-runs dcm, and catches an entry
+# that names a real file and hides NOTHING -- which is how a stale exclusion
+# outlives the issue it was written for. It used to run in CI and nowhere else;
+# with DCM removed from that workflow it would otherwise run nowhere at all.
+# Measured 2026-09-15 in the warm container: fast path 0s, --deep 1.4s, and it
+# really does the work (it reports the 42 issues the 16 exclusions hide).
+# Both its refusals are loud: no DCM credentials -> SKIP exit 0, so a machine
+# without the key is unaffected; uncommitted dcm_options.yaml -> REFUSE exit 2,
+# because the mode swaps that file and would risk your edits.
+s  dcm_excludes  bash tool/check_dcm_exclusions.sh --deep
 s  vague_errors bash tool/check_no_vague_errors.sh
 # The two backends implement one shared contract, so a consumer picks a backend
 # without picking a feature set. `throw UnimplementedError` breaks that

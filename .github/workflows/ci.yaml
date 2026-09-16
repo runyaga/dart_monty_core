@@ -301,94 +301,23 @@ jobs:
         # deploy triggers only on push to main, so a wrong badge caught here
         # never reaches the site.
         run: bash tool/check_page_versions.sh
-      - name: Install DCM
-        # dcm is NOT a pub package — `dart pub global activate dcm` cannot work.
-        # An earlier version of this workflow did exactly that with `|| true`,
-        # which meant the ratchet below skipped on every single run: a green tick
-        # that checked nothing. The official action is the supported install, and
-        # tool/dcm_ratchet.sh now FAILS rather than skips when dcm is absent, so
-        # this breaking again cannot go unnoticed.
-        uses: CQLabs/setup-dcm@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          # PINNED, and it must match whatever generated tool/dcm-baseline.json.
-          # setup-dcm installs the latest by default: CI ran 1.38.3 against a
-          # baseline produced by 1.37.0. A ratchet compares per-rule counts, so a
-          # different analyzer version silently changes the thing being compared
-          # -- the same floating-input problem as `sdk: stable`, where a gate
-          # cannot tell 'we broke it' from 'the world moved'.
-          # Bump this and regenerate the baseline in the SAME commit.
-          version: 1.37.0
-      - name: DCM ratchet (no new issues above baseline)
-        # `dcm analyze` is chronically red (206 issues at 0.18.1), so gating on a
-        # clean run is not achievable and gating on the raw count is useless — 5
-        # new issues move 206 -> 211 unnoticed, and fixing 10 old ones masks new
-        # ones behind a net improvement. The ratchet fails on any new rule, any
-        # per-rule increase, or any new file. Baseline: tool/dcm-baseline.json.
-        env:
-          # DCM is commercial and refuses to run on CI unlicensed: exit 64,
-          # "Both CI key and purchase email should be provided to run on CI."
-          # That -- not the version float -- is why this ratchet has never once
-          # executed in CI. Both secrets already exist on this repo, and the
-          # sibling dart_monty repo already passes them; this job never did.
-          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
-          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
-          # Same base-ref guard as the coverage ratchet: the baseline a PR is
-          # measured against must not be one the PR can edit. This one also
-          # refuses to compare across dcm versions -- a PR that legitimately
-          # bumps the analyzer AND regenerates the baseline would otherwise be
-          # judged against the OLD baseline with the NEW dcm, which is the
-          # cross-version comparison the version pin above exists to prevent.
-          RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
-        run: |
-          if [ -n "${RATCHET_BASE_REF:-}" ]; then
-            git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
-          fi
-          bash tool/dcm_ratchet.sh
-      - name: DCM metrics ratchet (complexity)
-        # `dcm calculate-metrics` was run by NOTHING until this step: zero hits
-        # for it in tool/gate.sh and zero here, while `dcm analyze` ran in both.
-        # 35 threshold breaches in lib/ sat unenforced, including a 633-line
-        # function against a 50 threshold and cyclomatic 70 against 10.
-        #
-        # It is a SEPARATE step from `dcm analyze` because the inline
-        # suppressions do not carry over: `analyze` honours
-        # `// ignore: lines-of-code`, `calculate-metrics` does not. Fourteen of
-        # this repo's twenty-two inline DCM ignores name a metric, so they were
-        # annotations against a check that never ran.
-        #
-        # RATCHET_BASE_REF, same as every other ratchet here, is what stops a PR
-        # lowering its own bar.
-        env:
-          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
-          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
-          RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
-        run: |
-          if [ -n "${RATCHET_BASE_REF:-}" ]; then
-            git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
-          fi
-          bash tool/metrics_ratchet.sh
-      - name: DCM exclusions still hide something (--deep)
-        # tool/gate.sh runs this script WITHOUT --deep: the fast path only
-        # checks that each excluded path exists on disk, because --deep costs a
-        # second full `dcm analyze` and needs the CI credentials, which a local
-        # gate cannot assume.
-        #
-        # CI has both, and this is where the other rot shape gets caught: an
-        # exclusion naming a REAL file that nonetheless hides nothing, because
-        # the violation it was written for was fixed and nobody deleted the
-        # entry. `lib/src/repl/monty_repl.dart` sat like that until the
-        # 2026-09-15 sweep -- its first class already matched the file name, so
-        # the rule it excluded could not fire.
-        #
-        # Five such entries were found in one day across four rules, which is
-        # why this is a check and not a habit. The script swaps dcm_options.yaml
-        # and restores it from a trap; it refuses to start if that file is dirty
-        # (exit 2) and skips cleanly if the credentials are absent (exit 0).
-        env:
-          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
-          DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
-        run: bash tool/check_dcm_exclusions.sh --deep
+      # ---------------------------------------------------------------------------
+      # DCM IS DELIBERATELY NOT RUN HERE. Do not add it back.
+      # ---------------------------------------------------------------------------
+      # Every DCM check -- `dcm analyze` via tool/dcm_ratchet.sh,
+      # `dcm calculate-metrics` via tool/metrics_ratchet.sh, and
+      # tool/check_dcm_exclusions.sh -- runs in tool/gate.sh ONLY, on the local
+      # gate. This workflow previously installed DCM (CQLabs/setup-dcm), carried
+      # DCM_CI_KEY / DCM_EMAIL, and ran three DCM steps; all of that is removed.
+      #
+      # DCM is commercial: running it here spends the licence on every push and
+      # every PR, and needs the key present as a repository secret to do it.
+      # The gate is the place that decision belongs.
+      #
+      # The consequence is stated rather than hidden: a contributor who does not
+      # run `bash tool/gate.sh` gets no DCM feedback at all, and the ratchets'
+      # RATCHET_BASE_REF protection (which exists so a PR cannot lower its own
+      # bar) is only exercised locally. That is the accepted trade.
       - name: Test (JIT, unit only)
         # The exit-79 tolerance is GONE. It said "no tests found is acceptable
         # until unit tests exist"; 457 of them exist, so all it could do now was
