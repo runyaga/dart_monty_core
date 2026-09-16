@@ -39,10 +39,28 @@ echo "" >> "$OUT/SUMMARY.txt"
 # what failed, so stop relying on it. Compared again at the foot of this file.
 TREE_BEFORE="$(git status --porcelain)"
 
+# EXIT 77 MEANS "DID NOT RUN", AND IT IS NOT A PASS.
+#
+# The runner used to be binary -- exit 0 PASS, anything else FAIL -- so a check
+# that deliberately skipped itself reported PASS. Measured 2026-09-15: with the
+# DCM licence quota exhausted, `DCM_RATCHET_ALLOW_MISSING=1 bash tool/gate.sh`
+# printed "GATE GREEN" and "PASS 39" while THREE of those 39 had verified
+# nothing at all. That is the skip-but-green shape this repo has already paid
+# for once (8dbdd59, "646 of 1593 registered tests" asserting nothing), wearing
+# a different hat.
+#
+# A skip is still GREEN -- it is a deliberate, opted-in decision, not a failure
+# -- but it must be VISIBLE as a skip in SUMMARY.txt, so nobody can read
+# "39 PASS" off a run where three checks were switched off.
+_res(){ rc=$1; n=$2; t=$3
+  if   [ "$rc" -eq 0  ]; then echo "PASS  $n  ($((SECONDS-t))s)"
+  elif [ "$rc" -eq 77 ]; then echo "SKIP  $n  ($((SECONDS-t))s)  — did not run, checked nothing"
+  else                        echo "FAIL  $n  ($((SECONDS-t))s)"
+  fi >> "$OUT/SUMMARY.txt"; }
 s(){ n="$1"; shift; t=$SECONDS
-  if "$@" >"$OUT/$n.log" 2>&1; then echo "PASS  $n  ($((SECONDS-t))s)"; else echo "FAIL  $n  ($((SECONDS-t))s)"; fi >> "$OUT/SUMMARY.txt"; }
+  "$@" >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
 ns(){ n="$1"; shift; t=$SECONDS
-  if (cd native && "$@") >"$OUT/$n.log" 2>&1; then echo "PASS  $n  ($((SECONDS-t))s)"; else echo "FAIL  $n  ($((SECONDS-t))s)"; fi >> "$OUT/SUMMARY.txt"; }
+  (cd native && "$@") >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
 
 # The native-assets build hook caches per-target and did NOT rebuild after
 # native/Cargo.toml changed, so dart test silently loaded a stale 0.18 dylib

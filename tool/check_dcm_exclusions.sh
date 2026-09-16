@@ -137,7 +137,7 @@ if [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; then
   echo "SKIP --deep: needs DCM_CI_KEY and DCM_EMAIL. Without BOTH (and CI=true)"
   echo "             dcm reports a licence error and exits nonzero for a reason"
   echo "             that has nothing to do with exclusions."
-  exit 0
+  exit 77
 fi
 if ! git diff --quiet -- "$CONFIG" 2>/dev/null; then
   echo "REFUSING --deep: $CONFIG has uncommitted changes."
