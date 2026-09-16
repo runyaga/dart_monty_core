@@ -32,8 +32,10 @@ void main() {
       const source = '7 % 2.5\n# Return=2.0\n';
       final expectation = parseFixture(source);
 
-      expect(expectation, isA<ExpectReturn>());
-      final want = MontyValue.fromDart((expectation! as ExpectReturn).value);
+      if (expectation is! ExpectReturn) {
+        fail('expected an ExpectReturn, got $expectation');
+      }
+      final want = MontyValue.fromDart(expectation.value);
 
       expect(
         want,
@@ -51,7 +53,10 @@ void main() {
 
     test('a negative zero expectation keeps its sign', () {
       final expectation = parseFixture('x\n# Return=-0.0\n');
-      final want = MontyValue.fromDart((expectation! as ExpectReturn).value);
+      if (expectation is! ExpectReturn) {
+        fail('expected an ExpectReturn, got $expectation');
+      }
+      final want = MontyValue.fromDart(expectation.value);
 
       expect(want, isA<MontyFloat>());
       expect(

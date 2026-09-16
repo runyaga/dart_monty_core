@@ -97,7 +97,9 @@ void main() {
               'check_no_vague_errors.sh exists because a diagnostic that '
               'does not name what was wrong is not a diagnostic',
         );
-        expect(json.decode(e.source! as String), isA<Map<String, Object?>>());
+        final source = e.source;
+        if (source is! String) fail('a decode error must carry its source');
+        expect(json.decode(source), isA<Map<String, Object?>>());
       }
     });
   });

@@ -281,7 +281,7 @@ await doubled(21)
         resolver: (ids, ps) {
           final results = <int, Object?>{};
           for (final p in ps) {
-            results[p.callId] = p.args.firstOrNull!.dartValue;
+            results[p.callId] = firstItem(p.args).dartValue;
           }
 
           return (results: results, errors: <int, String>{});

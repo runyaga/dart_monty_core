@@ -555,8 +555,9 @@ void main() {
           value,
           callExternal: callExternal,
         );
-        if (outcome.skipReason != null) {
-          markTestSkipped(outcome.skipReason!);
+        final skipReason = outcome.skipReason;
+        if (skipReason != null) {
+          markTestSkipped(skipReason);
 
           return;
         }

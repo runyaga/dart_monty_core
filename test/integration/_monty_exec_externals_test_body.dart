@@ -28,7 +28,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'greet(name="World")',
         externalFunctions: {
-          'greet': (_, kwargs) => 'Hello, ${kwargs!['name']}!',
+          'greet': (_, kwargs) => 'Hello, ${kwargs?['name']}!',
         },
       );
 

@@ -170,13 +170,15 @@ void runWireContractTests() {
       test(
         'row ${r.row}: ${r.code.replaceAll('\n', ' ; ')} -> ${r.expected}',
         () async {
-          if (r.pending != null) {
-            markTestSkipped(r.pending!);
+          final pending = r.pending;
+          if (pending != null) {
+            markTestSkipped(pending);
 
             return;
           }
-          if (_isWeb && r.webPending != null) {
-            markTestSkipped(r.webPending!);
+          final webPending = r.webPending;
+          if (_isWeb && webPending != null) {
+            markTestSkipped(webPending);
 
             return;
           }

@@ -48,8 +48,11 @@ void main() {
     test('iterdir of a real directory still lists it', () async {
       final listing = await handler()('Path.iterdir', ['/mnt/subdir'], null);
 
+      if (listing is! List) {
+        fail('Path.iterdir must return a list, got $listing');
+      }
       expect(
-        (listing! as List).map((p) => '$p'),
+        listing.map((p) => '$p'),
         [contains('/mnt/subdir/nested.txt')],
       );
     });

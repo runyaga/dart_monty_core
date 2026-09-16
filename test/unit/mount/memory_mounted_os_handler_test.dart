@@ -419,8 +419,14 @@ void main() {
         files: [MontyMemoryFile('/data/sub/x.txt', 'hi')],
       );
 
-      final st =
-          (await handler('Path.stat', ['/data/sub'], null))! as MontyNamedTuple;
+      final statResult = await handler('Path.stat', ['/data/sub'], null);
+      if (statResult is! MontyNamedTuple) {
+        fail(
+          'Path.stat on a directory must return a named tuple, '
+          'got $statResult',
+        );
+      }
+      final st = statResult;
 
       expect(_stat(st, 'st_size'), const MontyInt(4096));
       expect(_stat(st, 'st_nlink'), const MontyInt(2));

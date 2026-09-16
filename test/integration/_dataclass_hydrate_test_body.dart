@@ -106,12 +106,12 @@ void runDataclassHydrateTests() {
       }
 
       final user = await dispatchAndHydrate('make_user()');
-      expect(user, isA<_User>());
-      expect((user! as _User).name, 'eve');
+      if (user is! _User) fail('expected a _User, got $user');
+      expect(user.name, 'eve');
 
       final order = await dispatchAndHydrate('make_order()');
-      expect(order, isA<_Order>());
-      expect((order! as _Order).total, 12.5);
+      if (order is! _Order) fail('expected an _Order, got $order');
+      expect(order.total, 12.5);
     });
 
     // M1 ISOLATION TEST — written BEFORE the fix, and it is EXPECTED TO FAIL

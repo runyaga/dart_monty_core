@@ -5,6 +5,8 @@ import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
+
 void main() {
   // Three different lengths live in this handler and they must not be
   // confused:
@@ -40,12 +42,16 @@ void main() {
         );
 
         final statResult = await handler0('Path.stat', ['/mnt/u.txt'], null);
-        final stat = statResult! as MontyNamedTuple;
+        if (statResult is! MontyNamedTuple) {
+          fail('Path.stat must return a named tuple, got $statResult');
+        }
+        final stat = statResult;
         final size = stat.values.elementAtOrNull(
           stat.fieldNames.indexOf('st_size'),
         );
+        if (size == null) fail('stat has no st_size field: $stat');
         expect(
-          (size! as MontyInt).value,
+          dartValueOf<int>(size),
           utf8Bytes,
           reason: 'st_size must be UTF-8 bytes',
         );
