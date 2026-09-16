@@ -17,6 +17,34 @@ public items and most of what this package uses moved to the new `monty-types`
 crate — so this is a substantial internal change with a small consumer-facing
 surface.
 
+### Wire format — now versioned, and at v5
+
+The host/sandbox envelope is now versioned. `main` (0.18.1) has no
+`WIRE_FORMAT_VERSION` constant at all, so upgrading from the last release means
+adopting a versioned wire AND five format changes at once. Nothing in this file
+recorded that, which for a serialisation boundary is the omission that matters
+most.
+
+`native/src/convert.rs:65` declares it; `lib/src/ffi/native_bindings.dart:253`
+must equal it; `tool/check_wire_version.sh` fails if they drift
+(`OK: wire format v5 in both ...`).
+
+How it got to 5, each step a real decoder change rather than a bump:
+
+| v | commit | change |
+|---|---|---|
+| 1 -> 2 | `2808edb` | tag every dict, and reject what the decoder cannot name (core#136) |
+| 2 -> 3 | `55d3ac2` | a bare string means `str`, and nothing else (core#134 + 4 siblings) |
+| 3 -> 4 | `de7444b` | carry the ambiguous numbers as text, closing core#128 on the web |
+| 4 -> 5 | `c91bcc3` | `MontyClassInstance`, plus three decoder gaps an audit found |
+
+**Consumer impact.** A host and a sandbox built from different sides of any of
+these will disagree about what a value means — the failure mode each commit
+exists to prevent is a value silently decoding as the wrong type, not a crash.
+Rebuild both halves together. `docs/WIRE-CONTRACT.md` describes the envelope and
+`tool/check_wire_contract.sh` checks the document against the encoder in both
+directions.
+
 ### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
 
 Three behaviours that were true but documented nowhere. None is a change; all
