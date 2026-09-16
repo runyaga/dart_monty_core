@@ -123,6 +123,21 @@ if [ -n "$CACHED" ]; then
   fi
 fi
 
+# Is the container this gate runs in able to reap orphans? Every step below
+# spawns processes -- dart, chromium, cargo, bash -- and any whose parent exits
+# first is re-parented to PID 1. If PID 1 is `sleep infinity` rather than an
+# init, none of them are ever wait()ed for and each leaves a permanent zombie.
+#
+# Measured 2026-09-16: `dmc-build` had been created without `--init`, and after
+# two days held 45,725 zombies out of 45,730 processes -- five were alive. One
+# `tool/test_wasm.sh --skip-build` added 12 more; with `--init` the identical
+# run adds 0. tool/dmc_container.sh has the recipe and the full evidence.
+#
+# THIS CHECKS THE DEFECT, NOT THE BACKLOG. It orphans a probe process and asks
+# whether PID 1 reaped it, so a freshly-created broken container fails it while
+# still showing zero zombies -- which is exactly when it is worth catching,
+# rather than 45,000 processes later. It is a no-op outside a container.
+s  init_reaper   bash tool/dmc_container.sh check
 # The committed assets in lib/assets/ are build artefacts of native/src and
 # js/src, and the wasm build is NOT byte-reproducible, so `git diff` on the blob
 # cannot detect staleness. This hashes the SOURCES instead. It is the only layer
