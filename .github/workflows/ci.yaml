@@ -9,7 +9,13 @@ on:
   # close/reopens were needed to unstick them.
   workflow_dispatch:
   push:
-    branches: [main]
+    # `integration/**` IS A RELEASE LINE, NOT A TOPIC BRANCH. Measured
+    # 2026-09-16: SIX commits on integration/0.23 -- d6cf573, 38be183, e033b70,
+    # 8251f10, 75b3f11, 39487ef -- had each run exactly ONE workflow, TruffleHog.
+    # Every ci.yaml job was skipped, because a push to a non-main branch matched
+    # no trigger here. The branch was validated only by the LOCAL gate, and a
+    # local gate cannot see the ubuntu/x86_64 matrix CI runs.
+    branches: [main, 'integration/**']
   pull_request:
     # EVERY branch a PR can target must be listed, or the PR silently runs NO
     # ci.yaml jobs and shows green from `label` + `trufflehog` alone. Measured:
