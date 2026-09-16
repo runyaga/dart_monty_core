@@ -5,9 +5,9 @@
 // the full captured stdout text. The same dispatch site sits inside
 // MontyRepl.feedRun, so FFI and WASM share these scenarios verbatim.
 
-import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 void runPrintCallbackTests() {
   group('printCallback (batch)', () {
@@ -75,7 +75,7 @@ void runPrintCallbackTests() {
       final r = await Monty('print(double(value))').run(
         inputs: {'value': 21},
         externalFunctions: {
-          'double': (args, _) => (args.firstOrNull! as int) * 2,
+          'double': (args, _) => callbackArg<int>(args, 0) * 2,
         },
         printCallback: (stream, text) => captured.add((stream, text)),
       );

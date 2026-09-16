@@ -10,6 +10,7 @@
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 void runReplExtFnsLifecycleTests() {
   group('MontyRepl externals lifecycle', () {
@@ -28,7 +29,7 @@ void runReplExtFnsLifecycleTests() {
         final r1 = await repl.feedRun(
           'x = fetch(1)\nx',
           externalFunctions: {
-            'fetch': (args, _) => (args.firstOrNull! as int) * 10,
+            'fetch': (args, _) => callbackArg<int>(args, 0) * 10,
           },
         );
         expect(
@@ -87,7 +88,7 @@ void runReplExtFnsLifecycleTests() {
         await repl.feedRun(
           'r = a(5)',
           externalFunctions: {
-            'a': (args, _) => (args.firstOrNull! as int) + 1,
+            'a': (args, _) => callbackArg<int>(args, 0) + 1,
           },
         );
 
@@ -96,7 +97,7 @@ void runReplExtFnsLifecycleTests() {
         await repl.feedRun(
           'r = b(5)',
           externalFunctions: {
-            'b': (args, _) => (args.firstOrNull! as int) * 2,
+            'b': (args, _) => callbackArg<int>(args, 0) * 2,
           },
         );
 

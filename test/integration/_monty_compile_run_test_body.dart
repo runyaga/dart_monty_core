@@ -5,9 +5,9 @@
 // [runMontyCompileRunTests] so the assertions live in one place and stay
 // in sync across backends.
 
-import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 void runMontyCompileRunTests() {
   group('Monty(code).run', () {
@@ -49,7 +49,7 @@ void runMontyCompileRunTests() {
       final r = await program.run(
         inputs: {'value': 7},
         externalFunctions: {
-          'double': (args, _) => (args.firstOrNull! as int) * 2,
+          'double': (args, _) => callbackArg<int>(args, 0) * 2,
         },
       );
       expect(r.error, isNull);

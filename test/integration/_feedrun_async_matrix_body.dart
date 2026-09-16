@@ -14,6 +14,7 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 void runFeedRunAsyncMatrixTests() {
   group('MontyRepl.feedRun async/sync matrix', () {
@@ -31,7 +32,7 @@ void runFeedRunAsyncMatrixTests() {
           'fetch': (args, _) {
             calls++;
 
-            return Future.value((args.firstOrNull! as int) + 1);
+            return Future.value(callbackArg<int>(args, 0) + 1);
           },
         },
       );
@@ -51,7 +52,7 @@ void runFeedRunAsyncMatrixTests() {
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return (args.firstOrNull! as int) + 1;
+            return callbackArg<int>(args, 0) + 1;
           },
         },
       );
@@ -146,7 +147,7 @@ results
 ''',
           externalAsyncFunctions: {
             'fetch': (args, _) async {
-              final n = args.firstOrNull! as int;
+              final n = callbackArg<int>(args, 0);
               fired.add(n);
               await Future<void>.delayed(Duration.zero);
 

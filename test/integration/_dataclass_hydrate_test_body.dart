@@ -6,9 +6,9 @@
 // trips it through Python, and Dart hydrates the returned MontyDataclass
 // into a user class via MontyDataclass.hydrate.
 
-import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 class _User {
   const _User({required this.name, required this.age});
@@ -58,8 +58,8 @@ void runDataclassHydrateTests() {
         final r = await Monty('make_user("alice", 30)').run(
           externalFunctions: {
             'make_user': (args, _) => _userDataclass(
-              name: args.firstOrNull! as String,
-              age: args.elementAtOrNull(1)! as int,
+              name: callbackArg(args, 0),
+              age: callbackArg(args, 1),
             ),
           },
         );
@@ -212,8 +212,8 @@ o = make_order()
         externalFunctions: {
           'make_user': (args, _) => Future.value(
             _userDataclass(
-              name: args.firstOrNull! as String,
-              age: args.elementAtOrNull(1)! as int,
+              name: callbackArg(args, 0),
+              age: callbackArg(args, 1),
               frozen: true,
             ),
           ),

@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '_callback_args.dart';
 
 void runMontyAsyncInputsTests() {
   group('Monty(code).run(inputs:) + async', () {
@@ -144,7 +145,7 @@ results
                 inputs: {'a': 1, 'b': 2, 'c': 3},
                 externalAsyncFunctions: {
                   'fetch': (args, _) async {
-                    final n = args.firstOrNull! as int;
+                    final n = callbackArg<int>(args, 0);
                     calls.add(n);
                     await Future<void>.delayed(Duration.zero);
 
