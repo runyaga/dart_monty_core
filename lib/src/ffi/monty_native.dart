@@ -16,6 +16,42 @@ import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 /// that runs the native FFI. Manages a state machine: idle -> active ->
 /// disposed.
 ///
+/// ## INTENTIONALLY PRESENT AND NOT CURRENTLY SELECTED — do not delete
+///
+/// No application factory returns this class. `createPlatformMonty()` returns
+/// `MontyFfi` (monty_factory_native.dart:8), and the REPL path builds
+/// `FfiReplBindings` (repl_factory_native.dart:7). Static analysis will
+/// therefore report this file, and the two `native_isolate_bindings*.dart`
+/// files it is the sole importer of, as unused — `dcm check-unused-code`
+/// does exactly that. THAT REPORT IS NOT A LICENCE TO REMOVE THEM. It was
+/// acted on once, in 2026-09, and the deletion was wrong.
+///
+/// WHAT IT IS FOR. `MontyFfi` returns Futures but performs the synchronous
+/// FFI call on the CALLING isolate (ffi_core_bindings.dart:73). This backend
+/// runs that same implementation inside a worker — the worker constructs
+/// `MontyFfi.withCore` at native_isolate_bindings_impl.dart:156 — so native
+/// execution does not block the caller. That matters most for a Flutter UI
+/// isolate; docs/reference/execution-model.md:83 states it directly:
+/// "Running the sandbox in an isolate is still worthwhile to keep work off
+/// the Flutter UI thread."
+///
+/// WHAT IT IS NOT. The same document is equally direct that this is not a
+/// safety mechanism. Isolates share one OS process, so a native abort takes
+/// the host down with them (:75), and an isolate blocked in a synchronous FFI
+/// call cannot be killed, because `Isolate.kill` only lands at a Dart
+/// safepoint (:81). It is a concurrency boundary, not a fault boundary.
+///
+/// WHAT WIRING IT UP WOULD TAKE, so the next person does not assume a factory
+/// branch is enough:
+///   * this class inherits the throwing [MontyPlatform] defaults for
+///     compileCode, type checking, precompiled execution, typed exceptions,
+///     not-found and name-lookup responses, which `MontyFfi` gets from
+///     `BaseMontyPlatform`. The request protocol and worker dispatch need
+///     extending before the two are interchangeable.
+///   * `Monty.run` and `MontyRepl` go through `ReplBindings`, not through a
+///     `MontyPlatform` (monty.dart:73, monty_repl.dart:116). Selecting this
+///     backend for them needs a REPL worker adapter, not just a new factory.
+///
 /// ```dart
 /// final monty = MontyNative();
 /// await monty.initialize();
