@@ -52,11 +52,12 @@ void main() {
           await platform.dispose();
         }
 
-        if (oracleResult.error != null) {
+        final oracleErr = oracleResult.error;
+        if (oracleErr != null) {
           // Both should agree on the exception type.
           expect(
             ffiExcType,
-            equals(oracleResult.error!.excType),
+            equals(oracleErr.excType),
             reason: 'excType mismatch for $key',
           );
         } else {

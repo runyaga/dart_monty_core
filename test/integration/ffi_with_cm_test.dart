@@ -77,10 +77,11 @@ void main() {
         // The differential below is the real contract and is untouched.
 
         // Oracle and FFI must agree (same conformance contract as oracle_ffi).
-        if (oracleResult.error != null) {
+        final oracleErr = oracleResult.error;
+        if (oracleErr != null) {
           expect(
             ffiExcType,
-            equals(oracleResult.error!.excType),
+            equals(oracleErr.excType),
             reason: 'excType mismatch for $name',
           );
         } else {

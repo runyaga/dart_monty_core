@@ -41,7 +41,9 @@ void runMonty019SemanticsTests() {
               'print collection must be capped; unbounded collection lets '
               'sandboxed code exhaust host memory (upstream #558)',
         );
-        expect(r.error!.excType, 'MemoryError');
+        final err = r.error;
+        if (err == null) fail('expected a MemoryError, got no error at all');
+        expect(err.excType, 'MemoryError');
       },
     );
 
@@ -79,9 +81,10 @@ void runMonty019SemanticsTests() {
     test('open() with an action-less mode raises ValueError', () async {
       final r = await Monty('open("/m/a.txt", "b")\n').run();
 
-      expect(r.error, isNotNull);
+      final err = r.error;
+      if (err == null) fail('expected a ValueError, got no error at all');
       expect(
-        r.error!.excType,
+        err.excType,
         'ValueError',
         reason:
             'mode must contain exactly one of r/w/a/x; under 0.18 this '
@@ -95,8 +98,9 @@ void runMonty019SemanticsTests() {
       // mode check into rejecting valid modes.
       final r = await Monty('open("/m/a.txt", "r")\n').run();
 
-      expect(r.error, isNotNull);
-      expect(r.error!.excType, isNot('ValueError'));
+      final err = r.error;
+      if (err == null) fail('expected an error, got none');
+      expect(err.excType, isNot('ValueError'));
     });
 
     // -- upstream #576 : the Open OS-call was renamed to 'open' --------------

@@ -86,9 +86,10 @@ void main() {
         'x = b"a" * ${20 * 1024 * 1024}\nlen(x)',
       ).run(limits: const MontyLimits(memoryBytes: 100 * 1024));
 
-      expect(r.error, isNotNull);
-      expect(r.error!.excType, 'MemoryError');
-      expect(r.error!.message, contains('memory limit exceeded'));
+      final err = r.error;
+      if (err == null) fail('expected a MemoryError, got no error at all');
+      expect(err.excType, 'MemoryError');
+      expect(err.message, contains('memory limit exceeded'));
     });
 
     test('incremental growth into ONE object is caught too', () async {
@@ -100,8 +101,9 @@ void main() {
         's = ""\nfor i in range(200):\n    s += "y" * 100000\nlen(s)',
       ).run(limits: const MontyLimits(memoryBytes: 100 * 1024));
 
-      expect(r.error, isNotNull);
-      expect(r.error!.excType, 'MemoryError');
+      final err = r.error;
+      if (err == null) fail('expected a MemoryError, got no error at all');
+      expect(err.excType, 'MemoryError');
     });
 
     test('CHARACTERISATION: aggregate heap is NOT bounded', () async {
