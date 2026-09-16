@@ -142,7 +142,7 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
-      - name: Sixteen source-only invariants
+      - name: Source-only invariants (count asserted below)
         run: |
           set -uo pipefail
           RC=0; RAN=0
