@@ -3,10 +3,14 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/wire_json.dart';
 
-/// Internal bindings interface for REPL operations.
+/// Bindings interface for REPL operations.
 ///
 /// Implemented by `FfiReplBindings` and `WasmReplBindings` to provide
 /// a unified contract across native FFI and web WASM backends.
+///
+/// Public: `MontyRepl.withBindings` takes one, so an outside caller may
+/// implement this to drive a REPL over its own transport. Every type in every
+/// signature below is reachable from `dart_monty_core.dart`.
 abstract class ReplBindings {
   /// Creates a persistent REPL session.
   ///

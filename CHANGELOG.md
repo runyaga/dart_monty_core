@@ -55,6 +55,34 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Added
 
+- **`ReplBindings`, `CoreRunResult`, `CoreProgressResult` and `WireJson` are
+  now exported.** They were already public by reachability —
+  `MontyRepl.withBindings({required ReplBindings bindings, ...})` is a public
+  constructor, and `ReplBindings`' members return the two result types and take
+  a `WireJson` — but none of the four could be NAMED from
+  `package:dart_monty_core/dart_monty_core.dart`. A consumer could see the
+  constructor and had no way to call it.
+
+  Measured before the fix, compiling a file that imports only the barrel and
+  implements `ReplBindings`: five analyzer errors, starting with "Classes and
+  mixins can only implement other classes and mixins" because `ReplBindings`
+  was not a visible type. After: compiles.
+
+  `monty_core_bindings.dart` is exported with `show CoreProgressResult,
+  CoreRunResult` rather than wholesale. `MontyCoreBindings` itself is the
+  backend-adapter interface and is reached only through the unexported
+  `BaseMontyPlatform`, so it stays internal — the same reasoning already
+  applied to `VfsAccountant` and `vfs_limits.dart` above it.
+
+  Additive: no name is removed or changed, and none of the four added top-level
+  names (`ReplBindings`, `CoreRunResult`, `CoreProgressResult`, `WireJson`)
+  collides with one the barrel already exported. `WireJson`'s factories are
+  members, not separate top-level names. The one way this can still disturb a
+  consumer is the generic hazard of any new export: code that imports the
+  barrel unprefixed alongside another library declaring one of these four names
+  now has an ambiguous reference. That is not a semver break and carries no
+  `!` marker. `dcm check-exports-completeness` goes from 4 defects to none.
+
 - **Wire format v5.** `WIRE_FORMAT_VERSION` is 5. New public types:
   `MontyClassInstance`, `MontyClassType`, `MontyTime`, `MontyNotImplemented`.
 
