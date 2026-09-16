@@ -271,7 +271,7 @@ s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integratio
 # passing tests, one hitmap JSON, and format_coverage --report-on=lib writes a
 # 0-byte tracefile. The planning document listed this suite as free coverage;
 # it is free, and it is zero.
-s  examples      dart test test/integration/example_smoke_test.dart -p vm --run-skipped --tags=example
+s  examples      bash tool/run_example_smoke.sh "$OUT/example-test.log"
 # Every measured suite above wrote its hitmap into ONE directory, so format_coverage
 # unions them and there is no LCOV merge to get wrong. That matters: the FFI
 # suite is 1,356 tests that drive ffi_core_bindings, native_bindings_ffi,

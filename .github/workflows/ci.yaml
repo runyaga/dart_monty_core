@@ -798,12 +798,14 @@ jobs:
       # spawned-isolate case in native_isolate_bindings_impl.dart, one level
       # further out.
       - name: Run example smoke tests
-        run: |
-          set -o pipefail
-          dart test test/integration/example_smoke_test.dart \
-            -p vm --run-skipped --tags=example \
-            --reporter=expanded 2>&1 | tee /tmp/example-test.log
-          bash tool/assert_test_count.sh /tmp/example-test.log 14 example
+        # Same BODY as tool/gate.sh runs, not the same four lines copied. This
+        # step and gate.sh:274 had drifted: CI asserted a count, the local gate
+        # asserted nothing, and the two picked different reporters. The floor is
+        # no longer the hardcoded `14` either -- it was exactly met, 14 of 14, so
+        # adding a 16th example would have left it at 14 and allowed one of the
+        # existing fifteen to be deleted afterwards with CI still green.
+        # tool/example_floor.sh derives it from the tree.
+        run: bash tool/run_example_smoke.sh /tmp/example-test.log
 
       # Compile-only smoke for the Pages demo. Catches API drift between
       # `Monty`/`MontyRepl` refactors and packages/dart_monty_web at PR time
