@@ -29,7 +29,20 @@ const _skipReasons = {
   // declaration, which masked the runtime fault behind it.
   //
   // The compile error is fixed. What remains is a LIBRARY defect, not an
-  // example defect: Monty.compile() is broken on the FFI backend.
+  // example defect: Monty.compile() is broken.
+  //
+  // SCOPE CORRECTED 2026-09-16, measured. This said "broken on the FFI
+  // backend". It is broken on BOTH backends, and the fault is not in either
+  // binding -- it is in the shared Rust. native/src/handle.rs:558 is an
+  // unconditional `Err(...)` with no branch that can return Ok, and both
+  // backends reach it by the same two-step sequence:
+  //     FFI   ffi_core_bindings.dart:185  create(code) -> snapshot(handle)
+  //     WASM  worker_src.js:915,948       monty_create -> monty_snapshot
+  // The worker even comments "captures bytecode only" (worker_src.js:938), a
+  // belief the Rust it calls contradicts. runPrecompiled() is dead the same
+  // way via handle.rs:570. Sending someone to hunt in the FFI layer is exactly
+  // the stale-reason failure this entry already suffered once, above.
+  // Pinned by test/integration/ffi_compile_precompiled_test.dart.
   //   FfiCoreBindings.compileCode (ffi_core_bindings.dart:186-191) calls
   //   _bindings.snapshot() on a handle from _bindings.create(), i.e. a
   //   ONE-SHOT handle, and native_bindings_ffi.dart:297 refuses exactly that:

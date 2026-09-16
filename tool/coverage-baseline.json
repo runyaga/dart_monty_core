@@ -13,8 +13,8 @@
     },
     "lib/src/ffi/ffi_core_bindings.dart": {
       "found": 213,
-      "hit": 152,
-      "pct": 71.36
+      "hit": 156,
+      "pct": 73.24
     },
     "lib/src/ffi/monty_ffi.dart": {
       "found": 33,
@@ -33,8 +33,8 @@
     },
     "lib/src/ffi/native_bindings_ffi.dart": {
       "found": 336,
-      "hit": 259,
-      "pct": 77.08
+      "hit": 276,
+      "pct": 82.14
     },
     "lib/src/ffi/native_isolate_bindings.dart": {
       "found": 0,
@@ -48,8 +48,8 @@
     },
     "lib/src/monty.dart": {
       "found": 24,
-      "hit": 16,
-      "pct": 66.67
+      "hit": 24,
+      "pct": 100.0
     },
     "lib/src/monty_factory.dart": {
       "found": 0,
@@ -133,17 +133,12 @@
     },
     "lib/src/platform/base_monty_platform.dart": {
       "found": 191,
-      "hit": 152,
-      "pct": 79.58
+      "hit": 160,
+      "pct": 83.77
     },
     "lib/src/platform/code_capture.dart": {
       "found": 46,
       "hit": 46,
-      "pct": 100.0
-    },
-    "lib/src/platform/monty_core_bindings.dart": {
-      "found": 2,
-      "hit": 2,
       "pct": 100.0
     },
     "lib/src/platform/double_text.dart": {
@@ -154,6 +149,11 @@
     "lib/src/platform/inputs_encoder.dart": {
       "found": 33,
       "hit": 33,
+      "pct": 100.0
+    },
+    "lib/src/platform/monty_core_bindings.dart": {
+      "found": 2,
+      "hit": 2,
       "pct": 100.0
     },
     "lib/src/platform/monty_error.dart": {
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4160,
-    "hit": 2363,
-    "pct": 56.8
+    "hit": 2400,
+    "pct": 57.69
   }
 }

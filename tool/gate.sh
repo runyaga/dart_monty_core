@@ -215,6 +215,10 @@ s  vague_errors bash tool/check_no_vague_errors.sh
 # generated binding all existed. The message was false and it reached a shipped
 # example.
 s  backend_parity bash tool/check_backend_parity.sh
+# A mock proves the wiring compiles; it cannot prove the engine can do the
+# thing. Monty.compile() had a full unit file written against
+# MockMontyPlatform and was dead on every real backend (core#152).
+s  api_exercised bash tool/check_api_exercised.sh
 s  dart_analyze  dart analyze --fatal-infos
 # packages/ IS included, and was not until 2026-09-15. `dart analyze` walks
 # into the nested packages on its own (verified: a deliberate type error in
