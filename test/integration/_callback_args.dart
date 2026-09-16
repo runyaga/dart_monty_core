@@ -8,6 +8,7 @@
 //
 // It cannot live in package:monty_conformance, which is deliberately
 // dependency-free so it compiles for the browser — `fail()` is package:test.
+import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 /// Positional argument [i] of a host callback's `args`, as [T].
@@ -50,4 +51,33 @@ T callbackArg<T>(List<Object?> args, int i) {
   }
 
   return value as T;
+}
+
+/// The Dart value of positional argument [i] of a pending call, as [T].
+///
+/// The `MontyValue` sibling of [callbackArg]. A `MontyPending.args` is a
+/// `List<MontyValue>`, and `MontyValue.dartValue` is `Object?`, so the shape
+/// this replaces carried TWO assertions for two independent nulls:
+///
+///     p.args.firstOrNull!.dartValue! as int
+///
+/// The first is "no argument at that index", the second is "that argument has
+/// no Dart value" (MontyNone). They are different failures and deserve
+/// different messages; `!` gave them the same one, which was none.
+///
+/// Same caveat as [callbackArg]: when the callback is driven by the library
+/// rather than the test body, `fail` surfaces as a sandbox error, not a direct
+/// test failure. Assert on the run's result.
+T montyArg<T>(List<MontyValue> args, int i) {
+  final value = args.elementAtOrNull(i);
+  if (value == null) {
+    fail('pending call needs an argument at index $i, got ${args.length}');
+  }
+
+  final dart = value.dartValue;
+  if (dart == null) {
+    fail('pending call argument $i has no Dart value (got $value)');
+  }
+
+  return dart as T;
 }

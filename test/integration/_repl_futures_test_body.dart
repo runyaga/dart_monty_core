@@ -14,6 +14,8 @@ import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_callback_args.dart';
+
 /// Helper: walk the progress loop, treating every external call as a future.
 /// Returns the terminal [MontyComplete] (or throws if the script never
 /// completes / wraps an error).
@@ -94,7 +96,7 @@ result
               (p) => p.callId == id,
               orElse: () => fail('callId $id not in observed pendings'),
             );
-            final arg = pending.args.firstOrNull!.dartValue! as String;
+            final arg = montyArg<String>(pending.args, 0);
             results[id] = 'value-for-$arg';
           }
 
@@ -166,11 +168,11 @@ results
           // Every observed pending should have one int arg; record dispatch
           // order so we can assert all three fired before await yielded.
           for (final p in ps) {
-            dispatched.add(p.args.firstOrNull!.dartValue! as int);
+            dispatched.add(montyArg(p.args, 0));
           }
           final results = <int, Object?>{};
           for (final p in ps) {
-            results[p.callId] = (p.args.firstOrNull!.dartValue! as int) * 10;
+            results[p.callId] = montyArg<int>(p.args, 0) * 10;
           }
 
           return (results: results, errors: <int, String>{});
@@ -214,7 +216,7 @@ results
               final results = <int, Object?>{};
               final errors = <int, String>{};
               for (final p in ps) {
-                final n = p.args.firstOrNull!.dartValue! as int;
+                final n = montyArg<int>(p.args, 0);
                 if (n == 2) {
                   errors[p.callId] = 'broken-$n';
                 } else {
@@ -248,7 +250,7 @@ b = await fetch(13)
             cycles++;
             final results = <int, Object?>{};
             for (final p in ps) {
-              results[p.callId] = (p.args.firstOrNull!.dartValue! as int) * 2;
+              results[p.callId] = montyArg<int>(p.args, 0) * 2;
             }
 
             return (results: results, errors: <int, String>{});
@@ -358,7 +360,7 @@ results = await asyncio.gather(fetch("int"), fetch("str"), fetch("list"), fetch(
         resolver: (ids, ps) {
           final results = <int, Object?>{};
           for (final p in ps) {
-            final tag = p.args.firstOrNull!.dartValue! as String;
+            final tag = montyArg<String>(p.args, 0);
             results[p.callId] = switch (tag) {
               'int' => 42,
               'str' => 'hello',
