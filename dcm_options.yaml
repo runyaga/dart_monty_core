@@ -187,14 +187,27 @@ dcm:
     # --- Null Safety & Types ---
     - avoid-late-keyword:
         exclude:
-          # test/** (12 issues, VERIFIED 2026-09-15). Every one is the standard
-          # `late T x;` + `setUp(() { x = ...; })` pair -- e.g.
-          # repl_platform_args_test.dart:21-22. This one is not just tolerated,
-          # it is the RIGHT trade: dropping `late` means making the field
-          # nullable and writing `x!` at every use, which swaps this rule for
-          # avoid-non-null-assertion and makes the failure mode worse (a null
-          # deref deep in a test instead of a LateInitializationError naming the
-          # field that setUp forgot).
+          # test/** (12 issues). Every one is the standard `late T x;` +
+          # `setUp(() { x = ...; })` pair -- e.g. repl_platform_args_test.dart
+          # :20-21. This is not merely tolerated, it is the RIGHT trade, and
+          # that is now MEASURED rather than argued.
+          #
+          # Converting the two `late` fields in that one file to nullable
+          # produces SIX analyzer errors, and the analyzer's own suggested
+          # remedy is the rule this repo just finished eliminating:
+          #
+          #   error - :26:37 - The argument type 'MontyRepl?' can't be assigned
+          #           to the parameter type 'MontyRepl'
+          #   error - :29:25 - The method 'dispose' can't be unconditionally
+          #           invoked because the receiver can be 'null'. Try ... adding
+          #           a null check to the target ('!')
+          #   ... four more of the same
+          #
+          # So dropping `late` trades 12 of this rule for a larger number of
+          # avoid-non-null-assertion, which is enforced with NO exclusions as
+          # of 4d91397. It also worsens the failure: a null deref deep in a
+          # test, instead of a LateInitializationError naming the field setUp
+          # forgot to set.
           - "test/**"
     - avoid-dynamic
     - avoid-non-null-assertion
