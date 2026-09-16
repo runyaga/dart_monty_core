@@ -195,7 +195,17 @@ s  version_pin   bash tool/check_version_pin.sh
 # Both its refusals are loud: no DCM credentials -> SKIP exit 0, so a machine
 # without the key is unaffected; uncommitted dcm_options.yaml -> REFUSE exit 2,
 # because the mode swaps that file and would risk your edits.
-s  dcm_excludes  bash tool/check_dcm_exclusions.sh --deep
+# DCM RUNS ON THE HOST, NOT HERE. This gate executes inside the `dmc-build`
+# container, which carries dcm 1.37.0; the project standardises on 1.39.0, which
+# is installed on the host. Keeping two dcm versions in step is not worth it, so
+# the three DCM checks move out to `bash tool/dcm_host_gate.sh` (run from macOS)
+# and skip here — visibly, as SKIP, never as PASS.
+#
+# They still run normally when this script is invoked ON the host.
+dcm_here(){ [ -e /run/.containerenv ] || [ -e /.dockerenv ] && {
+  echo "SKIP  $1  (0s)  — DCM runs on the host: bash tool/dcm_host_gate.sh" \
+    >> "$OUT/SUMMARY.txt"; return 1; }; return 0; }
+dcm_here dcm_excludes  && s  dcm_excludes  bash tool/check_dcm_exclusions.sh --deep
 s  vague_errors bash tool/check_no_vague_errors.sh
 # The two backends implement one shared contract, so a consumer picks a backend
 # without picking a feature set. `throw UnimplementedError` breaks that
@@ -228,8 +238,8 @@ s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example --
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
 s  unit_web      dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
-s  dcm_ratchet   bash tool/dcm_ratchet.sh
-s  metrics_ratch bash tool/metrics_ratchet.sh
+dcm_here dcm_ratchet && s  dcm_ratchet   bash tool/dcm_ratchet.sh
+dcm_here metrics_ratch && s  metrics_ratch bash tool/metrics_ratchet.sh
 ns cargo_fmt     cargo fmt --check
 ns cargo_clippy  cargo clippy --all-targets -- -D warnings
 ns cargo_test    cargo test
