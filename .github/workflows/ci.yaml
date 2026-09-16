@@ -164,11 +164,21 @@ jobs:
           run bash tool/check_version_pin.sh
           run bash tool/check_no_vague_errors.sh
           run bash tool/check_backend_parity.sh
+          # Both of these catch things a Dart test PROVABLY cannot, and both ran
+          # only on a laptop until now:
+          #   hierarchy_registry — Dart has no runtime reflection on web or AOT,
+          #     so no test can enumerate a sealed class's subtypes. A 27th
+          #     subtype added without a sample leaves the matrix green.
+          #   hook_dependencies — measured: with the hook's .rs dependency loop
+          #     removed, editing a .rs never reaches the dylib and `dart test`
+          #     passes 30/30 against a stale artefact.
+          run bash tool/check_hierarchy_registry.sh
+          run bash tool/check_hook_dependencies.sh
 
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 16 ] || { echo "FAIL: expected 16 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 18 ] || { echo "FAIL: expected 18 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
