@@ -13,7 +13,7 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
-import '_callback_args.dart';
+import '../_accessors.dart';
 
 void runRunAsyncMatrixTests() {
   group('Monty(code).run async/sync matrix', () {

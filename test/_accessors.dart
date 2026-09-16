@@ -8,6 +8,7 @@
 //
 // It cannot live in package:monty_conformance, which is deliberately
 // dependency-free so it compiles for the browser — `fail()` is package:test.
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -98,4 +99,37 @@ T dartValueOf<T>(MontyValue value) {
   }
 
   return dart as T;
+}
+
+/// The single element of [items], or a failure naming what was there instead.
+///
+/// Replaces `xs.singleOrNull!` after an `expect(xs, hasLength(1))`. The expect
+/// is a real assertion, but it does not PROMOTE — so the `!` was load-bearing
+/// for the compiler while adding nothing for the reader, and on a length
+/// mismatch it reported a null-check failure rather than the length.
+T onlyItem<T>(Iterable<T> items) {
+  final list = items.toList();
+  // `list.first` would be the obvious ending and is exactly what
+  // avoid-unsafe-collection-methods flags -- the ratchet caught it here, in
+  // the helper written to stop that very pattern. `firstOrNull` plus the null
+  // check promotes instead.
+  final only = list.firstOrNull;
+  if (list.length != 1 || only == null) {
+    fail('expected exactly one item, got ${list.length}: $list');
+  }
+
+  return only;
+}
+
+/// The first element of [items], or a failure saying it was empty.
+///
+/// Replaces `xs.firstOrNull!` after an `expect(xs, isNotEmpty)`, for the same
+/// reason as [onlyItem].
+T firstItem<T>(Iterable<T> items) {
+  final first = items.firstOrNull;
+  if (first == null) {
+    fail('expected at least one item, got an empty $items');
+  }
+
+  return first;
 }

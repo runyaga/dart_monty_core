@@ -14,7 +14,7 @@ import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
-import '_callback_args.dart';
+import '../_accessors.dart';
 
 /// Helper: walk the progress loop, treating every external call as a future.
 /// Returns the terminal [MontyComplete] (or throws if the script never
@@ -107,7 +107,7 @@ result
       expect(result.result.error, isNull);
       expect(result.result.value.dartValue, 'value-for-token');
       expect(pendings, hasLength(1));
-      expect(pendings.firstOrNull!.functionName, 'fetch');
+      expect(firstItem(pendings).functionName, 'fetch');
     });
 
     // --- Error path --------------------------------------------------------

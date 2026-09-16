@@ -27,7 +27,7 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
-import '_callback_args.dart';
+import '../_accessors.dart';
 
 /// True on dart2js, where `int` and `double` are one runtime type.
 bool get _isJs => identical(1, 1.0);

@@ -4,7 +4,7 @@ library;
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
-import '_callback_args.dart';
+import '../_accessors.dart';
 
 // ---------------------------------------------------------------------------
 // In-memory VFS shared across tests
@@ -18,7 +18,7 @@ Map<String, String> _makeVfs() => {
 OsCallHandler _vfsHandler(Map<String, String> vfs) => (op, args, kwargs) {
   switch (op) {
     case 'Path.read_text':
-      return vfs[args.firstOrNull!] ?? '';
+      return vfs[callbackArg<String>(args, 0)] ?? '';
     case 'Path.write_text':
       vfs[callbackArg<String>(args, 0)] = callbackArg<String>(args, 1);
 
