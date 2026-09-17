@@ -10,10 +10,25 @@ import 'package:test/test.dart';
 void main() {
   // -------------------------------------------------------------------------
   group('toPythonLiteral', () {
-    test('null throws MontyInternalError', () {
+    test('null throws MontyInternalError, and the message is readable', () {
+      // ASSERT THE MESSAGE, not just the type. MontyInternalError exists to
+      // tell a caller what they did wrong, and its whole rendering is
+      // `toString()` -- which no test read, so lines 13-14 of
+      // monty_internal_error.dart were the file's only uncovered ones. A
+      // sentinel whose text nobody checks can lose its text silently.
       expect(
         () => toPythonLiteral(null),
-        throwsA(isA<MontyInternalError>()),
+        throwsA(
+          isA<MontyInternalError>().having(
+            (e) => e.toString(),
+            'toString()',
+            allOf(
+              startsWith('MontyInternalError: '),
+              contains('toPythonLiteral'),
+              contains('MontyNone()'),
+            ),
+          ),
+        ),
       );
     });
 
@@ -150,10 +165,16 @@ void main() {
       expect(inputsToCode({'x': const MontyNone()}), 'x = None');
     });
 
-    test('null entry throws MontyInternalError', () {
+    test('null entry throws MontyInternalError naming the offending key', () {
       expect(
         () => inputsToCode({'x': null}),
-        throwsA(isA<MontyInternalError>()),
+        throwsA(
+          isA<MontyInternalError>().having(
+            (e) => e.toString(),
+            'toString()',
+            startsWith('MontyInternalError: '),
+          ),
+        ),
       );
     });
 

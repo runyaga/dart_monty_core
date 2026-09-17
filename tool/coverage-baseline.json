@@ -173,8 +173,8 @@
     },
     "lib/src/platform/monty_internal_error.dart": {
       "found": 3,
-      "hit": 1,
-      "pct": 33.33
+      "hit": 3,
+      "pct": 100.0
     },
     "lib/src/platform/monty_limits.dart": {
       "found": 26,
@@ -293,8 +293,8 @@
     },
     "lib/src/repl/repl_platform.dart": {
       "found": 36,
-      "hit": 30,
-      "pct": 83.33
+      "hit": 36,
+      "pct": 100.0
     },
     "lib/src/repl/wasm_repl_bindings.dart": {
       "found": 122,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2673,
-    "pct": 64.15
+    "hit": 2681,
+    "pct": 64.34
   }
 }
