@@ -110,13 +110,50 @@ echo ""
 # excluded test stays excluded. The cost is that a NEW wasm_*_test.dart is
 # silently never run — which is exactly what happened to the two 0.19 suites:
 # they existed, were tagged `wasm`, and no CI job touched them. Guard the class.
-echo "--- Checking every wasm_*_test.dart is listed ---"
+echo "--- Checking every wasm-TAGGED suite is listed ---"
+# WIDENED 2026-09-17, on two holes both demonstrated before the fix. The guard
+# was narrower than the class it claimed to guard, and so returned PASS on a
+# file that nothing ran:
+#
+#   1. The loop globbed `wasm_*_test.dart`, but MEMBERSHIP IS THE TAG, not the
+#      filename. wasm_mem_spike_repro.dart is tagged `wasm` and does not end in
+#      `_test.dart`; a new suite shaped like it was invisible here. Measured:
+#      added a tagged wasm_zzz_probe.dart, guard said PASS, nothing ran it.
+#   2. Listedness was `grep -qF "$f" "$0"`, which searches the WHOLE SCRIPT
+#      INCLUDING COMMENTS. Measured: a path named only in a trailing comment
+#      satisfied the guard -- PASS, still unrun. This is the same defect as the
+#      api-exercised check, where a symbol inside a header comment counted as
+#      exercised.
+#
+# The list further down stays EXPLICIT on purpose (see the note above it: a
+# deliberately excluded test must stay excluded). So this guards the list; it
+# does not replace it with a glob.
+TAGGED=()
+while IFS= read -r _f; do
+  TAGGED+=("$_f")
+done < <(grep -rlE "@Tags\(\[[^]]*'wasm'" test/integration --include='*.dart' | sort)
+
+# REFUSE ON A COLLAPSED SET. If the pattern breaks or the directory moves, the
+# loop below iterates nothing and prints "all listed" -- a vacuous pass, which
+# is worse than no guard because it reads as evidence that the class is covered.
+if [ "${#TAGGED[@]}" -lt 30 ]; then
+  echo "REFUSING: discovered ${#TAGGED[@]} wasm-tagged suites under test/integration" >&2
+  echo "  (floor 30; it was 32 when this was written). Either discovery is" >&2
+  echo "  broken or suites were deleted. Do not lower the floor to go green." >&2
+  exit 1
+fi
+
+# Comments stripped, so only a real command-line mention counts as listed.
+LISTED_REGION="$(grep -v '^[[:space:]]*#' "$0")"
 UNLISTED=0
-for f in test/integration/wasm_*_test.dart; do
-  if ! grep -qF "$f" "$0"; then
-    echo "  UNLISTED: $f"
-    UNLISTED=1
-  fi
+for f in "${TAGGED[@]}"; do
+  case "$LISTED_REGION" in
+    *"$f"*) ;;
+    *)
+      echo "  UNLISTED: $f"
+      UNLISTED=1
+      ;;
+  esac
 done
 if [ "$UNLISTED" = "1" ]; then
   echo "FAIL: the file(s) above are tagged wasm but are not in this script's list,"
@@ -124,7 +161,7 @@ if [ "$UNLISTED" = "1" ]; then
   echo "      comment naming why they are skipped."
   exit 1
 fi
-echo "  all listed"
+echo "  all ${#TAGGED[@]} tagged suites listed"
 
 # Concurrency: half the cores, capped at 4, floor of 2. Override with
 # WASM_TEST_CONCURRENCY.
