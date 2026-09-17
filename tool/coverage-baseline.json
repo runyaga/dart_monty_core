@@ -33,8 +33,8 @@
     },
     "lib/src/ffi/native_bindings_ffi.dart": {
       "found": 338,
-      "hit": 295,
-      "pct": 87.28
+      "hit": 302,
+      "pct": 89.35
     },
     "lib/src/ffi/native_isolate_bindings.dart": {
       "found": 0,
@@ -258,13 +258,13 @@
     },
     "lib/src/repl/ffi_repl_bindings.dart": {
       "found": 176,
-      "hit": 143,
-      "pct": 81.25
+      "hit": 147,
+      "pct": 83.52
     },
     "lib/src/repl/monty_repl.dart": {
       "found": 228,
-      "hit": 187,
-      "pct": 82.02
+      "hit": 193,
+      "pct": 84.65
     },
     "lib/src/repl/repl_bindings.dart": {
       "found": 0,
@@ -293,8 +293,8 @@
     },
     "lib/src/repl/repl_platform.dart": {
       "found": 36,
-      "hit": 18,
-      "pct": 50.0
+      "hit": 30,
+      "pct": 83.33
     },
     "lib/src/repl/wasm_repl_bindings.dart": {
       "found": 122,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2605,
-    "pct": 62.51
+    "hit": 2634,
+    "pct": 63.21
   }
 }
