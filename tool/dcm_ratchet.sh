@@ -47,7 +47,8 @@ if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
     # for. A PR that legitimately bumps dcm AND regenerates the baseline would
     # otherwise be measured against the OLD baseline with the NEW analyzer,
     # which is a cross-version comparison this file already warns about.
-    BASE_V=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('_dcm_version',''))" "$BASE_COPY" 2>/dev/null)
+    BASE_V=$(python3 -c "import json
+import os,sys;print(json.load(open(sys.argv[1])).get('_dcm_version',''))" "$BASE_COPY" 2>/dev/null)
     CUR_V=$(python3 -c "import json;print(json.load(open('tool/dcm-baseline.json')).get('_dcm_version',''))" 2>/dev/null)
     if [ -n "$BASE_V" ] && [ "$BASE_V" != "$CUR_V" ]; then
       rm -f "$BASE_COPY"
@@ -214,7 +215,7 @@ if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))
 fi
 rm -f "$ERR"
 
-BASELINE="$BASELINE" UPDATE="$UPDATE" TMP="$TMP" python3 - <<'PY'
+BASELINE="$BASELINE" UPDATE="$UPDATE" TMP="$TMP" HAVE_V="$HAVE_V" python3 - <<'PY'
 import json, os, sys, collections
 
 tmp = os.environ['TMP']
@@ -230,7 +231,15 @@ for r in d['analyzeResults']:
 current = {'total': sum(rules.values()), 'by_rule': dict(rules), 'by_file': dict(files)}
 
 if update:
-    json.dump(current, open(baseline_path, 'w'), indent=2, sort_keys=True)
+    # RECORD THE ANALYSER VERSION. Without it the version pin above is inert:
+    # it reads `_dcm_version` from the baseline, finds nothing, and skips the
+    # comparison entirely. Measured 2026-09-17 -- tool/dcm-baseline.json had no
+    # such key, so the mismatch guard had never once fired, while
+    # tool/metrics-baseline.json (which does record it) deadlocked on a real
+    # 1.37.0 vs 1.39.0 skew. Counts are not comparable across dcm versions;
+    # a baseline that does not say which version produced it cannot be checked.
+    out = {'_dcm_version': os.environ.get('HAVE_V', ''), **current}
+    json.dump(out, open(baseline_path, 'w'), indent=2, sort_keys=True)
     print(f"baseline updated: {current['total']} issues, {len(rules)} rules, {len(files)} files")
     sys.exit(0)
 

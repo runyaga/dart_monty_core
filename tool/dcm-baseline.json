@@ -1,5 +1,15 @@
 {
-  "by_file": {},
-  "by_rule": {},
-  "total": 0
+  "_dcm_version": "1.39.0",
+  "by_file": {
+    "lib/src/ffi/ffi_core_bindings.dart": 18,
+    "test/unit/ffi/ffi_wire_format_handshake_test.dart": 1,
+    "test/unit/platform/monty_int_bigint_equality_test.dart": 4
+  },
+  "by_rule": {
+    "member-ordering": 17,
+    "newline-before-return": 1,
+    "prefer-declaring-const-constructor": 1,
+    "prefer-moving-to-variable": 4
+  },
+  "total": 23
 }
