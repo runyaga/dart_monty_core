@@ -1,2 +1,19 @@
 # Public entry points NOT exercised against a real backend.
-# One name per line, reason after a #. Empty is the goal and the current state.
+# One name per line, reason after a #. Empty is the goal.
+#
+# THESE SIX ARE A TODO LIST, NOT A GRANT OF EXEMPTION. They appeared when the
+# source list stopped being two hard-coded filenames and became the export
+# closure of lib/dart_monty_core.dart (2026-09-17). Every one of them has
+# callers inside lib/, so each is reached TRANSITIVELY when the calling path
+# runs on FFI or WASM -- but no real-backend test names it directly, which is
+# the weaker guarantee this check exists to distinguish from the stronger one.
+#
+# The check fails when a line here becomes exercised, so this list cannot rot
+# quietly: closing a gap forces deleting its line in the same commit.
+
+encodeForWire            # 1 lib caller, 2 unit tests, 0 real-backend. Wire encoding is exactly what a mock cannot vouch for.
+listFromJson             # 5 lib callers, 8 unit tests, 0 real-backend. Stack-frame decode; only ever fed hand-written JSON.
+restoreSnapshot          # 2 lib callers, no test of any kind. Snapshot restore across a real engine is untested.
+resumeNameLookupValue    # 3 lib callers, 0 real-backend. The only apparent hit is test/integration/web/wasm_runner.mjs, a COMPILED ARTIFACT, not Dart source.
+setExtFns                # 2 lib callers. Exercised transitively via feedStart; test/integration/wasm_setextfns_test.dart is the regression test for it being fire-and-forget on WASM, and names it only in comments.
+startPrecompiled         # 2 lib callers, 2 unit tests. Pairs with core#152: handle.rs:558 returns Err unconditionally, so the producer side is dead on every target.

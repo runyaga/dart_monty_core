@@ -47,17 +47,86 @@ if baseline_path.exists():
         if line:
             declared.add(line)
 
-SOURCES = ['lib/src/monty.dart', 'lib/src/repl/monty_repl.dart']
+# THE SOURCE LIST IS DISCOVERED, NOT ENUMERATED -- and it used to be two
+# hard-coded filenames, which is the very failure the header above warns
+# about, one level up. The METHOD list was derived; the FILE list was not, so
+# a public entry point added to any class other than Monty or MontyRepl was
+# exempt from this check by default. Measured, 2026-09-17: the two-file list
+# saw 18 entry points; the export closure of the public library sees 37 across
+# 33 files, and ELEVEN of the extra ones are not exercised on any real
+# backend -- including resumeNameLookupValue(), startPrecompiled() and
+# restoreSnapshot(), which is precisely the mock-green/backend-dead shape this
+# check was written for.
+#
+# The closure is the right boundary rather than `lib/**/*.dart`: globbing all
+# of lib/ pulls in the FFI and WASM binding layers (416 methods) that no
+# consumer calls directly, and a check that cries wolf gets deleted.
+def _export_closure(root):
+    EXPORT = re.compile(r"^export\s+'([^']+)'", re.M)
+    seen, queue = set(), [pathlib.Path(root)]
+    while queue:
+        f = queue.pop()
+        if f in seen or not f.exists():
+            continue
+        seen.add(f)
+        for rel in EXPORT.findall(f.read_text(errors='replace')):
+            if rel.startswith(('package:', 'dart:')):
+                continue
+            queue.append((f.parent / rel).resolve().relative_to(pathlib.Path.cwd()))
+    return sorted(str(f) for f in seen)
+
+SOURCES = _export_closure('lib/dart_monty_core.dart')
+
+# Refuse rather than check a set that collapsed. If an `export` rename or a
+# moved file shrinks the closure, every entry point silently disappears and
+# this reports a clean pass over nothing.
+if len(SOURCES) < 20:
+    print(f'FAIL: the public export closure is only {len(SOURCES)} file(s).')
+    print('  Expected 20+. A closure that stopped resolving would examine')
+    print('  almost nothing and still print PASS.')
+    sys.exit(1)
 # A public method declaration at class-member indentation. `_private` and
 # operators are excluded; getters have no parens and are not entry points.
 DECL = re.compile(
     r'^  (?:static\s+)?(?:Future<[^>]*>|Stream<[^>]*>|void|[A-Z][\w<>?,\[\] ]*)\s+'
     r'([a-z]\w*)\s*\(', re.M)
 
+# A METHOD IS ONLY A METHOD INSIDE A TYPE BODY.
+#
+# DECL keys off two-space indentation, and a LOCAL FUNCTION declared inside a
+# top-level function body sits at exactly that indentation too. Measured when
+# the source list was widened: lib/src/mount/memory_mounted_os_handler.dart
+# has no class at all -- `requireParentDir`, `putContent`, `refuseDirectory`,
+# `requireFile` and `notMine` are closures inside the factory function
+# `memoryMountedOsHandler(...)` at line 72. All five were reported as
+# unexercised public entry points. They are not public and not entry points,
+# and baselining them would have recorded five exemptions for a parsing
+# mistake.
+#
+# So track type bodies by brace depth and only accept declarations inside one.
+TYPE_START = re.compile(
+    r'^(?:final\s+|abstract\s+|base\s+|sealed\s+|interface\s+|mixin\s+)*'
+    r'(?:class|extension|mixin|enum)\b')
+
+def _methods_in_types(text):
+    """Yield method names declared directly inside a class/extension/mixin."""
+    names, depth, in_type, type_depth = [], 0, False, 0
+    for line in text.splitlines():
+        if not in_type and TYPE_START.match(line):
+            in_type, type_depth = True, depth
+        if in_type and depth == type_depth + 1:
+            m = DECL.match(line)
+            if m:
+                names.append(m.group(1))
+        depth += line.count('{') - line.count('}')
+        if in_type and depth <= type_depth:
+            in_type = False
+    return names
+
 entry_points = {}
 for src in SOURCES:
     text = pathlib.Path(src).read_text(errors='replace')
-    for name in DECL.findall(text):
+    for name in _methods_in_types(text):
         entry_points.setdefault(name, src)
 
 if not entry_points:
