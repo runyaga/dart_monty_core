@@ -32,8 +32,7 @@ WIRE_VER="$(grep -m1 -oE 'WIRE_FORMAT_VERSION: u32 = [0-9]+' native/src/convert.
 
 EXPECTED="dart_monty_core v${PUB_VER} &middot; monty ${CARGO_TAG} &middot; wire v${WIRE_VER}"
 
-# Every page a reader can land on. packages/dart_monty_web/web/index.html is
-# excluded deliberately: it is a <meta refresh> stub with no content.
+# Every page a reader can land on.
 PAGES="
 docs/index.html
 packages/dart_monty_web/web/index_js.html
@@ -41,6 +40,58 @@ packages/dart_monty_web/web/index_wasm.html
 packages/dart_monty_web/web/matrix_js.html
 packages/dart_monty_web/web/matrix_wasm.html
 "
+
+# Deliberately excluded, with the reason. An exclusion must be stated here, not
+# achieved by being forgotten.
+EXCLUDED="
+packages/dart_monty_web/web/index.html
+"
+
+# -----------------------------------------------------------------------------
+# THE LIST MUST COVER THE DIRECTORY, NOT JUST EXIST
+# -----------------------------------------------------------------------------
+# The loop below checks listed -> exists. It never checked exists -> listed, so
+# a NEW page was not version-checked at all -- which is precisely the failure
+# the comment inside that loop claims to catch ("a new page added without one
+# would otherwise pass by not being looked at"). It could not: an unlisted page
+# is never looked at. The stated intent and the code disagreed.
+#
+# Measured 2026-09-17 before this check: 6 pages on disk, 5 listed, and the
+# sixth is the documented stub -- so this closes a trap rather than a live gap.
+# `|| true` IS LOAD-BEARING. Under `set -euo pipefail` a failing `find` (a
+# renamed or deleted directory -- the exact case the floor below exists for)
+# aborts the script at this assignment with exit 1 and NO OUTPUT, so the
+# refusal never prints and the reader is told nothing. Measured while
+# falsifying this guard: the collapsed-discovery arm died silently here.
+DISCOVERED="$(find docs packages/dart_monty_web/web -name '*.html' -type f \
+  2>/dev/null | sort || true)"
+
+# REFUSE ON A COLLAPSED SET. If the directories move, `find` returns nothing,
+# every page below is "covered" and this gate reports PASS over an empty set --
+# a vacuous green that reads as evidence.
+NDISC="$(printf '%s\n' "$DISCOVERED" | grep -c '\.html$' || true)"
+if [ "$NDISC" -lt 5 ]; then
+  echo "REFUSING: discovered $NDISC .html page(s) under docs/ and"
+  echo "  packages/dart_monty_web/web (floor 5; it was 6 when written)."
+  echo "  Discovery is broken, or pages were deleted. Do not lower the floor."
+  exit 2
+fi
+
+UNCOVERED=""
+for found in $DISCOVERED; do
+  case " $(echo $PAGES) $(echo $EXCLUDED) " in
+    *" $found "*) ;;
+    *) UNCOVERED="$UNCOVERED $found" ;;
+  esac
+done
+if [ -n "$UNCOVERED" ]; then
+  echo "FAIL: page(s) on disk that this gate never looks at:"
+  for u in $UNCOVERED; do echo "  UNCOVERED: $u"; done
+  echo ""
+  echo "      A page nobody checks can state any version, or none. Add each to"
+  echo "      PAGES, or to EXCLUDED with the reason it carries no badge."
+  exit 1
+fi
 
 rc=0
 for page in $PAGES; do
@@ -72,4 +123,5 @@ if [ "$rc" -ne 0 ]; then
   exit 1
 fi
 
-echo "PASS — all 5 published pages state $EXPECTED"
+echo "PASS — all $NDISC page(s) on disk are covered; the published ones state"
+echo "       $EXPECTED"
