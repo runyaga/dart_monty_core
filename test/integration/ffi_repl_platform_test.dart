@@ -136,7 +136,7 @@ void main() {
   });
 
   group('ReplPlatform refuses what the REPL cannot do', () {
-    test('name-lookup resume is UnimplementedError, and says why', () async {
+    test('name-lookup resume is UnimplementedError, and says why', () {
       final m = _make();
       addTearDown(m.repl.dispose);
 
@@ -180,19 +180,14 @@ void main() {
       );
     });
 
-    test('precompiled and type-check surfaces are UnsupportedError', () async {
+    test('precompiled and type-check surfaces are UnsupportedError', () {
       final m = _make();
       addTearDown(m.repl.dispose);
 
       // Synchronous, for the same reason as the name-lookup pair above.
-      expect(
-        () => m.platform.compileCode('x = 1'),
-        throwsA(isA<UnsupportedError>()),
-      );
-      expect(
-        () => m.platform.typeCheck('x = 1'),
-        throwsA(isA<UnsupportedError>()),
-      );
+      final unsupported = throwsA(isA<UnsupportedError>());
+      expect(() => m.platform.compileCode('x = 1'), unsupported);
+      expect(() => m.platform.typeCheck('x = 1'), unsupported);
     });
   });
 }

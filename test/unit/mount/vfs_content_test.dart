@@ -79,9 +79,14 @@ void main() {
 
   group('VfsText', () {
     test('equality and hashCode follow the text', () {
-      expect(VfsText('a'), equals(VfsText('a')));
-      expect(VfsText('a').hashCode, VfsText('a').hashCode);
-      expect(VfsText('a'), isNot(VfsText('b')));
+      // TWO DISTINCT INSTANCES, deliberately. Collapsing these to one
+      // variable would make equality and hashCode agree by identity and the
+      // test would pass against a class that defines neither.
+      final a1 = VfsText('a');
+      final a2 = VfsText('a');
+      expect(a1, equals(a2));
+      expect(a1.hashCode, a2.hashCode);
+      expect(a1, isNot(VfsText('b')));
     });
   });
 

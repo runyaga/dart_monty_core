@@ -80,14 +80,9 @@ void main() {
 
       // assertNotDisposed guards every override here. Without this the
       // disposed branch of resumeAsFuture/resolveFutures is never taken.
-      await expectLater(
-        m.resumeAsFuture(),
-        throwsA(isA<StateError>()),
-      );
-      await expectLater(
-        m.resolveFutures(const {}),
-        throwsA(isA<StateError>()),
-      );
+      final stateError = throwsA(isA<StateError>());
+      await expectLater(m.resumeAsFuture(), stateError);
+      await expectLater(m.resolveFutures(const {}), stateError);
     });
 
     test('resumeAsFuture refuses when no execution is active', () async {
@@ -168,7 +163,7 @@ void main() {
       expect(r.value, const MontyInt(2));
     });
 
-    test('reports its backend name', () async {
+    test('reports its backend name', () {
       const native = NativeBindingsFfi();
       final m = MontyFfi.withCore(
         coreBindings: FfiCoreBindings(bindings: native),

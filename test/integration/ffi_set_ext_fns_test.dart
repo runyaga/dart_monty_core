@@ -52,11 +52,11 @@ void main() {
       expect(progress.error, isNull);
       // The engine built a callable for it, which it can only do if the
       // registration reached the interpreter.
-      expect(progress.value, isA<Map<String, dynamic>>());
-      expect(
-        (progress.value! as Map<String, dynamic>)['__type'],
-        'function',
-      );
+      final value = progress.value;
+      if (value is! Map<String, dynamic>) {
+        fail('expected a callable payload, got ${value.runtimeType}');
+      }
+      expect(value['__type'], 'function');
     });
 
     test('an UNregistered name raises NameError — identical source', () async {
@@ -77,11 +77,20 @@ void main() {
         // Pinned deliberately. This is the trap the first draft fell into, and
         // leaving it unasserted invites the next person to write the same
         // broken test.
+        // Paired with the second `_repl()` below: one engine WITH the
+        // registration, one without. A single hoisted REPL would compare an
+        // engine against itself.
+        // ignore: prefer-moving-to-variable
         final registered = await _repl();
         addTearDown(registered.dispose);
         await registered.setExtFns(['fetch_thing']);
         final withReg = await registered.feedStart('fetch_thing(1)');
 
+        // TWO REPLS ARE THE POINT. `_repl()` is invoked twice on purpose --
+        // one with the registration, one without -- and hoisting the call to a
+        // single variable would compare an engine against ITSELF, which is
+        // exactly the broken shape this test exists to rule out.
+        // ignore: prefer-moving-to-variable
         final bare = await _repl();
         addTearDown(bare.dispose);
         final withoutReg = await bare.feedStart('fetch_thing(1)');
@@ -146,11 +155,20 @@ void main() {
       addTearDown(repl.dispose);
 
       await repl.setExtFns(['gone']);
-      expect((await repl.feedStart('gone')).state, 'complete');
+      // Paired with the second feed below: the SAME source, before and after
+      // clearing the registration. Hoisting either into one shared call
+      // destroys the before/after comparison this test is made of.
+      // ignore: prefer-moving-to-variable
+      final whileRegistered = await repl.feedStart('gone');
+      expect(whileRegistered.state, 'complete');
 
       await repl.setExtFns(const []);
 
-      expect((await repl.feedStart('gone')).state, 'complete');
+      // TWO FEEDS ARE THE POINT: the same source before and after clearing the
+      // registration. One hoisted call cannot observe a change across it.
+      // ignore: prefer-moving-to-variable
+      final afterClearing = await repl.feedStart('gone');
+      expect(afterClearing.state, 'complete');
     });
   });
 }

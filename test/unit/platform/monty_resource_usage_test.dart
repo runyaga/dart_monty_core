@@ -42,9 +42,10 @@ void main() {
         stackDepthUsed: 0,
       );
 
-      expect(u.toString(), contains('memoryBytesUsed: 0'));
-      expect(u.toString(), contains('timeElapsedMs: 0'));
-      expect(u.toString(), contains('stackDepthUsed: 0'));
+      final rendered = u.toString();
+      expect(rendered, contains('memoryBytesUsed: 0'));
+      expect(rendered, contains('timeElapsedMs: 0'));
+      expect(rendered, contains('stackDepthUsed: 0'));
     });
 
     test('equality and hashCode follow all three fields', () {

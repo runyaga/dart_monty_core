@@ -29,7 +29,11 @@ void main() {
         await m.run('def f():\n    raise ValueError("boom")\nf()\n');
         fail('expected the run to raise');
       } on MontyScriptError catch (e) {
-        frames = e.exception!.traceback;
+        final exception = e.exception;
+        if (exception == null) {
+          fail('MontyScriptError carried no exception payload to read');
+        }
+        frames = exception.traceback;
       }
     });
 
@@ -47,10 +51,14 @@ void main() {
       // `preview_line` and `hide_caret` are only present on some frames, and
       // a decoder that ignored unknown-but-present keys would still pass a
       // hand-written fixture that omitted them.
-      expect(frames[0].previewLine, 'f()');
-      expect(frames[1].previewLine, contains('raise ValueError'));
-      expect(frames[1].hideCaret, isTrue);
-      expect(frames[0].hideCaret, isFalse);
+      // DESTRUCTURED, not indexed. The pattern asserts the arity as part of
+      // the read: a payload that stopped carrying two frames fails here
+      // rather than at whichever `[1]` happened to be evaluated first.
+      final [caller, raiser] = frames;
+      expect(caller.previewLine, 'f()');
+      expect(raiser.previewLine, contains('raise ValueError'));
+      expect(raiser.hideCaret, isTrue);
+      expect(caller.hideCaret, isFalse);
     });
 
     test('listFromJson round-trips the engine payload through toJson', () {
@@ -60,16 +68,16 @@ void main() {
       final decoded = MontyStackFrame.listFromJson(reEncoded);
 
       expect(decoded, hasLength(frames.length));
-      for (var i = 0; i < frames.length; i++) {
-        expect(decoded[i].filename, frames[i].filename);
-        expect(decoded[i].startLine, frames[i].startLine);
-        expect(decoded[i].startColumn, frames[i].startColumn);
-        expect(decoded[i].endLine, frames[i].endLine);
-        expect(decoded[i].endColumn, frames[i].endColumn);
-        expect(decoded[i].frameName, frames[i].frameName);
-        expect(decoded[i].previewLine, frames[i].previewLine);
-        expect(decoded[i].hideCaret, frames[i].hideCaret);
-      }
+      // COMPARE THE WHOLE PAYLOAD, not eight named fields. The field-by-field
+      // version could only check fields the test author remembered to list, so
+      // a ninth field added to MontyStackFrame would round-trip wrong and
+      // still pass. Re-encoding both sides compares every field the class
+      // serialises, including ones that do not exist yet.
+      expect(
+        decoded.map((f) => f.toJson()).toList(),
+        equals(reEncoded),
+        reason: 'decode(encode(x)) must reproduce the engine payload exactly',
+      );
     });
 
     test('an empty traceback decodes to an empty list, not a throw', () {
