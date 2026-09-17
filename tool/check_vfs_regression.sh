@@ -24,7 +24,11 @@ set -uo pipefail
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PKG"
 
-PROBE="$(mktemp -t vfsreg).dart"
+# `mktemp -t vfsreg` works on macOS and FAILS on Linux — GNU coreutils
+# requires the template to end in at least three X's, and errors with
+# "too few X's in template". Measured in the dmc-build container: the script
+# died at rc 255 before running anything. The X's make it portable.
+PROBE="$(mktemp -t vfsreg.XXXXXX).dart"
 trap 'rm -f "$PROBE"' EXIT
 
 cat > "$PROBE" <<'DART'
@@ -50,11 +54,29 @@ const _mustStayGreen = [
 ];
 const _targets = ['mount_fs__ops.py', 'mount_fs__errors.py'];
 
-const _dir =
+// The upstream fixture corpus, which is NOT vendored into this repo. It is
+// read from MONTY_TEST_CASES when set, so this tool is usable by someone
+// whose checkout is not at the author's path — which is what the literal
+// below used to hardcode. Without the override it still defaults to that
+// path, so the existing setup keeps working.
+final _dir = Platform.environment['MONTY_TEST_CASES'] ??
     '/Users/runyaga/dev/monty_0_0_19/crates/monty/test_cases';
 
 Future<String?> _run(String name) async {
-  final body = File('$_dir/$name').readAsStringSync();
+  // REFUSE WITH A SENTENCE, not a PathNotFoundException stack. The corpus
+  // lives outside this repo, so "it is not here" is the expected failure for
+  // anyone who has not fetched it, and it deserves an instruction rather than
+  // a dart:io trace from frame #0.
+  final f = File('$_dir/$name');
+  if (!f.existsSync()) {
+    stderr.writeln('FAIL: fixture corpus not found at $_dir');
+    stderr.writeln('  This tool reads upstream monty test_cases, which are');
+    stderr.writeln('  NOT vendored here. Point it at a checkout:');
+    stderr.writeln('    MONTY_TEST_CASES=/path/to/crates/monty/test_cases \\');
+    stderr.writeln('      bash tool/check_vfs_regression.sh');
+    exit(2);
+  }
+  final body = f.readAsStringSync();
   final r = await Monty(
     "from pathlib import Path as _P\nroot = _P('/mnt')\n$body",
   ).run(
