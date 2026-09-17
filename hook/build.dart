@@ -167,6 +167,23 @@ void _declareInputs(
     nativeDir.resolve('build.rs'),
     nativeDir.resolve('rust-toolchain.toml'),
   ];
+
+  // `.cargo/config.toml` IS A BUILD INPUT and was not declared. It is where
+  // rustflags, the linker and target settings live, so a change to it changes
+  // the artefact while every declared dependency stays identical — the stale
+  // -dylib class this hook's dependency list exists to prevent. Today the file
+  // holds only a comment and an empty `[target.wasm32-wasip1]` section, so
+  // this is a latent gap rather than a live defect; the cost of finding it
+  // later is the hour already spent misdiagnosing a stale dylib.
+  //
+  // CONDITIONAL, for the reason recorded immediately below about
+  // `native/.test-hooks`: declaring a file that does not exist makes the
+  // runner re-run the hook on EVERY invocation. So it is added only when
+  // present.
+  final cargoConfig = nativeDir.resolve('.cargo/config.toml');
+  if (File.fromUri(cargoConfig).existsSync()) {
+    deps.add(cargoConfig);
+  }
   // `native/.test-hooks` is NOT declared, and declaring it was a REGRESSION.
   // The runner records an absent declared dependency with a sentinel hash and
   // hashes it to a different value on the next check, so the two never compare

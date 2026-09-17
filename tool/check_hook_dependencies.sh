@@ -58,7 +58,21 @@ need() {  # need <pattern> <what it guards>
 }
 
 # The four fixed inputs.
-for f in Cargo.toml Cargo.lock build.rs rust-toolchain.toml; do
+# THE LIST IS A JUDGEMENT, SO IT IS WRITTEN DOWN AS ONE. native/ holds eight
+# tracked config files and only these affect the BUILT ARTEFACT:
+#
+#   Cargo.toml  Cargo.lock  build.rs  rust-toolchain.toml  .cargo/config.toml
+#
+# Excluded deliberately: clippy.toml, rustfmt.toml and deny.toml configure
+# linting, formatting and licence auditing. None of them changes a byte of the
+# dylib, and declaring them would make the hook re-run on a lint-config edit.
+#
+# `.cargo/config.toml` WAS MISSING from this list and from the hook until
+# 2026-09-17. It is where rustflags, the linker and target settings live, so a
+# change to it changes the artefact while every declared dependency stays
+# identical. It was found by asking which checks report HOW MUCH they examined
+# and then auditing the ones that enumerate rather than discover.
+for f in Cargo.toml Cargo.lock build.rs rust-toolchain.toml .cargo/config.toml; do
   need "nativeDir.resolve('$f')" "native/$f"
 done
 
