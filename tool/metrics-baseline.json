@@ -1,5 +1,5 @@
 {
-  "_dcm_version": "1.37.0",
+  "_dcm_version": "1.39.0",
   "by_file": {
     "lib/src/ffi/ffi_core_bindings.dart": 1,
     "lib/src/ffi/native_bindings.dart": 1,
