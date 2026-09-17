@@ -465,6 +465,35 @@ if [ "$TREE_BEFORE" != "$TREE_AFTER" ]; then
   } >> "$OUT/SUMMARY.txt"
 fi
 
+# THE GATE MUST RUN EVERY STEP IT HAS, and nothing was checking that.
+#
+# GREEN is decided by `grep -q '^FAIL'` over the summary. A step that stops
+# being invoked — an `s`/`sf` line lost to a bad merge, a `for` loop whose glob
+# stopped matching, an early `return` — removes its own result line, so it
+# cannot produce a FAIL and the gate goes green having checked less. That is
+# the same failure ci.yaml guards with `[ "$RAN" -eq 19 ]` on its checks job;
+# this file, which is the actual commit precondition, had no equivalent.
+#
+# EXACT, not a floor. A floor would let steps disappear one at a time. Adding
+# or removing a step is a deliberate act, so it gets a deliberate edit here —
+# and the failure message says which direction moved.
+EXPECT_STEPS=41
+GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
+if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
+  {
+    echo ""
+    echo "FAIL  step_count  (ran $GOT_STEPS steps, expected $EXPECT_STEPS)"
+    if [ "$GOT_STEPS" -lt "$EXPECT_STEPS" ]; then
+      echo "      A step stopped running. The gate cannot fail on a check it"
+      echo "      never invoked, so this would otherwise be GREEN while"
+      echo "      verifying less than it did yesterday."
+    else
+      echo "      A step was added. Raise EXPECT_STEPS in tool/gate.sh in the"
+      echo "      same commit, so the next person inherits the new number."
+    fi
+  } >> "$OUT/SUMMARY.txt"
+fi
+
 echo "" >> "$OUT/SUMMARY.txt"; echo "done $(date -u +%FT%TZ)" >> "$OUT/SUMMARY.txt"
 cat "$OUT/SUMMARY.txt"
 grep -q '^FAIL' "$OUT/SUMMARY.txt" && { echo; echo "GATE RED — do not commit. Logs: $OUT"; exit 1; }
