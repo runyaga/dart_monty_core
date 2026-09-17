@@ -686,3 +686,116 @@ String? _evaluate(
           '${_describeError(thrownExcType, thrownMessage)}';
   }
 }
+
+// ===========================================================================
+// M0 — run ONE fixture against a CALLER-SUPPLIED handler
+// ===========================================================================
+/// Runs the mount-fs fixture [name] against [osHandler] and returns `null` on
+/// pass, or the failure reason.
+///
+/// **Why this exists.** The corpus is the only adjudicator this project has for
+/// filesystem semantics, and until now it could only ever judge ONE handler:
+/// `runFixtureCorpus` hardcodes `conformanceMountFsOsHandler()` at its mount-fs
+/// branch. Everything needed to judge a DIFFERENT handler was already here —
+/// `_runDispatchLoop` has taken an [OsCallHandler] parameter all along — behind
+/// a missing `public`.
+///
+/// That gap is why `PLAN-CORE-DEDUP.md` marks every divergence claim between
+/// `dart_monty_core/lib/src/mount/` and `dart_monty/lib/src/os_call/` as
+/// UNVERIFIED: nobody could run the same fixture against both. Seven sandbox
+/// defects were fixed downstream in a single day, three of them regressions
+/// introduced by the previous fix, with no oracle to catch any of it.
+///
+/// COVERAGE, COUNTED — and narrower than it first looks. The engine issues
+/// **19** filesystem operations (listed at the head of
+/// `memory_mounted_os_handler.dart`). `mount_fs__ops.py` and
+/// `mount_fs__errors.py` between them call **15** of them: they contain zero
+/// calls to `open`, `Path.append_text`, `Path.append_bytes` or
+/// `Path.is_symlink`. An earlier version of this comment claimed "16 of 18,
+/// with `touch` and `glob` uncovered" — wrong twice over, since `touch` and
+/// `glob` are not operations the engine issues at all.
+///
+/// `is_symlink` being uncovered matters most: core answers it
+/// `return false;` unconditionally, and the entry-versus-target symlink bugs
+/// fixed downstream this week are exactly what a fixture here would have
+/// caught. This adjudicator cannot see them.
+///
+/// Static presence of a call is also not proof it RAN: a failing assertion
+/// stops the fixture, so operations after it are not exercised.
+///
+/// Returns `null` for PASS. A non-null string is the reason, in the same words
+/// [runFixtureCorpus] would print. Throws [ArgumentError] if [name] is not in
+/// the corpus, and [StateError] if it is not a mount-fs fixture — a silent
+/// "skipped" here would let a caller build a green three-column table out of
+/// fixtures that never ran, which is the exact shape this repo has paid for
+/// before.
+Future<String?> runMountFsFixture(
+  String name,
+  OsCallHandler osHandler, {
+  MontyPlatform? platform,
+}) async {
+  final source = fixtureCorpus[name];
+  if (source == null) {
+    throw ArgumentError.value(name, 'name', 'not in the fixture corpus');
+  }
+  if (!fixtureMountsFs(source)) {
+    throw StateError(
+      '$name is not a mount-fs fixture, so running it against a filesystem '
+      'handler proves nothing. Pick one that is — e.g. mount_fs__ops.py.',
+    );
+  }
+
+  final expectation = parseFixture(source, skipMountFs: false);
+  if (expectation == null) {
+    throw StateError('$name has no parseable expectation directive.');
+  }
+
+  // Same preamble runFixtureCorpus injects: the fixtures address the VFS
+  // through a `root` variable, not through a literal path.
+  final body = "from pathlib import Path\nroot = Path('/mnt')\n$source";
+
+  final own = platform == null;
+  final p = platform ?? createPlatformMonty();
+  try {
+    final (thrownExcType, thrownMessage, resultValue, shouldSkip) =
+        await _runDispatchLoop(p, body, name, osHandler);
+
+    if (shouldSkip) {
+      // Never report a skip as a pass. See the doc comment above.
+      return 'SKIPPED: the dispatch loop declined to run $name';
+    }
+
+    return _evaluate(expectation, thrownExcType, thrownMessage, resultValue);
+  } on Object catch (e) {
+    // SCOPE CAVEAT, STATED RATHER THAN HIDDEN. This catch spans the dispatch
+    // loop AND `_evaluate`, so a platform or evaluator failure is reported
+    // with the same "handler threw" wording as a genuine handler fault. The
+    // label is therefore a hypothesis about blame, not a measurement of it --
+    // read the message before attributing a cell in the table to the handler.
+    //
+    // A CANDIDATE HANDLER THAT THROWS IS A RESULT, NOT A CRASH.
+    //
+    // `_runDispatchLoop` lets a handler's exception propagate; inside
+    // `runFixtureCorpus` that is caught per fixture and reported. Here it
+    // escaped, so the first thing this was pointed at — a handler that
+    // declines every op with `OsCallNotHandledException`, which is exactly
+    // what `dart_monty`'s handlers do for an op they do not implement
+    // (`sandboxed_fs_handler.dart:390`) — took down the whole run instead of
+    // filling in one cell of the table.
+    //
+    // A comparison harness whose first real input crashes it is not a
+    // comparison harness.
+    return 'handler threw: $e';
+  } finally {
+    if (own) await p.dispose();
+  }
+}
+
+/// The mount-fs fixtures worth running against a candidate handler.
+///
+/// Both are in [fixtureCorpus]; between them they cover 16 of the 18 `Path.*`
+/// operations. Measured 2026-09-17.
+const mountFsFixtures = <String>[
+  'mount_fs__ops.py',
+  'mount_fs__errors.py',
+];

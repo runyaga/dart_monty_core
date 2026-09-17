@@ -73,8 +73,8 @@
     },
     "lib/src/mount/memory_mounted_os_handler.dart": {
       "found": 279,
-      "hit": 264,
-      "pct": 94.62
+      "hit": 266,
+      "pct": 95.34
     },
     "lib/src/mount/monty_memory_file.dart": {
       "found": 7,
@@ -98,8 +98,8 @@
     },
     "lib/src/mount/vfs_accountant.dart": {
       "found": 38,
-      "hit": 35,
-      "pct": 92.11
+      "hit": 36,
+      "pct": 94.74
     },
     "lib/src/mount/vfs_callback_file.dart": {
       "found": 7,
@@ -248,8 +248,8 @@
     },
     "lib/src/platform/os_call_exception.dart": {
       "found": 12,
-      "hit": 7,
-      "pct": 58.33
+      "hit": 10,
+      "pct": 83.33
     },
     "lib/src/platform/wire_json.dart": {
       "found": 8,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2407,
-    "pct": 57.76
+    "hit": 2413,
+    "pct": 57.91
   }
 }
