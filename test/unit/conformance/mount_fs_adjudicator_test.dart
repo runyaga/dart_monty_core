@@ -17,6 +17,14 @@ import 'package:test/test.dart';
 
 void main() {
   group('runMountFsFixture', () {
+    // NAME the fixture instead of indexing into the list. `.first` trips
+    // `avoid-unsafe-collection-methods` (it throws when empty) and `[0]` trips
+    // `prefer-first` -- the two rules contradict each other on the same line,
+    // so neither spelling of "take an element" is clean. These tests do not
+    // want an arbitrary element anyway: they want a fixture known to exercise
+    // the handler, and naming it says so.
+    const fixture = 'mount_fs__ops.py';
+
     test('the control handler passes every mount-fs fixture', () async {
       for (final name in mountFsFixtures) {
         expect(
@@ -33,7 +41,7 @@ void main() {
       // this was handled, that exception escaped and took down the whole run
       // instead of filling in one cell of the comparison table.
       final reason = await runMountFsFixture(
-        mountFsFixtures.first,
+        fixture,
         (op, args, kwargs) => throw OsCallNotHandledException(op),
       );
 
@@ -46,7 +54,7 @@ void main() {
       // Every query answers "yes", every write answers 0. If the adjudicator
       // still reported a pass, it would be measuring nothing.
       final reason = await runMountFsFixture(
-        mountFsFixtures.first,
+        fixture,
         (op, args, kwargs) =>
             op.startsWith('Path.is') || op == 'Path.exists' ? true : 0,
       );

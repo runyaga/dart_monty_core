@@ -34,7 +34,7 @@ class _StubBindings implements NativeBindings {
   int wireFormatVersion() => _version;
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
+  Never noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('${invocation.memberName} is not stubbed');
 }
 

@@ -21,7 +21,7 @@ void runFeedRunAsyncMatrixTests() {
     late MontyRepl repl;
 
     setUp(() => repl = MontyRepl());
-    tearDown(() async => repl.dispose());
+    tearDown(() => repl.dispose());
 
     // matrix-cell: (sync Dart) × (sync Python)
     test('cell 1: sync handler + bare Python call', () async {

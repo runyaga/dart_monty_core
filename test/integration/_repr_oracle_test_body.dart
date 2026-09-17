@@ -116,7 +116,7 @@ const _webOnlyDivergences = <String, String>{};
 void runReprOracleTests() {
   group('repr differential — independent value-fidelity oracle', () {
     for (final MapEntry(key: expr, value: why) in _knownDivergences.entries) {
-      test('KNOWN DIVERGENCE: $expr', () async {
+      test('KNOWN DIVERGENCE: $expr', () {
         markTestSkipped(why);
       });
     }

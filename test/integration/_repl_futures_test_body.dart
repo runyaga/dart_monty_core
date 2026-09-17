@@ -73,7 +73,7 @@ void runReplFuturesTests() {
     late MontyRepl repl;
 
     setUp(() => repl = MontyRepl());
-    tearDown(() async => repl.dispose());
+    tearDown(() => repl.dispose());
 
     // --- Single await ------------------------------------------------------
 
@@ -192,7 +192,7 @@ results
     test(
       'gather: an errored task terminates the script (not '
       'per-task try/except)',
-      () async {
+      () {
         // Same observed-contract caveat as the simpler error test:
         // resolveFutures errors short-circuit Python's exception handling,
         // so the script terminates rather than letting `safe()`'s
@@ -319,7 +319,7 @@ await doubled(21)
     test(
       'resolveFutures with errors-only map carries the message into '
       'the terminal error',
-      () async {
+      () {
         // The error string the host supplies surfaces verbatim in the
         // terminal MontyScriptError.message, so callers can route it
         // back to whichever Dart-side exception classification they
