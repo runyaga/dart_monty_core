@@ -188,8 +188,8 @@
     },
     "lib/src/platform/monty_progress.dart": {
       "found": 113,
-      "hit": 7,
-      "pct": 6.19
+      "hit": 113,
+      "pct": 100.0
     },
     "lib/src/platform/monty_resource_usage.dart": {
       "found": 23,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2413,
-    "pct": 57.91
+    "hit": 2519,
+    "pct": 60.45
   }
 }
