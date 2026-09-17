@@ -59,6 +59,29 @@ _res(){ rc=$1; n=$2; t=$3
   fi >> "$OUT/SUMMARY.txt"; }
 s(){ n="$1"; shift; t=$SECONDS
   "$@" >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
+
+# A SUITE THAT REGISTERS NOTHING PRINTS SUCCESS AND EXITS 0.
+#
+# ci.yaml has guarded that since its four `assert_test_count.sh` calls (unit
+# 400, FFI 1300, WASM unit 700 x2). THIS GATE DID NOT — measured 2026-09-17,
+# `grep -c assert_test_count tool/gate.sh` was 0, so every local run that is
+# the precondition for a commit would have gone green on a suite that
+# registered zero tests. The repo has already paid for that shape once
+# (8dbdd59, "646 of 1593 registered tests" asserting nothing), and CI catching
+# it later is not the same as the gate refusing to let it be committed.
+#
+# The floors below are set UNDER the observed counts so ordinary churn does
+# not trip them. Raise one when a suite grows; never lower one to make a run
+# pass. Observed at gate-20260917T122702Z:
+#
+#     unit_tests 753   unit_web 1483   ffi_features 859
+#     oracle_ffi 562   wasm_unit 757   wasm_unit_w 757
+sf(){ n="$1"; min="$2"; shift 2; t=$SECONDS
+  "$@" >"$OUT/$n.log" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    bash tool/assert_test_count.sh "$OUT/$n.log" "$min" "$n" >>"$OUT/$n.log" 2>&1 || rc=1
+  fi
+  _res "$rc" "$n" "$t"; }
 ns(){ n="$1"; shift; t=$SECONDS
   (cd native && "$@") >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
 
@@ -265,7 +288,7 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # in 5s with it on. (CI's 5m53s for the same step is the runner, not the
 # instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
 # still writes nothing the read-only check can see.
-s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example --coverage="$OUT/cov"
+sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example --coverage="$OUT/cov"
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
@@ -273,7 +296,7 @@ s  unit_tests    dart test --exclude-tags=ffi,wasm,integration,ladder,example --
 # inputs_encoder compiled, analysed clean and passed on the VM while doing
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
-s  unit_web      dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
+sf unit_web 1400 dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
 dcm_here dcm_ratchet && s  dcm_ratchet   bash tool/dcm_ratchet.sh
 dcm_here metrics_ratch && s  metrics_ratch bash tool/metrics_ratchet.sh
 ns cargo_fmt     cargo fmt --check
@@ -294,8 +317,8 @@ ns cargo_deny    cargo deny check
 # `examples` and `corpus_wasm` were added to close. It also makes the gate's
 # coverage set identical to CI's, which is what lets ONE tool/coverage-baseline
 # .json serve both.
-s  ffi_features  dart test $(ls test/integration/ffi_*_test.dart) test/integration/repros --run-skipped --tags=ffi -p vm --coverage="$OUT/cov"
-s  oracle_ffi    dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi --coverage="$OUT/cov"
+sf ffi_features 800 dart test $(ls test/integration/ffi_*_test.dart) test/integration/repros --run-skipped --tags=ffi -p vm --coverage="$OUT/cov"
+sf oracle_ffi 500 dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi --coverage="$OUT/cov"
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made
@@ -377,10 +400,10 @@ s  corpus_cm_w   bash tool/test_cm_wasm.sh --dart2wasm
 # chrome half of the standing "FFI and WASM both" rule was enforced only by CI.
 # Added 2026-07-30 after two new 0.19 suites shipped with FFI runners and no
 # WASM counterpart.
-s  wasm_unit     bash tool/test_wasm_unit.sh
+sf wasm_unit 700 bash tool/test_wasm_unit.sh
 # Same suite, same WASM ENGINE, different DART compile target — the unit-test
 # counterpart of corpus_js/corpus_wasm above.
-s  wasm_unit_w   bash tool/test_wasm_unit.sh --dart2wasm
+sf wasm_unit_w 700 bash tool/test_wasm_unit.sh --dart2wasm
 # Separate gate from the corpus steps on purpose: different artefact (the
 # assembled Pages site vs the test harness) and different failure modes (stale
 # asset copies, COOP/COEP, relative paths under /repl/).
