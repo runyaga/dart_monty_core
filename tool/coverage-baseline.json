@@ -263,8 +263,8 @@
     },
     "lib/src/repl/monty_repl.dart": {
       "found": 228,
-      "hit": 205,
-      "pct": 89.91
+      "hit": 208,
+      "pct": 91.23
     },
     "lib/src/repl/repl_bindings.dart": {
       "found": 0,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2730,
-    "pct": 65.51
+    "hit": 2733,
+    "pct": 65.59
   }
 }
