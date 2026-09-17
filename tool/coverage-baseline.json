@@ -158,8 +158,8 @@
     },
     "lib/src/platform/monty_error.dart": {
       "found": 16,
-      "hit": 14,
-      "pct": 87.5
+      "hit": 15,
+      "pct": 93.75
     },
     "lib/src/platform/monty_exception.dart": {
       "found": 52,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2519,
-    "pct": 60.45
+    "hit": 2520,
+    "pct": 60.48
   }
 }
