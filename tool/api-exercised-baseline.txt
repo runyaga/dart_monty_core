@@ -13,4 +13,3 @@
 
 encodeForWire            # 1 lib caller, 2 unit tests, 0 real-backend. Wire encoding is exactly what a mock cannot vouch for.
 listFromJson             # 5 lib callers, 8 unit tests, 0 real-backend. Stack-frame decode; only ever fed hand-written JSON.
-setExtFns                # 2 lib callers. Exercised transitively via feedStart; test/integration/wasm_setextfns_test.dart is the regression test for it being fire-and-forget on WASM, and names it only in comments.
