@@ -33,8 +33,8 @@
     },
     "lib/src/ffi/native_bindings_ffi.dart": {
       "found": 338,
-      "hit": 320,
-      "pct": 94.67
+      "hit": 322,
+      "pct": 95.27
     },
     "lib/src/ffi/native_isolate_bindings.dart": {
       "found": 0,
@@ -258,8 +258,8 @@
     },
     "lib/src/repl/ffi_repl_bindings.dart": {
       "found": 176,
-      "hit": 149,
-      "pct": 84.66
+      "hit": 158,
+      "pct": 89.77
     },
     "lib/src/repl/monty_repl.dart": {
       "found": 228,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2733,
-    "pct": 65.59
+    "hit": 2744,
+    "pct": 65.85
   }
 }
