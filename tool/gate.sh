@@ -497,4 +497,25 @@ fi
 echo "" >> "$OUT/SUMMARY.txt"; echo "done $(date -u +%FT%TZ)" >> "$OUT/SUMMARY.txt"
 cat "$OUT/SUMMARY.txt"
 grep -q '^FAIL' "$OUT/SUMMARY.txt" && { echo; echo "GATE RED — do not commit. Logs: $OUT"; exit 1; }
-echo; echo "GATE GREEN — safe to commit. Logs: $OUT"
+echo
+# NAME WHAT WAS SWITCHED OFF, IN THE LINE A HUMAN ACTUALLY READS.
+#
+# The skip is already visible in SUMMARY.txt -- that rule is enforced above and
+# the reason is recorded there. It was not enough. dcm_here() skips every DCM
+# check inside the container AND on a host whose tree is resolved elsewhere,
+# which is this checkout's normal state, so the usual run of this gate checks no
+# DCM at all and still ends on "safe to commit". DCM is deliberately absent from
+# CI as well (it is commercial), so nothing downstream catches it either.
+#
+# Measured 2026-09-17: six test suites were committed and pushed off exactly
+# that reading of exactly that line. tool/dcm_host_gate.sh was RED on them with
+# 35 findings the whole time.
+DCM_SKIPPED="$(grep -c 'dcm_host_gate\.sh' "$OUT/SUMMARY.txt" 2>/dev/null || true)"
+if [ "${DCM_SKIPPED:-0}" -gt 0 ]; then
+  echo "GATE GREEN — but $DCM_SKIPPED DCM check(s) DID NOT RUN here, and DCM is"
+  echo "  not in CI either. Nothing else will catch a DCM regression:"
+  echo "    bash tool/dcm_host_gate.sh"
+  echo "  Logs: $OUT"
+else
+  echo "GATE GREEN — safe to commit. Logs: $OUT"
+fi

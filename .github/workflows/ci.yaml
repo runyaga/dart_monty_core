@@ -334,18 +334,32 @@ jobs:
       # ---------------------------------------------------------------------------
       # Every DCM check -- `dcm analyze` via tool/dcm_ratchet.sh,
       # `dcm calculate-metrics` via tool/metrics_ratchet.sh, and
-      # tool/check_dcm_exclusions.sh -- runs in tool/gate.sh ONLY, on the local
-      # gate. This workflow previously installed DCM (CQLabs/setup-dcm), carried
-      # DCM_CI_KEY / DCM_EMAIL, and ran three DCM steps; all of that is removed.
+      # tool/check_dcm_exclusions.sh -- runs LOCALLY ONLY. This workflow
+      # previously installed DCM (CQLabs/setup-dcm), carried DCM_CI_KEY /
+      # DCM_EMAIL, and ran three DCM steps; all of that is removed.
+      #
+      # AND THE LOCAL RUNNER IS tool/dcm_host_gate.sh, NOT tool/gate.sh.
+      # This comment used to say "runs in tool/gate.sh ONLY", which stopped
+      # being true: gate.sh's dcm_here() skips every DCM check inside the
+      # container AND on a host whose tree is resolved elsewhere -- which is
+      # this checkout's normal state. So the sentence named a command that,
+      # in both ordinary environments, checks no DCM at all.
       #
       # DCM is commercial: running it here spends the licence on every push and
       # every PR, and needs the key present as a repository secret to do it.
       # The gate is the place that decision belongs.
       #
-      # The consequence is stated rather than hidden: a contributor who does not
-      # run `bash tool/gate.sh` gets no DCM feedback at all, and the ratchets'
-      # RATCHET_BASE_REF protection (which exists so a PR cannot lower its own
-      # bar) is only exercised locally. That is the accepted trade.
+      # The consequence is stated rather than hidden, and it is WIDER than this
+      # comment used to admit: a contributor who does not run
+      # `bash tool/dcm_host_gate.sh` gets no DCM feedback at all -- INCLUDING
+      # one who ran `bash tool/gate.sh` and read "GATE GREEN". Measured
+      # 2026-09-17: six suites were pushed that way while dcm_host_gate.sh was
+      # RED on them with 35 findings. gate.sh now names the skipped DCM checks
+      # in its own verdict line so that reading cannot be made again.
+      #
+      # The ratchets' RATCHET_BASE_REF protection (which exists so a PR cannot
+      # lower its own bar) is likewise only exercised locally. That is the
+      # accepted trade.
       - name: Test (JIT, unit only)
         # The exit-79 tolerance is GONE. It said "no tests found is acceptable
         # until unit tests exist"; 457 of them exist, so all it could do now was
