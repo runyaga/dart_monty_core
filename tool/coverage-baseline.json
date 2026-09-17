@@ -178,8 +178,8 @@
     },
     "lib/src/platform/monty_limits.dart": {
       "found": 26,
-      "hit": 9,
-      "pct": 34.62
+      "hit": 26,
+      "pct": 100.0
     },
     "lib/src/platform/monty_platform.dart": {
       "found": 26,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2588,
-    "pct": 62.11
+    "hit": 2605,
+    "pct": 62.51
   }
 }
