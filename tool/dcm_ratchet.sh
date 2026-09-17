@@ -189,6 +189,50 @@ if ! dcm_activated && { [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; }; 
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# THE TREE'S PACKAGE RESOLUTION MUST BELONG TO THIS MACHINE.
+#
+# `dcm analyze` returns a DIFFERENT ISSUE COUNT when dependencies do not
+# resolve, and it does so SILENTLY -- no error, no warning, exit 0. Measured
+# on 2026-09-17 at 5102de3, one variable changed and nothing else:
+#
+#     .dart_tool resolved to /Users/runyaga/.pub-cache  ->  19 issues
+#     .dart_tool resolved to /home/.pub-cache (absent)  ->  23 issues
+#
+# The four extra hits were all `prefer-moving-to-variable` in a single file,
+# byte-identical in both trees. They are an artifact of unresolved types, not
+# findings. This repo builds in a container that writes `/home/.pub-cache`
+# into .dart_tool, while dcm runs on the macOS host -- so the working tree is
+# routinely resolved for a machine that is not the one analysing it, and the
+# ratchet happily recorded and compared the wrong number.
+#
+# A ratchet whose reading depends on which machine last ran `pub get` is not a
+# ratchet. Refuse, loudly, rather than measure something that is not the code.
+# This is exit 1, NOT the exit-77 "checked nothing" path: 77 means a check was
+# legitimately skipped, and this is a check that would have produced a WRONG
+# answer had it continued.
+RESOLUTION=$(python3 "${0%/*}/_dcm_resolution_check.py" 2>/dev/null || echo "")
+case "$RESOLUTION" in
+  DANGLING*)
+    echo "FAIL: this tree's package resolution does not belong to this machine."
+    echo "  ${RESOLUTION%%$'\n'*}"
+    echo "$RESOLUTION" | tail -n +2 | sed 's/^/    /'
+    echo
+    echo "  .dart_tool/package_config.json points at directories that do not"
+    echo "  exist here, so \`dcm analyze\` would run with unresolved types and"
+    echo "  report a count that is NOT this code's count. Refusing to compare."
+    echo
+    echo "  This is the expected state of the working tree when the last"
+    echo "  \`pub get\` ran inside the build container. Do NOT \`dart pub get\`"
+    echo "  here to fix it -- that re-resolves the tree for the host and makes"
+    echo "  the container rebuild its native sources. Use the hermetic runner,"
+    echo "  which analyses a throwaway worktree it resolves itself:"
+    echo "      bash tool/dcm_host_gate.sh            # check"
+    echo "      bash tool/dcm_host_gate.sh --update   # rewrite the baseline"
+    exit 1
+    ;;
+esac
+
 DCM_AUTH=()
 DCM_CI_ENV=()
 if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then

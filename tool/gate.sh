@@ -217,9 +217,26 @@ s  version_pin   bash tool/check_version_pin.sh
 # and skip here — visibly, as SKIP, never as PASS.
 #
 # They still run normally when this script is invoked ON the host.
+# ...but "on the host" is not the same as "resolvable on the host". This repo
+# builds in a container, and the container's `pub get` writes /home/.pub-cache
+# into .dart_tool. On macOS those directories do not exist, so `dcm analyze`
+# runs here with EVERY dependency unresolved and silently reports a different
+# count -- measured 2026-09-17 at 5102de3: 23 issues unresolved vs 19 resolved,
+# the four extra all `prefer-moving-to-variable` in one byte-identical file.
+# That is how a green gate here disagreed with a red tool/dcm_host_gate.sh.
+# Running `dart pub get` here to fix it is the wrong remedy: it re-resolves the
+# tree for the host and forces the container to rebuild its native sources.
+# So skip -- visibly, as SKIP, never as PASS -- and defer to the hermetic
+# runner, which creates its own worktree and resolves it itself.
 dcm_here(){ [ -e /run/.containerenv ] || [ -e /.dockerenv ] && {
   echo "SKIP  $1  (0s)  — DCM runs on the host: bash tool/dcm_host_gate.sh" \
-    >> "$OUT/SUMMARY.txt"; return 1; }; return 0; }
+    >> "$OUT/SUMMARY.txt"; return 1; }
+  case "$(python3 tool/_dcm_resolution_check.py 2>/dev/null)" in
+    DANGLING*)
+      echo "SKIP  $1  (0s)  — tree resolved for another machine: bash tool/dcm_host_gate.sh" \
+        >> "$OUT/SUMMARY.txt"; return 1 ;;
+  esac
+  return 0; }
 dcm_here dcm_excludes  && s  dcm_excludes  bash tool/check_dcm_exclusions.sh --deep
 s  vague_errors bash tool/check_no_vague_errors.sh
 # The two backends implement one shared contract, so a consumer picks a backend
