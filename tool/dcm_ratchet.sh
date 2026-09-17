@@ -185,7 +185,14 @@ if ! dcm_activated && { [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; }; 
   echo "  with 'CI key limit for this month has been exceeded' and no DCM check"
   echo "  can run until it resets. To gate through that, knowing these steps"
   echo "  then verify nothing:"
-  echo "    DCM_RATCHET_ALLOW_MISSING=1 bash tool/gate.sh"
+  # NAME THE UMBRELLA, AND NAME THE RIGHT COMMAND. This used to print this
+  # script's own variable against `tool/gate.sh`, which is wrong twice: the
+  # variable skips one of the two ratchets, and gate.sh does not run either
+  # of them here -- dcm_here() skips DCM inside the container AND on a host
+  # whose tree is resolved elsewhere, which is the normal state of this
+  # checkout (measured: DANGLING:57). Following the old remedy ran a
+  # different command that passed without checking DCM at all.
+  echo "    DCM_ALLOW_MISSING=1 bash tool/dcm_host_gate.sh"
   exit 1
 fi
 

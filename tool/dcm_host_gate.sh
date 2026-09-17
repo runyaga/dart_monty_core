@@ -35,6 +35,23 @@ if [ -e /run/.containerenv ] || [ -e /.dockerenv ]; then
   exit 1
 fi
 
+# ONE NAME FOR ONE DECISION. Three scripts each honoured their own spelling --
+# DCM_RATCHET_ALLOW_MISSING, METRICS_RATCHET_ALLOW_MISSING -- so "let me gate
+# without a licence" needed a combination nobody printed, and setting just one
+# left this gate RED on the other. Measured with a `dcm` shim reporting
+# "Not activated." and every credential unset:
+#
+#   (nothing set)                      -> DCM HOST GATE RED
+#   DCM_RATCHET_ALLOW_MISSING=1        -> DCM HOST GATE RED   (metrics still FAIL)
+#   both specific names set            -> GREEN, all three "SKIP (checked nothing)"
+#
+# DCM_ALLOW_MISSING is the umbrella. The specific names still work on their own,
+# for skipping exactly one check on purpose.
+if [ "${DCM_ALLOW_MISSING:-0}" = "1" ]; then
+  export DCM_RATCHET_ALLOW_MISSING=1
+  export METRICS_RATCHET_ALLOW_MISSING=1
+fi
+
 REPO="$(git rev-parse --show-toplevel)"
 cd "$REPO"
 UPDATE=0
