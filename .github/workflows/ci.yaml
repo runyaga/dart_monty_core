@@ -354,11 +354,18 @@ jobs:
         # "646 of 1593 registered tests" asserting nothing). A floor on the test
         # count replaces it: raise the floor when the suite grows, never lower
         # it to make a run pass.
+        #
+        # RAISED 400 -> 700 on 2026-09-17. The 400 was set against the 457
+        # tests that existed then; the suite is now 753, so the floor had 353
+        # tests of slack — a third of the suite could have vanished silently
+        # while this step stayed green. Every other floor in this file sits
+        # within ~10% of its observed count. Following this comment's own
+        # instruction, late.
         run: |
           set -o pipefail
           dart test --exclude-tags=ffi,wasm,integration,ladder \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          bash tool/assert_test_count.sh /tmp/unit-test.log 400 unit
+          bash tool/assert_test_count.sh /tmp/unit-test.log 700 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -373,10 +380,18 @@ jobs:
         # `vm-only` is excluded because those files cannot COMPILE for the web
         # (0x7FFFFFFFFFFFFFFF is a dart2js compile error), and that failure
         # happens before any test runs, so a `skip:` cannot contain it.
+        # A FLOOR, because this step had none. It runs the same pure-Dart
+        # suite as the JIT step on two web compilers, and nothing asserted it
+        # registered anything — a compile that produced an empty suite, or a
+        # tag filter that stopped matching, would have exited 0. 1483 observed
+        # locally across both compilers (gate-20260917T123744Z); floor set
+        # under it so ordinary churn does not trip it.
         run: |
+          set -o pipefail
           dart test \
             --exclude-tags=ffi,wasm,integration,ladder,example,vm-only \
-            -p chrome -c dart2js -c dart2wasm
+            -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
+          bash tool/assert_test_count.sh /tmp/unit-web.log 1400 "unit (web)"
 
       - name: Generate LCOV
         run: |
