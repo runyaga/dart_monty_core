@@ -45,18 +45,65 @@ stubbed() {
   python3 - "$1" <<'PY'
 import re, sys
 src = open(sys.argv[1]).read()
+matched = 0
+names = []
 # @override ... <name>(...) { ... throw UnimplementedError
 for m in re.finditer(
         r'(?:Future<[^>]*>|void|[A-Za-z_][\w<>, ?]*)\s+([A-Za-z_]\w*)\s*\([^)]*\)\s*(?:async\s*)?\{(.*?)\n  \}',
         src, re.S):
     name, body = m.group(1), m.group(2)
+    matched += 1
     if 'throw UnimplementedError' in body:
-        print(name)
+        names.append(name)
+# The METHOD count comes first, so the caller can tell "no stubs" from "the
+# parser matched nothing". Those produce identical output otherwise, and only
+# one of them is good news.
+print('COUNT:%d' % matched)
+for n in names:
+    print(n)
 PY
 }
 
-FFI_STUBS=$(stubbed "$FFI" | sort -u)
-WASM_STUBS=$(stubbed "$WASM" | sort -u)
+FFI_RAW=$(stubbed "$FFI")
+WASM_RAW=$(stubbed "$WASM")
+
+# PARSER SANITY, BEFORE COMPARING ANYTHING.
+#
+# This reports asymmetry between two SETS OF STUBS and passes when they are
+# equal -- including when both are EMPTY. Empty-and-equal is the desired state,
+# so today's pass is correct: 0 stubs on each backend. But it is also exactly
+# what a BROKEN PARSER produces. The body regex ends in a newline followed by
+# two spaces and a brace, so a reformat that changes that closing indentation
+# makes every method stop matching, both sets go empty, and this prints PASS
+# having compared nothing.
+#
+# Tell them apart by asserting the parser saw a plausible number of METHODS.
+# Measured 2026-09-17: 30 in ffi_core_bindings.dart, 19 in
+# wasm_core_bindings.dart. Floors sit under those so ordinary churn does not
+# trip them. Raise when the surface grows; never lower to make a run pass.
+FFI_COUNT=$(printf '%s\n' "$FFI_RAW" | sed -n 's/^COUNT://p')
+WASM_COUNT=$(printf '%s\n' "$WASM_RAW" | sed -n 's/^COUNT://p')
+
+parse_floor() {
+  local label="$1" got="$2" min="$3" file="$4"
+  if [ -z "$got" ] || [ "$got" -lt "$min" ]; then
+    echo "FAIL: parsed only ${got:-0} method(s) out of $file (expected >= $min)."
+    echo "  The method regex stopped matching. With nothing parsed, both stub"
+    echo "  sets are empty and this check would report PASS having compared"
+    echo "  nothing at all."
+    exit 1
+  fi
+}
+parse_floor FFI  "$FFI_COUNT"  20 "$FFI"
+parse_floor WASM "$WASM_COUNT" 12 "$WASM"
+
+# `|| true` IS LOAD-BEARING. When a backend has no stubs -- the desired state,
+# and the state today -- grep filters out every line and exits 1, which under
+# `set -e` kills this script silently at rc 1 with no output at all. Measured
+# while adding the floor above: the check "failed" printing nothing, and the
+# cause was the success case.
+FFI_STUBS=$(printf '%s\n' "$FFI_RAW" | grep -v '^COUNT:' | sort -u || true)
+WASM_STUBS=$(printf '%s\n' "$WASM_RAW" | grep -v '^COUNT:' | sort -u || true)
 
 # Asymmetry is the finding: one backend refusing what the other implements.
 ONLY_FFI=$(comm -23 <(printf '%s\n' "$FFI_STUBS") <(printf '%s\n' "$WASM_STUBS") | grep -v '^$' || true)
@@ -86,4 +133,4 @@ if [ "$rc" -ne 0 ]; then
   exit 1
 fi
 
-echo "PASS — both backends agree on the CoreBindings surface."
+echo "PASS — both backends agree on the CoreBindings surface ($FFI_COUNT FFI / $WASM_COUNT web methods parsed)."
