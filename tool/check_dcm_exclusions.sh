@@ -133,7 +133,13 @@ echo "PASS — $CHECKED concrete exclusion path(s) exist ($TOTAL entries, $((TOT
 # already dirty, so a kill can never eat uncommitted edits.
 # ---------------------------------------------------------------------------
 echo
-if [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; then
+# Local activation first — see the note in tool/dcm_ratchet.sh. An activated
+# seat needs no CI key; the GitHub CI path is not supported by this project.
+dcm_activated() { dcm license 2>/dev/null | grep -q '^DCM License:'; }
+
+if ! dcm_activated && { [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; }; then
+  echo "SKIP --deep: dcm is not activated and no CI credentials are set."
+  echo "  Activate a seat:  dcm activate --license-key=\$DCM_KEY"
   echo "SKIP --deep: needs DCM_CI_KEY and DCM_EMAIL. Without BOTH (and CI=true)"
   echo "             dcm reports a licence error and exits nonzero for a reason"
   echo "             that has nothing to do with exclusions."
@@ -199,8 +205,13 @@ open(path, 'w').write('\n'.join(out))
 PY_STRIP
 
 REPORT="$(mktemp)"
-CI=true dcm analyze lib test --reporter=json \
-  --ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL" > "$REPORT" 2>/dev/null || true
+DEEP_ENV=(); DEEP_AUTH=()
+if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
+  DEEP_ENV=(env CI=true)
+  DEEP_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
+fi
+"${DEEP_ENV[@]}" dcm analyze lib test --reporter=json \
+  "${DEEP_AUTH[@]}" > "$REPORT" 2>/dev/null || true
 restore
 trap - EXIT INT TERM
 

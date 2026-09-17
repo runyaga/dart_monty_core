@@ -135,12 +135,32 @@ fi
 # missing-binary check above. A gate that decides on its own to check nothing
 # is not a gate; a gate with no honest way to say "this could not run" is a
 # gate people delete.
-if [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; then
+# LOCAL ACTIVATION IS THE PRIMARY PATH; CI CREDENTIALS ARE THE FALLBACK.
+#
+# `dcm activate --license-key=...` registers a SEAT on this machine, and an
+# activated dcm needs no CI key, no email and no CI=true. That is the normal
+# developer path and the only one this project uses: the GitHub CI path is not
+# supported here.
+#
+# This precondition used to demand DCM_CI_KEY and DCM_EMAIL unconditionally, so
+# a fully activated host was refused with a message about CI credentials it did
+# not need. Measured 2026-09-16 on an activated host: this script exited 1 while
+# `dcm analyze lib --reporter=json`, with DCM_CI_KEY, DCM_EMAIL and CI all
+# explicitly unset, analysed 67 files and reported 18 issues.
+#
+# Order matters: prefer the local seat. The CI key carries a MONTHLY RUN BUDGET
+# and fails with "CI key limit for this month has been exceeded" once spent;
+# a seat does not.
+dcm_activated() { dcm license 2>/dev/null | grep -q '^DCM License:'; }
+
+if ! dcm_activated && { [ -z "${DCM_CI_KEY:-}" ] || [ -z "${DCM_EMAIL:-}" ]; }; then
   if [ "${METRICS_RATCHET_ALLOW_MISSING:-0}" = "1" ]; then
     echo "DCM credentials absent — SKIPPING (METRICS_RATCHET_ALLOW_MISSING=1)"
     exit 77
   fi
-  echo "FAIL: DCM_CI_KEY and DCM_EMAIL are not both set, so dcm cannot run."
+  echo "FAIL: dcm is not activated here and no CI credentials are set."
+  echo "  PREFERRED — activate a seat on this machine:"
+  echo "    dcm activate --license-key=\$DCM_KEY   # DCM_KEY lives in ~/dev/.env"
   echo "  dcm only consults them when it believes it is on CI, so CI=true is"
   echo "  set alongside them, not instead of them."
   echo "    export DCM_CI_KEY=...   # the CI key, NOT a license-key"
