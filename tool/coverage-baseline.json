@@ -13,8 +13,8 @@
     },
     "lib/src/ffi/ffi_core_bindings.dart": {
       "found": 218,
-      "hit": 161,
-      "pct": 73.85
+      "hit": 169,
+      "pct": 77.52
     },
     "lib/src/ffi/monty_ffi.dart": {
       "found": 33,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2520,
-    "pct": 60.48
+    "hit": 2528,
+    "pct": 60.67
   }
 }
