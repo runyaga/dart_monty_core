@@ -13,8 +13,8 @@
     },
     "lib/src/ffi/ffi_core_bindings.dart": {
       "found": 218,
-      "hit": 191,
-      "pct": 87.61
+      "hit": 193,
+      "pct": 88.53
     },
     "lib/src/ffi/monty_ffi.dart": {
       "found": 33,
@@ -133,8 +133,8 @@
     },
     "lib/src/platform/base_monty_platform.dart": {
       "found": 191,
-      "hit": 174,
-      "pct": 91.1
+      "hit": 176,
+      "pct": 92.15
     },
     "lib/src/platform/code_capture.dart": {
       "found": 46,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2744,
-    "pct": 65.85
+    "hit": 2748,
+    "pct": 65.95
   }
 }
