@@ -12,6 +12,18 @@ abstract class NativeBindings {
   /// Creates a [NativeBindings].
   const NativeBindings();
 
+  /// The wire-format version the loaded native library emits.
+  ///
+  /// Backs the handshake in `FfiCoreBindings.init`. The symbol has existed in
+  /// the header (`dart_monty.h:80`) and in Rust (`native/src/lib.rs:77`) since
+  /// the format was versioned, and the generated binding has always been
+  /// present -- but nothing in `lib/` ever called it, so on the native backend
+  /// the comparison lived only in `test/integration/ffi_wire_format_test.dart`.
+  /// A check that runs only under the test suite does not protect an embedder
+  /// pairing a prebuilt library with a differently-versioned Dart package,
+  /// which is the one configuration the version integer exists for.
+  int wireFormatVersion();
+
   /// Creates a handle from Python [code].
   ///
   /// If [externalFunctions] is non-null, it is a comma-separated list of

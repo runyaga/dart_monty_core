@@ -23,6 +23,9 @@ class NativeBindingsFfi extends NativeBindings {
   const NativeBindingsFfi();
 
   @override
+  int wireFormatVersion() => ffi_native.monty_wire_format_version();
+
+  @override
   int create(String code, {String? externalFunctions, String? scriptName}) {
     final cCode = code.toNativeUtf8().cast<Char>();
     final nullChar = nullptr.cast<Char>();
