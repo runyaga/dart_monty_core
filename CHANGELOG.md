@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.23.0)
+## 0.23.0
 
 Requires `monty` v0.0.23.
 
