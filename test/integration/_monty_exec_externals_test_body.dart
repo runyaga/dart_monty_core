@@ -7,6 +7,7 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runMontyExecExternalsTests() {
   group('Monty.exec externals', () {
@@ -14,7 +15,8 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'add(3, 4)',
         externalFunctions: {
-          'add': (args, _) async => (args[0]! as int) + (args[1]! as int),
+          'add': (args, _) =>
+              callbackArg<int>(args, 0) + callbackArg<int>(args, 1),
         },
       );
 
@@ -26,7 +28,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'greet(name="World")',
         externalFunctions: {
-          'greet': (_, kwargs) async => 'Hello, ${kwargs!['name']}!',
+          'greet': (_, kwargs) => 'Hello, ${kwargs?['name']}!',
         },
       );
 
@@ -39,9 +41,10 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'double(double(double(1)))',
         externalFunctions: {
-          'double': (args, _) async {
+          'double': (args, _) {
             calls++;
-            return (args[0]! as int) * 2;
+
+            return callbackArg<int>(args, 0) * 2;
           },
         },
       );
@@ -55,7 +58,7 @@ void runMontyExecExternalsTests() {
       final result = await Monty.exec(
         'sum(get_numbers())',
         externalFunctions: {
-          'get_numbers': (_, _) async => [1, 2, 3, 4],
+          'get_numbers': (_, _) => [1, 2, 3, 4],
         },
       );
 

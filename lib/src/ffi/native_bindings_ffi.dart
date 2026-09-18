@@ -20,7 +20,10 @@ class NativeBindingsFfi extends NativeBindings {
   ///
   /// With native asset hooks, the library is resolved automatically by the
   /// Dart runtime. No manual path resolution is needed.
-  NativeBindingsFfi();
+  const NativeBindingsFfi();
+
+  @override
+  int wireFormatVersion() => ffi_native.monty_wire_format_version();
 
   @override
   int create(String code, {String? externalFunctions, String? scriptName}) {
@@ -201,6 +204,27 @@ class NativeBindingsFfi extends NativeBindings {
   }
 
   @override
+  ProgressResult resumeNameLookupValue(int handle, String valueJson) {
+    final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
+    final cValue = valueJson.toNativeUtf8().cast<Char>();
+    final outError = calloc<Pointer<Char>>();
+
+    try {
+      final tag = ffi_native.monty_resume_name_lookup_value(
+        ptr,
+        cValue,
+        outError,
+      );
+
+      return _buildProgressResult(ptr, tag, outError.value);
+    } finally {
+      calloc
+        ..free(cValue)
+        ..free(outError);
+    }
+  }
+
+  @override
   ProgressResult resumeNameLookupUndefined(int handle) {
     final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
     final outError = calloc<Pointer<Char>>();
@@ -264,11 +288,19 @@ class NativeBindingsFfi extends NativeBindings {
   Uint8List snapshot(int handle) {
     final ptr = Pointer<ffi_native.MontyHandle>.fromAddress(handle);
     final outLen = calloc<Size>();
+    final outError = calloc<Pointer<Char>>();
 
     try {
-      final buf = ffi_native.monty_snapshot(ptr, outLen);
+      final buf = ffi_native.monty_snapshot(ptr, outLen, outError);
       if (buf == nullptr) {
-        throw StateError('monty_snapshot returned null');
+        // `monty_snapshot returned null` was a GUESS, made one frame above the
+        // code that knew the answer. Rust discarded the reason on both the
+        // error and panic arms and had no out_error to put it in; that is
+        // fixed, so report what it says.
+        throw StateError(
+          _readAndFreeString(outError.value) ??
+              'monty_snapshot returned null without a reason',
+        );
       }
       final len = outLen.value;
       final bytes = Uint8List.fromList(buf.cast<Uint8>().asTypedList(len));
@@ -276,7 +308,9 @@ class NativeBindingsFfi extends NativeBindings {
 
       return bytes;
     } finally {
-      calloc.free(outLen);
+      calloc
+        ..free(outLen)
+        ..free(outError);
     }
   }
 
@@ -356,14 +390,19 @@ class NativeBindingsFfi extends NativeBindings {
   // ---------------------------------------------------------------------------
 
   @override
-  int replCreate({String? scriptName}) {
-    final cScriptName = scriptName != null
-        ? scriptName.toNativeUtf8().cast<Char>()
-        : nullptr.cast<Char>();
+  int replCreate({String? scriptName, String? limitsJson}) {
+    final nullStr = nullptr.cast<Char>();
+    final cScriptName = scriptName?.toNativeUtf8().cast<Char>() ?? nullStr;
+    final cLimits = limitsJson?.toNativeUtf8().cast<Char>() ?? nullStr;
     final outError = calloc<Pointer<Char>>();
 
     try {
-      final handle = ffi_native.monty_repl_create(cScriptName, outError);
+      final handle = _createReplHandle(
+        cScriptName,
+        cLimits,
+        outError,
+        limitsJson != null,
+      );
       if (handle == nullptr) {
         final errorMsg =
             _readAndFreeString(outError.value) ?? 'monty_repl_create failed';
@@ -373,6 +412,7 @@ class NativeBindingsFfi extends NativeBindings {
       return handle.address;
     } finally {
       if (scriptName != null) calloc.free(cScriptName);
+      if (limitsJson != null) calloc.free(cLimits);
       calloc.free(outError);
     }
   }
@@ -588,12 +628,21 @@ class NativeBindingsFfi extends NativeBindings {
   Uint8List replSnapshot(int handle) {
     final ptr = Pointer<ffi_native.MontyReplHandle>.fromAddress(handle);
     final outLen = calloc<Size>();
+    final outError = calloc<Pointer<Char>>();
 
     try {
-      final buf = ffi_native.monty_repl_snapshot(ptr, outLen);
+      final buf = ffi_native.monty_repl_snapshot(ptr, outLen, outError);
       if (buf == nullptr) {
+        // REPORTS THE REAL REASON. This layer used to invent one — it said
+        // "REPL may be mid-execution" for every null, because the C boundary
+        // discarded the Rust error string. That guess outlived the bug it was
+        // masking: the true cause was a stubbed-out implementation, and the
+        // invented message sent diagnosis down the wrong path for a whole
+        // session. `monty_repl_snapshot` now carries `out_error`, following
+        // the same convention monty_create and monty_start already use.
         throw StateError(
-          'monty_repl_snapshot returned null — REPL may be mid-execution',
+          _readAndFreeString(outError.value) ??
+              'monty_repl_snapshot returned null without a reason',
         );
       }
       final len = outLen.value;
@@ -602,20 +651,38 @@ class NativeBindingsFfi extends NativeBindings {
 
       return bytes;
     } finally {
-      calloc.free(outLen);
+      calloc
+        ..free(outLen)
+        ..free(outError);
     }
   }
 
   @override
-  int replRestore(Uint8List data) {
+  int replRestore(
+    Uint8List data, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) {
     final cData = calloc<Uint8>(data.length);
     final outError = calloc<Pointer<Char>>();
+    // nullptr means "keep the snapshot's limits" and "no ext fns" on the C
+    // side. Passing the caller's limits here is what stops a
+    // MontyRepl(limits: ...) silently running under the SNAPSHOT's limits
+    // after a restore.
+    final cLimits = limitsJson == null
+        ? nullptr
+        : limitsJson.toNativeUtf8().cast<Char>();
+    final cExtFns = (extFns == null || extFns.isEmpty)
+        ? nullptr
+        : extFns.join(',').toNativeUtf8().cast<Char>();
 
     try {
       cData.asTypedList(data.length).setAll(0, data);
       final handle = ffi_native.monty_repl_restore(
         cData,
         data.length,
+        cLimits,
+        cExtFns,
         outError,
       );
       if (handle == nullptr) {
@@ -625,6 +692,8 @@ class NativeBindingsFfi extends NativeBindings {
 
       return handle.address;
     } finally {
+      if (cLimits != nullptr) calloc.free(cLimits);
+      if (cExtFns != nullptr) calloc.free(cExtFns);
       calloc
         ..free(cData)
         ..free(outError);
@@ -812,4 +881,19 @@ class NativeBindingsFfi extends NativeBindings {
 
     return null;
   }
+
+  /// Picks the create export.
+  ///
+  /// Two exports rather than one with a NULL argument, so an existing caller's
+  /// behaviour is bit-for-bit unchanged: limits are session-scoped and chosen
+  /// when the session is created, which is when the tracker is built and after
+  /// which it cannot be swapped.
+  static Pointer<ffi_native.MontyReplHandle> _createReplHandle(
+    Pointer<Char> scriptName,
+    Pointer<Char> limits,
+    Pointer<Pointer<Char>> outError,
+    bool withLimits,
+  ) => withLimits
+      ? ffi_native.monty_repl_create_with_limits(scriptName, limits, outError)
+      : ffi_native.monty_repl_create(scriptName, outError);
 }

@@ -1,0 +1,14 @@
+name: monty_conformance
+description: >-
+  monty's conformance corpus and its directive parser, as a library.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  # Used by the parser to turn a fixture's `Return=` repr into a comparable
+  # value. Kept as a path dep so this package tracks the local core exactly.
+  dart_monty_core:
+    path: ../..

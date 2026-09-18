@@ -5,8 +5,9 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/ffi/generated/dart_monty_bindings.dart'
     as ffi_native;
 import 'package:dart_monty_core/src/ffi/native_bindings.dart';
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 
 /// GC safety net for Rust MontyReplHandle pointers.
@@ -39,11 +40,14 @@ class FfiReplBindings implements ReplBindings {
   Object? _detachToken;
 
   @override
-  Future<void> create({String? scriptName}) async {
+  Future<void> create({String? scriptName, String? limitsJson}) async {
     if (_replHandle != null) {
       await dispose();
     }
-    final handle = _bindings.replCreate(scriptName: scriptName);
+    final handle = _bindings.replCreate(
+      scriptName: scriptName,
+      limitsJson: limitsJson,
+    );
     _replHandle = handle;
 
     // Attach GC finalizer as safety net.
@@ -84,7 +88,13 @@ class FfiReplBindings implements ReplBindings {
     if (_guard != null && token != null) {
       _replHandleFinalizer.detach(token);
     }
-    _bindings.replFree(handle);
+
+    // Ensure any per-handle state in Rust is torn down before freeing.
+    // The Rust REPL handle stores ext fn names and can also carry pending
+    // suspension state; clearing avoids use-after-free via stale pointers.
+    _bindings
+      ..replSetExtFns(handle, '')
+      ..replFree(handle);
     _replHandle = null;
     _guard = null;
     _detachToken = null;
@@ -113,12 +123,12 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
     final handle = _replHandle;
     if (handle == null) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = _bindings.replResume(handle, valueJson);
+    final result = _bindings.replResume(handle, value.encoded);
 
     return _translateProgressResult(result);
   }
@@ -183,8 +193,8 @@ class FfiReplBindings implements ReplBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     final handle = _replHandle;
     if (handle == null) {
@@ -192,8 +202,8 @@ class FfiReplBindings implements ReplBindings {
     }
     final result = _bindings.replResolveFutures(
       handle,
-      resultsJson,
-      errorsJson,
+      results.encoded,
+      errors.encoded,
     );
 
     return _translateProgressResult(result);
@@ -210,7 +220,11 @@ class FfiReplBindings implements ReplBindings {
   }
 
   @override
-  Future<void> restore(Uint8List bytes) async {
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) async {
     // Detach old finalizer to prevent double-free.
     final token = _detachToken;
     if (_guard != null && token != null) {
@@ -226,7 +240,11 @@ class FfiReplBindings implements ReplBindings {
     _detachToken = null;
 
     // Restore new handle from bytes.
-    final newHandle = _bindings.replRestore(bytes);
+    final newHandle = _bindings.replRestore(
+      bytes,
+      limitsJson: limitsJson,
+      extFns: extFns,
+    );
     _replHandle = newHandle;
 
     // Attach new finalizer.

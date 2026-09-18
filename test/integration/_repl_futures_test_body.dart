@@ -10,8 +10,11 @@
 // Both files call [runReplFuturesTests] so the assertions stay in sync
 // across FFI and WASM backends.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+
+import '../_accessors.dart';
 
 /// Helper: walk the progress loop, treating every external call as a future.
 /// Returns the terminal [MontyComplete] (or throws if the script never
@@ -70,7 +73,7 @@ void runReplFuturesTests() {
     late MontyRepl repl;
 
     setUp(() => repl = MontyRepl());
-    tearDown(() async => repl.dispose());
+    tearDown(() => repl.dispose());
 
     // --- Single await ------------------------------------------------------
 
@@ -93,7 +96,7 @@ result
               (p) => p.callId == id,
               orElse: () => fail('callId $id not in observed pendings'),
             );
-            final arg = pending.args.first.dartValue! as String;
+            final arg = montyArg<String>(pending.args, 0);
             results[id] = 'value-for-$arg';
           }
 
@@ -104,7 +107,7 @@ result
       expect(result.result.error, isNull);
       expect(result.result.value.dartValue, 'value-for-token');
       expect(pendings, hasLength(1));
-      expect(pendings.first.functionName, 'fetch');
+      expect(firstItem(pendings).functionName, 'fetch');
     });
 
     // --- Error path --------------------------------------------------------
@@ -138,9 +141,12 @@ out
         );
 
         expect(result.result.error, isNull);
-        final tuple = result.result.value.dartValue! as List<Object?>;
-        expect(tuple.first, 'err');
-        expect(tuple[1], contains('simulated upstream failure'));
+        final tuple = dartValueOf<List<Object?>>(result.result.value);
+        expect(tuple.firstOrNull, 'err');
+        expect(
+          tuple.elementAtOrNull(1),
+          contains('simulated upstream failure'),
+        );
       },
     );
 
@@ -162,11 +168,11 @@ results
           // Every observed pending should have one int arg; record dispatch
           // order so we can assert all three fired before await yielded.
           for (final p in ps) {
-            dispatched.add(p.args.first.dartValue! as int);
+            dispatched.add(montyArg(p.args, 0));
           }
           final results = <int, Object?>{};
           for (final p in ps) {
-            results[p.callId] = (p.args.first.dartValue! as int) * 10;
+            results[p.callId] = montyArg<int>(p.args, 0) * 10;
           }
 
           return (results: results, errors: <int, String>{});
@@ -186,7 +192,7 @@ results
     test(
       'gather: an errored task terminates the script (not '
       'per-task try/except)',
-      () async {
+      () {
         // Same observed-contract caveat as the simpler error test:
         // resolveFutures errors short-circuit Python's exception handling,
         // so the script terminates rather than letting `safe()`'s
@@ -210,7 +216,7 @@ results
               final results = <int, Object?>{};
               final errors = <int, String>{};
               for (final p in ps) {
-                final n = p.args.first.dartValue! as int;
+                final n = montyArg<int>(p.args, 0);
                 if (n == 2) {
                   errors[p.callId] = 'broken-$n';
                 } else {
@@ -244,7 +250,7 @@ b = await fetch(13)
             cycles++;
             final results = <int, Object?>{};
             for (final p in ps) {
-              results[p.callId] = (p.args.first.dartValue! as int) * 2;
+              results[p.callId] = montyArg<int>(p.args, 0) * 2;
             }
 
             return (results: results, errors: <int, String>{});
@@ -275,7 +281,7 @@ await doubled(21)
         resolver: (ids, ps) {
           final results = <int, Object?>{};
           for (final p in ps) {
-            results[p.callId] = p.args.first.dartValue;
+            results[p.callId] = firstItem(p.args).dartValue;
           }
 
           return (results: results, errors: <int, String>{});
@@ -313,7 +319,7 @@ await doubled(21)
     test(
       'resolveFutures with errors-only map carries the message into '
       'the terminal error',
-      () async {
+      () {
         // The error string the host supplies surfaces verbatim in the
         // terminal MontyScriptError.message, so callers can route it
         // back to whichever Dart-side exception classification they
@@ -354,7 +360,7 @@ results = await asyncio.gather(fetch("int"), fetch("str"), fetch("list"), fetch(
         resolver: (ids, ps) {
           final results = <int, Object?>{};
           for (final p in ps) {
-            final tag = p.args.first.dartValue! as String;
+            final tag = montyArg<String>(p.args, 0);
             results[p.callId] = switch (tag) {
               'int' => 42,
               'str' => 'hello',
@@ -369,7 +375,7 @@ results = await asyncio.gather(fetch("int"), fetch("str"), fetch("list"), fetch(
       );
 
       expect(result.result.error, isNull);
-      final list = result.result.value.dartValue! as List;
+      final list = dartValueOf<List<Object?>>(result.result.value);
       // First four entries are the type names; last four are the values.
       expect(list.sublist(0, 4), ['int', 'str', 'list', 'dict']);
       expect(list.sublist(4), [

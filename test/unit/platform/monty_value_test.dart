@@ -75,13 +75,20 @@ void main() {
       expect(const MontyInt(0), isNot(const MontyBool(false)));
     });
 
-    test('toJson + dartValue + round-trip', () {
+    test('toJson + dartValue + round-trip within the exact range', () {
       expect(const MontyInt(42).toJson(), 42);
       expect(const MontyInt(-7).dartValue, -7);
       _expectRoundTrip(const MontyInt(0));
       _expectRoundTrip(const MontyInt(-42));
-      _expectRoundTrip(const MontyInt(0x7FFFFFFFFFFFFFFF));
+      // 2^53 exactly is the last value every backend holds in a Dart `int`.
+      _expectRoundTrip(const MontyInt(9007199254740992));
     });
+
+    // The past-2^53 cases live in monty_value_int64_vm_test.dart. They cannot
+    // be here: an `int` beyond 2^53 is unrepresentable on dart2js, and
+    // `0x7FFFFFFFFFFFFFFF` is a dart2js COMPILE error — which would take this
+    // whole file down with it, and a `skip:` cannot help because the failure
+    // happens before any test runs.
   });
 
   group('MontyFloat', () {
@@ -115,10 +122,22 @@ void main() {
       );
     });
 
-    test('toJson encodes specials as strings', () {
-      expect(const MontyFloat(double.nan).toJson(), 'NaN');
-      expect(const MontyFloat(double.infinity).toJson(), 'Infinity');
-      expect(const MontyFloat(double.negativeInfinity).toJson(), '-Infinity');
+    test('toJson encodes the non-finite forms as tagged envelopes', () {
+      expect(const MontyFloat(double.nan).toJson(), {
+        '__type': 'float',
+        'value': 'NaN',
+      });
+      expect(const MontyFloat(double.infinity).toJson(), {
+        '__type': 'float',
+        'value': 'Infinity',
+      });
+      // Wire v3: the non-finite forms are TAGGED. They used to be bare strings,
+      // which is why the str "NaN" decoded as a float.
+      expect(const MontyFloat(double.negativeInfinity).toJson(), {
+        '__type': 'float',
+        'value': '-Infinity',
+      });
+      // A finite float is still a plain JSON number.
       expect(const MontyFloat(3.14).toJson(), 3.14);
     });
 
@@ -149,16 +168,32 @@ void main() {
       _expectRoundTrip(const MontyString('unicode: π α 🎉'));
     });
 
-    test(
-      'special-float strings are NOT mistaken for strings on round-trip',
-      () {
-        // NaN-as-string is parsed back as MontyFloat by fromJson — that's the
-        // intended escape encoding. A genuine MontyString('NaN') would
-        // round-trip differently. Document the limit:
-        final got = MontyValue.fromJson(const MontyString('NaN').toJson());
+    test('the string "NaN" round-trips as a STRING', () {
+      // Was: 'special-float strings are NOT mistaken for strings on
+      // round-trip', asserting isA<MontyFloat>() and calling the collision "the
+      // intended escape encoding" while documenting it as a limit. It was a
+      // defect: `float('nan')` and the str `"NaN"` had one wire representation,
+      // so the decoder had to guess and guessed wrong half the time. Non-finite
+      // floats now carry a `float` envelope, and a bare string is a `str`.
+      for (final text in ['NaN', 'Infinity', '-Infinity']) {
+        expect(
+          MontyValue.fromJson(MontyString(text).toJson()),
+          MontyString(text),
+          reason: 'the STRING "$text" must survive as a string',
+        );
+      }
+    });
+
+    test('non-finite floats round-trip as floats', () {
+      for (final d in [double.nan, double.infinity, double.negativeInfinity]) {
+        final got = MontyValue.fromJson(MontyFloat(d).toJson());
         expect(got, isA<MontyFloat>());
-      },
-    );
+        final f = (got as MontyFloat).value;
+        expect(f.isNaN, d.isNaN);
+        expect(f.isInfinite, d.isInfinite);
+        expect(f.isNegative, d.isNegative);
+      }
+    });
   });
 
   // ------------------------------------------------------------------
@@ -257,46 +292,133 @@ void main() {
 
   group('MontyDict', () {
     test('equality + hashCode (deep)', () {
-      const a = MontyDict({'k': MontyInt(1)});
-      const b = MontyDict({'k': MontyInt(1)});
+      const a = MontyDict([(MontyString('k'), MontyInt(1))]);
+      const b = MontyDict([(MontyString('k'), MontyInt(1))]);
       expect(a, b);
       expect(a.hashCode, b.hashCode);
     });
 
-    test('different key order on the same map is still equal', () {
-      // Dart Map equality semantics — same key/value pairs.
-      const a = MontyDict({'a': MontyInt(1), 'b': MontyInt(2)});
-      const b = MontyDict({'b': MontyInt(2), 'a': MontyInt(1)});
+    test('order-independent equality, any key type', () {
+      // Order-insensitive, matching the sandbox, which answers True for both
+      // shapes. This used to hold ONLY for string keys: a non-string-keyed
+      // dict was a separate class comparing as a List, so the same Python dict
+      // compared UNEQUAL purely because its keys were not strings.
+      const a = MontyDict([
+        (MontyString('a'), MontyInt(1)),
+        (MontyString('b'), MontyInt(2)),
+      ]);
+      const b = MontyDict([
+        (MontyString('b'), MontyInt(2)),
+        (MontyString('a'), MontyInt(1)),
+      ]);
       expect(a, b);
+      expect(a.hashCode, b.hashCode);
+
+      const c = MontyDict([
+        (MontyInt(1), MontyString('a')),
+        (MontyInt(2), MontyString('b')),
+      ]);
+      const d = MontyDict([
+        (MontyInt(2), MontyString('b')),
+        (MontyInt(1), MontyString('a')),
+      ]);
+      expect(c, d);
+      expect(c.hashCode, d.hashCode);
     });
 
-    test('toJson preserves the entry shape (no __type)', () {
+    test('unequal when a value differs', () {
+      const a = MontyDict([(MontyString('k'), MontyInt(1))]);
+      const b = MontyDict([(MontyString('k'), MontyInt(2))]);
+      expect(a, isNot(b));
+    });
+
+    test('toJson: compact shape for all-string keys', () {
+      // Was: 'preserves the entry shape (no __type)', asserting {'k': 1}.
+      // That shape IS core#136 — a bare object was byte-identical to a type
+      // envelope, so a dict could name a host type.
       expect(
-        const MontyDict({'k': MontyInt(1), 's': MontyString('x')}).toJson(),
-        {'k': 1, 's': 'x'},
+        const MontyDict([
+          (MontyString('k'), MontyInt(1)),
+          (MontyString('s'), MontyString('x')),
+        ]).toJson(),
+        {
+          '__type': 'dict',
+          'value': {'k': 1, 's': 'x'},
+        },
       );
     });
 
-    test('round-trip via fromJson dispatcher (no __type → MontyDict)', () {
+    test('toJson: entries shape for non-string keys', () {
+      expect(const MontyDict([(MontyInt(1), MontyString('a'))]).toJson(), {
+        '__type': 'dict',
+        'entries': [
+          [1, 'a'],
+        ],
+      });
+    });
+
+    test('round-trip via fromJson dispatcher — string keys', () {
       _expectRoundTrip(
-        const MontyDict({
-          'k': MontyInt(1),
-          'nested': MontyList([MontyInt(2), MontyInt(3)]),
-        }),
+        const MontyDict([
+          (MontyString('k'), MontyInt(1)),
+          (MontyString('nested'), MontyList([MontyInt(2), MontyInt(3)])),
+        ]),
       );
     });
 
-    test('dartValue recursively projects', () {
+    test('round-trip via fromJson dispatcher — mixed keys', () {
+      _expectRoundTrip(
+        const MontyDict([
+          (MontyInt(1), MontyString('a')),
+          (MontyTuple([MontyInt(3), MontyInt(4)]), MontyString('t')),
+        ]),
+      );
+    });
+
+    test('dartValue is a Map for string keys, pairs otherwise', () {
+      // Conditional on key type by design -- see the dartValue doc comment.
       expect(
-        const MontyDict({'a': MontyInt(1), 'b': MontyString('x')}).dartValue,
+        const MontyDict([
+          (MontyString('a'), MontyInt(1)),
+          (MontyString('b'), MontyString('x')),
+        ]).dartValue,
         {'a': 1, 'b': 'x'},
+      );
+      expect(
+        const MontyDict([(MontyInt(1), MontyString('x'))]).dartValue,
+        [
+          [1, 'x'],
+        ],
+      );
+    });
+
+    test('asStringMap: null unless every key is a string', () {
+      expect(
+        const MontyDict([(MontyString('a'), MontyInt(1))]).asStringMap,
+        {'a': const MontyInt(1)},
+      );
+      // Null rather than a throw: the string-key assumption becomes an
+      // explicit decision at the call site.
+      expect(const MontyDict([(MontyInt(1), MontyInt(2))]).asStringMap, isNull);
+    });
+
+    test('ofStrings matches the pairs constructor', () {
+      expect(
+        MontyDict.ofStrings(const {'a': MontyInt(1)}),
+        const MontyDict([(MontyString('a'), MontyInt(1))]),
       );
     });
   });
 
   group('MontySet', () {
     test(
-      'equality + hashCode (treated as ordered list under deep equality)',
+      // TITLE CORRECTED. It read 'treated as ordered list under deep equality',
+      // which 17b175f made the OPPOSITE of the truth: MontySet compares
+      // order-INSENSITIVELY now, matching the sandbox. The body never
+      // exercised order either way -- both operands are in the same order --
+      // so nothing failed when the implementation was inverted underneath it.
+      // The order property itself lives in monty_set_order_equality_test.dart.
+      'equal sets with identical contents compare and hash equally',
       () {
         const a = MontySet([MontyInt(1), MontyInt(2)]);
         const b = MontySet([MontyInt(1), MontyInt(2)]);
@@ -670,38 +792,176 @@ void main() {
       expect(MontyValue.fromJson('hi'), const MontyString('hi'));
     });
 
-    test('special-float marker strings → MontyFloat', () {
-      expect(MontyValue.fromJson('NaN'), isA<MontyFloat>());
+    test('a bare marker string is a STRING, not a float', () {
+      // Was 'special-float marker strings → MontyFloat'. Rule R2: a bare JSON
+      // string means `str`. The floats themselves arrive tagged.
+      expect(MontyValue.fromJson('NaN'), const MontyString('NaN'));
+      expect(MontyValue.fromJson('Infinity'), const MontyString('Infinity'));
+      expect(MontyValue.fromJson('-Infinity'), const MontyString('-Infinity'));
+
       expect(
-        MontyValue.fromJson('Infinity'),
+        MontyValue.fromJson({'__type': 'float', 'value': 'Infinity'}),
         const MontyFloat(double.infinity),
       );
+    });
+
+    test('a tagged float may carry a finite value since Tier 3', () {
+      // Was asserted as REJECTED when only the non-finite forms travelled
+      // tagged. Tier 3 also tags integral floats and -0.0, because those are
+      // the shapes a JSON number cannot carry across the web transport.
       expect(
-        MontyValue.fromJson('-Infinity'),
-        const MontyFloat(double.negativeInfinity),
+        MontyValue.fromJson({'__type': 'float', 'value': '4.0'}),
+        const MontyFloat(4),
       );
+
+      final negZero =
+          MontyValue.fromJson({'__type': 'float', 'value': '-0.0'})
+              as MontyFloat;
+      expect(negZero.value.isNegative, isTrue, reason: 'the sign is the point');
+      expect(negZero.value, 0);
+
+      // Unparseable text is still refused.
+      expect(
+        () => MontyValue.fromJson({'__type': 'float', 'value': 'not-a-number'}),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('the two ambiguous float shapes are tagged, others are not', () {
+      // `4.0` reparses as `4` and `-0.0` re-serialises as `0` on the web; every
+      // other finite float survives as a plain JSON number, which is why this
+      // costs nothing measurable in corpus size.
+      expect(const MontyFloat(4).toJson(), {'__type': 'float', 'value': '4.0'});
+      // NOT `-0`: an int literal converts to POSITIVE zero, which would make
+      // this test pass while asserting the opposite of what it says. The
+      // prefer_int_literals lint is wrong here; the sign IS the point.
+      // ignore: prefer_int_literals
+      expect(const MontyFloat(-0.0).toJson(), {
+        '__type': 'float',
+        'value': '-0.0',
+      });
+      expect(const MontyFloat(3.14).toJson(), 3.14);
+      expect(const MontyFloat(0.1).toJson(), 0.1);
+    });
+
+    test('4.0 and 4 stay distinguishable through a round-trip', () {
+      // The single sentence core#128a is about.
+      final floatJson = const MontyFloat(4).toJson();
+      final intJson = const MontyInt(4).toJson();
+
+      expect(floatJson, isNot(intJson));
+      expect(MontyValue.fromJson(floatJson), isA<MontyFloat>());
+      expect(MontyValue.fromJson(intJson), isA<MontyInt>());
     });
 
     test('plain List → MontyList', () {
-      final got = MontyValue.fromJson(<dynamic>[1, 'x']);
+      final got = MontyValue.fromJson(<Object?>[1, 'x']);
       expect(got, const MontyList([MontyInt(1), MontyString('x')]));
     });
 
-    test('Map without __type → MontyDict', () {
-      final got = MontyValue.fromJson(<String, dynamic>{'k': 1});
-      expect(got, const MontyDict({'k': MontyInt(1)}));
+    test('Map without __type is REJECTED', () {
+      // Was: 'Map without __type → MontyDict'. That fall-through is core#136:
+      // a Python dict and a type envelope were the same shape on the wire.
+      expect(
+        () => MontyValue.fromJson(<String, dynamic>{'k': 1}),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('untagged'),
+          ),
+        ),
+      );
     });
 
-    test('Map with unknown __type falls back to MontyDict', () {
-      // Defensive path: a future Rust-side type unknown to this Dart
-      // version should still surface as a structurally-valid dict
-      // rather than throwing. The whole map (including __type) is
-      // wrapped — that's the documented contract of _parseMap.
+    test('Map with unknown __type is REJECTED', () {
+      // Was: 'falls back to MontyDict', justified as a defensive path for a
+      // future Rust type. It is the opposite of defensive: guessing a dict is
+      // how an unrecognised tag became a plausible value. `fromJson` is a
+      // deserializer, and rejecting what it cannot represent is the same
+      // contract `json.decode` has (rule R4).
+      expect(
+        () => MontyValue.fromJson(<String, dynamic>{
+          '__type': 'unknown_future_type',
+          'value': 1,
+        }),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('unknown __type'),
+          ),
+        ),
+      );
+    });
+
+    test('a dict whose KEYS spell a type envelope stays a dict', () {
+      // core#136 end to end, in the shape the encoder now produces. Before
+      // Tier 1 the inner object arrived untagged and decoded as MontyPath.
       final got = MontyValue.fromJson(<String, dynamic>{
-        '__type': 'unknown_future_type',
-        'value': 1,
+        '__type': 'dict',
+        'value': {'__type': 'path', 'value': '/etc/passwd'},
       });
+
       expect(got, isA<MontyDict>());
+      expect(
+        got,
+        const MontyDict([
+          (MontyString('__type'), MontyString('path')),
+          (MontyString('value'), MontyString('/etc/passwd')),
+        ]),
+        reason: 'both user keys must survive as ordinary dict entries',
+      );
+    });
+
+    test('a dict with non-string keys decodes as MontyDict', () {
+      final got = MontyValue.fromJson(<String, dynamic>{
+        '__type': 'dict',
+        'entries': [
+          [1, 'a'],
+          ['k', 2],
+        ],
+      });
+
+      expect(
+        got,
+        const MontyDict([
+          (MontyInt(1), MontyString('a')),
+          (MontyString('k'), MontyInt(2)),
+        ]),
+      );
+    });
+
+    test('a malformed dict entry is REJECTED', () {
+      expect(
+        () => MontyValue.fromJson(<String, dynamic>{
+          '__type': 'dict',
+          'entries': [
+            [1],
+          ],
+        }),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('a mixed-key dict round-trips through toJson', () {
+      const original = MontyDict([
+        (MontyInt(1), MontyString('a')),
+        (MontyTuple([MontyInt(1), MontyInt(2)]), MontyInt(3)),
+      ]);
+
+      expect(MontyValue.fromJson(original.toJson()), original);
+    });
+
+    test('encodeForWire gives a host Map the dict envelope', () {
+      // The five raw json.encode call sites used to send a bare object here,
+      // which the strict Rust decoder now rejects. This is the shared path
+      // that makes host values and interpreter values agree.
+      expect(
+        MontyValue.encodeForWire({'k': 1}),
+        '{"__type":"dict","value":{"k":1}}',
+      );
+      expect(MontyValue.encodeForWire(null), 'null');
     });
 
     test('throws for unsupported runtime types', () {
@@ -748,16 +1008,30 @@ void main() {
       );
     });
 
-    test('Dart Map → MontyDict with stringified keys + recursive values', () {
+    test('Dart Map → MontyDict, keys and values both converted', () {
       final got = MontyValue.fromDart({'k': 1, 'n': null});
-      expect(got, const MontyDict({'k': MontyInt(1), 'n': MontyNone()}));
+      expect(
+        got,
+        const MontyDict([
+          (MontyString('k'), MontyInt(1)),
+          (MontyString('n'), MontyNone()),
+        ]),
+      );
     });
 
-    test('Map with non-String keys coerces via toString()', () {
+    test('Map with non-String keys keeps the key TYPE', () {
+      // INVERTED. This used to assert the keys came back as the STRINGS '1'
+      // and '2', because fromDart forced every key through `k.toString()`.
+      // That silently turned the Dart map {1: 'one'} into the Python dict
+      // {'1': 'one'} — a different dict, with no error. Only string keys were
+      // expressible then; pairs carry any key monty accepts.
       final got = MontyValue.fromDart({1: 'one', 2: 'two'});
       expect(
         got,
-        const MontyDict({'1': MontyString('one'), '2': MontyString('two')}),
+        const MontyDict([
+          (MontyInt(1), MontyString('one')),
+          (MontyInt(2), MontyString('two')),
+        ]),
       );
     });
 
@@ -786,7 +1060,7 @@ void main() {
         MontyBytes([]),
         MontyList([]),
         MontyTuple([]),
-        MontyDict({}),
+        MontyDict([]),
         MontySet([]),
         MontyFrozenSet([]),
         MontyDate(year: 1, month: 1, day: 1),

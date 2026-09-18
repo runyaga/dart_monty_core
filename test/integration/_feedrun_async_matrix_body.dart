@@ -11,15 +11,17 @@
 
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runFeedRunAsyncMatrixTests() {
   group('MontyRepl.feedRun async/sync matrix', () {
     late MontyRepl repl;
 
     setUp(() => repl = MontyRepl());
-    tearDown(() async => repl.dispose());
+    tearDown(() => repl.dispose());
 
     // matrix-cell: (sync Dart) × (sync Python)
     test('cell 1: sync handler + bare Python call', () async {
@@ -30,7 +32,7 @@ void runFeedRunAsyncMatrixTests() {
           'fetch': (args, _) {
             calls++;
 
-            return Future.value((args[0]! as int) + 1);
+            return Future.value(callbackArg<int>(args, 0) + 1);
           },
         },
       );
@@ -50,7 +52,7 @@ void runFeedRunAsyncMatrixTests() {
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return (args[0]! as int) + 1;
+            return callbackArg<int>(args, 0) + 1;
           },
         },
       );
@@ -73,7 +75,7 @@ await doubled(3)
           'fetch': (args, _) {
             calls++;
 
-            return Future.value(args[0]);
+            return Future.value(args.firstOrNull);
           },
         },
       );
@@ -97,7 +99,7 @@ await doubled(3)
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return args[0];
+            return args.firstOrNull;
           },
         },
       );
@@ -120,7 +122,7 @@ await doubled(3)
               calls++;
               await Future<void>.delayed(Duration.zero);
 
-              return 'value-for-${args[0]}';
+              return 'value-for-${args.firstOrNull}';
             },
           },
         );
@@ -145,7 +147,7 @@ results
 ''',
           externalAsyncFunctions: {
             'fetch': (args, _) async {
-              final n = args[0]! as int;
+              final n = callbackArg<int>(args, 0);
               fired.add(n);
               await Future<void>.delayed(Duration.zero);
 
@@ -171,7 +173,7 @@ results
         final r = await repl.feedRun(
           'await fetch(1)',
           externalFunctions: {
-            'fetch': (args, _) => Future.value(args[0]),
+            'fetch': (args, _) => Future.value(args.firstOrNull),
           },
         );
 

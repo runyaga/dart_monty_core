@@ -151,7 +151,7 @@ Future<void> _isolateMain(_InitMessage init) async {
   final receivePort = ReceivePort();
   init.mainSendPort.send(_ReadyMessage(receivePort.sendPort));
 
-  final nativeBindings = NativeBindingsFfi();
+  const nativeBindings = NativeBindingsFfi();
   final ffiCoreBindings = FfiCoreBindings(bindings: nativeBindings);
   var monty = MontyFfi.withCore(
     coreBindings: ffiCoreBindings,
@@ -360,8 +360,12 @@ class NativeIsolateBindingsImpl extends NativeIsolateBindings {
       }
       // Isolate exit (null from addOnExitListener).
       if (message == null) {
-        if (_exitCompleter != null && !_exitCompleter!.isCompleted) {
-          _exitCompleter!.complete();
+        // Read the field once. `_exitCompleter` is mutable, so the null
+        // check could not promote it; a local also cannot be swapped between
+        // the isCompleted test and the complete() call.
+        final exitCompleter = _exitCompleter;
+        if (exitCompleter != null && !exitCompleter.isCompleted) {
+          exitCompleter.complete();
         }
         if (!completer.isCompleted) {
           completer.completeError(
@@ -526,8 +530,10 @@ class NativeIsolateBindingsImpl extends NativeIsolateBindings {
   /// does not exit in time, it is killed and counted as a zombie.
   Future<void> terminate() async {
     _sendPort?.send(_DisposeRequest(_nextId++));
-    if (_exitCompleter != null && !_exitCompleter!.isCompleted) {
-      final exited = await _exitCompleter!.future
+    // Same field-promotion fix as the exit listener above.
+    final exitCompleter = _exitCompleter;
+    if (exitCompleter != null && !exitCompleter.isCompleted) {
+      final exited = await exitCompleter.future
           .timeout(const Duration(seconds: 5))
           .then((_) => true)
           .onError((_, _) => false);

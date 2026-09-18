@@ -1,0 +1,35 @@
+# Fixtures the WASM corpus is EXPECTED to fail, with the reason each is genuine.
+#
+# tool/test_wasm.sh compares the actual failing set against this list and fails
+# the gate on ANY difference in EITHER direction:
+#
+#   * a fixture fails that is not listed  -> a real regression
+#   * a listed fixture PASSES             -> this list is stale, delete the entry
+#
+# The second direction is the point. A plain "0 failures" gate can never go
+# green while a genuine upstream bug exists, so the gate gets ignored or the
+# fixture gets quarantined out of the corpus. Declaring the expected set keeps
+# the corpus honest: every fixture still RUNS, and a fix shows up as a failure
+# here rather than passing unnoticed.
+#
+# Format: <fixture>  <TAB or spaces>  <reason>
+#
+# REMOVED 2026-09-13: dict__eq_self_referential.py. It was listed as an UPSTREAM
+# monty trap. It was not — it was our own default recursion limit. Monty's guard
+# is a counter; reaching it costs native stack; BaseMontyPlatform.defaultStackDepth
+# was 1000 ("matches CPython"), deeper than an in-process embedding can sustain,
+# so the stack blew before the counter tripped. At 512 the fixture raises the
+# RecursionError it expects and PASSES. This gate is what caught it: it went red
+# with "STALE: declared-expected fixture(s) now PASS", which is the whole point
+# of declaring the set rather than demanding zero.
+
+dataclass__basic.py              DIAGNOSED 2026-09-15 (artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md). Fails at fixture line 243: assert str(e) == "'Point' object has no attribute 'nonexistent_method'". The harness emits "'object' object has no attribute ..." because fixture_runner.dart:421 recovers the receiver type from args.firstOrNull, and monty v0.0.23 sends an EMPTY argument list for method calls -- the receiver travels as FunctionCall.object_id, which native/src/repl_handle.rs:848 reduces to object_id.is_some(). Validated against pydantic-monty 0.0.23: with the receiver resolved by object_id, the fixture's own assertions all pass, so the fixture and monty are both correct and OUR BINDING fails it. Not an upstream bug. Fixing it is a wire-format change: forward object_id. (convert.rs:754 stamps every host instance instance_id [0u8;16]; measured 2026-09-15 that this is NOT observable today -- a is b/a is a/aliasing/mutation-isolation/equality are all correct -- but it becomes load-bearing the moment object_id is forwarded, since that id IS this field.)
+
+# REMOVED 2026-09-13: functools__gc.py and itertools__gc.py. They were declared
+# here as expected failures, which says "we are wrong here". They are not: the
+# `gc` module is gated behind the test-hooks cargo feature in UPSTREAM MONTY
+# (crates/monty/src/modules/mod.rs:136-137, and gc.rs:1 says so in its first
+# line), so `import gc` raising ModuleNotFoundError on a shipped engine is the
+# designed behaviour, not a defect. They now sit in gcModuleFixtures, folded
+# into testHooksWasmFixtures, so every harness SKIPS them with that reason and
+# tool/test_cm_wasm.sh still RUNS them — where they pass.

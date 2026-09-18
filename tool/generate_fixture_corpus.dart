@@ -1,4 +1,5 @@
-// Generates test/integration/_fixture_corpus.dart from the .py fixture files.
+// Generates packages/monty_conformance/lib/src/fixture_corpus.dart from the
+// .py fixture files.
 //
 // Run from the package root:
 //   dart tool/generate_fixture_corpus.dart
@@ -64,7 +65,7 @@ void main() {
 
   buf.writeln('};');
 
-  const outPath = 'test/integration/_fixture_corpus.dart';
+  const outPath = 'packages/monty_conformance/lib/src/fixture_corpus.dart';
   fs.file(outPath).writeAsStringSync(buf.toString());
   // This is a CLI tool — print is the intended output mechanism.
   // ignore: avoid_print

@@ -7,8 +7,10 @@
 // through the Rust handle, which is identical FFI/WASM, so both
 // backends share these scenarios.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runReplExtFnsLifecycleTests() {
   group('MontyRepl externals lifecycle', () {
@@ -19,11 +21,28 @@ void runReplExtFnsLifecycleTests() {
         addTearDown(repl.dispose);
 
         // Feed 1: register `fetch`, call it.
-        await repl.feedRun(
-          'x = fetch(1)',
+        //
+        // The result is asserted deliberately (core#130). Without this, the
+        // test passes even when registration never worked at all: feed 1
+        // would error unnoticed and feed 2's NameError would look like
+        // correct de-registration. `setExtFns(const [])` passed this test.
+        final r1 = await repl.feedRun(
+          'x = fetch(1)\nx',
           externalFunctions: {
-            'fetch': (args, _) async => (args[0]! as int) * 10,
+            'fetch': (args, _) => callbackArg<int>(args, 0) * 10,
           },
+        );
+        expect(
+          r1.error,
+          isNull,
+          reason:
+              'registration itself must succeed before de-registration '
+              'can mean anything',
+        );
+        expect(
+          r1.value,
+          equals(MontyValue.fromDart(10)),
+          reason: 'the registered external must actually have been called',
         );
 
         // Feed 2: no externalFunctions. The leftover `fetch` name must
@@ -43,7 +62,9 @@ void runReplExtFnsLifecycleTests() {
         // Iterative path: register `fetch`.
         await repl.feedRun(
           'x = fetch(7)',
-          externalFunctions: {'fetch': (args, _) => Future.value(args[0])},
+          externalFunctions: {
+            'fetch': (args, _) => Future.value(args.firstOrNull),
+          },
         );
 
         // Fast-path feed (no externalFunctions, no osHandler)
@@ -63,18 +84,31 @@ void runReplExtFnsLifecycleTests() {
         final repl = MontyRepl();
         addTearDown(repl.dispose);
 
-        // Feed 1: register `a`.
-        await repl.feedRun(
-          'r = a(5)',
-          externalFunctions: {'a': (args, _) async => (args[0]! as int) + 1},
+        // Feed 1: register `a`. The result is ASSERTED, not discarded --
+        // codex found that dropping it lets the callback fail unnoticed. A
+        // failure inside a host callback does not fail the test on its own:
+        // monty_repl.dart:554 catches it and hands it to the sandbox as a
+        // script error, so the only way it becomes visible is to look at what
+        // the feed returned.
+        final feed1 = await repl.feedRun(
+          'r = a(5)\nr',
+          externalFunctions: {
+            'a': (args, _) => callbackArg<int>(args, 0) + 1,
+          },
         );
+        expect(feed1.error, isNull, reason: 'feed 1 must not error');
+        expect(feed1.value, const MontyInt(6), reason: 'a(5) is 5 + 1');
 
         // Feed 2: register `b` instead. `a` must no longer resolve
-        // when referenced again.
-        await repl.feedRun(
-          'r = b(5)',
-          externalFunctions: {'b': (args, _) async => (args[0]! as int) * 2},
+        // when referenced again. Asserted for the same reason.
+        final feed2 = await repl.feedRun(
+          'r = b(5)\nr',
+          externalFunctions: {
+            'b': (args, _) => callbackArg<int>(args, 0) * 2,
+          },
         );
+        expect(feed2.error, isNull, reason: 'feed 2 must not error');
+        expect(feed2.value, const MontyInt(10), reason: 'b(5) is 5 * 2');
 
         final r = await repl.feedRun('r = a(5)');
         expect(r.error?.excType, 'NameError');

@@ -42,3 +42,8 @@ cd "$ROOT"
 
 echo "[prebuild] Done. Assets in $ROOT/lib/assets/."
 ls -la lib/assets/
+
+# Re-record the hash of the sources these assets were built FROM, so
+# tool/check_asset_freshness.sh can detect a stale asset later. Derived, not
+# declared -- nobody has to remember to update it, which is the whole point.
+bash "$(dirname "$0")/check_asset_freshness.sh" --update

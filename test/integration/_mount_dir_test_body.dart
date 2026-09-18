@@ -5,15 +5,17 @@
 // uses pathlib.Path against a mount, the handler resolves the request
 // through the in-memory vfs, and the result round-trips back to Dart.
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runMountDirTests() {
   group('MountDir + memoryMountedOsHandler', () {
     test('Python reads a file mounted at /data', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
-        vfs: {'/data/hello.txt': 'Hello from VFS!'},
+        files: [MontyMemoryFile('/data/hello.txt', 'Hello from VFS!')],
       );
 
       final r = await Monty(
@@ -25,10 +27,10 @@ void runMountDirTests() {
     });
 
     test('Python writes through a writable mount', () async {
-      final vfs = <String, String>{};
+      final out = MontyMemoryFile('/tmp/out.txt', '');
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/tmp')],
-        vfs: vfs,
+        files: [out],
       );
 
       final r = await Monty(
@@ -37,7 +39,7 @@ void runMountDirTests() {
       ).run(osHandler: handler);
 
       expect(r.error, isNull);
-      expect(vfs['/tmp/out.txt'], 'written from Python');
+      expect(out.content, VfsText('written from Python'));
     });
 
     test('readOnly mount surfaces a write rejection to Python', () async {
@@ -45,7 +47,7 @@ void runMountDirTests() {
         mounts: const [
           MountDir(virtualPath: '/data', mode: MountMode.readOnly),
         ],
-        vfs: {'/data/x.txt': 'old'},
+        files: [MontyMemoryFile('/data/x.txt', 'old')],
       );
 
       // The handler raises OsCallException(pythonExceptionType:
@@ -60,28 +62,29 @@ void runMountDirTests() {
       expect(r.error?.message, contains('/data/x.txt'));
     });
 
-    test(
-      'Python sees a path outside every mount as a PermissionError',
-      () async {
-        final handler = memoryMountedOsHandler(
-          mounts: const [MountDir(virtualPath: '/data')],
-          vfs: const {},
-        );
+    // Was PermissionError. A path the sandbox does not mount is, as far as
+    // the sandbox is concerned, not there — the same answer `exists()` gives
+    // about it. `PermissionError` contradicted that and leaked more, by
+    // confirming the path was worth denying.
+    test('Python sees a path outside every mount as not there', () async {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        files: const [],
+      );
 
-        final r = await Monty(
-          'import pathlib\npathlib.Path("/etc/passwd").read_text()',
-        ).run(osHandler: handler);
+      final r = await Monty(
+        'import pathlib\npathlib.Path("/etc/passwd").read_text()',
+      ).run(osHandler: handler);
 
-        expect(r.error, isNotNull);
-        expect(r.error?.excType, 'PermissionError');
-        expect(r.error?.message, contains('/etc/passwd'));
-      },
-    );
+      expect(r.error, isNotNull);
+      expect(r.error?.excType, 'FileNotFoundError');
+      expect(r.error?.message, contains('/etc/passwd'));
+    });
 
     test('Python can catch the typed OS exception with except', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
-        vfs: const {},
+        files: const [],
       );
 
       final r = await Monty(
@@ -95,15 +98,15 @@ void runMountDirTests() {
       ).run(osHandler: handler);
 
       expect(r.error, isNull);
-      final tuple = r.value.dartValue! as List<Object?>;
-      expect(tuple.first, 'caught');
-      expect(tuple[1], contains('/data/missing.txt'));
+      final tuple = dartValueOf<List<Object?>>(r.value);
+      expect(tuple.firstOrNull, 'caught');
+      expect(tuple.elementAtOrNull(1), contains('/data/missing.txt'));
     });
 
     test('exists / is_file / is_dir reflect mount state', () async {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
-        vfs: {'/data/sub/x.txt': 'hi'},
+        files: [MontyMemoryFile('/data/sub/x.txt', 'hi')],
       );
 
       final r = await Monty('''

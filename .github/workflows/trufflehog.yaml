@@ -16,11 +16,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: TruffleHog scan
-        uses: trufflesecurity/trufflehog@main
+        # PINNED, was @main. A mutable branch ref on a secret scanner means
+        # every run executes whatever is on that branch at that moment, with
+        # repo read access -- the supply-chain shape this scanner exists to
+        # find. v3.97.4 is the current release (gh api .../releases/latest).
+        uses: trufflesecurity/trufflehog@v3.97.4
         with:
           extra_args: --only-verified
 

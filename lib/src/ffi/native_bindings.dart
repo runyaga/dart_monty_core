@@ -1,5 +1,193 @@
 import 'dart:typed_data';
 
+/// Abstract interface over the 17 native C functions.
+///
+/// Uses `int` handles (the pointer address) instead of `Pointer<T>` types
+/// so that the interface remains pure Dart and trivially mockable.
+///
+/// All memory management (C string allocation/deallocation, pointer
+/// lifecycle) is the responsibility of the concrete implementation.
+// ignore: number-of-methods — one method per Rust FFI symbol; count is bounded by the C ABI
+abstract class NativeBindings {
+  /// Creates a [NativeBindings].
+  const NativeBindings();
+
+  /// The wire-format version the loaded native library emits.
+  ///
+  /// Backs the handshake in `FfiCoreBindings.init`. The symbol has existed in
+  /// the header (`dart_monty.h:80`) and in Rust (`native/src/lib.rs:77`) since
+  /// the format was versioned, and the generated binding has always been
+  /// present -- but nothing in `lib/` ever called it, so on the native backend
+  /// the comparison lived only in `test/integration/ffi_wire_format_test.dart`.
+  /// A check that runs only under the test suite does not protect an embedder
+  /// pairing a prebuilt library with a differently-versioned Dart package,
+  /// which is the one configuration the version integer exists for.
+  int wireFormatVersion();
+
+  /// Creates a handle from Python [code].
+  ///
+  /// If [externalFunctions] is non-null, it is a comma-separated list of
+  /// external function names.
+  ///
+  /// If [scriptName] is non-null, it overrides the default filename used
+  /// in tracebacks and error messages.
+  ///
+  /// Returns the handle address as an `int`, or throws on error.
+  int create(String code, {String? externalFunctions, String? scriptName});
+
+  /// Frees the handle at [handle]. Safe to call with `0`.
+  void free(int handle);
+
+  /// Runs the handle to completion.
+  RunResult run(int handle);
+
+  /// Starts iterative execution. Returns progress with accessor data
+  /// already populated.
+  ProgressResult start(int handle);
+
+  /// Resumes with a JSON-encoded return [valueJson].
+  ProgressResult resume(int handle, String valueJson);
+
+  /// Resumes with an [errorMessage] (raises RuntimeError in Python).
+  ProgressResult resumeWithError(int handle, String errorMessage);
+
+  /// Resumes with a typed Python [excType] exception and [errorMessage].
+  ///
+  /// [excType] is the Python exception class name, e.g. `'FileNotFoundError'`.
+  /// Unknown names fall back to RuntimeError.
+  ProgressResult resumeWithException(
+    int handle,
+    String excType,
+    String errorMessage,
+  );
+
+  /// Resumes signalling "function not found" (raises NameError in Python).
+  ProgressResult resumeNotFound(int handle, String fnName);
+
+  /// Resumes by creating a future for the pending call.
+  ProgressResult resumeAsFuture(int handle);
+
+  /// Resumes a name lookup by supplying [valueJson] for the looked-up name.
+  ///
+  /// The sibling of [resumeNameLookupUndefined]. Both wrap C ABI functions that
+  /// have existed since the name-lookup protocol landed; this one had no Dart
+  /// binding at all, so `FfiCoreBindings.resumeNameLookupValue` threw
+  /// `UnimplementedError` claiming the FFI backend did not support it. It does.
+  ProgressResult resumeNameLookupValue(int handle, String valueJson);
+
+  /// Resumes from a NameLookup by indicating the variable is undefined.
+  ///
+  /// The engine raises NameError in Python.
+  ProgressResult resumeNameLookupUndefined(int handle);
+
+  /// Resolves pending futures with [resultsJson] and [errorsJson].
+  ///
+  /// [resultsJson] is a JSON object mapping call_id (string) to value.
+  /// [errorsJson] is a JSON object mapping call_id (string) to error message.
+  ProgressResult resolveFutures(
+    int handle,
+    String resultsJson,
+    String errorsJson,
+  );
+
+  /// Sets the memory limit in bytes.
+  void setMemoryLimit(int handle, int bytes);
+
+  /// Sets the execution time limit in milliseconds.
+  void setTimeLimitMs(int handle, int ms);
+
+  /// Sets the stack depth limit.
+  void setStackLimit(int handle, int depth);
+
+  /// Serializes the handle state to a byte buffer (snapshot).
+  Uint8List snapshot(int handle);
+
+  /// Restores a handle from snapshot [data].
+  ///
+  /// Returns the new handle address as an `int`, or throws on error.
+  int restore(Uint8List data);
+
+  /// Runs static type checking on [code] without executing it.
+  ///
+  /// Stateless — does not create or modify any handle. Returns the
+  /// Monty `json`-format diagnostics string when errors are found, or
+  /// `null` when the code type-checks cleanly. Throws on infrastructure
+  /// failure.
+  String? typeCheck(String code, {String? prefixCode, String scriptName});
+
+  // ---------------------------------------------------------------------------
+  // REPL
+  // ---------------------------------------------------------------------------
+
+  /// Creates a REPL handle with empty interpreter state.
+  ///
+  /// Returns the handle address as an `int`, or throws on error.
+  int replCreate({String? scriptName, String? limitsJson});
+
+  /// Frees a REPL handle. Safe to call with `0`.
+  void replFree(int handle);
+
+  /// Feeds a Python snippet to the REPL and runs to completion.
+  ///
+  /// The handle survives — state persists for subsequent calls.
+  RunResult replFeedRun(int handle, String code);
+
+  /// Detects whether a source fragment is complete or needs more input.
+  ///
+  /// Returns `0` = complete, `1` = incomplete (unclosed brackets/strings),
+  /// `2` = incomplete block (needs trailing blank line).
+  int replDetectContinuation(String source);
+
+  /// Registers external function names for REPL name resolution.
+  void replSetExtFns(int handle, String extFns);
+
+  /// Starts iterative REPL execution. Pauses at external function calls.
+  ProgressResult replFeedStart(int handle, String code);
+
+  /// Resumes REPL execution with a JSON-encoded return value.
+  ProgressResult replResume(int handle, String valueJson);
+
+  /// Resumes REPL execution with an error (raises RuntimeError in Python).
+  ProgressResult replResumeWithError(int handle, String errorMessage);
+
+  /// Resumes REPL execution with a typed Python exception. [excType] is the
+  /// Python exception class name (e.g. `FileNotFoundError`); unknown names
+  /// fall back to RuntimeError.
+  ProgressResult replResumeWithException(
+    int handle,
+    String excType,
+    String errorMessage,
+  );
+
+  /// Resumes REPL execution signalling "function not found" (raises NameError).
+  ProgressResult replResumeNotFound(int handle, String fnName);
+
+  /// Resumes REPL by creating a future for the pending call.
+  ProgressResult replResumeAsFuture(int handle);
+
+  /// Resolves pending REPL futures with results and errors.
+  ProgressResult replResolveFutures(
+    int handle,
+    String resultsJson,
+    String errorsJson,
+  );
+
+  /// Serialises a REPL handle's heap to postcard bytes.
+  ///
+  /// Throws [StateError] if the REPL is mid-execution.
+  Uint8List replSnapshot(int handle);
+
+  /// Restores a REPL handle from postcard bytes produced by [replSnapshot].
+  ///
+  /// Returns the new handle address. The caller must free the old handle
+  /// via [replFree] before calling this.
+  /// [limitsJson] is APPLIED to the restored session (null keeps the
+  /// snapshot's own limits), and [extFns] re-registers external names, which a
+  /// snapshot cannot carry. Both were previously dropped, which let a
+  /// `MontyRepl(limits: ...)` restore an unbounded snapshot and run unbounded.
+  int replRestore(Uint8List data, {String? limitsJson, List<String>? extFns});
+}
+
 /// Result of [NativeBindings.run].
 ///
 /// Contains either a JSON result string or an error message.
@@ -72,166 +260,42 @@ final class ProgressResult {
   final String? variableName;
 }
 
-/// Abstract interface over the 17 native C functions.
+/// The value-encoding wire format version this Dart code expects.
 ///
-/// Uses `int` handles (the pointer address) instead of `Pointer<T>` types
-/// so that the interface remains pure Dart and trivially mockable.
+/// Must equal `WIRE_FORMAT_VERSION` in `native/src/convert.rs`. Bump both in
+/// the SAME commit as any change to what the encoder emits or the decoder
+/// accepts.
 ///
-/// All memory management (C string allocation/deallocation, pointer
-/// lifecycle) is the responsibility of the concrete implementation.
-// ignore: number-of-methods — one method per Rust FFI symbol; count is bounded by the C ABI
-abstract class NativeBindings {
-  /// Creates a [NativeBindings].
-  const NativeBindings();
+/// **Scope: the VALUE encoding only** — what `monty_object_to_json` emits and
+/// `json_to_monty_object` accepts. It does **not** cover the protocol frames
+/// (`callId`, `methodCall`, `errorType`, `args`, `kwargs`, `architecture`,
+/// `diagnosticsJson`, …), which today have **no** versioning of any kind —
+/// verified, not assumed. Do not read this constant as covering "the wire".
+/// A protocol-frame change can still skew silently; that gap is real and
+/// unclosed.
+///
+/// This exists because `lib/assets/*.wasm` and the JS bridge are COMMITTED
+/// build artefacts and the wasm build is not byte-reproducible — an unchanged
+/// tree yields different bytes — so `git diff` on the blob cannot tell you
+/// whether the asset matches the crate. A version integer can, and a mismatch
+/// then fails loudly at init instead of mis-decoding values later.
+const int expectedWireFormatVersion = 5;
 
-  /// Creates a handle from Python [code].
-  ///
-  /// If [externalFunctions] is non-null, it is a comma-separated list of
-  /// external function names.
-  ///
-  /// If [scriptName] is non-null, it overrides the default filename used
-  /// in tracebacks and error messages.
-  ///
-  /// Returns the handle address as an `int`, or throws on error.
-  int create(String code, {String? externalFunctions, String? scriptName});
+/// Thrown at init when the native library's wire format does not match
+/// [expectedWireFormatVersion].
+class WireFormatMismatch implements Exception {
+  /// Creates a [WireFormatMismatch].
+  const WireFormatMismatch(this.expected, this.actual);
 
-  /// Frees the handle at [handle]. Safe to call with `0`.
-  void free(int handle);
+  /// What this Dart code was built against.
+  final int expected;
 
-  /// Runs the handle to completion.
-  RunResult run(int handle);
+  /// What the loaded native library reports.
+  final int actual;
 
-  /// Starts iterative execution. Returns progress with accessor data
-  /// already populated.
-  ProgressResult start(int handle);
-
-  /// Resumes with a JSON-encoded return [valueJson].
-  ProgressResult resume(int handle, String valueJson);
-
-  /// Resumes with an [errorMessage] (raises RuntimeError in Python).
-  ProgressResult resumeWithError(int handle, String errorMessage);
-
-  /// Resumes with a typed Python [excType] exception and [errorMessage].
-  ///
-  /// [excType] is the Python exception class name, e.g. `'FileNotFoundError'`.
-  /// Unknown names fall back to RuntimeError.
-  ProgressResult resumeWithException(
-    int handle,
-    String excType,
-    String errorMessage,
-  );
-
-  /// Resumes signalling "function not found" (raises NameError in Python).
-  ProgressResult resumeNotFound(int handle, String fnName);
-
-  /// Resumes by creating a future for the pending call.
-  ProgressResult resumeAsFuture(int handle);
-
-  /// Resumes from a NameLookup by indicating the variable is undefined.
-  ///
-  /// The engine raises NameError in Python.
-  ProgressResult resumeNameLookupUndefined(int handle);
-
-  /// Resolves pending futures with [resultsJson] and [errorsJson].
-  ///
-  /// [resultsJson] is a JSON object mapping call_id (string) to value.
-  /// [errorsJson] is a JSON object mapping call_id (string) to error message.
-  ProgressResult resolveFutures(
-    int handle,
-    String resultsJson,
-    String errorsJson,
-  );
-
-  /// Sets the memory limit in bytes.
-  void setMemoryLimit(int handle, int bytes);
-
-  /// Sets the execution time limit in milliseconds.
-  void setTimeLimitMs(int handle, int ms);
-
-  /// Sets the stack depth limit.
-  void setStackLimit(int handle, int depth);
-
-  /// Serializes the handle state to a byte buffer (snapshot).
-  Uint8List snapshot(int handle);
-
-  /// Restores a handle from snapshot [data].
-  ///
-  /// Returns the new handle address as an `int`, or throws on error.
-  int restore(Uint8List data);
-
-  /// Runs static type checking on [code] without executing it.
-  ///
-  /// Stateless — does not create or modify any handle. Returns the
-  /// Monty `json`-format diagnostics string when errors are found, or
-  /// `null` when the code type-checks cleanly. Throws on infrastructure
-  /// failure.
-  String? typeCheck(String code, {String? prefixCode, String scriptName});
-
-  // ---------------------------------------------------------------------------
-  // REPL
-  // ---------------------------------------------------------------------------
-
-  /// Creates a REPL handle with empty interpreter state.
-  ///
-  /// Returns the handle address as an `int`, or throws on error.
-  int replCreate({String? scriptName});
-
-  /// Frees a REPL handle. Safe to call with `0`.
-  void replFree(int handle);
-
-  /// Feeds a Python snippet to the REPL and runs to completion.
-  ///
-  /// The handle survives — state persists for subsequent calls.
-  RunResult replFeedRun(int handle, String code);
-
-  /// Detects whether a source fragment is complete or needs more input.
-  ///
-  /// Returns `0` = complete, `1` = incomplete (unclosed brackets/strings),
-  /// `2` = incomplete block (needs trailing blank line).
-  int replDetectContinuation(String source);
-
-  /// Registers external function names for REPL name resolution.
-  void replSetExtFns(int handle, String extFns);
-
-  /// Starts iterative REPL execution. Pauses at external function calls.
-  ProgressResult replFeedStart(int handle, String code);
-
-  /// Resumes REPL execution with a JSON-encoded return value.
-  ProgressResult replResume(int handle, String valueJson);
-
-  /// Resumes REPL execution with an error (raises RuntimeError in Python).
-  ProgressResult replResumeWithError(int handle, String errorMessage);
-
-  /// Resumes REPL execution with a typed Python exception. [excType] is the
-  /// Python exception class name (e.g. `FileNotFoundError`); unknown names
-  /// fall back to RuntimeError.
-  ProgressResult replResumeWithException(
-    int handle,
-    String excType,
-    String errorMessage,
-  );
-
-  /// Resumes REPL execution signalling "function not found" (raises NameError).
-  ProgressResult replResumeNotFound(int handle, String fnName);
-
-  /// Resumes REPL by creating a future for the pending call.
-  ProgressResult replResumeAsFuture(int handle);
-
-  /// Resolves pending REPL futures with results and errors.
-  ProgressResult replResolveFutures(
-    int handle,
-    String resultsJson,
-    String errorsJson,
-  );
-
-  /// Serialises a REPL handle's heap to postcard bytes.
-  ///
-  /// Throws [StateError] if the REPL is mid-execution.
-  Uint8List replSnapshot(int handle);
-
-  /// Restores a REPL handle from postcard bytes produced by [replSnapshot].
-  ///
-  /// Returns the new handle address. The caller must free the old handle
-  /// via [replFree] before calling this.
-  int replRestore(Uint8List data);
+  @override
+  String toString() =>
+      'WireFormatMismatch: this build expects wire format v$expected but the '
+      'loaded native library emits v$actual. The committed assets in '
+      'lib/assets/ are stale relative to native/ — run tool/prebuild.sh.';
 }

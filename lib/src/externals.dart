@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 
@@ -10,7 +11,10 @@ export 'package:dart_monty_core/src/platform/os_call_exception.dart';
 /// Return value is serialized back to Python as the function's return value.
 /// Return `null` to return `None` to Python.
 typedef MontyCallback =
-    Future<Object?> Function(List<Object?> args, Map<String, Object?>? kwargs);
+    FutureOr<Object?> Function(
+      List<Object?> args,
+      Map<String, Object?>? kwargs,
+    );
 
 /// A callback invoked when Python performs an OS operation (filesystem,
 /// environment, datetime).
@@ -25,7 +29,7 @@ typedef MontyCallback =
 /// Throw an [OsCallException] to raise a Python exception from the handler.
 /// Return `null` to return `None` to Python.
 typedef OsCallHandler =
-    Future<Object?> Function(
+    FutureOr<Object?> Function(
       String operation,
       List<Object?> args,
       Map<String, Object?>? kwargs,

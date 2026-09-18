@@ -2,6 +2,10 @@ custom_html_template_path: test/integration/wasm_test_template.html
 
 tags:
   unit: {}
+  # Cannot compile for the web at all — not merely wrong there. See
+  # test/unit/platform/monty_value_int64_vm_test.dart for why a tag is not
+  # enough on its own and the file must also be separate.
+  vm-only: {}
   integration:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=integration"
   ffi:

@@ -47,7 +47,7 @@ final class MontyException implements Exception {
   /// Expected keys: `message`, `filename`, `line_number`, `column_number`,
   /// `source_code`, `exc_type`, `traceback`.
   factory MontyException.fromJson(Map<String, dynamic> json) {
-    final rawTraceback = json['traceback'] as List<dynamic>?;
+    final rawTraceback = json['traceback'] as List<Object?>?;
 
     return MontyException(
       message: json['message'] as String,

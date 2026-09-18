@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dart_monty_core — pre-commit checks (mirrors CI exactly)
+# dart_monty_core — FAST pre-commit subset (does NOT mirror CI)
+#
+# This header used to claim "mirrors CI exactly". It does not, and never did:
+# it runs 4 checks while the real gate is 14 (tool/gate.sh). A git hook that
+# claims parity it does not have is worse than no hook, because it buys
+# confidence it cannot back.
+#
+# What this is: the fast checks worth blocking a commit on locally.
+# What it is NOT: the gate. Run `bash tool/gate.sh` before you push.
 #
 # Checks run:
 #   1. cargo fmt --check          (native/)

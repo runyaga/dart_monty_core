@@ -84,11 +84,14 @@ Future<void> _collections() async {
   final tup = (await repl.feedRun('(1, 2, 3)')).value as MontyTuple;
   print('tuple: ${tup.items.map((v) => v.dartValue)}');
 
-  // MontyDict — str keys only (Monty restriction)
+  // MontyDict — any hashable key, held as insertion-ordered pairs.
   final d = (await repl.feedRun('{"a": 1, "b": [2, 3]}')).value as MontyDict;
-  print('dict keys: ${d.entries.keys.toList()}');
+  print('dict keys: ${d.keys.map((k) => k.dartValue).toList()}');
+  // asStringMap is null unless EVERY key is a string, so the assumption is
+  // explicit rather than a cast that throws on {1: 'a'}.
+  final byName = d.asStringMap!;
   print(
-    'dict["b"]: ${(d.entries["b"] as MontyList).items.map((v) => v.dartValue)}',
+    'dict["b"]: ${(byName["b"]! as MontyList).items.map((v) => v.dartValue)}',
   );
 
   // MontySet
@@ -171,13 +174,19 @@ class User:
 
 u = User("Alice", 30)
 ''');
-  final dc = (await repl.feedRun('u')).value as MontyDataclass;
-  print('dataclass: ${dc.name}  frozen=${dc.frozen}  typeId=${dc.typeId}');
-  print('  fields: ${dc.fieldNames}');
+  // WIRE v5: an in-sandbox class instance arrives as MontyClassInstance, NOT
+  // MontyDataclass. MontyDataclass still exists but is ENCODE-ONLY -- you can
+  // send one in, you will not get one back. The old shape carried `name`,
+  // `frozen`, `typeId` and `fieldNames`; the replacement carries a class, an
+  // instance id and attrs, and nothing else. `frozen` and `fieldNames` are gone
+  // from the wire, so an example cannot print them.
+  final inst = (await repl.feedRun('u')).value as MontyClassInstance;
+  print('class instance: ${inst.classType.name}  id=${inst.instanceId}');
+  print('  isDataclass: ${inst.classType.isDataclass}');
   print(
-    '  name=${dc.attrs["name"]!.dartValue}  age=${dc.attrs["age"]!.dartValue}',
+    '  name=${inst.attrs["name"]!.dartValue}  age=${inst.attrs["age"]!.dartValue}',
   );
-  print('  dartValue: ${dc.dartValue}');
+  print('  dartValue: ${inst.dartValue}');
 
   repl.dispose();
 }

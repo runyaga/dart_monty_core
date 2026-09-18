@@ -9,6 +9,7 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runTypeCheckTests() {
   group('Monty.typeCheck', () {
@@ -23,7 +24,7 @@ void runTypeCheckTests() {
       // even though neither name is annotated.
       final errors = await Monty.typeCheck('x = "anything"\ny = x + 1');
       expect(errors, isNotEmpty);
-      expect(errors.first.code, 'unsupported-operator');
+      expect(firstItem(errors).code, 'unsupported-operator');
     });
 
     test('catches incompatible assignment in annotated code', () async {
@@ -32,7 +33,7 @@ void runTypeCheckTests() {
         scriptName: 'incompat.py',
       );
       expect(errors, isNotEmpty);
-      final e = errors.first;
+      final e = firstItem(errors);
       expect(e.code, 'invalid-assignment');
       expect(e.message, contains('not assignable'));
       expect(e.path, '/incompat.py');
@@ -101,8 +102,9 @@ b: int = "second"
       final type = Monty.typeCheck('x: int = "wrong"');
       final exec = Monty.exec('1 + 2');
       final results = await Future.wait([type, exec]);
-      final errors = results[0] as List<MontyTypingError>;
-      final result = results[1] as MontyResult;
+      // `results` is Future.wait's heterogeneous list: [typeCheck, exec].
+      final errors = callbackArg<List<MontyTypingError>>(results, 0);
+      final result = callbackArg<MontyResult>(results, 1);
       expect(errors, isNotEmpty);
       expect(result.error, isNull);
       expect(result.value.dartValue, 3);

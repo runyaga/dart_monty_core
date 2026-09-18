@@ -22,15 +22,49 @@ import 'package:test/test.dart';
 /// regression to fix; once fixed, remove the entry so the test enforces
 /// the example.
 const _skipReasons = {
+  // REASON CORRECTED 2026-09-14. It previously blamed resumeNameLookupValue
+  // being unsupported on FFI. That was fixed (06da3ba) and the file now holds
+  // zero UnimplementedError, so the stale reason was hiding the real cause
+  // TWICE over: the example also failed to COMPILE on a duplicate `repl`
+  // declaration, which masked the runtime fault behind it.
+  //
+  // The compile error is fixed. What remains is a LIBRARY defect, not an
+  // example defect: Monty.compile() is broken.
+  //
+  // SCOPE CORRECTED 2026-09-16, measured. This said "broken on the FFI
+  // backend". It is broken on BOTH backends, and the fault is not in either
+  // binding -- it is in the shared Rust. native/src/handle.rs:558 is an
+  // unconditional `Err(...)` with no branch that can return Ok, and both
+  // backends reach it by the same two-step sequence:
+  //     FFI   ffi_core_bindings.dart:185  create(code) -> snapshot(handle)
+  //     WASM  worker_src.js:915,948       monty_create -> monty_snapshot
+  // The worker even comments "captures bytecode only" (worker_src.js:938), a
+  // belief the Rust it calls contradicts. runPrecompiled() is dead the same
+  // way via handle.rs:570. Sending someone to hunt in the FFI layer is exactly
+  // the stale-reason failure this entry already suffered once, above.
+  // Pinned by test/integration/ffi_compile_precompiled_test.dart.
+  //   FfiCoreBindings.compileCode (ffi_core_bindings.dart:186-191) calls
+  //   _bindings.snapshot() on a handle from _bindings.create(), i.e. a
+  //   ONE-SHOT handle, and native_bindings_ffi.dart:297 refuses exactly that:
+  //     "snapshot is not supported on the one-shot handle: monty's SessionRef
+  //      has no variant for an un-started MontyRun ... Use MontyRepl."
+  // So every Monty.compile() call throws Bad state on FFI. Not tracked by any
+  // of the 47 open issues as of 2026-09-14. Now filed as core#152.
   'example/06_compile_and_platform.dart':
-      'TODO: UnimplementedError — resumeNameLookupValue is not supported by '
-      'the FFI backend (FfiCoreBindings:165). Binding gap, not docs rot.',
-  'example/07_all_values.dart':
-      'TODO: type cast error at line 157 — MontyNone vs MontyNamedTuple.',
-  'example/08_all_errors.dart':
-      'TODO: hangs in the MontyResourceError (timeout) section.',
-  'example/09_limits_and_code_capture.dart':
-      'TODO: hangs after the MontyLimits banner.',
+      'BLOCKED on a library defect: Monty.compile() throws "snapshot is not '
+      'supported on the one-shot handle" — compileCode snapshots a one-shot '
+      'handle (ffi_core_bindings.dart:186-191 vs '
+      'native_bindings_ffi.dart:297).',
+  // 08 and 09 were skipped for "hangs". Measured 2026-09-14: NEITHER HANGS.
+  // Both run to completion and exit 0. That was the last of four stale skip
+  // reasons in this map -- all four named a cause that was no longer true, and
+  // two of them hid live defects (core#152, and the one below).
+  //
+  // They are unskipped because they meet this harness's bar: compile and exit
+  // 0. Be clear about what that bar does NOT cover -- both examples print a
+  // section banner and then nothing, because `Monty.exec()` does not throw and
+  // their `on MontyResourceError catch` blocks are dead code. Tracked
+  // separately; a smoke test that only checks the exit code cannot see it.
 };
 
 void main() {

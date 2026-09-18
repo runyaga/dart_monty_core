@@ -1,5 +1,1041 @@
 # Changelog
 
+## 0.23.0
+
+Requires `monty` v0.0.23.
+
+This package's minor version tracks the monty patch it pins: v0.0.17 -> 0.17.x,
+v0.0.18 -> 0.18.1, v0.0.19 -> 0.19.0. This section opened as 0.19.0 and the pin
+moved to v0.0.23 inside the unreleased window (`e1e4eda`) without the version
+following, so it was renumbered to 0.23.0 when that drift was noticed. The
+0.19-era notes below are kept as written: they describe changes that really did
+land, and renumbering the heading does not make them untrue.
+`tool/check_version_pin.sh` now makes this class of drift impossible to repeat.
+
+The `monty` crate's public surface was split in 0.19 — it went from 1321 to 306
+public items and most of what this package uses moved to the new `monty-types`
+crate — so this is a substantial internal change with a small consumer-facing
+surface.
+
+### Wire format — now versioned, and at v5
+
+The host/sandbox envelope is now versioned. `main` (0.18.1) has no
+`WIRE_FORMAT_VERSION` constant at all, so upgrading from the last release means
+adopting a versioned wire AND five format changes at once. Nothing in this file
+recorded that, which for a serialisation boundary is the omission that matters
+most.
+
+`native/src/convert.rs:65` declares it; `lib/src/ffi/native_bindings.dart:253`
+must equal it; `tool/check_wire_version.sh` fails if they drift
+(`OK: wire format v5 in both ...`).
+
+How it got to 5, each step a real decoder change rather than a bump:
+
+| v | commit | change |
+|---|---|---|
+| 1 -> 2 | `2808edb` | tag every dict, and reject what the decoder cannot name (core#136) |
+| 2 -> 3 | `55d3ac2` | a bare string means `str`, and nothing else (core#134 + 4 siblings) |
+| 3 -> 4 | `de7444b` | carry the ambiguous numbers as text, closing core#128 on the web |
+| 4 -> 5 | `c91bcc3` | `MontyClassInstance`, plus three decoder gaps an audit found |
+
+**Consumer impact.** A host and a sandbox built from different sides of any of
+these will disagree about what a value means — the failure mode each commit
+exists to prevent is a value silently decoding as the wrong type, not a crash.
+Rebuild both halves together. `docs/WIRE-CONTRACT.md` describes the envelope and
+`tool/check_wire_contract.sh` checks the document against the encoder in both
+directions.
+
+### Mount lifetime and mode — read this if you are porting from `pydantic_monty`
+
+Three behaviours that were true but documented nowhere. None is a change; all
+three surprise people, and one of them differs from upstream's default.
+
+- **Our default mount mode is `readWrite`. Upstream's is `overlay`.** Pass no
+  `mode` and writes **persist** for the life of the handler. Upstream's
+  `MountDir(mode='overlay')` — its default (`_monty.pyi:90`) — captures writes
+  in memory and **discards them at feed end**. We have no overlay mode
+  (`MountMode` is `readOnly | readWrite`) because upstream's overlay falls
+  through to a real host directory and our mounts have no host path: our tree
+  *is* the filesystem, so there is nothing to fall through to.
+
+  In practice the two are **indistinguishable within one feed over a mount with
+  nothing underneath it** — which is why both of upstream's own
+  `OverlayMemory`-generated `mount_fs` fixtures pass green against our
+  `readWrite` tree.
+
+- **Mount state is scoped to the HANDLER, not to a feed.** Upstream discards by
+  dropping a per-feed mount table; our equivalent is dropping the handler.
+  Because `osHandler` is a per-feed parameter, **constructing a fresh handler
+  over fresh files per feed reproduces upstream's overlay behaviour exactly**,
+  with no extra API. Reusing one handler across feeds gives persistence.
+
+- **Seeded `VfsFile` objects are mutated IN PLACE by sandboxed code.** This is
+  upstream's contract (`os_access.py:608`, *"When Monty code writes to this
+  file, the content attribute is updated"*) and it is what makes output capture
+  work: seed `MontyMemoryFile('/out.txt', '')`, run, read `.content` back.
+
+  The consequence to know about: a fresh handler over **reused** seed objects
+  gives a *half* discard — files the sandbox created are gone, but your own
+  objects stay rewritten. If you want a clean slate, construct fresh
+  `MontyMemoryFile`s, not just a fresh handler. Pinned by
+  `memory_mounted_os_handler_test.dart`, "a fresh handler over REUSED seeds
+  half-discards, on purpose".
+
+### Added
+
+- **`ReplBindings`, `CoreRunResult`, `CoreProgressResult` and `WireJson` are
+  now exported.** They were already public by reachability —
+  `MontyRepl.withBindings({required ReplBindings bindings, ...})` is a public
+  constructor, and `ReplBindings`' members return the two result types and take
+  a `WireJson` — but none of the four could be NAMED from
+  `package:dart_monty_core/dart_monty_core.dart`. A consumer could see the
+  constructor and had no way to call it.
+
+  Measured before the fix, compiling a file that imports only the barrel and
+  implements `ReplBindings`: five analyzer errors, starting with "Classes and
+  mixins can only implement other classes and mixins" because `ReplBindings`
+  was not a visible type. After: compiles.
+
+  `monty_core_bindings.dart` is exported with `show CoreProgressResult,
+  CoreRunResult` rather than wholesale. `MontyCoreBindings` itself is the
+  backend-adapter interface and is reached only through the unexported
+  `BaseMontyPlatform`, so it stays internal — the same reasoning already
+  applied to `VfsAccountant` and `vfs_limits.dart` above it.
+
+  Additive: no name is removed or changed, and none of the four added top-level
+  names (`ReplBindings`, `CoreRunResult`, `CoreProgressResult`, `WireJson`)
+  collides with one the barrel already exported. `WireJson`'s factories are
+  members, not separate top-level names. The one way this can still disturb a
+  consumer is the generic hazard of any new export: code that imports the
+  barrel unprefixed alongside another library declaring one of these four names
+  now has an ambiguous reference. That is not a semver break and carries no
+  `!` marker. `dcm check-exports-completeness` goes from 4 defects to none.
+
+- **Wire format v5.** `WIRE_FORMAT_VERSION` is 5. New public types:
+  `MontyClassInstance`, `MontyClassType`, `MontyTime`, `MontyNotImplemented`.
+
+- **`MontyDataclass` is encode-only.** v0.0.23 dropped the dataclass variant, so
+  every class instance now decodes as `MontyClassInstance` — read
+  `classType.isDataclass` to tell them apart. Encoding is unchanged.
+
+- **`MontyRepl.restore()` works.** It was a silent no-op on FFI: it never set
+  the created flag, so the session kept its old heap and reported success. It
+  now also applies the caller's limits and external functions instead of
+  inheriting the snapshot's.
+
+- **`FfiCoreBindings.resumeNameLookupValue` is implemented.** The stub claimed
+  the FFI backend did not support it; the Rust export, header and generated
+  binding all existed.
+
+- **`docs/WIRE-CONTRACT.md` exists.** Ten sites cited it as normative and it had
+  never been written. Its row table is generated from the assertions that run,
+  not authored.
+
+- **`monty_alloc` / `monty_dealloc` declared in the C header.** Exported and
+  called 49 times by the Worker while absent from the header, so ffigen
+  generated no binding for them.
+
+- **`monty_snapshot` reports why it failed** instead of returning a bare NULL
+  that left Dart and the Worker each inventing a reason.
+
+- **`package:dart_monty_core/unsafe_callback_file.dart` — host-reaching virtual
+  files.** `VfsCallbackFile(path, read:, write:)` backs a virtual file with
+  host callbacks, mirroring upstream's `CallbackFile` (`os_access.py:676`). It
+  ships in a **separate library** because importing it is a security decision:
+  the callbacks run on the host with full access to the filesystem, network and
+  every other system resource, and one that touches the real filesystem breaks
+  the Monty sandbox. Upstream's warning is repeated on the class.
+
+  The callback always receives the path the file was **seeded** at, never its
+  live `path`. A rename rewrites the live path of every file in the moved
+  subtree, so passing that to the callback would let sandboxed Python choose the
+  argument the host receives simply by renaming inside the mount.
+
+  **This separation is a signal, not a boundary, and the distinction is worth
+  your attention.** `VfsFile` is an open interface, so a host-reaching backing
+  can be written against the main library with no import at all — that was true
+  before this release and remains true. The reviewer's rule is *audit every
+  `VfsFile` that is not a `MontyMemoryFile`*; this library makes the common case
+  greppable and does not replace that rule.
+
+### Internal
+
+- **Every WASM restore was failing silently.** `monty_repl_restore` grew from
+  three C parameters to five; the Worker kept calling it with three. JS pads a
+  short WebAssembly call with `0` rather than throwing, so `outError.ptr` bound
+  to the `limits_json` slot and the error channel went NULL — invisible to every
+  compiler and linter, and green across the whole FFI suite.
+  `tool/check_wasm_arity.mjs` now checks all 167 Worker call sites against the
+  shipped wasm.
+
+- **`MontyReplHandle::restore` is now `restore_keeping_snapshot_limits`.**
+  Rust-crate only, no Dart binding, every caller in this repo's tests — so no
+  consumer surface moved and the commit's `!` marker should not have been there.
+  The old name passed `limits: None`, meaning whoever supplied the bytes chose
+  the resource limits.
+
+- **Two conformance fixtures were blamed on monty and were ours.**
+  `dataclass__call_field_error.py` and `dataclass__get_missing_attr_error.py`
+  were listed in `knownBrokenExtFixtures` as a "monty v0.0.23 regression:
+  dataclass attribute errors are not surfaced ... excType is null". The FFI
+  dispatch loop simply had no branch for an unknown METHOD on a host dataclass,
+  so it returned a SKIP where the WASM loop raised `AttributeError` — nothing
+  ever raised, hence the null. Both fixtures now run and pass on both backends
+  (`oracle_ffi_ext` +48 ~9 -> +51 ~7). The two loops answer identically; this
+  was the third time they had drifted.
+
+- **`dataclass__basic.py` diagnosed, and it stays declared.** It fails
+  identically on FFI and WASM because monty v0.0.23 sends an EMPTY argument
+  list for a method call and passes the receiver as `FunctionCall.object_id`,
+  which `repl_handle.rs:848` reduces to `object_id.is_some()` — so the
+  `AttributeError` cannot name the receiver's type. Validated against
+  `pydantic-monty` 0.0.23 directly: with the receiver resolved by `object_id`,
+  every assertion in the fixture passes. The fixture is correct and monty is
+  correct; fixing it is a wire change.
+
+- **Declared-failure lists are now checked in both directions.** A list saying
+  "skip this, it is broken" is write-only: the day the thing is fixed, the skip
+  persists and the fixture silently stops running. `oracle_ffi_ext_test.dart`
+  gains "every knownBrokenExtFixtures entry STILL fails", which found the two
+  stale entries above the moment it was written.
+
+- **`tool/check_dcm_exclusions.sh`** (gate, 0s): every `dcm_options.yaml`
+  exclusion naming a concrete path must exist on disk. Five dormant exclusions
+  were deleted across four rules — two of them naming
+  `lib/src/monty_session.dart`, removed in `22cbe08` months earlier and still
+  excluded, one of them carrying a comment about parameters of a file not in
+  the tree. `--deep` (CI only, needs the DCM credentials) additionally re-runs
+  the analyzer with exclusions stripped to catch entries that name a real file
+  but hide nothing.
+
+- **DCM is now enforced on `lib/` for three rules it had been excluded from.**
+  `avoid-non-null-assertion` (12 sites: field reads hoisted into promotable
+  locals, which is stricter than the `!` it replaces, plus an explicit error at
+  the JS boundary), `avoid-dynamic` (21 sites, all `List<dynamic>` at
+  json.decode boundaries, now `List<Object?>` — no public signature changed;
+  every site is a local, a switch pattern, or a private factory), and
+  `prefer-declaring-const-constructor` (whose three exclusions each rested on a
+  claim that turned out to be false — extension types *can* be const,
+  `NativeBindingsFfi` has no fields, and `Monty._` never touched
+  `MontySession`). The const constructors let three call sites become `const`.
+
+### Breaking
+
+- **`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`**, was
+  `Future<Object?>`. Supplying a callback gets strictly easier: a
+  `Future`-returning function is still assignable, and one that simply computes
+  a value no longer has to be `async` to satisfy the signature. Every host
+  callback in this repo that had nothing to await has dropped it.
+
+  What breaks is CONSUMING the result as a Future. Code that calls a
+  typedef-typed callback and then `.then(...)`, `.catchError(...)`, or assigns
+  to a `Future<Object?>` variable no longer compiles; `await` is unaffected,
+  because awaiting a non-Future is valid. Failures from a now-synchronous
+  callback arrive as a synchronous throw rather than a rejected Future — both
+  dispatch paths in `monty_repl.dart` already catch both.
+
+  The old signature was a workaround wearing a contract: it forced asynchrony
+  on callbacks that had none, and the resulting `async` bodies were suppressed
+  from `avoid-unnecessary-futures` across nine test files as "false positives".
+  They were not false positives; the signature was wrong.
+
+#### `MontySet` and `MontyFrozenSet` compare and hash order-insensitively
+
+`MontySet([MontyInt(1), MontyInt(2)])` and `MontySet([MontyInt(2), MontyInt(1)])`
+were UNEQUAL and hashed differently. They are now equal, because they are the
+same Python set. Same for `MontyFrozenSet`.
+
+Breaking in the direction that matters: code relying on order-sensitive set
+comparison was relying on a defect, and any `Map` or `Set` keyed by a
+`MontySet`/`MontyFrozenSet` will now collide entries it previously kept apart —
+which is the correct behaviour, and worth checking if you keyed a cache that way.
+
+`operator==` compared `items` with `DeepCollectionEquality`, which compares a
+`List` IN ORDER. This is the same defect the two dict classes had, immediately
+above: `MontyDict` was fixed and the sets were left behind, so the file
+contradicted itself 20 lines apart. The sandbox settles it —
+`crates/monty/src/types/set.rs:412` compares with a length check plus a
+per-element `contains`, and `:1435` hashes a frozenset by XOR "so the hash is
+independent of insertion order".
+
+One deliberate divergence from upstream: hashes fold with `+`, not XOR. XOR
+cancels duplicates, so a forged `{"__type": "set", "value": [1, 1]}` would hash
+identically to the EMPTY set. Monty collapses equal elements before the wire so
+upstream never sees a duplicate; this decoder parses whatever arrives.
+
+#### `MontyPairsDict` is gone; `MontyDict` holds pairs
+
+A Python dict now decodes to ONE type whatever its keys are. `MontyPairsDict`
+is deleted and `MontyDict.entries` (`Map<String, MontyValue>`) is replaced by
+`MontyDict.pairs` (`List<(MontyValue, MontyValue)>`) — the shape monty itself
+uses (`DictPairs(Vec<(MontyObject, MontyObject)>)`).
+
+THE REASON IS A CORRECTNESS DEFECT, not tidiness. The two classes disagreed
+about what dict equality MEANS, and which one you got was decided by whether
+the keys happened to be strings:
+
+```
+{'x':1,'y':2} == {'y':2,'x':1}   ->  true    (MontyDict, compared as a Map)
+{1:'a',2:'b'} == {2:'b',1:'a'}   ->  false   (MontyPairsDict, compared as a List)
+```
+
+The sandbox answers `True` for both, so the second was wrong. Both behaviours
+were pinned by tests asserting opposite things about the same Python type.
+`MontyDict.==` is now order-insensitive for every key type, and `hashCode`
+folds commutatively to match.
+
+Porting:
+
+- `d.entries` -> `d.asStringMap` (returns `null` unless EVERY key is a string,
+  so the assumption is explicit) or iterate `d.pairs`.
+- `case MontyPairsDict(:final pairs)` -> fold into `case MontyDict(:final pairs)`.
+- `MontyDict({'a': v})` -> `MontyDict.ofStrings({'a': v})`, or
+  `MontyDict([(MontyString('a'), v)])`.
+- `d.length` / `d.isEmpty` / `d.keys` / `d.values` are available directly.
+
+UNCHANGED: the wire. Both envelope shapes are still emitted and accepted
+byte-identically (`value` for all-string keys, `entries` otherwise), so no
+native change was needed. `dartValue` also keeps its existing contract — a
+`Map` when every key is a string, a pair list otherwise.
+
+ALSO FIXED: `MontyValue.fromDart` forced every map key through `k.toString()`,
+silently turning the Dart map `{1: 'one'}` into the Python dict `{'1': 'one'}`.
+Keys now convert the same way values do.
+
+
+- **A negative or wrong-typed resource limit is now an error.**
+  `parse_limits_json` read each axis with `and_then(Value::as_u64)`, which
+  yields `None` for anything that is not a non-negative integer — so
+  `{"memory_bytes": -1}`, `"1000"`, `1.5` and `true` all left that limit UNSET
+  and ran **unbounded** while reporting success. Absent and `null` still mean
+  "no limit"; a present-but-unusable value now fails loudly. If you see this
+  error, you were not getting the limit you asked for.
+
+- **On the web, `restore(limitsJson:)` and `restore(extFns:)` throw
+  `UnsupportedError`** rather than accepting and ignoring them — the Worker
+  cannot carry either across the message boundary yet. A silently unbounded
+  restored session is worse than a refusal.
+
+- **`open()` parses its mode, and rejects a malformed one.**
+  `resolveOpenCall` string-compared the mode and treated *everything*
+  unrecognised as append: `open(p, 'wxyz')`, `open(p, 'x')` and even
+  `open(p, '')` fell through to create-if-missing. It now parses the mode
+  before any side effect and raises `ValueError: invalid mode: '<mode>'`,
+  which is what upstream does and for the reason upstream states
+  (`os_access.py:870-876`) — a direct caller must not be able to trigger the
+  truncate/create branch with a mode that was never valid.
+
+  Two consequences beyond the rejection. `b`, `t` and `+` are now understood as
+  orthogonal to the open-time action, so `r+`, `rt` and `rb+` are read actions
+  that check existence instead of silently creating, and `w+`/`wt`/`wb+`
+  truncate. And `x` (exclusive create) is rejected rather than treated as
+  append — upstream's own code asserts the action is one of `r`/`w`/`a`
+  (`os_access.py:896`), so accepting it would invent a semantic neither side
+  implements.
+
+  Found by porting upstream's `test_os_access.py`, whose own test for this is a
+  named data-loss regression guard.
+
+- **`MountDir.writeBytesLimit` is now CUMULATIVE, not per-write.** It capped a
+  single call, which bounds nothing an attacker cares about:
+  `write_bytes(b'x' * limit)` in a loop passed every check and exhausted host
+  memory. Measured against the old code, a limit of 100 bytes let **all ten** of
+  ten 30-byte writes through.
+
+  Upstream's parameter of the same name has always been cumulative — *"Cap on
+  cumulative bytes written through the mount within one feed"*
+  (`_monty.pyi:111-113`) — so the old behaviour was a silent contract mismatch
+  for anyone porting from `pydantic_monty`. It is monotonic: deleting a file
+  does not buy budget back, because the bytes were still written.
+
+  The message now matches upstream's too:
+  `OSError: disk write limit of 10 bytes exceeded` (was
+  `Write exceeds mount limit (100 > 10 bytes): /path`).
+
+- **New: `MountDir.memoryUsageLimit`, defaulting to 100 MB.** Bounds the bytes
+  a mount **currently retains**, where `writeBytesLimit` bounds what has flowed
+  through. Deleting refunds this one. Exceeding it raises
+  `MemoryError: mount memory usage limit of 100 MB exceeded`.
+
+  Ported from upstream rather than invented: the default matches
+  `DEFAULT_MEMORY_USAGE_LIMIT` (`monty-fs/src/mount_table.rs:18`), and each node
+  is charged `entryMemoryUsage` (256 bytes) plus its content, matching
+  `ENTRY_MEMORY_USAGE` (`monty-fs/src/overlay_state.rs:21`). The per-entry
+  charge is what stops a million empty files, which cost no content bytes and a
+  great deal of real memory.
+
+  Two deliberate scoping choices, both documented on `VfsAccountant`: content
+  **seeded** through `files:` is not charged, because the budget exists to bound
+  what untrusted code makes us retain rather than what the consumer handed us;
+  and a host-reaching file's content is never charged *or measured*, since
+  asking it for a size would fire a host callback — accounting must not have
+  side effects.
+
+  Because we have no feed boundary to hang state on, both limits are scoped to
+  the handler instance. For a one-shot `run()` that is identical to upstream;
+  for a long-lived REPL it is stricter.
+
+- **A `rename` TARGET outside every mount is absent too, not denied.** The rule
+  below was never carried through to the second path of a two-path call. A
+  target outside every mount declined instead, which with no fallthrough
+  surfaced as `PermissionError: Permission denied: '<target>'` — so sandboxed
+  code could map the sandbox by comparing exceptions: `PermissionError` meant
+  "outside your mounts", `FileNotFoundError` meant "just missing". It now
+  raises `FileNotFoundError: [Errno 2] No such file or directory: '<target>'`,
+  the same message a target whose parent is simply missing already gets, which
+  is what makes the two indistinguishable.
+
+  Upstream does not pin this case — `route_call` propagates "no mount" as a
+  non-answer (`monty-fs/src/mount_table.rs:125`) and upstream's own security
+  test accepts either outcome outright (`monty-fs/tests/fs_security.rs:1078`:
+  `None => {} // Also acceptable`).
+
+  Also fixed in the same place: declining to a `fallthrough` rewrote the call to
+  a single argument, so a fallthrough handler received `Path.rename` with its
+  **source dropped**. It now forwards both. (Upstream's `on_no_handler` names
+  the source for a rename, never the target — `monty-types/src/os.rs:241`.)
+
+- **A path outside every mount is reported as absent, not denied.**
+  `memoryMountedOsHandler` raised `PermissionError` for anything it does not
+  mount, which made `Path('/nonexistent').exists()` unusable.
+
+  - `exists`, `is_file`, `is_dir`, `is_symlink` return `false`.
+  - Every other operation raises
+    `FileNotFoundError: [Errno 2] No such file or directory: '<path>'`.
+
+  The second half is the part to notice if you relied on the old wording. It
+  is deliberate: reporting `exists() == False` and `PermissionError` about the
+  same path contradicts itself, and `Permission denied` leaks more — it
+  confirms the path is worth denying. A configured `fallthrough` still gets
+  first refusal, and a handler that *declines* with
+  `OsCallNotHandledException` is unaffected: it still gets upstream's
+  `on_no_handler` wording.
+
+- **CPython path semantics: name length, codepoint counts, `resolve` returns a
+  Path.** With these, both `mount_fs__ops.py` and `mount_fs__errors.py` pass.
+
+  - Paths with a component over **255 bytes**, or a total over **4096 bytes**,
+    raise `OSError: [Errno 36] File name too long: '<path>'` from
+    read/write/append/stat/mkdir/open. `exists`, `is_file`, `is_dir` and
+    `is_symlink` swallow it and return `false`, as CPython does. Bytes, not
+    characters.
+  - `write_text` and `append_text` return **codepoints**. They returned Dart's
+    `String.length`, i.e. UTF-16 code units, so a single emoji reported 2.
+  - `resolve` and `absolute` return a `MontyPath`. They returned a bare
+    `String`, so Python received a `str` and `.name` raised `AttributeError`.
+  - `mkdir(parents=True)` through a file raises `NotADirectoryError` rather
+    than surfacing an internal `StateError` as `RuntimeError: Bad state:`.
+
+- **`rename` follows CPython's full matrix.** It had two behaviours; there are
+  six, and which one applies depends on what is at *both* ends.
+
+  | source | destination | result |
+  | --- | --- | --- |
+  | missing | — | `FileNotFoundError`, naming the source |
+  | file | missing | move |
+  | file | file | **overwrites silently** (POSIX) |
+  | file | directory | `IsADirectoryError` `[Errno 21]` |
+  | directory | file | `NotADirectoryError` `[Errno 20]` |
+  | directory | non-empty directory | `OSError` `[Errno 39]` |
+  | directory | empty directory | move, replacing it |
+
+  Previously any existing destination was refused with
+  `Rename target already exists: <path>`, which was neither CPython's wording
+  nor its behaviour.
+
+- **`iterdir`, `unlink` and `mkdir` answer directory questions honestly.**
+
+  - `iterdir` of a **missing** path raised nothing and returned an empty list,
+    which is indistinguishable from a successful listing of an empty
+    directory. It now raises `FileNotFoundError`. Of a **file**, it now raises
+    `NotADirectoryError: [Errno 20] Not a directory: '<path>'`.
+  - `unlink` of a **directory** raised `FileNotFoundError`, naming a path that
+    exists. It now raises `IsADirectoryError`.
+  - `mkdir` on an existing **directory** said `Directory exists: <path>`. It
+    now says `[Errno 17] File exists: '<path>'` — CPython uses one message for
+    both the file and directory cases.
+
+- **Writing to a directory raises instead of destroying it.** This was silent
+  data loss: `write_text` on a directory path succeeded, replacing the
+  directory node with a file and discarding everything beneath it.
+
+      files: [MontyMemoryFile('/m/d/keep.txt', 'precious')]
+      Path.write_text('/m/d', 'clobber')   // returned 7
+      Path.read_text('/m/d/keep.txt')      // FileNotFoundError
+
+  `read_text`, `read_bytes`, `write_text`, `write_bytes`, `append_text`,
+  `append_bytes` and `open(dir, 'w')` now all raise
+  `IsADirectoryError: [Errno 21] Is a directory: '<path>'`. Reads of a
+  directory previously reported `FileNotFoundError`, which named an existing
+  path as missing.
+
+- **Directories are real, and that changes two things consumers can see.**
+  The mount's store is a tree (`VfsNode` = `VfsDir` | `VfsFile`) rather than a
+  flat path map, so an empty directory exists: `mkdir` creates one and
+  `Path.exists` reports `true` before anything is written into it. Previously
+  it reported `false` until a child appeared.
+
+  - `VfsFile` moved from `vfs_file.dart` to `vfs_node.dart` and gained a
+    `path` **setter** — renaming a directory rewrites the path of every file
+    beneath it, so a caller holding one sees the new path. `MontyMemoryFile`
+    is now in `monty_memory_file.dart`. Both are still exported from
+    `package:dart_monty_core/dart_monty_core.dart`, so only direct
+    `src/`-path imports break.
+  - `resolveOpenCall`'s `exists` callback now means **"a node is here"**, not
+    "a file is here", and `isDirectory` is checked independently rather than
+    only when `exists` is false. A custom handler passing a file-only
+    `exists` still behaves correctly; one that relied on the old nesting to
+    report `IsADirectoryError` must supply `isDirectory`.
+
+  Writing a file whose parent directory does not exist raises
+  `FileNotFoundError` again. That check was added and reverted earlier in this
+  same unreleased cycle because `mkdir` could not create the parent it
+  demanded; it can now.
+
+- **`memoryMountedOsHandler` takes `files:`, not a `vfs:` map.** The parameter
+  `vfs: Map<String, String>` is replaced by `files: List<VfsFile>`, matching
+  upstream's `OSAccess([MemoryFile(...)])`. There is no compatibility shim.
+
+      // before
+      final vfs = <String, String>{'/data/in.txt': 'hello'};
+      final h = memoryMountedOsHandler(mounts: [...], vfs: vfs);
+      ...
+      print(vfs['/data/out.txt']);
+
+      // after
+      final out = MontyMemoryFile('/data/out.txt', '');
+      final h = memoryMountedOsHandler(
+        mounts: [...],
+        files: [MontyMemoryFile('/data/in.txt', 'hello'), out],
+      );
+      ...
+      print(out.content.text);
+
+  A write updates the `VfsFile` you passed in rather than replacing it, so the
+  reference you hold stays live — that is upstream's documented contract for
+  `MemoryFile`. Reading back a file you did NOT seed is not supported, by
+  design and in upstream too; assert through `Path.exists` / `Path.read_text`
+  instead.
+
+  Two behaviour changes come with it, both fixes:
+
+  - **Binary content survives a round trip.** The old store held a `String` and
+    decoded at write time with `allowMalformed: true`, so `write_bytes([0xFF])`
+    stored U+FFFD and `read_bytes` returned three bytes, not one. Content is now
+    a sealed `VfsText | VfsBytes` and bytes are stored verbatim.
+  - **`read_text` can now raise `UnicodeDecodeError`.** It previously could not,
+    even in principle, because invalid bytes were destroyed before any read.
+
+- **A write no longer requires its parent directory to exist — added and
+  reverted within this unreleased cycle.** Relative to 0.18 nothing changed, so
+  there is no migration; it is recorded because the behaviour moved twice inside
+  the branch and a bisect would otherwise be confusing. The check rejected
+  `write_text('/mnt/typo/file.txt')` when `/mnt/typo` did not exist, which is
+  correct in principle, but the in-memory VFS cannot represent an empty
+  directory: `mkdir` inserts nothing, so `mkdir` followed by writing into that
+  directory failed. It returns once directories are first-class.
+
+- **Declining an OS call now raises the call's own default, not `NameError`.**
+  `OsCallNotHandledException` was routed through the *external-function* "not
+  found" verb, so declining `Path.read_text` produced
+
+      NameError: name 'Path.read_text' is not defined
+
+  which turned a sandbox refusal into a missing-function message. It now raises
+  what upstream raises for an unhandled call
+  (`OsFunctionCall::on_no_handler`): `PermissionError: Permission denied:
+  '<path>'` for a filesystem operation, and `RuntimeError: '<op>' is not
+  supported in this environment` for anything else.
+
+  `memoryMountedOsHandler` used the same wording for every unserved call —
+  `PermissionError: Path is outside any mount: <arg>` — which was wrong three
+  ways: it called `os.getenv`'s variable name a path, printed `null` for calls
+  carrying no path, and claimed a file that provably *existed inside* a mount
+  was outside it (that message is raised after the mount check, so it could
+  never be true there). It now reports the same defaults, which also stops
+  disclosing mount topology to sandboxed code.
+
+  Migration: catch the same exception classes; only the message text and, for
+  non-filesystem operations, the class (`NameError` → `RuntimeError`) change.
+
+- **The web backends no longer lose numbers (#128).** Three distinct defects,
+  all from the same cause — a JSON number's *text* is where the information
+  lives, and the JS bridge reparses it:
+
+  | Python | was, on dart2js/dart2wasm | now |
+  |---|---|---|
+  | `4.0` | `MontyInt(4)` — `JSON.parse("4.0") === 4` | `MontyFloat(4.0)` |
+  | `-0.0` | `MontyFloat(0.0)` — `JSON.stringify(-0) === "0"` | `MontyFloat(-0.0)` |
+  | `2**62` | `4611686018427388000` (rounded) | exact |
+
+  Those three shapes now travel as tagged **text**, which no reparse can damage.
+  Every other finite number stays a plain JSON number, so the corpus does not
+  grow — tagging *all* numbers was measured at 6.52× bytes and 17.4× round-trip
+  latency and rejected.
+
+- **Integers beyond 2⁵³ are `MontyBigInt` on every backend, including the VM.**
+  Previously anything inside i64 was a `MontyInt`. On dart2js Dart's `int` IS a
+  double, so past 2⁵³ such a value cannot be a `MontyInt` there at all; making
+  the type depend on the backend would be worse than moving the boundary. The
+  value is exact either way.
+
+  ```dart
+  // was, on the VM: MontyInt(4611686018427387904)
+  // now, everywhere: MontyBigInt(4611686018427387904)
+  ```
+
+- **Wire format is now 4.**
+
+- **A bare JSON string now means Python `str` and nothing else (#134 + four
+  more).** Seven value types used to collapse onto a bare string, so a value's
+  Dart type depended on whether some *other* type happened to produce the same
+  characters. Each now travels tagged:
+
+  | Python | was | now |
+  |---|---|---|
+  | `2**63` (beyond i64) | `MontyString` | **`MontyBigInt`** (exact `BigInt`) |
+  | `ValueError("boom")` | `MontyString('ValueError: boom')` | **`MontyExceptionValue`** |
+  | `float('nan')`, `inf`, `-inf` | `MontyString('NaN')` … | `MontyFloat` (tagged on the wire) |
+  | `int` (a class) | `MontyString('int')` | **`MontyOpaque(type, 'int')`** |
+  | `abs` | `MontyString('Abs')` ← Rust `Debug`! | **`MontyOpaque(builtin, 'abs')`** |
+  | an object's `repr()` | `MontyString` | **`MontyOpaque(repr, …)`** |
+  | a cycle marker `[...]` | `MontyString('[...]')` | **`MontyOpaque(cycle, '[...]')`** |
+
+  Two of these were worse than lossy. `ValueError("boom")` was **byte-identical**
+  to the Python string `"ValueError: boom"`, so nothing downstream could tell an
+  exception from prose describing one — and a message containing `": "` could not
+  be recovered at all. And `abs` arrived as `"Abs"`, Rust's `Debug` rendering of
+  an internal enum, where every reader would expect the Python name.
+
+  The string `"NaN"` is now a string. It used to decode as `MontyFloat(NaN)`,
+  because non-finite floats travelled as bare text and the decoder parsed any
+  string that looked like one.
+
+  **Three new variants on the sealed `MontyValue`** — `MontyBigInt`,
+  `MontyExceptionValue`, `MontyOpaque` — so exhaustive `switch`es stop compiling
+  until each gains an arm. Loud, and the analyzer names every site.
+
+  `MontyExceptionValue` is deliberately *not* called `MontyException`: that name
+  is already the exception this package THROWS. Reusing it would leave
+  `catch (e) { if (e is MontyException) }` compiling and silently never matching.
+
+- **`MontyOpaque` cannot be sent back into the interpreter.** `type`, `function`,
+  `repr` and `cycle` are host-side renderings, not constructible values, so
+  decoding one is an error rather than an approximation. `builtin` is the
+  exception — its Python name identifies it, so it round-trips exactly.
+
+- **Wire format is now 3.** Asserted at init on both backends.
+
+- **Sandbox escape fixed: sandboxed Python could mint any host type (#136).**
+  Returning the plain dict `{"__type": "path", "value": "/etc/passwd"}` from
+  Python arrived in Dart as a genuine `MontyPath` — untrusted code choosing its
+  own host class by writing a dict key. Closed in **both** directions; the two
+  halves landed separately and the second is described in the next entry.
+
+  The cause: only 13 of 27 value types carried a `__type` envelope, so a Python
+  dict and a type envelope were **byte-identical on the wire**. Now every dict is
+  tagged, and its contents live in a payload the decoder never re-dispatches:
+
+  ```
+  {"a": 1}                          →  {"__type":"dict","value":{"a":1}}
+  {1: "a"}   (non-string keys)      →  {"__type":"dict","entries":[[1,"a"]]}
+  ```
+
+  `MontyValue.toJson()` output changes shape accordingly. If you persisted it, or
+  wrote your own decoder against it, both need updating. `WIRE_FORMAT_VERSION` is
+  now 2 and is asserted at init, so a stale committed asset fails loudly rather
+  than mis-decoding.
+
+- **The other half of #136: a host callback's return value is now encoded, so
+  the sandbox can no longer pick its own type through an echo (#139).** The dict
+  tagging above closed **Python → Dart**. **Dart → Python** was still open: three
+  sites in the self-driven drive loop sent a callback's return with a raw
+  `jsonEncode`, so a payload the *sandbox* authored reached the interpreter
+  unwrapped.
+
+  ```dart
+  // was: Python sees _io.TextIOWrapper, and f.write() reaches the osHandler
+  //      as Path.append_text with NO preceding open() to refuse
+  // now: Python sees a dict
+  await Monty('''
+  f = echo({"__type": "filehandle", "path": "/etc/shadow", "mode": "w"})
+  ''').run(externalFunctions: {'echo': (args, kwargs) async => args[0]});
+  ```
+
+  The host here is an *echo*, and so is any transform, cache, lookup or
+  validation callback — it authors nothing. So the advice given for the
+  hand-built-envelope entry below ("don't spell envelopes by hand") never
+  applied to this: there was nothing a consumer could do.
+
+  The forged **file handle** is the severe case, not the forged path. A path
+  grants nothing — sandboxed Python can already write `pathlib.Path(...)`, and
+  every path operation reaches the `osHandler` with the path as an argument. A
+  file handle skips the authorisation point entirely.
+
+  The fix is a type, not a test: the internal bindings methods that carry a
+  value now take `WireJson`, which only `MontyValue`'s encoder can mint, so a
+  raw `jsonEncode` at those sites **does not compile**. That caught a fourth,
+  unencoded site no audit had listed — it passed a literal, so no grep for
+  `jsonEncode` would ever have found it. `core_bindings` is not exported, so
+  the public API is unchanged — `resume`, `resolveFutures` and `MontyCallback`
+  still take `Object?`.
+
+  Why it survived three tiers, a 17-step gate and green CI: every instrument in
+  this package reads values *out* of Python. Nothing tested inbound. There is
+  now an inbound probe on both backends where the sandbox authors the payload
+  and observation leaves via `print`, never via the value codec under test.
+
+- **`Monty.run(limits:)` was silently ignored, and `MontyLimits` is
+  session-scoped (#138).** Measured before: `timeoutMs: 50` on
+  `sum(range(20000000))` completed in **483 ms with `error == null`**. In a
+  sandboxing library that is the wrong direction to fail — the caller who asks
+  for a cap is exactly the caller who believes they have one. Now:
+  `TimeoutError: time limit exceeded`.
+
+  Limits attach to a **session**, not a call, because upstream's do:
+  `monty-python`'s `checkout(limits=…)` configures a REPL session and `feed_run`
+  takes no limits. So the constructor is where they go:
+
+  ```dart
+  // one-shot: unchanged, and now actually enforced
+  await Monty(code).run(limits: MontyLimits(timeoutMs: 50));
+
+  // a session: limits are fixed when it is created
+  final repl = MontyRepl(limits: MontyLimits(timeoutMs: 50));
+  ```
+
+  An omitted `limits:` is still fully unbounded, so no existing caller changes
+  behaviour. Malformed limits JSON is now an error rather than a silent fallback
+  to unbounded — the same defect one layer up.
+
+- **On the web, `MontyRepl(limits:)` — and therefore `Monty.run(limits:)` —
+  throws `UnsupportedError` instead of being ignored (#140).** Loud at the
+  boundary rather than quiet at runtime: a cap that is silently absent is worse
+  than one that refuses to be set.
+
+  **What is missing on web is session scoping, not limits.** Verified in Chrome
+  against the shipped WASM asset: all three limits are enforced on the one-shot
+  path, which the exported `MontyPlatform` reaches.
+
+  | limit | web behaviour, measured |
+  |---|---|
+  | `timeout_ms: 50` | `TimeoutError: time limit exceeded: 50.005ms > 50ms`, at 51 ms (266 ms unlimited) |
+  | `memory_bytes: 1 MiB` | `MemoryError: memory limit exceeded: 800000032 bytes > 1048576 bytes` |
+  | `stack_depth: 32` | `RecursionError: maximum recursion depth exceeded` |
+
+  So on web today:
+
+  ```dart
+  // throws UnsupportedError
+  await Monty(code).run(limits: MontyLimits(timeoutMs: 50));
+
+  // works — one-shot, limits enforced
+  final platform = createMontyPlatform();
+  await platform.run(code, limits: MontyLimits(timeoutMs: 50));
+  ```
+
+  The gap is narrow: the JS bridge already threads limits through `run` and
+  `start`, and `monty_repl_create_with_limits` is already present in the shipped
+  `.wasm`. Only `replCreate` does not take the parameter. #140 is JS plumbing,
+  not new engine work.
+
+- **A malformed typed envelope is now a decode error, not a panic and not a
+  silently-substituted zero.** Two defects sat on the same lines of
+  `native/src/convert.rs`: `map["key"]` is Rust's panicking index, and
+  `.unwrap_or(0)` swallowed a wrong-typed field.
+
+  Measured in Chrome against the shipped wasm, driving the JS bridge directly:
+
+  | envelope | was | now |
+  |---|---|---|
+  | `{"__type":"date","year":2020}` | `error: "unreachable"` — a wasm trap | `date envelope is missing required field "month"` |
+  | `{"__type":"datetime",…,"hour":"XX",…}` | `ok:true`, `datetime(2020,1,1,0,0)` — hour silently `0` | `datetime envelope field "hour" must be an integer, got "XX"` |
+
+  The same treatment covers `timedelta`, `timezone`, `path`, `bytes`,
+  `namedtuple` and `dataclass`, which had the identical shape. An *absent*
+  optional field is still absent; a *present but wrong-typed* one is now an
+  error, because a caller who supplied the key meant something by it.
+
+  Reachable only through the JS bridge, which is not gated by the internal
+  `WireJson` type — the Dart API never could produce these, and since #139
+  neither can sandboxed Python, whose maps arrive as dicts.
+
+  **Not fixed, and worth knowing:** a rejected resume still leaves that REPL
+  session unusable (`handle not in Idle or Complete state`). The trap is gone
+  and the error now says what was wrong, but recovery still means disposing the
+  session.
+
+- **`memoryMountedOsHandler`'s errors now read like CPython's.** They were
+  ad-hoc:
+
+  ```
+  was:  No such file: /mnt/x.txt
+  now:  [Errno 2] No such file or directory: '/mnt/x.txt'
+  ```
+
+  Also `[Errno 17] File exists`, `[Errno 20] Not a directory` and
+  `[Errno 39] Directory not empty`. Sandboxed Python that matched on the old
+  text will stop matching — but that code was matching on a string CPython
+  never produces. Found because monty's own `mount_fs__errors.py` asserts the
+  CPython wording verbatim, so the fixtures were right and we were not.
+
+- **An `inputs` key must now be a valid Python identifier, and it is enforced
+  (#137).** The doc always said so; nothing checked, and each key was
+  interpolated into Python source raw — so a key was a working code-injection
+  primitive:
+
+  ```dart
+  // executed as Python, before this release:
+  Monty(code).run(inputs: {'ignored = 0\nanswer = "INJECTED"\nz': 1});
+  ```
+
+  Now `ArgumentError`. Rejecting rather than sanitising is deliberate: a key
+  that is not an identifier cannot express what you meant, so rewriting it
+  would substitute our guess for your intent. Non-ASCII identifiers still
+  work — Python accepts `café`, so an ASCII-only rule would have been a
+  regression dressed up as a fix.
+
+  **This is a guard, not a boundary.** Inputs are still rendered as Python
+  source, so an escaping bug here would be a code-execution bug. And a bound
+  name shadows what it collides with — `{'print': 1}` makes `print("x")` raise
+  `TypeError`. That second one is not a bug we can encode away: shadowing is
+  what binding a name means, and `print = 1` is legal Python.
+
+- **An infinite `inputs` value produced invalid Python on the web.** Fixed.
+
+  ```dart
+  Monty(code).run(inputs: {'f': double.infinity});
+  // was, on dart2js:  f = Infinity   → NameError in Python
+  // now, everywhere:  f = float('inf')
+  ```
+
+  Cause: on dart2js `double.infinity is int` is **true** — the runtime check is
+  effectively `Math.floor(x) === x`, which holds for the infinities — so the
+  `int` branch claimed the value before the non-finite branch could. The VM was
+  never affected.
+
+  **A related case is deliberately NOT fixed.** On dart2js `4.0 is int` is also
+  true, so `inputs: {'x': 4.0}` binds a Python `int` there, where the VM and
+  dart2wasm bind a `float`. It is not recoverable inside the library — the
+  parameter is `Object?` and dart2js destroys the distinction before the call
+  is entered — and **upstream monty does not preserve it on JS either**. Since
+  this package mirrors upstream, that settles it: parity, not a gap awaiting a
+  fix. Documented rather than chased. The test row is live on the VM and
+  dart2wasm and skipped on dart2js against **#137**, so the decision stays
+  visible instead of silently passing.
+
+- **`MontyValue.fromJson` now throws `FormatException` on an untagged object or
+  an unknown `__type`.** Both used to decode as a dict, and that guess is what
+  turned a forged type into a real one. `fromJson` is a deserializer; it now has
+  the same contract as `json.decode`.
+
+- **Non-string-key dicts are `MontyPairsDict`, not `MontyList`.** They used to
+  travel as a bare JSON array, so a dict silently became a sequence with keys
+  indistinguishable from values. `MontyPairsDict` exposes
+  `List<(MontyValue, MontyValue)> pairs` in Python insertion order.
+
+  **This adds a variant to the sealed `MontyValue` hierarchy**, so exhaustive
+  switches stop compiling until they gain an arm — loud, and the analyzer points
+  at each one.
+
+- **A hand-built `{'__type': ...}` Dart `Map` is no longer honoured as that
+  type — it is a dict.** THIS ONE FAILS QUIETLY. If an OS-call handler or
+  external function returns a map spelling an envelope by hand, the interpreter
+  now receives a dict and your code stops working with no error at the boundary.
+
+  ```dart
+  // was: interpreted as a dataclass
+  (args, _) async => {'__type': 'dataclass', 'name': 'User', 'attrs': {…}}
+
+  // now: say it with the type
+  (args, _) async => MontyDataclass(
+        name: 'User', typeId: 1, fieldNames: ['name'], attrs: {…},
+      )
+  ```
+
+  This is the same defect as #136 pointing from the host into the sandbox: any
+  `Map` whose keys happened to spell an envelope became that type. Three test
+  fixtures in this repo relied on it, which is how it was found.
+
+  Six call sites also built wire JSON with a raw `json.encode(value)`, bypassing
+  the encoder entirely — `resume`, `resumeNameLookup`, `MontyRepl.resume`, and
+  all three `resolveFutures` implementations. They now route through
+  `MontyValue.encodeForWire`, so host values and interpreter values are encoded
+  by the same code.
+
+- **Python's `Ellipsis` (`...`) is now `MontyEllipsis`, not `MontyString('...')`.**
+  It travels as `{"__type": "ellipsis"}` rather than the bare string `"..."`, so
+  `...` and the actual string `"..."` are finally distinguishable — previously
+  both arrived as `MontyString` and nothing could tell them apart.
+
+  ```dart
+  final r = await Monty('...').run();
+  // was: MontyString('...')
+  // now: MontyEllipsis()
+  ```
+
+  **This adds a variant to the sealed `MontyValue` hierarchy.** If you have an
+  exhaustive `switch` over `MontyValue`, it will no longer compile until you add
+  a `MontyEllipsis` arm — the analyzer will point at each one. That is the only
+  loud part; code that treated `...` as a string just stops matching it.
+
+  A test in `convert.rs` asserted the old collapse as correct behaviour, which
+  is precisely why the defect survived to 0.19. It has been inverted. Fixes #129.
+
+- **Dict key order now follows Python insertion order; it used to be sorted
+  alphabetically.** ⚠️ **Silent** — nothing errors, values simply arrive in a
+  different order. `{"b": 1, "a": 2, "c": 3}` previously came back as
+  `{"a": 2, "b": 1, "c": 3}`. Affects **both backends, FFI included**.
+
+  ```python
+  d = {"b": 1, "a": 2, "c": 3}
+  list(d)     # was ['a', 'b', 'c']  ->  now ['b', 'a', 'c']
+  ```
+
+  This restores correct Python semantics: dicts have been insertion-ordered
+  since CPython 3.7, and monty computes the order correctly in Rust — `repr(d)`
+  always returned `{'b': 1, 'a': 2, 'c': 3}`. Our JSON encoder was discarding it,
+  because `serde_json::Map` is a sorted `BTreeMap` unless the `preserve_order`
+  feature is enabled. It now is.
+
+  If you sort our output before comparing, nothing changes for you. If you
+  relied on receiving alphabetical order, you were relying on a bug — sort
+  explicitly. Fixes #129.
+
+- **The `open()` OS-call op is now `'open'`, was `'Open'`.** ⚠️ **This is the one
+  change that fails silently.** If you have a custom `OsCallHandler` that matches
+  on the op name, a `case 'Open':` (or `if (op == 'Open')`) stops matching and
+  every `open()` falls through to your not-handled path. Rename it:
+
+  ```dart
+  // before
+  if (op == 'Open') { ... }
+  // after
+  if (op == 'open') { ... }
+  ```
+
+  Upstream renamed exactly one of the 23 ops in v0.0.19 (the other 22 are
+  unchanged);
+  `'Open'` was the only capitalised, undotted name, so `'open'` is now consistent
+  with `Path.*`, `os.*`, `date.*` and `datetime.*`.
+
+- **Print output is capped at 10 MB and raises `MemoryError` past it.** Print
+  collection previously sat outside all resource accounting, so sandboxed code
+  could exhaust the *host* process with a `while True: print(x)` loop. Exceeding
+  the cap now raises a normal, catchable Python `MemoryError` — the write is
+  rejected, nothing is truncated and no output is silently lost:
+
+  ```python
+  try:
+      for _ in range(1_000_000):
+          print("x" * 100_000)
+  except MemoryError:
+      ...          # reachable; chunk the output or stream it via printCallback
+  ```
+
+- **Session snapshots are not portable across this upgrade.** The canonical dump
+  for `"2 + 2"` changed from 60 to 59 bytes, because serialized sessions now carry
+  `CompileOptions`. Snapshots taken with 0.18.x cannot be restored on 0.19.0 and
+  must be regenerated. (This has been true of every monty bump: 98 → 74 → 60 → 59.)
+
+- **`monty`'s argument-error wording now matches CPython** for Python-style
+  argument callsites. For example `json.dumps(1, 2)` raised
+  `TypeError('dumps expected at most 1 argument, got 2')` and now raises
+  `TypeError('dumps() takes 1 positional argument but 2 were given')`. If you
+  assert on these strings, update them.
+
+- **`native/Cargo.lock` is now committed.** The build hook compiles the Rust crate
+  as a top-level package on every consumer's `pub get`, so the lockfile is honoured
+  and pinning it is what makes your build reproducible. It is also load-bearing:
+  free resolution selected a `get-size2` whose `GetSize` impl targeted a different
+  `compact_str` major than `ruff_python_ast` used, and the build failed inside a
+  dependency neither we nor you control. If you vendor or patch transitive Rust
+  dependencies, you now inherit our pins.
+
+- **`TimeoutError` is now part of the `OSError` hierarchy, and
+  `UnicodeEncodeError` exists (#522 et al.).** Upstream moved it, so sandboxed
+  Python that does `except OSError:` now also catches `TimeoutError`, where
+  before it did not. **Silent** — the handler simply starts firing for a case it
+  never saw.
+
+- **`open()` modes with no action are now rejected (#612).** A mode string that
+  requests neither reading nor writing (e.g. `'b'`) used to be accepted and do
+  something unhelpful; it now raises. If you passed a mode through from user
+  input without validating it, that call site changes from quietly wrong to
+  loud.
+
+- **`encode` / `decode` codec coverage changed, and with it which encodings
+  raise `LookupError` (#523).** Some names that used to fail now work, and the
+  error type for an unknown codec is now consistent. Code that branched on the
+  failure of a specific encoding needs rechecking.
+
+- **`ReplPlatform` now rejects per-call `limits` and `scriptName`.** Both are
+  part of the `MontyPlatform` signature and both were accepted and **silently
+  dropped**, because on a REPL each is session-scoped: the resource tracker is
+  chosen when the Rust handle is created and cannot be swapped, and the script
+  name is baked in at `monty_repl_create`. That is the FB-1 / core#124 defect
+  shape — a caller who asked for a memory cap got an unbounded session and no
+  signal. `run(code, limits: …)` and `start(code, scriptName: …)` now throw
+  `ArgumentError` naming the constructor that does honour the argument:
+
+  ```dart
+  // was: silently unbounded
+  ReplPlatform(repl: MontyRepl()).run(code, limits: MontyLimits(stackDepth: 10));
+  // now:
+  ReplPlatform(repl: MontyRepl(limits: MontyLimits(stackDepth: 10))).run(code);
+  ```
+
+  Note what this does **not** fix: a bare `MontyRepl()` is still UNBOUNDED,
+  while every one-shot run is bounded at 256 MB / depth 1000
+  (`native/src/handle.rs`'s `default_limits()`). Measured on this release:
+  `recurse(2000)` returns `2000` on a bare REPL session and raises
+  `RecursionError` on a one-shot run. Pass `MontyRepl(limits: …)` explicitly.
+
+  `ReplPlatform.resumeNameLookup` / `resumeNameLookupUndefined` now throw
+  `UnimplementedError` where they threw `UnsupportedError`. Harnesses that drive
+  a `MontyPlatform` catch `UnimplementedError` to record a capability gap as a
+  skip; an `UnsupportedError` went through that catch and aborted the run.
+
+### Added — capabilities 0.19 brings that this package now passes through
+
+These were previously unsupported by the engine. They are **handled, not
+surfaced**: no new Dart API, and values still marshal through the existing
+`MontyValue` contract. Documented here because our own docs asserted they did
+not work.
+
+- **User-defined classes and class decorators (#515, #582).** Sandboxed Python
+  can now define and use classes. Note the marshalling limit: an instance
+  crosses to Dart through `repr_or_error`, so it arrives as
+  `MontyOpaque(repr, …)` rather than a structured value. A richer surface is
+  blocked upstream.
+
+- **`unicodedata` (#522).** The module is available to sandboxed code.
+
+### Deliberately unchanged
+
+- **`assert` keeps CPython semantics.** monty v0.0.19 enables pytest-style
+  introspected assert messages by default, so `assert 2 == 5` would raise
+  `AssertionError('assert 2 == 5')` where CPython raises an empty
+  `AssertionError()`. This release pins them **off**, preserving 0.18 behaviour;
+  adopting a new upstream default silently is not an upgrade. An opt-in is
+  planned.
+
+### Security
+
+- Removed four stale `unic-*` advisory exemptions from `native/deny.toml`.
+  v0.0.19 dropped that dependency chain entirely, so the crate no longer carries
+  those unmaintained transitive dependencies.
+
+### Internal
+
+- Depends on the new `monty-types` crate; `monty_type_checking` is now
+  `monty-type-checking` upstream (the Rust path is unchanged). `monty-fs` is
+  **not** required — this package never used `monty::fs`.
+- The conformance corpus moved to v0.0.19's 531 fixtures (was 482 from v0.0.18),
+  and `tool/check_fixture_corpus.sh` now fails the build if the corpus and the
+  pinned monty version disagree.
+
+
 ## 0.18.1
 
 Requires `monty` v0.0.18 (Rust 1.95+ to build from source). Upgrades the

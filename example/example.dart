@@ -25,9 +25,9 @@ Future<void> main() async {
   // in the next — no serialisation boilerplate required.
   final squares = await Monty('[x**2 for x in range(10)]').run();
 
-  final total = await Monty('sum(squares)').run(
-    inputs: {'squares': squares.value.dartValue},
-  );
+  final total = await Monty(
+    'sum(squares)',
+  ).run(inputs: {'squares': squares.value.dartValue});
   print('sum of squares 0–9² = ${total.value.dartValue}'); // 285
 
   // ── 3. Externals ────────────────────────────────────────────────────────────
@@ -42,15 +42,16 @@ Future<void> main() async {
 
   // externalAsyncFunctions: Python can `await` the Dart callback directly.
   // asyncio.gather over multiple calls runs them concurrently in Dart.
-  final async_ = await Monty('''
+  final async_ =
+      await Monty('''
 import asyncio
 a, b = await asyncio.gather(fetch(1), fetch(2))
 a + b
 ''').run(
-    externalAsyncFunctions: {
-      'fetch': (args, _) async => (args[0] as int) * 10,
-    },
-  );
+        externalAsyncFunctions: {
+          'fetch': (args, _) async => (args[0] as int) * 10,
+        },
+      );
   print(async_.value.dartValue); // 30  (10 + 20)
 
   // ── 4. Stateful REPL ────────────────────────────────────────────────────────
@@ -63,13 +64,14 @@ a + b
   await repl.dispose();
 
   // ── 5. VFS — sandboxed in-memory filesystem ──────────────────────────────────
-  // Pre-populate a Dart Map, mount it at /data, then let Python read and
-  // write through pathlib.Path. The backing Map is ordinary Dart — inspect
-  // or update it from either side with no serialisation needed.
-  final vfs = <String, String>{'/data/input.txt': 'hello from Dart'};
+  // Hand the mount some files, mount them at /data, then let Python read and
+  // write through pathlib.Path. Writes update the very objects you passed in,
+  // so you inspect the result from Dart with no serialisation.
+  final input = MontyMemoryFile('/data/input.txt', 'hello from Dart');
+  final output = MontyMemoryFile('/data/output.txt', '');
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: vfs,
+    files: [input, output],
   );
 
   await Monty('''
@@ -78,5 +80,5 @@ text = Path("/data/input.txt").read_text()
 Path("/data/output.txt").write_text(text.upper())
 ''').run(osHandler: handler);
 
-  print(vfs['/data/output.txt']); // HELLO FROM DART
+  print(output.content.text); // HELLO FROM DART
 }

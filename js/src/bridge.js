@@ -74,6 +74,11 @@ function createSession() {
             nextMsgId: 1,
             pending: new Map(),
             timeoutMs: null,
+            // The value-encoding wire format the wasm reports. Dart asserts it
+            // against its own expectation, so a STALE committed asset fails at
+            // init rather than mis-decoding values later. null means the asset
+            // predates the symbol, which Dart treats as a mismatch.
+            wireFormatVersion: msg.wireFormatVersion ?? null,
           });
           console.log(`[DartMontyBridge] Session ${sessionId} ready`);
           resolve(sessionId);
@@ -231,8 +236,8 @@ async function init() {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<string>} JSON result.
  */
-async function run(code, limitsJson, scriptName) {
-  const sid = resolveSessionId(null);
+async function run(code, limitsJson, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -255,8 +260,8 @@ async function run(code, limitsJson, scriptName) {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<string>} JSON result.
  */
-async function start(code, extFnsJson, limitsJson, scriptName) {
-  const sid = resolveSessionId(null);
+async function start(code, extFnsJson, limitsJson, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -277,8 +282,8 @@ async function start(code, extFnsJson, limitsJson, scriptName) {
  * @param {string} valueJson JSON-encoded value to return to Python.
  * @returns {Promise<string>} JSON result.
  */
-async function resume(valueJson) {
-  const sid = resolveSessionId(null);
+async function resume(valueJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -293,8 +298,8 @@ async function resume(valueJson) {
  * @param {string} errorJson JSON-encoded error message string.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeWithError(errorJson) {
-  const sid = resolveSessionId(null);
+async function resumeWithError(errorJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -310,8 +315,8 @@ async function resumeWithError(errorJson) {
  * @param {string} errorJson   JSON-encoded error message string.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeWithException(excTypeJson, errorJson) {
-  const sid = resolveSessionId(null);
+async function resumeWithException(excTypeJson, errorJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -332,8 +337,8 @@ async function resumeWithException(excTypeJson, errorJson) {
  * @param {string} fnNameJson JSON-encoded function name.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeNotFound(fnNameJson) {
-  const sid = resolveSessionId(null);
+async function resumeNotFound(fnNameJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -351,8 +356,8 @@ async function resumeNotFound(fnNameJson) {
  *
  * @returns {Promise<string>} JSON result with state: pending, resolve_futures, or complete.
  */
-async function resumeAsFuture() {
-  const sid = resolveSessionId(null);
+async function resumeAsFuture(sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -367,8 +372,8 @@ async function resumeAsFuture() {
  * @param {string} errorsJson  JSON object {"callId": "errorMsg", ...}.
  * @returns {Promise<string>} JSON result.
  */
-async function resolveFutures(resultsJson, errorsJson) {
-  const sid = resolveSessionId(null);
+async function resolveFutures(resultsJson, errorsJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -383,8 +388,8 @@ async function resolveFutures(resultsJson, errorsJson) {
  *
  * @returns {Promise<string>} JSON result with base64-encoded data.
  */
-async function snapshot() {
-  const sid = resolveSessionId(null);
+async function snapshot(sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) {
     // Return a raw JS object (not JSON string) — Dart casts to _SnapshotResult.
     return { ok: false, error: 'Not initialized' };
@@ -402,8 +407,8 @@ async function snapshot() {
  * @param {string} dataBase64 Base64-encoded snapshot data.
  * @returns {Promise<string>} JSON result.
  */
-async function restore(dataBase64) {
-  const sid = resolveSessionId(null);
+async function restore(dataBase64, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -421,8 +426,8 @@ async function restore(dataBase64) {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<Object>} Raw JS object with snapshotBuffer ArrayBuffer.
  */
-async function compile(code, scriptName) {
-  const sid = resolveSessionId(null);
+async function compile(code, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) {
     return { ok: false, error: 'Not initialized' };
   }
@@ -448,8 +453,8 @@ async function compile(code, scriptName) {
  * @param {string} scriptName  Script name for diagnostic spans (optional).
  * @returns {Promise<string>}  JSON-encoded `{ ok, diagnosticsJson, ... }`.
  */
-async function typeCheck(code, prefixCode, scriptName) {
-  const sid = resolveSessionId(null);
+async function typeCheck(code, prefixCode, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) {
     return JSON.stringify({ ok: false, error: 'Not initialized' });
   }
@@ -470,8 +475,8 @@ async function typeCheck(code, prefixCode, scriptName) {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<string>} JSON result.
  */
-async function runPrecompiled(dataBase64, limitsJson, scriptName) {
-  const sid = resolveSessionId(null);
+async function runPrecompiled(dataBase64, limitsJson, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -493,8 +498,8 @@ async function runPrecompiled(dataBase64, limitsJson, scriptName) {
  * @param {string} scriptName Script name for tracebacks (optional).
  * @returns {Promise<string>} JSON result.
  */
-async function startPrecompiled(dataBase64, limitsJson, scriptName) {
-  const sid = resolveSessionId(null);
+async function startPrecompiled(dataBase64, limitsJson, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -514,8 +519,8 @@ async function startPrecompiled(dataBase64, limitsJson, scriptName) {
  * @param {string} valueJson JSON-encoded value.
  * @returns {Promise<string>} JSON result.
  */
-async function resumeNameLookupValue(valueJson) {
-  const sid = resolveSessionId(null);
+async function resumeNameLookupValue(valueJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -530,8 +535,8 @@ async function resumeNameLookupValue(valueJson) {
  *
  * @returns {Promise<string>} JSON result.
  */
-async function resumeNameLookupUndefined() {
-  const sid = resolveSessionId(null);
+async function resumeNameLookupUndefined(sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
 
   const session = sessions.get(sid);
@@ -565,8 +570,8 @@ function discover() {
  *
  * @returns {Promise<string>} JSON result.
  */
-async function cancel() {
-  const sid = resolveSessionId(null);
+async function cancel(sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) {
     return JSON.stringify({ ok: true });
   }
@@ -584,12 +589,42 @@ async function cancel() {
 }
 
 /**
+ * Abandon the current execution and return the session to IDLE.
+ *
+ * Unlike [cancel], this keeps the Worker and WASM instance alive.
+ * Any pending in-flight request promises are rejected with the
+ * MontyCancelled prefix.
+ *
+ * Idempotent — safe to call if no session exists.
+ *
+ * @returns {Promise<string>} JSON result.
+ */
+async function idle(sessionId) {
+  const sid = resolveSessionId(sessionId);
+  if (sid == null || !sessions.has(sid)) {
+    return JSON.stringify({ ok: true });
+  }
+  const session = sessions.get(sid);
+
+  // Reject any in-flight requests so Dart can unblock.
+  for (const req of session.pending.values()) {
+    if (req.timer) clearTimeout(req.timer);
+    req.reject(new Error('MontyCancelled: execution idled'));
+  }
+  session.pending.clear();
+
+  // Tell the worker to abandon any active handle.
+  const result = await callWorker(sid, { type: 'idle' }, 5000);
+  return JSON.stringify(result);
+}
+
+/**
  * Dispose the default Worker session.
  *
  * @returns {Promise<string>} JSON result.
  */
-async function dispose() {
-  const sid = resolveSessionId(null);
+async function dispose(sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) {
     return JSON.stringify({ ok: true });
   }
@@ -613,8 +648,8 @@ async function dispose() {
  * @param {string} [scriptName] Optional script name for tracebacks.
  * @returns {Promise<string>} JSON result.
  */
-async function replCreate(replId, scriptName) {
-  const sid = resolveSessionId(null);
+async function replCreate(replId, scriptName, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(sid, { type: 'replCreate', replId, scriptName }, session.timeoutMs);
@@ -625,24 +660,24 @@ async function replCreate(replId, scriptName) {
  * Feed code to the REPL and run to completion.
  * @param {string} replId Unique identifier for this REPL handle.
  */
-async function replFeedRun(replId, code) {
-  const sid = resolveSessionId(null);
+async function replFeedRun(replId, code, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(sid, { type: 'replFeedRun', replId, code }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replFeedStart(replId, code) {
-  const sid = resolveSessionId(null);
+async function replFeedStart(replId, code, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(sid, { type: 'replFeedStart', replId, code }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replSetExtFns(replId, extFnsCsv) {
-  const sid = resolveSessionId(null);
+async function replSetExtFns(replId, extFnsCsv, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const extFns = extFnsCsv ? extFnsCsv.split(',') : [];
@@ -650,8 +685,8 @@ async function replSetExtFns(replId, extFnsCsv) {
   return JSON.stringify(result);
 }
 
-async function replResume(replId, valueJson) {
-  const sid = resolveSessionId(null);
+async function replResume(replId, valueJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const value = JSON.parse(valueJson);
@@ -659,8 +694,8 @@ async function replResume(replId, valueJson) {
   return JSON.stringify(result);
 }
 
-async function replResumeWithError(replId, errorJson) {
-  const sid = resolveSessionId(null);
+async function replResumeWithError(replId, errorJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const errorMessage = JSON.parse(errorJson);
@@ -668,8 +703,8 @@ async function replResumeWithError(replId, errorJson) {
   return JSON.stringify(result);
 }
 
-async function replResumeWithException(replId, excTypeJson, errorJson) {
-  const sid = resolveSessionId(null);
+async function replResumeWithException(replId, excTypeJson, errorJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const excType = JSON.parse(excTypeJson);
@@ -678,8 +713,8 @@ async function replResumeWithException(replId, excTypeJson, errorJson) {
   return JSON.stringify(result);
 }
 
-async function replResumeAsFuture(replId) {
-  const sid = resolveSessionId(null);
+async function replResumeAsFuture(replId, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(
@@ -690,8 +725,8 @@ async function replResumeAsFuture(replId) {
   return JSON.stringify(result);
 }
 
-async function replResolveFutures(replId, resultsJson, errorsJson) {
-  const sid = resolveSessionId(null);
+async function replResolveFutures(replId, resultsJson, errorsJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(
@@ -702,8 +737,8 @@ async function replResolveFutures(replId, resultsJson, errorsJson) {
   return JSON.stringify(result);
 }
 
-async function replResumeNotFound(replId, fnNameJson) {
-  const sid = resolveSessionId(null);
+async function replResumeNotFound(replId, fnNameJson, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const fnName = JSON.parse(fnNameJson);
@@ -715,16 +750,16 @@ async function replResumeNotFound(replId, fnNameJson) {
   return JSON.stringify(result);
 }
 
-async function replDetectContinuation(source) {
-  const sid = resolveSessionId(null);
+async function replDetectContinuation(source, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(sid, { type: 'replDetectContinuation', source }, session.timeoutMs);
   return JSON.stringify(result);
 }
 
-async function replDispose(replId) {
-  const sid = resolveSessionId(null);
+async function replDispose(replId, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(sid, { type: 'replDispose', replId }, session.timeoutMs);
@@ -737,8 +772,8 @@ async function replDispose(replId) {
  * @param {string} replId Unique identifier for the REPL handle.
  * @returns {Promise<Object>} Raw JS object with snapshotBuffer ArrayBuffer.
  */
-async function replSnapshot(replId) {
-  const sid = resolveSessionId(null);
+async function replSnapshot(replId, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) {
     return { ok: false, error: 'Not initialized' };
   }
@@ -755,8 +790,8 @@ async function replSnapshot(replId) {
  * @param {string} dataBase64 Base64-encoded snapshot data.
  * @returns {Promise<string>} JSON result.
  */
-async function replRestore(replId, dataBase64) {
-  const sid = resolveSessionId(null);
+async function replRestore(replId, dataBase64, sessionId) {
+  const sid = resolveSessionId(sessionId);
   if (sid == null || !sessions.has(sid)) return notInitializedError();
   const session = sessions.get(sid);
   const result = await callWorker(
@@ -786,11 +821,20 @@ window.DartMontyBridge = {
   startPrecompiled,
   discover,
   cancel,
+  idle,
   dispose,
   // Phase 2 multi-session API
   createSession,
   disposeSession,
   getDefaultSessionId: () => defaultSessionId,
+  // The value-encoding wire format the loaded wasm reports, or null if the
+  // asset predates the symbol. Dart asserts this at init so a STALE committed
+  // asset fails loudly instead of mis-decoding values later; `git diff` on the
+  // blob cannot detect staleness because the wasm build is not byte-reproducible.
+  getWireFormatVersion: (sessionId) => {
+    const s = sessions.get(sessionId ?? defaultSessionId);
+    return s ? s.wireFormatVersion : null;
+  },
   // REPL API
   replCreate,
   replFeedRun,

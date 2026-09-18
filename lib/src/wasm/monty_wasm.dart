@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/base_monty_platform.dart';
@@ -6,9 +5,10 @@ import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_snapshot_capable.dart';
-import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
-import 'package:dart_monty_core/src/wasm/wasm_bindings_js_stub.dart'
+import 'package:dart_monty_core/src/platform/wire_json.dart';
+import 'package:dart_monty_core/src/wasm/stub/wasm_bindings_js.dart'
     if (dart.library.js_interop) 'package:dart_monty_core/src/wasm/wasm_bindings_js.dart';
+import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 import 'package:dart_monty_core/src/wasm/wasm_core_bindings.dart';
 
 /// Web WASM implementation of [MontyPlatform].
@@ -41,7 +41,26 @@ class MontyWasm extends BaseMontyPlatform
   }) : _wasmBindings = wasmBindings,
        super(bindings: coreBindings);
 
+  /// Returns the underlying Worker/WASM session to IDLE.
+  ///
+  /// This is primarily for test runners that want to reuse one session across
+  /// many fixtures without paying the cost (and memory growth) of creating a
+  /// fresh Worker per fixture.
   final WasmBindings _wasmBindings;
+
+  /// Returns the underlying Worker/WASM session to IDLE.
+  ///
+  /// This is primarily for test runners that want to reuse one session across
+  /// many fixtures without paying the cost (and memory growth) of creating a
+  /// fresh Worker per fixture.
+  Future<void> idle() async {
+    assertNotDisposed('idle');
+    final sid = (coreBindings as WasmCoreBindings).sessionId;
+    if (sid != null) {
+      await _wasmBindings.idleSession(sid);
+    }
+    markIdle();
+  }
 
   @override
   String get backendName => 'MontyWasm';
@@ -81,13 +100,10 @@ class MontyWasm extends BaseMontyPlatform
   }) async {
     assertNotDisposed('resolveFutures');
     assertActive('resolveFutures');
-    final resultsJson = json.encode(
-      results.map((k, v) => MapEntry(k.toString(), v)),
+    final progress = await coreBindings.resolveFutures(
+      WireJson.callResults(results),
+      WireJson.callErrors(errors),
     );
-    final errorsJson = errors != null
-        ? json.encode(errors.map((k, v) => MapEntry(k.toString(), v)))
-        : '{}';
-    final progress = await coreBindings.resolveFutures(resultsJson, errorsJson);
 
     return translateProgress(progress);
   }

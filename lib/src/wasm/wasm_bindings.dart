@@ -1,159 +1,5 @@
 import 'dart:typed_data';
 
-/// Result of [WasmBindings.run].
-///
-/// Contains either a successful value or an error message.
-final class WasmRunResult {
-  /// Creates a [WasmRunResult].
-  const WasmRunResult({
-    required this.ok,
-    this.value,
-    this.error,
-    this.errorType,
-    this.printOutput,
-    this.excType,
-    this.traceback,
-    this.filename,
-    this.lineNumber,
-    this.columnNumber,
-    this.sourceCode,
-  });
-
-  /// Whether the execution succeeded.
-  final bool ok;
-
-  /// The return value from the Python execution (when [ok] is true).
-  final Object? value;
-
-  /// Captured Python `print()` output (when [ok] is true).
-  final String? printOutput;
-
-  /// The error message (when [ok] is false).
-  final String? error;
-
-  /// The error type name (when [ok] is false).
-  final String? errorType;
-
-  /// The Python exception class name (when error occurred).
-  final String? excType;
-
-  /// The traceback frames as raw JSON list (when error occurred).
-  final List<Object?>? traceback;
-
-  /// Source filename (when [ok] is false).
-  final String? filename;
-
-  /// Source line number (when [ok] is false).
-  final int? lineNumber;
-
-  /// Source column number (when [ok] is false).
-  final int? columnNumber;
-
-  /// Source code at the error location (when [ok] is false).
-  final String? sourceCode;
-}
-
-/// Result of [WasmBindings.start], [WasmBindings.resume], and
-/// [WasmBindings.resumeWithError].
-///
-/// Contains a progress state and, depending on the state, accessor data.
-final class WasmProgressResult {
-  /// Creates a [WasmProgressResult].
-  const WasmProgressResult({
-    required this.ok,
-    this.state,
-    this.value,
-    this.functionName,
-    this.args,
-    this.kwargs,
-    this.callId,
-    this.methodCall,
-    this.printOutput,
-    this.pendingCallIds,
-    this.error,
-    this.errorType,
-    this.excType,
-    this.traceback,
-    this.filename,
-    this.lineNumber,
-    this.columnNumber,
-    this.sourceCode,
-    this.variableName,
-  });
-
-  /// Whether the operation succeeded.
-  final bool ok;
-
-  /// `'complete'`, `'pending'`, `'os_call'`,
-  /// or `'resolve_futures'` (when [ok] is true).
-  final String? state;
-
-  /// The return value (when state is `'complete'`).
-  final Object? value;
-
-  /// Captured Python `print()` output (when state is `'complete'`).
-  final String? printOutput;
-
-  /// The external function name (when state is `'pending'`).
-  final String? functionName;
-
-  /// The function arguments (when state is `'pending'`).
-  final List<Object?>? args;
-
-  /// Keyword arguments from the Python call site (when state is `'pending'`).
-  final Map<String, Object?>? kwargs;
-
-  /// Unique call identifier (when state is `'pending'`).
-  final int? callId;
-
-  /// Whether this is a method call (when state is `'pending'`).
-  final bool? methodCall;
-
-  /// Pending future call IDs (when state is `'resolve_futures'`).
-  final List<int>? pendingCallIds;
-
-  /// The error message (when [ok] is false).
-  final String? error;
-
-  /// The error type name (when [ok] is false).
-  final String? errorType;
-
-  /// The Python exception class name (when error occurred).
-  final String? excType;
-
-  /// The traceback frames as raw JSON list (when error occurred).
-  final List<Object?>? traceback;
-
-  /// Source filename (when [ok] is false).
-  final String? filename;
-
-  /// Source line number (when [ok] is false).
-  final int? lineNumber;
-
-  /// Source column number (when [ok] is false).
-  final int? columnNumber;
-
-  /// Source code at the error location (when [ok] is false).
-  final String? sourceCode;
-
-  /// Variable name being looked up (when state is `'name_lookup'`).
-  final String? variableName;
-}
-
-/// Result of [WasmBindings.discover].
-///
-/// Describes the state of the WASM bridge.
-final class WasmDiscoverResult {
-  /// Creates a [WasmDiscoverResult].
-  const WasmDiscoverResult({required this.loaded, required this.architecture});
-
-  /// Whether the WASM module is loaded.
-  final bool loaded;
-
-  /// The bridge architecture (e.g. `'worker'`).
-  final String architecture;
-}
-
 /// Abstract interface over the WASM bridge.
 ///
 /// All methods are `Future`-based because the Worker round-trip is
@@ -180,6 +26,11 @@ abstract class WasmBindings {
 
   /// Disposes a session, terminating its Worker.
   Future<void> disposeSession(int sessionId);
+
+  /// Abandons any active execution and returns the session to IDLE.
+  ///
+  /// Unlike [disposeSession], this keeps the Worker and WASM instance alive.
+  Future<void> idleSession(int sessionId);
 
   /// Runs Python [code] to completion.
   ///
@@ -510,4 +361,158 @@ abstract class WasmBindings {
     required Uint8List data,
     int? sessionId,
   });
+}
+
+/// Result of [WasmBindings.run].
+///
+/// Contains either a successful value or an error message.
+final class WasmRunResult {
+  /// Creates a [WasmRunResult].
+  const WasmRunResult({
+    required this.ok,
+    this.value,
+    this.error,
+    this.errorType,
+    this.printOutput,
+    this.excType,
+    this.traceback,
+    this.filename,
+    this.lineNumber,
+    this.columnNumber,
+    this.sourceCode,
+  });
+
+  /// Whether the execution succeeded.
+  final bool ok;
+
+  /// The return value from the Python execution (when [ok] is true).
+  final Object? value;
+
+  /// Captured Python `print()` output (when [ok] is true).
+  final String? printOutput;
+
+  /// The error message (when [ok] is false).
+  final String? error;
+
+  /// The error type name (when [ok] is false).
+  final String? errorType;
+
+  /// The Python exception class name (when error occurred).
+  final String? excType;
+
+  /// The traceback frames as raw JSON list (when error occurred).
+  final List<Object?>? traceback;
+
+  /// Source filename (when [ok] is false).
+  final String? filename;
+
+  /// Source line number (when [ok] is false).
+  final int? lineNumber;
+
+  /// Source column number (when [ok] is false).
+  final int? columnNumber;
+
+  /// Source code at the error location (when [ok] is false).
+  final String? sourceCode;
+}
+
+/// Result of [WasmBindings.start], [WasmBindings.resume], and
+/// [WasmBindings.resumeWithError].
+///
+/// Contains a progress state and, depending on the state, accessor data.
+final class WasmProgressResult {
+  /// Creates a [WasmProgressResult].
+  const WasmProgressResult({
+    required this.ok,
+    this.state,
+    this.value,
+    this.functionName,
+    this.args,
+    this.kwargs,
+    this.callId,
+    this.methodCall,
+    this.printOutput,
+    this.pendingCallIds,
+    this.error,
+    this.errorType,
+    this.excType,
+    this.traceback,
+    this.filename,
+    this.lineNumber,
+    this.columnNumber,
+    this.sourceCode,
+    this.variableName,
+  });
+
+  /// Whether the operation succeeded.
+  final bool ok;
+
+  /// `'complete'`, `'pending'`, `'os_call'`,
+  /// or `'resolve_futures'` (when [ok] is true).
+  final String? state;
+
+  /// The return value (when state is `'complete'`).
+  final Object? value;
+
+  /// Captured Python `print()` output (when state is `'complete'`).
+  final String? printOutput;
+
+  /// The external function name (when state is `'pending'`).
+  final String? functionName;
+
+  /// The function arguments (when state is `'pending'`).
+  final List<Object?>? args;
+
+  /// Keyword arguments from the Python call site (when state is `'pending'`).
+  final Map<String, Object?>? kwargs;
+
+  /// Unique call identifier (when state is `'pending'`).
+  final int? callId;
+
+  /// Whether this is a method call (when state is `'pending'`).
+  final bool? methodCall;
+
+  /// Pending future call IDs (when state is `'resolve_futures'`).
+  final List<int>? pendingCallIds;
+
+  /// The error message (when [ok] is false).
+  final String? error;
+
+  /// The error type name (when [ok] is false).
+  final String? errorType;
+
+  /// The Python exception class name (when error occurred).
+  final String? excType;
+
+  /// The traceback frames as raw JSON list (when error occurred).
+  final List<Object?>? traceback;
+
+  /// Source filename (when [ok] is false).
+  final String? filename;
+
+  /// Source line number (when [ok] is false).
+  final int? lineNumber;
+
+  /// Source column number (when [ok] is false).
+  final int? columnNumber;
+
+  /// Source code at the error location (when [ok] is false).
+  final String? sourceCode;
+
+  /// Variable name being looked up (when state is `'name_lookup'`).
+  final String? variableName;
+}
+
+/// Result of [WasmBindings.discover].
+///
+/// Describes the state of the WASM bridge.
+final class WasmDiscoverResult {
+  /// Creates a [WasmDiscoverResult].
+  const WasmDiscoverResult({required this.loaded, required this.architecture});
+
+  /// Whether the WASM module is loaded.
+  final bool loaded;
+
+  /// The bridge architecture (e.g. `'worker'`).
+  final String architecture;
 }

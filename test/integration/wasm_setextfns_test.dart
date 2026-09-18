@@ -21,6 +21,56 @@ void main() {
 
     tearDown(() => repl.dispose());
 
+    // THE THREE CASES BELOW USE THE CALL FORM ONLY, AND THE CALL FORM IS
+    // REGISTRATION-INDEPENDENT. Measured on FFI 2026-09-17: the engine
+    // suspends on ANY unknown call, registered or not, so
+    // `feedStart('my_tool()', externalFunctions: ['my_tool'])` yielding
+    // MontyPending proves nothing about setExtFns — this suite would pass
+    // against a WasmReplBindings.setExtFns that did nothing, which is
+    // uncomfortably close to the fire-and-forget bug it was written for.
+    //
+    // Registration is observable in the NAME form, so these two cases carry
+    // the actual claim on WASM. Both expected values were verified on FFI
+    // first, through the same public MontyRepl API.
+    test('a registered name RESOLVES on WASM', () async {
+      final progress = await repl.feedStart(
+        'my_tool',
+        externalFunctions: ['my_tool'],
+      );
+
+      expect(progress, isA<MontyComplete>());
+      expect(
+        (progress as MontyComplete).output.toString(),
+        contains('my_tool'),
+        reason: 'the engine must build a callable for the registered name',
+      );
+    });
+
+    test('an UNregistered name raises NameError on WASM', () async {
+      // The control. Same source, no externalFunctions, opposite outcome —
+      // which is what makes the case above evidence rather than decoration.
+      await expectLater(
+        repl.feedStart('my_tool'),
+        throwsA(
+          isA<MontyScriptError>().having(
+            (e) => e.toString(),
+            'message',
+            contains('my_tool'),
+          ),
+        ),
+      );
+    });
+
+    test('the CALL form suspends WITHOUT registration on WASM too', () async {
+      // Pins the trap on this backend rather than inferring it from FFI. If
+      // this ever stops being true, the three call-form cases below become
+      // meaningful on their own and this comment should go.
+      final progress = await repl.feedStart('my_tool()');
+
+      expect(progress, isA<MontyPending>());
+      expect((progress as MontyPending).functionName, 'my_tool');
+    });
+
     test(
       'feedStart with external functions does not produce unhandled errors',
       () async {
@@ -47,17 +97,18 @@ void main() {
     test(
       'feedStart with multiple external functions registers all names',
       () async {
+        final isPending = isA<MontyPending>();
         final progress = await repl.feedStart(
           'a = tool_a()\nb = tool_b()\na + b',
           externalFunctions: ['tool_a', 'tool_b'],
         );
 
-        expect(progress, isA<MontyPending>());
+        expect(progress, isPending);
         expect((progress as MontyPending).functionName, 'tool_a');
 
         // Resume tool_a
         final p2 = await repl.resume(10);
-        expect(p2, isA<MontyPending>());
+        expect(p2, isPending);
         expect((p2 as MontyPending).functionName, 'tool_b');
 
         // Resume tool_b

@@ -266,3 +266,144 @@ final class MontyTimeZone extends MontyValue {
   @override
   String toString() => 'MontyTimeZone(offset=$offsetSeconds, name=$name)';
 }
+
+/// Python's `datetime.time`.
+///
+/// ADDED 2026-09-14 after an encoder/decoder alignment audit. The Rust encoder
+/// has emitted `{"__type": "time", ...}` all along (native/src/convert.rs:174)
+/// and Dart had NO factory for it, so `datetime.time(12, 0)` crossing the
+/// boundary threw `FormatException: unknown __type "time"`. Same class of
+/// defect as the `class_instance` gap, found the same way: by enumerating what
+/// the encoder can emit rather than trusting the decoder's list.
+///
+/// Carries the same fields as the Rust arm, including the tz-aware ones — a
+/// `time` can hold a UTC offset and a fold flag exactly as a `datetime` can.
+@immutable
+final class MontyTime extends MontyValue {
+  /// Creates a [MontyTime].
+  const MontyTime({
+    required this.hour,
+    required this.minute,
+    required this.second,
+    required this.microsecond,
+    this.offsetSeconds,
+    this.timezoneName,
+    this.fold = 0,
+  });
+
+  factory MontyTime._fromMap(Map<String, dynamic> map) {
+    // REQUIRED fields are required. This was `?? 0` on every one of them, and
+    // review caught it: a malformed `time` envelope silently parsed as
+    // MIDNIGHT. That is the exact silent-default hazard removed from the Rust
+    // decoder and then from MontyClassInstance earlier the same day — written
+    // straight back into new code. Absent, wrong-typed and zero are three
+    // different things and must not collapse into one.
+    //
+    // The Rust encoder emits all five unconditionally (convert.rs:174-182), so
+    // an envelope missing any of them did not come from this encoder.
+    int req(String key) {
+      final v = map[key];
+      if (v is num) return v.toInt();
+
+      throw FormatException(
+        'time: $key must be a number, got ${v.runtimeType}',
+        json.encode(map),
+      );
+    }
+
+    // These two ARE legitimately nullable — a naive time carries neither —
+    // but present-and-wrong-typed is still an error.
+    final rawOffset = map['offset_seconds'];
+    if (rawOffset != null && rawOffset is! num) {
+      throw FormatException(
+        'time: offset_seconds must be a number or null, '
+        'got ${rawOffset.runtimeType}',
+        json.encode(map),
+      );
+    }
+    final rawTzName = map['timezone_name'];
+    if (rawTzName != null && rawTzName is! String) {
+      throw FormatException(
+        'time: timezone_name must be a string or null, '
+        'got ${rawTzName.runtimeType}',
+        json.encode(map),
+      );
+    }
+
+    return MontyTime(
+      hour: req('hour'),
+      minute: req('minute'),
+      second: req('second'),
+      microsecond: req('microsecond'),
+      offsetSeconds: (rawOffset as num?)?.toInt(),
+      timezoneName: rawTzName as String?,
+      fold: req('fold'),
+    );
+  }
+
+  /// Hour, 0-23.
+  final int hour;
+
+  /// Minute, 0-59.
+  final int minute;
+
+  /// Second, 0-59.
+  final int second;
+
+  /// Microsecond, 0-999999.
+  final int microsecond;
+
+  /// UTC offset in seconds, or null for a naive time.
+  final int? offsetSeconds;
+
+  /// The tzinfo name, if the time carries one.
+  final String? timezoneName;
+
+  /// Python's `fold`, disambiguating a repeated wall-clock time.
+  final int fold;
+
+  @override
+  Map<String, Object?> toJson() => {
+    '__type': 'time',
+    'hour': hour,
+    'minute': minute,
+    'second': second,
+    'microsecond': microsecond,
+    'offset_seconds': offsetSeconds,
+    'timezone_name': timezoneName,
+    'fold': fold,
+  };
+
+  /// Dart has no time-of-day type in `dart:core`, so this represents itself
+  /// rather than lying about being a [DateTime] on an arbitrary date.
+  @override
+  Object? get dartValue => this;
+
+  @override
+  String toString() =>
+      'MontyTime($hour:$minute:$second.$microsecond'
+      '${offsetSeconds == null ? '' : ' offset=$offsetSeconds'})';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyTime &&
+          other.hour == hour &&
+          other.minute == minute &&
+          other.second == second &&
+          other.microsecond == microsecond &&
+          other.offsetSeconds == offsetSeconds &&
+          other.timezoneName == timezoneName &&
+          other.fold == fold);
+
+  @override
+  int get hashCode => Object.hash(
+    hour,
+    minute,
+    second,
+    microsecond,
+    offsetSeconds,
+    timezoneName,
+    fold,
+  );
+}

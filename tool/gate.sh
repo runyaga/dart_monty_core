@@ -1,0 +1,521 @@
+#!/usr/bin/env bash
+# =============================================================================
+# tool/gate.sh — THE commit gate. Run this before every commit.
+# =============================================================================
+# Named to match dart_monty's tool/gate.sh: one word, one concept, same meaning
+# in both repos. It was called "matrix.sh", which described its shape rather
+# than its purpose and told you nothing about when to run it.
+# Runs every verification mechanism in docs/contributor/testing-runbook.md and
+# prints MATRIX GREEN or MATRIX RED. A red step means DO NOT COMMIT, including
+# when the failing step looks unrelated to your change.
+#
+# This lives in the repo on purpose. It used to sit in a private planning
+# directory, which meant the single most important gate could not be run by a
+# new contributor, by CI, or by an agent -- the runbook told you to run a script
+# that was not there.
+#
+# Usage:
+#   bash tool/gate.sh [outdir]
+#
+# The gate is READ-ONLY: it validates the tree as it stands, including the
+# committed binaries in lib/assets/. If you changed native/ or js/, run
+# `bash tool/prebuild.sh` FIRST — the gate will not rebuild for you, and step 1
+# (asset_fresh) fails if you forget.
+#
+# Logs land in <outdir> (default: .gate-logs/, gitignored), one file per step
+# plus SUMMARY.txt.
+# =============================================================================
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+OUT="${1:-.gate-logs/gate-$(date -u +%Y%m%dT%H%M%SZ)}"
+mkdir -p "$OUT"; : > "$OUT/SUMMARY.txt"
+echo "core $(git rev-parse --short HEAD) on $(git branch --show-current)" >> "$OUT/SUMMARY.txt"
+echo "monty pin: $(grep -m1 '^monty = ' native/Cargo.toml)" >> "$OUT/SUMMARY.txt"
+echo "" >> "$OUT/SUMMARY.txt"
+
+# Snapshot the working tree so the read-only promise in the header can be
+# CHECKED rather than merely asserted. Every past violation of that promise was
+# a step that wrote a build artefact and was believed not to — the belief is
+# what failed, so stop relying on it. Compared again at the foot of this file.
+TREE_BEFORE="$(git status --porcelain)"
+
+# EXIT 77 MEANS "DID NOT RUN", AND IT IS NOT A PASS.
+#
+# The runner used to be binary -- exit 0 PASS, anything else FAIL -- so a check
+# that deliberately skipped itself reported PASS. Measured 2026-09-15: with the
+# DCM licence quota exhausted, `DCM_RATCHET_ALLOW_MISSING=1 bash tool/gate.sh`
+# printed "GATE GREEN" and "PASS 39" while THREE of those 39 had verified
+# nothing at all. That is the skip-but-green shape this repo has already paid
+# for once (8dbdd59, "646 of 1593 registered tests" asserting nothing), wearing
+# a different hat.
+#
+# A skip is still GREEN -- it is a deliberate, opted-in decision, not a failure
+# -- but it must be VISIBLE as a skip in SUMMARY.txt, so nobody can read
+# "39 PASS" off a run where three checks were switched off.
+_res(){ rc=$1; n=$2; t=$3
+  if   [ "$rc" -eq 0  ]; then echo "PASS  $n  ($((SECONDS-t))s)"
+  elif [ "$rc" -eq 77 ]; then echo "SKIP  $n  ($((SECONDS-t))s)  — did not run, checked nothing"
+  else                        echo "FAIL  $n  ($((SECONDS-t))s)"
+  fi >> "$OUT/SUMMARY.txt"; }
+s(){ n="$1"; shift; t=$SECONDS
+  "$@" >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
+
+# A SUITE THAT REGISTERS NOTHING PRINTS SUCCESS AND EXITS 0.
+#
+# ci.yaml has guarded that since its four `assert_test_count.sh` calls (unit
+# 400, FFI 1300, WASM unit 700 x2). THIS GATE DID NOT — measured 2026-09-17,
+# `grep -c assert_test_count tool/gate.sh` was 0, so every local run that is
+# the precondition for a commit would have gone green on a suite that
+# registered zero tests. The repo has already paid for that shape once
+# (8dbdd59, "646 of 1593 registered tests" asserting nothing), and CI catching
+# it later is not the same as the gate refusing to let it be committed.
+#
+# The floors below are set UNDER the observed counts so ordinary churn does
+# not trip them. Raise one when a suite grows; never lower one to make a run
+# pass. Observed at gate-20260917T122702Z:
+#
+#     unit_tests 753   unit_web 1483   ffi_features 859
+#     oracle_ffi 562   wasm_unit 757   wasm_unit_w 757
+sf(){ n="$1"; min="$2"; shift 2; t=$SECONDS
+  "$@" >"$OUT/$n.log" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    bash tool/assert_test_count.sh "$OUT/$n.log" "$min" "$n" >>"$OUT/$n.log" 2>&1 || rc=1
+  fi
+  _res "$rc" "$n" "$t"; }
+ns(){ n="$1"; shift; t=$SECONDS
+  (cd native && "$@") >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
+
+# The native-assets build hook caches per-target and did NOT rebuild after
+# native/Cargo.toml changed, so dart test silently loaded a stale 0.18 dylib
+# against a 0.19 oracle. Clear the cache whenever native/ is newer than the
+# cached artifact.
+# BOTH EXTENSIONS. This searched only for `*.dylib`, which hook/build.dart:15
+# produces on macOS ONLY — Linux gets `.so` (hook/build.dart:16). So on every
+# Linux machine, including CI-shaped ones, `CACHED` was always empty and this
+# guard NEVER FIRED. Measured in the workspace container: 0 dylib matches, 2
+# .so matches.
+#
+# That is not theoretical. It cost an hour this session: after a fix to the
+# class-uuid derivation the tests still failed identically, and the obvious
+# reading was that the diagnosis was wrong. It was a hooks_runner dylib from
+# the previous day. The guard written to prevent exactly that had been dead
+# the whole time.
+#
+# IT COMPARES CONTENT, NOT MTIMES, and that is the whole of L4.
+#
+# The `find -newer` form this replaces fired on any mtime touch: a comment, a
+# `dart format` pass, a rebase, a `git checkout` rewriting a file to identical
+# bytes. Measured across four gate runs on an UNCHANGED tree: unit_tests 1s vs
+# 151s, corpus_cm_js 3s vs 138s, whole gate 163s vs 459s -- a 2.8x swing with no
+# source change. One trigger was reproduced exactly: bumping the version string
+# in pubspec.yaml, which touches no Rust at all, printed "native/ is newer than
+# the cached native library" and forced a full cold rebuild.
+#
+# `unit_tests` is PURE DART and was among the steps paying for it, which is the
+# sharper half of the finding: a pure-Dart step should never wait on a Rust
+# build. Clearing .dart_tool/hooks_runner made it re-resolve regardless.
+#
+# The hash is the same shape tool/check_asset_freshness.sh already uses over
+# these very files, and for the same stated reason: mtimes lie, content does
+# not. The stamp records WHICH SOURCE the cached library was built from, so the
+# cache is cleared when that source actually changes and left alone otherwise.
+STAMP=.dart_tool/.native-source-hash
+native_source_hash() {
+  {
+    find native/src -type f -name '*.rs' -print0 2>/dev/null
+    printf '%s\0' native/Cargo.toml native/Cargo.lock
+  } | tr '\0' '\n' | sort | while read -r f; do
+    [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
+  done | shasum -a 256 | awk '{print $1}'
+}
+CACHED=$(find .dart_tool \
+  \( -name 'libdart_monty_core_native*.dylib' \
+     -o -name 'libdart_monty_core_native*.so' \) 2>/dev/null | head -1)
+if [ -n "$CACHED" ]; then
+  NATIVE_NOW=$(native_source_hash)
+  NATIVE_WAS=$(cat "$STAMP" 2>/dev/null || echo '')
+  if [ "$NATIVE_NOW" != "$NATIVE_WAS" ]; then
+    # A missing stamp is treated as a miss ONCE, on the first run after this
+    # change. That is deliberate: the alternative is trusting a cache whose
+    # provenance is unknown, which is the exact bug the original guard was
+    # written for after a day-old dylib cost an hour of misdiagnosis.
+    echo "note: native/ SOURCE CHANGED (${NATIVE_WAS:0:8}… -> ${NATIVE_NOW:0:8}…) — clearing hook cache" >&2
+    rm -rf .dart_tool/hooks_runner .dart_tool/lib
+    dart pub get >/dev/null 2>&1
+    printf '%s' "$NATIVE_NOW" > "$STAMP"
+  fi
+fi
+
+# Is the container this gate runs in able to reap orphans? Every step below
+# spawns processes -- dart, chromium, cargo, bash -- and any whose parent exits
+# first is re-parented to PID 1. If PID 1 is `sleep infinity` rather than an
+# init, none of them are ever wait()ed for and each leaves a permanent zombie.
+#
+# Measured 2026-09-16: `dmc-build` had been created without `--init`, and after
+# two days held 45,725 zombies out of 45,730 processes -- five were alive. One
+# `tool/test_wasm.sh --skip-build` added 12 more; with `--init` the identical
+# run adds 0. tool/dmc_container.sh has the recipe and the full evidence.
+#
+# THIS CHECKS THE DEFECT, NOT THE BACKLOG. It orphans a probe process and asks
+# whether PID 1 reaped it, so a freshly-created broken container fails it while
+# still showing zero zombies -- which is exactly when it is worth catching,
+# rather than 45,000 processes later. It is a no-op outside a container.
+s  init_reaper   bash tool/dmc_container.sh check
+# The committed assets in lib/assets/ are build artefacts of native/src and
+# js/src, and the wasm build is NOT byte-reproducible, so `git diff` on the blob
+# cannot detect staleness. This hashes the SOURCES instead. It is the only layer
+# here that needs no human discipline: WIRE_FORMAT_VERSION is hand-bumped, so it
+# is blind to "encoding changed, nobody bumped, nobody rebuilt".
+s  asset_fresh   bash tool/check_asset_freshness.sh
+# The complement to asset_fresh: that one catches "sources moved, nobody
+# rebuilt"; this one catches "the encoding was versioned on one side only".
+s  wire_version  bash tool/check_wire_version.sh
+# The third member of that family. asset_fresh catches "sources moved, nobody
+# rebuilt" and wire_version catches "the encoding was versioned on one side
+# only"; this catches the Worker and the .wasm disagreeing about a function's
+# ARITY, which no compiler on either side can see. JS fills missing wasm
+# arguments with 0 and drops extra ones instead of throwing, so a Rust signature
+# change is a silent miscompile on the web backend -- measured 2026-09-14:
+# monty_repl_restore went from 3 parameters to 5, the Worker kept passing 3,
+# out_error bound to the limits_json slot, and every WASM restore failed with
+# no cause while the whole FFI suite stayed green.
+s  wasm_arity    node tool/check_wasm_arity.mjs
+# The complement of wasm_arity, which reads the SHIPPED WASM EXPORTS and never
+# opens the header -- so it can prove a call site matches the binary while the
+# header says nothing at all. Measured: monty_alloc and monty_dealloc were
+# exported, called 49 times by the Worker, and declared zero times.
+s  exports_decl  bash tool/check_exports_declared.sh
+# The inbound-forgery suite is the end-to-end proof of core#136/#139, and it was
+# HAND-LISTED, so it drifted: 11 tags attacked against 25 emitted, and three of
+# the gaps were types the wire-v5 work had added days earlier. Adding an encoder
+# tag and adding a forgery row are separate edits in separate languages; this
+# ties them together.
+s  forgery_cov   bash tool/check_forgery_coverage.sh
+s  hierarchy_reg bash tool/check_hierarchy_registry.sh
+s  hook_deps     bash tool/check_hook_dependencies.sh
+# WIRE-CONTRACT.md is cited as normative by ten sites -- including a test that
+# prints "WIRE-CONTRACT.md row N requires ..." on failure -- and did not exist.
+# The risk in writing one is fabrication: a plausible spec that does not match
+# the encoder is worse than none, because the tests cite it as authority. Its
+# row table is DERIVED from the executed assertions, and this keeps it derived.
+s  wire_contract bash tool/check_wire_contract.sh
+# A workflow GitHub cannot parse does not fail loudly: it records a 0-job run
+# and STOPS MATCHING ITS TRIGGERS, so the PR checks quietly cease. A duplicate
+# `env:` key took CI out for 13 commits here while `yaml.safe_load` passed the
+# whole time -- PyYAML keeps the last duplicate, GitHub rejects the document.
+s  workflows_ok bash tool/check_workflows_valid.sh
+s  corpus_check  bash tool/check_fixture_corpus.sh
+# The record, checked the same way the code is. A `!` commit touching lib/ must
+# reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
+# that should have caught it had been performed and gone stale within a day.
+s  breaking_rec  bash tool/check_breaking_recorded.sh
+# The demo links every fixture to pydantic/monty at a pinned tag; a crate bump
+# that missed the constant would show the wrong source with no error.
+s  fixture_links bash tool/check_fixture_links.sh
+# Same shape as fixture_links, one level up: the published pages state which
+# build they are, and nothing compiles an HTML shell, so the string rots
+# silently on the next version bump. The deployed site is the one artefact a
+# reader meets without a pubspec in front of them.
+s  page_versions bash tool/check_page_versions.sh
+# The source of the number those pages print. The monty pin moved 0.19 -> 0.23
+# in e1e4eda and pubspec.yaml did not follow, so the package called itself
+# 0.19.0 while pinning v0.0.23 -- and since snapshots are not portable across
+# monty upgrades, that told every consumer the wrong thing about compatibility.
+# Nothing compared the two until a human read the version off the demo page.
+s  version_pin   bash tool/check_version_pin.sh
+# --deep, not the fast path. The fast path only checks that each excluded PATH
+# still exists; --deep strips the exclusions, re-runs dcm, and catches an entry
+# that names a real file and hides NOTHING -- which is how a stale exclusion
+# outlives the issue it was written for. It used to run in CI and nowhere else;
+# with DCM removed from that workflow it would otherwise run nowhere at all.
+# Measured 2026-09-15 in the warm container: fast path 0s, --deep 1.4s, and it
+# really does the work (it reports the 42 issues the 16 exclusions hide).
+# Both its refusals are loud: no DCM credentials -> SKIP exit 0, so a machine
+# without the key is unaffected; uncommitted dcm_options.yaml -> REFUSE exit 2,
+# because the mode swaps that file and would risk your edits.
+# DCM RUNS ON THE HOST, NOT HERE. This gate executes inside the `dmc-build`
+# container, which carries dcm 1.37.0; the project standardises on 1.39.0, which
+# is installed on the host. Keeping two dcm versions in step is not worth it, so
+# the three DCM checks move out to `bash tool/dcm_host_gate.sh` (run from macOS)
+# and skip here — visibly, as SKIP, never as PASS.
+#
+# They still run normally when this script is invoked ON the host.
+# ...but "on the host" is not the same as "resolvable on the host". This repo
+# builds in a container, and the container's `pub get` writes /home/.pub-cache
+# into .dart_tool. On macOS those directories do not exist, so `dcm analyze`
+# runs here with EVERY dependency unresolved and silently reports a different
+# count -- measured 2026-09-17 at 5102de3: 23 issues unresolved vs 19 resolved,
+# the four extra all `prefer-moving-to-variable` in one byte-identical file.
+# That is how a green gate here disagreed with a red tool/dcm_host_gate.sh.
+# Running `dart pub get` here to fix it is the wrong remedy: it re-resolves the
+# tree for the host and forces the container to rebuild its native sources.
+# So skip -- visibly, as SKIP, never as PASS -- and defer to the hermetic
+# runner, which creates its own worktree and resolves it itself.
+dcm_here(){ [ -e /run/.containerenv ] || [ -e /.dockerenv ] && {
+  echo "SKIP  $1  (0s)  — DCM runs on the host: bash tool/dcm_host_gate.sh" \
+    >> "$OUT/SUMMARY.txt"; return 1; }
+  case "$(python3 tool/_dcm_resolution_check.py 2>/dev/null)" in
+    DANGLING*)
+      echo "SKIP  $1  (0s)  — tree resolved for another machine: bash tool/dcm_host_gate.sh" \
+        >> "$OUT/SUMMARY.txt"; return 1 ;;
+  esac
+  return 0; }
+dcm_here dcm_excludes  && s  dcm_excludes  bash tool/check_dcm_exclusions.sh --deep
+s  vague_errors bash tool/check_no_vague_errors.sh
+# The two backends implement one shared contract, so a consumer picks a backend
+# without picking a feature set. `throw UnimplementedError` breaks that
+# silently: at the call site it is indistinguishable from a real platform
+# limit. Measured -- FfiCoreBindings.resumeNameLookupValue claimed the FFI
+# backend did not support it while the Rust export, the header AND the
+# generated binding all existed. The message was false and it reached a shipped
+# example.
+s  backend_parity bash tool/check_backend_parity.sh
+# A mock proves the wiring compiles; it cannot prove the engine can do the
+# thing. Monty.compile() had a full unit file written against
+# MockMontyPlatform and was dead on every real backend (core#152).
+s  api_exercised bash tool/check_api_exercised.sh
+s  dart_analyze  dart analyze --fatal-infos
+# packages/ IS included, and was not until 2026-09-15. `dart analyze` walks
+# into the nested packages on its own (verified: a deliberate type error in
+# packages/monty_conformance/ fails the unscoped `dart analyze --fatal-infos`
+# above), but `dart format` only looks where it is pointed -- so two whole
+# packages went unformatted and unchecked. Three files had already drifted,
+# and 9d5d4c1 added a fourth: a regex edit to feature_matrix.dart left it
+# unformatted and this step reported green, because it never looked.
+s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/ packages/
+# --coverage is not decoration: it is the input to cov_report below, and the
+# collection is nearly free here -- measured in the build container, 457 tests
+# in 5s with it on. (CI's 5m53s for the same step is the runner, not the
+# instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
+# still writes nothing the read-only check can see.
+sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example --coverage="$OUT/cov"
+# The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
+# dart2js has one number type, so `4.0 is int` is true and integral doubles
+# collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
+# the VM and be unreachable-or-wrong on the web -- measured: a fix for
+# inputs_encoder compiled, analysed clean and passed on the VM while doing
+# nothing at all, because the arm it added was dead on the only backend with the
+# bug. `vm-only` is excluded because those files cannot COMPILE for the web.
+sf unit_web 1400 dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
+dcm_here dcm_ratchet && s  dcm_ratchet   bash tool/dcm_ratchet.sh
+dcm_here metrics_ratch && s  metrics_ratch bash tool/metrics_ratchet.sh
+ns cargo_fmt     cargo fmt --check
+ns cargo_clippy  cargo clippy --all-targets -- -D warnings
+ns cargo_test    cargo test
+ns cargo_deny    cargo deny check
+# ffi_with_cm_test.dart is INCLUDED again. The note here said it needs
+# `--features test-hooks` and was "retired in P1b since monty 0.19 dropped
+# `_test_cm()`". The second half is right and the first half stopped being
+# true because of it: with `_test_cm()` gone (0 hits in monty v0.0.23) the
+# with__cm_* fixtures use a plain Python `class CM:`, and the test passes 5/5
+# on a normal build. The exclusion outlived its reason on BOTH sides -- CI had
+# the same one (ci.yaml) -- so the suite ran nowhere at all.
+# test/integration/repros IS included now. CI's test-ffi job has globbed it in
+# since the job was written (ci.yaml, alongside the ffi_*_test.dart glob); the
+# gate named only the glob, so issue_32_listcomp_global_clobber_ffi_test.dart
+# ran in CI and nowhere else locally -- the same CI-only-gap shape that
+# `examples` and `corpus_wasm` were added to close. It also makes the gate's
+# coverage set identical to CI's, which is what lets ONE tool/coverage-baseline
+# .json serve both.
+sf ffi_features 800 dart test $(ls test/integration/ffi_*_test.dart) test/integration/repros --run-skipped --tags=ffi -p vm --coverage="$OUT/cov"
+sf oracle_ffi 500 dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi --coverage="$OUT/cov"
+# The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
+# them. CI has run this since forever; the gate did not, so a change that broke
+# every example could pass here and fail there — which it just did. Tier 1 made
+# a hand-built `{'__type': …}` map decode as a dict, and example/10 taught
+# exactly that pattern.
+# No --coverage on this one, and the reason is not obvious: the suite runs each
+# example with `Process.run('dart', ['run', ex])` (example_smoke_test.dart:59),
+# a separate PROCESS, and --coverage instruments the TEST isolate. Measured: 11
+# passing tests, one hitmap JSON, and format_coverage --report-on=lib writes a
+# 0-byte tracefile. The planning document listed this suite as free coverage;
+# it is free, and it is zero.
+s  examples      bash tool/run_example_smoke.sh "$OUT/example-test.log"
+# Every measured suite above wrote its hitmap into ONE directory, so format_coverage
+# unions them and there is no LCOV merge to get wrong. That matters: the FFI
+# suite is 1,356 tests that drive ffi_core_bindings, native_bindings_ffi,
+# monty_repl and ffi_repl_bindings -- the four files the unit-only measurement
+# reported at 0.0-3.1% -- and it has been running in CI, untracked, the whole
+# time. This does not test anything new; it stops throwing away the record of
+# what was already tested.
+#
+# It reports two numbers on purpose (loaded-files and lib-wide) so nobody can
+# quietly switch to whichever flatters.
+s  cov_report    bash tool/coverage_report.sh --out-dir "$OUT/coverage" "$OUT/cov"
+# ...and a floor under them. Nothing else here stops the reclassified coverage
+# decaying: new native code lands, the conformance corpus does not grow to
+# match, and per-file coverage slides back invisibly because the project total
+# is dominated by files nobody is changing. Same mechanism as dcm_ratchet, same
+# rule about regenerating the baseline only in the commit that justifies it.
+s  cov_ratchet   bash tool/coverage_ratchet.sh "$OUT/coverage/honest.info"
+# --skip-build is deliberate and load-bearing: without it this step REBUILDS
+# lib/assets/*.wasm, i.e. the gate would test an artefact that is not the one
+# being committed. It cost us a red CI once already (see the note at the foot of
+# this file). With it, the gate exercises the committed asset — the same thing
+# CI and every web consumer load — and touches nothing.
+#
+# RENAMED from `wasm_full` on 2026-08-02. That name claimed the widest possible
+# coverage ("full") for the NARROWER of the two web compilers, and the gap below
+# hid behind it for as long as it existed: everything here runs on the WASM
+# engine, so "wasm" in a step name never distinguished anything, and nobody
+# reading a green `wasm_full` had a reason to ask which Dart target it used.
+# The pair is now named after the axis that actually varies.
+s  corpus_js     bash tool/test_wasm.sh --skip-build
+# The SAME 531 fixtures, the same WASM engine, compiled with dart2wasm instead.
+# This step is new (2026-08-02) and closes the last CI-only gap: CI has run the
+# dart2wasm corpus since ci.yaml:583/:669, the gate never did, so every local
+# "GATE GREEN" was dart2js-only on the corpus and a dart2wasm-only regression
+# could only be caught after pushing. The compilers are not interchangeable —
+# dart2js has one number type, dart2wasm has real doubles — which is the same
+# reason `unit_web` runs both, and is exactly the class of bug that made
+# `unit_web` necessary.
+#
+# It does NOT rebuild anything in the tree: the dart2wasm output is staged in a
+# temp dir, because `dart compile wasm -o test/integration/web/wasm_runner.wasm`
+# (what CI runs) writes three TRACKED files and the gate is read-only.
+s  corpus_wasm   bash tool/test_wasm.sh --skip-build --dart2wasm
+# The two steps above run the SHIPPED engine, which has test-hooks off, so they
+# skip eight fixtures: five with__cm_* (they need monty's synthetic `_test_cm()`)
+# and three recursion ones (they need `sys.setrecursionlimit`). Measured on
+# dart2wasm: 520 passed / 11 skipped without the feature, 528 / 3 with it.
+# Those eight are therefore covered by NO step above, on either compiler — the
+# only thing that has ever run them is tool/test_cm_wasm.sh, which the gate did
+# not call, and which until now only had a dart2js path. So the eight had never
+# executed on dart2wasm anywhere, locally or in CI.
+#
+# Both variants are cheap here because they share one cargo cache: the pair adds
+# ~30s warm. Cold (or after native/src changes) the first of them pays a
+# test-hooks rebuild.
+#
+# Neither writes to the tree. The engine they build has test-hooks ON, which is
+# NEVER shipped, so test_cm_wasm.sh stages it in a temp dir and builds it in its
+# own target dir (native/target/test-hooks) — otherwise it would sit at exactly
+# the path tool/test_wasm.sh copies into lib/assets/ without --skip-build, and
+# the next reader would load a sandbox-escaping engine believing it was ours.
+s  corpus_cm_js  bash tool/test_cm_wasm.sh
+s  corpus_cm_w   bash tool/test_cm_wasm.sh --dart2wasm
+# Neither corpus step runs the package:test suites on chrome — those are a
+# different mechanism (`dart test -p chrome --tags=wasm`, via
+# tool/test_wasm_unit.sh) and were absent from this matrix entirely, so the
+# chrome half of the standing "FFI and WASM both" rule was enforced only by CI.
+# Added 2026-07-30 after two new 0.19 suites shipped with FFI runners and no
+# WASM counterpart.
+sf wasm_unit 700 bash tool/test_wasm_unit.sh
+# Same suite, same WASM ENGINE, different DART compile target — the unit-test
+# counterpart of corpus_js/corpus_wasm above.
+sf wasm_unit_w 700 bash tool/test_wasm_unit.sh --dart2wasm
+# Separate gate from the corpus steps on purpose: different artefact (the
+# assembled Pages site vs the test harness) and different failure modes (stale
+# asset copies, COOP/COEP, relative paths under /repl/).
+s  pages_render  bash tool/check_pages.sh
+
+# -----------------------------------------------------------------------------
+# THE GATE DOES NOT WRITE TO THE WORKING TREE. Why that rule exists:
+#
+# This step used to rebuild lib/assets/*.wasm (test_wasm.sh with no flag), and
+# because that build is NOT byte-reproducible (identical tree, different bytes —
+# issue #41) every gate run left the repo dirty, fighting the commit-per-gate
+# rule. The fix at the time was for the gate to `git checkout --` the wasm
+# afterwards. That restore then silently reverted a DELIBERATE rebuild — the one
+# that added the monty_wire_format_version export — the stale binary got
+# committed, and CI went red across every web job.
+#
+# A local gate structurally cannot catch that: the FFI path compiles from
+# source, so only the web path ever loads the committed asset, and the gate's
+# own web steps ran BEFORE the restore. Any smarter restore heuristic has the
+# same shape — an export-surface check would pass right through Phase 2, which
+# changes what convert.rs emits without adding a symbol.
+#
+# So the two responsibilities are split instead of threaded:
+#   tool/prebuild.sh   writes lib/assets/. A human runs it and commits the result.
+#   tool/gate.sh       reads lib/assets/. Never rebuilds, never restores.
+# Staleness is caught by tool/check_asset_freshness.sh (step 1), which hashes
+# the SOURCES — the one layer that needs no discipline.
+#
+# KEEP_WASM is gone: there is nothing left to keep or discard.
+if ! git diff --quiet -- lib/assets/ 2>/dev/null; then
+  echo "" >> "$OUT/SUMMARY.txt"
+  echo "note: lib/assets/ is dirty and was NOT touched — the gate tested exactly" >> "$OUT/SUMMARY.txt"
+  echo "      these bytes, so commit them with this change or CI will load others." >> "$OUT/SUMMARY.txt"
+fi
+
+# The read-only promise, enforced. This compares the tree to the snapshot taken
+# before step 1: it flags what THIS RUN changed, not what was already dirty when
+# you started, so it stays quiet on a work-in-progress tree and speaks only when
+# the gate itself wrote something.
+#
+# The trap it exists for: `dart compile wasm -o test/integration/web/wasm_runner.wasm`
+# — the command CI runs and the one wasm_runner_wasm.dart's header tells you to
+# run — overwrites three TRACKED files. Add the dart2wasm corpus the obvious way
+# and every gate run leaves a meaningless diff behind; worse, the same shape of
+# mistake with a test-hooks build (tool/test_cm_wasm.sh) would leave a dylib
+# that is NOT the shipped one for the next `dart test` to load silently.
+# corpus_wasm stages into a temp dir for exactly this reason. This check is what
+# notices if some future step forgets.
+TREE_AFTER="$(git status --porcelain)"
+if [ "$TREE_BEFORE" != "$TREE_AFTER" ]; then
+  {
+    echo ""
+    echo "FAIL  read_only_tree  (the gate MODIFIED the working tree)"
+    echo "      The gate must validate the tree as it stands. Paths that changed"
+    echo "      during this run:"
+    diff <(printf '%s\n' "$TREE_BEFORE") <(printf '%s\n' "$TREE_AFTER") \
+      | grep -E '^[<>]' | sed 's/^/        /'
+    echo "      Fix the step that wrote them — stage build output outside the repo."
+  } >> "$OUT/SUMMARY.txt"
+fi
+
+# THE GATE MUST RUN EVERY STEP IT HAS, and nothing was checking that.
+#
+# GREEN is decided by `grep -q '^FAIL'` over the summary. A step that stops
+# being invoked — an `s`/`sf` line lost to a bad merge, a `for` loop whose glob
+# stopped matching, an early `return` — removes its own result line, so it
+# cannot produce a FAIL and the gate goes green having checked less. That is
+# the same failure ci.yaml guards with `[ "$RAN" -eq 19 ]` on its checks job;
+# this file, which is the actual commit precondition, had no equivalent.
+#
+# EXACT, not a floor. A floor would let steps disappear one at a time. Adding
+# or removing a step is a deliberate act, so it gets a deliberate edit here —
+# and the failure message says which direction moved.
+EXPECT_STEPS=41
+GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
+if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
+  {
+    echo ""
+    echo "FAIL  step_count  (ran $GOT_STEPS steps, expected $EXPECT_STEPS)"
+    if [ "$GOT_STEPS" -lt "$EXPECT_STEPS" ]; then
+      echo "      A step stopped running. The gate cannot fail on a check it"
+      echo "      never invoked, so this would otherwise be GREEN while"
+      echo "      verifying less than it did yesterday."
+    else
+      echo "      A step was added. Raise EXPECT_STEPS in tool/gate.sh in the"
+      echo "      same commit, so the next person inherits the new number."
+    fi
+  } >> "$OUT/SUMMARY.txt"
+fi
+
+echo "" >> "$OUT/SUMMARY.txt"; echo "done $(date -u +%FT%TZ)" >> "$OUT/SUMMARY.txt"
+cat "$OUT/SUMMARY.txt"
+grep -q '^FAIL' "$OUT/SUMMARY.txt" && { echo; echo "GATE RED — do not commit. Logs: $OUT"; exit 1; }
+echo
+# NAME WHAT WAS SWITCHED OFF, IN THE LINE A HUMAN ACTUALLY READS.
+#
+# The skip is already visible in SUMMARY.txt -- that rule is enforced above and
+# the reason is recorded there. It was not enough. dcm_here() skips every DCM
+# check inside the container AND on a host whose tree is resolved elsewhere,
+# which is this checkout's normal state, so the usual run of this gate checks no
+# DCM at all and still ends on "safe to commit". DCM is deliberately absent from
+# CI as well (it is commercial), so nothing downstream catches it either.
+#
+# Measured 2026-09-17: six test suites were committed and pushed off exactly
+# that reading of exactly that line. tool/dcm_host_gate.sh was RED on them with
+# 35 findings the whole time.
+DCM_SKIPPED="$(grep -c 'dcm_host_gate\.sh' "$OUT/SUMMARY.txt" 2>/dev/null || true)"
+if [ "${DCM_SKIPPED:-0}" -gt 0 ]; then
+  echo "GATE GREEN — but $DCM_SKIPPED DCM check(s) DID NOT RUN here, and DCM is"
+  echo "  not in CI either. Nothing else will catch a DCM regression:"
+  echo "    bash tool/dcm_host_gate.sh"
+  echo "  Logs: $OUT"
+else
+  echo "GATE GREEN — safe to commit. Logs: $OUT"
+fi

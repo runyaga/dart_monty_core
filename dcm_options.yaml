@@ -33,12 +33,16 @@ dcm:
     - avoid-throw-in-finally-block
     - avoid-unsafe-collection-methods:
         exclude:
-          # Index access guarded by for-loop bounds and prior length checks
+          # Two index reads, both provably in bounds:
+          #   lines[startIdx] in captureLastExpression -- startIdx comes
+          #     from _findExpressionStart and lies in [0, lastIdx], and
+          #     lastIdx >= 0 has already been checked.
+          #   lines[i] in _findExpressionStart -- i walks lastIdx..0 and
+          #     the loop accumulates bracket depth across iterations, which
+          #     no single Iterable expression states as plainly.
+          # elementAtOrNull(i)! would trade a RangeError for a TypeError
+          # without removing the risk, so the loop form is kept.
           - "lib/src/platform/code_capture.dart"
-          # Mock tracking lists: only accessed after recording calls
-          - "lib/src/platform/mock_monty_platform.dart"
-          # Guarded by isEmpty/isNotEmpty/length checks before access
-          - "lib/src/monty_session.dart"
     - avoid-missing-completer-stack-trace
     - avoid-uncaught-future-errors
     - avoid-recursive-calls
@@ -86,10 +90,7 @@ dcm:
     - no-equal-nested-conditions
 
     # --- Common Anti-Patterns ---
-    - avoid-unused-parameters:
-        exclude:
-          # limits/scriptName kept for API compatibility; REPL ignores both
-          - "lib/src/monty_session.dart"
+    - avoid-unused-parameters
     - avoid-nested-conditional-expressions
     - avoid-missing-enum-constant-in-map
     - avoid-unnecessary-type-assertions
@@ -103,23 +104,31 @@ dcm:
     # --- Style & Formatting ---
     - prefer-match-file-name:
         exclude:
+          # test/** (6 issues). Test files are named for what they TEST, not
+          # for the first type they declare, and helpers declare support types
+          # first: _hierarchy_registry.dart:54 opens with `class WireFixture`,
+          # monty_compile_test.dart:18 with `final class _ThrowingBindings`.
+          # Renaming either to satisfy the rule would make the file harder to
+          # find, which is the opposite of what the rule exists for.
           - "test/**"
-          # Multiple typedefs + class — no single dominant name
-          - "lib/src/callbacks.dart"
-          # FFI/WASM binding abstractions
-          - "lib/**/native_bindings.dart"
-          - "lib/**/wasm_bindings.dart"
-          # Part files: first type is a sealed subclass, not the file name
+          # Part files (`part of 'monty_value.dart';` at line 1 of each). The
+          # first type is a subclass OF the sealed MontyValue -- the subclasses
+          # themselves are `final`. VERIFIED, first types are MontyNone:9,
+          # MontyBytes:9, MontyDate:9, MontyEllipsis:15 respectively. None can
+          # match its file name, because one file holds several of them, and
+          # the only fix would be 26 files for 26 MontyValue subtypes.
+          #
+          # Four sibling entries were deleted on 2026-09-16 because their files
+          # COULD be fixed, and were: native_bindings.dart, wasm_bindings.dart
+          # and mock_monty_platform.dart just needed their namesake class moved
+          # ahead of the result types it returns, and core_bindings.dart was
+          # renamed monty_core_bindings.dart to match MontyCoreBindings -- the
+          # same shape as its siblings wasm_core_bindings and ffi_core_bindings
+          # already had.
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_datetime.dart"
           - "lib/src/platform/monty_value_structured.dart"
-          # Helper types/enums declared before the main class
-          - "lib/src/platform/core_bindings.dart"
-          - "lib/src/repl/monty_repl.dart"
-          - "lib/src/wasm/wasm_bindings_js_stub.dart"
-          # MockCallHistory helper class defined before MockMontyPlatform
-          - "lib/src/platform/mock_monty_platform.dart"
     - prefer-immediate-return
     - prefer-commenting-analyzer-ignores
     - prefer-conditional-expressions
@@ -129,8 +138,15 @@ dcm:
     - no-boolean-literal-compare
     - no-empty-block:
         exclude:
-          # Intentional no-op dispose on non-owning wrappers
-          - "lib/src/platform/monty_platform.dart"
+          # _ThrowingBindings is a compile-error stub; dispose is deliberately
+          # a no-op to satisfy MontyCoreBindings.
+          #
+          # lib/src/platform/monty_platform.dart was listed here until
+          # 2026-09-15 for an "intentional no-op dispose". Measured: with the
+          # entry removed the rule reports ZERO issues in that file, so it was
+          # hiding nothing -- the same dormant-exclusion shape as the
+          # monty_session.dart entry deleted in 24a31da.
+          - "test/unit/platform/monty_compile_test.dart"
     - no-equal-then-else
     - prefer-first
     - prefer-last
@@ -142,17 +158,15 @@ dcm:
     - avoid-unnecessary-parentheses
     - prefer-async-await:
         exclude:
-          # Isolate message dispatch and timeout-or-false chain
+          # VERIFIED 2026-09-15, both sites still earn it:
+          #   :538 `await f.timeout(5s).then((_) => true).onError((_,_) => false)`
+          #        -- a timeout-or-false chain; async/await needs an explicit
+          #        try/catch on TimeoutException to say the same thing.
+          #   :581 isolate message dispatch, returning completer.future.then(...)
+          #        from a non-async function.
           - "lib/src/ffi/native_isolate_bindings_impl.dart"
     - avoid-adjacent-strings
-    - prefer-declaring-const-constructor:
-        exclude:
-          # Extension types cannot have const constructors
-          - "lib/src/wasm/wasm_bindings_js.dart"
-          # NativeBindingsFfi has non-final fields (handle state)
-          - "lib/src/ffi/native_bindings_ffi.dart"
-          # Private constructor wraps MontySession which creates platform state
-          - "lib/src/monty.dart"
+    - prefer-declaring-const-constructor
     - format-comment
 
     # --- Immutability ---
@@ -173,34 +187,30 @@ dcm:
     # --- Null Safety & Types ---
     - avoid-late-keyword:
         exclude:
+          # test/** (12 issues). Every one is the standard `late T x;` +
+          # `setUp(() { x = ...; })` pair -- e.g. repl_platform_args_test.dart
+          # :20-21. This is not merely tolerated, it is the RIGHT trade, and
+          # that is now MEASURED rather than argued.
+          #
+          # Converting the two `late` fields in that one file to nullable
+          # produces SIX analyzer errors, and the analyzer's own suggested
+          # remedy is the rule this repo just finished eliminating:
+          #
+          #   error - :26:37 - The argument type 'MontyRepl?' can't be assigned
+          #           to the parameter type 'MontyRepl'
+          #   error - :29:25 - The method 'dispose' can't be unconditionally
+          #           invoked because the receiver can be 'null'. Try ... adding
+          #           a null check to the target ('!')
+          #   ... four more of the same
+          #
+          # So dropping `late` trades 12 of this rule for a larger number of
+          # avoid-non-null-assertion, which is enforced with NO exclusions as
+          # of 4d91397. It also worsens the failure: a null deref deep in a
+          # test, instead of a LateInitializationError naming the field setUp
+          # forgot to set.
           - "test/**"
-    - avoid-dynamic:
-        exclude:
-          - "test/**"
-          # fromJson factories: Map<String, dynamic> is Dart JSON convention
-          - "lib/src/platform/monty_value.dart"
-          - "lib/src/platform/monty_value_collections.dart"
-          - "lib/src/platform/monty_value_structured.dart"
-          - "lib/src/platform/monty_progress.dart"
-          - "lib/src/platform/monty_exception.dart"
-          # JSON deserialization in SPI/base platform
-          - "lib/src/platform/base_monty_platform.dart"
-          - "lib/src/platform/core_bindings.dart"
-    - avoid-non-null-assertion:
-        exclude:
-          - "test/**"
-          # Isolate message protocol: non-null guaranteed by sealed message types
-          - "lib/src/ffi/native_isolate_bindings_impl.dart"
-          # JSON deserialization: fields guaranteed by Rust FFI contract
-          - "lib/src/platform/base_monty_platform.dart"
-          - "lib/src/platform/monty_progress.dart"
-          # Regex match.group(1) non-null guaranteed by pattern structure
-          - "lib/src/platform/code_capture.dart"
-          # WASM JS interop: non-null guaranteed by JS bridge contract
-          - "lib/src/wasm/wasm_bindings_js.dart"
-          - "lib/src/wasm/wasm_core_bindings.dart"
-
-    # --- Class Design & Architecture ---
+    - avoid-dynamic
+    - avoid-non-null-assertion
     - avoid-accessing-other-classes-private-members
     - avoid-default-tostring
     - prefer-abstract-final-static-class
@@ -211,11 +221,23 @@ dcm:
     - avoid-referencing-subclasses
     - match-getter-setter-field-names:
         exclude:
-          # dartValue getter intentionally wraps value field (sealed MontyValue API)
+          # `dartValue` is an @override of the sealed MontyValue API, so its
+          # name is fixed and can never match the backing field. VERIFIED
+          # 2026-09-15, all 8 sites read, independently confirmed by agy:
+          #   monty_value_scalars.dart:44,84,141,185,241  => value
+          #   monty_value_collections.dart:26             => value
+          #   monty_value_structured.dart:60  (MontyPath) => value
+          #   monty_value_structured.dart:726 (MontyOpaque) => TEXT, not value
+          #
+          # That last one is why this comment was rewritten. It used to say
+          # "wraps value field" flatly; MontyOpaque has no `value` field at all
+          # (its fields are `kind` and `text`), so the old wording was false for
+          # one of the three files it covered.
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_structured.dart"
-          # coreBindings getter wraps _bindings (protected API for subclasses)
+          # base_monty_platform.dart:128 `MontyCoreBindings get coreBindings =>
+          # _bindings;` -- protected accessor for subclasses. Verified.
           - "lib/src/platform/base_monty_platform.dart"
     - avoid-declaring-call-method
 
@@ -241,12 +263,28 @@ dcm:
           - private-methods
           - overridden-methods
         exclude:
-          # _fieldsEqual helper placed adjacent to operator== that uses it;
-          # strict re-ordering would harm readability
+          # MISATTRIBUTED UNTIL 2026-09-15. This said "_fieldsEqual helper
+          # placed adjacent to operator== that uses it". That fact is TRUE --
+          # monty_stack_frame.dart:95 `bool _fieldsEqual(MontyStackFrame o) =>`
+          # sits right under `operator ==` at :91 -- but it is NOT why the rule
+          # fires. The actual flagged sites are ordinary method-order
+          # violations against the `order:` above, which ends
+          # public-methods, private-methods, overridden-methods:
+          #
+          #   monty_value_datetime.dart:165   @override String toString()
+          #   monty_stack_frame.dart:119      @override String toString()
+          #   monty_stack_frame.dart:122      static List<..> listFromJson(..)
+          #
+          # i.e. an overridden toString() followed by a public static method.
+          # Reordering would split toString() from the == / hashCode / helper
+          # cluster it belongs with. Confirmed independently by agy.
           - "lib/src/platform/monty_value_datetime.dart"
           - "lib/src/platform/monty_stack_frame.dart"
-          # _nextReplId() is a constructor helper; grouping it with the
-          # counter field it mutates is clearer than moving it to the end
+          # VERIFIED and accurate: wasm_repl_bindings.dart:26
+          # `static String _nextReplId() => 'repl-${++_counter}';` precedes the
+          # private fields at :28, :30, :33, which is what those three are
+          # flagged for. Grouping the helper with the counter it mutates is
+          # clearer than moving it to the end.
           - "lib/src/repl/wasm_repl_bindings.dart"
 
     # --- Testing ---

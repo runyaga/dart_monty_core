@@ -21,13 +21,13 @@ void main() {
       expect(monty.scriptName, 'analysis.py');
     });
 
-    test('MontyRepl returns null when no scriptName given', () async {
+    test('MontyRepl returns null when no scriptName given', () {
       final repl = MontyRepl();
       addTearDown(repl.dispose);
       expect(repl.scriptName, isNull);
     });
 
-    test('MontyRepl round-trips a custom scriptName', () async {
+    test('MontyRepl round-trips a custom scriptName', () {
       final repl = MontyRepl(scriptName: 'task.py');
       addTearDown(repl.dispose);
       expect(repl.scriptName, 'task.py');

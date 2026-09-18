@@ -75,7 +75,7 @@ void main() {
       expect(err, isNot(isA<MontySyntaxError>()));
     });
 
-    test('MontySyntaxError is caught by `on MontyScriptError`', () async {
+    test('MontySyntaxError is caught by `on MontyScriptError`', () {
       // MontyRepl.feedRun catches MontyScriptError internally (including
       // MontySyntaxError) and returns it via MontyResult.error. Verify
       // the type hierarchy that powers that catch.

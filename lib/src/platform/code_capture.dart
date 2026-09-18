@@ -65,15 +65,12 @@ bool isExpression(String line) {
 (String, bool) captureLastExpression(String userCode) {
   final lines = userCode.split('\n');
 
-  // Find last non-empty, non-comment line index.
-  var lastIdx = -1;
-  for (var i = lines.length - 1; i >= 0; i--) {
-    final trimmed = lines[i].trim();
-    if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
-      lastIdx = i;
-      break;
-    }
-  }
+  // Find last non-empty, non-comment line index (-1 when there is none).
+  final lastIdx = lines.lastIndexWhere((line) {
+    final trimmed = line.trim();
+
+    return trimmed.isNotEmpty && !trimmed.startsWith('#');
+  });
 
   if (lastIdx < 0) return (userCode, false);
 
@@ -101,9 +98,15 @@ bool isExpression(String line) {
 String? _assignmentName(String segment) {
   final match = assignmentPattern.firstMatch(segment.trimLeft());
   if (match == null) return null;
-  final name = match.group(1)!;
+  // `group(1)` is String? because Match.group always is, even though group 1
+  // of `^([a-zA-Z]\w*)\s*=[^=]` cannot fail to participate in a successful
+  // match. This used to assert that with `!`. It does not need to: the
+  // function already returns null for "no assignment name here", so an
+  // impossible null folds into the contract instead of throwing.
+  final name = match.group(1);
+  if (name == null || name.startsWith('_')) return null;
 
-  return name.startsWith('_') ? null : name;
+  return name;
 }
 
 /// Extracts top-level assignment target names from [code].

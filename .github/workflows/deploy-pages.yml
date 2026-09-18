@@ -2,7 +2,15 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # Same gap as ci.yaml: the integration line could not publish its own docs.
+    #
+    # CONSEQUENCE, STATED RATHER THAN DISCOVERED: there is ONE GitHub Pages
+    # environment per repository, so a push to integration/** deploys to the
+    # LIVE site -- whichever branch pushed last is what visitors see. The
+    # sibling repo also needed its `github-pages` environment branch policy
+    # widened before this took effect; a green trigger and a green build still
+    # deploy nothing if the environment excludes the branch.
+    branches: [main, 'integration/**']
   workflow_dispatch:
 
 permissions:
@@ -22,12 +30,12 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Toolchains ──────────────────────────────────────────────────────────
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - uses: dart-lang/setup-dart@v1
         with:
@@ -83,12 +91,12 @@ jobs:
           cp docs/index.html site/index.html
 
       # ── Deploy ───────────────────────────────────────────────────────────────
-      - uses: actions/configure-pages@v4
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

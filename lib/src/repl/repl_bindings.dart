@@ -1,14 +1,23 @@
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 
-/// Internal bindings interface for REPL operations.
+/// Bindings interface for REPL operations.
 ///
 /// Implemented by `FfiReplBindings` and `WasmReplBindings` to provide
 /// a unified contract across native FFI and web WASM backends.
+///
+/// Public: `MontyRepl.withBindings` takes one, so an outside caller may
+/// implement this to drive a REPL over its own transport. Every type in every
+/// signature below is reachable from `dart_monty_core.dart`.
 abstract class ReplBindings {
   /// Creates a persistent REPL session.
-  Future<void> create({String? scriptName});
+  ///
+  /// [limitsJson] applies SESSION-scoped resource limits, mirroring
+  /// upstream's `checkout(limits=…)`. Null means an unbounded session, which
+  /// is what every REPL got before limits existed here.
+  Future<void> create({String? scriptName, String? limitsJson});
 
   /// Feeds a Python snippet and runs to completion.
   ///
@@ -26,8 +35,11 @@ abstract class ReplBindings {
   /// Starts iterative execution. Pauses at external function calls.
   Future<CoreProgressResult> feedStart(String code);
 
-  /// Resumes with a JSON-encoded return value.
-  Future<CoreProgressResult> resume(String valueJson);
+  /// Resumes with [value] as the pending call's return value.
+  ///
+  /// Typed [WireJson] rather than `String` because this is the method the
+  /// self-driven drive loop calls, and the loop is where core#136 lived.
+  Future<CoreProgressResult> resume(WireJson value);
 
   /// Resumes by raising an error in Python.
   Future<CoreProgressResult> resumeWithError(String errorMessage);
@@ -61,13 +73,13 @@ abstract class ReplBindings {
 
   /// Resolves outstanding REPL futures with their results and/or errors.
   ///
-  /// [resultsJson] is a JSON object mapping `callId.toString()` to the
-  /// resolved value. [errorsJson] is a JSON object mapping
-  /// `callId.toString()` to an error message string (each becomes a
-  /// RuntimeError in Python). Pass an empty `'{}'` when no errors occurred.
+  /// [results] frames `callId -> resolved value`; [errors] frames
+  /// `callId -> message` (each becomes a RuntimeError in Python). Build them
+  /// with [WireJson.callResults] and [WireJson.callErrors] — an absent error
+  /// map frames as `{}`.
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   );
 
   /// Serialises the REPL heap to postcard bytes.
@@ -79,7 +91,21 @@ abstract class ReplBindings {
   ///
   /// The old native handle is freed and replaced with a new one
   /// restored from [bytes].
-  Future<void> restore(Uint8List bytes);
+  /// Restores a session from [bytes].
+  ///
+  /// [limitsJson] is APPLIED to the restored session. A snapshot restores the
+  /// limits of the session it was taken from, so a caller who wants their own
+  /// must pass them — without this a `MontyRepl(limits: ...)` that restores an
+  /// unbounded snapshot runs UNBOUNDED, which is a security control reporting
+  /// success (FB-1 / core#124). Null keeps the snapshot's limits.
+  ///
+  /// [extFns] re-registers external function names. A snapshot cannot carry
+  /// them: they live on the native handle, not in monty's session.
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  });
 
   /// Disposes the REPL session.
   Future<void> dispose();

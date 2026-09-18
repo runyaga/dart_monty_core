@@ -13,7 +13,7 @@ jobs:
   check-upstream:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check for new monty releases
         id: check
@@ -23,13 +23,32 @@ jobs:
           LATEST_VERSION="${LATEST_TAG#v}"
 
           # Current version pinned in Cargo.toml as tag = "vX.Y.Z"
-          CURRENT_TAG=$(grep -oP 'tag = "\K[^"]*' native/Cargo.toml || echo "unknown")
+          #
+          # `| head -1` IS LOad-BEARING. native/Cargo.toml declares the tag on
+          # THREE dependencies (monty, monty-type-checking, and one more), so the
+          # bare grep returns three lines and CURRENT_TAG became a multi-line
+          # value. Writing that to $GITHUB_OUTPUT emitted
+          #     current_tag=v0.0.18
+          #     v0.0.18            <- a bare line, not key=value
+          # and Actions refused the whole file:
+          #     ##[error]Unable to process file command 'output' successfully.
+          #     ##[error]Invalid format 'v0.0.18'
+          # That is why this scheduled job has failed every run.
+          CURRENT_TAG=$(grep -oP 'tag = "\K[^"]*' native/Cargo.toml | head -1 || echo "unknown")
           CURRENT_VERSION="${CURRENT_TAG#v}"
 
-          echo "latest_tag=$LATEST_TAG"      >> "$GITHUB_OUTPUT"
-          echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
-          echo "current_tag=$CURRENT_TAG"    >> "$GITHUB_OUTPUT"
-          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          # Refuse to write a multi-line value rather than corrupt the whole
+          # output file. A malformed $GITHUB_OUTPUT does not fail the step that
+          # wrote it -- it fails the RUNNER's post-processing, which is why the
+          # error above names no step and is easy to misread as infrastructure.
+          for pair in "latest_tag=$LATEST_TAG" "latest_version=$LATEST_VERSION" \
+                      "current_tag=$CURRENT_TAG" "current_version=$CURRENT_VERSION"; do
+            if [ "$(printf '%s' "$pair" | wc -l | tr -d ' ')" != "0" ]; then
+              echo "::error::refusing to write a multi-line value to GITHUB_OUTPUT: ${pair%%=*}" >&2
+              exit 1
+            fi
+            echo "$pair" >> "$GITHUB_OUTPUT"
+          done
 
           if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ] && \
              [ "$LATEST_VERSION" != "unknown" ] && \

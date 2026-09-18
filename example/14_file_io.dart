@@ -30,10 +30,10 @@ Future<void> main() async {
 Future<void> _readWriteAppend() async {
   print('\n── open(): read / write / append ──');
 
-  final vfs = <String, String>{'/data/poem.txt': 'roses are red\n'};
+  final poem = MontyMemoryFile('/data/poem.txt', 'roses are red\n');
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: vfs,
+    files: [poem],
   );
 
   final read = await Monty('''
@@ -51,7 +51,7 @@ f.write("violets are blue\\n")
 f.write("monty runs python\\n")
 f.close()
 ''').run(osHandler: handler);
-  print('rewrote:  ${vfs["/data/poem.txt"]!.trim().split("\n")}');
+  print('rewrote:  ${poem.content.text.trim().split("\n")}');
 
   // 'a' preserves existing content.
   await Monty('''
@@ -59,17 +59,17 @@ f = open("/data/poem.txt", "a")
 f.write("and so do you\\n")
 f.close()
 ''').run(osHandler: handler);
-  print('appended: ${vfs["/data/poem.txt"]!.trim().split("\n").last}');
+  print('appended: ${poem.content.text.trim().split("\n").last}');
 }
 
 // ── with open(...) as f: — context manager closes automatically ──────────────
 Future<void> _withBlock() async {
   print('\n── with open(...) as f: ──');
 
-  final vfs = <String, String>{};
+  final log = MontyMemoryFile('/data/log.txt', '');
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: vfs,
+    files: [log],
   );
 
   final r = await Monty('''
@@ -82,30 +82,31 @@ out
 
   final t = r.value.dartValue! as List<Object?>;
   print('wrote ${t[0]} chars; closed inside=${t[1]} after=${t[2]}');
-  print('file:     ${vfs["/data/log.txt"]!.trim()}');
+  print('file:     ${log.content.text.trim()}');
 }
 
 // ── binary mode (rb / wb) ────────────────────────────────────────────────────
-// Note: memoryMountedOsHandler is text-backed (Map<String, String>), so it
-// round-trips bytes that are valid UTF-8 (here, the ASCII range). For files
-// with arbitrary high bytes, supply a custom OsCallHandler with a byte store.
+// Bytes are stored verbatim as `VfsBytes`, so ARBITRARY bytes survive the round
+// trip — including 0xFF, which is not valid UTF-8 and would previously have
+// come back as U+FFFD.
 Future<void> _binary() async {
   print('\n── binary (rb / wb) ──');
 
-  final vfs = <String, String>{};
+  final blob = MontyMemoryFile('/data/blob.bin', '');
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: vfs,
+    files: [blob],
   );
 
   final r = await Monty('''
 with open("/data/blob.bin", "wb") as f:
-    f.write(b"\\x00\\x01\\x02PNG")
+    f.write(b"\\x00\\x01\\xffPNG")
 with open("/data/blob.bin", "rb") as f:
     data = f.read()
 (list(data), len(data))
 ''').run(osHandler: handler);
   print('round-trip: ${r.value.dartValue}');
+  print('stored:     ${blob.content.bytes}');
 }
 
 // ── typed OS exceptions — Python catches the real class ──────────────────────
@@ -117,7 +118,7 @@ Future<void> _typedErrors() async {
       MountDir(virtualPath: '/data'),
       MountDir(virtualPath: '/ro', mode: MountMode.readOnly),
     ],
-    vfs: {'/ro/secret.txt': 'sk-123'},
+    files: [MontyMemoryFile('/ro/secret.txt', 'sk-123')],
   );
 
   // FileNotFoundError is now catchable in Python (was RuntimeError before).
@@ -156,7 +157,7 @@ Future<void> _fileHandleValue() async {
 
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
-    vfs: {'/data/poem.txt': 'hello'},
+    files: [MontyMemoryFile('/data/poem.txt', 'hello')],
   );
 
   final r = await Monty('open("/data/poem.txt")').run(osHandler: handler);

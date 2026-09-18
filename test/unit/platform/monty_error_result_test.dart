@@ -168,8 +168,9 @@ void main() {
         error: MontyException(message: 'boom'),
         usage: _zeroUsage,
       );
-      expect(r.toString(), contains('boom'));
-      expect(r.toString(), contains('error'));
+      final s = r.toString();
+      expect(s, contains('boom'));
+      expect(s, contains('error'));
     });
   });
 

@@ -7,6 +7,7 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runMontyCompileRunTests() {
   group('Monty(code).run', () {
@@ -48,7 +49,7 @@ void runMontyCompileRunTests() {
       final r = await program.run(
         inputs: {'value': 7},
         externalFunctions: {
-          'double': (args, _) async => (args[0]! as int) * 2,
+          'double': (args, _) => callbackArg<int>(args, 0) * 2,
         },
       );
       expect(r.error, isNull);

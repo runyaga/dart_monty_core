@@ -4,4 +4,4 @@ import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 
 /// Creates REPL bindings using the native FFI backend.
 ReplBindings createReplBindings() =>
-    FfiReplBindings(bindings: NativeBindingsFfi());
+    FfiReplBindings(bindings: const NativeBindingsFfi());

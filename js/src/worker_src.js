@@ -32,8 +32,20 @@ let wasm = null;
 async function initWasm() {
   const wasmUrl = new URL('./dart_monty_core_native.wasm', import.meta.url);
   wasm = await instantiateMonty(wasmUrl);
+  // Report the value-encoding wire format the wasm actually emits, so the Dart
+  // side can reject a STALE committed asset at init instead of mis-decoding
+  // values later. lib/assets/*.wasm is a committed build artefact and the build
+  // is not byte-reproducible, so `git diff` on the blob cannot detect staleness
+  // — this can. Absent on assets built before the symbol existed, which the
+  // Dart side treats as a mismatch rather than as "no opinion".
+  const wireFormatVersion =
+    typeof wasm.monty_wire_format_version === 'function'
+      ? wasm.monty_wire_format_version()
+      : null;
+
   self.postMessage({
     type: 'ready',
+    wireFormatVersion,
     exports: Object.keys(wasm).filter((k) => k.startsWith('monty_')),
   });
 }
@@ -80,11 +92,28 @@ function adaptResultForDart(cabiResultJson, isError) {
  */
 function excTypeFromMsg(msg) {
   if (!msg) return null;
+
+  // Most runtime errors are formatted as:
+  //   "NameError: name 'x' is not defined"
+  // but some code paths (notably NameLookup failures and certain reused-session
+  // paths) can emit just the message text without the "Type:" prefix.
+  //
+  // The conformance fixtures embed the traceback with a final line starting
+  // with "<TypeError>: ...". If we fail to extract a prefix, we still want to
+  // preserve the exception type for Dart's `excType` matching.
   const colon = msg.indexOf(':');
-  if (colon <= 0) return null;
-  const prefix = msg.substring(0, colon).trim();
-  // Sanity-check: exception type names are PascalCase identifiers.
-  return /^[A-Z][A-Za-z]+$/.test(prefix) ? prefix : null;
+  if (colon > 0) {
+    const prefix = msg.substring(0, colon).trim();
+    if (/^[A-Z][A-Za-z]+$/.test(prefix)) return prefix;
+  }
+
+  // Fallback: scan for a traceback final line containing "<ExcType>:".
+  // (both Monty and Python tracebacks end with a "<Type>: <message>" line)
+  const candidates = msg.match(/(^|\n)\s*([A-Z][A-Za-z]+):\s/gm);
+  if (!candidates) return null;
+  const last = candidates[candidates.length - 1];
+  const m = /([A-Z][A-Za-z]+):\s/.exec(last);
+  return m ? m[1] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +375,16 @@ function handleRun(id, code, limits, scriptName) {
       errorType: 'MontyException',
     });
   }
+}
+
+function handleIdle(id) {
+  // Abandon any active execution and return to IDLE without recycling
+  // the worker or wasm instance.
+  if (activeHandle) {
+    wasm.monty_free(activeHandle);
+    activeHandle = null;
+  }
+  self.postMessage({ type: 'result', id, ok: true });
 }
 
 function handleStart(id, code, extFns, limits, scriptName) {
@@ -756,11 +795,16 @@ function handleSnapshot(id) {
   }
 
   const outLen = allocOutPtr();
+  // monty_snapshot now carries its reason. It used to return a bare NULL and
+  // this handler invented "monty_snapshot returned null" -- a guess, made one
+  // frame above the code that knew the answer.
+  const outError = allocOutPtr();
   let ptr;
   try {
-    ptr = wasm.monty_snapshot(activeHandle, outLen.ptr);
+    ptr = wasm.monty_snapshot(activeHandle, outLen.ptr, outError.ptr);
   } catch (e) {
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
       error: e.message || String(e),
@@ -770,10 +814,12 @@ function handleSnapshot(id) {
   }
 
   if (ptr === 0) {
+    const errMsg = readAndFreeCString(outError.read());
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
-      error: 'monty_snapshot returned null',
+      error: errMsg || 'monty_snapshot returned null without a reason',
       errorType: 'StateError',
     });
     return;
@@ -781,6 +827,7 @@ function handleSnapshot(id) {
 
   const len = outLen.read();
   outLen.free();
+  outError.free();
 
   // Copy bytes out of WASM memory before freeing.
   // try/finally ensures WASM buffer is freed even if slice() OOMs.
@@ -890,12 +937,18 @@ function handleCompile(id, code, scriptName) {
 
   // Snapshot the compiled (pre-execution) handle — captures bytecode only.
   // Does NOT set activeHandle; handle is freed after snapshotting.
+  //
+  // REUSES the `outError` binding from the create above, which was freed on the
+  // line before. A second `const outError` here is a redeclaration in the same
+  // scope -- esbuild rejects it outright, which is how this was caught.
   const outLen = allocOutPtr();
+  outError = allocOutPtr();
   let ptr;
   try {
-    ptr = wasm.monty_snapshot(handle, outLen.ptr);
+    ptr = wasm.monty_snapshot(handle, outLen.ptr, outError.ptr);
   } catch (e) {
     outLen.free();
+    outError.free();
     wasm.monty_free(handle);
     self.postMessage({
       type: 'result', id, ok: false,
@@ -907,10 +960,12 @@ function handleCompile(id, code, scriptName) {
   wasm.monty_free(handle);
 
   if (ptr === 0) {
+    const errMsg = readAndFreeCString(outError.read());
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
-      error: 'monty_snapshot returned null after compile',
+      error: errMsg || 'monty_snapshot returned null after compile, without a reason',
       errorType: 'StateError',
     });
     return;
@@ -918,6 +973,7 @@ function handleCompile(id, code, scriptName) {
 
   const len = outLen.read();
   outLen.free();
+  outError.free();
 
   const wasmBytes = new Uint8Array(wasm.memory.buffer, ptr, len);
   let copy;
@@ -1587,11 +1643,13 @@ function handleReplSnapshot(id, replId) {
   }
 
   const outLen = allocOutPtr();
+  const outError = allocOutPtr();
   let ptr;
   try {
-    ptr = wasm.monty_repl_snapshot(handle, outLen.ptr);
+    ptr = wasm.monty_repl_snapshot(handle, outLen.ptr, outError.ptr);
   } catch (e) {
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
       error: e.message || String(e),
@@ -1601,10 +1659,18 @@ function handleReplSnapshot(id, replId) {
   }
 
   if (ptr === 0) {
+    // REPORTS THE REAL REASON. This branch used to GUESS — it said "REPL may
+    // be mid-execution" for every null, because the C boundary discarded the
+    // Rust error string. The Dart side invented the identical guess
+    // independently, and both outlived the bug they were masking: the true
+    // cause was a stubbed-out implementation. monty_repl_snapshot carries
+    // out_error now, the same way monty_create already did right above.
+    const errMsg = readAndFreeCString(outError.read());
     outLen.free();
+    outError.free();
     self.postMessage({
       type: 'result', id, ok: false,
-      error: 'monty_repl_snapshot returned null — REPL may be mid-execution',
+      error: errMsg || 'monty_repl_snapshot returned null without a reason',
       errorType: 'StateError',
     });
     return;
@@ -1612,6 +1678,11 @@ function handleReplSnapshot(id, replId) {
 
   const len = outLen.read();
   outLen.free();
+  // Freed on the SUCCESS path too. The first attempt at this change freed
+  // outError on both error paths and leaked it here — in a long-lived
+  // worker that snapshots repeatedly. Found by checking every free-site
+  // rather than assuming the paths were symmetric.
+  outError.free();
 
   const wasmBytes = new Uint8Array(wasm.memory.buffer, ptr, len);
   let copy;
@@ -1657,7 +1728,13 @@ function handleReplRestore(id, replId, dataBase64) {
 
   let handle;
   try {
-    handle = wasm.monty_repl_restore(ptr, bytes.length, outError.ptr);
+    // All five parameters are passed explicitly. A short call does NOT throw:
+    // JS pads missing wasm args with 0, so passing three would bind
+    // outError.ptr to the limits_json slot (an out-pointer read as a C string)
+    // and leave out_error NULL — a silent miscompile the linters cannot see.
+    // limits_json and ext_fns are NULL because WasmReplBindings.restore
+    // refuses both rather than dropping them; see wasm_repl_bindings.dart.
+    handle = wasm.monty_repl_restore(ptr, bytes.length, 0, 0, outError.ptr);
   } catch (e) {
     outError.free();
     throw e;
@@ -1738,6 +1815,9 @@ self.onmessage = (e) => {
         break;
       case 'dispose':
         handleDispose(id);
+        break;
+      case 'idle':
+        handleIdle(id);
         break;
       case 'typeCheck':
         handleTypeCheck(id, code, prefixCode, scriptName);

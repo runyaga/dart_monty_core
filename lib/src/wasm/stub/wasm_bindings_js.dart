@@ -1,0 +1,230 @@
+import 'dart:typed_data';
+
+import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
+
+/// VM stub for [WasmBindingsJs].
+///
+/// On non-web platforms `dart:js_interop` is unavailable, so this stub
+/// provides the same class name so that the conditional import in
+/// `monty_wasm.dart` compiles. The constructor throws immediately — tests
+/// always inject a mock, so this path is never reached.
+// ignore: number-of-methods — one method per WASM export; count is bounded by the JS bridge contract
+class WasmBindingsJs extends WasmBindings {
+  /// Throws [UnsupportedError] — only available on web.
+  WasmBindingsJs() {
+    throw UnsupportedError(
+      'WasmBindingsJs requires dart:js_interop (web only)',
+    );
+  }
+
+  @override
+  Future<bool> init() => throw UnimplementedError();
+
+  @override
+  Future<int> createSession() => throw UnimplementedError();
+
+  @override
+  Future<void> disposeSession(int sessionId) => throw UnimplementedError();
+
+  @override
+  Future<void> idleSession(int sessionId) => throw UnimplementedError();
+
+  @override
+  Future<WasmRunResult> run(
+    String code, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> start(
+    String code, {
+    String? extFnsJson,
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resume(
+    String valueJson, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeWithError(
+    String errorMessage, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeWithException(
+    String excType,
+    String errorMessage, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeNotFound(
+    String fnName, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeAsFuture({int? sessionId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resolveFutures(
+    String resultsJson,
+    String errorsJson, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> snapshot({int? sessionId}) => throw UnimplementedError();
+
+  @override
+  Future<void> restore(Uint8List data, {int? sessionId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Uint8List> compile(
+    String code, {
+    String? scriptName,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<String?> typeCheck(
+    String code, {
+    String? prefixCode,
+    String scriptName = 'main.py',
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmRunResult> runPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> startPrecompiled(
+    Uint8List compiled, {
+    String? limitsJson,
+    String? scriptName,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmDiscoverResult> discover() => throw UnimplementedError();
+
+  @override
+  Future<void> dispose({int? sessionId}) => throw UnimplementedError();
+
+  @override
+  Future<void> replCreate({
+    String? scriptName,
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> replFree({int? sessionId, String? replId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<WasmRunResult> replFeedRun(
+    String code, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<int> replDetectContinuation(String source, {int? sessionId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> replSetExtFns(
+    String extFns, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replFeedStart(
+    String code, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResume(
+    String valueJson, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResumeWithError(
+    String errorJson, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResumeWithException(
+    String excTypeJson,
+    String errorJson, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResumeNotFound(
+    String fnNameJson, {
+    int? sessionId,
+    String? replId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResumeAsFuture({
+    required String replId,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> replResolveFutures(
+    String resultsJson,
+    String errorsJson, {
+    required String replId,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupValue(
+    String valueJson, {
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<WasmProgressResult> resumeNameLookupUndefined({int? sessionId}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Uint8List> replSnapshot({
+    required String replId,
+    int? sessionId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> replRestore({
+    required String replId,
+    required Uint8List data,
+    int? sessionId,
+  }) => throw UnimplementedError();
+}

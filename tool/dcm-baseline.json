@@ -1,0 +1,13 @@
+{
+  "_dcm_version": "1.39.0",
+  "by_file": {
+    "lib/src/ffi/ffi_core_bindings.dart": 18,
+    "test/unit/ffi/ffi_wire_format_handshake_test.dart": 1
+  },
+  "by_rule": {
+    "member-ordering": 17,
+    "newline-before-return": 1,
+    "prefer-declaring-const-constructor": 1
+  },
+  "total": 19
+}

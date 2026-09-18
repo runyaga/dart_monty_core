@@ -7,6 +7,7 @@
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runPrintCallbackTests() {
   group('printCallback (batch)', () {
@@ -74,7 +75,7 @@ void runPrintCallbackTests() {
       final r = await Monty('print(double(value))').run(
         inputs: {'value': 21},
         externalFunctions: {
-          'double': (args, _) async => (args[0]! as int) * 2,
+          'double': (args, _) => callbackArg<int>(args, 0) * 2,
         },
         printCallback: (stream, text) => captured.add((stream, text)),
       );

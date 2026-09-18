@@ -1,11 +1,18 @@
-// 10 — Dataclasses: MontyDataclass + dartAttrs + hydrate
+// 10 — Class instances: MontyClassInstance + dartAttrs + hydrate
 //
-// Python `@dataclass` values cross the boundary as `MontyDataclass`. Dart
+// A host sends a dataclass IN as `MontyDataclass`, and it comes BACK as a
+// `MontyClassInstance`. That asymmetry is upstream's, not this binding's:
+// monty v0.0.23 deleted the wire `Dataclass` variant and represents every
+// instance as a `ClassInstance` (upstream cf8246d7). `frozen` and
+// `fieldNames` are therefore WRITE-ONLY — set them and they are consumed at
+// the boundary; nothing coming back carries them, because upstream has
+// nowhere to put them ("there is no frozen policy on the wire",
+// monty docs/limitations/classes.md:263-265). Dart
 // can read their fields directly, convert all attrs to plain Dart values
 // via `dartAttrs`, or hydrate into a user class with `hydrate(factory)`.
 //
-// Covers: MontyDataclass.name / attrs / fieldNames / frozen,
-//         MontyDataclass.dartAttrs, MontyDataclass.hydrate,
+// Covers: MontyClassInstance.name / attrs / classType,
+//         MontyClassInstance.dartAttrs, MontyClassInstance.hydrate,
 //         caller-side registry pattern for multiple types.
 //
 // Run: dart run example/10_dataclasses.dart
@@ -40,22 +47,27 @@ class Order {
   String toString() => 'Order(id=$id, total=$total)';
 }
 
-// ── Helper: build the dataclass JSON envelope returned from a Dart callback.
+// ── Helper: build the dataclass a Dart callback returns to Python.
 // ─────────────────────────────────────────────────────────────────────────────
+// Return the TYPE, not a hand-spelled `{'__type': 'dataclass', …}` map. Until
+// 0.19.0 such a map was honoured as the type it named, which is the same defect
+// as core#136 pointing from the host into the sandbox: any Map whose keys
+// happened to spell an envelope became that type. A Map is now a dict, so a
+// hand-built envelope reaches Python as a dict and your code stops working with
+// no error at the boundary. This example used to teach the old way.
 
-Map<String, Object?> _dataclass({
+MontyDataclass _dataclass({
   required String name,
   required int typeId,
-  required Map<String, Object?> attrs,
+  required Map<String, MontyValue> attrs,
   bool frozen = false,
-}) => {
-  '__type': 'dataclass',
-  'name': name,
-  'type_id': typeId,
-  'field_names': attrs.keys.toList(),
-  'attrs': attrs,
-  'frozen': frozen,
-};
+}) => MontyDataclass(
+  name: name,
+  typeId: typeId,
+  fieldNames: attrs.keys.toList(),
+  attrs: attrs,
+  frozen: frozen,
+);
 
 Future<void> main() async {
   await _readingFields();
@@ -63,8 +75,9 @@ Future<void> main() async {
   await _hydrateRegistry();
 }
 
-// ── Read fields directly off MontyDataclass ──────────────────────────────────
-// MontyDataclass exposes name, fieldNames, frozen, and the typed attrs map.
+// ── Read fields directly off MontyClassInstance ──────────────────────────────
+// MontyClassInstance exposes name, classType and the typed attrs map. It does
+// NOT expose fieldNames or frozen — see the header.
 // Use dartAttrs when you want a plain `Map<String, Object?>` instead of
 // `Map<String, MontyValue>`.
 Future<void> _readingFields() async {
@@ -75,18 +88,23 @@ Future<void> _readingFields() async {
       'make_user': (args, _) async => _dataclass(
         name: 'User',
         typeId: 1,
-        attrs: {'name': args[0]! as String, 'age': args[1]! as int},
+        attrs: {
+          'name': MontyString(args[0]! as String),
+          'age': MontyInt(args[1]! as int),
+        },
       ),
     },
   );
 
-  final dc = r.value as MontyDataclass;
-  print('name:       ${dc.name}'); // User
-  print('typeId:     ${dc.typeId}'); // 1
-  print('fields:     ${dc.fieldNames}'); // [name, age]
-  print('frozen:     ${dc.frozen}'); // false
-  print('attrs[name]: ${dc.attrs["name"]}'); // MontyString(alice)
-  print('dartAttrs:   ${dc.dartAttrs}'); // {name: alice, age: 30}
+  // A MontyClassInstance, not the MontyDataclass that was sent in.
+  final dc = r.value! as MontyClassInstance;
+  print('name:         ${dc.name}'); // User
+  print('class id:     ${dc.classType.id}'); // a stable uuid
+  print('isDataclass:  ${dc.isDataclass}'); // true — read from the CLASS
+  print('hostDefined:  ${dc.classType.hostDefined}'); // true
+  print('attrs[name]:  ${dc.attrs["name"]}'); // MontyString(alice)
+  print('dartAttrs:    ${dc.dartAttrs}'); // {name: alice, age: 30}
+  // fieldNames and frozen are NOT here, and cannot be: see the header.
 }
 
 // ── Hydrate into a user-supplied Dart class via a factory ────────────────────
@@ -100,12 +118,15 @@ Future<void> _hydrateOne() async {
       'make_user': (args, _) async => _dataclass(
         name: 'User',
         typeId: 1,
-        attrs: {'name': args[0]! as String, 'age': args[1]! as int},
+        attrs: {
+          'name': MontyString(args[0]! as String),
+          'age': MontyInt(args[1]! as int),
+        },
       ),
     },
   );
 
-  final dc = r.value as MontyDataclass;
+  final dc = r.value! as MontyClassInstance;
   final user = dc.hydrate(User.fromAttrs);
   print(user); // User(name=bob, age=42)
 }
@@ -124,16 +145,22 @@ Future<void> _hydrateRegistry() async {
   };
 
   Object? hydrate(MontyValue value) {
-    if (value is! MontyDataclass) return value;
+    if (value is! MontyClassInstance) return value;
     final factory = factories[value.name];
     return factory == null ? value : factory(value.dartAttrs);
   }
 
   final externalFunctions = <String, MontyCallback>{
-    'make_user': (_, _) async =>
-        _dataclass(name: 'User', typeId: 1, attrs: {'name': 'carol', 'age': 7}),
-    'make_order': (_, _) async =>
-        _dataclass(name: 'Order', typeId: 2, attrs: {'id': 99, 'total': 12.5}),
+    'make_user': (_, _) async => _dataclass(
+      name: 'User',
+      typeId: 1,
+      attrs: {'name': const MontyString('carol'), 'age': const MontyInt(7)},
+    ),
+    'make_order': (_, _) async => _dataclass(
+      name: 'Order',
+      typeId: 2,
+      attrs: {'id': const MontyInt(99), 'total': const MontyFloat(12.5)},
+    ),
   };
 
   final ru = await Monty(

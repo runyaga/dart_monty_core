@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use monty::{
-    ExtFunctionResult, FunctionCall, LimitedTracker, MontyException, MontyObject, MontyRun,
-    NameLookup, NameLookupResult, OsCall, PrintWriter, ResolveFutures, ResourceLimits, RunProgress,
+use monty::{FunctionCall, MontyRun, NameLookup, OsCall, ResolveFutures, RunProgress};
+use monty_types::{
+    ExtFunctionResult, MontyException, MontyObject, NameLookupResult, PrintWriter, ResourceLimits,
+    ResourceTracker,
 };
 use serde_json::Value;
 
@@ -15,7 +16,7 @@ use crate::error::monty_exception_to_json;
 // ---------------------------------------------------------------------------
 
 /// The concrete tracker type used for all execution. No variant doubling.
-type Tracker = LimitedTracker;
+type Tracker = ResourceTracker;
 
 /// Default resource limits when none are explicitly configured.
 ///
@@ -25,10 +26,22 @@ type Tracker = LimitedTracker;
 /// a default timeout actively harmful. Callers who need a time limit
 /// can set `MontyLimits(timeoutMs: N)` explicitly.
 fn default_limits() -> ResourceLimits {
-    let mut limits = ResourceLimits::new();
-    limits.max_memory = Some(256 * 1024 * 1024); // 256 MB
-    limits.max_recursion_depth = Some(1000);
-    limits
+    ResourceLimits {
+        max_memory: Some(256 * 1024 * 1024), // 256 MB
+        // 512, NOT CPython's 1000. Monty's recursion guard is a counter and
+        // reaching it costs real native stack. Upstream runs the engine in
+        // SUBPROCESS WORKERS with a full main-thread stack, so monty's own
+        // ResourceLimits::default() of 1000 is right for them; this binding
+        // runs it IN-PROCESS on a Dart isolate thread, where the stack
+        // overflows first and the HOST PROCESS DIES.
+        //
+        // Measured worst case (cyclic dict == dict): safe 534 / SIGSEGV 539.
+        // Must stay equal to Dart's BaseMontyPlatform.defaultStackDepth —
+        // ffi_repl_corpus_test.dart's `repl session limits match the one-shot
+        // defaults` guards that equality.
+        max_recursion_depth: 512,
+        ..Default::default()
+    }
 }
 
 /// Result tag for `monty_run` — matches `MontyResultTag` in the C header.
@@ -75,19 +88,19 @@ struct OsCallMeta {
 enum HandleState {
     Ready(MontyRun),
     Paused {
-        call: FunctionCall<Tracker>,
+        call: FunctionCall,
         meta: PendingMeta,
     },
     OsCall {
-        call: OsCall<Tracker>,
+        call: OsCall,
         meta: OsCallMeta,
     },
     Futures {
-        futures: ResolveFutures<Tracker>,
+        futures: ResolveFutures,
         call_ids_json: String,
     },
     NameLookup {
-        lookup: NameLookup<Tracker>,
+        lookup: NameLookup,
         name: String,
     },
     Complete {
@@ -123,7 +136,7 @@ impl MontyHandle {
         script_name: Option<String>,
     ) -> Result<Self, MontyException> {
         let name = script_name.unwrap_or_else(|| "<input>".into());
-        let compiled = MontyRun::new(code, &name, vec![])?;
+        let compiled = MontyRun::new(code, &name, vec![], crate::convert::compile_options())?;
 
         Ok(Self {
             state: HandleState::Ready(compiled),
@@ -149,7 +162,11 @@ impl MontyHandle {
         let mut buf = String::new();
         let limits = self.limits.clone().unwrap_or_else(default_limits);
         let tracker = Tracker::new(limits);
-        let result = compiled.run(vec![], tracker, PrintWriter::CollectString(&mut buf));
+        let result = compiled.run(
+            vec![],
+            tracker,
+            PrintWriter::CollectString(&mut buf, crate::convert::PRINT_COLLECT_LIMIT),
+        );
 
         self.print_output.push_str(&buf);
 
@@ -204,7 +221,13 @@ impl MontyHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
         let result = ExtFunctionResult::Return(obj);
         self.resume_with_result(result)
     }
@@ -212,7 +235,7 @@ impl MontyHandle {
     /// Resume with an error message.
     pub fn resume_with_error(&mut self, error_message: &str) -> (MontyProgressTag, Option<String>) {
         let exc = MontyException::new(
-            monty::ExcType::RuntimeError,
+            monty_types::ExcType::RuntimeError,
             Some(error_message.to_string()),
         );
         let result = ExtFunctionResult::Error(exc);
@@ -229,8 +252,8 @@ impl MontyHandle {
         error_message: &str,
     ) -> (MontyProgressTag, Option<String>) {
         let exc_kind = exc_type
-            .parse::<monty::ExcType>()
-            .unwrap_or(monty::ExcType::RuntimeError);
+            .parse::<monty_types::ExcType>()
+            .unwrap_or(monty_types::ExcType::RuntimeError);
         let exc = MontyException::new(exc_kind, Some(error_message.to_string()));
         let result = ExtFunctionResult::Error(exc);
         self.resume_with_result(result)
@@ -318,7 +341,10 @@ impl MontyHandle {
                     );
                 }
             };
-            let obj = json_to_monty_object(val);
+            let obj = match json_to_monty_object(val) {
+                Ok(o) => o,
+                Err(e) => return (MontyProgressTag::Error, Some(e)),
+            };
             ext_results.push((call_id, ExtFunctionResult::Return(obj)));
         }
 
@@ -333,7 +359,7 @@ impl MontyHandle {
                 }
             };
             let msg = val.as_str().unwrap_or("unknown error").to_string();
-            let exc = MontyException::new(monty::ExcType::RuntimeError, Some(msg));
+            let exc = MontyException::new(monty_types::ExcType::RuntimeError, Some(msg));
             ext_results.push((call_id, ExtFunctionResult::Error(exc)));
         }
 
@@ -418,7 +444,13 @@ impl MontyHandle {
             Ok(v) => v,
             Err(e) => return (MontyProgressTag::Error, Some(format!("invalid JSON: {e}"))),
         };
-        let obj = json_to_monty_object(&val);
+        let obj = match json_to_monty_object(&val) {
+            Ok(o) => o,
+            // A protocol violation in a host-supplied resume value is reported
+            // on the channel this function already has, not guessed at. Before
+            // wire format v2 an untagged object silently became a dict.
+            Err(e) => return (MontyProgressTag::Error, Some(e)),
+        };
         let state = std::mem::replace(&mut self.state, HandleState::Consumed);
         match state {
             HandleState::NameLookup { lookup, .. } => {
@@ -501,55 +533,77 @@ impl MontyHandle {
         }
     }
 
-    /// Serialize the compiled code to bytes (snapshot).
+    /// Snapshot is NOT SUPPORTED for the one-shot handle — and the reason
+    /// recorded here until 2026-09-14 was FALSE.
+    ///
+    /// It said "monty v0.0.23 moved snapshotting behind a non-public API.
+    /// Until monty exposes a stable dump/load surface...". That is wrong:
+    /// `dump`, `Dump`, `DumpError`, `Session` and `SessionRef` are all
+    /// publicly re-exported from monty's crate root (lib.rs:46-47), upstream
+    /// tests them (crates/monty/tests/repl.rs:48-70), and MontyReplHandle now
+    /// uses them. The same false claim blocked the REPL path for a release.
+    ///
+    /// THE REAL REASON, which is about SHAPE, not availability:
+    /// `SessionRef` has three variants — `Idle(&MontyRepl)`,
+    /// `Suspended(&ReplProgress)` and `Running(&RunProgress)`
+    /// (dump_format.rs). There is NO variant for a bare `MontyRun`, which is
+    /// what `HandleState::Ready` holds, so an un-started one-shot has nothing
+    /// to hand `dump`. And the paused states here destructure `RunProgress`
+    /// into `FunctionCall` / `OsCall` / `ResolveFutures` / `NameLookup`, so
+    /// they cannot supply the `&RunProgress` that `Running` wants either.
+    ///
+    /// Supporting it means keeping the whole `RunProgress` instead of its
+    /// parts — a real change to this state machine, not a missing API. Until
+    /// then this refuses, and says why.
     pub fn snapshot(&self) -> Result<Vec<u8>, String> {
-        match &self.state {
-            HandleState::Ready(compiled) => {
-                compiled.dump().map_err(|e| format!("snapshot failed: {e}"))
-            }
-            _ => Err("can only snapshot in Ready state".into()),
-        }
+        Err(
+            "snapshot is not supported on the one-shot handle: monty's SessionRef has no \
+             variant for an un-started MontyRun, and this handle destructures RunProgress \
+             into its parts so it cannot supply SessionRef::Running either. Use MontyRepl, \
+             which snapshots via SessionRef::Idle."
+                .into(),
+        )
     }
 
-    /// Restore a handle from serialized bytes.
-    pub fn restore(bytes: &[u8]) -> Result<Self, String> {
-        let compiled = MontyRun::load(bytes).map_err(|e| format!("restore failed: {e}"))?;
-
-        Ok(Self {
-            state: HandleState::Ready(compiled),
-            limits: None,
-            ext_fn_names: HashSet::new(),
-            usage_json: default_usage_json(),
-            print_output: String::new(),
-        })
+    /// Restore is NOT SUPPORTED here, for the same shape reason as
+    /// [`Self::snapshot`] — not because upstream lacks the API.
+    pub fn restore(_bytes: &[u8]) -> Result<Self, String> {
+        Err(
+            "restore is not supported on the one-shot handle; see snapshot() for why. \
+             Use MontyRepl::restore."
+                .into(),
+        )
     }
 
     /// Set memory limit in bytes.
     pub fn set_memory_limit(&mut self, bytes: usize) {
-        let limits = self.limits.get_or_insert_with(ResourceLimits::new);
+        let limits = self.limits.get_or_insert_with(ResourceLimits::default);
         limits.max_memory = Some(bytes);
     }
 
     /// Set time limit in milliseconds.
     pub fn set_time_limit_ms(&mut self, ms: u64) {
-        let limits = self.limits.get_or_insert_with(ResourceLimits::new);
+        let limits = self.limits.get_or_insert_with(ResourceLimits::default);
         limits.max_duration = Some(Duration::from_millis(ms));
     }
 
     /// Set stack depth limit.
     pub fn set_stack_limit(&mut self, depth: usize) {
-        let limits = self.limits.get_or_insert_with(ResourceLimits::new);
-        limits.max_recursion_depth = Some(depth);
+        let limits = self.limits.get_or_insert_with(ResourceLimits::default);
+        limits.max_recursion_depth = depth;
     }
 
     // --- private helpers ---
 
     fn run_snapshot_op(
         &mut self,
-        f: impl FnOnce(PrintWriter) -> Result<RunProgress<Tracker>, MontyException>,
+        f: impl FnOnce(PrintWriter) -> Result<RunProgress, MontyException>,
     ) -> (MontyProgressTag, Option<String>) {
         let mut buf = String::new();
-        let result = f(PrintWriter::CollectString(&mut buf));
+        let result = f(PrintWriter::CollectString(
+            &mut buf,
+            crate::convert::PRINT_COLLECT_LIMIT,
+        ));
         self.print_output.push_str(&buf);
         match result {
             Ok(progress) => self.process_progress(progress),
@@ -582,7 +636,7 @@ impl MontyHandle {
 
     fn process_progress(
         &mut self,
-        mut progress: RunProgress<Tracker>,
+        mut progress: RunProgress,
     ) -> (MontyProgressTag, Option<String>) {
         loop {
             match progress {
@@ -602,7 +656,7 @@ impl MontyHandle {
                         &call.args,
                         &call.kwargs,
                         call.call_id,
-                        call.method_call,
+                        call.object_id.is_some(),
                     );
                     self.state = HandleState::Paused { call, meta };
                     return (MontyProgressTag::Pending, None);
@@ -626,7 +680,10 @@ impl MontyHandle {
                                 name,
                                 docstring: None,
                             }),
-                            PrintWriter::CollectString(&mut buf),
+                            PrintWriter::CollectString(
+                                &mut buf,
+                                crate::convert::PRINT_COLLECT_LIMIT,
+                            ),
                         );
                         self.print_output.push_str(&buf);
                         match result {
@@ -639,10 +696,17 @@ impl MontyHandle {
                         return (MontyProgressTag::NameLookup, None);
                     }
                 }
-                RunProgress::OsCall(mut call) => {
+                RunProgress::OsCall(call) => {
                     let os_fn_name = call.function_call.name().to_string();
                     let call_id = call.call_id;
-                    let (args, kwargs) = call.take_function_call().to_args();
+                    // #583 removed `take_function_call()`: the OS-call payload is now RETAINED in the
+                    // suspended state instead of being moved out (the `OsFunctionCall::Used`
+                    // placeholder is gone). We read a clone here because the payload is needed
+                    // NOW, to build the metadata handed to Dart, while the resume happens in a
+                    // LATER FFI call — so upstream's `resume_with(.., FnOnce(OsFunctionCall))`,
+                    // which supplies the payload at resume time, does not fit this flow. The
+                    // original stays intact for the eventual `resume()`.
+                    let (args, kwargs) = call.function_call.clone().to_args();
                     let meta = OsCallMeta {
                         os_fn_name,
                         args_json: serde_json::to_string(
@@ -694,8 +758,8 @@ impl MontyHandle {
 /// Build a `PendingMeta` from a `FunctionCall` variant's fields.
 fn build_pending_meta(
     function_name: String,
-    args: &[monty::MontyObject],
-    kwargs: &[(monty::MontyObject, monty::MontyObject)],
+    args: &[monty_types::MontyObject],
+    kwargs: &[(monty_types::MontyObject, monty_types::MontyObject)],
     call_id: u32,
     method_call: bool,
 ) -> PendingMeta {
@@ -709,7 +773,7 @@ fn build_pending_meta(
         let map: serde_json::Map<String, Value> = kwargs
             .iter()
             .map(|(k, v)| {
-                let key = if let monty::MontyObject::String(s) = k {
+                let key = if let monty_types::MontyObject::String(s) = k {
                     s.clone()
                 } else {
                     format!("{k}")
@@ -729,6 +793,22 @@ fn build_pending_meta(
     }
 }
 
+/// The ONE-SHOT path still reports zeros, and it is not an oversight.
+///
+/// The REPL path reports a real `time_elapsed_ms` (repl_handle.rs), which makes
+/// the two asymmetric. Closing that gap here is NOT currently possible:
+/// `compiled.run(vec![], tracker, ...)` at :165-169 moves the tracker BY VALUE
+/// into monty, and `RunProgress::Complete(obj)` (monty/src/run_progress.rs:36-47)
+/// hands back only the object. There is no path from a completed one-shot run
+/// to its tracker in v0.0.23.
+///
+/// The available workaround -- wrapping the call in `Instant::now()` -- is
+/// deliberately NOT taken. That measures WALL time including host callbacks,
+/// while `ResourceTracker::elapsed()` measures interpreter time excluding them
+/// (monty-types/src/resource.rs:246-247). Reporting two different quantities
+/// under one field name is worse than reporting zero for one of them.
+///
+/// Tracked in core#155.
 fn default_usage_json() -> String {
     r#"{"memory_bytes_used":0,"time_elapsed_ms":0,"stack_depth_used":0}"#.into()
 }
@@ -817,6 +897,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "the one-shot handle cannot snapshot: SessionRef has no variant for an un-started MontyRun, and this handle destructures RunProgress. NOT an upstream API gap — see snapshot()."]
     fn test_snapshot_restore() {
         let handle = MontyHandle::new("2 + 2".into(), vec![], None).unwrap();
         let bytes = handle.snapshot().unwrap();
@@ -963,7 +1044,7 @@ result
         let (tag, err) = handle.start();
         assert_eq!(tag, MontyProgressTag::Error);
         assert!(err.is_some());
-        assert!(handle.complete_is_error() == Some(true));
+        assert_eq!(handle.complete_is_error(), Some(true));
     }
 
     #[test]
@@ -1221,6 +1302,71 @@ result
     }
 
     // --- Accessor tests ---
+
+    /// core#130: the OS-call kwargs branch was entirely uncovered. Mutating it
+    /// to always emit `"{}"` — i.e. silently dropping every keyword argument on
+    /// the way to an OS handler — left all 193 Rust tests green, because
+    /// `handle.rs` had NO OS-call tests at all and `os_call_kwargs_json()` was a
+    /// public accessor nothing called.
+    ///
+    /// `Path.mkdir(parents=..., exist_ok=...)` is dispatched as an OS call and
+    /// carries its flags as keyword arguments, so it reaches the branch.
+    #[test]
+    fn os_call_kwargs_are_actually_serialized() {
+        let code = "from pathlib import Path\nPath('/tmp/x').mkdir(parents=True, exist_ok=True)";
+        let mut handle = MontyHandle::new(code.into(), vec![], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(
+            tag,
+            MontyProgressTag::OsCall,
+            "mkdir must suspend as an OS call"
+        );
+        assert_eq!(handle.os_call_fn_name(), Some("Path.mkdir"));
+
+        let raw = handle
+            .os_call_kwargs_json()
+            .expect("an OS call must expose its kwargs");
+        let parsed: Value = serde_json::from_str(raw).expect("kwargs must be valid JSON");
+
+        assert_eq!(
+            parsed["parents"], true,
+            "keyword argument `parents` was dropped: got {raw}"
+        );
+        assert_eq!(
+            parsed["exist_ok"], true,
+            "keyword argument `exist_ok` was dropped: got {raw}"
+        );
+    }
+
+    /// core#130: the kwargs `else` branch — the one that actually SERIALIZES
+    /// keyword arguments — had no test. `test_pending_kwargs_empty` only covers
+    /// the `kwargs.is_empty()` arm, so replacing the whole expression with
+    /// `"{}"` (i.e. silently dropping every keyword argument passed from Python
+    /// to a host function) left the suite green.
+    ///
+    /// This is that mutation's red test.
+    #[test]
+    fn pending_kwargs_are_actually_serialized() {
+        let code = "result = ext_fn(1, k=2, name='x')\nresult";
+        let mut handle = MontyHandle::new(code.into(), vec!["ext_fn".into()], None).unwrap();
+        let (tag, _) = handle.start();
+        assert_eq!(tag, MontyProgressTag::Pending);
+
+        let raw = handle
+            .pending_fn_kwargs_json()
+            .expect("paused call must expose kwargs");
+        let parsed: Value = serde_json::from_str(raw).expect("kwargs must be valid JSON");
+
+        assert_eq!(
+            parsed["k"], 2,
+            "keyword argument `k` was dropped: got {raw}"
+        );
+        assert_eq!(
+            parsed["name"], "x",
+            "keyword argument `name` was dropped: got {raw}"
+        );
+        assert_ne!(raw, "{}", "kwargs collapsed to empty: got {raw}");
+    }
 
     #[test]
     fn test_pending_kwargs_empty() {

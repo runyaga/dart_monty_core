@@ -18,13 +18,15 @@ library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/monty_ffi.dart';
+import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
 
-import '_fixture_corpus.dart';
 import '_oracle_runner.dart';
 
+// with__cm_behaviors.py is deliberately absent: it does not exist in the 0.19
+// corpus. `fixtureCorpus[name]!` on a missing key is a null-check crash, which
+// is what made this file red all session (B3).
 const _fixtureNames = [
-  'with__cm_behaviors.py',
   'with__cm_context_expr_raises_traceback.py',
   'with__cm_enter_raises_traceback.py',
   'with__cm_exit_raises_normal_exit_traceback.py',
@@ -33,7 +35,11 @@ const _fixtureNames = [
 ];
 
 void main() {
-  group('with__cm (test-hooks)', () {
+  // NOT '(test-hooks)' any more. The name outlived the requirement, and a
+  // test named for a build it does not need is how this suite got excluded
+  // from CI and tool/gate.sh in the first place — for five tests that pass on
+  // a stock build.
+  group('with__cm', () {
     for (final name in _fixtureNames) {
       test(name, () async {
         final code = fixtureCorpus[name]!;
@@ -54,32 +60,36 @@ void main() {
           await platform.dispose();
         }
 
-        // `_test_cm` must have resolved on both sides — a NameError here means
-        // the binary was built without test-hooks (run via tool/test_cm.sh).
-        expect(
-          oracleResult.error?.excType,
-          isNot('NameError'),
-          reason:
-              '$name: oracle hit NameError — build with --features test-hooks '
-              '(use tool/test_cm.sh)',
-        );
-        expect(
-          ffiExcType,
-          isNot('NameError'),
-          reason:
-              '$name: FFI hit NameError — set DART_MONTY_TEST_HOOKS=1 and '
-              'rebuild (use tool/test_cm.sh)',
-        );
+        // TWO `isNot('NameError')` guards stood here and are GONE. They
+        // checked that `_test_cm` had resolved on both sides, because a
+        // NameError meant the binary lacked --features test-hooks.
+        //
+        // `_test_cm` does not exist in monty v0.0.23 — `grep -rn "_test_cm"
+        // crates/monty/src/` at the pinned rev 302e0f2 returns 0 hits, and
+        // these fixtures use an ordinary Python `class CM:`. So nothing can
+        // raise that NameError any more and neither guard could ever fail
+        // again: a guard that cannot fail is not a guard, it is decoration
+        // that reads like one. Their `reason` strings were worse than useless
+        // — they told a reader to run tool/test_cm.sh, which touches
+        // native/.test-hooks and rebuilds the dylib with a feature that is
+        // NEVER shipped.
+        //
+        // The differential below is the real contract and is untouched.
 
         // Oracle and FFI must agree (same conformance contract as oracle_ffi).
-        if (oracleResult.error != null) {
+        final oracleErr = oracleResult.error;
+        if (oracleErr != null) {
           expect(
             ffiExcType,
-            equals(oracleResult.error!.excType),
+            equals(oracleErr.excType),
             reason: 'excType mismatch for $name',
           );
         } else {
-          expect(ffiResult?.error, isNull, reason: 'unexpected error in $name');
+          expect(
+            ffiResult?.error,
+            isNull,
+            reason: describeFixtureFailure(name, ffiResult?.error),
+          );
           expect(
             ffiResult?.value,
             equals(oracleResult.value),

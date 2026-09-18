@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
@@ -12,35 +12,45 @@ import 'package:dart_monty_core/src/platform/monty_result.dart';
 import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
 import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:meta/meta.dart';
 
 typedef _ErrorInfo = ({
   String message,
   String? excType,
-  List<dynamic>? traceback,
+  List<Object?>? traceback,
   String? filename,
   int? lineNumber,
   int? columnNumber,
   String? sourceCode,
 });
 
-List<MontyStackFrame> _parseTraceback(List<dynamic>? traceback) {
+List<MontyStackFrame> _parseTraceback(List<Object?>? traceback) {
   if (traceback == null) return const [];
 
   return MontyStackFrame.listFromJson(traceback);
 }
 
-List<MontyValue> _parseArgList(List<dynamic>? args) =>
+List<MontyValue> _parseArgList(List<Object?>? args) =>
     args != null ? args.map(MontyValue.fromJson).toList() : const [];
 
 Map<String, MontyValue>? _parseKwargMap(Map<String, dynamic>? kwargs) =>
     kwargs?.map((k, v) => MapEntry(k, MontyValue.fromJson(v)));
 
-String _encodeLimitsJson(MontyLimits? limits) {
+/// Encodes [limits] as the JSON the native and web backends both accept.
+///
+/// Shared with `MontyRepl`, which applies limits at session creation, so the
+/// two paths cannot disagree about the shape.
+String encodeLimitsJson(MontyLimits? limits) {
+  final timeoutMs = limits?.timeoutMs;
+
   return json.encode({
     'memory_bytes': limits?.memoryBytes ?? BaseMontyPlatform.defaultMemoryBytes,
     'stack_depth': limits?.stackDepth ?? BaseMontyPlatform.defaultStackDepth,
-    if (limits?.timeoutMs != null) 'timeout_ms': limits!.timeoutMs,
+    // WAS `if (limits?.timeoutMs != null) 'timeout_ms': limits!.timeoutMs`.
+    // The condition does not promote `limits`, which is why the assertion was
+    // there. The null-aware element says the same thing with neither.
+    'timeout_ms': ?timeoutMs,
   });
 }
 
@@ -72,8 +82,44 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   /// Default memory limit: 256 MB.
   static const int defaultMemoryBytes = 256 * 1024 * 1024;
 
-  /// Default stack depth limit: 1000 (matches CPython).
-  static const int defaultStackDepth = 1000;
+  /// Default recursion limit, applied whenever a caller omits `stackDepth`.
+  ///
+  /// NOT CPython's 1000, and the difference is physical rather than stylistic.
+  /// Monty's recursion guard is a COUNTER: it raises `RecursionError` after N
+  /// nested frames. Reaching N costs real native stack, and this binding runs
+  /// the engine IN-PROCESS — an FFI call on a Dart isolate thread, or a wasm32
+  /// stack living in linear memory — where upstream runs it in SUBPROCESS
+  /// WORKERS with a full main-thread stack. Set this deeper than the stack can
+  /// sustain and the stack overflows BEFORE the counter trips:
+  ///
+  ///     FFI    SIGSEGV — the HOST PROCESS DIES, nothing to catch
+  ///     WASM   the module traps (contained, but still a failure)
+  ///
+  /// This was 1000, "matches CPython", and that is what made five corpus
+  /// fixtures kill the host for months — they were quarantined as upstream
+  /// monty bugs. They are not: `pydantic-monty 0.0.23`, the tag
+  /// native/Cargo.toml pins, raises RecursionError on the same scripts and its
+  /// parent survives. monty's own `ResourceLimits::default()` is also 1000
+  /// (monty-types/src/resource.rs:105) — correct for a subprocess embedding,
+  /// fatal for an in-process one.
+  ///
+  /// MEASURED by bisecting each recursion shape's crash point, monty v0.0.23,
+  /// linux/arm64 (`safe / crash`):
+  ///
+  ///     cyclic dict == dict     534 / 539   <-- worst case, sets this bound
+  ///     cyclic deque == deque   765 / 781
+  ///     cyclic list, deep repr, deep hash, heavy Python frames   >= 765
+  ///
+  /// Cost per frame is NOT uniform — a cyclic dict comparison burns far more
+  /// native stack per level than a Python call frame — so the bound is the
+  /// minimum across shapes, not the typical one. `ulimit -s` does not help:
+  /// 8MB, 64MB and unlimited all segfault identically, because an isolate
+  /// thread's stack is fixed at thread creation, not by the process rlimit.
+  ///
+  /// All three backends agree at 512 and all three fail at 1000. Guarded by
+  /// test/integration/ffi_recursion_ceiling_test.dart and its wasm_ twin,
+  /// which re-measure rather than trusting these numbers.
+  static const int defaultStackDepth = 512;
 
   final MontyCoreBindings _bindings;
 
@@ -102,7 +148,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final result = await _bindings.run(
         code,
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -127,7 +173,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       final progress = await _bindings.start(
         code,
         extFnsJson: _encodeExternalFunctionsJson(externalFunctions),
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -143,7 +189,9 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertNotDisposed('resume');
     assertActive('resume');
     try {
-      final progress = await _bindings.resume(json.encode(returnValue));
+      final progress = await _bindings.resume(
+        WireJson.value(returnValue),
+      );
 
       return translateProgress(progress);
     } catch (e) {
@@ -248,7 +296,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final result = await _bindings.runPrecompiled(
         compiled,
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -271,7 +319,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       await _ensureInitialized();
       final progress = await _bindings.startPrecompiled(
         compiled,
-        limitsJson: _encodeLimitsJson(limits),
+        limitsJson: encodeLimitsJson(limits),
         scriptName: scriptName,
       );
 
@@ -340,7 +388,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
     assertActive('resumeNameLookup');
     try {
       final progress = await _bindings.resumeNameLookupValue(
-        json.encode(value),
+        WireJson.value(value),
       );
 
       return translateProgress(progress);
@@ -397,7 +445,7 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   MontyException? _buildError(
     String? error,
     String? excType,
-    List<dynamic>? traceback,
+    List<Object?>? traceback,
   ) {
     if (error == null) return null;
 

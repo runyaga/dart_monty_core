@@ -10,8 +10,10 @@
 
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
+import '../_accessors.dart';
 
 void runRunAsyncMatrixTests() {
   group('Monty(code).run async/sync matrix', () {
@@ -23,7 +25,7 @@ void runRunAsyncMatrixTests() {
           'fetch': (args, _) {
             calls++;
 
-            return Future.value((args[0]! as int) + 1);
+            return Future.value(callbackArg<int>(args, 0) + 1);
           },
         },
       );
@@ -42,7 +44,7 @@ void runRunAsyncMatrixTests() {
             calls++;
             await Future<void>.delayed(Duration.zero);
 
-            return (args[0]! as int) + 1;
+            return callbackArg<int>(args, 0) + 1;
           },
         },
       );
@@ -65,7 +67,7 @@ await doubled(3)
               'fetch': (args, _) {
                 calls++;
 
-                return Future.value(args[0]);
+                return Future.value(args.firstOrNull);
               },
             },
           );
@@ -89,7 +91,7 @@ await doubled(3)
                 calls++;
                 await Future<void>.delayed(Duration.zero);
 
-                return args[0];
+                return args.firstOrNull;
               },
             },
           );
@@ -111,7 +113,7 @@ await doubled(3)
               calls++;
               await Future<void>.delayed(Duration.zero);
 
-              return 'value-for-${args[0]}';
+              return 'value-for-${args.firstOrNull}';
             },
           },
         );
@@ -134,7 +136,7 @@ results
 ''').run(
               externalAsyncFunctions: {
                 'fetch': (args, _) async {
-                  final n = args[0]! as int;
+                  final n = callbackArg<int>(args, 0);
                   fired.add(n);
                   await Future<void>.delayed(Duration.zero);
 
@@ -155,7 +157,9 @@ results
       'externalFunctions (sync): Python `await ext()` still raises TypeError',
       () async {
         final r = await Monty('await fetch(1)').run(
-          externalFunctions: {'fetch': (args, _) => Future.value(args[0])},
+          externalFunctions: {
+            'fetch': (args, _) => Future.value(args.firstOrNull),
+          },
         );
 
         expect(r.error, isNotNull);
@@ -178,7 +182,7 @@ result
                 'fetch': (args, _) async {
                   await Future<void>.delayed(Duration.zero);
 
-                  return 'hello, ${args[0]}';
+                  return 'hello, ${args.firstOrNull}';
                 },
               },
             );

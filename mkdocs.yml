@@ -61,3 +61,5 @@ nav:
   - Overview: index.md
   - Changelog: changelog.md
   - Build & Contribute: agents.md
+  - Testing runbook: testing-runbook.md
+  - Testing philosophy: testing-philosophy.md

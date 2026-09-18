@@ -1,8 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
 /// Error type string sent by the Worker when a Rust panic occurs.
@@ -27,6 +28,9 @@ class WasmCoreBindings implements MontyCoreBindings {
   /// Creates a [WasmCoreBindings] backed by [bindings].
   WasmCoreBindings({required WasmBindings bindings}) : _bindings = bindings;
 
+  /// The JS bridge session ID, or null before [init] runs.
+  int? get sessionId => _sessionId;
+
   final WasmBindings _bindings;
   int? _sessionId;
 
@@ -44,6 +48,7 @@ class WasmCoreBindings implements MontyCoreBindings {
     String? limitsJson,
     String? scriptName,
   }) async {
+    await init();
     final sw = Stopwatch()..start();
     final result = await _bindings.run(
       code,
@@ -63,6 +68,7 @@ class WasmCoreBindings implements MontyCoreBindings {
     String? limitsJson,
     String? scriptName,
   }) async {
+    await init();
     final sw = Stopwatch()..start();
     final progress = await _bindings.start(
       code,
@@ -77,9 +83,13 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
+    await init();
     final sw = Stopwatch()..start();
-    final progress = await _bindings.resume(valueJson, sessionId: _sessionId);
+    final progress = await _bindings.resume(
+      value.encoded,
+      sessionId: _sessionId,
+    );
     sw.stop();
 
     return _translateProgressResult(progress, sw.elapsedMilliseconds);
@@ -136,13 +146,13 @@ class WasmCoreBindings implements MontyCoreBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     final sw = Stopwatch()..start();
     final progress = await _bindings.resolveFutures(
-      resultsJson,
-      errorsJson,
+      results.encoded,
+      errors.encoded,
       sessionId: _sessionId,
     );
     sw.stop();
@@ -217,17 +227,21 @@ class WasmCoreBindings implements MontyCoreBindings {
 
   @override
   Future<void> dispose() async {
-    if (_sessionId != null) {
-      await _bindings.disposeSession(_sessionId!);
+    // Read the field ONCE into a local. `_sessionId` is mutable, so the
+    // null-check could not promote it and the call needed `_sessionId!`; a
+    // local also cannot be reassigned out from under the dispose call.
+    final openSession = _sessionId;
+    if (openSession != null) {
+      await _bindings.disposeSession(openSession);
       _sessionId = null;
     }
   }
 
   @override
-  Future<CoreProgressResult> resumeNameLookupValue(String valueJson) async {
+  Future<CoreProgressResult> resumeNameLookupValue(WireJson value) async {
     final sw = Stopwatch()..start();
     final progress = await _bindings.resumeNameLookupValue(
-      valueJson,
+      value.encoded,
       sessionId: _sessionId,
     );
     sw.stop();
@@ -255,7 +269,16 @@ class WasmCoreBindings implements MontyCoreBindings {
   /// The Worker is likely dead, so we null [_sessionId] so that [init] can
   /// spawn a fresh one.
   void _invalidateSession() {
+    // Ensure the poisoned Worker/WASM instance is actually terminated.
+    // The JS bridge keeps sessions alive until explicitly disposed; simply
+    // nulling _sessionId would leak a Worker per trap, eventually OOMing.
+    final sid = _sessionId;
     _sessionId = null;
+    if (sid != null) {
+      // Best-effort: the worker may already be dead.
+      // ignore: discarded_futures
+      _bindings.disposeSession(sid);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -286,7 +309,17 @@ class WasmCoreBindings implements MontyCoreBindings {
     // Route to MontyPanicError so supervisors can pattern-match.
     if (result.errorType == wasmPanicErrorType) {
       _invalidateSession();
-      throw MontyPanicError(result.error ?? 'WASM trap');
+
+      // The Worker already stringifies/normalizes various failure shapes.
+      // Preserve the original message (if any), but avoid throwing a Dart
+      // exception whose own `toString()` can itself fail in JS (e.g.
+      // 'Maximum call stack size exceeded'), which would abort the test runner
+      // before it can print FIXTURE_DONE.
+      final msg = result.error;
+      if (msg != null && msg.contains('Maximum call stack size exceeded')) {
+        throw const MontyPanicError('WASM trap');
+      }
+      throw MontyPanicError(msg ?? 'WASM trap');
     }
 
     return CoreRunResult(
@@ -310,7 +343,12 @@ class WasmCoreBindings implements MontyCoreBindings {
       // WASM trap (panic=abort) surfaces as errorType 'Panic' from the Worker.
       if (progress.errorType == wasmPanicErrorType) {
         _invalidateSession();
-        throw MontyPanicError(progress.error ?? 'WASM trap');
+
+        final msg = progress.error;
+        if (msg != null && msg.contains('Maximum call stack size exceeded')) {
+          throw const MontyPanicError('WASM trap');
+        }
+        throw MontyPanicError(msg ?? 'WASM trap');
       }
 
       return CoreProgressResult(

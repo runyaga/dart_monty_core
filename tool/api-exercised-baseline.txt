@@ -1,0 +1,17 @@
+# Public entry points NOT exercised against a real backend.
+# One name per line, reason after a #.
+#
+# EMPTY, and that is the goal state — 32 of 32 entry points in the public
+# export closure are now driven by a file that runs against FFI or WASM.
+#
+# It was not empty for long. Widening tool/check_api_exercised.sh from two
+# hard-coded source files to the export closure (1e4a875) surfaced six gaps;
+# they were closed one at a time in 443df48, 28afa5b, e13a469 and this commit,
+# and each closure had to delete its own line here because the stale check
+# fails while a declared name is exercised.
+#
+# ADD A LINE ONLY WITH A MEASURED REASON. "It is hard to test" is not one —
+# two of the six turned out to be genuinely dead on the one-shot handle
+# (core#152) and were closed by pinning the REFUSAL, which is a real test of
+# real behaviour. A name parked here without evidence is an exemption nobody
+# reviewed and everybody inherits.

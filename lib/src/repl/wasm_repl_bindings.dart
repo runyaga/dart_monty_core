@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/core_bindings.dart';
+import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_resource_usage.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/repl_bindings.dart';
 import 'package:dart_monty_core/src/wasm/wasm_bindings.dart';
 
@@ -32,7 +33,26 @@ class WasmReplBindings implements ReplBindings {
   bool _created = false;
 
   @override
-  Future<void> create({String? scriptName}) async {
+  Future<void> create({String? scriptName, String? limitsJson}) async {
+    // SESSION-scoped limits only. The web backend enforces limits perfectly
+    // well on the one-shot path — `monty_set_memory_limit` and friends are
+    // wired through `bridge.js` and `worker_src.js`, and measured in Chrome:
+    // timeout, memory and stack all fire. What is missing is `replCreate`
+    // taking the parameter, so a SESSION cannot carry them. Tracked in
+    // core#140; `monty_repl_create_with_limits` is already in the shipped wasm,
+    // so it is JS plumbing rather than engine work.
+    //
+    // Rejected loudly rather than dropped silently, which is the defect this
+    // whole change is about (core#138).
+    if (limitsJson != null) {
+      throw UnsupportedError(
+        'Session-scoped resource limits are not supported on the web backend '
+        'yet (core#140). Limits DO work on web for one-shot execution: use '
+        'createPlatformMonty().run(code, limits: …). Note that '
+        'Monty(code).run(limits: …) builds a MontyRepl, so it reaches this '
+        'same limitation. On the VM, session limits work as normal.',
+      );
+    }
     await _bindings.replCreate(scriptName: scriptName, replId: _replId);
     _created = true;
   }
@@ -67,11 +87,11 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
-  Future<CoreProgressResult> resume(String valueJson) async {
+  Future<CoreProgressResult> resume(WireJson value) async {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
-    final result = await _bindings.replResume(valueJson, replId: _replId);
+    final result = await _bindings.replResume(value.encoded, replId: _replId);
 
     return _translateWasmProgressResult(result);
   }
@@ -144,15 +164,15 @@ class WasmReplBindings implements ReplBindings {
 
   @override
   Future<CoreProgressResult> resolveFutures(
-    String resultsJson,
-    String errorsJson,
+    WireJson results,
+    WireJson errors,
   ) async {
     if (!_created) {
       throw StateError('REPL not created. Call create() first.');
     }
     final result = await _bindings.replResolveFutures(
-      resultsJson,
-      errorsJson,
+      results.encoded,
+      errors.encoded,
       replId: _replId,
     );
 
@@ -169,7 +189,32 @@ class WasmReplBindings implements ReplBindings {
   }
 
   @override
-  Future<void> restore(Uint8List bytes) async {
+  Future<void> restore(
+    Uint8List bytes, {
+    String? limitsJson,
+    List<String>? extFns,
+  }) async {
+    // TODO(wasm): the worker's replRestore does not accept limits or ext fns
+    // yet, so the Worker passes NULL for both (explicitly — see the arity note
+    // in worker_src.js). Until it does, a WASM restore keeps the SNAPSHOT's
+    // limits — the defect just fixed on FFI, where MontyRepl(limits:) +
+    // restore ran unbounded. Refusing loudly beats restoring with the wrong
+    // bound, and beats dropping ext fns into a session that cannot resolve
+    // them until the first external call fails somewhere unrelated.
+    if (limitsJson != null) {
+      throw UnsupportedError(
+        'restore(limitsJson:) is not implemented on the WASM backend. The '
+        'restored session would silently keep the snapshot limits instead of '
+        'the ones requested, which is a security control reporting success.',
+      );
+    }
+    if (extFns != null && extFns.isNotEmpty) {
+      throw UnsupportedError(
+        'restore(extFns:) is not implemented on the WASM backend. The '
+        'restored session would carry no external functions, so the first '
+        'call to one would fail as an unknown name far from this call site.',
+      );
+    }
     // replRestore in the Worker frees the old handle and stores the new one
     // under the same replId — no explicit free needed here.
     await _bindings.replRestore(replId: _replId, data: bytes);
