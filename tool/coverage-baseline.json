@@ -233,8 +233,8 @@
     },
     "lib/src/platform/monty_value_datetime.dart": {
       "found": 183,
-      "hit": 165,
-      "pct": 90.16
+      "hit": 180,
+      "pct": 98.36
     },
     "lib/src/platform/monty_value_scalars.dart": {
       "found": 107,
@@ -243,8 +243,8 @@
     },
     "lib/src/platform/monty_value_structured.dart": {
       "found": 213,
-      "hit": 194,
-      "pct": 91.08
+      "hit": 205,
+      "pct": 96.24
     },
     "lib/src/platform/os_call_exception.dart": {
       "found": 12,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2748,
-    "pct": 65.95
+    "hit": 2774,
+    "pct": 66.57
   }
 }
