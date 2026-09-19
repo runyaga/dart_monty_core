@@ -74,12 +74,12 @@ void _emit(
   // ignore: avoid_print
   print(
     'CAP:${jsonEncode({
-          'backend': backend,
-          'case': id,
-          'entry': entry,
-          'outcome': outcome,
-          'detail': _clip(detail),
-        })}',
+      'backend': backend,
+      'case': id,
+      'entry': entry,
+      'outcome': outcome,
+      'detail': _clip(detail),
+    })}',
   );
 }
 
