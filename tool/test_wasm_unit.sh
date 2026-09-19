@@ -143,17 +143,59 @@ if [ "${#TAGGED[@]}" -lt 30 ]; then
   exit 1
 fi
 
-# Comments stripped, so only a real command-line mention counts as listed.
-LISTED_REGION="$(grep -v '^[[:space:]]*#' "$0")"
+SUITES=(
+  "test/integration/wasm_dataclass_hydrate_test.dart"
+  "test/integration/wasm_datetime_oscall_test.dart"
+  "test/integration/wasm_feedrun_async_matrix_test.dart"
+  "test/integration/wasm_fixture_test.dart"
+  "test/integration/wasm_monty_async_inputs_test.dart"
+  "test/integration/wasm_monty_compile_run_test.dart"
+  "test/integration/wasm_monty_exec_externals_test.dart"
+  "test/integration/wasm_mount_dir_test.dart"
+  "test/integration/wasm_open_test.dart"
+  "test/integration/wasm_output_depth_test.dart"
+  "test/integration/wasm_oscall_decline_test.dart"
+  "test/integration/wasm_float_roundtrip_test.dart"
+  "test/integration/wasm_multi_repl_test.dart"
+  "test/integration/wasm_print_callback_test.dart"
+  "test/integration/wasm_repl_corpus_test.dart"
+  "test/integration/wasm_repl_extfns_lifecycle_test.dart"
+  "test/integration/wasm_repl_futures_test.dart"
+  "test/integration/wasm_repl_snapshot_lifecycle_test.dart"
+  "test/integration/wasm_run_async_matrix_test.dart"
+  "test/integration/wasm_setextfns_test.dart"
+  "test/integration/wasm_type_check_test.dart"
+  "test/integration/wasm_control_d_test.dart"
+  "test/integration/wasm_monty_019_semantics_test.dart"
+  "test/integration/wasm_ellipsis_test.dart"
+  "test/integration/wasm_repr_oracle_test.dart"
+  "test/integration/wasm_wire_format_test.dart"
+  "test/integration/wasm_wire_contract_test.dart"
+  "test/integration/wasm_inbound_forgery_test.dart"
+  "test/integration/wasm_envelope_decode_test.dart"
+  "test/integration/wasm_recursion_ceiling_test.dart"
+  "test/integration/wasm_mem_spike_repro.dart"
+  "test/integration/wasm_poison_boundary_test.dart"
+)
+
+# CHECKED AGAINST THE ARRAY THE INVOCATION ACTUALLY CONSUMES, not against this
+# script's text. The previous form was
+#   LISTED_REGION="$(grep -v '^[[:space:]]*#' "$0")"
+# which strips only WHOLE-LINE comments, so a suite deleted from the real
+# command still counted as "listed" if its path survived anywhere else in the
+# file -- an inline comment, an unused variable, an echo. The guard read prose
+# and reported on execution. SUITES below is expanded into the `dart test`
+# argument list, so a path present here is a path the runner is handed.
 UNLISTED=0
 for f in "${TAGGED[@]}"; do
-  case "$LISTED_REGION" in
-    *"$f"*) ;;
-    *)
-      echo "  UNLISTED: $f"
-      UNLISTED=1
-      ;;
-  esac
+  found=0
+  for s in "${SUITES[@]}"; do
+    [ "$s" = "$f" ] && { found=1; break; }
+  done
+  if [ "$found" = "0" ]; then
+    echo "  UNLISTED: $f"
+    UNLISTED=1
+  fi
 done
 if [ "$UNLISTED" = "1" ]; then
   echo "FAIL: the file(s) above are tagged wasm but are not in this script's list,"
@@ -194,36 +236,5 @@ dart test \
   --exclude-tags=pending-futures \
   --reporter expanded \
   --concurrency "$CONCURRENCY" \
-  test/integration/wasm_dataclass_hydrate_test.dart \
-  test/integration/wasm_datetime_oscall_test.dart \
-  test/integration/wasm_feedrun_async_matrix_test.dart \
-  test/integration/wasm_fixture_test.dart \
-  test/integration/wasm_monty_async_inputs_test.dart \
-  test/integration/wasm_monty_compile_run_test.dart \
-  test/integration/wasm_monty_exec_externals_test.dart \
-  test/integration/wasm_mount_dir_test.dart \
-  test/integration/wasm_open_test.dart \
-  test/integration/wasm_output_depth_test.dart \
-  test/integration/wasm_oscall_decline_test.dart \
-  test/integration/wasm_float_roundtrip_test.dart \
-  test/integration/wasm_multi_repl_test.dart \
-  test/integration/wasm_print_callback_test.dart \
-  test/integration/wasm_repl_corpus_test.dart \
-  test/integration/wasm_repl_extfns_lifecycle_test.dart \
-  test/integration/wasm_repl_futures_test.dart \
-  test/integration/wasm_repl_snapshot_lifecycle_test.dart \
-  test/integration/wasm_run_async_matrix_test.dart \
-  test/integration/wasm_setextfns_test.dart \
-  test/integration/wasm_type_check_test.dart \
-  test/integration/wasm_control_d_test.dart \
-  test/integration/wasm_monty_019_semantics_test.dart \
-  test/integration/wasm_ellipsis_test.dart \
-  test/integration/wasm_repr_oracle_test.dart \
-  test/integration/wasm_wire_format_test.dart \
-  test/integration/wasm_wire_contract_test.dart \
-  test/integration/wasm_inbound_forgery_test.dart \
-  test/integration/wasm_envelope_decode_test.dart \
-  test/integration/wasm_recursion_ceiling_test.dart \
-  test/integration/wasm_mem_spike_repro.dart \
-  test/integration/wasm_poison_boundary_test.dart \
+  "${SUITES[@]}" \
   "$@"
