@@ -82,6 +82,11 @@ fi
 # request. Unset -- every local run -- behaves exactly as before, because a
 # local run has no base to compare against and blocking it would just train
 # people to skip the gate.
+# Captured BEFORE the base-ref swap below reassigns BASELINE. The gain check
+# needs the file this branch actually ships; the regression check needs the
+# base branch's.
+OWN_BASELINE="$BASELINE"
+
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   # THE REF ITSELF MUST RESOLVE FIRST, and this check is the difference between
   # a gate and a suggestion. CI fetches the base with `|| true`, so a fetch that
@@ -119,11 +124,14 @@ if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   fi
 fi
 
-BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
+BASELINE="$BASELINE" OWN_BASELINE="$OWN_BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
 import json, os, sys
 
 root = os.getcwd()
 baseline_path = os.environ['BASELINE']
+# The baseline the GAIN is measured against, which is NOT always the one the
+# REGRESSION is measured against. See the long note at the gain check below.
+own_baseline_path = os.environ.get('OWN_BASELINE') or baseline_path
 update = os.environ['UPDATE'] == '1'
 tracefile = os.environ['TRACEFILE']
 
@@ -247,14 +255,33 @@ if violations:
 # "Consider: --update" and exiting 0 means a coverage GAIN is never captured:
 # the baseline stays low and the percentage can slide back down to it with the
 # gate green. A gain now FAILS until the baseline records it.
-if current['total']['pct'] > bt['pct']:
-    gain = current['total']['pct'] - bt['pct']
-    print(f"\nFAIL — coverage is {gain:.2f} points ABOVE the baseline.")
+# THE TWO DIRECTIONS READ DIFFERENT BASELINES, AND THAT IS THE WHOLE POINT.
+#
+# REGRESSION is measured against the BASE BRANCH's baseline, above: a PR must
+# not be able to lower its own bar.
+#
+# A RECORDED GAIN is measured against THIS BRANCH's baseline. Measured
+# 2026-09-19 on PR #169: with RATCHET_BASE_REF set, `bt` is origin/main's copy,
+# so a PR that raised coverage 66.57% -> 66.64% failed here, ran the `--update`
+# the failure prints, and FAILED AGAIN IDENTICALLY -- the updated file is never
+# read. There was no edit that could pass. A gate that demands an action, and
+# then ignores that action, is worse than no gate: it teaches people the check
+# is broken and to look for the override.
+own = json.load(open(own_baseline_path)) if os.path.exists(own_baseline_path) \
+    else base
+if current['total']['pct'] > own['total']['pct']:
+    gain = current['total']['pct'] - own['total']['pct']
+    print(f"\nFAIL — coverage is {gain:.2f} points ABOVE this branch's "
+          f"baseline ({own['total']['pct']}%).")
     print("  Good news that has to be recorded or it is not kept: a baseline")
     print("  left low lets coverage slide back with the gate still green.")
     print("  Raise it IN THIS COMMIT:")
     print(f"      bash tool/coverage_ratchet.sh {tracefile} --update")
     sys.exit(1)
+
+if own['total']['pct'] > bt['pct']:
+    print(f"note: this branch raises the recorded baseline "
+          f"{bt['pct']}% -> {own['total']['pct']}%.")
 
 print('PASS — no file below its baseline')
 PY
