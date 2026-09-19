@@ -123,3 +123,38 @@ class MontyResourceError extends MontyError {
   @override
   String get _typeName => 'MontyResourceError';
 }
+
+/// The session exhausted its suspension budget (core#156).
+///
+/// DISTINCT FROM [MontyResourceError], deliberately. That type is for limits
+/// the ENGINE enforces — memory, stack, interpreter time — and the engine
+/// reports those itself. This one is enforced by the HOST, because the engine
+/// cannot: every suspension hands control to Dart, and host time is not
+/// interpreter time, so a script calling an external function in a loop never
+/// accumulates enough interpreter time to trip a timeout. Measured: 1,975,000
+/// callbacks in 2,492ms against a 500ms `timeoutMs`.
+///
+/// Upstream reaches the same guarantee from `monty-pool`, which this package
+/// does not depend on, so the budget is this parent's job.
+///
+/// NOT REPORTED BACK INTO PYTHON. Every other failure inside the drive loop
+/// resumes the sandbox with an error the script can catch; doing that here
+/// would let a `try/except` keep asking for callbacks and make the bound
+/// advisory.
+final class MontySuspensionBudgetExceeded extends MontyError {
+  /// Creates a [MontySuspensionBudgetExceeded] for a session that used up
+  /// [budget] suspensions.
+  MontySuspensionBudgetExceeded(this.budget)
+    : super(
+        'suspension limit $budget exceeded: the session asked the host to '
+        'answer more than $budget suspensions. Raise or remove the bound with '
+        'MontyLimits(maxSuspensions: ...), or '
+        'MontyLimits.unlimitedSuspensions to opt out.',
+      );
+
+  /// The budget that was exhausted.
+  final int budget;
+
+  @override
+  String get _typeName => 'MontySuspensionBudgetExceeded';
+}

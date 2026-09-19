@@ -49,8 +49,15 @@ RC=$?
 kill -9 "$TIMER" 2>/dev/null
 wait "$TIMER" 2>/dev/null
 
-LAST_PROGRESS="$(grep '^PROGRESS:' "$OUT" | tail -1)"
-DONE="$(grep '^DONE:' "$OUT" | tail -1)"
+# NOT ANCHORED. `dart run` writes "Running build hooks..." without a trailing
+# newline, so the probe's first line arrives as
+#   Running build hooks...DONE:threw:1000:341:...
+# and an anchored `^DONE:` misses it. Measured 2026-09-19: a run that
+# terminated correctly in 341ms was reported KILLED with calls=0, because the
+# only evidence it produced was on a line that did not start where the grep
+# looked. The marker is distinctive enough not to need the anchor.
+LAST_PROGRESS="$(grep -o 'PROGRESS:[0-9]*:[0-9]*' "$OUT" | tail -1)"
+DONE="$(grep -o 'DONE:.*' "$OUT" | tail -1)"
 
 if [ -n "$DONE" ]; then
   KIND="$(echo "$DONE" | cut -d: -f2)"

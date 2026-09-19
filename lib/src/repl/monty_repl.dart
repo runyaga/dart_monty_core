@@ -137,6 +137,25 @@ class MontyRepl {
   bool _disposed = false;
   bool _pending = false;
 
+  /// Suspensions charged against this SESSION's budget.
+  ///
+  /// Session-scoped, not per-feed: it accumulates across `feedRun`/
+  /// `feedStart`, matching upstream's pool. Measured against
+  /// `pydantic-monty` 0.0.23 — two feeds of four callbacks under a budget of
+  /// six trip during the SECOND feed, having served six in total.
+  int _suspensionsUsed = 0;
+
+  /// Whether this session has already exhausted its budget.
+  ///
+  /// Terminal. A session that breached the budget does not get a fresh
+  /// allowance from the next feed, because that would make the bound
+  /// per-feed by another route.
+  bool _suspensionBudgetExhausted = false;
+
+  /// The budget for this session: the configured value, or the default.
+  int get _suspensionBudget =>
+      _limits?.maxSuspensions ?? MontyLimits.defaultMaxSuspensions;
+
   /// Script name used as the filename in tracebacks and error messages.
   ///
   /// Returns `null` when the REPL was constructed without one, in which
@@ -429,7 +448,9 @@ class MontyRepl {
     // while an identical un-restored session raised RecursionError.
     await _bindings.restore(
       bytes,
-      limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+      limitsJson: _limits == null || !_limits.hasEngineLimits
+          ? null
+          : encodeLimitsJson(_limits),
     );
 
     // MARKS THE SESSION CREATED, and without this restore silently did
@@ -498,6 +519,34 @@ class MontyRepl {
     var progress = initial;
     try {
       while (true) {
+        // CHARGED HERE, ONCE, BEFORE ANY BRANCH DISPATCHES.
+        //
+        // Every arm below hands work to the host: an external call (sync or
+        // async), an OS call, a name lookup, a batch of futures to resolve.
+        // `MontyComplete` is the only arm that does not, and it stays free so
+        // a run that exactly exhausts its allowance can still finish.
+        //
+        // Charging at the top rather than inside each arm is deliberate: a
+        // per-arm charge is one `case` away from being incomplete, and the
+        // async arm in particular SCHEDULES work before it resumes, so a
+        // check placed inside it would fire after the callback was already
+        // running.
+        if (progress is! MontyComplete) {
+          if (_suspensionBudgetExhausted ||
+              (_suspensionBudget != MontyLimits.unlimitedSuspensions &&
+                  _suspensionsUsed >= _suspensionBudget)) {
+            _suspensionBudgetExhausted = true;
+
+            // NOT resumed back into Python. Every other error path here calls
+            // `_bindings.resumeWithError`, which lets the script catch it and
+            // carry on asking for callbacks — which would make the budget
+            // advisory. Measured upstream: a script whose body is
+            // `try: f() except Exception: pass` still terminates.
+            throw MontySuspensionBudgetExceeded(_suspensionBudget);
+          }
+          _suspensionsUsed++;
+        }
+
         switch (progress) {
           case MontyComplete(:final result):
             return result;
@@ -705,7 +754,9 @@ class MontyRepl {
     if (!_created) {
       await _bindings.create(
         scriptName: _scriptName,
-        limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+        limitsJson: _limits == null || !_limits.hasEngineLimits
+            ? null
+            : encodeLimitsJson(_limits),
       );
       _created = true;
       final preamble = _preamble;
