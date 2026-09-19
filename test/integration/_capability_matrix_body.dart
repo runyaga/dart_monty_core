@@ -60,6 +60,7 @@ String _typeOf(Object e) => e.runtimeType.toString();
 /// Truncated so one pathological message cannot swamp the matrix.
 String _clip(String s, [int n = 90]) {
   final one = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+
   return one.length <= n ? one : '${one.substring(0, n)}…';
 }
 
@@ -104,9 +105,18 @@ Future<void> _probe(
 }
 
 void runCapabilityMatrix(String declaredBackend) {
-  final backend = declaredBackend != 'wasm'
-      ? declaredBackend
-      : (identical(1, 1.0) ? 'wasm-dart2js' : 'wasm-dart2wasm');
+  // dart2js has a single number type, so 1 and 1.0 are the same object there
+  // and distinct everywhere else — the property tool/test_wasm.sh documents as
+  // the reason the two web compilers are not interchangeable. Resolved at
+  // runtime because the mirror cannot know which compiler `dart test -c` got.
+  final String backend;
+  if (declaredBackend != 'wasm') {
+    backend = declaredBackend;
+  } else if (identical(1, 1.0)) {
+    backend = 'wasm-dart2js';
+  } else {
+    backend = 'wasm-dart2wasm';
+  }
 
   group('E2 capability matrix — $backend', () {
     for (final c in _cases) {
