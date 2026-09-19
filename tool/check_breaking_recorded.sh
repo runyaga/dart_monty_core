@@ -55,6 +55,7 @@ fi
 echo "--- breaking changes to lib/ since $(git rev-parse --short "$BASE") ---"
 
 FAILED=0
+SEEN_OIDS=""
 
 # `fix(x)!: …` / `feat!: …` — the conventional-commit breaking marker.
 breaking_lib_commits() {
@@ -97,10 +98,77 @@ while IFS=$'\t' read -r sha anchor; do
     continue
   fi
 
-  if ! echo "$IN_SCOPE" | grep -qx "$sha"; then
-    echo "  FAIL  $sha  ledger row names no breaking lib/ commit in range."
-    echo "        Either the sha is wrong, or the commit was rebased and the"
-    echo "        row needs updating. A row pointing at nothing checks nothing."
+  # VALIDATED AGAINST HISTORY, NOT AGAINST THE RANGE.
+  #
+  # This used to require the row's sha to appear in $IN_SCOPE -- the breaking
+  # commits between the merge-base and HEAD. The ledger is CUMULATIVE: it holds
+  # a row for every breaking change ever shipped. So a row stayed valid only
+  # while its commit happened to sit in the current diff, and went "dead" the
+  # moment it merged.
+  #
+  # Measured 2026-09-19: on `main`, merge-base(HEAD, origin/main) IS HEAD, so
+  # the range is EMPTY and ALL 24 rows failed -- main's own CI was red on this
+  # check. On PR #169 the range held six non-breaking commits, so all 24 failed
+  # there too. The check could only pass on a branch that still had every
+  # historical breaking commit in front of it, which is true exactly once.
+  #
+  # What direction 3 is actually for, per this file's own header, is "no dead
+  # rows": the sha must name a REAL breaking commit that touched lib/. That is
+  # a question about history, and it is asked here. Both jobs that run this
+  # check use fetch-depth: 0, so history is present.
+  # An identifier, not an arbitrary revision expression. `git rev-parse` would
+  # happily resolve `main`, a tag, or `HEAD~3` here and call the row valid.
+  case "$sha" in
+    *[!0-9a-fA-F]*)
+      echo "  FAIL  $sha  ledger identifier is not a hex commit id."
+      FAILED=$((FAILED + 1))
+      continue
+      ;;
+  esac
+
+  if ! row_oid="$(git rev-parse --verify --quiet "${sha}^{commit}" 2>/dev/null)"
+  then
+    echo "  FAIL  $sha  ledger row names a commit that does not exist."
+    echo "        Either the sha is wrong, or the commit was rebased away and"
+    echo "        the row needs updating. A row pointing at nothing checks"
+    echo "        nothing."
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+
+  # REACHABLE FROM HEAD, not merely present in the object store. Existence is a
+  # weaker claim than the range check it replaces: a commit on an unmerged
+  # branch, or a pre-rebase object not yet gc'd, resolves fine and certifies
+  # nothing about what this history actually shipped.
+  if ! git merge-base --is-ancestor "$row_oid" HEAD 2>/dev/null; then
+    echo "  FAIL  $sha  ledger row names a commit that is not an ancestor of"
+    echo "        HEAD. It exists, but this history never shipped it, so the"
+    echo "        row certifies nothing here."
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+
+  # One row per commit. Compared as full object ids, because two rows can name
+  # the same commit at different abbreviation lengths and read as distinct.
+  if echo "$SEEN_OIDS" | grep -qx "$row_oid"; then
+    echo "  FAIL  $sha  duplicate ledger row: this commit already has one."
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+  SEEN_OIDS="$SEEN_OIDS$row_oid
+"
+
+  row_subject="$(git log -1 --format='%s' "$row_oid")"
+  if ! [[ "$row_subject" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then
+    echo "  FAIL  $sha  ledger row names a commit that is not marked breaking:"
+    echo "        \"$row_subject\""
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+
+  if ! git show --stat --format='' "$row_oid" | grep -q '^ lib/'; then
+    echo "  FAIL  $sha  ledger row names a breaking commit that does not touch"
+    echo "        lib/, which is the surface this ledger covers."
     FAILED=$((FAILED + 1))
     continue
   fi
