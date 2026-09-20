@@ -46,8 +46,10 @@ class WasmReplBindings implements ReplBindings {
     // whole change is about (core#138).
     if (limitsJson != null) {
       throw UnsupportedError(
-        'Session-scoped resource limits are not supported on the web backend '
-        'yet (core#140). Limits DO work on web for one-shot execution: use '
+        'Engine-enforced session limits (memoryBytes, timeoutMs, stackDepth) '
+        'are not supported on the web backend '
+        'yet (core#140). maxSuspensions is host-side and DOES apply here. '
+        'Engine limits work on web for one-shot execution: use '
         'createPlatformMonty().run(code, limits: …). Note that '
         'Monty(code).run(limits: …) builds a MontyRepl, so it reaches this '
         'same limitation. On the VM, session limits work as normal.',

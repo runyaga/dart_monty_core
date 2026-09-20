@@ -2,20 +2,28 @@ import 'package:meta/meta.dart';
 
 /// Resource limits to impose on a Monty Python execution.
 ///
-/// All fields are optional — omitted limits are unconstrained.
+/// Engine-enforced fields are optional and omitted ones are unconstrained.
+/// [maxSuspensions] is the exception, and deliberately so — see its doc.
 @immutable
 final class MontyLimits {
   /// Creates a [MontyLimits] with optional resource constraints.
-  const MontyLimits({this.memoryBytes, this.timeoutMs, this.stackDepth});
+  const MontyLimits({
+    this.memoryBytes,
+    this.timeoutMs,
+    this.stackDepth,
+    this.maxSuspensions,
+  });
 
   /// Creates a [MontyLimits] from a JSON map.
   ///
-  /// Expected keys: `memory_bytes`, `timeout_ms`, `stack_depth`.
+  /// Expected keys: `memory_bytes`, `timeout_ms`, `stack_depth`,
+  /// `max_suspensions`.
   factory MontyLimits.fromJson(Map<String, dynamic> json) {
     return MontyLimits(
       memoryBytes: json['memory_bytes'] as int?,
       timeoutMs: json['timeout_ms'] as int?,
       stackDepth: json['stack_depth'] as int?,
+      maxSuspensions: json['max_suspensions'] as int?,
     );
   }
 
@@ -44,6 +52,14 @@ final class MontyLimits {
         : null,
     stackDepth: maxRecursionDepth,
   );
+
+  /// Suspension budget applied when [maxSuspensions] is omitted. Matches
+  /// upstream's pool default.
+  static const int defaultMaxSuspensions = 1000;
+
+  /// Pass as [maxSuspensions] to opt out of the budget. Distinct from
+  /// omitting it, which applies [defaultMaxSuspensions].
+  static const int unlimitedSuspensions = -1;
 
   /// Maximum size of a SINGLE object allocation in bytes, or `null` for
   /// unlimited.
@@ -81,12 +97,29 @@ final class MontyLimits {
   /// Maximum call stack depth, or `null` for unlimited.
   final int? stackDepth;
 
+  /// Maximum suspensions the sandbox may raise for the host to answer, across
+  /// the whole session. `null` applies [defaultMaxSuspensions];
+  /// [unlimitedSuspensions] removes the bound; `0` refuses the first
+  /// suspension while still permitting work that never suspends.
+  ///
+  /// Enforced by the HOST, not the engine — [timeoutMs] bounds interpreter
+  /// time, and a suspension spends its time in Dart. Needs no backend support,
+  /// so it applies on web too (core#156).
+  final int? maxSuspensions;
+
+  /// Whether anything here is for the ENGINE to enforce. [maxSuspensions] is
+  /// host-side, so a caller setting only it asks nothing of the backend — and
+  /// a backend that refuses session limits (core#140) must not refuse it.
+  bool get hasEngineLimits =>
+      memoryBytes != null || timeoutMs != null || stackDepth != null;
+
   /// Serializes this limits configuration to a JSON-compatible map.
   Map<String, dynamic> toJson() {
     return {
       if (memoryBytes != null) 'memory_bytes': memoryBytes,
       if (timeoutMs != null) 'timeout_ms': timeoutMs,
       if (stackDepth != null) 'stack_depth': stackDepth,
+      if (maxSuspensions != null) 'max_suspensions': maxSuspensions,
     };
   }
 
@@ -96,17 +129,20 @@ final class MontyLimits {
         (other is MontyLimits &&
             other.memoryBytes == memoryBytes &&
             other.timeoutMs == timeoutMs &&
-            other.stackDepth == stackDepth);
+            other.stackDepth == stackDepth &&
+            other.maxSuspensions == maxSuspensions);
   }
 
   @override
-  int get hashCode => Object.hash(memoryBytes, timeoutMs, stackDepth);
+  int get hashCode =>
+      Object.hash(memoryBytes, timeoutMs, stackDepth, maxSuspensions);
 
   @override
   String toString() {
     return 'MontyLimits('
         'memoryBytes: $memoryBytes, '
         'timeoutMs: $timeoutMs, '
-        'stackDepth: $stackDepth)';
+        'stackDepth: $stackDepth, '
+        'maxSuspensions: $maxSuspensions)';
   }
 }

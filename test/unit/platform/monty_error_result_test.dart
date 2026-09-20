@@ -469,13 +469,14 @@ void main() {
       // subclass slips into the hierarchy without a corresponding test
       // file. If a new subclass is added, this switch stops being
       // exhaustive and the analyser flags it.
-      const errors = <MontyError>[
-        MontyScriptError('s'),
-        MontySyntaxError('y'),
-        MontyPanicError('p'),
-        MontyCrashError('c'),
-        MontyDisposedError('d'),
-        MontyResourceError('r'),
+      final errors = <MontyError>[
+        const MontyScriptError('s'),
+        const MontySyntaxError('y'),
+        const MontyPanicError('p'),
+        const MontyCrashError('c'),
+        const MontyDisposedError('d'),
+        const MontyResourceError('r'),
+        MontySuspensionBudgetExceeded(1),
       ];
       final names = errors.map((e) {
         return switch (e) {
@@ -485,6 +486,7 @@ void main() {
           MontyCrashError() => 'crash',
           MontyDisposedError() => 'disposed',
           MontyResourceError() => 'resource',
+          MontySuspensionBudgetExceeded() => 'suspension-budget',
         };
       }).toList();
       expect(names, [
@@ -496,6 +498,7 @@ void main() {
         'crash',
         'disposed',
         'resource',
+        'suspension-budget',
       ]);
     });
   });

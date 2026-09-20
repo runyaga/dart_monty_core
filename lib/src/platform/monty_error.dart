@@ -123,3 +123,26 @@ class MontyResourceError extends MontyError {
   @override
   String get _typeName => 'MontyResourceError';
 }
+
+/// The session exhausted its suspension budget (core#156).
+///
+/// Separate from [MontyResourceError], which is for limits the ENGINE enforces
+/// and reports. This one is enforced by the host and is never resumed back
+/// into the sandbox, so a `try/except` there cannot buy more callbacks.
+final class MontySuspensionBudgetExceeded extends MontyError {
+  /// Creates a [MontySuspensionBudgetExceeded] for a session that used up
+  /// [budget] suspensions.
+  MontySuspensionBudgetExceeded(this.budget)
+    : super(
+        'suspension limit $budget exceeded: the session asked the host to '
+        'answer more than $budget suspensions. Raise or remove the bound with '
+        'MontyLimits(maxSuspensions: ...), or '
+        'MontyLimits.unlimitedSuspensions to opt out.',
+      );
+
+  /// The budget that was exhausted.
+  final int budget;
+
+  @override
+  String get _typeName => 'MontySuspensionBudgetExceeded';
+}
