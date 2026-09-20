@@ -38,13 +38,9 @@ export 'src/mount/vfs_limits.dart'
 export 'src/mount/vfs_node.dart';
 export 'src/platform/code_capture.dart';
 export 'src/platform/inputs_encoder.dart';
-// Only the two result types cross the public boundary: `MontyCoreBindings`
-// itself is the backend-adapter interface (implemented by `FfiCoreBindings`
-// and `WasmCoreBindings`) and is reached only through the unexported
-// `BaseMontyPlatform`, so exporting it would make the adapter contract
-// public API that nothing outside this package depends on.
-export 'src/platform/monty_core_bindings.dart'
-    show CoreProgressResult, CoreRunResult;
+// The backend-adapter layer is not exported: monty_core_bindings.dart,
+// repl_bindings.dart and wire_json.dart. Consumers use MontyProgress /
+// MontyResult instead. See a5c8b4d.
 export 'src/platform/monty_error.dart';
 export 'src/platform/monty_exception.dart';
 export 'src/platform/monty_future_capable.dart';
@@ -58,7 +54,5 @@ export 'src/platform/monty_stack_frame.dart';
 export 'src/platform/monty_typing_error.dart';
 export 'src/platform/monty_value.dart';
 export 'src/platform/os_call_exception.dart';
-export 'src/platform/wire_json.dart';
 export 'src/repl/monty_repl.dart';
-export 'src/repl/repl_bindings.dart';
 export 'src/repl/repl_platform.dart';

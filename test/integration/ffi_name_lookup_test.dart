@@ -25,6 +25,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/ffi_core_bindings.dart';
 import 'package:dart_monty_core/src/ffi/monty_ffi.dart';
 import 'package:dart_monty_core/src/ffi/native_bindings_ffi.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:test/test.dart';
 
 void main() {

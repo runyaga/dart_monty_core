@@ -22,12 +22,11 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// A nominal type visits all of them, because the only way to obtain a
 /// [WireJson] is to ask this class to mint one.
 ///
-/// Exported from `dart_monty_core.dart`, because it appears in `ReplBindings`
-/// signatures that an outside implementer has to write. It was internal until
-/// `MontyRepl.withBindings` made that constructor callable from outside; the
-/// three factories below are the only way to mint one, so exporting the type
-/// does not widen what a caller may put on the wire. The ordinary public
-/// surface still takes `Object?` and encodes on the caller's behalf.
+/// Not exported: it appears only in `ReplBindings` signatures, which are the
+/// backend-adapter layer and internal too. It was briefly public while
+/// `MontyRepl.withBindings` let an outside caller supply bindings; that
+/// constructor had no users and is gone. The public surface takes `Object?`
+/// and encodes on the caller's behalf.
 ///
 /// **The guarantee is compile-time, not runtime.** An extension type is erased,
 /// so at runtime a [WireJson] *is* its `String`, and `rawJson as WireJson`

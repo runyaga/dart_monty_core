@@ -118,17 +118,6 @@ class MontyRepl {
        _preamble = preamble,
        _limits = limits;
 
-  /// Creates a [MontyRepl] with explicit [bindings].
-  MontyRepl.withBindings({
-    required ReplBindings bindings,
-    String? scriptName,
-    String? preamble,
-    MontyLimits? limits,
-  }) : _bindings = bindings,
-       _scriptName = scriptName,
-       _preamble = preamble,
-       _limits = limits;
-
   ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;

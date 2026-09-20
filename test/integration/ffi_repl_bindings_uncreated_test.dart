@@ -16,9 +16,8 @@
 library;
 
 import 'dart:typed_data';
-
-import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/native_bindings_ffi.dart';
+import 'package:dart_monty_core/src/platform/wire_json.dart';
 import 'package:dart_monty_core/src/repl/ffi_repl_bindings.dart';
 import 'package:test/test.dart';
 
