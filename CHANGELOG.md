@@ -257,6 +257,29 @@ three surprise people, and one of them differs from upstream's default.
 
   Two in-package integration tests that drive the adapter directly now import
   `src/platform/wire_json.dart` explicitly.
+- **An omitted `maxSuspensions` now applies a budget of 1000, not none.**
+  `MontyLimits`' doc said "All fields are optional — omitted limits are
+  unconstrained". That is no longer true of suspensions, and matching upstream
+  mattered more than the sentence: `pydantic-monty` gets the same bound from
+  `monty-pool`, a crate this package does not depend on, so a direct binding
+  that is its own pool had to supply it.
+
+  `MontyRepl._driveLoop` was an unbounded `while (true)`, and `timeoutMs`
+  could not help — that limit bounds INTERPRETER time, while a suspension
+  spends its time in Dart. A script calling an external function in a loop ran
+  5,000,000 callbacks before stopping on its own, 11.7x past a 3s watchdog,
+  with `timeoutMs: 500` set.
+
+  Exceeding the budget throws `MontySuspensionBudgetExceeded`, a new
+  `MontyError` — not `MontyResourceError`, which is for limits the ENGINE
+  enforces and reports. It is not resumed back into the sandbox, so a
+  `try/except` there cannot buy more callbacks.
+
+  `MontyLimits.unlimitedSuspensions` opts out by name. `0` refuses the first
+  suspension while still permitting work that never suspends. Because the
+  budget is host-enforced it needs no backend support, so it applies on the
+  web backend too, where engine-enforced session limits still throw
+  `UnsupportedError` (#140).
 
 - **`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`**, was
   `Future<Object?>`. Supplying a callback gets strictly easier: a
