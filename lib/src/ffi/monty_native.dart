@@ -44,10 +44,10 @@ import 'package:dart_monty_core/src/platform/monty_state_mixin.dart';
 /// WHAT WIRING IT UP WOULD TAKE, so the next person does not assume a factory
 /// branch is enough:
 ///   * this class inherits the throwing [MontyPlatform] defaults for
-///     compileCode, type checking, precompiled execution, typed exceptions,
-///     not-found and name-lookup responses, which `MontyFfi` gets from
-///     `BaseMontyPlatform`. The request protocol and worker dispatch need
-///     extending before the two are interchangeable.
+///     type checking, typed exceptions, not-found and name-lookup
+///     responses, which `MontyFfi` gets from `BaseMontyPlatform`. The
+///     request protocol and worker dispatch need extending before the two
+///     are interchangeable.
 ///   * `Monty.run` and `MontyRepl` go through `ReplBindings`, not through a
 ///     `MontyPlatform` (monty.dart:73, monty_repl.dart:116). Selecting this
 ///     backend for them needs a REPL worker adapter, not just a new factory.

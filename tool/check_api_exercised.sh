@@ -8,7 +8,8 @@
 # MockMontyPlatform, whose compileCode returns `jsonEncode({'code': code})`.
 # Nothing ever called Monty.compile() against FFI or WASM, so the API was green
 # in CI and dead in every shipped configuration: native/src/handle.rs:558
-# returns Err unconditionally, on every target (core#152).
+# returns Err unconditionally, on every target (core#152). That API has since
+# been removed, test file included; tool/check_api_absent.sh keeps it out.
 #
 # This asks one question of each public entry point on Monty and MontyRepl:
 # does ANY file that runs against a real backend mention it?

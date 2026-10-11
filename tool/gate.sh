@@ -274,6 +274,9 @@ s  backend_parity bash tool/check_backend_parity.sh
 # thing. Monty.compile() had a full unit file written against
 # MockMontyPlatform and was dead on every real backend (core#152).
 s  api_exercised bash tool/check_api_exercised.sh
+# ...so it was removed, and this keeps it removed: the precompile names must
+# stay undefined on every type that carried them.
+s  api_absent    bash tool/check_api_absent.sh
 s  dart_analyze  dart analyze --fatal-infos
 # packages/ IS included, and was not until 2026-09-15. `dart analyze` walks
 # into the nested packages on its own (verified: a deliberate type error in
@@ -471,13 +474,13 @@ fi
 # being invoked — an `s`/`sf` line lost to a bad merge, a `for` loop whose glob
 # stopped matching, an early `return` — removes its own result line, so it
 # cannot produce a FAIL and the gate goes green having checked less. That is
-# the same failure ci.yaml guards with `[ "$RAN" -eq 19 ]` on its checks job;
+# the same failure ci.yaml guards with `[ "$RAN" -eq 20 ]` on its checks job;
 # this file, which is the actual commit precondition, had no equivalent.
 #
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=41
+EXPECT_STEPS=42
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

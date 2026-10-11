@@ -13,8 +13,6 @@
 @Tags(['unit'])
 library;
 
-import 'dart:typed_data';
-
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
@@ -107,44 +105,6 @@ void main() {
       expect(
         () => platform.resumeNameLookupUndefined('nope'),
         throwsA(isA<UnimplementedError>()),
-      );
-    });
-
-    // THE PRECOMPILED PAIR RAN NOWHERE. Measured on the gate's own
-    // coverage/honest.info: repl_platform.dart lines 131-147 and 150 were the
-    // file's only uncovered lines, and those are these two refusals plus
-    // dispose(). A refusal nothing executes is a refusal nobody has checked
-    // still refuses -- the same shape as the name-lookup pair above, which is
-    // why they belong in the same suite.
-    //
-    // SYNCHRONOUS, DELIBERATELY. Both are `=> throw ...` arrow bodies, so they
-    // throw when CALLED, not when the returned Future is awaited.
-    // `expectLater(platform.runPrecompiled(...), throwsA(...))` would never see
-    // it -- the throw happens while building the argument. `expect(() => ...)`
-    // is the form that observes it.
-    test('runPrecompiled is UnsupportedError, and says which surface', () {
-      expect(
-        () => platform.runPrecompiled(Uint8List(0)),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (e) => e.toString(),
-            'message',
-            allOf(contains('runPrecompiled'), contains('ReplPlatform')),
-          ),
-        ),
-      );
-    });
-
-    test('startPrecompiled is UnsupportedError, and says which surface', () {
-      expect(
-        () => platform.startPrecompiled(Uint8List(0)),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (e) => e.toString(),
-            'message',
-            allOf(contains('startPrecompiled'), contains('ReplPlatform')),
-          ),
-        ),
       );
     });
 

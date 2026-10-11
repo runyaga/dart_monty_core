@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_progress.dart';
 import 'package:dart_monty_core/src/platform/monty_result.dart';
@@ -92,18 +90,6 @@ abstract class MontyPlatform {
     );
   }
 
-  /// Compiles [code] and returns the bytecode as a binary blob.
-  ///
-  /// The returned bytes can be passed to [runPrecompiled] or
-  /// [startPrecompiled] to execute the code without re-parsing.
-  /// Pre-compiling avoids repeated parse overhead when running the same
-  /// script with different `inputs` values.
-  ///
-  /// Equivalent to `Monty.dump()` in the JS `@pydantic/monty` SDK.
-  Future<Uint8List> compileCode(String code) {
-    throw UnimplementedError('compileCode() has not been implemented.');
-  }
-
   /// Runs static type checking on [code] without executing it.
   ///
   /// Returns the Monty `json`-format diagnostics string when errors are
@@ -115,31 +101,6 @@ abstract class MontyPlatform {
     String scriptName = 'main.py',
   }) {
     throw UnimplementedError('typeCheck() has not been implemented.');
-  }
-
-  /// Executes pre-compiled [compiled] bytes returned by [compileCode].
-  ///
-  /// Equivalent to `Monty.load(binary).run()` in the JS `@pydantic/monty`
-  /// SDK. The [compiled] bytes are self-contained and may be used across
-  /// sessions and calls.
-  Future<MontyResult> runPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) {
-    throw UnimplementedError('runPrecompiled() has not been implemented.');
-  }
-
-  /// Starts iterative execution from pre-compiled [compiled] bytes.
-  ///
-  /// Use [MontyPlatform.resume] or [MontyPlatform.resumeWithError] to
-  /// continue after each [MontyPending].
-  Future<MontyProgress> startPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) {
-    throw UnimplementedError('startPrecompiled() has not been implemented.');
   }
 
   /// Releases resources held by this interpreter instance.

@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:dart_monty_core/src/platform/monty_future_capable.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
@@ -116,34 +114,12 @@ class ReplPlatform implements MontyFutureCapable {
       );
 
   @override
-  Future<Uint8List> compileCode(String code) =>
-      throw UnsupportedError('compileCode() is not supported by ReplPlatform');
-
-  @override
   Future<String?> typeCheck(
     String code, {
     String? prefixCode,
     String scriptName = 'main.py',
   }) => throw UnsupportedError(
     'typeCheck() is not supported by ReplPlatform',
-  );
-
-  @override
-  Future<MontyResult> runPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) => throw UnsupportedError(
-    'runPrecompiled() is not supported by ReplPlatform',
-  );
-
-  @override
-  Future<MontyProgress> startPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) => throw UnsupportedError(
-    'startPrecompiled() is not supported by ReplPlatform',
   );
 
   @override

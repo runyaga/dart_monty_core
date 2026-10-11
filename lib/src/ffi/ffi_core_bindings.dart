@@ -61,27 +61,8 @@ class FfiCoreBindings implements MontyCoreBindings {
   @override
   Future<bool> init() async {
     _assertWireFormat();
-    return true;
-  }
 
-  /// Rejects a native library whose value encoding this build cannot read.
-  ///
-  /// The WASM backend has always done this (`wasm_bindings_js.dart`
-  /// `_assertWireFormat`, called from `_ensureInit`). The native backend did
-  /// not: `init()` was `async => true`, so the only comparison ran inside
-  /// `test/integration/ffi_wire_format_test.dart`. Same guard, same constant,
-  /// present on one backend and absent from the other -- and absent precisely
-  /// where a consumer can pair a prebuilt library with a Dart package built
-  /// against a different `WIRE_FORMAT_VERSION`.
-  ///
-  /// Failing here is the point: a mismatch otherwise surfaces as values that
-  /// decode to the wrong thing rather than as a refusal, because the constant
-  /// covers the VALUE encoding only (see `native_bindings.dart`).
-  void _assertWireFormat() {
-    final reported = _bindings.wireFormatVersion();
-    if (reported != expectedWireFormatVersion) {
-      throw WireFormatMismatch(expectedWireFormatVersion, reported);
-    }
+    return true;
   }
 
   @override
@@ -205,16 +186,6 @@ class FfiCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<Uint8List> compileCode(String code) async {
-    final handle = _bindings.create(code);
-    try {
-      return _bindings.snapshot(handle);
-    } finally {
-      _bindings.free(handle);
-    }
-  }
-
-  @override
   Future<String?> typeCheck(
     String code, {
     String? prefixCode,
@@ -224,42 +195,6 @@ class FfiCoreBindings implements MontyCoreBindings {
     prefixCode: prefixCode,
     scriptName: scriptName,
   );
-
-  @override
-  Future<CoreRunResult> runPrecompiled(
-    Uint8List compiled, {
-    String? limitsJson,
-    String? scriptName,
-  }) async {
-    final handle = _bindings.restore(compiled);
-    try {
-      _applyLimits(handle, limitsJson);
-      final result = _bindings.run(handle);
-
-      return _translateRunResult(result);
-    } finally {
-      _bindings.free(handle);
-    }
-  }
-
-  @override
-  Future<CoreProgressResult> startPrecompiled(
-    Uint8List compiled, {
-    String? limitsJson,
-    String? scriptName,
-  }) async {
-    final handle = _bindings.restore(compiled);
-    final ProgressResult progress;
-    try {
-      _applyLimits(handle, limitsJson);
-      progress = _bindings.start(handle);
-    } catch (e) {
-      _bindings.free(handle);
-      rethrow;
-    }
-
-    return _translateProgressResult(handle, progress);
-  }
 
   @override
   Future<Uint8List> snapshot() async {
@@ -479,6 +414,26 @@ class FfiCoreBindings implements MontyCoreBindings {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /// Rejects a native library whose value encoding this build cannot read.
+  ///
+  /// The WASM backend has always done this (`wasm_bindings_js.dart`
+  /// `_assertWireFormat`, called from `_ensureInit`). The native backend did
+  /// not: `init()` was `async => true`, so the only comparison ran inside
+  /// `test/integration/ffi_wire_format_test.dart`. Same guard, same constant,
+  /// present on one backend and absent from the other -- and absent precisely
+  /// where a consumer can pair a prebuilt library with a Dart package built
+  /// against a different `WIRE_FORMAT_VERSION`.
+  ///
+  /// Failing here is the point: a mismatch otherwise surfaces as values that
+  /// decode to the wrong thing rather than as a refusal, because the constant
+  /// covers the VALUE encoding only (see `native_bindings.dart`).
+  void _assertWireFormat() {
+    final reported = _bindings.wireFormatVersion();
+    if (reported != expectedWireFormatVersion) {
+      throw WireFormatMismatch(expectedWireFormatVersion, reported);
+    }
+  }
 
   int _requireHandle(String method) {
     final handle = _handle;

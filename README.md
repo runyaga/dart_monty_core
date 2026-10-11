@@ -82,7 +82,6 @@ await repl.dispose();
 | `Monty(code, {scriptName})` | Hold source as a re-runnable program (`scriptName` defaults to `main.py`) |
 | `run({inputs, externalFunctions, externalAsyncFunctions, limits, osHandler, printCallback})` | Run in a fresh interpreter |
 | `Monty.exec(code, {…})` | One-shot wrapper |
-| `Monty.compile(code)` / `Monty.runPrecompiled(bytes, {…})` | Pre-compile and replay |
 | `Monty.typeCheck(code, {prefixCode, scriptName})` | Static type analysis → `List<MontyTypingError>` |
 
 ### `MontyRepl` — stateful REPL

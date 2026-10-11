@@ -16,6 +16,25 @@
 - CI now builds the AOT consumer probe with `dart build cli`, bundling the
   native library from `hook/build.dart`, and runs it to verify its assertions.
   Documented the build/run commands and the complete bundle consumers must ship.
+### Breaking
+
+- **The precompile API is removed**: `Monty.compile`, `Monty.runPrecompiled`,
+  and `MontyPlatform.compileCode` / `runPrecompiled` / `startPrecompiled`, with
+  their implementations on every platform (`MontyFfi`, `MontyWasm`,
+  `ReplPlatform`, `MockMontyPlatform` and its `compileCode`/`runPrecompiled`/
+  `startPrecompiled` history lists). No deprecation and no replacement.
+
+  It never worked. `Monty.compile` snapshots a one-shot handle, and the native
+  handle refuses that unconditionally on every target, so every call threw
+  "snapshot is not supported on the one-shot handle" — and `runPrecompiled`
+  fails the same way on restore (core#152). The only tests that passed were
+  written against `MockMontyPlatform`. Code that called it was already failing
+  at runtime; it now fails to compile instead. To run the same source
+  repeatedly, hold it in `Monty(code)` and call `run()`; for state that
+  survives between runs, use `MontyRepl` and its `snapshot()`/`restore()`.
+
+  `tool/check_api_absent.sh` (a gate step and a CI check) fails if any of the
+  removed names becomes callable again.
 
 ## 0.23.0
 

@@ -21,40 +21,12 @@ import 'package:test/test.dart';
 /// Examples that currently fail or hang on `main`. Each entry is a
 /// regression to fix; once fixed, remove the entry so the test enforces
 /// the example.
-const _skipReasons = {
-  // REASON CORRECTED 2026-09-14. It previously blamed resumeNameLookupValue
-  // being unsupported on FFI. That was fixed (06da3ba) and the file now holds
-  // zero UnimplementedError, so the stale reason was hiding the real cause
-  // TWICE over: the example also failed to COMPILE on a duplicate `repl`
-  // declaration, which masked the runtime fault behind it.
+const _skipReasons = <String, String>{
+  // 06 was skipped here, blocked on core#152 (Monty.compile() always failed:
+  // the one-shot handle cannot snapshot). The precompile API was removed
+  // instead of fixed, the example lost its compile section and was renamed
+  // example/06_platform_apis.dart, and it is enforced again.
   //
-  // The compile error is fixed. What remains is a LIBRARY defect, not an
-  // example defect: Monty.compile() is broken.
-  //
-  // SCOPE CORRECTED 2026-09-16, measured. This said "broken on the FFI
-  // backend". It is broken on BOTH backends, and the fault is not in either
-  // binding -- it is in the shared Rust. native/src/handle.rs:558 is an
-  // unconditional `Err(...)` with no branch that can return Ok, and both
-  // backends reach it by the same two-step sequence:
-  //     FFI   ffi_core_bindings.dart:185  create(code) -> snapshot(handle)
-  //     WASM  worker_src.js:915,948       monty_create -> monty_snapshot
-  // The worker even comments "captures bytecode only" (worker_src.js:938), a
-  // belief the Rust it calls contradicts. runPrecompiled() is dead the same
-  // way via handle.rs:570. Sending someone to hunt in the FFI layer is exactly
-  // the stale-reason failure this entry already suffered once, above.
-  // Pinned by test/integration/ffi_compile_precompiled_test.dart.
-  //   FfiCoreBindings.compileCode (ffi_core_bindings.dart:186-191) calls
-  //   _bindings.snapshot() on a handle from _bindings.create(), i.e. a
-  //   ONE-SHOT handle, and native_bindings_ffi.dart:297 refuses exactly that:
-  //     "snapshot is not supported on the one-shot handle: monty's SessionRef
-  //      has no variant for an un-started MontyRun ... Use MontyRepl."
-  // So every Monty.compile() call throws Bad state on FFI. Not tracked by any
-  // of the 47 open issues as of 2026-09-14. Now filed as core#152.
-  'example/06_compile_and_platform.dart':
-      'BLOCKED on a library defect: Monty.compile() throws "snapshot is not '
-      'supported on the one-shot handle" — compileCode snapshots a one-shot '
-      'handle (ffi_core_bindings.dart:186-191 vs '
-      'native_bindings_ffi.dart:297).',
   // 08 and 09 were skipped for "hangs". Measured 2026-09-14: NEITHER HANGS.
   // Both run to completion and exit 0. That was the last of four stale skip
   // reasons in this map -- all four named a cause that was no longer true, and

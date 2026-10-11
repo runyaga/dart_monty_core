@@ -1,7 +1,7 @@
 // MontyPlatform's defaults — the diagnostic a new backend author sees.
 //
 // lib/src/platform/monty_platform.dart sat at 0/26. It is the abstract class
-// every backend implements against, and all thirteen of its methods have the
+// every backend implements against, and all ten of its methods have the
 // same shape: a body that throws UnimplementedError naming itself.
 //
 // WHAT THIS PINS, AND WHY IT IS NOT BOOKKEEPING. The message is the whole
@@ -12,7 +12,7 @@
 // of them:
 //
 //   - a copy-pasted body naming the WRONG method (the most likely mistake in
-//     thirteen near-identical throws, and the one a human reading the file
+//     ten near-identical throws, and the one a human reading the file
 //     will not catch)
 //   - a default that stops throwing and returns null or a Future that never
 //     completes, turning "not implemented" into a hang
@@ -23,8 +23,6 @@
 // the methods.
 @Tags(['unit'])
 library;
-
-import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_platform.dart';
@@ -75,23 +73,14 @@ void main() {
       );
     });
 
-    test('the compile and type-check surfaces', () {
-      _refuses('compileCode', () => p.compileCode('x = 1'));
+    test('the type-check surface', () {
       _refuses('typeCheck', () => p.typeCheck('x = 1'));
-      _refuses(
-        'runPrecompiled',
-        () => p.runPrecompiled(Uint8List.fromList([0])),
-      );
-      _refuses(
-        'startPrecompiled',
-        () => p.startPrecompiled(Uint8List.fromList([0])),
-      );
     });
 
     test('no default names a DIFFERENT method than its own', () {
       // The copy-paste check, stated as its own case because it is the failure
       // the per-method assertions above would still catch but nobody would
-      // read them as testing for. Thirteen near-identical throws is where a
+      // read them as testing for. Ten near-identical throws is where a
       // wrong name hides.
       final seen = <String>{};
       for (final entry in <String, Object? Function()>{
@@ -103,10 +92,7 @@ void main() {
         'resumeNotFound': () => p.resumeNotFound('f'),
         'resumeNameLookup': () => p.resumeNameLookup('n', 1),
         'resumeNameLookupUndefined': () => p.resumeNameLookupUndefined('n'),
-        'compileCode': () => p.compileCode('x'),
         'typeCheck': () => p.typeCheck('x'),
-        'runPrecompiled': () => p.runPrecompiled(Uint8List.fromList([0])),
-        'startPrecompiled': () => p.startPrecompiled(Uint8List.fromList([0])),
         'dispose': p.dispose,
       }.entries) {
         // RECORDED THROUGH THE MATCHER, not a catch. `UnimplementedError`
@@ -133,13 +119,13 @@ void main() {
         );
       }
 
-      // Thirteen DISTINCT messages. If two defaults carried the same text,
+      // Ten DISTINCT messages. If two defaults carried the same text,
       // at least one names the wrong method — the copy-paste failure this
       // case exists for, which the per-method assertions above would catch
       // only if the wrong name happened to belong to a method not also tested.
       expect(
         seen,
-        hasLength(13),
+        hasLength(10),
         reason: 'two defaults share a message, so one names the wrong method',
       );
     });

@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/monty_factory.dart';
 import 'package:dart_monty_core/src/platform/monty_limits.dart';
@@ -82,40 +80,6 @@ class Monty {
       );
     } finally {
       await repl.dispose();
-    }
-  }
-
-  /// Compiles [code] and returns the bytecode as a binary blob.
-  ///
-  /// Use [runPrecompiled] to execute the result. Pre-compiling avoids
-  /// re-parsing on repeated executions of the same script.
-  static Future<Uint8List> compile(String code) async {
-    final platform = createPlatformMonty();
-    try {
-      return await platform.compileCode(code);
-    } finally {
-      await platform.dispose();
-    }
-  }
-
-  /// Runs pre-compiled bytecode from [compile] in a stateless context.
-  ///
-  /// Creates a temporary backend, runs once, and disposes. Does not
-  /// affect any session state.
-  static Future<MontyResult> runPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) async {
-    final platform = createPlatformMonty();
-    try {
-      return await platform.runPrecompiled(
-        compiled,
-        limits: limits,
-        scriptName: scriptName,
-      );
-    } finally {
-      await platform.dispose();
     }
   }
 
