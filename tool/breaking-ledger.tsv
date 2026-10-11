@@ -41,3 +41,4 @@ edd9c41	`MontyPairsDict` is gone; `MontyDict` holds pairs
 8c6d20f	`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`
 2d68f6c	The backend-adapter layer is no longer exported
 2493243	An omitted `maxSuspensions` now applies a budget of 1000, not none.
+e3ee9c9	The precompile API is removed
