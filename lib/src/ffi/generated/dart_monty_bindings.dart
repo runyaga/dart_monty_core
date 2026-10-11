@@ -1047,8 +1047,7 @@ final class MontyHandle extends ffi.Opaque {}
 /// Result tag for monty_run().
 enum MontyResultTag {
   MONTY_RESULT_OK(0),
-  MONTY_RESULT_ERROR(1)
-  ;
+  MONTY_RESULT_ERROR(1);
 
   final int value;
   const MontyResultTag(this.value);
@@ -1067,8 +1066,7 @@ enum MontyProgressTag {
   MONTY_PROGRESS_ERROR(2),
   MONTY_PROGRESS_RESOLVE_FUTURES(3),
   MONTY_PROGRESS_OS_CALL(4),
-  MONTY_PROGRESS_NAME_LOOKUP(5)
-  ;
+  MONTY_PROGRESS_NAME_LOOKUP(5);
 
   final int value;
   const MontyProgressTag(this.value);
