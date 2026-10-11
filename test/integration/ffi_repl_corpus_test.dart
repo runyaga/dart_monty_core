@@ -80,12 +80,13 @@ import 'package:test/test.dart';
 /// REPL session on the one-shot handle's footing so a difference in RESULT is
 /// attributable to the handle rather than to a difference in configuration.
 ///
-/// The numbers are pinned to the one-shot constants below rather than
-/// retyped — see `repl session limits match the one-shot defaults`.
-const _replSessionLimits = MontyLimits(
-  memoryBytes: BaseMontyPlatform.defaultMemoryBytes,
-  stackDepth: BaseMontyPlatform.defaultStackDepth,
-);
+/// They are the one-shot corpus runner's own limits (`conformanceLimits`,
+/// upstream's datatest configuration: recursion 50), not retyped numbers —
+/// see `repl session limits match the one-shot corpus runner`. Since the
+/// strict adjudicator compares traceback frames, the recursion limit is
+/// visible in results: `traceback__recursion_error.py` states
+/// `[Previous line repeated 47 more times]`, which only depth 50 produces.
+const MontyLimits _replSessionLimits = conformanceLimits;
 
 // ---------------------------------------------------------------------------
 // Known divergences — EXACT MATCH, and self-cleaning
@@ -268,9 +269,48 @@ Future<_ReplOutcome> _runOnRepl(
   }
 }
 
+/// The REPL's frames, renamed from the REPL's input name to [script].
+///
+/// A REPL names each feed `<python-input-N>`, as CPython's REPL does, whatever
+/// `scriptName` the session was given — measured identically through
+/// `pydantic-monty 0.0.23`'s `MontySession.feed_run`, so this is upstream
+/// behaviour, not a binding defect. The fixtures state their tracebacks with
+/// the script's file name. Only the first feed's name is rewritten, and only
+/// exactly, so any other difference in a frame still fails.
+MontyException? _asScript(MontyException? e, String script) {
+  if (e == null) return null;
+  const replInput = '<python-input-0>';
+
+  return MontyException(
+    message: e.message,
+    excType: e.excType,
+    filename: e.filename,
+    lineNumber: e.lineNumber,
+    columnNumber: e.columnNumber,
+    sourceCode: e.sourceCode,
+    traceback: [
+      for (final f in e.traceback)
+        if (f.filename != replInput)
+          f
+        else
+          MontyStackFrame(
+            filename: script,
+            startLine: f.startLine,
+            startColumn: f.startColumn,
+            endLine: f.endLine,
+            endColumn: f.endColumn,
+            frameName: f.frameName,
+            previewLine: f.previewLine,
+            hideCaret: f.hideCaret,
+            hideFrameName: f.hideFrameName,
+          ),
+    ],
+  );
+}
+
 void main() {
   group('ffi_repl_corpus', () {
-    test('repl session limits match the one-shot defaults', () {
+    test('repl session limits match the one-shot corpus runner', () {
       // The point of this runner is that a difference is attributable to the
       // HANDLE. If these drift from `handle.rs`'s `default_limits()` the
       // comparison is against a different configuration and means less than it
@@ -281,13 +321,15 @@ void main() {
       // so this runner silently kept testing at a depth that KILLS THE HOST,
       // while every other caller had been fixed. That is precisely the drift
       // this test exists to catch, and asserting literals could not catch it.
+      //
+      // The one-shot corpus runner (runFixtureCorpus) runs every fixture under
+      // `conformanceLimits`, so that is the configuration to share. The
+      // one-shot DEFAULT (BaseMontyPlatform.defaultStackDepth, 512) is the
+      // wrong yardstick for a corpus authored at depth 50.
+      expect(_replSessionLimits, same(conformanceLimits));
       expect(
         _replSessionLimits.memoryBytes,
         BaseMontyPlatform.defaultMemoryBytes,
-      );
-      expect(
-        _replSessionLimits.stackDepth,
-        BaseMontyPlatform.defaultStackDepth,
       );
     });
 
@@ -579,31 +621,15 @@ void main() {
           return;
         }
 
-        switch (expectation) {
-          case ExpectNoException():
-            expect(
-              outcome.excType,
-              isNull,
-              reason: describeFixtureFailure(key, outcome.exception),
-            );
-          case ExpectReturn(value: final expected):
-            expect(
-              outcome.excType,
-              isNull,
-              reason: describeFixtureFailure(key, outcome.exception),
-            );
-            expect(
-              outcome.value,
-              equals(MontyValue.fromDart(expected)),
-              reason: 'value mismatch for $key',
-            );
-          case ExpectRaise(:final excType):
-            expect(
-              outcome.excType,
-              equals(excType),
-              reason: 'excType mismatch for $key',
-            );
-        }
+        final failure = adjudicateFixture(
+          expectation,
+          FixtureOutcome.from(
+            exception: _asScript(outcome.exception, key),
+            excType: outcome.excType,
+            value: outcome.value,
+          ),
+        );
+        expect(failure, isNull, reason: '$key: $failure');
       });
     }
   });

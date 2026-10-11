@@ -31,6 +31,13 @@ void main() {
           return;
         }
 
+        // This suite compares FFI against the oracle, not against the
+        // directives, so a malformed fixture would otherwise pass here
+        // unremarked. The directives are adjudicated by
+        // ffi_fixture_corpus_test.dart; this keeps the two from disagreeing
+        // about whether the fixture is readable at all.
+        if (expectation is MalformedFixture) fail(expectation.reason);
+
         // Run the oracle to get the authoritative expected result.
         final oracleJson = await runOracle(value);
         final oracleResult = MontyResult.fromJson(
