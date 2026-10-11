@@ -31,10 +31,10 @@ void runSuspensionBudgetTests(String backend) {
             repl.feedRun(
               'for i in range(500):\n    ping()',
               externalFunctions: {
-                'ping': (args, kwargs) async {
+                'ping': (args, kwargs) {
                   calls++;
 
-                  return null;
+                  return Future<Object?>.value();
                 },
               },
             ),
@@ -59,10 +59,10 @@ void runSuspensionBudgetTests(String backend) {
         final first = await repl.feedRun(
           'for i in range(4):\n    ping()',
           externalFunctions: {
-            'ping': (args, kwargs) async {
+            'ping': (args, kwargs) {
               calls++;
 
-              return null;
+              return Future<Object?>.value();
             },
           },
         );
@@ -72,10 +72,10 @@ void runSuspensionBudgetTests(String backend) {
           repl.feedRun(
             'for i in range(4):\n    ping()',
             externalFunctions: {
-              'ping': (args, kwargs) async {
+              'ping': (args, kwargs) {
                 calls++;
 
-                return null;
+                return Future<Object?>.value();
               },
             },
           ),
@@ -109,10 +109,10 @@ void runSuspensionBudgetTests(String backend) {
         final r = await repl.feedRun(
           'for i in range(2000):\n    ping()',
           externalFunctions: {
-            'ping': (args, kwargs) async {
+            'ping': (args, kwargs) {
               calls++;
 
-              return null;
+              return Future<Object?>.value();
             },
           },
         );
@@ -137,10 +137,10 @@ void runSuspensionBudgetTests(String backend) {
             'for i in range(100):\n'
             '    f()\n',
             externalFunctions: {
-              'ping': (args, kwargs) async {
+              'ping': (args, kwargs) {
                 calls++;
 
-                return null;
+                return Future<Object?>.value();
               },
             },
           ),
@@ -167,10 +167,10 @@ void runSuspensionBudgetTests(String backend) {
           repl.feedRun(
             'while True:\n    ping()',
             externalFunctions: {
-              'ping': (args, kwargs) async {
+              'ping': (args, kwargs) {
                 calls++;
 
-                return null;
+                return Future<Object?>.value();
               },
             },
           ),
@@ -195,10 +195,10 @@ void runSuspensionBudgetTests(String backend) {
           repl.feedRun(
             'while True:\n    await ping()',
             externalAsyncFunctions: {
-              'ping': (args, kwargs) async {
+              'ping': (args, kwargs) {
                 calls++;
 
-                return null;
+                return Future<Object?>.value();
               },
             },
           ),

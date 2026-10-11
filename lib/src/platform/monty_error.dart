@@ -14,6 +14,7 @@ import 'package:dart_monty_core/src/platform/monty_exception.dart';
 ///     case MontyCrashError():       // Isolate died unexpectedly
 ///     case MontyDisposedError():    // Disposed while running
 ///     case MontyResourceError():    // OOM, timeout, WASM trap
+///     case MontySuspensionBudgetExceeded(): // host suspension bound hit
 ///   }
 /// }
 /// ```
@@ -132,7 +133,7 @@ class MontyResourceError extends MontyError {
 final class MontySuspensionBudgetExceeded extends MontyError {
   /// Creates a [MontySuspensionBudgetExceeded] for a session that used up
   /// [budget] suspensions.
-  MontySuspensionBudgetExceeded(this.budget)
+  const MontySuspensionBudgetExceeded(this.budget)
     : super(
         'suspension limit $budget exceeded: the session asked the host to '
         'answer more than $budget suspensions. Raise or remove the bound with '

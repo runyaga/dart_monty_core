@@ -476,7 +476,7 @@ void main() {
         const MontyCrashError('c'),
         const MontyDisposedError('d'),
         const MontyResourceError('r'),
-        MontySuspensionBudgetExceeded(1),
+        const MontySuspensionBudgetExceeded(1),
       ];
       final names = errors.map((e) {
         return switch (e) {

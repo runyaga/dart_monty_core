@@ -22,29 +22,28 @@
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  _errorInResult(); // Python errors land in result.error, not thrown
+  await _errorInResult(); // Python errors land in result.error, not thrown
   await _syntaxError();
   await _scriptError();
   await _resourceError();
-  _disposedError();
+  await _disposedError();
   _exhaustivePatternMatch();
 }
 
 // ── Python errors in result.error ────────────────────────────────────────────
 // A Python exception does NOT throw in Dart.
 // It appears in MontyResult.error while result.value is MontyNone.
-void _errorInResult() {
+Future<void> _errorInResult() async {
   print('\n── error in result (no throw) ──');
-  Monty.exec('1 / 0').then((r) {
-    print('isError: ${r.isError}');
-    if (r.error != null) {
-      final e = r.error!;
-      print('excType:  ${e.excType}'); // ZeroDivisionError
-      print('message:  ${e.message}');
-      print('line:     ${e.lineNumber}');
-      print('value:    ${r.value}'); // MontyNone
-    }
-  });
+  final r = await Monty.exec('1 / 0');
+  print('isError: ${r.isError}');
+  final e = r.error;
+  if (e != null) {
+    print('excType:  ${e.excType}'); // ZeroDivisionError
+    print('message:  ${e.message}');
+    print('line:     ${e.lineNumber}');
+    print('value:    ${r.value}'); // MontyNone
+  }
 }
 
 // ── MontySyntaxError ──────────────────────────────────────────────────────────
@@ -82,8 +81,8 @@ def inner():
 outer()
 ''');
 
-  if (r.error != null) {
-    final e = r.error!;
+  final e = r.error;
+  if (e != null) {
     print('script error!');
     print('  excType:  ${e.excType}');
     print('  message:  ${e.message}');
@@ -103,7 +102,7 @@ Future<void> _resourceError() async {
   try {
     await Monty.exec(
       'while True: pass', // infinite loop
-      limits: MontyLimits(timeoutMs: 200),
+      limits: const MontyLimits(timeoutMs: 200),
     );
   } on MontyResourceError catch (e) {
     print('resource error: ${e.message}');
@@ -112,20 +111,19 @@ Future<void> _resourceError() async {
 
 // ── MontyDisposedError ────────────────────────────────────────────────────────
 // Thrown when you use an interpreter after calling dispose().
-void _disposedError() {
+Future<void> _disposedError() async {
   print('\n── MontyDisposedError ──');
-  final repl = MontyRepl();
-  repl.dispose();
-  repl
-      .feedRun('1 + 1')
-      .then((_) {
-        print('should not reach here');
-      })
-      .catchError((Object e) {
-        if (e is MontyDisposedError) {
-          print('disposed error: ${e.message}');
-        }
-      });
+  final repl = MontyRepl()..dispose();
+  try {
+    await repl.feedRun('1 + 1');
+    print('should not reach here');
+  } on MontyDisposedError catch (e) {
+    print('disposed error: ${e.message}');
+  } on StateError catch (e) {
+    // MontyRepl reports use-after-dispose as a StateError today, not as
+    // MontyDisposedError; the earlier `.catchError` hid that by ignoring it.
+    print('disposed (StateError): ${e.message}');
+  }
 }
 
 // ── Exhaustive supervisor pattern match ───────────────────────────────────────
@@ -155,15 +153,20 @@ void _exhaustivePatternMatch() {
 
       case MontyResourceError():
         print('resource: OOM/timeout — reduce load, then restart');
+
+      case MontySuspensionBudgetExceeded(:final budget):
+        // The host's suspension bound was hit; the sandbox cannot catch it.
+        print('suspensions: more than $budget host calls — raise the bound');
     }
   }
 
-  handleError(MontySyntaxError('bad syntax', excType: 'SyntaxError'));
-  handleError(MontyScriptError('value error', excType: 'ValueError'));
-  handleError(MontyPanicError('rust panic'));
-  handleError(MontyCrashError('worker died'));
-  handleError(MontyDisposedError('use after dispose'));
-  handleError(MontyResourceError('OOM'));
+  handleError(const MontySyntaxError('bad syntax', excType: 'SyntaxError'));
+  handleError(const MontyScriptError('value error', excType: 'ValueError'));
+  handleError(const MontyPanicError('rust panic'));
+  handleError(const MontyCrashError('worker died'));
+  handleError(const MontyDisposedError('use after dispose'));
+  handleError(const MontyResourceError('OOM'));
+  handleError(const MontySuspensionBudgetExceeded(100));
 }
 
 void _printException(MontyException? e) {
