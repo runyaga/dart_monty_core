@@ -161,6 +161,7 @@ SUITES=(
   "test/integration/wasm_repl_corpus_test.dart"
   "test/integration/wasm_repl_extfns_lifecycle_test.dart"
   "test/integration/wasm_repl_futures_test.dart"
+  "test/integration/wasm_repl_preamble_test.dart"
   "test/integration/wasm_repl_snapshot_lifecycle_test.dart"
   "test/integration/wasm_run_async_matrix_test.dart"
   "test/integration/wasm_setextfns_test.dart"

@@ -87,12 +87,11 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   /// NOT CPython's 1000, and the difference is physical rather than stylistic.
   /// Monty's recursion guard is a COUNTER: it raises `RecursionError` after N
   /// nested frames. Reaching N costs real native stack, and this binding runs
-  /// the engine IN-PROCESS — an FFI call on a Dart isolate thread, or a wasm32
-  /// stack living in linear memory — where upstream runs it in SUBPROCESS
-  /// WORKERS with a full main-thread stack. Set this deeper than the stack can
-  /// sustain and the stack overflows BEFORE the counter trips:
+  /// the engine IN-PROCESS, where upstream runs it in SUBPROCESS WORKERS. Set
+  /// this deeper than the stack can sustain and the stack overflows BEFORE the
+  /// counter trips:
   ///
-  ///     FFI    SIGSEGV — the HOST PROCESS DIES, nothing to catch
+  ///     FFI    SIGSEGV/SIGILL — the HOST PROCESS DIES, nothing to catch
   ///     WASM   the module traps (contained, but still a failure)
   ///
   /// This was 1000, "matches CPython", and that is what made five corpus
@@ -100,25 +99,24 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   /// monty bugs. They are not: `pydantic-monty 0.0.23`, the tag
   /// native/Cargo.toml pins, raises RecursionError on the same scripts and its
   /// parent survives. monty's own `ResourceLimits::default()` is also 1000
-  /// (monty-types/src/resource.rs:105) — correct for a subprocess embedding,
-  /// fatal for an in-process one.
+  /// (monty-types/src/resource.rs:105).
   ///
-  /// MEASURED by bisecting each recursion shape's crash point, monty v0.0.23,
-  /// linux/arm64 (`safe / crash`):
-  ///
-  ///     cyclic dict == dict     534 / 539   <-- worst case, sets this bound
-  ///     cyclic deque == deque   765 / 781
-  ///     cyclic list, deep repr, deep hash, heavy Python frames   >= 765
+  /// The FFI stack: interpreter calls used to run on the calling Dart thread
+  /// (~1 MiB, fixed at thread creation, so `ulimit -s` never helped). The
+  /// worst shape, a cyclic `dict == dict`, died there at depth 539
+  /// (linux/arm64), then at 510 (macOS arm64, rustc 1.99), which is below this
+  /// default. They now run on a dedicated 16 MiB stack (`interpreter_stack`,
+  /// native/src/error.rs), where the same shape reaches RecursionError up to
+  /// depth 8191. FFI no longer sets this bound.
   ///
   /// Cost per frame is NOT uniform — a cyclic dict comparison burns far more
-  /// native stack per level than a Python call frame — so the bound is the
-  /// minimum across shapes, not the typical one. `ulimit -s` does not help:
-  /// 8MB, 64MB and unlimited all segfault identically, because an isolate
-  /// thread's stack is fixed at thread creation, not by the process rlimit.
+  /// native stack per level than a Python call frame — so any bound is the
+  /// minimum across shapes, not the typical one. Raising this towards
+  /// upstream's 1000 needs the wasm32 ceiling measured first.
   ///
-  /// All three backends agree at 512 and all three fail at 1000. Guarded by
-  /// test/integration/ffi_recursion_ceiling_test.dart and its wasm_ twin,
-  /// which re-measure rather than trusting these numbers.
+  /// Guarded by test/integration/ffi_recursion_ceiling_test.dart (here and at
+  /// 4x) and its wasm_ twin, which re-measure rather than trusting these
+  /// numbers.
   static const int defaultStackDepth = 512;
 
   final MontyCoreBindings _bindings;

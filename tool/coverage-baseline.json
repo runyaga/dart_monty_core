@@ -252,8 +252,8 @@
       "pct": 83.33
     },
     "lib/src/platform/wire_json.dart": {
-      "found": 8,
-      "hit": 8,
+      "found": 9,
+      "hit": 9,
       "pct": 100.0
     },
     "lib/src/repl/ffi_repl_bindings.dart": {
@@ -262,9 +262,9 @@
       "pct": 89.77
     },
     "lib/src/repl/monty_repl.dart": {
-      "found": 228,
-      "hit": 208,
-      "pct": 91.23
+      "found": 227,
+      "hit": 209,
+      "pct": 92.07
     },
     "lib/src/repl/repl_bindings.dart": {
       "found": 0,
@@ -334,7 +334,7 @@
   },
   "total": {
     "found": 4167,
-    "hit": 2777,
-    "pct": 66.64
+    "hit": 2779,
+    "pct": 66.69
   }
 }

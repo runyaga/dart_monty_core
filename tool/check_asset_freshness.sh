@@ -29,14 +29,14 @@ cd "$(git rev-parse --show-toplevel)"
 
 RECORD=tool/wasm-provenance.json
 
-# Everything the committed assets are built FROM. Order is fixed by `sort` so
-# the hash is stable across machines and filesystems.
+# Everything the committed assets are built FROM. Order is fixed by `LC_ALL=C sort`
+# so the hash is stable across machines: macOS and GNU sort collate differently.
 source_hash() {
   {
     find native/src -type f -name '*.rs' -print0 2>/dev/null
-    printf '%s\0' native/Cargo.toml native/Cargo.lock
+    printf '%s\0' native/Cargo.toml native/Cargo.lock native/build.rs
     find js/src -type f -name '*.js' -print0 2>/dev/null
-  } | tr '\0' '\n' | sort | while read -r f; do
+  } | tr '\0' '\n' | LC_ALL=C sort | while read -r f; do
     [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
   done | shasum -a 256 | awk '{print $1}'
 }
@@ -53,7 +53,7 @@ except FileNotFoundError:
     d = {}
 d['source_sha256'] = sys.argv[1]
 d['_source_sha256_comment'] = (
-    'sha256 over native/src/**.rs, native/Cargo.{toml,lock} and js/src/**.js -- '
+    'sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs and js/src/**.js -- '
     'the INPUTS to the committed assets. The assets themselves are not '
     'byte-reproducible, so hashing them proves nothing; hashing what they are '
     'built from proves everything that matters. Updated by tool/prebuild.sh.')

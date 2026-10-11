@@ -1,21 +1,21 @@
 {
   "_comment": "Provenance for the committed WASM/JS assets in lib/assets/. Lives in tool/ (.pubignore'd) rather than lib/assets/ because it is DEVELOPMENT knowledge: consumers used to download it with the package and it told them nothing actionable. See docs/contributor/testing-runbook.md for why a git diff on the blob is uninformative.",
-  "_source_sha256_comment": "sha256 over native/src/**.rs, native/Cargo.{toml,lock} and js/src/**.js -- the INPUTS to the committed assets. The assets themselves are not byte-reproducible, so hashing them proves nothing; hashing what they are built from proves everything that matters. Updated by tool/prebuild.sh.",
+  "_source_sha256_comment": "sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs and js/src/**.js -- the INPUTS to the committed assets. The assets themselves are not byte-reproducible, so hashing them proves nothing; hashing what they are built from proves everything that matters. Updated by tool/prebuild.sh.",
   "assets": {
     "dart_monty_core_bridge.js": {
-      "bytes": 19034,
-      "sha256": "2645a793c9bbb097c04b32b1e82a45ca580fab1d333016db5c118991c660a494"
+      "bytes": 20921,
+      "sha256": "bf163bf573a0e62be828728f0561637ac9f57d668ef9b1441936c67cb31b42d2"
     },
     "dart_monty_core_native.wasm": {
-      "bytes": 14375976,
-      "sha256": "9176459f67b130a16e09b40a5401c6eb8aa693ba7a16dc6a82353621aecf06cc"
+      "bytes": 15191477,
+      "sha256": "3ced9dda61d332f752e4d4ad9439d18dd6dfd36fcb71f53211104cfd74d95634"
     },
     "dart_monty_core_worker.js": {
-      "bytes": 51823,
-      "sha256": "2f37657f9855b2302f559afbf620b53afc13782d7f79ba07d87b3a371db51f58"
+      "bytes": 52955,
+      "sha256": "4c0f28306d542f6e1a0c7b70e0713c56151331978f3ca15197eec95acd5ef909"
     }
   },
   "monty_tag": "v0.0.23",
-  "native_commit": "f5610574158839b6e1c4fcb89d0b358ccc248a06",
-  "source_sha256": "7d7a5457503db0a8d1741c8b34952734326190c00e45780dc2f3355335647fe1"
+  "native_commit": "3ff62af878b9743368bf1a2b5944695c040ca931",
+  "source_sha256": "28f8015349b5ddcfd215ef8b771ddd44b6b10d7f9d7240ed88e40791478412c7"
 }

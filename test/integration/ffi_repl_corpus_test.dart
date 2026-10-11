@@ -149,11 +149,13 @@ typedef ReplCrash = ({int exitCode, String why});
 /// Monty's guard is a COUNTER — RecursionError after N nested frames — and
 /// reaching N costs real native stack. Upstream runs the engine in SUBPROCESS
 /// WORKERS with a full main-thread stack, so its default of 1000 suits it;
-/// this binding runs it IN-PROCESS on a Dart isolate thread, where the stack
-/// overflows before the counter trips. `_replSessionLimits` hardcoded 1000
-/// even after the shared default moved to 512, so this runner kept testing at
-/// a depth that kills the host while every other caller had been fixed. Both
-/// now reference BaseMontyPlatform.defaultStackDepth.
+/// this binding ran it IN-PROCESS on the calling Dart thread (~1 MiB), where
+/// the stack overflows before the counter trips. (It now runs on a 16 MiB
+/// interpreter stack; see `BaseMontyPlatform.defaultStackDepth`.)
+/// `_replSessionLimits` hardcoded 1000 even after the shared default moved to
+/// 512, so this runner kept testing at a depth that kills the host while every
+/// other caller had been fixed. Both now reference
+/// BaseMontyPlatform.defaultStackDepth.
 ///
 /// With that corrected, all four run to completion and PASS: the suite went
 /// +556 ~34 -3 to +560 ~34 -3, same failures, no crash.

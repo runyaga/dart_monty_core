@@ -362,7 +362,7 @@ fn run_error_with_null_result_json() {
     assert!(!error_msg.is_null());
 
     let err = unsafe { read_c_string(error_msg) };
-    assert!(!err.is_empty());
+    assert_ne!(err, "");
 
     unsafe { monty_free(handle) };
 }
