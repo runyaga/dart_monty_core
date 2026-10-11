@@ -279,6 +279,17 @@ if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
   exit 1
 fi
 
+# Every fixture the runner COUNTED must have a parseable result line, or a
+# lost FAILURE reads as a pass -- see step 8a' in tool/test_wasm.sh.
+DONE_PASSED=$(echo "$DONE" | sed -n 's/.*"passed":\([0-9]*\).*/\1/p')
+DONE_FAILED=$(echo "$DONE" | sed -n 's/.*"failed":\([0-9]*\).*/\1/p')
+SEEN_PASSED=$(echo "$RESULTS" | grep -c '"ok":true' || true)
+if [ "$SEEN_PASSED" != "$DONE_PASSED" ] || [ "$FAILURES" != "$DONE_FAILED" ]; then
+  echo "FAILED: FIXTURE_DONE says passed=$DONE_PASSED failed=$DONE_FAILED but"
+  echo "  parseable FIXTURE_RESULT lines show passed=$SEEN_PASSED failed=$FAILURES"
+  exit 1
+fi
+
 # Compare against the DECLARED expected-failure set, exactly as
 # tool/test_wasm.sh does for the shipped engine.
 #

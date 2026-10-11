@@ -484,6 +484,35 @@ if [ "$ACTUAL_TOTAL" != "$EXPECTED_TOTAL" ]; then
 fi
 
 # -------------------------------------------------------
+# Step 8a': every fixture the runner COUNTED must have a parseable result line
+#
+# The expected-failure comparison below reads `FIXTURE_RESULT:{...}` lines, so a
+# result line the grep cannot match makes its fixture vanish -- and a vanished
+# FAILURE reads as a pass. Measured 2026-10-11: reasons were hand-escaped
+# without newlines, a multi-line traceback diff split its record across console
+# lines, and FIXTURE_DONE said 26 failed while only 12 `"ok":false` lines
+# survived the grep. The runner's own counters are the cross-check.
+# -------------------------------------------------------
+DONE_PASSED=$(echo "$FIXTURE_DONE" | sed -n 's/.*"passed":\([0-9]*\).*/\1/p')
+DONE_FAILED=$(echo "$FIXTURE_DONE" | sed -n 's/.*"failed":\([0-9]*\).*/\1/p')
+SEEN_PASSED=0
+SEEN_FAILED=0
+if [ -n "$FIXTURE_RESULTS" ]; then
+  SEEN_PASSED=$(echo "$FIXTURE_RESULTS" | grep -c '"ok":true' || true)
+  SEEN_FAILED=$(echo "$FIXTURE_RESULTS" | grep -c '"ok":false' || true)
+fi
+if [ "$SEEN_PASSED" != "$DONE_PASSED" ] || [ "$SEEN_FAILED" != "$DONE_FAILED" ]; then
+  echo ""
+  echo "=== FAILED: result lines do not match the runner's counters ==="
+  echo "  FIXTURE_DONE says passed=$DONE_PASSED failed=$DONE_FAILED; parseable"
+  echo "  FIXTURE_RESULT lines show passed=$SEEN_PASSED failed=$SEEN_FAILED."
+  echo "  A result record was lost (unescaped newline in a reason?), so the"
+  echo "  expected-failure comparison would judge an incomplete set."
+  dump_debug
+  exit 1
+fi
+
+# -------------------------------------------------------
 # Step 8b: compare against the DECLARED expected-failure set
 #
 # A plain "0 failures" gate can never go green while a genuine upstream bug

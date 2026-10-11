@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 import 'package:monty_conformance/src/fixture_corpus.dart';
@@ -65,11 +67,16 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       log('FIXTURE_RESULT:{"name":"$key","ok":true}');
     } else {
       failed++;
-      // Backslash FIRST -- escaping quotes first would then escape the
-      // backslashes this very line inserts, doubling them. Latent until the
-      // reason started carrying Python exception text, which can contain both.
-      final escaped = reason.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      log('FIXTURE_RESULT:{"name":"$key","ok":false,"reason":"$escaped"}');
+      // jsonEncode, not hand escaping. The hand-rolled version escaped `\`
+      // and `"` but not newlines, and a strict-adjudicator reason (a traceback
+      // diff) is multi-line: the record split across console lines, the
+      // harness's `FIXTURE_RESULT:{.*}` grep no longer matched it, and the
+      // failing fixture VANISHED from the result set. Measured: FIXTURE_DONE
+      // said 26 failed while only 12 `"ok":false` lines survived.
+      log(
+        'FIXTURE_RESULT:{"name":"$key","ok":false,'
+        '"reason":${jsonEncode(reason)}}',
+      );
 
       // (no early-abort here; fixture runs must be exhaustive)
     }
