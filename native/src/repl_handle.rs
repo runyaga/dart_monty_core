@@ -1506,7 +1506,7 @@ mod tests {
         let bytes = repl
             .snapshot()
             .expect("snapshot should succeed in Idle state");
-        assert!(!bytes.is_empty());
+        assert_ne!(bytes, b"", "snapshot must not be empty");
 
         let mut restored = MontyReplHandle::restore_keeping_snapshot_limits(&bytes)
             .expect("restore should succeed");

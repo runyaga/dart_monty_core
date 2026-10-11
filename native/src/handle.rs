@@ -901,7 +901,7 @@ mod tests {
     fn test_snapshot_restore() {
         let handle = MontyHandle::new("2 + 2".into(), vec![], None).unwrap();
         let bytes = handle.snapshot().unwrap();
-        assert!(!bytes.is_empty());
+        assert_ne!(bytes, b"", "snapshot must not be empty");
 
         let mut restored = MontyHandle::restore(&bytes).unwrap();
         let (tag, result_json, _) = restored.run();

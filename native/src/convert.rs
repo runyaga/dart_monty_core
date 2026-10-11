@@ -2021,7 +2021,7 @@ mod tests {
     fn rt_tuple_empty() {
         let obj = MontyObject::Tuple(vec![]);
         match round_trip(&obj) {
-            MontyObject::Tuple(items) => assert!(items.is_empty()),
+            MontyObject::Tuple(items) => assert_eq!(items, [] as [MontyObject; 0]),
             other => panic!("expected empty Tuple, got {other:?}"),
         }
     }
@@ -2094,7 +2094,7 @@ mod tests {
     fn rt_set_empty() {
         let obj = MontyObject::Set(vec![]);
         match round_trip(&obj) {
-            MontyObject::Set(items) => assert!(items.is_empty()),
+            MontyObject::Set(items) => assert_eq!(items, [] as [MontyObject; 0]),
             other => panic!("expected empty Set, got {other:?}"),
         }
     }
@@ -2116,7 +2116,7 @@ mod tests {
     fn rt_frozenset_empty() {
         let obj = MontyObject::FrozenSet(vec![]);
         match round_trip(&obj) {
-            MontyObject::FrozenSet(items) => assert!(items.is_empty()),
+            MontyObject::FrozenSet(items) => assert_eq!(items, [] as [MontyObject; 0]),
             other => panic!("expected empty FrozenSet, got {other:?}"),
         }
     }
@@ -2136,7 +2136,7 @@ mod tests {
     fn rt_bytes_empty() {
         let obj = MontyObject::Bytes(vec![]);
         match round_trip(&obj) {
-            MontyObject::Bytes(b) => assert!(b.is_empty()),
+            MontyObject::Bytes(b) => assert_eq!(b, b""),
             other => panic!("expected empty Bytes, got {other:?}"),
         }
     }
@@ -2193,8 +2193,8 @@ mod tests {
                 values,
             } => {
                 assert_eq!(type_name, "Empty");
-                assert!(field_names.is_empty());
-                assert!(values.is_empty());
+                assert_eq!(field_names, [] as [String; 0]);
+                assert_eq!(values, [] as [MontyObject; 0]);
             }
             other => panic!("expected empty NamedTuple, got {other:?}"),
         }
