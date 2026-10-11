@@ -502,4 +502,18 @@ void main() {
       ]);
     });
   });
+
+  group('MontySuspensionBudgetExceeded', () {
+    test('carries the budget, names the opt-outs and its type', () {
+      // Built at run time on purpose: a const instance never runs the
+      // constructor, so its message and type name would go unexercised.
+      final budget = int.parse('7');
+      final e = MontySuspensionBudgetExceeded(budget);
+
+      expect(e.budget, 7);
+      expect(e.message, contains('suspension limit 7 exceeded'));
+      expect(e.message, contains('MontyLimits.unlimitedSuspensions'));
+      expect(e.toString(), startsWith('MontySuspensionBudgetExceeded: '));
+    });
+  });
 }
