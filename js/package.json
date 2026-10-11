@@ -2,15 +2,9 @@
   "name": "dart-monty-wasm-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "JS bridge for dart_monty_core — C-ABI WASM Worker",
+  "description": "JS bridge for dart_monty_core \u2014 C-ABI WASM Worker",
   "scripts": {
     "build": "node build.js"
-  },
-  "dependencies": {
-    "@emnapi/core": "^1.8.1",
-    "@emnapi/runtime": "^1.8.1",
-    "@napi-rs/wasm-runtime": "^1.1.1",
-    "@tybys/wasm-util": "^0.10.1"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
