@@ -25,6 +25,55 @@ where
     })
 }
 
+/// Native stack, in bytes, that every interpreter call runs on.
+///
+/// The same 16 MiB upstream gives its own worker thread. Monty's recursion
+/// guard is a frame COUNTER, so whether `RecursionError` is raised or the host
+/// process dies depends on the native stack outlasting the counter.
+#[cfg(not(target_arch = "wasm32"))]
+pub const INTERPRETER_STACK_BYTES: usize = 16 * 1024 * 1024;
+
+/// [`catch_ffi_panic`], run on a dedicated thread with
+/// [`INTERPRETER_STACK_BYTES`] of stack. Use it for every call that can execute
+/// or compile Python.
+///
+/// Without it the interpreter runs on the caller's thread: for FFI that is a
+/// Dart thread with ~1 MiB of stack, fixed at thread creation. On macOS arm64
+/// a cyclic `dict == dict` overflowed that at depth 549 when built with rustc
+/// 1.98 and at 509 with rustc 1.99, under a default limit of 512, killing the
+/// host with no exception. On this stack the same case reaches `RecursionError`
+/// up to depth 8191.
+///
+/// The caller blocks until the call returns, so the thread borrows its inputs
+/// and nothing runs concurrently with the caller. wasm32-wasip1 has no threads;
+/// there the call runs in place, on the stack the module was linked with.
+pub fn interpreter_stack<F, T>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> T + Send,
+    T: Send,
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        catch_ffi_panic(f)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::thread::scope(|scope| {
+            let worker = std::thread::Builder::new()
+                .name("monty-interpreter".into())
+                .stack_size(INTERPRETER_STACK_BYTES)
+                .spawn_scoped(scope, || catch_ffi_panic(f))
+                .map_err(|e| format!("could not start the interpreter thread: {e}"))?;
+            // `catch_ffi_panic` already converted any panic, so a join error
+            // means the thread died some other way; report it, never unwind
+            // across the FFI boundary.
+            worker
+                .join()
+                .unwrap_or_else(|_| Err("the interpreter thread died".to_string()))
+        })
+    }
+}
+
 /// Parse a C string pointer, writing to `out_error` on failure.
 /// Returns `Ok(&str)` or `Err(())` if null or invalid UTF-8.
 ///
@@ -169,6 +218,47 @@ mod tests {
     fn test_catch_ffi_panic_str() {
         let result = catch_ffi_panic(|| panic!("boom"));
         assert_eq!(result, Err("boom".to_string()));
+    }
+
+    /// Burns at least 1 KiB of native stack per level, so `levels` levels need
+    /// more than `levels` KiB.
+    fn burn_stack(levels: u32) -> u64 {
+        let frame = std::hint::black_box([u8::try_from(levels % 251).unwrap(); 1024]);
+        if levels == 0 {
+            0
+        } else {
+            burn_stack(levels - 1) + u64::from(frame[0])
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_interpreter_stack_outlasts_a_small_caller_stack() {
+        // The caller gets 256 KiB, a quarter of a Dart thread's; the work needs
+        // over 4 MiB. Run the closure in place and the test binary dies of a
+        // stack overflow; on the interpreter stack it returns.
+        let caller = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| interpreter_stack(|| burn_stack(4096)))
+            .unwrap();
+        assert!(caller.join().unwrap().is_ok());
+    }
+
+    #[test]
+    fn test_interpreter_stack_converts_a_panic() {
+        let result: Result<(), String> = interpreter_stack(|| panic!("deep boom"));
+        assert_eq!(result, Err("deep boom".to_string()));
+    }
+
+    #[test]
+    fn test_interpreter_stack_borrows_the_callers_state() {
+        let mut seen = Vec::new();
+        let result = interpreter_stack(|| {
+            seen.push(1);
+            seen.len()
+        });
+        assert_eq!(result, Ok(1));
+        assert_eq!(seen, [1]);
     }
 
     #[test]

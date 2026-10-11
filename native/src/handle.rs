@@ -29,13 +29,10 @@ fn default_limits() -> ResourceLimits {
     ResourceLimits {
         max_memory: Some(256 * 1024 * 1024), // 256 MB
         // 512, NOT CPython's 1000. Monty's recursion guard is a counter and
-        // reaching it costs real native stack. Upstream runs the engine in
-        // SUBPROCESS WORKERS with a full main-thread stack, so monty's own
-        // ResourceLimits::default() of 1000 is right for them; this binding
-        // runs it IN-PROCESS on a Dart isolate thread, where the stack
-        // overflows first and the HOST PROCESS DIES.
-        //
-        // Measured worst case (cyclic dict == dict): safe 534 / SIGSEGV 539.
+        // reaching it costs real native stack; overflow first and the HOST
+        // PROCESS DIES. FFI calls now run on a 16 MiB stack
+        // (`error::interpreter_stack`, worst case safe to depth 8191); the
+        // reasoning and history live on BaseMontyPlatform.defaultStackDepth.
         // Must stay equal to Dart's BaseMontyPlatform.defaultStackDepth —
         // ffi_repl_corpus_test.dart's `repl session limits match the one-shot
         // defaults` guards that equality.

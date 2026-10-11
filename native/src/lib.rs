@@ -15,7 +15,7 @@ pub use repl_handle::MontyReplHandle;
 use std::ffi::{CStr, c_char, c_int};
 use std::ptr;
 
-use error::{catch_ffi_panic, parse_c_str, to_c_string};
+use error::{catch_ffi_panic, interpreter_stack, parse_c_str, to_c_string};
 use monty_type_checking::{SourceFile, TypeChecker};
 use monty_types::TypeCheckingConfig;
 
@@ -32,7 +32,7 @@ macro_rules! ffi_progress {
         }
         // SAFETY: handle is non-null (just checked) and was created by monty_create via Box::into_raw
         let $h = unsafe { &mut *$handle };
-        match catch_ffi_panic(|| $body) {
+        match interpreter_stack(|| $body) {
             Ok((tag, err)) => {
                 if !$out_error.is_null() {
                     match err {
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn monty_create(
         }
     };
 
-    match catch_ffi_panic(|| MontyHandle::new(code_str, ext_fn_list, name)) {
+    match interpreter_stack(|| MontyHandle::new(code_str, ext_fn_list, name)) {
         Ok(Ok(handle)) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_HANDLES
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn monty_run(
     // SAFETY: handle is non-null (just checked) and was created by monty_create via Box::into_raw
     let h = unsafe { &mut *handle };
 
-    match catch_ffi_panic(|| h.run()) {
+    match interpreter_stack(|| h.run()) {
         Ok((tag, json, err)) => {
             if !result_json.is_null() {
                 // SAFETY: result_json is non-null (just checked), writing result JSON string
@@ -686,7 +686,7 @@ pub unsafe extern "C" fn monty_restore(
 
     // SAFETY: data is non-null (just checked), len is provided by caller matching the snapshot buffer size
     let bytes = unsafe { std::slice::from_raw_parts(data, len) };
-    match catch_ffi_panic(|| MontyHandle::restore(bytes)) {
+    match interpreter_stack(|| MontyHandle::restore(bytes)) {
         Ok(Ok(handle)) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_HANDLES
@@ -775,7 +775,8 @@ pub unsafe extern "C" fn monty_repl_create(
         }
     };
 
-    match catch_ffi_panic(|| MontyReplHandle::new(&name, monty_types::ResourceLimits::default())) {
+    match interpreter_stack(|| MontyReplHandle::new(&name, monty_types::ResourceLimits::default()))
+    {
         Ok(handle) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_REPL_HANDLES
@@ -844,7 +845,7 @@ pub unsafe extern "C" fn monty_repl_create_with_limits(
         }
     };
 
-    match catch_ffi_panic(|| MontyReplHandle::new(&name, limits)) {
+    match interpreter_stack(|| MontyReplHandle::new(&name, limits)) {
         Ok(handle) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_REPL_HANDLES
@@ -914,7 +915,7 @@ pub unsafe extern "C" fn monty_repl_feed_run(
     // SAFETY: handle is non-null (just checked) and was created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
 
-    match catch_ffi_panic(|| h.feed_run(code_str)) {
+    match interpreter_stack(|| h.feed_run(code_str)) {
         Ok((tag, json, err)) => {
             if !result_json.is_null() {
                 // SAFETY: result_json is non-null (just checked), writing result JSON string
@@ -977,7 +978,7 @@ macro_rules! ffi_repl_progress {
         }
         // SAFETY: handle is non-null (just checked) and was created by monty_repl_create via Box::into_raw
         let $h = unsafe { &mut *$handle };
-        match catch_ffi_panic(|| $body) {
+        match interpreter_stack(|| $body) {
             Ok((tag, err)) => {
                 if !$out_error.is_null() {
                     match err {
@@ -1048,7 +1049,7 @@ pub unsafe extern "C" fn monty_repl_feed_start(
     };
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
-    match catch_ffi_panic(|| h.feed_start(code_str)) {
+    match interpreter_stack(|| h.feed_start(code_str)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
@@ -1090,7 +1091,7 @@ pub unsafe extern "C" fn monty_repl_resume(
     };
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
-    match catch_ffi_panic(|| h.resume(val_str)) {
+    match interpreter_stack(|| h.resume(val_str)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
@@ -1132,7 +1133,7 @@ pub unsafe extern "C" fn monty_repl_resume_with_error(
     };
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
-    match catch_ffi_panic(|| h.resume_with_error(msg_str)) {
+    match interpreter_stack(|| h.resume_with_error(msg_str)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
@@ -1184,7 +1185,7 @@ pub unsafe extern "C" fn monty_repl_resume_with_exception(
     };
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
-    match catch_ffi_panic(|| h.resume_with_exception(exc_type_str, msg_str)) {
+    match interpreter_stack(|| h.resume_with_exception(exc_type_str, msg_str)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
@@ -1226,7 +1227,7 @@ pub unsafe extern "C" fn monty_repl_resume_not_found(
     };
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
-    match catch_ffi_panic(|| h.resume_not_found(name)) {
+    match interpreter_stack(|| h.resume_not_found(name)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
@@ -1282,7 +1283,7 @@ pub unsafe extern "C" fn monty_repl_resume_futures(
     };
     // SAFETY: handle is non-null (just checked), created by monty_repl_create via Box::into_raw
     let h = unsafe { &mut *handle };
-    match catch_ffi_panic(|| h.resume_futures(results_str, errors_str)) {
+    match interpreter_stack(|| h.resume_futures(results_str, errors_str)) {
         Ok((tag, err)) => {
             if !out_error.is_null() {
                 match err {
@@ -1613,7 +1614,7 @@ pub unsafe extern "C" fn monty_repl_restore(
 
     // SAFETY: data is non-null (just checked) and len matches the snapshot buffer
     let bytes = unsafe { std::slice::from_raw_parts(data, len) };
-    match catch_ffi_panic(move || MontyReplHandle::restore_with_ext_fns(bytes, names, limits)) {
+    match interpreter_stack(move || MontyReplHandle::restore_with_ext_fns(bytes, names, limits)) {
         Ok(Ok(handle)) => {
             let ptr = Box::into_raw(Box::new(handle));
             LIVE_REPL_HANDLES

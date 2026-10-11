@@ -147,6 +147,13 @@ belong in `dart_monty`.
   and failed later on the *same commit* because a newer Dart reformatted the
   ffigen output. A gate whose inputs float cannot tell "we broke it" from "the
   world moved". (`deploy-pages.yml` stays on `stable` — docs build, not a gate.)
+- **Rust is not pinned**: CI uses `dtolnay/rust-toolchain@stable` and
+  `native/rust-toolchain.toml` says `stable`, so a new rustc reaches CI the day
+  it ships. 1.99.0 did both kinds of damage: a new default clippy lint, and
+  codegen that uses ~7% more stack per interpreter frame, which killed the FFI
+  host and trapped the wasm module at depths that had passed on 1.98. The
+  engine therefore runs on stacks we size: 16 MiB on FFI (`interpreter_stack`
+  in `native/src/error.rs`), 2 MiB on wasm32 (`native/build.rs`).
 - `publish.yaml` — fires on tag push matching
   `v[0-9]+.[0-9]+.[0-9]+*`; analyze → dry-run → `pub publish --force`
   via OIDC.

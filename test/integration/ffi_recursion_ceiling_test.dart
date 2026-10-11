@@ -38,19 +38,30 @@ import 'package:test/test.dart';
 /// itself would fail. The WASM half CAN report cleanly, because a wasm32
 /// stack overflow is a contained trap rather than a process death.
 ///
-/// MEASURED, monty v0.0.23, by bisecting each shape's crash point on
-/// linux/arm64 (`safe / SIGSEGV`):
+/// WHERE THE STACK COMES FROM. Every interpreter call runs on a dedicated
+/// thread with a fixed 16 MiB stack (`interpreter_stack` in
+/// native/src/error.rs), mirroring upstream's own worker thread. Before that it
+/// ran on whatever Dart thread made the FFI call: ~1 MiB on macOS, fixed at
+/// thread creation, so `ulimit -s` never helped.
 ///
-///     cyclic dict == dict     534 / 539   <-- worst case, sets the bound
-///     cyclic deque == deque   765 / 781
-///     cyclic list, deep repr, deep hash, heavy Python frames   >= 765
+/// MEASURED, monty v0.0.23, macOS arm64, cyclic dict (the worst shape),
+/// `safe / killed` by bisection:
+///
+///     Dart thread stack, rustc 1.98.0     549 / 550
+///     Dart thread stack, rustc 1.99.0     509 / 510   <-- default 512 died
+///     16 MiB interpreter stack, 1.99.0   8191 / 8192
+///
+/// The Dart SDK was NOT a factor: 3.11.4 and 3.13.5 give the FFI call the same
+/// 1036 KiB stack, and the 2x2 (Dart 3.11.4 / 3.13.5 x rustc 1.98 / 1.99)
+/// crashes exactly on the rustc 1.99 column. A compiler upgrade moved the
+/// ceiling 7%, under a default that had a 7% margin. Hence the second group:
+/// [_headroomFactor] times the default must also be survivable, so the next
+/// codegen change has to eat most of a 16x margin before it reaches users.
 ///
 /// Not an upstream bug: `pydantic-monty 0.0.23` — the tag native/Cargo.toml
-/// pins — raises RecursionError on these same scripts and its parent survives,
-/// because upstream runs the engine in SUBPROCESS WORKERS with a full
-/// main-thread stack. An FFI call runs on a Dart isolate thread with far less,
-/// and `ulimit -s` cannot change that: 8MB, 64MB and unlimited all segfault
-/// identically, because the isolate thread's stack is fixed at creation.
+/// pins — raises RecursionError on these same scripts and its parent survives.
+const _headroomFactor = 4;
+
 void main() {
   const shapes = {
     // Worst case measured. If a platform regresses, expect this one first.
@@ -89,53 +100,63 @@ a == b
 ''',
   };
 
-  group('defaultStackDepth is survivable on this platform', () {
-    for (final MapEntry(key: name, value: src) in shapes.entries) {
-      test(
-        '$name raises RecursionError at defaultStackDepth',
-        () async {
-          final repl = MontyRepl(
-            limits: const MontyLimits(
-              memoryBytes: 256 * 1024 * 1024,
-              stackDepth: BaseMontyPlatform.defaultStackDepth,
-            ),
-          );
-          String? excType;
-          String rendered;
-          try {
-            final r = await repl.feedRun(src);
-            // An error RETURNED rather than thrown is the normal shape here.
-            excType = r.error?.excType;
-            rendered = '${r.error}';
-          } on MontyScriptError catch (e) {
-            excType = e.excType;
-            rendered = '$e';
-          } on Object catch (e) {
-            rendered = '$e';
-          } finally {
-            await repl.dispose();
-          }
+  const depths = {
+    'defaultStackDepth is survivable on this platform':
+        BaseMontyPlatform.defaultStackDepth,
+    'the interpreter stack has ${_headroomFactor}x headroom over the default':
+        BaseMontyPlatform.defaultStackDepth * _headroomFactor,
+  };
 
-          // Assert on excType, NOT toString(). MontyScriptError is THROWN when
-          // the interpreter hits a Python-level exception and CARRIES the
-          // structured MontyException, whose `excType` names it. The renderings
-          // differ by backend — FFI "MontyException: RecursionError: ...",
-          // WASM "MontyScriptError: maximum recursion depth exceeded" — so text
-          // matching would fail a backend that behaved CORRECTLY.
-          expect(
-            excType,
-            'RecursionError',
-            reason:
-                'PROVED NOTHING: "$name" did not surface excType '
-                '"RecursionError", so it never stressed the recursion '
-                'guard and '
-                'says nothing about whether '
-                '${BaseMontyPlatform.defaultStackDepth} is survivable here. '
-                'Got excType=$excType rendered=$rendered',
-          );
-        },
-        timeout: const Timeout(Duration(minutes: 2)),
-      );
-    }
-  });
+  for (final MapEntry(key: groupName, value: depth) in depths.entries) {
+    group(groupName, () {
+      for (final MapEntry(key: name, value: src) in shapes.entries) {
+        test(
+          '$name raises RecursionError at stackDepth $depth',
+          () async {
+            final repl = MontyRepl(
+              limits: MontyLimits(
+                memoryBytes: 256 * 1024 * 1024,
+                stackDepth: depth,
+              ),
+            );
+            String? excType;
+            String rendered;
+            try {
+              final r = await repl.feedRun(src);
+              // An error RETURNED rather than thrown is the normal shape here.
+              excType = r.error?.excType;
+              rendered = '${r.error}';
+            } on MontyScriptError catch (e) {
+              excType = e.excType;
+              rendered = '$e';
+            } on Object catch (e) {
+              rendered = '$e';
+            } finally {
+              await repl.dispose();
+            }
+
+            // Assert on excType, NOT toString(). MontyScriptError is THROWN
+            // when the interpreter hits a Python-level exception and CARRIES
+            // the structured MontyException, whose `excType` names it. The
+            // renderings differ by backend — FFI "MontyException:
+            // RecursionError: ...", WASM "MontyScriptError: maximum recursion
+            // depth exceeded" — so text matching would fail a backend that
+            // behaved CORRECTLY.
+            expect(
+              excType,
+              'RecursionError',
+              reason:
+                  'PROVED NOTHING: "$name" did not surface excType '
+                  '"RecursionError", so it never stressed the recursion '
+                  'guard and '
+                  'says nothing about whether '
+                  '$depth is survivable here. '
+                  'Got excType=$excType rendered=$rendered',
+            );
+          },
+          timeout: const Timeout(Duration(minutes: 2)),
+        );
+      }
+    });
+  }
 }
