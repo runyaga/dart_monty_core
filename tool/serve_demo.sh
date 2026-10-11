@@ -116,11 +116,7 @@ if [ "$SKIP_BUILD" = false ]; then
     exit 1
   fi
   cd "$JS_DIR"
-  # --force bypasses EBADPLATFORM on arm64 hosts: @pydantic/monty-wasm32-wasi
-  # declares cpu: wasm32. tool/test_wasm.sh and tool/test_wasm_unit.sh already
-  # pass it; this script did not, so the demo could not be served on an Apple
-  # Silicon machine at all.
-  npm install --force --silent
+  npm install --silent
   node build.js
   echo "  JS bridge: OK"
 else
@@ -161,12 +157,6 @@ if [ "$TEST_HOOKS" = true ]; then
   echo "  staged test-hooks engine (LOCAL ONLY — not the shipped asset)"
 fi
 
-# WASI runtime for the Worker (needed when running dart2wasm)
-WASI_PKG="$JS_DIR/node_modules/@pydantic/monty-wasm32-wasi"
-if [ -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
-  mkdir -p "$WEB_DIR/@pydantic/monty-wasm32-wasi"
-  cp "$WASI_PKG/wasi-worker-browser.mjs" "$WEB_DIR/@pydantic/monty-wasm32-wasi/"
-fi
 echo "  Assets: OK"
 
 # ---------------------------------------------------------------------------
@@ -235,7 +225,6 @@ cleanup() {
     "$WEB_DIR/feature_matrix.support.js" \
     "$WEB_DIR/feature_matrix.wasm" \
     "$WEB_DIR/feature_matrix.wasm.map"
-  rm -rf "$WEB_DIR/@pydantic"
 }
 trap cleanup EXIT
 

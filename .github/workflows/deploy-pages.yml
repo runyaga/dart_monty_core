@@ -46,14 +46,8 @@ jobs:
       # node build.js step needed. CI's drift-check job guarantees the
       # committed assets match the Rust source on every PR.
       #
-      # npm install is only needed for @pydantic/monty-wasm32-wasi — a
-      # runtime dep (WASI worker shim) that isn't produced by our build.
-      # --force: package declares cpu:wasm32; npm refuses on x64 Linux
-      # otherwise. The package is a WASM binary — the check is a false
-      # positive.
-      - name: Install WASI runtime dep
-        working-directory: js
-        run: npm install --force
+      # No npm install either: the worker supplies its own WASI imports
+      # (js/src/wasm_glue.js), so nothing from js/node_modules is served.
 
       - name: Prepare web REPL assets
         run: |
@@ -63,9 +57,6 @@ jobs:
           cp lib/assets/dart_monty_core_bridge.js   $WEB/
           cp lib/assets/dart_monty_core_worker.js   $WEB/
           cp lib/assets/dart_monty_core_native.wasm $WEB/
-          mkdir -p $WEB/@pydantic/monty-wasm32-wasi
-          cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-             $WEB/@pydantic/monty-wasm32-wasi/
 
       # ── Web REPL (dart2js) ───────────────────────────────────────────────────
       - name: Build web REPL (dart2js)

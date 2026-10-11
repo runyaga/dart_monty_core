@@ -82,11 +82,7 @@ cd native
 cargo build --release                                  # FFI dylib
 cargo build --bin oracle                               # oracle binary
 cargo build --target wasm32-wasip1 --release           # WASM binary
-cd ../js && npm install --force && node build.js       # JS bridge → lib/assets/
-
-# WASM tests + web demo also need the WASI runtime (esbuild doesn't copy it):
-cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-   test/integration/web/@pydantic/monty-wasm32-wasi/
+cd ../js && npm install && node build.js               # JS bridge → lib/assets/
 ```
 
 If you change `native/include/dart_monty.h`, regenerate bindings:
@@ -193,9 +189,7 @@ git tag v0.19.0 && git push origin v0.19.0
 
 | Symptom | Fix |
 |---|---|
-| `EBADPLATFORM` on `npm install` | `npm install --force` |
 | `no default linker (cc)` on `pub get` | Install C linker (see prereqs) |
-| Chrome `TypeError: … 'init'` | Copy `wasi-worker-browser.mjs` (see Build) |
 | FFI `DynamicLibraryLoadError` | `cd native && cargo build --release` |
 | FFI `ProcessException` on oracle | `cd native && cargo build --bin oracle` |
 | `Unknown experiment: native-assets` | Update Dart SDK to ≥ 3.10 |

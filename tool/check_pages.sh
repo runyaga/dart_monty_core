@@ -35,10 +35,6 @@ if [ "$SKIP_BUILD" = "0" ]; then
   for a in dart_monty_core_bridge.js dart_monty_core_worker.js dart_monty_core_native.wasm; do
     cp "lib/assets/$a" "$WEB/" || fail "missing lib/assets/$a — run tool/prebuild.sh"
   done
-  mkdir -p "$WEB/@pydantic/monty-wasm32-wasi"
-  cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-     "$WEB/@pydantic/monty-wasm32-wasi/" 2>/dev/null \
-     || echo "  note: wasi-worker-browser.mjs not staged (npm not installed?)"
 
   # BOTH entry points, both compilers. feature_matrix was omitted here, and
   # `packages/dart_monty_web/**` is excluded in analysis_options.yaml, so

@@ -18,4 +18,3 @@ feature_matrix.wasm.map
 dart_monty_core_bridge.js
 dart_monty_core_worker.js
 dart_monty_core_native.wasm
-@pydantic/

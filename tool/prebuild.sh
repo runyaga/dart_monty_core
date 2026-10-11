@@ -34,7 +34,7 @@ cd "$ROOT"
 
 echo "[prebuild] Installing JS bridge deps..."
 cd js
-npm install --force
+npm install
 
 echo "[prebuild] Bundling bridge + worker + copying WASM..."
 node build.js

@@ -125,13 +125,6 @@ and verifies the committed files match; regenerate locally with
 compiled locally via `dart compile js`. The `tool/serve_demo.sh` script
 handles this automatically.
 
-### Why `npm install --force`?
-
-The `@pydantic/monty-wasm32-wasi` package declares `"cpu": "wasm32"`. On x64
-Linux (CI), npm refuses to install it without `--force`. The package is a WASM
-binary that runs in a WASI runtime regardless of host CPU — the platform check
-is a false positive.
-
 ---
 
 ## Prerequisites
@@ -171,7 +164,7 @@ bash tool/serve_demo.sh --skip-build
 cd native && cargo build --release --target wasm32-wasip1 && cd ..
 
 # 2. Build JS bridge (outputs to assets/)
-cd js && npm install --force && node build.js && cd ..
+cd js && npm install && node build.js && cd ..
 
 # 3. Fetch Dart dependencies
 dart pub get
@@ -181,18 +174,13 @@ cp lib/assets/dart_monty_core_bridge.js   web/
 cp lib/assets/dart_monty_core_worker.js   web/
 cp lib/assets/dart_monty_core_native.wasm web/
 
-# 5. Copy WASI runtime (NOT done by build.js — must be copied manually)
-mkdir -p web/@pydantic/monty-wasm32-wasi
-cp ../../js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-   web/@pydantic/monty-wasm32-wasi/
-
-# 6a. Compile Dart to JS
+# 5a. Compile Dart to JS
 dart compile js web/repl_demo.dart -o web/repl_demo.dart.js --no-minify
 
-# 6b. Or compile Dart to WASM (dart2wasm)
+# 5b. Or compile Dart to WASM (dart2wasm)
 dart compile wasm web/repl_demo.dart -o web/repl_demo.wasm
 
-# 7. Serve it (serve_demo.sh adds COOP/COEP; not required, see above)
+# 6. Serve it (serve_demo.sh adds COOP/COEP; not required, see above)
 python3 - <<'EOF'
 import http.server
 class H(http.server.SimpleHTTPRequestHandler):

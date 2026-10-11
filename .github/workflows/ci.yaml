@@ -560,9 +560,6 @@ jobs:
           # `ReferenceError: WebSocket is not defined`, and it only surfaced
           # the first time CI ever ran the gate.
           node-version: '24'
-      - name: Install WASI runtime dep
-        working-directory: js
-        run: npm install --force
       - run: dart pub get
       - name: Pages render gate
         run: bash tool/check_pages.sh
@@ -882,26 +879,15 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
 
-      - uses: actions/cache@v6
-        with:
-          path: ~/.npm
-          key: npm-${{ hashFiles('js/package.json') }}
-          restore-keys: npm-
-
       # Assets are committed to git (Mode A). Stage them directly for
       # the test runner rather than rebuilding from source — drift-check
-      # owns the rebuild-parity story. npm install is still needed for
-      # the WASI runtime (@pydantic/monty-wasm32-wasi), which is a pure
-      # runtime dep not produced by our build.
+      # owns the rebuild-parity story. No npm install: the worker supplies
+      # its own WASI imports (js/src/wasm_glue.js), so nothing from
+      # js/node_modules is served.
       - name: Stage bridge assets for test runner
         run: |
           set -euo pipefail
           WEB_DIR="test/integration/web"
-
-          cd js
-          echo "--- npm install (WASI runtime) ---"
-          npm install --force
-          cd "$GITHUB_WORKSPACE"
 
           # Verify committed assets exist (they should — drift-check enforces).
           for f in lib/assets/dart_monty_core_bridge.js lib/assets/dart_monty_core_worker.js lib/assets/dart_monty_core_native.wasm; do
@@ -914,19 +900,11 @@ jobs:
           cp lib/assets/dart_monty_core_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
           cp lib/assets/dart_monty_core_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
 
-          # WASI runtime required by the Worker.
-          WASI_PKG="js/node_modules/@pydantic/monty-wasm32-wasi"
-          [ -f "$WASI_PKG/wasi-worker-browser.mjs" ] || { echo "FATAL: $WASI_PKG/wasi-worker-browser.mjs not found"; exit 1; }
-          mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi"
-          cp "$WASI_PKG/wasi-worker-browser.mjs" \
-             "$GITHUB_WORKSPACE/$WEB_DIR/@pydantic/monty-wasm32-wasi/"
-
           # Final verification — every file the test runner needs must exist.
           for f in \
             "$WEB_DIR/dart_monty_core_bridge.js" \
             "$WEB_DIR/dart_monty_core_worker.js" \
-            "$WEB_DIR/dart_monty_core_native.wasm" \
-            "$WEB_DIR/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs"; do
+            "$WEB_DIR/dart_monty_core_native.wasm"; do
             [ -f "$GITHUB_WORKSPACE/$f" ] || { echo "FATAL: staged asset missing: $f"; exit 1; }
           done
 
@@ -978,19 +956,8 @@ jobs:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - uses: actions/cache@v6
-        with:
-          path: ~/.npm
-          key: npm-${{ hashFiles('js/package.json') }}
-          restore-keys: npm-
 
       - run: dart pub get
-
-      - name: Install WASI runtime (npm)
-        run: |
-          set -euo pipefail
-          cd js
-          npm install --force
 
       - name: Run WASM unit-style tests (dart2js)
         # The floor is the point. tool/test_wasm_unit.sh checks that every
@@ -1066,19 +1033,8 @@ jobs:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - uses: actions/cache@v6
-        with:
-          path: ~/.npm
-          key: npm-${{ hashFiles('js/package.json') }}
-          restore-keys: npm-
 
       - run: dart pub get
-
-      - name: Install WASI runtime (npm)
-        run: |
-          set -euo pipefail
-          cd js
-          npm install --force
 
       # Both steps PIN THE RESULT rather than trusting the exit code.
       # tool/test_cm_wasm.sh does `exit 0` when it cannot find Chrome —
@@ -1129,24 +1085,18 @@ jobs:
         # CARGO_TARGET_DIR precisely so it cannot leave a test-hooks engine
         # where lib/assets/ is staged from. Assert that, rather than trust it.
         #
-        # js/package-lock.json is EXCLUDED, and the exclusion is not a shrug.
-        # `npm install --force` rewrites it whenever the runner's npm resolves
-        # differently from whoever last committed it, which is npm's churn and
-        # not something the corpus did. Four other jobs in this file run the
-        # same `npm install --force` (lines ~317, ~540, ~716, ~785) and none of
-        # them guards its tree, so this job was simply the first to look.
-        # Whether the committed lockfile should match CI's npm is a real
-        # question; it is not this job's to answer, and failing here would only
-        # teach people to ignore a red corpus check.
+        # No path is excluded. js/package-lock.json used to be, because this
+        # job ran `npm install --force` for the WASI shim and npm rewrote the
+        # lockfile; the job no longer runs npm at all.
         run: |
           set -euo pipefail
-          DIRTY="$(git status --porcelain -- . ':(exclude)js/package-lock.json')"
+          DIRTY="$(git status --porcelain -- .)"
           if [ -n "$DIRTY" ]; then
             echo "FAIL: the test-hooks corpus modified the working tree:"
             echo "$DIRTY"
             exit 1
           fi
-          echo "OK: tree clean (js/package-lock.json excluded — see comment)"
+          echo "OK: tree clean"
 
   # ---------------------------------------------------------------------------
   # Coverage: merge every measured suite, report lib-wide, ratchet

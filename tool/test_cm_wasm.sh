@@ -56,7 +56,6 @@ set -euo pipefail
 
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 INTEG_WEB="$PKG/test/integration/web"
-WASI_PKG="$PKG/js/node_modules/@pydantic/monty-wasm32-wasi"
 # Kept out of native/target/{debug,release,wasm32-*} so the test-hooks feature
 # never invalidates the shipped build's cache (and vice versa).
 CARGO_TARGET="$PKG/native/target/test-hooks"
@@ -139,14 +138,6 @@ cp "$WASM_SRC"                                   "$STAGE/dart_monty_core_native.
 cp "$PKG/lib/assets/dart_monty_core_bridge.js"   "$STAGE/"
 cp "$PKG/lib/assets/dart_monty_core_worker.js"   "$STAGE/"
 cp "$INTEG_WEB/$ENTRY"                           "$STAGE/"
-
-# WASI runtime (esbuild doesn't copy it; mirror tool/test_wasm.sh).
-if [ ! -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
-  echo "--- Installing WASI runtime (npm install --force in js/) ---"
-  (cd js && npm install --force --silent)
-fi
-mkdir -p "$STAGE/@pydantic/monty-wasm32-wasi"
-cp "$WASI_PKG/wasi-worker-browser.mjs" "$STAGE/@pydantic/monty-wasm32-wasi/"
 
 # -------------------------------------------------------
 # Step 3: Compile the corpus runner with MONTY_TEST_HOOKS=true
