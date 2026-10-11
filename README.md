@@ -432,6 +432,21 @@ dependencies:
       ref: main
 ```
 
+### AOT command-line consumers
+
+Use `dart build cli` to bundle the native library built by `hook/build.dart`.
+For example, from this repository:
+
+```bash
+dart build cli --target tool/aot_probe.dart -o build/aot
+(cd build/aot/bundle && ./bin/aot_probe)
+```
+
+For your application, replace `tool/aot_probe.dart` with its entry point.
+Distribute the entire `build/aot/bundle/` directory: the executable in `bin/`
+needs the native library in `lib/`. CI builds and runs the self-checking probe.
+The build requires the desktop toolchain below.
+
 ### Prerequisites for FFI (desktop only)
 
 `hook/build.dart` runs `cargo build --release --target <host-triple>`

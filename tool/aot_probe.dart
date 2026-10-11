@@ -1,11 +1,11 @@
-// AOT smoke probe — compiled with `dart compile exe` and executed by CI.
+// AOT smoke probe — bundled with `dart build cli` and executed by CI.
 //
 // Why this exists (core#130): the `test-aot` job did not exercise AOT at all.
 // It ran `dart test --compiler=kernel`, which is the JIT default, and then a
 // step named "Run compiled AOT snapshot" that was a literal `echo` claiming
 // success. Nothing could fail.
 //
-// AOT matters for this package specifically: it links a Rust static library
+// AOT matters for this package specifically: it loads a Rust dynamic library
 // through native assets, and AOT and JIT can diverge on exactly the things
 // this package does — number representation at the FFI boundary, tree-shaking
 // of entry points, and native-asset registration. A package that works under

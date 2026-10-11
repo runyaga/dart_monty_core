@@ -11,6 +11,12 @@
   the mock from `src/platform/mock_monty_platform.dart`; use this entry
   instead. No other `src/` declaration becomes public through it.
 
+### Changed
+
+- CI now builds the AOT consumer probe with `dart build cli`, bundling the
+  native library from `hook/build.dart`, and runs it to verify its assertions.
+  Documented the build/run commands and the complete bundle consumers must ship.
+
 ## 0.23.0
 
 Requires `monty` v0.0.23.

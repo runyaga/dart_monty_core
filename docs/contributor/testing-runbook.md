@@ -325,9 +325,19 @@ Prefer a glob. If a list is unavoidable, add an unlisted-file guard —
 ### 4. `--compiler=kernel` is the JIT default, not AOT
 
 A job named `test-aot` ran no AOT for months and ended in an `echo` claiming
-success. Related: the package currently **cannot run from an AOT executable at
-all** (#131) — it compiles, then dies on the first FFI call with
-`No available native assets`.
+success. It then used `dart compile exe` without running the result, leaving
+native-asset resolution unchecked (#131). The job now uses `dart build cli`
+to run `hook/build.dart` and bundle the native library, then executes the
+self-checking probe from the bundle directory:
+
+```bash
+dart build cli --target tool/aot_probe.dart -o build/aot
+(cd build/aot/bundle && ./bin/aot_probe)
+```
+
+Distribute the entire `bundle/` directory, including `lib/`, with the executable.
+This remains a separate CI check: `tool/gate.sh` has no AOT step, and a cold
+native build plus AOT compilation adds substantial work to the local gate.
 
 ### 5. `$?` after a pipe is the LAST command's status
 
