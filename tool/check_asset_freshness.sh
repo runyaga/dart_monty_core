@@ -29,14 +29,14 @@ cd "$(git rev-parse --show-toplevel)"
 
 RECORD=tool/wasm-provenance.json
 
-# Everything the committed assets are built FROM. Order is fixed by `sort` so
-# the hash is stable across machines and filesystems.
+# Everything the committed assets are built FROM. Order is fixed by `LC_ALL=C sort`
+# so the hash is stable across machines: macOS and GNU sort collate differently.
 source_hash() {
   {
     find native/src -type f -name '*.rs' -print0 2>/dev/null
     printf '%s\0' native/Cargo.toml native/Cargo.lock native/build.rs
     find js/src -type f -name '*.js' -print0 2>/dev/null
-  } | tr '\0' '\n' | sort | while read -r f; do
+  } | tr '\0' '\n' | LC_ALL=C sort | while read -r f; do
     [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
   done | shasum -a 256 | awk '{print $1}'
 }
