@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `package:dart_monty_core/dart_monty_core_testing.dart`, a public entry for
+  test doubles (core#165). It exports `MockMontyPlatform` and its
+  `MockCallHistory`, and re-exports `dart_monty_core.dart` so the types the
+  mock is configured with come with one import. Downstream packages imported
+  the mock from `src/platform/mock_monty_platform.dart`; use this entry
+  instead. No other `src/` declaration becomes public through it.
+
 ## 0.23.0
 
 Requires `monty` v0.0.23.
