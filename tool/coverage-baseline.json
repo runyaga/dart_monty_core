@@ -6,6 +6,11 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/dart_monty_core_testing.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
     "lib/src/externals.dart": {
       "found": 0,
       "hit": 0,
@@ -157,9 +162,9 @@
       "pct": 100.0
     },
     "lib/src/platform/monty_error.dart": {
-      "found": 16,
-      "hit": 15,
-      "pct": 93.75
+      "found": 19,
+      "hit": 18,
+      "pct": 94.74
     },
     "lib/src/platform/monty_exception.dart": {
       "found": 52,
@@ -177,8 +182,8 @@
       "pct": 100.0
     },
     "lib/src/platform/monty_limits.dart": {
-      "found": 26,
-      "hit": 26,
+      "found": 32,
+      "hit": 32,
       "pct": 100.0
     },
     "lib/src/platform/monty_platform.dart": {
@@ -262,9 +267,9 @@
       "pct": 89.77
     },
     "lib/src/repl/monty_repl.dart": {
-      "found": 226,
-      "hit": 209,
-      "pct": 92.48
+      "found": 241,
+      "hit": 224,
+      "pct": 92.95
     },
     "lib/src/repl/repl_bindings.dart": {
       "found": 0,
@@ -333,8 +338,8 @@
     }
   },
   "total": {
-    "found": 4166,
-    "hit": 2779,
-    "pct": 66.71
+    "found": 4190,
+    "hit": 2803,
+    "pct": 66.9
   }
 }

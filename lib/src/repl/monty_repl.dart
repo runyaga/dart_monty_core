@@ -113,18 +113,30 @@ class MontyRepl {
     String? scriptName,
     String? preamble,
     MontyLimits? limits,
-  }) : _bindings = repl_factory.createReplBindings(),
+  }) : _limits = _checkLimits(limits),
+       _bindings = repl_factory.createReplBindings(),
        _scriptName = scriptName,
-       _preamble = preamble,
-       _limits = limits;
+       _preamble = preamble;
 
   ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;
   final MontyLimits? _limits;
+
   bool _created = false;
   bool _disposed = false;
   bool _pending = false;
+
+  /// Suspensions charged against this SESSION's budget. Accumulates across
+  /// feeds, matching upstream — not reset per feed.
+  int _suspensionsUsed = 0;
+
+  /// Terminal: a breached session does not get a fresh allowance next feed.
+  bool _suspensionBudgetExhausted = false;
+
+  /// The budget for this session: the configured value, or the default.
+  int get _suspensionBudget =>
+      _limits?.maxSuspensions ?? MontyLimits.defaultMaxSuspensions;
 
   /// Script name used as the filename in tracebacks and error messages.
   ///
@@ -418,7 +430,9 @@ class MontyRepl {
     // while an identical un-restored session raised RecursionError.
     await _bindings.restore(
       bytes,
-      limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+      limitsJson: _limits == null || !_limits.hasEngineLimits
+          ? null
+          : encodeLimitsJson(_limits),
     );
 
     // MARKS THE SESSION CREATED, and without this restore silently did
@@ -473,6 +487,19 @@ class MontyRepl {
   // Private
   // ---------------------------------------------------------------------------
 
+  static MontyLimits? _checkLimits(MontyLimits? limits) {
+    final budget = limits?.maxSuspensions;
+    if (budget != null && budget < 0) {
+      throw ArgumentError.value(
+        budget,
+        'maxSuspensions',
+        'must be >= 0; the suspension budget cannot be disabled',
+      );
+    }
+
+    return limits;
+  }
+
   Future<MontyResult> _driveLoop(
     MontyProgress initial,
     Map<String, MontyCallback> externalFunctions,
@@ -487,6 +514,22 @@ class MontyRepl {
     var progress = initial;
     try {
       while (true) {
+        // Charged once, before any branch dispatches. Every arm below hands
+        // work to the host; MontyComplete is the only one that does not, so a
+        // run that exactly exhausts its allowance still finishes. Charging
+        // per-arm would miss the async arm, which schedules before resuming.
+        if (progress is! MontyComplete) {
+          if (_suspensionBudgetExhausted ||
+              _suspensionsUsed >= _suspensionBudget) {
+            _suspensionBudgetExhausted = true;
+
+            // Not resumed into Python: every other error path here calls
+            // resumeWithError, which a try/except could swallow.
+            throw MontySuspensionBudgetExceeded(_suspensionBudget);
+          }
+          _suspensionsUsed++;
+        }
+
         switch (progress) {
           case MontyComplete(:final result):
             return result;
@@ -694,7 +737,9 @@ class MontyRepl {
     if (!_created) {
       await _bindings.create(
         scriptName: _scriptName,
-        limitsJson: _limits == null ? null : encodeLimitsJson(_limits),
+        limitsJson: _limits == null || !_limits.hasEngineLimits
+            ? null
+            : encodeLimitsJson(_limits),
       );
       _created = true;
       final preamble = _preamble;

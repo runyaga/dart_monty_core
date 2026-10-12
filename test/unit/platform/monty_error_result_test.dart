@@ -469,13 +469,14 @@ void main() {
       // subclass slips into the hierarchy without a corresponding test
       // file. If a new subclass is added, this switch stops being
       // exhaustive and the analyser flags it.
-      const errors = <MontyError>[
-        MontyScriptError('s'),
-        MontySyntaxError('y'),
-        MontyPanicError('p'),
-        MontyCrashError('c'),
-        MontyDisposedError('d'),
-        MontyResourceError('r'),
+      final errors = <MontyError>[
+        const MontyScriptError('s'),
+        const MontySyntaxError('y'),
+        const MontyPanicError('p'),
+        const MontyCrashError('c'),
+        const MontyDisposedError('d'),
+        const MontyResourceError('r'),
+        const MontySuspensionBudgetExceeded(1),
       ];
       final names = errors.map((e) {
         return switch (e) {
@@ -485,6 +486,7 @@ void main() {
           MontyCrashError() => 'crash',
           MontyDisposedError() => 'disposed',
           MontyResourceError() => 'resource',
+          MontySuspensionBudgetExceeded() => 'suspension-budget',
         };
       }).toList();
       expect(names, [
@@ -496,7 +498,23 @@ void main() {
         'crash',
         'disposed',
         'resource',
+        'suspension-budget',
       ]);
+    });
+  });
+
+  group('MontySuspensionBudgetExceeded', () {
+    test('carries the budget, names how to raise it and its type', () {
+      // Built at run time on purpose: a const instance never runs the
+      // constructor, so its message and type name would go unexercised.
+      final budget = int.parse('7');
+      final e = MontySuspensionBudgetExceeded(budget);
+
+      expect(e.budget, 7);
+      expect(e.message, contains('suspension limit 7 exceeded'));
+      expect(e.message, contains('MontyLimits(maxSuspensions: ...)'));
+      expect(e.message, isNot(contains('unlimited')));
+      expect(e.toString(), startsWith('MontySuspensionBudgetExceeded: '));
     });
   });
 }

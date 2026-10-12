@@ -33,6 +33,7 @@
 //     // ERROR MontyCrashError     -- the host process died
 //     // ERROR MontyDisposedError  -- use after close
 //     // ERROR MontyResourceError  -- a declared limit was hit
+//     // ERROR MontySuspensionBudgetExceeded -- the host's suspension bound was hit
 //
 // NOT under MontyError, and deliberately excluded from that list because they
 // are not part of the sealed hierarchy: MontyException, MontyTypingError,
