@@ -230,21 +230,37 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libclang-dev
       - name: Generate bindings
         run: bash tool/generate_bindings.sh
-      - name: Upload bindings
-        uses: actions/upload-artifact@v7
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated/dart_monty_bindings.dart
-          retention-days: 1
+      # A DRIFT CHECK, not a producer. The bindings are committed, and every
+      # other job builds against the committed copy; this job proves that copy
+      # is what ffigen emits from the current header. It used to upload the
+      # regenerated file for four jobs to download over the committed one,
+      # which serialised them behind this job and hid drift instead of failing.
+      - name: Committed bindings match ffigen output
+        run: |
+          set -euo pipefail
+          F=lib/src/ffi/generated/dart_monty_bindings.dart
+          # Present AND tracked: a diff of an untracked or deleted file is empty.
+          [ -s "$F" ] || { echo "FAIL: $F missing or empty after generation."; exit 1; }
+          git ls-files --error-unmatch "$F" >/dev/null \
+            || { echo "FAIL: $F is not tracked by git."; exit 1; }
+          # Nothing else may appear under generated/ either.
+          UNTRACKED="$(git ls-files --others --exclude-standard -- lib/src/ffi/generated/)"
+          [ -z "$UNTRACKED" ] || { echo "FAIL: untracked generated files: $UNTRACKED"; exit 1; }
+          git diff --exit-code -- lib/src/ffi/generated/ || {
+            echo "FAIL: lib/src/ffi/generated/ is stale -- run bash tool/generate_bindings.sh and commit."
+            exit 1
+          }
+          echo "OK: committed bindings match ffigen output"
 
   # ---------------------------------------------------------------------------
   # Dart: analyze + format + unit tests (JIT) + coverage
   # ---------------------------------------------------------------------------
   test:
     name: Dart test (JIT)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [ffigen]
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
@@ -270,11 +286,6 @@ jobs:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
       - run: dart pub get
       - name: Analyze
         run: dart analyze --fatal-infos
@@ -490,9 +501,10 @@ jobs:
   # ---------------------------------------------------------------------------
   test-aot:
     name: AOT consumer
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [ffigen]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -514,11 +526,6 @@ jobs:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
       - run: dart pub get
       # Build CLI bundles the hook's native asset; the probe asserts its result.
       - name: Build an AOT consumer
@@ -651,7 +658,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test-ffi:
     name: FFI integration tests
-    needs: [changes, ffigen]
+    needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -683,11 +690,6 @@ jobs:
           # and is left alone so it cannot win the write-once race and leave the
           # release jobs cold.
           shared-key: native-amd64
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
       - name: Build native library
         working-directory: native
         # --target MATCHES THE HOOK, and that is the whole point of the flag.
@@ -772,7 +774,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test-examples:
     name: Example smoke tests
-    needs: [changes, ffigen]
+    needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -804,11 +806,6 @@ jobs:
           # and is left alone so it cannot win the write-once race and leave the
           # release jobs cold.
           shared-key: native-amd64
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
       - name: Build native library
         working-directory: native
         # --target MATCHES THE HOOK, and that is the whole point of the flag.
