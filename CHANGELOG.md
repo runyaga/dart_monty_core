@@ -238,6 +238,26 @@ three surprise people, and one of them differs from upstream's default.
 
 ### Breaking
 
+- **The backend-adapter layer is no longer exported**, and
+  `MontyRepl.withBindings` is gone. Unexported: `CoreProgressResult`,
+  `CoreRunResult`, `ReplBindings` and `WireJson`. Consumers use `MontyProgress`
+  and `MontyResult`, which `BaseMontyPlatform` translates the DTOs into.
+
+  Dropping only the two DTOs would not have worked. `ReplBindings` was exported
+  and nine of its methods return them, so an outside implementer would have
+  been asked to write signatures naming types it could no longer name.
+  `WireJson` was exported for the same reason and its doc said so.
+
+  That whole surface existed to serve `MontyRepl.withBindings`, which let an
+  outside caller supply their own bindings. It had **no callers** — not in
+  `lib/`, `test/`, `example/` or `tool/` — so it is removed rather than
+  preserved, and the adapter contract becomes internal in fact and not just by
+  directory. What remains free to change is the DTO shape, which the progress
+  translator work needs.
+
+  Two in-package integration tests that drive the adapter directly now import
+  `src/platform/wire_json.dart` explicitly.
+
 - **`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`**, was
   `Future<Object?>`. Supplying a callback gets strictly easier: a
   `Future`-returning function is still assignable, and one that simply computes
