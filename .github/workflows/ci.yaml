@@ -249,6 +249,76 @@ jobs:
       - run: python3 -I tool/check_capability_manifest.py --online
 
   # ---------------------------------------------------------------------------
+  # Upstream parity: the measured baseline moves only on purpose
+  # ---------------------------------------------------------------------------
+  # Runs the parity suite (github.com/runyaga/dart_monty_parity, at the commit
+  # PARITY_PIN names) against this checkout on the VM (FFI), dart2js and
+  # dart2wasm, and asserts its tool/parity/baseline-current.json: every case's
+  # result within every re-measured row, every row's status, the PRESENT
+  # totals. On this x86_64 runner float_values is PARTIAL on vm and dart2wasm
+  # (core's NaN sign bit), as recorded there; nothing else may differ.
+  #
+  # A change meant to move parity updates that baseline in dart_monty_parity
+  # first, then bumps PARITY_PIN here in the same PR as the change.
+  parity:
+    name: Parity (pinned dart_monty_parity; vm, dart2js, dart2wasm)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PARITY_PIN: d7d253da10be6329541b641a1885dbad840e9750
+    steps:
+      - uses: actions/checkout@v7
+      - name: The pin is one full commit SHA
+        run: '[[ "$PARITY_PIN" =~ ^[0-9a-f]{40}$ ]] || { echo "PARITY_PIN must be a full commit SHA, got $PARITY_PIN"; exit 1; }'
+      - uses: actions/checkout@v7
+        with:
+          repository: runyaga/dart_monty_parity
+          ref: ${{ env.PARITY_PIN }}
+          path: .parity
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-parity-${{ runner.os }}-${{ hashFiles('.parity/packages/monty_parity/pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: The suite's upstream pins are this tree's
+        run: python3 -I .parity/tool/check_core_upstream.py --core .
+      - name: Run on the VM (FFI)
+        run: python3 -I .parity/tool/parity/run.py vm --core . --out /tmp/parity
+      - name: Run on dart2js
+        run: python3 -I .parity/tool/parity/run.py dart2js --core . --out /tmp/parity
+      - name: Run on dart2wasm
+        run: python3 -I .parity/tool/parity/run.py dart2wasm --core . --out /tmp/parity
+      - name: Score and assert the current baseline
+        run: |
+          python3 -I .parity/tool/parity/score.py /tmp/parity \
+            --json /tmp/parity/score.json --markdown /tmp/parity/score.md \
+            --assert-current .parity/tool/parity/baseline-current.json
+      - name: Publish the scorecard
+        if: success() || failure()
+        run: '[ -f /tmp/parity/score.md ] && cat /tmp/parity/score.md >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: parity
+          path: /tmp/parity
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
   # FFI binding generation
   # ---------------------------------------------------------------------------
   ffigen:
