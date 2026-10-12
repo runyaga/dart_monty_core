@@ -182,6 +182,8 @@ jobs:
           run dart analyze --fatal-infos
           run dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
           run bash tool/check_asset_freshness.sh
+          # The proto worker wasm's gzip -9 budget (5.75 MB; O7 measured 5.66).
+          run bash tool/check_worker_wasm_size.sh
           run bash tool/check_wire_version.sh
           run node tool/check_wasm_arity.mjs
           run bash tool/check_exports_declared.sh
@@ -226,7 +228,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 24 ] || { echo "FAIL: expected 24 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 25 ] || { echo "FAIL: expected 25 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -535,7 +537,7 @@ jobs:
         run: |
           set -o pipefail
           dart test \
-            --exclude-tags=ffi,wasm,integration,ladder,example,vm-only \
+            --exclude-tags=ffi,wasm,integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
           bash tool/assert_test_count.sh /tmp/unit-web.log 1400 "unit (web)"
 
@@ -1106,6 +1108,60 @@ jobs:
           bash tool/assert_test_count.sh /tmp/wasm-unit-w.log 700 "WASM unit (dart2wasm)"
 
   # ---------------------------------------------------------------------------
+  # WorkerChannel in Chrome against the COMMITTED proto worker wasm
+  # ---------------------------------------------------------------------------
+  # lib/assets/dart_monty_core_proto_worker.{js,wasm} through WorkerChannel on
+  # both Dart web compilers: two Workers sharing one compiled Module, a wasm
+  # trap surfacing as MontyCrashedError with a working replacement, kill,
+  # protocol skew, and `jspi == true` on Chrome plus the forced-fallback
+  # variant. The wasm is not rebuilt here: tests run the asset consumers get,
+  # and tool/check_asset_freshness.sh (gate job) ties it to native/worker/.
+  test-worker-web:
+    name: Worker channel (Chrome, dart2js + dart2wasm)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      # `dart test` runs hook/build.dart (the in-process crate) whatever the
+      # platform; restore the shared native cache rather than build it cold.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      # One run per compiler, each with its own test-count floor, and
+      # coverage from dart2js alone: tool/test_worker_web.sh says why.
+      - name: Worker channel tests (dart2js, then dart2wasm)
+        run: bash tool/test_worker_web.sh --coverage coverage-web
+      # The only measurement of lib/src/worker/worker_channel.dart, which the
+      # VM cannot load. coverage-merge takes it with --browser, for that file
+      # alone (tool/coverage_report.sh says why).
+      - name: Format Chrome coverage
+        run: |
+          dart run coverage:format_coverage --lcov --in=coverage-web \
+            --out=coverage-web/lcov.info --report-on=lib --package=.
+          test -s coverage-web/lcov.info
+      - name: Upload Chrome tracefile
+        uses: actions/upload-artifact@v7
+        with:
+          name: lcov-worker-web
+          path: coverage-web/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
   # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
   #
   # These need an engine built `--features test-hooks`, which is NEVER shipped
@@ -1236,7 +1292,7 @@ jobs:
   # back in with --baseline. This job is checkout + python3.
   coverage-merge:
     name: Coverage (merged, lib-wide) + ratchet
-    needs: [changes, test, test-ffi]
+    needs: [changes, test, test-ffi, test-worker-web]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1260,6 +1316,11 @@ jobs:
         with:
           name: lcov-ffi
           path: coverage-ffi
+      - name: Download Chrome tracefile (worker channel)
+        uses: actions/download-artifact@v8
+        with:
+          name: lcov-worker-web
+          path: coverage-web
       - name: Merge and report
         # R3: `lcov -a` needs identical absolute paths in every input. Every job
         # here runs in /home/runner/work/dart_monty_core/dart_monty_core, and
@@ -1270,6 +1331,7 @@ jobs:
           bash tool/coverage_report.sh \
             --baseline coverage/anchor.info \
             --out-dir coverage \
+            --browser coverage-web/lcov.info \
             coverage/lcov.info \
             coverage-ffi/lcov.info
       - name: Coverage ratchet (no per-file decrease)

@@ -167,6 +167,9 @@ s  init_reaper   bash tool/dmc_container.sh check
 # here that needs no human discipline: WIRE_FORMAT_VERSION is hand-bumped, so it
 # is blind to "encoding changed, nobody bumped, nobody rebuilt".
 s  asset_fresh   bash tool/check_asset_freshness.sh
+# The proto worker wasm is what every browser page downloads; its gzip -9 size
+# has a budget (5.75 MB; O7 measured 5.66) that only a deliberate edit raises.
+s  worker_size   bash tool/check_worker_wasm_size.sh
 # The complement to asset_fresh: that one catches "sources moved, nobody
 # rebuilt"; this one catches "the encoding was versioned on one side only".
 s  wire_version  bash tool/check_wire_version.sh
@@ -320,7 +323,15 @@ sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example -
 # inputs_encoder compiled, analysed clean and passed on the VM while doing
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
-sf unit_web 1400 dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only -p chrome -c dart2js -c dart2wasm
+sf unit_web 1400 dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
+# WorkerChannel against the COMMITTED proto worker .{js,wasm}, in Chrome, on
+# both compilers: two Workers on one Module, trap -> MontyCrashedError plus a
+# working replacement (JSPI and forced fallback), kill, protocol skew. `worker`
+# is excluded from unit_web above so these run once, here, as in CI's
+# test-worker-web job. The script asserts a floor per compiler, and its
+# dart2js coverage is the only measurement of lib/src/worker/worker_channel
+# .dart, which the VM cannot load; cov_report takes it with --browser.
+s  worker_web    bash tool/test_worker_web.sh --coverage "$OUT/cov-web"
 dcm_here dcm_ratchet && s  dcm_ratchet   bash tool/dcm_ratchet.sh
 dcm_here metrics_ratch && s  metrics_ratch bash tool/metrics_ratchet.sh
 ns cargo_fmt     cargo fmt --check
@@ -365,7 +376,7 @@ s  examples      bash tool/run_example_smoke.sh "$OUT/example-test.log"
 #
 # It reports two numbers on purpose (loaded-files and lib-wide) so nobody can
 # quietly switch to whichever flatters.
-s  cov_report    bash tool/coverage_report.sh --out-dir "$OUT/coverage" "$OUT/cov"
+s  cov_report    bash tool/coverage_report.sh --out-dir "$OUT/coverage" --browser "$OUT/cov-web" "$OUT/cov"
 # ...and a floor under them. Nothing else here stops the reclassified coverage
 # decaying: new native code lands, the conformance corpus does not grow to
 # match, and per-file coverage slides back invisibly because the project total
@@ -501,7 +512,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=47
+EXPECT_STEPS=49
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

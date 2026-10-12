@@ -18,5 +18,10 @@ tags:
     skip: "Example smoke tests. Run: dart test -p vm --run-skipped --tags=example"
   ladder:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=ladder"
+  # The monty-proto worker channels against real workers. Not skipped: the
+  # browser half drives the COMMITTED lib/assets/dart_monty_core_proto_worker
+  # .{js,wasm}, served under packages/. Excluded from unit_web and run on its
+  # own: bash tool/test_worker_web.sh
+  worker: {}
   pending-futures:
     skip: "Pending feat/repl-future-capable. Run with --run-skipped --tags=pending-futures to confirm the spec is still failing."

@@ -51,4 +51,8 @@ flutter:
     - lib/assets/dart_monty_core_bridge.js
     - lib/assets/dart_monty_core_worker.js
     - lib/assets/dart_monty_core_native.wasm
+    # The monty-proto Web Worker and its module (WorkerChannel; internal
+    # until a public API uses them).
+    - lib/assets/dart_monty_core_proto_worker.js
+    - lib/assets/dart_monty_core_proto_worker.wasm
 

@@ -1,6 +1,7 @@
 {
   "_comment": "Provenance for the committed WASM/JS assets in lib/assets/. Lives in tool/ (.pubignore'd) rather than lib/assets/ because it is DEVELOPMENT knowledge: consumers used to download it with the package and it told them nothing actionable. See docs/contributor/testing-runbook.md for why a git diff on the blob is uninformative.",
   "_source_sha256_comment": "sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs and js/src/**.js -- the INPUTS to the committed assets. The assets themselves are not byte-reproducible, so hashing them proves nothing; hashing what they are built from proves everything that matters. Updated by tool/prebuild.sh.",
+  "_worker_source_sha256_comment": "sha256 over every file under native/worker/ (target/ excluded), native/rust-toolchain.toml and tool/build_worker_wasm.sh -- the INPUTS to lib/assets/dart_monty_core_proto_worker.wasm. Updated by tool/prebuild.sh, either scope.",
   "assets": {
     "dart_monty_core_bridge.js": {
       "bytes": 20921,
@@ -10,6 +11,10 @@
       "bytes": 15191477,
       "sha256": "3ced9dda61d332f752e4d4ad9439d18dd6dfd36fcb71f53211104cfd74d95634"
     },
+    "dart_monty_core_proto_worker.wasm": {
+      "bytes": 16399286,
+      "sha256": "31d99e55343339334cf9226d2bda27069199e590762bbddd4d6d204755f4ccc2"
+    },
     "dart_monty_core_worker.js": {
       "bytes": 52955,
       "sha256": "4c0f28306d542f6e1a0c7b70e0713c56151331978f3ca15197eec95acd5ef909"
@@ -17,5 +22,6 @@
   },
   "monty_tag": "v0.0.23",
   "native_commit": "3ff62af878b9743368bf1a2b5944695c040ca931",
-  "source_sha256": "28f8015349b5ddcfd215ef8b771ddd44b6b10d7f9d7240ed88e40791478412c7"
+  "source_sha256": "28f8015349b5ddcfd215ef8b771ddd44b6b10d7f9d7240ed88e40791478412c7",
+  "worker_source_sha256": "333f6e74acf4b05def03e98d6d2fd186163a476db9a8193768f27e9881afa5d1"
 }

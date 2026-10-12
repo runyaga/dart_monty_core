@@ -33,7 +33,13 @@
 # line is, and merging them is a union, not a reconciliation.
 #
 # Usage:
-#   bash tool/coverage_report.sh [--out-dir DIR] INPUT [INPUT...]
+#   bash tool/coverage_report.sh [--out-dir DIR] [--browser INPUT] INPUT [INPUT...]
+#
+# --browser INPUT is coverage measured in Chrome (`dart test -p chrome
+# --coverage`). It is used for the VM_UNLOADABLE files ONLY, where it replaces
+# the synthesised estimate with a measurement; its records for every other file
+# are ignored, because dart2js attributes lines differently from the VM and a
+# union would add lines the VM's notion of coverable does not have.
 #
 # An INPUT is either an LCOV tracefile or a directory of `dart test --coverage`
 # hitmap JSON, which is formatted here. Taking the raw hitmap directly is the
@@ -63,11 +69,13 @@ OUT_DIR=coverage
 # every-lib-file assertion still run, so a stale baseline shows up as a missing
 # file rather than as a quietly smaller denominator.
 BASELINE=""
+BROWSER=""
 INPUTS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --out-dir) OUT_DIR="$2"; shift 2 ;;
     --baseline) BASELINE="$2"; shift 2 ;;
+    --browser) BROWSER="$2"; shift 2 ;;
     -h|--help) sed -n '2,54p' "$0"; exit 0 ;;
     -*) echo "FAIL: unknown option $1" >&2; exit 2 ;;
     *) INPUTS+=("$1"); shift ;;
@@ -84,7 +92,7 @@ fi
 # core#130, where a wrong glob meant `format_coverage` wrote an EMPTY lcov every
 # run and the 70% patch gate short-circuited to exit 0 for months. Treat an
 # empty input as a hard failure, never as "0% coverage".
-for f in "${INPUTS[@]}"; do
+for f in "${INPUTS[@]}" ${BROWSER:+"$BROWSER"}; do
   if [ -d "$f" ]; then
     if [ -z "$(find "$f" -name '*.json' -print -quit)" ]; then
       echo "FAIL: input directory '$f' holds no coverage hitmap JSON."
@@ -129,7 +137,7 @@ EXCLUDE=(
 
 # -----------------------------------------------------------------------------
 # Files the Dart VM cannot load AT ALL, so the anchor cannot ask the VM for
-# their coverable lines. Both are browser-only: they resolve `.toJS` extension
+# their coverable lines. All are browser-only: they resolve `.toJS` extension
 # members from dart:js_interop, which do not exist off the web.
 #
 # The list is VERIFIED, not asserted — see the "vm_unloadable is still true"
@@ -141,6 +149,7 @@ EXCLUDE=(
 VM_UNLOADABLE=(
   'lib/src/wasm/wasm_bindings_js.dart'
   'lib/src/repl/repl_factory_web.dart'
+  'lib/src/worker/worker_channel.dart'
 )
 
 READY_SENTINEL='coverage-anchor-compiled-and-ran'
@@ -304,10 +313,10 @@ rm -f "$ANCHOR_DIR/probe.dart" "$ANCHOR_DIR/probe.log"
 fi  # end of the anchor run
 
 # ---- hitmap directories become tracefiles -------------------------------------
-ORIG_INPUTS="$(printf '%s\n' "${INPUTS[@]}")"
+ORIG_INPUTS="$(printf '%s\n' "${INPUTS[@]}" ${BROWSER:+"$BROWSER (browser)"})"
 RESOLVED=()
 i=0
-for f in "${INPUTS[@]}"; do
+for f in "${INPUTS[@]}" ${BROWSER:+"$BROWSER"}; do
   if [ -d "$f" ]; then
     lcov="$ANCHOR_DIR/in-$i.info"
     dart run coverage:format_coverage --lcov --in="$f" --out="$lcov" \
@@ -324,12 +333,18 @@ for f in "${INPUTS[@]}"; do
   i=$((i + 1))
 done
 INPUTS=("${RESOLVED[@]}")
+if [ -n "$BROWSER" ]; then
+  # The last input resolved is the browser one; it is not part of the union.
+  BROWSER="${INPUTS[${#INPUTS[@]}-1]}"
+  unset 'INPUTS[${#INPUTS[@]}-1]'
+fi
 
 # -----------------------------------------------------------------------------
 OUT_DIR="$OUT_DIR" ANCHOR="$ANCHOR_DIR/anchor.info" \
 EXCLUDE="$(printf '%s\n' "${EXCLUDE[@]}")" \
 UNLOADABLE="$(printf '%s\n' "${VM_UNLOADABLE[@]}")" \
 INPUTS="$(printf '%s\n' "${INPUTS[@]}")" ORIG_INPUTS="$ORIG_INPUTS" \
+BROWSER="$BROWSER" \
 python3 - <<'PY'
 import os, re, shutil, sys
 
@@ -409,6 +424,19 @@ def synthesise(path):
 
 synth = {f: synthesise(f) for f in unloadable}
 
+# --- browser measurement, for the VM-unloadable files only --------------------
+# A measurement beats an estimate: where Chrome coverage exists for a file the
+# VM cannot load, it replaces the synthesised lines outright. It is REAL data,
+# so it enters merged.info -- the patch-coverage gate's input --
+# where the estimate never does. Records for any other file are dropped (see
+# --browser in the header).
+measured = set()
+if os.environ.get('BROWSER'):
+    for f, lines in parse(os.environ['BROWSER']).items():
+        if f in unloadable and lines:
+            merged[f] = dict(lines)
+            measured.add(f)
+
 # --- every lib/ file, no exceptions -------------------------------------------
 # The FILESYSTEM, not `git ls-files`: a file that exists is a file the anchor
 # imports and the suites can load, tracked or not. Enumerating from the index
@@ -423,7 +451,8 @@ all_lib = sorted(
 
 honest = {}
 for f in all_lib:
-    lines = dict(baseline.get(f) or synth.get(f) or {})
+    estimate = {} if f in measured else synth.get(f)
+    lines = dict(baseline.get(f) or estimate or {})
     for n, h in merged.get(f, {}).items():
         lines[n] = lines.get(n, 0) + h
     honest[f] = lines
@@ -465,7 +494,6 @@ def rate(data):
 
 mh, mf, mp = rate(merged)
 hh, hf, hp = rate(honest)
-synth_lines = sum(len(honest[f]) for f in unloadable if f in honest)
 
 print('coverage report')
 print(f'  inputs                 : {", ".join(named)}')
@@ -474,9 +502,13 @@ print(f'  LOADED-FILES number    : {mh}/{mf} = {mp:.1f}%  '
 print(f'  LIB-WIDE number        : {hh}/{hf} = {hp:.1f}%  '
       f'({len(honest)} files — every .dart under lib/ minus '
       f'{len(exclude)} documented exclusions)')
+synth_lines = sum(len(honest[f]) for f in unloadable
+                  if f in honest and f not in measured)
 print(f'  of which synthesised   : {synth_lines} lines in '
-      f'{len(unloadable)} VM-unloadable file(s) — an over-estimate, see '
-      f'tool/coverage_report.sh')
+      f'{len(unloadable) - len(measured)} VM-unloadable file(s) — an '
+      f'over-estimate, see tool/coverage_report.sh')
+for f in sorted(measured):
+    print(f'  measured in Chrome     : {f}')
 print(f'  wrote {out_dir}/merged.info (real lines only, for diff-cover)')
 print(f'  wrote {out_dir}/honest.info (every lib/ file, for humans and the ratchet)')
 print(f'  wrote {out_dir}/anchor.info (the zero baseline, for --baseline)')
