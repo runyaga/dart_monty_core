@@ -11,8 +11,10 @@ and dart2wasm.
 | `manifest.json` | binds every case (sha256) to the expected outcomes generated from it (sha256), plus the sha256 of the generator (the oracle's code) and of the upstream pins |
 | `oracle/` | the reference oracle that generates `expected/`: `run_cases.py`, `run_probes.py`, `rust/` |
 
-The Dart runner, scorer and per-row rules are added on top of this (packages/monty_parity,
-`run.py`, `score.py`, `rows.json`).
+| `rows.json` | per capability row: its cases or probes, the recorded status per backend, per-architecture expectations, and the named exceptions (stable IDs; full summary in `EXCEPTIONS.md`) |
+| `run.py`, `score.py`, `probes_compare.py` | run the cases through core on a backend; score each row against `expected/` |
+
+The Dart runner is `packages/monty_parity`.
 
 ## Checks
 

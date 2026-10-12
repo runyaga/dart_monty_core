@@ -1,0 +1,19 @@
+name: monty_parity
+description: >-
+  Parity runner: drives the parity cases through dart_monty_core's public API
+  on the Dart VM (FFI), dart2js and dart2wasm, for scoring against upstream
+  pydantic-monty (tool/parity).
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  # Overridden by tool/parity/run.sh when measuring another core checkout.
+  dart_monty_core:
+    path: ../..
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^10.0.0

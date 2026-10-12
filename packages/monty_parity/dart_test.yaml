@@ -1,0 +1,3 @@
+# The web runner needs core's JS bridge on the page; tool/parity/run.py stages
+# it (and the worker and wasm) into test/ for the run.
+custom_html_template_path: test/web_template.html

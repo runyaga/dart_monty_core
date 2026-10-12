@@ -1,0 +1,1827 @@
+{
+ "platforms": {
+  "arm64": {
+   "measured_on": "macOS arm64: the platform the capability manifest baseline was measured on",
+   "rows": {},
+   "present": {
+    "vm": 37,
+    "dart2js": 36,
+    "dart2wasm": 36
+   }
+  },
+  "x86_64": {
+   "measured_on": "Linux x86_64 (CI)",
+   "rows": {
+    "float_values": {
+     "vm": "PARTIAL",
+     "dart2wasm": "PARTIAL"
+    }
+   },
+   "present": {
+    "vm": 36,
+    "dart2js": 36,
+    "dart2wasm": 35
+   },
+   "cause": {
+    "float_values": "float(\"nan\") reaches the host with the sign bit set on x86_64 (fff8000000000000; upstream 7ff8000000000000): a core defect, recorded as measured"
+   }
+  }
+ },
+ "rows": {
+  "singleton_values": {
+   "cases": [
+    "v_none",
+    "i_none",
+    "r_singletons"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "boolean_integer_values": {
+   "cases": [
+    "v_bool_int",
+    "i_bool_int"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "big_integer_values": {
+   "cases": [
+    "v_bigint",
+    "i_bigint",
+    "r_bigint"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "float_values": {
+   "cases": [
+    "v_float",
+    "v_nan",
+    "i_float",
+    "r_float"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "complex_values": {
+   "cases": [
+    "v_complex",
+    "i_complex",
+    "r_complex"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "text_and_bytes": {
+   "cases": [
+    "v_text_bytes",
+    "i_text_bytes"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "sequence_values": {
+   "cases": [
+    "v_seq",
+    "i_seq",
+    "r_bytes_tuple_set"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "set_values": {
+   "cases": [
+    "v_set",
+    "i_set"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "dictionary_values": {
+   "cases": [
+    "v_dict",
+    "i_dict",
+    "r_dict"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "named_tuple_values": {
+   "cases": [
+    "v_namedtuple",
+    "i_namedtuple",
+    "r_namedtuple"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "calendar_values": {
+   "cases": [
+    "v_date",
+    "v_datetime_tz",
+    "v_datetime_utc",
+    "i_date",
+    "i_datetime_tz",
+    "r_datetime"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "time_duration_zone_values": {
+   "cases": [
+    "v_time",
+    "v_timedelta",
+    "v_timezone",
+    "i_time",
+    "i_timedelta",
+    "i_timezone",
+    "r_time_td_tz"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "path_value_conversion": {
+   "cases": [
+    "v_path",
+    "i_path",
+    "r_path"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "exception_value_conversion": {
+   "cases": [
+    "v_exception",
+    "i_exception",
+    "r_exception"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "builtin_type_function_handles": {
+   "cases": [
+    "v_builtin",
+    "r_builtin",
+    "v_type",
+    "i_type",
+    "r_type",
+    "h_b05_std_type_proxy"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "lossy_output_placeholders": {
+   "cases": [
+    "v_cycle_list",
+    "v_cycle_dict",
+    "r_cycle",
+    "v_function",
+    "r_function",
+    "v_repr"
+   ],
+   "exceptions": [
+    {
+     "name": "placeholder-type",
+     "reason": "core types a repr/cycle/function placeholder as MontyOpaque; upstream returns the same text as str",
+     "normalise": "opaque_as_str"
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "boundary_value_graph": {
+   "cases": [
+    "v_alias",
+    "v_alias_nested",
+    "i_alias",
+    "i_alias_is",
+    "r_alias"
+   ],
+   "exceptions": [
+    {
+     "name": "identity-only",
+     "reason": "core decodes a tree, so shared sub-objects arrive as equal copies; identity-testing cases still differ",
+     "normalise": "identity_inline"
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "host_eager_attributes": {
+   "cases": [
+    "h_x01_eager_all",
+    "h_x02_eager_list",
+    "h_x03_eager_none"
+   ],
+   "exceptions": [
+    {
+     "name": "host-calls-not-compared",
+     "reason": "the host-call transcript differs in events owned by host_value_conversion_hook and host_method_dispatch",
+     "ignore": [
+      "H"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "host_instance_value": {
+   "cases": [
+    "h_b01_proxy_roundtrip",
+    "h_b02_proxy_nested",
+    "h_b03_dataclass_proxy",
+    "h_x17_return_original"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "host_class_type_proxy": {
+   "cases": [
+    "h_b07_restore_type_proxy",
+    "h_b08_restore_class_eager"
+   ],
+   "refusal": {
+    "message_contains": [
+     "cannot be sent back",
+     "MontyClassType is not a MontyValue"
+    ]
+   },
+   "expect": {
+    "ffi": "REFUSED",
+    "web": "REFUSED"
+   }
+  },
+  "host_lazy_attributes": {
+   "cases": [
+    "h_x07_lazy"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "host_class_value": {
+   "cases": [
+    "h_x09_class_init"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "host_constructor_policy": {
+   "cases": [
+    "h_x09_class_init",
+    "h_x11_class_methods"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "host_value_conversion_hook": {
+   "cases": [
+    "h_x13_convert_upper",
+    "h_x14_convert_redact",
+    "h_x15_convert_wrap"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "os_path_predicates": {
+   "cases": [
+    "b11fs_predicates"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_file_reads": {
+   "cases": [
+    "b11fs_read_text",
+    "b11fs_read_bytes",
+    "b11fs_read_text_unicode",
+    "b11fs_read_open_partial",
+    "b11fs_read_missing",
+    "b11fs_read_dir"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_file_writes": {
+   "cases": [
+    "b11fs_write_text",
+    "b11fs_write_bytes",
+    "b11fs_overwrite",
+    "b11fs_append_open",
+    "b11fs_write_open"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_rename": {
+   "cases": [
+    "b11fs_rename",
+    "b11fs_rename_replace",
+    "b11fs_rename_dir",
+    "b11fs_rename_missing"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_path_resolution": {
+   "cases": [
+    "b11fs_resolve_absolute"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_open_file": {
+   "cases": [
+    "x8mode_00",
+    "x8mode_01",
+    "x8mode_02",
+    "x8mode_03",
+    "x8mode_04",
+    "x8mode_05",
+    "x8mode_06",
+    "x8mode_07",
+    "x8mode_08",
+    "x8mode_09",
+    "x8mode_10",
+    "x8mode_11",
+    "x8mode_12",
+    "x8mode_13",
+    "x8mode_14",
+    "x8mode_15",
+    "x8mode_16",
+    "x8mode_17"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_stat_results": {
+   "cases": [
+    "b11fs_stat_file",
+    "b11fs_stat_dir",
+    "b11fs_stat_missing"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_directory_listing": {
+   "cases": [
+    "b11fs_iterdir",
+    "b11fs_iterdir_file",
+    "b11fs_iterdir_missing",
+    "b11fs_read_root_listing"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_directory_creation": {
+   "cases": [
+    "b11fs_mkdir",
+    "b11fs_mkdir_exists",
+    "b11fs_mkdir_exist_ok",
+    "b11fs_mkdir_parents",
+    "b11fs_mkdir_no_parent",
+    "b11fs_mkdir_then_write"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_entry_removal": {
+   "cases": [
+    "b11fs_unlink",
+    "b11fs_unlink_dir",
+    "b11fs_unlink_missing",
+    "b11fs_rmdir_empty",
+    "b11fs_rmdir_file",
+    "b11fs_rmdir_nonempty"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "memory_filesystem": {
+   "cases": [
+    "b11fs_append_open",
+    "b11fs_iter_open",
+    "b11fs_iterdir",
+    "b11fs_iterdir_file",
+    "b11fs_iterdir_missing",
+    "b11fs_mkdir",
+    "b11fs_mkdir_exist_ok",
+    "b11fs_mkdir_exists",
+    "b11fs_mkdir_no_parent",
+    "b11fs_mkdir_parents",
+    "b11fs_mkdir_then_write",
+    "b11fs_overwrite",
+    "b11fs_predicates",
+    "b11fs_read_binary_open",
+    "b11fs_read_bytes",
+    "b11fs_read_dir",
+    "b11fs_read_missing",
+    "b11fs_read_open_partial",
+    "b11fs_read_root_listing",
+    "b11fs_read_text",
+    "b11fs_read_text_unicode",
+    "b11fs_readlines_open",
+    "b11fs_rename",
+    "b11fs_rename_dir",
+    "b11fs_rename_missing",
+    "b11fs_rename_replace",
+    "b11fs_resolve_absolute",
+    "b11fs_rmdir_empty",
+    "b11fs_rmdir_file",
+    "b11fs_rmdir_nonempty",
+    "b11fs_stat_dir",
+    "b11fs_stat_file",
+    "b11fs_stat_missing",
+    "b11fs_unlink",
+    "b11fs_unlink_dir",
+    "b11fs_unlink_missing",
+    "b11fs_write_bytes",
+    "b11fs_write_dir",
+    "b11fs_write_missing_parent",
+    "b11fs_write_open",
+    "b11fs_write_text",
+    "x8mode_00",
+    "x8mode_01",
+    "x8mode_02",
+    "x8mode_03",
+    "x8mode_04",
+    "x8mode_05",
+    "x8mode_06",
+    "x8mode_07",
+    "x8mode_08",
+    "x8mode_09",
+    "x8mode_10",
+    "x8mode_11",
+    "x8mode_12",
+    "x8mode_13",
+    "x8mode_14",
+    "x8mode_15",
+    "x8mode_16",
+    "x8mode_17"
+   ],
+   "oracle": "refmem-py",
+   "compare": [
+    "V",
+    "Et",
+    "Em"
+   ],
+   "exceptions": [
+    {
+     "name": "rename-missing-message",
+     "reason": "renaming a missing file: upstream names the source path, core names source and destination",
+     "case": "b11fs_rename_missing",
+     "ignore": [
+      "Em"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "os_environment": {
+   "cases": [
+    "b14_env",
+    "x21_fallback_nonfs"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "mount_table": {
+   "cases": [
+    "x21_two_mounts",
+    "x21_nested_virtual",
+    "x21_trailing_slash_virtual",
+    "x21_dup_virtual",
+    "x21_relative_virtual"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "mount_modes": {
+   "cases": [
+    "x21_ro_read_ok",
+    "x21_ro_write",
+    "x21_overlay_same_feed"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "mount_errors": {
+   "cases": [
+    "x21_write_limit",
+    "x21_ro_write",
+    "x21_ro_mkdir",
+    "x21_ro_open_w",
+    "x21_ro_unlink",
+    "x21_dup_virtual",
+    "x21_relative_virtual",
+    "g19_close_then_feed"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "mount_feed_lifecycle": {
+   "cases": [
+    "x21_lifecycle_read-write",
+    "x21_lifecycle_delete_read-write",
+    "x21_lifecycle_overlay",
+    "x21_write_limit_per_feed"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "mount_close": {
+   "cases": [
+    "g19_close_then_feed"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "async_os_sleep": {
+   "cases": [
+    "b14_async_sleep_default",
+    "b14_async_sleep_callhost"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "os_calendar_calls": {
+   "cases": [
+    "b14_date_callhost",
+    "b14_date_callhost_tz"
+   ],
+   "exceptions": [
+    {
+     "name": "call-host-is-core-default",
+     "reason": "the case asks for os_policy call_host, the only behaviour core has",
+     "case": "b14_date_callhost",
+     "ignore": [
+      "C"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "os_entropy": {
+   "cases": [
+    "b14_urandom",
+    "b14_urandom_unhandled"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "os_clock_reads": {
+   "cases": [
+    "b14_time_default",
+    "b14_time_callhost"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "os_sync_sleep": {
+   "cases": [
+    "b14_sleep_default",
+    "b14_sleep_callhost",
+    "b14_sleep_zero",
+    "b14_sleep_negative",
+    "l16_sync_sleep"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "working_directory": {
+   "cases": [
+    "b14_getcwd_default",
+    "b14_getcwd_set",
+    "x21_cwd_feed",
+    "x21_cwd_default_mount",
+    "x21_cwd_relative_fallback"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "clock_source": {
+   "cases": [
+    "b14_date_default",
+    "b14_date_fixed",
+    "b14_date_callhost"
+   ],
+   "exceptions": [
+    {
+     "name": "call-host-is-core-default",
+     "reason": "the case asks for os_policy call_host, the only behaviour core has",
+     "case": "b14_date_callhost",
+     "ignore": [
+      "C"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "sleep_policy": {
+   "cases": [
+    "b14_sleep_default",
+    "b14_sleep_callhost",
+    "b14_sleep_zero"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "random_initialization": {
+   "cases": [
+    "x25_callhost",
+    "x25_callhost_no_draw",
+    "x25_callhost_reseed_first",
+    "x25_callhost_short",
+    "x25_callhost_unhandled",
+    "x25_callhost_wrongtype",
+    "x25_default_unseeded_instance",
+    "x25_seed_bigint",
+    "x25_seed_bytes",
+    "x25_seed_float",
+    "x25_seed_int",
+    "x25_seed_negint",
+    "x25_seed_str",
+    "x25_seed_vs_sandbox_seed",
+    "x25_system"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "configure_os_policy": {
+   "cases": [
+    "c02_process_time_zero",
+    "c03_process_time_elapsed",
+    "c04_elapsed_excludes_sleep",
+    "l17_sleep_zero_policy",
+    "b14_async_sleep_callhost",
+    "b14_callhost_all_unhandled",
+    "b14_date_callhost",
+    "b14_date_callhost_tz",
+    "b14_date_fixed",
+    "b14_sleep_callhost",
+    "b14_sleep_zero",
+    "b14_time_callhost",
+    "x25_callhost",
+    "x25_callhost_no_draw",
+    "x25_callhost_reseed_first",
+    "x25_callhost_short",
+    "x25_callhost_unhandled",
+    "x25_callhost_wrongtype",
+    "x25_seed_bigint",
+    "x25_seed_bytes",
+    "x25_seed_float",
+    "x25_seed_int",
+    "x25_seed_negint",
+    "x25_seed_str",
+    "x25_seed_vs_sandbox_seed"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "file_mode_inspection": {
+   "cases": [
+    "x8cbmode_00",
+    "x8cbmode_01",
+    "x8cbmode_02",
+    "x8cbmode_03",
+    "x8cbmode_04",
+    "x8cbmode_05",
+    "x8cbmode_06",
+    "x8cbmode_07",
+    "x8cbmode_08",
+    "x8cbmode_09",
+    "x8cbmode_10",
+    "x8cbmode_11",
+    "x8cbmode_12",
+    "x8cbmode_13",
+    "x8cbmode_14",
+    "x8cbmode_15",
+    "x8cbmode_16",
+    "x8cbmode_17",
+    "x8hostmode_zz",
+    "x8hostmode_rt",
+    "x8hostmode_rplus"
+   ],
+   "compare": [
+    "V",
+    "E"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "file_handle_value_conversion": {
+   "cases": [
+    "x8handle_pos5",
+    "x8handle_tell",
+    "x8handle_pos2p53",
+    "x8handle_pos2p63m1",
+    "x8hostmode_neg"
+   ],
+   "compare": [
+    "V",
+    "E"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "raised_exception": {
+   "cases": [
+    "b12_args__dict_get_no_args",
+    "b12_args__dict_get_too_many",
+    "b12_args__dict_items_with_args",
+    "b12_args__dict_keys_with_args",
+    "b12_args__dict_pop_no_args",
+    "b12_args__dict_pop_too_many",
+    "b12_args__dict_values_with_args",
+    "b12_args__id_too_many",
+    "b12_args__len_no_args",
+    "b12_args__len_too_many",
+    "b12_args__len_type_error_int",
+    "b12_args__len_type_error_none",
+    "b12_args__list_append_no_args",
+    "b12_args__list_append_too_many",
+    "b12_args__list_insert_too_few",
+    "b12_args__list_insert_too_many",
+    "b12_args__repr_no_args",
+    "b12_arith__div_zero_float",
+    "b12_arith__div_zero_int",
+    "b12_arith__floordiv_zero_float",
+    "b12_arith__floordiv_zero_int",
+    "b12_arith__pow_zero_neg",
+    "b12_arith__pow_zero_neg_builtin",
+    "b12_assert__fail",
+    "b12_assert__fail_msg",
+    "b12_attr__get_int_error",
+    "b12_attr__get_list_error",
+    "b12_attr__set_int_error",
+    "b12_attr__set_list_error",
+    "b12_builtin__add_type_error",
+    "b12_builtin__exec_import_traceback",
+    "b12_builtin__exec_traceback",
+    "b12_builtin__filter_not_iterable",
+    "b12_builtin__iter_err_unpack_int",
+    "b12_builtin__map_not_iterable",
+    "b12_builtin__next_stop_iteration",
+    "b12_builtin__print_invalid_kwarg",
+    "b12_bytes__endswith_str_error",
+    "b12_bytes__getitem_index_error",
+    "b12_bytes__index_start_gt_end",
+    "b12_bytes__negative_count",
+    "b12_bytes__startswith_str_error",
+    "b12_class__attribute_error",
+    "b12_class__body_raises",
+    "b12_class__init_raises",
+    "b12_class__init_return",
+    "b12_class__method_raises",
+    "b12_class__name_error",
+    "b12_complex__error_ordering",
+    "b12_complex__error_zero_power",
+    "b12_comprehension__unbound_local",
+    "b12_decorator__class_body_traceback",
+    "b12_decorator__class_traceback",
+    "b12_decorator__function_traceback",
+    "b12_dict__get_unhashable_key",
+    "b12_dict__literal_unhashable_key",
+    "b12_dict__method_pop_missing_error",
+    "b12_dict__pop_unhashable_key",
+    "b12_dict__popitem_empty",
+    "b12_dict__subscript_missing_key",
+    "b12_dict__unhashable_dict_key",
+    "b12_dict__unhashable_list_key",
+    "b12_dict__unpack_type_error",
+    "b12_execute_raise__error_instance_str",
+    "b12_execute_raise__error_no_args",
+    "b12_execute_raise__error_string_arg",
+    "b12_execute_raise__error_string_arg_quotes",
+    "b12_execute_raise__error_type",
+    "b12_execute_raise__raise_instance_via_var",
+    "b12_execute_raise__raise_list",
+    "b12_execute_raise__raise_number",
+    "b12_execute_raise__raise_type_call_via_var",
+    "b12_execute_raise__raise_type_direct",
+    "b12_execute_raise__raise_type_via_var",
+    "b12_fstring__error_eq_align_on_str",
+    "b12_fstring__error_float_f_on_str",
+    "b12_fstring__error_int_d_on_float",
+    "b12_fstring__error_int_d_on_str",
+    "b12_fstring__error_invalid_spec",
+    "b12_fstring__error_invalid_spec_dynamic",
+    "b12_fstring__error_invalid_spec_str",
+    "b12_fstring__error_str_s_on_int",
+    "b12_function__call_duplicate_kwargs",
+    "b12_function__err_duplicate_arg",
+    "b12_function__err_duplicate_first_arg",
+    "b12_function__err_duplicate_kwarg_cleanup",
+    "b12_function__err_duplicate_param",
+    "b12_function__err_kwonly_as_positional",
+    "b12_function__err_missing_all_posonly",
+    "b12_function__err_missing_heap_cleanup",
+    "b12_function__err_missing_kwonly",
+    "b12_function__err_missing_posonly_with_kwarg",
+    "b12_function__err_missing_with_posonly",
+    "b12_function__err_posonly_as_kwarg",
+    "b12_function__err_posonly_first_as_kwarg",
+    "b12_function__err_repeated_keyword",
+    "b12_function__err_too_many_posonly",
+    "b12_function__err_too_many_with_kwonly",
+    "b12_function__err_unexpected_kwarg",
+    "b12_function__err_unexpected_kwarg_cleanup",
+    "b12_function__err_unexpected_kwarg_quote",
+    "b12_function__err_unexpected_kwarg_simple",
+    "b12_function__err_unpack_duplicate_arg",
+    "b12_function__err_unpack_duplicate_heap",
+    "b12_function__err_unpack_int",
+    "b12_function__err_unpack_nonstring_key",
+    "b12_function__err_unpack_not_mapping",
+    "b12_function__too_few_args_all",
+    "b12_function__too_few_args_one",
+    "b12_function__too_few_args_two",
+    "b12_function__too_many_args_one",
+    "b12_function__too_many_args_two",
+    "b12_function__too_many_args_zero",
+    "b12_generic_alias__not_subscriptable",
+    "b12_global__error_assigned_before",
+    "b12_hash__dict_unhashable",
+    "b12_hash__list_unhashable",
+    "b12_if__raise_elif",
+    "b12_if__raise_else",
+    "b12_if__raise_if",
+    "b12_if__raise_in_elif_condition",
+    "b12_if__raise_in_if_condition",
+    "b12_import__error_cannot_import",
+    "b12_import__error_module_not_found",
+    "b12_import__future_unknown_feature",
+    "b12_import__relative_error",
+    "b12_import__relative_future_error",
+    "b12_import__relative_no_module_error",
+    "b12_import__runtime_error_when_executed",
+    "b12_import__star_error",
+    "b12_isinstance__arg2_list_error",
+    "b12_isinstance__arg2_type_error",
+    "b12_iter__dict_mutation",
+    "b12_iter__not_iterable",
+    "b12_list__extend_not_iterable",
+    "b12_list__getitem_out_of_bounds",
+    "b12_list__index_not_found",
+    "b12_list__index_start_gt_end",
+    "b12_list__pop_empty",
+    "b12_list__pop_out_of_range",
+    "b12_list__pop_type_error",
+    "b12_list__remove_not_found",
+    "b12_list__setitem_dict_index",
+    "b12_list__setitem_huge_int_index",
+    "b12_list__setitem_index_error",
+    "b12_list__setitem_type_error",
+    "b12_list__unpack_type_error",
+    "b12_longint__index_error",
+    "b12_longint__repeat_error",
+    "b12_loop__break_in_function_error",
+    "b12_loop__break_in_if_error",
+    "b12_loop__break_outside_error",
+    "b12_loop__continue_in_function_error",
+    "b12_loop__continue_in_if_error",
+    "b12_loop__continue_outside_error",
+    "b12_math__acos_domain_error",
+    "b12_math__acosh_domain_error",
+    "b12_math__asin_domain_error",
+    "b12_math__atanh_domain_error",
+    "b12_math__cos_inf_error",
+    "b12_math__cosh_overflow_error",
+    "b12_math__exp_overflow_error",
+    "b12_math__factorial_float_error",
+    "b12_math__factorial_negative_error",
+    "b12_math__floor_inf_error",
+    "b12_math__floor_nan_error",
+    "b12_math__floor_str_error",
+    "b12_math__fmod_inf_error",
+    "b12_math__gamma_neg_int_error",
+    "b12_math__gcd_float_error",
+    "b12_math__isqrt_negative_error",
+    "b12_math__ldexp_overflow_error",
+    "b12_math__log1p_domain_error",
+    "b12_math__log_base1_error",
+    "b12_math__log_zero_error",
+    "b12_math__pow_domain_error",
+    "b12_math__sin_inf_error",
+    "b12_math__sqrt_negative_error",
+    "b12_math__tan_inf_error",
+    "b12_math__trunc_str_error",
+    "b12_name_error__module_conditional_assign",
+    "b12_name_error__unbound_local_func",
+    "b12_name_error__unbound_local_module",
+    "b12_name_error__undefined_call_chained",
+    "b12_name_error__undefined_call_in_expr",
+    "b12_name_error__undefined_call_in_function",
+    "b12_name_error__undefined_call_with_args",
+    "b12_name_error__undefined_global",
+    "b12_name_error__undefined_global_in_function",
+    "b12_namedtuple__missing_attr",
+    "b12_nonlocal__error_module_level",
+    "b12_range__error_no_args",
+    "b12_range__error_step_zero",
+    "b12_range__error_too_many_args",
+    "b12_range__getitem_index_error",
+    "b12_recursion__function_depth",
+    "b12_set__unpack_type_error",
+    "b12_slice__invalid_indices",
+    "b12_slice__kwargs",
+    "b12_slice__no_args",
+    "b12_slice__step_zero",
+    "b12_slice__step_zero_bytes",
+    "b12_slice__step_zero_range",
+    "b12_slice__step_zero_str",
+    "b12_slice__step_zero_tuple",
+    "b12_slice__too_many_args",
+    "b12_str__getitem_index_error",
+    "b12_str__index_not_found",
+    "b12_str__join_no_args",
+    "b12_str__join_non_string",
+    "b12_str__join_not_iterable",
+    "b12_str__join_too_many_args",
+    "b12_str__partition_empty",
+    "b12_str__rsplit_empty_sep",
+    "b12_str__split_empty_sep",
+    "b12_traceback__division_error",
+    "b12_traceback__index_error",
+    "b12_traceback__insert_as_int",
+    "b12_traceback__nested_call",
+    "b12_traceback__nonlocal_module_scope",
+    "b12_traceback__nonlocal_unbound",
+    "b12_traceback__range_as_int",
+    "b12_traceback__recursion_error",
+    "b12_traceback__set_mutation",
+    "b12_traceback__undefined_attr_call",
+    "b12_traceback__undefined_call",
+    "b12_traceback__undefined_raise",
+    "b12_try_except__bare_raise_no_context",
+    "b12_try_except__invalid_type",
+    "b12_tuple__getitem_out_of_bounds",
+    "b12_tuple__index_not_found",
+    "b12_tuple__index_start_gt_end",
+    "b12_tuple__unpack_type_error",
+    "b12_type__builtin_attr_error",
+    "b12_type__bytes_negative",
+    "b12_type__cell_not_builtin",
+    "b12_type__exception_attr_error",
+    "b12_type__float_conversion_error",
+    "b12_type__float_repr_both_quotes",
+    "b12_type__float_repr_newline",
+    "b12_type__float_repr_single_quote",
+    "b12_type__int_conversion_error",
+    "b12_type__list_not_iterable",
+    "b12_type__non_builtin_name_error",
+    "b12_type__tuple_not_iterable",
+    "b12_type_error__int_add_list",
+    "b12_type_error__int_div_str",
+    "b12_type_error__int_floordiv_str",
+    "b12_type_error__int_iadd_str",
+    "b12_type_error__int_mod_str",
+    "b12_type_error__int_pow_str",
+    "b12_type_error__int_sub_str",
+    "b12_type_error__list_add_int",
+    "b12_type_error__list_add_str",
+    "b12_type_error__str_add_int",
+    "b12_type_error__str_iadd_int",
+    "b12_type_error__unary_invert_str",
+    "b12_type_error__unary_minus_str",
+    "b12_type_error__unary_neg_str",
+    "b12_type_error__unary_plus_str",
+    "b12_unicodedata__bad_arg",
+    "b12_unicodedata__name_error",
+    "b12_unpack__err_multiple_starred",
+    "b12_unpack__non_sequence",
+    "b12_unpack__not_enough",
+    "b12_unpack__star_not_enough",
+    "b12_unpack__too_many",
+    "b12_with__cm_context_expr_raises_traceback",
+    "b12_with__cm_enter_raises_traceback",
+    "b12_with__cm_exit_raises_normal_exit_traceback",
+    "b12_with__cm_nested_body_raises_traceback",
+    "b12_with__cm_traceback",
+    "b12_with__not_context_manager"
+   ],
+   "compare": [
+    "Et",
+    "Em"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "traceback_frames": {
+   "cases": [
+    "b12_args__dict_get_no_args",
+    "b12_args__dict_get_too_many",
+    "b12_args__dict_items_with_args",
+    "b12_args__dict_keys_with_args",
+    "b12_args__dict_pop_no_args",
+    "b12_args__dict_pop_too_many",
+    "b12_args__dict_values_with_args",
+    "b12_args__id_too_many",
+    "b12_args__len_no_args",
+    "b12_args__len_too_many",
+    "b12_args__len_type_error_int",
+    "b12_args__len_type_error_none",
+    "b12_args__list_append_no_args",
+    "b12_args__list_append_too_many",
+    "b12_args__list_insert_too_few",
+    "b12_args__list_insert_too_many",
+    "b12_args__repr_no_args",
+    "b12_arith__div_zero_float",
+    "b12_arith__div_zero_int",
+    "b12_arith__floordiv_zero_float",
+    "b12_arith__floordiv_zero_int",
+    "b12_arith__pow_zero_neg",
+    "b12_arith__pow_zero_neg_builtin",
+    "b12_assert__fail",
+    "b12_assert__fail_msg",
+    "b12_attr__get_int_error",
+    "b12_attr__get_list_error",
+    "b12_attr__set_int_error",
+    "b12_attr__set_list_error",
+    "b12_builtin__add_type_error",
+    "b12_builtin__exec_import_traceback",
+    "b12_builtin__exec_traceback",
+    "b12_builtin__filter_not_iterable",
+    "b12_builtin__iter_err_unpack_int",
+    "b12_builtin__map_not_iterable",
+    "b12_builtin__next_stop_iteration",
+    "b12_builtin__print_invalid_kwarg",
+    "b12_bytes__endswith_str_error",
+    "b12_bytes__getitem_index_error",
+    "b12_bytes__index_start_gt_end",
+    "b12_bytes__negative_count",
+    "b12_bytes__startswith_str_error",
+    "b12_class__attribute_error",
+    "b12_class__body_raises",
+    "b12_class__init_raises",
+    "b12_class__init_return",
+    "b12_class__method_raises",
+    "b12_class__name_error",
+    "b12_complex__error_ordering",
+    "b12_complex__error_zero_power",
+    "b12_comprehension__unbound_local",
+    "b12_decorator__class_body_traceback",
+    "b12_decorator__class_traceback",
+    "b12_decorator__function_traceback",
+    "b12_dict__get_unhashable_key",
+    "b12_dict__literal_unhashable_key",
+    "b12_dict__method_pop_missing_error",
+    "b12_dict__pop_unhashable_key",
+    "b12_dict__popitem_empty",
+    "b12_dict__subscript_missing_key",
+    "b12_dict__unhashable_dict_key",
+    "b12_dict__unhashable_list_key",
+    "b12_dict__unpack_type_error",
+    "b12_execute_raise__error_instance_str",
+    "b12_execute_raise__error_no_args",
+    "b12_execute_raise__error_string_arg",
+    "b12_execute_raise__error_string_arg_quotes",
+    "b12_execute_raise__error_type",
+    "b12_execute_raise__raise_instance_via_var",
+    "b12_execute_raise__raise_list",
+    "b12_execute_raise__raise_number",
+    "b12_execute_raise__raise_type_call_via_var",
+    "b12_execute_raise__raise_type_direct",
+    "b12_execute_raise__raise_type_via_var",
+    "b12_fstring__error_eq_align_on_str",
+    "b12_fstring__error_float_f_on_str",
+    "b12_fstring__error_int_d_on_float",
+    "b12_fstring__error_int_d_on_str",
+    "b12_fstring__error_invalid_spec",
+    "b12_fstring__error_invalid_spec_dynamic",
+    "b12_fstring__error_invalid_spec_str",
+    "b12_fstring__error_str_s_on_int",
+    "b12_function__call_duplicate_kwargs",
+    "b12_function__err_duplicate_arg",
+    "b12_function__err_duplicate_first_arg",
+    "b12_function__err_duplicate_kwarg_cleanup",
+    "b12_function__err_duplicate_param",
+    "b12_function__err_kwonly_as_positional",
+    "b12_function__err_missing_all_posonly",
+    "b12_function__err_missing_heap_cleanup",
+    "b12_function__err_missing_kwonly",
+    "b12_function__err_missing_posonly_with_kwarg",
+    "b12_function__err_missing_with_posonly",
+    "b12_function__err_posonly_as_kwarg",
+    "b12_function__err_posonly_first_as_kwarg",
+    "b12_function__err_repeated_keyword",
+    "b12_function__err_too_many_posonly",
+    "b12_function__err_too_many_with_kwonly",
+    "b12_function__err_unexpected_kwarg",
+    "b12_function__err_unexpected_kwarg_cleanup",
+    "b12_function__err_unexpected_kwarg_quote",
+    "b12_function__err_unexpected_kwarg_simple",
+    "b12_function__err_unpack_duplicate_arg",
+    "b12_function__err_unpack_duplicate_heap",
+    "b12_function__err_unpack_int",
+    "b12_function__err_unpack_nonstring_key",
+    "b12_function__err_unpack_not_mapping",
+    "b12_function__too_few_args_all",
+    "b12_function__too_few_args_one",
+    "b12_function__too_few_args_two",
+    "b12_function__too_many_args_one",
+    "b12_function__too_many_args_two",
+    "b12_function__too_many_args_zero",
+    "b12_generic_alias__not_subscriptable",
+    "b12_global__error_assigned_before",
+    "b12_hash__dict_unhashable",
+    "b12_hash__list_unhashable",
+    "b12_if__raise_elif",
+    "b12_if__raise_else",
+    "b12_if__raise_if",
+    "b12_if__raise_in_elif_condition",
+    "b12_if__raise_in_if_condition",
+    "b12_import__error_cannot_import",
+    "b12_import__error_module_not_found",
+    "b12_import__future_unknown_feature",
+    "b12_import__relative_error",
+    "b12_import__relative_future_error",
+    "b12_import__relative_no_module_error",
+    "b12_import__runtime_error_when_executed",
+    "b12_import__star_error",
+    "b12_isinstance__arg2_list_error",
+    "b12_isinstance__arg2_type_error",
+    "b12_iter__dict_mutation",
+    "b12_iter__not_iterable",
+    "b12_list__extend_not_iterable",
+    "b12_list__getitem_out_of_bounds",
+    "b12_list__index_not_found",
+    "b12_list__index_start_gt_end",
+    "b12_list__pop_empty",
+    "b12_list__pop_out_of_range",
+    "b12_list__pop_type_error",
+    "b12_list__remove_not_found",
+    "b12_list__setitem_dict_index",
+    "b12_list__setitem_huge_int_index",
+    "b12_list__setitem_index_error",
+    "b12_list__setitem_type_error",
+    "b12_list__unpack_type_error",
+    "b12_longint__index_error",
+    "b12_longint__repeat_error",
+    "b12_loop__break_in_function_error",
+    "b12_loop__break_in_if_error",
+    "b12_loop__break_outside_error",
+    "b12_loop__continue_in_function_error",
+    "b12_loop__continue_in_if_error",
+    "b12_loop__continue_outside_error",
+    "b12_math__acos_domain_error",
+    "b12_math__acosh_domain_error",
+    "b12_math__asin_domain_error",
+    "b12_math__atanh_domain_error",
+    "b12_math__cos_inf_error",
+    "b12_math__cosh_overflow_error",
+    "b12_math__exp_overflow_error",
+    "b12_math__factorial_float_error",
+    "b12_math__factorial_negative_error",
+    "b12_math__floor_inf_error",
+    "b12_math__floor_nan_error",
+    "b12_math__floor_str_error",
+    "b12_math__fmod_inf_error",
+    "b12_math__gamma_neg_int_error",
+    "b12_math__gcd_float_error",
+    "b12_math__isqrt_negative_error",
+    "b12_math__ldexp_overflow_error",
+    "b12_math__log1p_domain_error",
+    "b12_math__log_base1_error",
+    "b12_math__log_zero_error",
+    "b12_math__pow_domain_error",
+    "b12_math__sin_inf_error",
+    "b12_math__sqrt_negative_error",
+    "b12_math__tan_inf_error",
+    "b12_math__trunc_str_error",
+    "b12_name_error__module_conditional_assign",
+    "b12_name_error__unbound_local_func",
+    "b12_name_error__unbound_local_module",
+    "b12_name_error__undefined_call_chained",
+    "b12_name_error__undefined_call_in_expr",
+    "b12_name_error__undefined_call_in_function",
+    "b12_name_error__undefined_call_with_args",
+    "b12_name_error__undefined_global",
+    "b12_name_error__undefined_global_in_function",
+    "b12_namedtuple__missing_attr",
+    "b12_nonlocal__error_module_level",
+    "b12_range__error_no_args",
+    "b12_range__error_step_zero",
+    "b12_range__error_too_many_args",
+    "b12_range__getitem_index_error",
+    "b12_recursion__function_depth",
+    "b12_set__unpack_type_error",
+    "b12_slice__invalid_indices",
+    "b12_slice__kwargs",
+    "b12_slice__no_args",
+    "b12_slice__step_zero",
+    "b12_slice__step_zero_bytes",
+    "b12_slice__step_zero_range",
+    "b12_slice__step_zero_str",
+    "b12_slice__step_zero_tuple",
+    "b12_slice__too_many_args",
+    "b12_str__getitem_index_error",
+    "b12_str__index_not_found",
+    "b12_str__join_no_args",
+    "b12_str__join_non_string",
+    "b12_str__join_not_iterable",
+    "b12_str__join_too_many_args",
+    "b12_str__partition_empty",
+    "b12_str__rsplit_empty_sep",
+    "b12_str__split_empty_sep",
+    "b12_traceback__division_error",
+    "b12_traceback__index_error",
+    "b12_traceback__insert_as_int",
+    "b12_traceback__nested_call",
+    "b12_traceback__nonlocal_module_scope",
+    "b12_traceback__nonlocal_unbound",
+    "b12_traceback__range_as_int",
+    "b12_traceback__recursion_error",
+    "b12_traceback__set_mutation",
+    "b12_traceback__undefined_attr_call",
+    "b12_traceback__undefined_call",
+    "b12_traceback__undefined_raise",
+    "b12_try_except__bare_raise_no_context",
+    "b12_try_except__invalid_type",
+    "b12_tuple__getitem_out_of_bounds",
+    "b12_tuple__index_not_found",
+    "b12_tuple__index_start_gt_end",
+    "b12_tuple__unpack_type_error",
+    "b12_type__builtin_attr_error",
+    "b12_type__bytes_negative",
+    "b12_type__cell_not_builtin",
+    "b12_type__exception_attr_error",
+    "b12_type__float_conversion_error",
+    "b12_type__float_repr_both_quotes",
+    "b12_type__float_repr_newline",
+    "b12_type__float_repr_single_quote",
+    "b12_type__int_conversion_error",
+    "b12_type__list_not_iterable",
+    "b12_type__non_builtin_name_error",
+    "b12_type__tuple_not_iterable",
+    "b12_type_error__int_add_list",
+    "b12_type_error__int_div_str",
+    "b12_type_error__int_floordiv_str",
+    "b12_type_error__int_iadd_str",
+    "b12_type_error__int_mod_str",
+    "b12_type_error__int_pow_str",
+    "b12_type_error__int_sub_str",
+    "b12_type_error__list_add_int",
+    "b12_type_error__list_add_str",
+    "b12_type_error__str_add_int",
+    "b12_type_error__str_iadd_int",
+    "b12_type_error__unary_invert_str",
+    "b12_type_error__unary_minus_str",
+    "b12_type_error__unary_neg_str",
+    "b12_type_error__unary_plus_str",
+    "b12_unicodedata__bad_arg",
+    "b12_unicodedata__name_error",
+    "b12_unpack__err_multiple_starred",
+    "b12_unpack__non_sequence",
+    "b12_unpack__not_enough",
+    "b12_unpack__star_not_enough",
+    "b12_unpack__too_many",
+    "b12_with__cm_context_expr_raises_traceback",
+    "b12_with__cm_enter_raises_traceback",
+    "b12_with__cm_exit_raises_normal_exit_traceback",
+    "b12_with__cm_nested_body_raises_traceback",
+    "b12_with__cm_traceback",
+    "b12_with__not_context_manager"
+   ],
+   "compare": [
+    "Ef"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "recursion_limit": {
+   "cases": [
+    "l01_recursion",
+    "l02_recursion_catch"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "REFUSED"
+   }
+  },
+  "resource_failure_semantics": {
+   "cases": [
+    "l02_recursion_catch",
+    "l07_feed_timeout_catch",
+    "l05_mem_catch"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "REFUSED"
+   }
+  },
+  "feed_execution_limit": {
+   "cases": [
+    "l06_feed_timeout",
+    "l08_feed_reset_after_timeout",
+    "l09_feed_reset_sum"
+   ],
+   "exceptions": [
+    {
+     "name": "limit-wording",
+     "reason": "\"time limit exceeded\" vs upstream \"feed time limit exceeded\"; same exception type",
+     "case": "l06_feed_timeout",
+     "ignore": [
+      "Em"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "REFUSED"
+   }
+  },
+  "turn_execution_limit": {
+   "cases": [
+    "l11_turn_reset_on_resume"
+   ],
+   "absent_if_unsupported": [
+    "limits.max_turn_duration_secs"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "host_suspension_budget": {
+   "cases": [
+    "l12_suspensions",
+    "l13_suspension_default"
+   ],
+   "absent_if_unsupported": [
+    "limits.max_suspensions"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "host_sleep_budget": {
+   "cases": [
+    "l14_total_sleep",
+    "l15_total_sleep_catch"
+   ],
+   "absent_if_unsupported": [
+    "limits.max_total_sleep_secs"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "source_nesting_guard": {
+   "cases": [
+    "n01_unary_chain",
+    "n02_bracket_chain",
+    "n03_power_chain",
+    "n04_lambda_chain",
+    "n05_moderate"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "garbage_collection_interval": {
+   "cases": [
+    "g01_gc_interval_small"
+   ],
+   "absent_if_unsupported": [
+    "limits.gc_interval"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "exception_taxonomy": {
+   "cases": [
+    "t01_except_hierarchy",
+    "t02_host_raise_subclass"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "structured_exception_data": {
+   "cases": [
+    "t03_unicode_uncaught",
+    "t05_json_uncaught"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "process_clock_policy": {
+   "cases": [
+    "c01_process_time_default",
+    "c02_process_time_zero",
+    "c03_process_time_elapsed",
+    "c04_elapsed_excludes_sleep"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "run_blocking": {
+   "probes": [
+    "api_run_blocking"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "start_program": {
+   "probes": [
+    "api_start_program"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "interactive_continuation": {
+   "probes": [
+    "api_interactive_continuation"
+   ],
+   "oracle": "ref-rust",
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "create_repl": {
+   "probes": [
+    "api_create_repl"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "recover_repl_after_error": {
+   "probes": [
+    "api_recover_repl_after_error"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "external_call_result": {
+   "probes": [
+    "api_ext_result_resume",
+    "api_ext_result_callback"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "external_call_arguments": {
+   "probes": [
+    "api_ext_args_values",
+    "api_ext_args_identity"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "register_pending_future": {
+   "probes": [
+    "api_futures_gather",
+    "api_futures_error"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "mount_write_budget": {
+   "probes": [
+    "api_write_budget_feed1",
+    "api_write_budget_feed2"
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "mount_memory_budget": {
+   "probes": [
+    "api_memory_budget"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "callback_files": {
+   "probes": [
+    "api_callback_files"
+   ],
+   "exceptions": [
+    {
+     "name": "payload-host-type",
+     "reason": "the write payload's host-side type name differs (Python str vs core VfsText); path and text compared",
+     "ignore_keys": [
+      "type"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "boundary_uuid": {
+   "probes": [
+    "api_boundary_uuid"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "fork_session": {
+   "probes": [
+    "api_fork_session"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "reset_type_checker": {
+   "probes": [
+    "api_reset_type_checker"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "compile_program": {
+   "probes": [
+    "api_compile_program"
+   ],
+   "oracle": "ref-rust",
+   "refusal": true,
+   "expect": {
+    "ffi": "REFUSED",
+    "web": "REFUSED"
+   }
+  },
+  "compiled_source": {
+   "probes": [
+    "api_compiled_source"
+   ],
+   "oracle": "ref-rust",
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "eager_coroutine_completion": {
+   "probes": [
+    "api_eager_coroutine"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "run_progress_variants": {
+   "probes": [
+    "k_function",
+    "k_os",
+    "k_future",
+    "k_name"
+   ],
+   "exceptions": [
+    {
+     "name": "no-suspension-position",
+     "reason": "core exposes no suspension position (measured by row suspension_source_position)",
+     "ignore_keys": [
+      "position"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "resume_os_call": {
+   "probes": [
+    "k_os",
+    "k_os_not_handled"
+   ],
+   "exceptions": [
+    {
+     "name": "no-suspension-position",
+     "reason": "core exposes no suspension position (measured by row suspension_source_position)",
+     "ignore_keys": [
+      "position"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "resolve_pending_futures": {
+   "probes": [
+    "k_future",
+    "abortctl_future"
+   ],
+   "exceptions": [
+    {
+     "name": "no-suspension-position",
+     "reason": "core exposes no suspension position (measured by row suspension_source_position)",
+     "ignore_keys": [
+      "position"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "async_host_driver": {
+   "probes": [
+    "async_gather"
+   ],
+   "expect": {
+    "ffi": "PRESENT",
+    "web": "PRESENT"
+   }
+  },
+  "snapshot_auto_resume": {
+   "probes": [
+    "auto_interleave"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "feed_repl_suspendable": {
+   "probes": [
+    "k_function",
+    "inputs_typed"
+   ],
+   "exceptions": [
+    {
+     "name": "no-suspension-position",
+     "reason": "core exposes no suspension position (measured by row suspension_source_position)",
+     "ignore_keys": [
+      "position"
+     ]
+    }
+   ],
+   "expect": {
+    "ffi": "PARTIAL",
+    "web": "PARTIAL"
+   }
+  },
+  "suspension_source_position": {
+   "probes": [
+    "pos_utf8",
+    "pos_earlier_feed",
+    "pos_eval"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  },
+  "abandon_suspended_feed": {
+   "probes": [
+    "abandon"
+   ],
+   "expect": {
+    "ffi": "ABSENT",
+    "web": "ABSENT"
+   }
+  }
+ }
+}

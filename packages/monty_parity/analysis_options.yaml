@@ -1,0 +1,6 @@
+include: package:very_good_analysis/analysis_options.10.2.0.yaml
+
+analyzer:
+  exclude:
+    # Generated per run by tool/parity/run.py (the cases baked for the browser).
+    - test/cases.g.dart

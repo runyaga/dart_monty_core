@@ -14,6 +14,10 @@ analyzer:
     - 'lib/src/ffi/generated/**'
     - 'packages/dart_monty_flutter/**'
     - 'packages/dart_monty_web/**'
+    # The parity runner is its own package (its own analysis_options.yaml and
+    # dependencies). Compensating step: CI's parity job runs
+    # `dart analyze --fatal-infos` inside packages/monty_parity.
+    - 'packages/monty_parity/**'
     - 'example/**'
     # Assembled GitHub Pages output (tool/check_pages.sh). It is a COPY of
     # packages/dart_monty_web/web, which is already excluded above, so
