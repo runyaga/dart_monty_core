@@ -292,6 +292,11 @@ s  dart_analyze  dart analyze --fatal-infos
 # packages went unformatted and unchecked. Three files had already drifted,
 # and 9d5d4c1 added a fourth: a regex edit to feature_matrix.dart left it
 # unformatted and this step reported green, because it never looked.
+# dart format output differs between SDK releases (dart_style ships style
+# fixes that are not language-versioned), so the SDK running this gate must be
+# CI's pin, and every workflow must pin the same one, or format "fails" here
+# for reasons that have nothing to do with the code.
+s  sdk_pin       bash tool/check_sdk_pin.sh
 s  dart_format   dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/ packages/
 # --coverage is not decoration: it is the input to cov_report below, and the
 # collection is nearly free here -- measured in the build container, 457 tests
@@ -487,7 +492,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=44
+EXPECT_STEPS=45
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {
