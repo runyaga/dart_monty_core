@@ -1,20 +1,34 @@
-// Fixture directive parser for .py test case files.
+// Fixture directive parser for upstream monty's `test_cases/*.py`.
 //
-// Directive placement:
-//   - Skip/mode directives (xfail, call-external, run-async, mount-fs) appear at the TOP.
-//   - Expectation directives (Return=, Raise=) appear at the END.
+// THE FORMAT IS UPSTREAM'S, AND SO ARE ITS RULES. The reference is
+// `parse_fixture` in monty's `crates/monty-datatest/src/main.rs` (v0.0.23):
 //
-// Fallback: if no comment directive is found, scan for a TRACEBACK docstring
-// of the form:
-//   """
-//   TRACEBACK:
-//   Traceback (most recent call last):
-//     ...
-//   ExcType: message
-//   """
-// and derive ExpectRaise from the last non-empty line.
+//   * Config directives are unindented comment lines anywhere in the file,
+//     matched by prefix: `xfail=`, `call-external`, `run-async`, `mount-fs`,
+//     `gc-interval=`, `skip-cpython-windows`, `cpython-main-module`.
+//   * An expectation is read from the LAST line only: `# Raise=`,
+//     `# Return=`, `# Return.str=`, `# Return.type=`, `# ref-counts=`.
+//   * A `"""\nTRACEBACK:\n ... \n"""` docstring takes precedence over the last
+//     line, and is compared VERBATIM against the rendered traceback.
+//   * `xfail=` is STRICT: a fixture marked xfail that passes is a failure.
 //
-// Returns null when the fixture must be skipped.
+// Where this parser is STRICTER than upstream, it is deliberately so, and only
+// in one direction — a malformed fixture fails instead of silently asserting
+// less. Upstream ignores an unrecognised directive, which turns a typo such as
+// `# Raises=ValueError()` into "must not raise" and reports it green. Here
+// every such case becomes [MalformedFixture], which no backend can pass:
+//
+//   * a directive-shaped line in the header block or on the last line whose
+//     key is not in [knownFixtureDirectives];
+//   * an expectation directive anywhere but the last line;
+//   * a TRACEBACK docstring AND an expectation line (upstream silently picks
+//     the docstring);
+//   * an `xfail=` target other than `monty` / `cpython`, or a non-integer
+//     `gc-interval=`;
+//   * `# Return.type=`, which is upstream vocabulary this adjudicator does not
+//     implement — failing loudly beats asserting nothing.
+//
+// Returns null when the caller asked to skip the fixture's mode.
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
@@ -34,193 +48,289 @@ final class ExpectReturn extends FixtureExpectation {
   final Object? value;
 }
 
-/// The fixture declared `# Raise=<ExcType>: <message>`, or carried a
+/// The fixture declared `# Return.str=<text>`: it must complete with a value
+/// whose `str()` is exactly [text].
+final class ExpectReturnStr extends FixtureExpectation {
+  /// Creates an [ExpectReturnStr].
+  const ExpectReturnStr(this.text);
+
+  /// The expected `str()` of the result, verbatim.
+  final String text;
+}
+
+/// The fixture declared `# Raise=<ExcType>(<repr>)`, or carried a
 /// `TRACEBACK:` docstring, so running it must raise.
 final class ExpectRaise extends FixtureExpectation {
   /// Creates an [ExpectRaise].
-  const ExpectRaise({required this.excType, required this.message});
+  const ExpectRaise({
+    required this.excType,
+    required this.message,
+    this.repr,
+    this.traceback,
+  });
 
   /// The Python exception class name, e.g. `ValueError`.
   final String excType;
 
-  /// The exception message. Not every harness asserts on this — the excType
-  /// is the stable part.
+  /// The exception message, unquoted. Informational: the strict comparison is
+  /// on [repr] or [traceback], whichever the fixture stated.
   final String message;
+
+  /// The `# Raise=` text verbatim, e.g. `ValueError('bad')` — compared against
+  /// the raised exception's Python `repr()`, as upstream does.
+  final String? repr;
+
+  /// The TRACEBACK docstring body verbatim (frames and final line) — compared
+  /// against the rendered traceback, as upstream does.
+  final String? traceback;
 }
 
 /// The fixture declared no outcome directive: it must simply not raise.
+///
+/// Also what `# ref-counts=` means here: upstream checks ref counts only under
+/// its `ref-count-return` feature and otherwise just requires a clean run.
 final class ExpectNoException extends FixtureExpectation {
   /// Creates an [ExpectNoException].
   const ExpectNoException();
 }
 
+/// The fixture is marked `# xfail=monty`: [expected] must NOT hold.
+///
+/// Strict, like upstream: if the fixture meets [expected], that is a failure
+/// and the marker must be removed.
+final class ExpectXfail extends FixtureExpectation {
+  /// Creates an [ExpectXfail].
+  const ExpectXfail(this.expected);
+
+  /// What the fixture would assert if it were not marked xfail.
+  final FixtureExpectation expected;
+}
+
+/// The fixture's directives could not be read. Always adjudicated as a
+/// failure, on every backend, naming [reason].
+final class MalformedFixture extends FixtureExpectation {
+  /// Creates a [MalformedFixture].
+  const MalformedFixture(this.reason);
+
+  /// What is wrong with the directives.
+  final String reason;
+}
+
+/// Every directive key upstream's datatest runner understands at v0.0.23.
+///
+/// A directive-shaped comment whose key is not here makes the fixture
+/// [MalformedFixture]. `Return.type` is listed so its rejection says "not
+/// implemented" rather than "unknown".
+const knownFixtureDirectives = <String>{
+  'xfail',
+  'call-external',
+  'run-async',
+  'mount-fs',
+  'gc-interval',
+  'skip-cpython-windows',
+  'cpython-main-module',
+  'Raise',
+  'Return',
+  'Return.str',
+  'Return.type',
+  'ref-counts',
+};
+
+const _expectationKeys = <String>{
+  'Raise',
+  'Return',
+  'Return.str',
+  'Return.type',
+  'ref-counts',
+};
+
+/// `key` or `key=value`, where a bare key must contain `-` or `.` to count as
+/// directive-shaped. A one-word prose comment (`# membership`) is not.
+final _directiveShape = RegExp(
+  r'^([A-Za-z][A-Za-z0-9_]*(?:[.-][A-Za-z0-9_]+)*)(=.*)?$',
+);
+
+/// The unindented comment lines among [lines], `#`s stripped and trimmed —
+/// upstream's `comment_lines`.
+List<String> _commentLines(List<String> lines) => [
+  for (final l in lines)
+    if (l.startsWith('#')) l.replaceFirst(RegExp('^#+'), '').trim(),
+];
+
+/// Splits like Rust's `str::lines`: CRLF folded, one trailing empty dropped.
+List<String> _lines(String source) {
+  final lines = source.replaceAll('\r\n', '\n').split('\n');
+  if (lines.isNotEmpty && lines.last.isEmpty) lines.removeLast();
+
+  return lines;
+}
+
+bool _hasConfig(String source, String key) =>
+    _commentLines(_lines(source)).any((c) => c.startsWith(key));
+
 /// Returns `true` when [source] declares a `# call-external` directive,
 /// meaning the fixture requires external function dispatch to run.
-bool fixtureIsCallExternal(String source) {
-  for (final raw in source.split('\n')) {
-    final line = raw.trim();
-    if (!line.startsWith('#')) continue;
-    final directive = line.substring(1).trim();
-    if (directive == 'call-external' ||
-        directive.startsWith('call-external ')) {
-      return true;
-    }
-  }
-
-  return false;
-}
+bool fixtureIsCallExternal(String source) =>
+    _hasConfig(source, 'call-external');
 
 /// Returns `true` when [source] declares a `# run-async` directive,
 /// meaning the fixture uses top-level `await` and requires async dispatch.
-bool fixtureIsRunAsync(String source) {
-  for (final raw in source.split('\n')) {
-    final line = raw.trim();
-    if (!line.startsWith('#')) continue;
-    final directive = line.substring(1).trim();
-    if (directive == 'run-async' || directive.startsWith('run-async ')) {
-      return true;
-    }
-  }
-
-  return false;
-}
+bool fixtureIsRunAsync(String source) => _hasConfig(source, 'run-async');
 
 /// Returns `true` when [source] declares a `# mount-fs` directive,
 /// meaning the fixture expects a `root` Path variable pointing to a
 /// pre-populated virtual filesystem.
-bool fixtureMountsFs(String source) {
-  for (final raw in source.split('\n')) {
-    final line = raw.trim();
-    if (!line.startsWith('#')) continue;
-    final directive = line.substring(1).trim();
-    if (directive == 'mount-fs' || directive.startsWith('mount-fs ')) {
-      return true;
+bool fixtureMountsFs(String source) => _hasConfig(source, 'mount-fs');
+
+/// Why the directives in [lines] are malformed, or null when well formed.
+String? _directiveProblem(List<String> lines, {required bool hasTraceback}) {
+  // Header block: leading lines that are blank or comments.
+  final header = <int>[];
+  for (var i = 0; i < lines.length; i++) {
+    final l = lines[i];
+    if (l.trim().isEmpty) continue;
+    if (!l.startsWith('#')) break;
+    header.add(i);
+  }
+  final last = lines.length - 1;
+  for (final i in {...header, if (last >= 0) last}) {
+    final l = lines[i];
+    if (!l.startsWith('#')) continue;
+    final body = l.replaceFirst(RegExp('^#+'), '').trim();
+    final m = _directiveShape.firstMatch(body);
+    if (m == null) continue;
+    final key = m.group(1)!;
+    final isAssignment = m.group(2) != null;
+    if (!isAssignment && !key.contains('-') && !key.contains('.')) continue;
+    if (!knownFixtureDirectives.contains(key)) {
+      return 'unknown directive `# $key${isAssignment ? '=' : ''}` on line '
+          '${i + 1}; known: ${knownFixtureDirectives.join(', ')}';
     }
   }
 
-  return false;
+  // Expectation directives anywhere but the last line are ignored upstream.
+  for (var i = 0; i < lines.length; i++) {
+    final l = lines[i];
+    if (!l.startsWith('# ')) continue;
+    final key = l.substring(2).split('=').first;
+    if (i != last && l.contains('=') && _expectationKeys.contains(key)) {
+      return '`# $key=` on line ${i + 1} is not the last line, where upstream '
+          'reads expectations — it would be silently ignored';
+    }
+  }
+  if (hasTraceback && last >= 0) {
+    final key = lines[last].startsWith('# ')
+        ? lines[last].substring(2).split('=').first
+        : '';
+    if (lines[last].contains('=') && _expectationKeys.contains(key)) {
+      return 'both a TRACEBACK docstring and `# $key=`; upstream silently '
+          'uses the docstring';
+    }
+  }
+
+  final comments = _commentLines(lines);
+  final xfail = comments.where((c) => c.startsWith('xfail=')).firstOrNull;
+  if (xfail != null) {
+    final value = xfail.substring('xfail='.length).split(RegExp(r'\s')).first;
+    final bad = value
+        .split(',')
+        .where((t) => t != 'monty' && t != 'cpython')
+        .toList();
+    if (value.isEmpty || bad.isNotEmpty) {
+      return '`# $xfail`: xfail targets must be `monty` and/or `cpython`';
+    }
+  }
+  final gc = comments.where((c) => c.startsWith('gc-interval=')).firstOrNull;
+  if (gc != null) {
+    final v = gc.substring('gc-interval='.length).split(RegExp(r'\s')).first;
+    if (int.tryParse(v) == null) return '`# $gc`: not an integer';
+  }
+
+  return null;
 }
 
 /// Parses a `.py` fixture and returns the expected outcome.
 ///
-/// Returns `null` when the fixture should be skipped:
-/// - `# xfail=monty` or `# xfail=monty,cpython` — not yet supported
-/// - `# xfail=wasm` — expected failure on WASM backend only
-/// - `# call-external` — requires external function dispatch (skip unless
-///   [skipCallExternal] is false)
-/// - `# run-async` — requires async execution mode (skip unless
-///   [skipRunAsync] is false)
-/// - `# mount-fs` — requires filesystem mount (skip unless
-///   [skipMountFs] is false)
+/// Returns `null` when the fixture should be skipped because it needs a mode
+/// the caller did not opt into: `# call-external` (unless [skipCallExternal]
+/// is false), `# run-async` (unless [skipRunAsync] is false), `# mount-fs`
+/// (unless [skipMountFs] is false).
 ///
-/// `# xfail=cpython` is NOT a skip — monty supports these cases.
+/// Never returns null for malformed directives — that is [MalformedFixture],
+/// checked first so a skipped mode cannot hide it.
+///
+/// `# xfail=monty` yields [ExpectXfail]: the fixture RUNS, and must fail.
+/// `# xfail=cpython` changes nothing here — monty is expected to pass.
 FixtureExpectation? parseFixture(
   String source, {
   bool skipCallExternal = true,
   bool skipMountFs = true,
   bool skipRunAsync = true,
 }) {
-  final lines = source.split('\n');
+  final lines = _lines(source);
+  final traceback = _parseTracebackDocstring(source);
 
-  FixtureExpectation? result;
+  final problem = _directiveProblem(lines, hasTraceback: traceback != null);
+  if (problem != null) return MalformedFixture(problem);
 
-  for (final raw in lines) {
-    final line = raw.trim();
-    if (!line.startsWith('#')) continue;
-
-    final directive = line.substring(1).trim();
-
-    if (directive.startsWith('xfail=')) {
-      final targets = directive.substring('xfail='.length).trim().toLowerCase();
-      // `xfail=monty` means upstream expects MONTY to fail, so there is
-      // nothing here for us to assert.
-      //
-      // There was also a `skipWasm` flag gating `targets.contains('wasm')`.
-      // The 0.19 corpus contains ZERO `xfail=wasm` fixtures (9 are
-      // `xfail=cpython`, 1 is `xfail=monty`), so that branch could never fire
-      // — while the flag was threaded through 13 call sites looking as though
-      // it meant "skip what does not work on wasm". A parameter that cannot
-      // change any outcome is worse than absent: it invites callers to believe
-      // they have opted into something.
-      if (targets.contains('monty')) return null;
-      continue;
-    }
-
-    if ((skipCallExternal &&
-            (directive == 'call-external' ||
-                directive.startsWith('call-external '))) ||
-        (skipRunAsync &&
-            (directive == 'run-async' || directive.startsWith('run-async '))) ||
-        (skipMountFs &&
-            (directive == 'mount-fs' || directive.startsWith('mount-fs ')))) {
-      return null;
-    }
-
-    if (directive.startsWith('Return=')) {
-      final raw2 = directive.substring('Return='.length).trim();
-      result = ExpectReturn(_parseReturnValue(raw2));
-      continue;
-    }
-
-    if (directive.startsWith('Raise=')) {
-      final raw2 = directive.substring('Raise='.length).trim();
-      result = _parseRaise(raw2);
-      continue;
-    }
+  final comments = _commentLines(lines);
+  bool has(String key) => comments.any((c) => c.startsWith(key));
+  if ((skipCallExternal && has('call-external')) ||
+      (skipRunAsync && has('run-async')) ||
+      (skipMountFs && has('mount-fs'))) {
+    return null;
   }
 
-  // If no explicit directive, look for a TRACEBACK docstring.
-  // Pattern: """\nTRACEBACK:\n...\nExcType: message\n"""
-  result ??= _parseTracebackDocstring(source);
+  final expectation = traceback ?? _parseLastLine(lines);
+  final xfail = comments.where((c) => c.startsWith('xfail=')).firstOrNull;
+  if (xfail != null && xfail.contains('monty')) {
+    return ExpectXfail(expectation);
+  }
 
-  return result ?? const ExpectNoException();
+  return expectation;
 }
 
-/// Scans `source` for a docstring block of the form:
-/// ```python
-/// """
-/// TRACEBACK:
-/// ...
-/// ExcType: message
-/// """
-/// ```
-/// Returns [ExpectRaise] if found, otherwise null.
-ExpectRaise? _parseTracebackDocstring(String source) {
-  // Find opening """ followed by newline + TRACEBACK:
-  const marker = '"""\nTRACEBACK:';
-  final start = source.indexOf(marker);
-  if (start < 0) return null;
-
-  // Find the closing """
-  final afterMarker = start + 3; // skip opening """
-  final end = source.indexOf('\n"""', afterMarker);
-  if (end < 0) return null;
-
-  final block = source.substring(afterMarker, end);
-  final blockLines = block.split('\n');
-
-  // Walk from the end, find the last non-empty line
-  for (final rawLine in blockLines.reversed) {
-    final line = rawLine.trim();
-    if (line.isEmpty) continue;
-
-    // Expected format: "ExcType: message" or bare "ExcType" (no message)
-    final colonIdx = line.indexOf(':');
-    final excType = colonIdx < 0
-        ? line.trim()
-        : line.substring(0, colonIdx).trim();
-
-    // Basic sanity: exception types are PascalCase identifiers (letters only)
-    if (excType.isEmpty || !RegExp(r'^[A-Z][A-Za-z]+$').hasMatch(excType)) {
-      break;
-    }
-
-    final message = colonIdx < 0 ? '' : line.substring(colonIdx + 1).trim();
-
-    return ExpectRaise(excType: excType, message: message);
+FixtureExpectation _parseLastLine(List<String> lines) {
+  final last = lines.isEmpty ? '' : lines.last;
+  if (last.startsWith('# ref-counts=')) return const ExpectNoException();
+  if (last.startsWith('# Return.str=')) {
+    return ExpectReturnStr(last.substring('# Return.str='.length));
+  }
+  if (last.startsWith('# Return.type=')) {
+    return const MalformedFixture(
+      '`# Return.type=` is upstream vocabulary this adjudicator does not '
+      'implement',
+    );
+  }
+  if (last.startsWith('# Return=')) {
+    return ExpectReturn(_parseReturnValue(last.substring('# Return='.length)));
+  }
+  if (last.startsWith('# Raise=')) {
+    return _parseRaise(last.substring('# Raise='.length));
   }
 
-  return null;
+  return const ExpectNoException();
+}
+
+/// Upstream's `parse_traceback_expectation`: the text between
+/// `"""\nTRACEBACK:\n` and the next `\n"""`, verbatim.
+ExpectRaise? _parseTracebackDocstring(String source) {
+  const marker = '"""\nTRACEBACK:\n';
+  final content = source.replaceAll('\r\n', '\n');
+  final start = content.indexOf(marker);
+  if (start < 0) return null;
+  final after = content.substring(start + marker.length);
+  final end = after.indexOf('\n"""');
+  if (end < 0) return null;
+  final block = after.substring(0, end);
+
+  // excType/message are informational; the comparison uses [block].
+  final finalLine = block.split('\n').last;
+  final colon = finalLine.indexOf(': ');
+  final excType = colon < 0 ? finalLine : finalLine.substring(0, colon);
+  final message = colon < 0 ? '' : finalLine.substring(colon + 2);
+
+  return ExpectRaise(excType: excType, message: message, traceback: block);
 }
 
 Object? _parseReturnValue(String raw) {
@@ -389,10 +499,12 @@ class _ReprParser {
   }
 }
 
+/// `# Raise=` text. [ExpectRaise.repr] keeps it verbatim — that is what is
+/// compared; type and message are split out for display only.
 FixtureExpectation _parseRaise(String raw) {
   final parenIdx = raw.indexOf('(');
   if (parenIdx < 0) {
-    return ExpectRaise(excType: raw.trim(), message: '');
+    return ExpectRaise(excType: raw.trim(), message: '', repr: raw);
   }
   final excType = raw.substring(0, parenIdx).trim();
   final msgRaw = raw.substring(parenIdx + 1, raw.length - 1).trim();
@@ -403,5 +515,5 @@ FixtureExpectation _parseRaise(String raw) {
       ? msgRaw.substring(1, msgRaw.length - 1)
       : msgRaw;
 
-  return ExpectRaise(excType: excType, message: message);
+  return ExpectRaise(excType: excType, message: message, repr: raw);
 }

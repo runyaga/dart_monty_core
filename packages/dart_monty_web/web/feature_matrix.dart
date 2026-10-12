@@ -879,14 +879,17 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
         return o.skipReason ?? 'not modelled';
       }
 
-      final ok = switch (expectation) {
-        ExpectNoException() => o.excType == null,
-        ExpectReturn(value: final want) =>
-          o.excType == null && o.value == MontyValue.fromDart(want),
-        ExpectRaise(:final excType) => o.excType == excType,
-      };
+      final failure = adjudicateFixture(
+        expectation,
+        FixtureOutcome.from(
+          exception: o.exception,
+          excType: o.excType,
+          value: o.value,
+        ),
+      );
+      if (failure != null) _skipNotes[f.name] = failure;
 
-      return ok ? 'PASS' : 'FAIL';
+      return failure == null ? 'PASS' : 'FAIL';
     } on StateError catch (e) {
       // conformanceDispatch throws this for an external it does not model.
       _skipNotes[f.name] = e.message;
@@ -900,6 +903,7 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
   final platform = createPlatformMonty();
   MontyResult? result;
   String? thrownExcType;
+  MontyException? thrown;
   try {
     if (fixtureMountsFs(f.source)) {
       // The fixtures document that `root` is injected by the test runner, so
@@ -923,19 +927,18 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
       // showing. The reason travels with the failure instead.
       if (r.error != null) _skipNotes[f.name] = _describeError(r.error!);
 
-      return switch (expectation) {
-        ExpectNoException() => r.error == null ? 'PASS' : 'FAIL',
-        ExpectReturn(value: final want) =>
-          r.error == null && r.value == MontyValue.fromDart(want)
-              ? 'PASS'
-              : 'FAIL',
-        ExpectRaise(:final excType) =>
-          r.error?.excType == excType ? 'PASS' : 'FAIL',
-      };
+      final failure = adjudicateFixture(
+        expectation,
+        FixtureOutcome.from(exception: r.error, value: r.value),
+      );
+      if (failure != null) _skipNotes[f.name] = failure;
+
+      return failure == null ? 'PASS' : 'FAIL';
     }
 
     result = await platform.run(f.source, scriptName: f.name);
     thrownExcType = result.error?.excType;
+    thrown = result.error;
     // The plain path recorded nothing, so a FAIL here arrived with no reason
     // at all — which is how `range__ops.py` could be "confirmed failing" with
     // no way to see which of its 278 assertions did it.
@@ -943,6 +946,7 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
       _skipNotes[f.name] = _describeError(result.error!);
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;
+    thrown = e.exception;
     // Also here: a fixture that RAISES arrives on this branch, not the one
     // above, so recording only there still lost the reason for exactly the
     // failures worth reading.
@@ -958,14 +962,17 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
     await platform.dispose();
   }
 
-  final ok = switch (expectation) {
-    ExpectNoException() => thrownExcType == null,
-    ExpectReturn(value: final want) =>
-      thrownExcType == null && result?.value == MontyValue.fromDart(want),
-    ExpectRaise(:final excType) => thrownExcType == excType,
-  };
+  final failure = adjudicateFixture(
+    expectation,
+    FixtureOutcome.from(
+      exception: thrown,
+      excType: thrownExcType,
+      value: result?.value,
+    ),
+  );
+  if (failure != null) _skipNotes[f.name] = failure;
 
-  return ok ? 'PASS' : 'FAIL';
+  return failure == null ? 'PASS' : 'FAIL';
 }
 
 void _renderCorpusOverview() {
@@ -1093,13 +1100,17 @@ void _renderGroupDetail() {
       skipRunAsync: false,
       skipMountFs: false,
     );
-    final want = switch (expectation) {
+    String describe(FixtureExpectation? e) => switch (e) {
       ExpectReturn(:final value) => 'Return= $value',
+      ExpectReturnStr(:final text) => 'Return.str= $text',
       ExpectRaise(:final excType, :final message) =>
         'Raise= $excType: $message',
       ExpectNoException() => 'must not raise',
+      ExpectXfail(:final expected) => 'xfail=monty (${describe(expected)})',
+      MalformedFixture(:final reason) => 'malformed: $reason',
       null => 'no directive',
     };
+    final want = describe(expectation);
 
     host.append(
       _el('div', cls: 'fx')

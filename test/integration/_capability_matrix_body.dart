@@ -6,10 +6,15 @@
 // reproducer that throws `UnsupportedError` on web is not evidence about the
 // defect under test; it is evidence the wrong entry point was used.
 //
-// This file RECORDS, it does not judge. Every cell prints an outcome and the
-// test passes — an inventory that fails on its first finding never
-// finishes inventorying.
-// E3 is where outcomes become pass/defect.
+// Every cell prints its outcome FIRST, then asserts the one condition the
+// matrix depends on: the probe REACHED the behaviour under test. A cell whose
+// probe raised something unrelated (core#154's original memory probe measured
+// a NameError) or returned cleanly says nothing about the case, so the matrix
+// fails on it rather than recording it as data. The one permitted
+// non-reaching outcome is the documented refusal: `Monty.exec(limits:)` on web
+// throws UnsupportedError (core#140), recorded as REFUSED by
+// tool/control/compare.py. Whether a reached outcome is a defect is still E3's
+// question (compare.py), not this file's.
 //
 // THE AXIS THAT MATTERS, found by reading wasm_repl_bindings.dart:36-58:
 //   Monty.exec(code, limits: …)        -> Monty(code).run(limits: …)
@@ -27,20 +32,29 @@ import 'dart:convert';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
-/// One probe: the Python that triggers it and the limits it needs.
-typedef _Case = ({String id, String code, MontyLimits? limits, String why});
+/// One probe: the Python that triggers it, the limits it needs, and the
+/// exception classes that show it reached the behaviour under test.
+typedef _Case = ({
+  String id,
+  String code,
+  MontyLimits? limits,
+  Set<String> reaches,
+  String why,
+});
 
 final _cases = <_Case>[
   (
     id: 'syntax',
     code: 'def (',
     limits: null,
+    reaches: {'SyntaxError'},
     why: 'core#154 — dartdoc says binding-level failures throw; does it?',
   ),
   (
     id: 'timeout',
     code: 'while True: pass',
     limits: const MontyLimits(timeoutMs: 150),
+    reaches: {'TimeoutError'},
     why: 'core#154 — a resource limit is a binding-level failure',
   ),
   (
@@ -51,6 +65,7 @@ final _cases = <_Case>[
     // `bytes(10**9)` and `list(range(10**8))`.
     code: 'x = [0] * (10**8)',
     limits: const MontyLimits(memoryBytes: 1024 * 1024),
+    reaches: {'MemoryError', 'MemoryLimitExceeded'},
     why: 'core#154 + core#160 — single-object bound, not a heap ceiling',
   ),
 ];
@@ -69,8 +84,9 @@ void _emit(
   String id,
   String entry,
   String outcome,
-  String detail,
-) {
+  String detail, {
+  String? excType,
+}) {
   // The matrix is the deliverable; stdout is how it leaves the process.
   // ignore: avoid_print
   print(
@@ -79,29 +95,57 @@ void _emit(
       'case': id,
       'entry': entry,
       'outcome': outcome,
+      'excType': excType,
       'detail': _clip(detail),
     })}',
   );
 }
 
-Future<void> _probe(
+/// Runs one cell, emits it, and returns why it did NOT reach [c]'s behaviour,
+/// or null when it did (or refused in the one documented way).
+Future<String?> _probe(
   String backend,
   _Case c,
   String entry,
   Future<MontyResult> Function() call,
 ) async {
+  String outcome;
+  String? excType;
   try {
     final r = await call();
+    excType = r.error?.excType;
+    outcome = r.isError ? 'returned-error' : 'returned-ok';
     _emit(
       backend,
       c.id,
       entry,
-      r.isError ? 'returned-error' : 'returned-ok',
+      outcome,
       r.isError ? '${r.error}' : 'value=${r.value}',
+      excType: excType,
     );
   } on Object catch (e) {
-    _emit(backend, c.id, entry, 'threw', '${_typeOf(e)}: $e');
+    excType = switch (e) {
+      MontyScriptError(excType: final type) => type,
+      MontyResourceError() => 'MemoryLimitExceeded',
+      _ => null,
+    };
+    outcome = 'threw';
+    _emit(backend, c.id, entry, outcome, '${_typeOf(e)}: $e', excType: excType);
+    if (e is UnsupportedError) {
+      // core#140: Monty.exec builds a MontyRepl, and web refuses REPL session
+      // limits. Anywhere else a refusal means the cell measured nothing.
+      final documented =
+          backend.startsWith('wasm') &&
+          entry == 'Monty.exec' &&
+          c.limits != null;
+
+      return documented ? null : '$entry refused instead of executing: $e';
+    }
   }
+  if (c.reaches.contains(excType)) return null;
+
+  return '$entry did not reach ${c.reaches.join('/')}: $outcome '
+      '(excType $excType)';
 }
 
 void runCapabilityMatrix(String declaredBackend) {
@@ -123,7 +167,7 @@ void runCapabilityMatrix(String declaredBackend) {
       test('${c.id} · both entry points', () async {
         // ENTRY POINT 1: the public API most consumers reach for. On web with
         // limits this is expected to refuse before executing anything.
-        await _probe(
+        final exec = await _probe(
           backend,
           c,
           'Monty.exec',
@@ -132,12 +176,16 @@ void runCapabilityMatrix(String declaredBackend) {
 
         // ENTRY POINT 2: the platform one-shot, which the refusal message
         // itself names as the path where limits work on web.
-        await _probe(
+        final run = await _probe(
           backend,
           c,
           'platform.run',
           () => createPlatformMonty().run(c.code, limits: c.limits),
         );
+
+        // Both are checked after both are emitted, so a failing cell never
+        // hides its sibling from the inventory.
+        expect([exec, run].nonNulls, isEmpty, reason: c.why);
       });
     }
 
@@ -153,7 +201,10 @@ void runCapabilityMatrix(String declaredBackend) {
         'deferred-to-E4',
         'needs an external watchdog; probing it here would hang the suite',
       );
-      expect(true, isTrue);
+      // Was `expect(true, isTrue)`: a pass that asserted nothing. Nothing was
+      // probed, so the honest report is a skip with its reason (runbook
+      // trap 6).
+      markTestSkipped('core#156 is probed by E4 (tool/control/watchdog.sh)');
     });
   });
 }

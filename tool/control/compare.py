@@ -17,9 +17,12 @@ return "inconclusive" is not an experiment:
               raised would be a FALSE MATCH.
   no-control  the control has no comparable cell, so nothing is concluded.
 
-Exit status is always 0. This reports; it does not gate. A comparison that
-fails the build on its first divergence stops producing the inventory that
-makes the divergence interpretable.
+Exit status: 0 only when no cell DIVERGES and every control case was
+compared. Any DIVERGES, or a control case no CAP row names (a Dart cell that
+silently stopped being probed), exits 1 -- AFTER the full table is printed, so
+failing never truncates the inventory that makes a divergence interpretable.
+It used to exit 0 unconditionally, which made it a report nobody's build could
+act on: a DIVERGES row read exactly as green as a match.
 """
 
 import json
@@ -50,6 +53,7 @@ def main():
     print(f"{'case':9} {'entry':14} {'backend':16} "
           f"{'dart':16} {'control':10} verdict")
     print("-" * 86)
+    diverges = 0
     for row in cap:
         control = ctl.get(row["case"])
         if control is None or row["entry"] == "n/a":
@@ -60,10 +64,16 @@ def main():
             both_raise = (row["outcome"] in RAISED) == (
                 control["outcome"] in RAISED)
             verdict = "match" if both_raise else "DIVERGES"
+            diverges += verdict == "DIVERGES"
         print(f"{row['case']:9} {row['entry']:14} {row['backend']:16} "
               f"{row['outcome']:16} "
               f"{(control or {}).get('outcome', '-'):10} {verdict}")
-    return 0
+
+    uncompared = sorted(set(ctl) - {row["case"] for row in cap})
+    print()
+    print(f"{diverges} DIVERGES, {len(uncompared)} uncompared control case(s)"
+          + (f": {', '.join(uncompared)}" if uncompared else ""))
+    return 1 if diverges or uncompared else 0
 
 
 if __name__ == "__main__":

@@ -78,8 +78,8 @@
     },
     "lib/src/mount/memory_mounted_os_handler.dart": {
       "found": 279,
-      "hit": 266,
-      "pct": 95.34
+      "hit": 268,
+      "pct": 96.06
     },
     "lib/src/mount/monty_memory_file.dart": {
       "found": 7,
@@ -339,7 +339,7 @@
   },
   "total": {
     "found": 4037,
-    "hit": 2757,
-    "pct": 68.29
+    "hit": 2759,
+    "pct": 68.34
   }
 }

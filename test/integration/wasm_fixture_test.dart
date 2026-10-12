@@ -86,7 +86,11 @@ void main() {
         String? thrownExcType;
         MontyException? thrownException;
         try {
-          result = await platform.run(value, scriptName: key);
+          result = await platform.run(
+            value,
+            scriptName: key,
+            limits: conformanceLimits,
+          );
           thrownExcType = result.error?.excType;
           thrownException = result.error;
         } on MontyScriptError catch (e) {
@@ -98,15 +102,18 @@ void main() {
           await platform.dispose();
         }
 
+        final failure = adjudicateFixture(
+          expectation,
+          FixtureOutcome.from(
+            exception: thrownException,
+            excType: thrownExcType,
+            value: result?.value,
+          ),
+        );
+
         if (expectDivergence) {
           // Did the run satisfy the fixture's own directive?
-          final matched = switch (expectation) {
-            ExpectNoException() => thrownExcType == null,
-            ExpectReturn(value: final fixtureValue) =>
-              thrownExcType == null &&
-                  result?.value == MontyValue.fromDart(fixtureValue),
-            ExpectRaise(:final excType) => thrownExcType == excType,
-          };
+          final matched = failure == null;
 
           expect(
             matched,
@@ -123,31 +130,25 @@ void main() {
           return;
         }
 
-        switch (expectation) {
-          case ExpectNoException():
-            expect(
-              thrownExcType,
-              isNull,
-              reason: describeFixtureFailure(key, thrownException),
-            );
-          case ExpectReturn(value: final fixtureValue):
-            expect(
-              thrownExcType,
-              isNull,
-              reason: describeFixtureFailure(key, thrownException),
-            );
-            expect(
-              result?.value,
-              equals(MontyValue.fromDart(fixtureValue)),
-              reason: 'value mismatch for $key',
-            );
-          case ExpectRaise(:final excType):
-            expect(
-              thrownExcType,
-              equals(excType),
-              reason: 'excType mismatch for $key',
-            );
+        // Expected failures the strict adjudicator exposed (S7). Run, and
+        // required to STILL fail, so a fix goes red here rather than passing
+        // unnoticed -- the same contract as alwaysUnsupportedWasmFixtures
+        // above, with the cause recorded in strict_adjudicator_defects.dart.
+        if (oneShotCompileErrorDefects.contains(key) ||
+            (_isWeb && webEmptyMessageDefects.contains(key))) {
+          expect(
+            failure,
+            isNotNull,
+            reason:
+                '$key is declared a strict-adjudicator defect but PASSED. '
+                'Delete it from strict_adjudicator_defects.dart and the '
+                'tool/*-corpus-expected-failures.txt files.',
+          );
+
+          return;
         }
+
+        expect(failure, isNull, reason: '$key: $failure');
       });
     }
   });

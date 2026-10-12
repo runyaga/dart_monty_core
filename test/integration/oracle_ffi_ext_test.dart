@@ -121,19 +121,20 @@ void main() {
         final expectation = parseFixture(value, skipCallExternal: false);
         if (expectation == null) continue;
 
-        final (thrownExcType, resultValue, skipped, _, _) = await _runDispatch(
-          value,
-          key,
-        );
+        final (thrownExcType, resultValue, skipped, thrown, _) =
+            await _runDispatch(value, key);
         if (skipped) continue; // cannot run it, so cannot call it fixed
 
-        final met = switch (expectation) {
-          ExpectNoException() => thrownExcType == null,
-          ExpectReturn(value: final expected) =>
-            thrownExcType == null &&
-                resultValue == MontyValue.fromDart(expected),
-          ExpectRaise(excType: final want) => thrownExcType == want,
-        };
+        final met =
+            adjudicateFixture(
+              expectation,
+              FixtureOutcome.from(
+                exception: thrown,
+                excType: thrownExcType,
+                value: resultValue,
+              ),
+            ) ==
+            null;
         if (met) stale.add(key);
       }
       expect(
@@ -183,31 +184,15 @@ void main() {
           return;
         }
 
-        switch (expectation) {
-          case ExpectNoException():
-            expect(
-              thrownExcType,
-              isNull,
-              reason: describeFixtureFailure(key, thrownException),
-            );
-          case ExpectReturn(value: final expected):
-            expect(
-              thrownExcType,
-              isNull,
-              reason: describeFixtureFailure(key, thrownException),
-            );
-            expect(
-              resultValue,
-              equals(MontyValue.fromDart(expected)),
-              reason: 'value mismatch for $key',
-            );
-          case ExpectRaise(:final excType):
-            expect(
-              thrownExcType,
-              equals(excType),
-              reason: 'excType mismatch for $key',
-            );
-        }
+        final failure = adjudicateFixture(
+          expectation,
+          FixtureOutcome.from(
+            exception: thrownException,
+            excType: thrownExcType,
+            value: resultValue,
+          ),
+        );
+        expect(failure, isNull, reason: '$key: $failure');
       });
     }
   });

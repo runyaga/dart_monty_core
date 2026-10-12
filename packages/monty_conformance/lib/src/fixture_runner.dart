@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 
+import 'package:monty_conformance/src/fixture_adjudicator.dart';
 import 'package:monty_conformance/src/fixture_corpus.dart';
 import 'package:monty_conformance/src/fixture_externals.dart';
 import 'package:monty_conformance/src/fixture_os_handler.dart';
@@ -65,11 +68,16 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
       log('FIXTURE_RESULT:{"name":"$key","ok":true}');
     } else {
       failed++;
-      // Backslash FIRST -- escaping quotes first would then escape the
-      // backslashes this very line inserts, doubling them. Latent until the
-      // reason started carrying Python exception text, which can contain both.
-      final escaped = reason.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
-      log('FIXTURE_RESULT:{"name":"$key","ok":false,"reason":"$escaped"}');
+      // jsonEncode, not hand escaping. The hand-rolled version escaped `\`
+      // and `"` but not newlines, and a strict-adjudicator reason (a traceback
+      // diff) is multi-line: the record split across console lines, the
+      // harness's `FIXTURE_RESULT:{.*}` grep no longer matched it, and the
+      // failing fixture VANISHED from the result set. Measured: FIXTURE_DONE
+      // said 26 failed while only 12 `"ok":false` lines survived.
+      log(
+        'FIXTURE_RESULT:{"name":"$key","ok":false,'
+        '"reason":${jsonEncode(reason)}}',
+      );
 
       // (no early-abort here; fixture runs must be exhaustive)
     }
@@ -86,7 +94,10 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
     log('FIXTURE_BEGIN:{"name":"$key"}');
     // Engine-level divergences are always skipped; test-hooks fixtures run
     // only under a `-DMONTY_TEST_HOOKS=true` build against a test-hooks WASM.
-    if (alwaysUnsupportedWasmFixtures.contains(key) ||
+    // `isWasm` guards the first set: it is a claim about the web backends,
+    // and this runner also drives FFI (ffi_fixture_corpus_test.dart), where
+    // range__ops.py passes.
+    if ((isWasm && alwaysUnsupportedWasmFixtures.contains(key)) ||
         (!_testHooks && testHooksWasmFixtures.contains(key))) {
       skipped++;
       continue;
@@ -115,6 +126,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
           thrownMessage,
           resultValue,
           shouldSkip,
+          thrownException,
         ) = await _runDispatchLoop(
           platform,
           value,
@@ -128,7 +140,13 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         } else {
           report(
             key,
-            _evaluate(expectation, thrownExcType, thrownMessage, resultValue),
+            _evaluate(
+              expectation,
+              thrownExcType,
+              thrownMessage,
+              resultValue,
+              thrownException,
+            ),
           );
         }
       } on Object catch (e) {
@@ -185,6 +203,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
           thrownMessage,
           resultValue,
           shouldSkip,
+          thrownException,
         ) = await _runDispatchLoop(
           platform,
           source,
@@ -197,7 +216,13 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         } else {
           report(
             key,
-            _evaluate(expectation, thrownExcType, thrownMessage, resultValue),
+            _evaluate(
+              expectation,
+              thrownExcType,
+              thrownMessage,
+              resultValue,
+              thrownException,
+            ),
           );
         }
       } on Object catch (e) {
@@ -235,10 +260,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
     if (fixtureIsCallExternal(value)) {
       // Parse the fixture expectation with call-external skipping disabled
       // (run-async / mount-fs still cause a skip via parseFixture).
-      final expectation = parseFixture(
-        value,
-        skipCallExternal: false,
-      );
+      final expectation = parseFixture(value, skipCallExternal: false);
       if (expectation == null) {
         skipped++;
         continue;
@@ -251,6 +273,7 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
           thrownMessage,
           resultValue,
           shouldSkip,
+          thrownException,
         ) = await _runDispatchLoop(
           platform,
           value,
@@ -264,7 +287,13 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         } else {
           report(
             key,
-            _evaluate(expectation, thrownExcType, thrownMessage, resultValue),
+            _evaluate(
+              expectation,
+              thrownExcType,
+              thrownMessage,
+              resultValue,
+              thrownException,
+            ),
           );
         }
       } on Object catch (e) {
@@ -308,20 +337,20 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
         MontyResult? result;
         String? thrownExcType;
         String? thrownMessage;
+        MontyException? thrownException;
         try {
-          // Untrusted fixture corpus: cap memory so a single runaway (or a
-          // backend leak) cannot poison the rest of the run by growing the WASM
-          // linear memory to the 4GiB ceiling.
           result = await platform.run(
             value,
             scriptName: key,
-            limits: const MontyLimits(memoryBytes: 256 * 1024 * 1024),
+            limits: conformanceLimits,
           );
           thrownExcType = result.error?.excType;
           thrownMessage = result.error?.message;
+          thrownException = result.error;
         } on MontyScriptError catch (e) {
           thrownExcType = e.excType;
           thrownMessage = e.message;
+          thrownException = e.exception;
         } on MontyResourceError catch (e) {
           thrownExcType = 'MemoryLimitExceeded';
           thrownMessage = e.message;
@@ -329,7 +358,13 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
 
         report(
           key,
-          _evaluate(expectation, thrownExcType, thrownMessage, result?.value),
+          _evaluate(
+            expectation,
+            thrownExcType,
+            thrownMessage,
+            result?.value,
+            thrownException,
+          ),
         );
       } on Object catch (e) {
         report(key, '$e');
@@ -376,6 +411,23 @@ Future<void> runFixtureCorpus({required void Function(String) log}) async {
   }
 }
 
+/// The limits every corpus fixture runs under.
+///
+/// `stackDepth: 50` is upstream's `TEST_RECURSION_LIMIT`
+/// (`crates/monty-datatest/src/main.rs`, applied to EVERY fixture by
+/// `default_test_limits()`). The corpus is authored against it, and a
+/// traceback fixture states it: `traceback__recursion_error.py` expects
+/// `[Previous line repeated 47 more times]`. Running at the package default
+/// (512) printed `509 more times` — the harness's configuration, not the
+/// engine, was the variable.
+///
+/// Memory is capped so a single runaway (or a backend leak) cannot poison the
+/// rest of the run by growing the WASM linear memory to the 4GiB ceiling.
+const conformanceLimits = MontyLimits(
+  memoryBytes: 256 * 1024 * 1024,
+  stackDepth: 50,
+);
+
 /// Set by `-DMONTY_TEST_HOOKS=true` (tool/test_cm_wasm.sh), paired with a
 /// test-hooks WASM binary so `_test_cm`-based fixtures can run.
 ///
@@ -388,8 +440,9 @@ const _testHooks = bool.fromEnvironment('MONTY_TEST_HOOKS');
 /// Runs [source] through [platform] using `start()` + a dispatch loop,
 /// answering OS calls from [osHandler].
 ///
-/// Returns `(thrownExcType, thrownMessage, resultValue, shouldSkip)`.
-Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
+/// Returns `(thrownExcType, thrownMessage, resultValue, shouldSkip,
+/// thrownException)`.
+Future<(String?, String?, MontyValue?, bool, MontyException?)> _runDispatchLoop(
   MontyPlatform platform,
   String source,
   String key,
@@ -398,6 +451,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
 }) async {
   String? thrownExcType;
   String? thrownMessage;
+  MontyException? thrownException;
   MontyValue? resultValue;
   var shouldSkip = false;
 
@@ -407,11 +461,12 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
       source,
       externalFunctions: externalFunctions,
       scriptName: key,
-      limits: const MontyLimits(memoryBytes: 256 * 1024 * 1024),
+      limits: conformanceLimits,
     );
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;
     thrownMessage = e.message;
+    thrownException = e.exception;
   } on MontyResourceError catch (e) {
     thrownExcType = 'MemoryLimitExceeded';
     thrownMessage = e.message;
@@ -427,6 +482,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
         case MontyComplete(:final result):
           thrownExcType = result.error?.excType;
           thrownMessage = result.error?.message;
+          thrownException = result.error;
           resultValue = result.value;
           break dispatchLoop;
 
@@ -447,6 +503,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
             } on MontyScriptError catch (e) {
               thrownExcType = e.excType;
               thrownMessage = e.message;
+              thrownException = e.exception;
               break dispatchLoop;
             } on MontyResourceError catch (e) {
               thrownExcType = 'MemoryLimitExceeded';
@@ -482,6 +539,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
               } on MontyScriptError catch (e) {
                 thrownExcType = e.excType;
                 thrownMessage = e.message;
+                thrownException = e.exception;
                 break dispatchLoop;
               }
             } else {
@@ -502,6 +560,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
             } on MontyScriptError catch (e) {
               thrownExcType = e.excType;
               thrownMessage = e.message;
+              thrownException = e.exception;
               break dispatchLoop;
             } on MontyResourceError catch (e) {
               thrownExcType = 'MemoryLimitExceeded';
@@ -551,6 +610,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
           } on MontyScriptError catch (e) {
             thrownExcType = e.excType;
             thrownMessage = e.message;
+            thrownException = e.exception;
             break dispatchLoop;
           } on MontyResourceError catch (e) {
             thrownExcType = 'MemoryLimitExceeded';
@@ -593,6 +653,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
           } on MontyScriptError catch (e) {
             thrownExcType = e.excType;
             thrownMessage = e.message;
+            thrownException = e.exception;
             break dispatchLoop;
           } on MontyResourceError catch (e) {
             thrownExcType = 'MemoryLimitExceeded';
@@ -613,6 +674,7 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
           } on MontyScriptError catch (e) {
             thrownExcType = e.excType;
             thrownMessage = e.message;
+            thrownException = e.exception;
             break dispatchLoop;
           } on MontyResourceError catch (e) {
             thrownExcType = 'MemoryLimitExceeded';
@@ -623,33 +685,17 @@ Future<(String?, String?, MontyValue?, bool)> _runDispatchLoop(
     }
   }
 
-  return (thrownExcType, thrownMessage, resultValue, shouldSkip);
+  return (
+    thrownExcType,
+    thrownMessage,
+    resultValue,
+    shouldSkip,
+    thrownException,
+  );
 }
 
-/// Renders a caught error as `ExcType: message` for a fixture reason line.
-///
-/// The corpus used to report the bare `excType`, so a failure read "expected
-/// no error, got AssertionError" and said nothing about WHICH of a fixture's
-/// ~200 assertions blew up. Recovering that cost a hand-instrumented re-run of
-/// the dispatch loop when `dataclass__basic.py` was diagnosed
-/// (artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md), and every `MontyError`
-/// already carried the message this needed -- 17 capture sites read `.excType`
-/// off the exception and dropped `.message` on the floor.
-///
-/// Folded to one line and capped, because this text is emitted inside a
-/// single-line `FIXTURE_RESULT:` record that tool/test_wasm.sh greps.
-String _describeError(String? excType, String? message) {
-  final type = excType ?? 'no error';
-  if (message == null) return type;
-  final oneLine = message.replaceAll(RegExp(r'\s+'), ' ').trim();
-  if (oneLine.isEmpty || oneLine == type) return type;
-  final capped = oneLine.length > 200
-      ? '${oneLine.substring(0, 200)}…'
-      : oneLine;
-  return '$type: $capped';
-}
-
-/// Evaluates an expectation against the actual result.
+/// Evaluates an expectation against the actual result, through the shared
+/// strict adjudicator (`fixture_adjudicator.dart`).
 ///
 /// Returns `null` when the fixture met its expectation, otherwise the reason
 /// it did not — the same shape [runFixtureCorpus]'s `report` consumes.
@@ -658,34 +704,16 @@ String? _evaluate(
   String? thrownExcType,
   String? thrownMessage,
   MontyValue? resultValue,
-) {
-  switch (expectation) {
-    case ExpectNoException():
-      if (thrownExcType == null) return null;
-
-      return 'expected no error, got '
-          '${_describeError(thrownExcType, thrownMessage)}';
-
-    case ExpectReturn(value: final fixtureValue):
-      final expected = MontyValue.fromDart(fixtureValue);
-      if (thrownExcType == null && resultValue == expected) return null;
-      if (thrownExcType != null) {
-        // Say what was expected as well as what happened. "unexpected error:
-        // X" told a reader neither which value the fixture wanted nor where it
-        // died, and this runner's output IS the CI diagnostic (core#145).
-        return 'expected $expected, got error '
-            '${_describeError(thrownExcType, thrownMessage)}';
-      }
-
-      return 'value mismatch: expected $expected, got $resultValue';
-
-    case ExpectRaise(:final excType):
-      if (thrownExcType == excType) return null;
-
-      return 'excType mismatch: expected $excType, got '
-          '${_describeError(thrownExcType, thrownMessage)}';
-  }
-}
+  MontyException? thrownException,
+) => adjudicateFixture(
+  expectation,
+  FixtureOutcome.from(
+    exception: thrownException,
+    excType: thrownExcType,
+    message: thrownMessage,
+    value: resultValue,
+  ),
+);
 
 // ===========================================================================
 // M0 — run ONE fixture against a CALLER-SUPPLIED handler
@@ -757,7 +785,7 @@ Future<String?> runMountFsFixture(
   final own = platform == null;
   final p = platform ?? createPlatformMonty();
   try {
-    final (thrownExcType, thrownMessage, resultValue, shouldSkip) =
+    final (thrownExcType, thrownMessage, resultValue, shouldSkip, thrown) =
         await _runDispatchLoop(p, body, name, osHandler);
 
     if (shouldSkip) {
@@ -765,7 +793,13 @@ Future<String?> runMountFsFixture(
       return 'SKIPPED: the dispatch loop declined to run $name';
     }
 
-    return _evaluate(expectation, thrownExcType, thrownMessage, resultValue);
+    return _evaluate(
+      expectation,
+      thrownExcType,
+      thrownMessage,
+      resultValue,
+      thrown,
+    );
   } on Object catch (e) {
     // SCOPE CAVEAT, STATED RATHER THAN HIDDEN. This catch spans the dispatch
     // loop AND `_evaluate`, so a platform or evaluator failure is reported
