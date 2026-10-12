@@ -75,6 +75,13 @@ jobs:
               # this workflow applies.
               - 'example/**'
               - 'native/**'
+              # js/src/** is hashed by tool/check_asset_freshness.sh and is
+              # the source of the committed worker/bridge assets; without it a
+              # JS-only change skipped the freshness check and every WASM job.
+              - 'js/**'
+              # ffigen's own config: without it a change to ffigen.yaml alone
+              # skipped the bindings drift check.
+              - 'ffigen.yaml'
               - 'hook/**'
               - 'tool/**'
               - 'packages/**'
