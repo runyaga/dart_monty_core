@@ -1,0 +1,15 @@
+{
+ "id": "r_type",
+ "feeds": [
+  "orig = int\norig",
+  "x = echo()\n(repr(x), x is int)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP builtin_type_function_handles: "
+}

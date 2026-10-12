@@ -1,0 +1,5 @@
+{
+ "id": "b12_execute_raise__raise_type_call_via_var",
+ "code": "# raise exception type called via variable\na = ValueError\nraise a('error message')\n# Raise=ValueError('error message')\n",
+ "note": "upstream test_cases/execute_raise__raise_type_call_via_var.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__acosh_domain_error",
+ "code": "import math\n\nmath.acosh(0.5)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__acosh_domain_error.py\", line 3, in <module>\n    math.acosh(0.5)\n    ~~~~~~~~~~~~~~~\nValueError: expected argument value not less than 1, got 0.5\n\"\"\"\n",
+ "note": "upstream test_cases/math__acosh_domain_error.py (expects an exception)"
+}

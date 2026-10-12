@@ -1,0 +1,5 @@
+{
+ "id": "x25_system",
+ "code": "import random\nx = random.random()\n0 <= x < 1",
+ "host_errors": "plain"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__pop_out_of_range",
+ "code": "[1, 2, 3].pop(10)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__pop_out_of_range.py\", line 1, in <module>\n    [1, 2, 3].pop(10)\n    ~~~~~~~~~~~~~~~~~\nIndexError: pop index out of range\n\"\"\"\n",
+ "note": "upstream test_cases/list__pop_out_of_range.py (expects an exception)"
+}

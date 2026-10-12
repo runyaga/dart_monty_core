@@ -1,0 +1,30 @@
+{
+ "id": "i_time",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "time",
+       "v": "01:02:03.000004",
+       "offset": null,
+       "tzname": null,
+       "fold": 0
+      },
+      {
+       "t": "time",
+       "v": "23:59:00.000000",
+       "offset": -10800,
+       "tzname": null,
+       "fold": 1
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN time_duration_zone_values: "
+}

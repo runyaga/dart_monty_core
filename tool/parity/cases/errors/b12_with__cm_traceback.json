@@ -1,0 +1,5 @@
+{
+ "id": "b12_with__cm_traceback",
+ "code": "# A passthrough class context manager: an exception raised inside the\n# `with` body propagates with its original traceback intact — `__exit__`\n# returns None, never raises, and so adds no frame of its own.\nclass CM:\n    def __enter__(self):\n        return self\n\n    def __exit__(self, typ, val, tb):\n        return None\n\n\nwith CM() as cm:\n    raise ValueError('inside passthrough')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"with__cm_traceback.py\", line 13, in <module>\n    raise ValueError('inside passthrough')\nValueError: inside passthrough\n\"\"\"\n",
+ "note": "upstream test_cases/with__cm_traceback.py (expects an exception)"
+}

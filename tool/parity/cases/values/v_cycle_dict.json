@@ -1,0 +1,5 @@
+{
+ "id": "v_cycle_dict",
+ "code": "d = {}\nd[\"x\"] = d\nd",
+ "note": "OUT lossy_output_placeholders: "
+}

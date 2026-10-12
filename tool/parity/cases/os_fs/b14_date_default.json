@@ -1,0 +1,6 @@
+{
+ "id": "b14_date_default",
+ "code": "from pathlib import Path\nimport os\nfrom datetime import date, datetime\n(type(date.today()).__name__, type(datetime.now()).__name__)",
+ "os": {},
+ "host_errors": "plain"
+}

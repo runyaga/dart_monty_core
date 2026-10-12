@@ -1,0 +1,15 @@
+{
+ "probe": "api_create_repl",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "42"
+   }
+  }
+ ],
+ "runner_error": null
+}

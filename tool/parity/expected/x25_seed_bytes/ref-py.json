@@ -1,0 +1,72 @@
+{
+ "case": "x25_seed_bytes",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "float",
+      "v": "0.9695416231416547",
+      "bits": "3fef067c2770221c"
+     },
+     {
+      "t": "float",
+      "v": "0.05105764519299716",
+      "bits": "3faa243a48a11fa0"
+     },
+     {
+      "t": "int",
+      "v": "778"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  },
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "float",
+      "v": "0.7079808751644097",
+      "bits": "3fe6a7c78220c982"
+     },
+     {
+      "t": "float",
+      "v": "0.1458009623474229",
+      "bits": "3fc2a99b1e80f60c"
+     },
+     {
+      "t": "float",
+      "v": "0.569002705179016",
+      "bits": "3fe2354529428a79"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

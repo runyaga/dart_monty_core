@@ -1,0 +1,9 @@
+{
+ "id": "b14_sleep_zero",
+ "code": "from pathlib import Path\nimport os\nimport time\ntime.sleep(5)",
+ "os": {},
+ "os_policy": {
+  "sleep": "zero"
+ },
+ "host_errors": "plain"
+}

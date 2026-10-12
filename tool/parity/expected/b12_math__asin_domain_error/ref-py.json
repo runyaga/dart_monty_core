@@ -1,0 +1,46 @@
+{
+ "case": "b12_math__asin_domain_error",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "ValueError",
+    "message": "expected a number in range from -1 up to 1, got 2.0",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 3,
+      "column": 1,
+      "end_line": 3,
+      "end_column": 13,
+      "function": "<module>",
+      "source_line": "math.asin(2)"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "ValueError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

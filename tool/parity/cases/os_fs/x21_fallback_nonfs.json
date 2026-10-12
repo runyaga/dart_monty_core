@@ -1,0 +1,37 @@
+{
+ "id": "x21_fallback_nonfs",
+ "code": "from pathlib import Path\nimport os\nos.getenv('HOME')",
+ "os": {
+  "os.getenv": [
+   {
+    "return": {
+     "t": "str",
+     "v": "/home/u"
+    }
+   }
+  ]
+ },
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

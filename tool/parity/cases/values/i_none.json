@@ -1,0 +1,25 @@
+{
+ "id": "i_none",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "none"
+      },
+      {
+       "t": "ellipsis"
+      },
+      {
+       "t": "notimpl"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN singleton_values: "
+}

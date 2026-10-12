@@ -1,0 +1,5 @@
+{
+ "id": "b12_generic_alias__not_subscriptable",
+ "code": "Record = tuple[int, int]\nBad = int[str]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"generic_alias__not_subscriptable.py\", line 2, in <module>\n    Bad = int[str]\n          ~~~~~~~~\nTypeError: type 'int' is not subscriptable\n\"\"\"\n",
+ "note": "upstream test_cases/generic_alias__not_subscriptable.py (expects an exception)"
+}

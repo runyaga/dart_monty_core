@@ -1,0 +1,40 @@
+{
+ "id": "b14_env",
+ "code": "from pathlib import Path\nimport os\n(os.getenv('HOME'), os.getenv('NOPE', 'dflt'), os.environ.get('A'))",
+ "os": {
+  "os.getenv": [
+   {
+    "return": {
+     "t": "str",
+     "v": "/home/u"
+    }
+   },
+   {
+    "return": {
+     "t": "str",
+     "v": "dflt"
+    }
+   }
+  ],
+  "os.environ": [
+   {
+    "return": {
+     "t": "dict",
+     "items": [
+      [
+       {
+        "t": "str",
+        "v": "A"
+       },
+       {
+        "t": "str",
+        "v": "1"
+       }
+      ]
+     ]
+    }
+   }
+  ]
+ },
+ "host_errors": "plain"
+}

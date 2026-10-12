@@ -1,0 +1,5 @@
+{
+ "id": "b12_complex__error_ordering",
+ "code": "def is_less(a, b):\n    return a < b\n\n\nis_less(1 + 1j, 2j)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"complex__error_ordering.py\", line 5, in <module>\n    is_less(1 + 1j, 2j)\n    ~~~~~~~~~~~~~~~~~~~\n  File \"complex__error_ordering.py\", line 2, in is_less\n    return a < b\n           ~~~~~\nTypeError: '<' not supported between instances of 'complex' and 'complex'\n\"\"\"\n",
+ "note": "upstream test_cases/complex__error_ordering.py (expects an exception)"
+}

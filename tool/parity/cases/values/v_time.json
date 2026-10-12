@@ -1,0 +1,5 @@
+{
+ "id": "v_time",
+ "code": "import datetime\n(datetime.time(1, 2, 3, 4), datetime.time(23, 59, tzinfo=datetime.timezone(datetime.timedelta(hours=-3))))",
+ "note": "OUT time_duration_zone_values: "
+}

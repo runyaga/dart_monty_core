@@ -1,0 +1,30 @@
+{
+ "id": "b11fs_rename",
+ "code": "from pathlib import Path\nimport os\nr = Path('/data/a.txt').rename('/data/z.txt')\n(str(r), Path('/data/a.txt').exists(), Path('/data/z.txt').read_text())",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "upstream_quirk": "upstream Path.rename returns None (CPython returns the target Path); logs/ref outcome b11fs_rename",
+ "note": "fs op on read-write mount: rename",
+ "host_errors": "plain"
+}

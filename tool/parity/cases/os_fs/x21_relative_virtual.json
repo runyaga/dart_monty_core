@@ -1,0 +1,13 @@
+{
+ "id": "x21_relative_virtual",
+ "code": "from pathlib import Path\nimport os\n1",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "data"
+   }
+  ],
+  "files": {}
+ },
+ "host_errors": "plain"
+}

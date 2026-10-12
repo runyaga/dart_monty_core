@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__too_few_args_two",
+ "code": "def f(a, b):\n    return a + b\n\n\nf(1)\n# Raise=TypeError(\"f() missing 1 required positional argument: 'b'\")\n",
+ "note": "upstream test_cases/function__too_few_args_two.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unpack_not_mapping",
+ "code": "def f(a, b):\n    return a + b\n\n\nf(1, **[2])\n# Raise=TypeError('f() argument after ** must be a mapping, not list')\n",
+ "note": "upstream test_cases/function__err_unpack_not_mapping.py (expects an exception)"
+}

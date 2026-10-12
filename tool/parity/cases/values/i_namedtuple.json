@@ -1,0 +1,29 @@
+{
+ "id": "i_namedtuple",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "namedtuple",
+     "type": "mod.P",
+     "fields": [
+      "a",
+      "b"
+     ],
+     "items": [
+      {
+       "t": "int",
+       "v": "1"
+      },
+      {
+       "t": "int",
+       "v": "2"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN named_tuple_values: "
+}

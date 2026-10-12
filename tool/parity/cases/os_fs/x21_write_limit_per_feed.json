@@ -1,0 +1,31 @@
+{
+ "id": "x21_write_limit_per_feed",
+ "feeds": [
+  "from pathlib import Path\nimport os\nPath('/data/x.txt').write_text('123456')\n'ok'",
+  "from pathlib import Path\nimport os\nPath('/data/y.txt').write_text('123456')\n'ok'"
+ ],
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "write_bytes_limit": 8
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "note": "upstream: cap is per feed",
+ "host_errors": "plain"
+}

@@ -1,0 +1,11 @@
+{
+ "id": "l02_recursion_catch",
+ "code": "def r(k):\n    return 0 if k == 0 else 1 + r(k - 1)\ntry:\n    r(500)\nexcept RecursionError:\n    x = 'caught'\nx",
+ "limits": {
+  "max_recursion_depth": 20
+ },
+ "note": "RecursionError is catchable upstream",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

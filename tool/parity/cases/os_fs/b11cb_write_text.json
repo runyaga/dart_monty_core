@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_write_text",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').write_text('xyz')",
+ "os": {
+  "Path.write_text": [
+   {
+    "return": {
+     "t": "int",
+     "v": "3"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: write_text request transcript",
+ "host_errors": "plain"
+}

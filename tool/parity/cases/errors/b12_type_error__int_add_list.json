@@ -1,0 +1,5 @@
+{
+ "id": "b12_type_error__int_add_list",
+ "code": "2 + [1]\n# Raise=TypeError(\"unsupported operand type(s) for +: 'int' and 'list'\")\n",
+ "note": "upstream test_cases/type_error__int_add_list.py (expects an exception)"
+}

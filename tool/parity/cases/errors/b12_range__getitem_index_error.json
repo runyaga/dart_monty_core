@@ -1,0 +1,5 @@
+{
+ "id": "b12_range__getitem_index_error",
+ "code": "r = range(5)\nr[10]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"range__getitem_index_error.py\", line 2, in <module>\n    r[10]\n    ~~~~~\nIndexError: range object index out of range\n\"\"\"\n",
+ "note": "upstream test_cases/range__getitem_index_error.py (expects an exception)"
+}

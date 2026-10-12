@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__cos_inf_error",
+ "code": "import math\n\nmath.cos(math.inf)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__cos_inf_error.py\", line 3, in <module>\n    math.cos(math.inf)\n    ~~~~~~~~~~~~~~~~~~\nValueError: expected a finite input, got inf\n\"\"\"\n",
+ "note": "upstream test_cases/math__cos_inf_error.py (expects an exception)"
+}

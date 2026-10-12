@@ -1,0 +1,46 @@
+{
+ "case": "b12_hash__list_unhashable",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "TypeError",
+    "message": "unhashable type: 'list'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 1,
+      "column": 1,
+      "end_line": 1,
+      "end_column": 16,
+      "function": "<module>",
+      "source_line": "hash([1, 2, 3])"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "TypeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

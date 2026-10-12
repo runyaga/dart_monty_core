@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_is_dir",
+ "code": "from pathlib import Path\nimport os\nPath('/d').is_dir()",
+ "os": {
+  "Path.is_dir": [
+   {
+    "return": {
+     "t": "bool",
+     "v": true
+    }
+   }
+  ]
+ },
+ "note": "callback layer: is_dir request transcript",
+ "host_errors": "plain"
+}

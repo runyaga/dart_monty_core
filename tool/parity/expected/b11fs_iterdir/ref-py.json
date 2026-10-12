@@ -1,0 +1,45 @@
+{
+ "case": "b11fs_iterdir",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "str",
+      "v": "/data/a.txt"
+     },
+     {
+      "t": "str",
+      "v": "/data/b.bin"
+     },
+     {
+      "t": "str",
+      "v": "/data/sub"
+     },
+     {
+      "t": "str",
+      "v": "/data/u.txt"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

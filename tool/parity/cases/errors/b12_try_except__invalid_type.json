@@ -1,0 +1,5 @@
+{
+ "id": "b12_try_except__invalid_type",
+ "code": "try:\n    raise ValueError('test')\nexcept 123:\n    pass\n# Raise=TypeError('catching classes that do not inherit from BaseException is not allowed')\n",
+ "note": "upstream test_cases/try_except__invalid_type.py (expects an exception)"
+}

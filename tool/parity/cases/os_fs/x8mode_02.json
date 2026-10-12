@@ -1,0 +1,29 @@
+{
+ "id": "x8mode_02",
+ "code": "from pathlib import Path\nimport os\ntry:\n    f = open('/data/a.txt', 'rt')\n    r = 'opened'\nexcept Exception as e:\n    r = type(e).__name__ + ': ' + str(e)\n(r, Path('/data/a.txt').read_text())",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "open mode 'rt': acceptance + open-time effect",
+ "host_errors": "plain"
+}

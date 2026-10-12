@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__log_base1_error",
+ "code": "import math\n\nmath.log(10, 1)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__log_base1_error.py\", line 3, in <module>\n    math.log(10, 1)\n    ~~~~~~~~~~~~~~~\nZeroDivisionError: division by zero\n\"\"\"\n",
+ "note": "upstream test_cases/math__log_base1_error.py (expects an exception)"
+}

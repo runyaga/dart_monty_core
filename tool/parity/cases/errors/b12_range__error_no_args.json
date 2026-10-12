@@ -1,0 +1,5 @@
+{
+ "id": "b12_range__error_no_args",
+ "code": "range()\n# Raise=TypeError('range expected at least 1 argument, got 0')\n",
+ "note": "upstream test_cases/range__error_no_args.py (expects an exception)"
+}

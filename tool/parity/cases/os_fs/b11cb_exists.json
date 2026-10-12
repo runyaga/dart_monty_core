@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_exists",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').exists()",
+ "os": {
+  "Path.exists": [
+   {
+    "return": {
+     "t": "bool",
+     "v": true
+    }
+   }
+  ]
+ },
+ "note": "callback layer: exists request transcript",
+ "host_errors": "plain"
+}

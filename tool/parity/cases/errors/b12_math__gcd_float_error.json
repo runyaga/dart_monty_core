@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__gcd_float_error",
+ "code": "import math\n\nmath.gcd(1.5, 2)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__gcd_float_error.py\", line 3, in <module>\n    math.gcd(1.5, 2)\n    ~~~~~~~~~~~~~~~~\nTypeError: 'float' object cannot be interpreted as an integer\n\"\"\"\n",
+ "note": "upstream test_cases/math__gcd_float_error.py (expects an exception)"
+}

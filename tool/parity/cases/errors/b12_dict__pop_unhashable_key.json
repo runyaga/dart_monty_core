@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__pop_unhashable_key",
+ "code": "# note cpython behaves weirdly if the dict is empty: https://github.com/python/cpython/issues/142396\nd = {1: 2}\nd.pop([], 'fallback')\n# Raise=TypeError(\"cannot use 'list' as a dict key (unhashable type: 'list')\")\n",
+ "note": "upstream test_cases/dict__pop_unhashable_key.py (expects an exception)"
+}

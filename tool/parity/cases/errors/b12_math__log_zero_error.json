@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__log_zero_error",
+ "code": "import math\n\nmath.log(0)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__log_zero_error.py\", line 3, in <module>\n    math.log(0)\n    ~~~~~~~~~~~\nValueError: expected a positive input\n\"\"\"\n",
+ "note": "upstream test_cases/math__log_zero_error.py (expects an exception)"
+}

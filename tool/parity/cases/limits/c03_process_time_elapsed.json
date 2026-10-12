@@ -1,0 +1,11 @@
+{
+ "id": "c03_process_time_elapsed",
+ "code": "import time\na = time.process_time()\nn=0\nfor i in range(5000000):\n    n+=i\nb = time.process_time()\n(a >= 0.0, b > a, b > 0.0)",
+ "os_policy": {
+  "process_time": "elapsed"
+ },
+ "note": "elapsed: positive, monotone",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__set_mutation",
+ "code": "s = {1, 2}\nfor x in s:\n    s.add(3)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__set_mutation.py\", line 2, in <module>\n    for x in s:\n             ~\nRuntimeError: Set changed size during iteration\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__set_mutation.py (expects an exception)"
+}

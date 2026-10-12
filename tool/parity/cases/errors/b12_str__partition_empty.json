@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__partition_empty",
+ "code": "'hello'.partition('')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__partition_empty.py\", line 1, in <module>\n    'hello'.partition('')\n    ~~~~~~~~~~~~~~~~~~~~~\nValueError: empty separator\n\"\"\"\n",
+ "note": "upstream test_cases/str__partition_empty.py (expects an exception)"
+}

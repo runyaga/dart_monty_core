@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_read_bytes",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.bin').read_bytes()",
+ "os": {
+  "Path.read_bytes": [
+   {
+    "return": {
+     "t": "bytes",
+     "hex": "00ff"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: read_bytes request transcript",
+ "host_errors": "plain"
+}

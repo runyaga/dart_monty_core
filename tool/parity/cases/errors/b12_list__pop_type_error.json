@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__pop_type_error",
+ "code": "[].pop('not an int')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__pop_type_error.py\", line 1, in <module>\n    [].pop('not an int')\n    ~~~~~~~~~~~~~~~~~~~~\nTypeError: 'str' object cannot be interpreted as an integer\n\"\"\"\n",
+ "note": "upstream test_cases/list__pop_type_error.py (expects an exception)"
+}

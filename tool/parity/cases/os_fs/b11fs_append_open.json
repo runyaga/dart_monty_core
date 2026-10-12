@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_append_open",
+ "code": "from pathlib import Path\nimport os\nwith open('/data/a.txt', 'a') as f:\n    f.write('more')\nPath('/data/a.txt').read_text()",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: append_open",
+ "host_errors": "plain"
+}

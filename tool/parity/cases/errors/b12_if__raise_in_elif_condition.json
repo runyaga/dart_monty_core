@@ -1,0 +1,5 @@
+{
+ "id": "b12_if__raise_in_elif_condition",
+ "code": "def fail():\n    raise ValueError('elif condition failed')\n\n\nif False:\n    x = 1\nelif fail():\n    x = 2\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"if__raise_in_elif_condition.py\", line 7, in <module>\n    elif fail():\n         ~~~~~~\n  File \"if__raise_in_elif_condition.py\", line 2, in fail\n    raise ValueError('elif condition failed')\nValueError: elif condition failed\n\"\"\"\n",
+ "note": "upstream test_cases/if__raise_in_elif_condition.py (expects an exception)"
+}

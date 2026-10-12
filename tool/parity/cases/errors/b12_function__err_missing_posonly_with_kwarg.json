@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_missing_posonly_with_kwarg",
+ "code": "# Test: missing positional-only when keyword is provided for other param\ndef f(a, /, b):\n    return a + b\n\n\nf(b=2)\n# Raise=TypeError(\"f() missing 1 required positional argument: 'a'\")\n",
+ "note": "upstream test_cases/function__err_missing_posonly_with_kwarg.py (expects an exception)"
+}

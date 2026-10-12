@@ -1,0 +1,5 @@
+{
+ "id": "b12_arith__div_zero_float",
+ "code": "1.0 / 0.0\n# Raise=ZeroDivisionError('division by zero')\n",
+ "note": "upstream test_cases/arith__div_zero_float.py (expects an exception)"
+}

@@ -1,0 +1,15 @@
+{
+ "id": "r_alias",
+ "feeds": [
+  "a = [1]\norig = [a, a]\norig",
+  "x = echo()\n(repr(x), x[0] is x[1])"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP boundary_value_graph: "
+}

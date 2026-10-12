@@ -1,0 +1,36 @@
+{
+ "case": "x21_dup_virtual",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "ValueError",
+    "message": "cannot mount '<fsroot>/x21_dup_virtual/1' at '/data': it overlaps the mount of '<fsroot>/x21_dup_virtual/0' at '/data'; mounts must have distinct virtual paths and disjoint host directories",
+    "traceback": []
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "ValueError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

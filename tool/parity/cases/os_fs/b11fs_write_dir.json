@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_write_dir",
+ "code": "from pathlib import Path\nimport os\nPath('/data/sub').write_text('x')",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: write_dir",
+ "host_errors": "plain"
+}

@@ -1,0 +1,45 @@
+{
+ "case": "x8hostmode_rplus",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "ValueError",
+    "message": "update modes ('+') are not yet supported",
+    "traceback": []
+   },
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "open",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      },
+      {
+       "t": "str",
+       "v": "r"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "thrown": "host"
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

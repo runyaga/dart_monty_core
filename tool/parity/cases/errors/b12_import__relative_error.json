@@ -1,0 +1,5 @@
+{
+ "id": "b12_import__relative_error",
+ "code": "from .foo import bar\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__relative_error.py\", line 1, in <module>\n    from .foo import bar\nImportError: attempted relative import with no known parent package\n\"\"\"\n",
+ "note": "upstream test_cases/import__relative_error.py (expects an exception)"
+}

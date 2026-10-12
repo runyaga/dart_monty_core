@@ -1,0 +1,152 @@
+{
+ "id": "h_x09_class_init",
+ "feeds": [
+  "P = get()\np = P(\"Ada\", 36)\n(p.name, p.greeting(), type(p) is P, p)"
+ ],
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "wrap",
+     "w": "P"
+    }
+   }
+  ]
+ },
+ "host": {
+  "classes": {
+   "Person": {
+    "dataclass": true,
+    "fields": [
+     "name",
+     "age"
+    ],
+    "class_attrs": {
+     "KIND": {
+      "t": "str",
+      "v": "human"
+     }
+    },
+    "methods": {
+     "greeting": {
+      "format": "hi {name}"
+     },
+     "shout": {
+      "format": "{0}!"
+     },
+     "secret_method": {
+      "returns": {
+       "t": "str",
+       "v": "secret"
+      }
+     },
+     "fail": {
+      "raise": {
+       "type": "ValueError",
+       "message": "boom"
+      }
+     },
+     "make_default": {
+      "kind": "static",
+      "returns": {
+       "t": "str",
+       "v": "static-ok"
+      }
+     },
+     "kind_of": {
+      "kind": "classmethod",
+      "returns": {
+       "t": "str",
+       "v": "cm-ok"
+      }
+     }
+    }
+   },
+   "Config": {
+    "dataclass": false,
+    "fields": [
+     "retries",
+     "api_key",
+     "_hidden"
+    ],
+    "methods": {}
+   },
+   "Wallet": {
+    "dataclass": true,
+    "fields": [
+     "balance"
+    ],
+    "methods": {
+     "pay": {
+      "new_minus": "balance"
+     }
+    }
+   }
+  },
+  "objects": {
+   "p1": {
+    "class": "Person",
+    "values": {
+     "name": {
+      "t": "str",
+      "v": "Samuel"
+     },
+     "age": {
+      "t": "int",
+      "v": "4"
+     }
+    }
+   },
+   "p2": {
+    "class": "Person",
+    "values": {
+     "name": {
+      "t": "str",
+      "v": "Ada"
+     },
+     "age": {
+      "t": "int",
+      "v": "36"
+     }
+    }
+   },
+   "cfg": {
+    "class": "Config",
+    "values": {
+     "retries": {
+      "t": "int",
+      "v": "3"
+     },
+     "api_key": {
+      "t": "str",
+      "v": "hunter2"
+     },
+     "_hidden": {
+      "t": "str",
+      "v": "h"
+     }
+    }
+   },
+   "wal": {
+    "class": "Wallet",
+    "values": {
+     "balance": {
+      "t": "int",
+      "v": "100"
+     }
+    }
+   }
+  },
+  "wrappers": {
+   "P": {
+    "kind": "class",
+    "class": "Person",
+    "init": true,
+    "instance_eager": "all",
+    "instance_methods": [
+     "greeting"
+    ]
+   }
+  }
+ }
+}

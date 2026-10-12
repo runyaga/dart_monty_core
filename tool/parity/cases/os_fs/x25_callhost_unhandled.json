@@ -1,0 +1,8 @@
+{
+ "id": "x25_callhost_unhandled",
+ "code": "import random\nrandom.random()",
+ "os_policy": {
+  "random_start": "call_host"
+ },
+ "host_errors": "plain"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_iter__not_iterable",
+ "code": "for x in 42:\n    pass\n# Raise=TypeError(\"'int' object is not iterable\")\n",
+ "note": "upstream test_cases/iter__not_iterable.py (expects an exception)"
+}

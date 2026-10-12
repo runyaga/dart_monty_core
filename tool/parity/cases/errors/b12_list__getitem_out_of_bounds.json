@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__getitem_out_of_bounds",
+ "code": "a = [1, 2, 3]\na[10]\n# Raise=IndexError('list index out of range')\n",
+ "note": "upstream test_cases/list__getitem_out_of_bounds.py (expects an exception)"
+}

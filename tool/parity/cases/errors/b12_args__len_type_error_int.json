@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__len_type_error_int",
+ "code": "len(42)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"args__len_type_error_int.py\", line 1, in <module>\n    len(42)\n    ~~~~~~~\nTypeError: object of type 'int' has no len()\n\"\"\"\n",
+ "note": "upstream test_cases/args__len_type_error_int.py (expects an exception)"
+}

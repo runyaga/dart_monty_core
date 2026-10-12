@@ -1,0 +1,124 @@
+{
+ "case": "h_x11_class_methods",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "static-ok"
+     },
+     {
+      "t": "str",
+      "v": "cm-ok"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [
+    {
+     "op": "call",
+     "obj": {
+      "t": "hostclass",
+      "obj": "Person"
+     },
+     "name": "make_default"
+    },
+    {
+     "op": "method",
+     "obj": {
+      "t": "none"
+     },
+     "name": "make_default",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "op": "convert",
+     "name": "make_default"
+    },
+    {
+     "op": "call",
+     "obj": {
+      "t": "hostclass",
+      "obj": "Person"
+     },
+     "name": "kind_of"
+    },
+    {
+     "op": "method",
+     "obj": {
+      "t": "hostclass",
+      "obj": "Person"
+     },
+     "name": "kind_of",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "op": "convert",
+     "name": "kind_of"
+    }
+   ],
+   "usage": null
+  },
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "AttributeError"
+     },
+     {
+      "t": "str",
+      "v": "type object 'Person' has no attribute 'greeting'"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [
+    {
+     "op": "call",
+     "obj": {
+      "t": "hostclass",
+      "obj": "Person"
+     },
+     "name": "greeting"
+    }
+   ],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

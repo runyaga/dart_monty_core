@@ -1,0 +1,18 @@
+{
+ "id": "x25_callhost_short",
+ "code": "import random\nrandom.random()",
+ "os": {
+  "os.urandom": [
+   {
+    "return": {
+     "t": "bytes",
+     "hex": "00000000000000000000"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "random_start": "call_host"
+ },
+ "host_errors": "plain"
+}

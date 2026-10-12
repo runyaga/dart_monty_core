@@ -1,0 +1,5 @@
+{
+ "id": "b12_loop__continue_in_function_error",
+ "code": "def foo():\n    continue\n\n\nfoo()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"loop__continue_in_function_error.py\", line 2\n    continue\n    ~~~~~~~~\nSyntaxError: 'continue' not properly in loop\n\"\"\"\n",
+ "note": "upstream test_cases/loop__continue_in_function_error.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__call_duplicate_kwargs",
+ "code": "def f(**kwargs):\n    pass\n\n\nf(**{'x': 1}, **{'x': 2})\n# Raise=TypeError(\"f() got multiple values for keyword argument 'x'\")\n",
+ "note": "upstream test_cases/function__call_duplicate_kwargs.py (expects an exception)"
+}

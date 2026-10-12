@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__float_repr_single_quote",
+ "code": "float(\"it's\")\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__float_repr_single_quote.py\", line 1, in <module>\n    float(\"it's\")\n    ~~~~~~~~~~~~~\nValueError: could not convert string to float: \"it's\"\n\"\"\"\n",
+ "note": "upstream test_cases/type__float_repr_single_quote.py (expects an exception)"
+}

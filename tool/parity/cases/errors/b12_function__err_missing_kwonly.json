@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_missing_kwonly",
+ "code": "# Test: missing required keyword-only argument\ndef f(a, *, b):\n    return a + b\n\n\nf(1)\n# Raise=TypeError(\"f() missing 1 required keyword-only argument: 'b'\")\n",
+ "note": "upstream test_cases/function__err_missing_kwonly.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "v_path",
+ "code": "from pathlib import Path\n(Path(\"/a/b.txt\"), Path(\"rel/x\"))",
+ "note": "OUT path_value_conversion: "
+}

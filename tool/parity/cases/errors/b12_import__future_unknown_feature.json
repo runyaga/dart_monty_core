@@ -1,0 +1,5 @@
+{
+ "id": "b12_import__future_unknown_feature",
+ "code": "# `__future__` imports are accepted as no-ops, but only for real feature names,\n# so an eventual change to one of them (see limitations/typing.md) stays visible\n# only to code that asked for it.\nfrom __future__ import teleportation\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__future_unknown_feature.py\", line 4\n    from __future__ import teleportation\n                           ~~~~~~~~~~~~~\nSyntaxError: future feature teleportation is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/import__future_unknown_feature.py (expects an exception)"
+}

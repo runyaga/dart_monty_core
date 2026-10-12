@@ -1,0 +1,5 @@
+{
+ "id": "v_exception",
+ "code": "(ValueError(\"bad\"), KeyError(\"k\"), RuntimeError())",
+ "note": "OUT exception_value_conversion: "
+}

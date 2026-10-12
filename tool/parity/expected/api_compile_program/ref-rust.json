@@ -1,0 +1,11 @@
+{
+  "backend": "rust",
+  "engine": "ref-rust",
+  "events": [
+    {
+      "ev": "compiled"
+    }
+  ],
+  "probe": "api_compile_program",
+  "runner_error": null
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_recursion__function_depth",
+ "code": "# Test that recursive function calls hit the recursion limit\n# This uses Python function call recursion which both CPython and Monty limit\n\n\ndef recurse(n):\n    if n == 0:\n        return 0\n    return recurse(n - 1) + 1\n\n\n# This should raise RecursionError in both interpreters\nrecurse(2000)\n# Raise=RecursionError('maximum recursion depth exceeded')\n",
+ "note": "upstream test_cases/recursion__function_depth.py (expects an exception)"
+}

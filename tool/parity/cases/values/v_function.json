@@ -1,0 +1,6 @@
+{
+ "id": "v_function",
+ "code": "def f():\n    pass\nf",
+ "upstream_quirk": "upstream returns a sandbox function as the plain str \"<function 'f' at 0xc>\" (decode.rs Repr -> str)",
+ "note": "OUT lossy_output_placeholders: "
+}

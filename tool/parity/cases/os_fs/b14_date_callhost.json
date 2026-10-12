@@ -1,0 +1,26 @@
+{
+ "id": "b14_date_callhost",
+ "code": "from pathlib import Path\nimport os\nfrom datetime import date, datetime\n(date.today().isoformat(), datetime.now().isoformat())",
+ "os": {
+  "date.today": [
+   {
+    "return": {
+     "t": "date",
+     "v": "2024-02-29"
+    }
+   }
+  ],
+  "datetime.now": [
+   {
+    "return": {
+     "t": "datetime",
+     "v": "2024-02-29T12:34:56.123456"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "datetime": "call_host"
+ },
+ "host_errors": "plain"
+}

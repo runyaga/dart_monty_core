@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unpack_nonstring_key",
+ "code": "def foo(a):\n    return a\n\n\nfoo(**{1: 'value'})\n# Raise=TypeError('keywords must be strings')\n",
+ "note": "upstream test_cases/function__err_unpack_nonstring_key.py (expects an exception)"
+}

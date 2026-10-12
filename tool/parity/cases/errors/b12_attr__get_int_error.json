@@ -1,0 +1,5 @@
+{
+ "id": "b12_attr__get_int_error",
+ "code": "x = 5\nx.foo\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"attr__get_int_error.py\", line 2, in <module>\n    x.foo\nAttributeError: 'int' object has no attribute 'foo'\n\"\"\"\n",
+ "note": "upstream test_cases/attr__get_int_error.py (expects an exception)"
+}

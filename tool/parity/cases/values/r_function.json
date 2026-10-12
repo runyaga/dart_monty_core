@@ -1,0 +1,15 @@
+{
+ "id": "r_function",
+ "feeds": [
+  "def f():\n    pass\norig = f\norig",
+  "x = echo()\n(repr(x), type(x).__name__)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP lossy_output_placeholders: "
+}

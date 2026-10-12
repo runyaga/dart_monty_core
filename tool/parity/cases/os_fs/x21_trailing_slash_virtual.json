@@ -1,0 +1,26 @@
+{
+ "id": "x21_trailing_slash_virtual",
+ "code": "from pathlib import Path\nimport os\nPath('/data/a.txt').read_text()",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data/"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

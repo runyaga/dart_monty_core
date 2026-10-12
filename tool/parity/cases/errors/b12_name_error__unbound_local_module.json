@@ -1,0 +1,5 @@
+{
+ "id": "b12_name_error__unbound_local_module",
+ "code": "# Read-before-write at module scope must raise `NameError`, not `UnboundLocalError`.\nprint(x)\nx = 1\nprint(x)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"name_error__unbound_local_module.py\", line 2, in <module>\n    print(x)\n          ~\nNameError: name 'x' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/name_error__unbound_local_module.py (expects an exception)"
+}

@@ -1,0 +1,32 @@
+{
+ "id": "i_bool_int",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "bool",
+       "v": true
+      },
+      {
+       "t": "int",
+       "v": "-1"
+      },
+      {
+       "t": "int",
+       "v": "9223372036854775807"
+      },
+      {
+       "t": "int",
+       "v": "-9223372036854775808"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN boolean_integer_values: "
+}

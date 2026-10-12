@@ -1,0 +1,5 @@
+{
+ "id": "v_timezone",
+ "code": "import datetime\n(datetime.timezone(datetime.timedelta(hours=-3)), datetime.timezone(datetime.timedelta(hours=1), \"CET\"), datetime.timezone.utc)",
+ "note": "OUT time_duration_zone_values: "
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__dict_pop_too_many",
+ "code": "x = {}\nx.pop(1, 2, 3)\n# Raise=TypeError('pop expected at most 2 arguments, got 3')\n",
+ "note": "upstream test_cases/args__dict_pop_too_many.py (expects an exception)"
+}

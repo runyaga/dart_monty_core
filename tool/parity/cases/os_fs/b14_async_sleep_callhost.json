@@ -1,0 +1,17 @@
+{
+ "id": "b14_async_sleep_callhost",
+ "code": "from pathlib import Path\nimport os\nimport asyncio\nawait asyncio.sleep(0.01, result='r')",
+ "os": {
+  "asyncio.sleep": [
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "sleep": "call_host"
+ },
+ "host_errors": "plain"
+}

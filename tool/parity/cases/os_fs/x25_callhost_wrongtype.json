@@ -1,0 +1,18 @@
+{
+ "id": "x25_callhost_wrongtype",
+ "code": "import random\nrandom.random()",
+ "os": {
+  "os.urandom": [
+   {
+    "return": {
+     "t": "str",
+     "v": "nope"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "random_start": "call_host"
+ },
+ "host_errors": "plain"
+}

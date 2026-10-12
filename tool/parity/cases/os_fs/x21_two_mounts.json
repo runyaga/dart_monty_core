@@ -1,0 +1,34 @@
+{
+ "id": "x21_two_mounts",
+ "code": "from pathlib import Path\nimport os\n(Path('/data/a.txt').read_text(), Path('/ro/r.txt').read_text())",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   },
+   {
+    "virtual": "/ro",
+    "mode": "read-only"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   },
+   "/ro/r.txt": {
+    "text": "ro"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

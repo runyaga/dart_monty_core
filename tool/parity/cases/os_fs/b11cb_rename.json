@@ -1,0 +1,15 @@
+{
+ "id": "b11cb_rename",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').rename('/d/b.txt')",
+ "os": {
+  "Path.rename": [
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: rename request transcript",
+ "host_errors": "plain"
+}

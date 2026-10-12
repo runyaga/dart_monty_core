@@ -1,0 +1,78 @@
+{
+  "backend": "rust",
+  "engine": "ref-rust",
+  "events": [
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "x = 1"
+    },
+    {
+      "ev": "mode",
+      "mode": "incompleteBlock",
+      "src": "def f():"
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "def f():\n    return 1"
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "def f():\n    return 1\n"
+    },
+    {
+      "ev": "mode",
+      "mode": "incompleteImplicit",
+      "src": "(1,"
+    },
+    {
+      "ev": "mode",
+      "mode": "incompleteImplicit",
+      "src": "[1, 2"
+    },
+    {
+      "ev": "mode",
+      "mode": "incompleteImplicit",
+      "src": "x = ("
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "if True:\n    pass\n"
+    },
+    {
+      "ev": "mode",
+      "mode": "incompleteImplicit",
+      "src": "s = '''abc"
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "1 +"
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "x = )"
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": ""
+    },
+    {
+      "ev": "mode",
+      "mode": "incompleteBlock",
+      "src": "for i in range(3):"
+    },
+    {
+      "ev": "mode",
+      "mode": "complete",
+      "src": "class A:\n    x = 1\n\n"
+    }
+  ],
+  "probe": "api_interactive_continuation",
+  "runner_error": null
+}

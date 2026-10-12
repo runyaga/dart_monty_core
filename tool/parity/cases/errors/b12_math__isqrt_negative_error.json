@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__isqrt_negative_error",
+ "code": "import math\n\nmath.isqrt(-1)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__isqrt_negative_error.py\", line 3, in <module>\n    math.isqrt(-1)\n    ~~~~~~~~~~~~~~\nValueError: isqrt() argument must be nonnegative\n\"\"\"\n",
+ "note": "upstream test_cases/math__isqrt_negative_error.py (expects an exception)"
+}

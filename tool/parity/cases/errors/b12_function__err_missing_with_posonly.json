@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_missing_with_posonly",
+ "code": "# Test: missing required argument with positional-only params\ndef f(a, b, /, c):\n    return a + b + c\n\n\nf(1, 2)\n# Raise=TypeError(\"f() missing 1 required positional argument: 'c'\")\n",
+ "note": "upstream test_cases/function__err_missing_with_posonly.py (expects an exception)"
+}

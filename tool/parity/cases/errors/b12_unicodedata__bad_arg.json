@@ -1,0 +1,5 @@
+{
+ "id": "b12_unicodedata__bad_arg",
+ "code": "import unicodedata\n\nunicodedata.category('ab')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"unicodedata__bad_arg.py\", line 3, in <module>\n    unicodedata.category('ab')\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~\nTypeError: category(): argument must be a unicode character, not a string of length 2\n\"\"\"\n",
+ "note": "upstream test_cases/unicodedata__bad_arg.py (expects an exception)"
+}

@@ -1,0 +1,46 @@
+{
+ "case": "t04_unicode_attrs",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "AttributeError",
+    "message": "'UnicodeDecodeError' object has no attribute 'encoding'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 4,
+      "column": 38,
+      "end_line": 4,
+      "end_column": 46,
+      "function": "<module>",
+      "source_line": "    r = (e.encoding, e.start, e.end, e.reason)"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "AttributeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

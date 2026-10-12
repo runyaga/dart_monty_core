@@ -1,0 +1,31 @@
+{
+ "id": "g19_close_then_feed",
+ "feeds": [
+  "from pathlib import Path\nimport os\nPath('/data/a.txt').read_text()",
+  "from pathlib import Path\nimport os\nPath('/data/a.txt').read_text()"
+ ],
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "close_mount_before_feed": 1,
+ "host_errors": "plain"
+}

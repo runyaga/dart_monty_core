@@ -1,0 +1,36 @@
+{
+ "case": "b11fs_iter_open",
+ "engine": "refmem",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0 OSAccess+MemoryFile",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "TypeError",
+    "message": "'_io.TextIOWrapper' object is not iterable",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 4,
+      "column": 10,
+      "end_line": 4,
+      "end_column": 11,
+      "function": "<module>",
+      "source_line": "    r = [l for l in f]"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {},
+ "notes": {
+  "fs": "OSAccess(files=[MemoryFile]) as os= handler"
+ },
+ "runner_error": null
+}

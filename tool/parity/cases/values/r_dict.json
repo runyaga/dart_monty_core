@@ -1,0 +1,15 @@
+{
+ "id": "r_dict",
+ "feeds": [
+  "orig = {1: \"a\", (1, 2): None}\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP dictionary_values: "
+}

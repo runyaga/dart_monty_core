@@ -1,0 +1,17 @@
+{
+ "id": "i_timedelta",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "timedelta",
+     "days": -1,
+     "seconds": 5,
+     "us": 7
+    }
+   }
+  ]
+ },
+ "note": "IN time_duration_zone_values: "
+}

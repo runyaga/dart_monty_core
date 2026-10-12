@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unexpected_kwarg_cleanup",
+ "code": "# Test that heap values are properly cleaned up when unexpected kwarg error occurs\ndef f(a, b):\n    return a\n\n\n# The list [1, 2, 3] should be cleaned up when the error occurs\n# because 'c' is an unexpected keyword argument\nf([1, 2, 3], [4, 5], c=[6, 7])\n# Raise=TypeError(\"f() got an unexpected keyword argument 'c'\")\n",
+ "note": "upstream test_cases/function__err_unexpected_kwarg_cleanup.py (expects an exception)"
+}

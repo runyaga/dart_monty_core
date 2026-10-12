@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__len_too_many",
+ "code": "len(1, 2)\n# Raise=TypeError('len() takes exactly one argument (2 given)')\n",
+ "note": "upstream test_cases/args__len_too_many.py (expects an exception)"
+}

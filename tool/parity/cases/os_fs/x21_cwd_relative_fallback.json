@@ -1,0 +1,38 @@
+{
+ "id": "x21_cwd_relative_fallback",
+ "code": "from pathlib import Path\nimport os\nPath('y.txt').read_text()",
+ "os": {
+  "Path.read_text": [
+   {
+    "return": {
+     "t": "str",
+     "v": "host"
+    }
+   }
+  ]
+ },
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "cwd": "/other",
+ "host_errors": "plain"
+}

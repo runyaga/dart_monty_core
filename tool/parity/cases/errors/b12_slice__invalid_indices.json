@@ -1,0 +1,5 @@
+{
+ "id": "b12_slice__invalid_indices",
+ "code": "[1, 2, 3]['a':'b']\n# Raise=TypeError('slice indices must be integers or None or have an __index__ method')\n",
+ "note": "upstream test_cases/slice__invalid_indices.py (expects an exception)"
+}

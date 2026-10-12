@@ -1,0 +1,47 @@
+{
+ "case": "b11fs_unlink_missing",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "FileNotFoundError",
+    "message": "[Errno 2] No such file or directory: '/data/nope'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 3,
+      "column": 1,
+      "end_line": 3,
+      "end_column": 28,
+      "function": "<module>",
+      "source_line": "Path('/data/nope').unlink()"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "FileNotFoundError",
+    "OSError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

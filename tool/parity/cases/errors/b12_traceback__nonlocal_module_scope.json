@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__nonlocal_module_scope",
+ "code": "# nonlocal at module level is a syntax error\nnonlocal x  # type: ignore\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__nonlocal_module_scope.py\", line 2\n    nonlocal x  # type: ignore\n    ~~~~~~~~~~\nSyntaxError: nonlocal declaration not allowed at module level\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__nonlocal_module_scope.py (expects an exception)"
+}

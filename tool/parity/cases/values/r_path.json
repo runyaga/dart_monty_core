@@ -1,0 +1,15 @@
+{
+ "id": "r_path",
+ "feeds": [
+  "from pathlib import Path\norig = Path(\"/a/b\")\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP path_value_conversion: "
+}

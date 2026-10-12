@@ -1,0 +1,11 @@
+{
+ "id": "l17_sleep_zero_policy",
+ "code": "import time\ntime.sleep(100)\n'slept'",
+ "os_policy": {
+  "sleep": "zero"
+ },
+ "note": "sleep=zero returns immediately",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_name_error__undefined_global_in_function",
+ "code": "# Regression: a NameError raised from inside a function body for an undefined\n# module-level global must report the actual variable name.\n#\n# Before the global-slot reverse-map fix, the VM looked up the slot through\n# the current frame's function-local names table, which doesn't know about\n# module-namespace slots — so the error message was either an unrelated\n# function-local name at the same slot index or a `<global N>` placeholder.\ndef f():\n    return undefined_in_function\n\n\nf()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"name_error__undefined_global_in_function.py\", line 12, in <module>\n    f()\n    ~~~\n  File \"name_error__undefined_global_in_function.py\", line 9, in f\n    return undefined_in_function\n           ~~~~~~~~~~~~~~~~~~~~~\nNameError: name 'undefined_in_function' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/name_error__undefined_global_in_function.py (expects an exception)"
+}

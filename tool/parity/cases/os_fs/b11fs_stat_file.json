@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_stat_file",
+ "code": "from pathlib import Path\nimport os\ns = Path('/data/a.txt').stat()\n(s.st_size, s.st_mode & 0o170000 == 0o100000, s.st_mode & 0o777)",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: stat_file",
+ "host_errors": "plain"
+}

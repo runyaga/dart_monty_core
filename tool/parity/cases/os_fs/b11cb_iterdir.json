@@ -1,0 +1,25 @@
+{
+ "id": "b11cb_iterdir",
+ "code": "from pathlib import Path\nimport os\n[str(p) for p in Path('/d').iterdir()]",
+ "os": {
+  "Path.iterdir": [
+   {
+    "return": {
+     "t": "list",
+     "items": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      },
+      {
+       "t": "path",
+       "v": "/d/b.txt"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "callback layer: iterdir request transcript",
+ "host_errors": "plain"
+}

@@ -1,0 +1,11 @@
+{
+ "id": "c02_process_time_zero",
+ "code": "n=0\nfor i in range(5000000):\n    n+=i\nimport time\n(time.process_time(), time.thread_time())",
+ "os_policy": {
+  "process_time": "zero"
+ },
+ "note": "zero",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

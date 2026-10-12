@@ -1,0 +1,5 @@
+{
+ "id": "b12_hash__dict_unhashable",
+ "code": "hash({})\n# Raise=TypeError(\"unhashable type: 'dict'\")\n",
+ "note": "upstream test_cases/hash__dict_unhashable.py (expects an exception)"
+}

@@ -1,0 +1,32 @@
+{
+ "probe": "k_os",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "os",
+   "name": "Path.read_text",
+   "args": [
+    {
+     "t": "path",
+     "v": "/x"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 25,
+    "end": 47
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "str",
+    "v": "hi"
+   }
+  }
+ ],
+ "runner_error": null
+}

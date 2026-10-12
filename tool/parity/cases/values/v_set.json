@@ -1,0 +1,5 @@
+{
+ "id": "v_set",
+ "code": "({1, 2}, frozenset({\"a\"}), set(), frozenset())",
+ "note": "OUT set_values: "
+}

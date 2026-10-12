@@ -1,0 +1,5 @@
+{
+ "id": "b12_decorator__class_traceback",
+ "code": "# A failing decorator in a stack must pin its own expression, not the whole\n# `class` statement — otherwise every decorator in a stack reports the same\n# location and there is no way to tell which one raised.\ndef bad(cls):\n    raise ValueError('boom')\n\n\ndef ok(cls):\n    return cls\n\n\n@ok\n@bad\n@ok\nclass C:\n    x = 1\n    y = 2\n\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"decorator__class_traceback.py\", line 13, in <module>\n    @bad\n     ~~~\n  File \"decorator__class_traceback.py\", line 5, in bad\n    raise ValueError('boom')\nValueError: boom\n\"\"\"\n",
+ "note": "upstream test_cases/decorator__class_traceback.py (expects an exception)"
+}

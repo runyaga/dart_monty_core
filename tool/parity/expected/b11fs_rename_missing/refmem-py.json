@@ -1,0 +1,36 @@
+{
+ "case": "b11fs_rename_missing",
+ "engine": "refmem",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0 OSAccess+MemoryFile",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "FileNotFoundError",
+    "message": "[Errno 2] No such file or directory: '/data/nope' -> '/data/z.txt'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 3,
+      "column": 1,
+      "end_line": 3,
+      "end_column": 41,
+      "function": "<module>",
+      "source_line": "Path('/data/nope').rename('/data/z.txt')"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {},
+ "notes": {
+  "fs": "OSAccess(files=[MemoryFile]) as os= handler"
+ },
+ "runner_error": null
+}

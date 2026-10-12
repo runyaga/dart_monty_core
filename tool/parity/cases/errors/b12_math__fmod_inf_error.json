@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__fmod_inf_error",
+ "code": "import math\n\nmath.fmod(math.inf, 3)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__fmod_inf_error.py\", line 3, in <module>\n    math.fmod(math.inf, 3)\n    ~~~~~~~~~~~~~~~~~~~~~~\nValueError: math domain error\n\"\"\"\n",
+ "note": "upstream test_cases/math__fmod_inf_error.py (expects an exception)"
+}

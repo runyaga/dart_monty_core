@@ -1,0 +1,34 @@
+{
+ "case": "x8mode_13",
+ "engine": "refmem",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0 OSAccess+MemoryFile",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "ValueError: exclusive creation mode is not supported"
+     },
+     {
+      "t": "str",
+      "v": "hello\nworld\n"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {},
+ "notes": {
+  "fs": "OSAccess(files=[MemoryFile]) as os= handler"
+ },
+ "runner_error": null
+}

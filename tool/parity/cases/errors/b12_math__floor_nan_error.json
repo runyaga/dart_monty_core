@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__floor_nan_error",
+ "code": "import math\n\nmath.floor(float('nan'))\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__floor_nan_error.py\", line 3, in <module>\n    math.floor(float('nan'))\n    ~~~~~~~~~~~~~~~~~~~~~~~~\nValueError: cannot convert float NaN to integer\n\"\"\"\n",
+ "note": "upstream test_cases/math__floor_nan_error.py (expects an exception)"
+}

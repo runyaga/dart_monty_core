@@ -1,0 +1,5 @@
+{
+ "id": "b12_slice__too_many_args",
+ "code": "slice(1, 2, 3, 4)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"slice__too_many_args.py\", line 1, in <module>\n    slice(1, 2, 3, 4)\n    ~~~~~~~~~~~~~~~~~\nTypeError: slice expected at most 3 arguments, got 4\n\"\"\"\n",
+ "note": "upstream test_cases/slice__too_many_args.py (expects an exception)"
+}

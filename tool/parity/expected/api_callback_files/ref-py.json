@@ -1,0 +1,45 @@
+{
+ "probe": "api_callback_files",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "host",
+   "op": "read",
+   "path": "/cb/f.txt"
+  },
+  {
+   "ev": "host",
+   "op": "write",
+   "path": "/cb/f.txt",
+   "type": "str",
+   "text": "new"
+  },
+  {
+   "ev": "host",
+   "op": "read",
+   "path": "/cb/f.txt"
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "initial"
+     },
+     {
+      "t": "str",
+      "v": "callback-saw:new"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ]
+   }
+  }
+ ],
+ "runner_error": null
+}

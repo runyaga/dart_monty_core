@@ -1,0 +1,27 @@
+{
+ "id": "x21_overlay_same_feed",
+ "code": "from pathlib import Path\nimport os\nPath('/data/a.txt').write_text('O')\n(Path('/data/a.txt').read_text(), sorted(str(p) for p in Path('/data').iterdir()))",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "overlay"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

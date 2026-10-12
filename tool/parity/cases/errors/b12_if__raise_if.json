@@ -1,0 +1,5 @@
+{
+ "id": "b12_if__raise_if",
+ "code": "if True:\n    raise ValueError('in if body')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"if__raise_if.py\", line 2, in <module>\n    raise ValueError('in if body')\nValueError: in if body\n\"\"\"\n",
+ "note": "upstream test_cases/if__raise_if.py (expects an exception)"
+}

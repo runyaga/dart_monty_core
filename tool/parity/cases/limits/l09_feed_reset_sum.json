@@ -1,0 +1,24 @@
+{
+ "id": "l09_feed_reset_sum",
+ "feeds": [
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn",
+  "n=0\nfor i in range(5000000):\n    n+=i\nn"
+ ],
+ "limits": {
+  "max_feed_duration_secs": 1.0
+ },
+ "note": "feed 1.0 s; 12 feeds of ~0.1 s (sum > budget, each 10x under)",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

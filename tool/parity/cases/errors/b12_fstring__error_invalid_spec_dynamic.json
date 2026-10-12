@@ -1,0 +1,5 @@
+{
+ "id": "b12_fstring__error_invalid_spec_dynamic",
+ "code": "# invalid format specifier with dynamic spec\nspec = 'xyz'\nf'{1:{spec}}'\n# Raise=ValueError(\"Invalid format specifier 'xyz' for object of type 'int'\")\n",
+ "note": "upstream test_cases/fstring__error_invalid_spec_dynamic.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_fstring__error_eq_align_on_str",
+ "code": "# '=' alignment on string raises ValueError\nf'{\"hello\":=10}'\n# Raise=ValueError(\"'=' alignment not allowed in string format specifier\")\n",
+ "note": "upstream test_cases/fstring__error_eq_align_on_str.py (expects an exception)"
+}

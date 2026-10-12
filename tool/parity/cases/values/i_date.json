@@ -1,0 +1,26 @@
+{
+ "id": "i_date",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "date",
+       "v": "2024-02-29"
+      },
+      {
+       "t": "datetime",
+       "v": "2024-01-02T03:04:05.000006",
+       "offset": null,
+       "tzname": null
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN calendar_values: "
+}

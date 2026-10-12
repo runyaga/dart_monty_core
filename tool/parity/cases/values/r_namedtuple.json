@@ -1,0 +1,15 @@
+{
+ "id": "r_namedtuple",
+ "feeds": [
+  "import sys\norig = sys.version_info\norig",
+  "x = echo()\n(repr(x), x == orig, x.major)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP named_tuple_values: "
+}

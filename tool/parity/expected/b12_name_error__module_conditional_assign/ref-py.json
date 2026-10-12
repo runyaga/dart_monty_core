@@ -1,0 +1,48 @@
+{
+ "case": "b12_name_error__module_conditional_assign",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "NameError",
+    "message": "name 'foo' is not defined",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 15,
+      "column": 7,
+      "end_line": 15,
+      "end_column": 10,
+      "function": "<module>",
+      "source_line": "print(foo)"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [
+    "foo"
+   ],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "NameError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

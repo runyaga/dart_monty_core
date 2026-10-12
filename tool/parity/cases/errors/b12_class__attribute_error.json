@@ -1,0 +1,5 @@
+{
+ "id": "b12_class__attribute_error",
+ "code": "# Accessing an attribute an instance does not have raises AttributeError, with a\n# traceback whose frames, line numbers and caret markers match CPython.\n\n\nclass Empty:\n    pass\n\n\ne = Empty()\ne.missing\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"class__attribute_error.py\", line 10, in <module>\n    e.missing\nAttributeError: 'Empty' object has no attribute 'missing'\n\"\"\"\n",
+ "note": "upstream test_cases/class__attribute_error.py (expects an exception)"
+}

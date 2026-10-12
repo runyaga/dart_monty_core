@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__map_not_iterable",
+ "code": "# map() with non-iterable second argument\nmap(abs, 42)\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"builtin__map_not_iterable.py\", line 2, in <module>\n    map(abs, 42)\n    ~~~~~~~~~~~~\nTypeError: 'int' object is not iterable\n\"\"\"\n",
+ "note": "upstream test_cases/builtin__map_not_iterable.py (expects an exception)"
+}

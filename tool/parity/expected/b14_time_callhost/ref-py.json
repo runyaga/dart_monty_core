@@ -1,0 +1,89 @@
+{
+ "case": "b14_time_callhost",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "float",
+      "v": "1700000000.5",
+      "bits": "41d954fc40200000"
+     },
+     {
+      "t": "float",
+      "v": "1700000000.5",
+      "bits": "41d954fc40200000"
+     },
+     {
+      "t": "float",
+      "v": "1700000000.5",
+      "bits": "41d954fc40200000"
+     },
+     {
+      "t": "int",
+      "v": "1700000000500000000"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "time.time",
+     "args": [
+      {
+       "t": "str",
+       "v": "time.time"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "time.time",
+     "args": [
+      {
+       "t": "str",
+       "v": "time.monotonic"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "time.time",
+     "args": [
+      {
+       "t": "str",
+       "v": "time.perf_counter"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "time.time",
+     "args": [
+      {
+       "t": "str",
+       "v": "time.time_ns"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

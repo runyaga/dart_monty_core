@@ -1,0 +1,5 @@
+{
+ "id": "b12_execute_raise__raise_list",
+ "code": "raise []\n# Raise=TypeError('exceptions must derive from BaseException')\n",
+ "note": "upstream test_cases/execute_raise__raise_list.py (expects an exception)"
+}

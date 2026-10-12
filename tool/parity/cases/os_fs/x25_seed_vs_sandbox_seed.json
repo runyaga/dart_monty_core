@@ -1,0 +1,13 @@
+{
+ "id": "x25_seed_vs_sandbox_seed",
+ "code": "import random\nrandom.seed(42)\n[random.random(), random.random()]",
+ "os_policy": {
+  "random_start": {
+   "seed": {
+    "t": "int",
+    "v": "42"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

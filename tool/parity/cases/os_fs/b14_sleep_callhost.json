@@ -1,0 +1,17 @@
+{
+ "id": "b14_sleep_callhost",
+ "code": "from pathlib import Path\nimport os\nimport time\ntime.sleep(0.01)",
+ "os": {
+  "time.sleep": [
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "sleep": "call_host"
+ },
+ "host_errors": "plain"
+}

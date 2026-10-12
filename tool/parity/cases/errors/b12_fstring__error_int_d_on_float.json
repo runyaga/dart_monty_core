@@ -1,0 +1,5 @@
+{
+ "id": "b12_fstring__error_int_d_on_float",
+ "code": "# integer format specifier ':d' on float raises ValueError\nf'{3.14:d}'\n# Raise=ValueError(\"Unknown format code 'd' for object of type 'float'\")\n",
+ "note": "upstream test_cases/fstring__error_int_d_on_float.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__popitem_empty",
+ "code": "{}.popitem()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"dict__popitem_empty.py\", line 1, in <module>\n    {}.popitem()\n    ~~~~~~~~~~~~\nKeyError: 'popitem(): dictionary is empty'\n\"\"\"\n",
+ "note": "upstream test_cases/dict__popitem_empty.py (expects an exception)"
+}

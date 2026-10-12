@@ -1,0 +1,5 @@
+{
+ "id": "b12_fstring__error_invalid_spec_str",
+ "code": "# xfail=cpython\n# invalid format specifier for string (detected at parse time)\nf'{\"hello\":abc}'\n# Raise=SyntaxError(\"Invalid format specifier 'abc'\")\n",
+ "note": "upstream test_cases/fstring__error_invalid_spec_str.py (expects an exception)"
+}

@@ -1,0 +1,62 @@
+{
+ "case": "b11fs_predicates",
+ "engine": "refmem",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0 OSAccess+MemoryFile",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "bool",
+      "v": true
+     },
+     {
+      "t": "bool",
+      "v": false
+     },
+     {
+      "t": "bool",
+      "v": true
+     },
+     {
+      "t": "bool",
+      "v": false
+     },
+     {
+      "t": "bool",
+      "v": true
+     },
+     {
+      "t": "bool",
+      "v": false
+     },
+     {
+      "t": "bool",
+      "v": false
+     },
+     {
+      "t": "bool",
+      "v": true
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {},
+ "notes": {
+  "fs": "OSAccess(files=[MemoryFile]) as os= handler"
+ },
+ "runner_error": null
+}

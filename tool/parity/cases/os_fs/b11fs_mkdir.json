@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_mkdir",
+ "code": "from pathlib import Path\nimport os\nPath('/data/n').mkdir()\n(Path('/data/n').is_dir(), sorted(str(p) for p in Path('/data').iterdir()))",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: mkdir",
+ "host_errors": "plain"
+}

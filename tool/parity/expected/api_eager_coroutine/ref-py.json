@@ -1,0 +1,16 @@
+{
+ "probe": "api_eager_coroutine",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "eager",
+   "sync_call": false
+  },
+  {
+   "ev": "eager",
+   "await_call": true
+  }
+ ],
+ "runner_error": null
+}

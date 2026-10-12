@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__list_append_too_many",
+ "code": "x = []\nx.append(1, 2)\n# Raise=TypeError('list.append() takes exactly one argument (2 given)')\n",
+ "note": "upstream test_cases/args__list_append_too_many.py (expects an exception)"
+}

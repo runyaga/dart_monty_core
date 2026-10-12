@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__recursion_error",
+ "code": "def recurse():\n    recurse()\n\n\nrecurse()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__recursion_error.py\", line 5, in <module>\n    recurse()\n    ~~~~~~~~~\n  File \"traceback__recursion_error.py\", line 2, in recurse\n    recurse()\n    ~~~~~~~~~\n  File \"traceback__recursion_error.py\", line 2, in recurse\n    recurse()\n    ~~~~~~~~~\n  File \"traceback__recursion_error.py\", line 2, in recurse\n    recurse()\n    ~~~~~~~~~\n  [Previous line repeated 47 more times]\nRecursionError: maximum recursion depth exceeded\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__recursion_error.py (expects an exception)"
+}

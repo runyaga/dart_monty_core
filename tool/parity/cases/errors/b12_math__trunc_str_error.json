@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__trunc_str_error",
+ "code": "import math\n\nmath.trunc('x')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__trunc_str_error.py\", line 3, in <module>\n    math.trunc('x')\n    ~~~~~~~~~~~~~~~\nTypeError: type str doesn't define __trunc__ method\n\"\"\"\n",
+ "note": "upstream test_cases/math__trunc_str_error.py (expects an exception)"
+}

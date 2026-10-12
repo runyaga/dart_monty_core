@@ -1,0 +1,5 @@
+{
+ "id": "b12_tuple__unpack_type_error",
+ "code": "(*42,)\n# Raise=TypeError('Value after * must be an iterable, not int')\n",
+ "note": "upstream test_cases/tuple__unpack_type_error.py (expects an exception)"
+}

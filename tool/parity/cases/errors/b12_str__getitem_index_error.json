@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__getitem_index_error",
+ "code": "s = 'hello'\ns[10]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__getitem_index_error.py\", line 2, in <module>\n    s[10]\n    ~~~~~\nIndexError: string index out of range\n\"\"\"\n",
+ "note": "upstream test_cases/str__getitem_index_error.py (expects an exception)"
+}

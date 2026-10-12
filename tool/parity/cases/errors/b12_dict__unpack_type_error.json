@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__unpack_type_error",
+ "code": "{**42}\n# Raise=TypeError(\"'int' object is not a mapping\")\n",
+ "note": "upstream test_cases/dict__unpack_type_error.py (expects an exception)"
+}

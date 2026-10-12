@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__filter_not_iterable",
+ "code": "# filter() with non-iterable second argument\nfilter(None, 42)\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"builtin__filter_not_iterable.py\", line 2, in <module>\n    filter(None, 42)\n    ~~~~~~~~~~~~~~~~\nTypeError: 'int' object is not iterable\n\"\"\"\n",
+ "note": "upstream test_cases/builtin__filter_not_iterable.py (expects an exception)"
+}

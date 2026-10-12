@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__print_invalid_kwarg",
+ "code": "print('xxx', **{\"foo'\": 123})\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"builtin__print_invalid_kwarg.py\", line 1, in <module>\n    print('xxx', **{\"foo'\": 123})\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nTypeError: print() got an unexpected keyword argument 'foo''\n\"\"\"\n",
+ "note": "upstream test_cases/builtin__print_invalid_kwarg.py (expects an exception)"
+}

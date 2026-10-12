@@ -1,0 +1,5 @@
+{
+ "id": "b12_bytes__startswith_str_error",
+ "code": "# Test that bytes.startswith with str raises TypeError\nb'hello'.startswith('h')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"bytes__startswith_str_error.py\", line 2, in <module>\n    b'hello'.startswith('h')\n    ~~~~~~~~~~~~~~~~~~~~~~~~\nTypeError: startswith first arg must be bytes or a tuple of bytes, not str\n\"\"\"\n",
+ "note": "upstream test_cases/bytes__startswith_str_error.py (expects an exception)"
+}

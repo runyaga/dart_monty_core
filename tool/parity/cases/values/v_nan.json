@@ -1,0 +1,5 @@
+{
+ "id": "v_nan",
+ "code": "float(\"nan\")",
+ "note": "OUT float_values: "
+}

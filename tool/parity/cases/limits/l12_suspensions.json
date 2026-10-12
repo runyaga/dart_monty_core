@@ -1,0 +1,1219 @@
+{
+ "id": "l12_suspensions",
+ "feeds": [
+  "n = 0\nfor i in range(100):\n    try:\n        fetch('x')\n    except Exception:\n        n += 1\nn",
+  "n",
+  "fetch('y')"
+ ],
+ "externals": {
+  "fetch": [
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   },
+   {
+    "raise": {
+     "type": "ValueError",
+     "message": "refused"
+    }
+   }
+  ]
+ },
+ "limits": {
+  "max_suspensions": 3
+ },
+ "note": "upstream test_suspension_limit (3)",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_resolve",
+ "code": "from pathlib import Path\nimport os\nPath('/d/./a.txt').resolve()",
+ "os": {
+  "Path.resolve": [
+   {
+    "return": {
+     "t": "path",
+     "v": "/d/a.txt"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: resolve request transcript",
+ "host_errors": "plain"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__dict_pop_no_args",
+ "code": "x = {}\nx.pop()\n# Raise=TypeError('pop expected at least 1 argument, got 0')\n",
+ "note": "upstream test_cases/args__dict_pop_no_args.py (expects an exception)"
+}

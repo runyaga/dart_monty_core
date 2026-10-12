@@ -1,0 +1,5 @@
+{
+ "id": "b12_class__name_error",
+ "code": "# Methods skip the class scope: a bare member name is NOT the class attribute,\n# so with no matching global it raises NameError. The traceback (frames, line\n# numbers, caret markers) matches CPython exactly.\n#\n# (CPython appends a \"Did you mean: 'self.timeout'?\" suggestion to the final\n# line, which Monty does not implement; the traceback harness strips that\n# CPython-only suffix — see scripts/run_traceback.py.)\n\n\nclass Settings:\n    timeout = 30\n\n    def describe(self):\n        return timeout  # not Settings.timeout; no global -> NameError\n\n\nSettings().describe()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"class__name_error.py\", line 17, in <module>\n    Settings().describe()\n    ~~~~~~~~~~~~~~~~~~~~~\n  File \"class__name_error.py\", line 14, in describe\n    return timeout  # not Settings.timeout; no global -> NameError\n           ~~~~~~~\nNameError: name 'timeout' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/class__name_error.py (expects an exception)"
+}

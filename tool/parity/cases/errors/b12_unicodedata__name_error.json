@@ -1,0 +1,5 @@
+{
+ "id": "b12_unicodedata__name_error",
+ "code": "import unicodedata\n\n# U+FFFF is a permanently-unassigned noncharacter, so it has no name and no\n# default is supplied.\nunicodedata.name('￿')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"unicodedata__name_error.py\", line 5, in <module>\n    unicodedata.name('￿')\n    ~~~~~~~~~~~~~~~~~~~~~\nValueError: no such name\n\"\"\"\n",
+ "note": "upstream test_cases/unicodedata__name_error.py (expects an exception)"
+}

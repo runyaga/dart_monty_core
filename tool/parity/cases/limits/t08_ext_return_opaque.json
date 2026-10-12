@@ -1,0 +1,17 @@
+{
+ "id": "t08_ext_return_opaque",
+ "code": "f()",
+ "externals": {
+  "f": [
+   {
+    "return": {
+     "t": "opaque"
+    }
+   }
+  ]
+ },
+ "note": "callback returns unconvertible value",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

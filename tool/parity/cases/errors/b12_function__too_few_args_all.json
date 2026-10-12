@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__too_few_args_all",
+ "code": "def f(a, b, c):\n    return a + b + c\n\n\nf()\n# Raise=TypeError(\"f() missing 3 required positional arguments: 'a', 'b', and 'c'\")\n",
+ "note": "upstream test_cases/function__too_few_args_all.py (expects an exception)"
+}

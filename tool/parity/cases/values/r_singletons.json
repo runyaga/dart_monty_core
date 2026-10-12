@@ -1,0 +1,15 @@
+{
+ "id": "r_singletons",
+ "feeds": [
+  "orig = (None, ..., NotImplemented)\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP singleton_values: "
+}

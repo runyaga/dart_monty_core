@@ -1,0 +1,5 @@
+{
+ "id": "b12_namedtuple__missing_attr",
+ "code": "# Test AttributeError message for missing attribute on named tuple\nimport sys\n\nsys.version_info.foobar\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"namedtuple__missing_attr.py\", line 4, in <module>\n    sys.version_info.foobar\nAttributeError: 'sys.version_info' object has no attribute 'foobar'\n\"\"\"\n",
+ "note": "upstream test_cases/namedtuple__missing_attr.py (expects an exception)"
+}

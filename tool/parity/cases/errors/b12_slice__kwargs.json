@@ -1,0 +1,5 @@
+{
+ "id": "b12_slice__kwargs",
+ "code": "slice(stop=5)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"slice__kwargs.py\", line 1, in <module>\n    slice(stop=5)\n    ~~~~~~~~~~~~~\nTypeError: slice() takes no keyword arguments\n\"\"\"\n",
+ "note": "upstream test_cases/slice__kwargs.py (expects an exception)"
+}

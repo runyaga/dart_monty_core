@@ -1,0 +1,16 @@
+{
+ "id": "x25_seed_int",
+ "feeds": [
+  "import random\n[random.random(), random.random(), random.randint(1, 1000)]",
+  "import random\n(random.random(), random.Random().random(), random.Random().random())"
+ ],
+ "os_policy": {
+  "random_start": {
+   "seed": {
+    "t": "int",
+    "v": "42"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

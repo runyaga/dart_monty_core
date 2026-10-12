@@ -1,0 +1,44 @@
+{
+ "probe": "abandon",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "f",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 6,
+    "end": 10
+   }
+  },
+  {
+   "ev": "refused",
+   "cls": "RuntimeError",
+   "msg": "monty worker protocol error: feed called while a suspension is awaiting an answer"
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "5"
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "2"
+   }
+  }
+ ],
+ "runner_error": null
+}

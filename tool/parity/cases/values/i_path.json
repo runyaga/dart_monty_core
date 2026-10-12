@@ -1,0 +1,15 @@
+{
+ "id": "i_path",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "path",
+     "v": "/a/b.txt"
+    }
+   }
+  ]
+ },
+ "note": "IN path_value_conversion: "
+}

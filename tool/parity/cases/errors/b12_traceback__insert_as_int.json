@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__insert_as_int",
+ "code": "a = []\na.insert({1: 2}, 2)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__insert_as_int.py\", line 2, in <module>\n    a.insert({1: 2}, 2)\n    ~~~~~~~~~~~~~~~~~~~\nTypeError: 'dict' object cannot be interpreted as an integer\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__insert_as_int.py (expects an exception)"
+}

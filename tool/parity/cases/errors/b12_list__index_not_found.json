@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__index_not_found",
+ "code": "[1, 2, 3].index(4)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__index_not_found.py\", line 1, in <module>\n    [1, 2, 3].index(4)\n    ~~~~~~~~~~~~~~~~~~\nValueError: list.index(x): x not in list\n\"\"\"\n",
+ "note": "upstream test_cases/list__index_not_found.py (expects an exception)"
+}

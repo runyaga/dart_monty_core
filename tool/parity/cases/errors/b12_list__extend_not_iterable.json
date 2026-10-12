@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__extend_not_iterable",
+ "code": "# Regression test: list.extend() with a non-iterable should still raise TypeError\n# with the correct message. This verifies that the list_extend opcode helper in\n# collections.rs (for [*expr] literals) and the list.extend() method in\n# types/list.rs are separate code paths that do not interfere with each other.\na = []\na.extend(1)\n# Raise=TypeError(\"'int' object is not iterable\")\n",
+ "note": "upstream test_cases/list__extend_not_iterable.py (expects an exception)"
+}

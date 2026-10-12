@@ -1,0 +1,5 @@
+{
+ "id": "b12_complex__error_zero_power",
+ "code": "def reciprocal(z):\n    return z**-1\n\n\nreciprocal(0j)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"complex__error_zero_power.py\", line 5, in <module>\n    reciprocal(0j)\n    ~~~~~~~~~~~~~~\n  File \"complex__error_zero_power.py\", line 2, in reciprocal\n    return z**-1\n           ~~~~~\nZeroDivisionError: zero to a negative or complex power\n\"\"\"\n",
+ "note": "upstream test_cases/complex__error_zero_power.py (expects an exception)"
+}

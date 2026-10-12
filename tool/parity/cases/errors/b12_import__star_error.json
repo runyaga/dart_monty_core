@@ -1,0 +1,5 @@
+{
+ "id": "b12_import__star_error",
+ "code": "# xfail=cpython\nfrom sys import *\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__star_error.py\", line 2, in <module>\n    from sys import *\n    ~~~~~~~~~~~~~~~~~\nNotImplementedError: Wildcard imports (`from ... import *`) are not supported\n\"\"\"\n",
+ "note": "upstream test_cases/import__star_error.py (expects an exception)"
+}

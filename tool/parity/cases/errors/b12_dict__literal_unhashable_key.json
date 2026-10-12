@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__literal_unhashable_key",
+ "code": "{'a': 1, []: 2}\n# Raise=TypeError(\"cannot use 'list' as a dict key (unhashable type: 'list')\")\n",
+ "note": "upstream test_cases/dict__literal_unhashable_key.py (expects an exception)"
+}

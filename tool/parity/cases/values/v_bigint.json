@@ -1,0 +1,5 @@
+{
+ "id": "v_bigint",
+ "code": "(2**64, -(2**100), 2**63)",
+ "note": "OUT big_integer_values: "
+}

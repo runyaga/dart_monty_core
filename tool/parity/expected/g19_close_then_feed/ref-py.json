@@ -1,0 +1,43 @@
+{
+ "case": "g19_close_then_feed",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "str",
+    "v": "hello\nworld\n"
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  },
+  {
+   "value": null,
+   "exception": {
+    "type": "ValueError",
+    "message": "mount '/data' is closed",
+    "traceback": []
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "thrown": "host"
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

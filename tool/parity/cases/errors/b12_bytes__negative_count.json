@@ -1,0 +1,5 @@
+{
+ "id": "b12_bytes__negative_count",
+ "code": "bytes(-1)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"bytes__negative_count.py\", line 1, in <module>\n    bytes(-1)\n    ~~~~~~~~~\nValueError: negative count\n\"\"\"\n",
+ "note": "upstream test_cases/bytes__negative_count.py (expects an exception)"
+}

@@ -1,0 +1,48 @@
+{
+ "probe": "api_recover_repl_after_error",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "error",
+   "code": "1 / 0",
+   "type": "ZeroDivisionError",
+   "message": "division by zero",
+   "after": {
+    "t": "int",
+    "v": "2"
+   }
+  },
+  {
+   "ev": "error",
+   "code": "def r():\n    return r()\nr()",
+   "type": "RecursionError",
+   "message": "maximum recursion depth exceeded",
+   "after": {
+    "t": "int",
+    "v": "2"
+   }
+  },
+  {
+   "ev": "error",
+   "code": "x = (",
+   "type": "SyntaxError",
+   "message": "unexpected EOF while parsing",
+   "after": {
+    "t": "int",
+    "v": "2"
+   }
+  },
+  {
+   "ev": "error",
+   "code": "undefined_name",
+   "type": "NameError",
+   "message": "name 'undefined_name' is not defined",
+   "after": {
+    "t": "int",
+    "v": "2"
+   }
+  }
+ ],
+ "runner_error": null
+}

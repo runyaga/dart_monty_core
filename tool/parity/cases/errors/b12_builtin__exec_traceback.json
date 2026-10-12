@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__exec_traceback",
+ "code": "exec('def f():\\n    raise ValueError(\"boom\")\\nf()')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"builtin__exec_traceback.py\", line 1, in <module>\n    exec('def f():\\n    raise ValueError(\"boom\")\\nf()')\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n  File \"<string>\", line 3, in <module>\n  File \"<string>\", line 2, in f\nValueError: boom\n\"\"\"\n",
+ "note": "upstream test_cases/builtin__exec_traceback.py (expects an exception)"
+}

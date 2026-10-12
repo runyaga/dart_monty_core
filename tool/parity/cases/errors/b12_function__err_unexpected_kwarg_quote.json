@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unexpected_kwarg_quote",
+ "code": "def f(a):\n    pass\n\n\nf(1, **{\"foo'\": 2})\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"function__err_unexpected_kwarg_quote.py\", line 5, in <module>\n    f(1, **{\"foo'\": 2})\n    ~~~~~~~~~~~~~~~~~~~\nTypeError: f() got an unexpected keyword argument 'foo''\n\"\"\"\n",
+ "note": "upstream test_cases/function__err_unexpected_kwarg_quote.py (expects an exception)"
+}

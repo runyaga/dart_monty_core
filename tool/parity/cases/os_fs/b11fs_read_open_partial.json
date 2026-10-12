@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_read_open_partial",
+ "code": "from pathlib import Path\nimport os\nf = open('/data/a.txt')\na = f.read(3)\nb = f.readline()\nc = f.read()\nf.close()\n(a, b, c)",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: read_open_partial",
+ "host_errors": "plain"
+}

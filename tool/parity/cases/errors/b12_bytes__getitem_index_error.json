@@ -1,0 +1,5 @@
+{
+ "id": "b12_bytes__getitem_index_error",
+ "code": "b = b'hello'\nb[10]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"bytes__getitem_index_error.py\", line 2, in <module>\n    b[10]\n    ~~~~~\nIndexError: index out of range\n\"\"\"\n",
+ "note": "upstream test_cases/bytes__getitem_index_error.py (expects an exception)"
+}

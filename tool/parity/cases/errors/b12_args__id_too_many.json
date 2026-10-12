@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__id_too_many",
+ "code": "id(1, 2)\n# Raise=TypeError('id() takes exactly one argument (2 given)')\n",
+ "note": "upstream test_cases/args__id_too_many.py (expects an exception)"
+}

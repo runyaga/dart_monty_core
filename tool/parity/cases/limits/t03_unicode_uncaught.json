@@ -1,0 +1,8 @@
+{
+ "id": "t03_unicode_uncaught",
+ "code": "b\"ab\\xff\".decode(\"utf-8\")",
+ "note": "UnicodeDecodeError payload",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

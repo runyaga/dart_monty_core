@@ -1,0 +1,26 @@
+{
+ "id": "i_timezone",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "timezone",
+       "offset": -10800,
+       "name": null
+      },
+      {
+       "t": "timezone",
+       "offset": 3600,
+       "name": "CET"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN time_duration_zone_values: "
+}

@@ -1,0 +1,32 @@
+{
+ "id": "x8handle_tell",
+ "code": "from pathlib import Path\nimport os\nf = open('/d/a.txt', 'r')\na = f.read(2)\nb = f.read(2)\n(a, b)",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.txt",
+     "mode": "r",
+     "position": "0"
+    }
+   }
+  ],
+  "Path.read_text": [
+   {
+    "return": {
+     "t": "str",
+     "v": "0123456789"
+    }
+   },
+   {
+    "return": {
+     "t": "str",
+     "v": "0123456789"
+    }
+   }
+  ]
+ },
+ "note": "successive sized reads: position carried in the handle",
+ "host_errors": "plain"
+}

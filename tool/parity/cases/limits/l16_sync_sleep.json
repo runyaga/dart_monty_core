@@ -1,0 +1,8 @@
+{
+ "id": "l16_sync_sleep",
+ "code": "import time\ntime.sleep(0.05)\n'slept'",
+ "note": "os_sync_sleep: default system sleep",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

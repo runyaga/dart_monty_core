@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__list_insert_too_many",
+ "code": "x = []\nx.insert(1, 2, 3)\n# Raise=TypeError('insert expected 2 arguments, got 3')\n",
+ "note": "upstream test_cases/args__list_insert_too_many.py (expects an exception)"
+}

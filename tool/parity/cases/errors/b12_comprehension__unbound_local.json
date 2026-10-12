@@ -1,0 +1,5 @@
+{
+ "id": "b12_comprehension__unbound_local",
+ "code": "# Test that comprehension scoping raises UnboundLocalError when a generator's iter\n# references a later generator's loop variable (which is local but not yet assigned)\n\nz = ['outer']\n\nresult = [x for x in [1] for y in z for z in [[2], [3]]]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"comprehension__unbound_local.py\", line 6, in <module>\n    result = [x for x in [1] for y in z for z in [[2], [3]]]\n                                      ~\nUnboundLocalError: cannot access local variable 'z' where it is not associated with a value\n\"\"\"\n",
+ "note": "upstream test_cases/comprehension__unbound_local.py (expects an exception)"
+}

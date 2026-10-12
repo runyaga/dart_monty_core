@@ -1,0 +1,18 @@
+{
+ "id": "b14_date_callhost_tz",
+ "code": "from pathlib import Path\nimport os\nfrom datetime import datetime, timezone\ndatetime.now(timezone.utc).isoformat()",
+ "os": {
+  "datetime.now": [
+   {
+    "return": {
+     "t": "datetime",
+     "v": "2024-02-29T12:34:56+00:00"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "datetime": "call_host"
+ },
+ "host_errors": "plain"
+}

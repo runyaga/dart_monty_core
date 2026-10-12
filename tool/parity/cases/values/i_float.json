@@ -1,0 +1,41 @@
+{
+ "id": "i_float",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "float",
+       "v": "1.5",
+       "bits": "3ff8000000000000"
+      },
+      {
+       "t": "float",
+       "v": "-0.0",
+       "bits": "8000000000000000"
+      },
+      {
+       "t": "float",
+       "v": "4.0",
+       "bits": "4010000000000000"
+      },
+      {
+       "t": "float",
+       "v": "inf",
+       "bits": "7ff0000000000000"
+      },
+      {
+       "t": "float",
+       "v": "5e-324",
+       "bits": "0000000000000001"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN float_values: "
+}

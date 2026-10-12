@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unexpected_kwarg_simple",
+ "code": "# Test: unexpected keyword argument on single-param function\ndef f(a):\n    return a\n\n\nf(1, b=2)\n# Raise=TypeError(\"f() got an unexpected keyword argument 'b'\")\n",
+ "note": "upstream test_cases/function__err_unexpected_kwarg_simple.py (expects an exception)"
+}

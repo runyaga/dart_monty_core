@@ -1,0 +1,5 @@
+{
+ "id": "b12_tuple__index_start_gt_end",
+ "code": "# Test that tuple.index with start > end doesn't panic but raises ValueError\n(1, 2, 3).index(1, 5, 2)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"tuple__index_start_gt_end.py\", line 2, in <module>\n    (1, 2, 3).index(1, 5, 2)\n    ~~~~~~~~~~~~~~~~~~~~~~~~\nValueError: tuple.index(x): x not in tuple\n\"\"\"\n",
+ "note": "upstream test_cases/tuple__index_start_gt_end.py (expects an exception)"
+}

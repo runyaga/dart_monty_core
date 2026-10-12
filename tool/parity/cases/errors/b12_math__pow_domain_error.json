@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__pow_domain_error",
+ "code": "import math\n\nmath.pow(-1, 0.5)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__pow_domain_error.py\", line 3, in <module>\n    math.pow(-1, 0.5)\n    ~~~~~~~~~~~~~~~~~\nValueError: math domain error\n\"\"\"\n",
+ "note": "upstream test_cases/math__pow_domain_error.py (expects an exception)"
+}

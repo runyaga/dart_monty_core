@@ -1,0 +1,143 @@
+{
+ "probe": "auto_interleave",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "h",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 5,
+    "end": 9
+   }
+  },
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "h",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 5,
+    "end": 9
+   }
+  },
+  {
+   "ev": "handler",
+   "who": "A",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ]
+  },
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "h",
+   "args": [
+    {
+     "t": "int",
+     "v": "2"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 11,
+    "end": 15
+   }
+  },
+  {
+   "ev": "refused",
+   "cls": "RuntimeError",
+   "msg": "snapshot has already been resumed"
+  },
+  {
+   "ev": "handler",
+   "who": "B",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ]
+  },
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "h",
+   "args": [
+    {
+     "t": "int",
+     "v": "2"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 11,
+    "end": 15
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "int",
+      "v": "10"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ]
+   }
+  },
+  {
+   "ev": "handler",
+   "who": "B",
+   "args": [
+    {
+     "t": "int",
+     "v": "2"
+    }
+   ]
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "int",
+      "v": "100"
+     },
+     {
+      "t": "int",
+      "v": "200"
+     }
+    ]
+   }
+  }
+ ],
+ "runner_error": null
+}

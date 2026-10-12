@@ -1,0 +1,29 @@
+{
+ "probe": "pos_utf8",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "add",
+   "args": [
+    {
+     "t": "str",
+     "v": "é"
+    },
+    {
+     "t": "int",
+     "v": "2"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 13,
+    "end": 22
+   }
+  }
+ ],
+ "runner_error": null
+}

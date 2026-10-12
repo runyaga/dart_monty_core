@@ -1,0 +1,5 @@
+{
+ "id": "v_timedelta",
+ "code": "import datetime\n(datetime.timedelta(days=-1, seconds=5, microseconds=7), datetime.timedelta(0))",
+ "note": "OUT time_duration_zone_values: "
+}

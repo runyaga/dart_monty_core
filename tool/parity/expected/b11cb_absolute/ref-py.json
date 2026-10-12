@@ -1,0 +1,39 @@
+{
+ "case": "b11cb_absolute",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "path",
+    "v": "/d/a.txt"
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "Path.absolute",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

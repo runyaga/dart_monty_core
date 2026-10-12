@@ -1,0 +1,5 @@
+{
+ "id": "v_alias_nested",
+ "code": "x = [1]\nd = {\"a\": x, \"b\": [x]}\n(d, d)",
+ "note": "OUT boundary_value_graph: "
+}

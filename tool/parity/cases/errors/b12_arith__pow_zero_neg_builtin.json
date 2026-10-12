@@ -1,0 +1,5 @@
+{
+ "id": "b12_arith__pow_zero_neg_builtin",
+ "code": "pow(0, -1)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"arith__pow_zero_neg_builtin.py\", line 1, in <module>\n    pow(0, -1)\n    ~~~~~~~~~~\nZeroDivisionError: zero to a negative power\n\"\"\"\n",
+ "note": "upstream test_cases/arith__pow_zero_neg_builtin.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_posonly_first_as_kwarg",
+ "code": "# Test: first positional-only parameter passed as keyword argument\ndef f(a, /, b):\n    return a + b\n\n\nf(a=1, b=2)\n# Raise=TypeError(\"f() got some positional-only arguments passed as keyword arguments: 'a'\")\n",
+ "note": "upstream test_cases/function__err_posonly_first_as_kwarg.py (expects an exception)"
+}

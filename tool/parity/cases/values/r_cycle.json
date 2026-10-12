@@ -1,0 +1,16 @@
+{
+ "id": "r_cycle",
+ "feeds": [
+  "orig = [1]\norig.append(orig)\norig",
+  "x = echo()\n(repr(x), type(x[1]).__name__)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "upstream_quirk": "the cycle placeholder re-enters as a str: x[1] is '[...]'",
+ "note": "ROUNDTRIP lossy_output_placeholders: "
+}

@@ -1,0 +1,5 @@
+{
+ "id": "v_datetime_utc",
+ "code": "import datetime\ndatetime.datetime(2024, 1, 2, tzinfo=datetime.timezone.utc)",
+ "note": "OUT calendar_values: "
+}

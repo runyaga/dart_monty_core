@@ -1,0 +1,5 @@
+{
+ "id": "b12_unpack__star_not_enough",
+ "code": "a, *b, c = [1]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"unpack__star_not_enough.py\", line 1, in <module>\n    a, *b, c = [1]\n    ~~~~~~~~\nValueError: not enough values to unpack (expected at least 2, got 1)\n\"\"\"\n",
+ "note": "upstream test_cases/unpack__star_not_enough.py (expects an exception)"
+}

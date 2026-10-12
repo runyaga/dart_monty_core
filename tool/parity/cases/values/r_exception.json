@@ -1,0 +1,15 @@
+{
+ "id": "r_exception",
+ "feeds": [
+  "orig = ValueError(\"bad\")\norig",
+  "x = echo()\n(repr(x), type(x).__name__, str(x))"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP exception_value_conversion: "
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_execute_raise__raise_instance_via_var",
+ "code": "# raise exception instance stored in a variable\na = ValueError('instance error')\nraise a\n# Raise=ValueError('instance error')\n",
+ "note": "upstream test_cases/execute_raise__raise_instance_via_var.py (expects an exception)"
+}

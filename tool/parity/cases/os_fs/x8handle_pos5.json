@@ -1,0 +1,34 @@
+{
+ "id": "x8handle_pos5",
+ "code": "from pathlib import Path\nimport os\nf = open('/d/a.txt', 'r')\nf.read()",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.txt",
+     "mode": "r",
+     "position": "5"
+    }
+   }
+  ],
+  "Path.read_text": [
+   {
+    "return": {
+     "t": "str",
+     "v": "0123456789"
+    }
+   }
+  ],
+  "Path.read_bytes": [
+   {
+    "return": {
+     "t": "bytes",
+     "hex": "00010203040506070809"
+    }
+   }
+  ]
+ },
+ "note": "host-returned handle position 5: value and follow-up transcript",
+ "host_errors": "plain"
+}

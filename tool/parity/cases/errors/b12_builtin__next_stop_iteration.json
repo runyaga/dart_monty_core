@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__next_stop_iteration",
+ "code": "it = iter([])\nnext(it)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"builtin__next_stop_iteration.py\", line 2, in <module>\n    next(it)\n    ~~~~~~~~\nStopIteration\n\"\"\"\n",
+ "note": "upstream test_cases/builtin__next_stop_iteration.py (expects an exception)"
+}

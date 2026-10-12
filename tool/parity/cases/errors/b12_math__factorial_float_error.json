@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__factorial_float_error",
+ "code": "import math\n\nmath.factorial(1.5)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__factorial_float_error.py\", line 3, in <module>\n    math.factorial(1.5)\n    ~~~~~~~~~~~~~~~~~~~\nTypeError: 'float' object cannot be interpreted as an integer\n\"\"\"\n",
+ "note": "upstream test_cases/math__factorial_float_error.py (expects an exception)"
+}

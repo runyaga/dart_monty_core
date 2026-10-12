@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__setitem_type_error",
+ "code": "lst = [1, 2, 3]\nlst['key'] = 'value'\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__setitem_type_error.py\", line 2, in <module>\n    lst['key'] = 'value'\n    ~~~~~~~~~~\nTypeError: list indices must be integers or slices, not str\n\"\"\"\n",
+ "note": "upstream test_cases/list__setitem_type_error.py (expects an exception)"
+}

@@ -1,0 +1,37 @@
+{
+ "id": "x21_matched_failure_no_fallthrough",
+ "code": "from pathlib import Path\nimport os\nPath('/data/nope.txt').read_text()",
+ "os": {
+  "Path.read_text": [
+   {
+    "return": {
+     "t": "str",
+     "v": "WRONG: fell through"
+    }
+   }
+  ]
+ },
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

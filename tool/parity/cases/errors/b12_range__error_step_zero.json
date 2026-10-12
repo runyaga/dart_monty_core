@@ -1,0 +1,5 @@
+{
+ "id": "b12_range__error_step_zero",
+ "code": "range(0, 10, 0)\n# Raise=ValueError('range() arg 3 must not be zero')\n",
+ "note": "upstream test_cases/range__error_step_zero.py (expects an exception)"
+}

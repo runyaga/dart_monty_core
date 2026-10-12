@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__too_many_args_zero",
+ "code": "def f():\n    return 1\n\n\nf(42)\n# Raise=TypeError('f() takes 0 positional arguments but 1 was given')\n",
+ "note": "upstream test_cases/function__too_many_args_zero.py (expects an exception)"
+}

@@ -1,0 +1,78 @@
+{
+ "case": "h_x13_convert_upper",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "SAMUEL"
+     },
+     {
+      "t": "int",
+      "v": "4"
+     },
+     {
+      "t": "str",
+      "v": "HI SAMUEL"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [
+    {
+     "op": "convert",
+     "name": "name"
+    },
+    {
+     "op": "convert",
+     "name": "age"
+    },
+    {
+     "op": "call",
+     "obj": {
+      "t": "hostobj",
+      "obj": "p1"
+     },
+     "name": "greeting"
+    },
+    {
+     "op": "method",
+     "obj": {
+      "t": "hostobj",
+      "obj": "p1"
+     },
+     "name": "greeting",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "op": "convert",
+     "name": "greeting"
+    }
+   ],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

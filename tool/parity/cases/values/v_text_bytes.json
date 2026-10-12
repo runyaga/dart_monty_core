@@ -1,0 +1,5 @@
+{
+ "id": "v_text_bytes",
+ "code": "(\"\", \"h\\u00e9llo\\n\\x00\", \"\\U0001F600\", b\"\\x00\\xff\", b\"\")",
+ "note": "OUT text_and_bytes: "
+}

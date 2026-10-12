@@ -1,0 +1,5 @@
+{
+ "id": "v_repr",
+ "code": "(range(3), slice(1, 2))",
+ "note": "OUT lossy_output_placeholders: "
+}

@@ -1,0 +1,15 @@
+{
+ "id": "b11cb_mkdir",
+ "code": "from pathlib import Path\nimport os\nPath('/d/n').mkdir(parents=True, exist_ok=True)",
+ "os": {
+  "Path.mkdir": [
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: mkdir request transcript",
+ "host_errors": "plain"
+}

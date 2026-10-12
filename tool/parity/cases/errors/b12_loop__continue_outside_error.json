@@ -1,0 +1,5 @@
+{
+ "id": "b12_loop__continue_outside_error",
+ "code": "continue\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"loop__continue_outside_error.py\", line 1\n    continue\n    ~~~~~~~~\nSyntaxError: 'continue' not properly in loop\n\"\"\"\n",
+ "note": "upstream test_cases/loop__continue_outside_error.py (expects an exception)"
+}

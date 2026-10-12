@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_duplicate_arg",
+ "code": "# Test: same argument passed both positionally and by keyword\ndef f(a, b, c):\n    return a + b + c\n\n\nf(1, 2, b=3)\n# Raise=TypeError(\"f() got multiple values for argument 'b'\")\n",
+ "note": "upstream test_cases/function__err_duplicate_arg.py (expects an exception)"
+}

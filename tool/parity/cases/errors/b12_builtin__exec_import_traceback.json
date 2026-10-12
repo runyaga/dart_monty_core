@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__exec_import_traceback",
+ "code": "def run():\n    exec('\\n\\nfrom . import missing', {'__name__': 'test'})\n\n\nrun()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"builtin__exec_import_traceback.py\", line 5, in <module>\n    run()\n    ~~~~~\n  File \"builtin__exec_import_traceback.py\", line 2, in run\n    exec('\\n\\nfrom . import missing', {'__name__': 'test'})\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n  File \"<string>\", line 3, in <module>\nImportError: attempted relative import with no known parent package\n\"\"\"\n",
+ "note": "upstream test_cases/builtin__exec_import_traceback.py (expects an exception)"
+}

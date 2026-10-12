@@ -1,0 +1,5 @@
+{
+ "id": "b12_slice__step_zero_str",
+ "code": "'hello'[::0]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"slice__step_zero_str.py\", line 1, in <module>\n    'hello'[::0]\n    ~~~~~~~~~~~~\nValueError: slice step cannot be zero\n\"\"\"\n",
+ "note": "upstream test_cases/slice__step_zero_str.py (expects an exception)"
+}

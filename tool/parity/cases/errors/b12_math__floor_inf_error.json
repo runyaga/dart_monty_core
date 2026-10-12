@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__floor_inf_error",
+ "code": "import math\n\nmath.floor(float('inf'))\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__floor_inf_error.py\", line 3, in <module>\n    math.floor(float('inf'))\n    ~~~~~~~~~~~~~~~~~~~~~~~~\nOverflowError: cannot convert float infinity to integer\n\"\"\"\n",
+ "note": "upstream test_cases/math__floor_inf_error.py (expects an exception)"
+}

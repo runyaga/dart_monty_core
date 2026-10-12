@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__get_unhashable_key",
+ "code": "d = {}\nd.get([], 'fallback')\n# Raise=TypeError(\"cannot use 'list' as a dict key (unhashable type: 'list')\")\n",
+ "note": "upstream test_cases/dict__get_unhashable_key.py (expects an exception)"
+}

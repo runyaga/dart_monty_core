@@ -1,0 +1,5 @@
+{
+ "id": "b12_fstring__error_int_d_on_str",
+ "code": "# integer format specifier ':d' on string raises ValueError\nf'{\"hello\":d}'\n# Raise=ValueError(\"Unknown format code 'd' for object of type 'str'\")\n",
+ "note": "upstream test_cases/fstring__error_int_d_on_str.py (expects an exception)"
+}

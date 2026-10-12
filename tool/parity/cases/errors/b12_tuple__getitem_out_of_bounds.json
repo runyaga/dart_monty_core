@@ -1,0 +1,5 @@
+{
+ "id": "b12_tuple__getitem_out_of_bounds",
+ "code": "a = (1, 2)\na[5]\n# Raise=IndexError('tuple index out of range')\n",
+ "note": "upstream test_cases/tuple__getitem_out_of_bounds.py (expects an exception)"
+}

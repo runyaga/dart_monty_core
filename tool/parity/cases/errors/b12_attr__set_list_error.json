@@ -1,0 +1,5 @@
+{
+ "id": "b12_attr__set_list_error",
+ "code": "x = [1, 2, 3]\nx.foo = 1\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"attr__set_list_error.py\", line 2, in <module>\n    x.foo = 1\n    ~~~~~\nAttributeError: 'list' object has no attribute 'foo' and no __dict__ for setting new attributes\n\"\"\"\n",
+ "note": "upstream test_cases/attr__set_list_error.py (expects an exception)"
+}

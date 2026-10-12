@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__len_no_args",
+ "code": "len()\n# Raise=TypeError('len() takes exactly one argument (0 given)')\n",
+ "note": "upstream test_cases/args__len_no_args.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_hash__list_unhashable",
+ "code": "hash([1, 2, 3])\n# Raise=TypeError(\"unhashable type: 'list'\")\n",
+ "note": "upstream test_cases/hash__list_unhashable.py (expects an exception)"
+}

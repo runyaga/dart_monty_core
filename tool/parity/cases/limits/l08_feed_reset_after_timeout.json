@@ -1,0 +1,17 @@
+{
+ "id": "l08_feed_reset_after_timeout",
+ "feeds": [
+  "1 + 1",
+  "1 + 1",
+  "1 + 1",
+  "while True:\n    pass",
+  "2 + 2"
+ ],
+ "limits": {
+  "max_feed_duration_secs": 0.1
+ },
+ "note": "upstream test_feed_duration_limit_restarts_each_feed",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__setitem_huge_int_index",
+ "code": "# Test using a huge LongInt as a list setitem index (should raise IndexError)\n# This covers the code path where a LongInt exceeds i64 range\nlst = [1, 2, 3]\nhuge = 2**100\nlst[huge] = 42\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__setitem_huge_int_index.py\", line 5, in <module>\n    lst[huge] = 42\n    ~~~~~~~~~\nIndexError: cannot fit 'int' into an index-sized integer\n\"\"\"\n",
+ "note": "upstream test_cases/list__setitem_huge_int_index.py (expects an exception)"
+}

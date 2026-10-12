@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__join_too_many_args",
+ "code": "','.join(['a'], ['b'])\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__join_too_many_args.py\", line 1, in <module>\n    ','.join(['a'], ['b'])\n    ~~~~~~~~~~~~~~~~~~~~~~\nTypeError: str.join() takes exactly one argument (2 given)\n\"\"\"\n",
+ "note": "upstream test_cases/str__join_too_many_args.py (expects an exception)"
+}

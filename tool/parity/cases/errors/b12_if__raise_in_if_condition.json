@@ -1,0 +1,5 @@
+{
+ "id": "b12_if__raise_in_if_condition",
+ "code": "def fail():\n    raise ValueError('condition failed')\n\n\nif fail():\n    x = 1\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"if__raise_in_if_condition.py\", line 5, in <module>\n    if fail():\n       ~~~~~~\n  File \"if__raise_in_if_condition.py\", line 2, in fail\n    raise ValueError('condition failed')\nValueError: condition failed\n\"\"\"\n",
+ "note": "upstream test_cases/if__raise_in_if_condition.py (expects an exception)"
+}

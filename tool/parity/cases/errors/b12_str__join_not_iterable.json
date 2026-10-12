@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__join_not_iterable",
+ "code": "','.join(123)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__join_not_iterable.py\", line 1, in <module>\n    ','.join(123)\n    ~~~~~~~~~~~~~\nTypeError: can only join an iterable\n\"\"\"\n",
+ "note": "upstream test_cases/str__join_not_iterable.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_name_error__undefined_call_in_expr",
+ "code": "x = 1 + missing_func()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"name_error__undefined_call_in_expr.py\", line 1, in <module>\n    x = 1 + missing_func()\n            ~~~~~~~~~~~~\nNameError: name 'missing_func' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/name_error__undefined_call_in_expr.py (expects an exception)"
+}

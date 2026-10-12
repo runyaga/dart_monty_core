@@ -1,0 +1,5 @@
+{
+ "id": "b12_longint__index_error",
+ "code": "big = 10**100\n[1, 2, 3][big]\n# Raise=IndexError(\"cannot fit 'int' into an index-sized integer\")\n",
+ "note": "upstream test_cases/longint__index_error.py (expects an exception)"
+}

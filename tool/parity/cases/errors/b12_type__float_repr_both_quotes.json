@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__float_repr_both_quotes",
+ "code": "float(\"it's \\\"nice\\\"\")\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__float_repr_both_quotes.py\", line 1, in <module>\n    float(\"it's \\\"nice\\\"\")\n    ~~~~~~~~~~~~~~~~~~~~~~\nValueError: could not convert string to float: 'it\\'s \"nice\"'\n\"\"\"\n",
+ "note": "upstream test_cases/type__float_repr_both_quotes.py (expects an exception)"
+}

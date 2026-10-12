@@ -1,0 +1,5 @@
+{
+ "id": "v_namedtuple",
+ "code": "import sys\nsys.version_info",
+ "note": "OUT named_tuple_values: "
+}

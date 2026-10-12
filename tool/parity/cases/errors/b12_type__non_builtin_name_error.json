@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__non_builtin_name_error",
+ "code": "print(TextIOWrapper)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__non_builtin_name_error.py\", line 1, in <module>\n    print(TextIOWrapper)\n          ~~~~~~~~~~~~~\nNameError: name 'TextIOWrapper' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/type__non_builtin_name_error.py (expects an exception)"
+}

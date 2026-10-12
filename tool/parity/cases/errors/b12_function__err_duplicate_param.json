@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_duplicate_param",
+ "code": "# Duplicate parameter names in a function definition are a SyntaxError.\n# Previously this panicked the VM at call time because `prepare.rs` sized\n# the frame's namespace from the unique name count (HashMap::len) but\n# resolved the duplicate to a NamespaceId from the positional index,\n# so `load_local` indexed past the allocated stack slots.\ndef f(x, x):\n    return x\n# Raise=SyntaxError(\"duplicate argument 'x' in function definition\")\n",
+ "note": "upstream test_cases/function__err_duplicate_param.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_loop__break_in_if_error",
+ "code": "x = True\nif x:\n    break\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"loop__break_in_if_error.py\", line 3\n    break\n    ~~~~~\nSyntaxError: 'break' outside loop\n\"\"\"\n",
+ "note": "upstream test_cases/loop__break_in_if_error.py (expects an exception)"
+}

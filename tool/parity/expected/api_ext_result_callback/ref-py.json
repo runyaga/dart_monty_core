@@ -1,0 +1,15 @@
+{
+ "probe": "api_ext_result_callback",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "complete",
+   "value": {
+    "t": "str",
+    "v": "caught ValueError: bad"
+   }
+  }
+ ],
+ "runner_error": null
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_class__init_raises",
+ "code": "# An exception raised inside __init__ propagates with a traceback that includes\n# the constructor-call frame and the __init__ frame, matching CPython exactly\n# (the half-built instance is cleaned up, verified under memory-model-checks).\n\n\nclass Account:\n    def __init__(self, balance):\n        if balance < 0:\n            raise ValueError('balance must be non-negative')\n        self.balance = balance\n\n\nAccount(-5)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"class__init_raises.py\", line 13, in <module>\n    Account(-5)\n    ~~~~~~~~~~~\n  File \"class__init_raises.py\", line 9, in __init__\n    raise ValueError('balance must be non-negative')\nValueError: balance must be non-negative\n\"\"\"\n",
+ "note": "upstream test_cases/class__init_raises.py (expects an exception)"
+}

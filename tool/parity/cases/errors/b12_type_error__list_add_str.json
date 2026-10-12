@@ -1,0 +1,5 @@
+{
+ "id": "b12_type_error__list_add_str",
+ "code": "[1] + 'x'\n# Raise=TypeError('can only concatenate list (not \"str\") to list')\n",
+ "note": "upstream test_cases/type_error__list_add_str.py (expects an exception)"
+}

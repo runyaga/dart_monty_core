@@ -1,0 +1,5 @@
+{
+ "id": "v_dict",
+ "code": "{1: \"a\", \"b\": [2], (1, 2): None, None: 1.5, 2.5: b\"x\"}",
+ "note": "OUT dictionary_values: "
+}

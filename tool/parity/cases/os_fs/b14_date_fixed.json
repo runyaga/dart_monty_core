@@ -1,0 +1,11 @@
+{
+ "id": "b14_date_fixed",
+ "code": "from pathlib import Path\nimport os\nimport time\nfrom datetime import date, datetime\n(datetime.now().isoformat(), date.today().isoformat(), time.time())",
+ "os": {},
+ "os_policy": {
+  "datetime": {
+   "fixed": "2020-01-02T03:04:05.000006"
+  }
+ },
+ "host_errors": "plain"
+}

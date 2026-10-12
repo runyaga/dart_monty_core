@@ -1,0 +1,64 @@
+{
+ "case": "i_bool_int",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "tuple"
+     },
+     {
+      "t": "str",
+      "v": "(True, -1, 9223372036854775807, -9223372036854775808)"
+     },
+     {
+      "t": "tuple",
+      "items": [
+       {
+        "t": "bool",
+        "v": true
+       },
+       {
+        "t": "int",
+        "v": "-1"
+       },
+       {
+        "t": "int",
+        "v": "9223372036854775807"
+       },
+       {
+        "t": "int",
+        "v": "-9223372036854775808"
+       }
+      ]
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

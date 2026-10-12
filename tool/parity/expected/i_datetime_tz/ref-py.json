@@ -1,0 +1,49 @@
+{
+ "case": "i_datetime_tz",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "datetime"
+     },
+     {
+      "t": "str",
+      "v": "datetime.datetime(2024, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone(datetime.timedelta(seconds=19800), 'IST'))"
+     },
+     {
+      "t": "datetime",
+      "v": "2024-01-02T03:04:05.000006",
+      "offset": 19800,
+      "tzname": "IST"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

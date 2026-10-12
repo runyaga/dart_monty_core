@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unpack_int",
+ "code": "def f(a, b):\n    return a + b\n\n\nf(1, **42)\n# Raise=TypeError('f() argument after ** must be a mapping, not int')\n",
+ "note": "upstream test_cases/function__err_unpack_int.py (expects an exception)"
+}

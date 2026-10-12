@@ -1,0 +1,5 @@
+{
+ "id": "b12_with__cm_context_expr_raises_traceback",
+ "code": "# Exception raised by the context expression itself (constructing the\n# manager), before `__enter__` is ever invoked: neither `__enter__` nor\n# `__exit__` runs and the `__init__` frame shows under the `with` line.\nclass CM:\n    def __init__(self):\n        raise TypeError('ctor boom')\n\n    def __enter__(self):\n        return self\n\n    def __exit__(self, typ, val, tb):\n        return None\n\n\nwith CM():\n    raise RuntimeError('body should not run')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"with__cm_context_expr_raises_traceback.py\", line 15, in <module>\n    with CM():\n         ~~~~\n  File \"with__cm_context_expr_raises_traceback.py\", line 6, in __init__\n    raise TypeError('ctor boom')\nTypeError: ctor boom\n\"\"\"\n",
+ "note": "upstream test_cases/with__cm_context_expr_raises_traceback.py (expects an exception)"
+}

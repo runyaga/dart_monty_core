@@ -1,0 +1,55 @@
+{
+ "case": "b12_decorator__function_traceback",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "RuntimeError",
+    "message": "decorator failed",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 12,
+      "column": 2,
+      "end_line": 12,
+      "end_column": 9,
+      "function": "<module>",
+      "source_line": "@explode"
+     },
+     {
+      "filename": "<python-input-0>",
+      "line": 8,
+      "column": 11,
+      "end_line": 8,
+      "end_column": 43,
+      "function": "explode",
+      "source_line": "    raise RuntimeError('decorator failed')"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "RuntimeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

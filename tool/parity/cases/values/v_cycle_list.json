@@ -1,0 +1,6 @@
+{
+ "id": "v_cycle_list",
+ "code": "a = [1]\na.append(a)\na",
+ "upstream_quirk": "upstream returns a cycle back-edge as the plain str '[...]' (decode.rs: output-only nodes become their text)",
+ "note": "OUT lossy_output_placeholders: "
+}

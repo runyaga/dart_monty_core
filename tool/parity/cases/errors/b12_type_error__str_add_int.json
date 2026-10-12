@@ -1,0 +1,5 @@
+{
+ "id": "b12_type_error__str_add_int",
+ "code": "'hello' + 1\n# Raise=TypeError('can only concatenate str (not \"int\") to str')\n",
+ "note": "upstream test_cases/type_error__str_add_int.py (expects an exception)"
+}

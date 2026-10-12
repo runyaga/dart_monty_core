@@ -1,0 +1,5 @@
+{
+ "id": "b12_class__init_return",
+ "code": "class Foo:\n    def __init__(self):\n        return 42\n\n\nFoo()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"class__init_return.py\", line 6, in <module>\n    Foo()\n    ~~~~~\nTypeError: __init__() should return None, not 'int'\n\"\"\"\n",
+ "note": "upstream test_cases/class__init_return.py (expects an exception)"
+}

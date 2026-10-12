@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__tuple_not_iterable",
+ "code": "tuple(123)\n# Raise=TypeError(\"'int' object is not iterable\")\n",
+ "note": "upstream test_cases/type__tuple_not_iterable.py (expects an exception)"
+}

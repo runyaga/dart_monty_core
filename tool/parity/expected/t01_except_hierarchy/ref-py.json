@@ -1,0 +1,59 @@
+{
+ "case": "t01_except_hierarchy",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "str",
+      "v": "KeyError"
+     },
+     {
+      "t": "str",
+      "v": "ZeroDivisionError"
+     },
+     {
+      "t": "str",
+      "v": "ValueError"
+     },
+     {
+      "t": "str",
+      "v": "UnicodeDecodeError"
+     },
+     {
+      "t": "str",
+      "v": "JSONDecodeError"
+     },
+     {
+      "t": "str",
+      "v": "IndexError"
+     },
+     {
+      "t": "str",
+      "v": "NameError"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [
+    "undefined_name"
+   ],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

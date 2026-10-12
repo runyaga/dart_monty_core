@@ -1,0 +1,26 @@
+{
+ "id": "b11cb_open_r",
+ "code": "from pathlib import Path\nimport os\nf = open('/d/a.txt')\nf.read()",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.txt",
+     "mode": "r",
+     "position": "0"
+    }
+   }
+  ],
+  "Path.read_text": [
+   {
+    "return": {
+     "t": "str",
+     "v": "hello world"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: open_r request transcript",
+ "host_errors": "plain"
+}

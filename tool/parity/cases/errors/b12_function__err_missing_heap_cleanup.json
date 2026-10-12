@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_missing_heap_cleanup",
+ "code": "# Test that heap values are properly cleaned up when missing required arg error occurs\ndef f(a, b, c):\n    return a\n\n\n# The list [1, 2, 3] should be cleaned up when the error occurs\n# because 'c' is missing\nf([1, 2, 3], [4, 5])\n# Raise=TypeError(\"f() missing 1 required positional argument: 'c'\")\n",
+ "note": "upstream test_cases/function__err_missing_heap_cleanup.py (expects an exception)"
+}

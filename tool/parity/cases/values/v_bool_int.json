@@ -1,0 +1,5 @@
+{
+ "id": "v_bool_int",
+ "code": "(True, False, 0, -1, 2**63 - 1, -2**63)",
+ "note": "OUT boolean_integer_values: "
+}

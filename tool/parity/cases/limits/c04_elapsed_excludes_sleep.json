@@ -1,0 +1,11 @@
+{
+ "id": "c04_elapsed_excludes_sleep",
+ "code": "import time\na = time.process_time()\ntime.sleep(0.5)\nb = time.process_time()\nb - a < 0.25",
+ "os_policy": {
+  "process_time": "elapsed"
+ },
+ "note": "elapsed excludes a 0.5 s system sleep",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

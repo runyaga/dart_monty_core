@@ -1,0 +1,5 @@
+{
+ "id": "b12_with__not_context_manager",
+ "code": "# `with` on a value without `__exit__` raises CPython's specific TypeError\n# (not a generic AttributeError), even though the bytecode check itself\n# fails on `__enter__` first. We surface CPython's text so user-facing\n# diagnostics match.\nwith 5:\n    assert False, 'body should never execute'\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"with__not_context_manager.py\", line 5, in <module>\n    with 5:\n         ~\nTypeError: 'int' object does not support the context manager protocol (missed __exit__ method)\n\"\"\"\n",
+ "note": "upstream test_cases/with__not_context_manager.py (expects an exception)"
+}

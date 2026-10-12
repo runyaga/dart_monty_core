@@ -1,0 +1,11 @@
+{
+ "id": "l05_mem_catch",
+ "code": "try:\n    s = 'x' * 50000000\nexcept MemoryError:\n    s = 'caught'\ns",
+ "limits": {
+  "max_memory": 1000000
+ },
+ "note": "MemoryError uncatchable upstream",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__repr_no_args",
+ "code": "repr()\n# Raise=TypeError('repr() takes exactly one argument (0 given)')\n",
+ "note": "upstream test_cases/args__repr_no_args.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_decorator__function_traceback",
+ "code": "# A raising decorator in a stack is pinned to its own `@` line, not to the whole\n# `def` statement, so the traceback identifies which decorator failed.\ndef ok(fn):\n    return fn\n\n\ndef explode(fn):\n    raise RuntimeError('decorator failed')\n\n\n@ok\n@explode\n@ok\ndef target():\n    pass\n\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"decorator__function_traceback.py\", line 12, in <module>\n    @explode\n     ~~~~~~~\n  File \"decorator__function_traceback.py\", line 8, in explode\n    raise RuntimeError('decorator failed')\nRuntimeError: decorator failed\n\"\"\"\n",
+ "note": "upstream test_cases/decorator__function_traceback.py (expects an exception)"
+}

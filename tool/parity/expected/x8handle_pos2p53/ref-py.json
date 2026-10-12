@@ -1,0 +1,53 @@
+{
+ "case": "x8handle_pos2p53",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "bytes",
+    "hex": ""
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "open",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      },
+      {
+       "t": "str",
+       "v": "rb"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "Path.read_bytes",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

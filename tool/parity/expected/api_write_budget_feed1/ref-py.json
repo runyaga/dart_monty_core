@@ -1,0 +1,24 @@
+{
+ "probe": "api_write_budget_feed1",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "complete",
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "str",
+      "v": "ok"
+     },
+     {
+      "t": "str",
+      "v": "OSError: disk write limit of 10 bytes exceeded"
+     }
+    ]
+   }
+  }
+ ],
+ "runner_error": null
+}

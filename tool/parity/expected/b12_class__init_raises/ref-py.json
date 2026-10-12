@@ -1,0 +1,55 @@
+{
+ "case": "b12_class__init_raises",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "ValueError",
+    "message": "balance must be non-negative",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 13,
+      "column": 1,
+      "end_line": 13,
+      "end_column": 12,
+      "function": "<module>",
+      "source_line": "Account(-5)"
+     },
+     {
+      "filename": "<python-input-0>",
+      "line": 9,
+      "column": 19,
+      "end_line": 9,
+      "end_column": 61,
+      "function": "__init__",
+      "source_line": "            raise ValueError('balance must be non-negative')"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "ValueError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

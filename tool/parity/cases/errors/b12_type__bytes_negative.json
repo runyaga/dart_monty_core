@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__bytes_negative",
+ "code": "bytes(-1)\n# Raise=ValueError('negative count')\n",
+ "note": "upstream test_cases/type__bytes_negative.py (expects an exception)"
+}

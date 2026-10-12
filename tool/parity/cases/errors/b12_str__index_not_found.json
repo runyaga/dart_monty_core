@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__index_not_found",
+ "code": "'hello'.index('x')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__index_not_found.py\", line 1, in <module>\n    'hello'.index('x')\n    ~~~~~~~~~~~~~~~~~~\nValueError: substring not found\n\"\"\"\n",
+ "note": "upstream test_cases/str__index_not_found.py (expects an exception)"
+}

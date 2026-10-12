@@ -1,0 +1,5 @@
+{
+ "id": "b12_type_error__unary_invert_str",
+ "code": "# bitwise NOT on string should raise TypeError\n~'hello'\n# Raise=TypeError(\"bad operand type for unary ~: 'str'\")\n",
+ "note": "upstream test_cases/type_error__unary_invert_str.py (expects an exception)"
+}

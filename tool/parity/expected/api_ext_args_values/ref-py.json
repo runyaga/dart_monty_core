@@ -1,0 +1,65 @@
+{
+ "probe": "api_ext_args_values",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "name": "f",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    },
+    {
+     "t": "str",
+     "v": "a"
+    },
+    {
+     "t": "list",
+     "items": [
+      {
+       "t": "int",
+       "v": "1"
+      }
+     ]
+    },
+    {
+     "t": "list",
+     "items": [
+      {
+       "t": "int",
+       "v": "1"
+      }
+     ]
+    }
+   ],
+   "kwargs": {
+    "k": {
+     "t": "int",
+     "v": "3"
+    },
+    "m": {
+     "t": "dict",
+     "items": [
+      [
+       {
+        "t": "str",
+        "v": "x"
+       },
+       {
+        "t": "float",
+        "v": "1.5",
+        "bits": "3ff8000000000000"
+       }
+      ]
+     ]
+    },
+    "n": {
+     "t": "none"
+    }
+   }
+  }
+ ],
+ "runner_error": null
+}

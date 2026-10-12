@@ -1,0 +1,46 @@
+{
+ "case": "b12_if__raise_else",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "ValueError",
+    "message": "in else body",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 6,
+      "column": 11,
+      "end_line": 6,
+      "end_column": 37,
+      "function": "<module>",
+      "source_line": "    raise ValueError('in else body')"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "ValueError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

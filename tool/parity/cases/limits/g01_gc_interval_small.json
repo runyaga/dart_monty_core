@@ -1,0 +1,12 @@
+{
+ "id": "g01_gc_interval_small",
+ "code": "for i in range(100000):\n    a = []\n    a.append(a)\n'ok'",
+ "limits": {
+  "gc_interval": 100,
+  "max_memory": 5000000
+ },
+ "note": "cyclic garbage, gc_interval 100, 5 MB cap",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

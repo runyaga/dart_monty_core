@@ -1,0 +1,15 @@
+{
+ "id": "r_bytes_tuple_set",
+ "feeds": [
+  "orig = (b\"\\x00\", (1,), {1}, frozenset({2}))\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP sequence_values: "
+}

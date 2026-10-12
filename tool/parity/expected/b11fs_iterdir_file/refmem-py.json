@@ -1,0 +1,36 @@
+{
+ "case": "b11fs_iterdir_file",
+ "engine": "refmem",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0 OSAccess+MemoryFile",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "NotADirectoryError",
+    "message": "[Errno 20] Not a directory: '/data/a.txt'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 3,
+      "column": 6,
+      "end_line": 3,
+      "end_column": 35,
+      "function": "<module>",
+      "source_line": "list(Path('/data/a.txt').iterdir())"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {},
+ "notes": {
+  "fs": "OSAccess(files=[MemoryFile]) as os= handler"
+ },
+ "runner_error": null
+}

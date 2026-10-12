@@ -1,0 +1,30 @@
+{
+ "id": "i_alias",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "list",
+       "id": 1,
+       "items": [
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ]
+      },
+      {
+       "t": "ref",
+       "id": 1
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN boundary_value_graph: "
+}

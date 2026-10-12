@@ -1,0 +1,5 @@
+{
+ "id": "b12_name_error__undefined_call_in_function",
+ "code": "def outer():\n    return missing_func()\n\n\nouter()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"name_error__undefined_call_in_function.py\", line 5, in <module>\n    outer()\n    ~~~~~~~\n  File \"name_error__undefined_call_in_function.py\", line 2, in outer\n    return missing_func()\n           ~~~~~~~~~~~~\nNameError: name 'missing_func' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/name_error__undefined_call_in_function.py (expects an exception)"
+}

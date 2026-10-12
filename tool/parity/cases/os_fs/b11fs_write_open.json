@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_write_open",
+ "code": "from pathlib import Path\nimport os\nwith open('/data/w.txt', 'w') as f:\n    n = f.write('abc')\n(n, Path('/data/w.txt').read_text())",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: write_open",
+ "host_errors": "plain"
+}

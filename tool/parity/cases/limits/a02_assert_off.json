@@ -1,0 +1,9 @@
+{
+ "id": "a02_assert_off",
+ "code": "x = 2\nassert x == 5",
+ "assert_message_annotations": false,
+ "note": "annotations off",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

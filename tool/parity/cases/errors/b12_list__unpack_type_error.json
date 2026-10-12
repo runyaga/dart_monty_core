@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__unpack_type_error",
+ "code": "[*42]\n# Raise=TypeError('Value after * must be an iterable, not int')\n",
+ "note": "upstream test_cases/list__unpack_type_error.py (expects an exception)"
+}

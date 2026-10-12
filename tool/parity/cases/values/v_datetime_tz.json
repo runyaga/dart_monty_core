@@ -1,0 +1,5 @@
+{
+ "id": "v_datetime_tz",
+ "code": "import datetime\ndatetime.datetime(2024, 1, 2, 3, 4, 5, 6, tzinfo=datetime.timezone(datetime.timedelta(hours=5, minutes=30), \"IST\"))",
+ "note": "OUT calendar_values: "
+}

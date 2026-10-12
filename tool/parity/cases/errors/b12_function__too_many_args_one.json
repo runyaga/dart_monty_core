@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__too_many_args_one",
+ "code": "def f(x):\n    return x\n\n\nf(1, 2)\n# Raise=TypeError('f() takes 1 positional argument but 2 were given')\n",
+ "note": "upstream test_cases/function__too_many_args_one.py (expects an exception)"
+}

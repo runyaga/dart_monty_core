@@ -1,0 +1,15 @@
+{
+ "id": "r_complex",
+ "feeds": [
+  "orig = complex(1, -2)\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP complex_values: "
+}

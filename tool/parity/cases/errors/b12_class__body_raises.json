@@ -1,0 +1,5 @@
+{
+ "id": "b12_class__body_raises",
+ "code": "def f():\n    class Inner:\n        y = 1 / 0\n\n\nclass Outer:\n    a = 1\n    b = 2\n    c = 3\n    d = f() + 0\n\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"class__body_raises.py\", line 6, in <module>\n    class Outer:\n    ...<3 lines>...\n        d = f() + 0\n  File \"class__body_raises.py\", line 10, in Outer\n    d = f() + 0\n        ~~~\n  File \"class__body_raises.py\", line 2, in f\n    class Inner:\n        y = 1 / 0\n  File \"class__body_raises.py\", line 3, in Inner\n    y = 1 / 0\n        ~~~~~\nZeroDivisionError: division by zero\n\"\"\"\n",
+ "note": "upstream test_cases/class__body_raises.py (expects an exception)"
+}

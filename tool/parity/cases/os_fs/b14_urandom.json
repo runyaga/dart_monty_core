@@ -1,0 +1,15 @@
+{
+ "id": "b14_urandom",
+ "code": "from pathlib import Path\nimport os\nimport os\nos.urandom(4)",
+ "os": {
+  "os.urandom": [
+   {
+    "return": {
+     "t": "bytes",
+     "hex": "deadbeef"
+    }
+   }
+  ]
+ },
+ "host_errors": "plain"
+}

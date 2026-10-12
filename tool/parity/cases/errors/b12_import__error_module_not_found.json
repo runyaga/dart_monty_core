@@ -1,0 +1,5 @@
+{
+ "id": "b12_import__error_module_not_found",
+ "code": "import nonexistent_module\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__error_module_not_found.py\", line 1, in <module>\n    import nonexistent_module\nModuleNotFoundError: No module named 'nonexistent_module'\n\"\"\"\n",
+ "note": "upstream test_cases/import__error_module_not_found.py (expects an exception)"
+}

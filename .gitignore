@@ -61,3 +61,11 @@ site/
 .claude/
 probe*.dart
 __pycache__/
+
+# Parity harness (tool/parity/run.py): baked cases, staged web assets, the
+# per-run core override, and the Rust oracle's build output.
+packages/monty_parity/test/cases.g.dart
+packages/monty_parity/test/dart_monty_core_*
+packages/monty_parity/test/@pydantic/
+packages/monty_parity/pubspec_overrides.yaml
+tool/parity/oracle/rust/target/

@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__subscript_missing_key",
+ "code": "d = {'a': 1}\nd['missing']\n# Raise=KeyError('missing')\n",
+ "note": "upstream test_cases/dict__subscript_missing_key.py (expects an exception)"
+}

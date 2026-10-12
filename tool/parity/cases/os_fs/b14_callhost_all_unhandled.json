@@ -1,0 +1,11 @@
+{
+ "id": "b14_callhost_all_unhandled",
+ "code": "from pathlib import Path\nimport os\nfrom datetime import datetime\ndatetime.now()",
+ "os": {},
+ "os_policy": {
+  "datetime": "call_host",
+  "sleep": "call_host",
+  "random_start": "call_host"
+ },
+ "host_errors": "plain"
+}

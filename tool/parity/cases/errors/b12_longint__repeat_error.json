@@ -1,0 +1,5 @@
+{
+ "id": "b12_longint__repeat_error",
+ "code": "big = 10**100\n'abc' * big\n# Raise=OverflowError(\"cannot fit 'int' into an index-sized integer\")\n",
+ "note": "upstream test_cases/longint__repeat_error.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_duplicate_first_arg",
+ "code": "# Test: first argument passed both positionally and by keyword\ndef f(a, b):\n    return a + b\n\n\nf(1, a=2)\n# Raise=TypeError(\"f() got multiple values for argument 'a'\")\n",
+ "note": "upstream test_cases/function__err_duplicate_first_arg.py (expects an exception)"
+}

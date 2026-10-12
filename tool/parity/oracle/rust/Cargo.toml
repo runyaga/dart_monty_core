@@ -1,0 +1,15 @@
+# Oracle for the three Rust-only capability rows no upstream binding exposes
+# (continuation detection, MontyRun::new, MontyRun::code): upstream monty
+# itself, at the commit tool/upstream/upstream-pin.json pins.
+[package]
+name = "parity-rust-oracle"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+monty = { git = "https://github.com/pydantic/monty", rev = "591527397445bf734873252d1ee20c1b6308fe7f" }
+monty-types = { git = "https://github.com/pydantic/monty", rev = "591527397445bf734873252d1ee20c1b6308fe7f" }
+serde_json = "1"
+
+[workspace]

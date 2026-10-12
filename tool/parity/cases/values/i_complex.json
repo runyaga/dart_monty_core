@@ -1,0 +1,24 @@
+{
+ "id": "i_complex",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "complex",
+     "re": {
+      "t": "float",
+      "v": "1.0",
+      "bits": "3ff0000000000000"
+     },
+     "im": {
+      "t": "float",
+      "v": "2.0",
+      "bits": "4000000000000000"
+     }
+    }
+   }
+  ]
+ },
+ "note": "IN complex_values: "
+}

@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_write_bytes",
+ "code": "from pathlib import Path\nimport os\nn = Path('/data/new.bin').write_bytes(b'\\x00\\x01\\x02')\n(n, Path('/data/new.bin').read_bytes())",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: write_bytes",
+ "host_errors": "plain"
+}

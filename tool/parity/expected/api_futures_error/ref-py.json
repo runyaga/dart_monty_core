@@ -1,0 +1,15 @@
+{
+ "probe": "api_futures_error",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "complete",
+   "value": {
+    "t": "str",
+    "v": "caught ValueError: boom"
+   }
+  }
+ ],
+ "runner_error": null
+}

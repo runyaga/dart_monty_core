@@ -1,0 +1,16 @@
+{
+ "probe": "api_reset_type_checker",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "checked",
+   "with_prior_definition": "ok"
+  },
+  {
+   "ev": "checked",
+   "fresh_unresolved": true
+  }
+ ],
+ "runner_error": null
+}

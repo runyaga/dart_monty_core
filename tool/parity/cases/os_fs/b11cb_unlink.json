@@ -1,0 +1,15 @@
+{
+ "id": "b11cb_unlink",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').unlink()",
+ "os": {
+  "Path.unlink": [
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: unlink request transcript",
+ "host_errors": "plain"
+}

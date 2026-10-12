@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__method_pop_missing_error",
+ "code": "d = {'a': 1}\nd.pop('missing')\n# Raise=KeyError('missing')\n",
+ "note": "upstream test_cases/dict__method_pop_missing_error.py (expects an exception)"
+}

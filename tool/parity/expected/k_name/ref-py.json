@@ -1,0 +1,25 @@
+{
+ "probe": "k_name",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "name",
+   "name": "missing",
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 12,
+    "end": 19
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "42"
+   }
+  }
+ ],
+ "runner_error": null
+}

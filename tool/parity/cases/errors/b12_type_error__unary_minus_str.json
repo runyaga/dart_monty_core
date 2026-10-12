@@ -1,0 +1,5 @@
+{
+ "id": "b12_type_error__unary_minus_str",
+ "code": "# unary minus on heap-allocated string should raise TypeError\n# str() creates a heap-allocated string, triggering ref count check\n-str(42)\n# Raise=TypeError(\"bad operand type for unary -: 'str'\")\n",
+ "note": "upstream test_cases/type_error__unary_minus_str.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_unpack__too_many",
+ "code": "a, b = (1, 2, 3, 4, 5)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"unpack__too_many.py\", line 1, in <module>\n    a, b = (1, 2, 3, 4, 5)\n    ~~~~\nValueError: too many values to unpack (expected 2, got 5)\n\"\"\"\n",
+ "note": "upstream test_cases/unpack__too_many.py (expects an exception)"
+}

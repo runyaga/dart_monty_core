@@ -1,0 +1,18 @@
+{
+ "id": "x8cbmode_06",
+ "code": "from pathlib import Path\nimport os\nopen('/d/a.txt', 'a')\n'done'",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.txt",
+     "mode": "r",
+     "position": "0"
+    }
+   }
+  ]
+ },
+ "note": "callback: open request transcript for mode 'a'",
+ "host_errors": "plain"
+}

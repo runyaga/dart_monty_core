@@ -1,0 +1,5 @@
+{
+ "id": "b12_bytes__index_start_gt_end",
+ "code": "# Test that bytes.index with start > end doesn't panic but raises ValueError\nb'hello'.index(b'e', 5, 2)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"bytes__index_start_gt_end.py\", line 2, in <module>\n    b'hello'.index(b'e', 5, 2)\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~\nValueError: subsection not found\n\"\"\"\n",
+ "note": "upstream test_cases/bytes__index_start_gt_end.py (expects an exception)"
+}

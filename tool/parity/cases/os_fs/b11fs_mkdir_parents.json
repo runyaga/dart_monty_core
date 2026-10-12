@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_mkdir_parents",
+ "code": "from pathlib import Path\nimport os\nPath('/data/p/q/r').mkdir(parents=True)\nPath('/data/p/q').is_dir()",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: mkdir_parents",
+ "host_errors": "plain"
+}

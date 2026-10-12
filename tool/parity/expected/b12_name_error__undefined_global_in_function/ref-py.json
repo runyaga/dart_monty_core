@@ -1,0 +1,57 @@
+{
+ "case": "b12_name_error__undefined_global_in_function",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "NameError",
+    "message": "name 'undefined_in_function' is not defined",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 12,
+      "column": 1,
+      "end_line": 12,
+      "end_column": 4,
+      "function": "<module>",
+      "source_line": "f()"
+     },
+     {
+      "filename": "<python-input-0>",
+      "line": 9,
+      "column": 12,
+      "end_line": 9,
+      "end_column": 33,
+      "function": "f",
+      "source_line": "    return undefined_in_function"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [
+    "undefined_in_function"
+   ],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "NameError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

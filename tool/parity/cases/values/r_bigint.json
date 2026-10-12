@@ -1,0 +1,15 @@
+{
+ "id": "r_bigint",
+ "feeds": [
+  "orig = 2**100\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP big_integer_values: "
+}

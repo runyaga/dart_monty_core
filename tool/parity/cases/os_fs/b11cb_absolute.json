@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_absolute",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').absolute()",
+ "os": {
+  "Path.absolute": [
+   {
+    "return": {
+     "t": "path",
+     "v": "/d/a.txt"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: absolute request transcript",
+ "host_errors": "plain"
+}

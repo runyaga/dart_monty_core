@@ -1,0 +1,44 @@
+{
+ "probe": "k_future",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "f",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 29,
+    "end": 33
+   }
+  },
+  {
+   "ev": "suspend",
+   "kind": "future",
+   "pending": [
+    0
+   ],
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 23,
+    "end": 33
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "10"
+   }
+  }
+ ],
+ "runner_error": null
+}

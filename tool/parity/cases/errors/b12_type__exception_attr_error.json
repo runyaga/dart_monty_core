@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__exception_attr_error",
+ "code": "# Regression test for: \"fmt() called on disabled variant\" panic\n# Type::Exception must be displayable in error messages.\ne = ValueError('test')\ne.nonexistent\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__exception_attr_error.py\", line 4, in <module>\n    e.nonexistent\nAttributeError: 'ValueError' object has no attribute 'nonexistent'\n\"\"\"\n",
+ "note": "upstream test_cases/type__exception_attr_error.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_import__runtime_error_when_executed",
+ "code": "# Verify that ModuleNotFoundError is raised when an unknown module import is actually executed\n# (not guarded by TYPE_CHECKING)\n\ncondition = True\nif condition:\n    import nonexistent_at_runtime\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"import__runtime_error_when_executed.py\", line 6, in <module>\n    import nonexistent_at_runtime\nModuleNotFoundError: No module named 'nonexistent_at_runtime'\n\"\"\"\n",
+ "note": "upstream test_cases/import__runtime_error_when_executed.py (expects an exception)"
+}

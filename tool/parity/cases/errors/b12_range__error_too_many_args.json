@@ -1,0 +1,5 @@
+{
+ "id": "b12_range__error_too_many_args",
+ "code": "range(1, 2, 3, 4)\n# Raise=TypeError('range expected at most 3 arguments, got 4')\n",
+ "note": "upstream test_cases/range__error_too_many_args.py (expects an exception)"
+}

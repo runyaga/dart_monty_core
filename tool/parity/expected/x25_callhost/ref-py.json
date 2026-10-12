@@ -1,0 +1,68 @@
+{
+ "case": "x25_callhost",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "float",
+      "v": "0.5147890652939239",
+      "bits": "3fe07926eaf8d373"
+     },
+     {
+      "t": "float",
+      "v": "0.5033126732112471",
+      "bits": "3fe01b232de35939"
+     },
+     {
+      "t": "int",
+      "v": "155"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "os.urandom",
+     "args": [
+      {
+       "t": "int",
+       "v": "2496"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  },
+  {
+   "value": {
+    "t": "float",
+    "v": "0.7121032328273343",
+    "bits": "3fe6c98cb80bd119"
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

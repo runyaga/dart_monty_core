@@ -1,0 +1,36 @@
+{
+ "id": "b14_time_callhost",
+ "code": "from pathlib import Path\nimport os\nimport time\n(time.time(), time.monotonic(), time.perf_counter(), time.time_ns())",
+ "os": {
+  "time.time": [
+   {
+    "return": {
+     "t": "float",
+     "v": "1700000000.5"
+    }
+   },
+   {
+    "return": {
+     "t": "float",
+     "v": "1700000000.5"
+    }
+   },
+   {
+    "return": {
+     "t": "float",
+     "v": "1700000000.5"
+    }
+   },
+   {
+    "return": {
+     "t": "float",
+     "v": "1700000000.5"
+    }
+   }
+  ]
+ },
+ "os_policy": {
+  "datetime": "call_host"
+ },
+ "host_errors": "plain"
+}

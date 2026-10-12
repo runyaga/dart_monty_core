@@ -1,0 +1,6 @@
+{
+ "id": "b14_sleep_negative",
+ "code": "from pathlib import Path\nimport os\nimport time\ntime.sleep(-1)",
+ "os": {},
+ "host_errors": "plain"
+}

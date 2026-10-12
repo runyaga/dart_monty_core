@@ -1,0 +1,28 @@
+{
+ "id": "x21_cwd_invalid",
+ "code": "from pathlib import Path\nimport os\nos.getcwd()",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "cwd": "relative/dir",
+ "host_errors": "plain"
+}

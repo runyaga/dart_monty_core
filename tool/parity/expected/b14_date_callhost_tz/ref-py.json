@@ -1,0 +1,40 @@
+{
+ "case": "b14_date_callhost_tz",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "str",
+    "v": "2024-02-29T12:34:56+00:00"
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "datetime.now",
+     "args": [
+      {
+       "t": "timezone",
+       "offset": 0,
+       "name": null
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

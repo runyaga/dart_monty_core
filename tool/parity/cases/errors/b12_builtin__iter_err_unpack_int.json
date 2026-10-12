@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__iter_err_unpack_int",
+ "code": "iterator = 0\n\niter(**42)\n# Raise=TypeError('iter() argument after ** must be a mapping, not int')\n",
+ "note": "upstream test_cases/builtin__iter_err_unpack_int.py (expects an exception)"
+}

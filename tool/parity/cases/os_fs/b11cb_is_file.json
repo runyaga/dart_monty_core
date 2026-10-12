@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_is_file",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').is_file()",
+ "os": {
+  "Path.is_file": [
+   {
+    "return": {
+     "t": "bool",
+     "v": true
+    }
+   }
+  ]
+ },
+ "note": "callback layer: is_file request transcript",
+ "host_errors": "plain"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_with__cm_enter_raises_traceback",
+ "code": "# `__enter__` raises before the body runs: the body never executes and\n# `__exit__` is never called. `__enter__` is a real frame on both sides,\n# so it appears in the traceback under the `with` line.\nclass CM:\n    def __enter__(self):\n        raise ValueError('fail-enter')\n\n    def __exit__(self, typ, val, tb):\n        return None\n\n\nwith CM():\n    raise RuntimeError('body should not run')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"with__cm_enter_raises_traceback.py\", line 12, in <module>\n    with CM():\n         ~~~~\n  File \"with__cm_enter_raises_traceback.py\", line 6, in __enter__\n    raise ValueError('fail-enter')\nValueError: fail-enter\n\"\"\"\n",
+ "note": "upstream test_cases/with__cm_enter_raises_traceback.py (expects an exception)"
+}

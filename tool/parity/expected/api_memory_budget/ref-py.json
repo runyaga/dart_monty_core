@@ -1,0 +1,40 @@
+{
+ "probe": "api_memory_budget",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "complete",
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "str",
+      "v": "ok"
+     },
+     {
+      "t": "str",
+      "v": "MemoryError: mount memory usage limit of 1 KB exceeded"
+     },
+     {
+      "t": "str",
+      "v": "MemoryError: mount memory usage limit of 1 KB exceeded"
+     },
+     {
+      "t": "str",
+      "v": "MemoryError: mount memory usage limit of 1 KB exceeded"
+     },
+     {
+      "t": "str",
+      "v": "unlinked"
+     },
+     {
+      "t": "str",
+      "v": "ok"
+     }
+    ]
+   }
+  }
+ ],
+ "runner_error": null
+}

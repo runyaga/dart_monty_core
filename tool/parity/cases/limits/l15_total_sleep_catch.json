@@ -1,0 +1,11 @@
+{
+ "id": "l15_total_sleep_catch",
+ "code": "import time\ntry:\n    time.sleep(0.5)\nexcept TimeoutError:\n    x = 'caught'\nx",
+ "limits": {
+  "max_total_sleep_secs": 0.05
+ },
+ "note": "sleep-limit TimeoutError uncatchable",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

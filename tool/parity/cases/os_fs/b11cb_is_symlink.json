@@ -1,0 +1,16 @@
+{
+ "id": "b11cb_is_symlink",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').is_symlink()",
+ "os": {
+  "Path.is_symlink": [
+   {
+    "return": {
+     "t": "bool",
+     "v": false
+    }
+   }
+  ]
+ },
+ "note": "callback layer: is_symlink request transcript",
+ "host_errors": "plain"
+}

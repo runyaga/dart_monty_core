@@ -1,0 +1,7 @@
+{
+ "id": "b11cb_read_unhandled",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').read_text()",
+ "os": {},
+ "note": "callback layer: read_unhandled request transcript",
+ "host_errors": "plain"
+}

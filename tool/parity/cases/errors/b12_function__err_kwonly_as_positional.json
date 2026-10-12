@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_kwonly_as_positional",
+ "code": "# Test: keyword-only argument passed positionally\ndef f(*, a, b):\n    return a + b\n\n\nf(1, 2)\n# Raise=TypeError('f() takes 0 positional arguments but 2 were given')\n",
+ "note": "upstream test_cases/function__err_kwonly_as_positional.py (expects an exception)"
+}

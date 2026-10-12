@@ -1,0 +1,5 @@
+{
+ "id": "b12_args__dict_keys_with_args",
+ "code": "x = {}\nx.keys(1)\n# Raise=TypeError('dict.keys() takes no arguments (1 given)')\n",
+ "note": "upstream test_cases/args__dict_keys_with_args.py (expects an exception)"
+}

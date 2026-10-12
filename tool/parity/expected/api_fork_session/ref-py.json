@@ -1,0 +1,34 @@
+{
+ "probe": "api_fork_session",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "fork",
+   "fork_a": {
+    "t": "list",
+    "items": [
+     {
+      "t": "int",
+      "v": "1"
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ]
+   },
+   "fork_b": {
+    "t": "list",
+    "items": [
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ]
+   },
+   "bytes_unchanged": true
+  }
+ ],
+ "runner_error": null
+}

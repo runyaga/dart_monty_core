@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__division_error",
+ "code": "def foo():\n    1 / 0\n\n\ndef bar():\n    foo()\n\n\ndef baz():\n    bar()\n\n\nbaz()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__division_error.py\", line 13, in <module>\n    baz()\n    ~~~~~\n  File \"traceback__division_error.py\", line 10, in baz\n    bar()\n    ~~~~~\n  File \"traceback__division_error.py\", line 6, in bar\n    foo()\n    ~~~~~\n  File \"traceback__division_error.py\", line 2, in foo\n    1 / 0\n    ~~~~~\nZeroDivisionError: division by zero\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__division_error.py (expects an exception)"
+}

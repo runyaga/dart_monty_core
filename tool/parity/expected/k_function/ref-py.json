@@ -1,0 +1,37 @@
+{
+ "probe": "k_function",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "f",
+   "args": [
+    {
+     "t": "int",
+     "v": "2"
+    }
+   ],
+   "kwargs": {
+    "k": {
+     "t": "str",
+     "v": "é"
+    }
+   },
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 10,
+    "end": 22
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "5"
+   }
+  }
+ ],
+ "runner_error": null
+}

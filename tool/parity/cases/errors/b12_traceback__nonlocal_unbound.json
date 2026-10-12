@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__nonlocal_unbound",
+ "code": "def outer():\n    def inner():\n        nonlocal x\n        return x\n\n    inner()\n    x = 1\n\n\nouter()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__nonlocal_unbound.py\", line 10, in <module>\n    outer()\n    ~~~~~~~\n  File \"traceback__nonlocal_unbound.py\", line 6, in outer\n    inner()\n    ~~~~~~~\n  File \"traceback__nonlocal_unbound.py\", line 4, in inner\n    return x\n           ~\nNameError: cannot access free variable 'x' where it is not associated with a value in enclosing scope\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__nonlocal_unbound.py (expects an exception)"
+}

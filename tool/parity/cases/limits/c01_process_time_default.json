@@ -1,0 +1,8 @@
+{
+ "id": "c01_process_time_default",
+ "code": "n=0\nfor i in range(5000000):\n    n+=i\nimport time\ntime.process_time()",
+ "note": "default zero",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

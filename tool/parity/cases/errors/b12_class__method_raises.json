@@ -1,0 +1,5 @@
+{
+ "id": "b12_class__method_raises",
+ "code": "class Account:\n    def __init__(self, balance: int) -> None:\n        self.balance = balance\n\n    def withdraw(self, amount: int) -> None:\n        if amount > self.balance:\n            raise ValueError('insufficient funds')\n        self.balance -= amount\n\n\na = Account(100)\na.withdraw(200)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"class__method_raises.py\", line 12, in <module>\n    a.withdraw(200)\n    ~~~~~~~~~~~~~~~\n  File \"class__method_raises.py\", line 7, in withdraw\n    raise ValueError('insufficient funds')\nValueError: insufficient funds\n\"\"\"\n",
+ "note": "upstream test_cases/class__method_raises.py (expects an exception)"
+}

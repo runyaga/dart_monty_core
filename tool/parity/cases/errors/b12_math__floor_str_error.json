@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__floor_str_error",
+ "code": "import math\n\nmath.floor('x')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__floor_str_error.py\", line 3, in <module>\n    math.floor('x')\n    ~~~~~~~~~~~~~~~\nTypeError: must be real number, not str\n\"\"\"\n",
+ "note": "upstream test_cases/math__floor_str_error.py (expects an exception)"
+}

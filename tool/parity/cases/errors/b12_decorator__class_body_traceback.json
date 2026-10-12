@@ -1,0 +1,5 @@
+{
+ "id": "b12_decorator__class_body_traceback",
+ "code": "# A traceback from a *decorated* class body locates the frame at the `class`\n# keyword, not the first decorator. Three things that could misdirect the search\n# for that keyword are present: a decorator argument holding the literal text\n# `class`, a comment mentioning `class` between the decorators and the header,\n# and irregular header spacing.\ndef tag(label):\n    def deco(cls):\n        return cls\n\n    return deco\n\n\n@tag('class Fake:')\n@tag('x')\n# class: a comment naming class, closer to the header than the keyword itself\nclass   C:\n    a = 1\n    b = 1 / 0\n\n\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"decorator__class_body_traceback.py\", line 16, in <module>\n    class   C:\n        a = 1\n        b = 1 / 0\n  File \"decorator__class_body_traceback.py\", line 18, in C\n    b = 1 / 0\n        ~~~~~\nZeroDivisionError: division by zero\n\"\"\"\n",
+ "note": "upstream test_cases/decorator__class_body_traceback.py (expects an exception)"
+}

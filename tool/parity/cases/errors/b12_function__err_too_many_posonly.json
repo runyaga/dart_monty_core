@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_too_many_posonly",
+ "code": "# Test: too many positional arguments with positional-only params\ndef f(a, b, /):\n    return a + b\n\n\nf(1, 2, 3)\n# Raise=TypeError('f() takes 2 positional arguments but 3 were given')\n",
+ "note": "upstream test_cases/function__err_too_many_posonly.py (expects an exception)"
+}

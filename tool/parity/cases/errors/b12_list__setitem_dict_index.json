@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__setitem_dict_index",
+ "code": "# Test using a dict as a list setitem index (should raise TypeError)\n# This covers the code path where a non-LongInt Ref type is used as an index\nlst = [1, 2, 3]\nd = {'key': 'value'}\nlst[d] = 42\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__setitem_dict_index.py\", line 5, in <module>\n    lst[d] = 42\n    ~~~~~~\nTypeError: list indices must be integers or slices, not dict\n\"\"\"\n",
+ "note": "upstream test_cases/list__setitem_dict_index.py (expects an exception)"
+}

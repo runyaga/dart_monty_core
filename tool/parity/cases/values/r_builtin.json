@@ -1,0 +1,15 @@
+{
+ "id": "r_builtin",
+ "feeds": [
+  "orig = len\norig",
+  "x = echo()\n(repr(x), x is len, x([1, 2]))"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP builtin_type_function_handles: "
+}

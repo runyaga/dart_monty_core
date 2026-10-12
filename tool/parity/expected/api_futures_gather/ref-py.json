@@ -1,0 +1,28 @@
+{
+ "probe": "api_futures_gather",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "pending",
+   "count": 2
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "int",
+      "v": "10"
+     },
+     {
+      "t": "int",
+      "v": "20"
+     }
+    ]
+   }
+  }
+ ],
+ "runner_error": null
+}

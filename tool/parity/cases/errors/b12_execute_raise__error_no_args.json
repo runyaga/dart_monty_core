@@ -1,0 +1,5 @@
+{
+ "id": "b12_execute_raise__error_no_args",
+ "code": "raise TypeError()\n# Raise=TypeError()\n",
+ "note": "upstream test_cases/execute_raise__error_no_args.py (expects an exception)"
+}

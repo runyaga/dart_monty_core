@@ -1,0 +1,5 @@
+{
+ "id": "b12_bytes__endswith_str_error",
+ "code": "# Test that bytes.endswith with str raises TypeError\nb'hello'.endswith('o')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"bytes__endswith_str_error.py\", line 2, in <module>\n    b'hello'.endswith('o')\n    ~~~~~~~~~~~~~~~~~~~~~~\nTypeError: endswith first arg must be bytes or a tuple of bytes, not str\n\"\"\"\n",
+ "note": "upstream test_cases/bytes__endswith_str_error.py (expects an exception)"
+}

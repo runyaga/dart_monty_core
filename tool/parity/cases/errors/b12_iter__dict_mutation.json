@@ -1,0 +1,5 @@
+{
+ "id": "b12_iter__dict_mutation",
+ "code": "d = {'a': 1, 'b': 2}\nfor k in d:\n    d['c'] = 3\n# Raise=RuntimeError('dictionary changed size during iteration')\n",
+ "note": "upstream test_cases/iter__dict_mutation.py (expects an exception)"
+}

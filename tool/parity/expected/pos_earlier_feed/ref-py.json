@@ -1,0 +1,25 @@
+{
+ "probe": "pos_earlier_feed",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "fetch",
+   "args": [
+    {
+     "t": "int",
+     "v": "3"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 26,
+    "end": 34
+   }
+  }
+ ],
+ "runner_error": null
+}

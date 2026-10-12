@@ -1,0 +1,7 @@
+{
+ "id": "b11cb_stat_unhandled",
+ "code": "from pathlib import Path\nimport os\nPath('/d/a.txt').stat().st_size",
+ "os": {},
+ "note": "callback layer: stat_unhandled request transcript",
+ "host_errors": "plain"
+}

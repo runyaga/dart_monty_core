@@ -1,0 +1,24 @@
+{
+ "id": "t02_host_raise_subclass",
+ "code": "out = []\ntry:\n    f()\nexcept LookupError as e:\n    out.append(type(e).__name__)\ntry:\n    f()\nexcept ValueError as e:\n    out.append(type(e).__name__)\nout",
+ "externals": {
+  "f": [
+   {
+    "raise": {
+     "type": "KeyError",
+     "message": "k"
+    }
+   },
+   {
+    "raise": {
+     "type": "json.JSONDecodeError",
+     "message": "bad"
+    }
+   }
+  ]
+ },
+ "note": "host raises KeyError / json.JSONDecodeError, caught by parent",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

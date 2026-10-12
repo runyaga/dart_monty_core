@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__join_no_args",
+ "code": "','.join()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__join_no_args.py\", line 1, in <module>\n    ','.join()\n    ~~~~~~~~~~\nTypeError: str.join() takes exactly one argument (0 given)\n\"\"\"\n",
+ "note": "upstream test_cases/str__join_no_args.py (expects an exception)"
+}

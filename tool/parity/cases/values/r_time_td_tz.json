@@ -1,0 +1,15 @@
+{
+ "id": "r_time_td_tz",
+ "feeds": [
+  "import datetime\norig = (datetime.time(1, 2, 3, 4), datetime.timedelta(days=-1, seconds=5), datetime.timezone(datetime.timedelta(hours=1), \"CET\"))\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP time_duration_zone_values: "
+}

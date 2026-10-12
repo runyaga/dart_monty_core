@@ -1,0 +1,5 @@
+{
+ "id": "b12_execute_raise__raise_type_direct",
+ "code": "# raise exception type directly\nraise ValueError\n# Raise=ValueError()\n",
+ "note": "upstream test_cases/execute_raise__raise_type_direct.py (expects an exception)"
+}

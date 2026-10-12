@@ -1,0 +1,64 @@
+{
+ "case": "v_float",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "float",
+      "v": "1.5",
+      "bits": "3ff8000000000000"
+     },
+     {
+      "t": "float",
+      "v": "-0.0",
+      "bits": "8000000000000000"
+     },
+     {
+      "t": "float",
+      "v": "4.0",
+      "bits": "4010000000000000"
+     },
+     {
+      "t": "float",
+      "v": "inf",
+      "bits": "7ff0000000000000"
+     },
+     {
+      "t": "float",
+      "v": "-inf",
+      "bits": "fff0000000000000"
+     },
+     {
+      "t": "float",
+      "v": "1e+300",
+      "bits": "7e37e43c8800759c"
+     },
+     {
+      "t": "float",
+      "v": "5e-324",
+      "bits": "0000000000000001"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

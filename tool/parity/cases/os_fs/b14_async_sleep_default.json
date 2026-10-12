@@ -1,0 +1,6 @@
+{
+ "id": "b14_async_sleep_default",
+ "code": "from pathlib import Path\nimport os\nimport asyncio\nawait asyncio.sleep(0.01, result='r')",
+ "os": {},
+ "host_errors": "plain"
+}

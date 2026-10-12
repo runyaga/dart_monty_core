@@ -1,0 +1,20 @@
+{
+ "probe": "pos_eval",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "fetch",
+   "args": [],
+   "kwargs": {},
+   "position": {
+    "filename": "<string>",
+    "start": 4,
+    "end": 11
+   }
+  }
+ ],
+ "runner_error": null
+}

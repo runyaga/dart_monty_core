@@ -1,0 +1,7 @@
+{
+ "id": "b14_getcwd_set",
+ "code": "from pathlib import Path\nimport os\nimport os\nos.getcwd()",
+ "os": {},
+ "cwd": "/tmp",
+ "host_errors": "plain"
+}

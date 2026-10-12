@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_duplicate_kwarg_cleanup",
+ "code": "# Test that heap values are properly cleaned up when duplicate kwarg error occurs\ndef f(a, b):\n    return a\n\n\n# The list [1, 2, 3] should be cleaned up when the error occurs\n# because 'a' is passed both positionally and by keyword\nf([1, 2, 3], a=[4, 5])\n# Raise=TypeError(\"f() got multiple values for argument 'a'\")\n",
+ "note": "upstream test_cases/function__err_duplicate_kwarg_cleanup.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__undefined_call",
+ "code": "def foo():\n    snap(1)\n\n\nfoo()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__undefined_call.py\", line 5, in <module>\n    foo()\n    ~~~~~\n  File \"traceback__undefined_call.py\", line 2, in foo\n    snap(1)\n    ~~~~\nNameError: name 'snap' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__undefined_call.py (expects an exception)"
+}

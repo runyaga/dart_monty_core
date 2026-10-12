@@ -1,0 +1,62 @@
+{
+ "case": "x8handle_tell",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "01"
+     },
+     {
+      "t": "str",
+      "v": "23"
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "open",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      },
+      {
+       "t": "str",
+       "v": "r"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "Path.read_text",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

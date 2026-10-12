@@ -1,0 +1,5 @@
+{
+ "id": "b12_dict__unhashable_dict_key",
+ "code": "{{'a': 1}: 'value'}\n# Raise=TypeError(\"cannot use 'dict' as a dict key (unhashable type: 'dict')\")\n",
+ "note": "upstream test_cases/dict__unhashable_dict_key.py (expects an exception)"
+}

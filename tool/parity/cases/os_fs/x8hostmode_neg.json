@@ -1,0 +1,26 @@
+{
+ "id": "x8hostmode_neg",
+ "code": "f = open('/d/a.txt', 'r')\nf.read()",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.txt",
+     "mode": "r",
+     "position": "-1"
+    }
+   }
+  ],
+  "Path.read_text": [
+   {
+    "return": {
+     "t": "str",
+     "v": "0123456789"
+    }
+   }
+  ]
+ },
+ "note": "host returns a handle with mode 'r' position -1",
+ "host_errors": "plain"
+}

@@ -1,0 +1,38 @@
+{
+ "id": "i_seq",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "list",
+       "items": [
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ]
+      },
+      {
+       "t": "tuple",
+       "items": [
+        {
+         "t": "int",
+         "v": "1"
+        },
+        {
+         "t": "tuple",
+         "items": []
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN sequence_values: "
+}

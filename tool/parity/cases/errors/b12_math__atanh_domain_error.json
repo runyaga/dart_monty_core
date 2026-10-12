@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__atanh_domain_error",
+ "code": "import math\n\nmath.atanh(1)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__atanh_domain_error.py\", line 3, in <module>\n    math.atanh(1)\n    ~~~~~~~~~~~~~\nValueError: expected a number between -1 and 1, got 1.0\n\"\"\"\n",
+ "note": "upstream test_cases/math__atanh_domain_error.py (expects an exception)"
+}

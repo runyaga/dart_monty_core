@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__cosh_overflow_error",
+ "code": "import math\n\nmath.cosh(1000)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__cosh_overflow_error.py\", line 3, in <module>\n    math.cosh(1000)\n    ~~~~~~~~~~~~~~~\nOverflowError: math range error\n\"\"\"\n",
+ "note": "upstream test_cases/math__cosh_overflow_error.py (expects an exception)"
+}

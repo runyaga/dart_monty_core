@@ -1,0 +1,42 @@
+{
+ "case": "t08_ext_return_opaque",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "TypeError",
+    "message": "Cannot convert builtins.object to Monty value — wrap class instances in pydantic_monty.ClassInstance(...)",
+    "traceback": []
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "f",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "TypeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

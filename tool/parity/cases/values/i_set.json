@@ -1,0 +1,38 @@
+{
+ "id": "i_set",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "set",
+       "items": [
+        {
+         "t": "int",
+         "v": "1"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ]
+      },
+      {
+       "t": "frozenset",
+       "items": [
+        {
+         "t": "str",
+         "v": "a"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN set_values: "
+}

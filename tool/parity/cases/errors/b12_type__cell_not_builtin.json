@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__cell_not_builtin",
+ "code": "print(cell)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__cell_not_builtin.py\", line 1, in <module>\n    print(cell)\n          ~~~~\nNameError: name 'cell' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/type__cell_not_builtin.py (expects an exception)"
+}

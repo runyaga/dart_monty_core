@@ -1,0 +1,28 @@
+{
+ "id": "i_bigint",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "int",
+       "v": "18446744073709551616"
+      },
+      {
+       "t": "int",
+       "v": "-1267650600228229401496703205376"
+      },
+      {
+       "t": "int",
+       "v": "9223372036854775808"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN big_integer_values: "
+}

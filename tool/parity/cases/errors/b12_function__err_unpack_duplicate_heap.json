@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unpack_duplicate_heap",
+ "code": "# Test that heap values are cleaned up when duplicate kwargs error occurs\ndef f(a, b):\n    return a\n\n\n# The list value in the dict should be cleaned up when the error occurs\nf(a=[1, 2, 3], **{'a': [4, 5, 6]})\n# Raise=TypeError(\"f() got multiple values for keyword argument 'a'\")\n",
+ "note": "upstream test_cases/function__err_unpack_duplicate_heap.py (expects an exception)"
+}

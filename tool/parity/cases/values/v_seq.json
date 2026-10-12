@@ -1,0 +1,5 @@
+{
+ "id": "v_seq",
+ "code": "([1, [2]], (1, (2,)), (), [])",
+ "note": "OUT sequence_values: "
+}

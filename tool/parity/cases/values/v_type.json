@@ -1,0 +1,5 @@
+{
+ "id": "v_type",
+ "code": "import datetime\n(int, str, ValueError, datetime.date, type(None))",
+ "note": "OUT builtin_type_function_handles: "
+}

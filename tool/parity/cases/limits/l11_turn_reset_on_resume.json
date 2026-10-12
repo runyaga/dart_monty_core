@@ -1,0 +1,65 @@
+{
+ "id": "l11_turn_reset_on_resume",
+ "code": "t = 0\nfor j in range(10):\n    n=0\n    for i in range(5000000):\n        n+=i\n    tick()\n    t += 1\nt",
+ "externals": {
+  "tick": [
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   },
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "limits": {
+  "max_turn_duration_secs": 0.5
+ },
+ "note": "turn 0.5 s; 10 x (0.1 s work + host call) = 1 s total",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

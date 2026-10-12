@@ -1,0 +1,44 @@
+{
+ "probe": "async_gather",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "handler",
+   "who": "af",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ]
+  },
+  {
+   "ev": "handler",
+   "who": "af",
+   "args": [
+    {
+     "t": "int",
+     "v": "2"
+    }
+   ]
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "list",
+    "items": [
+     {
+      "t": "int",
+      "v": "10"
+     },
+     {
+      "t": "int",
+      "v": "20"
+     }
+    ]
+   }
+  }
+ ],
+ "runner_error": null
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_slice__no_args",
+ "code": "slice()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"slice__no_args.py\", line 1, in <module>\n    slice()\n    ~~~~~~~\nTypeError: slice expected at least 1 argument, got 0\n\"\"\"\n",
+ "note": "upstream test_cases/slice__no_args.py (expects an exception)"
+}

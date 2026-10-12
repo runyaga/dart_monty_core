@@ -1,0 +1,6 @@
+{
+ "id": "b14_urandom_unhandled",
+ "code": "from pathlib import Path\nimport os\nimport os\nos.urandom(4)",
+ "os": {},
+ "host_errors": "plain"
+}

@@ -1,0 +1,15 @@
+{
+ "id": "r_float",
+ "feeds": [
+  "orig = (-0.0, 4.0, float(\"inf\"))\norig",
+  "x = echo()\n(repr(x), x == orig)"
+ ],
+ "externals": {
+  "echo": [
+   {
+    "echo": 0
+   }
+  ]
+ },
+ "note": "ROUNDTRIP float_values: "
+}

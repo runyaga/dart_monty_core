@@ -1,0 +1,51 @@
+{
+ "probe": "abortctl_future",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "f",
+   "args": [
+    {
+     "t": "int",
+     "v": "1"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-1>",
+    "start": 45,
+    "end": 49
+   }
+  },
+  {
+   "ev": "suspend",
+   "kind": "future",
+   "pending": [
+    0
+   ],
+   "position": {
+    "filename": "<python-input-1>",
+    "start": 39,
+    "end": 49
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "str",
+    "v": "caught"
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "int",
+    "v": "1"
+   }
+  }
+ ],
+ "runner_error": null
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__range_as_int",
+ "code": "range([1])\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__range_as_int.py\", line 1, in <module>\n    range([1])\n    ~~~~~~~~~~\nTypeError: 'list' object cannot be interpreted as an integer\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__range_as_int.py (expects an exception)"
+}

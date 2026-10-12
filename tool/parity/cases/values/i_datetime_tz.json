@@ -1,0 +1,17 @@
+{
+ "id": "i_datetime_tz",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "datetime",
+     "v": "2024-01-02T03:04:05.000006",
+     "offset": 19800,
+     "tzname": "IST"
+    }
+   }
+  ]
+ },
+ "note": "IN calendar_values: "
+}

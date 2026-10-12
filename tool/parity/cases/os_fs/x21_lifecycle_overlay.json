@@ -1,0 +1,31 @@
+{
+ "id": "x21_lifecycle_overlay",
+ "feeds": [
+  "from pathlib import Path\nimport os\nPath('/data/new.txt').write_text('x')\nPath('/data/new.txt').read_text()",
+  "from pathlib import Path\nimport os\n(Path('/data/new.txt').exists(), Path('/data/a.txt').read_text())"
+ ],
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "overlay"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "note": "overlay: does a write in feed 1 survive into feed 2 (same mount object)",
+ "host_errors": "plain"
+}

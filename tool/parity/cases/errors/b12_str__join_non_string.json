@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__join_non_string",
+ "code": "','.join([1, 2])\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__join_non_string.py\", line 1, in <module>\n    ','.join([1, 2])\n    ~~~~~~~~~~~~~~~~\nTypeError: sequence item 0: expected str instance, int found\n\"\"\"\n",
+ "note": "upstream test_cases/str__join_non_string.py (expects an exception)"
+}

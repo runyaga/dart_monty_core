@@ -1,0 +1,24 @@
+{
+ "id": "i_type",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "type",
+       "name": "int"
+      },
+      {
+       "t": "type",
+       "name": "ValueError"
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN builtin_type_function_handles: "
+}

@@ -1,0 +1,58 @@
+{
+ "case": "b11cb_stat_unhandled",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "PermissionError",
+    "message": "Permission denied: '/d/a.txt'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 3,
+      "column": 1,
+      "end_line": 3,
+      "end_column": 24,
+      "function": "<module>",
+      "source_line": "Path('/d/a.txt').stat().st_size"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [
+    {
+     "name": "Path.stat",
+     "args": [
+      {
+       "t": "path",
+       "v": "/d/a.txt"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "PermissionError",
+    "OSError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

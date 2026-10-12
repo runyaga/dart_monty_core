@@ -1,0 +1,30 @@
+{
+ "id": "i_alias_is",
+ "code": "x = get()\nx[0].append(2)\n(x[0] is x[1], x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "list",
+       "id": 1,
+       "items": [
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ]
+      },
+      {
+       "t": "ref",
+       "id": 1
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "note": "IN boundary_value_graph: shared sub-list identity inside the sandbox"
+}

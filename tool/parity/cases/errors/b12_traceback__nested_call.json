@@ -1,0 +1,5 @@
+{
+ "id": "b12_traceback__nested_call",
+ "code": "def foo():\n    raise ValueError('xxx')\n\n\ndef bar():\n    foo()\n\n\ndef baz():\n    bar()\n\n\nbaz()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"traceback__nested_call.py\", line 13, in <module>\n    baz()\n    ~~~~~\n  File \"traceback__nested_call.py\", line 10, in baz\n    bar()\n    ~~~~~\n  File \"traceback__nested_call.py\", line 6, in bar\n    foo()\n    ~~~~~\n  File \"traceback__nested_call.py\", line 2, in foo\n    raise ValueError('xxx')\nValueError: xxx\n\"\"\"\n",
+ "note": "upstream test_cases/traceback__nested_call.py (expects an exception)"
+}

@@ -1,0 +1,29 @@
+{
+ "id": "b11fs_predicates",
+ "code": "from pathlib import Path\nimport os\n(Path('/data/a.txt').exists(), Path('/data/nope').exists(), Path('/data/a.txt').is_file(), Path('/data/sub').is_file(), Path('/data/sub').is_dir(), Path('/data/a.txt').is_dir(), Path('/data/a.txt').is_symlink(), Path('/data').exists(), Path('/data').is_dir())",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "read-write"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "refmem": true,
+ "note": "fs op on read-write mount: predicates",
+ "host_errors": "plain"
+}

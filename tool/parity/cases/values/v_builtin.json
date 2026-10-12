@@ -1,0 +1,5 @@
+{
+ "id": "v_builtin",
+ "code": "(len, print)",
+ "note": "OUT builtin_type_function_handles: "
+}

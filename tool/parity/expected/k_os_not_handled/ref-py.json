@@ -1,0 +1,34 @@
+{
+ "probe": "k_os_not_handled",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "os",
+   "name": "Path.read_text",
+   "args": [
+    {
+     "t": "path",
+     "v": "/x"
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 25,
+    "end": 47
+   }
+  },
+  {
+   "ev": "error",
+   "type": "PermissionError",
+   "message": "Permission denied: '/x'",
+   "tb_last": {
+    "line": 2,
+    "function": "<module>"
+   }
+  }
+ ],
+ "runner_error": null
+}

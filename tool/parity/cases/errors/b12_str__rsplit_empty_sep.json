@@ -1,0 +1,5 @@
+{
+ "id": "b12_str__rsplit_empty_sep",
+ "code": "'hello'.rsplit('')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"str__rsplit_empty_sep.py\", line 1, in <module>\n    'hello'.rsplit('')\n    ~~~~~~~~~~~~~~~~~~\nValueError: empty separator\n\"\"\"\n",
+ "note": "upstream test_cases/str__rsplit_empty_sep.py (expects an exception)"
+}

@@ -1,0 +1,46 @@
+{
+ "case": "b12_class__attribute_error",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "AttributeError",
+    "message": "'Empty' object has no attribute 'missing'",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 10,
+      "column": 1,
+      "end_line": 10,
+      "end_column": 10,
+      "function": "<module>",
+      "source_line": "e.missing"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "AttributeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

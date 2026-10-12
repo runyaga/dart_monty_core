@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__builtin_attr_error",
+ "code": "x = len\nx.nonexistent\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__builtin_attr_error.py\", line 2, in <module>\n    x.nonexistent\nAttributeError: 'builtin_function_or_method' object has no attribute 'nonexistent'\n\"\"\"\n",
+ "note": "upstream test_cases/type__builtin_attr_error.py (expects an exception)"
+}

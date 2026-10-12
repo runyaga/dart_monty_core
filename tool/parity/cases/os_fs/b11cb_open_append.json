@@ -1,0 +1,26 @@
+{
+ "id": "b11cb_open_append",
+ "code": "from pathlib import Path\nimport os\nf = open('/d/a.txt', 'a')\nf.write('zz')",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.txt",
+     "mode": "a",
+     "position": "0"
+    }
+   }
+  ],
+  "Path.append_text": [
+   {
+    "return": {
+     "t": "int",
+     "v": "2"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: open_append request transcript",
+ "host_errors": "plain"
+}

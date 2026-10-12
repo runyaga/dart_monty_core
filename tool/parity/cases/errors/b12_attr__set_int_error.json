@@ -1,0 +1,5 @@
+{
+ "id": "b12_attr__set_int_error",
+ "code": "x = 5\nx.foo = 1\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"attr__set_int_error.py\", line 2, in <module>\n    x.foo = 1\n    ~~~~~\nAttributeError: 'int' object has no attribute 'foo' and no __dict__ for setting new attributes\n\"\"\"\n",
+ "note": "upstream test_cases/attr__set_int_error.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_fstring__error_float_f_on_str",
+ "code": "# float format specifier ':f' on string raises ValueError\nf'{\"hello\":f}'\n# Raise=ValueError(\"Unknown format code 'f' for object of type 'str'\")\n",
+ "note": "upstream test_cases/fstring__error_float_f_on_str.py (expects an exception)"
+}

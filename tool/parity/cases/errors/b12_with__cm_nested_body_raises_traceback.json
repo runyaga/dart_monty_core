@@ -1,0 +1,5 @@
+{
+ "id": "b12_with__cm_nested_body_raises_traceback",
+ "code": "# Nested `with` blocks with a passthrough class cm at each level: an\n# exception raised in the innermost body propagates through both\n# `__exit__` calls (both return None) and surfaces with the body's frame\n# intact. Verifies that `WithExceptStart` doesn't perturb the propagating\n# exception's traceback when `__exit__` is a no-op cleanup.\nclass CM:\n    def __enter__(self):\n        return self\n\n    def __exit__(self, typ, val, tb):\n        return None\n\n\nwith CM() as outer:\n    with CM() as inner:\n        raise ValueError('from inner body')\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"with__cm_nested_body_raises_traceback.py\", line 16, in <module>\n    raise ValueError('from inner body')\nValueError: from inner body\n\"\"\"\n",
+ "note": "upstream test_cases/with__cm_nested_body_raises_traceback.py (expects an exception)"
+}

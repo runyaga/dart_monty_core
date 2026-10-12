@@ -1,0 +1,11 @@
+{
+ "id": "l01_recursion",
+ "code": "def r(k):\n    return 0 if k == 0 else 1 + r(k - 1)\nr(500)",
+ "limits": {
+  "max_recursion_depth": 20
+ },
+ "note": "depth 20, recursion 500 (25x)",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

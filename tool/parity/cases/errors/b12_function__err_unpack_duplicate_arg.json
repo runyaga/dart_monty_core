@@ -1,0 +1,5 @@
+{
+ "id": "b12_function__err_unpack_duplicate_arg",
+ "code": "def f(a, b):\n    return a + b\n\n\nf(a=1, **{'a': 2})\n# Raise=TypeError(\"f() got multiple values for keyword argument 'a'\")\n",
+ "note": "upstream test_cases/function__err_unpack_duplicate_arg.py (expects an exception)"
+}

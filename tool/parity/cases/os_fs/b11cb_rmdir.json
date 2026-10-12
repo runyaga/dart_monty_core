@@ -1,0 +1,15 @@
+{
+ "id": "b11cb_rmdir",
+ "code": "from pathlib import Path\nimport os\nPath('/d/n').rmdir()",
+ "os": {
+  "Path.rmdir": [
+   {
+    "return": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: rmdir request transcript",
+ "host_errors": "plain"
+}

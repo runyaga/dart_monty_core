@@ -1,0 +1,61 @@
+{
+ "case": "i_namedtuple",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "namedtuple"
+     },
+     {
+      "t": "str",
+      "v": "mod.P(a=1, b=2)"
+     },
+     {
+      "t": "namedtuple",
+      "type": "mod.P",
+      "fields": [
+       "a",
+       "b"
+      ],
+      "items": [
+       {
+        "t": "int",
+        "v": "1"
+       },
+       {
+        "t": "int",
+        "v": "2"
+       }
+      ]
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

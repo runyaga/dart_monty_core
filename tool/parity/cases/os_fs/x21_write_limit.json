@@ -1,0 +1,27 @@
+{
+ "id": "x21_write_limit",
+ "code": "from pathlib import Path\nimport os\nPath('/data/x.txt').write_text('12345')\nPath('/data/y.txt').write_text('67890')",
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "write_bytes_limit": 8
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

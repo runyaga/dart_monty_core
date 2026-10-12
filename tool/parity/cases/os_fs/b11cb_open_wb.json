@@ -1,0 +1,26 @@
+{
+ "id": "b11cb_open_wb",
+ "code": "from pathlib import Path\nimport os\nf = open('/d/a.bin', 'wb')\nf.write(b'\\x01')",
+ "os": {
+  "open": [
+   {
+    "return": {
+     "t": "filehandle",
+     "path": "/d/a.bin",
+     "mode": "wb",
+     "position": "0"
+    }
+   }
+  ],
+  "Path.write_bytes": [
+   {
+    "return": {
+     "t": "int",
+     "v": "1"
+    }
+   }
+  ]
+ },
+ "note": "callback layer: open_wb request transcript",
+ "host_errors": "plain"
+}

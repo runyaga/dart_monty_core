@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__ldexp_overflow_error",
+ "code": "import math\n\nmath.ldexp(1.0, 1075)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__ldexp_overflow_error.py\", line 3, in <module>\n    math.ldexp(1.0, 1075)\n    ~~~~~~~~~~~~~~~~~~~~~\nOverflowError: math range error\n\"\"\"\n",
+ "note": "upstream test_cases/math__ldexp_overflow_error.py (expects an exception)"
+}

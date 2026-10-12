@@ -1,0 +1,6 @@
+{
+ "id": "v_sandbox_class",
+ "code": "class C:\n    pass\nC",
+ "upstream_quirk": "upstream returns a sandbox class as the plain str \"<class 'C'>\"",
+ "note": "OUT lossy_output_placeholders: "
+}

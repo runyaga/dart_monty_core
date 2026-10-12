@@ -1,0 +1,5 @@
+{
+ "id": "b12_builtin__add_type_error",
+ "code": "len + 1\n# Raise=TypeError(\"unsupported operand type(s) for +: 'builtin_function_or_method' and 'int'\")\n",
+ "note": "upstream test_cases/builtin__add_type_error.py (expects an exception)"
+}

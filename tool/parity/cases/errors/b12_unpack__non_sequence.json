@@ -1,0 +1,5 @@
+{
+ "id": "b12_unpack__non_sequence",
+ "code": "a, b = 42\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"unpack__non_sequence.py\", line 1, in <module>\n    a, b = 42\n    ~~~~\nTypeError: cannot unpack non-iterable int object\n\"\"\"\n",
+ "note": "upstream test_cases/unpack__non_sequence.py (expects an exception)"
+}

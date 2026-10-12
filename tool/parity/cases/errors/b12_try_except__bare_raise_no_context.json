@@ -1,0 +1,5 @@
+{
+ "id": "b12_try_except__bare_raise_no_context",
+ "code": "raise\n# Raise=RuntimeError('No active exception to reraise')\n",
+ "note": "upstream test_cases/try_except__bare_raise_no_context.py (expects an exception)"
+}

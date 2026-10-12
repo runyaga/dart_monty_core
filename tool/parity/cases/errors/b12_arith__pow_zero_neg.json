@@ -1,0 +1,5 @@
+{
+ "id": "b12_arith__pow_zero_neg",
+ "code": "0**-1\n# Raise=ZeroDivisionError('zero to a negative power')\n",
+ "note": "upstream test_cases/arith__pow_zero_neg.py (expects an exception)"
+}

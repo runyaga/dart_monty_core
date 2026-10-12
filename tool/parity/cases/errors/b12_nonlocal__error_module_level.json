@@ -1,0 +1,5 @@
+{
+ "id": "b12_nonlocal__error_module_level",
+ "code": "# nonlocal at module level is a syntax error\nnonlocal x  # type: ignore\n# Raise=SyntaxError('nonlocal declaration not allowed at module level')\n",
+ "note": "upstream test_cases/nonlocal__error_module_level.py (expects an exception)"
+}

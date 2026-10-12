@@ -1,0 +1,55 @@
+{
+ "case": "t05_json_uncaught",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "json.JSONDecodeError",
+    "message": "Expecting value: line 2 column 7 (char 15)",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 2,
+      "column": 1,
+      "end_line": 2,
+      "end_column": 32,
+      "function": "<module>",
+      "source_line": "json.loads('{\"a\": 1,\\n \"b\": }')"
+     }
+    ],
+    "data": {
+     "kind": "json",
+     "msg": "Expecting value",
+     "doc": "{\"a\": 1,\n \"b\": }",
+     "pos": 15,
+     "lineno": 2,
+     "colno": 7
+    }
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "JSONDecodeError",
+    "ValueError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

@@ -1,0 +1,54 @@
+{
+ "probe": "inputs_typed",
+ "engine": "ref",
+ "backend": "py",
+ "events": [
+  {
+   "ev": "suspend",
+   "kind": "function",
+   "name": "f",
+   "args": [
+    {
+     "t": "bytes",
+     "hex": "00ff"
+    },
+    {
+     "t": "int",
+     "v": "1180591620717411303424"
+    },
+    {
+     "t": "list",
+     "items": [
+      {
+       "id": 1,
+       "t": "list",
+       "items": [
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ]
+      },
+      {
+       "t": "ref",
+       "id": 1
+      }
+     ]
+    }
+   ],
+   "kwargs": {},
+   "position": {
+    "filename": "<python-input-0>",
+    "start": 0,
+    "end": 10
+   }
+  },
+  {
+   "ev": "complete",
+   "value": {
+    "t": "none"
+   }
+  }
+ ],
+ "runner_error": null
+}

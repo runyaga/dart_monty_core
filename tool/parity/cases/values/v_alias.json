@@ -1,0 +1,5 @@
+{
+ "id": "v_alias",
+ "code": "x = [1]\n(x, x)",
+ "note": "OUT boundary_value_graph: "
+}

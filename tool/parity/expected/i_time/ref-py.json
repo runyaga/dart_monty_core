@@ -1,0 +1,62 @@
+{
+ "case": "i_time",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": {
+    "t": "tuple",
+    "items": [
+     {
+      "t": "str",
+      "v": "tuple"
+     },
+     {
+      "t": "str",
+      "v": "(datetime.time(1, 2, 3, 4), datetime.time(23, 59, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=75600)), fold=1))"
+     },
+     {
+      "t": "tuple",
+      "items": [
+       {
+        "t": "time",
+        "v": "01:02:03.000004",
+        "offset": null,
+        "tzname": null,
+        "fold": 0
+       },
+       {
+        "t": "time",
+        "v": "23:59:00.000000",
+        "offset": -10800,
+        "tzname": null,
+        "fold": 1
+       }
+      ]
+     }
+    ]
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "get",
+     "args": [],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

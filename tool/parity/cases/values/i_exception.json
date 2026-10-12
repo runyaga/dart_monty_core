@@ -1,0 +1,27 @@
+{
+ "id": "i_exception",
+ "code": "x = get()\n(type(x).__name__, repr(x), x)",
+ "externals": {
+  "get": [
+   {
+    "return": {
+     "t": "tuple",
+     "items": [
+      {
+       "t": "exception",
+       "type": "ValueError",
+       "arg": "bad"
+      },
+      {
+       "t": "exception",
+       "type": "RuntimeError",
+       "arg": null
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "upstream_quirk": "upstream encodes an arg-less host exception with arg=str(exc)='' (exceptions.rs:201-214), so RuntimeError() arrives as RuntimeError('')",
+ "note": "IN exception_value_conversion: "
+}

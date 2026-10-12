@@ -1,0 +1,121 @@
+{
+ "case": "l12_suspensions",
+ "engine": "ref",
+ "backend": "py",
+ "engine_version": "pydantic_monty 1.1.0",
+ "steps": [
+  {
+   "value": null,
+   "exception": {
+    "type": "RuntimeError",
+    "message": "suspension limit 3 exceeded",
+    "traceback": [
+     {
+      "filename": "<python-input-0>",
+      "line": 4,
+      "column": 9,
+      "end_line": 4,
+      "end_column": 19,
+      "function": "<module>",
+      "source_line": "        fetch('x')"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [
+    {
+     "name": "fetch",
+     "args": [
+      {
+       "t": "str",
+       "v": "x"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "fetch",
+     "args": [
+      {
+       "t": "str",
+       "v": "x"
+      }
+     ],
+     "kwargs": {}
+    },
+    {
+     "name": "fetch",
+     "args": [
+      {
+       "t": "str",
+       "v": "x"
+      }
+     ],
+     "kwargs": {}
+    }
+   ],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "RuntimeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  },
+  {
+   "value": {
+    "t": "int",
+    "v": "3"
+   },
+   "exception": null,
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null
+  },
+  {
+   "value": null,
+   "exception": {
+    "type": "RuntimeError",
+    "message": "suspension limit 3 exceeded",
+    "traceback": [
+     {
+      "filename": "<python-input-2>",
+      "line": 1,
+      "column": 1,
+      "end_line": 1,
+      "end_column": 11,
+      "function": "<module>",
+      "source_line": "fetch('y')"
+     }
+    ]
+   },
+   "prints": [],
+   "os_calls": [],
+   "ext_calls": [],
+   "name_lookups": [],
+   "host_calls": [],
+   "usage": null,
+   "error_class": "MontyRuntimeError",
+   "host_exception_mro": [
+    "RuntimeError",
+    "Exception",
+    "BaseException",
+    "object"
+   ]
+  }
+ ],
+ "unsupported": {
+  "usage": "pydantic_monty exposes no per-feed resource usage"
+ },
+ "notes": {
+  "inputs": "typed: feed_start(inputs=...) on the first feed"
+ },
+ "runner_error": null
+}

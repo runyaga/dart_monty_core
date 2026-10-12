@@ -1,0 +1,30 @@
+{
+ "id": "x21_lifecycle_delete_overlay",
+ "feeds": [
+  "from pathlib import Path\nimport os\nPath('/data/a.txt').unlink()\nPath('/data/a.txt').exists()",
+  "from pathlib import Path\nimport os\nPath('/data/a.txt').exists()"
+ ],
+ "fs": {
+  "mounts": [
+   {
+    "virtual": "/data",
+    "mode": "overlay"
+   }
+  ],
+  "files": {
+   "/data/a.txt": {
+    "text": "hello\nworld\n"
+   },
+   "/data/b.bin": {
+    "hex": "00ff10"
+   },
+   "/data/sub/c.txt": {
+    "text": "c"
+   },
+   "/data/u.txt": {
+    "text": "héllo ✓"
+   }
+  }
+ },
+ "host_errors": "plain"
+}

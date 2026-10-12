@@ -1,0 +1,5 @@
+{
+ "id": "b12_type_error__int_floordiv_str",
+ "code": "5 // 'x'\n# Raise=TypeError(\"unsupported operand type(s) for //: 'int' and 'str'\")\n",
+ "note": "upstream test_cases/type_error__int_floordiv_str.py (expects an exception)"
+}

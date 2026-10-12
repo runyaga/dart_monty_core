@@ -1,0 +1,8 @@
+{
+ "id": "n05_moderate",
+ "code": "((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))",
+ "note": "depth 50 compiles",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}

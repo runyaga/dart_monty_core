@@ -1,0 +1,5 @@
+{
+ "id": "b12_math__sqrt_negative_error",
+ "code": "import math\n\nmath.sqrt(-1)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"math__sqrt_negative_error.py\", line 3, in <module>\n    math.sqrt(-1)\n    ~~~~~~~~~~~~~\nValueError: expected a nonnegative input, got -1.0\n\"\"\"\n",
+ "note": "upstream test_cases/math__sqrt_negative_error.py (expects an exception)"
+}

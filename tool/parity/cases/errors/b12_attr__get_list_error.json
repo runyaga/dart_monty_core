@@ -1,0 +1,5 @@
+{
+ "id": "b12_attr__get_list_error",
+ "code": "x = [1, 2, 3]\nx.foo\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"attr__get_list_error.py\", line 2, in <module>\n    x.foo\nAttributeError: 'list' object has no attribute 'foo'\n\"\"\"\n",
+ "note": "upstream test_cases/attr__get_list_error.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_list__pop_empty",
+ "code": "[].pop()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"list__pop_empty.py\", line 1, in <module>\n    [].pop()\n    ~~~~~~~~\nIndexError: pop from empty list\n\"\"\"\n",
+ "note": "upstream test_cases/list__pop_empty.py (expects an exception)"
+}

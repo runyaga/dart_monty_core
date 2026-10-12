@@ -1,0 +1,5 @@
+{
+ "id": "b12_type__float_repr_newline",
+ "code": "float(\"a\\nb\")\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"type__float_repr_newline.py\", line 1, in <module>\n    float(\"a\\nb\")\n    ~~~~~~~~~~~~~\nValueError: could not convert string to float: 'a\\nb'\n\"\"\"\n",
+ "note": "upstream test_cases/type__float_repr_newline.py (expects an exception)"
+}

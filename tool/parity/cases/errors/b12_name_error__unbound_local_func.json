@@ -1,0 +1,5 @@
+{
+ "id": "b12_name_error__unbound_local_func",
+ "code": "# Test that accessing a variable before assignment in a function raises UnboundLocalError\n# (In function scope, Python pre-scans for assignments so it knows x is local)\ndef foo():\n    print(x)\n    x = 1\n\n\nfoo()\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"name_error__unbound_local_func.py\", line 8, in <module>\n    foo()\n    ~~~~~\n  File \"name_error__unbound_local_func.py\", line 4, in foo\n    print(x)\n          ~\nUnboundLocalError: cannot access local variable 'x' where it is not associated with a value\n\"\"\"\n",
+ "note": "upstream test_cases/name_error__unbound_local_func.py (expects an exception)"
+}

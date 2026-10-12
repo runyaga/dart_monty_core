@@ -1,0 +1,5 @@
+{
+ "id": "b12_assert__fail_msg",
+ "code": "assert False, 'custom message'\n# Raise=AssertionError('custom message')\n",
+ "note": "upstream test_cases/assert__fail_msg.py (expects an exception)"
+}

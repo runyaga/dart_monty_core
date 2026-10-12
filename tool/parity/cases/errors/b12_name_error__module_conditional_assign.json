@@ -1,0 +1,5 @@
+{
+ "id": "b12_name_error__module_conditional_assign",
+ "code": "# Module-scope read of a name whose later assignment didn't execute must raise\n# `NameError`, not `UnboundLocalError` — module scope only has `NameError`.\n\n\ndef boom():\n    raise ValueError('nope')\n\n\ntry:\n    boom()\n    foo = 1\nexcept ValueError:\n    pass\n\nprint(foo)\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"name_error__module_conditional_assign.py\", line 15, in <module>\n    print(foo)\n          ~~~\nNameError: name 'foo' is not defined\n\"\"\"\n",
+ "note": "upstream test_cases/name_error__module_conditional_assign.py (expects an exception)"
+}

@@ -1,0 +1,5 @@
+{
+ "id": "b12_unpack__err_multiple_starred",
+ "code": "# `UnpackEx` encodes one starred slot as \"n before, m after\", so a second star\n# has nowhere to go and the assignment is rejected, as CPython rejects it.\na, *b, *c = [1, 2, 3, 4]\n\"\"\"\nTRACEBACK:\nTraceback (most recent call last):\n  File \"unpack__err_multiple_starred.py\", line 3\n    a, *b, *c = [1, 2, 3, 4]\n    ~~~~~~~~~\nSyntaxError: multiple starred expressions in assignment\n\"\"\"\n",
+ "note": "upstream test_cases/unpack__err_multiple_starred.py (expects an exception)"
+}

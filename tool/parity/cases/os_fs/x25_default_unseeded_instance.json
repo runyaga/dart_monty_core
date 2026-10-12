@@ -1,0 +1,5 @@
+{
+ "id": "x25_default_unseeded_instance",
+ "code": "import random\nr = random.Random()\n0 <= r.random() < 1",
+ "host_errors": "plain"
+}

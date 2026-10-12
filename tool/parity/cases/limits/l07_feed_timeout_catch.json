@@ -1,0 +1,11 @@
+{
+ "id": "l07_feed_timeout_catch",
+ "code": "try:\n    while True:\n        pass\nexcept TimeoutError:\n    x = 'caught'\nx",
+ "limits": {
+  "max_feed_duration_secs": 0.1
+ },
+ "note": "TimeoutError uncatchable upstream",
+ "on_refused_limits": "record",
+ "one_shot": true,
+ "isolate": true
+}
