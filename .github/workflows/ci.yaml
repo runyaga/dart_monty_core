@@ -149,11 +149,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      # fetch-depth: 0 — check_breaking_recorded.sh diffs against the merge-base
-      # with main, and a shallow clone has no merge-base to find.
+      # check_breaking_recorded.sh is NOT run here: the unfiltered
+      # `breaking-recorded` job above runs it on every event, so a copy here
+      # only ran it twice. Nothing left in this job reads git history, so the
+      # checkout is shallow.
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
@@ -182,7 +182,6 @@ jobs:
           run bash tool/check_wire_contract.sh
           run bash tool/check_workflows_valid.sh
           run bash tool/check_fixture_corpus.sh
-          run bash tool/check_breaking_recorded.sh
           run bash tool/check_fixture_links.sh
           run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
@@ -204,7 +203,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 20 ] || { echo "FAIL: expected 20 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 19 ] || { echo "FAIL: expected 19 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -288,81 +287,9 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
-      - name: Analyze
-        run: dart analyze --fatal-infos
-      - name: Format check
-        # The generated bindings are always pre-formatted by generate_bindings.sh
-        # so it is safe to include lib/ without exclusions.
-        run: |
-          dart format --line-length=80 --set-exit-if-changed \
-            lib/ test/ hook/ tool/
-      - name: Committed assets are not stale
-        # The wasm build is not byte-reproducible, so `git diff` on the blob
-        # cannot detect staleness. This hashes the SOURCES instead. Unlike
-        # WIRE_FORMAT_VERSION, which is hand-bumped, it is derived -- so it
-        # catches 'encoding changed, nobody bumped, nobody rebuilt', which
-        # the version handshake is blind to.
-        run: bash tool/check_asset_freshness.sh
-      - name: Wire-format version agrees between the crate and Dart
-        # WIRE_FORMAT_VERSION in convert.rs is the source of truth and the JS
-        # side reads it out of the wasm, but expectedWireFormatVersion has to be
-        # a Dart compile-time constant, so it is a hand-kept copy. That makes the
-        # handshake itself depend on someone remembering to bump two files
-        # together -- the same unenforced-invariant class it exists to replace.
-        run: bash tool/check_wire_version.sh
-      - name: Fixture corpus matches the pinned monty version
-        # The corpus is a symlink into a monty checkout, so it silently drifts
-        # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus
-        # against a v0.0.19 interpreter reported all-green having never seen the
-        # 49 fixtures upstream added for 0.19.
-        run: bash tool/check_fixture_corpus.sh
-      - name: Demo fixture links point at the monty version we build
-        # Local-only until now: tool/gate.sh:74 ran it, ci.yaml ran nothing, so
-        # the invariant held only for people who ran the gate before pushing.
-        # The conformance panel links each fixture to its source in
-        # pydantic/monty at a hand-written tag; an upgrade that bumps the crate
-        # leaves every link silently showing the WRONG source, which is worse
-        # than a dead link -- a reader who clicks through sees plausible code
-        # and has no reason to suspect the link.
-        run: bash tool/check_fixture_links.sh
-      - name: No harness reports a bare "unexpected error"
-        # Local-only until now: tool/gate.sh:75. MontyException carries
-        # excType, lineNumber, columnNumber, sourceCode and traceback, and six
-        # separate sites used to discard all of it to print the word
-        # "unexpected" (core#145). This package exists so a model can generate
-        # Monty Python and RETRY on failure; "unexpected error" gives it
-        # nothing to localise or act on.
-        run: bash tool/check_no_vague_errors.sh
-      - name: Worker and wasm agree on every export's arity
-        # Local-only until now: tool/gate.sh. JS does NOT throw when a
-        # WebAssembly export is called with the wrong number of arguments -- it
-        # pads missing ones with 0 and drops extras -- so a Rust signature
-        # change is a SILENT miscompile on the web backend. `dart analyze`
-        # covers the FFI half of the ABI and nothing at all covered the JS half.
-        # Measured: monty_repl_restore grew from 3 parameters to 5, the Worker
-        # kept passing 3, out_error bound to the limits_json slot (an
-        # out-pointer parsed as a C string), and every WASM restore failed with
-        # no cause while the full FFI suite stayed green.
-        run: node tool/check_wasm_arity.mjs
-      - name: Package version tracks the monty pin
-        # Local-only until now. This package's MINOR version equals the monty
-        # PATCH it pins (v0.0.17 -> 0.17.x, v0.0.19 -> 0.19.0), and that is not
-        # decorative: snapshots are not portable across monty upgrades, so the
-        # version is how a consumer knows which format they hold. e1e4eda moved
-        # the pin 0.19 -> 0.23 without touching pubspec.yaml, so the package
-        # called itself 0.19.0 while pinning v0.0.23 -- and nothing compared the
-        # two until a human read the version off the deployed demo page.
-        run: bash tool/check_version_pin.sh
-      - name: Published pages state the versions they were built from
-        # Local-only until now. The deployed site is the one artefact a reader
-        # meets without a pubspec in front of them, and nothing compiles an HTML
-        # shell -- so a hand-written version string rots silently on the next
-        # bump. The expected string is assembled from pubspec.yaml,
-        # native/Cargo.toml and convert.rs, and every published page must carry
-        # it. Note this gate runs BEFORE deploy-pages.yml can publish anything:
-        # deploy triggers only on push to main, so a wrong badge caught here
-        # never reaches the site.
-        run: bash tool/check_page_versions.sh
+      # analyze, format and the source-only check_*.sh scripts that used to be
+      # repeated here run in `gate`, which runs on every code OR docs change
+      # (a superset of this job's trigger). This job is the tests.
       # ---------------------------------------------------------------------------
       # DCM IS DELIBERATELY NOT RUN HERE. Do not add it back.
       # ---------------------------------------------------------------------------
