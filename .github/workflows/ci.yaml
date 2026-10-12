@@ -643,15 +643,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+      # Compile-only: the one CI build of the shipped wasm feature set (the same
+      # command as tool/prebuild.sh). Tests run the COMMITTED lib/assets/ wasm,
+      # so the binary is not uploaded -- no job ever downloaded it.
       - name: Build WASM
         working-directory: native
         run: cargo build --release --target wasm32-wasip1
-      - name: Upload WASM binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: wasm-binary
-          path: native/target/wasm32-wasip1/release/dart_monty_core_native.wasm
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # FFI integration tests — 464 fixtures, oracle binary vs MontyFfi
