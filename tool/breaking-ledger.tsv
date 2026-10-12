@@ -40,6 +40,4 @@ edd9c41	`MontyPairsDict` is gone; `MontyDict` holds pairs
 17b175f	`MontySet` and `MontyFrozenSet` compare and hash order-insensitively
 8c6d20f	`MontyCallback` and `OsCallHandler` now return `FutureOr<Object?>`
 2d68f6c	The backend-adapter layer is no longer exported
-b605119	An omitted `maxSuspensions` now applies a budget of 1000, not none.
-6bcff62	An omitted `maxSuspensions` now applies a budget of 1000, not none.
-e370f94	An omitted `maxSuspensions` now applies a budget of 1000, not none.
+2493243	An omitted `maxSuspensions` now applies a budget of 1000, not none.
