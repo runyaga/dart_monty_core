@@ -70,15 +70,17 @@ final class ProtoSession {
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
   }) => _guard(() async {
-    final sink = _PrintSink(onPrint);
+    final sink = _PrintSink(onPrint, _channel.kill);
     var request = pb.ParentRequest(feed: _feedRequest(code, inputs));
     for (;;) {
-      final event = await _channel.turn(request, onPrint: sink.add);
-      if (sink.failure case (final error, final stack)) {
-        // The feed is abandoned wherever the worker stands, so end it.
-        _channel.kill();
-        Error.throwWithStackTrace(error, stack);
+      final pb.ChildEvent event;
+      try {
+        event = await _channel.turn(request, onPrint: sink.add);
+      } on Object {
+        sink.rethrowFailure();
+        rethrow;
       }
+      sink.rethrowFailure();
       if (event.whichKind() == pb.ChildEvent_Kind.complete) {
         final complete = event.complete;
 
@@ -161,18 +163,21 @@ final class ProtoSession {
 
 /// Collects a feed's prints and passes each to the caller's callback.
 ///
-/// A throwing callback must not escape into the channel mid-turn: the turn
-/// would be abandoned with the worker possibly suspended on a call nobody
-/// answers. The first failure is held for the driver to act on once the turn
-/// has ended.
+/// A throwing callback must not escape into the channel mid-turn, and the
+/// feed cannot carry on without it: the worker may be suspended on a call
+/// nobody will answer, or never end the turn at all. So the first failure
+/// kills the worker at once, later prints are dropped, and the driver
+/// rethrows the failure when the turn returns.
 final class _PrintSink {
-  _PrintSink(this._onPrint);
+  _PrintSink(this._onPrint, this._kill);
 
   final List<(String, String)> prints = [];
-  (Object, StackTrace)? failure;
   final ProtoPrintCallback? _onPrint;
+  final void Function() _kill;
+  (Object, StackTrace)? _failure;
 
   void add(pb.Print print) {
+    if (_failure != null) return;
     for (final segment in print.segments) {
       final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
           ? 'stderr'
@@ -181,8 +186,18 @@ final class _PrintSink {
       try {
         _onPrint?.call(stream, segment.text);
       } on Object catch (error, stack) {
-        failure ??= (error, stack);
+        _failure = (error, stack);
+        _kill();
+
+        return;
       }
+    }
+  }
+
+  /// Throws the callback's failure, if there was one.
+  void rethrowFailure() {
+    if (_failure case (final error, final stack)) {
+      Error.throwWithStackTrace(error, stack);
     }
   }
 }

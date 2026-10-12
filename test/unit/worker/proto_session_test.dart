@@ -213,6 +213,37 @@ void main() {
       },
     );
 
+    test('a throwing onPrint ends a feed that never finishes', () async {
+      // `while True: print('x')`: the turn only ends if the driver kills it.
+      final ch = _configured([
+        hangAfter([
+          for (var i = 0; i < 1000; i++) printed([(_stdout, 'x\n')]),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      var calls = 0;
+      await expectLater(
+        s
+            .feed(
+              'while True: print("x")',
+              onPrint: (_, _) {
+                calls++;
+                throw StateError('boom');
+              },
+            )
+            .timeout(const Duration(seconds: 5)),
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'boom'),
+        ),
+      );
+      expect(ch.kills, 1);
+      expect(
+        calls,
+        1,
+        reason: 'no more prints are delivered after the failure',
+      );
+    });
+
     test('a name in externals resolves to a function node', () async {
       final ch = _configured([
         answer([_nameLookup('fetch')]),

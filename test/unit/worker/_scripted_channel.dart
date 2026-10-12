@@ -4,6 +4,7 @@
 // (zero or more Print, then the turn end) or a crash. Requests and events go
 // through the protobuf wire encoding both ways, so a message the real channel
 // could not send fails here too. Pure Dart: runs on vm, dart2js and dart2wasm.
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
@@ -29,6 +30,7 @@ final class ScriptedChannel implements MontyChannel {
   int kills = 0;
 
   final Queue<Reply> _remaining;
+  final Completer<void> _killed = Completer();
   bool _isAlive = true;
 
   /// Replies not yet used.
@@ -62,6 +64,8 @@ final class ScriptedChannel implements MontyChannel {
     } on _Crash catch (c) {
       _isAlive = false;
       throw MontyCrashedError(c.cause, message: c.message);
+    } on _Hang catch (h) {
+      return _hang(h.prints, onPrint);
     }
     for (final e in events.take(events.length - 1)) {
       if (e.whichKind() != pb.ChildEvent_Kind.print) {
@@ -90,7 +94,23 @@ final class ScriptedChannel implements MontyChannel {
   @override
   void kill() {
     kills++;
+    if (!_killed.isCompleted) _killed.complete();
     _isAlive = false;
+  }
+
+  /// Streams [prints] one by one, as a native worker would, and never ends
+  /// the turn: only [kill] does.
+  Future<pb.ChildEvent> _hang(
+    List<pb.ChildEvent> prints,
+    void Function(pb.Print print)? onPrint,
+  ) async {
+    for (final p in prints) {
+      if (_killed.isCompleted) break;
+      onPrint?.call(p.print);
+      await Future<void>.delayed(Duration.zero);
+    }
+    await _killed.future;
+    throw MontyCrashedError(CrashCause.killed, message: 'killed mid-turn');
   }
 }
 
@@ -113,6 +133,20 @@ Reply expecting(
 /// A worker that dies with [cause] instead of answering.
 Reply crash(CrashCause cause, [String? message]) =>
     (_) => throw _Crash(cause, message);
+
+/// A worker that streams [prints] and then runs until killed.
+Reply hangAfter(List<pb.ChildEvent> prints) =>
+    (_) => throw _Hang(prints);
+
+/// How a [Reply] tells the channel to hang.
+final class _Hang implements Exception {
+  const _Hang(this.prints);
+
+  final List<pb.ChildEvent> prints;
+
+  @override
+  String toString() => '_Hang(${prints.length} prints)';
+}
 
 /// How a [Reply] tells the channel the worker died.
 final class _Crash implements Exception {
