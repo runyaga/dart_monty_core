@@ -227,6 +227,9 @@ s  version_pin   bash tool/check_version_pin.sh
 # measured against. Offline shape here; CI's `upstream-pin` job and
 # `python3 -I tool/check_upstream_pin.py --online` verify it against upstream.
 s  upstream_pin  python3 -I tool/check_upstream_pin.py
+# The frozen capability manifest (the D1 denominator): schema, content hash and
+# baseline totals. `--online` also resolves every upstream cite.
+s  cap_manifest  python3 -I tool/check_capability_manifest.py
 # --deep, not the fast path. The fast path only checks that each excluded PATH
 # still exists; --deep strips the exclusions, re-runs dcm, and catches an entry
 # that names a real file and hides NOTHING -- which is how a stale exclusion
@@ -484,7 +487,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=43
+EXPECT_STEPS=44
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

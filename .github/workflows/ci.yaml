@@ -195,6 +195,9 @@ jobs:
           # The upstream reference pin (pydantic/monty 1.1.0): shape only here;
           # the `upstream-pin` job below fetches and installs it.
           run python3 -I tool/check_upstream_pin.py
+          # The frozen capability manifest (187 rows, 185 in scope): schema,
+          # content hash and baseline totals.
+          run python3 -I tool/check_capability_manifest.py
           run bash tool/check_no_vague_errors.sh
           run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
@@ -213,7 +216,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 20 ] || { echo "FAIL: expected 20 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 21 ] || { echo "FAIL: expected 21 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -238,6 +241,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -I tool/check_upstream_pin.py --online
+      # Every upstream path:line the capability manifest cites must exist at
+      # the pinned commit.
+      - run: python3 -I tool/check_capability_manifest.py --online
 
   # ---------------------------------------------------------------------------
   # FFI binding generation
