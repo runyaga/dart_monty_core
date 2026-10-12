@@ -1,0 +1,4 @@
+# Upstream pydantic/monty's width, so `cargo fmt --check` accepts the verbatim
+# upstream/subprocess.rs unchanged.
+edition = "2024"
+max_width = 120

@@ -1,0 +1,103 @@
+# dart_monty_core's worker: upstream's `monty subprocess` loop, compiled as one
+# crate with three artefacts.
+#
+#   bin    dart_monty_worker                   stdio worker a Dart parent spawns
+#   cdylib dart_monty_worker_main()            the same loop, entered from a
+#                                              relaunched `dart build cli` exe
+#   cdylib on wasm32-wasip1 (dmw_* exports)    one turn per call, for a Web Worker
+#
+# `upstream/subprocess.rs` is a byte-identical copy of
+# crates/monty-runtime/src/subprocess.rs at the tag pinned in
+# tool/upstream/upstream-pin.json. tool/check_worker_mirror.py checks the copy,
+# the exact pins below and that Cargo.lock is a version-subset of upstream's.
+#
+# Its own workspace root, with its own Cargo.lock, beside the in-process crate
+# in native/. It shares native/rust-toolchain.toml (rustup finds it by walking
+# up from here).
+[package]
+name = "dart_monty_worker"
+version = "0.110.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+publish = false
+
+[lib]
+name = "dart_monty_worker"
+# rlib is what the bin links. No staticlib until a mobile target needs one: it
+# costs a ~227 MB archive and an extra LTO pass.
+crate-type = ["cdylib", "rlib"]
+# No unit tests or doctests: tests/smoke.rs drives the built executable.
+test = false
+doctest = false
+
+[[bin]]
+name = "dart_monty_worker"
+path = "src/bin/dart_monty_worker.rs"
+test = false
+
+# Exact pins: the worker mirrors one upstream tag. The crates come from
+# crates.io, so Cargo.lock records their checksums.
+[dependencies]
+monty-proto = { version = "=1.1.0", features = ["worker"] }
+monty-types = { version = "=1.1.0", features = ["tzdb-bundled"] }
+monty-alloc = "=1.1.0"
+
+# Native, as crates/monty-runtime/Cargo.toml: monty-alloc reports allocation
+# failure as an exit code (65), monty-types reads the host tz database.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+monty-alloc = { version = "=1.1.0", features = ["exit-code"] }
+monty-types = { version = "=1.1.0", features = ["tzdb", "tzdb-bundled"] }
+
+# Upstream's workspace lints, so the verbatim subprocess.rs is held to the
+# rules it was written under.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+use_self = "warn"
+allow_attributes = "warn"
+undocumented_unsafe_blocks = "warn"
+redundant_clone = "warn"
+absolute_paths = "warn"
+pedantic = { level = "warn", priority = -1 }
+cast_precision_loss = "allow"
+doc_markdown = "allow"
+match_same_arms = "allow"
+missing_errors_doc = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+
+# The executable and the native cdylib.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# wasm32-wasip1 only. Size-optimised dependencies, speed-optimised interpreter,
+# parser and type-checker core.
+[profile.mixd]
+inherits = "release"
+[profile.mixd.package."*"]
+opt-level = "z"
+[profile.mixd.package.monty]
+opt-level = 3
+[profile.mixd.package.monty-types]
+opt-level = 3
+[profile.mixd.package.monty-proto]
+opt-level = 3
+[profile.mixd.package.monty-alloc]
+opt-level = 3
+[profile.mixd.package.salsa]
+opt-level = 3
+[profile.mixd.package.ty_python_core]
+opt-level = 3
+[profile.mixd.package.ruff_python_parser]
+opt-level = 3
+[profile.mixd.package.ruff_python_ast]
+opt-level = 3
+[profile.mixd.package.ty_python_semantic]
+opt-level = "s"
+
+[workspace]

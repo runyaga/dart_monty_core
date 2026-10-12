@@ -198,6 +198,10 @@ jobs:
           # The frozen capability manifest (187 rows, 185 in scope): schema,
           # content hash and baseline totals.
           run python3 -I tool/check_capability_manifest.py
+          # native/worker/ against the same pin: verbatim subprocess.rs, exact
+          # monty crate pins, Cargo.lock a subset of upstream's. Offline; the
+          # `upstream-pin` job checks the recorded hashes against upstream.
+          run python3 -I tool/check_worker_mirror.py --local
           run bash tool/check_no_vague_errors.sh
           run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
@@ -219,7 +223,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 22 ] || { echo "FAIL: expected 22 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 23 ] || { echo "FAIL: expected 23 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -247,6 +251,9 @@ jobs:
       # Every upstream path:line the capability manifest cites must exist at
       # the pinned commit.
       - run: python3 -I tool/check_capability_manifest.py --online
+      # Every file native/worker/ copies or follows, and upstream's Cargo.lock,
+      # must still hash to its recorded sha256 at the pinned commit.
+      - run: python3 -I tool/check_worker_mirror.py --online
 
   # ---------------------------------------------------------------------------
   # Upstream parity: the measured baseline moves only on purpose
@@ -664,6 +671,52 @@ jobs:
         # `cargo llvm-cov` call reinstates the bug AND reads 71.02% against the
         # 74% floor below -- a false red, not a quiet pass.
         run: bash tool/rust_coverage.sh --summary --fail-under 77
+
+  # ---------------------------------------------------------------------------
+  # Worker crate: native/worker (upstream's `monty subprocess` loop)
+  # ---------------------------------------------------------------------------
+  # Its own cargo workspace and Cargo.lock, so its own cache, keyed on that lock.
+  # One cargo call builds the executable and the cdylib (two fat-LTO links);
+  # the smoke test runs against that same release executable. The wasm module
+  # is built here only to prove it compiles; nothing ships it yet.
+  worker-rust:
+    name: Worker crate (fmt + clippy + build + smoke)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: native/worker
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/worker
+          key: worker-${{ hashFiles('native/worker/Cargo.lock') }}
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy (native)
+        run: cargo clippy --locked --all-targets -- -D warnings
+      # src/wasm.rs compiles only for wasm32, so the native pass never sees it.
+      - name: cargo clippy (wasm32-wasip1)
+        run: cargo clippy --locked --lib --target wasm32-wasip1 -- -D warnings
+      - name: Build executable + cdylib
+        run: cargo build --locked --release --lib --bins
+      - name: Smoke test (Configure, Feed 1 + 1, Shutdown)
+        run: cargo test --locked --release
+      - name: Build wasm module (mixd)
+        run: cargo build --locked --profile mixd --lib --target wasm32-wasip1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dart_monty_worker-linux-x64
+          path: native/worker/target/release/dart_monty_worker
+          if-no-files-found: error
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
   # Build WASM binary (wasm32-wasip1)

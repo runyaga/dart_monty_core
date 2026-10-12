@@ -6,6 +6,7 @@ js/
 
 # Rust build output and dev artifacts
 native/target/
+native/worker/target/
 native/.dart_tool/
 native/tests/
 native/lcov.info

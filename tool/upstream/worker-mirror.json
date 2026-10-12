@@ -1,0 +1,88 @@
+{
+  "pin": "tool/upstream/upstream-pin.json",
+  "worker_manifest": "native/worker/Cargo.toml",
+  "worker_lock": "native/worker/Cargo.lock",
+  "upstream_lock": {
+    "upstream": "Cargo.lock",
+    "local": "tool/upstream/monty-Cargo.lock",
+    "sha256": "09b74d49840851a0ec35502336bd290cf01bc400b6e22bbe9f8c33bde2be322a"
+  },
+  "pinned_crates": [
+    "monty",
+    "monty-alloc",
+    "monty-macros",
+    "monty-proto",
+    "monty-type-checking",
+    "monty-types",
+    "monty-typeshed"
+  ],
+  "verbatim": [
+    {
+      "upstream": "crates/monty-runtime/src/subprocess.rs",
+      "local": "native/worker/upstream/subprocess.rs",
+      "sha256": "77a67c871b4cd8985496d0b86d60372e5d5a98e08c0b2ffcf5d383cf050fc8fe"
+    }
+  ],
+  "watched": [
+    {
+      "upstream": "crates/monty-runtime/src/main.rs",
+      "sha256": "1497900c3a617202251b22be7223fce75742a7096bcf6f152fa1aac782cad244",
+      "mirrored_in": "native/worker/src/lib.rs, native/worker/src/bin/dart_monty_worker.rs",
+      "why": "#[global_allocator]; how subprocess::run is entered"
+    },
+    {
+      "upstream": "crates/monty-runtime/Cargo.toml",
+      "sha256": "c4d27c0b9f68956f91a07a456091161aa6dcd0a5cc50e66ddfdc6827262dfe1e",
+      "mirrored_in": "native/worker/Cargo.toml",
+      "why": "worker features: monty-alloc exit-code, monty-types tzdb"
+    },
+    {
+      "upstream": "crates/monty-wasm-runtime/src/lib.rs",
+      "sha256": "5834e5ba6461c6d903c442dfdbf82c14bb4bde68cb9bc426a8f605fd2424d95a",
+      "mirrored_in": "native/worker/src/wasm.rs",
+      "why": "wasm turn loop: warm-up, allocator re-arm, refused arm becomes FatalError"
+    },
+    {
+      "upstream": "crates/monty-wasm-runtime/Cargo.toml",
+      "sha256": "4688a0552d08675c54c0d1c6229204d2acf402e55230096cd469080123f1a0cd",
+      "mirrored_in": "native/worker/Cargo.toml",
+      "why": "wasm features (tzdb-bundled)"
+    },
+    {
+      "upstream": "crates/monty-alloc/src/lib.rs",
+      "sha256": "ef5cadfbd12a8c1d49fb654e5ca29f628f6e6a769048d6946f3ee1b0727785c4",
+      "mirrored_in": "native/worker/src/wasm.rs",
+      "why": "set_hard_limit contract; OOM exit path"
+    },
+    {
+      "upstream": "crates/monty-types/src/resource.rs",
+      "sha256": "9b78b1926af8764151c544a0162d7db7e437163789f9a38869a9fbcbaaf0d48d",
+      "mirrored_in": "the Dart process channel",
+      "why": "OOM_EXIT_CODE (65)"
+    },
+    {
+      "upstream": "crates/monty-pool/src/worker.rs",
+      "sha256": "2dd07c2e621eac7fec182a034336dc505355cc99ccb02f393fd06a5b8a1e3e45",
+      "mirrored_in": "the Dart process channel",
+      "why": "parent spawn duties: env_clear, SystemRoot, kill_on_drop"
+    },
+    {
+      "upstream": "crates/monty-proto/src/lib.rs",
+      "sha256": "f41aa6a71afd7ee2335dc1909f5a9b5872dbcfef1c227a9302245588df118a9a",
+      "mirrored_in": "the Dart driver",
+      "why": "PROTOCOL_VERSION / MIN_SUPPORTED_PROTOCOL_VERSION"
+    },
+    {
+      "upstream": "crates/monty-proto/src/frame.rs",
+      "sha256": "bdccaf0a770483beadb05567452043903e1b4ba25a41a7ab64246c35684ac264",
+      "mirrored_in": "the Dart frame decoder",
+      "why": "4-byte little-endian framing, MAX_FRAME_LEN"
+    },
+    {
+      "upstream": "crates/monty-proto/proto/monty/v1/monty.proto",
+      "sha256": "ad0b15ebd50e7813ce090808bea986107d1a74bf8246c2523ba9ccc4cbab3238",
+      "mirrored_in": "the generated Dart protobuf",
+      "why": "schema the Dart bindings are generated from"
+    }
+  ]
+}
