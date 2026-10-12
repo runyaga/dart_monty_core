@@ -63,8 +63,9 @@ jobs:
               - 'lib/**'
               - 'test/**'
               # `example/**` IS CODE. Without it, editing only
-              # example/*.dart left `code` false and `test-examples` — the
-              # ONLY job that runs those programs — did not run at all. A
+              # example/*.dart left `code` false and `test-examples` (now the
+              # example step of `test-ffi`) — the ONLY job that runs those
+              # programs — did not run at all. A
               # broken example merged green, because the single check that
               # could catch it was the one the change switched off.
               #
@@ -74,6 +75,13 @@ jobs:
               # this workflow applies.
               - 'example/**'
               - 'native/**'
+              # js/src/** is hashed by tool/check_asset_freshness.sh and is
+              # the source of the committed worker/bridge assets; without it a
+              # JS-only change skipped the freshness check and every WASM job.
+              - 'js/**'
+              # ffigen's own config: without it a change to ffigen.yaml alone
+              # skipped the bindings drift check.
+              - 'ffigen.yaml'
               - 'hook/**'
               - 'tool/**'
               - 'packages/**'
@@ -148,11 +156,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      # fetch-depth: 0 — check_breaking_recorded.sh diffs against the merge-base
-      # with main, and a shallow clone has no merge-base to find.
+      # check_breaking_recorded.sh is NOT run here: the unfiltered
+      # `breaking-recorded` job above runs it on every event, so a copy here
+      # only ran it twice. Nothing left in this job reads git history, so the
+      # checkout is shallow.
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
@@ -181,7 +189,6 @@ jobs:
           run bash tool/check_wire_contract.sh
           run bash tool/check_workflows_valid.sh
           run bash tool/check_fixture_corpus.sh
-          run bash tool/check_breaking_recorded.sh
           run bash tool/check_fixture_links.sh
           run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
@@ -203,7 +210,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 20 ] || { echo "FAIL: expected 20 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 19 ] || { echo "FAIL: expected 19 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -230,112 +237,66 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libclang-dev
       - name: Generate bindings
         run: bash tool/generate_bindings.sh
-      - name: Upload bindings
-        uses: actions/upload-artifact@v7
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated/dart_monty_bindings.dart
-          retention-days: 1
+      # A DRIFT CHECK, not a producer. The bindings are committed, and every
+      # other job builds against the committed copy; this job proves that copy
+      # is what ffigen emits from the current header. It used to upload the
+      # regenerated file for four jobs to download over the committed one,
+      # which serialised them behind this job and hid drift instead of failing.
+      - name: Committed bindings match ffigen output
+        run: |
+          set -euo pipefail
+          F=lib/src/ffi/generated/dart_monty_bindings.dart
+          # Present AND tracked: a diff of an untracked or deleted file is empty.
+          [ -s "$F" ] || { echo "FAIL: $F missing or empty after generation."; exit 1; }
+          git ls-files --error-unmatch "$F" >/dev/null \
+            || { echo "FAIL: $F is not tracked by git."; exit 1; }
+          # Nothing else may appear under generated/ either.
+          UNTRACKED="$(git ls-files --others --exclude-standard -- lib/src/ffi/generated/)"
+          [ -z "$UNTRACKED" ] || { echo "FAIL: untracked generated files: $UNTRACKED"; exit 1; }
+          git diff --exit-code -- lib/src/ffi/generated/ || {
+            echo "FAIL: lib/src/ffi/generated/ is stale -- run bash tool/generate_bindings.sh and commit."
+            exit 1
+          }
+          echo "OK: committed bindings match ffigen output"
 
   # ---------------------------------------------------------------------------
   # Dart: analyze + format + unit tests (JIT) + coverage
   # ---------------------------------------------------------------------------
   test:
     name: Dart test (JIT)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [ffigen]
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
+      # `dart test` runs hook/build.dart, which runs `cargo build --release
+      # --lib --target x86_64-unknown-linux-gnu`. Without a cache that was a
+      # cold ~300s build in this job; the shared key restores what the other
+      # native-amd64 jobs (test-ffi) already compiled.
+      #
+      # save-if: false -- RESTORE ONLY. The key is written once, by whichever
+      # job finishes first. This job builds only the release cdylib; test-ffi
+      # also builds the dev oracle, so it is the one that must write the key,
+      # or test-ffi restores a cache with no dev deps and builds them cold.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
       - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
       - run: dart pub get
-      - name: Analyze
-        run: dart analyze --fatal-infos
-      - name: Format check
-        # The generated bindings are always pre-formatted by generate_bindings.sh
-        # so it is safe to include lib/ without exclusions.
-        run: |
-          dart format --line-length=80 --set-exit-if-changed \
-            lib/ test/ hook/ tool/
-      - name: Committed assets are not stale
-        # The wasm build is not byte-reproducible, so `git diff` on the blob
-        # cannot detect staleness. This hashes the SOURCES instead. Unlike
-        # WIRE_FORMAT_VERSION, which is hand-bumped, it is derived -- so it
-        # catches 'encoding changed, nobody bumped, nobody rebuilt', which
-        # the version handshake is blind to.
-        run: bash tool/check_asset_freshness.sh
-      - name: Wire-format version agrees between the crate and Dart
-        # WIRE_FORMAT_VERSION in convert.rs is the source of truth and the JS
-        # side reads it out of the wasm, but expectedWireFormatVersion has to be
-        # a Dart compile-time constant, so it is a hand-kept copy. That makes the
-        # handshake itself depend on someone remembering to bump two files
-        # together -- the same unenforced-invariant class it exists to replace.
-        run: bash tool/check_wire_version.sh
-      - name: Fixture corpus matches the pinned monty version
-        # The corpus is a symlink into a monty checkout, so it silently drifts
-        # when that checkout moves. The failure mode is a PASS: a v0.0.18 corpus
-        # against a v0.0.19 interpreter reported all-green having never seen the
-        # 49 fixtures upstream added for 0.19.
-        run: bash tool/check_fixture_corpus.sh
-      - name: Demo fixture links point at the monty version we build
-        # Local-only until now: tool/gate.sh:74 ran it, ci.yaml ran nothing, so
-        # the invariant held only for people who ran the gate before pushing.
-        # The conformance panel links each fixture to its source in
-        # pydantic/monty at a hand-written tag; an upgrade that bumps the crate
-        # leaves every link silently showing the WRONG source, which is worse
-        # than a dead link -- a reader who clicks through sees plausible code
-        # and has no reason to suspect the link.
-        run: bash tool/check_fixture_links.sh
-      - name: No harness reports a bare "unexpected error"
-        # Local-only until now: tool/gate.sh:75. MontyException carries
-        # excType, lineNumber, columnNumber, sourceCode and traceback, and six
-        # separate sites used to discard all of it to print the word
-        # "unexpected" (core#145). This package exists so a model can generate
-        # Monty Python and RETRY on failure; "unexpected error" gives it
-        # nothing to localise or act on.
-        run: bash tool/check_no_vague_errors.sh
-      - name: Worker and wasm agree on every export's arity
-        # Local-only until now: tool/gate.sh. JS does NOT throw when a
-        # WebAssembly export is called with the wrong number of arguments -- it
-        # pads missing ones with 0 and drops extras -- so a Rust signature
-        # change is a SILENT miscompile on the web backend. `dart analyze`
-        # covers the FFI half of the ABI and nothing at all covered the JS half.
-        # Measured: monty_repl_restore grew from 3 parameters to 5, the Worker
-        # kept passing 3, out_error bound to the limits_json slot (an
-        # out-pointer parsed as a C string), and every WASM restore failed with
-        # no cause while the full FFI suite stayed green.
-        run: node tool/check_wasm_arity.mjs
-      - name: Package version tracks the monty pin
-        # Local-only until now. This package's MINOR version equals the monty
-        # PATCH it pins (v0.0.17 -> 0.17.x, v0.0.19 -> 0.19.0), and that is not
-        # decorative: snapshots are not portable across monty upgrades, so the
-        # version is how a consumer knows which format they hold. e1e4eda moved
-        # the pin 0.19 -> 0.23 without touching pubspec.yaml, so the package
-        # called itself 0.19.0 while pinning v0.0.23 -- and nothing compared the
-        # two until a human read the version off the deployed demo page.
-        run: bash tool/check_version_pin.sh
-      - name: Published pages state the versions they were built from
-        # Local-only until now. The deployed site is the one artefact a reader
-        # meets without a pubspec in front of them, and nothing compiles an HTML
-        # shell -- so a hand-written version string rots silently on the next
-        # bump. The expected string is assembled from pubspec.yaml,
-        # native/Cargo.toml and convert.rs, and every published page must carry
-        # it. Note this gate runs BEFORE deploy-pages.yml can publish anything:
-        # deploy triggers only on push to main, so a wrong badge caught here
-        # never reaches the site.
-        run: bash tool/check_page_versions.sh
+      # analyze, format and the source-only check_*.sh scripts that used to be
+      # repeated here run in `gate`, which runs on every code OR docs change
+      # (a superset of this job's trigger). This job is the tests.
       # ---------------------------------------------------------------------------
       # DCM IS DELIBERATELY NOT RUN HERE. Do not add it back.
       # ---------------------------------------------------------------------------
@@ -475,17 +436,23 @@ jobs:
   # ---------------------------------------------------------------------------
   test-aot:
     name: AOT consumer
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [ffigen]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
+      # `dart build cli` runs the same hook build as `dart test` (release,
+      # --lib, --locked, x86_64-unknown-linux-gnu), so it restores the same
+      # shared key. Restore-only: test-ffi is the one writer (see `test`).
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
@@ -494,11 +461,6 @@ jobs:
           path: ~/.pub-cache
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
       - run: dart pub get
       # Build CLI bundles the hook's native asset; the probe asserts its result.
       - name: Build an AOT consumer
@@ -615,15 +577,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+      # Compile-only: the one CI build of the shipped wasm feature set (the same
+      # command as tool/prebuild.sh). Tests run the COMMITTED lib/assets/ wasm,
+      # so the binary is not uploaded -- no job ever downloaded it.
       - name: Build WASM
         working-directory: native
         run: cargo build --release --target wasm32-wasip1
-      - name: Upload WASM binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: wasm-binary
-          path: native/target/wasm32-wasip1/release/dart_monty_core_native.wasm
-          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # FFI integration tests — 464 fixtures, oracle binary vs MontyFfi
@@ -631,10 +590,12 @@ jobs:
   # ---------------------------------------------------------------------------
   test-ffi:
     name: FFI integration tests
-    needs: [changes, ffigen]
+    needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 + 5 for the example smoke suite folded in from test-examples, which
+    # on a cold cache was the job that needed the most headroom.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
@@ -662,12 +623,12 @@ jobs:
           # feature set. Neither shares this one. The `rust` job is dev-profile
           # and is left alone so it cannot win the write-once race and leave the
           # release jobs cold.
-          shared-key: native-amd64
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
+          #
+          # -v2: the v1 entry on main was written by the old test-examples job,
+          # which built no dev oracle, so every hit here rebuilt the oracle's
+          # dev deps cold (~70s), and an exact hit never re-saves. test-ffi is
+          # now the only writer (the other jobs on this key are save-if: false).
+          shared-key: native-amd64-v2
       - name: Build native library
         working-directory: native
         # --target MATCHES THE HOOK, and that is the whole point of the flag.
@@ -681,7 +642,12 @@ jobs:
         # `shared-key` (added in 5e25267) fixed the CACHE not warming between
         # jobs; it did nothing about this, because both directories were being
         # cached and both still had to be built. This is the other half.
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+        #
+        # --lib and --locked MATCH THE HOOK TOO (hook/build.dart passes exactly
+        # `build --locked --release --lib --target <triple>`). Without --lib
+        # cargo also builds the release `oracle` bin, a second fat-LTO link
+        # nothing runs: the tests use the dev-profile oracle built next.
+        run: cargo build --locked --release --lib --target x86_64-unknown-linux-gnu
       - name: Build oracle binary
         working-directory: native
         run: cargo build --bin oracle
@@ -744,66 +710,16 @@ jobs:
           path: coverage-ffi/lcov.info
           if-no-files-found: error
           retention-days: 1
-  # ---------------------------------------------------------------------------
-  # Example smoke tests — every example/*.dart must compile and exit 0.
-  # `dart analyze` only checks types; this is the only thing exercising the
-  # examples at runtime. Broken examples are tracked via markTestSkipped()
-  # with a TODO reason; remove the skip-list entry to enforce.
-  # ---------------------------------------------------------------------------
-  test-examples:
-    name: Example smoke tests
-    needs: [changes, ffigen]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: 3.13.5
-      - uses: actions/cache@v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-          # SHARED with the other native-amd64 release job. Swatinem defaults to
-          # a per-job key (add-job-id-key: true) and cache-on-failure: false, so
-          # a job that is red never saves and never warms. test-examples had
-          # been red for 10 runs and its key had never existed, which is why it
-          # spent 698s of a 736s job compiling what test-ffi built in 56s on a
-          # hit. A shared key lets the job that passes populate the cache the
-          # job that fails restores from.
-          #
-          # Scope is deliberate: build-wasm targets wasm32-wasip1 (different
-          # triple) and test-hooks-corpus documents its own key for a different
-          # feature set. Neither shares this one. The `rust` job is dev-profile
-          # and is left alone so it cannot win the write-once race and leave the
-          # release jobs cold.
-          shared-key: native-amd64
-      - name: Download FFI bindings
-        uses: actions/download-artifact@v8
-        with:
-          name: ffi-bindings
-          path: lib/src/ffi/generated
-      - name: Build native library
-        working-directory: native
-        # --target MATCHES THE HOOK, and that is the whole point of the flag.
-        # hook/build.dart:36-37 computes `_rustTriple(os, arch)` and passes
-        # `--target <triple>`, so it builds into target/<triple>/release/. A bare
-        # `cargo build --release` builds into target/release/ instead -- a
-        # DIFFERENT directory that shares nothing. The result was the monty tree
-        # compiled twice per job: once here, once by the hook, neither reusing
-        # the other.
-        #
-        # `shared-key` (added in 5e25267) fixed the CACHE not warming between
-        # jobs; it did nothing about this, because both directories were being
-        # cached and both still had to be built. This is the other half.
-        run: cargo build --release --target x86_64-unknown-linux-gnu
-      - run: dart pub get
+      # -----------------------------------------------------------------------
+      # Example smoke tests — every example/*.dart must compile and exit 0.
+      # `dart analyze` only checks types; this is the only thing exercising the
+      # examples at runtime. Broken examples are tracked via markTestSkipped()
+      # with a TODO reason; remove the skip-list entry to enforce.
+      #
+      # The repl_demo dart2js compile that used to follow is gone: the `pages`
+      # job compiles repl_demo AND feature_matrix with dart2js and dart2wasm
+      # (tool/check_pages.sh) on every code or docs change.
+      # -----------------------------------------------------------------------
       # NOT measured for coverage, and the reason is worth recording because
       # the obvious assumption is wrong. This suite runs each example with
       # `Process.run('dart', ['run', ex])` (example_smoke_test.dart:59) -- a
@@ -815,6 +731,10 @@ jobs:
       # spawned-isolate case in native_isolate_bindings_impl.dart, one level
       # further out.
       - name: Run example smoke tests
+        # Formerly its own job (`test-examples`), which rebuilt the same x86_64
+        # release library this job has already built. Runs even if the FFI
+        # suite failed, so one red result cannot hide the other.
+        if: success() || failure()
         # Same BODY as tool/gate.sh runs, not the same four lines copied. This
         # step and gate.sh:274 had drifted: CI asserted a count, the local gate
         # asserted nothing, and the two picked different reporters. The floor is
@@ -823,15 +743,6 @@ jobs:
         # existing fifteen to be deleted afterwards with CI still green.
         # tool/example_floor.sh derives it from the tree.
         run: bash tool/run_example_smoke.sh /tmp/example-test.log
-
-      # Compile-only smoke for the Pages demo. Catches API drift between
-      # `Monty`/`MontyRepl` refactors and packages/dart_monty_web at PR time
-      # rather than after merge (deploy-pages.yml only runs on push:main).
-      - name: Build web REPL (compile-only smoke)
-        run: |
-          cd packages/dart_monty_web && dart pub get && cd ../..
-          dart compile js packages/dart_monty_web/web/repl_demo.dart \
-            -o /tmp/repl_demo.dart.js --no-source-maps
 
   # ---------------------------------------------------------------------------
   # WASM/JS integration tests — 464 fixtures through MontyWasm in headless Chrome
@@ -929,6 +840,21 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
+      # `dart test` runs hook/build.dart, which runs `cargo build --release
+      # --lib --target x86_64-unknown-linux-gnu`. Without a cache that was a
+      # cold ~300s build in this job; the shared key restores what the other
+      # native-amd64 jobs (test-ffi) already compiled.
+      #
+      # save-if: false -- RESTORE ONLY. The key is written once, by whichever
+      # job finishes first. This job builds only the release cdylib; test-ffi
+      # also builds the dev oracle, so it is the one that must write the key,
+      # or test-ffi restores a cache with no dev deps and builds them cold.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
       - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
