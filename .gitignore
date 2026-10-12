@@ -7,6 +7,7 @@ coverage/
 
 # Rust
 native/target/
+native/worker/target/
 # native/Cargo.lock IS committed (deliberately un-ignored during the monty 0.19
 # upgrade). Cargo's "libraries don't commit lockfiles" convention does not apply
 # here: hook/build.dart compiles this crate as a TOP-LEVEL package on every

@@ -1,0 +1,40 @@
+name: Worker nightly (macOS arm64)
+
+# The worker crate's required CI is the ubuntu `worker-rust` job in ci.yaml.
+# This runs the same build and smoke test on macOS arm64 once a night, to catch
+# platform drift without putting a macOS runner on every PR. A PR that edits
+# this file runs it too, so a change to it is tested before it merges.
+on:
+  schedule:
+    - cron: '30 3 * * *'   # daily 03:30 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/worker-nightly.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  worker-macos:
+    name: Worker crate (macOS arm64 build + smoke)
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: native/worker
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/worker
+          key: worker-${{ hashFiles('native/worker/Cargo.lock') }}
+      - name: Build executable + cdylib
+        run: cargo build --locked --release --lib --bins
+      - name: Smoke test (Configure, Feed 1 + 1, Shutdown)
+        run: cargo test --locked --release
