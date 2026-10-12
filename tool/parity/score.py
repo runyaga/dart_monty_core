@@ -39,9 +39,10 @@ from OUTCOMES/platform.json, written by tool/parity/run.py; an architecture
 with no entry fails.
 
 --assert-current FILE compares instead with the baseline recorded for the
-current tree (tool/parity/baseline-current.json): every re-measured row on
-every backend, and the totals. A change that moves a row updates that file,
-with the move listed under `deltas`.
+current tree (tool/parity/baseline-current.json): every case's class within
+every re-measured row, every row's status, on every backend, and the PRESENT
+totals. A change that moves a case or a row updates that file, with the move
+listed under `deltas`.
 """
 
 from __future__ import annotations
@@ -340,10 +341,14 @@ def main() -> int:
 
     measured = {row: {b: result['rows'][row][b]['status'] for b in backends} for row in rules}
     present = {b: totals[b]['all_rows'].get('PRESENT', 0) for b in backends}
+    cells = {row: {c['case']: {b: next(x['class'] for x in result['rows'][row][b]['cells'] if x['case'] == c['case'])
+                                for b in backends}
+                   for c in result['rows'][row][backends[0]]['cells']} for row in rules}
     if a.write_current:
         prev = json.loads(a.write_current.read_text()) if a.write_current.exists() else {}
         doc = {'subject': prev.get('subject', ''), 'present': present, 'totals': {b: totals[b]['all_rows'] for b in backends},
-               'rows': measured, 'platforms': prev.get('platforms', {}), 'deltas': prev.get('deltas', [])}
+               'platforms': prev.get('platforms', {}), 'deltas': prev.get('deltas', []),
+               'rows': measured, 'cells': cells}
         a.write_current.write_text(json.dumps(doc, indent=1) + '\n')
     rc = 0
     if a.assert_current:
@@ -357,6 +362,16 @@ def main() -> int:
                for row in rules for b in backends if measured[row][b] != want_rows[row].get(b)]
         for row, b, got, want in bad:
             print(f'FAIL current row {row} on {b}: measured {got}, recorded {want} (tool/parity/baseline-current.json)')
+        want_cells = {row: {case: {**by_b, **cplat.get('cells', {}).get(row, {}).get(case, {})}
+                            for case, by_b in cur.get('cells', {}).get(row, {}).items()} for row in rules}
+        for row in rules:
+            for case in sorted(set(cells[row]) | set(want_cells[row])):
+                for b in backends:
+                    got_c = cells[row].get(case, {}).get(b)
+                    want_c = want_cells[row].get(case, {}).get(b)
+                    if got_c != want_c:
+                        bad.append((f'{row}/{case}', b, got_c, want_c))
+                        print(f'FAIL current case {case} (row {row}) on {b}: measured {got_c}, recorded {want_c}')
         for b in backends:
             if present[b] != cur['present'].get(b):
                 bad.append(('PRESENT', b, present[b], cur['present'].get(b)))
@@ -364,7 +379,7 @@ def main() -> int:
         if bad:
             rc = 1
         else:
-            print(f'PASS current ({arch}): every re-measured row and the PRESENT totals match '
+            print(f'PASS current ({arch}): every case, every re-measured row and the PRESENT totals match '
                   f'baseline-current.json ({", ".join(f"{b} {present[b]}/{len(in_scope)}" for b in backends)})')
     if a.assert_rows and mismatches:
         rc = 1

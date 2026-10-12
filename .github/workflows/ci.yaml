@@ -370,6 +370,63 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
+  # Parity, current tree: the measured baseline moves only on purpose
+  # ---------------------------------------------------------------------------
+  # The same harness as parity-baseline, on this tree's own dart_monty_core.
+  # tool/parity/baseline-current.json records every case's result within every
+  # re-measured row, every row's status, on every backend, and the PRESENT
+  # totals; a change that moves any of them -- even one case inside a row
+  # whose status holds -- fails here until that file is updated in the same
+  # change, with the move listed under `deltas`. Expectations are per architecture (its
+  # `platforms`); on this x86_64 runner float_values is PARTIAL on vm and
+  # dart2wasm (core's NaN sign bit), and nothing else may differ.
+  parity-current:
+    name: Parity, current tree (vm, dart2js, dart2wasm)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-parity-${{ runner.os }}-${{ hashFiles('packages/monty_parity/pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Run on the VM (FFI)
+        run: python3 -I tool/parity/run.py vm --out /tmp/parity
+      - name: Run on dart2js
+        run: python3 -I tool/parity/run.py dart2js --out /tmp/parity
+      - name: Run on dart2wasm
+        run: python3 -I tool/parity/run.py dart2wasm --out /tmp/parity
+      - name: Score and assert the current baseline
+        run: |
+          python3 -I tool/parity/score.py /tmp/parity \
+            --json /tmp/parity/score.json --markdown /tmp/parity/score.md \
+            --assert-current tool/parity/baseline-current.json
+      - name: Publish the scorecard
+        if: success() || failure()
+        run: '[ -f /tmp/parity/score.md ] && cat /tmp/parity/score.md >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: parity-current
+          path: /tmp/parity
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
   # FFI binding generation
   # ---------------------------------------------------------------------------
   ffigen:

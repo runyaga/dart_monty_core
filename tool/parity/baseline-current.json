@@ -1,0 +1,5304 @@
+{
+ "subject": "dart_monty_core main (0.23.1: 5873ec5 plus the stabilisation changes); rows the harness does not re-measure carry their 5873ec5 status from the capability manifest",
+ "note": "`rows`, `cells`, `present` and `totals` are as measured on arm64. `platforms` gives each architecture's PRESENT totals and the rows and cases whose result differs there, with the cause.",
+ "present": {
+  "vm": 37,
+  "dart2js": 36,
+  "dart2wasm": 36
+ },
+ "totals": {
+  "vm": {
+   "ABSENT": 64,
+   "PRESENT": 37,
+   "PARTIAL": 56,
+   "REFUSED": 2,
+   "N/A": 26
+  },
+  "dart2js": {
+   "ABSENT": 60,
+   "PRESENT": 36,
+   "PARTIAL": 56,
+   "REFUSED": 6,
+   "N/A": 27
+  },
+  "dart2wasm": {
+   "ABSENT": 60,
+   "PRESENT": 36,
+   "PARTIAL": 56,
+   "REFUSED": 6,
+   "N/A": 27
+  }
+ },
+ "platforms": {
+  "arm64": {
+   "measured_on": "macOS arm64",
+   "rows": {},
+   "present": {
+    "vm": 37,
+    "dart2js": 36,
+    "dart2wasm": 36
+   }
+  },
+  "x86_64": {
+   "measured_on": "Linux x86_64 (CI)",
+   "rows": {
+    "float_values": {
+     "vm": "PARTIAL",
+     "dart2wasm": "PARTIAL"
+    }
+   },
+   "present": {
+    "vm": 36,
+    "dart2js": 36,
+    "dart2wasm": 35
+   },
+   "cause": {
+    "float_values": "float(\"nan\") reaches the host with the sign bit set on x86_64 (fff8000000000000; upstream 7ff8000000000000): a core defect, recorded as measured"
+   },
+   "cells": {
+    "float_values": {
+     "v_nan": {
+      "vm": "DIVERGE",
+      "dart2wasm": "DIVERGE"
+     }
+    }
+   }
+  }
+ },
+ "deltas": [
+  {
+   "row": "compile_program",
+   "backends": [
+    "vm",
+    "dart2js",
+    "dart2wasm"
+   ],
+   "from": "REFUSED",
+   "to": "ABSENT",
+   "commit": "9bd7bbc",
+   "pr": 173,
+   "why": "refactor(api)!: remove the precompile API (core#152). At 5873ec5 compiling threw StateError (a runtime refusal); the API no longer exists."
+  }
+ ],
+ "rows": {
+  "singleton_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "boolean_integer_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "big_integer_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "float_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "complex_values": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "text_and_bytes": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "sequence_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "set_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "dictionary_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "named_tuple_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "calendar_values": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "time_duration_zone_values": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "path_value_conversion": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "exception_value_conversion": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "builtin_type_function_handles": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "lossy_output_placeholders": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "boundary_value_graph": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "host_eager_attributes": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "host_instance_value": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "host_class_type_proxy": {
+   "vm": "REFUSED",
+   "dart2js": "REFUSED",
+   "dart2wasm": "REFUSED"
+  },
+  "host_lazy_attributes": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "host_class_value": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "host_constructor_policy": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "host_value_conversion_hook": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "os_path_predicates": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_file_reads": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_file_writes": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_rename": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_path_resolution": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_open_file": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_stat_results": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_directory_listing": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_directory_creation": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_entry_removal": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "memory_filesystem": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "os_environment": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "mount_table": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "mount_modes": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "mount_errors": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "mount_feed_lifecycle": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "mount_close": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "async_os_sleep": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "os_calendar_calls": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "os_entropy": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "os_clock_reads": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "os_sync_sleep": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "working_directory": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "clock_source": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "sleep_policy": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "random_initialization": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "configure_os_policy": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "file_mode_inspection": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "file_handle_value_conversion": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "raised_exception": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "traceback_frames": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "recursion_limit": {
+   "vm": "PRESENT",
+   "dart2js": "REFUSED",
+   "dart2wasm": "REFUSED"
+  },
+  "resource_failure_semantics": {
+   "vm": "PARTIAL",
+   "dart2js": "REFUSED",
+   "dart2wasm": "REFUSED"
+  },
+  "feed_execution_limit": {
+   "vm": "PARTIAL",
+   "dart2js": "REFUSED",
+   "dart2wasm": "REFUSED"
+  },
+  "turn_execution_limit": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "host_suspension_budget": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "host_sleep_budget": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "source_nesting_guard": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "garbage_collection_interval": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "exception_taxonomy": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "structured_exception_data": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "process_clock_policy": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "run_blocking": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "start_program": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "interactive_continuation": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "create_repl": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "recover_repl_after_error": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "external_call_result": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "external_call_arguments": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "register_pending_future": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "mount_write_budget": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "mount_memory_budget": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "callback_files": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "boundary_uuid": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "fork_session": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "reset_type_checker": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "compile_program": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "compiled_source": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "eager_coroutine_completion": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "run_progress_variants": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "resume_os_call": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "resolve_pending_futures": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "async_host_driver": {
+   "vm": "PRESENT",
+   "dart2js": "PRESENT",
+   "dart2wasm": "PRESENT"
+  },
+  "snapshot_auto_resume": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "feed_repl_suspendable": {
+   "vm": "PARTIAL",
+   "dart2js": "PARTIAL",
+   "dart2wasm": "PARTIAL"
+  },
+  "suspension_source_position": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  },
+  "abandon_suspended_feed": {
+   "vm": "ABSENT",
+   "dart2js": "ABSENT",
+   "dart2wasm": "ABSENT"
+  }
+ },
+ "cells": {
+  "singleton_values": {
+   "v_none": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_none": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_singletons": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "boolean_integer_values": {
+   "v_bool_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_bool_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "big_integer_values": {
+   "v_bigint": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_bigint": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_bigint": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "float_values": {
+   "v_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_nan": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "complex_values": {
+   "v_complex": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "i_complex": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "r_complex": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "text_and_bytes": {
+   "v_text_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_text_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "sequence_values": {
+   "v_seq": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_seq": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_bytes_tuple_set": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "set_values": {
+   "v_set": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_set": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "dictionary_values": {
+   "v_dict": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_dict": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_dict": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "named_tuple_values": {
+   "v_namedtuple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_namedtuple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_namedtuple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "calendar_values": {
+   "v_date": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_datetime_tz": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_datetime_utc": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_date": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_datetime_tz": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_datetime": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "time_duration_zone_values": {
+   "v_time": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_timedelta": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_timezone": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_time": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "i_timedelta": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_timezone": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_time_td_tz": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "path_value_conversion": {
+   "v_path": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_path": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_path": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "exception_value_conversion": {
+   "v_exception": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "i_exception": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "r_exception": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "builtin_type_function_handles": {
+   "v_builtin": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_builtin": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_type": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_type": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "r_type": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "h_b05_std_type_proxy": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "lossy_output_placeholders": {
+   "v_cycle_list": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_cycle_dict": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_cycle": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "v_function": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "r_function": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "v_repr": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "boundary_value_graph": {
+   "v_alias": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "v_alias_nested": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_alias": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "i_alias_is": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "r_alias": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_eager_attributes": {
+   "h_x01_eager_all": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "h_x02_eager_list": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "h_x03_eager_none": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "host_instance_value": {
+   "h_b01_proxy_roundtrip": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "h_b02_proxy_nested": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "h_b03_dataclass_proxy": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "h_x17_return_original": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_class_type_proxy": {
+   "h_b07_restore_type_proxy": {
+    "vm": "REFUSED",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   },
+   "h_b08_restore_class_eager": {
+    "vm": "REFUSED",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   }
+  },
+  "host_lazy_attributes": {
+   "h_x07_lazy": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_class_value": {
+   "h_x09_class_init": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_constructor_policy": {
+   "h_x09_class_init": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "h_x11_class_methods": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_value_conversion_hook": {
+   "h_x13_convert_upper": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "h_x14_convert_redact": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "h_x15_convert_wrap": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "os_path_predicates": {
+   "b11fs_predicates": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_file_reads": {
+   "b11fs_read_text": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_text_unicode": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_open_partial": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_file_writes": {
+   "b11fs_write_text": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_overwrite": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_append_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_rename": {
+   "b11fs_rename": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename_replace": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_path_resolution": {
+   "b11fs_resolve_absolute": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_open_file": {
+   "x8mode_00": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_01": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_02": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_03": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_04": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_05": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_06": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_07": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_08": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_09": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_10": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_11": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_12": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_13": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_14": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_15": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_16": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_17": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_stat_results": {
+   "b11fs_stat_file": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_stat_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_stat_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_directory_listing": {
+   "b11fs_iterdir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_iterdir_file": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_iterdir_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_root_listing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_directory_creation": {
+   "b11fs_mkdir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_exists": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_exist_ok": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_parents": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_no_parent": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_then_write": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_entry_removal": {
+   "b11fs_unlink": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_unlink_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_unlink_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rmdir_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rmdir_file": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rmdir_nonempty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "memory_filesystem": {
+   "b11fs_append_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_iter_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_iterdir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_iterdir_file": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_iterdir_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_exist_ok": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_exists": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_no_parent": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_parents": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_mkdir_then_write": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_overwrite": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_predicates": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_binary_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_open_partial": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_root_listing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_text": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_read_text_unicode": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_readlines_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rename_replace": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_resolve_absolute": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rmdir_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rmdir_file": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_rmdir_nonempty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_stat_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_stat_file": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_stat_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_unlink": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_unlink_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_unlink_missing": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_dir": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_missing_parent": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_open": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b11fs_write_text": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_00": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_01": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_02": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_03": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_04": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_05": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_06": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_07": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_08": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_09": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_10": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_11": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_12": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_13": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_14": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_15": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_16": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8mode_17": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "os_environment": {
+   "b14_env": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_fallback_nonfs": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "mount_table": {
+   "x21_two_mounts": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_nested_virtual": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_trailing_slash_virtual": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_dup_virtual": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_relative_virtual": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "mount_modes": {
+   "x21_ro_read_ok": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_ro_write": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_overlay_same_feed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "mount_errors": {
+   "x21_write_limit": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_ro_write": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_ro_mkdir": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_ro_open_w": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_ro_unlink": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_dup_virtual": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_relative_virtual": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "g19_close_then_feed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "mount_feed_lifecycle": {
+   "x21_lifecycle_read-write": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_lifecycle_delete_read-write": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x21_lifecycle_overlay": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_write_limit_per_feed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "mount_close": {
+   "g19_close_then_feed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "async_os_sleep": {
+   "b14_async_sleep_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_async_sleep_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "os_calendar_calls": {
+   "b14_date_callhost": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b14_date_callhost_tz": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "os_entropy": {
+   "b14_urandom": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_urandom_unhandled": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "os_clock_reads": {
+   "b14_time_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_time_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "os_sync_sleep": {
+   "b14_sleep_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_zero": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_negative": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "l16_sync_sleep": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "working_directory": {
+   "b14_getcwd_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_getcwd_set": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_cwd_feed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_cwd_default_mount": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x21_cwd_relative_fallback": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "clock_source": {
+   "b14_date_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_date_fixed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_date_callhost": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "sleep_policy": {
+   "b14_sleep_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_zero": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "random_initialization": {
+   "x25_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_no_draw": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_reseed_first": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_short": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_unhandled": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_wrongtype": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_default_unseeded_instance": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_bigint": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_bytes": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_float": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_int": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_negint": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_str": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_vs_sandbox_seed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_system": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "configure_os_policy": {
+   "c02_process_time_zero": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "c03_process_time_elapsed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "c04_elapsed_excludes_sleep": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "l17_sleep_zero_policy": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_async_sleep_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_callhost_all_unhandled": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_date_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_date_callhost_tz": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_date_fixed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_sleep_zero": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b14_time_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_no_draw": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_reseed_first": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_short": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_unhandled": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_callhost_wrongtype": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_bigint": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_bytes": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_float": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_int": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_negint": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_str": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x25_seed_vs_sandbox_seed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "file_mode_inspection": {
+   "x8cbmode_00": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_01": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_02": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_03": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_04": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_05": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_06": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_07": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_08": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_09": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_10": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_11": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_12": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_13": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_14": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_15": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_16": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8cbmode_17": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8hostmode_zz": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x8hostmode_rt": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8hostmode_rplus": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "file_handle_value_conversion": {
+   "x8handle_pos5": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8handle_tell": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "x8handle_pos2p53": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x8handle_pos2p63m1": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "x8hostmode_neg": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "raised_exception": {
+   "b12_args__dict_get_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_get_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_items_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_keys_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_pop_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_pop_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_values_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__id_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_type_error_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_type_error_none": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_append_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_append_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_insert_too_few": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_insert_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__repr_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__div_zero_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__div_zero_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__floordiv_zero_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__floordiv_zero_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__pow_zero_neg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__pow_zero_neg_builtin": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_assert__fail": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_assert__fail_msg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__get_int_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__get_list_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__set_int_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__set_list_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__add_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__exec_import_traceback": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_builtin__exec_traceback": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_builtin__filter_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__iter_err_unpack_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__map_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__next_stop_iteration": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_builtin__print_invalid_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__endswith_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__getitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__index_start_gt_end": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__negative_count": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__startswith_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__attribute_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__body_raises": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__init_raises": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__init_return": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__method_raises": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__name_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_complex__error_ordering": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_complex__error_zero_power": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_comprehension__unbound_local": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_decorator__class_body_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_decorator__class_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_decorator__function_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__get_unhashable_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__literal_unhashable_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__method_pop_missing_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__pop_unhashable_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__popitem_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__subscript_missing_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__unhashable_dict_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__unhashable_list_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_instance_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_no_args": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_execute_raise__error_string_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_string_arg_quotes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_type": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_execute_raise__raise_instance_via_var": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_list": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_number": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_type_call_via_var": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_type_direct": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_execute_raise__raise_type_via_var": {
+    "vm": "MATCH",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_fstring__error_eq_align_on_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_float_f_on_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_int_d_on_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_int_d_on_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_invalid_spec": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_invalid_spec_dynamic": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_invalid_spec_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_str_s_on_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__call_duplicate_kwargs": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_first_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_kwarg_cleanup": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_param": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_kwonly_as_positional": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_all_posonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_heap_cleanup": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_kwonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_posonly_with_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_with_posonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_posonly_as_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_posonly_first_as_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_repeated_keyword": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_function__err_too_many_posonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_too_many_with_kwonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg_cleanup": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg_quote": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg_simple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_duplicate_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_duplicate_heap": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_nonstring_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_not_mapping": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_few_args_all": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_few_args_one": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_few_args_two": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_many_args_one": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_many_args_two": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_many_args_zero": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_generic_alias__not_subscriptable": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_global__error_assigned_before": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_hash__dict_unhashable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_hash__list_unhashable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_elif": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_else": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_if": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_in_elif_condition": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_in_if_condition": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__error_cannot_import": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__error_module_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__future_unknown_feature": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__relative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__relative_future_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__relative_no_module_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__runtime_error_when_executed": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__star_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_isinstance__arg2_list_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_isinstance__arg2_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_iter__dict_mutation": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_iter__not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__extend_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__getitem_out_of_bounds": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__index_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__index_start_gt_end": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__pop_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__pop_out_of_range": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__pop_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__remove_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_dict_index": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_huge_int_index": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_longint__index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_longint__repeat_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__break_in_function_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__break_in_if_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__break_outside_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__continue_in_function_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__continue_in_if_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__continue_outside_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__acos_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__acosh_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__asin_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__atanh_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__cos_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__cosh_overflow_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__exp_overflow_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__factorial_float_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__factorial_negative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__floor_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__floor_nan_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__floor_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__fmod_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__gamma_neg_int_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__gcd_float_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__isqrt_negative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__ldexp_overflow_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__log1p_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__log_base1_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__log_zero_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__pow_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__sin_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__sqrt_negative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__tan_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__trunc_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__module_conditional_assign": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__unbound_local_func": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__unbound_local_module": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_call_chained": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_name_error__undefined_call_in_expr": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_name_error__undefined_call_in_function": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_name_error__undefined_call_with_args": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_name_error__undefined_global": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_name_error__undefined_global_in_function": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_namedtuple__missing_attr": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_nonlocal__error_module_level": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__error_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__error_step_zero": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__error_too_many_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__getitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_recursion__function_depth": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_set__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__invalid_indices": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__kwargs": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_range": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_tuple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__too_many_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__getitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__index_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_non_string": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_too_many_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__partition_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__rsplit_empty_sep": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__split_empty_sep": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__division_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__insert_as_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__nested_call": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__nonlocal_module_scope": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__nonlocal_unbound": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__range_as_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__recursion_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__set_mutation": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__undefined_attr_call": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__undefined_call": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_traceback__undefined_raise": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_try_except__bare_raise_no_context": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_try_except__invalid_type": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__getitem_out_of_bounds": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__index_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__index_start_gt_end": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__builtin_attr_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__bytes_negative": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__cell_not_builtin": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__exception_attr_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_conversion_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_repr_both_quotes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_repr_newline": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_repr_single_quote": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__int_conversion_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__list_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__non_builtin_name_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__tuple_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_add_list": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_div_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_floordiv_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_iadd_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_mod_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_pow_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_sub_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__list_add_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__list_add_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__str_add_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__str_iadd_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_invert_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_minus_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_neg_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_plus_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unicodedata__bad_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unicodedata__name_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__err_multiple_starred": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_unpack__non_sequence": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__not_enough": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__star_not_enough": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_context_expr_raises_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_enter_raises_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_exit_raises_normal_exit_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_nested_body_raises_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__not_context_manager": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "traceback_frames": {
+   "b12_args__dict_get_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_get_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_items_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_keys_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_pop_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_pop_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__dict_values_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__id_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_type_error_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__len_type_error_none": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_append_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_append_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_insert_too_few": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__list_insert_too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_args__repr_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__div_zero_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__div_zero_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__floordiv_zero_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__floordiv_zero_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__pow_zero_neg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_arith__pow_zero_neg_builtin": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_assert__fail": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_assert__fail_msg": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_attr__get_int_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__get_list_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__set_int_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_attr__set_list_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__add_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__exec_import_traceback": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_builtin__exec_traceback": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_builtin__filter_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__iter_err_unpack_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__map_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__next_stop_iteration": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_builtin__print_invalid_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__endswith_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__getitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__index_start_gt_end": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__negative_count": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_bytes__startswith_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__attribute_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__body_raises": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__init_raises": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__init_return": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__method_raises": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_class__name_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_complex__error_ordering": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_complex__error_zero_power": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_comprehension__unbound_local": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_decorator__class_body_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_decorator__class_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_decorator__function_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__get_unhashable_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__literal_unhashable_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__method_pop_missing_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__pop_unhashable_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__popitem_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__subscript_missing_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__unhashable_dict_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__unhashable_list_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_dict__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_instance_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_string_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_string_arg_quotes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__error_type": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_instance_via_var": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_list": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_number": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_type_call_via_var": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_type_direct": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_execute_raise__raise_type_via_var": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_eq_align_on_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_float_f_on_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_int_d_on_float": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_int_d_on_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_invalid_spec": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_invalid_spec_dynamic": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_invalid_spec_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_fstring__error_str_s_on_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__call_duplicate_kwargs": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_first_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_kwarg_cleanup": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_duplicate_param": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_kwonly_as_positional": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_all_posonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_heap_cleanup": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_kwonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_posonly_with_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_missing_with_posonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_posonly_as_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_posonly_first_as_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_repeated_keyword": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_too_many_posonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_too_many_with_kwonly": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg_cleanup": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg_quote": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unexpected_kwarg_simple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_duplicate_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_duplicate_heap": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_nonstring_key": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__err_unpack_not_mapping": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_few_args_all": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_few_args_one": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_few_args_two": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_many_args_one": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_many_args_two": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_function__too_many_args_zero": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_generic_alias__not_subscriptable": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_global__error_assigned_before": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_hash__dict_unhashable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_hash__list_unhashable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_elif": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_else": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_if": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_in_elif_condition": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_if__raise_in_if_condition": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__error_cannot_import": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__error_module_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__future_unknown_feature": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__relative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__relative_future_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__relative_no_module_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__runtime_error_when_executed": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_import__star_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_isinstance__arg2_list_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_isinstance__arg2_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_iter__dict_mutation": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_iter__not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__extend_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__getitem_out_of_bounds": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__index_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__index_start_gt_end": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__pop_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__pop_out_of_range": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__pop_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__remove_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_dict_index": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_huge_int_index": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__setitem_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_list__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_longint__index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_longint__repeat_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__break_in_function_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__break_in_if_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__break_outside_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__continue_in_function_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__continue_in_if_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_loop__continue_outside_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__acos_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__acosh_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__asin_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__atanh_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__cos_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__cosh_overflow_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__exp_overflow_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__factorial_float_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__factorial_negative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__floor_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__floor_nan_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__floor_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__fmod_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__gamma_neg_int_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__gcd_float_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__isqrt_negative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__ldexp_overflow_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__log1p_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__log_base1_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__log_zero_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__pow_domain_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__sin_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__sqrt_negative_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__tan_inf_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_math__trunc_str_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__module_conditional_assign": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__unbound_local_func": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__unbound_local_module": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_call_chained": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_call_in_expr": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_call_in_function": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_call_with_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_global": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_name_error__undefined_global_in_function": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_namedtuple__missing_attr": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_nonlocal__error_module_level": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__error_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__error_step_zero": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__error_too_many_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_range__getitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_recursion__function_depth": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_set__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__invalid_indices": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__kwargs": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_bytes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_range": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__step_zero_tuple": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_slice__too_many_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__getitem_index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__index_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_no_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_non_string": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__join_too_many_args": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__partition_empty": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__rsplit_empty_sep": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_str__split_empty_sep": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__division_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__index_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__insert_as_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__nested_call": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__nonlocal_module_scope": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__nonlocal_unbound": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__range_as_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__recursion_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__set_mutation": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__undefined_attr_call": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__undefined_call": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_traceback__undefined_raise": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_try_except__bare_raise_no_context": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_try_except__invalid_type": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__getitem_out_of_bounds": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__index_not_found": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__index_start_gt_end": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_tuple__unpack_type_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__builtin_attr_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__bytes_negative": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__cell_not_builtin": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__exception_attr_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_conversion_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_repr_both_quotes": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_repr_newline": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__float_repr_single_quote": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__int_conversion_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__list_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__non_builtin_name_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type__tuple_not_iterable": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_add_list": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_div_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_floordiv_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_iadd_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_mod_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_pow_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__int_sub_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__list_add_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__list_add_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__str_add_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__str_iadd_int": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_invert_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_minus_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_neg_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_type_error__unary_plus_str": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unicodedata__bad_arg": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unicodedata__name_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__err_multiple_starred": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "b12_unpack__non_sequence": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__not_enough": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__star_not_enough": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_unpack__too_many": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_context_expr_raises_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_enter_raises_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_exit_raises_normal_exit_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_nested_body_raises_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__cm_traceback": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "b12_with__not_context_manager": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "recursion_limit": {
+   "l01_recursion": {
+    "vm": "MATCH",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   },
+   "l02_recursion_catch": {
+    "vm": "MATCH",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   }
+  },
+  "resource_failure_semantics": {
+   "l02_recursion_catch": {
+    "vm": "MATCH",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   },
+   "l07_feed_timeout_catch": {
+    "vm": "DIVERGE",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   },
+   "l05_mem_catch": {
+    "vm": "MATCH",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   }
+  },
+  "feed_execution_limit": {
+   "l06_feed_timeout": {
+    "vm": "MATCH",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   },
+   "l08_feed_reset_after_timeout": {
+    "vm": "DIVERGE",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   },
+   "l09_feed_reset_sum": {
+    "vm": "DIVERGE",
+    "dart2js": "REFUSED",
+    "dart2wasm": "REFUSED"
+   }
+  },
+  "turn_execution_limit": {
+   "l11_turn_reset_on_resume": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_suspension_budget": {
+   "l12_suspensions": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "l13_suspension_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "host_sleep_budget": {
+   "l14_total_sleep": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "l15_total_sleep_catch": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "source_nesting_guard": {
+   "n01_unary_chain": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "n02_bracket_chain": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "n03_power_chain": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "n04_lambda_chain": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "n05_moderate": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "garbage_collection_interval": {
+   "g01_gc_interval_small": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "exception_taxonomy": {
+   "t01_except_hierarchy": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "t02_host_raise_subclass": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "structured_exception_data": {
+   "t03_unicode_uncaught": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "t05_json_uncaught": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "process_clock_policy": {
+   "c01_process_time_default": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "c02_process_time_zero": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "c03_process_time_elapsed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "c04_elapsed_excludes_sleep": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "run_blocking": {
+   "api_run_blocking": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "start_program": {
+   "api_start_program": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "interactive_continuation": {
+   "api_interactive_continuation": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "create_repl": {
+   "api_create_repl": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "recover_repl_after_error": {
+   "api_recover_repl_after_error": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "external_call_result": {
+   "api_ext_result_resume": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "api_ext_result_callback": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "external_call_arguments": {
+   "api_ext_args_values": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "api_ext_args_identity": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "register_pending_future": {
+   "api_futures_gather": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "api_futures_error": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "mount_write_budget": {
+   "api_write_budget_feed1": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "api_write_budget_feed2": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "mount_memory_budget": {
+   "api_memory_budget": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "callback_files": {
+   "api_callback_files": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "boundary_uuid": {
+   "api_boundary_uuid": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "fork_session": {
+   "api_fork_session": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "reset_type_checker": {
+   "api_reset_type_checker": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "compile_program": {
+   "api_compile_program": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "compiled_source": {
+   "api_compiled_source": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "eager_coroutine_completion": {
+   "api_eager_coroutine": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "run_progress_variants": {
+   "k_function": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "k_os": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "k_future": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "k_name": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "resume_os_call": {
+   "k_os": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "k_os_not_handled": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "resolve_pending_futures": {
+   "k_future": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "abortctl_future": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "async_host_driver": {
+   "async_gather": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   }
+  },
+  "snapshot_auto_resume": {
+   "auto_interleave": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "feed_repl_suspendable": {
+   "k_function": {
+    "vm": "MATCH",
+    "dart2js": "MATCH",
+    "dart2wasm": "MATCH"
+   },
+   "inputs_typed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "suspension_source_position": {
+   "pos_utf8": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "pos_earlier_feed": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   },
+   "pos_eval": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  },
+  "abandon_suspended_feed": {
+   "abandon": {
+    "vm": "DIVERGE",
+    "dart2js": "DIVERGE",
+    "dart2wasm": "DIVERGE"
+   }
+  }
+ }
+}
