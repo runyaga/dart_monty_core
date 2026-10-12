@@ -135,8 +135,9 @@ own_baseline_path = os.environ.get('OWN_BASELINE') or baseline_path
 update = os.environ['UPDATE'] == '1'
 tracefile = os.environ['TRACEFILE']
 
-# The two documented exclusions, kept in step with tool/coverage_report.sh.
-EXCLUDE = ('lib/src/ffi/generated/', 'lib/src/platform/mock_monty_platform.dart')
+# The documented exclusions, kept in step with tool/coverage_report.sh.
+EXCLUDE = ('lib/src/ffi/generated/', 'lib/src/worker/proto/',
+           'lib/src/platform/mock_monty_platform.dart')
 
 
 def excluded(p):

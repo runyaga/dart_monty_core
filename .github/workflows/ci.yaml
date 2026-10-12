@@ -371,6 +371,56 @@ jobs:
           echo "OK: committed bindings match ffigen output"
 
   # ---------------------------------------------------------------------------
+  # monty-proto Dart bindings: drift check
+  # ---------------------------------------------------------------------------
+  # Same shape as `ffigen` above. lib/src/worker/proto/ is committed protoc
+  # output for upstream's monty.proto at the commit tool/upstream/upstream-pin.json
+  # records, built with the hash-pinned protoc in
+  # tool/upstream/protoc-requirements.lock, protoc_plugin 25.1.0 and the pinned
+  # SDK's formatter. This job regenerates it and fails on any difference.
+  #
+  # It is also the COMPENSATING CHECK for analysis_options.yaml excluding that
+  # directory from the analyzer and DCM, and for the coverage tools excluding it
+  # from the denominator: nothing lints or measures generated code, so this job
+  # is what proves it is only generated code.
+  proto-drift:
+    name: monty-proto bindings drift
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      # A version the lock has wheel hashes for (CPython 3.12-3.14).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Generate bindings
+        run: bash tool/generate_proto.sh
+      - name: Committed bindings match protoc output
+        run: |
+          set -euo pipefail
+          D=lib/src/worker/proto/
+          # Present AND tracked: a diff of an untracked or deleted file is empty.
+          TRACKED="$(git ls-files -- "$D" | wc -l)"
+          [ "$TRACKED" -gt 0 ] || { echo "FAIL: nothing tracked under $D."; exit 1; }
+          UNTRACKED="$(git ls-files --others --exclude-standard -- "$D")"
+          [ -z "$UNTRACKED" ] || { echo "FAIL: untracked generated files: $UNTRACKED"; exit 1; }
+          git diff --exit-code --stat -- "$D" || {
+            echo "FAIL: $D is stale -- run bash tool/generate_proto.sh and commit."
+            exit 1
+          }
+          echo "OK: $TRACKED committed files match protoc output"
+
+  # ---------------------------------------------------------------------------
   # Dart: analyze + format + unit tests (JIT) + coverage
   # ---------------------------------------------------------------------------
   test:
@@ -1285,8 +1335,9 @@ jobs:
             echo "FAIL: merged.info is empty — the merge job produced nothing."
             exit 1
           fi
-          # merged.info already has the two documented exclusions applied
-          # (ffi/generated, mock_monty_platform), so only ONE removal is left.
+          # merged.info already has the documented exclusions applied
+          # (ffi/generated, worker/proto, mock_monty_platform), so only ONE
+          # removal is left.
           # `*/native_bindings_ffi.dart` is GONE from this list: it was excluded
           # because it read 0.3%, and it now reads 76.8% because the FFI suite
           # that always covered it is finally measured. Excluding a covered file

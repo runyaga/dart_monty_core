@@ -1,0 +1,26 @@
+# protoc for tool/generate_proto.sh: grpcio-tools 1.84.0, which bundles
+# libprotoc 35.1, pinned by content hash. Install ONLY with
+#
+#     pip install --require-hashes --only-binary :all: --no-deps -r tool/upstream/protoc-requirements.lock
+#
+# --no-deps is deliberate. `python -m grpc_tools.protoc` needs only the
+# package's own compiled extension; grpcio, protobuf and setuptools are
+# runtime dependencies of the gRPC Python codegen, which this repo does not
+# use. tool/generate_proto.sh checks `--version` reports libprotoc 35.1.
+#
+# This is NOT tool/upstream/requirements.lock. That file is the reference
+# oracle's lock, and the parity suite asserts it is byte-identical to its own
+# copy, so a build tool cannot be added to it.
+#
+# Hashes are the sha256 digests PyPI publishes for each file: the sdist, and
+# the wheels for CPython 3.12-3.14 on manylinux2014_x86_64 (CI) and
+# macosx_11_0_universal2. A platform not listed here fails the install, by
+# design; add its hash from PyPI rather than relaxing --require-hashes.
+grpcio-tools==1.84.0 \
+    --hash=sha256:210ac5ac9803569490ec33574b7e995bc087815b00d9b777e0134cab5ed9a379 \
+    --hash=sha256:fc1708de3ba6cc46eff02de1aea865442418167794ca963a2cf6ea2013930146 \
+    --hash=sha256:fad2e65eed6e98ca01046bd8a47e446c7f760af89f2a958a497d61da203f9fd8 \
+    --hash=sha256:38b2819f6a04cb98158815f7d12cc14fd62659ce65c30b5c8c9f0efcf898cb6e \
+    --hash=sha256:9315344bed77b08c155672ab2d77513e1e8a20fd2744ab0bb72647e22bc900ac \
+    --hash=sha256:131cc59f5612cc6d2b7f83adea3177eb85a0b52196007c555e7d80bb1d0b2b97 \
+    --hash=sha256:ce0d963308f1954c8265828b8aa0d37cdfebb068727fa34c700e992a64a0bdc6

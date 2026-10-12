@@ -16,8 +16,10 @@ dependencies:
   code_assets: ^1.0.0
   collection: ^1.18.0
   ffi: ^2.1.3
+  fixnum: ^1.1.0
   hooks: ^1.0.2
   meta: ^1.11.0
+  protobuf: ^6.1.0
 
 dev_dependencies:
   # Declared, not inherited. `format_coverage` and `collect_coverage` already
@@ -34,6 +36,11 @@ dev_dependencies:
   # `dart pub publish --dry-run`: the only warning was an unrelated dirty tree).
   monty_conformance:
     path: packages/monty_conformance
+  # EXACT, not a caret: tool/generate_proto.sh compiles the plugin from this
+  # resolution, and the committed lib/src/worker/proto/ is its output. A
+  # plugin release that changes the emitted code must arrive as a deliberate
+  # bump here plus a regeneration, which the proto-drift CI job enforces.
+  protoc_plugin: 25.1.0
   test: ^1.25.0
   very_good_analysis: ^10.0.0
 
