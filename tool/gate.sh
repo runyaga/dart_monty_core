@@ -235,6 +235,10 @@ s  cap_manifest  python3 -I tool/check_capability_manifest.py
 # crates.io entry is in upstream's lock (a fresh resolve picks salsa 0.28.5
 # and fails to build). Offline; CI's `upstream-pin` job runs `--online`.
 s  worker_mirror python3 -I tool/check_worker_mirror.py --local
+# The check's negative controls: a path, git, [patch], [replace] or
+# cargo-config override that swaps local code in for an upstream crate (at the
+# pinned version, or as salsa 0.28.5) must fail it. Temp-dir fixtures.
+s  worker_mirror_t python3 -I tool/test_check_worker_mirror.py
 # --deep, not the fast path. The fast path only checks that each excluded PATH
 # still exists; --deep strips the exclusions, re-runs dcm, and catches an entry
 # that names a real file and hides NOTHING -- which is how a stale exclusion
@@ -497,7 +501,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=46
+EXPECT_STEPS=47
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

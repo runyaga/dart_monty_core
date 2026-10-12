@@ -16,14 +16,26 @@ Usage:
   - every verbatim copy hashes to its recorded sha256;
   - tool/upstream/monty-Cargo.lock (upstream's lock at the pin) hashes to its
     recorded sha256;
-  - every crates.io package in native/worker/Cargo.lock appears in upstream's
-    lock with the same version and checksum (the lock is a subset of
-    upstream's; a fresh resolution that drifts, e.g. to salsa 0.28.5, fails);
-  - the monty crates are exactly the pinned version, both as `=X` requirements
-    in native/worker/Cargo.toml and in the lock.
+  - native/worker/Cargo.lock has exactly one source-less entry, the worker
+    crate itself; every other entry comes from the crates.io registry with a
+    checksum, so a path, git or [patch] override cannot stand in for upstream
+    code while reporting upstream's version;
+  - every crates.io package appears in upstream's lock with the same version
+    and checksum (the lock is a subset of upstream's; a fresh resolution that
+    drifts, e.g. to salsa 0.28.5, fails);
+  - the monty crates, which upstream's lock records as workspace members
+    without a checksum, are exactly the pinned version with the crates.io
+    checksum recorded in pinned_crates;
+  - native/worker/Cargo.toml has no [patch] or [replace] table and no path,
+    git or alternate-registry dependency, and its monty crates are `=X`
+    requirements;
+  - no .cargo/config* that Cargo reads when building from native/worker/
+    (that directory, native/, the repository root) has a [patch] or [source]
+    table or a `paths` override.
 
 --online: every verbatim and watched upstream file, and upstream's Cargo.lock,
-still hashes to its recorded sha256 at the pinned commit.
+still hashes to its recorded sha256 at the pinned commit, and every
+pinned_crates checksum is the one the crates.io index publishes for the pin.
 
 --candidate TAG: prints a unified diff for every verbatim or watched upstream
 file that differs between the pin and TAG. Exit 1 means there is porting work.
@@ -44,9 +56,18 @@ import urllib.request
 from pathlib import Path
 
 RAW = 'https://raw.githubusercontent.com/pydantic/monty/{ref}/{path}'
+INDEX = 'https://index.crates.io/{prefix}/{name}'
 MIRROR = 'tool/upstream/worker-mirror.json'
 HEX64 = re.compile(r'^[0-9a-f]{64}$')
 CRATES_IO = 'registry+https://github.com/rust-lang/crates.io-index'
+WORKER = 'dart_monty_worker'
+# Dependency tables and the keys that point one away from crates.io.
+DEP_TABLES = ('dependencies', 'dev-dependencies', 'build-dependencies')
+NON_REGISTRY = ('path', 'git', 'registry', 'registry-index', 'package')
+# Cargo reads .cargo/config* from the working directory up; CI builds from
+# native/worker/.
+CARGO_CONFIG_DIRS = ('native/worker/.cargo', 'native/.cargo', '.cargo')
+CARGO_CONFIG_OVERRIDES = ('patch', 'source', 'paths')
 
 
 def sha(data: bytes) -> str:
@@ -64,19 +85,77 @@ def fatal(msg: str) -> None:
 
 
 def lock_packages(text: str) -> dict[str, dict[str, str | None]]:
-    """{name: {version: checksum}} for every package in a Cargo.lock.
+    """{name: {version: checksum}} for the crates.io packages of a Cargo.lock.
 
-    Path and workspace packages have no source; their versions are recorded
-    with a None checksum and the source marked by the key "path".
+    Workspace/path packages (no source) map to None. Any other source raises
+    ValueError, naming the package.
     """
     out: dict[str, dict[str, str | None]] = {}
     for pkg in tomllib.loads(text).get('package', []):
         source = pkg.get('source')
-        checksum = pkg.get('checksum') if source == CRATES_IO else None
         if source is not None and source != CRATES_IO:
-            fatal(f'{pkg["name"]} {pkg["version"]}: unsupported source {source}')
-        out.setdefault(pkg['name'], {})[pkg['version']] = checksum if source else 'path'
+            raise ValueError(f'{pkg["name"]} {pkg["version"]}: source {source}')
+        out.setdefault(pkg['name'], {})[pkg['version']] = pkg.get('checksum') if source else None
     return out
+
+
+def dep_tables(manifest: dict) -> list[tuple[str, dict]]:
+    """(label, table) for every dependency table, target-specific ones included."""
+    out = [(t, manifest.get(t, {})) for t in DEP_TABLES]
+    for cfg, target in manifest.get('target', {}).items():
+        out += [(f'target.{cfg}.{t}', target.get(t, {})) for t in DEP_TABLES]
+    return out
+
+
+def check_manifest(root: Path, mirror: dict, version: str, bad: list[str]) -> int:
+    """Checks the worker's Cargo.toml; returns the number of monty requirements."""
+    path = mirror['worker_manifest']
+    manifest = tomllib.loads((root / path).read_text())
+    for table in ('patch', 'replace'):
+        if table in manifest:
+            bad.append(f'{path}: [{table}] table overrides crates.io sources; the worker builds '
+                       'upstream\'s published crates only')
+    if manifest.get('package', {}).get('name') != WORKER:
+        bad.append(f'{path}: package is {manifest.get("package", {}).get("name")!r}, expected {WORKER!r}')
+    pinned = mirror['pinned_crates']
+    reqs = 0
+    for label, deps in dep_tables(manifest):
+        for name, spec in deps.items():
+            if isinstance(spec, dict):
+                for key in NON_REGISTRY:
+                    if key in spec:
+                        bad.append(f'{path} [{label}] {name}: {key!r} dependency; only crates.io '
+                                   'version requirements are allowed')
+            if not name.startswith('monty'):
+                continue
+            reqs += 1
+            req = spec if isinstance(spec, str) else spec.get('version')
+            if name not in pinned:
+                bad.append(f'{path}: {name} is not in pinned_crates')
+            if req != f'={version}':
+                bad.append(f'{path}: {name} = {req!r}, must be "={version}"')
+    if not reqs:
+        bad.append(f'{path}: no monty dependencies found')
+    return reqs
+
+
+def check_cargo_config(root: Path, bad: list[str]) -> int:
+    """Rejects source overrides in any .cargo/config* a worker build reads."""
+    seen = 0
+    for d in CARGO_CONFIG_DIRS:
+        for f in sorted((root / d).glob('config*')):
+            seen += 1
+            rel = f.relative_to(root).as_posix()
+            try:
+                config = tomllib.loads(f.read_text())
+            except (OSError, ValueError) as e:
+                bad.append(f'{rel}: unreadable ({e})')
+                continue
+            for key in CARGO_CONFIG_OVERRIDES:
+                if key in config:
+                    bad.append(f'{rel}: [{key}] overrides where crates come from; the worker builds '
+                               'upstream\'s published crates only')
+    return seen
 
 
 def load(root: Path) -> tuple[dict, dict]:
@@ -94,6 +173,12 @@ def load(root: Path) -> tuple[dict, dict]:
     for f in mirror['verbatim'] + mirror['watched'] + [mirror['upstream_lock']]:
         if not HEX64.match(f.get('sha256', '')):
             fatal(f'{f.get("upstream")}: sha256 is not 64 hex digits')
+    pinned = mirror['pinned_crates']
+    if not isinstance(pinned, dict) or not pinned:
+        fatal(f'{MIRROR}: pinned_crates must map each crate to its crates.io checksum')
+    for name, checksum in pinned.items():
+        if not isinstance(checksum, str) or not HEX64.match(checksum):
+            fatal(f'{MIRROR}: pinned_crates.{name} is not 64 hex digits')
     return mirror, pin
 
 
@@ -109,52 +194,64 @@ def local(root: Path, mirror: dict, pin: dict, bad: list[str]) -> None:
     if sha(up_bytes) != up_lock['sha256']:
         bad.append(f'{up_lock["local"]} is not upstream\'s Cargo.lock @ {pin["tag"]} '
                    f'(sha256 {sha(up_bytes)[:12]}, pinned {up_lock["sha256"][:12]})')
-    upstream = lock_packages(up_bytes.decode())
-    ours = lock_packages((root / mirror['worker_lock']).read_text())
-    pinned = set(mirror['pinned_crates'])
+    try:
+        upstream = lock_packages(up_bytes.decode())
+    except ValueError as e:
+        fatal(f'{up_lock["local"]}: unsupported source: {e}')
+    pinned = mirror['pinned_crates']
     version = pin['version']
+    lock_path = mirror['worker_lock']
 
     checked = 0
-    for name, versions in sorted(ours.items()):
-        if name in pinned:
+    worker_entries = 0
+    found: dict[str, list[str]] = {}
+    for pkg in tomllib.loads((root / lock_path).read_text()).get('package', []):
+        name, ver = pkg['name'], pkg['version']
+        source, checksum = pkg.get('source'), pkg.get('checksum')
+        found.setdefault(name, []).append(ver)
+        if source is None:
+            if name == WORKER:
+                worker_entries += 1
+            else:
+                bad.append(f'{lock_path}: {name} {ver} has no source (a path, workspace or [patch] '
+                           f'override); only {WORKER} itself may')
             continue
-        for ver, checksum in sorted(versions.items()):
-            if checksum == 'path':
-                continue  # the worker crate itself
-            checked += 1
-            up = upstream.get(name, {})
-            if ver not in up:
-                bad.append(f'Cargo.lock drift: {name} {ver} is not in upstream\'s lock '
-                           f'(upstream has {sorted(up) or "none"})')
-            elif up[ver] != checksum:
-                bad.append(f'Cargo.lock drift: {name} {ver} checksum differs from upstream\'s')
+        if source != CRATES_IO:
+            bad.append(f'{lock_path}: {name} {ver} comes from {source}, not crates.io')
+            continue
+        if not checksum:
+            bad.append(f'{lock_path}: {name} {ver} has no checksum')
+            continue
+        checked += 1
+        if name in pinned:
+            if ver != version:
+                continue  # reported below
+            if checksum != pinned[name]:
+                bad.append(f'{lock_path}: {name} {ver} checksum {checksum[:12]} is not the published '
+                           f'crate\'s {pinned[name][:12]} (pinned_crates)')
+            continue
+        up = upstream.get(name, {})
+        if ver not in up:
+            bad.append(f'Cargo.lock drift: {name} {ver} is not in upstream\'s lock '
+                       f'(upstream has {sorted(up) or "none"})')
+        elif up[ver] != checksum:
+            bad.append(f'Cargo.lock drift: {name} {ver} checksum differs from upstream\'s')
+    if worker_entries != 1:
+        bad.append(f'{lock_path}: {worker_entries} {WORKER} entries, expected 1')
 
     for name in sorted(pinned):
-        got = sorted(ours.get(name, {}))
+        got = sorted(found.get(name, []))
         if got != [version]:
-            bad.append(f'{name} must be exactly {version} in {mirror["worker_lock"]}, found {got or "none"}')
+            bad.append(f'{name} must be exactly {version} in {lock_path}, found {got or "none"}')
 
-    manifest = tomllib.loads((root / mirror['worker_manifest']).read_text())
-    tables = [manifest.get('dependencies', {})]
-    tables += [t.get('dependencies', {}) for t in manifest.get('target', {}).values()]
-    reqs = 0
-    for deps in tables:
-        for name, spec in deps.items():
-            if not name.startswith('monty'):
-                continue
-            reqs += 1
-            req = spec if isinstance(spec, str) else spec.get('version')
-            if name not in pinned:
-                bad.append(f'{mirror["worker_manifest"]}: {name} is not in pinned_crates')
-            if req != f'={version}':
-                bad.append(f'{mirror["worker_manifest"]}: {name} = {req!r}, must be "={version}"')
-    if not reqs:
-        bad.append(f'{mirror["worker_manifest"]}: no monty dependencies found')
+    reqs = check_manifest(root, mirror, version, bad)
+    configs = check_cargo_config(root, bad)
 
     if not bad:
         print(f'OK:   {len(mirror["verbatim"])} verbatim file(s) match {pin["tag"]}; '
-              f'{checked} crates.io packages are a subset of upstream\'s lock; '
-              f'{len(pinned)} monty crates at {version}; {reqs} exact requirements')
+              f'{checked} crates.io packages, {len(pinned)} of them monty crates at {version} with '
+              f'pinned checksums, the rest a subset of upstream\'s lock; {reqs} exact requirements; '
+              f'no source overrides in the manifest or {configs} cargo config file(s)')
 
 
 def online(mirror: dict, pin: dict, bad: list[str]) -> None:
@@ -166,6 +263,18 @@ def online(mirror: dict, pin: dict, bad: list[str]) -> None:
             bad.append(f'{f["upstream"]} @ {commit[:12]} hashes {got[:12]}, recorded {f["sha256"][:12]}')
         else:
             print(f'OK:   {f["upstream"]} @ {commit[:12]} {got[:12]}')
+    version = pin['version']
+    for name, checksum in sorted(mirror['pinned_crates'].items()):
+        prefix = {1: '1', 2: '2', 3: f'3/{name[0]}'}.get(len(name), f'{name[:2]}/{name[2:4]}')
+        url = INDEX.format(prefix=prefix, name=name)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            lines = [json.loads(line) for line in r.read().decode().splitlines() if line]
+        published = [e['cksum'] for e in lines if e.get('vers') == version]
+        if published != [checksum]:
+            bad.append(f'crates.io {name} {version}: index has {published or "nothing"}, '
+                       f'pinned_crates records {checksum[:12]}')
+        else:
+            print(f'OK:   crates.io {name} {version} {checksum[:12]}')
 
 
 def candidate(mirror: dict, pin: dict, tag: str, bad: list[str]) -> None:

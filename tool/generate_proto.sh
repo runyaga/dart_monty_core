@@ -12,8 +12,12 @@
 #   protoc          grpcio-tools from tool/upstream/protoc-requirements.lock,
 #                   installed with --require-hashes into a temp venv; must
 #                   report libprotoc 35.1.
-#   protoc_plugin   the exact dev_dependency in pubspec.yaml (25.1.0),
-#                   compiled from this package's own resolution.
+#   protoc_plugin   25.1.0 and every transitive dependency (dart_style
+#                   among them, which formats the emitted code) from the
+#                   committed tool/proto_gen/pubspec.lock, resolved with
+#                   --enforce-lockfile: a lock that no longer satisfies
+#                   tool/proto_gen/pubspec.yaml, or a package whose content
+#                   hash differs, fails rather than re-resolving.
 #   dart format     the SDK tool/check_sdk_pin.sh enforces, so the committed
 #                   output has no format churn.
 #
@@ -63,26 +67,29 @@ GOT_PROTOC="$("$TMP/venv/bin/python" -I -m grpc_tools.protoc --version)"
 echo "$GOT_PROTOC"
 
 echo "--- protoc_plugin $WANT_PLUGIN ---"
-dart pub get >/dev/null
+GEN=tool/proto_gen
+if ! out="$(dart pub get --enforce-lockfile --directory "$GEN" 2>&1)"; then
+  echo "$out"; echo "FAIL: $GEN/pubspec.lock does not resolve as committed"; exit 1
+fi
 PLUGIN_ROOT="$(python3 -I -c '
 import json, sys
 from pathlib import Path
 from urllib.parse import urlparse, unquote
-cfg = Path(".dart_tool/package_config.json")
+cfg = Path(sys.argv[1]) / ".dart_tool/package_config.json"
 for p in json.loads(cfg.read_text())["packages"]:
     if p["name"] == "protoc_plugin":
         u = p["rootUri"]
         root = Path(unquote(urlparse(u).path)) if u.startswith("file:") else (cfg.parent / u).resolve()
         print(root)
         sys.exit(0)
-sys.exit("protoc_plugin is not in .dart_tool/package_config.json")')"
+sys.exit(f"protoc_plugin is not in {cfg}")' "$GEN")"
 GOT_PLUGIN="$(sed -nE 's/^version: *([^ ]+).*/\1/p' "$PLUGIN_ROOT/pubspec.yaml")"
 [ "$GOT_PLUGIN" = "$WANT_PLUGIN" ] \
   || { echo "FAIL: resolved protoc_plugin $GOT_PLUGIN, want $WANT_PLUGIN"; exit 1; }
 # Output is shown only on failure: the compile notes that the plugin's own
 # pubspec says `resolution: workspace`, which is harmless here because
 # --packages supplies the resolution.
-if ! out="$(dart compile exe --packages=.dart_tool/package_config.json \
+if ! out="$(dart compile exe --packages="$GEN/.dart_tool/package_config.json" \
   "$PLUGIN_ROOT/bin/protoc_plugin.dart" -o "$TMP/protoc-gen-dart" 2>&1)"; then
   echo "$out"; echo "FAIL: could not compile protoc_plugin"; exit 1
 fi
@@ -97,7 +104,12 @@ mkdir -p "$OUT"
   "$PROTO_FILE"
 
 echo "--- dart format (generated) ---"
-dart format --line-length=80 "$OUT" >/dev/null
+# The package's language version, stated rather than inferred: the root
+# package is not resolved here, and without a package config dart format
+# falls back to the SDK's latest language version.
+LANG_VERSION="$(sed -nE 's/^  sdk: *"?\^?([0-9]+\.[0-9]+)\..*/\1/p' pubspec.yaml)"
+[ -n "$LANG_VERSION" ] || { echo "FAIL: no sdk constraint in pubspec.yaml"; exit 1; }
+dart format --line-length=80 --language-version="$LANG_VERSION" "$OUT" >/dev/null 2>&1
 
 find "$OUT" -type f | sort | while read -r f; do
   printf '%6d  %s\n' "$(wc -l < "$f")" "$f"

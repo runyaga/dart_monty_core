@@ -23,6 +23,17 @@
   bindings are reachable from no public library, so compiled web apps do not
   grow until a public path uses them.
 
+### Fixed
+
+- Worker groundwork (internal, no public API): the wasm module frees the
+  previous turn's reply before running the next one, so it no longer counts
+  against that turn's `max_memory` (two consecutive large replies raised a
+  spurious `MemoryError`). `tool/check_worker_mirror.py` now accepts a
+  source-less `Cargo.lock` entry only for the worker crate itself, checks
+  the monty crates' crates.io checksums, and rejects `[patch]`/`[replace]`,
+  path/git dependencies and cargo-config source overrides. The protoc plugin
+  is compiled from a committed lockfile (`tool/proto_gen/pubspec.lock`).
+
 ## 0.23.1
 
 Git tag only (not published to pub.dev): the M0 stabilisation work. Still
