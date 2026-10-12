@@ -63,8 +63,9 @@ jobs:
               - 'lib/**'
               - 'test/**'
               # `example/**` IS CODE. Without it, editing only
-              # example/*.dart left `code` false and `test-examples` — the
-              # ONLY job that runs those programs — did not run at all. A
+              # example/*.dart left `code` false and `test-examples` (now the
+              # example step of `test-ffi`) — the ONLY job that runs those
+              # programs — did not run at all. A
               # broken example merged green, because the single check that
               # could catch it was the one the change switched off.
               #
@@ -661,7 +662,9 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 + 5 for the example smoke suite folded in from test-examples, which
+    # on a cold cache was the job that needed the most headroom.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
@@ -766,61 +769,16 @@ jobs:
           path: coverage-ffi/lcov.info
           if-no-files-found: error
           retention-days: 1
-  # ---------------------------------------------------------------------------
-  # Example smoke tests — every example/*.dart must compile and exit 0.
-  # `dart analyze` only checks types; this is the only thing exercising the
-  # examples at runtime. Broken examples are tracked via markTestSkipped()
-  # with a TODO reason; remove the skip-list entry to enforce.
-  # ---------------------------------------------------------------------------
-  test-examples:
-    name: Example smoke tests
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: 3.13.5
-      - uses: actions/cache@v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-          # SHARED with the other native-amd64 release job. Swatinem defaults to
-          # a per-job key (add-job-id-key: true) and cache-on-failure: false, so
-          # a job that is red never saves and never warms. test-examples had
-          # been red for 10 runs and its key had never existed, which is why it
-          # spent 698s of a 736s job compiling what test-ffi built in 56s on a
-          # hit. A shared key lets the job that passes populate the cache the
-          # job that fails restores from.
-          #
-          # Scope is deliberate: build-wasm targets wasm32-wasip1 (different
-          # triple) and test-hooks-corpus documents its own key for a different
-          # feature set. Neither shares this one. The `rust` job is dev-profile
-          # and is left alone so it cannot win the write-once race and leave the
-          # release jobs cold.
-          shared-key: native-amd64
-      - name: Build native library
-        working-directory: native
-        # --target MATCHES THE HOOK, and that is the whole point of the flag.
-        # hook/build.dart:36-37 computes `_rustTriple(os, arch)` and passes
-        # `--target <triple>`, so it builds into target/<triple>/release/. A bare
-        # `cargo build --release` builds into target/release/ instead -- a
-        # DIFFERENT directory that shares nothing. The result was the monty tree
-        # compiled twice per job: once here, once by the hook, neither reusing
-        # the other.
-        #
-        # `shared-key` (added in 5e25267) fixed the CACHE not warming between
-        # jobs; it did nothing about this, because both directories were being
-        # cached and both still had to be built. This is the other half.
-        run: cargo build --release --target x86_64-unknown-linux-gnu
-      - run: dart pub get
+      # -----------------------------------------------------------------------
+      # Example smoke tests — every example/*.dart must compile and exit 0.
+      # `dart analyze` only checks types; this is the only thing exercising the
+      # examples at runtime. Broken examples are tracked via markTestSkipped()
+      # with a TODO reason; remove the skip-list entry to enforce.
+      #
+      # The repl_demo dart2js compile that used to follow is gone: the `pages`
+      # job compiles repl_demo AND feature_matrix with dart2js and dart2wasm
+      # (tool/check_pages.sh) on every code or docs change.
+      # -----------------------------------------------------------------------
       # NOT measured for coverage, and the reason is worth recording because
       # the obvious assumption is wrong. This suite runs each example with
       # `Process.run('dart', ['run', ex])` (example_smoke_test.dart:59) -- a
@@ -832,6 +790,10 @@ jobs:
       # spawned-isolate case in native_isolate_bindings_impl.dart, one level
       # further out.
       - name: Run example smoke tests
+        # Formerly its own job (`test-examples`), which rebuilt the same x86_64
+        # release library this job has already built. Runs even if the FFI
+        # suite failed, so one red result cannot hide the other.
+        if: success() || failure()
         # Same BODY as tool/gate.sh runs, not the same four lines copied. This
         # step and gate.sh:274 had drifted: CI asserted a count, the local gate
         # asserted nothing, and the two picked different reporters. The floor is
@@ -840,15 +802,6 @@ jobs:
         # existing fifteen to be deleted afterwards with CI still green.
         # tool/example_floor.sh derives it from the tree.
         run: bash tool/run_example_smoke.sh /tmp/example-test.log
-
-      # Compile-only smoke for the Pages demo. Catches API drift between
-      # `Monty`/`MontyRepl` refactors and packages/dart_monty_web at PR time
-      # rather than after merge (deploy-pages.yml only runs on push:main).
-      - name: Build web REPL (compile-only smoke)
-        run: |
-          cd packages/dart_monty_web && dart pub get && cd ../..
-          dart compile js packages/dart_monty_web/web/repl_demo.dart \
-            -o /tmp/repl_demo.dart.js --no-source-maps
 
   # ---------------------------------------------------------------------------
   # WASM/JS integration tests — 464 fixtures through MontyWasm in headless Chrome
