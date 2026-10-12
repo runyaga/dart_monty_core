@@ -962,6 +962,8 @@ String _fmt(MontyValue v) => switch (v) {
   MontyBool(:final value) => value.toString(),
   MontyInt(:final value) => value.toString(),
   MontyFloat(:final value) => _fmtFloat(value),
+  MontyComplex(:final real, :final imag) =>
+    '(${_fmtFloat(real)}+${_fmtFloat(imag)}j)',
   MontyString(:final value) => '"$value"',
   MontyBytes(:final value) => 'b[${value.length}]',
   // Show up to 20 items — enough for demo punchlines like

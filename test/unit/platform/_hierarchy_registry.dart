@@ -73,6 +73,7 @@ final hierarchySamples = <String, MontyValue>{
   'MontyInt': const MontyInt(42),
   'MontyBigInt': MontyBigInt(BigInt.parse('123456789012345678901234567890')),
   'MontyFloat': const MontyFloat(1.5),
+  'MontyComplex': const MontyComplex(1.5, -2.5),
   'MontyString': const MontyString('s'),
   'MontyBytes': const MontyBytes([1, 2, 3]),
   'MontyList': const MontyList([MontyInt(1)]),

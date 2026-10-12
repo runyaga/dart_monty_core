@@ -39,7 +39,7 @@ void main() {
       // sample must fail here, not silently reduce coverage.
       expect(
         hierarchySamples.length,
-        26,
+        27,
         reason:
             'a MontyValue subtype was added or removed; update `samples` '
             'so the matrix stays exhaustive',
