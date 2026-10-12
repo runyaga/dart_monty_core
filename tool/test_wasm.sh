@@ -108,6 +108,8 @@ echo ""
 if [ "$SKIP_BUILD" = false ]; then
   echo "--- Building WASM binary (cargo wasm32-wasip1) ---"
   cd "$PKG/native"
+  # native/rust-toolchain.toml lists no targets; add the one built here.
+  if command -v rustup >/dev/null 2>&1; then rustup target add wasm32-wasip1; fi
   cargo build --target wasm32-wasip1 --release
   mkdir -p "$ASSETS_DIR"
   cp target/wasm32-wasip1/release/dart_monty_core_native.wasm "$ASSETS_DIR/"

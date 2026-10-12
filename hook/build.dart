@@ -54,6 +54,9 @@ void main(List<String> args) async {
       // Contributor path: always run cargo (handles incremental builds).
       final triple = _rustTriple(os, arch);
       final targetArgs = triple != null ? ['--target', triple] : <String>[];
+      if (triple != null) {
+        await _ensureRustTarget(triple, Directory.fromUri(nativeDir).path);
+      }
       // A marker file (not an env var) is used because native-assets build
       // hooks run hermetically and don't inherit host env vars. The file is
       // gitignored and only tool/test_cm.sh creates it — never in shipped
@@ -104,6 +107,25 @@ void main(List<String> args) async {
       'native/Cargo.toml not found — clone the full monorepo to build from source.',
     );
   });
+}
+
+/// Installs the std library for [triple] via rustup, if rustup is present.
+///
+/// native/rust-toolchain.toml lists no `targets`, so only the host's std is
+/// guaranteed. The host case is a fast no-op; a cross-arch desktop build (an
+/// x64 slice on an arm64 Mac, say) gets its target here. Failures are ignored
+/// on purpose: without rustup, cargo's own missing-target error is the clearer
+/// message.
+Future<void> _ensureRustTarget(String triple, String workingDirectory) async {
+  try {
+    await Process.run('rustup', [
+      'target',
+      'add',
+      triple,
+    ], workingDirectory: workingDirectory);
+  } on ProcessException {
+    // rustup not on PATH (distro cargo); let cargo report the problem.
+  }
 }
 
 void _addAsset(BuildOutputBuilder output, String packageName, Uri file) {

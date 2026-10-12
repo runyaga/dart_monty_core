@@ -25,7 +25,8 @@ ROOT="$PWD"
 
 echo "[prebuild] Repo root: $ROOT"
 echo "[prebuild] Ensuring wasm32-wasip1 target is installed..."
-rustup target add wasm32-wasip1
+# In native/, so it lands on the toolchain native/rust-toolchain.toml selects.
+(cd native && rustup target add wasm32-wasip1)
 
 echo "[prebuild] Building Rust WASM binary..."
 cd native

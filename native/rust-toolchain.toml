@@ -1,20 +1,13 @@
 [toolchain]
 channel = "stable"
-targets = [
-  # Desktop
-  "aarch64-apple-darwin",
-  "x86_64-apple-darwin",
-  "aarch64-unknown-linux-gnu",
-  "x86_64-unknown-linux-gnu",
-  "aarch64-pc-windows-msvc",
-  "x86_64-pc-windows-msvc",
-  # Mobile
-  "aarch64-apple-ios",
-  "aarch64-apple-ios-sim",
-  "aarch64-linux-android",
-  "armv7-linux-androideabi",
-  "x86_64-linux-android",
-  # WASM
-  "wasm32-wasip1-threads",
-  "wasm32-wasip1",
-]
+# No `targets` list, deliberately. rustup installs every listed target the
+# first time any cargo/rustc command runs in native/ -- including inside
+# hook/build.dart, so every consumer (and every CI job that runs `dart test`)
+# paid for a dozen cross-compile std libraries (~20 s) it never used.
+#
+# The host target ships with the toolchain, which is all a default build
+# needs. Anything else is added where it is used:
+#   - hook/build.dart: `rustup target add <triple>` for the triple it builds
+#     (a no-op for the host; covers cross-arch desktop builds).
+#   - wasm32-wasip1: tool/prebuild.sh, tool/test_wasm.sh, tool/test_cm_wasm.sh,
+#     tool/serve_demo.sh, and the `targets:` input of the CI jobs that build it.
