@@ -286,7 +286,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          shared-key: native-amd64
+          shared-key: native-amd64-v2
           save-if: false
       - uses: actions/cache@v6
         with:
@@ -451,7 +451,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          shared-key: native-amd64
+          shared-key: native-amd64-v2
           save-if: false
       - uses: dart-lang/setup-dart@v1
         with:
@@ -623,7 +623,12 @@ jobs:
           # feature set. Neither shares this one. The `rust` job is dev-profile
           # and is left alone so it cannot win the write-once race and leave the
           # release jobs cold.
-          shared-key: native-amd64
+          #
+          # -v2: the v1 entry on main was written by the old test-examples job,
+          # which built no dev oracle, so every hit here rebuilt the oracle's
+          # dev deps cold (~70s), and an exact hit never re-saves. test-ffi is
+          # now the only writer (the other jobs on this key are save-if: false).
+          shared-key: native-amd64-v2
       - name: Build native library
         working-directory: native
         # --target MATCHES THE HOOK, and that is the whole point of the flag.
@@ -848,7 +853,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-          shared-key: native-amd64
+          shared-key: native-amd64-v2
           save-if: false
       - uses: actions/cache@v6
         with:
