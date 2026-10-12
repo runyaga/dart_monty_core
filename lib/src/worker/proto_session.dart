@@ -70,26 +70,21 @@ final class ProtoSession {
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
   }) => _guard(() async {
-    final prints = <(String, String)>[];
-    void printed(pb.Print print) {
-      for (final segment in print.segments) {
-        final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
-            ? 'stderr'
-            : 'stdout';
-        prints.add((stream, segment.text));
-        onPrint?.call(stream, segment.text);
-      }
-    }
-
+    final sink = _PrintSink(onPrint);
     var request = pb.ParentRequest(feed: _feedRequest(code, inputs));
     for (;;) {
-      final event = await _channel.turn(request, onPrint: printed);
+      final event = await _channel.turn(request, onPrint: sink.add);
+      if (sink.failure case (final error, final stack)) {
+        // The feed is abandoned wherever the worker stands, so end it.
+        _channel.kill();
+        Error.throwWithStackTrace(error, stack);
+      }
       if (event.whichKind() == pb.ChildEvent_Kind.complete) {
         final complete = event.complete;
 
         return FeedResult(
           ArenaReader(complete.values)[complete.value],
-          List.unmodifiable(prints),
+          List.unmodifiable(sink.prints),
         );
       }
       request = await _answer(event, externals, onOsCall);
@@ -161,6 +156,34 @@ final class ProtoSession {
           'protocol desync: $request was answered with '
           '${event.whichKind().name}',
     );
+  }
+}
+
+/// Collects a feed's prints and passes each to the caller's callback.
+///
+/// A throwing callback must not escape into the channel mid-turn: the turn
+/// would be abandoned with the worker possibly suspended on a call nobody
+/// answers. The first failure is held for the driver to act on once the turn
+/// has ended.
+final class _PrintSink {
+  _PrintSink(this._onPrint);
+
+  final List<(String, String)> prints = [];
+  (Object, StackTrace)? failure;
+  final ProtoPrintCallback? _onPrint;
+
+  void add(pb.Print print) {
+    for (final segment in print.segments) {
+      final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
+          ? 'stderr'
+          : 'stdout';
+      prints.add((stream, segment.text));
+      try {
+        _onPrint?.call(stream, segment.text);
+      } on Object catch (error, stack) {
+        failure ??= (error, stack);
+      }
+    }
   }
 }
 

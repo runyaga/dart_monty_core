@@ -11,9 +11,12 @@
 /// memory, not by the Dart call stack, on every compiler.
 ///
 /// Only the kinds the M2 cases need are carried: `None`, `bool`, `int` of any
-/// size, `float`, `complex`, `str`, `bytes`, `list`, `tuple`, `dict`, `set`,
-/// `frozenset` and `pathlib.Path`. Any other kind throws [UnsupportedError]
-/// naming it.
+/// size, `float`, `str`, `bytes`, `list`, `tuple`, `dict`, `set`, `frozenset`
+/// and `pathlib.Path`. Any other kind throws [UnsupportedError] naming it.
+///
+/// `complex` is one of those other kinds for now. A Dart value for it is a
+/// new subtype of the sealed, public [MontyValue], which breaks every
+/// exhaustive `switch` over it, and this layer adds no public API.
 ///
 /// Known gap: an `int` node whose magnitude is at least 2^62 decodes wrongly,
 /// because package:protobuf's sint64 (zigzag) decoding uses an arithmetic
@@ -141,10 +144,6 @@ MontyValue? _scalar(pb.MontyNode node) => switch (node.whichKind()) {
   pb.MontyNode_Kind.int_5 => _intValue(_bigFromInt64(node.int_5)),
   pb.MontyNode_Kind.bigint => _intValue(_bigFromProto(node.bigint)),
   pb.MontyNode_Kind.float => MontyFloat(node.float),
-  pb.MontyNode_Kind.complex => MontyComplex(
-    node.complex.real,
-    node.complex.imag,
-  ),
   pb.MontyNode_Kind.str => MontyString(node.str),
   pb.MontyNode_Kind.bytes => MontyBytes(
     Uint8List.fromList(node.bytes).asUnmodifiableView(),

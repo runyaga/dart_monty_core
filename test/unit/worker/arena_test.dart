@@ -66,12 +66,6 @@ void main() {
         const MontyBytes([0, 255]),
       );
       expect(_decode([pb.MontyNode(path: '/x')]), const MontyPath('/x'));
-      expect(
-        _decode([
-          pb.MontyNode(complex: pb.Complex(real: 1, imag: 2)),
-        ]),
-        const MontyComplex(1, 2),
-      );
     });
 
     test('an integral float stays a float on every compiler', () {
@@ -79,15 +73,10 @@ void main() {
       expect(v, isA<MontyFloat>());
     });
 
-    test('-0.0 keeps its sign, alone and inside a complex', () {
+    test('-0.0 keeps its sign', () {
       // ignore: prefer_int_literals -- the sign of zero is the point.
       final zero = _decode([pb.MontyNode(float: -0.0)]);
       expect(_bits((zero as MontyFloat).value), '8000000000000000');
-      final c = _decode([
-        // ignore: prefer_int_literals -- as above.
-        pb.MontyNode(complex: pb.Complex(real: -0.0, imag: 2)),
-      ]);
-      expect(_bits((c as MontyComplex).real), '8000000000000000');
     });
 
     test('ints: MontyInt within 2^53, MontyBigInt beyond, either arm', () {
@@ -219,6 +208,7 @@ void main() {
     test('kinds outside the subset are refused by name', () {
       for (final node in [
         pb.MontyNode(ellipsis: pb.Unit()),
+        pb.MontyNode(complex: pb.Complex(real: 1, imag: 2)),
         pb.MontyNode(repr: '<object>'),
         pb.MontyNode(cycle: '[...]'),
         pb.MontyNode(date: pb.Date(year: 2026, month: 1, day: 2)),
@@ -295,7 +285,6 @@ void main() {
         MontyBigInt(-BigInt.two.pow(70) + BigInt.one),
         const MontyFloat(1.5),
         const MontyFloat(4),
-        const MontyComplex(1, -2.5),
         const MontyString('héllo ✓'),
         const MontyBytes([0, 255]),
         const MontyPath('/x'),
@@ -315,14 +304,10 @@ void main() {
       }
     });
 
-    test('-0.0 keeps its sign in a float and in both complex parts', () {
-      const negZero = -0.0;
-      final f = _roundTrip(const MontyFloat(negZero)) as MontyFloat;
+    test('-0.0 keeps its sign', () {
+      // ignore: prefer_int_literals -- the sign of zero is the point.
+      final f = _roundTrip(const MontyFloat(-0.0)) as MontyFloat;
       expect(_bits(f.value), '8000000000000000');
-      final c =
-          _roundTrip(const MontyComplex(negZero, negZero)) as MontyComplex;
-      expect(_bits(c.real), '8000000000000000');
-      expect(_bits(c.imag), '8000000000000000');
     });
 
     test('a bigint beyond 64 bits uses the bigint arm', () {

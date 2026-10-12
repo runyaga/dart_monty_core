@@ -189,6 +189,30 @@ void main() {
       expect(r.value, const MontyString('done'));
     });
 
+    test(
+      'a throwing onPrint kills the worker, not leaves it suspended',
+      () async {
+        final ch = _configured([
+          answer([
+            printed([(_stdout, 'x\n')]),
+            _nameLookup('fetch'),
+          ]),
+        ]);
+        final s = await ProtoSession.open(ch);
+        await expectLater(
+          s.feed(
+            'print(1); fetch',
+            onPrint: (_, _) => throw StateError('boom'),
+          ),
+          throwsStateError,
+        );
+        // The worker is suspended on a NameLookup nobody will answer, so the
+        // session must not let another request reach it.
+        expect(ch.kills, 1);
+        expect(ch.isAlive, isFalse);
+      },
+    );
+
     test('a name in externals resolves to a function node', () async {
       final ch = _configured([
         answer([_nameLookup('fetch')]),

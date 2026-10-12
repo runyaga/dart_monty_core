@@ -133,7 +133,6 @@ sealed class MontyValue {
     // Tier 2 — rule R2: these all used to be bare strings, so a value's type
     // depended on whether some other variant produced the same characters.
     'bigint': MontyBigInt._fromMap,
-    'complex': MontyComplex._fromMap,
     'exception': MontyExceptionValue._fromMap,
     'float': _taggedFloatFromMap,
     for (final k in MontyOpaqueKind.values) k.wireTag: MontyOpaque._fromMap,

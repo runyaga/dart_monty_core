@@ -16,11 +16,6 @@
   function and OS call answers, print streaming, reset), and a value arena
   that keeps shared sub-objects shared in both directions and nests without
   recursion. Still under `lib/src/worker/` and not exported.
-- `MontyComplex`, a `MontyValue` for Python's `complex` (its `real` and
-  `imag` parts as doubles). Only the worker protocol produces one; the
-  in-process engine has no complex type. `MontyValue` is sealed, so an
-  exhaustive `switch` over it needs a `MontyComplex` case or a wildcard;
-  the web demo's value formatter gains one.
 
 ### Changed
 

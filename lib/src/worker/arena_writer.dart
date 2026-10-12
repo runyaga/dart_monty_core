@@ -104,11 +104,6 @@ pb.MontyNode? _scalarNode(MontyValue v) => switch (v) {
   MontyInt(:final value) => pb.MontyNode(int_5: Int64(value)),
   MontyBigInt(:final value) => _bigNode(value),
   MontyFloat(:final value) => pb.MontyNode(float: value),
-  // Both parts are set explicitly: proto3 omits a default double, and an
-  // omitted -0.0 would arrive as 0.0.
-  MontyComplex(:final real, :final imag) => pb.MontyNode(
-    complex: pb.Complex(real: real, imag: imag),
-  ),
   MontyString(:final value) => pb.MontyNode(str: value),
   MontyBytes(:final value) => pb.MontyNode(bytes: value),
   MontyPath(:final value) => pb.MontyNode(path: value),

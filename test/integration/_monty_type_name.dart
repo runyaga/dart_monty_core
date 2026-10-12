@@ -42,7 +42,6 @@ String montyTypeName(MontyValue v) => switch (v) {
   MontyTimeDelta() => 'timedelta',
   MontyTimeZone() => 'timezone',
   MontyPath() => 'path',
-  MontyComplex() => 'complex',
   MontyFileHandle() => 'filehandle',
   // BOTH ADDED 2026-09-14. An alignment audit found the Rust encoder emits
   // these two (convert.rs:172, :174) while Dart had no factory for either, so
