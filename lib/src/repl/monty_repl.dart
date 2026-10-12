@@ -123,19 +123,6 @@ class MontyRepl {
   final String? _preamble;
   final MontyLimits? _limits;
 
-  static MontyLimits? _checkLimits(MontyLimits? limits) {
-    final budget = limits?.maxSuspensions;
-    if (budget != null && budget < 0) {
-      throw ArgumentError.value(
-        budget,
-        'maxSuspensions',
-        'must be >= 0; the suspension budget cannot be disabled',
-      );
-    }
-
-    return limits;
-  }
-
   bool _created = false;
   bool _disposed = false;
   bool _pending = false;
@@ -499,6 +486,19 @@ class MontyRepl {
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------
+
+  static MontyLimits? _checkLimits(MontyLimits? limits) {
+    final budget = limits?.maxSuspensions;
+    if (budget != null && budget < 0) {
+      throw ArgumentError.value(
+        budget,
+        'maxSuspensions',
+        'must be >= 0; the suspension budget cannot be disabled',
+      );
+    }
+
+    return limits;
+  }
 
   Future<MontyResult> _driveLoop(
     MontyProgress initial,
