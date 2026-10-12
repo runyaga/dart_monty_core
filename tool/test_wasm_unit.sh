@@ -45,7 +45,6 @@ fi
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 INTEG="$PKG/test/integration"
 ASSETS="$PKG/lib/assets"
-WASI_PKG="$PKG/js/node_modules/@pydantic/monty-wasm32-wasi"
 
 cd "$PKG"
 
@@ -63,47 +62,24 @@ for f in dart_monty_core_bridge.js dart_monty_core_worker.js dart_monty_core_nat
 done
 
 # -----------------------------------------------------------------------------
-# Step 2: Ensure the WASI runtime is installed (npm dep, gitignored)
-# -----------------------------------------------------------------------------
-if [ ! -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
-  echo "--- Installing WASI runtime (npm install in js/) ---"
-  if ! command -v npm &>/dev/null; then
-    echo "FATAL: npm not found. Install Node.js to fetch @pydantic/monty-wasm32-wasi."
-    exit 1
-  fi
-  # --force bypasses EBADPLATFORM on arm64 hosts (the WASI package declares
-  # cpu: wasm32). tool/test_wasm.sh and the CI test-wasm job already use --force.
-  (cd "$PKG/js" && npm install --force --silent)
-fi
-if [ ! -f "$WASI_PKG/wasi-worker-browser.mjs" ]; then
-  echo "FATAL: $WASI_PKG/wasi-worker-browser.mjs still missing after npm install"
-  exit 1
-fi
-
-# -----------------------------------------------------------------------------
-# Step 3: Stage assets into test/integration/ (gitignored; cleaned on exit)
+# Step 2: Stage assets into test/integration/ (gitignored; cleaned on exit)
 # -----------------------------------------------------------------------------
 STAGED=(
   "$INTEG/dart_monty_core_bridge.js"
   "$INTEG/dart_monty_core_worker.js"
   "$INTEG/dart_monty_core_native.wasm"
-  "$INTEG/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs"
 )
 cleanup() {
   rm -f "${STAGED[@]}"
-  rmdir "$INTEG/@pydantic/monty-wasm32-wasi" 2>/dev/null || true
-  rmdir "$INTEG/@pydantic" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 cp "$ASSETS/dart_monty_core_bridge.js"   "$INTEG/"
 cp "$ASSETS/dart_monty_core_worker.js"   "$INTEG/"
 cp "$ASSETS/dart_monty_core_native.wasm" "$INTEG/"
-mkdir -p "$INTEG/@pydantic/monty-wasm32-wasi"
-cp "$WASI_PKG/wasi-worker-browser.mjs" "$INTEG/@pydantic/monty-wasm32-wasi/"
 
 # -----------------------------------------------------------------------------
-# Step 4: Run the WASM unit-style tests
+# Step 3: Run the WASM unit-style tests
 # -----------------------------------------------------------------------------
 echo ""
 # The file list below is explicit rather than a glob, so that a deliberately

@@ -8,7 +8,7 @@ How Python code runs inside a browser tab: three layers, zero servers.
  Dart (main thread)           JS Bridge (main thread)         WASM Worker
  ──────────────────           ──────────────────────          ────────────
  @JS() interop bindings  ──>  window.DartMontyBridge    ──>  Web Worker
- dart:js_interop              postMessage + promise map       @pydantic/monty WASM
+ dart:js_interop              postMessage + promise map       dart_monty_core_native.wasm
                          <──                             <──
                               resolve pending promise         postMessage response
 ```
@@ -112,8 +112,9 @@ worker.onmessage = (e) => {
 
 ## Layer 3: WASM Worker
 
-The Worker loads `@pydantic/monty-wasm32-wasi` and handles messages
-dispatched from the bridge. Key state:
+The Worker instantiates `dart_monty_core_native.wasm` (the Rust C-ABI shim)
+with its own WASI imports from `js/src/wasm_glue.js` — no npm package is
+loaded at runtime — and handles messages dispatched from the bridge. Key state:
 
 - `monty` — the Monty interpreter instance
 - `activeSnapshot` — set when execution pauses (pending), used for resume

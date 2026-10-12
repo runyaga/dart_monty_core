@@ -72,18 +72,10 @@ Then visit:
 
 ```bash
 # 1. Build JS bridge (outputs to repo root assets/)
-cd js && npm install --force && node build.js && cd ..
+cd js && npm install && node build.js && cd ..
 
 # 2. Copy bridge assets into this directory
 cp assets/dart_monty_core_bridge.js   packages/dart_monty_web/web/
 cp assets/dart_monty_core_worker.js   packages/dart_monty_web/web/
 cp assets/dart_monty_core_native.wasm packages/dart_monty_web/web/
-
-# 3. Copy WASI runtime (node build.js does NOT copy this — manual step required)
-mkdir -p packages/dart_monty_web/web/@pydantic/monty-wasm32-wasi
-cp js/node_modules/@pydantic/monty-wasm32-wasi/wasi-worker-browser.mjs \
-   packages/dart_monty_web/web/@pydantic/monty-wasm32-wasi/
 ```
-
-If the WASI runtime is missing, the dart2wasm demo will show
-`TypeError: Cannot read properties of undefined (reading 'init')` in the console.
