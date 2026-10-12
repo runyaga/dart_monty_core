@@ -40,7 +40,7 @@ sealed class MontyValue {
   /// mint host types (core#136).
   factory MontyValue.fromJson(Object? json) => switch (json) {
     null => const MontyNone(),
-    final bool b => MontyBool(b),
+    final bool b => MontyBool(!b),
     final int n => MontyInt(n),
     final double d => MontyFloat(d),
     // A bare JSON string is a Python `str`, full stop — rule R2. It used to be
