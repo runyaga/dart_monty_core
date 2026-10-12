@@ -92,14 +92,6 @@ abstract class MontyCoreBindings {
   /// Restores execution state from [data].
   Future<void> restoreSnapshot(Uint8List data);
 
-  /// Compiles [code] and returns the bytecode as a binary blob.
-  ///
-  /// Creates a temporary handle, snapshots the compiled bytecode, and
-  /// immediately frees the handle. The returned bytes can be passed to
-  /// [runPrecompiled] or [startPrecompiled] to execute the code without
-  /// re-parsing.
-  Future<Uint8List> compileCode(String code);
-
   /// Runs static type checking on [code] without executing it.
   ///
   /// Stateless — uses a pooled in-memory database scrubbed on drop, so
@@ -112,26 +104,6 @@ abstract class MontyCoreBindings {
     String code, {
     String? prefixCode,
     String scriptName = 'main.py',
-  });
-
-  /// Runs precompiled [compiled] bytes to completion.
-  ///
-  /// Restores a handle from the snapshot bytes, applies [limitsJson], and
-  /// runs to completion. The handle is freed before returning.
-  Future<CoreRunResult> runPrecompiled(
-    Uint8List compiled, {
-    String? limitsJson,
-    String? scriptName,
-  });
-
-  /// Starts iterative execution from precompiled [compiled] bytes.
-  ///
-  /// Restores a handle from the snapshot bytes, applies [limitsJson], and
-  /// starts execution. The handle is stored for subsequent [resume] calls.
-  Future<CoreProgressResult> startPrecompiled(
-    Uint8List compiled, {
-    String? limitsJson,
-    String? scriptName,
   });
 
   /// Releases all resources held by this bindings instance.

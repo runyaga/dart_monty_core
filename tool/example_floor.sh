@@ -33,12 +33,12 @@ EXPECTED_PROGRAMS=15
 # from the skip list alone would let a new skip lower its own bar, so this is a
 # deliberate constant too.
 #
-# The one skip is example/06_compile_and_platform.dart, blocked on core#152:
-# Monty.compile() throws "snapshot is not supported on the one-shot handle" on
-# the FFI backend (ffi_core_bindings.dart:186-191 vs
-# native_bindings_ffi.dart:297). A LIBRARY defect, not an example defect. When
-# core#152 is fixed this drops to 0 and the floor rises to 15.
-MAX_SKIPS=1
+# There are none. The last one was example/06_compile_and_platform.dart,
+# blocked on core#152 (Monty.compile() always failed on the one-shot handle).
+# The precompile API was removed, the example was renamed
+# example/06_platform_apis.dart without its compile section, and the floor rose
+# to 15.
+MAX_SKIPS=0
 
 FILES=$(find example -maxdepth 1 -name '*.dart' -type f | wc -l | tr -d ' ')
 NESTED=$(find example -name '*.dart' -type f | wc -l | tr -d ' ')

@@ -161,10 +161,6 @@ class WasmCoreBindings implements MontyCoreBindings {
   }
 
   @override
-  Future<Uint8List> compileCode(String code) =>
-      _bindings.compile(code, sessionId: _sessionId);
-
-  @override
   Future<String?> typeCheck(
     String code, {
     String? prefixCode,
@@ -175,42 +171,6 @@ class WasmCoreBindings implements MontyCoreBindings {
     scriptName: scriptName,
     sessionId: _sessionId,
   );
-
-  @override
-  Future<CoreRunResult> runPrecompiled(
-    Uint8List compiled, {
-    String? limitsJson,
-    String? scriptName,
-  }) async {
-    final sw = Stopwatch()..start();
-    final result = await _bindings.runPrecompiled(
-      compiled,
-      limitsJson: limitsJson,
-      scriptName: scriptName,
-      sessionId: _sessionId,
-    );
-    sw.stop();
-
-    return _translateRunResult(result, sw.elapsedMilliseconds);
-  }
-
-  @override
-  Future<CoreProgressResult> startPrecompiled(
-    Uint8List compiled, {
-    String? limitsJson,
-    String? scriptName,
-  }) async {
-    final sw = Stopwatch()..start();
-    final progress = await _bindings.startPrecompiled(
-      compiled,
-      limitsJson: limitsJson,
-      scriptName: scriptName,
-      sessionId: _sessionId,
-    );
-    sw.stop();
-
-    return _translateProgressResult(progress, sw.elapsedMilliseconds);
-  }
 
   @override
   Future<Uint8List> snapshot() {

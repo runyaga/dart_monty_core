@@ -1,11 +1,11 @@
 // The snapshot/restore pair on the ONE-SHOT handle — DECLARED DEFECT, core#152.
 //
-// test/integration/ffi_compile_precompiled_test.dart already pins this defect
-// at the top of the stack, through `Monty.compile()` and
-// `Monty.runPrecompiled()`. It never names the MontyCoreBindings entry points
-// underneath, which is why `restoreSnapshot` and `startPrecompiled` were
-// reported unexercised by tool/check_api_exercised.sh once its source list
-// became the public export closure (1e4a875).
+// `restoreSnapshot` was reported unexercised by tool/check_api_exercised.sh
+// once its source list became the public export closure (1e4a875). The
+// precompiled API that used to sit on top of this pair (`Monty.compile`,
+// `Monty.runPrecompiled`, `MontyPlatform.compileCode`/`runPrecompiled`/
+// `startPrecompiled`) was removed because of this defect; the pair itself
+// remains on MontyCoreBindings.
 //
 // This file drives them at their own layer, on a real backend, and pins the
 // REFUSAL rather than pretending the feature works. That is the honest state:
@@ -29,8 +29,6 @@
 // behaviour gets asserted.
 @Tags(['integration', 'ffi'])
 library;
-
-import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/ffi/ffi_core_bindings.dart';
@@ -94,28 +92,8 @@ void main() {
       },
     );
 
-    test('startPrecompiled() is unusable because restore is', () async {
-      // compileCode() feeds startPrecompiled(). Both ends sit on the same
-      // broken pair, so this asserts the reachable end: whatever bytes are
-      // supplied, the restore underneath refuses.
-      final core = _core();
-
-      // The error it raises is the RESTORE one, which is what makes the
-      // causal claim in this test's name a measurement rather than a guess.
-      await expectLater(
-        core.startPrecompiled(Uint8List.fromList([0, 1, 2, 3])),
-        throwsA(
-          isA<Object>().having(
-            (e) => e.toString(),
-            'message',
-            contains('restore is not supported on the one-shot handle'),
-          ),
-        ),
-      );
-    });
-
     test('the REPL path, by contrast, round-trips its own snapshot', () async {
-      // The control. Without this, the three refusals above could be read as
+      // The control. Without this, the two refusals above could be read as
       // "snapshots do not work in this engine" rather than "they do not work
       // on THIS handle", which is the whole content of core#152.
       final repl = MontyRepl();

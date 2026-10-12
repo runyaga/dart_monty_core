@@ -17,9 +17,9 @@
       "pct": 0.0
     },
     "lib/src/ffi/ffi_core_bindings.dart": {
-      "found": 218,
-      "hit": 194,
-      "pct": 88.99
+      "found": 202,
+      "hit": 186,
+      "pct": 92.08
     },
     "lib/src/ffi/monty_ffi.dart": {
       "found": 33,
@@ -52,8 +52,8 @@
       "pct": 0.0
     },
     "lib/src/monty.dart": {
-      "found": 24,
-      "hit": 24,
+      "found": 16,
+      "hit": 16,
       "pct": 100.0
     },
     "lib/src/monty_factory.dart": {
@@ -137,9 +137,9 @@
       "pct": 88.0
     },
     "lib/src/platform/base_monty_platform.dart": {
-      "found": 191,
-      "hit": 176,
-      "pct": 92.15
+      "found": 163,
+      "hit": 158,
+      "pct": 96.93
     },
     "lib/src/platform/code_capture.dart": {
       "found": 46,
@@ -187,8 +187,8 @@
       "pct": 100.0
     },
     "lib/src/platform/monty_platform.dart": {
-      "found": 26,
-      "hit": 26,
+      "found": 20,
+      "hit": 20,
       "pct": 100.0
     },
     "lib/src/platform/monty_progress.dart": {
@@ -297,8 +297,8 @@
       "pct": 0.0
     },
     "lib/src/repl/repl_platform.dart": {
-      "found": 36,
-      "hit": 36,
+      "found": 30,
+      "hit": 30,
       "pct": 100.0
     },
     "lib/src/repl/wasm_repl_bindings.dart": {
@@ -312,7 +312,7 @@
       "pct": 0.0
     },
     "lib/src/wasm/stub/wasm_bindings_js.dart": {
-      "found": 74,
+      "found": 68,
       "hit": 0,
       "pct": 0.0
     },
@@ -322,12 +322,12 @@
       "pct": 0.0
     },
     "lib/src/wasm/wasm_bindings_js.dart": {
-      "found": 558,
+      "found": 489,
       "hit": 0,
       "pct": 0.0
     },
     "lib/src/wasm/wasm_core_bindings.dart": {
-      "found": 158,
+      "found": 144,
       "hit": 0,
       "pct": 0.0
     },
@@ -338,8 +338,8 @@
     }
   },
   "total": {
-    "found": 4190,
-    "hit": 2803,
-    "pct": 66.9
+    "found": 4037,
+    "hit": 2757,
+    "pct": 68.29
   }
 }

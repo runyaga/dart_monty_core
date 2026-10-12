@@ -106,9 +106,8 @@ dcm:
         exclude:
           # test/** (6 issues). Test files are named for what they TEST, not
           # for the first type they declare, and helpers declare support types
-          # first: _hierarchy_registry.dart:54 opens with `class WireFixture`,
-          # monty_compile_test.dart:18 with `final class _ThrowingBindings`.
-          # Renaming either to satisfy the rule would make the file harder to
+          # first: _hierarchy_registry.dart:54 opens with `class WireFixture`.
+          # Renaming one to satisfy the rule would make the file harder to
           # find, which is the opposite of what the rule exists for.
           - "test/**"
           # Part files (`part of 'monty_value.dart';` at line 1 of each). The
@@ -136,17 +135,10 @@ dcm:
     - prefer-moving-to-variable
     - newline-before-return
     - no-boolean-literal-compare
-    - no-empty-block:
-        exclude:
-          # _ThrowingBindings is a compile-error stub; dispose is deliberately
-          # a no-op to satisfy MontyCoreBindings.
-          #
-          # lib/src/platform/monty_platform.dart was listed here until
-          # 2026-09-15 for an "intentional no-op dispose". Measured: with the
-          # entry removed the rule reports ZERO issues in that file, so it was
-          # hiding nothing -- the same dormant-exclusion shape as the
-          # monty_session.dart entry deleted in 24a31da.
-          - "test/unit/platform/monty_compile_test.dart"
+    # No exclusions. The last one was test/unit/platform/monty_compile_test.dart
+    # (a no-op dispose on a stub MontyCoreBindings), deleted with the
+    # precompile API it tested (core#152).
+    - no-empty-block
     - no-equal-then-else
     - prefer-first
     - prefer-last

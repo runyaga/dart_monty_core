@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_core_bindings.dart';
 import 'package:dart_monty_core/src/platform/monty_error.dart';
@@ -247,25 +246,6 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
   }
 
   @override
-  Future<Uint8List> compileCode(String code) async {
-    assertNotDisposed('compileCode');
-    await _ensureInitialized();
-    try {
-      return await _bindings.compileCode(code);
-    } on MontyScriptError catch (e) {
-      if (e.excType == 'SyntaxError') {
-        throw MontySyntaxError(
-          e.message,
-          excType: e.excType,
-          exception: e.exception,
-        );
-      }
-
-      rethrow;
-    }
-  }
-
-  @override
   Future<String?> typeCheck(
     String code, {
     String? prefixCode,
@@ -279,53 +259,6 @@ abstract class BaseMontyPlatform extends MontyPlatform with MontyStateMixin {
       prefixCode: prefixCode,
       scriptName: scriptName,
     );
-  }
-
-  @override
-  Future<MontyResult> runPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) async {
-    assertNotDisposed('runPrecompiled');
-    assertIdle('runPrecompiled');
-    markActive();
-    try {
-      await _ensureInitialized();
-      final result = await _bindings.runPrecompiled(
-        compiled,
-        limitsJson: encodeLimitsJson(limits),
-        scriptName: scriptName,
-      );
-
-      return _translateRunResult(result);
-    } finally {
-      markIdle();
-    }
-  }
-
-  @override
-  Future<MontyProgress> startPrecompiled(
-    Uint8List compiled, {
-    MontyLimits? limits,
-    String? scriptName,
-  }) async {
-    assertNotDisposed('startPrecompiled');
-    assertIdle('startPrecompiled');
-    markActive();
-    try {
-      await _ensureInitialized();
-      final progress = await _bindings.startPrecompiled(
-        compiled,
-        limitsJson: encodeLimitsJson(limits),
-        scriptName: scriptName,
-      );
-
-      return translateProgress(progress);
-    } catch (e) {
-      markIdle();
-      rethrow;
-    }
   }
 
   @override

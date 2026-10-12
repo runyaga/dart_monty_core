@@ -1,54 +1,23 @@
-// 06 — Compile, precompiled execution, and platform-level APIs
+// 06 — Platform-level APIs
 //
 // This file exercises the lower-level platform abstractions:
 //
-//  Monty.compile()       → bytecode blob
-//  Monty.runPrecompiled() → run blob without a session
 //  createPlatformMonty() → direct MontyPlatform access
 //  MontySnapshotCapable  → platform-level snapshot/restore
 //  MontyFutureCapable    → async future resolution protocol
 //  MontyNameLookup       → dynamic name resolution
 //  ReplPlatform          → use MontyRepl as a MontyPlatform
 //
-// Run: dart run example/06_compile_and_platform.dart
+// Run: dart run example/06_platform_apis.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _compileAndRun();
   await _platformDirect();
   await _snapshotCapable();
   await _futureCapable();
   await _nameLookup();
   await _replPlatform();
-}
-
-// ── Compile + runPrecompiled ──────────────────────────────────────────────────
-// Compile once, run many times — avoids re-parsing on repeated execution.
-Future<void> _compileAndRun() async {
-  print('\n── compile + runPrecompiled ──');
-
-  const src = '''
-def fib(n):
-    a, b = 0, 1
-    for _ in range(n):
-        a, b = b, a + b
-    return a
-
-fib(10)
-''';
-
-  // Compile to bytecode.
-  final bytecode = await Monty.compile(src);
-  print('bytecode: ${bytecode.length} bytes');
-
-  // Run precompiled — stateless, disposable interpreter per call.
-  final r1 = await Monty.runPrecompiled(bytecode);
-  print('fib(10) = ${r1.value}'); // 55
-
-  // Same bytecode, run again.
-  final r2 = await Monty.runPrecompiled(bytecode);
-  print('fib(10) = ${r2.value}'); // 55 — independent run
 }
 
 // ── createPlatformMonty(): direct platform access ────────────────────────────
@@ -62,9 +31,7 @@ Future<void> _platformDirect() async {
     final r = await platform.run('"hello from platform".upper()');
     print('upper: ${r.value}');
 
-    // Compile + runPrecompiled at the platform level.
-    final bytecode = await platform.compileCode('sum(range(100))');
-    final r2 = await platform.runPrecompiled(bytecode);
+    final r2 = await platform.run('sum(range(100))');
     print('sum(range(100)) = ${r2.value}'); // 4950
   } finally {
     await platform.dispose();

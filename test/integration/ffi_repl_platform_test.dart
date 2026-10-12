@@ -180,14 +180,15 @@ void main() {
       );
     });
 
-    test('precompiled and type-check surfaces are UnsupportedError', () {
+    test('the type-check surface is UnsupportedError', () {
       final m = _make();
       addTearDown(m.repl.dispose);
 
       // Synchronous, for the same reason as the name-lookup pair above.
-      final unsupported = throwsA(isA<UnsupportedError>());
-      expect(() => m.platform.compileCode('x = 1'), unsupported);
-      expect(() => m.platform.typeCheck('x = 1'), unsupported);
+      expect(
+        () => m.platform.typeCheck('x = 1'),
+        throwsA(isA<UnsupportedError>()),
+      );
     });
   });
 }
