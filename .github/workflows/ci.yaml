@@ -267,7 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      PARITY_PIN: d7d253da10be6329541b641a1885dbad840e9750
+      PARITY_PIN: 9fc746cc61fc4f96488e6bcd0c865aea80868e3d
     steps:
       - uses: actions/checkout@v7
       - name: The pin is one full commit SHA
