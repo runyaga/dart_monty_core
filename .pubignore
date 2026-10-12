@@ -7,6 +7,8 @@ js/
 # Rust build output and dev artifacts
 native/target/
 native/worker/target/
+# Worker executables from tool/build_worker.sh: not shipped in this release.
+lib/src/bin/
 native/.dart_tool/
 native/tests/
 native/lcov.info
