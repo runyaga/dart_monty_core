@@ -470,17 +470,21 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Dart: unit tests compiled with dart2native (AOT)
-  # AOT and JIT can diverge on: number representation, tree-shaking, timing
-  # Skipped until the codebase has unit tests separate from integration tests.
+  # Dart: build and run an AOT consumer with bundled native assets
   # ---------------------------------------------------------------------------
   test-aot:
-    name: AOT compile check
+    name: AOT consumer
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [ffigen]
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
@@ -495,39 +499,12 @@ jobs:
           name: ffi-bindings
           path: lib/src/ffi/generated
       - run: dart pub get
-      # The `Build native test kernel` step that used to sit here is GONE. It ran
-      #   dart test --exclude-tags=... --platform vm --compiler=kernel
-      # and `--compiler=kernel` IS the JIT default, so it re-ran the same 457
-      # tests the `test` job had already run on the same engine — both logged an
-      # identical "457 tests passed". Measured on run 34847818587: 331s of this
-      # job's 353s, almost all of it the hidden native rebuild that precedes any
-      # `dart test` here.
-      #
-      # Its exit-79 tolerance was also stale twice over: it said "no tests found
-      # is acceptable until unit tests are added", and 457 of them exist.
-      #
-      # What is KEPT is the step below, which is 2s and is the only thing in this
-      # repo that compiles AOT at all. Deleting the whole job — as an earlier
-      # analysis proposed — would have saved 22 more seconds and removed that.
-      #
-      # This job did NOT exercise AOT: `--compiler=kernel` is the JIT default,
-      # and the step here was a literal `echo` claiming success (core#130).
-      #
-      # It now really compiles an AOT executable, so the step can fail.
-      #
-      # It deliberately does NOT RUN the result. Verified locally: the binary
-      # compiles, then dies at startup with
-      #   "Couldn't resolve native function 'monty_repl_create' ...
-      #    No available native assets."
-      # `dart compile exe` does not bundle this package's native asset, so the
-      # package cannot currently be used from an AOT executable at all. That is
-      # a real limitation this fake gate was hiding; tracked in its own issue
-      # (same family as #98). Running the probe here would just pin a known
-      # failure red. When the asset gap is fixed, drop the comment and add
-      #   ./aot_probe
-      # as the next line -- tool/aot_probe.dart already asserts its own result.
-      - name: Compile an AOT executable (compilation only -- see note)
-        run: dart compile exe tool/aot_probe.dart -o aot_probe
+      # Build CLI bundles the hook's native asset; the probe asserts its result.
+      - name: Build an AOT consumer
+        run: dart build cli --target tool/aot_probe.dart -o build/aot
+      - name: Run the AOT consumer
+        working-directory: build/aot/bundle
+        run: ./bin/aot_probe
 
   # ---------------------------------------------------------------------------
   # GitHub Pages render gate — the deployed site must load in a real browser
