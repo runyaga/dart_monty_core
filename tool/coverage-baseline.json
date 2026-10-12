@@ -331,6 +331,11 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/src/worker/frame.dart": {
+      "found": 65,
+      "hit": 65,
+      "pct": 100.0
+    },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
       "hit": 0,
@@ -338,8 +343,8 @@
     }
   },
   "total": {
-    "found": 4037,
-    "hit": 2759,
-    "pct": 68.34
+    "found": 4102,
+    "hit": 2824,
+    "pct": 68.84
   }
 }
