@@ -1,0 +1,56 @@
+{
+  "manifest": "tool/upstream/capability-manifest.tsv",
+  "sha256": "180ec493848b9c9697f47833a5317b035f31410cc65f4d670ffcca6ff5966069",
+  "upstream_version": "1.1.0",
+  "rows": 187,
+  "in_scope": 185,
+  "areas": [
+    "compile_run",
+    "repl",
+    "progress",
+    "external_functions",
+    "host_objects",
+    "async",
+    "os_policy",
+    "os_calls",
+    "filesystem",
+    "values",
+    "errors",
+    "resource_limits",
+    "snapshots",
+    "sessions",
+    "type_checking",
+    "print",
+    "telemetry",
+    "pool",
+    "protocol",
+    "runtime_cli",
+    "deployment",
+    "binding_helpers",
+    "security"
+  ],
+  "baseline": {
+    "subject": "dart_monty_core 0.23.0 at 5873ec5 (monty v0.0.23)",
+    "method": "Each in-scope row was decided per backend from probe programs run through dart_monty_core's public API (FFI on the Dart VM; dart2js and dart2wasm in headless Chrome) and through pydantic-monty 1.1.0, comparing values, exceptions, prints and host-call transcripts against pydantic-monty (method 'run'); from source where no runnable probe applies ('read'); from both ('mixed'); or, for one row upstream gates behind a test-only feature, by decision ('decided'). 'web' is one status per row for dart2js and dart2wasm together, as recorded then; the parity runner measures the two compilers separately.",
+    "ffi": {
+      "PRESENT": 37,
+      "PARTIAL": 56,
+      "ABSENT": 63,
+      "REFUSED": 3,
+      "N/A": 26
+    },
+    "web": {
+      "PRESENT": 36,
+      "PARTIAL": 56,
+      "ABSENT": 59,
+      "REFUSED": 7,
+      "N/A": 27
+    },
+    "methods": {
+      "run": 150,
+      "mixed": 6,
+      "read": 28,
+      "decided": 1
+    }
+  }
+}
