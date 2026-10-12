@@ -250,6 +250,21 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
+      # `dart test` runs hook/build.dart, which runs `cargo build --release
+      # --lib --target x86_64-unknown-linux-gnu`. Without a cache that was a
+      # cold ~300s build in this job; the shared key restores what the other
+      # native-amd64 jobs (test-ffi) already compiled.
+      #
+      # save-if: false -- RESTORE ONLY. The key is written once, by whichever
+      # job finishes first. This job builds only the release cdylib; test-ffi
+      # also builds the dev oracle, so it is the one that must write the key,
+      # or test-ffi restores a cache with no dev deps and builds them cold.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64
+          save-if: false
       - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
@@ -483,9 +498,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
+      # `dart build cli` runs the same hook build as `dart test` (release,
+      # --lib, --locked, x86_64-unknown-linux-gnu), so it restores the same
+      # shared key. Restore-only: test-ffi is the one writer (see `test`).
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
+          shared-key: native-amd64
+          save-if: false
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
@@ -929,6 +949,21 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: 3.13.5
+      # `dart test` runs hook/build.dart, which runs `cargo build --release
+      # --lib --target x86_64-unknown-linux-gnu`. Without a cache that was a
+      # cold ~300s build in this job; the shared key restores what the other
+      # native-amd64 jobs (test-ffi) already compiled.
+      #
+      # save-if: false -- RESTORE ONLY. The key is written once, by whichever
+      # job finishes first. This job builds only the release cdylib; test-ffi
+      # also builds the dev oracle, so it is the one that must write the key,
+      # or test-ffi restores a cache with no dev deps and builds them cold.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64
+          save-if: false
       - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
