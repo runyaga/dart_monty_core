@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.23.1
+
+Git tag only (not published to pub.dev): the M0 stabilisation work. Still
+requires `monty` v0.0.23.
 
 ### Added
 
