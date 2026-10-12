@@ -133,3 +133,17 @@ T firstItem<T>(Iterable<T> items) {
 
   return first;
 }
+
+/// Element [i] of [items], or a failure naming the length instead.
+///
+/// The indexed sibling of [onlyItem] and [firstItem]: `xs[i]` is what
+/// avoid-unsafe-collection-methods flags, and its RangeError names neither
+/// the list nor what it held.
+T itemAt<T>(List<T> items, int i) {
+  final item = items.elementAtOrNull(i);
+  if (item == null) {
+    fail('expected an item at index $i, got ${items.length}: $items');
+  }
+
+  return item;
+}

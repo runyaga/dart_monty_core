@@ -12,6 +12,14 @@ analyzer:
     - 'build/**'
     - 'native/**'
     - 'lib/src/ffi/generated/**'
+    # protoc_plugin output (tool/generate_proto.sh). Same footing as the ffigen
+    # output above: nobody edits it, so its lints are the generator's style,
+    # not ours (2,464 infos, all of them public_member_api_docs, trailing
+    # commas and the like). THE COMPENSATING CHECK is CI's `proto-drift` job,
+    # which regenerates it with the pinned protoc, plugin and SDK and fails on
+    # any diff -- so what is excluded here is provably the generator's output
+    # and nothing hand-written. DCM reads this list too.
+    - 'lib/src/worker/proto/**'
     - 'packages/dart_monty_flutter/**'
     - 'packages/dart_monty_web/**'
     - 'example/**'

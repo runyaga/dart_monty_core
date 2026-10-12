@@ -101,12 +101,17 @@ for f in "${INPUTS[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
-# Exclusions. Two, both documented, both with a reason that is not "it is red".
+# Exclusions. Three, all documented, each with a reason that is not "it is red".
 #
 #   lib/src/ffi/generated/**            ffigen output. Regenerated from
 #                                       native/ on every CI run; testing it
 #                                       tests ffigen. The patch gate at
 #                                       ci.yaml already removes it.
+#   lib/src/worker/proto/**             protoc_plugin output, ~10,900 lines.
+#                                       CI's proto-drift job proves it is the
+#                                       pinned generator's output; testing it
+#                                       tests protoc_plugin. The code that
+#                                       USES it (lib/src/worker/*.dart) stays in.
 #   lib/src/platform/mock_monty_platform.dart
 #                                       363 lines of TEST SCAFFOLDING that
 #                                       happens to ship in lib/. Covering it
@@ -118,6 +123,7 @@ done
 # -----------------------------------------------------------------------------
 EXCLUDE=(
   'lib/src/ffi/generated/'
+  'lib/src/worker/proto/'
   'lib/src/platform/mock_monty_platform.dart'
 )
 
@@ -157,6 +163,7 @@ mkdir -p "$ANCHOR_DIR/hitmap" "$OUT_DIR"
 mapfile -t ANCHOR_FILES < <(
   find lib -name '*.dart' \
     | grep -v '^lib/src/ffi/generated/' \
+    | grep -v '^lib/src/worker/proto/' \
     | grep -v 'mock_monty_platform\.dart$' \
     | grep -vF -f <(printf '%s\n' "${VM_UNLOADABLE[@]}") \
     | xargs grep -L '^part of' \

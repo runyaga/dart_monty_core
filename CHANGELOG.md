@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Internal groundwork for running Python in a separate worker process
+  (native) or Web Worker (browser) that speaks upstream monty's `monty-proto`
+  wire protocol: Dart bindings generated from upstream's `monty.proto` at the
+  pinned 1.1.0 commit, and the protocol's length-prefixed framing. Everything
+  lives under `lib/src/worker/` and nothing is exported, so there is no new
+  public API. `tool/generate_proto.sh` regenerates the bindings and CI's
+  `proto-drift` job fails if the committed copy differs.
+
+### Changed
+
+- New runtime dependencies: `protobuf` (^6.1.0) and `fixnum` (^1.1.0). The
+  bindings are reachable from no public library, so compiled web apps do not
+  grow until a public path uses them.
+
 ## 0.23.1
 
 Git tag only (not published to pub.dev): the M0 stabilisation work. Still

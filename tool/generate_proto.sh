@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Generate the Dart bindings for upstream monty-proto
+# =============================================================================
+# Output: lib/src/worker/proto/monty/v1/monty.pb*.dart (committed).
+#
+# Inputs, all pinned:
+#   monty.proto     crates/monty-proto/proto/monty/v1/monty.proto at the
+#                   commit tool/upstream/upstream-pin.json records. Fetched by
+#                   commit id into a temp dir, so the content is addressed by
+#                   hash and nothing upstream is vendored here.
+#   protoc          grpcio-tools from tool/upstream/protoc-requirements.lock,
+#                   installed with --require-hashes into a temp venv; must
+#                   report libprotoc 35.1.
+#   protoc_plugin   the exact dev_dependency in pubspec.yaml (25.1.0),
+#                   compiled from this package's own resolution.
+#   dart format     the SDK tool/check_sdk_pin.sh enforces, so the committed
+#                   output has no format churn.
+#
+# CI's `proto-drift` job runs this and fails on `git diff`. That job is also
+# the compensating check for excluding lib/src/worker/proto/ from the analyzer
+# and DCM: generated code is not linted, so it must be proven to be exactly
+# what the pinned generator emits.
+#
+# Needs: git, python3 (3.12-3.14; see the lock), dart, network.
+# Usage: bash tool/generate_proto.sh
+# =============================================================================
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+OUT=lib/src/worker/proto
+PROTO_PATH=crates/monty-proto/proto
+PROTO_FILE=monty/v1/monty.proto
+WANT_PROTOC='libprotoc 35.1'
+WANT_PLUGIN='25.1.0'
+
+TMP="$(mktemp -d)"
+# chmod first: the fetched .proto is made read-only below.
+trap 'chmod -R u+w "$TMP" 2>/dev/null; /bin/rm -rf "$TMP"' EXIT
+
+read -r UPSTREAM COMMIT < <(python3 -I -c '
+import json
+p = json.load(open("tool/upstream/upstream-pin.json"))
+print(p["upstream"], p["commit"])')
+
+echo "--- fetch $PROTO_PATH/$PROTO_FILE @ ${COMMIT:0:12} ---"
+git init -q "$TMP/upstream"
+git -C "$TMP/upstream" fetch -q --depth 1 --filter=blob:none "$UPSTREAM.git" "$COMMIT"
+mkdir -p "$TMP/proto/$(dirname "$PROTO_FILE")"
+git -C "$TMP/upstream" show "$COMMIT:$PROTO_PATH/$PROTO_FILE" > "$TMP/proto/$PROTO_FILE"
+chmod -R a-w "$TMP/proto"
+echo "blob $(git -C "$TMP/upstream" rev-parse "$COMMIT:$PROTO_PATH/$PROTO_FILE")"
+
+echo "--- protoc (grpcio-tools, hash-pinned) ---"
+python3 -m venv "$TMP/venv"
+"$TMP/venv/bin/python" -m pip install -q --disable-pip-version-check --no-cache-dir \
+  --require-hashes --only-binary :all: --no-deps \
+  -r tool/upstream/protoc-requirements.lock
+GOT_PROTOC="$("$TMP/venv/bin/python" -I -m grpc_tools.protoc --version)"
+[ "$GOT_PROTOC" = "$WANT_PROTOC" ] \
+  || { echo "FAIL: protoc reports '$GOT_PROTOC', want '$WANT_PROTOC'"; exit 1; }
+echo "$GOT_PROTOC"
+
+echo "--- protoc_plugin $WANT_PLUGIN ---"
+dart pub get >/dev/null
+PLUGIN_ROOT="$(python3 -I -c '
+import json, sys
+from pathlib import Path
+from urllib.parse import urlparse, unquote
+cfg = Path(".dart_tool/package_config.json")
+for p in json.loads(cfg.read_text())["packages"]:
+    if p["name"] == "protoc_plugin":
+        u = p["rootUri"]
+        root = Path(unquote(urlparse(u).path)) if u.startswith("file:") else (cfg.parent / u).resolve()
+        print(root)
+        sys.exit(0)
+sys.exit("protoc_plugin is not in .dart_tool/package_config.json")')"
+GOT_PLUGIN="$(sed -nE 's/^version: *([^ ]+).*/\1/p' "$PLUGIN_ROOT/pubspec.yaml")"
+[ "$GOT_PLUGIN" = "$WANT_PLUGIN" ] \
+  || { echo "FAIL: resolved protoc_plugin $GOT_PLUGIN, want $WANT_PLUGIN"; exit 1; }
+# Output is shown only on failure: the compile notes that the plugin's own
+# pubspec says `resolution: workspace`, which is harmless here because
+# --packages supplies the resolution.
+if ! out="$(dart compile exe --packages=.dart_tool/package_config.json \
+  "$PLUGIN_ROOT/bin/protoc_plugin.dart" -o "$TMP/protoc-gen-dart" 2>&1)"; then
+  echo "$out"; echo "FAIL: could not compile protoc_plugin"; exit 1
+fi
+
+echo "--- generate $OUT ---"
+/bin/rm -rf "$OUT"
+mkdir -p "$OUT"
+"$TMP/venv/bin/python" -I -m grpc_tools.protoc \
+  --plugin=protoc-gen-dart="$TMP/protoc-gen-dart" \
+  -I "$TMP/proto" \
+  --dart_out="$OUT" \
+  "$PROTO_FILE"
+
+echo "--- dart format (generated) ---"
+dart format --line-length=80 "$OUT" >/dev/null
+
+find "$OUT" -type f | sort | while read -r f; do
+  printf '%6d  %s\n' "$(wc -l < "$f")" "$f"
+done
+echo "=== monty-proto bindings generated ==="
