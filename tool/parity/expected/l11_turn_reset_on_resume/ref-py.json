@@ -7,12 +7,162 @@
   {
    "value": {
     "t": "int",
-    "v": "10"
+    "v": "40"
    },
    "exception": null,
    "prints": [],
    "os_calls": [],
    "ext_calls": [
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
+    {
+     "name": "tick",
+     "args": [],
+     "kwargs": {}
+    },
     {
      "name": "tick",
      "args": [],
