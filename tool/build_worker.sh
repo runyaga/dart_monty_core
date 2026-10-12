@@ -14,6 +14,13 @@
 #
 #   bash tool/build_worker.sh            # build, then copy
 #   bash tool/build_worker.sh --print    # print the destination path only
+#   bash tool/build_worker.sh --check    # fail unless the copy is fresh
+#
+# Next to the executable it writes <exe>.stamp: a hash of every build input
+# (native/worker sources, manifest, lock, build script, toolchain file) and
+# of the executable itself. --check recomputes both, so the gate's worker_vm
+# step cannot pass against a stale build, or one whose source no longer
+# compiles, or a binary swapped in by hand.
 #
 # Then: dart test test/integration/worker -p vm --tags=worker
 #
@@ -38,15 +45,58 @@ exe=dart_monty_worker
 [ "$os" = windows ] && exe=dart_monty_worker.exe
 dest="lib/src/bin/$os-$arch/$exe"
 
-if [ "${1:-}" = "--print" ]; then
-  echo "$dest"
-  exit 0
-fi
+stamp="$dest.stamp"
 
+sha() { shasum -a 256 | awk '{print $1}'; }
+
+# Every input of the build, by content: paths and bytes, sorted.
+source_hash() {
+  {
+    find native/worker/src native/worker/upstream -type f -print
+    printf '%s\n' native/worker/Cargo.toml native/worker/Cargo.lock \
+      native/worker/build.rs native/rust-toolchain.toml
+  } | LC_ALL=C sort | while read -r f; do
+    printf '%s %s\n' "$f" "$(sha < "$f")"
+  done | sha
+}
+
+stamp_line() { printf 'source %s exe %s\n' "$(source_hash)" "$(sha < "$dest")"; }
+
+case "${1:-}" in
+  --print)
+    echo "$dest"
+    exit 0
+    ;;
+  --check)
+    if [ ! -f "$dest" ] || [ ! -f "$stamp" ]; then
+      echo "build_worker: no worker at $dest. Run: bash tool/build_worker.sh" >&2
+      exit 1
+    fi
+    if [ "$(stamp_line)" != "$(cat "$stamp")" ]; then
+      echo "build_worker: $dest is STALE: native/worker changed since it was" >&2
+      echo "  built, or the executable was replaced. Run: bash tool/build_worker.sh" >&2
+      exit 1
+    fi
+    echo "build_worker: $dest is fresh"
+    exit 0
+    ;;
+  "") ;;
+  *) echo "usage: build_worker.sh [--print|--check]" >&2; exit 2 ;;
+esac
+
+# One absolute target directory for Cargo and for the copy: a relative
+# CARGO_TARGET_DIR would resolve against native/worker for Cargo but against
+# the repository root here.
 target_dir="${CARGO_TARGET_DIR:-native/worker/target}"
-(cd native/worker && cargo build --locked --release --bin dart_monty_worker)
+case "$target_dir" in
+  /*) ;;
+  *) target_dir="$PWD/$target_dir" ;;
+esac
+(cd native/worker && CARGO_TARGET_DIR="$target_dir" \
+  cargo build --locked --release --bin dart_monty_worker)
 
 mkdir -p "$(dirname "$dest")"
 cp "$target_dir/release/$exe" "$dest"
 chmod +x "$dest"
+stamp_line > "$stamp"
 echo "build_worker: $dest"

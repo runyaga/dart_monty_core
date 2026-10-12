@@ -365,7 +365,11 @@ sf oracle_ffi 500 dart test test/integration/oracle_ffi_test.dart test/integrati
 # and a skipped suite still writes its (empty) hitmap into the shared
 # --coverage dir, overwriting what unit_tests and ffi_features recorded there.
 # Measured: lib-wide coverage read 9.18% instead of 68.84%.
-sf worker_vm 30 dart test test/integration/worker -p vm --tags=worker --coverage="$OUT/cov"
+# build_worker.sh --check first: without it a stale executable, or one whose
+# source no longer compiles, passes this step.
+worker_vm(){ bash tool/build_worker.sh --check &&
+  dart test test/integration/worker -p vm --tags=worker --coverage="$OUT/cov"; }
+sf worker_vm 30 worker_vm
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made

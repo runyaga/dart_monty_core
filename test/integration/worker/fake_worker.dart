@@ -70,6 +70,14 @@ Future<void> _handle(String scenario, pb.ParentRequest request) async {
         ..writeln(stderrLastLine);
       await stderr.flush();
       exit(134);
+    case 'late-stderr':
+      // Exits at once, while a child holding only stderr writes the last
+      // line 200 ms later: stderr is still arriving after the exit code.
+      await Process.start('/bin/sh', [
+        '-c',
+        'exec >/dev/null; sleep 0.2; echo "$stderrLastLine" >&2',
+      ], mode: ProcessStartMode.inheritStdio);
+      exit(0);
     case 'env':
       stderr.writeln((Platform.environment.keys.toList()..sort()).join(','));
       await stderr.flush();

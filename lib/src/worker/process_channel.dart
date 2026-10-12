@@ -39,7 +39,11 @@ final class ProcessChannel implements MontyChannel {
     _live.add(this);
     unawaited(_reapOnExit());
     // Always drained: a worker blocks once its stderr pipe fills.
-    _process.stderr.listen(_stderr.add);
+    _process.stderr.listen(
+      _stderr.add,
+      onDone: _stderr.end,
+      onError: (Object _) => _stderr.end(),
+    );
     unawaited(_absorbFailure(_process.stdin.done));
   }
 
@@ -49,6 +53,11 @@ final class ProcessChannel implements MontyChannel {
   /// Long enough that an exit code such as 65 is read, not overwritten by
   /// the kill's signal.
   static const Duration fatalExitGrace = Duration(milliseconds: 100);
+
+  /// How long a crash report waits, after the exit code, for the rest of
+  /// stderr: the exit code can arrive before the last of the worker's
+  /// output, and a process that inherited the pipe can hold it open.
+  static const Duration stderrDrainGrace = Duration(seconds: 1);
 
   /// How long [close] waits for the worker to exit after `Shutdown`.
   static const Duration shutdownGrace = Duration(seconds: 2);
@@ -186,6 +195,8 @@ final class ProcessChannel implements MontyChannel {
       (_, workerOomExitCode) => CrashCause.outOfMemory,
       _ => CrashCause.vanished,
     };
+    // A pipe still held open after the grace leaves the tail as it stands.
+    await _stderr.ended.timeout(stderrDrainGrace, onTimeout: () => null);
     final tail = _stderr.text;
 
     return _crash ??= MontyCrashedError(
@@ -387,6 +398,7 @@ final class _ByteTail {
 
   final int capacity;
   final _chunks = ListQueue<List<int>>();
+  final _ended = Completer<void>();
   int _length = 0;
 
   void add(List<int> chunk) {
@@ -397,6 +409,14 @@ final class _ByteTail {
       if (head == null || _length - head.length < capacity) break;
       _length -= _chunks.removeFirst().length;
     }
+  }
+
+  /// Completes once the stream has ended.
+  Future<void> get ended => _ended.future;
+
+  /// Marks the stream ended. Idempotent.
+  void end() {
+    if (!_ended.isCompleted) _ended.complete();
   }
 
   /// The tail as text, trimmed; a cut multi-byte character becomes U+FFFD.

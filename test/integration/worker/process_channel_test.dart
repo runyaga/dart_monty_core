@@ -164,6 +164,16 @@ void main() {
       expect(crash.toString(), contains(stderrLastLine));
     });
 
+    test(
+      'stderr written just before the exit still reaches the tail',
+      () async {
+        final channel = await _spawn('late-stderr');
+        final crash = await _crashOf(channel.turn(_configure));
+        expect(crash.stderrTail, stderrLastLine);
+      },
+      testOn: '!windows',
+    );
+
     test('a crash is final: every later turn throws the same error', () async {
       final channel = await _spawn('oom');
       final crashes = [
