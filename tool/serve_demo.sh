@@ -90,6 +90,8 @@ echo ""
 if [ "$SKIP_BUILD" = false ]; then
   echo "--- Building WASM binary (cargo wasm32-wasip1) ---"
   cd "$PKG/native"
+  # native/rust-toolchain.toml lists no targets; add the one built here.
+  if command -v rustup >/dev/null 2>&1; then rustup target add wasm32-wasip1; fi
   cargo build --target wasm32-wasip1 --release
   # Deliberately NOT copied here. js/build.js places it in lib/assets and runs
   # wasm-opt (14.5 MB -> 12.7 MB); copying the raw artefact over the top would

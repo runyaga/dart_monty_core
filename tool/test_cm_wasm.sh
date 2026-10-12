@@ -111,7 +111,9 @@ done
 # Step 1: Build a test-hooks WASM engine (own target dir, never lib/assets)
 # -------------------------------------------------------
 echo "--- Building test-hooks WASM (cargo wasm32-wasip1 --features test-hooks) ---"
-(cd native && CARGO_TARGET_DIR="$CARGO_TARGET" \
+# native/rust-toolchain.toml lists no targets; add the one built here.
+(cd native && { ! command -v rustup >/dev/null 2>&1 || rustup target add wasm32-wasip1; } \
+  && CARGO_TARGET_DIR="$CARGO_TARGET" \
   cargo build --target wasm32-wasip1 --release --features test-hooks)
 WASM_SRC="$CARGO_TARGET/wasm32-wasip1/release/dart_monty_core_native.wasm"
 [ -f "$WASM_SRC" ] || { echo "FATAL: missing $WASM_SRC"; exit 1; }

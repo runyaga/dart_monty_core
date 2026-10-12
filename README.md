@@ -449,7 +449,9 @@ The build requires the desktop toolchain below.
 ### Prerequisites for FFI (desktop only)
 
 `hook/build.dart` runs `cargo build --release --target <host-triple>`
-on the consumer's machine during `pub get`. Required toolchain:
+on the consumer's machine during `pub get`, first running
+`rustup target add <triple>` (a no-op for the host). `native/rust-toolchain.toml`
+pins the channel only and installs no extra targets. Required toolchain:
 
 - **Rust** — install via [rustup](https://rustup.rs)
 - **C linker** for the cdylib link step:

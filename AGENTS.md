@@ -13,7 +13,9 @@ building, testing, and releasing this package.
 | Dart SDK ≥ 3.10 | `brew install dart` | dart.dev/get-dart | dart.dev/get-dart |
 | Web tests | Node 20+ + Chrome | Node 20+ + Chrome | Node 20+ + Chrome |
 
-Maintainers also need the WASM target for rebuilding `lib/assets/`:
+Maintainers also need the WASM target for rebuilding `lib/assets/`
+(`native/rust-toolchain.toml` pins the channel only and lists no `targets`;
+the wasm scripts and CI jobs add it themselves):
 
 ```bash
 rustup target add wasm32-wasip1
