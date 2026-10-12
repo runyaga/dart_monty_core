@@ -37,9 +37,11 @@ jobs:
         with:
           node-version: '24'
 
+      # Same SDK as ci.yaml, so the site is built by the compiler the `pages`
+      # job validated -- not whatever `stable` resolves to on deploy day.
       - uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.13.5
 
       # ── Web REPL — uses committed assets (Mode A) ───────────────────────────
       # Assets live in assets/ and are committed to git. No cargo build or
