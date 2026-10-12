@@ -57,10 +57,6 @@ final class MontyLimits {
   /// upstream's pool default.
   static const int defaultMaxSuspensions = 1000;
 
-  /// Pass as [maxSuspensions] to opt out of the budget. Distinct from
-  /// omitting it, which applies [defaultMaxSuspensions].
-  static const int unlimitedSuspensions = -1;
-
   /// Maximum size of a SINGLE object allocation in bytes, or `null` for
   /// unlimited.
   ///
@@ -98,9 +94,10 @@ final class MontyLimits {
   final int? stackDepth;
 
   /// Maximum suspensions the sandbox may raise for the host to answer, across
-  /// the whole session. `null` applies [defaultMaxSuspensions];
-  /// [unlimitedSuspensions] removes the bound; `0` refuses the first
-  /// suspension while still permitting work that never suspends.
+  /// the whole session. `null` applies [defaultMaxSuspensions]; `0` refuses
+  /// the first suspension while still permitting work that never suspends.
+  /// The budget cannot be disabled, as upstream; a negative value is
+  /// rejected with an [ArgumentError] when the session is created.
   ///
   /// Enforced by the HOST, not the engine — [timeoutMs] bounds interpreter
   /// time, and a suspension spends its time in Dart. Needs no backend support,

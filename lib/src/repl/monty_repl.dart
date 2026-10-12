@@ -113,15 +113,29 @@ class MontyRepl {
     String? scriptName,
     String? preamble,
     MontyLimits? limits,
-  }) : _bindings = repl_factory.createReplBindings(),
+  }) : _limits = _checkLimits(limits),
+       _bindings = repl_factory.createReplBindings(),
        _scriptName = scriptName,
-       _preamble = preamble,
-       _limits = limits;
+       _preamble = preamble;
 
   ReplBindings _bindings;
   final String? _scriptName;
   final String? _preamble;
   final MontyLimits? _limits;
+
+  static MontyLimits? _checkLimits(MontyLimits? limits) {
+    final budget = limits?.maxSuspensions;
+    if (budget != null && budget < 0) {
+      throw ArgumentError.value(
+        budget,
+        'maxSuspensions',
+        'must be >= 0; the suspension budget cannot be disabled',
+      );
+    }
+
+    return limits;
+  }
+
   bool _created = false;
   bool _disposed = false;
   bool _pending = false;
@@ -506,8 +520,7 @@ class MontyRepl {
         // per-arm would miss the async arm, which schedules before resuming.
         if (progress is! MontyComplete) {
           if (_suspensionBudgetExhausted ||
-              (_suspensionBudget != MontyLimits.unlimitedSuspensions &&
-                  _suspensionsUsed >= _suspensionBudget)) {
+              _suspensionsUsed >= _suspensionBudget) {
             _suspensionBudgetExhausted = true;
 
             // Not resumed into Python: every other error path here calls

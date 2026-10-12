@@ -136,9 +136,8 @@ final class MontySuspensionBudgetExceeded extends MontyError {
   const MontySuspensionBudgetExceeded(this.budget)
     : super(
         'suspension limit $budget exceeded: the session asked the host to '
-        'answer more than $budget suspensions. Raise or remove the bound with '
-        'MontyLimits(maxSuspensions: ...), or '
-        'MontyLimits.unlimitedSuspensions to opt out.',
+        'answer more than $budget suspensions. Raise the bound with '
+        'MontyLimits(maxSuspensions: ...).',
       );
 
   /// The budget that was exhausted.

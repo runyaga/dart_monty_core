@@ -504,7 +504,7 @@ void main() {
   });
 
   group('MontySuspensionBudgetExceeded', () {
-    test('carries the budget, names the opt-outs and its type', () {
+    test('carries the budget, names how to raise it and its type', () {
       // Built at run time on purpose: a const instance never runs the
       // constructor, so its message and type name would go unexercised.
       final budget = int.parse('7');
@@ -512,7 +512,8 @@ void main() {
 
       expect(e.budget, 7);
       expect(e.message, contains('suspension limit 7 exceeded'));
-      expect(e.message, contains('MontyLimits.unlimitedSuspensions'));
+      expect(e.message, contains('MontyLimits(maxSuspensions: ...)'));
+      expect(e.message, isNot(contains('unlimited')));
       expect(e.toString(), startsWith('MontySuspensionBudgetExceeded: '));
     });
   });

@@ -275,8 +275,9 @@ three surprise people, and one of them differs from upstream's default.
   enforces and reports. It is not resumed back into the sandbox, so a
   `try/except` there cannot buy more callbacks.
 
-  `MontyLimits.unlimitedSuspensions` opts out by name. `0` refuses the first
-  suspension while still permitting work that never suspends. Because the
+  As upstream, the budget cannot be disabled: a negative `maxSuspensions`
+  throws `ArgumentError`. `0` refuses the first suspension while still
+  permitting work that never suspends. Because the
   budget is host-enforced it needs no backend support, so it applies on the
   web backend too, where engine-enforced session limits still throw
   `UnsupportedError` (#140).

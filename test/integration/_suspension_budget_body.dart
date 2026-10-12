@@ -98,29 +98,14 @@ void runSuspensionBudgetTests(String backend) {
       }
     });
 
-    test('unlimited opts out', () async {
-      var calls = 0;
-      final repl = MontyRepl(
-        limits: const MontyLimits(
-          maxSuspensions: MontyLimits.unlimitedSuspensions,
+    test('a negative budget is rejected, not read as unlimited', () {
+      // Upstream's max_suspensions cannot be disabled; there is no opt-out.
+      expect(
+        () => MontyRepl(limits: const MontyLimits(maxSuspensions: -1)),
+        throwsA(
+          isA<ArgumentError>().having((e) => e.name, 'name', 'maxSuspensions'),
         ),
       );
-      try {
-        final r = await repl.feedRun(
-          'for i in range(2000):\n    ping()',
-          externalFunctions: {
-            'ping': (args, kwargs) {
-              calls++;
-
-              return Future<Object?>.value();
-            },
-          },
-        );
-        expect(r.isError, isFalse);
-      } finally {
-        await repl.dispose();
-      }
-      expect(calls, 2000, reason: 'well past the default of 1000');
     });
 
     test('the sandbox cannot catch it and carry on', () async {
