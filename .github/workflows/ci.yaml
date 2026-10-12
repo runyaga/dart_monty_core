@@ -706,7 +706,12 @@ jobs:
         # `shared-key` (added in 5e25267) fixed the CACHE not warming between
         # jobs; it did nothing about this, because both directories were being
         # cached and both still had to be built. This is the other half.
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+        #
+        # --lib and --locked MATCH THE HOOK TOO (hook/build.dart passes exactly
+        # `build --locked --release --lib --target <triple>`). Without --lib
+        # cargo also builds the release `oracle` bin, a second fat-LTO link
+        # nothing runs: the tests use the dev-profile oracle built next.
+        run: cargo build --locked --release --lib --target x86_64-unknown-linux-gnu
       - name: Build oracle binary
         working-directory: native
         run: cargo build --bin oracle
