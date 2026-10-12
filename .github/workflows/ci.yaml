@@ -53,6 +53,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       docs: ${{ steps.filter.outputs.docs }}
+      parity_oracle: ${{ steps.filter.outputs.parity_oracle }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -103,6 +104,26 @@ jobs:
               - 'docs/**'
               - 'mkdocs.yml'
               - 'mkdocs_docs/**'
+            # Everything the parity expected outcomes are generated from, and
+            # the outcomes themselves: when any of it changes, the oracle must
+            # regenerate them (job parity-oracle). The workflow files are in
+            # here so a change to how the oracle runs is itself checked.
+            parity_oracle:
+              - 'tool/parity/cases/**'
+              - 'tool/parity/expected/**'
+              - 'tool/parity/manifest.json'
+              - 'tool/parity/oracle/**'
+              - 'tool/upstream/**'
+              - 'tool/check_parity_manifest.py'
+              - '.github/workflows/parity-oracle.yaml'
+              - '.github/workflows/ci.yaml'
+      - name: Report whether the parity oracle runs
+        run: |
+          if [ "${{ steps.filter.outputs.parity_oracle }}" = "true" ]; then
+            echo "parity-oracle: RUNS — a parity input changed (cases, expected outcomes, manifest, oracle code, upstream pins or workflow)." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "parity-oracle: SKIPPED because no parity input changed; the gate's manifest check still binds every case to its expected outcome, and the weekly scheduled run regenerates them." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ---------------------------------------------------------------------------
   # The record, checked mechanically
@@ -198,6 +219,9 @@ jobs:
           # The frozen capability manifest (187 rows, 185 in scope): schema,
           # content hash and baseline totals.
           run python3 -I tool/check_capability_manifest.py
+          # Every parity case bound to its expected outcome, and the oracle's
+          # code and pins unchanged since the outcomes were generated.
+          run python3 -I tool/check_parity_manifest.py
           run bash tool/check_no_vague_errors.sh
           run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
@@ -219,7 +243,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 22 ] || { echo "FAIL: expected 22 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 23 ] || { echo "FAIL: expected 23 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -251,39 +275,15 @@ jobs:
   # ---------------------------------------------------------------------------
   # Parity oracle: the expected outcomes are what upstream actually does
   # ---------------------------------------------------------------------------
-  # tool/parity/expected holds pydantic-monty 1.1.0's outcome for every parity
-  # case and probe (and upstream monty's own, through a small Rust program, for
-  # the three Rust-only probes). They are committed so the Dart runs need no
-  # Python; this job regenerates them from the hash-pinned oracle and fails on
-  # any difference, so a committed expectation cannot drift from upstream.
+  # Runs (and is required) only when a parity input changed (the
+  # `parity_oracle` filter above); otherwise GitHub shows it as skipped and
+  # the `changes` job's summary says why. The same workflow also runs weekly
+  # and on demand (.github/workflows/parity-oracle.yaml).
   parity-oracle:
-    name: Parity oracle (expected outcomes regenerate)
+    name: Parity oracle
     needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tool/parity/oracle/rust
-          key: parity-rust-oracle
-      - name: Install the pinned oracle
-        run: |
-          python3 -m venv /tmp/oracle
-          /tmp/oracle/bin/pip install -q --disable-pip-version-check --no-cache-dir \
-            --require-hashes --only-binary :all: --no-deps -r tool/upstream/requirements.lock
-      - name: Build the Rust oracle
-        working-directory: tool/parity/oracle/rust
-        run: cargo build --locked --release
-      - name: Expected outcomes regenerate identically
-        run: >-
-          /tmp/oracle/bin/python -I tool/parity/oracle/check_expected.py
-          --rust tool/parity/oracle/rust/target/release/parity-rust-oracle
+    if: needs.changes.outputs.parity_oracle == 'true'
+    uses: ./.github/workflows/parity-oracle.yaml
 
   # ---------------------------------------------------------------------------
   # FFI binding generation

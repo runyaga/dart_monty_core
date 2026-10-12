@@ -1,0 +1,4116 @@
+{
+ "generator": {
+  "sha256": "fb0b4d050e5035c14b0776748c3cbe4d128f985205e532b04084fd0108031c33",
+  "files": {
+   "tool/parity/oracle/run_cases.py": "8071b940bb702c18615828e212e47947664bb76ab4ec7c1c434c3a242d1fa4fa",
+   "tool/parity/oracle/run_probes.py": "a6738a2f5f5ec947f13f58b8add4f787b7fa66f8c85ddf2eaebfb379d159f712",
+   "tool/parity/oracle/rust/Cargo.toml": "e7bccce9812ea8ce32f65a72f835a5f82c87bf0f4359113601698781372d6f03",
+   "tool/parity/oracle/rust/Cargo.lock": "a0cfbede3bedb6e846d2e24e6e089db40ae9171e858fd584d3bef299a1837858",
+   "tool/parity/oracle/rust/src/main.rs": "38a41e960e77840c3a0e70f9ec2ece985ab05ac94b3bbeae6a24d3d3c6e2e901"
+  }
+ },
+ "pins": {
+  "sha256": "8699ebc48e045a2b0f59d5914e75213230099a15176ef685e080f1e7251934d9",
+  "files": {
+   "tool/upstream/requirements.lock": "0791321b7cc6eb7254bbb9dfd4df497b8baa1f1f26f399b18ca2f224e1dd6f5d",
+   "tool/upstream/upstream-pin.json": "3745c69e7937f62ec7beb063da5a6d560013c14b99faeeda97f7a70ddd18c2c1"
+  }
+ },
+ "cases": {
+  "b12_args__dict_get_no_args": {
+   "suite": "errors",
+   "case": "185bcaf54daaec0fc71672684933ca652b2dbdec63250ed6a2a21f8819c64574",
+   "outcomes": {
+    "ref-py": "b3310dc471a1674bc7f830eab679ce91f6a037f74d2b4a71c076150871fac1bc"
+   }
+  },
+  "b12_args__dict_get_too_many": {
+   "suite": "errors",
+   "case": "5f6a0925861d0d94622b6e9fc115df44a3255259eb6ba3eda614cfaf7226dabc",
+   "outcomes": {
+    "ref-py": "e63b4fc9fdb9daf6b5e2340311455c3ec3dd51561b4c5794f3dda0e4fe89b85d"
+   }
+  },
+  "b12_args__dict_items_with_args": {
+   "suite": "errors",
+   "case": "4aeea1ba91cb44004ad3851446ec6ba4817f47c611524a7446acd4c844549a49",
+   "outcomes": {
+    "ref-py": "a7f5047bdeb1dfd0677e7a5208171694bfac9b22610229e3adbbdcf62565d738"
+   }
+  },
+  "b12_args__dict_keys_with_args": {
+   "suite": "errors",
+   "case": "391818bbed66f0a2a2caa9f8c1be0917b86c08d8e74519d5b038f2eb2417411d",
+   "outcomes": {
+    "ref-py": "dd334edf3876e9ea5b2a106dec6654a9e3bb5a09e22c1b26cc629dcd3223af79"
+   }
+  },
+  "b12_args__dict_pop_no_args": {
+   "suite": "errors",
+   "case": "59c88d3ff19583a90ac0db91957dd1fc46eade3b7ac80256d42c687827ee8c65",
+   "outcomes": {
+    "ref-py": "1fc71cfe8b2f5e25eafcaf2580b72963df8a3e9a302b804a95550836743b087e"
+   }
+  },
+  "b12_args__dict_pop_too_many": {
+   "suite": "errors",
+   "case": "3f04d8c4914a16f5477f203f64e2ddfe53a93b06841c462bed205830f5eafbea",
+   "outcomes": {
+    "ref-py": "75dc293bf242c8e63c058c962fd6732d071a8cc0d701dba480eb131aa67221ff"
+   }
+  },
+  "b12_args__dict_values_with_args": {
+   "suite": "errors",
+   "case": "6323fe62a39925c016ef1006c41a653869f2035e18f1c1d9522e19916e38d127",
+   "outcomes": {
+    "ref-py": "3f70eb058d6717a23cdbbd09a2f83a4111cefe499be72a3ef9af4e5c3bdb2bc4"
+   }
+  },
+  "b12_args__id_too_many": {
+   "suite": "errors",
+   "case": "1bd7b5ec19a285ce9469b0b65940962a12410eb230111f99983338866df4025d",
+   "outcomes": {
+    "ref-py": "ef1225d94657e5cf66c9569e795e2359ee739d12c0147c0e0a8e2fe57e0cc0d0"
+   }
+  },
+  "b12_args__len_no_args": {
+   "suite": "errors",
+   "case": "0e1660a30e79e224a894f791f6d49070eb6e52ca0fe4bcf960c5e85820bd5357",
+   "outcomes": {
+    "ref-py": "6a0a98b6bd966ab1d4a1bdb623defc7123c71fea21fe043b42f58affbb89cdb1"
+   }
+  },
+  "b12_args__len_too_many": {
+   "suite": "errors",
+   "case": "336c4368b7c484ab964145acd3ac727fdb66584b257e5195fb2e0364c382a672",
+   "outcomes": {
+    "ref-py": "004442b0b4a5da968b5704ae9cc0d2370b751f9657ff358289dee24337eb7be4"
+   }
+  },
+  "b12_args__len_type_error_int": {
+   "suite": "errors",
+   "case": "4d86ab46cc83467119c7cf9b2296ecaa13a3e4406b9a12dd1ddf9d296dc157ac",
+   "outcomes": {
+    "ref-py": "ef2715226f78a36a1514cdd586a99f2e0dae09c5fa3a29678e71142e78c8fe35"
+   }
+  },
+  "b12_args__len_type_error_none": {
+   "suite": "errors",
+   "case": "4a9b6a3b96a6dc6a626b36561a645a6fd564ac46d00fd01704796b0981215be0",
+   "outcomes": {
+    "ref-py": "6aa0fd9f633a635e22717b2743879f4cce0469cd8483c0d9adc65a79fef8742e"
+   }
+  },
+  "b12_args__list_append_no_args": {
+   "suite": "errors",
+   "case": "da9214c54342d45c425f2396e664b22f42373ee4539c3de14086fbaf2b7e457d",
+   "outcomes": {
+    "ref-py": "58690f9db84990fd77240f725d0feb013b32e8370089d92e6b4e75b46ba45ec5"
+   }
+  },
+  "b12_args__list_append_too_many": {
+   "suite": "errors",
+   "case": "4b7218c03a4f5de605e991eb2dc724d218145270e4a2d9a7087e7e73d7ef50d1",
+   "outcomes": {
+    "ref-py": "e8da4c93b49535cb0bf9a609896ce8b858103b42fd53d7e58eb79f683d1c914a"
+   }
+  },
+  "b12_args__list_insert_too_few": {
+   "suite": "errors",
+   "case": "34179d0253c910476556c6a47e91be68c71f5382d43b5d8b6558cf249224f306",
+   "outcomes": {
+    "ref-py": "2599132e7c94fbd9da3448d024e7ff12aaaf6b6e27825d36b9c88c11c9beaee0"
+   }
+  },
+  "b12_args__list_insert_too_many": {
+   "suite": "errors",
+   "case": "d4ad9dab1cae833e446e1fdbdae6464268dff36d8f0b1e96ec9c28da8442709a",
+   "outcomes": {
+    "ref-py": "1eac02c352545260a38f36fb65e3ebf3ff4fc877fde9a1857da82754704cfe85"
+   }
+  },
+  "b12_args__repr_no_args": {
+   "suite": "errors",
+   "case": "3c152f7b13b4c5b07261788ae963e84aebbb1a877bc70b6bb7c15b86d4414edf",
+   "outcomes": {
+    "ref-py": "7c70e9d6bda4863a7fe5aef66ea0fc1ae9bc8eb18b2c56317d8c06c0f73b1690"
+   }
+  },
+  "b12_arith__div_zero_float": {
+   "suite": "errors",
+   "case": "15c53919534152ed066ca624629e9f22aebf2fedf787905b299934c1d0165880",
+   "outcomes": {
+    "ref-py": "ca12c82afb8788469517b065f5a1f93fb2151e8cdc8acd13d2717a03e25bd7bc"
+   }
+  },
+  "b12_arith__div_zero_int": {
+   "suite": "errors",
+   "case": "6c026e01f311e9fd2760fa126c9255b1d29621e984383fee9b1f1fc2bc71780e",
+   "outcomes": {
+    "ref-py": "9a44dc08ed0870df10c1f5040c4373c489d85954be2a76c6bbb7063deab31823"
+   }
+  },
+  "b12_arith__floordiv_zero_float": {
+   "suite": "errors",
+   "case": "5edeb9087670a0b4ef7d7252a7d7fb8e4d79688c7f8882691df4eb676b5ed8d7",
+   "outcomes": {
+    "ref-py": "ca15ed4ac8321a78f0a736f2b1d2424b5520996d1b9e68eef78d5d906a35dad9"
+   }
+  },
+  "b12_arith__floordiv_zero_int": {
+   "suite": "errors",
+   "case": "6bff3f71215daf4c27f65a60a4c9ad9277da938641ef38ec9f819cc7c9fdbdc0",
+   "outcomes": {
+    "ref-py": "b2f672e90412a9d99308ef71605a763cad5b2b17bbec4cadd8b2818681771f80"
+   }
+  },
+  "b12_arith__pow_zero_neg": {
+   "suite": "errors",
+   "case": "91467b4a6c1e25b38b954f92e8dac6c2b7fc83a49c9eb5f9eb03e02824e90b50",
+   "outcomes": {
+    "ref-py": "675a8285763dc448243a7ab30ab5663182231ae704d682dbad35d563f08b4042"
+   }
+  },
+  "b12_arith__pow_zero_neg_builtin": {
+   "suite": "errors",
+   "case": "aa08e8ceb7b4e8adde2394c67f9fe228ea83caaf155d39ba08032cb46aca0d43",
+   "outcomes": {
+    "ref-py": "690b447cde49ebe5d52f6d23636994e3dcfdff12ef96b1b0b53e0d29165cb236"
+   }
+  },
+  "b12_assert__fail": {
+   "suite": "errors",
+   "case": "7b0c9b7af3f70701bae050c2bd1008515c46609b83829a2d7e287bf68f0d09cc",
+   "outcomes": {
+    "ref-py": "4e57980153e1d743bacbc9e13a9493bdaa61bb9bda5bd37a425fde6c89a6a8d6"
+   }
+  },
+  "b12_assert__fail_msg": {
+   "suite": "errors",
+   "case": "c586fb0bd34d020d727d150a5076c86ec5b7e6bdf7df8718e71e4c053fb2fbac",
+   "outcomes": {
+    "ref-py": "420d7a405cc86074fd3661a0cd3083f1e6a2a69d3511d0fefa3e633bc6ba15f1"
+   }
+  },
+  "b12_attr__get_int_error": {
+   "suite": "errors",
+   "case": "95b3dc849a33d10c98cca7f6a3813505dd71a95abfd7e536a90e4e3a6cd00da7",
+   "outcomes": {
+    "ref-py": "7e97a241e2b5c0ac96133417a3c7409bcc719344b0ed3c9ac08644d05cb7b0e0"
+   }
+  },
+  "b12_attr__get_list_error": {
+   "suite": "errors",
+   "case": "82f2f2b7c32535a9056445778181baa4c5015f5e3a972b711da3af413cf985cc",
+   "outcomes": {
+    "ref-py": "f8849a899dd4bf2bd11c80e60be3c6709c1fb3e1208c8a590442e17123e8469a"
+   }
+  },
+  "b12_attr__set_int_error": {
+   "suite": "errors",
+   "case": "dd38eacfeda6c0477ae545ead4d294e69537c8f60d6abb14d301b00375939b21",
+   "outcomes": {
+    "ref-py": "b158015efa9ee98e3958937dd6ee211e783d779bd8a94f8d005480641feba1e6"
+   }
+  },
+  "b12_attr__set_list_error": {
+   "suite": "errors",
+   "case": "8fe481c6c24a65a2b60675322fe0230d597326dfae2ebe48d15d2cdc07e68aae",
+   "outcomes": {
+    "ref-py": "64de0d97455db133799ef56cbe520066f2ca40e65b106efcb18c51a104cf5db3"
+   }
+  },
+  "b12_builtin__add_type_error": {
+   "suite": "errors",
+   "case": "8a970ae0fe30c95e1144284fac87f6322f3c42ad382d744415e3b1f87bdc97a9",
+   "outcomes": {
+    "ref-py": "19d09855a22164f2413030251007bc3d1efad7043c642332d8bc834a6e551a07"
+   }
+  },
+  "b12_builtin__exec_import_traceback": {
+   "suite": "errors",
+   "case": "2758fdcff2bed5bff1a4fa9a4fc97caede557ebe88734962027d3aaae6a6f62e",
+   "outcomes": {
+    "ref-py": "b2f9a3ff9f2bec16f90cc717b8beda1fa865b26db41dd80f71e937755cd36e38"
+   }
+  },
+  "b12_builtin__exec_traceback": {
+   "suite": "errors",
+   "case": "d4dcf246f33ce7fed47885820a1b5ce6c73c5f2578abde39ac53475c76ac95f3",
+   "outcomes": {
+    "ref-py": "2a79e71fe88c6979fec5e675837683b48f5e39c216c324803d816979efbda607"
+   }
+  },
+  "b12_builtin__filter_not_iterable": {
+   "suite": "errors",
+   "case": "5e18031459ba7b64ad5843467381f302a52cd3dedff55298ce9e784d2808eadf",
+   "outcomes": {
+    "ref-py": "211479521318b756bb980299cc2274f7689dd9a83c84e5c1e7c69fda6a66e90c"
+   }
+  },
+  "b12_builtin__iter_err_unpack_int": {
+   "suite": "errors",
+   "case": "6e06bdda270e21b2d0c783e61d259588a7764831c548eca6b8aa28499f6a9db5",
+   "outcomes": {
+    "ref-py": "800b4ca1342949b1f89b5decc15cb9ef74a8ab1214c053180044074114e7e4d9"
+   }
+  },
+  "b12_builtin__map_not_iterable": {
+   "suite": "errors",
+   "case": "cac3a539ddf41148e4cc482ab586db91f9d483a18de9956f6f657af7f0a10234",
+   "outcomes": {
+    "ref-py": "c4a026cdf560f765e05d1448d0da938e05a2014d157c2c5b9d3569afcb10d182"
+   }
+  },
+  "b12_builtin__next_stop_iteration": {
+   "suite": "errors",
+   "case": "32e42a4e2da40e695b4ac21f6e0f1aa4acbd9089fc522f05a20e7ce91e281324",
+   "outcomes": {
+    "ref-py": "aa1ceb26bdd40b7c78261e8af5cae741192beeaa322b2286aca505314d1bfbd7"
+   }
+  },
+  "b12_builtin__print_invalid_kwarg": {
+   "suite": "errors",
+   "case": "40e10d1137aaf5c929eccf00b01080e1eeba1ac1a4551b59942b7d09b65db44e",
+   "outcomes": {
+    "ref-py": "71a8c220af9aed91d919788402c97eb4526391c9d0d511204bc74c10f90b2bbb"
+   }
+  },
+  "b12_bytes__endswith_str_error": {
+   "suite": "errors",
+   "case": "34a03d766b2770b7f644842baaa2dcd4c4e941de84bad83116732ffa09f4a6d8",
+   "outcomes": {
+    "ref-py": "64e065fa3fb9ce25c85bf2de42681577d0a11eeaee6579412d86b89b587d57cf"
+   }
+  },
+  "b12_bytes__getitem_index_error": {
+   "suite": "errors",
+   "case": "0fbc31a018c8f62b9f92a01d5d63fb1a89937ef434fe0a66e42e5ad80d458b5c",
+   "outcomes": {
+    "ref-py": "0167efe7a93c94553bf4454f3bbb069abaecba21731c873e6b4b94b915d34724"
+   }
+  },
+  "b12_bytes__index_start_gt_end": {
+   "suite": "errors",
+   "case": "7f07d3bda7a09b22bb2de50c73185cc8cd8a0a6c71353aa81986fca14bc4ba0f",
+   "outcomes": {
+    "ref-py": "f52226350c9df599da35f3c35f29bf6861a55979d05ab65b8029ba0f8a9d36e3"
+   }
+  },
+  "b12_bytes__negative_count": {
+   "suite": "errors",
+   "case": "28f804d0ae73770da8d96566a3bd5d1777b22356d1e29b9defca09aa2292e73d",
+   "outcomes": {
+    "ref-py": "9b36138e1fac2bd820df31ad2ed511a2fde5f1c8af559bd05afa7507f2e89442"
+   }
+  },
+  "b12_bytes__startswith_str_error": {
+   "suite": "errors",
+   "case": "1fc5de6919ebb8b6f0be020b0fb0f01f6f29123e18f43d92f8ea5749993e4ea0",
+   "outcomes": {
+    "ref-py": "bd15387f9baec84d2551174c15727ced136ed87366bd8e9b8a4fc69f5f1d7349"
+   }
+  },
+  "b12_class__attribute_error": {
+   "suite": "errors",
+   "case": "a9dfa0bae5568f734cddc9762f6601e6d1b05c1cda5991c25a176f094d8309a9",
+   "outcomes": {
+    "ref-py": "52b7116d7376af35d1a9b5417a5398d55f62f74afc5403827e989ce84c23bf2b"
+   }
+  },
+  "b12_class__body_raises": {
+   "suite": "errors",
+   "case": "4929e12a585e989adcf9795c56871361aaf7d0eacc8de192751addd329131d2d",
+   "outcomes": {
+    "ref-py": "ec714361d57ecca61e2a70f1d23a8aba027c745ab118e0890b19f9049c97fe49"
+   }
+  },
+  "b12_class__init_raises": {
+   "suite": "errors",
+   "case": "1e45ee300a7fa5d14495dd1544d54ce1a38fffe40dcadf19ff8c3194490b7d91",
+   "outcomes": {
+    "ref-py": "02519dff80e3238d24449caf45b5216c0a2cac5d83fd5c6c09d0cfd18f9273a2"
+   }
+  },
+  "b12_class__init_return": {
+   "suite": "errors",
+   "case": "21bacbb25344ca3e737f69802cff5cb935470159c6190cb4c0dea92834b2f850",
+   "outcomes": {
+    "ref-py": "3694a84a2355519c533026cbdf1d913cde9365f1969e0f3a01317918c3f15d30"
+   }
+  },
+  "b12_class__method_raises": {
+   "suite": "errors",
+   "case": "ba645bfe7d1e47d1b9152c3cd1b4da8a19dca97245029f832ddec51750b4ff16",
+   "outcomes": {
+    "ref-py": "36e1da9270a161eddbf89dc8ed8e9f6a29e5598ce8652d6b775d3e0d1b03b5dd"
+   }
+  },
+  "b12_class__name_error": {
+   "suite": "errors",
+   "case": "a074eefc8e030c92bc49b913d08a80073a2756cc0c55d5aecac18087e8c4ae0b",
+   "outcomes": {
+    "ref-py": "bac816ba56d261f9f163b77e87a79dc8100d14c1afcf1ea1cb3203c893af2548"
+   }
+  },
+  "b12_complex__error_ordering": {
+   "suite": "errors",
+   "case": "023c90ac7e765b54dd8e80feae19f50c1aea848a616cfadc94219f758bea1588",
+   "outcomes": {
+    "ref-py": "13b9767eb02a16df8bb6118785d4a4e930ac69d5f6ba5e442aff4c98c7ce4c2b"
+   }
+  },
+  "b12_complex__error_zero_power": {
+   "suite": "errors",
+   "case": "f86a19724ce89e8ecc6ff90e7ed2e7ddfc6a402942e44be7f4ddac33bd19ab13",
+   "outcomes": {
+    "ref-py": "7dff09a3517ba8cd9ae1f0ef7c4d425f580eaca5fb1d2b196cd7f302ee687f1a"
+   }
+  },
+  "b12_comprehension__unbound_local": {
+   "suite": "errors",
+   "case": "f2636a7fd4f6e5f8c3ac7128e88176751dee2e6311d0ae4c19f386b232c3b970",
+   "outcomes": {
+    "ref-py": "34117cbd63400c6a365acb2e73586c35a68810e44303ed955c08c53aa89fa8fc"
+   }
+  },
+  "b12_decorator__class_body_traceback": {
+   "suite": "errors",
+   "case": "3566d651db10f8b4ae5c1a3ce37b6046f740e91b58f2f991af8ee7498c64149c",
+   "outcomes": {
+    "ref-py": "dc8cc5becba415c08beee50a06fce7bb554f503295180e428f2e227c96135dfa"
+   }
+  },
+  "b12_decorator__class_traceback": {
+   "suite": "errors",
+   "case": "afae5e43dc6695d7d978df7bb9b9e33be2af8036b181e6703b1ef2aea893781f",
+   "outcomes": {
+    "ref-py": "fe8da6ba9b46dcb18a2ca3eb12b47c470a83ef72979fc5dd603d707c488c1478"
+   }
+  },
+  "b12_decorator__function_traceback": {
+   "suite": "errors",
+   "case": "7b05d8230c28714dfaea6522bcaff59b695a38e492f87f1ce26a10b0701b6093",
+   "outcomes": {
+    "ref-py": "1e91548838c6439ee189c73abb3813a0ba1770ff00a599f88abddab1eca6a95a"
+   }
+  },
+  "b12_dict__get_unhashable_key": {
+   "suite": "errors",
+   "case": "bc70e937ef6c9433fbdf032ce8a3136efc39f64efe5307032bff30edf13bc2d6",
+   "outcomes": {
+    "ref-py": "48bc08a52bd8322460e87410d228dfa03ad96a1ee34612e60c2ff259d0e7acba"
+   }
+  },
+  "b12_dict__literal_unhashable_key": {
+   "suite": "errors",
+   "case": "7e8382c270079efebfc0b64bb49d3ae877d505d06e727cc7d942cb6d57dd836b",
+   "outcomes": {
+    "ref-py": "27042fea3d09e7b766bbf2da13ea227a4681325ac25a3cf2a640587f26249336"
+   }
+  },
+  "b12_dict__method_pop_missing_error": {
+   "suite": "errors",
+   "case": "178c7ccfb19021c16e9b5894a630b9922d619ebae392532d09cc96040d1fb977",
+   "outcomes": {
+    "ref-py": "d17fd099a1c9978b3b2ee0e9b98213a3f97adcfc1c74516470708e1d422e3ddc"
+   }
+  },
+  "b12_dict__pop_unhashable_key": {
+   "suite": "errors",
+   "case": "5ae1e91c972b57ce95fc117bca2a9edb6b28cad19b90444a4793990e3fd43269",
+   "outcomes": {
+    "ref-py": "6dfd919735cad5a44a6733f8295680570b37b1b0a789f3968f785e441af23ffd"
+   }
+  },
+  "b12_dict__popitem_empty": {
+   "suite": "errors",
+   "case": "2694323db6da749ed2b38aeaba91b8aa9362081b66dc3c378ddb8fc9109b3a19",
+   "outcomes": {
+    "ref-py": "4dc1b72f4fdaccb63e8f4ad4bdfd6def3c2dd0b447beb14ce22c3bef89448b27"
+   }
+  },
+  "b12_dict__subscript_missing_key": {
+   "suite": "errors",
+   "case": "c40100e29fb14b4914e1caebb5f421178a283f7b8c43104390e421951351d581",
+   "outcomes": {
+    "ref-py": "8ca770a4df1b69a10c06de84d504c44982d22072db8915433988d1cfcd1109ca"
+   }
+  },
+  "b12_dict__unhashable_dict_key": {
+   "suite": "errors",
+   "case": "3d69dc49102b2d1c91c0a49d2bb06b6198e232e548ce3bfd290b487988fb0792",
+   "outcomes": {
+    "ref-py": "33eff3bd071e31390729a76e5f026757a531a1c94001a2e37bc7aad2a21c18b3"
+   }
+  },
+  "b12_dict__unhashable_list_key": {
+   "suite": "errors",
+   "case": "28666f8cc7ae838801cdfa0f2570c42c80f99065454d07db1363ddfb35c71c17",
+   "outcomes": {
+    "ref-py": "2e31811783730bd7d13fca5f4cb8288973a7eee79dddf50081c561c8094fc79b"
+   }
+  },
+  "b12_dict__unpack_type_error": {
+   "suite": "errors",
+   "case": "8d72c0c39d1d772f9551dfea61406bdeb12b23ce3c3f9c065a7d02c5fafd52db",
+   "outcomes": {
+    "ref-py": "bf74fbcf5de2987682b4132422b57b2afb2d094e8376820215a97d4e2cd5a139"
+   }
+  },
+  "b12_execute_raise__error_instance_str": {
+   "suite": "errors",
+   "case": "5a49c9f23be73d8f19214885484ba4270b0c86ad51aab405afbc742dabd8753e",
+   "outcomes": {
+    "ref-py": "27ce7e95e4a3863305b11228c23ef8cd7e064c0d6c6d2f5bc3e1adeaaf2ac27f"
+   }
+  },
+  "b12_execute_raise__error_no_args": {
+   "suite": "errors",
+   "case": "0f4e594a5c687ccd307bab069df487ea172c4be29222ab95bec9559d6d5a4b35",
+   "outcomes": {
+    "ref-py": "5d3b921e2ab9acf6069235299d508a5ad3a0d843bdf5a54eff51541759fb075c"
+   }
+  },
+  "b12_execute_raise__error_string_arg": {
+   "suite": "errors",
+   "case": "6afa127d9e05d1786d2005ffcf3c5a08c4320c91254462ea92c1a1d2a2c168e6",
+   "outcomes": {
+    "ref-py": "db3303bbec7de9043ce4651b533081eb76e3ec393b8a4e1d671d67afe9fa83f9"
+   }
+  },
+  "b12_execute_raise__error_string_arg_quotes": {
+   "suite": "errors",
+   "case": "fd511db59ffe8d8203b9b5c3d7dfe4cbf422d2c7afbe6085f40322e0cb38b1e9",
+   "outcomes": {
+    "ref-py": "a4098e68300a250367af4321fac8ddccf739a0304f24399874e5f29e56232e81"
+   }
+  },
+  "b12_execute_raise__error_type": {
+   "suite": "errors",
+   "case": "fbcabd710c02b8b7855092e01c8f40f6018cd4510fae3c3f4e7d8b6f89830eff",
+   "outcomes": {
+    "ref-py": "8a2976966be0bf114a02d86c7129822554bd1d3c6554633f53e16e630b40143b"
+   }
+  },
+  "b12_execute_raise__raise_instance_via_var": {
+   "suite": "errors",
+   "case": "3c2916dc6952f0dc576adfa8a26371935cc8f9291876741f7f06250c9a9e8f90",
+   "outcomes": {
+    "ref-py": "0eb2ff21fe751edcc78e67a3fdeee28a899b1ce7f059e12dc98ca192ce0ec0c6"
+   }
+  },
+  "b12_execute_raise__raise_list": {
+   "suite": "errors",
+   "case": "9200d6f028414a406404a6590a7b56fe0da964ed8a6478050549a9d5e5334d29",
+   "outcomes": {
+    "ref-py": "5c0fd2bb16b01b20f587077aeed627554eb6597ed217a8b78b64ec3b247381fa"
+   }
+  },
+  "b12_execute_raise__raise_number": {
+   "suite": "errors",
+   "case": "abb060562c3c69d5236c4af34770e16db00f341a9784dbaee6c083af0a2f94c2",
+   "outcomes": {
+    "ref-py": "084fbd5ed93d9a86ec1ba0f8112b1f58a68493e56c21cc4cb8a4a94b4987b8cb"
+   }
+  },
+  "b12_execute_raise__raise_type_call_via_var": {
+   "suite": "errors",
+   "case": "33dc2b800305db9f5c263f0acacef41be0e5c639c60f5397cdbfad7728e1ff49",
+   "outcomes": {
+    "ref-py": "d320c9228a4850c34946d6dfe8f10dc6175479b82f2201d63d7769971f648250"
+   }
+  },
+  "b12_execute_raise__raise_type_direct": {
+   "suite": "errors",
+   "case": "7b79e1b6f47e5eb309c4a9be78c6a648d05acf31942d8751b18acc7497311331",
+   "outcomes": {
+    "ref-py": "5f7755d7baeb284e645d67f4520d486cd90f3e323682f84a69c5d1b9175d3c4e"
+   }
+  },
+  "b12_execute_raise__raise_type_via_var": {
+   "suite": "errors",
+   "case": "c682260463c58621707127517c4dd6541b9ed1f359876f3bd5826c50eae56618",
+   "outcomes": {
+    "ref-py": "f35e6524616e0f3551bf1b41441577dbe5f5e0d5412fa70302f1696fd7607947"
+   }
+  },
+  "b12_fstring__error_eq_align_on_str": {
+   "suite": "errors",
+   "case": "6beae56568454d3dbbb53b6cb7669addca259abbc7c034c186b967d16341531e",
+   "outcomes": {
+    "ref-py": "8a8f8a12a0373a33abe780d341f770ce5ceb5673794ff0ee8c6cbc498c089972"
+   }
+  },
+  "b12_fstring__error_float_f_on_str": {
+   "suite": "errors",
+   "case": "fc60e7dc89d3538b58e37398b00da8ff48cdcdf0d5cbc55253dac3ca1bf4024e",
+   "outcomes": {
+    "ref-py": "d4fef72e2f17677307c2a6a5f4803bd06b158719d0e03505f8f95424ea47bd37"
+   }
+  },
+  "b12_fstring__error_int_d_on_float": {
+   "suite": "errors",
+   "case": "f40e53792772524833a677d3ed5d2e8d83187db7af763fffa5ff2695d103fd96",
+   "outcomes": {
+    "ref-py": "b3b6c5d4fedbc2f9e5d402f05431a9c313bd0a45c7431127c6b1aac585eca5fd"
+   }
+  },
+  "b12_fstring__error_int_d_on_str": {
+   "suite": "errors",
+   "case": "e45d44f73d966a0045ea6a3ed8a8061aa873dfe1bfcefbd8bd84d08bf68644df",
+   "outcomes": {
+    "ref-py": "ab62210a622d673d46fc48e909bb0d21a304587c43d2d2bc8f227f0a0ecb285d"
+   }
+  },
+  "b12_fstring__error_invalid_spec": {
+   "suite": "errors",
+   "case": "20d0b9cb7cee42d969ae019106bce39f866ae98257bd192c9ad3b41f7be9afae",
+   "outcomes": {
+    "ref-py": "04bb29e65425683f6d22b08bbfddeb9337850f1fb08bcdb7c413fc3f9ccfca8e"
+   }
+  },
+  "b12_fstring__error_invalid_spec_dynamic": {
+   "suite": "errors",
+   "case": "9804724ff96aa6e2fc691cf79bfb477f6258294d873814f477707694f6c8a44c",
+   "outcomes": {
+    "ref-py": "3d178927dd2c8f50a6f951cc46db5af1c50b1b357a6c0cdef4b029fd640f6043"
+   }
+  },
+  "b12_fstring__error_invalid_spec_str": {
+   "suite": "errors",
+   "case": "e2a81bdc3e07e63d255b9b4b596a77e232ec08c4bdc1e310cefa91a5b14649ca",
+   "outcomes": {
+    "ref-py": "21795f96e72785605f5d500f73e7975c20aa5c5cbbbba4f4c604b228e27eb69f"
+   }
+  },
+  "b12_fstring__error_str_s_on_int": {
+   "suite": "errors",
+   "case": "68c15e5e2042332c85c125e222e2db43baab2b44a88650d3ad33a77031bb6db6",
+   "outcomes": {
+    "ref-py": "4274c8bc5ffd806d593fccc7c2e7d285f32aee9b110874c39d386d16f477c259"
+   }
+  },
+  "b12_function__call_duplicate_kwargs": {
+   "suite": "errors",
+   "case": "931ba379658f948e2b3bc1e8b7aefb3358b85dcc2d9ff9b71762df78083b5478",
+   "outcomes": {
+    "ref-py": "535661e41537f2517a002fa167c048a45e95d7f9b5858e96c7ed60500f5e7575"
+   }
+  },
+  "b12_function__err_duplicate_arg": {
+   "suite": "errors",
+   "case": "8bd11aad4df4e6b8a0ee9e565e0161b282803baed0c6d14aa9b3f8fb8e4bbc09",
+   "outcomes": {
+    "ref-py": "65bd973599546ded3c57934529799737bddaf1376ceadc2c2d9c8975d3c488bc"
+   }
+  },
+  "b12_function__err_duplicate_first_arg": {
+   "suite": "errors",
+   "case": "ec3fa7abf9052e136612c9ce17ac3da521835c24d96cabfaecc3fd4bea510943",
+   "outcomes": {
+    "ref-py": "90ac800a54bb3d2115fc0315c2532f796208adeb15f72bd42aa8f1d014721b60"
+   }
+  },
+  "b12_function__err_duplicate_kwarg_cleanup": {
+   "suite": "errors",
+   "case": "50d77c9bb86c213313b5e7a2336646d8c7af23300ac78b0c456447bec8b422d5",
+   "outcomes": {
+    "ref-py": "470ae26ed18150c3d79aa8257e343d8b666e391f497f981db1e989cebeec1a11"
+   }
+  },
+  "b12_function__err_duplicate_param": {
+   "suite": "errors",
+   "case": "0db40d2575a515b27398f5cc974cb83dcae7d6dc8bb646ef2c495f6ea620e170",
+   "outcomes": {
+    "ref-py": "9b53e3b08c4fe6cc30a5c339bbc83b14518025b57cc0b45637a5583f89af6c24"
+   }
+  },
+  "b12_function__err_kwonly_as_positional": {
+   "suite": "errors",
+   "case": "210afb57841b7857cf57bdab7a361541503ee46dbf69dbc81c66c67a252c2227",
+   "outcomes": {
+    "ref-py": "e44fee0865da804fcbbe3a0f6a00aec68e2012a32fa293eb930c77836bac6b09"
+   }
+  },
+  "b12_function__err_missing_all_posonly": {
+   "suite": "errors",
+   "case": "539b8ab2b4fddcc1a3118a9ab55cf7c682d444a0d7f31c4d6fe62c16ed54e4ea",
+   "outcomes": {
+    "ref-py": "dfc53bc34a2774ff20274c4873366181de32cf143e14431d18585825707c4c31"
+   }
+  },
+  "b12_function__err_missing_heap_cleanup": {
+   "suite": "errors",
+   "case": "0fed843d87bd2ab825214751c24a4464d0f1b218ddc266628ec67c6d8b31aa7f",
+   "outcomes": {
+    "ref-py": "a0ef845f43cbcdbd13238392aa6246840fa7253af1ab0138fcc837dcd423426f"
+   }
+  },
+  "b12_function__err_missing_kwonly": {
+   "suite": "errors",
+   "case": "84f9cafb9a6ae33057e893fba6e44bea69de1546fe4ce3892ee4dd81d48f0e32",
+   "outcomes": {
+    "ref-py": "21eff051bee04e6171337d8fd20227d908722e3cd8e10605c7529eb7226258fd"
+   }
+  },
+  "b12_function__err_missing_posonly_with_kwarg": {
+   "suite": "errors",
+   "case": "ac6130b4123d427938de6bfb028ab20c5522b2a4e6893c16eccc86e88c0da890",
+   "outcomes": {
+    "ref-py": "cc0b18da425d9159c7e7086a11e409684cd280ac8628e3f3fc40446c714017e7"
+   }
+  },
+  "b12_function__err_missing_with_posonly": {
+   "suite": "errors",
+   "case": "d5cb56d9e34d15ab0849dffe57a242e522845a4079079a7f5d741d46ea70a915",
+   "outcomes": {
+    "ref-py": "9ccf1c8d6813a77d1ca87c0fea7bd83ae1641142fd37982a2e8bbbd2dbbb3f34"
+   }
+  },
+  "b12_function__err_posonly_as_kwarg": {
+   "suite": "errors",
+   "case": "f145f0d5bf9c958b303de9ba3c2a243fc94ecb52f52c6460eec827850df6837e",
+   "outcomes": {
+    "ref-py": "376403da92f2782bf5d63f9b7b8f175d69c822133a27983c3a2c94ce67a29e6e"
+   }
+  },
+  "b12_function__err_posonly_first_as_kwarg": {
+   "suite": "errors",
+   "case": "e78c20fbb849161ac32283ee7d86dd09c14a3166625668c30b4d710a7dea5d81",
+   "outcomes": {
+    "ref-py": "c2ec52a2140b27dc1a065112cc0676289a00b1d9e9e7acc827f4f13f6fe02986"
+   }
+  },
+  "b12_function__err_repeated_keyword": {
+   "suite": "errors",
+   "case": "e628b1821ec16ca66795918d97e86784d659d5d1fbf6e5c30b4a1b3290aed57e",
+   "outcomes": {
+    "ref-py": "87006e9574d4ed7a8064635dda29f4d0e60d8a2ac5ca321b59e9ea666e7a1aee"
+   }
+  },
+  "b12_function__err_too_many_posonly": {
+   "suite": "errors",
+   "case": "6f2248400d221a3a5ec5dac1339f2c85a795894af86d48023e1f381f538d3132",
+   "outcomes": {
+    "ref-py": "fc9c6f265057ccc04cd71a1d3abc98badab44f24253ff96c50f7c3cd16f4af77"
+   }
+  },
+  "b12_function__err_too_many_with_kwonly": {
+   "suite": "errors",
+   "case": "dc2c1fd3eec52c189984621fe4a13c13f1dee921758d6634f325261e50c88454",
+   "outcomes": {
+    "ref-py": "7559549a561c94301cbf4dfc9263a35d48e2cdb398110cfeb58cff848a0195d2"
+   }
+  },
+  "b12_function__err_unexpected_kwarg": {
+   "suite": "errors",
+   "case": "2e84b489244dcc9ac166f142d611e6d8499762d99fdd5904f3461a239d2a3b79",
+   "outcomes": {
+    "ref-py": "aff43df4d7c6103833055c6db71c5d7aad0f12260271a2bbd7bbfd3443f37b32"
+   }
+  },
+  "b12_function__err_unexpected_kwarg_cleanup": {
+   "suite": "errors",
+   "case": "0e19a581cf93f745e4601721373827fdc6bd4f29ee954291a2d3419e0876b6d9",
+   "outcomes": {
+    "ref-py": "290a6eff5e65d904e53b087e72fcf4fac2f6ca4043c93407028cc933bce64b1b"
+   }
+  },
+  "b12_function__err_unexpected_kwarg_quote": {
+   "suite": "errors",
+   "case": "e87cde478fbb360c6f406dff492a0f398e7b6e54ef041c23a9ec49979c292b72",
+   "outcomes": {
+    "ref-py": "8c1490d2df84adf211086c7fc72b1ab1592ee62cdc2c742d6317182d5d4c4de0"
+   }
+  },
+  "b12_function__err_unexpected_kwarg_simple": {
+   "suite": "errors",
+   "case": "b284c02636716deff2aa0140854da921d66e4138720bbe3619c9d951a7e3eb49",
+   "outcomes": {
+    "ref-py": "3b85176d842fe2713ad619eb923dc2c2a17eab57d982f58ae62cd8513beae6f2"
+   }
+  },
+  "b12_function__err_unpack_duplicate_arg": {
+   "suite": "errors",
+   "case": "ba10a91a2d8dc8dc1f6f774c948587aee944a009430651f972129b4222c6282d",
+   "outcomes": {
+    "ref-py": "ce874dcc98b9a3c13869aa3c0c1cf0f449d0673ebc4ba288c259e6d481191360"
+   }
+  },
+  "b12_function__err_unpack_duplicate_heap": {
+   "suite": "errors",
+   "case": "7f997e953d77a0f910d9fb61e8fb3241c79fee2d79a55bb3202d1697582bbb2a",
+   "outcomes": {
+    "ref-py": "5a379b06a2ef81511e6622b6157b359b6324a67a0def8617cce97c7cc5dcea95"
+   }
+  },
+  "b12_function__err_unpack_int": {
+   "suite": "errors",
+   "case": "7098c12ee1f6f6109b84e05722106092cba0b879a837d37af0e0c8d0e7205457",
+   "outcomes": {
+    "ref-py": "1882c18eea22f1775bfb198fb2a4a8412b742c550288785c826658ab1b86b544"
+   }
+  },
+  "b12_function__err_unpack_nonstring_key": {
+   "suite": "errors",
+   "case": "d826bec46461ac34e50c9422ccd52de88de5f116ee3c817453557763bec70199",
+   "outcomes": {
+    "ref-py": "dc30ac610d8777d76ee780b533614039a793332f908f5355f86864a0ce991733"
+   }
+  },
+  "b12_function__err_unpack_not_mapping": {
+   "suite": "errors",
+   "case": "3b05d38e540e08633e08fb88dad1abc66d2f0247f3d6b1b1ecc71fe03f13d02b",
+   "outcomes": {
+    "ref-py": "6197916ee8c9b55f8b9d50ba7c1e5bed71f5f5fa83dc03b1fc7fa6def62fbeb3"
+   }
+  },
+  "b12_function__too_few_args_all": {
+   "suite": "errors",
+   "case": "376023761635ce6f0c9516718d018a79fe8976e754817924c3ab20bc5a1a01c5",
+   "outcomes": {
+    "ref-py": "5ae4eb9214b355fe6523bdbc9b7e343fd312344ebe4accbe0edf66513a63ee8f"
+   }
+  },
+  "b12_function__too_few_args_one": {
+   "suite": "errors",
+   "case": "cc194b03fd0cadd96716bafcf98bf51ea6b51f677cd0f550cd657d1de3bd445c",
+   "outcomes": {
+    "ref-py": "d3111886b6c72b8d5ac9d759e73d871cf54f8161d4968be4f20390e7ea915b00"
+   }
+  },
+  "b12_function__too_few_args_two": {
+   "suite": "errors",
+   "case": "9065a0248cb57dead9945bd2a430804b860584d674fac28777be90fde64adda7",
+   "outcomes": {
+    "ref-py": "fb7e25caf90f1f238510d1f52121aa5969cbc4083636446822444c6c5b3cfb03"
+   }
+  },
+  "b12_function__too_many_args_one": {
+   "suite": "errors",
+   "case": "347dca02e9207b49075a017066ae8c2b07d75bfcd3cdb24748b4a483784fbeb9",
+   "outcomes": {
+    "ref-py": "e891365c73760717ee1df636a3604301aafd5b64388ec165487e9cebde06ad42"
+   }
+  },
+  "b12_function__too_many_args_two": {
+   "suite": "errors",
+   "case": "438594d868f48d5c462ec3de1b755d4f84acd4ac8b63f9b48a767c475281ea4b",
+   "outcomes": {
+    "ref-py": "54b3920440113e9d123da232a20e3c9246113750912cb7137a2bc0e537535733"
+   }
+  },
+  "b12_function__too_many_args_zero": {
+   "suite": "errors",
+   "case": "7e9c2d79cfe927df2017c79db419ce8a4f4a7b1002a2c3f9b65a687b5fe6f161",
+   "outcomes": {
+    "ref-py": "796ccc4c42964bd774936b583a3d45cd40ed16a63b0c3bd0a31f18b21c310f93"
+   }
+  },
+  "b12_generic_alias__not_subscriptable": {
+   "suite": "errors",
+   "case": "47b01f59496845ad998cb14aec3605561046f1411ea3268d1c3288fc3d95c481",
+   "outcomes": {
+    "ref-py": "3677c6242b22e817e75742cd6833b5f422211343da2281fb17220bd3a9595e3d"
+   }
+  },
+  "b12_global__error_assigned_before": {
+   "suite": "errors",
+   "case": "b73c06f6dce150010a5943a6f12e805705824471c45349ba4bb25eacc938198f",
+   "outcomes": {
+    "ref-py": "213993468f83a7c8ca9f0ed2be44153d5a6772bb30798634bb078e49e6e8304d"
+   }
+  },
+  "b12_hash__dict_unhashable": {
+   "suite": "errors",
+   "case": "2c8c64d8fbf45625dde288bc2b26769bf1dc5dff021c05d666d581e690dcd7d5",
+   "outcomes": {
+    "ref-py": "8600d72b3d42e5b177c89df58a81b64af409dbf1b7b148860fd27aa9e97b9e31"
+   }
+  },
+  "b12_hash__list_unhashable": {
+   "suite": "errors",
+   "case": "69e1fd28124c4a2c18df348d7e5ebee8409c87d0b8d809d42e9a8c890b9c31c4",
+   "outcomes": {
+    "ref-py": "72ba529995fb7700fb20361f9c0a44dccf4d9a8195457b2179a68744dd9c0ee7"
+   }
+  },
+  "b12_if__raise_elif": {
+   "suite": "errors",
+   "case": "842cc5e11f7c79713f9084c1642175a83e6387e16b07cc248a49a5c2259a6074",
+   "outcomes": {
+    "ref-py": "635c23979b44e33d73c67d484379f95133ac4f894bfadb55fa85b2473680bf13"
+   }
+  },
+  "b12_if__raise_else": {
+   "suite": "errors",
+   "case": "15506a7d751accbd6c701739ee33da80975903c03cdc2160dba42f8f64f169f7",
+   "outcomes": {
+    "ref-py": "76553957230f6767fb61c78ffc92b45cb412b3320af024e26e76c6b6777665fc"
+   }
+  },
+  "b12_if__raise_if": {
+   "suite": "errors",
+   "case": "82b69ac4626ae1e0d6b902b00e727a16c35db0bbac935c4b127aa9b1e56804da",
+   "outcomes": {
+    "ref-py": "108cc72b2399d1cd3a2cec48dd8e0775d6b3f87e42168783b2b6554e5c3d1542"
+   }
+  },
+  "b12_if__raise_in_elif_condition": {
+   "suite": "errors",
+   "case": "08c463ccd04829691a9ea27222cf22fcf855e5f8b8028712bdaa01a4c1ed65c2",
+   "outcomes": {
+    "ref-py": "4908261cbfc528d38cd25713f6ddc8b282a143f3911df192d4f4fda8f7733903"
+   }
+  },
+  "b12_if__raise_in_if_condition": {
+   "suite": "errors",
+   "case": "4ed3c0b042c510154c4707c15be12ad6f321f9c7efe4c1adc9d2e13787dc83b8",
+   "outcomes": {
+    "ref-py": "00f83576c1934891e7877a8527deafd9c51b3f0ddf711a2316ea077ab8480d8d"
+   }
+  },
+  "b12_import__error_cannot_import": {
+   "suite": "errors",
+   "case": "29cad7e25eeb9e80b60e3d60d61e05cb9dd81a881a33181757353d0c58b9bf81",
+   "outcomes": {
+    "ref-py": "ec9e20c8d1389d1351c282cbccafe07c6cab61b281497aa734e88709ecbe62f6"
+   }
+  },
+  "b12_import__error_module_not_found": {
+   "suite": "errors",
+   "case": "9e41fdb66ca320fd8329e7b0500f43d8a69ae49e76b068a836f5b38293ae3f20",
+   "outcomes": {
+    "ref-py": "51007a9d59ee9c67a23b956cca4ee758463ab91aace14ff6c780fb010e624cdf"
+   }
+  },
+  "b12_import__future_unknown_feature": {
+   "suite": "errors",
+   "case": "f6dc6ee87db2de1d203bbf94db566840e337d677fccd627db45612decf3175a0",
+   "outcomes": {
+    "ref-py": "16e46ce959cd8f31364ba2c8e3b3af86fb49c8eb075f8b0205ec3b56298922e8"
+   }
+  },
+  "b12_import__relative_error": {
+   "suite": "errors",
+   "case": "c4e050ce42e7eaa984b9bfa44b1d39e971323b61bca7e921cf4363623423d6f1",
+   "outcomes": {
+    "ref-py": "ccec7b92532c5995284590ebe4795dd8f192a360b880bafbc894ef7efd1a69a1"
+   }
+  },
+  "b12_import__relative_future_error": {
+   "suite": "errors",
+   "case": "907d43384395c4eec941fcf1d7e59ae04ab9a76de57248f9d1e3edb212b6f12d",
+   "outcomes": {
+    "ref-py": "2754226588f14d6526bdd2da8a412f5b0d0dc636e6e1e23b20b6fd24e5749ba3"
+   }
+  },
+  "b12_import__relative_no_module_error": {
+   "suite": "errors",
+   "case": "e0131e804bbfab2cbaf1fda34d8f65904256fbb5426a77a1cc8d27f8bb2c6aa8",
+   "outcomes": {
+    "ref-py": "287540179df575232be58088afcdbdb9dbfe13028b628d81edc69856f7b5686b"
+   }
+  },
+  "b12_import__runtime_error_when_executed": {
+   "suite": "errors",
+   "case": "8dc9975026f7dd8b241fcb27df13f0638e84111d86ca046f3a0cc8dee96b88ed",
+   "outcomes": {
+    "ref-py": "886cd0a9f9c0b2b4cfa649af715958317fe99028e4e1e18a8c16e2fb57cb5944"
+   }
+  },
+  "b12_import__star_error": {
+   "suite": "errors",
+   "case": "24dd493ec69481c23de94718f9eda1a01b058e408a08173b073ecca10150bfc4",
+   "outcomes": {
+    "ref-py": "a01df141d5251e55183337f7338bf8af606d48fab01153f369274b11d1da6f90"
+   }
+  },
+  "b12_isinstance__arg2_list_error": {
+   "suite": "errors",
+   "case": "502f50e2e920cab82ff769c3d03e3f766d435c10cf1d4ca80a058c22530de138",
+   "outcomes": {
+    "ref-py": "011b0ef57e3310380fd0996050de32a8c86e70e60c33cb1d5efa5b0496bc1ed2"
+   }
+  },
+  "b12_isinstance__arg2_type_error": {
+   "suite": "errors",
+   "case": "aad4ec6816b5f3fe1bda9c7adddbca36f986521d3e272fcb691086770d609da7",
+   "outcomes": {
+    "ref-py": "f5a0b2134cd76f4d77f54eaa97509b955eba242ee6eb523f7a5f2fe1581697a8"
+   }
+  },
+  "b12_iter__dict_mutation": {
+   "suite": "errors",
+   "case": "2519e7716164fff6f546bc896e08d866347b62c5eba15f6610a7b7b5747d385c",
+   "outcomes": {
+    "ref-py": "3e4382022d4e004a33a59d78b16f2af22860d8ae6de86aeda59cf26365d9c34f"
+   }
+  },
+  "b12_iter__not_iterable": {
+   "suite": "errors",
+   "case": "715bc918dfe046edb6ef29519833d1452ee08d720019a4040fec3ae0d2ce71b7",
+   "outcomes": {
+    "ref-py": "695d7399e2969f6fd6baf4346675c761897f92c6215b952d38c67545d0f7b423"
+   }
+  },
+  "b12_list__extend_not_iterable": {
+   "suite": "errors",
+   "case": "c09a59571c7497381bff928cfb39f918444ca50ca11f584a515d591731d9aca8",
+   "outcomes": {
+    "ref-py": "ec6b43486ffbe4ce5fad1eb55d67f34ee9f7fef6a8ef279f4aaec684347456d0"
+   }
+  },
+  "b12_list__getitem_out_of_bounds": {
+   "suite": "errors",
+   "case": "88cb432962c653e0c7f529cf86a3b18a74237ef6dd612e731c966115db9cb951",
+   "outcomes": {
+    "ref-py": "7f8f5d7f8aec1603116241ec4672b55552fb01dd694d7f46df7591f303c59828"
+   }
+  },
+  "b12_list__index_not_found": {
+   "suite": "errors",
+   "case": "1d20297b0ef356fbfbafcdc8c10840879608cf5fb25818f484a927c4fc79f0cd",
+   "outcomes": {
+    "ref-py": "a3fe2bfc1aea1a0c077d1dcbc14bfbefae9912d2c92b9567401cea7b2084057f"
+   }
+  },
+  "b12_list__index_start_gt_end": {
+   "suite": "errors",
+   "case": "f400ab7cd62461157b0111222f8fba1f3a13a0dd7032cb74f39617a64afaca4d",
+   "outcomes": {
+    "ref-py": "da0aba17755d5ef8770a30a40a7cda214686844e18785d06ba69e89c2f891584"
+   }
+  },
+  "b12_list__pop_empty": {
+   "suite": "errors",
+   "case": "bb71415640688556a1a05a5d043648e14657d537a3c0778ad6b64d8bb5a104de",
+   "outcomes": {
+    "ref-py": "76288a159302a3aa48fcd65985af32b510a23c36ee4c1e72f77641f1c53cd5fa"
+   }
+  },
+  "b12_list__pop_out_of_range": {
+   "suite": "errors",
+   "case": "68873a9935daf2de03a7cbd04ab526ecf7eb8f2233538b5eb6c623f26a700552",
+   "outcomes": {
+    "ref-py": "6f1ff21c3c0282b0b2aa15e79daefdc1cad6d43a8071da07fe078a92f30292e1"
+   }
+  },
+  "b12_list__pop_type_error": {
+   "suite": "errors",
+   "case": "f5d312bbe31a0018bfd0814cac9a8752b011677971dea4f7217d1a54e9964258",
+   "outcomes": {
+    "ref-py": "3f2ca7ee5ba17f83053c210a56a106300a8991741cda6a0c1edac4a493f16bd7"
+   }
+  },
+  "b12_list__remove_not_found": {
+   "suite": "errors",
+   "case": "a5d1ddc669da994a68e811bc8cb2aaf3d3835634142283466ad1ef278681c1cd",
+   "outcomes": {
+    "ref-py": "c8cb1a89cb49de0a93516cfa9723ad1814db4badc144b79a22556ab50ceb6298"
+   }
+  },
+  "b12_list__setitem_dict_index": {
+   "suite": "errors",
+   "case": "13211546351a7c4fd3d2758b059e4addfab95658f235956099e8066aa10a5e61",
+   "outcomes": {
+    "ref-py": "6d126a6660ed102c923aed9d016ef52cda7900ac67beb8ff26026efe889a2583"
+   }
+  },
+  "b12_list__setitem_huge_int_index": {
+   "suite": "errors",
+   "case": "86873132dfec65bcde9d90f3372710be4d4922f885a79cec2344062211b6b1bc",
+   "outcomes": {
+    "ref-py": "13701c6a1291a5202baed6b035ce6631948391470aff461e04c80d4aefcaf92c"
+   }
+  },
+  "b12_list__setitem_index_error": {
+   "suite": "errors",
+   "case": "ec3bde769882efd41b7cd866d4bc4db40cebe3aafd17c160165e8b03befcee78",
+   "outcomes": {
+    "ref-py": "fe118ac32f7dbd4017ac515b36c7e024f67a487f37a797b8d7ac25913396bf5c"
+   }
+  },
+  "b12_list__setitem_type_error": {
+   "suite": "errors",
+   "case": "a3faf8db481bec0fde18e4e545eeb2e7a453a12bae27a6a04b5eec252bb3247d",
+   "outcomes": {
+    "ref-py": "1b556577e5f535286158cb37801534b7d3607dacb3fe384faeae3c0a921242b1"
+   }
+  },
+  "b12_list__unpack_type_error": {
+   "suite": "errors",
+   "case": "54015da08b511c6d86db5f633ce33f6cf37b3f83c5df51060d354c678d1d29fa",
+   "outcomes": {
+    "ref-py": "530eab2af663a6004780488f1315ea19ca259e962210fe154e00fc0c82264624"
+   }
+  },
+  "b12_longint__index_error": {
+   "suite": "errors",
+   "case": "57a09082c6c7e0860bdaca710d0f21b0fa37ecac311a424d9ae11f1b7cd95800",
+   "outcomes": {
+    "ref-py": "b06db6f0fd96c97d235dbe6b87934d8fb85d6cb00cbdeef6b91a84869bce2a77"
+   }
+  },
+  "b12_longint__repeat_error": {
+   "suite": "errors",
+   "case": "4b9967454a83dfd1d18da0a055b594af5ba389a8ca9eb9df471ceb9d501a87ad",
+   "outcomes": {
+    "ref-py": "15cc89ae1cfa9e3b216450753c8456c2e3fe2831800d93b624848d5018cc674e"
+   }
+  },
+  "b12_loop__break_in_function_error": {
+   "suite": "errors",
+   "case": "24294207b07dddba682b48cdafec56cadd4060f8889a6739221137c7700a2555",
+   "outcomes": {
+    "ref-py": "a1e208aa3ccedb4f23299908d5d1a69a2ef729354d484d8dc3839127ee567121"
+   }
+  },
+  "b12_loop__break_in_if_error": {
+   "suite": "errors",
+   "case": "5ad370ad564c09e4cdaec9a8cc33b71e5a2e0200c413c855757709dd4ef323c7",
+   "outcomes": {
+    "ref-py": "4300ebb01173ddc1c1514f17f3a897679ffbe9d13ee1830e6c46b1e7640eea92"
+   }
+  },
+  "b12_loop__break_outside_error": {
+   "suite": "errors",
+   "case": "62e59d61541fe8a589263398b023d6c7c5f27f493aab315fe3158fdfe1961aad",
+   "outcomes": {
+    "ref-py": "19ab99e34fafc95da33c50534fdb8058b402f1e922c74ca5f8a084b7f00c67d1"
+   }
+  },
+  "b12_loop__continue_in_function_error": {
+   "suite": "errors",
+   "case": "62ccdbb0dc3344a414d689dc09db5c23f16ad799fb6f588620a9a8c107b46247",
+   "outcomes": {
+    "ref-py": "b2b1e5e1fd34f3c6f9110b80655c1b4d199f7a1757f01ef3d5d5da2bc7d7c4f3"
+   }
+  },
+  "b12_loop__continue_in_if_error": {
+   "suite": "errors",
+   "case": "a8880a9ce3ba2b7c7364fc466171eb0979017010dc93f2dd97a932c8a772155d",
+   "outcomes": {
+    "ref-py": "9fc10f39b9856eff4bc9205a3ea85e47357684ca60e570c4200ecec0303085aa"
+   }
+  },
+  "b12_loop__continue_outside_error": {
+   "suite": "errors",
+   "case": "986de39d7e89e8fdb2ae8c9be0fda0847b3029f7cb3d884d65ef9de3ebee4526",
+   "outcomes": {
+    "ref-py": "f976e2cb36d890f5505d17301d48b686c32f37466eb2339c3c8afebc0c88f31a"
+   }
+  },
+  "b12_math__acos_domain_error": {
+   "suite": "errors",
+   "case": "2864821bfc9baf32672ef5ece06561e7871a8203be7d3f596b7edc5bedf3dd9f",
+   "outcomes": {
+    "ref-py": "491b4eecf2e2ce64e66d5d418e6dde5936dfb426292cf6290bb705b863ed1114"
+   }
+  },
+  "b12_math__acosh_domain_error": {
+   "suite": "errors",
+   "case": "e2cef58be5c6fd8c6bf4e25143142135230279969113b4aa1eee1835d939a5a4",
+   "outcomes": {
+    "ref-py": "c4f273f7bcf30f6377a1bf207e22a6c9bbd3c0e247c6c57b95549ea0fd36af94"
+   }
+  },
+  "b12_math__asin_domain_error": {
+   "suite": "errors",
+   "case": "aa2fe72f3bbf929eb5bf33ba94005f9767249627c79ca6bc6766fa416ededf6c",
+   "outcomes": {
+    "ref-py": "3b475d4169dbb4f741726e61faf6d8ab4d6ef185a41da1c6944c560ffdae7299"
+   }
+  },
+  "b12_math__atanh_domain_error": {
+   "suite": "errors",
+   "case": "750c046957f9dba0eac2bd5854849d00675bdc2bad44cd4fa7c0d084f98cc668",
+   "outcomes": {
+    "ref-py": "9063a777794db57b3cc5d697e28f5a1ab3c3eab2af8dba96ef51f783f46f862e"
+   }
+  },
+  "b12_math__cos_inf_error": {
+   "suite": "errors",
+   "case": "a978c161a904ee4041fd4742ce1470d846455872b98ac8dedce0b169098e1e57",
+   "outcomes": {
+    "ref-py": "0f37de2d8c9c775e71513ea9850e4f4da9d4b9a1e898bc378ac26e4dfec9c27f"
+   }
+  },
+  "b12_math__cosh_overflow_error": {
+   "suite": "errors",
+   "case": "ddcd952ce0808f2dff51f62366bc91f953977c91915a4bce9b9ae97dfd42a46b",
+   "outcomes": {
+    "ref-py": "596fee45d86fe39f06921bc753e1c5101b59bcc5854827b643e998866ade1afb"
+   }
+  },
+  "b12_math__exp_overflow_error": {
+   "suite": "errors",
+   "case": "29012df32e82e64bdcad26cd085fed9b48ace516a02882261cac254974be16cf",
+   "outcomes": {
+    "ref-py": "3f7c64bfa2c90e69ee0b706d1d455f4a7a70e0b0042fb8bca6019fce7939e4f9"
+   }
+  },
+  "b12_math__factorial_float_error": {
+   "suite": "errors",
+   "case": "0db765039f628110eadddc78d9121995de5eb489e74e98aaa984644275fa0611",
+   "outcomes": {
+    "ref-py": "0c2dcfb91ba3fe84dc32d8143cee88f5f7913f97dba0884df8c2ec09984f5064"
+   }
+  },
+  "b12_math__factorial_negative_error": {
+   "suite": "errors",
+   "case": "258792ea453efcbe5b7e231b5b82f88e0b93a5289c15dc167b7a5f8d4a5b01e8",
+   "outcomes": {
+    "ref-py": "14da559c3eb1d9218d91bffeacf528109f1765b57799c1c73de1f1665a42bd0f"
+   }
+  },
+  "b12_math__floor_inf_error": {
+   "suite": "errors",
+   "case": "1652e951c8c9fd7db6b3baff53f70713163f7b99dd57a76c18b3cadfe59a29a6",
+   "outcomes": {
+    "ref-py": "353c016fee81363028b5e2ad055fb4572550ca41c09c1606d0364ae9caa89844"
+   }
+  },
+  "b12_math__floor_nan_error": {
+   "suite": "errors",
+   "case": "dc523f565c4048e99e575dd7201fc79c9986663c853ad6c6c02f562e158e7541",
+   "outcomes": {
+    "ref-py": "cf5d2ea5de546e62add781a41d72c2e61ee1e6360d7a50549ab3bb3163871f3b"
+   }
+  },
+  "b12_math__floor_str_error": {
+   "suite": "errors",
+   "case": "e39f95bf63870dd81e85fe7dc996a8efbe3e92db4541ba3fcb3c4e206ca17c10",
+   "outcomes": {
+    "ref-py": "197fb75ab04f057c67d801530a6639eccd0b9e114554d76365c1833a4030acf7"
+   }
+  },
+  "b12_math__fmod_inf_error": {
+   "suite": "errors",
+   "case": "ba8cbb7fb96f8e7d4ad11365507cadd9c4fe79ab75f10bff3b91740c545e1e9c",
+   "outcomes": {
+    "ref-py": "931b60c41f82073cf9025b6a744eb2390f4200e9da5cfb728c5f5f9b3933b2db"
+   }
+  },
+  "b12_math__gamma_neg_int_error": {
+   "suite": "errors",
+   "case": "b5820980ab120ad86262c1970a89fc60dd6e3e41b0fb86d238b8f0c17ba88dec",
+   "outcomes": {
+    "ref-py": "1b37cec69b0f63e0b85f15c07b7c024bed0823c246e5a390d8df5134c5c6eb03"
+   }
+  },
+  "b12_math__gcd_float_error": {
+   "suite": "errors",
+   "case": "ed95dd7955dd608e380cec86f0502a47bb8cb83992ecfa35894b6ad39e2da7ad",
+   "outcomes": {
+    "ref-py": "0447c90e71aa884719f1716f3521d8e19c334ca4fba014a814aa9ba0b7b1ebf2"
+   }
+  },
+  "b12_math__isqrt_negative_error": {
+   "suite": "errors",
+   "case": "7d0ea77ad7d0bf8f87bcd3df8b28987ff219bae76bd407c20f83db2b35459464",
+   "outcomes": {
+    "ref-py": "11c62b3217240e418369c58fb2c32559d7b27603d8171971726df343b16e36d8"
+   }
+  },
+  "b12_math__ldexp_overflow_error": {
+   "suite": "errors",
+   "case": "0d0f03e20050b9baf67a9dd39826bda8315d791809c61eb8575c0efcfa6e26f2",
+   "outcomes": {
+    "ref-py": "3daecd181de3339892bf413c83c0185b8da4625be4d9a2c3abccf74f52810f4e"
+   }
+  },
+  "b12_math__log1p_domain_error": {
+   "suite": "errors",
+   "case": "ef72b8d3587c5e7b156624f7878e18cfb53d17780f9d2f53e8c4aba4b280a036",
+   "outcomes": {
+    "ref-py": "67c5f539a69265668c1b56d8fdc5a9d645386eb6d03c3942989e1742317824bf"
+   }
+  },
+  "b12_math__log_base1_error": {
+   "suite": "errors",
+   "case": "9c75edbb099f9fea46cf82ae209d8ccb272f6e7bcdba925c94cf4c1f162f15bf",
+   "outcomes": {
+    "ref-py": "3ff9af0c9fcce742e5173f61ed63a97594dce9dde6e1406fdb1f0bfee95026c2"
+   }
+  },
+  "b12_math__log_zero_error": {
+   "suite": "errors",
+   "case": "4929ea7f1f3cc2162edc8fe925f5738cb9638200b96bff7e86079108decab7cc",
+   "outcomes": {
+    "ref-py": "fada44e607dccb9fc061b7cd623fa580dffec9f49f7b260b919794ae406916cb"
+   }
+  },
+  "b12_math__pow_domain_error": {
+   "suite": "errors",
+   "case": "1a6ddc4db3849f22bce547899550b3cb5ee318260015f3a795bd4bbda06374bf",
+   "outcomes": {
+    "ref-py": "7da0b9d0381da7359799706cd06c816a88f3849db62baff018870c2775757571"
+   }
+  },
+  "b12_math__sin_inf_error": {
+   "suite": "errors",
+   "case": "2a22781fc85edc5d7396a973a7bc2f97b0a321ad8a6282c6a0df7ad498270654",
+   "outcomes": {
+    "ref-py": "41f8583274f84deda6cb12fb817279f9e8e327327f3807f4ff622cdede487c11"
+   }
+  },
+  "b12_math__sqrt_negative_error": {
+   "suite": "errors",
+   "case": "9d4973d28ae9c1e46bdb1f6434443140a202fd02a5e649bdd7b857e73b2e49ef",
+   "outcomes": {
+    "ref-py": "5acdaa852e3695d9c49897cd74af977496db62f6f8c864f92adc6bd8a7fc8734"
+   }
+  },
+  "b12_math__tan_inf_error": {
+   "suite": "errors",
+   "case": "758312b9b3c159b58455142b1fba9966ad04c1254f86182f10eab788984770e4",
+   "outcomes": {
+    "ref-py": "1e1c5cd72e999a854c2c78a24568aaef06c2d4e2fcd05a64da0c0778e1c10e10"
+   }
+  },
+  "b12_math__trunc_str_error": {
+   "suite": "errors",
+   "case": "3c69111d0ecd4535d8d866ccd96046a273bb233a860fb38b2e6183cdf3a14150",
+   "outcomes": {
+    "ref-py": "a633f7ff9f4f73cc976b427d85bd009856e619d2f2073e926c663a15a889a229"
+   }
+  },
+  "b12_name_error__module_conditional_assign": {
+   "suite": "errors",
+   "case": "5a3b7bd4bd1a0c7e7264688f84b1dc5b626407853cb98dbe49e0de9c0bd78136",
+   "outcomes": {
+    "ref-py": "e447002b70d7301380b8bee77a36755e2488f0671343a958475a2c88401a8fe6"
+   }
+  },
+  "b12_name_error__unbound_local_func": {
+   "suite": "errors",
+   "case": "daa6b096bf00e3142b2ec7f6580cefe7a4bb6503dbed7385d005dc2987da2860",
+   "outcomes": {
+    "ref-py": "b0172ff23bee1036245fdc70798965597470952202d55031d49c7b79396ba52a"
+   }
+  },
+  "b12_name_error__unbound_local_module": {
+   "suite": "errors",
+   "case": "622272d57da1329055bd15f010543d09b8b992c02bb33e561e4a990fe6831652",
+   "outcomes": {
+    "ref-py": "0a23ebbe29859319d917085b53d7391ff868ed7d5d2b3e4db2f2801919925b52"
+   }
+  },
+  "b12_name_error__undefined_call_chained": {
+   "suite": "errors",
+   "case": "1f34476931a099c3655635d34ea18c6e9237317ce82a0c53b543c9902a0142cd",
+   "outcomes": {
+    "ref-py": "a5976e9b8e2802c9a5ede003fb29ceecdede9480837d3c5bff6520fb9eef9788"
+   }
+  },
+  "b12_name_error__undefined_call_in_expr": {
+   "suite": "errors",
+   "case": "cafa1cdb44cd08097cc1424f7c155a765d05918fdbcec7c592a031eed5efdeff",
+   "outcomes": {
+    "ref-py": "7d148e7ba05fa81d1953bebc3bc9c0a1b3744c44199adbb6006cd9a62c09ed2f"
+   }
+  },
+  "b12_name_error__undefined_call_in_function": {
+   "suite": "errors",
+   "case": "37bf07ecd224161c59e4d0ea7fe92c85647a48b2355b4501cfa5480180236ac1",
+   "outcomes": {
+    "ref-py": "9eb2092cd89cdab010369ef67ea86a9a61456161191efc7a74d388e7998617b2"
+   }
+  },
+  "b12_name_error__undefined_call_with_args": {
+   "suite": "errors",
+   "case": "dbbc2067014c2cb4174b3890042f9dda56346b06994f867c9b139cf037e27d7e",
+   "outcomes": {
+    "ref-py": "93f84917b8e3e054a9042d5945a7c7ca75e943e2af14289639a0cd1f2fadfab2"
+   }
+  },
+  "b12_name_error__undefined_global": {
+   "suite": "errors",
+   "case": "0be1f467d0b79902518197d6685004d0071d2a5991efd9d91a9808decd5f4643",
+   "outcomes": {
+    "ref-py": "80a1c3eddfe5c074a795afb001cc626002a51bbb890672856a73bd3c014c5222"
+   }
+  },
+  "b12_name_error__undefined_global_in_function": {
+   "suite": "errors",
+   "case": "255668cb94bd3fc4afb7f305d877bb31a3ebcb0c34b0556ba896daa70f3953f0",
+   "outcomes": {
+    "ref-py": "cd7e36e4666168b82fe6b5a4986822dcf24adac73989d1365db41a78ae67a6cd"
+   }
+  },
+  "b12_namedtuple__missing_attr": {
+   "suite": "errors",
+   "case": "820558519733c5b386e2a36c24cebf47d58f2a5b5d426beae10d90dee8351cb1",
+   "outcomes": {
+    "ref-py": "b4bea43fc35dfa4060f7883f94bcd2ee64265ffe093adc9c02302445e3f60672"
+   }
+  },
+  "b12_nonlocal__error_module_level": {
+   "suite": "errors",
+   "case": "d4df602db52d07670cb5f6ef71b8ab0fb002e82e3d4c09163dbf7e6c61f784e7",
+   "outcomes": {
+    "ref-py": "2b6bb1cbebb06c5049602d9bd4322277b85c6fb64d5db94d64a9c3ecb695d53e"
+   }
+  },
+  "b12_range__error_no_args": {
+   "suite": "errors",
+   "case": "9015ea70ffedf4377dd59f46b9862b0a005a345bf66778965188cf0ab9dbde63",
+   "outcomes": {
+    "ref-py": "a61be8a901fb04047434f4e205689ba925e0d9edb76b241616ee2aa22f78de93"
+   }
+  },
+  "b12_range__error_step_zero": {
+   "suite": "errors",
+   "case": "f9e631819b3072cf09766fc65c400fd88c629792f9ba291a1d9afaaae787266a",
+   "outcomes": {
+    "ref-py": "97d4714e2166c0c64fd7bb5248608224891e028e21de71a905fe9359f4846788"
+   }
+  },
+  "b12_range__error_too_many_args": {
+   "suite": "errors",
+   "case": "4fbf3b4cda24abaa2d2c4265a101666fd92ea75fa6bc2c150f11325e3a3a53f1",
+   "outcomes": {
+    "ref-py": "18bc42d029898ed5b202015ed5efb4b7af0f1105ac6d444af3ef80b2d34062d2"
+   }
+  },
+  "b12_range__getitem_index_error": {
+   "suite": "errors",
+   "case": "9c0ed26d407685971dd03adcd736c6b2cc1fb5600cf2ea823ae65ed957e9f807",
+   "outcomes": {
+    "ref-py": "7451d3bdc02bf4fef4fe730d9c531a2523350f9fbab6ecffb300335278d03a8a"
+   }
+  },
+  "b12_recursion__function_depth": {
+   "suite": "errors",
+   "case": "839457f7cab84e645bb2c220cd1dd581d39a18f4a9265700eb4fcc27884b33de",
+   "outcomes": {
+    "ref-py": "e7857f67075b50e8e4b2c2b7cb1566f4d8d66e3e1562e9df4aabb5157c54c5fd"
+   }
+  },
+  "b12_set__unpack_type_error": {
+   "suite": "errors",
+   "case": "1e9a6a601bf011407be01845c4312938965f7af0424ae9d3a351efee3c2ffcc7",
+   "outcomes": {
+    "ref-py": "b21363812ece4253a4f73da71ecc91b25c63252ad9a2eaa9bfe4009d05b7f5b0"
+   }
+  },
+  "b12_slice__invalid_indices": {
+   "suite": "errors",
+   "case": "728dc6dc5a95a303b96efd839645a8ed5624319f363f8cdc12827c2b54865ef7",
+   "outcomes": {
+    "ref-py": "747028fe1bbaa8674e6fd49a081861dcd36421bb3619c65b85e49e488e262e36"
+   }
+  },
+  "b12_slice__kwargs": {
+   "suite": "errors",
+   "case": "6b46ca62a3e1ec26d840a67697baaab9409d4bf294fcf879a5b9a3c710a95b1f",
+   "outcomes": {
+    "ref-py": "da6fc14ed0e302933b12febcdd3a8ac601b2ce6b4b0a37d65ec1a1fabb46e59c"
+   }
+  },
+  "b12_slice__no_args": {
+   "suite": "errors",
+   "case": "b9cdb5ff6eaabeb7754f97b7eec425abb08e206fb68d3a6397a281145acba533",
+   "outcomes": {
+    "ref-py": "3a4f373ce9c11e613d7bc593eea2de4a119ecda75d051e14399ce471d7a1fe20"
+   }
+  },
+  "b12_slice__step_zero": {
+   "suite": "errors",
+   "case": "878eda3a489cf8b9b6319ae5a095ae67d5118b5f4499dc8e4caf792ea83f7229",
+   "outcomes": {
+    "ref-py": "838a9caebb8312297908f06ff1201dfa30cf9974b41ed4ee35bd2992ab731153"
+   }
+  },
+  "b12_slice__step_zero_bytes": {
+   "suite": "errors",
+   "case": "a8efadbfb8b75317bb9b55e403a5a57c65b5819ac23291af59b409d4f061f344",
+   "outcomes": {
+    "ref-py": "d2e154bf2e7747d1f22e0e831662642986cb0f43eb4c936cceb9e08161fd633a"
+   }
+  },
+  "b12_slice__step_zero_range": {
+   "suite": "errors",
+   "case": "1025e31ca161f00a7a967c08094437194e40b9991ddd6e3d56384175073e5e37",
+   "outcomes": {
+    "ref-py": "e34ae01acc5d945394d6cd8a536829c3eab65c31b7321da2599653205f19f82e"
+   }
+  },
+  "b12_slice__step_zero_str": {
+   "suite": "errors",
+   "case": "3bcb051fde69fb4ed852ceb1d4b30fc30e66788f5543d5b79f51d73c1c7d5f48",
+   "outcomes": {
+    "ref-py": "148b8e8d12d3030ea185259efb796cd0258c921a54efdb8ed6c960090eb3a376"
+   }
+  },
+  "b12_slice__step_zero_tuple": {
+   "suite": "errors",
+   "case": "195e4d91172d8f6f5379fdfc6ba3a6914bf74adb5d7582df93c933fd95b4fbba",
+   "outcomes": {
+    "ref-py": "6fd12e7baeb24851a7d0082432204bd89d11423f7247f738172dbb4ca5f87b75"
+   }
+  },
+  "b12_slice__too_many_args": {
+   "suite": "errors",
+   "case": "6f670fd4d77fa82798c37116cc21321dd9986f3a1387b1f0e464a9e6e9d5370f",
+   "outcomes": {
+    "ref-py": "88ee4c96b27fcc959dbaf7db12488cf5a38d187d936fe6e6896a3e321140e195"
+   }
+  },
+  "b12_str__getitem_index_error": {
+   "suite": "errors",
+   "case": "b79680573b7e7f46f4c42f858fc0a486c705382c24e07a7b8d67e6889dfee4b0",
+   "outcomes": {
+    "ref-py": "20203f4e85a85bcec40e7e862866b3db832a25bc0d3d233f1170d0955794d18f"
+   }
+  },
+  "b12_str__index_not_found": {
+   "suite": "errors",
+   "case": "2e2a6c8e2b5f4ebe2f64269c22b6d757ed7a689499d141b32de32c956db5a78e",
+   "outcomes": {
+    "ref-py": "41232ad6d9c5eb80c6b29d701f93452a5352ba987256e7df79362ab368dd10eb"
+   }
+  },
+  "b12_str__join_no_args": {
+   "suite": "errors",
+   "case": "4e77c93be9b954dbe7943587d30db95d277e2c5446c0575a9bbc90dd8bd7b9d8",
+   "outcomes": {
+    "ref-py": "c376bb3c02aee740e6cd4128098af9d85c13ca28d66304bedee5bf108ca97b84"
+   }
+  },
+  "b12_str__join_non_string": {
+   "suite": "errors",
+   "case": "2fefeedc650a3dd934181691cfb432276baacc946490700c81c4714cd287b69a",
+   "outcomes": {
+    "ref-py": "67c0446eefe07ebe809af24f68db3666388d7975c3ac760047ba558f10db7d75"
+   }
+  },
+  "b12_str__join_not_iterable": {
+   "suite": "errors",
+   "case": "6b391988ff315093e88770d50a591e12bec3f95c698abccaa195a7c49b81ada0",
+   "outcomes": {
+    "ref-py": "467da72b712a479c5682f9de0bd29e5e9fe933ffd9ca4c09f669b937ab0c2da9"
+   }
+  },
+  "b12_str__join_too_many_args": {
+   "suite": "errors",
+   "case": "0176078d9b2b37f953579b827dc6ee5ff75d4451f9ff7b81db71041a70deade4",
+   "outcomes": {
+    "ref-py": "e205e9dfc0ac909a313b10291a843ac010d8a3817a9e70ab8a5f4b49a2085dde"
+   }
+  },
+  "b12_str__partition_empty": {
+   "suite": "errors",
+   "case": "6de084fc958fa6fdfdf2ed2581879b914c8bd1401d8215fe178a0d9de948e5d8",
+   "outcomes": {
+    "ref-py": "1b29059e7934da475204328e18b2486335edf5278ebfb5f9619ef3cd52486de3"
+   }
+  },
+  "b12_str__rsplit_empty_sep": {
+   "suite": "errors",
+   "case": "de293b6bfa41a07ef16b35248a51ec5e209b364e775e6523a61879a8c5c18871",
+   "outcomes": {
+    "ref-py": "6e02335dde851da4734153d24f4f0862141d35dc743124e846f83cca06ada98f"
+   }
+  },
+  "b12_str__split_empty_sep": {
+   "suite": "errors",
+   "case": "8343453092e7461cec4cdaeb19790a7bbed7ac759de265639587f1d13e07763c",
+   "outcomes": {
+    "ref-py": "8bb19b88cb2d392ce3a8e729c7023b341997e2acd47c60c9b0d2c47c363efe67"
+   }
+  },
+  "b12_traceback__division_error": {
+   "suite": "errors",
+   "case": "ecc361da6444eae688b32db709189addef4b3ff859d0f29c9b0348a8db6aeac7",
+   "outcomes": {
+    "ref-py": "c23f41a90e55d14963fcdd1cafbe7b5c2a24ebd06298460a3a23b0b4603028bf"
+   }
+  },
+  "b12_traceback__index_error": {
+   "suite": "errors",
+   "case": "9bdec2b38dfb79f7562de5f85708113fbc5ab5d56e2864d0e07da354182099bb",
+   "outcomes": {
+    "ref-py": "350740ea0466d744711e38f5c37296dde92d29849c8bf5f2ca988c90f4e0715b"
+   }
+  },
+  "b12_traceback__insert_as_int": {
+   "suite": "errors",
+   "case": "c3188aabe00b905724fce2aec9b87d05550573e6c13a474c4bd386a91d7c8e43",
+   "outcomes": {
+    "ref-py": "169915c49437849528904a0c024b67834e976552bd7385c301f7df3c858309ff"
+   }
+  },
+  "b12_traceback__nested_call": {
+   "suite": "errors",
+   "case": "d114285db3c7d449ccb30da0c36c7f18af3315f9b45d2d0d75a81b958d48c280",
+   "outcomes": {
+    "ref-py": "4dfe6a2602287758129a93f019b17c77673355e080bd30b14dd19ca0ca7e6d77"
+   }
+  },
+  "b12_traceback__nonlocal_module_scope": {
+   "suite": "errors",
+   "case": "dac3d08714449d242534c44f5ec63f8fbcf695c9612c5184d1658df7f0366c00",
+   "outcomes": {
+    "ref-py": "6a1ff1b871b4b84c4821df29a332bd61e75bd99353d02b0314ffe920a3157435"
+   }
+  },
+  "b12_traceback__nonlocal_unbound": {
+   "suite": "errors",
+   "case": "9fd822c7a372da75373b5b836f22d325463a2f8135e017c88066ce8696a3c943",
+   "outcomes": {
+    "ref-py": "0b6c3a6134be4c3eda011eb645a2e686625a12644b813c38a73ec1826a0e49d3"
+   }
+  },
+  "b12_traceback__range_as_int": {
+   "suite": "errors",
+   "case": "d3e0ca54c133c4c534479cbda7f8fdda3de6c7f36913e638a40ccc46d58a0a67",
+   "outcomes": {
+    "ref-py": "5aec5c60d09d9ba3804ce2eb7a01da165cca08607fa412427031a41504bebc32"
+   }
+  },
+  "b12_traceback__recursion_error": {
+   "suite": "errors",
+   "case": "e0734cce682446ac58c8a1994afe4f6bafcd5d8ed572324b59ddb0760eebd19a",
+   "outcomes": {
+    "ref-py": "dc038beb4f62930997d731f6eaf7dcf91420cc8241b59125bcb125a008f9f5d7"
+   }
+  },
+  "b12_traceback__set_mutation": {
+   "suite": "errors",
+   "case": "f6f1e9ad4381f4241e44ce0b1b874426f24b9de42998a923dd2c5351191fec17",
+   "outcomes": {
+    "ref-py": "ae364fd5d4601f7e30eb85ceade8e960be493110fe8a63621cdd41ed100d428e"
+   }
+  },
+  "b12_traceback__undefined_attr_call": {
+   "suite": "errors",
+   "case": "8b31b3ea7e5cf47e9c42d368644f6040bf19ee1f8fa60349c53ce81807ff8456",
+   "outcomes": {
+    "ref-py": "a3bc119621c08c898db990ea01eb16fac1c4e3bf217a0b5676182ccc88603400"
+   }
+  },
+  "b12_traceback__undefined_call": {
+   "suite": "errors",
+   "case": "0be5ce395f932f420faadd144ff1ea3e2faed1e0b2edcafaaeccad9448fe86dd",
+   "outcomes": {
+    "ref-py": "300530b538695e6915ff9e2c43e6a0c0594ebae1de29ced1e260f08588532a21"
+   }
+  },
+  "b12_traceback__undefined_raise": {
+   "suite": "errors",
+   "case": "1fd505041a25b7ec939ca854e1e97dbfc7e28cf11fb20710a8df8d6338ce002a",
+   "outcomes": {
+    "ref-py": "14f2cd57c97749680020e6cd799f4ddfa2926fe1e4a037ec9a0e2a4c30258870"
+   }
+  },
+  "b12_try_except__bare_raise_no_context": {
+   "suite": "errors",
+   "case": "95ca8093a4d3659241b00587eca44d777388cbbde04648db94d3522b96f01ab9",
+   "outcomes": {
+    "ref-py": "b4559317541e05542c5f6c9a7237cf505e4edd9f8023a6d0da92c4a1cdecd746"
+   }
+  },
+  "b12_try_except__invalid_type": {
+   "suite": "errors",
+   "case": "4d7cfaf5bcace7671bfe2b22752235104602dc36e317c376282856344d306c75",
+   "outcomes": {
+    "ref-py": "4c7885f56d79aafb9f3b26aa7157c415cbe8d95ae50e6507c35773a2a829545c"
+   }
+  },
+  "b12_tuple__getitem_out_of_bounds": {
+   "suite": "errors",
+   "case": "aae87251c6d5813d9c9d9bb975088e590ffd27b70df7063f3756eeebd0e4b7a6",
+   "outcomes": {
+    "ref-py": "4a7aa65e9a58cacfd40b4c862bb4a47dba307527a9594fd2452d76622d09eb08"
+   }
+  },
+  "b12_tuple__index_not_found": {
+   "suite": "errors",
+   "case": "ab9d23ff46ac87f16d114da64022969a0450001fad2cf3c1217243e44844e3f0",
+   "outcomes": {
+    "ref-py": "777a0a42bf8e17a07bdc6f52f8bb534b3ce35b08e177780e8d5f5c8b12823ff1"
+   }
+  },
+  "b12_tuple__index_start_gt_end": {
+   "suite": "errors",
+   "case": "a498a2a04092bfdedcf3aac7bd43a43f47eda85669f09de99bc6aeb5bf682d6b",
+   "outcomes": {
+    "ref-py": "50bd72c33a379c1a65b02dde3dabc39ccd76864a29afea88d68f3e9390149175"
+   }
+  },
+  "b12_tuple__unpack_type_error": {
+   "suite": "errors",
+   "case": "bedc9c6f56dd7d9661cf0d0d3e98656a71db56441c0ecc80b9908e2d11a816b1",
+   "outcomes": {
+    "ref-py": "dad03e8e7241a0bf1f030876b0c0474e15e3a2970a66cc34cf2dfcf71cae9c7f"
+   }
+  },
+  "b12_type__builtin_attr_error": {
+   "suite": "errors",
+   "case": "7e8d73d3667437cdef0d8b31b64c6bd2d67e9987463dbd75cf60dcd654944ec2",
+   "outcomes": {
+    "ref-py": "9d28c4be23c35b57747761b4efc5f5d2823268e743bae6563bf2cbfbe6f0b484"
+   }
+  },
+  "b12_type__bytes_negative": {
+   "suite": "errors",
+   "case": "e885112dd647c60fbc14c56f7f70fb9d175efaad714aa9c93384f860205f4709",
+   "outcomes": {
+    "ref-py": "7a4d491dd1a75aeb8ae55a9fb83eef996b1a8458fb7bdb3d56a63bcfe94741da"
+   }
+  },
+  "b12_type__cell_not_builtin": {
+   "suite": "errors",
+   "case": "db21ffc42b4aade0fb78ccc74aa9d3669f373646b146669722fbdbe92b889d00",
+   "outcomes": {
+    "ref-py": "c68deef0723ab97b25c5d50db8dc70d11d75e35d14bf9e2e465ca63b1a52735a"
+   }
+  },
+  "b12_type__exception_attr_error": {
+   "suite": "errors",
+   "case": "f293b1e669b8c4e12dcbbf8f877822063046b523f663b763bc3b8cc97855e6f5",
+   "outcomes": {
+    "ref-py": "b407cd2a2a3400980a7523826179edcbc995aba991d7d4038fd9a1a29c4ed07a"
+   }
+  },
+  "b12_type__float_conversion_error": {
+   "suite": "errors",
+   "case": "8f569dc6d16fe639a805e113183c695c935a5314095a81fa24cc1e36584ca829",
+   "outcomes": {
+    "ref-py": "b0b0ec6bb9dba649e3f3b2ff4e5b07055a6c6fb9f919ae51fc1b17d107b48630"
+   }
+  },
+  "b12_type__float_repr_both_quotes": {
+   "suite": "errors",
+   "case": "1338c7f2c4227f8b83b4db2e92c82509ca7cdf2918888ca323e3a4cbbce9521d",
+   "outcomes": {
+    "ref-py": "710b31273ad79cb4ee2e863f0092861c417a21639f324baada6fa7d4ad1172f8"
+   }
+  },
+  "b12_type__float_repr_newline": {
+   "suite": "errors",
+   "case": "63f66883c7ff6d03e35598165746412a33b12348291a9cf0771beb9bb0369909",
+   "outcomes": {
+    "ref-py": "a4882c76ec65ba6d8cc53206f51a31b52cc42e2de76aaa6d6ea558d97f1c0b19"
+   }
+  },
+  "b12_type__float_repr_single_quote": {
+   "suite": "errors",
+   "case": "29d0708616af5418e369628e53423b5f7917ca150c9d7a713f5021ecc21aa991",
+   "outcomes": {
+    "ref-py": "c8844cb9397112257774094c0bddcd47647b92f651429634480ed70a72c8d392"
+   }
+  },
+  "b12_type__int_conversion_error": {
+   "suite": "errors",
+   "case": "cebf8d8b0a52892ed3fb400c99c6215b0139eda54df80bed57b5b7ff4c04aa58",
+   "outcomes": {
+    "ref-py": "a169d3ef164dfe17b5c74fb8f7aa71d7a423721b80cf46c9c5800d46074bd24a"
+   }
+  },
+  "b12_type__list_not_iterable": {
+   "suite": "errors",
+   "case": "f791c24d2f6cb0ff8e2696ef40840ab397ab599100835e5169331fc2ba2ab381",
+   "outcomes": {
+    "ref-py": "93b68bcc6a8adb33c076912c7efc7bcb0e38d776c2fe3390c9880d5d1d5faa34"
+   }
+  },
+  "b12_type__non_builtin_name_error": {
+   "suite": "errors",
+   "case": "d1e75ca72f6ec49c7ff83a22def9a5dba5a81cf956947290df867dda9713b76f",
+   "outcomes": {
+    "ref-py": "a06742fa6db268527bd71468ac17b08dc5d1f9c68f9acb879e47e9ba680a16e6"
+   }
+  },
+  "b12_type__tuple_not_iterable": {
+   "suite": "errors",
+   "case": "4bf41c94aeecc51462560e0edc4a49b2c7904cb91f0d2f1c7dd41eba0d7db536",
+   "outcomes": {
+    "ref-py": "6592f49dad27458a239cdc43a4aba1f3d1a49791d125fc62a956a0131128f6a3"
+   }
+  },
+  "b12_type_error__int_add_list": {
+   "suite": "errors",
+   "case": "4a569eefa6475d902557e5b3252c2ba478b5304f383c159ea6634833561a9db9",
+   "outcomes": {
+    "ref-py": "007b868f798d9d80696b1c8b385beef2dca7c386b2e2e434b5ded4883c8f13ed"
+   }
+  },
+  "b12_type_error__int_div_str": {
+   "suite": "errors",
+   "case": "1ee2724e8ab3875090c30924f8ff46be1e746196f7e95186586ad3af9b3715b3",
+   "outcomes": {
+    "ref-py": "05f82393fe09a598d38c474c70fb8cce96ba88bd77af6c214c79c8da1aa5db47"
+   }
+  },
+  "b12_type_error__int_floordiv_str": {
+   "suite": "errors",
+   "case": "4b221a0e7a1035f4f2f093833187c453a3247c4c0a2af3d25e2c2a6b6db9b017",
+   "outcomes": {
+    "ref-py": "10ad068fb47ec2ec5aff8ad9a3cc8df011000c5b2c4c876aad45051670ca7c9a"
+   }
+  },
+  "b12_type_error__int_iadd_str": {
+   "suite": "errors",
+   "case": "ca1aa19e688b696b6e78b852a66e82d813f93511d5708d083598738ec281715d",
+   "outcomes": {
+    "ref-py": "290905936b8ea500cba3099059bbe07641142c22340ed2f0e6935936ef6de28e"
+   }
+  },
+  "b12_type_error__int_mod_str": {
+   "suite": "errors",
+   "case": "a398533111ac626653ede56a7aee5d458a582a3937e39fc0f179dff775d1cec3",
+   "outcomes": {
+    "ref-py": "3b01a67d3e2b4a9ffa662d2fa77e4e1e563df59027fa31b065c0d3e392c56f7d"
+   }
+  },
+  "b12_type_error__int_pow_str": {
+   "suite": "errors",
+   "case": "f28bdd2da7bcb51b915ab94e06cfa1748df69eeda8b649c39835f2fe60abd663",
+   "outcomes": {
+    "ref-py": "c3b0f5cc5231b95f5ed3676654bf15e10de7c24ba0cc837eda884dd4ca337465"
+   }
+  },
+  "b12_type_error__int_sub_str": {
+   "suite": "errors",
+   "case": "788b114f249053d481cce193accf3e4b8337711a42ce901a3d6705853af985d6",
+   "outcomes": {
+    "ref-py": "65dc4bfc71608eba4450ee59924a315010959167e2fc357f051e70596ef2daa1"
+   }
+  },
+  "b12_type_error__list_add_int": {
+   "suite": "errors",
+   "case": "8749349f255e84c4d6849e59731b0bc8f7e77c797bedd0e02057a4d5cf32bf52",
+   "outcomes": {
+    "ref-py": "45c2bd643557d35b29eb2622965283281e1ed065f7474ca9407f8d5ef8c8ef0a"
+   }
+  },
+  "b12_type_error__list_add_str": {
+   "suite": "errors",
+   "case": "ede0461b8535bf1cfcfbd233452611ece56cee8f927c34001133fd8130f75787",
+   "outcomes": {
+    "ref-py": "8115a808ba92d7a9768df92cfe2b61acd5ed6ec7f9f23873e80b9dd0de7f081a"
+   }
+  },
+  "b12_type_error__str_add_int": {
+   "suite": "errors",
+   "case": "3cd391c0b085184764712cd7e756da0be720351eb4337893d1df127bdcb73897",
+   "outcomes": {
+    "ref-py": "a06f0c2a0bbaf32fc09e8f6ccb57c548422fd27e7e6d936b4e9d029e06411b84"
+   }
+  },
+  "b12_type_error__str_iadd_int": {
+   "suite": "errors",
+   "case": "efc102df28330c0cbb4cdcade8f45e3e69d788ad31682d524da5d7abd3f0ed91",
+   "outcomes": {
+    "ref-py": "f497bb9752c238494a837c778fb084886900acb85d074c5e4102a98a580d7e97"
+   }
+  },
+  "b12_type_error__unary_invert_str": {
+   "suite": "errors",
+   "case": "d7939014fe5282a4d4f7ea1ff449461af77677d5356bbebb21bdb1f004595127",
+   "outcomes": {
+    "ref-py": "914a3a9b1d892e769e9e2f65263ebb26496949462ec532763e7ab1258f227760"
+   }
+  },
+  "b12_type_error__unary_minus_str": {
+   "suite": "errors",
+   "case": "5b5be324277efc7bffe12bfe9aabf61f3bb0a478739f84737f43abf9137a2c27",
+   "outcomes": {
+    "ref-py": "374ff5d9964a2d1e5e59bb44954968e087d9d449b563c4ff123d37e7c4d8453c"
+   }
+  },
+  "b12_type_error__unary_neg_str": {
+   "suite": "errors",
+   "case": "613f6285fbb63a4f750f3d2ddf6c915d83d48b3c0fb793692f5750bd8d472b9e",
+   "outcomes": {
+    "ref-py": "c2d7c0583a1eb4600fc8c4b66b4f81109eb4be43e1c882fc25816d783eeb3167"
+   }
+  },
+  "b12_type_error__unary_plus_str": {
+   "suite": "errors",
+   "case": "0cbf0a409cab59c4fabcfe9d63adb4aecb5d121081f9e90b8d999c8cd228f746",
+   "outcomes": {
+    "ref-py": "cf96fa426f797b81a2d38a9108dda91724d1fee3957381ef66da448f2f2b6f5e"
+   }
+  },
+  "b12_unicodedata__bad_arg": {
+   "suite": "errors",
+   "case": "37af7516209dd22e7d51e42242d5ff1d64ab7516588da9ba01346c332a687488",
+   "outcomes": {
+    "ref-py": "f3af7cbfbd111387662574ddef25bf139f39d1fc4fb0292226a2b60573823175"
+   }
+  },
+  "b12_unicodedata__name_error": {
+   "suite": "errors",
+   "case": "327d9dee24ea12ee1a9b37005fe0db806bcb1926ffe3bfee66876c98674ce3ef",
+   "outcomes": {
+    "ref-py": "be3b2497e85ea89197e4ed384459e32cb21a04576c622ebbee8743bc3ffa9827"
+   }
+  },
+  "b12_unpack__err_multiple_starred": {
+   "suite": "errors",
+   "case": "99e2d8b0773c86309e1a5fa7c878b64c87dc676b75e477a2716b520676ec0e62",
+   "outcomes": {
+    "ref-py": "eaaccd46fb7203a742c4a96fdb1a19557ab8cd55e7e75bed303b0951454e0c07"
+   }
+  },
+  "b12_unpack__non_sequence": {
+   "suite": "errors",
+   "case": "48060cf1edf0d4019a508f34e21bdac5a51893b5780e89dba433cba2bab774c0",
+   "outcomes": {
+    "ref-py": "e8f2303317d05564f8003e9a84fb84f9026005c10f77f5cb657dc732a61aad82"
+   }
+  },
+  "b12_unpack__not_enough": {
+   "suite": "errors",
+   "case": "0041de5a4a309eb4d8ffee0876c766fba9c13f1b60b5beaa47808a650dfa859e",
+   "outcomes": {
+    "ref-py": "4b3127af970d8f0ab4bcfbc85c9870cd6a21dfe5d834b3da75778198ee99b141"
+   }
+  },
+  "b12_unpack__star_not_enough": {
+   "suite": "errors",
+   "case": "5a8ab4f41537508ab5e256b5857f76468028d2ccd8e2f0b8624d8b2b7b74df40",
+   "outcomes": {
+    "ref-py": "3a0082bc64fe5d5747a0415fdbcf80e0f4142c152e62d13c3af5fb2f1008bbb6"
+   }
+  },
+  "b12_unpack__too_many": {
+   "suite": "errors",
+   "case": "4254d82517130b514342765bca48bc4103cb6d5e5ebae77d69cd108e1b57a209",
+   "outcomes": {
+    "ref-py": "9d052c017e42e68c3c9af84dc28e72edf95eb094ca5117dddf11ae497b1054f5"
+   }
+  },
+  "b12_with__cm_context_expr_raises_traceback": {
+   "suite": "errors",
+   "case": "51a3d399bc59691896227b38d7e2ccabbc1a08a5d0d3545361b6198449ef27fa",
+   "outcomes": {
+    "ref-py": "500ffd255b3930f3e12e5de38c5e585a18838891b4bd09cd1c7dbeb6b45a7a56"
+   }
+  },
+  "b12_with__cm_enter_raises_traceback": {
+   "suite": "errors",
+   "case": "e915e5c82e005d022dc9cf252837c65c24823a2a31473ff36b013fd13ca1de98",
+   "outcomes": {
+    "ref-py": "ac1ac7f31db81becf882dc8b6d6b48bb381bed20e6125dc6b95d9c18f2102b9c"
+   }
+  },
+  "b12_with__cm_exit_raises_normal_exit_traceback": {
+   "suite": "errors",
+   "case": "0fb9f9f2bfe19e302457d98f952de8cb6f739d32f9f7c7a5494e026c79a41126",
+   "outcomes": {
+    "ref-py": "22b98a184fb8e4a63466b0b150022455be62184bedd83c555252c243ca7a729e"
+   }
+  },
+  "b12_with__cm_nested_body_raises_traceback": {
+   "suite": "errors",
+   "case": "b3dd33b4f6c897790420db2e03c50864e450e4472422574a0de8f99cad15e5b4",
+   "outcomes": {
+    "ref-py": "022a8912fb92bed74c65f5a5437a03f9aaf7e46dba38d657f101fad210566d9d"
+   }
+  },
+  "b12_with__cm_traceback": {
+   "suite": "errors",
+   "case": "684ddf284808d71e565a31dcc249c326a1a6115beca739a4a9028de38f371737",
+   "outcomes": {
+    "ref-py": "5527317daa3066ccb738f2fbf3f9b5444258ab239bf23b56bb9573042235ad24"
+   }
+  },
+  "b12_with__not_context_manager": {
+   "suite": "errors",
+   "case": "ba55d1b348342c6986b8b34139d1eb8a8e3117d884b65c8ac2fb143d24287fb2",
+   "outcomes": {
+    "ref-py": "6c30a25f6fa9cc2ea4ce9a50c843f9cde15c874ae8ee5de6ddc2b8632aa49aff"
+   }
+  },
+  "a01_assert_default": {
+   "suite": "limits",
+   "case": "b6949a121df90aa0c32e8f112ffefff1670e31f1bb9f26d1c088db0e22b9f421",
+   "outcomes": {
+    "ref-py": "3b11ac407e086bf9cc2ae230d961cb65b522afb8f54d39e7604bc56dce72b682"
+   }
+  },
+  "a02_assert_off": {
+   "suite": "limits",
+   "case": "198c79e46417f4ee60dda5ec7a16aeec946ef29eeb97655a9e3b8696e3248d40",
+   "outcomes": {
+    "ref-py": "6ee80a2e3346adf73ebf83ea5fdee4b50f4216a13b77dc15dfaa4a363702e3ef"
+   }
+  },
+  "c01_process_time_default": {
+   "suite": "limits",
+   "case": "10ed2d1d9ddd66c7d88e9109f71c9b45ff947bba100819f0de55e34dda1fe895",
+   "outcomes": {
+    "ref-py": "c4ccd7b8ad3f32b86e819de9e068a44e22b97f248618968dbfffa5c73f0bc890"
+   }
+  },
+  "c02_process_time_zero": {
+   "suite": "limits",
+   "case": "8e49d4fb17ad590ed68f8a71263454ce13b141151f969c4de824faefbce2e6f5",
+   "outcomes": {
+    "ref-py": "cfd8a5d9c0186731b8e1318be0bba224acfb11225cd77b04d1d873292a93e573"
+   }
+  },
+  "c03_process_time_elapsed": {
+   "suite": "limits",
+   "case": "5234ec944e394420447171fdc18405d7dce1582034d09329f07bd1f4c69e8a7b",
+   "outcomes": {
+    "ref-py": "575bf4f10df48341c35bc81241148d23ac31749ae563fee78646491c024c5cd0"
+   }
+  },
+  "c04_elapsed_excludes_sleep": {
+   "suite": "limits",
+   "case": "ed03bb66de9a726bf4a1731a45f8c3f11351f8965c568b6b7c989b4f91cd8f23",
+   "outcomes": {
+    "ref-py": "bdc0a4dfe7db054417975e19534e21c2c23ccda53bd3ac3845036ddef24a74f5"
+   }
+  },
+  "g01_gc_interval_small": {
+   "suite": "limits",
+   "case": "77510339defa45f3044adf36aaa04468b79c1c6dd2216738ac63fa0a847aa5e0",
+   "outcomes": {
+    "ref-py": "c78fe0106e5604d2b7b4087ce9333b94635b5b930eb22f9c024c24bc2e76cd94"
+   }
+  },
+  "l01_recursion": {
+   "suite": "limits",
+   "case": "4ceaac86acce4b81e4854076d3206314bfc1ebbc32fdb101001150e5befa0ade",
+   "outcomes": {
+    "ref-py": "d8079e91b9b4ce4604730ee97965f3d59ca97eefa00092a48f2ee76437b20361"
+   }
+  },
+  "l02_recursion_catch": {
+   "suite": "limits",
+   "case": "8f63f4616e5595ba83e0fdfd04731a4a20ec37fce13d56de1e317ddc4f57fb0d",
+   "outcomes": {
+    "ref-py": "ec42019e6349097bf607c9d984322766ef8bf7f821c7389e81a07b7b7f97fb10"
+   }
+  },
+  "l04_mem_single": {
+   "suite": "limits",
+   "case": "a9a9ba1f4cdd6f3dbd0bb47dd74b3cb51574ca6b3fb1313e11a30d47656a193b",
+   "outcomes": {
+    "ref-py": "3187367316872526398aa202897fc855f6d2c87d9cc179524cc77f7882847255"
+   }
+  },
+  "l05_mem_catch": {
+   "suite": "limits",
+   "case": "ff0d7c0fea2b472b1564b84ac6fd06a89dc8d59de1da6e38a1a7abd1dcfffa3d",
+   "outcomes": {
+    "ref-py": "6406febd88a1848f8d29a26998484856706841cd70efb6e3605687ce1ccc8f3d"
+   }
+  },
+  "l06_feed_timeout": {
+   "suite": "limits",
+   "case": "68446748fa257715accf4bb5a46217bb74bbe9bbab7426ac6e9cb346688dc52d",
+   "outcomes": {
+    "ref-py": "fa7a6af2225d5152fa56a7a9c3e46d7946ca943aeb1c8b0dfc1bf9f577251650"
+   }
+  },
+  "l07_feed_timeout_catch": {
+   "suite": "limits",
+   "case": "22ebeae07dc5a56dd59195f4d1563c29233ad9c041558e9c1cb30e41fca15ccf",
+   "outcomes": {
+    "ref-py": "e8798e72ab1b9c9e738f3251dd691eb0304fa42b846cd946bd4c94c48e71453b"
+   }
+  },
+  "l08_feed_reset_after_timeout": {
+   "suite": "limits",
+   "case": "4f209ca09d2cd2dbc2ec47299f74d79175e10be70302de6771e371242b110ed9",
+   "outcomes": {
+    "ref-py": "bf62e940681ccbb1b13984144cb18bca92eb09a268f64491e79b3f6713c86ece"
+   }
+  },
+  "l09_feed_reset_sum": {
+   "suite": "limits",
+   "case": "a7b5a40c86f4677df3df6a12e707817cf9ad4d157afc6ee330bbaa4199628bf0",
+   "outcomes": {
+    "ref-py": "6d2b8b521d0199d795c989004c43f9902f27102c4e0eb7a1e3d15410f9b71a86"
+   }
+  },
+  "l11_turn_reset_on_resume": {
+   "suite": "limits",
+   "case": "7fe4cee33a496b44b185a99b18747f4adc0121f2054e99341ca7cd74e154b549",
+   "outcomes": {
+    "ref-py": "76f4260025a631810a92f8df3bb6e981649ea472fbfb6e84203717a8160d5415"
+   }
+  },
+  "l12_suspensions": {
+   "suite": "limits",
+   "case": "ffc923f94592cd18f5dc06a37473d62a0b2302eb0ee2a1093310cffb8e18c08a",
+   "outcomes": {
+    "ref-py": "64f47250a3c5501c69e09287e936078e1024dcd1d9004d3a2cbd6857f9565664"
+   }
+  },
+  "l13_suspension_default": {
+   "suite": "limits",
+   "case": "b8c4302702fff3b40c256d2abbff167f7faac17b0cecacc311de0ccde1fe48b0",
+   "outcomes": {
+    "ref-py": "038ff0d5f8fc7d76eb025571ae86c145371fb371b0efe91b6d6770d85c9284de"
+   }
+  },
+  "l14_total_sleep": {
+   "suite": "limits",
+   "case": "a27c1474f2890c429e40bee310a96998f3021e196d6c193f33dbd0f2b345cfd8",
+   "outcomes": {
+    "ref-py": "4db86c3cbba2944959352f76ea32d1a87d4c56ec2be60ba692b6e9783d3bd4a2"
+   }
+  },
+  "l15_total_sleep_catch": {
+   "suite": "limits",
+   "case": "dab5462b2bf433eb4a80f7f4690fe0ff62f8b092f6c95ed8e38130b1a6b507fb",
+   "outcomes": {
+    "ref-py": "40bae73b7892433aa3e100a431b340fd3e67ae33bff67461f544998fe120756b"
+   }
+  },
+  "l16_sync_sleep": {
+   "suite": "limits",
+   "case": "14bf39c8f18d4f680d583b2ece18fa0b76c4fdd6ebca5d37d972cd4a72d8ac16",
+   "outcomes": {
+    "ref-py": "c71cc83ffa62eeff400a3b775518bc37bc26feb8831d2bfa73caf571020820c4"
+   }
+  },
+  "l17_sleep_zero_policy": {
+   "suite": "limits",
+   "case": "104aab57d931146458e46c88b2def32b0549a58d958149ec91087a9828c7a64a",
+   "outcomes": {
+    "ref-py": "7a5f6839b07cb71b56c454a4a91d14ebbaea8f70caa455b4943ea8010c8e9bf4"
+   }
+  },
+  "n01_unary_chain": {
+   "suite": "limits",
+   "case": "aef75385d5726e33fd572a08f35f9bfe93ff522918fc4722eabf7aa85d21867c",
+   "outcomes": {
+    "ref-py": "c029d64b784aee0ac8ffe1758e0c9d2985fc5ef53bd9c66237e1d005b37ba37c"
+   }
+  },
+  "n02_bracket_chain": {
+   "suite": "limits",
+   "case": "9a1d336040e0c0dd86cd922854dc4c886d2372d1037d6edbfdf324120a632bcb",
+   "outcomes": {
+    "ref-py": "f8932b0afe7e460fd613f92f2dd5fba8e9ab2711d097a2f27e2a918890d34046"
+   }
+  },
+  "n03_power_chain": {
+   "suite": "limits",
+   "case": "125f54ce73f7f4e82901b4bd22db00a20bb0bdd1705e1899857f6ec1d1e1ded6",
+   "outcomes": {
+    "ref-py": "5456db52ca17bbdfe7a836580c26a81b73e33af15111a841a0e8772e76edf95c"
+   }
+  },
+  "n04_lambda_chain": {
+   "suite": "limits",
+   "case": "b11bbef2619848e0f64135b76035a056b9983d477939c22caf1d3b011416eda8",
+   "outcomes": {
+    "ref-py": "8f49a462639e46cf5a6730dc1fa0476071e99d8ac3521de64568c5c216790635"
+   }
+  },
+  "n05_moderate": {
+   "suite": "limits",
+   "case": "f2661bdf0ecf218e972eb23476a79fecc067e7ef22f1484a735065ffbe5da989",
+   "outcomes": {
+    "ref-py": "acc1b6aab8cc768941f2346849ad46865075abf3b460c5a623f4066f0ade6ed3"
+   }
+  },
+  "t01_except_hierarchy": {
+   "suite": "limits",
+   "case": "f2e56828ba46fd420a46e9e657bf559395cab1749eae235369e0410ffcbbfe9f",
+   "outcomes": {
+    "ref-py": "592759730e8693e64687a31e56117da0727d87879ca612e55820eb256474972f"
+   }
+  },
+  "t02_host_raise_subclass": {
+   "suite": "limits",
+   "case": "6b825cc2946f9d3655f0a5c2df569e2dcce44fb6f7d19b2ea8a28edb0b37466a",
+   "outcomes": {
+    "ref-py": "6257f120f66ee8f75713be6d84a126dd2b29478982be35f4507ba8258d4d1fa4"
+   }
+  },
+  "t03_unicode_uncaught": {
+   "suite": "limits",
+   "case": "ac8e93aa3353e9a8e350db71a64d3e196aad51dec66ad4be48855af77d04b1d3",
+   "outcomes": {
+    "ref-py": "ce952113f6ec339a037564fd0de35c96e9070c50b87859ad08a36875237ab081"
+   }
+  },
+  "t04_unicode_attrs": {
+   "suite": "limits",
+   "case": "5ad5ef9c0b8f1cdc72d2193d3def300b2adb84d03ff43a7e0d85f702bdaf7ca9",
+   "outcomes": {
+    "ref-py": "30fde0853b28971199426da32ea8964b09068cbd496b474d7bedda44d46de12f"
+   }
+  },
+  "t05_json_uncaught": {
+   "suite": "limits",
+   "case": "a4fc798f31b1f305588da9bdb0b696c61227269358cd4cf33d10b5a413221a85",
+   "outcomes": {
+    "ref-py": "035adfb3f58421638ff70d21ee24b4ea6c651e811c60e247c663ae4d6ea39422"
+   }
+  },
+  "t06_input_opaque": {
+   "suite": "limits",
+   "case": "0f751315785ecf309ca06f1706dd222ec00e8554e8d7e17a4d0abac0f87b689c",
+   "outcomes": {
+    "ref-py": "f14f09a677974464e047020e69869f7ab5ca801983655e7592cac61cf8580333"
+   }
+  },
+  "t08_ext_return_opaque": {
+   "suite": "limits",
+   "case": "b99b663446cb259f8238f1f78589bfd7629a64396d67d76ede26fa51a38d7b85",
+   "outcomes": {
+    "ref-py": "26fbb191703986b525bed4e1bdd515f802ecf612931cdb2831179920787ab826"
+   }
+  },
+  "b11cb_absolute": {
+   "suite": "os_fs",
+   "case": "0bcfc404a8304aecf88474ad2d30966f29f619e661fa3d77354e191695aa1770",
+   "outcomes": {
+    "ref-py": "8d4510d77224ea73138ba8cecc811b2b0df2f305c78c7c7d19d91d336d6e8c8b"
+   }
+  },
+  "b11cb_exists": {
+   "suite": "os_fs",
+   "case": "20c9cb3774fed402c5a96e2db10a0df45f420c8e03fb49ade0e6aac7b8503356",
+   "outcomes": {
+    "ref-py": "d035009972fa981911d13758ac2bebe42825ace7f0ee2d318d29cedcc2faf030"
+   }
+  },
+  "b11cb_is_dir": {
+   "suite": "os_fs",
+   "case": "4cfce07c6caea08d23d6e064e75bb461e1dc0c99c826270ff37a6dea39c06253",
+   "outcomes": {
+    "ref-py": "a285750c10116dfc86821bdecfb7fc84e1d862a097bd02bc37d3bb0f082cd9d4"
+   }
+  },
+  "b11cb_is_file": {
+   "suite": "os_fs",
+   "case": "33598f34eb3144fd44199024bde7c362e89396c2c4e83059d0578dfe1b19b6ab",
+   "outcomes": {
+    "ref-py": "95690c7cb0e1273310d2a6ec92d34bc5537ad226fa407158b41cfc5774a85d2e"
+   }
+  },
+  "b11cb_is_symlink": {
+   "suite": "os_fs",
+   "case": "27546282e00136d6c4cb2fd8db6414d15201d526ed1ae5fe75863829f3712061",
+   "outcomes": {
+    "ref-py": "70c6f6f089a07b22643280568722077bc992ef849bf5c0255fd52b5357440742"
+   }
+  },
+  "b11cb_iterdir": {
+   "suite": "os_fs",
+   "case": "c7480fc1ff747689ebcbe461f244f44f7de18275e4b78f95a1c4b13f1ba3292a",
+   "outcomes": {
+    "ref-py": "93c3bceeca1f455971d1ea9ad342e9ba781ca0f07b893317a3162301bc86deee"
+   }
+  },
+  "b11cb_mkdir": {
+   "suite": "os_fs",
+   "case": "350321260044ce4269dab2045fc654fc223000a24906ab349648cdeb008a598d",
+   "outcomes": {
+    "ref-py": "83748761d013b8d841a88f595eae21bac283921b379c3ecab8c2cbcec2ed2979"
+   }
+  },
+  "b11cb_open_append": {
+   "suite": "os_fs",
+   "case": "cb2370648e8ba11502e5f0e29036f4226a3334c8c529db9f20b7f44f6c6b49c0",
+   "outcomes": {
+    "ref-py": "aa7c38da2079b0f42bd1b2deb7251c65dd21bc65e5e6146e529321bffa3d015a"
+   }
+  },
+  "b11cb_open_r": {
+   "suite": "os_fs",
+   "case": "06c100ebff16c4b97888a6f133e80ca64aa68370bdd97e7b9737c3536ad61e70",
+   "outcomes": {
+    "ref-py": "dfdbfda4f0268a6f4362abc200ae3e3c5ab3d6cd735b142c04a6314532a55278"
+   }
+  },
+  "b11cb_open_wb": {
+   "suite": "os_fs",
+   "case": "33afea8181fdc1d490dac37f472ef1b3fce5f3169afab92ae372b8529c4ca9a4",
+   "outcomes": {
+    "ref-py": "57a4370ab527bdcb0069297bb29ffb6896ca4232fb292cbf6de71c6325b14f30"
+   }
+  },
+  "b11cb_read_bytes": {
+   "suite": "os_fs",
+   "case": "5dd0b69226eea4bdbd0d2c2545ddc2f12ffb3c769b9045afb11231a2d2187467",
+   "outcomes": {
+    "ref-py": "9f9858b85a8316905cddeaf20d9c4c196a2e01d7a16ba5a3737fd292c9d778f7"
+   }
+  },
+  "b11cb_read_unhandled": {
+   "suite": "os_fs",
+   "case": "98b6114bcd3e3af546eb5f9890e8fd0bfde37286b4a2e79b39505eade4ff3a7b",
+   "outcomes": {
+    "ref-py": "4ce73ac373d34ae6e7e760a3e972b4029fa2931cbc4ef03d0d7ab5992df931b4"
+   }
+  },
+  "b11cb_rename": {
+   "suite": "os_fs",
+   "case": "8d85202904e39b6993dfde9640d402effe15dd6f027433ca642fa13bd0d3323d",
+   "outcomes": {
+    "ref-py": "cd1f5995b8aa118e2f5cdcc3bafa6604761f214a92afc4c0500052403e5b4d38"
+   }
+  },
+  "b11cb_resolve": {
+   "suite": "os_fs",
+   "case": "2e15bda03b8ece49bdfbcdcafcc906ad2487bca9802398c6cc357f4899916427",
+   "outcomes": {
+    "ref-py": "6bc9fd1aee65d8694c1c9e4d7adae10a55731a32ccdabb597915829ae5e98057"
+   }
+  },
+  "b11cb_rmdir": {
+   "suite": "os_fs",
+   "case": "162274bb109d66ccd7e4b0b1175c754f276eb4f08e8dbb9505b78edcd5da64ad",
+   "outcomes": {
+    "ref-py": "d68c2045573a2694c8489e1d99e2c7cf5a15e24395419f72f65449d4bb587ba8"
+   }
+  },
+  "b11cb_stat_unhandled": {
+   "suite": "os_fs",
+   "case": "10e2541868c0bc8fe04807c32471e2b639e534b7f7fdbac6a6d0545604df7528",
+   "outcomes": {
+    "ref-py": "855b6880a5522f64a4c3e9d3476763a33460e596a14b0b993245703c22266e16"
+   }
+  },
+  "b11cb_unlink": {
+   "suite": "os_fs",
+   "case": "a37103164d2dd3a99056ad2a70f0b104255815b91787ef6310405d7c099a93db",
+   "outcomes": {
+    "ref-py": "2b54881d027cefdf937d33bb3ae514e54999bccbc637317de1a5a8b06af1411e"
+   }
+  },
+  "b11cb_write_bytes": {
+   "suite": "os_fs",
+   "case": "1e4987987abeb7e2092e2937c61278eae8649d1b453216dbc7782623e7a4c9e4",
+   "outcomes": {
+    "ref-py": "b232cf0f6ac53a0490e12a6dc7af340a6ad46b3f8b6d9cab175644dce253047b"
+   }
+  },
+  "b11cb_write_text": {
+   "suite": "os_fs",
+   "case": "2d7c204ed2e9e107733ae46e83bdcacf0b4acc226589656529d3844bb0b8af83",
+   "outcomes": {
+    "ref-py": "c65377297fbb2d22feb84c32317309f1d87c53e46e0016dac07f2129d93d8641"
+   }
+  },
+  "b11fs_append_open": {
+   "suite": "os_fs",
+   "case": "b14113b2831aed1c764cd72101ea8dd11a89e266c2de835ebbbcbd267d51b632",
+   "outcomes": {
+    "ref-py": "f5ec4097ea9fd65d9f65bff70c3195edad470552b3fe5e85057c5c3eb3988e71",
+    "refmem-py": "cae581c193e9497b72b3b70bec0f8819fd666664e2d01fea454d64beabe8430d"
+   }
+  },
+  "b11fs_iter_open": {
+   "suite": "os_fs",
+   "case": "91ad4d6fc2a1a9563685777bb07cb06e0a29f3caa7bde7b866130479356f9787",
+   "outcomes": {
+    "ref-py": "ba07114672f5b77bc9fc73020e52462d461d0d44309fff41521cffddae721e86",
+    "refmem-py": "1ee6e65827b7a43a45a954cc81e66526ee259b50ea46fb787014ad724e9ba990"
+   }
+  },
+  "b11fs_iterdir": {
+   "suite": "os_fs",
+   "case": "31018d6343903c70c17f458caa8810a8cccb682581c77ca1ec76423f575eedfc",
+   "outcomes": {
+    "ref-py": "4693634f5d2dd703cea765d82c4fb3d115c577bc7dc62c9474b99c7676012539",
+    "refmem-py": "e44ff6e96003586c6b43b965aedd5d0a6a7f72a84cc065e5d8e3607a503016f2"
+   }
+  },
+  "b11fs_iterdir_file": {
+   "suite": "os_fs",
+   "case": "3049853ade1f776fbffd3e58bf21f2403fbdb41b044c7b26c040ac3466752312",
+   "outcomes": {
+    "ref-py": "f0349d164c17fe4a1c83a7d4af112377e6c4bba627180a5a4e8335e594e17a9e",
+    "refmem-py": "5d74d7e79f2aa6b9ba19ce888e7c3bc2c94eff47afbb2bd307f212fef9b1b829"
+   }
+  },
+  "b11fs_iterdir_missing": {
+   "suite": "os_fs",
+   "case": "0c135f97ec0432bc814151c037547c75a8c4303dc3d207ea47c0d969865b1794",
+   "outcomes": {
+    "ref-py": "6af8fee4957a56c67cd3e29e48370ed6c8c453c20e5daf04a3b8f5f305d20086",
+    "refmem-py": "fa70028b22750312f8a6943e9a414280e6b54ea7be8336df2d26d2aed15f9fef"
+   }
+  },
+  "b11fs_mkdir": {
+   "suite": "os_fs",
+   "case": "7a8bcd23f5fc2736c5ae823968c90c4818cc4c798d984db8a929ab349b661045",
+   "outcomes": {
+    "ref-py": "d4ab1a0a76b82a3cac826e6e14b98c0f92c8efd977879fdaf8fbb4b577f606a2",
+    "refmem-py": "938c527fc633564f725e39fdf0beed7814597a615af83d720c8e58bd36ba2630"
+   }
+  },
+  "b11fs_mkdir_exist_ok": {
+   "suite": "os_fs",
+   "case": "be5fbf2cd0a5700f95b67abc637f95d596e33133949af273fa5a2843ac07a3c3",
+   "outcomes": {
+    "ref-py": "0c7f564e006891aa2e1d2faddd5452d4d500049efe429100b754846f71672637",
+    "refmem-py": "6b487b575c89ff23bbb45d13d644831ca631ee9f9df4259719180a95e40b078d"
+   }
+  },
+  "b11fs_mkdir_exists": {
+   "suite": "os_fs",
+   "case": "44264d4908f42eb538e8c4662003aa94756dfd33aadd37f4abf370a5b29dea3e",
+   "outcomes": {
+    "ref-py": "3e6b5ad873cc2e4a842f664e39b79ba2e85566853324a2f4080b20a3cd339177",
+    "refmem-py": "d5896c6e6b11077c22b8db86a3d42093d1c3bd097801e5e95cefe47af76f6fdf"
+   }
+  },
+  "b11fs_mkdir_no_parent": {
+   "suite": "os_fs",
+   "case": "c407d314950a37218b6bd41ecd4b7892228a26ef12ae78061b561f0e02ebe3c0",
+   "outcomes": {
+    "ref-py": "5ce35409a5cbc0b95d680e459326fe227c7f6413d91ebb031cb45717e5ee0242",
+    "refmem-py": "8d94d8c3cd01c3b4d5746eb43f8003f6e4f46519955dadf0ef9c215da4afae05"
+   }
+  },
+  "b11fs_mkdir_parents": {
+   "suite": "os_fs",
+   "case": "131e896b1448d3ade705d08c5966efd3968db4269507277d0e1b0a2c4c7c9865",
+   "outcomes": {
+    "ref-py": "8f183db0b134092415d207a1e04dcdc4f56e33ea367837075150c3e109726369",
+    "refmem-py": "076ffcf9427341a2ffd54d1956495d449bb297de9877d7cea83c4793efb88767"
+   }
+  },
+  "b11fs_mkdir_then_write": {
+   "suite": "os_fs",
+   "case": "aeda82638940c5a177ff48fda39c41bbb1633a56237581e3902bd547cabff2dd",
+   "outcomes": {
+    "ref-py": "9ec64f4c3fdbb9dd75b214f43d7d7e9ddac4ead8b76de939e724f20cebf1f8cc",
+    "refmem-py": "e013d16905b8cd5d25899cc5528e8b6892047571bf36ba6ab73db37588daeea7"
+   }
+  },
+  "b11fs_overwrite": {
+   "suite": "os_fs",
+   "case": "a26b83ae62db6046420a5b3c2581893b52e974abeb62dfe9415bf9f0f86bf83b",
+   "outcomes": {
+    "ref-py": "bca5096e0bccdf1283ee64df751324c6e0a1119a47869e88a37627ecb1990581",
+    "refmem-py": "27fbc4333c9233e5e7f869f69c514b88a92e565dcad079109743947067f7d3e9"
+   }
+  },
+  "b11fs_predicates": {
+   "suite": "os_fs",
+   "case": "4f21553595c245239b9fd767285b9c67379364ca3773b24f2faad5bfc9b22544",
+   "outcomes": {
+    "ref-py": "db5f1ad2dcf4633435bd589c0dc046f18e4666bdbe7fac610d9d95134844ccec",
+    "refmem-py": "00fcb013ae91dbd2e7aacf99a8b4e112ae8bb228d19e4984ca899fed68f9c3c4"
+   }
+  },
+  "b11fs_read_binary_open": {
+   "suite": "os_fs",
+   "case": "dc0b14f1db001678020da2d22f5d25cf6621247e3f5b326a9decd3b731a321b0",
+   "outcomes": {
+    "ref-py": "b9b90be8b83b179872eb9346acd2c265cc1d1ed5d915a16caa7df6edae3ed426",
+    "refmem-py": "05c6cf789cc84e4bf7e70b476ed0aa24c67aa39ac85395ac0506cfef151f3f7e"
+   }
+  },
+  "b11fs_read_bytes": {
+   "suite": "os_fs",
+   "case": "21f06b036ed507dbefb78026e78159c7fa984b02cb21f2f1fbd1b675fa5c032d",
+   "outcomes": {
+    "ref-py": "538f7313032c6e3da13735f8d588c5329fceb2600a124148f305fb316243366c",
+    "refmem-py": "aafe91d7378ce1ee521792f6c0b5673f34b215ecdf978693a10895cceed05259"
+   }
+  },
+  "b11fs_read_dir": {
+   "suite": "os_fs",
+   "case": "3a06abde701721c719ff882eb5a6e9e41392ed0486656c808211ab33d9f9a794",
+   "outcomes": {
+    "ref-py": "a16ada9b1febea315fb647e71a895ec5796a8a4e7654bd0ca2b7aceaf5f4342d",
+    "refmem-py": "216d4d9f39c887b6f3c100dfcd84f6a925ab72e7051ed72bc7bf54a12398dd1f"
+   }
+  },
+  "b11fs_read_missing": {
+   "suite": "os_fs",
+   "case": "4b69d5bcdb51291e2f6ce7a403d89aff1b665406a41b1ca42daefbe0cb2027db",
+   "outcomes": {
+    "ref-py": "39b1dadc09fab7e2f1e18fc5135e8154cc81fe44c2ff9d22c35278ac02ef704f",
+    "refmem-py": "ef38fe90eedf5c4d152f174332947530d3c06404822f6c670eb3f2fbcd8c7414"
+   }
+  },
+  "b11fs_read_open_partial": {
+   "suite": "os_fs",
+   "case": "1df6676b14c33f69efcf8db42948b35e9e85d8eebe9adeaf0045387c5c2c76a2",
+   "outcomes": {
+    "ref-py": "c1fbb0ae279bc42c6a4faf26059f321a099532613de6268cdcacb690f3945b65",
+    "refmem-py": "275023869f970b250330d35592e4a9065b1def5a8b3e03b52381fbd74dfedd0e"
+   }
+  },
+  "b11fs_read_root_listing": {
+   "suite": "os_fs",
+   "case": "cb5e7f74ff1463e3b3b6ae4d0a1b7e63be6560faf0b5498d276b69c7f4acec82",
+   "outcomes": {
+    "ref-py": "e24d054c53562adc661e6310f5615875f411aab22c9545289c0781721764dabc",
+    "refmem-py": "1d0fd09db1fe60e33232b0cc22ba029da2c708128783433307df1683efd37439"
+   }
+  },
+  "b11fs_read_text": {
+   "suite": "os_fs",
+   "case": "56a83f86e63be8f8a54b9bde0713ba1cbb34602507218540186e826d6b2ec9f1",
+   "outcomes": {
+    "ref-py": "c60c19abb485e4f27623873e893a873bc867fa6d12cf44808871320f3d1233fe",
+    "refmem-py": "5c176df8c4078a4a0b4e9a39d3a54b16c7a2751e4d43b3b416ae3b213a079f2b"
+   }
+  },
+  "b11fs_read_text_unicode": {
+   "suite": "os_fs",
+   "case": "eb655ab238b55aa5d0bf7a845e66e5e481f45ba1197988ccbdac79012c446739",
+   "outcomes": {
+    "ref-py": "01403fc881ecdceb0719e121c2a24fca0aaf0d1ce7c3047388a0fbe2a1fc8e78",
+    "refmem-py": "118fac192ce3cd8911e0aba2b528057e6c873cd4ad0e1cae5c406be235fa0572"
+   }
+  },
+  "b11fs_readlines_open": {
+   "suite": "os_fs",
+   "case": "6cf641ecd91e8b17a29457d2aad5d416d08c8d273c195e4e1f00703182722442",
+   "outcomes": {
+    "ref-py": "3db2b9ec0c84987ff202ab53e268ae1fee84bdc8314e82fc5629c3f7f0ea32d9",
+    "refmem-py": "bb5b4b097257471ea452d3ae5f59fef1ccb753523c56d1a5944fbbd942d516ee"
+   }
+  },
+  "b11fs_rename": {
+   "suite": "os_fs",
+   "case": "a1a3d1946202e70d158effd0f381eba8cdc909c2971f83bceb49d03dddfb97ae",
+   "outcomes": {
+    "ref-py": "389a20e83c618f5100fe497d383ed8316e4b41d78244dcc7f0425b2697e724e6",
+    "refmem-py": "c33f292d8a5a5d22cbdcd6f607de7b2c8d02f282f5e39d5434970761970fe3d4"
+   }
+  },
+  "b11fs_rename_dir": {
+   "suite": "os_fs",
+   "case": "63b13f48b798006366d2be80b6a4d1030d41c096671257cc7457c9e6a38a4637",
+   "outcomes": {
+    "ref-py": "827f65d9d40790f775268644684f5e4c9a94c1645a236ecd41ddbcd2702937ac",
+    "refmem-py": "6521ce8a8c3d1108dc4c69929228c1a6c30257803fb0c643c5398defacf7d92f"
+   }
+  },
+  "b11fs_rename_missing": {
+   "suite": "os_fs",
+   "case": "d0b834248f151babc8cb043ec9058765a6db1159ed8c30bc5f6fdc20586ab7f9",
+   "outcomes": {
+    "ref-py": "1436ec71fd00f454fc2ac0cfd5f391d125564f91cfb26f3b34bd9286f19c3145",
+    "refmem-py": "67fada5598f2c85429c78962f0a22e0c9045c41f0cb718955f152fdea91929ea"
+   }
+  },
+  "b11fs_rename_replace": {
+   "suite": "os_fs",
+   "case": "e23fbe2a1ad734878fa7e04fc2edbc047e4f0dd44c9db88565a625c35c35be49",
+   "outcomes": {
+    "ref-py": "2902e8e9c426a73b3031aeff70aa3288beb9ebba042daef6f96aa7956822b770",
+    "refmem-py": "a89dfcefbe92f59977eb84832786f621539fa3b31b06d51ff3c116c0299ad9da"
+   }
+  },
+  "b11fs_resolve_absolute": {
+   "suite": "os_fs",
+   "case": "9b5ae1a5564f87f2407f766aa7405c0d83e6c4bf400990e488cefb632a0e4430",
+   "outcomes": {
+    "ref-py": "880081d3a0cd36bc916ef8c950dae7493cf9f32fbbf7067f88d845714d107f2a",
+    "refmem-py": "1eee891400db30bd1184f28ef0074ab6930c65663670c48fa962aecb8b84deb0"
+   }
+  },
+  "b11fs_rmdir_empty": {
+   "suite": "os_fs",
+   "case": "32b301c6901c6019951eed2ce397f9536136ddc871fdd37df5a7cb2a6ef2cec5",
+   "outcomes": {
+    "ref-py": "c6122a432eafc2dfeca9aba73bb0ce64a2c0af88c24c58dd187673a86e66ad50",
+    "refmem-py": "4262aca3534a4ac1c1b0fdb4e357175fccd80c296918458aaff1a1d500fcc2a9"
+   }
+  },
+  "b11fs_rmdir_file": {
+   "suite": "os_fs",
+   "case": "38656c1b43cf21d9b591c5154142735fcb2989de15963d6af6ee91d7dde53d15",
+   "outcomes": {
+    "ref-py": "a895be360f3641dcf9c3d0dc402047c86f9cfd6b03b0293b0b760ad8d10c573c",
+    "refmem-py": "f464add46e8164d2bc9d756831e595ee59a95cf7b8f53524f361e53050033625"
+   }
+  },
+  "b11fs_rmdir_nonempty": {
+   "suite": "os_fs",
+   "case": "b93210ab2cb700eb85da6b2d5718fe55e3e660eee73b1be4175efd35f8cef0dc",
+   "outcomes": {
+    "ref-py": "98ed9fe9ceec0731f02d3ea662716a2394359ec3a6c283df11ce5c121f02daaf",
+    "refmem-py": "676f391fa0a21ba58e847f76719b818d1f168361d8aba6d083b627f0344bc8cd"
+   }
+  },
+  "b11fs_stat_dir": {
+   "suite": "os_fs",
+   "case": "553aabfc411b8c44ec777f7670ba1a1c62e2d6f7e8a2fa83d403e2a2a6bba079",
+   "outcomes": {
+    "ref-py": "61d793e6f19f91eeb66bb7e98b01de8ae28aee631db30c0e62f7e870e6051b2d",
+    "refmem-py": "e4b40a69a26ff79515146ddbcd78ad26fae4bff88c5bfafef3ff9c5ad850b620"
+   }
+  },
+  "b11fs_stat_file": {
+   "suite": "os_fs",
+   "case": "abb1266beeb3e7f9546d052ee82df1b1e469c92c463282527adfe93e3764f166",
+   "outcomes": {
+    "ref-py": "74ef0f3ab649c816076253e02fb46b496c76e00d0c8d93c73ffcca04092f19c4",
+    "refmem-py": "d67803dfd225be6e77b669359ec56daea264c82c9cf7986e5b4511541e520037"
+   }
+  },
+  "b11fs_stat_missing": {
+   "suite": "os_fs",
+   "case": "41dbce0278b63307d8a79ba64cb7b3d6eff723954ce9bf20c1fc2cbd43b9131f",
+   "outcomes": {
+    "ref-py": "57d8648909415713bdd8b080f96ec70801fc615720f7e6f07bdd479f8edc2e5f",
+    "refmem-py": "09e3e4fe6acc013e910d53fa52d90382f8fa8cfdb06ee8bcd4a4a946bd3bcccf"
+   }
+  },
+  "b11fs_unlink": {
+   "suite": "os_fs",
+   "case": "a3c53f39d903a51cf8392931a0fc63f69c5e4774ffe5e69d5309a6854bed27c3",
+   "outcomes": {
+    "ref-py": "755095c836b97b7eb8e26132498ea9df9d15df637c3efe6b1fd3d68807832aab",
+    "refmem-py": "7fbd22f32b1ee6ae5c5d95e9d0779af729404b68b6c0d72659470fc9bc0765ef"
+   }
+  },
+  "b11fs_unlink_dir": {
+   "suite": "os_fs",
+   "case": "c9c94f319bf98aa40d8324b4ca964291ce42465f968de61216c9bc3bc4c0e56e",
+   "outcomes": {
+    "ref-py": "75dde40a699cc7d6d41390083ad47b89247215115b744d52c1c9c269d6c6b992",
+    "refmem-py": "f47525444e0e34d7dc5e986d339f9e4e56032246a2b2cd9272d63d7c21913d64"
+   }
+  },
+  "b11fs_unlink_missing": {
+   "suite": "os_fs",
+   "case": "63e9dbbae778abd413b16b03fe57961ee7044d7d2f7d20e0f10df93516a03313",
+   "outcomes": {
+    "ref-py": "e18dda30f1a5d2622feb290669b227bcf11efaeb9171b97f1e778efdee1fe3ff",
+    "refmem-py": "b8f8d18062931b7183bb5ae8e29b94f999317307bda11ec3d796520493bb2a3a"
+   }
+  },
+  "b11fs_write_bytes": {
+   "suite": "os_fs",
+   "case": "4a381fc2d4d48da8dde0140b49f0c9974572059294480993e90b8331f64f00b0",
+   "outcomes": {
+    "ref-py": "60bc73e2400b916d12be7781ddafa82e016d76b286a87c062e4040ca3f397859",
+    "refmem-py": "853d10872470243714475ad4c23ac6c3992ed7829d7ac68303aec9f228d0f9bc"
+   }
+  },
+  "b11fs_write_dir": {
+   "suite": "os_fs",
+   "case": "9c8c28601c24fddbea97729367a2d5098d7b326f2db73d9a816de34556d0c19b",
+   "outcomes": {
+    "ref-py": "34ecdc97417ccf9124528f0d9d8223685a14501346f2a1e2e6d6e4c4609fb04b",
+    "refmem-py": "99a21096adc9a72787577c8384be2502c8293b11119851a8a1745a2f8533d571"
+   }
+  },
+  "b11fs_write_missing_parent": {
+   "suite": "os_fs",
+   "case": "cefde7849682abdf964e657a80427aa040daddd3a02a182986a0965551c40661",
+   "outcomes": {
+    "ref-py": "e9c51dcc14e5020423368652e74cec0800889d45aab5a5fd422c01e286e55726",
+    "refmem-py": "7b9642e65a9e67d4883ecda4aca26ffe00c1d347ebe2c12a409fc774673b4678"
+   }
+  },
+  "b11fs_write_open": {
+   "suite": "os_fs",
+   "case": "204b7f28abcddbe90cb83d3b79c80dd6ade08a515c4ffcd9364e695eeb538663",
+   "outcomes": {
+    "ref-py": "e4a8a48d884c171c1f6819cf02c0fbe246ce4f8090ed43e45bac929f5be7e0c1",
+    "refmem-py": "d3467570d080010954f333b276cf20a99cc57f3d06bc4643292db3244054c33a"
+   }
+  },
+  "b11fs_write_text": {
+   "suite": "os_fs",
+   "case": "c2abd70740e4690ac55527934ca12ee8c04bda6802a1fd9a5230a9436ebb1765",
+   "outcomes": {
+    "ref-py": "bf941f15a7bfa79f3e1ced4d58e24a76b5779f77f75f1b0d120b63f05c490e39",
+    "refmem-py": "1f29ac0fa7b783c21e93e51d01c46943061f2f6c4d65a040de142b41df80ba71"
+   }
+  },
+  "b14_async_sleep_callhost": {
+   "suite": "os_fs",
+   "case": "f035ac21ae852352b6269948d8f040d143f8055e4c50ee0c8a67f5d6d7a2260a",
+   "outcomes": {
+    "ref-py": "b5572c5c27e4f9e0630a021f7a6a62af0bc406d290da53255a5fe3699a7376fd"
+   }
+  },
+  "b14_async_sleep_default": {
+   "suite": "os_fs",
+   "case": "57f99e7cfe979ac719b3032fdce08ca6d904ee77e18031ae7f2d263b7c502771",
+   "outcomes": {
+    "ref-py": "adab8fc9e07293b34885ad27364dfad5ccc3aea39545443a21d8814091d8a2bd"
+   }
+  },
+  "b14_callhost_all_unhandled": {
+   "suite": "os_fs",
+   "case": "341e8bf76e1ad3b8faf40d7a6509dbd17764c997c1143a089ba990c5d112602b",
+   "outcomes": {
+    "ref-py": "d0becd01849ee3576e24d9aae3dfe4ca4b685a1ab13f407e8e1c7d0cbcd9fa68"
+   }
+  },
+  "b14_date_callhost": {
+   "suite": "os_fs",
+   "case": "200a5a740dca7971a33efd538cd5500784a82c8a1fcf988fb54327548942ec2e",
+   "outcomes": {
+    "ref-py": "393faa28bac380f3bb9091d1e57c0393b76e6fc07b15023de319c01ce8276306"
+   }
+  },
+  "b14_date_callhost_tz": {
+   "suite": "os_fs",
+   "case": "2b62339f607d35b490cca22ed01918d40db4f826f04fa40df825b8dd220be947",
+   "outcomes": {
+    "ref-py": "1902f53e6ec69ec7563c0e16517f4dec32de5410e088a9b7eb49cc4159da87b1"
+   }
+  },
+  "b14_date_default": {
+   "suite": "os_fs",
+   "case": "e87ba3dfd328311aa4127742bf09738da11390024398f884ec0730b6d5abd7e9",
+   "outcomes": {
+    "ref-py": "8ae4d8145059380b334889ce03e659c2edf6531bc72eee75a50e89706dcaa307"
+   }
+  },
+  "b14_date_fixed": {
+   "suite": "os_fs",
+   "case": "c7bba754b04944c7e859ed94dbeea9dfa45769e28196c3a99c88e9010b479e8d",
+   "outcomes": {
+    "ref-py": "f46cc7efed6c03f122a5f139dfdca020f5f6535fe8be002fcb0b3a99e0b8d7ed"
+   }
+  },
+  "b14_env": {
+   "suite": "os_fs",
+   "case": "d82714eaecf15938cef9869524d8013cefdb43c99cf6452c2d934daee2b56f03",
+   "outcomes": {
+    "ref-py": "56e6d1bcbb4b7da046c9b000a995635707b0e1a8e0d627d1bec6b757ba51ae46"
+   }
+  },
+  "b14_getcwd_default": {
+   "suite": "os_fs",
+   "case": "ed8f9786281177e719f890fde3e904a77e6270da629c136eb2957e2fa81f277c",
+   "outcomes": {
+    "ref-py": "04d96f3d782ad8d57ad8a299ea7122c0ec5b518c9f0af85b753eccbc5107e606"
+   }
+  },
+  "b14_getcwd_set": {
+   "suite": "os_fs",
+   "case": "79471c625cdf3be7caf59a24f730b2898a8a1068bceb800d02da5913cac1a4b5",
+   "outcomes": {
+    "ref-py": "9122de02179afc7e439d23c3799adacbde85adcc4dde7970f04fb52366bfe904"
+   }
+  },
+  "b14_sleep_callhost": {
+   "suite": "os_fs",
+   "case": "973101025390ecb4e5b3a04b4a4f59e819e1e66593ecba79275bfa6adc219032",
+   "outcomes": {
+    "ref-py": "7f43b1a204f744381b32f32e8aec061a9bfe1c7d065ce8afa35c04a458a8e56f"
+   }
+  },
+  "b14_sleep_default": {
+   "suite": "os_fs",
+   "case": "808ea58a88297fd23eb0a104b1fdfc0946bc58a1f6563922de0667e6108d7ace",
+   "outcomes": {
+    "ref-py": "c1802e6bd0f2f911e5119611cd87d77b7bcd11cd75d595dcf09dcaa6ec7e5b61"
+   }
+  },
+  "b14_sleep_negative": {
+   "suite": "os_fs",
+   "case": "d1c8a05eb358d5bb2fd7ec88772e56fe2559e24e4366e1f40af5fcfaa2116bd8",
+   "outcomes": {
+    "ref-py": "440f39636d5d02dc770b505ed1538dc38c077c85a5f5ff9082f6ae0601a8852b"
+   }
+  },
+  "b14_sleep_zero": {
+   "suite": "os_fs",
+   "case": "95fa2f7caf46952f4fdb6979ea217aecdd85089df869cda52f0338f04ba895ef",
+   "outcomes": {
+    "ref-py": "cb280ca687a690d6aeeabdfa6caacbcd10948cb4b0830f60355659de253864e4"
+   }
+  },
+  "b14_time_callhost": {
+   "suite": "os_fs",
+   "case": "73405255c4c8c4d39d23e9e5d4ceb84404dee499e656df99ae1839f0add5fcee",
+   "outcomes": {
+    "ref-py": "db8f5b0ef53e3fe2e65123663121dcd450911bdafe99289e458f0698c4fc8cd6"
+   }
+  },
+  "b14_time_default": {
+   "suite": "os_fs",
+   "case": "fb99181dd904b0b141d42ff478bb130932ab62902a240d84b3cc254c81e71b81",
+   "outcomes": {
+    "ref-py": "8e8ad030e3bbeeb7d9fbdde499bb83e0da6b51dce87f313ecab33e3c0278ae46"
+   }
+  },
+  "b14_urandom": {
+   "suite": "os_fs",
+   "case": "dce657043b2b094983d4d47d9fe7ace18542f7bd49808f2e65ad86a07ed6e3b7",
+   "outcomes": {
+    "ref-py": "d43c36a6d8ee97570cfc1f70de517e719810894ee40ba185ebf9e26f93882e74"
+   }
+  },
+  "b14_urandom_unhandled": {
+   "suite": "os_fs",
+   "case": "fec9124ce7cf94f32efb81da7e3a0cfe2a3029a5f073dc82c1c2806e8b78e36d",
+   "outcomes": {
+    "ref-py": "93b3efa8fd546c9f34df3d484e2931cc74820e928cb9163bcbe422fb6a8aef71"
+   }
+  },
+  "g19_close_then_feed": {
+   "suite": "os_fs",
+   "case": "f40806451ddf909be84ea8ff61c4b543ee6aa1cd7049cf1826f27d08e3b99047",
+   "outcomes": {
+    "ref-py": "5598c54f6b167ea95a108dd2d38b5196ed13917edeb4dbe29d33f9ac23cb0d74"
+   }
+  },
+  "x21_cwd_default_mount": {
+   "suite": "os_fs",
+   "case": "716f98d7fde8710cbe73cf1fb6018d8179812a4046c94ee3e35fa27beecbd0f7",
+   "outcomes": {
+    "ref-py": "4828ea53677482370ca97fca00a4557ae2ca124d1d5676691459b6a4ebb92e9f"
+   }
+  },
+  "x21_cwd_feed": {
+   "suite": "os_fs",
+   "case": "dd450eba0d7a9cf41ad995aae24919974162fd2921b1f00a385c0a20e703440e",
+   "outcomes": {
+    "ref-py": "43324c340c1e96d3658bf4be2c58ca0968530a4a2d33b53f1483c0711a9dd304"
+   }
+  },
+  "x21_cwd_invalid": {
+   "suite": "os_fs",
+   "case": "f92f23e0b5fd0a575e5b88c578f8c88766c957505c479ddd82629a57b8b8387c",
+   "outcomes": {
+    "ref-py": "a58a1829ec685cb1b27503227317e34bee2688df319eb0c3a35744145e7dcaa6"
+   }
+  },
+  "x21_cwd_relative_fallback": {
+   "suite": "os_fs",
+   "case": "69fe756ac16104c6cf6a89cd2d61d7ff8894bb6f437d2e6dc03fc492926199ae",
+   "outcomes": {
+    "ref-py": "4152cdbbcedf8a5145b1f58d6bdadf75948f0573e9902ac46aa21b9084340e0a"
+   }
+  },
+  "x21_dup_virtual": {
+   "suite": "os_fs",
+   "case": "a560f9c64caf371ed2b003eba63f32cb6879887c0bd6ca98b68deb514b367a92",
+   "outcomes": {
+    "ref-py": "0a98679c7d66adedd600e1b4a9277e0218cec218b2386a0c5d0aeb293185bb3a"
+   }
+  },
+  "x21_fallback_nonfs": {
+   "suite": "os_fs",
+   "case": "e178fb0ed0e045ab4608a140f238c8c132add2cae7259eaac11ec352242011be",
+   "outcomes": {
+    "ref-py": "766d0742127c2209ed0fe33e6547412437bfd7dc6a2ed85c4967967dd9be2f90"
+   }
+  },
+  "x21_fallback_unscripted": {
+   "suite": "os_fs",
+   "case": "18d0f684f2ed7476619703d7f07513e4ffd0c0ab1f24ce449a820c9c0ff91d86",
+   "outcomes": {
+    "ref-py": "09a086f6c6f1e26151712182ec9750e51494a7bad496c0d0994d86f31764a67c"
+   }
+  },
+  "x21_lifecycle_delete_overlay": {
+   "suite": "os_fs",
+   "case": "3aa62b2dea30b524b7be053608267b23afa0ab166012cb2bbbf8212050f9f5c0",
+   "outcomes": {
+    "ref-py": "10c4d39054744cf99c8866e22749a77062910aa7834ba940f330a5f89d21c46f"
+   }
+  },
+  "x21_lifecycle_delete_read-write": {
+   "suite": "os_fs",
+   "case": "ef204174421f56fde59039b4297ba275a83adbf65f2f13b47061cbfb0ae99819",
+   "outcomes": {
+    "ref-py": "40a550424ff0069942cd2c0d5db0a0a0f305a0f2166226775c534481129a356c"
+   }
+  },
+  "x21_lifecycle_overlay": {
+   "suite": "os_fs",
+   "case": "3e688ab0afb83478e0816aee19d61bc12588cf64c42a517ff1f1c7026cdb44a4",
+   "outcomes": {
+    "ref-py": "f080979dac7ac9e0159dd9beecbdff1e0ce1c55c547cad9bab73afa585b72a94"
+   }
+  },
+  "x21_lifecycle_read-write": {
+   "suite": "os_fs",
+   "case": "83e73381fbf4cef3a4470c80cd45ae2ba879c05a0ec16502b5601c23364f2e0d",
+   "outcomes": {
+    "ref-py": "fe0734cabdd9d685b94cc7f85d98e570155296f7b555fe1bb98538aa18c3d2ad"
+   }
+  },
+  "x21_matched_failure_no_fallthrough": {
+   "suite": "os_fs",
+   "case": "19e62a702bfaa2f3b3c7b4b1f9c5872499a6e6bd7c09ecfaff5558045cdce2a5",
+   "outcomes": {
+    "ref-py": "eabf8cc823ab1530d409592c526d79c63cca866abff49c9e8bd2370c0bfbbd24"
+   }
+  },
+  "x21_nested_virtual": {
+   "suite": "os_fs",
+   "case": "570b68f0f934194af708cc84ae4cbc338c2c64c7bbf419effd779a563d558f4a",
+   "outcomes": {
+    "ref-py": "420b1301831ef0ede1ddbd6aa2de611ace0b8eedffdd491a9f45ff49fff1ee83"
+   }
+  },
+  "x21_normalise_inside": {
+   "suite": "os_fs",
+   "case": "26d41a6b0c5b66cd8a57732412e22ef02cc045e600001e0d6d423a33b63da748",
+   "outcomes": {
+    "ref-py": "3ccece9b89baa1fa804a06564471b75418ca6137ecefc2aac5746a68b9b1b3d0"
+   }
+  },
+  "x21_overlay_same_feed": {
+   "suite": "os_fs",
+   "case": "cc3a95def244e3bc06507338aa1b1981d5fac39fb7d02a7d0f1349a54d2d4d79",
+   "outcomes": {
+    "ref-py": "20606a0f8d1c1f56c2c19b6180b5b3fd8437cb45c479ffa7204eee9be52175f1"
+   }
+  },
+  "x21_relative_virtual": {
+   "suite": "os_fs",
+   "case": "20a6d6d8accc6f8c41c0114f7533792ecfca6694eb4223b29621c81bb30023ec",
+   "outcomes": {
+    "ref-py": "dc33b8fb802cd9889a301680c3d3382809bd1fc8ec4236a9de6e046c02e7dad2"
+   }
+  },
+  "x21_ro_mkdir": {
+   "suite": "os_fs",
+   "case": "3ab43b93d1df6b7583877705321f935db489df35293aa34c968bbc44f7a06a3c",
+   "outcomes": {
+    "ref-py": "660e9876a14eb264cf2b25d86f37b25691709d9e39db590938652648e0eb68de"
+   }
+  },
+  "x21_ro_open_w": {
+   "suite": "os_fs",
+   "case": "50d0fc0458f642c440c19599778c9d05b96f464ca7cbab9dacbb593a81d92ca1",
+   "outcomes": {
+    "ref-py": "adf6ff58384205cde279b526561598662dbb3d6febaf79b3be42f4ec4ed5e733"
+   }
+  },
+  "x21_ro_read_ok": {
+   "suite": "os_fs",
+   "case": "c3eb9d7e4dc51511732f69a1112f8155ec53aa236cbe63346563a3cb52b89a25",
+   "outcomes": {
+    "ref-py": "4e50205c699d507d9c80c246b918e0bb89eec74c3d5d4bbc05ee7bcd6d1db61f"
+   }
+  },
+  "x21_ro_unlink": {
+   "suite": "os_fs",
+   "case": "f4d8fb88b903c9c08cd4c468acc2d13eaacf0062e90a61a0032a816bd312debc",
+   "outcomes": {
+    "ref-py": "14faf974fd86b0974cdace5ff146491d54deeea886b11ed5b1364b0c65de50c5"
+   }
+  },
+  "x21_ro_write": {
+   "suite": "os_fs",
+   "case": "3a00491d1c0ad3f9604d2277762ab188bf5698ae2058cbdb0a13d9a8e8418723",
+   "outcomes": {
+    "ref-py": "c4cff62003ef0e75a2c87aa5daa22266f6c193cae0f85daf7333af945b6a1282"
+   }
+  },
+  "x21_trailing_slash_virtual": {
+   "suite": "os_fs",
+   "case": "eee01f371a422f7d8fafb4a37d3ba264c3257f2f0ea33d58a4cbb870508486b2",
+   "outcomes": {
+    "ref-py": "a4150e1ba92d6b35c18c4c001c682c0e881e2d48c2e8fd5ee00bbfff289dc33a"
+   }
+  },
+  "x21_two_mounts": {
+   "suite": "os_fs",
+   "case": "157dc72aa5f21bf551b805e3e838de9ff09bc92f4b7dd17341e1387603165005",
+   "outcomes": {
+    "ref-py": "6771676593fb52a143247a62c520c02a5d67e841f95cbb3f6d17147a68174266"
+   }
+  },
+  "x21_write_limit": {
+   "suite": "os_fs",
+   "case": "39c2a41e54d17a5fb0f44dae4cdc2e8966051d6847005a887a870387a28a7739",
+   "outcomes": {
+    "ref-py": "8841c2aad947bc63dedf805e431fef749f7f86a0ba6b71ca80bcdcbfde16ea8c"
+   }
+  },
+  "x21_write_limit_per_feed": {
+   "suite": "os_fs",
+   "case": "3997b9096e2888e7c4944b7e276de573f029b1d24034d99df6e488fae7f98eb6",
+   "outcomes": {
+    "ref-py": "8f26600ed020ee7f832d45079546b756fbf61cec6fc309719cb6dcf905f0916a"
+   }
+  },
+  "x25_callhost": {
+   "suite": "os_fs",
+   "case": "ac9d1d3c2a7dfaf23b61de82dc154af4628abe5a0e22388b5f11c54908fe817c",
+   "outcomes": {
+    "ref-py": "0813fc87297872e565541e84f360b8ac16a0113030929e1c7a7b313ca535baca"
+   }
+  },
+  "x25_callhost_no_draw": {
+   "suite": "os_fs",
+   "case": "ffd4bac698af04456cf9c422f0a93b528494045874af17f3756d72fe9b595d7a",
+   "outcomes": {
+    "ref-py": "65834ef1b76f6eba0547aa4c1ffa7a8a0dccbebbe1ed5dc0d10c7ed1b36f987f"
+   }
+  },
+  "x25_callhost_reseed_first": {
+   "suite": "os_fs",
+   "case": "dec44f8d14281fbe02f35b70d2b9193fada4099482c0cf89ab677646070976c6",
+   "outcomes": {
+    "ref-py": "7b008de9412c28e3c0248884b33f279b5280130bbd4f5c02771c01abed37a000"
+   }
+  },
+  "x25_callhost_short": {
+   "suite": "os_fs",
+   "case": "3673f7bd3e71ba639c86f19deda7a1af9d87e0cd4492c7c55e132497c0689778",
+   "outcomes": {
+    "ref-py": "e00dfafa7f2d367e1664e3502379683a375cda6fad681b32273da83e01720199"
+   }
+  },
+  "x25_callhost_unhandled": {
+   "suite": "os_fs",
+   "case": "d04aefdeb1a2f38ed70651b3ed05648284a73e2100e9a2656481cd6570c26b0f",
+   "outcomes": {
+    "ref-py": "ff14edd970de05e11714261d5b24e13a723d2e8a99c9669ee3cd4a092957af54"
+   }
+  },
+  "x25_callhost_wrongtype": {
+   "suite": "os_fs",
+   "case": "530ecd0130fa24cfe364f56267e5a0b584d31ac3a2cd39da4e30f3cae7b2c1f4",
+   "outcomes": {
+    "ref-py": "062cd2bd28b52544428dfbc04871c846d76d579e755127eba41e3eca0afe9a97"
+   }
+  },
+  "x25_default_unseeded_instance": {
+   "suite": "os_fs",
+   "case": "2549b4348c73622695f291d7cd42283dd5a27053d1471e0d074696270984cd90",
+   "outcomes": {
+    "ref-py": "a8717e6b08bed6b0daf1040232704a5560977552c4458b6740f44394b39ebe56"
+   }
+  },
+  "x25_seed_bigint": {
+   "suite": "os_fs",
+   "case": "cae2318ea6e0e95ce92a0f88e70bbc9f5b0b9621228c115d7cc0258f3796f658",
+   "outcomes": {
+    "ref-py": "d477009461226770e8a4684ef378a39d519d2f7313beb18f0940167bd49f46d6"
+   }
+  },
+  "x25_seed_bytes": {
+   "suite": "os_fs",
+   "case": "cdbb019259cf64a8552697b781004b7400aba81fdb143a4239a1154a4b8c5a20",
+   "outcomes": {
+    "ref-py": "5ce76b414dd5b904da74df979a91fcb5150dca78debbde7c371e187d536304df"
+   }
+  },
+  "x25_seed_float": {
+   "suite": "os_fs",
+   "case": "7c6cd33f43d7124874f4176f8c55657b6ad99aba22d337f53dd2f0c199537df2",
+   "outcomes": {
+    "ref-py": "c1ba6c9f345915f8f91c77f072ced997b99f36014612152932b539fea956c231"
+   }
+  },
+  "x25_seed_int": {
+   "suite": "os_fs",
+   "case": "9ddb7c1753cd11bdb941c078b1f6e6d51a63609c5bedb6cf1a7cdbbda3026ea1",
+   "outcomes": {
+    "ref-py": "bd6d8ea1a20cf4eda0d7303b80827b0ad205b53bf54e9fbc78b8f67ac460dfb3"
+   }
+  },
+  "x25_seed_negint": {
+   "suite": "os_fs",
+   "case": "9ae901363f9c81c6fc9cb36fe7f43af5871b3a0d1143454ce983547e506dbbec",
+   "outcomes": {
+    "ref-py": "075ca4d5aa13fc69f818d39221fccafb67bde5b11ad79f7c317666395978fc04"
+   }
+  },
+  "x25_seed_str": {
+   "suite": "os_fs",
+   "case": "c2d57adfcc1e84354d8cc9e974679d29fe0ab06b6bfe117e29c63b5ad8aded5b",
+   "outcomes": {
+    "ref-py": "0a978f77b5cbde24348cc935618122ccb06b7cd71983d0abc492b34840879256"
+   }
+  },
+  "x25_seed_vs_sandbox_seed": {
+   "suite": "os_fs",
+   "case": "1d8997694a4b78ec001b86329d0f96c712511d6e6a9ea92b0077f7ef42aa9d0b",
+   "outcomes": {
+    "ref-py": "979b8d9a395773f04b3ecaae7f02e6f64aeee6f391cbe54cd7703a2ccbdb4bd0"
+   }
+  },
+  "x25_system": {
+   "suite": "os_fs",
+   "case": "27910c214216bffe462d47d3b407ac8531e0dbf9311e8752914854859887cfb7",
+   "outcomes": {
+    "ref-py": "1bf73e6d77201328daaef3b47f657beea69e1a0cb12485cdbf85661f033fe209"
+   }
+  },
+  "x8cbmode_00": {
+   "suite": "os_fs",
+   "case": "b8ab90d41ea3be82a49aac6611a3ff92404a088fd63a29588b2cc037f1c15f5c",
+   "outcomes": {
+    "ref-py": "0b019be2a14ba968c48099fdee548346c23b3dec82cc41fa3a92dc570b9d5a84"
+   }
+  },
+  "x8cbmode_01": {
+   "suite": "os_fs",
+   "case": "82d944603022318079352e86af117442e4490f3d1157aa32eecbea541a330068",
+   "outcomes": {
+    "ref-py": "9133cab7dc92c6f355fc3000a6657dbdef0ece0e4df61fb16dcfd8ac3a1a90bd"
+   }
+  },
+  "x8cbmode_02": {
+   "suite": "os_fs",
+   "case": "64513a34471740380a0fcff1149991aa9b45cd576b1ac64250aad4386f332946",
+   "outcomes": {
+    "ref-py": "360e52c72cd1679c8c72553f6937aaa9d703573704467a872d887d0d9af501a0"
+   }
+  },
+  "x8cbmode_03": {
+   "suite": "os_fs",
+   "case": "7c79d3a842efc1780ddc6362a95ddc695507f40406f34233851af8890da5d81d",
+   "outcomes": {
+    "ref-py": "cfe2ccc2fdd9e6e7f77370f1ace78a3c76b6b2e30ca747cedff389e3365bfa58"
+   }
+  },
+  "x8cbmode_04": {
+   "suite": "os_fs",
+   "case": "1fa182aa51b0c42bf34ffa5cd0e4671405d3d2e26eb715565a4ab5e555dccecd",
+   "outcomes": {
+    "ref-py": "fc56d48c486998a3347ebd0152c15af9941af85f81eeb3f4ece1c92db37db2d9"
+   }
+  },
+  "x8cbmode_05": {
+   "suite": "os_fs",
+   "case": "a5a1664e21f862ef51908181cdcaa25076d0fb4c1059ea0d0088fd39a40effea",
+   "outcomes": {
+    "ref-py": "af789a7c919595f098b2e83a160bb6d22133e75cf495114c874003093101c6de"
+   }
+  },
+  "x8cbmode_06": {
+   "suite": "os_fs",
+   "case": "841b4739aca77ea6cc1ff4577dadc0b5ac81d564c165da739ff8f36c7c3d6811",
+   "outcomes": {
+    "ref-py": "7a683b7bda009d0286ca62ba6e78d670ab7e288c27b240471d5edc8cc2f890b7"
+   }
+  },
+  "x8cbmode_07": {
+   "suite": "os_fs",
+   "case": "cb7aa347bf445aefefd24b8b7c8ea3e52220eba0a6657623eb0c5a1ec0487198",
+   "outcomes": {
+    "ref-py": "eee8bf1ec7683f9223687ce86b607eb91b4287fd59a169409dfb233cdeea857f"
+   }
+  },
+  "x8cbmode_08": {
+   "suite": "os_fs",
+   "case": "b2d4d223e44e7e75effd22d8d280ec0d856fb00fc4e54ea3ca05498b2eb85298",
+   "outcomes": {
+    "ref-py": "abe2cd1dcda8ad6713add6560c7614c78fc963734d0616acecd041ddd7de830f"
+   }
+  },
+  "x8cbmode_09": {
+   "suite": "os_fs",
+   "case": "76756cce79133564ac7586370cec8331927fd390a90630e050bf304826614cf3",
+   "outcomes": {
+    "ref-py": "e681077da0633b3ebfd472fd73635765e81b56097b5f8a08da368e345a9ab467"
+   }
+  },
+  "x8cbmode_10": {
+   "suite": "os_fs",
+   "case": "63d08519a11d1685dd4121a4976fe1a1656ca79dd24ebdc62b9c2ee40d854458",
+   "outcomes": {
+    "ref-py": "896ccb3af9bcae4e2ceca91751e2127061252a8eb054ffd17836dd76ac3aa9d9"
+   }
+  },
+  "x8cbmode_11": {
+   "suite": "os_fs",
+   "case": "b8ac5e75a67b65495b65074f3919a03816a6bcd5b0aea466910bdfb1e65cd874",
+   "outcomes": {
+    "ref-py": "40986af945721dd1c86121945bfe4d8fca63721a5f23a56fcadd3d549ebc1f0f"
+   }
+  },
+  "x8cbmode_12": {
+   "suite": "os_fs",
+   "case": "d69ad38db27125cb530ca065e405b95e70f34d0e1ac1c3752d1893b4579783c8",
+   "outcomes": {
+    "ref-py": "6f17cd33c67d2cd9c4045d4445313a9a4929818658fd49858c151c0c35d9de42"
+   }
+  },
+  "x8cbmode_13": {
+   "suite": "os_fs",
+   "case": "ed9db1813186c448e75308e3c8ef58d88c294dfbdb70f31b0630f68866090cea",
+   "outcomes": {
+    "ref-py": "b002b2e64d743b4f41ab1c4bb86bb1baeafcb9885e5355b3c34ff1714b81f09a"
+   }
+  },
+  "x8cbmode_14": {
+   "suite": "os_fs",
+   "case": "bd135218bd1b1e0572ce0f1bf4440ede09748b31bb145740fa8363e48b2587ab",
+   "outcomes": {
+    "ref-py": "74ab9608cc9bcd626e7aad06c774d1c7733a3d747057b2d6f4ac1326c6546339"
+   }
+  },
+  "x8cbmode_15": {
+   "suite": "os_fs",
+   "case": "5f82aac181504a25d9b836eace976ac11eb52fc7be932058bfe266b995e02bb9",
+   "outcomes": {
+    "ref-py": "0255e8a7f2ef9819bd69883246550e6ca60904d72d80c5730df0d5462bb4279e"
+   }
+  },
+  "x8cbmode_16": {
+   "suite": "os_fs",
+   "case": "960ca22f1666141bebc55fe183a516c422dd20cb7c49f6146bebc2d3937466a9",
+   "outcomes": {
+    "ref-py": "322668168affcb07824c760e32f0abeed4a33cbd0b9050e2d03b6a8e3ff9ae8a"
+   }
+  },
+  "x8cbmode_17": {
+   "suite": "os_fs",
+   "case": "fba6b20fd5ca80ab609d60417c4b53e35316977f0f02b005ba026c9dd1c75885",
+   "outcomes": {
+    "ref-py": "16679a77476aef94ed2ed5dba296f2fd45fc58504f15ffa6d2d1e0ec58c5c5d7"
+   }
+  },
+  "x8handle_pos2p53": {
+   "suite": "os_fs",
+   "case": "3ff3cc52781cf141d3307704da86e3426044cb3f9b06939450e88aec3969af93",
+   "outcomes": {
+    "ref-py": "e4b6bca35e9814ac472058e10c5f33e7e6f856b7457674d1e2a2edcb02b564f7"
+   }
+  },
+  "x8handle_pos2p63m1": {
+   "suite": "os_fs",
+   "case": "03e9c84f8a26afcf2a33dc3f73d92197f20bdea5ee7b31acaa7700a1d8823e98",
+   "outcomes": {
+    "ref-py": "ec5f6763d69a7a369d4f77d3a3300c3a2d7feecc3e6ce28414f5d0c28d76a63a"
+   }
+  },
+  "x8handle_pos5": {
+   "suite": "os_fs",
+   "case": "85f361790a0160213457b85fed6d14f8793949d8cb2c6ec738cb3bab474f2603",
+   "outcomes": {
+    "ref-py": "7935dca321addb1f930b296845347e35707271c4c8f361f9aa659b591a154601"
+   }
+  },
+  "x8handle_tell": {
+   "suite": "os_fs",
+   "case": "5762bb41c1402caef2ffd6713d9a8a176d4c3071eeac06587c0ff935f04bf77b",
+   "outcomes": {
+    "ref-py": "c49d212d60e5bab310a00601eaf872035306b44c311bb8758f1ccae6d7ae3432"
+   }
+  },
+  "x8hostmode_neg": {
+   "suite": "os_fs",
+   "case": "d49f66c0e563ffa4f3f1a0d8e0ca41e975e279995fb9dfae861341f373b6d9a9",
+   "outcomes": {
+    "ref-py": "2451a7d40e4349898e6189c3cb87fb5c6238b0c347ff63a604007d06b780e2d1"
+   }
+  },
+  "x8hostmode_rplus": {
+   "suite": "os_fs",
+   "case": "f4df7ca731547cbbb16ba373dd11e41ecd661ba8ca4988102a348922bcbe17ca",
+   "outcomes": {
+    "ref-py": "14d1fff21b75c7131d478e71971273a47552806907113ff960b6a21a18e56d26"
+   }
+  },
+  "x8hostmode_rt": {
+   "suite": "os_fs",
+   "case": "b72f319495e4f7e136a8cfadc2a52f24c53aba0d5f67108ffbc1e5e95a21a5d0",
+   "outcomes": {
+    "ref-py": "18b9ba25f0fd33b7c5408259fdb41de3344e23e6cf8ab4b210b2da4f7775b2f2"
+   }
+  },
+  "x8hostmode_zz": {
+   "suite": "os_fs",
+   "case": "612a089e1c1a9eba3a4edda591a122f4318db9339ee28ec73f356eed7d661eef",
+   "outcomes": {
+    "ref-py": "a49d0f3ad2ba3e867f6d310941a2968b2093be118e15667a9ec0879d12a7dd56"
+   }
+  },
+  "x8mode_00": {
+   "suite": "os_fs",
+   "case": "677717abd655528930f2bf9d0eda4ea9e71d0c6ffb384aef1e9ce09068f9ff73",
+   "outcomes": {
+    "ref-py": "bbc835d1951702799ec868de055409e11ec927348cd2c674e3797e72efebbd58",
+    "refmem-py": "d0786e5f3baeb9aa2a7159835f1783676d0b25fdad8a9c951c5445b1c625f77e"
+   }
+  },
+  "x8mode_01": {
+   "suite": "os_fs",
+   "case": "88654887bf975dd73a1c475ed7a113407a0edfec7e18928cc52898c168492d7d",
+   "outcomes": {
+    "ref-py": "55e316b7655ebcbda83b9db8565e88905d0e4fb36d01aaf3797312356fd70c68",
+    "refmem-py": "1338d73c3eae5e09a73fdb360e33036c30795a219f92139c958efaa5ed382ae5"
+   }
+  },
+  "x8mode_02": {
+   "suite": "os_fs",
+   "case": "1e8dea34e37bfc76502c4c4246e5cac83227731e44cce2b9f03d84b851520957",
+   "outcomes": {
+    "ref-py": "b1ba6ac38cba15d7ec8907197a9972be5849ab21402f1afb5a95944bbd007cb1",
+    "refmem-py": "081013003fbb9c4e95f26cad58700a63f6e6932681319f45b59a1c8a518782b9"
+   }
+  },
+  "x8mode_03": {
+   "suite": "os_fs",
+   "case": "1d9c6d85ea29c69744a241e19e2243ac8bf31e06fa6228e63bcef37b70477e56",
+   "outcomes": {
+    "ref-py": "cfc7708eb54636b762fcde608320d13563404e51917045ea8fac8fcea05c8069",
+    "refmem-py": "58127489bac998c1290b26e6a96e6b867e3f2cf8478ad7f0ec533f1b3dd98420"
+   }
+  },
+  "x8mode_04": {
+   "suite": "os_fs",
+   "case": "ffeb8ef56857d433ed80980c9f7246d09ea4c29bdefebf9826a9fb5ec25be59a",
+   "outcomes": {
+    "ref-py": "d204b26aa0b20f828a32a11f5847602cfeb15477fe20576f092ea2fb9bb4f924",
+    "refmem-py": "e28f533a675e077890fd4bea9e5d58290198327166adcb1353583c7137892dfa"
+   }
+  },
+  "x8mode_05": {
+   "suite": "os_fs",
+   "case": "43097d7981ba7621c5b4ed7f7f044b0254194ece4dcc3cb79072136fa7cf5dc7",
+   "outcomes": {
+    "ref-py": "af122cbe17b5aacc1b8b17a95d3868681646b12a3bc7ffc1b92a1a4897eb5652",
+    "refmem-py": "bd352ff1c483ac3a62cb312d6a51af44d0d9b45ab1c744f54157031360825b0f"
+   }
+  },
+  "x8mode_06": {
+   "suite": "os_fs",
+   "case": "cdd88adcddcd7f548f9aadfb6e6ba2e42a4b6fcaed8e5a874a7a3f163c9ba88f",
+   "outcomes": {
+    "ref-py": "b254fd068b6bff815a2104bc23bc7236c5fd9564ac8543a8b5ee13eba533679d",
+    "refmem-py": "b0423bbc53b8c964576d1867156ec5edad4f3f3bf5dc39c27490c3e4c78700a5"
+   }
+  },
+  "x8mode_07": {
+   "suite": "os_fs",
+   "case": "7c65f63418768c11d14e3dfee377a264cf67fa35902bc98efaecddeae7ec111b",
+   "outcomes": {
+    "ref-py": "34397d5a57ef80dbddc36e86d62851e2a9ae793ed526b8853e179d507229f1b5",
+    "refmem-py": "01e176999918699a70a927d44f4c42b3d78aa583448077e18a179accb6e632f8"
+   }
+  },
+  "x8mode_08": {
+   "suite": "os_fs",
+   "case": "730b0305e69d0af1d523f9f36da72b6bef342fc4ffb19f1ec6468175dffa0976",
+   "outcomes": {
+    "ref-py": "316daac90367d439d0bc41f1b59584d23aa75c6a4144e070adcce3fc669f371c",
+    "refmem-py": "4009137fe5bb71d6c94a7209e129b3118419c2a6d51211e4b376862033963417"
+   }
+  },
+  "x8mode_09": {
+   "suite": "os_fs",
+   "case": "717b935b01531ea4106b69ac2a3e22720e43bec727251cec71a3d963b1fdbd35",
+   "outcomes": {
+    "ref-py": "26b7af436200062828f259143d6be084331a3e8abe14bf8228a1b032b38d0fea",
+    "refmem-py": "6424b3116a7f65bf58f3991da65433f508101a458fa7ed5a46faba90c8d33dd7"
+   }
+  },
+  "x8mode_10": {
+   "suite": "os_fs",
+   "case": "67dc0a78b350d2d40515ff45e55aaebac16e2b5a796dc3050c7efc884df37bfa",
+   "outcomes": {
+    "ref-py": "0b9c0e94c53b3f2ceb91e4125a69e69d0997eb12335c78db8d0d60086913abc6",
+    "refmem-py": "d9256f8688f32d505092407aa512e7a27e958e2327ccb8cca1f9e07d348b3f6f"
+   }
+  },
+  "x8mode_11": {
+   "suite": "os_fs",
+   "case": "96d9b0c32054cdada173f679932956e76796c26becc9c20ad53154f3c0341688",
+   "outcomes": {
+    "ref-py": "4e8b1bb4b90062a386c4e2e1e06971e977f86e8132fef1667fa00d6fc7f1a5c9",
+    "refmem-py": "78b79dcb1412acf838b57453bf36d9c59843f261ab3a40f0ea90aa3431f2d158"
+   }
+  },
+  "x8mode_12": {
+   "suite": "os_fs",
+   "case": "02287557c8cb01a1e53450f48613832ad170398fe5f294629993cf6063ae2558",
+   "outcomes": {
+    "ref-py": "722d5126c6ef3e70faaa73f9deb808cf9794a6a57ffcbaaf138fd42ef83f12be",
+    "refmem-py": "470aec5930e73bf791742c109ebb9840cb4143909c333a4f931830364a41ffe8"
+   }
+  },
+  "x8mode_13": {
+   "suite": "os_fs",
+   "case": "83beb5ccc0e027a1085006f44e0962ee41a87a2c279202e007c408ca612e6e49",
+   "outcomes": {
+    "ref-py": "48a4d9f287961b201a59b4125194d569a8faedc1f3b78bc1f111949534695861",
+    "refmem-py": "38a30b520359bc381a401281e3f599a85562a02d2abb1128b368155a2f038058"
+   }
+  },
+  "x8mode_14": {
+   "suite": "os_fs",
+   "case": "b00e96666066806250ae36c5ba2a002e6f5a6d30a99fb7109e439f5d90e483e0",
+   "outcomes": {
+    "ref-py": "574c4174107bd75569fc5ec11b7be8c6383da058f68864cf7b334ba21ca4d497",
+    "refmem-py": "af771c6f0b318f0c653817425b9ee6dcc4705ce3e23091d2fc78a43178300114"
+   }
+  },
+  "x8mode_15": {
+   "suite": "os_fs",
+   "case": "56a6d21382e6229292e4acfdcee4d7e801e500cc96b110ac505ea3a4fceac054",
+   "outcomes": {
+    "ref-py": "7ba73b4191a41e6713bfb12f375fe11af9e6c5ca28c5f5a711ed642d8bbad8a1",
+    "refmem-py": "ce9887c754a72054308afea16880f2bf358a004c2e0149c23f9710a1469495b9"
+   }
+  },
+  "x8mode_16": {
+   "suite": "os_fs",
+   "case": "e00f9fda66c84589652071f2346657387039dfbee2cb424cb799a0054ad036a4",
+   "outcomes": {
+    "ref-py": "e57ebe2f79bf707db05071f9b86c00f677ae5cb1c5408730f0fbcd840bcb62f0",
+    "refmem-py": "1484b13aaaa657eba7488d55ac1339f3c575056daee50dac34dc0935f256fa3c"
+   }
+  },
+  "x8mode_17": {
+   "suite": "os_fs",
+   "case": "360da32a03db7d95273b527d3e572e0e484f2b3663b1e5bae9c3ed79bc8837aa",
+   "outcomes": {
+    "ref-py": "5cc6760c2ba34eacd753bbe823cb418b4859afe4f4139851b32e9ac4b5ce78c6",
+    "refmem-py": "03d18e6e4180c921c3f14df01632666f94ec944e17435b3221f40906ee80616a"
+   }
+  },
+  "h_b01_proxy_roundtrip": {
+   "suite": "values",
+   "case": "192514235067193a70e1b6c8ab51f46bb14ec12c037aa7e22b0b290c17957d37",
+   "outcomes": {
+    "ref-py": "100cf127e15c8c1f017304b0681bcfcc70eeb10fbbbd21c85eb61d583c1804df"
+   }
+  },
+  "h_b02_proxy_nested": {
+   "suite": "values",
+   "case": "fa2bbd95992c5f1480b4c3217003e2e9e0523f26c6a30a9f1e6326041987b962",
+   "outcomes": {
+    "ref-py": "34a2362beb52c732e4912be58f0eff47a9b84a5326a40e568b5bce1715764165"
+   }
+  },
+  "h_b03_dataclass_proxy": {
+   "suite": "values",
+   "case": "c26103f6b16a45007e7cce86e65bb23e706f869d93cea01c22e813a669b6dd36",
+   "outcomes": {
+    "ref-py": "6b1f45ae3fa86c2fdf6061861213b20079c76255d95a1f9e24333134159e3b9c"
+   }
+  },
+  "h_b04_freed_proxy": {
+   "suite": "values",
+   "case": "bd428b4b30ae851406d7566ca4f283a033f4706d7a1f7acbaf0511ce28c7b68c",
+   "outcomes": {
+    "ref-py": "a8026398c86adf57591aa0b41d57f0279068508367e9212f5a736224afc8e3de"
+   }
+  },
+  "h_b05_std_type_proxy": {
+   "suite": "values",
+   "case": "20b211e519e1336bdb113501144aa25580091e22cc42ff381f626607d86786ff",
+   "outcomes": {
+    "ref-py": "561b43840738a55e0d9c44b1b6942023587ffe0b6a19bd1826b7a67dbaceeb5b"
+   }
+  },
+  "h_b07_restore_type_proxy": {
+   "suite": "values",
+   "case": "3a3b685ab60ef0520000eab1ebbe1d32232af5a8d158c0fb574c6bb35a86ed63",
+   "outcomes": {
+    "ref-py": "a1a06a6e2dd39ae184eba6e1a4f932e3f0abb578eca1662017c896275c2363d3"
+   }
+  },
+  "h_b08_restore_class_eager": {
+   "suite": "values",
+   "case": "2f17202fdadaa7cd180ec01ebb3acea40be84a202a61d2cc6133683c843541d0",
+   "outcomes": {
+    "ref-py": "9e79af7fcb58bf952687b15e2c5d68d6d6a233583eb20b2af2e2d9a09decfddd"
+   }
+  },
+  "h_x01_eager_all": {
+   "suite": "values",
+   "case": "7f85dea6bd87c3f99316e4e3bbdbcd8fd17c6e0d0a0fac1feea427b407d693cb",
+   "outcomes": {
+    "ref-py": "a2a96b42e344bafa65c94fb856ebd2f09047eb33666e10d5683c90634fc2fff1"
+   }
+  },
+  "h_x02_eager_list": {
+   "suite": "values",
+   "case": "646707004ff4d2dba72e4c51a5dca36bef899d73bcce23cecad9b1f05a03cdea",
+   "outcomes": {
+    "ref-py": "12f5d3e6d8cc676a4538fbeee637252947cfdd440c1920d076e4898d061fd679"
+   }
+  },
+  "h_x03_eager_none": {
+   "suite": "values",
+   "case": "5d15ee56a91bf21a0d3ad6beabbd4bfac29e6572bfe9776e206fb7ea32048ffc",
+   "outcomes": {
+    "ref-py": "2db9cd0dcc521597fff3142f81e264e30f98ad6bb193e3f9d0fc1a13a23fed42"
+   }
+  },
+  "h_x07_lazy": {
+   "suite": "values",
+   "case": "5212a60f4c0da8f051ff4e662b05d8c50a795fe0ecf8a7c70838e20b9ba1597d",
+   "outcomes": {
+    "ref-py": "c9c61eccffb53c5b64ef74e42106387f13a26452918fa768b4c5776c40fd4f7b"
+   }
+  },
+  "h_x09_class_init": {
+   "suite": "values",
+   "case": "ea896e9dc7259068f37f627792b0abfbf80d60e375d3a8204812a8d9265fcfd6",
+   "outcomes": {
+    "ref-py": "10a18d1b52435197bb7a7b2c9e8c461f7d126370ac3568730ca266ee48e046c0"
+   }
+  },
+  "h_x11_class_methods": {
+   "suite": "values",
+   "case": "30770e42d0377003b15e6e601a3d5e6e21882196a6c5c5bc8f479483bf9287c7",
+   "outcomes": {
+    "ref-py": "0cbf1ee8f3904ad4549b743d82d1ff71d76b0016afa459b1b1102464054719a4"
+   }
+  },
+  "h_x13_convert_upper": {
+   "suite": "values",
+   "case": "ed63bb03f8ef4bf02bd96a945b42aea7460eca0573f98c7000641e7f36aec453",
+   "outcomes": {
+    "ref-py": "acfc522011ca87ef808a154868bf062b36429a79056aac202308edca70757a91"
+   }
+  },
+  "h_x14_convert_redact": {
+   "suite": "values",
+   "case": "0f9bd5be0dd0e17eada3325f4a02a93d1748b12de15341c28616bb2b1dcce0b6",
+   "outcomes": {
+    "ref-py": "5c32b63e7c37baac63d4be430b577e975ad94999337c8f9b4bfdb197fee23151"
+   }
+  },
+  "h_x15_convert_wrap": {
+   "suite": "values",
+   "case": "950eca8e5c8c1eddf203b50ae52f9911c4490669bede0220368efccd254f4346",
+   "outcomes": {
+    "ref-py": "4ff077b5a971bafc09c51b52e24da286001e119d0aeec8689b177f68056ed337"
+   }
+  },
+  "h_x17_return_original": {
+   "suite": "values",
+   "case": "bfae6dfb0e99827b1f606a16471d1a5825aee187bf51839282a9cd7ea518d758",
+   "outcomes": {
+    "ref-py": "75c0304850f949f668ab5e60c4df27c57e9ebee311c4d54e990dc728c61b588d"
+   }
+  },
+  "i_alias": {
+   "suite": "values",
+   "case": "b4a4d543695d8d5e7b310c45c662f2743f34fc65ab7f5112607eaf42317cedc8",
+   "outcomes": {
+    "ref-py": "647ef2df0729e20a0f58da266b451d9450de63754a89e56871eec0c13f0c2bac"
+   }
+  },
+  "i_alias_is": {
+   "suite": "values",
+   "case": "611be92b5cf5385c8a42e9945ae5b78a6ce7c238e4a18b3d542245b72490e35b",
+   "outcomes": {
+    "ref-py": "7fac89914289eb3cd6c8a3782ba30d70d1aebee5fac1221b707dd2a8cf02ce55"
+   }
+  },
+  "i_bigint": {
+   "suite": "values",
+   "case": "66bd0ca02bacc507b10904a2da04c5f9af91c47c49da1bf846c72146d7c3b758",
+   "outcomes": {
+    "ref-py": "0100ac48ed359be33f1b8b7ea714c52d6932fdf5de2310d4618bb67b4188662b"
+   }
+  },
+  "i_bool_int": {
+   "suite": "values",
+   "case": "a1931f87ed7c408782b05183a209a18c7206b344fde8cd4f13d706323f4ae258",
+   "outcomes": {
+    "ref-py": "f12ca59d61ed7e7469974ca144a0484e80aeee80df4c96d96ea4f0ebabcee726"
+   }
+  },
+  "i_complex": {
+   "suite": "values",
+   "case": "68dd3a30ebae14efacab5b8b4d4d2e740352d70320ddf8cbc7e597ff988a0067",
+   "outcomes": {
+    "ref-py": "76cddbfbbe043c2a03d20c6bc157602f19d63ac1e571d5c4d169365440b2fc48"
+   }
+  },
+  "i_date": {
+   "suite": "values",
+   "case": "d89c57a12942be97a7f5698a82a2d72c56b73cd3dcc8393112533bbe8fe0091c",
+   "outcomes": {
+    "ref-py": "ccd97bb4fca984994f128b9fc58c220e3874c3b7d626d18a911ff3a2e9204f05"
+   }
+  },
+  "i_datetime_tz": {
+   "suite": "values",
+   "case": "f79210c96370f203ec4f2d5e38da140a08a8e84b5b76bc2d87c4dfcc93ad22fc",
+   "outcomes": {
+    "ref-py": "54ec7782fca6ff02ff1ea94b4023c5793490cae22c77b4db6acb65a11c110d53"
+   }
+  },
+  "i_dict": {
+   "suite": "values",
+   "case": "9b2c20bf0fdaec4d11e60442ef39fe315df5d846289c67e845ad44d5f0bd513d",
+   "outcomes": {
+    "ref-py": "8db0e8bb546b3287c39e2e714be626900cca19aaab4422ee626782fcf605acc4"
+   }
+  },
+  "i_exception": {
+   "suite": "values",
+   "case": "c2c8bc08c295ba80675982068553a36cb73b0e527209f7609ed0498f0be65fbb",
+   "outcomes": {
+    "ref-py": "77cbc83312045dd4a54e206b34c735db514dc4eb7256c192151acd81afb68bb2"
+   }
+  },
+  "i_float": {
+   "suite": "values",
+   "case": "71176b43c3f305793a6f2dcd1fb12755e7c71d33b6fd3f301a1e411969b8b6db",
+   "outcomes": {
+    "ref-py": "b18a8e5579d5284d9095280b32960f21cf71ca6f4a7087e590028c3b74951ac3"
+   }
+  },
+  "i_namedtuple": {
+   "suite": "values",
+   "case": "6788e87513b6c462d16518271bde0cf3ac3e981298bced25cfa6897bc0f73003",
+   "outcomes": {
+    "ref-py": "c33105cf75185b9a0fa006cf1e39b7b0ed1b201af2937fab17fb9f4c59fed341"
+   }
+  },
+  "i_none": {
+   "suite": "values",
+   "case": "f809c58a18d82bb1b039c9e07990d1956630b8a88bb6a0fd7969bf2f5c00c663",
+   "outcomes": {
+    "ref-py": "bc0a03424d8b37e865bc8ec89c4138252828eddb0b73e8fb7ae2b80d1218a487"
+   }
+  },
+  "i_path": {
+   "suite": "values",
+   "case": "5106ef5fe00343c22a3f1c024f1ba34db4ce34e5add8ffbbcc0b15ed785b2180",
+   "outcomes": {
+    "ref-py": "2124bb977065337ffdf20e372e5d8d407b5294ffcc3fe109aa1c51ef277c7111"
+   }
+  },
+  "i_seq": {
+   "suite": "values",
+   "case": "bf8b11987a0625c62556a1624ded8228d824ce638a694f84c598658f7faa159d",
+   "outcomes": {
+    "ref-py": "86e48ea39c3ff2635145a8a8952f7b59d026077cef1ef54a51f7ccd3fa0c2b4e"
+   }
+  },
+  "i_set": {
+   "suite": "values",
+   "case": "046188d2538e43d1a23db3b878dda74f4597c79877151c17d1670b267440671a",
+   "outcomes": {
+    "ref-py": "a68dae050f09d02d51fa83618e8d58c1693612e213ecec44f24f9f1bca5af260"
+   }
+  },
+  "i_text_bytes": {
+   "suite": "values",
+   "case": "39a53bf2f186d3733004bdf1c3147153ca9b211463d0ef3efadda1935833190d",
+   "outcomes": {
+    "ref-py": "4690cdabd5044d8a5d4921fef5cf14f86c620606e9d8ec55db1d63ff0b4b5a89"
+   }
+  },
+  "i_time": {
+   "suite": "values",
+   "case": "c39d240dbb0c00324c93672179335900b7b366cf7d6f4aaf2b097b65cad0c48f",
+   "outcomes": {
+    "ref-py": "b535b1871bf5136d79192971764d4e518c8c1744577d275370f21ae77c33d025"
+   }
+  },
+  "i_timedelta": {
+   "suite": "values",
+   "case": "98d487e172d6e3b4f36b8cd52a09f49e64f92e8b1762d9f0966ca6468ba67c18",
+   "outcomes": {
+    "ref-py": "577e1bb9cc72b7ec9ffd2e3a3b4c6188c4750e83152d3541288ea88185a24aa7"
+   }
+  },
+  "i_timezone": {
+   "suite": "values",
+   "case": "e13641da9fb3fb39f3d49598fa4c0130df56ad620b505643c5e7426487b8e17c",
+   "outcomes": {
+    "ref-py": "f88119d6626c9c9e5c73422c847e57980e0e96a645dc625221a6de411e09ed1a"
+   }
+  },
+  "i_type": {
+   "suite": "values",
+   "case": "baeabffb005e94cfe4f9b059a63077511b06348be95bf7d9e2ccca1051aa7c3d",
+   "outcomes": {
+    "ref-py": "66493e6902ecad88708f4a1ce13d7723bb3ec5f189e018ad5717070557b204ca"
+   }
+  },
+  "r_alias": {
+   "suite": "values",
+   "case": "b061b8edbce33c4d13b5ee45453be2d6d81bc62f255abfd05426ebaf906b84ea",
+   "outcomes": {
+    "ref-py": "84815f9ab78c85dc8cb90e1c4b77e2d2fa2e9b90aebf27c1bdb0135633bbb01b"
+   }
+  },
+  "r_bigint": {
+   "suite": "values",
+   "case": "da0c8d5dab647c42cb0ea52656b6923dd8266148696792127f56e41351569d0d",
+   "outcomes": {
+    "ref-py": "2bd55ce864c3ab3080f8a5b588a9f48e3cc2bc8ff56475681edd53ae9403c2b5"
+   }
+  },
+  "r_builtin": {
+   "suite": "values",
+   "case": "f98b85cc05024da9fe9f87bcc61b0f5eb44109a32d93638eb6531c28c5740b66",
+   "outcomes": {
+    "ref-py": "4bf6247b962e9a4e5736356517fc537a3bab9b9e553af783d6b80431b368ef45"
+   }
+  },
+  "r_bytes_tuple_set": {
+   "suite": "values",
+   "case": "222cbd851b95c212b0e1f70e35495048d00db8ec3a4b8aee50757a104608846a",
+   "outcomes": {
+    "ref-py": "5417435efafe7853807f2156a035259375c7c6aad2dfb9f62923642211bc8e7c"
+   }
+  },
+  "r_complex": {
+   "suite": "values",
+   "case": "e2e47bee573bb48640b1bdac3e0539f13713ac76f8f89f7a399c884f9d3a69fa",
+   "outcomes": {
+    "ref-py": "f1d6ba2a246d673b227732c1568ac984387d360f93d58474066f0e09be7c0021"
+   }
+  },
+  "r_cycle": {
+   "suite": "values",
+   "case": "594e51c752231c6de31e06368cbed3934c2d0b6b04e786afbfbf57a81945173d",
+   "outcomes": {
+    "ref-py": "94419e24b81f28a497371e7f42041fdf9359a597a8e4405a5f4c844ee7c97020"
+   }
+  },
+  "r_datetime": {
+   "suite": "values",
+   "case": "0923e3633738988583565c4ba9ab94c5932f25b334c0e17b19bb64e2344bcd6e",
+   "outcomes": {
+    "ref-py": "c13e647e996fedb2c0d5f82b5a092588e742855c6ddd8a97c912fb8feff43e6a"
+   }
+  },
+  "r_dict": {
+   "suite": "values",
+   "case": "b117819b850d45d2581715bd24effe7bbba8f2ebcebf53d0816d334e09296cce",
+   "outcomes": {
+    "ref-py": "47fd9860053366d741ef4d6133d738390b424059d8b7eadfecdca7b7419ba856"
+   }
+  },
+  "r_exception": {
+   "suite": "values",
+   "case": "d48b1cd05279d87369848c29c4ce3896babfb3154c5ecaad2461aa1a7ec0ca11",
+   "outcomes": {
+    "ref-py": "979f242c81ff5c9d292c8cf8488a121ee746ee9fc57406000900b5f019b01003"
+   }
+  },
+  "r_float": {
+   "suite": "values",
+   "case": "4819858936d93940deb891988b34646bcf0b9f68ad69b96ef8bca12a6fb84626",
+   "outcomes": {
+    "ref-py": "e7f68ccef98e1316080c31fd6b677195b61431e48228b6d94b9e11791ef443bd"
+   }
+  },
+  "r_function": {
+   "suite": "values",
+   "case": "1d23ce854c93cfa355c485a2fd4207718d9057ef24cd899f46fb96dbc24f3ef3",
+   "outcomes": {
+    "ref-py": "d115e09d7882c17d3dc218ff0611523c07a783b0a0de6bbb70565c5605621fe4"
+   }
+  },
+  "r_namedtuple": {
+   "suite": "values",
+   "case": "a3f7914a3b800cc9d75a27785892f85b8c49ee4d7942cc0c0281d1ea95449cb5",
+   "outcomes": {
+    "ref-py": "a9fed14dc9658499e594e208563bfdec26318c2a5ea704ae4e80dfb7b4088fff"
+   }
+  },
+  "r_path": {
+   "suite": "values",
+   "case": "e448b32307498167d3ae98999cd03f93019b218503e89bfa0be7c69cbe3ccbbc",
+   "outcomes": {
+    "ref-py": "ea9af14284b51ab8d9f30ff65447eb5a99ab842362ca55c765509812b8b50db7"
+   }
+  },
+  "r_singletons": {
+   "suite": "values",
+   "case": "aca7642fdf65134ed12b710436be50e1ae007508cb219026a9b765501ec777ec",
+   "outcomes": {
+    "ref-py": "230d107f7fd873eca670d2c7a0a3983b022ad58c65742afaa72a37b5788c1e0d"
+   }
+  },
+  "r_time_td_tz": {
+   "suite": "values",
+   "case": "0f862cc9744323d17bad4f70101f8e8cbaf03e7a87d71a84d0844fb5a369cd2d",
+   "outcomes": {
+    "ref-py": "33fafa3a39c887bfe6c495a045096f8fa19ef1c2bca14212a4d76b08dfed6d28"
+   }
+  },
+  "r_type": {
+   "suite": "values",
+   "case": "57d32b880d4169db8b8d3fdf54f8326237cad6339093f06172ea4f2ea3dfafde",
+   "outcomes": {
+    "ref-py": "274213721ee2b7793c772f9300ca509139d330b806a20af9cd28a29ecc239924"
+   }
+  },
+  "v_alias": {
+   "suite": "values",
+   "case": "7be60d5207aea576296c277659d646a4604b6ff0425629d3ea9b12c6fe775464",
+   "outcomes": {
+    "ref-py": "0957a8703352edcf7fee62bd2e91ae6b3e69b8698ef946aa3235b59490a23d90"
+   }
+  },
+  "v_alias_nested": {
+   "suite": "values",
+   "case": "594b2b760ad0048c689f13b30fb8005986641081ba7d1a0bf65889aed89ba7cd",
+   "outcomes": {
+    "ref-py": "faec9f668c9b572569099cedd9000dda6e25b02ea387e020ea9083c354eeffaa"
+   }
+  },
+  "v_bigint": {
+   "suite": "values",
+   "case": "cc2683bcf17aec24a859e7135807dff794a6e0b277012d85f507bfd05e58e8cb",
+   "outcomes": {
+    "ref-py": "c6151deee314846b9d7a561967c1bdb7e4c93e604dec96c60afee64e66ad2f95"
+   }
+  },
+  "v_bool_int": {
+   "suite": "values",
+   "case": "72b0943af4d38f4c3f6644c466a1f9f7347e02d30eb52ae60c3f14547d5c4530",
+   "outcomes": {
+    "ref-py": "b5b24772c61aefdf884ec84957cb1dc3d3165f59095be0518438b276cc261529"
+   }
+  },
+  "v_builtin": {
+   "suite": "values",
+   "case": "a3f868cb79d7646ba90b646d797bf72065b5acf82068c6b3bc79ab1eeb6a81f8",
+   "outcomes": {
+    "ref-py": "5484ed79bcedd34b5602e5160562dcfcec5ff5847437ee8a240ba9447c34e6d0"
+   }
+  },
+  "v_complex": {
+   "suite": "values",
+   "case": "22ebc5a27500c3ec70d26122e8f899177a1afa7f4113dd4eb5871404e17da335",
+   "outcomes": {
+    "ref-py": "0b9bd436994a90fd30a2fdf400991f2465811cfd364acde2eac722df6d3773f7"
+   }
+  },
+  "v_cycle_dict": {
+   "suite": "values",
+   "case": "0f4cceee278aa6d6240d3d6084379192c4514b5dc87e5f5bcf7778c75a6b6eb1",
+   "outcomes": {
+    "ref-py": "ac754bca7b8c584591173fe55a81e57c8fdb86b4000dd553302aeadad3ca6b10"
+   }
+  },
+  "v_cycle_list": {
+   "suite": "values",
+   "case": "525c50061b5ce2c4e3203e15c497557d393a18c723bcef416bdc8b1a4ddc833a",
+   "outcomes": {
+    "ref-py": "436d9bdd04cfcd0ae685247f6da9a5cb67551d92cdbca9137c9f5e520a6e17f9"
+   }
+  },
+  "v_date": {
+   "suite": "values",
+   "case": "7fa7a541f682a07094e8c3120e0a9568cb8922577bdd140b1a631f26cbd4f0b9",
+   "outcomes": {
+    "ref-py": "b37e918dfdf908f798874bde627582f37198689b9d39288f6daa5b5b2147811a"
+   }
+  },
+  "v_datetime_tz": {
+   "suite": "values",
+   "case": "9b7a4e1f77f278ecf854f80070288ac8162a9a69c495443b75ba2b6f5d098cd7",
+   "outcomes": {
+    "ref-py": "c9d0657dc2dc6de65e4f9b3fc3847e9db193b1be69efd5059715b3c07cb870a8"
+   }
+  },
+  "v_datetime_utc": {
+   "suite": "values",
+   "case": "0e53aaadf67ddf6a3b346a017b395690c7f1ddf72a9f6a4b51e18380b4cd237a",
+   "outcomes": {
+    "ref-py": "034401f6b8fcabb76bce6b4f52c98bb2ffc0336f10398e576a9c4c17da99a005"
+   }
+  },
+  "v_dict": {
+   "suite": "values",
+   "case": "f406b3f125417a93d84a11dcdc77e0d9f559f2025c8027bde0eb33b8489a6208",
+   "outcomes": {
+    "ref-py": "9e1e43610b16d0be0e124f421cc3eac7beba7c0c39be3668ad556095a2248e26"
+   }
+  },
+  "v_exception": {
+   "suite": "values",
+   "case": "153e5c420748f10026caecd5a1f57f2914bfde8f9a278a8db98d7765d09afacd",
+   "outcomes": {
+    "ref-py": "29a2d670cdefbb0c468977ddda5b2554fc3b5ba5149f5e7f7f7ff1fd33beb5b7"
+   }
+  },
+  "v_float": {
+   "suite": "values",
+   "case": "d3a3d050fb056d0c9f6a73d66075e9bd93025ef04e32a4441b4eddaea3ba3065",
+   "outcomes": {
+    "ref-py": "a4f7ce5d9d650ef78a0aceac87318a20876256b537cd9dc3b975a02d2d982d72"
+   }
+  },
+  "v_function": {
+   "suite": "values",
+   "case": "34a284159e2b091b775f0fc7404be6a2bdc78195e3a8a759aaf3f7d3b1f811cb",
+   "outcomes": {
+    "ref-py": "712f0bc8d9565d97c190cef38d94f2a9557638cfe71fa63a79a5351a29dfffb8"
+   }
+  },
+  "v_namedtuple": {
+   "suite": "values",
+   "case": "bf6c15e16bfd6d2f35012b3a336c884e0b1b0ceb876c2860b1efbc50ecdac8e3",
+   "outcomes": {
+    "ref-py": "14d668f957adee5fff31258b280e46f80b47e87cf9a9e680e3a91eb40269a266"
+   }
+  },
+  "v_nan": {
+   "suite": "values",
+   "case": "a8757b8a65503291967dd647511e87726784cbad19ba17a3bdcaf993af7a4434",
+   "outcomes": {
+    "ref-py": "3af5202abaf3a8ee96f00eada3e2f1c4c6b047c12e58b9d24876c8ada8332d4e"
+   }
+  },
+  "v_none": {
+   "suite": "values",
+   "case": "6fee4d9d129307427a01aa044fe058a6f0f5093908561781f5f1d801c41ae5c1",
+   "outcomes": {
+    "ref-py": "253484bd3d62bbe41b40df9eda2a865551cbfeb73e4af6c841571ab8c3bd7b95"
+   }
+  },
+  "v_path": {
+   "suite": "values",
+   "case": "f73ef603b7b13c4db1b0b48d5c8389b80fbc4063b01e157c0b85314af424214e",
+   "outcomes": {
+    "ref-py": "6eee3da383b5f4fb5edaa02f738caf4335218611bd18192d43d26030be06179b"
+   }
+  },
+  "v_repr": {
+   "suite": "values",
+   "case": "00e105080e99e3516dbe0d7fae837691d445cb23c514a95471d6d4ee741c8248",
+   "outcomes": {
+    "ref-py": "669138fac02c028e2ea5605c1f2e8bb5e59e830c2c296137e9815d5d77e1fee7"
+   }
+  },
+  "v_sandbox_class": {
+   "suite": "values",
+   "case": "0a2efa37e1a43f59eef29ac8cc0facc4662d5e19553fdefc0033fe4409a43ddb",
+   "outcomes": {
+    "ref-py": "41a27883eead0156057fb7e17c1af91923e73347811bb5afc03651244889b1d0"
+   }
+  },
+  "v_seq": {
+   "suite": "values",
+   "case": "e60480d1a75dc43512bd6e12f89477bad148285e2aac22fb5eb07b48ada0ded2",
+   "outcomes": {
+    "ref-py": "1021aacd5a098f73f40106c22f65ceb7f9172c880e7600e3b17982e4f7595203"
+   }
+  },
+  "v_set": {
+   "suite": "values",
+   "case": "5b115249370868ce1b179a33487e9d0cf69e13b7e0ac54afc23a8a97c7ba0777",
+   "outcomes": {
+    "ref-py": "3338291d95bb281329c0f89ca6fc743670d51f5122c9e8025a04675cba84c2e9"
+   }
+  },
+  "v_text_bytes": {
+   "suite": "values",
+   "case": "f5ac51b641c8100e090db2d74e25380782e743704836531a4569ca6609b527cd",
+   "outcomes": {
+    "ref-py": "d581e0a449e3ad50f891ebeee20b77e14640f0f62328fe376a2128411e0df260"
+   }
+  },
+  "v_time": {
+   "suite": "values",
+   "case": "563df717eea80e25003ad6c0453c1f39f636746851db6652c227f231fda1841d",
+   "outcomes": {
+    "ref-py": "16e1b9b42a9157b1cc757fb7d82915bb7479de1d5a3da7e68ac5a2da3edc5cf1"
+   }
+  },
+  "v_timedelta": {
+   "suite": "values",
+   "case": "08cba2949438e0687c73362e7896b97c211da02873bac2dd00af47493de3382b",
+   "outcomes": {
+    "ref-py": "94235bff87df169f6d1a4562ff148b0b547d2a2a605411c62219c61a830e432c"
+   }
+  },
+  "v_timezone": {
+   "suite": "values",
+   "case": "60aa2e9ae7ec0f3c386fa17b87925f3029e12ab7269e2fd54ca96bdac951f8c1",
+   "outcomes": {
+    "ref-py": "ea6fbd0ea9095bd6a026b6be983ca275bbe57f7d974d492c3b7a306a16a23357"
+   }
+  },
+  "v_type": {
+   "suite": "values",
+   "case": "88533e442678f3579e60ca333f1e809b3ac9848e7be76a04bc2919ca927c67ab",
+   "outcomes": {
+    "ref-py": "366cf49f64c1ba31016492cf99245921b862d3c42cf7fb4e23e786a7d649cb06"
+   }
+  },
+  "v_type_print": {
+   "suite": "values",
+   "case": "5ce4db5069dc7130709b16e48b0f09b5114f85167eaa8813da33959ab8855849",
+   "outcomes": {
+    "ref-py": "bb84e281e560dbfe1dc2c0b1bd328ede7f157876541d503323186cb93e8003f8"
+   }
+  }
+ },
+ "probes": {
+  "abandon": {
+   "outcomes": {
+    "ref-py": "bef5148d8ff3895e1d3519171a28dd8eba65b9249f5a16ccca16345e82e82809"
+   }
+  },
+  "abortctl_future": {
+   "outcomes": {
+    "ref-py": "d703d54ffdb8acb30d5d5f535b276bee8b448ae6cde23caaeaa1ccacb6b0da96"
+   }
+  },
+  "api_boundary_uuid": {
+   "outcomes": {
+    "ref-py": "2f046ff1ccf94ea8f7d640503e812bd325020cce51a6b1309824048f6f2fea76"
+   }
+  },
+  "api_callback_files": {
+   "outcomes": {
+    "ref-py": "23c7e56c01ec7ec17591f17dc61ea789020d7bf5beb7577c1337a1169a70d508"
+   }
+  },
+  "api_compile_program": {
+   "outcomes": {
+    "ref-rust": "5064f8a15d645f5290a7c7532d25de3bb1d5839aa27957f9cb368c7b7a5b8915"
+   }
+  },
+  "api_compiled_source": {
+   "outcomes": {
+    "ref-rust": "168cef0958d052ba6587b13240d15f743a129fdc0a499cbee0bc9ad597154175"
+   }
+  },
+  "api_create_repl": {
+   "outcomes": {
+    "ref-py": "5caf03a9ab8b5fdbc6bb600b790cb844ba04085af92baadcab14b58eca1b633d"
+   }
+  },
+  "api_eager_coroutine": {
+   "outcomes": {
+    "ref-py": "cfaa45414d521d7e879da55dba57c399559114a58f4b78cb46813bc1551452ac"
+   }
+  },
+  "api_ext_args_identity": {
+   "outcomes": {
+    "ref-py": "82130b208280aa8f9f245bb7fa481c1d2bdbae9747075fbcb2e19525af5e367d"
+   }
+  },
+  "api_ext_args_values": {
+   "outcomes": {
+    "ref-py": "31130878955919c441a6199c9509ca9627e007cfb5352af95222849fc92b8050"
+   }
+  },
+  "api_ext_result_callback": {
+   "outcomes": {
+    "ref-py": "2b4e2c3693a9c4f19bde8534a717ab0bf0a12efb9733880e8dac243ed4ddf20e"
+   }
+  },
+  "api_ext_result_resume": {
+   "outcomes": {
+    "ref-py": "68cd76749b99f8bed22ac5fc010a6317a36c154160c316f26ee70d5ea40dc6dd"
+   }
+  },
+  "api_fork_session": {
+   "outcomes": {
+    "ref-py": "1fe451443b67ae89ad409064965af6b1e561932532d415add042ca4315374f32"
+   }
+  },
+  "api_futures_error": {
+   "outcomes": {
+    "ref-py": "67d933d1d45d37f5da44ee303fca03ab1dca49a386c35b6aceb3fe88aa43c483"
+   }
+  },
+  "api_futures_gather": {
+   "outcomes": {
+    "ref-py": "12f519918e07f1320f50ca9907b44b0a52b41dd2b624afec52bc87018a2614a5"
+   }
+  },
+  "api_interactive_continuation": {
+   "outcomes": {
+    "ref-rust": "de9b725119265a788390ab0ee677a8175e3e36c708353c65172a9cc2da977668"
+   }
+  },
+  "api_memory_budget": {
+   "outcomes": {
+    "ref-py": "5ba3c999cd4ccae5152533d815782f834b41cb0a4a2d00d43bb7e1e7cd2d5c02"
+   }
+  },
+  "api_recover_repl_after_error": {
+   "outcomes": {
+    "ref-py": "9a663144e5eee2b1293fb467bdff6b3108efd891947c7dd18b960619cc21ce5e"
+   }
+  },
+  "api_reset_type_checker": {
+   "outcomes": {
+    "ref-py": "0ba125e80f79ead332ac8530f9e1b97ec83832b01737bc2f342849dd0837e626"
+   }
+  },
+  "api_run_blocking": {
+   "outcomes": {
+    "ref-py": "2ba6191e735815a97060d05ae76bd446407e866dcc334f20c82a8d26d52e3c9c"
+   }
+  },
+  "api_start_program": {
+   "outcomes": {
+    "ref-py": "29e4e75232a6fd207395e57f5f00a12153fc54741886b847561ca6a6206badae"
+   }
+  },
+  "api_write_budget_feed1": {
+   "outcomes": {
+    "ref-py": "b438ad68262221ec1353d3835dccfde22e2cf543b6638a7d2c4d4d68c5b8ff7c"
+   }
+  },
+  "api_write_budget_feed2": {
+   "outcomes": {
+    "ref-py": "84b85e453dfa66e32f59261f22b3cb77b78d1a08b8df70cb1582b2479e0fc420"
+   }
+  },
+  "async_gather": {
+   "outcomes": {
+    "ref-py": "bd488db748082db16826e3472d406661d8576fd593d02d66d8dfaa462af84fdb"
+   }
+  },
+  "auto_interleave": {
+   "outcomes": {
+    "ref-py": "8716d178e033af7bdb547f599c6d163d2cc3269936fd6c8803c9ce4594503685"
+   }
+  },
+  "inputs_typed": {
+   "outcomes": {
+    "ref-py": "9aee7c5e14d0e45bef816f22ed234c085a9d08bd3fc177f03ab516b85691930c"
+   }
+  },
+  "k_function": {
+   "outcomes": {
+    "ref-py": "4acee425a7e8f42ed5ffbef535b3c90fb0f461372782a1067433ba9ff3f0d6f4"
+   }
+  },
+  "k_future": {
+   "outcomes": {
+    "ref-py": "d18395f40ffa4f67d87744ca669fa5ec3f8ba17515f9364b90dec08ccfd433aa"
+   }
+  },
+  "k_name": {
+   "outcomes": {
+    "ref-py": "8ce6197855c7035ab32cbf0012979ae1bd531d9d5ecc898a1b3d7b1ff1763443"
+   }
+  },
+  "k_os": {
+   "outcomes": {
+    "ref-py": "f5bbb739c77f1680ab1e081bd443c0c366bc3602690a38c2232ffdf86fd91647"
+   }
+  },
+  "k_os_not_handled": {
+   "outcomes": {
+    "ref-py": "32d6d9960d19c279130002b7c33c0cdf5153b8d7e736efab59a9b4299698fed2"
+   }
+  },
+  "pos_earlier_feed": {
+   "outcomes": {
+    "ref-py": "957f7e6db6e738ad2ad0159151065f047a84a18673a12bdcd97ab1cb6c806cd7"
+   }
+  },
+  "pos_eval": {
+   "outcomes": {
+    "ref-py": "67af3ce06fab319a5ae0ec7cd49ac8f1e49976747470cc164b4d103b941432e4"
+   }
+  },
+  "pos_utf8": {
+   "outcomes": {
+    "ref-py": "373e750709f3315124761d563fda41e5fc053d1c24ecfc386a566aa8e30ddd2e"
+   }
+  }
+ }
+}

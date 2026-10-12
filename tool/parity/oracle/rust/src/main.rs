@@ -6,7 +6,7 @@ use monty::{MontyRun, ReplContinuationMode, detect_repl_continuation_mode};
 use monty_types::CompileOptions;
 use serde_json::{Value, json};
 
-/// The sources the continuation probe classifies (same list as probes.dart).
+/// The sources the continuation probe classifies (same list as api_probes.dart).
 const CONTINUATION_SOURCES: [&str; 14] = [
     "x = 1",
     "def f():",

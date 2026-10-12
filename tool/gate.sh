@@ -230,6 +230,9 @@ s  upstream_pin  python3 -I tool/check_upstream_pin.py
 # The frozen capability manifest (the D1 denominator): schema, content hash and
 # baseline totals. `--online` also resolves every upstream cite.
 s  cap_manifest  python3 -I tool/check_capability_manifest.py
+# Every parity case bound to its expected outcome; oracle code and pins
+# unchanged since the outcomes were generated (tool/parity/manifest.json).
+s  parity_manif  python3 -I tool/check_parity_manifest.py
 # --deep, not the fast path. The fast path only checks that each excluded PATH
 # still exists; --deep strips the exclusions, re-runs dcm, and catches an entry
 # that names a real file and hides NOTHING -- which is how a stale exclusion
@@ -492,7 +495,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=45
+EXPECT_STEPS=46
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

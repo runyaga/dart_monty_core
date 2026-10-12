@@ -7,7 +7,7 @@ Probes cover what a single feed-and-compare case cannot: suspensions resumed by
 hand, futures, async host functions, feeding while suspended, mounts and
 callback files, session forks, the type checker. Each probe writes
 OUTDIR/<probe>/ref-py.json = {probe, engine, backend, events, runner_error};
-packages/monty_parity/lib/src/probes.dart emits the same events through
+packages/monty_parity/lib/src/api_probes.dart emits the same events through
 dart_monty_core, and tool/parity/probes_compare.py compares the two.
 
 Event vocabulary: suspend{kind,name,args,kwargs,position,pending},

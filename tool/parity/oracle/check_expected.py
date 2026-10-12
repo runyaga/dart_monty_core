@@ -7,8 +7,10 @@ Runs tool/parity/oracle/run_cases.py over every case and run_probes.py over
 every probe with the interpreter running this script (which must have the
 hash-pinned pydantic-monty from tool/upstream/requirements.lock installed),
 and, with --rust, the Rust oracle binary for the three Rust-only probes. The
-result must equal tool/parity/expected byte for byte. --write replaces the
-committed files instead (then review the diff).
+result must equal tool/parity/expected byte for byte, and
+tool/parity/manifest.json must bind every case to it. --write replaces the
+committed outcomes and rewrites the manifest in the same step (then review
+the diff and commit cases, outcomes and manifest together).
 
 The committed outcomes were generated on Linux x86_64, as CI runs it; one
 case's upstream error follows the host OS errno (b11fs_unlink_dir), so a
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import json
 import shutil
 import subprocess
 import sys
@@ -28,6 +31,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 EXPECTED = ROOT / 'tool/parity/expected'
 ORACLE = ROOT / 'tool/parity/oracle'
+sys.path.insert(0, str(ROOT / 'tool'))
+import check_parity_manifest  # noqa: E402
 
 
 def files(d: Path) -> set[str]:
@@ -65,7 +70,8 @@ def main() -> int:
             shutil.copytree(out, EXPECTED)
             if keep:
                 shutil.copytree(keep, EXPECTED, dirs_exist_ok=True)
-            print(f'wrote {len(files(EXPECTED))} expected outcomes')
+            check_parity_manifest.MANIFEST.write_text(json.dumps(check_parity_manifest.compute(), indent=1) + '\n')
+            print(f'wrote {len(files(EXPECTED))} expected outcomes and tool/parity/manifest.json')
             return 0
         want = files(EXPECTED) - (set() if a.rust else rust_outputs)
         got = files(out)
@@ -79,7 +85,7 @@ def main() -> int:
             return 1
         print(f'PASS: {len(got)} expected outcomes regenerate identically'
               + ('' if a.rust else ' (Rust-only probes not regenerated: pass --rust)'))
-        return 0
+        return check_parity_manifest.main()
 
 
 if __name__ == '__main__':

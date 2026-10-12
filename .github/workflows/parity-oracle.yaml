@@ -1,0 +1,44 @@
+name: Parity oracle
+
+# Regenerates every parity expected outcome (tool/parity/expected) from the
+# reference oracle -- pydantic-monty 1.1.0 by sha256 (tool/upstream) and
+# upstream monty at the pinned commit for three Rust-only probes -- and fails
+# on any byte of difference, or on a manifest that does not bind them.
+#
+# Called from ci.yaml when a parity input changed; also weekly and on demand.
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'   # Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    name: Expected outcomes regenerate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tool/parity/oracle/rust
+          key: parity-rust-oracle
+      - name: Install the pinned oracle
+        run: |
+          python3 -m venv /tmp/oracle
+          /tmp/oracle/bin/pip install -q --disable-pip-version-check --no-cache-dir \
+            --require-hashes --only-binary :all: --no-deps -r tool/upstream/requirements.lock
+      - name: Build the Rust oracle
+        working-directory: tool/parity/oracle/rust
+        run: cargo build --locked --release
+      - name: Expected outcomes regenerate identically
+        run: >-
+          /tmp/oracle/bin/python -I tool/parity/oracle/check_expected.py
+          --rust tool/parity/oracle/rust/target/release/parity-rust-oracle
