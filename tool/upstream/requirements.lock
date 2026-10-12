@@ -1,0 +1,35 @@
+# The reference oracle: upstream pydantic/monty 1.1.0 as published on PyPI,
+# pinned by content hash. Install ONLY with
+#
+#     pip install --require-hashes --only-binary :all: --no-deps -r tool/upstream/requirements.lock
+#
+# `pydantic-monty` is a pure-Python meta-package; its API lives in
+# `pydantic-monty-client` (CPython extension) and the engine in
+# `pydantic-monty-runtime` (the `monty` worker executable). `typing-extensions`
+# is the client's only runtime dependency.
+#
+# Hashes are the sha256 digests PyPI publishes for each file. Recorded: the
+# sdists, the platform-independent wheels, and the platform wheels for
+# CPython 3.12-3.14 on manylinux_2_28_x86_64 (CI) and macosx_11_0_arm64.
+# A platform not listed here fails the install, by design; add its hash from
+# PyPI rather than relaxing --require-hashes.
+#
+# Checked by tool/check_upstream_pin.sh (offline: shape; --online: install).
+pydantic-monty==1.1.0 \
+    --hash=sha256:51037ef7908535b49794a70494b81f32bd3d70a575600b1285a961a4ee838315 \
+    --hash=sha256:31d61d045b4779869bf09f7653e34d3fd2f52371d08b689619eb707e9dcdb282
+pydantic-monty-client==1.1.0 \
+    --hash=sha256:432326f4d519fcadbffe6b8e26465bceba03edd810551b98d909ffee8e6a6bc4 \
+    --hash=sha256:b8edf4ebde6ccd40a483d87b6889f7e19183fa7fef74ff37a3c2e4c2c427fbb3 \
+    --hash=sha256:a5eca05016900cf385c5049db6c643763ca7ab3635beb578831825638c3fa60f \
+    --hash=sha256:ed3309bbb3f8199fc014f48f63e32dee18f8c0b6f5f62fd8f88799a30c79408b \
+    --hash=sha256:34ae1937375a3542a2a40b8aff56a18ce9772988f389c7db619b6af152d1eb07 \
+    --hash=sha256:d84da5dcdf55e88b84a078ebb2a9c2b265c2f6780507a5d9697dca9eb741d0ed \
+    --hash=sha256:cb21da6e4e25d52387b49d196aa6388585f3856c04c7f5abd1129c422238638c
+pydantic-monty-runtime==1.1.0 \
+    --hash=sha256:1f6b68b078b058dcf64f53c1d0e4cd4a2d843c1bff7c9de5d21eef723be961aa \
+    --hash=sha256:7cee4303924ad44a858ec3efdde4123cadbf032cb23006a2d260c73d68748d60 \
+    --hash=sha256:ac03475cf60b3a07d7bfdb3a32c3fcfb6b026d903b536856d097001145960dc5
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
+    --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
