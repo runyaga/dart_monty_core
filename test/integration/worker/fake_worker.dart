@@ -78,6 +78,13 @@ Future<void> _handle(String scenario, pb.ParentRequest request) async {
         'exec >/dev/null; sleep 0.2; echo "$stderrLastLine" >&2',
       ], mode: ProcessStartMode.inheritStdio);
       exit(0);
+    case 'hold-stderr':
+      // Exits at once, leaving a child that holds stderr open for 6 s.
+      await Process.start('/bin/sh', [
+        '-c',
+        'exec >/dev/null; sleep 6',
+      ], mode: ProcessStartMode.inheritStdio);
+      exit(0);
     case 'env':
       stderr.writeln((Platform.environment.keys.toList()..sort()).join(','));
       await stderr.flush();

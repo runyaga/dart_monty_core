@@ -53,6 +53,9 @@ sha() { shasum -a 256 | awk '{print $1}'; }
 source_hash() {
   {
     find native/worker/src native/worker/upstream -type f -print
+    # Cargo configuration native/worker inherits, as well as its own.
+    find native/.cargo native/worker/.cargo -maxdepth 1 -type f \
+      -name 'config*' -print 2>/dev/null || true
     printf '%s\n' native/worker/Cargo.toml native/worker/Cargo.lock \
       native/worker/build.rs native/rust-toolchain.toml
   } | LC_ALL=C sort | while read -r f; do
@@ -92,11 +95,21 @@ case "$target_dir" in
   /*) ;;
   *) target_dir="$PWD/$target_dir" ;;
 esac
-(cd native/worker && CARGO_TARGET_DIR="$target_dir" \
-  cargo build --locked --release --bin dart_monty_worker)
+# The executable Cargo reports for THIS build, not a path guessed from the
+# target directory: with CARGO_BUILD_TARGET set it lands under
+# <target>/<triple>/release/, and a guess would copy, and stamp as fresh, an
+# older binary.
+built="$(cd native/worker && CARGO_TARGET_DIR="$target_dir" \
+  cargo build --locked --release --bin dart_monty_worker \
+  --message-format=json-render-diagnostics |
+  python3 -I -c 'import json, sys
+paths = [m["executable"] for m in map(json.loads, sys.stdin)
+         if m.get("reason") == "compiler-artifact" and m.get("executable")
+         and m["target"]["name"] == "dart_monty_worker"]
+sys.exit("build_worker: cargo reported no dart_monty_worker executable") if len(paths) != 1 else print(paths[0])')"
 
 mkdir -p "$(dirname "$dest")"
-cp "$target_dir/release/$exe" "$dest"
+cp "$built" "$dest"
 chmod +x "$dest"
 stamp_line > "$stamp"
 echo "build_worker: $dest"

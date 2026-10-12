@@ -35,15 +35,10 @@ final class ProcessChannel implements MontyChannel {
     : _events = _EventStream(
         _process.stdout,
         onDesync: () => _process.kill(ProcessSignal.sigkill),
-      ) {
+      ),
+      _stderr = _ByteTail(_process.stderr, 4096) {
     _live.add(this);
     unawaited(_reapOnExit());
-    // Always drained: a worker blocks once its stderr pipe fills.
-    _process.stderr.listen(
-      _stderr.add,
-      onDone: _stderr.end,
-      onError: (Object _) => _stderr.end(),
-    );
     unawaited(_absorbFailure(_process.stdin.done));
   }
 
@@ -54,9 +49,8 @@ final class ProcessChannel implements MontyChannel {
   /// the kill's signal.
   static const Duration fatalExitGrace = Duration(milliseconds: 100);
 
-  /// How long a crash report waits, after the exit code, for the rest of
-  /// stderr: the exit code can arrive before the last of the worker's
-  /// output, and a process that inherited the pipe can hold it open.
+  /// How long a crash report or [close] waits, after the exit code, for the
+  /// rest of stderr before it stops listening.
   static const Duration stderrDrainGrace = Duration(seconds: 1);
 
   /// How long [close] waits for the worker to exit after `Shutdown`.
@@ -69,7 +63,7 @@ final class ProcessChannel implements MontyChannel {
 
   final Process _process;
   final _EventStream _events;
-  final _stderr = _ByteTail(4096);
+  final _ByteTail _stderr;
   MontyCrashedError? _crash;
   bool _killed = false;
   bool _closed = false;
@@ -195,8 +189,7 @@ final class ProcessChannel implements MontyChannel {
       (_, workerOomExitCode) => CrashCause.outOfMemory,
       _ => CrashCause.vanished,
     };
-    // A pipe still held open after the grace leaves the tail as it stands.
-    await _stderr.ended.timeout(stderrDrainGrace, onTimeout: () => null);
+    await _stderr.drain(stderrDrainGrace);
     final tail = _stderr.text;
 
     return _crash ??= MontyCrashedError(
@@ -238,6 +231,7 @@ final class ProcessChannel implements MontyChannel {
     }
     await _exitWithin(shutdownGrace);
     _events.cancel();
+    await _stderr.drain(stderrDrainGrace);
   }
 
   Future<void> _reapOnExit() async {
@@ -301,7 +295,7 @@ final class WorkerExecutable extends WorkerLaunch {
 /// The worker's stdout as decoded events, buffered until a turn reads them.
 final class _EventStream {
   _EventStream(Stream<List<int>> bytes, {required this.onDesync}) {
-    bytes.listen(_add, onDone: _end, onError: _fail);
+    _subscription = bytes.listen(_add, onDone: _end, onError: _fail);
   }
 
   /// Called once if the stream stops being readable as frames.
@@ -309,6 +303,7 @@ final class _EventStream {
 
   final _decoder = FrameDecoder();
   final _queue = Queue<pb.ChildEvent>();
+  StreamSubscription<List<int>>? _subscription;
   Completer<void>? _wake;
   Object? _error;
   bool _ended = false;
@@ -333,10 +328,13 @@ final class _EventStream {
     }
   }
 
-  /// Drops buffered events and ends any wait in [next].
+  /// Drops buffered events, ends any wait in [next] and stops listening, so
+  /// a pipe some other process holds open cannot keep this one alive.
   void cancel() {
     _cancelled = true;
     _queue.clear();
+    unawaited(_subscription?.cancel());
+    _subscription = null;
     _wakeUp();
   }
 
@@ -392,16 +390,44 @@ final class _EventStream {
   }
 }
 
-/// The last [capacity] bytes of a byte stream.
+/// The last [capacity] bytes of a byte stream, which it always drains: a
+/// worker blocks once its stderr pipe fills.
 final class _ByteTail {
-  _ByteTail(this.capacity);
+  _ByteTail(Stream<List<int>> bytes, this.capacity) {
+    _subscription = bytes.listen(
+      _add,
+      onDone: _end,
+      onError: (Object _) => _end(),
+    );
+  }
 
   final int capacity;
   final _chunks = ListQueue<List<int>>();
   final _ended = Completer<void>();
+  StreamSubscription<List<int>>? _subscription;
   int _length = 0;
 
-  void add(List<int> chunk) {
+  /// Waits up to [grace] for the stream to end, then stops listening.
+  ///
+  /// The exit code can arrive before the last of the output, so a reader
+  /// waits; a process that inherited the pipe can hold it open forever, so
+  /// the wait is bounded, and the subscription is cancelled so it cannot
+  /// keep this process alive.
+  Future<void> drain(Duration grace) async {
+    await _ended.future.timeout(grace, onTimeout: () => null);
+    await _subscription?.cancel();
+    _subscription = null;
+  }
+
+  /// The tail as text, trimmed; a cut multi-byte character becomes U+FFFD.
+  String get text {
+    final bytes = [for (final chunk in _chunks) ...chunk];
+    final start = math.max(0, bytes.length - capacity);
+
+    return utf8.decode(bytes.sublist(start), allowMalformed: true).trim();
+  }
+
+  void _add(List<int> chunk) {
     _chunks.add(chunk);
     _length += chunk.length;
     for (;;) {
@@ -411,19 +437,7 @@ final class _ByteTail {
     }
   }
 
-  /// Completes once the stream has ended.
-  Future<void> get ended => _ended.future;
-
-  /// Marks the stream ended. Idempotent.
-  void end() {
+  void _end() {
     if (!_ended.isCompleted) _ended.complete();
-  }
-
-  /// The tail as text, trimmed; a cut multi-byte character becomes U+FFFD.
-  String get text {
-    final bytes = [for (final chunk in _chunks) ...chunk];
-    final start = math.max(0, bytes.length - capacity);
-
-    return utf8.decode(bytes.sublist(start), allowMalformed: true).trim();
   }
 }

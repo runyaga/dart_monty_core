@@ -174,6 +174,22 @@ void main() {
       testOn: '!windows',
     );
 
+    test(
+      'a pipe held open by a descendant does not keep this process alive',
+      () async {
+        final watch = Stopwatch()..start();
+        final probe = await Process.run(Platform.resolvedExecutable, [
+          File('test/integration/worker/exit_probe.dart').absolute.path,
+          'hold-stderr',
+        ]);
+        expect(probe.stdout, contains('crashed'));
+        expect(probe.exitCode, 0);
+        // The descendant holds stderr for 6 s; the drain gives up after 1 s.
+        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+      },
+      testOn: '!windows',
+    );
+
     test('a crash is final: every later turn throws the same error', () async {
       final channel = await _spawn('oom');
       final crashes = [
