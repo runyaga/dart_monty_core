@@ -233,8 +233,8 @@
     },
     "lib/src/platform/monty_value_collections.dart": {
       "found": 133,
-      "hit": 120,
-      "pct": 90.23
+      "hit": 128,
+      "pct": 96.24
     },
     "lib/src/platform/monty_value_datetime.dart": {
       "found": 183,
@@ -243,8 +243,8 @@
     },
     "lib/src/platform/monty_value_scalars.dart": {
       "found": 107,
-      "hit": 101,
-      "pct": 94.39
+      "hit": 107,
+      "pct": 100.0
     },
     "lib/src/platform/monty_value_structured.dart": {
       "found": 213,
@@ -331,10 +331,30 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/src/worker/arena_reader.dart": {
+      "found": 69,
+      "hit": 67,
+      "pct": 97.1
+    },
+    "lib/src/worker/arena_writer.dart": {
+      "found": 66,
+      "hit": 66,
+      "pct": 100.0
+    },
     "lib/src/worker/frame.dart": {
       "found": 65,
       "hit": 65,
       "pct": 100.0
+    },
+    "lib/src/worker/monty_channel.dart": {
+      "found": 8,
+      "hit": 1,
+      "pct": 12.5
+    },
+    "lib/src/worker/proto_session.dart": {
+      "found": 172,
+      "hit": 162,
+      "pct": 94.19
     },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
@@ -343,8 +363,8 @@
     }
   },
   "total": {
-    "found": 4102,
-    "hit": 2824,
-    "pct": 68.84
+    "found": 4417,
+    "hit": 3134,
+    "pct": 70.95
   }
 }
