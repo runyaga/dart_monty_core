@@ -64,6 +64,14 @@
   the monty crates' crates.io checksums, and rejects `[patch]`/`[replace]`,
   path/git dependencies and cargo-config source overrides. The protoc plugin
   is compiled from a committed lockfile (`tool/proto_gen/pubspec.lock`).
+- The committed wasm no longer embeds build-machine paths:
+  `lib/assets/dart_monty_core_native.wasm` carried the builder's
+  absolute cargo paths in its panic locations. Both wasm recipes now remap
+  them through `tool/rust_remap.sh` (the in-process one lives in the new
+  `tool/build_native_wasm.sh`, and both are hashed into the asset
+  provenance), and `tool/check_asset_freshness.sh` fails if any
+  `lib/assets/*.wasm` contains a macOS or Linux home-directory path.
+  Behaviour is unchanged.
 
 ## 0.23.1
 
