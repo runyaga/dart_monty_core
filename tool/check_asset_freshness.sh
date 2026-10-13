@@ -88,20 +88,26 @@ HOME_ROOTS=(Users home root)
 #              :line) starts with a prefix the recipe remaps to
 #              (tool/rust_remap.sh: /cargo/, /rustup/, /src/) or rustc's own
 #              (/rustc/<hash>/, /rust/deps/). Catches a toolchain outside any
-#              home, such as CARGO_HOME=/opt/rust/cargo, and drive letters.
+#              home, such as CARGO_HOME=/opt/rust/cargo, and Windows paths
+#              (drive letter with either slash, or UNC).
 #   layout     every cargo-home layout marker (registry/src/, git/checkouts/,
 #              either slash) sits directly under /cargo/.
 #
-# A path starts at / or a drive letter that follows a delimiter (NUL, space,
+# A path starts at /, a drive letter or \\ after a delimiter (NUL, space,
 # quote, bracket ...) and runs to the next one; bytes >= 0x80 are path bytes,
 # so a non-ASCII directory name does not split a path in two.
+#
+# Known limit: a toolchain directory whose name contains a space, outside every
+# HOME_ROOTS entry, splits at the space and can pass. The layout rule cannot be
+# stricter about what precedes /cargo/: tracing metadata concatenates a module
+# path and a file name with no delimiter (`...::arguments/cargo/registry/...`).
 leaked_paths() {
   python3 -I - "${HOME_ROOTS[@]}" <<'PY'
 import glob, re, sys
 deny = [s for r in sys.argv[1:] for s in (f"/{r}/".encode(), f"\\{r}\\".encode())]
 allowed = (b"/cargo/", b"/rustup/", b"/src/", b"/rustc/", b"/rust/deps/")
 stop = rb"\x00-\x20\x7f\"'`()\[\]<>{},;="
-path = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:\\)[^" + stop + rb"]+")
+path = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:[/\\]|\\\\)[^" + stop + rb"]+")
 rust_src = re.compile(rb"\.rs(?::|$)")
 marker = re.compile(rb"(?:registry|git)[/\\](?:src|checkouts)[/\\]")
 rc = 0
