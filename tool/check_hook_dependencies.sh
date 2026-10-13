@@ -57,6 +57,22 @@ need() {  # need <pattern> <what it guards>
   fi
 }
 
+# need_in <function> <pattern> <what>: like `need`, but only inside the named
+# top-level function. Two functions now declare dependencies (_declareInputs
+# for native/, _declareWorkerInputs for native/worker/), so a whole-file match
+# for a statement they share is satisfied by either one, and deleting it from
+# the other stays green (found in review, by mutation).
+fn_body() { printf '%s\n' "$CODE" | awk -v h="void $1(" 'index($0, h) == 1 {f=1} f {print} f && /^}/ {exit}'; }
+need_in() {
+  if fn_body "$1" | grep -qF "$2"; then
+    echo "  ok  $1 declares $3"
+  else
+    echo "FAIL: $1 in $HOOK no longer declares $3"
+    echo "      missing: $2"
+    FAIL=1
+  fi
+}
+
 # The four fixed inputs.
 # THE LIST IS A JUDGEMENT, SO IT IS WRITTEN DOWN AS ONE. native/ holds eight
 # tracked config files and only these affect the BUILT ARTEFACT:
@@ -78,9 +94,9 @@ done
 
 # The .rs traversal -- the one whose removal was measured to serve a stale
 # dylib. Both halves are required: walking src/ and ADDING what it finds.
-need "srcDir.listSync(recursive: true)" "a recursive walk of native/src/"
-need "deps.add(e.uri)" "each .rs file found by that walk"
-need "output.dependencies.addAll(deps)" "the collected list to the runner"
+need_in _declareInputs "srcDir.listSync(recursive: true)" "a recursive walk of native/src/"
+need_in _declareInputs "deps.add(e.uri)" "each .rs file found by that walk"
+need_in _declareInputs "output.dependencies.addAll(deps)" "the collected list to the runner"
 
 # `native/.test-hooks` must be declared ONLY when it exists. Declaring it
 # unconditionally was a REGRESSION: the runner records an absent declared
@@ -105,20 +121,13 @@ fi
 need "input.userDefines['build_worker']" "the build_worker opt-in read"
 need "if (_wantsWorker(input)) {" "the worker build behind that opt-in"
 for f in Cargo.toml Cargo.lock build.rs; do
-  need "workerDir.resolve('$f')" "native/worker/$f"
+  need_in _declareWorkerInputs "workerDir.resolve('$f')" "native/worker/$f"
 done
-need "const ['src/', 'upstream/']" "a walk of native/worker/src and upstream/"
-need "_declareWorkerInputs(output, workerDir);" "the worker's inputs to the runner"
-# ...and that function itself must hand its list to the runner. A whole-file
-# match cannot see this: _declareInputs's own addAll satisfies it, so the
-# worker's could be deleted with this check still green (found in review).
-WORKER_DECL=$(printf '%s\n' "$CODE" | awk '/^void _declareWorkerInputs\(/{f=1} f{print} f&&/^}/{exit}')
-if printf '%s' "$WORKER_DECL" | grep -qF "output.dependencies.addAll(deps);"; then
-  echo "  ok  _declareWorkerInputs passes its list to the runner"
-else
-  echo "FAIL: _declareWorkerInputs no longer calls output.dependencies.addAll(deps)"
-  FAIL=1
-fi
+need_in _declareWorkerInputs "const ['src/', 'upstream/']" "a walk of native/worker/src and upstream/"
+need_in _declareWorkerInputs "dir.listSync(recursive: true)" "a recursive walk of each"
+need_in _declareWorkerInputs "deps.add(e.uri)" "each .rs file found by that walk"
+need_in _declareWorkerInputs "output.dependencies.addAll(deps)" "the collected list to the runner"
+need "_declareWorkerInputs(output, workerDir);" "the worker's inputs, after its build"
 # Exactly one call site of the worker build, and it is the gated one: a
 # second, ungated call would build it for every consumer.
 WORKER_CALLS=$(printf '%s' "$CODE" | grep -cF "await _buildWorker(")
