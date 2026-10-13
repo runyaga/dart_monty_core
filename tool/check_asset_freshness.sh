@@ -81,22 +81,29 @@ worker_source_hash() {
 HOME_ROOTS=(Users home root)
 
 # Committed wasm that embeds a build-machine absolute path. Byte-level, so it
-# sees panic-location strings inside data segments. Two rules:
+# sees panic-location and log strings inside data segments. Three rules:
 #
 #   denylist   no HOME_ROOTS directory anywhere, in / or \ form.
-#   allowlist  every absolute Rust source path must start with a prefix the
-#              recipe remaps to (tool/rust_remap.sh: /cargo/, /rustup/, /src/)
-#              or rustc's own (/rustc/<hash>/, /rust/deps/). This catches a
-#              toolchain outside any home, such as CARGO_HOME=/opt/rust/cargo,
-#              and drive-letter paths.
+#   allowlist  every absolute path naming a Rust source file (.rs, optionally
+#              :line) starts with a prefix the recipe remaps to
+#              (tool/rust_remap.sh: /cargo/, /rustup/, /src/) or rustc's own
+#              (/rustc/<hash>/, /rust/deps/). Catches a toolchain outside any
+#              home, such as CARGO_HOME=/opt/rust/cargo, and drive letters.
+#   layout     every cargo-home layout marker (registry/src/, git/checkouts/,
+#              either slash) sits directly under /cargo/.
 #
-# rustc stores panic-location file names NUL-terminated, so a "path" is a run
-# of printable bytes that ends in .rs and starts with / or a drive letter.
+# A path starts at / or a drive letter that follows a delimiter (NUL, space,
+# quote, bracket ...) and runs to the next one; bytes >= 0x80 are path bytes,
+# so a non-ASCII directory name does not split a path in two.
 leaked_paths() {
   python3 -I - "${HOME_ROOTS[@]}" <<'PY'
 import glob, re, sys
 deny = [s for r in sys.argv[1:] for s in (f"/{r}/".encode(), f"\\{r}\\".encode())]
 allowed = (b"/cargo/", b"/rustup/", b"/src/", b"/rustc/", b"/rust/deps/")
+stop = rb"\x00-\x20\x7f\"'`()\[\]<>{},;="
+path = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:\\)[^" + stop + rb"]+")
+rust_src = re.compile(rb"\.rs(?::|$)")
+marker = re.compile(rb"(?:registry|git)[/\\](?:src|checkouts)[/\\]")
 rc = 0
 for f in sorted(glob.glob("lib/assets/*.wasm")):
     try:
@@ -105,14 +112,16 @@ for f in sorted(glob.glob("lib/assets/*.wasm")):
         print(f"FAIL: cannot read {f}: {e}")
         rc = 1
         continue
-    hits = sum(data.count(d) for d in deny)
-    paths = [t for t in re.split(rb"[^\x20-\x7e]+", data) if t.endswith(b".rs")
-             and (t.startswith(b"/") or re.match(rb"[A-Za-z]:[\\/]", t))]
-    bad = [t for t in paths if not t.startswith(allowed)]
-    if hits or bad:
-        print(f"FAIL: {f} embeds build-machine absolute paths: {hits} under a "
-              f"home-directory root, {len(bad)} of {len(paths)} source paths "
-              "outside the remapped prefixes.")
+    homes = sum(data.count(d) for d in deny)
+    srcs = [p.group() for p in path.finditer(data) if rust_src.search(p.group())]
+    outside = sum(1 for p in srcs if not p.startswith(allowed))
+    layout = sum(1 for m in marker.finditer(data)
+                 if data[max(0, m.start() - 7):m.start()] != b"/cargo/")
+    if homes or outside or layout:
+        print(f"FAIL: {f} embeds build-machine absolute paths: {homes} under a "
+              f"home-directory root, {outside} of {len(srcs)} Rust source paths "
+              f"outside the remapped prefixes, {layout} cargo-home paths not "
+              "under /cargo/.")
         rc = 1
 if rc:
     print("  Rebuild through the recipe, which remaps them: bash tool/prebuild.sh")
