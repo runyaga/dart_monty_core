@@ -17,14 +17,14 @@
     "lib/src/wasm/wasm_bindings.dart": 1,
     "lib/src/wasm/wasm_bindings_js.dart": 1,
     "lib/src/wasm/wasm_core_bindings.dart": 2,
-    "lib/src/worker/monty_pool.dart": 2
+    "lib/src/worker/monty_pool.dart": 4
   },
   "by_metric": {
     "cyclomatic-complexity": 5,
     "lines-of-code": 11,
     "maximum-nesting-level": 1,
     "number-of-methods": 12,
-    "number-of-parameters": 4
+    "number-of-parameters": 6
   },
-  "total": 33
+  "total": 35
 }
