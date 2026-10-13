@@ -47,6 +47,13 @@
   surface as a typed `MontyCrashedError`, after which a fresh worker must
   answer. `PARITY_PIN` is now one workflow-level value, shared with the
   `parity` job.
+- CI's `parity-e0` job also asserts the pinned parity suite's worker value
+  rows: the value cases run through the worker on vm, dart2js and dart2wasm.
+  Every pre-cutover case must match upstream. Each recorded divergence must
+  differ exactly as recorded: an exception value with no argument, and a
+  `KeyError` repr under a newer Unicode table. The cutover cases (complex
+  values, file positions above 2^53) must run, and each negative control
+  must turn a match into a difference. `PARITY_PIN` moves to that suite.
 - Internal self-relaunch for `dart build cli` apps: the app runs a copy of
   itself as its worker, served by a worker library the build hook bundles.
   The hook builds that library ONLY when the root package opts in with
