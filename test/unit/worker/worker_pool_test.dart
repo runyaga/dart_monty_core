@@ -248,6 +248,49 @@ void main() {
       await a.release();
     });
 
+    test('a factory that throws gives its slot back', () async {
+      var calls = 0;
+      SpawnHandle open() {
+        if (calls++ == 0) throw UnsupportedError('no channel here');
+
+        return starts.open();
+      }
+
+      final p = await WorkerPool.start(
+        const PoolOptions(minProcesses: 0, maxProcesses: 1),
+        open,
+      );
+      addTearDown(p.close);
+      await expectLater(p.acquire(), throwsUnsupportedError);
+      expect(p.liveWorkers, 0);
+      final [lease] = await acquireEach(p, 1);
+      await lease.release();
+    });
+
+    test(
+      'a factory that throws during start cancels what it started',
+      () async {
+        starts = FakeStarts(auto: false);
+        var calls = 0;
+        SpawnHandle open() {
+          if (calls++ == 1) throw UnsupportedError('no channel here');
+
+          return starts.open();
+        }
+
+        await expectLater(
+          WorkerPool.start(
+            const PoolOptions(minProcesses: 2, maxProcesses: 2),
+            open,
+          ),
+          throwsUnsupportedError,
+        );
+        await pump();
+        final first = starts.only;
+        expect(first.cancelled, isTrue);
+      },
+    );
+
     test('a failed start gives its slot back', () async {
       starts = FakeStarts(auto: false);
       final p = await pool(const PoolOptions(minProcesses: 0, maxProcesses: 1));

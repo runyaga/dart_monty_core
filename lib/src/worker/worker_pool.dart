@@ -163,7 +163,7 @@ final class WorkerPool {
   /// Starts [count] workers; if one fails, cancels the rest, closes the
   /// ready ones, and rethrows the first failure.
   Future<List<MontyChannel>> _startAll(int count) async {
-    final handles = [for (var i = 0; i < count; i++) _open()];
+    final handles = _openEach(_open, count);
     final waiting = {...handles};
     final ready = <MontyChannel>[];
     final closing = <Future<void>>[];
@@ -202,10 +202,11 @@ final class WorkerPool {
   /// Starts a worker into a slot already reserved, releasing the slot if
   /// the start fails or the pool closes meanwhile.
   Future<MontyChannel> _spawnOne() async {
-    final handle = _open();
-    _starting.add(handle);
+    SpawnHandle? handle;
     final MontyChannel channel;
     try {
+      handle = _open();
+      _starting.add(handle);
       channel = await _ready(handle);
     } on Object {
       _releaseSlot();
@@ -318,6 +319,24 @@ final class PoolOptions {
 }
 
 StateError _closedError() => StateError('the monty pool is closed');
+
+/// [count] starts from [open]; if [open] throws, cancels the ones already
+/// made and rethrows.
+List<SpawnHandle> _openEach(OpenChannel open, int count) {
+  final handles = <SpawnHandle>[];
+  try {
+    for (var i = 0; i < count; i++) {
+      handles.add(open());
+    }
+  } on Object {
+    for (final handle in handles) {
+      handle.cancel();
+    }
+    rethrow;
+  }
+
+  return handles;
+}
 
 final class _Worker {
   _Worker(this.id, this.channel);

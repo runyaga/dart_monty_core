@@ -366,6 +366,22 @@ void main() {
     });
   });
 
+  test('a request the worker cannot read is a crash, not a hang', () async {
+    // A "worker" that closes its stdin at once and keeps stdout open.
+    final channel = await ProcessChannel.spawn(
+      const WorkerExecutable(
+        '/bin/sh',
+        args: ['-c', 'exec 0<&-; exec /bin/sleep 30'],
+      ),
+    );
+    addTearDown(channel.close);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await expectLater(
+      channel.turn(_configure).timeout(const Duration(seconds: 15)),
+      throwsA(isA<MontyCrashedError>()),
+    );
+  });
+
   group('bounded read-ahead', () {
     const limit = ProcessChannel.readAheadLimit;
 

@@ -140,6 +140,7 @@ final class ProcessChannel implements MontyChannel {
       final sending = isAlive && _added(stdin, frame)
           ? _flushed(stdin)
           : Future.value(false);
+      unawaited(_endOutputIfUnsent(sending, _events));
       // Read while the request is still being written: a worker paused on
       // a full stdout reads no stdin until the parent reads again, so a
       // request larger than the pipe would otherwise never be sent. A
@@ -277,6 +278,13 @@ Map<String, String> workerEnvironment({
   return {
     if (isWindows && systemRoot != null) 'SystemRoot': systemRoot,
   };
+}
+
+/// Ends [events] (after the usual drain grace) if [sending] fails: a worker
+/// that cannot read its request may still hold stdout open, and the turn
+/// reading it would otherwise wait forever.
+Future<void> _endOutputIfUnsent(Future<bool> sending, EventQueue events) async {
+  if (!await sending) await events.endWithin(ProcessChannel.pipeDrainGrace);
 }
 
 /// Whether [frame] could be added to [stdin]; false once it is closed.
