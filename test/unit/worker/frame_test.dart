@@ -188,12 +188,16 @@ void main() {
     test('a frame completes on the chunk that carries its last byte', () {
       final decoder = FrameDecoder();
       final frame = Frame.wrap([10, 20, 30]);
-      expect(decoder.add(frame.sublist(0, 6)), isEmpty);
+      expect(decoder.add(frame.sublist(0, 2)), isEmpty);
+      expect(decoder.inFlightLength, 2, reason: 'prefix not yet read');
+      expect(decoder.add(frame.sublist(2, 6)), isEmpty);
       expect(decoder.pendingBytes, 6);
+      expect(decoder.inFlightLength, 7, reason: 'prefix and whole body');
       expect(decoder.add(frame.sublist(6)), [
         [10, 20, 30],
       ]);
       expect(decoder.pendingBytes, 0);
+      expect(decoder.inFlightLength, 0);
     });
 
     test('a decoded message survives a one-byte-at-a-time stream', () {

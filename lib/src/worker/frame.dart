@@ -166,6 +166,16 @@ final class FrameDecoder {
   int get pendingBytes =>
       _buffered + (_bodyLength == null ? 0 : Frame.prefixLength);
 
+  /// The whole length of the frame not yet complete, prefix included, once
+  /// its prefix has arrived; until then, the bytes of the prefix received.
+  ///
+  /// Zero means the stream is at a frame boundary.
+  int get inFlightLength {
+    final body = _bodyLength;
+
+    return body == null ? _buffered : Frame.prefixLength + body;
+  }
+
   /// Feeds [chunk] and returns every frame body it completes, in order.
   ///
   /// An empty frame yields an empty body, which decodes to the default

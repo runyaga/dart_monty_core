@@ -481,9 +481,12 @@ final class EventQueue {
   Future<void> endWithin(Duration grace) async {
     if (!_draining) {
       _draining = true;
-      // Relative to the queue: an oversized frame can hold it past the
-      // limit, and the frames behind it in the pipe must still arrive.
-      _bound = math.max(_bound, _readAhead) + drainAllowance;
+      // Relative to the queue, and to the frame in flight, which completes
+      // whatever the bound: either can hold the queue past the limit, and
+      // the frames behind them in the pipe must still arrive.
+      _bound =
+          math.max(_bound, _readAhead + _decoder.inFlightLength) +
+          drainAllowance;
     }
     if (_readAhead < _bound) _resume();
     await _closed.future.timeout(grace, onTimeout: () => null);

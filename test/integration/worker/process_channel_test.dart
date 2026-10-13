@@ -581,6 +581,34 @@ void main() {
       },
     );
 
+    test('draining with a large frame half-received still reads the last '
+        'frames', () async {
+      final pipe = StreamController<List<int>>();
+      final drained = EventQueue(
+        pipe.stream,
+        limit: limit,
+        onDesync: () => desyncs++,
+        drainAllowance: 100,
+      );
+      addTearDown(drained.cancel);
+      final big = frame('c' * 5000);
+      // Over the limit, with the large frame only begun.
+      pipe.add([...frame('a' * 600), ...frame('b' * 600), ...big.take(100)]);
+      await pump();
+      final ending = drained.endWithin(const Duration(milliseconds: 500));
+      // The worker had written the rest, then its last frame, then exited.
+      pipe.add(big.skip(100).toList());
+      await pump();
+      pipe.add(frame('fatal'));
+      await pump();
+      unawaited(pipe.close());
+      await ending;
+      for (final text in ['a' * 600, 'b' * 600, 'c' * 5000, 'fatal']) {
+        final event = await drained.next() ?? fail('lost the frame $text');
+        expect(onlyItem(event.print.segments).text, text);
+      }
+    });
+
     test('pauses at the limit when no frame is part-received', () async {
       bytes.add(frame('a' * 600));
       await pump();
