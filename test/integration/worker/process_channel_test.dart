@@ -462,6 +462,21 @@ void main() {
       },
     );
 
+    test('a descendant writing after the worker exits stays bounded', () async {
+      final channel = await _spawn('exit-leaving-writer');
+      expect(
+        (await channel.turn(_configure)).whichKind(),
+        pb.ChildEvent_Kind.ok,
+      );
+      await channel.exitCode;
+      // Draining after the exit reads what the pipe held, no more.
+      await settled(channel);
+      expect(
+        channel.readAhead.peak,
+        lessThan(limit + ProcessChannel.drainAllowance + (1 << 20)),
+      );
+    });
+
     test('a frame larger than the limit completes; later ones wait', () async {
       final channel = await _spawn('big-frame');
       expect(

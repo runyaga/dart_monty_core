@@ -41,6 +41,7 @@ const bigFrameSuffixPrints = 32;
 
 Future<void> main(List<String> args) async {
   var scenario = args.firstOrNull ?? 'serve';
+  if (scenario == 'writer') return _writeAfterParentExits();
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
@@ -155,6 +156,16 @@ Future<String> _handle(String scenario, pb.ParentRequest request) async {
       await _send(_completeNone);
 
       return 'idle';
+    case 'exit-leaving-writer':
+      // Ok, then exit, leaving a descendant that inherited stdout and keeps
+      // writing valid Prints after this process is gone.
+      await _send(pb.ChildEvent(ok: pb.Ok()));
+      await Process.start(Platform.resolvedExecutable, [
+        Platform.script.toFilePath(),
+        'writer',
+      ], mode: ProcessStartMode.inheritStdio);
+      await Future<void>.delayed(const Duration(seconds: 2));
+      exit(0);
     case 'idle':
       // Everything was sent up front; only Shutdown is answered.
       if (request.whichKind() == pb.ParentRequest_Kind.shutdown) exit(0);
@@ -187,6 +198,16 @@ Future<void> _serve(
     default:
       await _send(pb.ChildEvent(ok: pb.Ok()));
   }
+}
+
+/// The `writer` descendant: 32 MiB of Prints on the inherited stdout,
+/// reading nothing, and gone after 20 s whatever happened.
+Future<void> _writeAfterParentExits() async {
+  Timer(const Duration(seconds: 20), () => exit(0));
+  for (var i = 0; i < floodPrints; i++) {
+    await _send(_numbered(i, floodPrintLength));
+  }
+  exit(0);
 }
 
 final pb.ChildEvent _completeNone = pb.ChildEvent(
