@@ -433,6 +433,44 @@ void main() {
       expect(await first, const MontyNone());
     });
 
+    test('a queued feed fails once the running feed suspends', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'held\n')]),
+          _lookup('f'),
+        ]),
+        answer([_call('f')]),
+        answer([_int(1)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final gate = Completer<void>();
+      final first = session.feedRun(
+        'print("held")\nf()',
+        externals: {'f': (args, kwargs) => const MontyNone()},
+        printCallback: (_, _) => gate.future,
+      );
+      final queued = expectLater(
+        session.feedRun('2', printCallback: _ignore),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('suspension'),
+          ),
+        ),
+      );
+      await pumpEventQueue();
+      // The first feed's turn ends in a suspension: the queued feed gets
+      // the turn and refuses, as upstream's checkout does.
+      gate.complete();
+      await queued;
+      expect(await first, const MontyInt(1));
+      expect(ch.remaining, 0);
+    });
+
     test('a queued feed fails as finished when the session closes', () async {
       final ch = ScriptedChannel([
         _configureOk,
