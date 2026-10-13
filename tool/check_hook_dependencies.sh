@@ -109,6 +109,16 @@ for f in Cargo.toml Cargo.lock build.rs; do
 done
 need "const ['src/', 'upstream/']" "a walk of native/worker/src and upstream/"
 need "_declareWorkerInputs(output, workerDir);" "the worker's inputs to the runner"
+# ...and that function itself must hand its list to the runner. A whole-file
+# match cannot see this: _declareInputs's own addAll satisfies it, so the
+# worker's could be deleted with this check still green (found in review).
+WORKER_DECL=$(printf '%s\n' "$CODE" | awk '/^void _declareWorkerInputs\(/{f=1} f{print} f&&/^}/{exit}')
+if printf '%s' "$WORKER_DECL" | grep -qF "output.dependencies.addAll(deps);"; then
+  echo "  ok  _declareWorkerInputs passes its list to the runner"
+else
+  echo "FAIL: _declareWorkerInputs no longer calls output.dependencies.addAll(deps)"
+  FAIL=1
+fi
 # Exactly one call site of the worker build, and it is the gated one: a
 # second, ungated call would build it for every consumer.
 WORKER_CALLS=$(printf '%s' "$CODE" | grep -cF "await _buildWorker(")

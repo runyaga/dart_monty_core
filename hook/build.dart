@@ -174,9 +174,12 @@ Future<void> _buildWorker(
       'cargo build succeeded but $libName not found in target directories.',
     );
   }
+  // Its own directory: with native/.test-hooks present the in-process
+  // library goes to `<arch>-test-hooks/`, so `<arch>/` may not exist yet.
   final outFile = File.fromUri(
     input.outputDirectoryShared.resolve('$arch/$libName'),
   );
+  outFile.parent.createSync(recursive: true);
   _publishAtomically(built, outFile);
   output.assets.code.add(
     CodeAsset(
