@@ -40,7 +40,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: aaca805b36db7d5fdbd4bbefeb4a3565c3c46f44
+  PARITY_PIN: fb7d82b940f8e699be8b6dc9d308f2da6be7bb02
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
@@ -370,7 +370,10 @@ jobs:
   # not counted). Each run also runs the suite's worker crash tests on that
   # backend: deadline kill, native stack overflow, wasm trap under JSPI and
   # the forced fallback, each a typed MontyCrashedError and then a fresh
-  # worker answering.
+  # worker answering. The same runs carry the suite's worker value rows
+  # (rows.json `worker`): every pre-cutover case must MATCH, each recorded
+  # divergence must differ exactly as recorded, the cutover cases must run,
+  # and each negative control must turn a match into a difference.
   parity-e0:
     name: Parity E0 through the worker (pinned dart_monty_parity; vm, dart2js, dart2wasm)
     needs: [changes, worker-rust]
@@ -426,9 +429,14 @@ jobs:
         run: |
           python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-e0 \
             --json /tmp/parity-e0/e0.json --markdown /tmp/parity-e0/e0.md
-      - name: Publish the E0 table
+      - name: Assert the worker value rows (every pre-cutover case MATCH on every backend)
         if: success() || failure()
-        run: '[ -f /tmp/parity-e0/e0.md ] && cat /tmp/parity-e0/e0.md >> "$GITHUB_STEP_SUMMARY" || true'
+        run: |
+          python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-worker \
+            --json /tmp/parity-e0/worker.json --markdown /tmp/parity-e0/worker.md
+      - name: Publish the E0 and worker tables
+        if: success() || failure()
+        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: success() || failure()
         with:
