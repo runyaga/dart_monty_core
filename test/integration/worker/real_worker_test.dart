@@ -21,6 +21,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '../../unit/worker/_display_cases.dart';
 import '../../unit/worker/_kind_round_trips.dart';
 import '_worker_harness.dart';
 
@@ -207,6 +208,12 @@ void main() {
   });
 
   kindRoundTripTests('vm', () async {
+    final channel = await _configured();
+
+    return (channel.turn, channel.close);
+  });
+
+  displayFixtureTests('vm', () async {
     final channel = await _configured();
 
     return (channel.turn, channel.close);

@@ -144,6 +144,19 @@
   upstream's pool. The frame being received when the limit is reached
   always completes, and frames that arrive between turns stay queued for
   the next one.
+- Worker groundwork (internal, no public API): a port of upstream's
+  traceback renderer, `display()` in its three formats (`'traceback'`,
+  `'type-msg'`, `'msg'`; any other format is an `ArgumentError` with
+  upstream's text) over the frames a raised exception carries on the wire.
+  It keeps upstream's rules: more than 3 identical consecutive frames
+  collapse into `[Previous line repeated N more times]`, the caret padding
+  counts a stripped non-ASCII indent in UTF-8 bytes, a span over several
+  lines prints its block without carets, and an absent message renders as
+  `Type` where an empty one renders as `Type: `. Checked byte for byte
+  against pydantic-monty 1.1.0's own renderings of the parity suite's 19
+  display cases on the VM, dart2js and dart2wasm; CI's `parity` job checks
+  the baked cases (`tool/generate_display_fixtures.py`) against the pinned
+  suite.
 
 ### Changed
 
