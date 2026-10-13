@@ -10,9 +10,11 @@ import 'dart:collection';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
@@ -122,10 +124,12 @@ void main() {
       await pool.checkout(
         options: const SessionConfig(
           scriptName: 'case.py',
-          maxMemoryBytes: 1 << 24,
-          maxRecursionDepth: 50,
-          maxFeedDuration: Duration(milliseconds: 1500),
-          maxTurnDuration: Duration(milliseconds: 250),
+          limits: ResourceLimits(
+            maxMemory: 1 << 24,
+            maxRecursionDepth: 50,
+            maxFeedDuration: Duration(milliseconds: 1500),
+            maxTurnDuration: Duration(milliseconds: 250),
+          ),
           assertMessageAnnotations: 0,
           printFlushInterval: Duration(milliseconds: 5),
         ),
@@ -911,7 +915,9 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout(
         options: const SessionConfig(
-          maxFeedDuration: Duration(milliseconds: 200),
+          limits: ResourceLimits(
+            maxFeedDuration: Duration(milliseconds: 200),
+          ),
         ),
       );
       await expectLater(
@@ -942,7 +948,9 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout(
         options: const SessionConfig(
-          maxFeedDuration: Duration(milliseconds: 200),
+          limits: ResourceLimits(
+            maxFeedDuration: Duration(milliseconds: 200),
+          ),
         ),
       );
       await expectLater(
@@ -967,8 +975,10 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout(
         options: const SessionConfig(
-          maxFeedDuration: Duration(milliseconds: 1),
-          maxTurnDuration: Duration(milliseconds: 20),
+          limits: ResourceLimits(
+            maxFeedDuration: Duration(milliseconds: 1),
+            maxTurnDuration: Duration(milliseconds: 20),
+          ),
         ),
       );
       await expectLater(
@@ -995,7 +1005,9 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout(
         options: const SessionConfig(
-          maxSuspensions: 2,
+          limits: ResourceLimits(
+            maxSuspensions: 2,
+          ),
         ),
       );
       var calls = 0;
@@ -1063,8 +1075,10 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout(
         options: SessionConfig(
-          maxSuspensions: 0,
-          maxFeedDuration: _ms(20),
+          limits: ResourceLimits(
+            maxSuspensions: 0,
+            maxFeedDuration: _ms(20),
+          ),
         ),
       );
       await expectLater(
@@ -1085,7 +1099,9 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout(
         options: const SessionConfig(
-          maxSuspensions: 0,
+          limits: ResourceLimits(
+            maxSuspensions: 0,
+          ),
         ),
       );
       await expectLater(
@@ -1136,21 +1152,176 @@ void main() {
         ]);
         final pool = await _pool(Workers([ch]));
         addTearDown(pool.close);
-        final policy = pb.OsPolicy(
-          sleep: pb.SleepMode(system: pb.SystemSleep(maxMicros: Int64(20000))),
-        );
+        const policy = OsPolicy(sleepSystemMax: Duration(milliseconds: 20));
         final session = await pool.checkout(
-          options: SessionConfig(
-            osPolicy: policy,
-          ),
+          options: const SessionConfig(osPolicy: policy),
         );
         final clock = Stopwatch()..start();
         await session.feedRun('time.sleep(30)', printCallback: _ignore);
         expect(clock.elapsed, lessThan(const Duration(seconds: 5)));
         expect(clock.elapsed, greaterThanOrEqualTo(_ms(35)));
-        expect(itemAt(ch.requests, 0).configure.osPolicy, policy);
+        expect(
+          itemAt(ch.requests, 0).configure.osPolicy.sleep.system.maxMicros,
+          Int64(20000),
+        );
       },
     );
+  });
+
+  group('sleep budget', () {
+    pb.ChildEvent sleep(double seconds) => pb.ChildEvent(
+      osCall: pb.OsCall(
+        callId: 3,
+        systemSleep: pb.OsCall_Sleep(seconds: seconds),
+      ),
+    );
+
+    Matcher timedOut(String message) => throwsA(
+      isA<MontyScriptError>()
+          .having((e) => e.excType, 'excType', 'TimeoutError')
+          .having((e) => e.message, 'message', message),
+    );
+
+    test('the sleep that passes maxTotalSleep aborts, unwaited', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([sleep(0.04)]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(1)]),
+        // The charge is the session's: 40 ms from the last feed, 70 now.
+        answer([sleep(0.07)]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('TimeoutError', 'sleep limit exceeded: 110ms > 100ms'),
+        ]),
+        answer([_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxTotalSleep: Duration(milliseconds: 100)),
+        ),
+      );
+      expect(
+        itemAt(ch.requests, 0).configure.limits.maxTotalSleepMicros,
+        Int64(100000),
+      );
+      await session.feedRun('time.sleep(0.04)', printCallback: _ignore);
+      final clock = Stopwatch()..start();
+      await expectLater(
+        session.feedRun('time.sleep(0.07)', printCallback: _ignore),
+        timedOut('sleep limit exceeded: 110ms > 100ms'),
+      );
+      expect(clock.elapsed, lessThan(_ms(60)));
+      final abort = itemAt(ch.requests, 4).abortFeed.exception;
+      expect(abort.excType, 'TimeoutError');
+      expect(abort.message, 'sleep limit exceeded: 110ms > 100ms');
+      // The session runs on.
+      expect(
+        await session.feedRun('2', printCallback: _ignore),
+        const MontyInt(2),
+      );
+    });
+
+    test('a capped sleep is charged its cap; a bad delay the cap', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([sleep(30)]),
+        answer([sleep(double.nan)]),
+        answer([sleep(0.015)]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('TimeoutError', 'sleep limit exceeded: 55ms > 50ms'),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxTotalSleep: Duration(milliseconds: 50)),
+          osPolicy: OsPolicy(sleepSystemMax: Duration(milliseconds: 20)),
+        ),
+      );
+      await expectLater(
+        session.feedRun('...', printCallback: _ignore),
+        timedOut('sleep limit exceeded: 55ms > 50ms'),
+      );
+    });
+
+    test('no limit: sleeps are waited, never charged against one', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        for (var i = 0; i < 2; i++) answer([sleep(0.01)]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(1)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      expect(
+        await session.feedRun('...', printCallback: _ignore),
+        const MontyInt(1),
+      );
+      expect(itemAt(ch.requests, 0).configure.hasLimits(), isFalse);
+    });
+  });
+
+  group('settings refused', () {
+    final refused = {
+      'a negative limit': const SessionConfig(
+        limits: ResourceLimits(maxMemory: -1),
+      ),
+      'an unknown policy mode': const SessionConfig(
+        osPolicy: OsPolicy(sleep: 'nap'),
+      ),
+      'a non-finite seed': const SessionConfig(
+        osPolicy: OsPolicy(randomSeed: RandomSeed.float(double.nan)),
+      ),
+      'both forms of one field': const SessionConfig(
+        osPolicy: OsPolicy(
+          randomStart: 'system',
+          randomSeed: RandomSeed.string('x'),
+        ),
+      ),
+      'an annotation length past u32': const SessionConfig(
+        assertMessageAnnotations: 0x100000000,
+      ),
+      'a negative flush interval': SessionConfig(printFlushInterval: _ms(-1)),
+    };
+    for (final MapEntry(key: name, value: config) in refused.entries) {
+      test('$name, before a worker is taken', () async {
+        final workers = Workers([]);
+        final pool = await _pool(workers);
+        addTearDown(pool.close);
+        await expectLater(
+          pool.checkout(options: config),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(workers.started, isEmpty);
+        expect(pool.liveWorkers, 0);
+      });
+    }
+
+    test('one the worker refuses: ArgumentError, the slot freed', () async {
+      const refusal =
+          "protocol violation: invalid os_policy: unknown timezone 'Q/Z'";
+      final ch = ScriptedChannel([
+        answer([raised('RuntimeError', refusal)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      await expectLater(
+        pool.checkout(
+          options: const SessionConfig(osPolicy: OsPolicy(timezone: 'Q/Z')),
+        ),
+        throwsA(
+          isA<ArgumentError>().having((e) => e.message, 'message', refusal),
+        ),
+      );
+      expect(ch.kills, greaterThan(0));
+      expect(pool.liveWorkers, 0);
+      expect(
+        onlyItem(ch.requests).configure.osPolicy.timezone.named,
+        'Q/Z',
+      );
+    });
   });
 
   group('type check', () {

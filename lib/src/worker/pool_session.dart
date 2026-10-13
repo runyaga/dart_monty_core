@@ -18,6 +18,7 @@ import 'package:dart_monty_core/src/worker/default_print.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
 /// A Python session on a worker dedicated to it until [close].
@@ -60,7 +61,8 @@ abstract interface class PoolSession {
   /// [MontyTypeCheckError] without running; [skipTypeCheck] skips the check
   /// for this snippet. Past the session's
   /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
-  /// `RuntimeError`.
+  /// `RuntimeError`; a system sleep that would take the session's sleeps
+  /// past `maxTotalSleep` aborts it with an in-sandbox `TimeoutError`.
   Future<MontyValue> feedRun(
     String code, {
     Map<String, MontyValue>? inputs,
@@ -327,7 +329,10 @@ StateError _pendingError() =>
 /// It also keeps upstream's suspension budget: the session's suspensions are
 /// counted, and one past `maxSuspensions` (default 1000) is not handed to
 /// the driver. The feed is aborted in its place with an in-sandbox
-/// `RuntimeError`, which the driver then sees as the turn's answer.
+/// `RuntimeError`, which the driver then sees as the turn's answer. Its
+/// system sleeps are charged against `maxTotalSleep` the same way, before
+/// they are waited: the one that would pass it aborts the feed with an
+/// in-sandbox `TimeoutError`.
 ///
 /// A turn's deadline is the pool's `requestTimeout`; an execution turn's is
 /// also bounded by what the feed budget has left and by the turn budget,
@@ -359,6 +364,10 @@ final class _SessionChannel implements MontyChannel {
 
   /// Suspensions this session has received.
   int _suspensions = 0;
+
+  /// The system sleep this session has been charged, capped sleeps at
+  /// their cap.
+  Duration _slept = Duration.zero;
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
@@ -405,8 +414,9 @@ final class _SessionChannel implements MontyChannel {
   @override
   void kill() => _hold.lease.kill();
 
-  /// [request]'s turn-ending event; a suspension past the budget is
-  /// replaced by the reply to the `AbortFeed` sent in its place.
+  /// [request]'s turn-ending event; a suspension past the budget, or a
+  /// system sleep past the sleep budget, is replaced by the reply to the
+  /// `AbortFeed` sent in its place.
   Future<pb.ChildEvent> _turnWithBudget(
     pb.ParentRequest request,
     PrintHandler? onPrint,
@@ -416,9 +426,16 @@ final class _SessionChannel implements MontyChannel {
     final used = Duration(microseconds: event.feedExecutionMicros.toInt());
     if (used > _feedUsed) _feedUsed = used;
     if (!_isSuspension(event)) return event;
-    final limit = _config.maxSuspensions ?? defaultMaxSuspensions;
-    if (++_suspensions <= limit) return event;
-    final reply = await channel.turn(_abort(limit), onPrint: onPrint);
+    final limits = _config.limits;
+    final limit = limits?.maxSuspensions ?? defaultMaxSuspensions;
+    final exceeded = ++_suspensions > limit
+        ? _raised('RuntimeError', 'suspension limit $limit exceeded')
+        : _chargeSleep(event, limits?.maxTotalSleep);
+    if (exceeded == null) return event;
+    final reply = await channel.turn(
+      pb.ParentRequest(abortFeed: pb.AbortFeed(exception: exceeded)),
+      onPrint: onPrint,
+    );
     final kind = reply.whichKind();
     if (kind == pb.ChildEvent_Kind.error) return reply;
     kill();
@@ -426,6 +443,35 @@ final class _SessionChannel implements MontyChannel {
       CrashCause.killed,
       message: 'protocol desync: AbortFeed was answered with ${kind.name}',
     );
+  }
+
+  /// Charges [event], if it is a system sleep, against [limit] (upstream's
+  /// `charge_sleep`): the delay as the session will wait it, cut to the
+  /// system-sleep maximum, a delay that is not a valid duration counting as
+  /// that maximum. A sleep that would pass [limit] is not charged; the
+  /// exception to abort the feed with is returned instead.
+  pb.RaisedException? _chargeSleep(pb.ChildEvent event, Duration? limit) {
+    if (event.whichKind() != pb.ChildEvent_Kind.osCall ||
+        event.osCall.whichCall() != pb.OsCall_Call.systemSleep) {
+      return null;
+    }
+    final max = _config.systemSleepMax;
+    final seconds = event.osCall.systemSleep.seconds;
+    final micros = seconds * Duration.microsecondsPerSecond;
+    final delay = micros.isFinite && micros >= 0 && micros < max.inMicroseconds
+        ? Duration(microseconds: micros.round())
+        : max;
+    final total = _slept + delay;
+    if (limit != null && total > limit) {
+      return _raised(
+        'TimeoutError',
+        'sleep limit exceeded: ${rustDuration(total)} > '
+            '${rustDuration(limit)}',
+      );
+    }
+    _slept = total;
+
+    return null;
   }
 
   /// The deadline passed: kill the worker and fail [done].
@@ -448,12 +494,12 @@ final class _SessionChannel implements MontyChannel {
       _feedUsed = Duration.zero;
     }
     final feed = _backstop(
-      _config.maxFeedDuration,
+      _config.limits?.maxFeedDuration,
       _feedUsed,
       _options.feedDurationLimitGrace,
     );
     final turn = _backstop(
-      _config.maxTurnDuration,
+      _config.limits?.maxTurnDuration,
       Duration.zero,
       _options.turnDurationLimitGrace,
     );
@@ -461,9 +507,6 @@ final class _SessionChannel implements MontyChannel {
     return _earliest(_earliest(timeout, feed), turn);
   }
 }
-
-/// Upstream's `DEFAULT_MAX_SUSPENSIONS`.
-const int defaultMaxSuspensions = 1000;
 
 /// Turn-ending events that wait for a host answer.
 bool _isSuspension(pb.ChildEvent event) => switch (event.whichKind()) {
@@ -474,16 +517,9 @@ bool _isSuspension(pb.ChildEvent event) => switch (event.whichKind()) {
   _ => false,
 };
 
-/// Aborts the running feed past [limit] suspensions, with upstream's
-/// exception.
-pb.ParentRequest _abort(int limit) => pb.ParentRequest(
-  abortFeed: pb.AbortFeed(
-    exception: pb.RaisedException(
-      excType: 'RuntimeError',
-      message: 'suspension limit $limit exceeded',
-    ),
-  ),
-);
+/// The exception a feed is aborted with.
+pb.RaisedException _raised(String type, String message) =>
+    pb.RaisedException(excType: type, message: message);
 
 /// Requests that run sandbox code, which the duration backstops bound.
 bool _isExecution(pb.ParentRequest request) => switch (request.whichKind()) {

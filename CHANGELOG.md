@@ -192,6 +192,34 @@
     through the session on vm, dart2js and dart2wasm. Every counted case
     must match upstream on each backend. `PARITY_PIN` moves to the suite
     that adds the session engine.
+- Worker groundwork (internal, no public API): upstream's four session
+  settings types, `ResourceLimits`, `OsPolicy`, `TimeZone` and `RandomSeed`,
+  replace the session's internal records. Nothing is exported until the API
+  cutover.
+  - Literals are strings, durations are `Duration`s, and a field that is a
+    mode or a value is two parameters (`datetime` and `fixedDatetime`,
+    `timezone` and `fixedTimezone`, `randomStart` and `randomSeed`).
+  - Each setting upstream refuses is an `ArgumentError` with upstream's
+    message, raised at checkout before a worker is taken: negative limits
+    and durations, unknown modes and type-check formats (ASCII case
+    ignored, as upstream), `sleepSystemMax` with a sleep mode other than
+    `'system'`, a fixed zone a day or more from UTC, a non-finite float
+    seed, an assert-annotation length outside 0..2^32 - 1. An IANA zone
+    name is resolved by the worker; one it does not know is an
+    `ArgumentError` carrying the worker's refusal.
+  - A frozen clock also sets the sandbox's zone, as upstream's: UTC for a
+    UTC `DateTime`, else the `DateTime`'s own offset and zone name, unless
+    a zone is given.
+  - `maxTotalSleep` is enforced by the session, as upstream's pool does:
+    each system sleep is charged at its capped length before it is waited,
+    and the one that would pass the limit aborts the feed with an
+    uncatchable `TimeoutError` ("sleep limit exceeded: 150ms > 100ms", in
+    Rust's `Duration` format).
+  - Checked against pydantic-monty 1.1.0 on 53 cases (one per refusal, and
+    each policy field's effect in the sandbox: frozen clocks and zones,
+    seeds of every kind, call-host modes, the process clock, sleep modes
+    and the sleep budget), on the VM, dart2js and dart2wasm.
+    `tool/generate_config_oracle.py` records the cases.
 
 ### Changed
 

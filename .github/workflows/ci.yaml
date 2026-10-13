@@ -1022,16 +1022,16 @@ jobs:
       # Artifacts do not keep the executable bit.
       - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
       - name: Test (worker tag)
-        # Floor under the 106 tests registered once the pool-session tests
-        # joined (11 of them; 95 with the display cases, 36 when this job
-        # was added). The path is
+        # Floor under the 160 tests registered once the session-settings
+        # oracle cases joined (54 of them; 106 with the pool-session tests,
+        # 95 with the display cases, 36 when this job was added). The path is
         # load-bearing: without it every suite in test/ loads, the wasm ones fail
         # to, and each skipped suite writes an empty hitmap.
         run: |
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 100 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 150 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob

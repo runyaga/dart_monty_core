@@ -14,15 +14,19 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '../../unit/worker/_config_cases.dart';
 import '_worker_harness.dart';
 
 /// Every session's memory is bounded.
-const _limits = SessionConfig(maxMemoryBytes: 64 * 1024 * 1024);
+const _limits = SessionConfig(
+  limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
+);
 
 /// What a test passes as `printCallback` when it does not look at prints.
 void _ignore(String stream, String text) => _ignored++;
@@ -65,6 +69,11 @@ Future<String> _workerPath() async =>
 
 void main() {
   expectNoWorkersLeftAfterEachTest();
+
+  configOracleTests(
+    'vm',
+    () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
+  );
 
   test('feedRun, prints in order, Reset on close, the worker reused', () async {
     await MontyPool.withPool(
@@ -205,8 +214,10 @@ void main() {
         (pool) async {
           final session = await pool.checkout(
             options: const SessionConfig(
-              maxMemoryBytes: 64 * 1024 * 1024,
-              maxFeedDuration: Duration(milliseconds: 200),
+              limits: ResourceLimits(
+                maxMemory: 64 * 1024 * 1024,
+                maxFeedDuration: Duration(milliseconds: 200),
+              ),
             ),
           );
           // The sandbox raises TimeoutError itself, within its budget.
@@ -301,7 +312,7 @@ void main() {
           );
         },
         options: const SessionConfig(
-          maxMemoryBytes: 64 * 1024 * 1024,
+          limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
           typeCheck: true,
         ),
       ),
