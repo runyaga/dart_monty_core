@@ -92,10 +92,11 @@ HOME_ROOTS=(Users home root)
 #              (drive letter with either slash, or UNC).
 #   layout     every cargo-home layout marker (registry/src/, git/checkouts/,
 #              either slash) sits under a /cargo/ that is itself a path root:
-#              after a delimiter, or after a Rust module path (tracing
-#              metadata concatenates `a::b::c` and the file name with no
-#              delimiter). Catches /opt/rust/cargo/ inside such a string and
-#              a toolchain directory whose name contains a space.
+#              after whitespace, a control byte or a quote, or after a Rust
+#              module path (tracing metadata concatenates `a::b::c` and the
+#              file name with no delimiter). Catches /opt/rust/cargo/ inside
+#              such a string, and a toolchain directory whose name contains a
+#              space, parenthesis or bracket.
 #
 # A path starts at /, a drive letter or \\ after a delimiter (NUL, space,
 # quote, bracket ...) and runs to the next one; bytes >= 0x80 are path bytes,
@@ -110,6 +111,9 @@ stop = rb"\x00-\x20\x7f\"'`()\[\]<>{},;="
 path = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:[/\\]|\\\\)[^" + stop + rb"]+")
 rust_src = re.compile(rb"\.rs(?::|$)")
 marker = re.compile(rb"(?:registry|git)[/\\](?:src|checkouts)[/\\]")
+# Stricter than `stop`: a bracket or parenthesis can be part of a directory
+# name, such as "/opt/Toolchain (stable)/cargo/".
+root_boundary = re.compile(rb"[\x00-\x20\x7f\"'`]")
 module_path = re.compile(rb"(?:[A-Za-z_][A-Za-z0-9_]*::)+[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -118,7 +122,7 @@ def cargo_rooted(data, at):
     root = at - len(b"/cargo/")
     if root < 0 or data[root:at] != b"/cargo/":
         return False
-    if root == 0 or re.match(rb"[" + stop + rb"]", data[root - 1:root]):
+    if root == 0 or root_boundary.match(data[root - 1:root]):
         return True
     return module_path.search(data[max(0, root - 256):root]) is not None
 
