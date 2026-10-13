@@ -151,6 +151,7 @@ VM_UNLOADABLE=(
   'lib/src/repl/repl_factory_web.dart'
   'lib/src/worker/worker_channel.dart'
   'lib/src/worker/channel_factory_web.dart'
+  'lib/src/worker/default_print_web.dart'
 )
 
 READY_SENTINEL='coverage-anchor-compiled-and-ran'
