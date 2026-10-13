@@ -152,6 +152,14 @@ void main() {
       expect(configure.hasPrintFlushIntervalMs(), isFalse);
     });
 
+    test('any other Configure failure frees the slot too', () async {
+      // A worker with nothing scripted: the turn fails with a StateError.
+      final pool = await _pool(Workers([ScriptedChannel([])]));
+      addTearDown(pool.close);
+      await expectLater(pool.checkout(), throwsA(isA<StateError>()));
+      expect(pool.liveWorkers, 0);
+    });
+
     test('a refused Configure frees the slot and throws', () async {
       final ch = ScriptedChannel([
         answer([fatal('protocol_version 5 outside 6..=6')]),
