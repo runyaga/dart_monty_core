@@ -128,12 +128,18 @@ final class _CheckExportBoundary {
   /// The names and member sections together, as the golden lists them.
   Map<String, List<String>> get sections => {...names, ...members};
 
-  /// As [sections], with every member line in one section: a conditional
-  /// export selects a different file per platform, so platforms are
-  /// compared on what they declare, not on which file declares it.
+  /// As [sections], with the `members:` sections' lines in one section: a
+  /// conditional export selects a different file per platform, so platforms
+  /// are compared on what they declare, not on which file declares it. The
+  /// `exports:` sections keep their library.
   Map<String, List<String>> get platformSections => {
     ...names,
-    'members': members.values.expand((lines) => lines).toList(),
+    for (final MapEntry(:key, :value) in members.entries)
+      if (!key.startsWith('members: ')) key: value,
+    'members': [
+      for (final MapEntry(:key, :value) in members.entries)
+        if (key.startsWith('members: ')) ...value,
+    ],
   };
 
   /// Rule 1 and 2 failures.
@@ -1307,6 +1313,11 @@ String _hiddenNode(String implements) =>
     '  @override int get permissions => 0;\n'
     '}\n';
 
+/// Exports `Item` from [usual], or from [other] when the condition holds.
+String _swapExport(String usual, String other) =>
+    "export 'src/boundary_probe_$usual.dart'\n"
+    "    if (dart.library.boundary_c) 'src/boundary_probe_$other.dart';\n";
+
 /// A private subtype of the sealed `VfsNode` that reaches `VfsFile` only
 /// through a private ancestor, which declares [implements].
 String _hiddenAncestor(String implements) =>
@@ -1888,6 +1899,18 @@ final _controls = [
     alsoMentions: [
       '+ defaultMemoryUsageLimit: const variable int = 200000000',
     ],
+  ),
+  _Control(
+    'conditional exports swap two same-named types between libraries',
+    _Verdict.both,
+    'boundary_c==true] $_differsFromDefault:   + Item: '
+        'src/boundary_probe_b.dart',
+    {
+      ..._sameNames,
+      'lib/boundary_probe_items.dart': (_) => _items('a'),
+      'lib/boundary_probe_reexport.dart': (_) => _swapExport('a', 'b'),
+      'lib/boundary_probe_reexport2.dart': (_) => _swapExport('b', 'a'),
+    },
   ),
   _Control(
     'multi-line default value prints the same with CRLF line endings',
