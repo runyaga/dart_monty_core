@@ -177,7 +177,8 @@
     flush awaited) and to the console in a browser.
   - CI's `parity-e0` job also runs the pinned parity suite's E0 cases
     through the session on vm, dart2js and dart2wasm. Every counted case
-    must match upstream on each backend.
+    must match upstream on each backend. `PARITY_PIN` moves to the suite
+    that adds the session engine.
 
 ### Changed
 
