@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
@@ -29,6 +30,27 @@ void _ignore(String stream, String text) => _ignored++;
 
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
+
+/// Runs the probe program [name] with the worker's path; its exit code,
+/// stdout and stderr. A probe still running after 60 s is killed and fails
+/// the test, so a probe that cannot exit never outlives it.
+Future<(int, String, String)> _runProbe(String name) async {
+  final probe = await Process.start(Platform.resolvedExecutable, [
+    File('test/integration/worker/$name').absolute.path,
+    await _workerPath(),
+  ]);
+  final out = probe.stdout.transform(utf8.decoder).join();
+  final err = probe.stderr.transform(utf8.decoder).join();
+  try {
+    final code = await probe.exitCode.timeout(const Duration(seconds: 60));
+
+    return (code, await out, await err);
+  } on TimeoutException {
+    probe.kill(ProcessSignal.sigkill);
+    await probe.exitCode;
+    fail('$name did not exit within 60 s; stderr: ${await err}');
+  }
+}
 
 Future<String> _workerPath() async =>
     ((await realWorker()) as WorkerExecutable).path;
@@ -286,24 +308,18 @@ void main() {
   });
 
   test('a busy close leaves nothing that keeps the process alive', () async {
-    final result = await Process.run(Platform.resolvedExecutable, [
-      File('test/integration/worker/close_exit_probe.dart').absolute.path,
-      await _workerPath(),
-    ]).timeout(const Duration(seconds: 60));
-    expect(result.exitCode, 0, reason: '${result.stderr}');
-    expect(result.stdout, 'closed\n');
+    final (code, out, err) = await _runProbe('close_exit_probe.dart');
+    expect(code, 0, reason: err);
+    expect(out, 'closed\n');
   });
 
   test(
     'no print callback: fragments reach the process stdout and stderr',
     () async {
-      final result = await Process.run(Platform.resolvedExecutable, [
-        File('test/integration/worker/default_print_probe.dart').absolute.path,
-        await _workerPath(),
-      ]).timeout(const Duration(seconds: 60));
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(result.stdout, 'ab\n');
-      expect(result.stderr, 'e\n');
+      final (code, out, err) = await _runProbe('default_print_probe.dart');
+      expect(code, 0, reason: err);
+      expect(out, 'ab\n');
+      expect(err, 'e\n');
     },
   );
 }
