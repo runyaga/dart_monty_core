@@ -184,8 +184,11 @@ void main() {
         ]);
         expect(probe.stdout, contains('crashed'));
         expect(probe.exitCode, 0);
-        // The descendant holds stderr for 6 s; the drain gives up after 1 s.
-        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+        // The descendant holds stderr for 20 s; the drain gives up after
+        // 1 s. The bound leaves room for two JIT start-ups on a loaded
+        // runner (measured 5.05 s against a 5 s bound in CI) and still fails
+        // well before the descendant lets go.
+        expect(watch.elapsed, lessThan(const Duration(seconds: 15)));
       },
       testOn: '!windows',
     );

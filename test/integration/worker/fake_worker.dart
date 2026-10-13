@@ -79,10 +79,12 @@ Future<void> _handle(String scenario, pb.ParentRequest request) async {
       ], mode: ProcessStartMode.inheritStdio);
       exit(0);
     case 'hold-stderr':
-      // Exits at once, leaving a child that holds stderr open for 6 s.
+      // Exits at once, leaving a child that holds stderr open for 20 s.
+      // Long against the test's bound: that bound also covers two JIT
+      // start-ups (the probe and this program), which a loaded runner slows.
       await Process.start('/bin/sh', [
         '-c',
-        'exec >/dev/null; sleep 6',
+        'exec >/dev/null; sleep 20',
       ], mode: ProcessStartMode.inheritStdio);
       exit(0);
     case 'hold-stdout':
