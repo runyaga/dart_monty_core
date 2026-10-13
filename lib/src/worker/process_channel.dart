@@ -423,9 +423,12 @@ final class EventQueue {
   /// Over [limit] with a frame part-received: pause once a frame ends.
   bool _finishingFrame = false;
 
-  /// The read-ahead at which reading pauses: [limit], or [limit] plus
-  /// [drainAllowance] once [endWithin] has run.
+  /// The read-ahead at which reading pauses: [limit] until [endWithin]
+  /// first runs, then what was queued then (at least [limit]) plus
+  /// [drainAllowance].
   int _bound;
+
+  bool _draining = false;
 
   /// Wire bytes of the queued events.
   int get readAhead => _readAhead;
@@ -476,7 +479,12 @@ final class EventQueue {
   /// pipe held, but stays bounded: a process that inherited the pipe may
   /// keep writing.
   Future<void> endWithin(Duration grace) async {
-    _bound = limit + drainAllowance;
+    if (!_draining) {
+      _draining = true;
+      // Relative to the queue: an oversized frame can hold it past the
+      // limit, and the frames behind it in the pipe must still arrive.
+      _bound = math.max(_bound, _readAhead) + drainAllowance;
+    }
     if (_readAhead < _bound) _resume();
     await _closed.future.timeout(grace, onTimeout: () => null);
     if (_ended) return;

@@ -553,6 +553,34 @@ void main() {
       }
     }
 
+    test(
+      'draining past an oversized queue still reads the last frames',
+      () async {
+        final pipe = StreamController<List<int>>();
+        final drained = EventQueue(
+          pipe.stream,
+          limit: limit,
+          onDesync: () => desyncs++,
+          drainAllowance: 100,
+        );
+        addTearDown(drained.cancel);
+        // Oversized and unread: paused well past the limit plus allowance.
+        pipe.add(frame('c' * 5000));
+        await pump();
+        expect(pipe.isPaused, isTrue);
+        // The worker's last frame waits in the pipe, then the worker exits.
+        pipe.add(frame('fatal'));
+        final ending = drained.endWithin(const Duration(milliseconds: 500));
+        await pump();
+        unawaited(pipe.close());
+        await ending;
+        for (final text in ['c' * 5000, 'fatal']) {
+          final event = await drained.next() ?? fail('lost the frame $text');
+          expect(onlyItem(event.print.segments).text, text);
+        }
+      },
+    );
+
     test('pauses at the limit when no frame is part-received', () async {
       bytes.add(frame('a' * 600));
       await pump();
