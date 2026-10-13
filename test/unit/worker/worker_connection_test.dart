@@ -1,0 +1,486 @@
+// WorkerConnection (lib/src/worker/worker_connection.dart): the browser
+// channel's turn logic against a scripted WorkerPort. Pure Dart, so it runs on
+// the VM, dart2js and dart2wasm through the unit and unit_web steps; the real
+// Worker is exercised by worker_channel_web_test.dart.
+import 'dart:typed_data';
+
+import 'package:collection/collection.dart';
+import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/worker_connection.dart';
+import 'package:test/test.dart';
+
+/// Records what the connection sends and whether it terminated the Worker.
+final class _FakePort implements WorkerPort {
+  final List<Uint8List> posted = [];
+  int terminated = 0;
+
+  @override
+  void post(Uint8List frame) => posted.add(frame);
+
+  @override
+  void terminate() => terminated++;
+}
+
+/// The ready reply of a Worker that started.
+WorkerMessage _hello({
+  bool jspi = true,
+  int protocol = workerProtocolVersion,
+}) => (
+  ready: true,
+  error: null,
+  jspi: jspi,
+  protocol: protocol,
+  events: null,
+  outcome: null,
+  trap: null,
+);
+
+/// A later Worker message: a turn reply, or a trap.
+WorkerMessage _message({Uint8List? events, int? outcome, String? trap}) => (
+  ready: null,
+  error: null,
+  jspi: null,
+  protocol: null,
+  events: events,
+  outcome: outcome,
+  trap: trap,
+);
+
+WorkerConnection _accept(_FakePort port, {Duration? grace}) =>
+    WorkerConnection.accept(
+      port,
+      _hello(),
+      closeGrace: grace ?? workerCloseGrace,
+    );
+
+Uint8List _frames(List<pb.ChildEvent> events) =>
+    Uint8List.fromList([for (final e in events) ...Frame.encode(e)]);
+
+pb.ChildEvent _print(String text) => pb.ChildEvent(
+  print: pb.Print(
+    segments: [
+      pb.PrintSegment(stream: pb.PrintStream.PRINT_STREAM_STDOUT, text: text),
+    ],
+  ),
+);
+
+final pb.ChildEvent _ok = pb.ChildEvent(ok: pb.Ok());
+final pb.ParentRequest _feed = pb.ParentRequest(feed: pb.Feed(code: '1 + 1'));
+
+Matcher _crashed(CrashCause cause, [Object? message]) =>
+    isA<MontyCrashedError>()
+        .having((e) => e.cause, 'cause', cause)
+        .having((e) => e.message, 'message', message ?? anything);
+
+final Matcher _throwsKilled = throwsA(_crashed(CrashCause.killed));
+final Matcher _throwsVanished = throwsA(_crashed(CrashCause.vanished));
+
+/// The one request [port] was sent, decoded.
+pb.ParentRequest _onlyRequest(_FakePort port) {
+  final bodies = [for (final f in port.posted) ...Frame.split(f)];
+  expect(bodies, hasLength(1));
+
+  return pb.ParentRequest.fromBuffer(bodies.firstOrNull ?? fail('none sent'));
+}
+
+/// Starts a turn, lets it post, and returns its future.
+Future<pb.ChildEvent> _start(
+  WorkerConnection c, {
+  void Function(pb.Print)? onPrint,
+}) => c.turn(_feed, onPrint: onPrint);
+
+void main() {
+  group('accept', () {
+    test('a matching protocol is accepted and exposes the probe', () {
+      final port = _FakePort();
+      final c = _accept(port);
+      expect(c.jspi, isTrue);
+      expect(c.protocol, workerProtocolVersion);
+      expect(c.isAlive, isTrue);
+      expect(port.terminated, 0);
+    });
+
+    test('protocol skew is refused before any request, as fatal', () {
+      final port = _FakePort();
+      expect(
+        () => WorkerConnection.accept(port, _hello(protocol: 4)),
+        throwsA(_crashed(CrashCause.fatal, contains('protocol 4'))),
+      );
+      expect(port.terminated, 1);
+      expect(port.posted, isEmpty);
+    });
+
+    test('a Worker that did not start is refused as vanished', () {
+      final port = _FakePort();
+      expect(
+        () => WorkerConnection.accept(port, workerFailure('no module')),
+        throwsA(_crashed(CrashCause.vanished, 'no module')),
+      );
+      expect(port.terminated, 1);
+    });
+
+    test('a ready reply without a protocol is skew', () {
+      final hello = _hello();
+      expect(
+        () => WorkerConnection.accept(_FakePort(), (
+          ready: true,
+          error: null,
+          jspi: hello.jspi,
+          protocol: null,
+          events: null,
+          outcome: null,
+          trap: null,
+        )),
+        throwsA(_crashed(CrashCause.fatal, contains('protocol null'))),
+      );
+    });
+
+    test('a ready reply without jspi reads as no JSPI', () {
+      final c = WorkerConnection.accept(_FakePort(), (
+        ready: true,
+        error: null,
+        jspi: null,
+        protocol: workerProtocolVersion,
+        events: null,
+        outcome: null,
+        trap: null,
+      ));
+      expect(c.jspi, isFalse);
+    });
+  });
+
+  group('onMessage', () {
+    test('routes a turn reply', () async {
+      final c = _accept(_FakePort());
+      final done = _start(c);
+      c.onMessage(_message(events: _frames([_ok]), outcome: outcomeContinue));
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
+    });
+
+    test('routes a trap', () async {
+      final c = _accept(_FakePort());
+      final done = expectLater(
+        _start(c),
+        throwsA(_crashed(CrashCause.vanished, 'unreachable')),
+      );
+      c.onMessage(_message(trap: 'unreachable'));
+      await done;
+    });
+
+    test('a reply with no outcome is not a Continue', () async {
+      final c = _accept(_FakePort());
+      final done = expectLater(_start(c), throwsA(_crashed(CrashCause.fatal)));
+      c.onMessage(_message(events: _frames([_ok])));
+      await done;
+    });
+
+    test('anything else is a Worker error', () {
+      final c = _accept(_FakePort())..onMessage(_message());
+      expect(c.isAlive, isFalse);
+      expect(
+        () => c.turn(_feed),
+        throwsA(_crashed(CrashCause.vanished, contains('unrecognised'))),
+      );
+    });
+  });
+
+  group('OnceAsync', () {
+    test('produces once and shares the value', () async {
+      var made = 0;
+      final once = OnceAsync<int>(() async => ++made);
+      expect(once.runs, 0);
+      final values = await Future.wait([once.value, once.value]);
+      expect(values, [1, 1]);
+      expect(await once.value, 1);
+      expect(once.runs, 1);
+    });
+
+    test('a failure is not kept; the next use retries', () async {
+      var attempt = 0;
+      final once = OnceAsync<String>(() async {
+        attempt++;
+        if (attempt == 1) throw StateError('first');
+
+        return 'second';
+      });
+      await expectLater(once.value, throwsStateError);
+      expect(await once.value, 'second');
+      expect(once.runs, 2);
+    });
+  });
+
+  group('turn', () {
+    test('posts one frame, delivers Prints in order, returns the turn '
+        'end', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final prints = <String>[];
+      final done = _start(
+        c,
+        onPrint: (p) => prints.add(p.segments.map((s) => s.text).join()),
+      );
+      expect(port.posted, [Frame.encode(_feed)]);
+      c.onReply(
+        _frames([_print('a'), _print('b'), _ok]),
+        outcomeContinue,
+      );
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
+      expect(prints, ['a', 'b']);
+      expect(c.isAlive, isTrue);
+    });
+
+    test('a kill from inside onPrint fails the turn as killed', () async {
+      final port = _FakePort();
+      late final WorkerConnection c;
+      c = _accept(port);
+      final done = expectLater(
+        _start(c, onPrint: (_) => c.kill()),
+        _throwsKilled,
+      );
+      c.onReply(_frames([_print('a'), _ok]), outcomeContinue);
+      await done;
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+    });
+
+    test(
+      'onPrint throwing kills the Worker; the error reaches the caller',
+      () async {
+        final port = _FakePort();
+        final c = _accept(port);
+        final done = expectLater(
+          _start(c, onPrint: (_) => throw const FormatException('host bug')),
+          throwsFormatException,
+        );
+        final lookup = pb.ChildEvent(nameLookup: pb.NameLookup(name: 'x'));
+        c.onReply(_frames([_print('a'), lookup]), outcomeContinue);
+        await done;
+        // The NameLookup was never delivered, so the Worker is left waiting for
+        // an answer nobody will send: it must not be reusable.
+        expect(c.isAlive, isFalse);
+        expect(port.terminated, 1);
+        expect(() => c.turn(_feed), _throwsKilled);
+      },
+    );
+
+    test('no second turn can start from inside onPrint', () async {
+      final c = _accept(_FakePort());
+      Object? reentered;
+      final done = _start(
+        c,
+        onPrint: (_) => c.turn(_feed).catchError((Object e) {
+          reentered = e;
+
+          return _ok;
+        }),
+      );
+      c.onReply(_frames([_print('a'), _ok]), outcomeContinue);
+      await done;
+      await pumpEventQueue();
+      expect(reentered, isStateError);
+    });
+
+    test('Prints without a callback are dropped', () async {
+      final c = _accept(_FakePort());
+      final done = _start(c);
+      c.onReply(_frames([_print('x'), _ok]), outcomeContinue);
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
+    });
+
+    test('one turn at a time', () {
+      final c = _accept(_FakePort());
+      _start(c).ignore();
+      expect(() => c.turn(_feed), throwsStateError);
+    });
+
+    test('a reply with no turn waiting is ignored', () async {
+      final c = _accept(_FakePort())..onReply(_frames([_ok]), 0);
+      expect(c.isAlive, isTrue);
+      final done = _start(c);
+      c.onReply(_frames([_ok]), outcomeContinue);
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
+    });
+
+    test('FatalError is a fatal crash and kills the Worker', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final done = _start(c);
+      c.onReply(
+        _frames([
+          pb.ChildEvent(fatalError: pb.FatalError(message: 'boom')),
+        ]),
+        2,
+      );
+      final boom = throwsA(_crashed(CrashCause.fatal, 'boom'));
+      await expectLater(done, boom);
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+      expect(() => c.turn(_feed), boom);
+    });
+
+    test('a Fatal outcome after a turn end is a fatal crash', () async {
+      final c = _accept(_FakePort());
+      final done = _start(c);
+      c.onReply(_frames([_ok]), 2);
+      await expectLater(
+        done,
+        throwsA(_crashed(CrashCause.fatal, contains('outcome 2'))),
+      );
+    });
+
+    test('a Shutdown outcome closes the channel after the turn', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final done = _start(c);
+      c.onReply(_frames([_ok]), outcomeShutdown);
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+      expect(() => c.turn(_feed), throwsStateError);
+    });
+
+    test('a torn reply is a vanished crash', () async {
+      final c = _accept(_FakePort());
+      final done = _start(c);
+      final whole = Frame.encode(_ok);
+      c.onReply(Uint8List.sublistView(whole, 0, whole.length - 1), 0);
+      await expectLater(
+        done,
+        throwsA(_crashed(CrashCause.vanished, contains('unreadable'))),
+      );
+    });
+
+    test('a reply without a turn-ending event is a vanished crash', () async {
+      final c = _accept(_FakePort());
+      final done = _start(c);
+      c.onReply(_frames([_print('only')]), 0);
+      await expectLater(
+        done,
+        throwsA(_crashed(CrashCause.vanished, contains('turn-ending'))),
+      );
+    });
+
+    test('a trap fails the turn as vanished and poisons the channel', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final done = _start(c);
+      c.onTrap('RangeError: Maximum call stack size exceeded');
+      final trapped = throwsA(
+        _crashed(CrashCause.vanished, startsWith('RangeError')),
+      );
+      await expectLater(done, trapped);
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+      expect(() => c.turn(_feed), trapped);
+    });
+
+    test('a Worker error between turns poisons the channel', () {
+      final c = _accept(_FakePort())..onWorkerError('script error');
+      expect(c.isAlive, isFalse);
+      expect(
+        () => c.turn(_feed),
+        throwsA(_crashed(CrashCause.vanished, 'script error')),
+      );
+    });
+  });
+
+  group('kill', () {
+    test('mid-turn fails the turn as killed; idempotent', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final done = _start(c);
+      c
+        ..kill()
+        ..kill();
+      await expectLater(done, _throwsKilled);
+      expect(port.terminated, 1);
+      expect(c.isAlive, isFalse);
+      expect(() => c.turn(_feed), _throwsKilled);
+      // A late reply from the terminated Worker changes nothing.
+      c.onReply(_frames([_ok]), 0);
+      expect(c.isAlive, isFalse);
+    });
+
+    test('after a crash keeps the original cause', () async {
+      final c = _accept(_FakePort());
+      final done = _start(c);
+      c
+        ..onTrap('trap')
+        ..kill();
+      await expectLater(done, _throwsVanished);
+      expect(() => c.turn(_feed), _throwsVanished);
+    });
+  });
+
+  group('close', () {
+    test('sends Shutdown, terminates on the reply; idempotent', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final first = c.close();
+      expect(identical(c.close(), first), isTrue);
+      expect(c.isAlive, isFalse);
+      expect(_onlyRequest(port).whichKind(), pb.ParentRequest_Kind.shutdown);
+      c.onReply(Uint8List(0), outcomeShutdown);
+      await first;
+      expect(port.terminated, 1);
+      expect(() => c.turn(_feed), throwsStateError);
+      await c.close();
+      expect(port.terminated, 1);
+    });
+
+    test('terminates after the grace when the Worker never answers', () async {
+      final port = _FakePort();
+      final c = _accept(port, grace: const Duration(milliseconds: 10));
+      await c.close();
+      expect(port.terminated, 1);
+      expect(c.isAlive, isFalse);
+    });
+
+    test('during a turn kills it', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final done = expectLater(_start(c), _throwsKilled);
+      await c.close();
+      await done;
+      expect(port.terminated, 1);
+    });
+
+    test('a kill while closing still terminates once', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final closing = c.close();
+      c.kill();
+      await closing;
+      expect(port.terminated, 1);
+      expect(() => c.turn(_feed), _throwsKilled);
+    });
+
+    test('on a dead channel does nothing', () async {
+      final port = _FakePort();
+      final c = _accept(port)..onTrap('t');
+      await c.close();
+      expect(port.posted, isEmpty);
+      expect(port.terminated, 1);
+    });
+  });
+
+  group('MontyCrashedError', () {
+    test('toString names the cause and what is known', () {
+      expect(
+        MontyCrashedError(CrashCause.killed).toString(),
+        'MontyCrashedError(killed)',
+      );
+      expect(
+        MontyCrashedError(
+          CrashCause.outOfMemory,
+          exitCode: 65,
+          message: 'EOF',
+          stderrTail: 'oom',
+        ).toString(),
+        'MontyCrashedError(outOfMemory, exit code 65, EOF, stderr: oom)',
+      );
+    });
+  });
+}

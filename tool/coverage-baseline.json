@@ -348,13 +348,23 @@
     },
     "lib/src/worker/monty_channel.dart": {
       "found": 8,
-      "hit": 1,
-      "pct": 12.5
+      "hit": 8,
+      "pct": 100.0
     },
     "lib/src/worker/proto_session.dart": {
       "found": 172,
       "hit": 162,
       "pct": 94.19
+    },
+    "lib/src/worker/worker_channel.dart": {
+      "found": 47,
+      "hit": 42,
+      "pct": 89.36
+    },
+    "lib/src/worker/worker_connection.dart": {
+      "found": 91,
+      "hit": 91,
+      "pct": 100.0
     },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
@@ -363,8 +373,8 @@
     }
   },
   "total": {
-    "found": 4417,
-    "hit": 3134,
-    "pct": 70.95
+    "found": 4555,
+    "hit": 3274,
+    "pct": 71.88
   }
 }

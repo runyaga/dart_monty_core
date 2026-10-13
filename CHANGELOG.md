@@ -16,6 +16,18 @@
   function and OS call answers, print streaming, reset), and a value arena
   that keeps shared sub-objects shared in both directions and nests without
   recursion. Still under `lib/src/worker/` and not exported.
+- Internal browser channel for that worker: a Web Worker runs a new committed
+  asset, `lib/assets/dart_monty_core_proto_worker.wasm` (the worker crate
+  built for `wasm32-wasip1` with a size-tuned profile, a 2 MiB stack and the
+  Dart SDK's `wasm-opt -Os`), from a hand-written
+  `lib/assets/dart_monty_core_proto_worker.js`. The page compiles the module
+  once and shares it with every Worker; dispatch runs under JSPI where the
+  browser supports it, with a probe and a direct-call fallback. A wasm trap,
+  a kill or a protocol mismatch surfaces as a typed crash error. Still
+  internal: nothing is exported. `tool/prebuild.sh --worker-only` rebuilds
+  the module, `tool/check_asset_freshness.sh` now also hashes `native/worker/`,
+  and `tool/check_worker_wasm_size.sh` holds it to 5.75 MB gzipped. The
+  existing in-process assets are unchanged.
 
 ### Changed
 

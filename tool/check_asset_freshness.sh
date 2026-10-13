@@ -3,9 +3,10 @@
 # Are the committed assets stale relative to their sources?
 # =============================================================================
 # lib/assets/{dart_monty_core_bridge.js,dart_monty_core_worker.js,
-# dart_monty_core_native.wasm} are COMMITTED build artefacts. The wasm build is
-# NOT byte-reproducible -- an unchanged tree yields different bytes -- so
-# `git diff` on the blob can never tell you whether the asset matches the crate.
+# dart_monty_core_native.wasm,dart_monty_core_proto_worker.wasm} are COMMITTED
+# build artefacts. The wasm build is NOT byte-reproducible -- an unchanged tree
+# yields different bytes -- so `git diff` on the blob can never tell you whether
+# the asset matches the crate.
 #
 # Hashing the OUTPUT is therefore useless. Hashing the INPUT is not: native/src,
 # native/Cargo.{toml,lock} and js/src are ordinary files and hash deterministically.
@@ -20,47 +21,96 @@
 # version, forget to rebuild, and both sides report v1 and agree. This catches
 # that, because the hash is DERIVED rather than declared.
 #
+# TWO RECORDS, because there are two independent builds. `source_sha256` covers
+# the in-process engine (native/, js/); `worker_source_sha256` covers the proto
+# worker wasm (native/worker/, built by `tool/prebuild.sh --worker-only`). One
+# combined hash would let a worker-only rebuild re-record the in-process assets
+# as fresh without rebuilding them, and rebuilding them would rewrite committed
+# bytes for no source change.
+#
 # Usage:
-#   bash tool/check_asset_freshness.sh            # verify
-#   bash tool/check_asset_freshness.sh --update   # re-record (tool/prebuild.sh does this)
+#   bash tool/check_asset_freshness.sh                   # verify both
+#   bash tool/check_asset_freshness.sh --update [SCOPE]  # re-record; SCOPE is
+#       all (default), native or worker. tool/prebuild.sh does this.
 # =============================================================================
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 RECORD=tool/wasm-provenance.json
 
-# Everything the committed assets are built FROM. Order is fixed by `LC_ALL=C sort`
-# so the hash is stable across machines: macOS and GNU sort collate differently.
+# Hashes the files named on stdin (NUL-separated). Order is fixed by
+# `LC_ALL=C sort` so the hash is stable across machines: macOS and GNU sort
+# collate differently.
+hash_files() {
+  tr '\0' '\n' | LC_ALL=C sort | while read -r f; do
+    [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
+  done | shasum -a 256 | awk '{print $1}'
+}
+
+# Everything the in-process assets are built FROM.
 source_hash() {
   {
     find native/src -type f -name '*.rs' -print0 2>/dev/null
     printf '%s\0' native/Cargo.toml native/Cargo.lock native/build.rs
     find js/src -type f -name '*.js' -print0 2>/dev/null
-  } | tr '\0' '\n' | LC_ALL=C sort | while read -r f; do
-    [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
-  done | shasum -a 256 | awk '{print $1}'
+  } | hash_files
+}
+
+# Everything lib/assets/dart_monty_core_proto_worker.wasm is built FROM: every
+# file under native/worker/ (sources, the verbatim upstream copy, manifest,
+# lock, build.rs), the toolchain file it shares, and the build recipe (cargo
+# profile, wasm-opt flags). target/ is build output.
+worker_source_hash() {
+  {
+    find native/worker -path native/worker/target -prune -o -type f -print0 \
+      2>/dev/null
+    printf '%s\0' native/rust-toolchain.toml tool/build_worker_wasm.sh
+  } | hash_files
 }
 
 HAVE=$(source_hash)
+HAVE_WORKER=$(worker_source_hash)
 
 if [ "${1:-}" = "--update" ]; then
-  python3 - "$HAVE" <<'PY'
-import json, sys
+  SCOPE="${2:-all}"
+  case "$SCOPE" in
+    all|native|worker) ;;
+    *) echo "FAIL: --update scope is all, native or worker (got '$SCOPE')"
+       exit 2 ;;
+  esac
+  python3 - "$SCOPE" "$HAVE" "$HAVE_WORKER" <<'PY'
+import hashlib, json, sys
+scope, have, have_worker = sys.argv[1:4]
 p = 'tool/wasm-provenance.json'
 try:
     d = json.load(open(p))
 except FileNotFoundError:
     d = {}
-d['source_sha256'] = sys.argv[1]
-d['_source_sha256_comment'] = (
-    'sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs and js/src/**.js -- '
-    'the INPUTS to the committed assets. The assets themselves are not '
-    'byte-reproducible, so hashing them proves nothing; hashing what they are '
-    'built from proves everything that matters. Updated by tool/prebuild.sh.')
-json.dump(d, open(p, 'w'), indent=2, sort_keys=True)
-print(f"  recorded source_sha256 = {sys.argv[1][:16]}…")
+if scope in ('all', 'native'):
+    d['source_sha256'] = have
+    d['_source_sha256_comment'] = (
+        'sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs and js/src/**.js -- '
+        'the INPUTS to the committed assets. The assets themselves are not '
+        'byte-reproducible, so hashing them proves nothing; hashing what they are '
+        'built from proves everything that matters. Updated by tool/prebuild.sh.')
+    print(f"  recorded source_sha256 = {have[:16]}…")
+if scope in ('all', 'worker'):
+    name = 'dart_monty_core_proto_worker.wasm'
+    blob = open(f'lib/assets/{name}', 'rb').read()
+    d.setdefault('assets', {})[name] = {
+        'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest()}
+    d['worker_source_sha256'] = have_worker
+    d['_worker_source_sha256_comment'] = (
+        'sha256 over every file under native/worker/ (target/ excluded), '
+        'native/rust-toolchain.toml and tool/build_worker_wasm.sh -- the INPUTS to '
+        'lib/assets/dart_monty_core_proto_worker.wasm. Updated by '
+        'tool/prebuild.sh, either scope.')
+    print(f"  recorded worker_source_sha256 = {have_worker[:16]}…")
+with open(p, 'w') as fh:
+    json.dump(d, fh, indent=2, sort_keys=True)
+    fh.write('\n')
 PY
-  exit 0
+  exit $?
 fi
 
 if [ ! -f "$RECORD" ]; then
@@ -68,10 +118,14 @@ if [ ! -f "$RECORD" ]; then
   exit 1
 fi
 
-WANT=$(python3 -c "import json;print(json.load(open('$RECORD')).get('source_sha256',''))")
+recorded() {
+  python3 -c "import json,sys;print(json.load(open('$RECORD')).get(sys.argv[1],''))" "$1"
+}
+WANT=$(recorded source_sha256)
+WANT_WORKER=$(recorded worker_source_sha256)
 
-if [ -z "$WANT" ]; then
-  echo "FAIL: $RECORD has no source_sha256."
+if [ -z "$WANT" ] || [ -z "$WANT_WORKER" ]; then
+  echo "FAIL: $RECORD lacks source_sha256 or worker_source_sha256."
   echo "  Run: bash tool/prebuild.sh   (or: bash tool/check_asset_freshness.sh --update)"
   exit 1
 fi
@@ -90,4 +144,18 @@ if [ "$HAVE" != "$WANT" ]; then
   exit 1
 fi
 
+if [ "$HAVE_WORKER" != "$WANT_WORKER" ]; then
+  echo "FAIL: lib/assets/dart_monty_core_proto_worker.wasm is STALE."
+  echo "  worker sources hash to : $HAVE_WORKER"
+  echo "  the wasm was built from: $WANT_WORKER"
+  echo
+  echo "  Something under native/worker/, native/rust-toolchain.toml or the recipe"
+  echo "  tool/build_worker_wasm.sh changed since the worker wasm was last built,"
+  echo "  so the browser WorkerChannel runs a module that recipe did not produce."
+  echo
+  echo "  Fix:  bash tool/prebuild.sh --worker-only   (rebuilds and re-records)"
+  exit 1
+fi
+
 echo "OK: committed assets match their sources ($HAVE)"
+echo "OK: proto worker wasm matches native/worker ($HAVE_WORKER)"
