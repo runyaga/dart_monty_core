@@ -150,6 +150,18 @@
 - New runtime dependencies: `protobuf` (^6.1.0) and `fixnum` (^1.1.0). The
   bindings are reachable from no public library, so compiled web apps do not
   grow until a public path uses them.
+- Tooling only, no library change: `tool/check_export_boundary.dart` now
+  also records the public members of every declaration the exported names
+  reach in `tool/export-golden.txt`. Each declaration is listed once, under
+  the library that declares it. The record covers kinds, modifiers (`const`,
+  `factory`, `static`, class modifiers), type parameters and bounds,
+  supertypes, a sealed class's subtypes (private ones included), whether a
+  field has a setter, and each parameter's position, name, type and
+  default. A type is named with its library wherever the name alone could
+  mean another declaration. A change to any of them now fails the check
+  until the golden is updated. The tool prints signatures itself from the
+  analyzer's element model, so an analyzer upgrade does not change the
+  golden through formatting.
 
 ### Fixed
 
