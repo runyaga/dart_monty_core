@@ -11,6 +11,11 @@
   lives under `lib/src/worker/` and nothing is exported, so there is no new
   public API. `tool/generate_proto.sh` regenerates the bindings and CI's
   `proto-drift` job fails if the committed copy differs.
+- Internal groundwork, continued: a pure-Dart driver for one Python session
+  on a worker (configure with limits, feed with typed inputs, external
+  function and OS call answers, print streaming, reset), and a value arena
+  that keeps shared sub-objects shared in both directions and nests without
+  recursion. Still under `lib/src/worker/` and not exported.
 
 ### Changed
 

@@ -9,6 +9,8 @@
 // protobuf are wire-compatible with the worker, not merely self-consistent.
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:fixnum/fixnum.dart';
@@ -146,6 +148,28 @@ void main() {
       maxSuspensions: Int64(1000),
     );
     expect(Frame.encode(ev), _completeFrame);
+  });
+
+  test("upstream's Complete reads as values, sharing kept", () {
+    final ev = pb.ChildEvent.fromBuffer(
+      onlyItem(Frame.split(_bytes(_completeFrame))),
+    );
+    final dict =
+        ArenaReader(ev.complete.values)[ev.complete.value] as MontyDict;
+    final byKey = {
+      for (final (k, v) in dict.pairs) (k as MontyInt).value: v,
+    };
+    MontyValue at(int key) => byKey[key] ?? fail('no key $key');
+    final four = at(20);
+    final shared = at(40);
+    expect(at(10), MontyBigInt(BigInt.parse(_big)));
+    expect(four, const MontyFloat(4));
+    expect(four, isA<MontyFloat>());
+    final zero = at(30) as MontyFloat;
+    expect(zero.value.isNegative, isTrue, reason: '-0.0 keeps its sign');
+    expect(shared, const MontyList([MontyInt(1), MontyInt(2)]));
+    expect(identical(shared, at(50)), isTrue, reason: 'one shared sub-list');
+    expect(at(60), MontyBigInt(BigInt.parse('-$_big')));
   });
 
   test('both goldens decode from one stream split at every byte', () {
