@@ -426,6 +426,26 @@ void main() {
       expect(afterward.peak, bounded);
     });
 
+    test(
+      'a request larger than the pipe is sent while stdout is paused',
+      () async {
+        final channel = await _spawn('flood');
+        expect(
+          (await channel.turn(_configure)).whichKind(),
+          pb.ChildEvent_Kind.ok,
+        );
+        // Paused at the limit: the worker is blocked writing, so it reads no
+        // stdin until the parent reads stdout again.
+        expect(await settled(channel), greaterThanOrEqualTo(limit));
+        final printed = <pb.Print>[];
+        final end = await channel
+            .turn(_feed('#' * (2 << 20)), onPrint: printed.add)
+            .timeout(const Duration(seconds: 20));
+        expect(end.whichKind(), pb.ChildEvent_Kind.complete);
+        expect(printed, hasLength(floodPrints));
+      },
+    );
+
     test('a frame larger than the limit completes; later ones wait', () async {
       final channel = await _spawn('big-frame');
       expect(

@@ -407,6 +407,20 @@ void main() {
       expect(p.liveWorkers, 0);
     });
 
+    test('a release after close kills at once, without a Reset', () async {
+      starts = FakeStarts(auto: false);
+      final p = await pool(const PoolOptions(minProcesses: 0, maxProcesses: 1));
+      final acquired = acquireEach(p, 1);
+      // A worker that would never answer the Reset.
+      final start = starts.only..succeed(ScriptedChannel([hangAfter([])]));
+      final [lease] = await acquired;
+      await p.close();
+      await lease.release().timeout(const Duration(seconds: 5));
+      expect(start.channel.requests, isEmpty);
+      expect(start.channel.kills, 1);
+      expect(p.liveWorkers, 0);
+    });
+
     test('fails a waiting acquire', () async {
       final p = await pool(const PoolOptions(maxProcesses: 1));
       final [held] = await acquireEach(p, 1);

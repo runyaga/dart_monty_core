@@ -358,7 +358,8 @@ final class WorkerLease {
   /// Sends `Reset` and, on `Ok`, gives the worker back to the pool;
   /// otherwise kills it and rethrows the failure (a reply other than `Ok`
   /// is a [StateError]). The `Reset` turn is bounded by the pool's
-  /// `requestTimeout`.
+  /// `requestTimeout`. Once the pool is closed it kills the worker at once,
+  /// without a `Reset`.
   ///
   /// Completes normally if [kill] ends the lease first. Idempotent.
   Future<void> release() => _releasing ??= _release();
@@ -374,6 +375,8 @@ final class WorkerLease {
 
   Future<void> _release() async {
     if (_isReleased) return;
+    // A closed pool keeps no worker: there is nothing to Reset for.
+    if (_pool._closed) return kill();
     final worker = _worker;
     final limit = _pool.options.requestTimeout;
     final timer = limit == null ? null : Timer(limit, worker.channel.kill);

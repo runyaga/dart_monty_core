@@ -136,19 +136,20 @@ final class ProcessChannel implements MontyChannel {
     final frame = Frame.encode(request);
     _busy = true;
     try {
-      var sent = isAlive;
-      if (sent) {
-        final stdin = _process.stdin;
-        try {
-          stdin.add(frame);
-          await stdin.flush();
-        } on Object catch (_) {
-          sent = false;
-        }
-      }
-      if (!sent) throw await _crashed();
+      final stdin = _process.stdin;
+      final sending = isAlive && _added(stdin, frame)
+          ? _flushed(stdin)
+          : Future.value(false);
+      // Read while the request is still being written: a worker paused on
+      // a full stdout reads no stdin until the parent reads again, so a
+      // request larger than the pipe would otherwise never be sent. A
+      // request that was not sent ends the turn as a crash, whatever was
+      // read.
+      final event = await _readTurn(onPrint);
 
-      return await _readTurn(onPrint);
+      // _flushed catches every failure, so nothing can go uncaught here.
+      // ignore: avoid-uncaught-future-errors
+      return await sending ? event : throw await _crashed();
     } finally {
       _busy = false;
     }
@@ -276,6 +277,28 @@ Map<String, String> workerEnvironment({
   return {
     if (isWindows && systemRoot != null) 'SystemRoot': systemRoot,
   };
+}
+
+/// Whether [frame] could be added to [stdin]; false once it is closed.
+bool _added(IOSink stdin, List<int> frame) {
+  try {
+    stdin.add(frame);
+
+    return true;
+  } on Object catch (_) {
+    return false;
+  }
+}
+
+/// Whether everything added to [stdin] was written.
+Future<bool> _flushed(IOSink stdin) async {
+  try {
+    await stdin.flush();
+
+    return true;
+  } on Object catch (_) {
+    return false;
+  }
 }
 
 /// Awaits [done], a stdin's completion, discarding its failure.
