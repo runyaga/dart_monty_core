@@ -4,6 +4,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
@@ -52,8 +53,17 @@ void main() {
     );
   });
 
-  test('a start cancelled at once leaves no worker running', () async {
-    final handle = openChannel()..cancel();
+  test('a start cancelled at once kills its process when it arrives', () async {
+    // The native factory's start, with the spawned process observable: the
+    // test waits for that process to exit, not just for the cancel.
+    final launch = await realWorker();
+    final spawned = Completer<ProcessChannel>();
+    final handle = PendingSpawn((_) async {
+      final channel = await ProcessChannel.spawn(launch);
+      spawned.complete(channel);
+
+      return channel;
+    })..cancel();
     await expectLater(
       handle.ready,
       throwsA(
@@ -64,8 +74,9 @@ void main() {
         ),
       ),
     );
-    // The process that was already starting is killed as it arrives; the
-    // tearDown fails the test if it is still running.
+    final channel = await spawned.future;
+    await channel.exitCode.timeout(const Duration(seconds: 5));
+    expect(channel.isAlive, isFalse);
   });
 
   test(
