@@ -231,8 +231,8 @@ jobs:
           run bash tool/check_api_exercised.sh
           run bash tool/check_api_absent.sh
           # Nothing under lib/src/worker/ exported or in a public signature,
-          # and the exported names equal tool/export-golden.txt; then the
-          # check's own controls. Not `dart run`, which would build the
+          # and the exported names and their public members equal
+          # tool/export-golden.txt; then the check's own controls. Not `dart run`, which would build the
           # native crate through the build hook.
           run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart
           run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test

@@ -23,9 +23,23 @@
 //    every declaration of this package those types name, exported or not.
 //    Private members are skipped; private classes are not, because their
 //    public members are inherited by the public classes that extend them.
-// 3. GOLDEN. The exported names equal tool/export-golden.txt, per library.
-//    A difference prints the added and removed names; review it as a public
-//    API change, then rewrite the file with --update.
+// 3. GOLDEN. The exported names equal tool/export-golden.txt, per library,
+//    and so do the public members of every declaration rule 2 reaches. A
+//    difference prints the added and removed lines; review it as a public API
+//    change, then rewrite the file with --update.
+//
+// THE MEMBER GOLDEN. Each declaration of this package that rule 2 reaches
+// (exported, named by a public signature, or a supertype of one, private
+// classes included) is printed once, in a `[members: <path>]` section for the
+// library that declares it; the per-library `[<path>]` sections stay
+// names-only, so a library that re-exports another does not repeat its
+// members. A declaration prints its kind, modifiers, type parameters with
+// bounds and supertypes; each public member prints its kind, modifiers,
+// parameters (position, `required`, `covariant`, name, type and default
+// value source) and type. The printer is this tool's own and reads only the
+// element model: the analyzer's display-string formatter is never called (the
+// check fails if this file names it), so an analyzer upgrade changes the
+// golden only where the element model changes.
 //
 // IMPORTS ARE ALLOWED. Rule 1 and 2 are "exported or in a public signature",
 // not "reachable". A public library may import worker code and use it in
@@ -41,7 +55,9 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/file_system/file_system.dart'
     show Folder, ResourceProvider;
@@ -93,6 +109,24 @@ final class _CheckExportBoundary {
   /// Exported names per public library, keyed by its path under lib/.
   final Map<String, List<String>> names = {};
 
+  /// Printed declarations and members, per declaring library, keyed
+  /// `members: <path under lib/>`.
+  final Map<String, List<String>> members = {};
+
+  /// Every own declaration rule 2 reached.
+  final Set<Element> declarations = {};
+
+  /// The names and member sections together, as the golden lists them.
+  Map<String, List<String>> get sections => {...names, ...members};
+
+  /// As [sections], with every member line in one section: a conditional
+  /// export selects a different file per platform, so platforms are
+  /// compared on what they declare, not on which file declares it.
+  Map<String, List<String>> get platformSections => {
+    ...names,
+    'members': members.values.expand((lines) => lines).toList(),
+  };
+
   /// Rule 1 and 2 failures.
   final List<String> violations = [];
 
@@ -133,14 +167,15 @@ Future<int> _run(String root, {required bool update}) async {
     root,
     PhysicalResourceProvider.INSTANCE,
   );
+  _checkToolSource(_toolSource(root), report);
   final golden = File('$root/$_goldenPath');
   if (update) {
-    golden.writeAsStringSync(_renderGolden(report.names));
+    golden.writeAsStringSync(_renderGolden(report.sections));
     stdout.writeln('wrote $_goldenPath');
   }
   final diff = _diffGolden(
     golden.existsSync() ? golden.readAsStringSync() : '',
-    report.names,
+    report.sections,
   );
   _print(report, diff);
   final failed = report.violations.isNotEmpty || diff.isNotEmpty;
@@ -154,8 +189,14 @@ void _print(_CheckExportBoundary report, List<String> diff) {
   for (final MapEntry(:key, :value) in report.names.entries) {
     stdout.writeln('$key: ${value.length} exported names');
   }
+  final printed = report.members.values.expand((lines) => lines);
+  final members = printed.where((line) => line.startsWith(' ')).length;
   stdout
     ..writeln('${unique.length} unique exported names')
+    ..writeln(
+      '${printed.length - members} declarations and $members public members '
+      'in ${report.members.length} declaring libraries',
+    )
     ..writeln(
       'also analysed with: '
       '${report.conditions.isEmpty ? 'none' : report.conditions.join(', ')}',
@@ -168,7 +209,9 @@ void _print(_CheckExportBoundary report, List<String> diff) {
     stdout.writeln('FAIL $violation');
   }
   if (diff.isNotEmpty) {
-    stdout.writeln('FAIL exported names differ from $_goldenPath:');
+    stdout.writeln(
+      'FAIL exported names or public members differ from $_goldenPath:',
+    );
     diff.forEach(stdout.writeln);
     stdout.writeln(
       '  Review the diff as a public API change, then: '
@@ -187,7 +230,7 @@ Future<_CheckExportBoundary> _analyzeBoundary(
 ) async {
   final report = _CheckExportBoundary();
   await _analyzeUnder(root, provider, const {}, report);
-  final defaults = Map.of(report.names);
+  final defaults = report.platformSections;
   for (final declared in _platforms(_conditions(root, provider))) {
     final variant = _CheckExportBoundary();
     await _analyzeUnder(root, provider, declared, variant);
@@ -197,14 +240,17 @@ Future<_CheckExportBoundary> _analyzeBoundary(
     report.conditions.add(label);
     report.violations.addAll([
       for (final violation in variant.violations) '[$label] $violation',
-      for (final line in _diffNames(defaults, variant.names))
-        '[$label] exported names differ from the default platform: $line',
+      for (final line in _diffNames(defaults, variant.platformSections))
+        '[$label] $_differsFromDefault: $line',
     ]);
     report.importOnly.addAll(variant.importOnly);
   }
 
   return report;
 }
+
+const _differsFromDefault =
+    'exported names or members differ from the default platform';
 
 /// Above this many combinations the check refuses rather than slow down.
 const _maxPlatforms = 64;
@@ -256,6 +302,8 @@ Future<void> _analyzeUnder(
       }
       _checkLibrary(relative, result.element, report);
     }
+    // Printed while the collection is alive: the elements belong to it.
+    report.members.addAll(_printDeclarations(report.declarations));
   } finally {
     await collection.dispose();
   }
@@ -324,6 +372,14 @@ void _checkLibrary(
     walker.add(value, key);
   }
   walker.run();
+  report.declarations.addAll(
+    walker.seen
+        .map(_declarationOf)
+        .nonNulls
+        .where(
+          (element) => _forbiddenSource(element) == null,
+        ),
+  );
   report.importOnly.addAll(_forbiddenByImport(library));
 }
 
@@ -384,6 +440,9 @@ final class _SignatureWalker {
   final List<String> _violations;
   final Set<Element> _seen = {};
   final List<(Element, String)> _pending = [];
+
+  /// Every element walked so far.
+  Set<Element> get seen => _seen;
 
   void add(Element element, String path) {
     if (_seen.add(element)) _pending.add((element, path));
@@ -486,13 +545,358 @@ List<Element> _membersOf(Element element) => switch (element) {
   _ => const [],
 };
 
+// ---------------------------------------------------------------------------
+// The member golden's printer. It reads the element model only; every type is
+// printed by _type below, never by the analyzer's own formatter.
+// ---------------------------------------------------------------------------
+
+/// The library-level declaration [element] is or belongs to, when it is one
+/// of this package's: a top-level variable for its implicit accessors.
+Element? _declarationOf(Element element) {
+  final declaration = switch (element) {
+    PropertyAccessorElement(isOriginVariable: true, :final variable) =>
+      variable,
+    _ => element,
+  };
+  final library = declaration.library;
+  if (library == null || !_isOwn(library.uri)) return null;
+
+  return declaration.enclosingElement is LibraryElement ? declaration : null;
+}
+
+/// The member sections for [declarations]: per declaring library, each
+/// declaration's line followed by its public members' lines, indented.
+Map<String, List<String>> _printDeclarations(Set<Element> declarations) {
+  final byLibrary = SplayTreeMap<String, Map<String, Element>>();
+  for (final element in declarations) {
+    final path = element.library!.uri.toString().substring(_package.length);
+    byLibrary.putIfAbsent('members: $path', () => {})[_sortKey(element)] =
+        element;
+  }
+
+  return {
+    for (final MapEntry(:key, :value) in byLibrary.entries)
+      key: [
+        for (final name in value.keys.toList()..sort())
+          ..._printDeclaration(value[name]!),
+      ],
+  };
+}
+
+String _sortKey(Element element) =>
+    '${_nameOf(element)}${element is SetterElement ? '=' : ''}';
+
+String _nameOf(Element element) => element.name ?? '<unnamed>';
+
+List<String> _printDeclaration(Element element) {
+  final name = _nameOf(element);
+  final members = [
+    for (final member in _membersOf(element))
+      if (_printMember(member) case final line?) '  $name.$line',
+  ]..sort();
+
+  return [_printHead(element), ...members];
+}
+
+/// The declaration's own line: modifiers, kind, name, type parameters,
+/// supertypes or type.
+String _printHead(Element element) {
+  final name = _nameOf(element);
+  final generics = element is TypeParameterizedElement
+      ? _typeParameters(element.typeParameters)
+      : '';
+
+  return switch (element) {
+    ClassElement() => _words([
+      ..._classModifiers(element),
+      'class $name$generics${_supertypes(element)}',
+    ]),
+    MixinElement() => _words([
+      if (element.isBase) 'base',
+      'mixin $name$generics${_constraints(element)}',
+    ]),
+    EnumElement() => 'enum $name$generics${_supertypes(element)}',
+    ExtensionTypeElement(:final representation) =>
+      'extension type $name$generics'
+          '(${_type(representation.type)} ${_nameOf(representation)})'
+          '${_list(' implements ', element.interfaces)}',
+    ExtensionElement(:final extendedType) =>
+      'extension $name$generics on ${_type(extendedType)}',
+    TypeAliasElement(:final aliasedType) =>
+      'typedef $name$generics = ${_type(aliasedType)}',
+    TopLevelVariableElement() => _words([
+      if (element.isExternal) 'external',
+      ..._variableModifiers(element),
+      'variable',
+      _type(element.type),
+    ], prefix: '$name: '),
+    ExecutableElement() => _printExecutable(element, name),
+    _ => throw StateError(
+      'no canonical form for ${element.kind.displayName} $name',
+    ),
+  };
+}
+
+/// ` on C implements I`.
+String _constraints(MixinElement element) =>
+    _list(' on ', element.superclassConstraints) +
+    _list(' implements ', element.interfaces);
+
+List<String> _classModifiers(ClassElement element) => element.isSealed
+    ? ['sealed']
+    : [
+        if (element.isAbstract) 'abstract',
+        if (element.isBase) 'base',
+        if (element.isInterface) 'interface',
+        if (element.isFinal) 'final',
+        if (element.isMixinClass) 'mixin',
+      ];
+
+/// ` extends S with M implements I`, leaving out the implicit `Object` and
+/// an enum's implicit `Enum`.
+String _supertypes(InterfaceElement element) {
+  final supertype = element.supertype;
+  final implicit =
+      supertype == null ||
+      supertype.isDartCoreObject ||
+      (element is EnumElement && supertype.isDartCoreEnum);
+
+  return '${implicit ? '' : ' extends ${_type(supertype)}'}'
+      '${_list(' with ', element.mixins)}'
+      '${_list(' implements ', element.interfaces)}';
+}
+
+String _list(String keyword, List<DartType> types) {
+  final shown = types.where((type) => !type.isDartCoreObject).toList();
+
+  return shown.isEmpty ? '' : '$keyword${shown.map(_type).join(', ')}';
+}
+
+/// One member's line, after `Declaration.`, or null when it only stands for
+/// another one (a field's implicit accessors, an explicit getter's field) or
+/// cannot be called from outside (an enum's constructors).
+String? _printMember(Element member) {
+  final name = _nameOf(member);
+
+  return switch (member) {
+    ConstructorElement(enclosingElement: EnumElement()) => null,
+    ConstructorElement() => _words([
+      if (member.isExternal) 'external',
+      if (member.isConst) 'const',
+      if (member.isFactory) 'factory',
+      'constructor${_parameters(member.formalParameters)}',
+      if (member.redirectedConstructor != null) 'redirecting',
+    ], prefix: '$name: '),
+    FieldElement(isOriginGetterSetter: true) => null,
+    FieldElement() => _words([
+      if (member.isStatic) 'static',
+      if (member.isAbstract) 'abstract',
+      if (member.isExternal) 'external',
+      if (member.isCovariant) 'covariant',
+      ..._variableModifiers(member),
+      if (member.isEnumConstant) 'enum value' else 'field',
+      _type(member.type),
+    ], prefix: '$name: '),
+    PropertyAccessorElement(isOriginVariable: true) => null,
+    ExecutableElement() => _printExecutable(member, name),
+    _ => throw StateError(
+      'no canonical form for member ${member.kind.displayName} $name',
+    ),
+  };
+}
+
+List<String> _variableModifiers(PropertyInducingElement element) => [
+  if (element.isLate) 'late',
+  if (element.isConst) 'const' else if (element.isFinal) 'final',
+];
+
+/// A method, operator, getter, setter or top-level function.
+String _printExecutable(ExecutableElement element, String name) {
+  final kind = switch (element) {
+    GetterElement() => 'getter',
+    SetterElement() => 'setter',
+    MethodElement(isOperator: true) => 'operator',
+    MethodElement() => 'method',
+    TopLevelFunctionElement() => 'function',
+    _ => throw StateError('no canonical form for $name'),
+  };
+  final signature = switch (element) {
+    GetterElement() => ' -> ${_type(element.returnType)}',
+    SetterElement() => _parameters(element.formalParameters),
+    _ =>
+      '${_typeParameters(element.typeParameters)}'
+          '${_parameters(element.formalParameters)}'
+          ' -> ${_type(element.returnType)}',
+  };
+  final member = element.enclosingElement is! LibraryElement;
+
+  return _words([
+    if (element.isStatic && member) 'static',
+    if (element.isAbstract) 'abstract',
+    if (element.isExternal) 'external',
+    '$kind$signature',
+  ], prefix: '${element is SetterElement ? '$name=' : name}: ');
+}
+
+String _words(List<String> words, {String prefix = ''}) =>
+    '$prefix${words.join(' ')}';
+
+String _typeParameters(List<TypeParameterElement> parameters) =>
+    parameters.isEmpty
+    ? ''
+    : '<${parameters.map((parameter) {
+        final bound = parameter.bound;
+
+        return '${_nameOf(parameter)}'
+            '${bound == null ? '' : ' extends ${_type(bound)}'}';
+      }).join(', ')}>';
+
+/// `(A a, [B b = 1], {required C c, D d})`; with [positionalNames] false,
+/// as in a function type, positional parameters print their types only.
+String _parameters(
+  List<FormalParameterElement> parameters, {
+  bool positionalNames = true,
+}) {
+  String one(FormalParameterElement parameter) {
+    final name = parameter.isNamed || positionalNames
+        ? ' ${_nameOf(parameter)}'
+        : '';
+    final value = parameter.defaultValueCode;
+
+    return _words([
+      if (parameter.isCovariant) 'covariant',
+      if (parameter.isRequiredNamed) 'required',
+      '${_type(parameter.type)}$name${value == null ? '' : ' = $value'}',
+    ]);
+  }
+
+  final required = [
+    for (final parameter in parameters)
+      if (parameter.isRequiredPositional) one(parameter),
+  ];
+  final optional = [
+    for (final parameter in parameters)
+      if (parameter.isOptionalPositional) one(parameter),
+  ];
+  final keyed = [
+    for (final parameter in parameters)
+      if (parameter.isNamed) one(parameter),
+  ];
+
+  return '(${[
+    ...required,
+    if (optional.isNotEmpty) '[${optional.join(', ')}]',
+    if (keyed.isNotEmpty) '{${keyed.join(', ')}}',
+  ].join(', ')})';
+}
+
+/// The tool's canonical text for [type]: the alias when the type was written
+/// through one, type arguments, and `?` for a nullable type.
+String _type(DartType type) {
+  final nullable = type.nullabilitySuffix == NullabilitySuffix.question;
+  if (type.alias case InstantiatedTypeAliasElement(
+    :final element,
+    :final typeArguments,
+  )) {
+    final aliasNullable =
+        element.aliasedType.nullabilitySuffix == NullabilitySuffix.question;
+
+    return '${_nameOf(element)}${_arguments(typeArguments)}'
+        '${nullable && !aliasNullable ? '?' : ''}';
+  }
+  final suffix = nullable ? '?' : '';
+
+  return switch (type) {
+    DynamicType() => 'dynamic',
+    VoidType() => 'void',
+    InvalidType() => throw StateError('an unresolved type in a signature'),
+    NeverType() => 'Never$suffix',
+    InterfaceType(:final element, :final typeArguments) =>
+      '${_nameOf(element)}${_arguments(typeArguments)}$suffix',
+    TypeParameterType(:final element) => '${_nameOf(element)}$suffix',
+    FunctionType(
+      :final returnType,
+      :final typeParameters,
+      :final formalParameters,
+    ) =>
+      '${_type(returnType)} Function${_typeParameters(typeParameters)}'
+          '${_parameters(formalParameters, positionalNames: false)}$suffix',
+    RecordType() => '${_record(type)}$suffix',
+    _ => throw StateError('no canonical form for a ${type.runtimeType}'),
+  };
+}
+
+/// `(A, {B b})`, and `(A,)` for one positional field alone.
+String _record(RecordType type) {
+  final positional = type.positionalFields.map((field) => _type(field.type));
+  final named = [
+    for (final field in type.namedFields) '${_type(field.type)} ${field.name}',
+  ];
+  final fields = [
+    ...positional,
+    if (named.isNotEmpty) '{${named.join(', ')}}',
+  ];
+
+  final trailing = fields.length == 1 && named.isEmpty ? ',' : '';
+
+  return '(${fields.join(', ')}$trailing)';
+}
+
+String _arguments(List<DartType> arguments) =>
+    arguments.isEmpty ? '' : '<${arguments.map(_type).join(', ')}>';
+
+/// Identifiers in a Dart [source] that reach the analyzer's display-string
+/// formatter, with their line numbers. The printer above must not use it.
+List<String> _formatterReferences(String source) {
+  final result = parseString(content: source, throwIfDiagnostics: false);
+  final found = <String>[];
+  result.unit.accept(
+    _IdentifierVisitor((node) {
+      if (_formatter.hasMatch(node.name)) {
+        final line = result.lineInfo.getLocation(node.offset).lineNumber;
+        found.add('${node.name} at line $line');
+      }
+    }),
+  );
+
+  return found;
+}
+
+final _formatter = RegExp('displaystring', caseSensitive: false);
+
+final class _IdentifierVisitor extends RecursiveAstVisitor<void> {
+  _IdentifierVisitor(this._onIdentifier);
+
+  final void Function(SimpleIdentifier node) _onIdentifier;
+
+  @override
+  void visitSimpleIdentifier(SimpleIdentifier node) {
+    _onIdentifier(node);
+    super.visitSimpleIdentifier(node);
+  }
+}
+
+String _toolSource(String root) =>
+    File('$root/tool/check_export_boundary.dart').readAsStringSync();
+
+void _checkToolSource(String source, _CheckExportBoundary report) {
+  for (final reference in _formatterReferences(source)) {
+    report.violations.add(
+      'tool/check_export_boundary.dart: names the analyzer formatter, '
+      '$reference; print types with _type',
+    );
+  }
+}
+
 /// The golden file's text for [names].
 String _renderGolden(Map<String, List<String>> names) {
   final out = StringBuffer()
     ..writeln('# Every name each public library exports, one section per')
-    ..writeln('# library. tool/check_export_boundary.dart fails on any')
-    ..writeln('# difference. A diff here is a public API change: review it')
-    ..writeln('# as one, then regenerate this file with')
+    ..writeln('# library, then every declaration those names reach, with its')
+    ..writeln('# public members, once, in a "members:" section for the library')
+    ..writeln('# that declares it. tool/check_export_boundary.dart fails on')
+    ..writeln('# any difference. A diff here is a public API change: review')
+    ..writeln('# it as one, then regenerate this file with')
     ..writeln('#   $_command --update');
   for (final MapEntry(:key, :value) in names.entries) {
     out
@@ -515,8 +919,13 @@ List<String> _diffNames(
   final libraries = {...expected.keys, ...names.keys}.toList()..sort();
   final diff = <String>[];
   for (final library in libraries) {
-    final want = (expected[library] ?? const <String>[]).toSet();
-    final have = (names[library] ?? const <String>[]).toSet();
+    // Member lines are indented in the file; the indent is layout only.
+    final want = {
+      for (final line in expected[library] ?? const <String>[]) line.trim(),
+    };
+    final have = {
+      for (final line in names[library] ?? const <String>[]) line.trim(),
+    };
     final lines = [
       for (final name in have.difference(want)) '  + $name',
       for (final name in want.difference(have)) '  - $name',
@@ -576,6 +985,10 @@ final class _Control {
     this.mentions,
     this.edits, {
     this.needsImport = false,
+    this.alsoMentions = const [],
+    this.base,
+    this.section,
+    this.toolEdit,
   });
 
   final String name;
@@ -589,6 +1002,19 @@ final class _Control {
 
   /// Package-relative path to edit (a missing file starts empty).
   final Map<String, String Function(String original)> edits;
+
+  /// More text the failure output must contain.
+  final List<String> alsoMentions;
+
+  /// Edits the golden is generated from, in place of the committed golden,
+  /// so a control can change one detail of a declaration the package lacks.
+  final Map<String, String Function(String original)>? base;
+
+  /// A member section the edited package must print exactly.
+  final (String, String)? section;
+
+  /// An edit to this tool's own source before its formatter scan.
+  final String Function(String original)? toolEdit;
 }
 
 const _proto =
@@ -599,6 +1025,149 @@ const _nestedProbe =
     ' as boundary_probe;\n';
 const _valueAnchor = 'sealed class MontyValue {\n';
 const _partAnchor = "part 'monty_value_scalars.dart';";
+
+const _limitsAnchor = 'final class MontyLimits {\n';
+const _limitsFile = 'lib/src/platform/monty_limits.dart';
+const _frameAnchor =
+    'static List<MontyStackFrame> listFromJson(List<Object?> jsonList)';
+const _frameFile = 'lib/src/platform/monty_stack_frame.dart';
+const _memoryFile = 'lib/src/mount/monty_memory_file.dart';
+
+/// A public method with a bounded type parameter, added to MontyLimits.
+String Function(String) _boundProbe(String bound) => _insertAfter(
+  _limitsAnchor,
+  '  T boundaryProbe<T extends $bound>(T value) => value;\n',
+);
+
+/// MontyLimits extending a private class, whose public members are
+/// inherited: [members] is that class's body.
+String Function(String) _privateBase(String members) =>
+    (s) => _replaceOnce(
+      s,
+      _limitsAnchor,
+      'abstract class _BoundaryProbeBase {\n'
+      '  const _BoundaryProbeBase();\n'
+      '$members}\n'
+      'final class MontyLimits extends _BoundaryProbeBase {\n',
+    );
+
+/// A public library declaring one of each kind the printer handles.
+const _fixture = '''
+library;
+
+typedef ProbeCallback<T extends Object> =
+    Future<T?> Function(int count, {required bool flag, String? label});
+
+abstract base class ProbeBase<T extends num>
+    implements Comparable<ProbeBase<T>> {
+  const ProbeBase();
+  int get id;
+}
+
+final class Probe<T extends num> extends ProbeBase<T> with ProbeMixin {
+  const Probe(this.value, {this.label = 'x', required this.flag,
+      this.limit = 3});
+  const factory Probe.redirect(T value, {required bool flag}) = Probe<T>;
+  factory Probe.make() => throw UnimplementedError();
+  final T value;
+  final String label;
+  final bool flag;
+  final int? limit;
+  static late final int cache;
+  static const int max = 9;
+  @override
+  int get id => 0;
+  set name(String value) {}
+  int operator [](int index) => index;
+  R map<R extends Object?>(R Function(T) f, {(int, {String s})? record}) =>
+      f(value);
+  void widen(covariant num x, [List<Map<String, int?>>? rows]) {}
+  @override
+  int compareTo(ProbeBase<T> other) => 0;
+  int _hidden() => 0;
+}
+
+mixin ProbeMixin {
+  int get mixed => 1;
+}
+
+base mixin ProbeOn on ProbeBase<int> {}
+
+enum ProbeKind { a, b }
+
+extension ProbeExtension on Probe<int> {
+  int get doubled => 2;
+  static int helper() => 1;
+}
+
+extension type ProbeId(int raw) implements int {}
+
+sealed class ProbeSealed {}
+
+interface class ProbeInterface {}
+
+abstract mixin class ProbeMixinClass {}
+
+int probeFunction<T>(T value, {int? count, (String,)? one}) => 0;
+
+late final String probeLate;
+
+const probeConst = 1;
+
+Never probeNever() => throw StateError('');
+
+dynamic probeDynamic;
+
+void Function()? probeCallback;
+''';
+
+const _fixturePrinted = '''
+final class Probe<T extends num> extends ProbeBase<T> with ProbeMixin
+  Probe.[]: operator(int index) -> int
+  Probe.cache: static late final field int
+  Probe.compareTo: method(ProbeBase<T> other) -> int
+  Probe.flag: final field bool
+  Probe.id: getter -> int
+  Probe.label: final field String
+  Probe.limit: final field int?
+  Probe.make: factory constructor()
+  Probe.map: method<R extends Object?>(R Function(T) f, {(int, {String s})? record}) -> R
+  Probe.max: static const field int
+  Probe.name=: setter(String value)
+  Probe.new: const constructor(T value, {String label = 'x', required bool flag, int? limit = 3})
+  Probe.redirect: const factory constructor(T value, {required bool flag}) redirecting
+  Probe.value: final field T
+  Probe.widen: method(covariant num x, [List<Map<String, int?>>? rows]) -> void
+abstract base class ProbeBase<T extends num> implements Comparable<ProbeBase<T>>
+  ProbeBase.id: abstract getter -> int
+  ProbeBase.new: const constructor()
+typedef ProbeCallback<T extends Object> = Future<T?> Function(int, {required bool flag, String? label})
+extension ProbeExtension on Probe<int>
+  ProbeExtension.doubled: getter -> int
+  ProbeExtension.helper: static method() -> int
+extension type ProbeId(int raw) implements int
+  ProbeId.new: constructor(int raw)
+  ProbeId.raw: final field int
+interface class ProbeInterface
+  ProbeInterface.new: constructor()
+enum ProbeKind
+  ProbeKind.a: static const enum value ProbeKind
+  ProbeKind.b: static const enum value ProbeKind
+  ProbeKind.values: static const field List<ProbeKind>
+mixin ProbeMixin
+  ProbeMixin.mixed: getter -> int
+abstract mixin class ProbeMixinClass
+  ProbeMixinClass.new: constructor()
+base mixin ProbeOn on ProbeBase<int>
+sealed class ProbeSealed
+  ProbeSealed.new: constructor()
+probeCallback: variable void Function()?
+probeConst: const variable int
+probeDynamic: variable dynamic
+probeFunction: function<T>(T value, {int? count, (String,)? one}) -> int
+probeLate: late final variable String
+probeNever: function() -> Never
+''';
 
 final _controls = [
   const _Control('unchanged package passes', _Verdict.pass, '', {}),
@@ -633,7 +1202,7 @@ final _controls = [
   ),
   _Control(
     'proto type selected only when two conditions hold together',
-    _Verdict.boundary,
+    _Verdict.both,
     'boundary_a==true dart.library.boundary_b==true] dart_monty_core.dart: '
         'MontyValue.boundaryProbe (signature) names Arena',
     {
@@ -668,7 +1237,7 @@ final _controls = [
   ),
   _Control(
     'proto type in a public member signature',
-    _Verdict.boundary,
+    _Verdict.both,
     'names Arena',
     {
       'lib/src/platform/monty_value.dart': (s) => _insertAfter(
@@ -679,7 +1248,7 @@ final _controls = [
   ),
   _Control(
     'proto type behind an unexported package type',
-    _Verdict.boundary,
+    _Verdict.both,
     'BoundaryProbe.arena (type) names Arena',
     {
       'lib/src/boundary_probe.dart': (_) =>
@@ -711,6 +1280,178 @@ final _controls = [
     },
     needsImport: true,
   ),
+  _Control(
+    'public member added',
+    _Verdict.golden,
+    '+ MontyLimits.boundaryProbe: getter -> int',
+    {
+      _limitsFile: _insertAfter(
+        _limitsAnchor,
+        '  int get boundaryProbe => 0;\n',
+      ),
+    },
+  ),
+  _Control(
+    'public member removed',
+    _Verdict.golden,
+    '- MontyLimits.defaultMaxSuspensions: static const field int',
+    {
+      _limitsFile: (s) => _replaceOnce(
+        s,
+        '  static const int defaultMaxSuspensions = 1000;',
+        '',
+      ),
+    },
+  ),
+  _Control(
+    'constructor removed',
+    _Verdict.golden,
+    '- MontyLimits.jsAligned: factory constructor({int? maxMemory, '
+        'double? maxDurationSecs, int? maxRecursionDepth})',
+    {
+      _limitsFile: (s) => _replaceOnce(
+        s,
+        'factory MontyLimits.jsAligned({',
+        'static MontyLimits jsAligned({',
+      ),
+    },
+    alsoMentions: ['+ MontyLimits.jsAligned: static method('],
+  ),
+  _Control(
+    'parameter renamed',
+    _Verdict.golden,
+    '+ MontyMemoryFile.new: factory constructor(String path, '
+        'Object content, {int mode = 0x1A4})',
+    {
+      _memoryFile: (s) => _replaceOnce(
+        s,
+        '    int permissions = 0x1A4,',
+        '    int mode = 0x1A4,',
+      ),
+    },
+    alsoMentions: ['- MontyMemoryFile.new: factory constructor('],
+  ),
+  _Control(
+    'parameter type changed',
+    _Verdict.golden,
+    '+ MontyStackFrame.listFromJson: '
+        'static method(Iterable<Object?> jsonList) -> List<MontyStackFrame>',
+    {
+      _frameFile: (s) => _replaceOnce(
+        s,
+        _frameAnchor,
+        _frameAnchor.replaceFirst('(List<', '(Iterable<'),
+      ),
+    },
+  ),
+  _Control(
+    'nullability of a type argument changed',
+    _Verdict.golden,
+    '+ MontyStackFrame.listFromJson: '
+        'static method(List<Object> jsonList) -> List<MontyStackFrame>',
+    {
+      _frameFile: (s) => _replaceOnce(
+        s,
+        _frameAnchor,
+        _frameAnchor.replaceFirst('Object?', 'Object'),
+      ),
+    },
+  ),
+  _Control(
+    'default value changed',
+    _Verdict.golden,
+    '+ MontyMemoryFile.withContent: constructor(String path, '
+        'VfsContent content, {int permissions = 0x1ED})',
+    {
+      _memoryFile: (s) => _replaceOnce(
+        s,
+        '    this.permissions = 0x1A4,',
+        '    this.permissions = 0x1ED,',
+      ),
+    },
+  ),
+  _Control(
+    'const dropped from a constructor',
+    _Verdict.golden,
+    '+ MontyLimits.new: constructor({int? memoryBytes,',
+    {
+      _limitsFile: (s) =>
+          _replaceOnce(s, '  const MontyLimits({', '  MontyLimits({'),
+    },
+    alsoMentions: ['- MontyLimits.new: const constructor('],
+  ),
+  _Control(
+    'static member made an instance member',
+    _Verdict.golden,
+    '+ MontyStackFrame.listFromJson: '
+        'method(List<Object?> jsonList) -> List<MontyStackFrame>',
+    {
+      _frameFile: (s) => _replaceOnce(
+        s,
+        _frameAnchor,
+        _frameAnchor.replaceFirst('static ', ''),
+      ),
+    },
+  ),
+  _Control(
+    'final class made base',
+    _Verdict.golden,
+    '+ base class MontyLimits',
+    {
+      _limitsFile: (s) =>
+          _replaceOnce(s, _limitsAnchor, 'base class MontyLimits {\n'),
+    },
+    alsoMentions: ['- final class MontyLimits'],
+  ),
+  _Control(
+    'type parameter bound changed',
+    _Verdict.golden,
+    '+ MontyLimits.boundaryProbe: method<T extends int>(T value) -> T',
+    {_limitsFile: _boundProbe('int')},
+    base: {_limitsFile: _boundProbe('num')},
+    alsoMentions: [
+      '- MontyLimits.boundaryProbe: method<T extends num>(T value) -> T',
+    ],
+  ),
+  _Control(
+    'private member added (allowed)',
+    _Verdict.pass,
+    '',
+    {
+      _limitsFile: _insertAfter(
+        _limitsAnchor,
+        '  int get _boundaryProbe => 0;\n'
+        '  int get boundaryProbeUse => _boundaryProbe;\n',
+      ),
+    },
+    base: {
+      _limitsFile: _insertAfter(
+        _limitsAnchor,
+        '  int get boundaryProbeUse => 0;\n',
+      ),
+    },
+  ),
+  _Control(
+    'member of a private supertype inherited by a public class',
+    _Verdict.golden,
+    '+ _BoundaryProbeBase.inherited: getter -> int',
+    {_limitsFile: _privateBase('  int get inherited => 0;\n')},
+    base: {_limitsFile: _privateBase('')},
+  ),
+  _Control(
+    'printer output for a fixture library',
+    _Verdict.golden,
+    '+ ProbeCallback',
+    {'lib/boundary_probe_fixture.dart': (_) => _fixture},
+    section: ('members: boundary_probe_fixture.dart', _fixturePrinted),
+  ),
+  _Control(
+    'tool names the analyzer formatter',
+    _Verdict.boundary,
+    'names the analyzer formatter, getDisplayString at line',
+    {},
+    toolEdit: (s) => '$s\nString _probe(DartType t) => t.getDisplayString();\n',
+  ),
 ];
 
 Future<int> _selfTest(String root) async {
@@ -736,21 +1477,19 @@ Future<int> _selfTest(String root) async {
 /// Runs one control; returns why it failed, or null.
 Future<String?> _runControl(
   String root,
-  String golden,
+  String committed,
   _Control control,
 ) async {
-  final provider = OverlayResourceProvider(PhysicalResourceProvider.INSTANCE);
-  for (final MapEntry(:key, :value) in control.edits.entries) {
-    final file = File('$root/$key');
-    final original = file.existsSync() ? file.readAsStringSync() : '';
-    provider.setOverlay(
-      file.path,
-      content: value(original),
-      modificationStamp: 0,
-    );
-  }
-  final report = await _analyzeBoundary(root, provider);
-  final diff = _diffGolden(golden, report.names);
+  final golden = switch (control.base) {
+    null => committed,
+    final base => _renderGolden(
+      (await _analyzeBoundary(root, _overlay(root, base))).sections,
+    ),
+  };
+  final report = await _analyzeBoundary(root, _overlay(root, control.edits));
+  final source = _toolSource(root);
+  _checkToolSource(control.toolEdit?.call(source) ?? source, report);
+  final diff = _diffGolden(golden, report.sections);
   final output = [...report.violations, ...diff].join('\n');
   final verdict = switch ((report.violations.isEmpty, diff.isEmpty)) {
     (true, true) => _Verdict.pass,
@@ -764,8 +1503,36 @@ Future<String?> _runControl(
   if (control.needsImport && report.importOnly.isEmpty) {
     return 'no worker library was reached by import: the control is vacuous';
   }
+  if (control.section case (final key, final expected)?) {
+    final printed = (report.members[key] ?? const []).join('\n');
+    if (printed != expected.trim()) {
+      return 'section [$key] printed:\n$printed\nexpected:\n${expected.trim()}';
+    }
+  }
+  for (final text in [control.mentions, ...control.alsoMentions]) {
+    if (!output.contains(text)) {
+      return 'output does not mention "$text":\n$output';
+    }
+  }
 
-  return output.contains(control.mentions)
-      ? null
-      : 'output does not mention "${control.mentions}":\n$output';
+  return null;
+}
+
+/// The package as [edits] change it, in memory.
+OverlayResourceProvider _overlay(
+  String root,
+  Map<String, String Function(String original)> edits,
+) {
+  final provider = OverlayResourceProvider(PhysicalResourceProvider.INSTANCE);
+  for (final MapEntry(:key, :value) in edits.entries) {
+    final file = File('$root/$key');
+    final original = file.existsSync() ? file.readAsStringSync() : '';
+    provider.setOverlay(
+      file.path,
+      content: value(original),
+      modificationStamp: 0,
+    );
+  }
+
+  return provider;
 }
