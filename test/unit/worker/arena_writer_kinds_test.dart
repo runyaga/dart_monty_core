@@ -313,6 +313,29 @@ void main() {
       );
     });
 
+    test("an exception without a message is sent with argument ''", () {
+      // Upstream's encoder sends str(exc), which is '' for RuntimeError(),
+      // so the sandbox sees RuntimeError(''), not RuntimeError().
+      for (final type in ['RuntimeError', 'KeyError']) {
+        final e = _only(MontyExceptionValue(excType: type)).exception;
+        expect(e.hasArg(), isTrue, reason: type);
+        expect(e.arg, '', reason: type);
+      }
+      // str(SyntaxError()) is 'None' (CPython 3.12), and upstream sends that.
+      final syntax = _only(
+        const MontyExceptionValue(excType: 'SyntaxError'),
+      ).exception;
+      expect(syntax.hasArg(), isTrue);
+      expect(syntax.arg, 'None');
+      // An explicit empty message stays empty.
+      expect(
+        _only(
+          const MontyExceptionValue(excType: 'SyntaxError', message: ''),
+        ).exception.arg,
+        '',
+      );
+    });
+
     test('a zone name with no UTF-8 form is dropped; the offset stays', () {
       final zone = _only(
         const MontyTimeZone(offsetSeconds: 60, name: '\uD800'),
