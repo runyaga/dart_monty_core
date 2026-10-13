@@ -352,8 +352,8 @@
       "pct": 99.09
     },
     "lib/src/worker/arena_writer.dart": {
-      "found": 268,
-      "hit": 268,
+      "found": 269,
+      "hit": 269,
       "pct": 100.0
     },
     "lib/src/worker/asset_base.dart": {
@@ -463,8 +463,8 @@
     }
   },
   "total": {
-    "found": 6786,
-    "hit": 5484,
-    "pct": 80.81
+    "found": 6787,
+    "hit": 5485,
+    "pct": 80.82
   }
 }
