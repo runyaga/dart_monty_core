@@ -156,7 +156,8 @@
 - Worker groundwork (internal, no public API): an exception value without a
   message is sent with an argument, as upstream's encoder sends `str(exc)`:
   `''`, so the sandbox sees `RuntimeError('')`, not `RuntimeError()`; for
-  `SyntaxError`, `'None'`.
+  `SyntaxError`, `'None'`. `PARITY_PIN` moves to the parity suite that
+  asserts this case (`i_exception`) as a match.
 - Worker groundwork (internal, no public API): integers and floats in the
   worker's value arena are now exact. `tool/generate_proto.sh` declares four
   fields of its working copy of `monty.proto` with raw 64-bit types
