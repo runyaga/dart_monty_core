@@ -11,7 +11,6 @@ import 'dart:async';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
-import 'package:meta/meta.dart';
 
 /// A pool of Python workers, each dedicated to one session at a time.
 ///
@@ -69,8 +68,7 @@ final class MontyPool {
   );
 
   /// [start] with [options], and [open] in place of the platform's channel
-  /// factory.
-  @visibleForTesting
+  /// factory: for tests, and for harnesses that must see each worker.
   static Future<MontyPool> startWith(
     PoolOptions options, {
     OpenChannel? open,
