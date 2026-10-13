@@ -99,7 +99,8 @@ final Map<String, SessionConfig> configCases = {
   'frozen_offset_unnamed': _policy(
     OsPolicy(fixedDatetime: _frozen, fixedTimezone: const TimeZone(-12600)),
   ),
-  // Upstream's aware datetime: in Dart, the instant and its zone apart.
+  // Upstream's aware datetime: in Dart, the instant and its zone apart. The
+  // zone a DateTime itself implies is checked by the local-zone test below.
   'frozen_aware': _policy(
     OsPolicy(
       fixedDatetime: _frozen,
@@ -142,6 +143,13 @@ final Map<String, SessionConfig> configCases = {
     const ResourceLimits(maxTotalSleep: Duration(milliseconds: 120)),
   ),
   'total_sleep_uncapped': _policy(
+    const OsPolicy(sleepSystemMax: uncappedSleep),
+    const ResourceLimits(maxTotalSleep: Duration(seconds: 1)),
+  ),
+  'total_sleep_sub_micro': _limits(
+    const ResourceLimits(maxTotalSleep: Duration(microseconds: 1)),
+  ),
+  'total_sleep_uncapped_huge': _policy(
     const OsPolicy(sleepSystemMax: uncappedSleep),
     const ResourceLimits(maxTotalSleep: Duration(seconds: 1)),
   ),
@@ -204,7 +212,7 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.
-    expect(configOracle.length, greaterThanOrEqualTo(53));
+    expect(configOracle.length, greaterThanOrEqualTo(55));
   });
 
   for (final MapEntry(key: id, value: (:code, :outcome))
@@ -227,4 +235,40 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
       }
     });
   }
+
+  test('a local DateTime freezes the clock in its own zone ($label)', () async {
+    // Upstream's aware datetime implies its zone; a local DateTime's zone is
+    // the platform's, so the expectation is computed from it, not recorded.
+    final local = DateTime(2020, 7, 2, 3, 4, 5, 678);
+    final offset = local.timeZoneOffset.inSeconds;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final wall =
+        '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}:${two(local.second)}.678000';
+    final pool = await start();
+    try {
+      final session = await pool.checkout(
+        options: SessionConfig(osPolicy: OsPolicy(fixedDatetime: local)),
+      );
+      try {
+        final printed = StringBuffer();
+        final value = await session.feedRun(
+          'import datetime, time\n'
+          'repr((str(datetime.datetime.now()), time.tzname, time.timezone))',
+          printCallback: (_, text) => printed.write(text),
+        );
+        final name = offset == 0 && local.timeZoneName == 'UTC'
+            ? 'UTC'
+            : local.timeZoneName;
+        expect(
+          (value as MontyString).value,
+          "('$wall', ('$name', '$name'), ${-offset})",
+        );
+      } finally {
+        await session.close();
+      }
+    } finally {
+      await pool.close();
+    }
+  });
 }

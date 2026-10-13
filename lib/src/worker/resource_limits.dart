@@ -9,6 +9,8 @@
 /// Internal until the cutover exports it; nothing here is exported.
 library;
 
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:fixnum/fixnum.dart';
 import 'package:meta/meta.dart';
@@ -113,14 +115,21 @@ const String negativeDurationText =
     'cannot convert float seconds to Duration: value is negative';
 
 void _unsigned(int? value, String name) {
-  if (value != null && value < 0) {
+  if (value == null) return;
+  if (value < 0) {
     throw ArgumentError.value(
       value,
       name,
       "can't convert negative int to unsigned",
     );
   }
+  // Only dart2js holds an int this large; the wire's u64 cannot.
+  if (value.toDouble() >= _twoTo64) {
+    throw ArgumentError.value(value, name, 'int too big to convert');
+  }
 }
+
+const double _twoTo64 = 18446744073709551616.0;
 
 void _duration(Duration? value, String name) {
   if (value != null && value.isNegative) {
@@ -131,21 +140,26 @@ void _duration(Duration? value, String name) {
 /// Rust's `Debug` for a `Duration`, which upstream's limit messages print:
 /// the largest unit with a non-zero whole part (`s`, `ms`, `µs`, `ns`), and
 /// the fraction with its trailing zeros dropped (`1.5s`, `150ms`).
-String rustDuration(Duration d) {
-  final micros = d.inMicroseconds;
-  const perSecond = Duration.microsecondsPerSecond;
-  final seconds = micros ~/ perSecond;
-  final nanos = (micros % perSecond) * 1000;
-  if (seconds > 0) return _decimal(seconds, nanos, 100000000, 's');
-  if (nanos >= 1000000) {
-    return _decimal(nanos ~/ 1000000, nanos % 1000000, 100000, 'ms');
-  }
-  if (nanos >= 1000) return _decimal(nanos ~/ 1000, nanos % 1000, 100, 'µs');
+String rustDuration(Duration d) => rustDurationNanos(nanosOf(d));
 
-  return '${nanos}ns';
+/// [rustDuration] for a duration of [nanos] nanoseconds, which a Dart
+/// [Duration] cannot always hold (below a microsecond, or past 2^53
+/// microseconds on dart2js).
+String rustDurationNanos(BigInt nanos) {
+  final seconds = nanos ~/ _nanosPerSecond;
+  final rest = (nanos % _nanosPerSecond).toInt();
+  if (seconds > BigInt.zero) {
+    return _decimal('$seconds', rest, 100000000, 's');
+  }
+  if (rest >= 1000000) {
+    return _decimal('${rest ~/ 1000000}', rest % 1000000, 100000, 'ms');
+  }
+  if (rest >= 1000) return _decimal('${rest ~/ 1000}', rest % 1000, 100, 'µs');
+
+  return '${rest}ns';
 }
 
-String _decimal(int whole, int fraction, int divisor, String unit) {
+String _decimal(String whole, int fraction, int divisor, String unit) {
   final digits = StringBuffer();
   var rest = fraction;
   var place = divisor;
@@ -156,6 +170,58 @@ String _decimal(int whole, int fraction, int divisor, String unit) {
   }
 
   return digits.isEmpty ? '$whole$unit' : '$whole.$digits$unit';
+}
+
+/// [d] in nanoseconds.
+BigInt nanosOf(Duration d) => BigInt.from(d.inMicroseconds) * BigInt.from(1000);
+
+final BigInt _nanosPerSecond = BigInt.from(1000000000);
+
+/// Rust's `Duration::MAX` in nanoseconds: `u64::MAX` seconds and
+/// 999999999 nanoseconds.
+final BigInt durationMaxNanos =
+    ((BigInt.one << 64) - BigInt.one) * _nanosPerSecond +
+    BigInt.from(999999999);
+
+/// Rust's `Duration::try_from_secs_f64` in nanoseconds: the exact value of
+/// [seconds] rounded to the nearest nanosecond, ties to even; null where
+/// Rust fails (negative, NaN, infinite, or past `u64::MAX` seconds).
+///
+/// Exact on every compiler: the double is taken apart into its integer
+/// significand and binary exponent, and the arithmetic is on [BigInt]s.
+BigInt? nanosFromSeconds(double seconds) {
+  if (seconds.isNaN || seconds.isInfinite || seconds < 0) return null;
+  final (significand, exponent) = _binaryParts(seconds);
+  final scaled = significand * _nanosPerSecond;
+  final nanos = exponent >= 0
+      ? scaled << exponent
+      : _divideToNearestEven(scaled, BigInt.one << -exponent);
+
+  return nanos > durationMaxNanos ? null : nanos;
+}
+
+/// A finite, non-negative [value] as `significand * 2^exponent`, with an
+/// integer significand: IEEE 754's fields, read through their bytes.
+(BigInt, int) _binaryParts(double value) {
+  final bits = ByteData(8)..setFloat64(0, value);
+  final high = bits.getUint32(0);
+  final biased = (high >> 20) & 0x7ff;
+  final fraction =
+      (BigInt.from(high & 0xfffff) << 32) | BigInt.from(bits.getUint32(4));
+  // A normal double has an implicit leading bit; a subnormal (or zero) does
+  // not, and has the smallest exponent.
+  if (biased == 0) return (fraction, -1074);
+
+  return (fraction | (BigInt.one << 52), biased - 1075);
+}
+
+/// [n] / [d] rounded to the nearest integer, ties to even.
+BigInt _divideToNearestEven(BigInt n, BigInt d) {
+  final q = n ~/ d;
+  final twice = (n - q * d) * BigInt.two;
+  final up = twice > d || (twice == d && q.isOdd);
+
+  return up ? q + BigInt.one : q;
 }
 
 Int64? _u64(int? value) => value == null ? null : Int64(value);

@@ -1206,12 +1206,12 @@ void main() {
         Int64(100000),
       );
       await session.feedRun('time.sleep(0.04)', printCallback: _ignore);
-      final clock = Stopwatch()..start();
       await expectLater(
         session.feedRun('time.sleep(0.07)', printCallback: _ignore),
         timedOut('sleep limit exceeded: 110ms > 100ms'),
       );
-      expect(clock.elapsed, lessThan(_ms(60)));
+      // Unwaited: the abort is the answer, with no resume before it.
+      expect(itemAt(ch.requests, 3).whichKind(), pb.ParentRequest_Kind.feed);
       final abort = itemAt(ch.requests, 4).abortFeed.exception;
       expect(abort.excType, 'TimeoutError');
       expect(abort.message, 'sleep limit exceeded: 110ms > 100ms');
@@ -1244,6 +1244,42 @@ void main() {
         session.feedRun('...', printCallback: _ignore),
         timedOut('sleep limit exceeded: 55ms > 50ms'),
       );
+    });
+
+    test('charged in nanoseconds; uncapped is the request itself', () async {
+      for (final (seconds, config, message) in [
+        (
+          0.0000014,
+          const SessionConfig(
+            limits: ResourceLimits(maxTotalSleep: Duration(microseconds: 1)),
+          ),
+          'sleep limit exceeded: 1.4µs > 1µs',
+        ),
+        (
+          9.1e9,
+          const SessionConfig(
+            limits: ResourceLimits(maxTotalSleep: Duration(seconds: 1)),
+            osPolicy: OsPolicy(sleepSystemMax: uncappedSleep),
+          ),
+          'sleep limit exceeded: 9100000000s > 1s',
+        ),
+      ]) {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([sleep(seconds)]),
+          expecting(pb.ParentRequest_Kind.abortFeed, [
+            raised('TimeoutError', message),
+          ]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout(options: config);
+        await expectLater(
+          session.feedRun('...', printCallback: _ignore),
+          timedOut(message),
+        );
+        expect(itemAt(ch.requests, 2).abortFeed.exception.message, message);
+      }
     });
 
     test('no limit: sleeps are waited, never charged against one', () async {

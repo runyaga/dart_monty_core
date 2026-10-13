@@ -143,6 +143,15 @@ final class OsPolicy {
     _validateSleepMax();
   }
 
+  /// The longest one system sleep is charged, in nanoseconds: [systemSleepMax],
+  /// or Rust's `Duration::MAX` for [uncappedSleep], as upstream's
+  /// `float('inf')`.
+  BigInt get systemSleepCapNanos {
+    final max = systemSleepMax;
+
+    return max == uncappedSleep ? durationMaxNanos : nanosOf(max);
+  }
+
   /// The longest one system sleep waits: [sleepSystemMax] under the system
   /// mode, else upstream's 10 s (the parent's ceiling whatever the mode).
   Duration get systemSleepMax =>
@@ -295,8 +304,10 @@ final class RandomSeed {
   /// A string seed.
   const RandomSeed.string(String seed) : _seed = seed;
 
-  /// A bytes seed; [seed] must not change once the seed is made.
-  const RandomSeed.bytes(Uint8List seed) : _seed = seed;
+  /// A bytes seed, a copy of [seed].
+  // Not const: the copy keeps the seed immutable.
+  RandomSeed.bytes(Uint8List seed)
+    : _seed = Uint8List.fromList(seed).asUnmodifiableView();
 
   /// The seed: a [BigInt], a `double`, a [String] or a [Uint8List].
   final Object _seed;
@@ -376,14 +387,17 @@ void _oneOf(String? value, String name, Set<String> accepted, String text) {
   }
 }
 
+/// [instant] as the wire's seconds and microsecond, from its milliseconds
+/// and its sub-millisecond microseconds: exact on dart2js too, where the
+/// microseconds since the epoch can pass 2^53 (and a DateTime holds no
+/// sub-millisecond part).
 pb.FixedDateTime _fixed(DateTime instant) {
-  final micros = instant.microsecondsSinceEpoch;
-  const perSecond = Duration.microsecondsPerSecond;
-  final seconds = (micros - micros % perSecond) ~/ perSecond;
+  final ms = instant.millisecondsSinceEpoch;
+  final rest = ms % 1000;
 
   return pb.FixedDateTime(
-    unixSeconds: Int64(seconds),
-    microsecond: micros % perSecond,
+    unixSeconds: Int64((ms - rest) ~/ 1000),
+    microsecond: rest * 1000 + instant.microsecond,
   );
 }
 

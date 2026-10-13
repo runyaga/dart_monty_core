@@ -365,9 +365,9 @@ final class _SessionChannel implements MontyChannel {
   /// Suspensions this session has received.
   int _suspensions = 0;
 
-  /// The system sleep this session has been charged, capped sleeps at
-  /// their cap.
-  Duration _slept = Duration.zero;
+  /// The system sleep this session has been charged, in nanoseconds as
+  /// upstream's `Duration`; capped sleeps at their cap.
+  BigInt _slept = BigInt.zero;
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
@@ -455,17 +455,16 @@ final class _SessionChannel implements MontyChannel {
         event.osCall.whichCall() != pb.OsCall_Call.systemSleep) {
       return null;
     }
-    final max = _config.systemSleepMax;
-    final seconds = event.osCall.systemSleep.seconds;
-    final micros = seconds * Duration.microsecondsPerSecond;
-    final delay = micros.isFinite && micros >= 0 && micros < max.inMicroseconds
-        ? Duration(microseconds: micros.round())
-        : max;
-    final total = _slept + delay;
-    if (limit != null && total > limit) {
+    final cap = _config.systemSleepCapNanos;
+    final requested = nanosFromSeconds(event.osCall.systemSleep.seconds) ?? cap;
+    final delay = requested < cap ? requested : cap;
+    final sum = _slept + delay;
+    // Saturating, as Rust's Duration::saturating_add.
+    final total = sum > durationMaxNanos ? durationMaxNanos : sum;
+    if (limit != null && total > nanosOf(limit)) {
       return _raised(
         'TimeoutError',
-        'sleep limit exceeded: ${rustDuration(total)} > '
+        'sleep limit exceeded: ${rustDurationNanos(total)} > '
             '${rustDuration(limit)}',
       );
     }

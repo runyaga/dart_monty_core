@@ -211,11 +211,11 @@
     UTC `DateTime`, else the `DateTime`'s own offset and zone name, unless
     a zone is given.
   - `maxTotalSleep` is enforced by the session, as upstream's pool does:
-    each system sleep is charged at its capped length before it is waited,
-    and the one that would pass the limit aborts the feed with an
-    uncatchable `TimeoutError` ("sleep limit exceeded: 150ms > 100ms", in
-    Rust's `Duration` format).
-  - Checked against pydantic-monty 1.1.0 on 53 cases (one per refusal, and
+    each system sleep is charged at its capped length, in nanoseconds,
+    before it is waited, and the one that would pass the limit aborts the
+    feed with an uncatchable `TimeoutError` ("sleep limit exceeded: 150ms >
+    100ms", in Rust's `Duration` format).
+  - Checked against pydantic-monty 1.1.0 on 55 cases (one per refusal, and
     each policy field's effect in the sandbox: frozen clocks and zones,
     seeds of every kind, call-host modes, the process clock, sleep modes
     and the sleep budget), on the VM, dart2js and dart2wasm.

@@ -4,6 +4,7 @@
 // outcomes; the Configure encoding of every field; Rust's Duration format.
 // No worker runs (the same cases run against real workers in
 // _config_cases.dart). Pure Dart: vm, dart2js and dart2wasm.
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/worker/os_policy.dart';
@@ -208,6 +209,15 @@ void main() {
       expect(before.microsecond, 250000);
     });
 
+    test('a frozen instant far from 1970 keeps its microseconds', () {
+      // Past 2^53 microseconds since the epoch, which dart2js cannot hold.
+      final far = _policy(
+        OsPolicy(fixedDatetime: DateTime.utc(5000, 1, 1, 0, 0, 0, 1)),
+      ).fixed;
+      expect(far.unixSeconds, Int64(95617584000));
+      expect(far.microsecond, 1000);
+    });
+
     test('the zone a frozen instant implies, unless one is given', () {
       final utc = _policy(OsPolicy(fixedDatetime: DateTime.utc(2020)));
       expect(utc.timezone.hasUtc(), isTrue);
@@ -310,6 +320,16 @@ void main() {
       ]);
     });
 
+    test('a bytes seed is a copy of the bytes it was given', () {
+      final source = Uint8List.fromList([1, 2]);
+      final seed = RandomSeed.bytes(source);
+      final hash = seed.hashCode;
+      source[0] = 9;
+      expect(seed.toProto().bytes, [1, 2]);
+      expect(seed.hashCode, hash);
+      expect(seed, RandomSeed.bytes(Uint8List.fromList([1, 2])));
+    });
+
     test('== and hashCode: by kind and value', () {
       RandomSeed bytesOf(List<int> b) =>
           RandomSeed.bytes(Uint8List.fromList(b));
@@ -380,6 +400,61 @@ void main() {
       for (final MapEntry(key: d, value: text) in cases.entries) {
         expect(rustDuration(d), text, reason: '$d');
       }
+    });
+  });
+
+  group("Rust's Duration from float seconds, in nanoseconds", () {
+    test('exact to the nanosecond, rounded to the nearest', () {
+      final cases = {
+        0.15: '150000000',
+        0.0000014: '1400',
+        1.5: '1500000000',
+        9.1e9: '9100000000000000000',
+        0.0: '0',
+        // Half a nanosecond rounds to even: 0.5 ns is below one ulp of
+        // 1e-9 here, so the double is not a tie; 2.5e-9 is close to one.
+        1e-9: '1',
+      };
+      for (final MapEntry(key: seconds, value: nanos) in cases.entries) {
+        expect('${nanosFromSeconds(seconds)}', nanos, reason: '$seconds');
+      }
+    });
+
+    test('negative, NaN, infinite or past u64::MAX seconds: none', () {
+      for (final seconds in [
+        -1.0,
+        -1e-12,
+        double.nan,
+        double.infinity,
+        1.9e19,
+      ]) {
+        expect(nanosFromSeconds(seconds), isNull, reason: '$seconds');
+      }
+    });
+
+    test("the Debug format from nanoseconds, Duration::MAX's included", () {
+      expect(rustDurationNanos(BigInt.from(1400)), '1.4µs');
+      expect(rustDurationNanos(BigInt.from(999)), '999ns');
+      expect(
+        rustDurationNanos(BigInt.parse('9100000000000000000')),
+        '9100000000s',
+      );
+      expect(
+        rustDurationNanos(durationMaxNanos),
+        '18446744073709551615.999999999s',
+      );
+    });
+  });
+
+  group('limits past u64::MAX', () {
+    test('an int dart2js holds past 2^64 is refused, as upstream', () {
+      // Only dart2js has such an int; elsewhere this is 2^63 - 1.
+      final huge = math.pow(2, 64).toInt();
+      if (huge.toDouble() < 18446744073709551616.0) return;
+      expect(
+        ResourceLimits(maxMemory: huge).validate,
+        _refused('int too big to convert'),
+      );
     });
   });
 

@@ -361,6 +361,11 @@ final class SessionConfig {
   Duration get systemSleepMax =>
       osPolicy?.systemSleepMax ?? const OsPolicy().systemSleepMax;
 
+  /// The longest one system sleep is charged, in nanoseconds (see
+  /// [OsPolicy.systemSleepCapNanos]).
+  BigInt get systemSleepCapNanos =>
+      (osPolicy ?? const OsPolicy()).systemSleepCapNanos;
+
   /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
   /// message, before any frame is sent.
   void validate() {

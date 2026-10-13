@@ -116,6 +116,13 @@ RUNS = [
     ('total_sleep_uncapped',
      {'os_policy': {'sleep_system_max': math.inf}, 'limits': {'max_total_sleep_secs': 1.0}},
      'import time\ntime.sleep(5.5)'),
+    # Charged in nanoseconds, as upstream's Duration.
+    ('total_sleep_sub_micro', {'limits': {'max_total_sleep_secs': 0.000001}},
+     'import time\ntime.sleep(0.0000014)'),
+    # Uncapped: the charge is the request itself, refused before any wait.
+    ('total_sleep_uncapped_huge',
+     {'os_policy': {'sleep_system_max': math.inf}, 'limits': {'max_total_sleep_secs': 1.0}},
+     'import time\ntime.sleep(9.1e9)'),
     ('total_sleep_uncatchable', {'limits': {'max_total_sleep_secs': 0.01}},
      'import time\ntry:\n    time.sleep(1)\nexcept BaseException:\n    pass\nrepr("caught")'),
     ('recursion_limit', {'limits': {'max_recursion_depth': 20}},

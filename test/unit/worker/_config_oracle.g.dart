@@ -256,6 +256,16 @@ const Map<String, ({String? code, String outcome})> configOracle = {
     code: 'import time\ntime.sleep(5.5)',
     outcome: 'MontyRuntimeError: TimeoutError: sleep limit exceeded: 5.5s > 1s',
   ),
+  'total_sleep_sub_micro': (
+    code: 'import time\ntime.sleep(0.0000014)',
+    outcome:
+        'MontyRuntimeError: TimeoutError: sleep limit exceeded: 1.4\u{b5}s > 1\u{b5}s',
+  ),
+  'total_sleep_uncapped_huge': (
+    code: 'import time\ntime.sleep(9.1e9)',
+    outcome:
+        'MontyRuntimeError: TimeoutError: sleep limit exceeded: 9100000000s > 1s',
+  ),
   'total_sleep_uncatchable': (
     code:
         'import time\ntry:\n    time.sleep(1)\nexcept BaseException:\n    pass\nrepr("caught")',
