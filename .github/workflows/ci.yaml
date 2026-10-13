@@ -387,7 +387,7 @@ jobs:
     needs: [changes, worker-rust]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -442,9 +442,25 @@ jobs:
         run: |
           python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-worker \
             --json /tmp/parity-e0/worker.json --markdown /tmp/parity-e0/worker.md
+      # The same E0 cases through the internal pool session (C1-3a): one pool
+      # per run, its one worker Reset and reused from case to case.
+      - name: E0 through the session on the VM
+        if: success() || failure()
+        run: python3 -I .parity/tool/parity/run.py vm --engine session --core . --out /tmp/parity-e0
+      - name: E0 through the session on dart2js
+        if: success() || failure()
+        run: python3 -I .parity/tool/parity/run.py dart2js --engine session --core . --out /tmp/parity-e0
+      - name: E0 through the session on dart2wasm
+        if: success() || failure()
+        run: python3 -I .parity/tool/parity/run.py dart2wasm --engine session --core . --out /tmp/parity-e0
+      - name: Assert E0 through the session (every counted case MATCH on every backend)
+        if: success() || failure()
+        run: |
+          python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-e0 --engine session \
+            --json /tmp/parity-e0/e0-session.json --markdown /tmp/parity-e0/e0-session.md
       - name: Publish the E0 and worker tables
         if: success() || failure()
-        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
+        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md /tmp/parity-e0/e0-session.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: success() || failure()
         with:
