@@ -80,9 +80,7 @@ final class ProcessChannel implements MontyChannel {
   /// The worker gets an empty environment, plus `SystemRoot` on Windows (see
   /// [workerEnvironment]). Throws [ProcessException] if it cannot start.
   static Future<ProcessChannel> spawn(WorkerLaunch launch) async {
-    final WorkerExecutable(:path, :args) = switch (launch) {
-      final WorkerExecutable executable => executable,
-    };
+    final (path, args) = launchCommand(launch);
     final process = await Process.start(
       path,
       args,
@@ -296,6 +294,31 @@ final class WorkerExecutable extends WorkerLaunch {
   @override
   String toString() => 'WorkerExecutable($path)';
 }
+
+/// This AOT executable, run again with [flag] so that
+/// `runMontyWorkerIfChild` (lib/src/worker/self_relaunch.dart) serves the
+/// protocol in the copy.
+///
+/// For `dart build cli` apps that bundle the worker library. Under `dart run`
+/// the executable is the Dart VM, which does not know the flag.
+final class SelfRelaunch extends WorkerLaunch {
+  /// The relaunch of this executable.
+  const SelfRelaunch();
+
+  /// The child's only argument; it selects the worker in
+  /// `runMontyWorkerIfChild`.
+  static const String flag = '--dart-monty-core-worker';
+
+  @override
+  String toString() => 'SelfRelaunch()';
+}
+
+/// The executable and arguments [launch] runs.
+@visibleForTesting
+(String, List<String>) launchCommand(WorkerLaunch launch) => switch (launch) {
+  WorkerExecutable(:final path, :final args) => (path, args),
+  SelfRelaunch() => (Platform.resolvedExecutable, const [SelfRelaunch.flag]),
+};
 
 /// The worker's stdout as decoded events, buffered until a turn reads them.
 final class _EventStream {

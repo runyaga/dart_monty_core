@@ -95,6 +95,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# The worker library (self-relaunch): opt-in only, and its inputs declared.
+# ---------------------------------------------------------------------------
+# Built only when the root package sets the `build_worker` user_define, so a
+# consumer without it runs no second cargo build. When it IS built, its own
+# crate's inputs must reach the runner for the reason at the top of this file:
+# otherwise an edit under native/worker/ leaves a self-relaunching app on a
+# stale worker library.
+need "input.userDefines['build_worker']" "the build_worker opt-in read"
+need "if (_wantsWorker(input)) {" "the worker build behind that opt-in"
+for f in Cargo.toml Cargo.lock build.rs; do
+  need "workerDir.resolve('$f')" "native/worker/$f"
+done
+need "const ['src/', 'upstream/']" "a walk of native/worker/src and upstream/"
+need "_declareWorkerInputs(output, workerDir);" "the worker's inputs to the runner"
+# Exactly one call site of the worker build, and it is the gated one: a
+# second, ungated call would build it for every consumer.
+WORKER_CALLS=$(printf '%s' "$CODE" | grep -cF "await _buildWorker(")
+if [ "$WORKER_CALLS" = 1 ]; then
+  echo "  ok  builds the worker library from exactly one (gated) call"
+else
+  echo "FAIL: expected exactly 1 call of _buildWorker, found $WORKER_CALLS"
+  FAIL=1
+fi
+
+# ---------------------------------------------------------------------------
 # The published artefact must be swapped, never truncated in place.
 # ---------------------------------------------------------------------------
 # `File.copySync` opens the destination O_TRUNC, shortening the EXISTING inode.

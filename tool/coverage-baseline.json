@@ -352,14 +352,19 @@
       "pct": 100.0
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 167,
-      "hit": 161,
-      "pct": 96.41
+      "found": 171,
+      "hit": 165,
+      "pct": 96.49
     },
     "lib/src/worker/proto_session.dart": {
       "found": 172,
       "hit": 162,
       "pct": 94.19
+    },
+    "lib/src/worker/self_relaunch.dart": {
+      "found": 5,
+      "hit": 4,
+      "pct": 80.0
     },
     "lib/src/worker/worker_channel.dart": {
       "found": 47,
@@ -372,9 +377,9 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_locator.dart": {
-      "found": 16,
-      "hit": 14,
-      "pct": 87.5
+      "found": 22,
+      "hit": 21,
+      "pct": 95.45
     },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
@@ -383,8 +388,8 @@
     }
   },
   "total": {
-    "found": 4738,
-    "hit": 3449,
-    "pct": 72.79
+    "found": 4753,
+    "hit": 3464,
+    "pct": 72.88
   }
 }
