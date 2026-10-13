@@ -13,8 +13,10 @@
 # Usage: bash tool/build_native_wasm.sh
 # =============================================================================
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
-ROOT="$PWD"
+# The checkout this script lives in, not the caller's: tool/test_wasm.sh and
+# tool/serve_demo.sh call it by path from any working directory.
+cd "$(dirname "$0")/.."
+ROOT="$(pwd -P)"
 source tool/rust_remap.sh
 
 # --target-dir is explicit because js/build.js copies the module from

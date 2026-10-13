@@ -72,8 +72,8 @@
   provenance). `tool/test_wasm.sh` and `tool/serve_demo.sh`, which also
   write `lib/assets/` when run without `--skip-build`, now build through
   that recipe. `tool/check_asset_freshness.sh` fails if any
-  `lib/assets/*.wasm` contains a macOS, Linux or container-root
-  home-directory path. Behaviour is unchanged.
+  `lib/assets/*.wasm` contains a home-directory path or a Rust source path
+  outside the remapped prefixes. Behaviour is unchanged.
 
 ## 0.23.1
 

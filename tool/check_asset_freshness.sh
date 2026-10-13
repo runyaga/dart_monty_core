@@ -30,8 +30,7 @@
 # bytes for no source change.
 #
 # It also fails if any committed lib/assets/*.wasm embeds a build-machine
-# absolute path: a home directory under a HOME_ROOTS entry below (macOS,
-# Linux, container root). The recipes remap those away
+# absolute path (see leaked_paths below). The recipes remap those away
 # (tool/rust_remap.sh); a module built some other way and committed would carry
 # the builder's home directory into every published copy of the package.
 #
@@ -82,24 +81,43 @@ worker_source_hash() {
 HOME_ROOTS=(Users home root)
 
 # Committed wasm that embeds a build-machine absolute path. Byte-level, so it
-# sees panic-location strings inside data segments. grep -c counts lines, not
-# occurrences; any non-zero count fails.
+# sees panic-location strings inside data segments. Two rules:
+#
+#   denylist   no HOME_ROOTS directory anywhere, in / or \ form.
+#   allowlist  every absolute Rust source path must start with a prefix the
+#              recipe remaps to (tool/rust_remap.sh: /cargo/, /rustup/, /src/)
+#              or rustc's own (/rustc/<hash>/, /rust/deps/). This catches a
+#              toolchain outside any home, such as CARGO_HOME=/opt/rust/cargo,
+#              and drive-letter paths.
+#
+# rustc stores panic-location file names NUL-terminated, so a "path" is a run
+# of printable bytes that ends in .rs and starts with / or a drive letter.
 leaked_paths() {
-  local f n r rc=0 pats=()
-  for r in "${HOME_ROOTS[@]}"; do pats+=(-e "/$r/"); done
-  for f in lib/assets/*.wasm; do
-    [ -f "$f" ] || continue
-    n=$(LC_ALL=C grep -ac "${pats[@]}" "$f")
-    # An unreadable file prints no count: that fails too.
-    if [ "${n:-1}" != 0 ]; then
-      echo "FAIL: $f embeds build-machine absolute paths ($n lines match a home-directory root)."
-      rc=1
-    fi
-  done
-  if [ "$rc" -ne 0 ]; then
-    echo "  Rebuild through the recipe, which remaps them: bash tool/prebuild.sh"
-  fi
-  return "$rc"
+  python3 -I - "${HOME_ROOTS[@]}" <<'PY'
+import glob, re, sys
+deny = [s for r in sys.argv[1:] for s in (f"/{r}/".encode(), f"\\{r}\\".encode())]
+allowed = (b"/cargo/", b"/rustup/", b"/src/", b"/rustc/", b"/rust/deps/")
+rc = 0
+for f in sorted(glob.glob("lib/assets/*.wasm")):
+    try:
+        data = open(f, "rb").read()
+    except OSError as e:
+        print(f"FAIL: cannot read {f}: {e}")
+        rc = 1
+        continue
+    hits = sum(data.count(d) for d in deny)
+    paths = [t for t in re.split(rb"[^\x20-\x7e]+", data) if t.endswith(b".rs")
+             and (t.startswith(b"/") or re.match(rb"[A-Za-z]:[\\/]", t))]
+    bad = [t for t in paths if not t.startswith(allowed)]
+    if hits or bad:
+        print(f"FAIL: {f} embeds build-machine absolute paths: {hits} under a "
+              f"home-directory root, {len(bad)} of {len(paths)} source paths "
+              "outside the remapped prefixes.")
+        rc = 1
+if rc:
+    print("  Rebuild through the recipe, which remaps them: bash tool/prebuild.sh")
+sys.exit(rc)
+PY
 }
 
 HAVE=$(source_hash)
@@ -206,4 +224,4 @@ fi
 
 echo "OK: committed assets match their sources ($HAVE)"
 echo "OK: proto worker wasm matches native/worker ($HAVE_WORKER)"
-echo "OK: no committed wasm embeds a home-directory path"
+echo "OK: no committed wasm embeds a build-machine absolute path"
