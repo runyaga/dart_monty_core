@@ -698,9 +698,44 @@ List<String> _printDeclaration(Element element) {
   final members = [
     for (final member in _membersOf(element))
       if (_printMember(member) case final line?) '  $name.$line',
+    if (element is ClassElement && element.isSealed)
+      '  $name: permits ${_permitted(element).join(', ')}',
   ]..sort();
 
   return [_printHead(element), ...members];
+}
+
+/// Every subtype of the sealed class [sealed], private ones included, and
+/// those of each sealed subtype in turn: exhaustive switches over [sealed]
+/// break when one is added, so the list is API.
+List<String> _permitted(ClassElement sealed) {
+  final found = <String>{};
+  final pending = [sealed];
+  while (pending.isNotEmpty) {
+    final parent = pending.removeLast();
+    final library = parent.library;
+    final candidates = <InterfaceElement>[
+      ...library.classes,
+      ...library.mixins,
+      ...library.enums,
+    ];
+    for (final candidate in candidates) {
+      final supertypes = [
+        ?candidate.supertype,
+        ...candidate.mixins,
+        ...candidate.interfaces,
+        if (candidate is MixinElement) ...candidate.superclassConstraints,
+      ];
+      if (!supertypes.any((type) => type.element == parent)) continue;
+      if (found.add(_typeNames.of(candidate)) &&
+          candidate is ClassElement &&
+          candidate.isSealed) {
+        pending.add(candidate);
+      }
+    }
+  }
+
+  return found.isEmpty ? const ['(none)'] : (found.toList()..sort());
 }
 
 /// The declaration's own line: modifiers, kind, name, type parameters,
@@ -1266,6 +1301,14 @@ interface class ProbeInterface {}
 
 abstract mixin class ProbeMixinClass {}
 
+sealed class ProbeShape {}
+
+final class ProbeSquare extends ProbeShape {}
+
+sealed class _ProbeRound implements ProbeShape {}
+
+final class _ProbeCircle extends _ProbeRound {}
+
 int probeFunction<T>(T value, {int? count, (String,)? one}) => 0;
 
 late final String probeLate;
@@ -1325,6 +1368,12 @@ extension type ProbeObject(int raw) implements Object
 base mixin ProbeOn on ProbeBase<int>
 sealed class ProbeSealed
   ProbeSealed.new: constructor()
+  ProbeSealed: permits (none)
+sealed class ProbeShape
+  ProbeShape.new: constructor()
+  ProbeShape: permits ProbeSquare, _ProbeCircle, _ProbeRound
+final class ProbeSquare extends ProbeShape
+  ProbeSquare.new: constructor()
 probeCallback: settable variable void Function()?
 probeConst: const variable int
 probeDynamic: settable variable dynamic
@@ -1676,6 +1725,16 @@ final _controls = [
           "export 'src/boundary_probe_a.dart';\n",
     },
     alsoMentions: ['- Item: src/boundary_probe_a.dart'],
+  ),
+  _Control(
+    'private subtype added to a sealed class',
+    _Verdict.golden,
+    '+ VfsNode: permits VfsDir, VfsFile, _BoundaryProbeNode',
+    {
+      'lib/src/mount/vfs_node.dart': (s) =>
+          '$s\nfinal class _BoundaryProbeNode extends VfsNode {}\n',
+    },
+    alsoMentions: ['- VfsNode: permits VfsDir, VfsFile'],
   ),
   _Control(
     'multi-line default value prints the same with CRLF line endings',

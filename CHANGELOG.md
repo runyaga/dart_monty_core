@@ -155,12 +155,13 @@
   reach in `tool/export-golden.txt`. Each declaration is listed once, under
   the library that declares it. The record covers kinds, modifiers (`const`,
   `factory`, `static`, class modifiers), type parameters and bounds,
-  supertypes, whether a field has a setter, and each parameter's position,
-  name, type and default. A type is named with its library wherever the name
-  alone could mean another declaration. A change to any of them now fails
-  the check until the golden is updated.
-  The tool prints signatures itself from the analyzer's element model, so
-  an analyzer upgrade does not change the golden through formatting.
+  supertypes, a sealed class's subtypes (private ones included), whether a
+  field has a setter, and each parameter's position, name, type and
+  default. A type is named with its library wherever the name alone could
+  mean another declaration. A change to any of them now fails the check
+  until the golden is updated. The tool prints signatures itself from the
+  analyzer's element model, so an analyzer upgrade does not change the
+  golden through formatting.
 
 ### Fixed
 
