@@ -69,9 +69,11 @@
   absolute cargo paths in its panic locations. Both wasm recipes now remap
   them through `tool/rust_remap.sh` (the in-process one lives in the new
   `tool/build_native_wasm.sh`, and both are hashed into the asset
-  provenance), and `tool/check_asset_freshness.sh` fails if any
-  `lib/assets/*.wasm` contains a macOS or Linux home-directory path.
-  Behaviour is unchanged.
+  provenance). `tool/test_wasm.sh` and `tool/serve_demo.sh`, which also
+  write `lib/assets/` when run without `--skip-build`, now build through
+  that recipe. `tool/check_asset_freshness.sh` fails if any
+  `lib/assets/*.wasm` contains a macOS, Linux or container-root
+  home-directory path. Behaviour is unchanged.
 
 ## 0.23.1
 

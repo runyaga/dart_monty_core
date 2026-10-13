@@ -30,8 +30,8 @@
 # bytes for no source change.
 #
 # It also fails if any committed lib/assets/*.wasm embeds a build-machine
-# absolute path: a home directory under a HOME_ROOTS entry below (macOS and
-# Linux). The recipes remap those away
+# absolute path: a home directory under a HOME_ROOTS entry below (macOS,
+# Linux, container root). The recipes remap those away
 # (tool/rust_remap.sh); a module built some other way and committed would carry
 # the builder's home directory into every published copy of the package.
 #
@@ -77,8 +77,9 @@ worker_source_hash() {
   } | hash_files
 }
 
-# Where build machines keep home directories (macOS, Linux).
-HOME_ROOTS=(Users home)
+# Where build machines keep home directories: macOS, Linux, and Linux root
+# (the usual user in a container).
+HOME_ROOTS=(Users home root)
 
 # Committed wasm that embeds a build-machine absolute path. Byte-level, so it
 # sees panic-location strings inside data segments. grep -c counts lines, not

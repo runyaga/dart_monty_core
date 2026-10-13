@@ -34,7 +34,6 @@ set -euo pipefail
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 WEB_PKG="$PKG/packages/dart_monty_web"
 WEB_DIR="$WEB_PKG/web"
-JS_DIR="$PKG/js"
 # lib/assets is the only directory that receives build output (Mode A).
 # This said "$PKG/assets", a pre-Mode-A path, so the script could not find
 # what js/build.js had just produced.
@@ -88,15 +87,16 @@ echo ""
 # Step 1: Build WASM binary
 # ---------------------------------------------------------------------------
 if [ "$SKIP_BUILD" = false ]; then
-  echo "--- Building WASM binary (cargo wasm32-wasip1) ---"
-  cd "$PKG/native"
+  echo "--- Building WASM binary + JS bridge (tool/build_native_wasm.sh) ---"
   # native/rust-toolchain.toml lists no targets; add the one built here.
-  if command -v rustup >/dev/null 2>&1; then rustup target add wasm32-wasip1; fi
-  cargo build --target wasm32-wasip1 --release
-  # Deliberately NOT copied here. js/build.js places it in lib/assets and runs
-  # wasm-opt (14.5 MB -> 12.7 MB); copying the raw artefact over the top would
-  # both undo that and dirty a committed asset.
-  echo "  WASM binary: OK ($(du -sh target/wasm32-wasip1/release/dart_monty_core_native.wasm | cut -f1))"
+  if command -v rustup >/dev/null 2>&1; then
+    (cd "$PKG/native" && rustup target add wasm32-wasip1)
+  fi
+  # The committed-asset recipe, not a bare cargo build: js/build.js writes
+  # lib/assets/, so the module must have build-machine paths remapped exactly
+  # as tool/prebuild.sh does.
+  bash "$PKG/tool/build_native_wasm.sh"
+  echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"
 fi
@@ -110,20 +110,7 @@ fi
 # ---------------------------------------------------------------------------
 # Step 2: Build JS bridge (npm + esbuild)
 # ---------------------------------------------------------------------------
-if [ "$SKIP_BUILD" = false ]; then
-  echo ""
-  echo "--- Building JS bridge (npm) ---"
-  if ! command -v npm &>/dev/null; then
-    echo "ERROR: npm not found. Install Node.js to build the JS bridge."
-    exit 1
-  fi
-  cd "$JS_DIR"
-  npm install --silent
-  node build.js
-  echo "  JS bridge: OK"
-else
-  echo "--- Skipping JS bridge build (--skip-build) ---"
-fi
+# Built in Step 1 by tool/build_native_wasm.sh (js/build.js).
 
 for f in dart_monty_core_bridge.js dart_monty_core_worker.js dart_monty_core_native.wasm; do
   if [ ! -f "$ASSETS_DIR/$f" ]; then
