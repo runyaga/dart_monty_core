@@ -464,7 +464,8 @@ pb.TimeDelta _timedelta(MontyTimeDelta td) => _check(
 /// message as it is, or, when it has an unpaired surrogate, `str(exc)`
 /// converted lossily. A `KeyError`'s `str` is the `repr` of its key, which
 /// escapes the surrogate. No message is `str(exc)` of an argument-less
-/// exception, `''`: upstream always sends an argument.
+/// exception: upstream always sends an argument, `''` for every type but
+/// `SyntaxError`, whose `str()` is `'None'` (CPython 3.12).
 pb.Exception _exception(MontyExceptionValue e) {
   if (!exceptionTypeNames.contains(e.excType)) {
     throw ArgumentError.value(
@@ -476,7 +477,7 @@ pb.Exception _exception(MontyExceptionValue e) {
   final message = switch (e.message) {
     final m? when hasUnpairedSurrogate(m) =>
       e.excType == 'KeyError' ? pythonRepr(m) : lossyString(m),
-    final m => m ?? '',
+    final m => m ?? (e.excType == 'SyntaxError' ? 'None' : ''),
   };
 
   return pb.Exception(excType: e.excType, arg: message);
