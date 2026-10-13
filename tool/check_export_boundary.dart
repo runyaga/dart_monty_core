@@ -590,7 +590,8 @@ _TypeNames _typeNames = _TypeNames(const {});
 
 /// A type's name with its library when the name alone could mean another
 /// declaration: bare for what `dart:core` exports and for this package's
-/// declarations whose name is unique (in the run and against `dart:core`),
+/// declarations whose name is unique (in the run, against `dart:core` and
+/// against every type parameter the printed signatures declare),
 /// `Name@<path under lib/>` for this package's others, and
 /// `Name@<library URI>` for everything else.
 final class _TypeNames {
@@ -598,10 +599,29 @@ final class _TypeNames {
     for (final element in declarations) {
       final name = _nameOf(element);
       _own[name] = (_own[name] ?? 0) + 1;
+      [element, ..._membersOf(element)].forEach(_collectTypeParameters);
     }
   }
 
   final Map<String, int> _own = {};
+
+  /// Every type parameter name in the printed signatures: a nominal type of
+  /// the same name is qualified, so `T` is never both.
+  final Set<String> _typeParameters = {};
+
+  void _collectTypeParameters(Element element) {
+    if (element is TypeParameterizedElement) {
+      _typeParameters.addAll(element.typeParameters.map(_nameOf));
+    }
+    final types = [for (final (type, _) in _typesOf(element)) type];
+    while (types.isNotEmpty) {
+      final type = types.removeLast();
+      if (type is FunctionType) {
+        _typeParameters.addAll(type.typeParameters.map(_nameOf));
+      }
+      types.addAll([...?type.alias?.typeArguments, ..._componentsOf(type)]);
+    }
+  }
 
   String of(Element element) {
     final name = _nameOf(element);
@@ -609,14 +629,15 @@ final class _TypeNames {
     if (library == null) return name;
     final core = library.typeProvider.objectElement.library;
     final fromCore = core.exportNamespace.get2(name);
+    final shadowed = _typeParameters.contains(name);
     if (_isOwn(library.uri)) {
-      final unique = (_own[name] ?? 0) <= 1 && fromCore == null;
+      final unique = (_own[name] ?? 0) <= 1 && fromCore == null && !shadowed;
       final path = library.uri.toString().substring(_package.length);
 
       return unique ? name : '$name@$path';
     }
 
-    return fromCore == element ? name : '$name@${library.uri}';
+    return fromCore == element && !shadowed ? name : '$name@${library.uri}';
   }
 }
 
@@ -811,7 +832,7 @@ String _parameters(
     final name = parameter.isNamed || positionalNames
         ? ' ${_nameOf(parameter)}'
         : '';
-    final value = parameter.defaultValueCode;
+    final value = _oneLine(parameter.defaultValueCode);
 
     return _words([
       if (parameter.isCovariant) 'covariant',
@@ -839,6 +860,13 @@ String _parameters(
     if (keyed.isNotEmpty) '{${keyed.join(', ')}}',
   ].join(', ')})';
 }
+
+/// [source] on one line, as the golden is line-based: backslash, newline
+/// and carriage return escaped, reversibly.
+String? _oneLine(String? source) => source
+    ?.replaceAll(r'\', r'\\')
+    .replaceAll('\n', r'\n')
+    .replaceAll('\r', r'\r');
 
 /// The tool's canonical text for [type]: the alias when the type was written
 /// through one, type arguments, and `?` for a nullable type.
@@ -1113,6 +1141,17 @@ String _items(String take) =>
     "import 'src/boundary_probe_b.dart' as b;\n"
     'void boundaryBoth(a.Item x, b.Item y) {}\n'
     'void boundaryTake($take.Item x) {}\n';
+
+/// A class whose type parameter is named `String`; `take` takes the type
+/// [prefix] names: `core.` for dart:core's, empty for the type parameter.
+String _shadow(String prefix) =>
+    "import 'dart:core' as core;\n"
+    'class BoundaryProbe<String> {\n'
+    '  void take(${prefix}String x) {}\n'
+    '}\n';
+
+/// A default value whose source spans two lines and holds a backslash.
+const _multiLine = "void boundaryLines({String s = '''a\nb\\\\n'''}) {}\n";
 
 /// A public library declaring one of each kind the printer handles.
 const _fixture = '''
@@ -1550,6 +1589,25 @@ final _controls = [
       'lib/boundary_probe_ext.dart': (_) =>
           'extension type BoundaryProbe(int raw) implements Object {}\n',
     },
+  ),
+  _Control(
+    'parameter switched from a core type to a type parameter of its name',
+    _Verdict.golden,
+    '- BoundaryProbe.take: method(String@dart:core x) -> void',
+    {'lib/boundary_probe_shadow.dart': (_) => _shadow('')},
+    base: {'lib/boundary_probe_shadow.dart': (_) => _shadow('core.')},
+    alsoMentions: ['+ BoundaryProbe.take: method(String x) -> void'],
+  ),
+  _Control(
+    'multi-line default value round-trips through the golden',
+    _Verdict.pass,
+    '',
+    {'lib/boundary_probe_lines.dart': (_) => _multiLine},
+    base: {'lib/boundary_probe_lines.dart': (_) => _multiLine},
+    section: (
+      'members: boundary_probe_lines.dart',
+      r"boundaryLines: function({String s = '''a\nb\\\\n'''}) -> void",
+    ),
   ),
   _Control(
     'printer output for a fixture library',
