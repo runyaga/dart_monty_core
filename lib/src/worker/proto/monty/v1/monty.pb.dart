@@ -1925,7 +1925,7 @@ class Type extends $pb.GeneratedMessage {
   factory Type({
     $core.String? name,
     Uuid? id,
-    TypeOrigin? origin,
+    $core.int? origin,
     $core.bool? isDataclass,
     NodePairs? attrs,
   }) {
@@ -1954,8 +1954,7 @@ class Type extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'name')
     ..aOM<Uuid>(2, _omitFieldNames ? '' : 'id',
         subBuilder: Uuid.$_createMessage)
-    ..aE<TypeOrigin>(3, _omitFieldNames ? '' : 'origin',
-        enumValues: TypeOrigin.values)
+    ..aI(3, _omitFieldNames ? '' : 'origin')
     ..aOB(4, _omitFieldNames ? '' : 'isDataclass')
     ..aOM<NodePairs>(5, _omitFieldNames ? '' : 'attrs',
         subBuilder: NodePairs.$_createMessage)
@@ -2006,9 +2005,9 @@ class Type extends $pb.GeneratedMessage {
 
   /// Where the type was defined (builtin, sandbox, or host).
   @$pb.TagNumber(3)
-  TypeOrigin get origin => $_getN(2);
+  $core.int get origin => $_getIZ(2);
   @$pb.TagNumber(3)
-  set origin(TypeOrigin value) => $_setField(3, value);
+  set origin($core.int value) => $_setSignedInt32(2, value);
   @$pb.TagNumber(3)
   $core.bool hasOrigin() => $_has(2);
   @$pb.TagNumber(3)
