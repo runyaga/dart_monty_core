@@ -184,8 +184,8 @@ VfsReadCallback
 VfsWriteCallback
 
 [members: src/externals.dart]
-typedef MontyCallback = FutureOr<Object?> Function(List<Object?>, Map<String, Object?>?)
-typedef OsCallHandler = FutureOr<Object?> Function(String, List<Object?>, Map<String, Object?>?)
+typedef MontyCallback = FutureOr@dart:async<Object?> Function(List<Object?>, Map<String, Object?>?)
+typedef OsCallHandler = FutureOr@dart:async<Object?> Function(String, List<Object?>, Map<String, Object?>?)
 
 [members: src/monty.dart]
 class Monty
@@ -203,9 +203,9 @@ memoryMountedOsHandler: function({required List<MountDir> mounts, required List<
 
 [members: src/mount/monty_memory_file.dart]
 final class MontyMemoryFile implements VfsFile
-  MontyMemoryFile.content: field VfsContent
+  MontyMemoryFile.content: settable field VfsContent
   MontyMemoryFile.new: factory constructor(String path, Object content, {int permissions = 0x1A4})
-  MontyMemoryFile.path: field String
+  MontyMemoryFile.path: settable field String
   MontyMemoryFile.permissions: final field int
   MontyMemoryFile.withContent: constructor(String path, VfsContent content, {int permissions = 0x1A4})
 
@@ -231,7 +231,7 @@ final class VfsCallbackFile implements VfsFile
   VfsCallbackFile.content: getter -> VfsContent
   VfsCallbackFile.content=: setter(VfsContent value)
   VfsCallbackFile.new: constructor(String path, {required VfsReadCallback read, required VfsWriteCallback write, int permissions = 0x1A4})
-  VfsCallbackFile.path: field String
+  VfsCallbackFile.path: settable field String
   VfsCallbackFile.permissions: final field int
   VfsCallbackFile.read: final field VfsReadCallback
   VfsCallbackFile.seededPath: final field String
@@ -243,19 +243,19 @@ typedef VfsWriteCallback = void Function(String, VfsContent)
 final class VfsBytes extends VfsContent
   VfsBytes.==: operator(Object other) -> bool
   VfsBytes.byteLength: getter -> int
-  VfsBytes.bytes: final field Uint8List
+  VfsBytes.bytes: final field Uint8List@dart:typed_data
   VfsBytes.hashCode: getter -> int
-  VfsBytes.new: const constructor(Uint8List bytes)
+  VfsBytes.new: const constructor(Uint8List@dart:typed_data bytes)
   VfsBytes.text: getter -> String
 sealed class VfsContent
   VfsContent.byteLength: abstract getter -> int
-  VfsContent.bytes: abstract getter -> Uint8List
+  VfsContent.bytes: abstract getter -> Uint8List@dart:typed_data
   VfsContent.new: const constructor()
   VfsContent.text: abstract getter -> String
 final class VfsText extends VfsContent
   VfsText.==: operator(Object other) -> bool
   VfsText.byteLength: getter -> int
-  VfsText.bytes: getter -> Uint8List
+  VfsText.bytes: getter -> Uint8List@dart:typed_data
   VfsText.hashCode: getter -> int
   VfsText.new: constructor(String text)
   VfsText.text: final field String
@@ -294,7 +294,7 @@ toPythonLiteral: function(Object? value) -> String
 final class MockCallHistory
   MockCallHistory.lastResolveFuturesErrors: getter -> Map<int, String>?
   MockCallHistory.lastResolveFuturesResults: getter -> Map<int, Object?>?
-  MockCallHistory.lastRestoreData: getter -> Uint8List?
+  MockCallHistory.lastRestoreData: getter -> Uint8List@dart:typed_data?
   MockCallHistory.lastResumeErrorMessage: getter -> String?
   MockCallHistory.lastResumeReturnValue: getter -> Object?
   MockCallHistory.lastRunCode: getter -> String?
@@ -307,8 +307,8 @@ final class MockCallHistory
   MockCallHistory.new: constructor()
   MockCallHistory.resolveFuturesErrorsList: final field List<Map<int, String>?>
   MockCallHistory.resolveFuturesResultsList: final field List<Map<int, Object?>>
-  MockCallHistory.restoreDataList: final field List<Uint8List>
-  MockCallHistory.resumeAsFutureCount: field int
+  MockCallHistory.restoreDataList: final field List<Uint8List@dart:typed_data>
+  MockCallHistory.resumeAsFutureCount: settable field int
   MockCallHistory.resumeErrorMessages: final field List<String>
   MockCallHistory.resumeReturnValues: final field List<Object?>
   MockCallHistory.runCodes: final field List<String>
@@ -325,15 +325,15 @@ class MockMontyPlatform extends MontyPlatform with MontyStateMixin implements Mo
   MockMontyPlatform.history: final field MockCallHistory
   MockMontyPlatform.new: constructor()
   MockMontyPlatform.resolveFutures: method(Map<int, Object?> results, {Map<int, String>? errors}) -> Future<MontyProgress>
-  MockMontyPlatform.restore: method(Uint8List data) -> Future<MontyPlatform>
-  MockMontyPlatform.restoreResult: field MontyPlatform?
+  MockMontyPlatform.restore: method(Uint8List@dart:typed_data data) -> Future<MontyPlatform>
+  MockMontyPlatform.restoreResult: settable field MontyPlatform?
   MockMontyPlatform.resume: method(Object? returnValue) -> Future<MontyProgress>
   MockMontyPlatform.resumeAsFuture: method() -> Future<MontyProgress>
   MockMontyPlatform.resumeWithError: method(String errorMessage) -> Future<MontyProgress>
   MockMontyPlatform.run: method(String code, {MontyLimits? limits, String? scriptName}) -> Future<MontyResult>
-  MockMontyPlatform.runResult: field MontyResult?
-  MockMontyPlatform.snapshot: method() -> Future<Uint8List>
-  MockMontyPlatform.snapshotData: field Uint8List?
+  MockMontyPlatform.runResult: settable field MontyResult?
+  MockMontyPlatform.snapshot: method() -> Future<Uint8List@dart:typed_data>
+  MockMontyPlatform.snapshotData: settable field Uint8List@dart:typed_data?
   MockMontyPlatform.start: method(String code, {List<String>? externalFunctions, MontyLimits? limits, String? scriptName}) -> Future<MontyProgress>
 
 [members: src/platform/monty_error.dart]
@@ -502,8 +502,8 @@ final class MontyResult
 [members: src/platform/monty_snapshot_capable.dart]
 abstract class MontySnapshotCapable
   MontySnapshotCapable.new: constructor()
-  MontySnapshotCapable.restore: abstract method(Uint8List data) -> Future<MontyPlatform>
-  MontySnapshotCapable.snapshot: abstract method() -> Future<Uint8List>
+  MontySnapshotCapable.restore: abstract method(Uint8List@dart:typed_data data) -> Future<MontyPlatform>
+  MontySnapshotCapable.snapshot: abstract method() -> Future<Uint8List@dart:typed_data>
 
 [members: src/platform/monty_stack_frame.dart]
 final class MontyStackFrame
@@ -850,14 +850,14 @@ class MontyRepl
   MontyRepl.feedStart: method(String code, {List<String>? externalFunctions}) -> Future<MontyProgress>
   MontyRepl.new: constructor({String? scriptName, String? preamble, MontyLimits? limits})
   MontyRepl.resolveFutures: method(Map<int, Object?> results, {Map<int, String>? errors}) -> Future<MontyProgress>
-  MontyRepl.restore: method(Uint8List bytes) -> Future<void>
+  MontyRepl.restore: method(Uint8List@dart:typed_data bytes) -> Future<void>
   MontyRepl.resume: method(Object? returnValue) -> Future<MontyProgress>
   MontyRepl.resumeAsFuture: method() -> Future<MontyProgress>
   MontyRepl.resumeNotFound: method(String fnName) -> Future<MontyProgress>
   MontyRepl.resumeWithError: method(String errorMessage) -> Future<MontyProgress>
   MontyRepl.resumeWithException: method(String excType, String errorMessage) -> Future<MontyProgress>
   MontyRepl.scriptName: getter -> String?
-  MontyRepl.snapshot: method() -> Future<Uint8List>
+  MontyRepl.snapshot: method() -> Future<Uint8List@dart:typed_data>
 enum ReplContinuationMode
   ReplContinuationMode.complete: static const enum value ReplContinuationMode
   ReplContinuationMode.incompleteBlock: static const enum value ReplContinuationMode

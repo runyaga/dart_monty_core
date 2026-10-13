@@ -567,6 +567,7 @@ Element? _declarationOf(Element element) {
 /// The member sections for [declarations]: per declaring library, each
 /// declaration's line followed by its public members' lines, indented.
 Map<String, List<String>> _printDeclarations(Set<Element> declarations) {
+  _typeNames = _TypeNames(declarations);
   final byLibrary = SplayTreeMap<String, Map<String, Element>>();
   for (final element in declarations) {
     final path = element.library!.uri.toString().substring(_package.length);
@@ -581,6 +582,42 @@ Map<String, List<String>> _printDeclarations(Set<Element> declarations) {
           ..._printDeclaration(value[name]!),
       ],
   };
+}
+
+/// How [_type] names the declaration of a type or alias, set for each
+/// printing run.
+_TypeNames _typeNames = _TypeNames(const {});
+
+/// A type's name with its library when the name alone could mean another
+/// declaration: bare for what `dart:core` exports and for this package's
+/// declarations whose name is unique (in the run and against `dart:core`),
+/// `Name@<path under lib/>` for this package's others, and
+/// `Name@<library URI>` for everything else.
+final class _TypeNames {
+  _TypeNames(Set<Element> declarations) {
+    for (final element in declarations) {
+      final name = _nameOf(element);
+      _own[name] = (_own[name] ?? 0) + 1;
+    }
+  }
+
+  final Map<String, int> _own = {};
+
+  String of(Element element) {
+    final name = _nameOf(element);
+    final library = element.library;
+    if (library == null) return name;
+    final core = library.typeProvider.objectElement.library;
+    final fromCore = core.exportNamespace.get2(name);
+    if (_isOwn(library.uri)) {
+      final unique = (_own[name] ?? 0) <= 1 && fromCore == null;
+      final path = library.uri.toString().substring(_package.length);
+
+      return unique ? name : '$name@$path';
+    }
+
+    return fromCore == element ? name : '$name@${library.uri}';
+  }
 }
 
 String _sortKey(Element element) =>
@@ -619,7 +656,7 @@ String _printHead(Element element) {
     ExtensionTypeElement(:final representation) =>
       'extension type $name$generics'
           '(${_type(representation.type)} ${_nameOf(representation)})'
-          '${_list(' implements ', element.interfaces)}',
+          '${_list(' implements ', element.interfaces, keepObject: true)}',
     ExtensionElement(:final extendedType) =>
       'extension $name$generics on ${_type(extendedType)}',
     TypeAliasElement(:final aliasedType) =>
@@ -666,8 +703,17 @@ String _supertypes(InterfaceElement element) {
       '${_list(' implements ', element.interfaces)}';
 }
 
-String _list(String keyword, List<DartType> types) {
-  final shown = types.where((type) => !type.isDartCoreObject).toList();
+/// [types] after [keyword], leaving out a redundant `Object`, unless
+/// [keepObject]: an extension type is an `Object` only if it says so.
+String _list(
+  String keyword,
+  List<DartType> types, {
+  bool keepObject = false,
+}) {
+  final shown = [
+    for (final type in types)
+      if (keepObject || !type.isDartCoreObject) type,
+  ];
 
   return shown.isEmpty ? '' : '$keyword${shown.map(_type).join(', ')}';
 }
@@ -705,9 +751,13 @@ String? _printMember(Element member) {
   };
 }
 
+/// `late`, `const` or `final`, and `settable` when the variable has a
+/// public setter: a `late final` one without an initializer has one, and
+/// gaining an initializer removes it.
 List<String> _variableModifiers(PropertyInducingElement element) => [
   if (element.isLate) 'late',
   if (element.isConst) 'const' else if (element.isFinal) 'final',
+  if (element.setter case final setter? when setter.isPublic) 'settable',
 ];
 
 /// A method, operator, getter, setter or top-level function.
@@ -801,7 +851,7 @@ String _type(DartType type) {
     final aliasNullable =
         element.aliasedType.nullabilitySuffix == NullabilitySuffix.question;
 
-    return '${_nameOf(element)}${_arguments(typeArguments)}'
+    return '${_typeNames.of(element)}${_arguments(typeArguments)}'
         '${nullable && !aliasNullable ? '?' : ''}';
   }
   final suffix = nullable ? '?' : '';
@@ -812,7 +862,7 @@ String _type(DartType type) {
     InvalidType() => throw StateError('an unresolved type in a signature'),
     NeverType() => 'Never$suffix',
     InterfaceType(:final element, :final typeArguments) =>
-      '${_nameOf(element)}${_arguments(typeArguments)}$suffix',
+      '${_typeNames.of(element)}${_arguments(typeArguments)}$suffix',
     TypeParameterType(:final element) => '${_nameOf(element)}$suffix',
     FunctionType(
       :final returnType,
@@ -1051,9 +1101,24 @@ String Function(String) _privateBase(String members) =>
       'final class MontyLimits extends _BoundaryProbeBase {\n',
     );
 
+/// Two declarations named `Item`, both in public signatures.
+final _sameNames = <String, String Function(String)>{
+  'lib/src/boundary_probe_a.dart': (_) => 'class Item {}\n',
+  'lib/src/boundary_probe_b.dart': (_) => 'class Item {}\n',
+};
+
+/// A public library using both `Item`s; `boundaryTake` takes [take]'s.
+String _items(String take) =>
+    "import 'src/boundary_probe_a.dart' as a;\n"
+    "import 'src/boundary_probe_b.dart' as b;\n"
+    'void boundaryBoth(a.Item x, b.Item y) {}\n'
+    'void boundaryTake($take.Item x) {}\n';
+
 /// A public library declaring one of each kind the printer handles.
 const _fixture = '''
 library;
+
+import 'dart:async';
 
 typedef ProbeCallback<T extends Object> =
     Future<T?> Function(int count, {required bool flag, String? label});
@@ -1074,6 +1139,7 @@ final class Probe<T extends num> extends ProbeBase<T> with ProbeMixin {
   final bool flag;
   final int? limit;
   static late final int cache;
+  late final int pending;
   static const int max = 9;
   @override
   int get id => 0;
@@ -1102,6 +1168,8 @@ extension ProbeExtension on Probe<int> {
 
 extension type ProbeId(int raw) implements int {}
 
+extension type ProbeObject(int raw) implements Object {}
+
 sealed class ProbeSealed {}
 
 interface class ProbeInterface {}
@@ -1119,12 +1187,14 @@ Never probeNever() => throw StateError('');
 dynamic probeDynamic;
 
 void Function()? probeCallback;
+
+FutureOr<int> probeFutureOr() => 1;
 ''';
 
 const _fixturePrinted = '''
 final class Probe<T extends num> extends ProbeBase<T> with ProbeMixin
   Probe.[]: operator(int index) -> int
-  Probe.cache: static late final field int
+  Probe.cache: static late final settable field int
   Probe.compareTo: method(ProbeBase<T> other) -> int
   Probe.flag: final field bool
   Probe.id: getter -> int
@@ -1135,6 +1205,7 @@ final class Probe<T extends num> extends ProbeBase<T> with ProbeMixin
   Probe.max: static const field int
   Probe.name=: setter(String value)
   Probe.new: const constructor(T value, {String label = 'x', required bool flag, int? limit = 3})
+  Probe.pending: late final settable field int
   Probe.redirect: const factory constructor(T value, {required bool flag}) redirecting
   Probe.value: final field T
   Probe.widen: method(covariant num x, [List<Map<String, int?>>? rows]) -> void
@@ -1158,14 +1229,18 @@ mixin ProbeMixin
   ProbeMixin.mixed: getter -> int
 abstract mixin class ProbeMixinClass
   ProbeMixinClass.new: constructor()
+extension type ProbeObject(int raw) implements Object
+  ProbeObject.new: constructor(int raw)
+  ProbeObject.raw: final field int
 base mixin ProbeOn on ProbeBase<int>
 sealed class ProbeSealed
   ProbeSealed.new: constructor()
-probeCallback: variable void Function()?
+probeCallback: settable variable void Function()?
 probeConst: const variable int
-probeDynamic: variable dynamic
+probeDynamic: settable variable dynamic
 probeFunction: function<T>(T value, {int? count, (String,)? one}) -> int
-probeLate: late final variable String
+probeFutureOr: function() -> FutureOr@dart:async<int>
+probeLate: late final settable variable String
 probeNever: function() -> Never
 ''';
 
@@ -1437,6 +1512,44 @@ final _controls = [
     '+ _BoundaryProbeBase.inherited: getter -> int',
     {_limitsFile: _privateBase('  int get inherited => 0;\n')},
     base: {_limitsFile: _privateBase('')},
+  ),
+  _Control(
+    'implicit setter removed',
+    _Verdict.golden,
+    '- MontyLimits.boundaryProbe: late final settable field int',
+    {
+      _limitsFile: _insertAfter(
+        _limitsAnchor,
+        '  late final int boundaryProbe = 0;\n',
+      ),
+    },
+    base: {
+      _limitsFile: _insertAfter(
+        _limitsAnchor,
+        '  late final int boundaryProbe;\n',
+      ),
+    },
+    alsoMentions: ['+ MontyLimits.boundaryProbe: late final field int'],
+  ),
+  _Control(
+    'parameter switched between two types of one name',
+    _Verdict.golden,
+    '+ boundaryTake: function(Item@src/boundary_probe_b.dart x) -> void',
+    {..._sameNames, 'lib/boundary_probe_items.dart': (_) => _items('b')},
+    base: {..._sameNames, 'lib/boundary_probe_items.dart': (_) => _items('a')},
+  ),
+  _Control(
+    'extension type no longer implements Object',
+    _Verdict.golden,
+    '- extension type BoundaryProbe(int raw) implements Object',
+    {
+      'lib/boundary_probe_ext.dart': (_) =>
+          'extension type BoundaryProbe(int raw) {}\n',
+    },
+    base: {
+      'lib/boundary_probe_ext.dart': (_) =>
+          'extension type BoundaryProbe(int raw) implements Object {}\n',
+    },
   ),
   _Control(
     'printer output for a fixture library',
