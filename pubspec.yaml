@@ -22,6 +22,10 @@ dependencies:
   protobuf: ^6.1.0
 
 dev_dependencies:
+  # tool/check_export_boundary.dart resolves the public libraries' element
+  # model. Already in the graph transitively; declared so the tool does not
+  # depend on a transitive.
+  analyzer: ^14.5.0
   # Declared, not inherited. `format_coverage` and `collect_coverage` already
   # resolved here as a transitive dependency of package:test, so tool/
   # coverage_report.sh worked by accident; a `test` upgrade that dropped the

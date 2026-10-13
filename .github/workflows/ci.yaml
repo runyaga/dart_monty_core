@@ -230,6 +230,12 @@ jobs:
           run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
           run bash tool/check_api_absent.sh
+          # Nothing under lib/src/worker/ exported or in a public signature,
+          # and the exported names equal tool/export-golden.txt; then the
+          # check's own controls. Not `dart run`, which would build the
+          # native crate through the build hook.
+          run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart
+          run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test
           # Both of these catch things a Dart test PROVABLY cannot, and both ran
           # only on a laptop until now:
           #   hierarchy_registry — Dart has no runtime reflection on web or AOT,
@@ -247,7 +253,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 27 ] || { echo "FAIL: expected 27 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 29 ] || { echo "FAIL: expected 29 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
