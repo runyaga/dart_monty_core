@@ -306,6 +306,95 @@ void main() {
       );
     });
 
+    test('queued feeds keep their order against a new feed', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'held\n')]),
+          _int(1),
+        ]),
+        for (var i = 2; i <= 5; i++) answer([_int(i)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final gate = Completer<void>();
+      final order = <String>[];
+      // The first feed's caller submits the next feed the moment its own
+      // returns, three times over.
+      Future<void> producer() async {
+        await heldFeed(session, gate);
+        order.add('first');
+        for (var i = 0; i < 3; i++) {
+          await session.feedRun('p$i', printCallback: _ignore);
+          order.add('producer-$i');
+        }
+      }
+
+      Future<void> queued() async {
+        await session.feedRun('q', printCallback: _ignore);
+        order.add('queued');
+      }
+
+      final all = Future.wait([producer(), queued()]);
+      await pumpEventQueue();
+      gate.complete();
+      await all;
+      expect(order, [
+        'first',
+        'queued',
+        'producer-0',
+        'producer-1',
+        'producer-2',
+      ]);
+    });
+
+    test(
+      'print callbacks calling each other across sessions are refused',
+      () async {
+        final a = ScriptedChannel([
+          _configureOk,
+          answer([
+            printed([(_stdout, 'a\n')]),
+            _int(1),
+          ]),
+        ]);
+        final b = ScriptedChannel([
+          _configureOk,
+          answer([
+            printed([(_stdout, 'b\n')]),
+            _int(2),
+          ]),
+        ]);
+        final pool = await _pool(Workers([a, b]), maxProcesses: 2);
+        addTearDown(pool.close);
+        final [sa, sb] = await Future.wait(
+          // Two sessions on two workers.
+          [for (var i = 0; i < 2; i++) pool.checkout()],
+        );
+        Object? refused;
+        final value = await sa
+            .feedRun(
+              'print("a")',
+              // A's print callback runs a feed on B, whose print callback
+              // calls back into A: A is inside its own turn.
+              printCallback: (_, _) => sb.feedRun(
+                'print("b")',
+                printCallback: (_, _) async {
+                  try {
+                    await sa.feedRun('1', printCallback: _ignore);
+                  } on Object catch (e) {
+                    refused = e;
+                  }
+                },
+              ),
+            )
+            .timeout(const Duration(seconds: 5));
+        expect(value, const MontyInt(1));
+        expect(refused, isA<StateError>());
+      },
+    );
+
     test('a feed while another is suspended on a host call fails', () async {
       final release = Completer<MontyValue>();
       final ch = ScriptedChannel([

@@ -9,6 +9,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:dart_monty_core/src/platform/monty_error.dart';
 import 'package:dart_monty_core/src/platform/monty_exception.dart';
@@ -153,7 +154,9 @@ final class _Hold {
 }
 
 final class _LeasedSession implements PoolSession {
-  _LeasedSession(this._hold, this._channel, this._proto, this._sleepMax);
+  _LeasedSession(this._hold, this._channel, this._proto, this._sleepMax) {
+    _channel.onSuspended = _handOff;
+  }
 
   final _Hold _hold;
   final _SessionChannel _channel;
@@ -164,6 +167,14 @@ final class _LeasedSession implements PoolSession {
   /// The feed running now, if any.
   Future<MontyValue>? _active;
 
+  /// Feeds waiting for the turn, oldest first (upstream's turn lock is
+  /// first come, first served).
+  final Queue<Completer<void>> _waiters = Queue();
+
+  /// Whether the oldest waiter was just handed the turn and has not yet
+  /// taken it: a new feed must queue behind it.
+  bool _reserved = false;
+
   @override
   Future<MontyValue> feedRun(
     String code, {
@@ -173,16 +184,25 @@ final class _LeasedSession implements PoolSession {
     ProtoOsCallHandler? os,
     bool skipTypeCheck = false,
   }) async {
-    if (Zone.current[_printZone] == this) {
+    if (_inPrintCallback(this)) {
       throw StateError(
         'a print callback cannot call its own session: it runs inside the '
         'turn',
       );
     }
-    // Checked and taken in one synchronous step after each wait, so two
-    // queued feeds cannot both find the turn free.
-    while (!_mayStart()) {
-      await _nextChance();
+    if (_hold.isFinished) throw _finishedError();
+    final queueFree = _waiters.isEmpty && !_reserved;
+    if (_active != null || !queueFree) {
+      // With nobody ahead and the running feed suspended on a host call,
+      // upstream's turn lock is free and this feed would take it, then
+      // refuse.
+      if (queueFree && _suspended) throw _pendingError();
+      await _waitForTurn();
+      // From here to the drive's start is one synchronous step: the turn
+      // stays reserved until this feed holds it, so no new feed can slip
+      // in between.
+      _reserved = false;
+      if (_hold.isFinished || _active != null) _refuse();
     }
     final drive = _drive(
       code,
@@ -196,7 +216,8 @@ final class _LeasedSession implements PoolSession {
     try {
       return await drive;
     } finally {
-      if (identical(_active, drive)) _active = null;
+      _active = null;
+      _handOff();
     }
   }
 
@@ -206,6 +227,8 @@ final class _LeasedSession implements PoolSession {
   Future<void> _close() async {
     final lease = _hold.lease;
     _hold.closed = true;
+    // Queued feeds fail as finished, one after another.
+    _handOff();
     if (lease.isReleased) return;
     if (_channel.inTurn) return _hold.abandon();
     try {
@@ -216,30 +239,32 @@ final class _LeasedSession implements PoolSession {
     }
   }
 
-  /// Whether a feed may start now: no other feed is running. Throws
-  /// [StateError] when it never can: the session is finished, or the other
-  /// feed is suspended on a host call (upstream's turn lock then hands the
-  /// turn to this feed, which refuses).
-  bool _mayStart() {
-    if (_hold.isFinished) throw _finishedError();
-    if (_active == null) return true;
-    if (!_channel.inTurn && _channel.pendingSuspension) {
-      throw StateError('feed called while a suspension is awaiting an answer');
-    }
+  /// Queues for the turn and waits to be handed it.
+  Future<void> _waitForTurn() {
+    final turn = Completer<void>();
+    _waiters.add(turn);
 
-    return false;
+    return turn.future;
   }
 
-  /// Waits for the turn in flight to end, or, between turns, for the
-  /// running feed to return.
-  Future<void> _nextChance() async {
-    final active = _active;
-    if (_channel.inTurn || active == null) return _channel.turnEnded;
-    try {
-      await active;
-    } on Object catch (_) {
-      // Its failure is its own caller's; this feed only waited for it.
-    }
+  /// Woken by a close, or by the running feed suspending: this feed cannot
+  /// run, and the next waiter learns the same.
+  Never _refuse() {
+    _handOff();
+    if (_hold.isFinished) throw _finishedError();
+    throw _pendingError();
+  }
+
+  /// Whether the running feed is suspended on a host call.
+  bool get _suspended =>
+      _active != null && !_channel.inTurn && _channel.pendingSuspension;
+
+  /// Hands the turn to the oldest waiting feed, which then starts, or
+  /// fails and hands it on.
+  void _handOff() {
+    if (_waiters.isEmpty) return;
+    _reserved = true;
+    _waiters.removeFirst().complete();
   }
 
   Future<MontyValue> _drive(
@@ -261,7 +286,9 @@ final class _LeasedSession implements PoolSession {
         // refused rather than left waiting on the turn it is part of.
         onPrint: (stream, text) => runZoned(
           () => print(stream, text),
-          zoneValues: {_printZone: this},
+          zoneValues: {
+            _printZone: {..._printingSessions(), this},
+          },
         ),
         options: FeedOptions(
           collectPrints: false,
@@ -282,8 +309,17 @@ final class _LeasedSession implements PoolSession {
 
 StateError _finishedError() => StateError('the session is finished');
 
-/// The zone key a session's print callbacks run under.
+/// The zone key under which print callbacks record the sessions whose
+/// turns they run inside: every enclosing one, so nesting keeps them all.
 final Object _printZone = Object();
+
+Set<Object> _printingSessions() =>
+    (Zone.current[_printZone] as Set<Object>?) ?? const {};
+
+bool _inPrintCallback(Object session) => _printingSessions().contains(session);
+
+StateError _pendingError() =>
+    StateError('feed called while a suspension is awaiting an answer');
 
 /// The session's view of its worker: the lease's channel, with each turn
 /// refused once the session is finished and bounded by its deadline.
@@ -308,10 +344,9 @@ final class _SessionChannel implements MontyChannel {
   /// answer (upstream's `pending`).
   bool pendingSuspension = false;
 
-  Completer<void> _turnEnded = Completer<void>()..complete();
-
-  /// Completes when the turn in flight ends (at once if none is).
-  Future<void> get turnEnded => _turnEnded.future;
+  /// Called when a turn ends in a suspension: the turn is free while the
+  /// host answers.
+  void Function()? onSuspended;
 
   final _Hold _hold;
   final PoolOptions _options;
@@ -336,7 +371,6 @@ final class _SessionChannel implements MontyChannel {
     if (_hold.isFinished) throw _finishedError();
     inTurn = true;
     pendingSuspension = false;
-    final ended = _turnEnded = Completer<void>();
     try {
       // One deadline for the whole turn: print delivery, and an abort the
       // suspension budget sends in its place, as upstream's request_turn.
@@ -360,7 +394,7 @@ final class _SessionChannel implements MontyChannel {
       }
     } finally {
       inTurn = false;
-      ended.complete();
+      if (pendingSuspension) onSuspended?.call();
     }
   }
 
