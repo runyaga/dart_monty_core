@@ -254,7 +254,8 @@ sealed class VfsContent
   VfsContent.bytes: abstract getter -> Uint8List@dart:typed_data
   VfsContent.new: const constructor()
   VfsContent.text: abstract getter -> String
-  VfsContent: permits VfsBytes, VfsText
+  VfsContent: permits final class VfsBytes extends VfsContent
+  VfsContent: permits final class VfsText extends VfsContent
 final class VfsText extends VfsContent
   VfsText.==: operator(Object other) -> bool
   VfsText.byteLength: getter -> int
@@ -281,7 +282,8 @@ abstract interface class VfsFile implements VfsNode
   VfsFile.permissions: abstract getter -> int
 sealed class VfsNode
   VfsNode.new: constructor()
-  VfsNode: permits VfsDir, VfsFile
+  VfsNode: permits abstract interface class VfsFile implements VfsNode
+  VfsNode: permits final class VfsDir extends VfsNode
 
 [members: src/platform/code_capture.dart]
 assignmentPattern: final variable RegExp
@@ -349,7 +351,12 @@ sealed class MontyError implements Exception
   MontyError.message: final field String
   MontyError.new: const constructor(String message)
   MontyError.toString: method() -> String
-  MontyError: permits MontyCrashError, MontyDisposedError, MontyPanicError, MontyResourceError, MontyScriptError, MontySuspensionBudgetExceeded
+  MontyError: permits class MontyCrashError extends MontyError
+  MontyError: permits class MontyDisposedError extends MontyError
+  MontyError: permits class MontyPanicError extends MontyError
+  MontyError: permits class MontyResourceError extends MontyError
+  MontyError: permits class MontyScriptError extends MontyError
+  MontyError: permits final class MontySuspensionBudgetExceeded extends MontyError
 class MontyPanicError extends MontyError
   MontyPanicError.new: const constructor(String message)
 class MontyResourceError extends MontyError
@@ -467,7 +474,11 @@ sealed class MontyProgress
   MontyProgress.fromJson: factory constructor(Map<String, dynamic> json)
   MontyProgress.new: const constructor()
   MontyProgress.toJson: abstract method() -> Map<String, dynamic>
-  MontyProgress: permits MontyComplete, MontyNameLookup, MontyOsCall, MontyPending, MontyResolveFutures
+  MontyProgress: permits final class MontyComplete extends MontyProgress
+  MontyProgress: permits final class MontyNameLookup extends MontyProgress
+  MontyProgress: permits final class MontyOsCall extends MontyProgress
+  MontyProgress: permits final class MontyPending extends MontyProgress
+  MontyProgress: permits final class MontyResolveFutures extends MontyProgress
 final class MontyResolveFutures extends MontyProgress
   MontyResolveFutures.==: operator(Object other) -> bool
   MontyResolveFutures.fromJson: factory constructor(Map<String, dynamic> json)
@@ -834,7 +845,32 @@ sealed class MontyValue
   MontyValue.fromJson: factory constructor(Object? json)
   MontyValue.new: const constructor()
   MontyValue.toJson: abstract method() -> Object?
-  MontyValue: permits MontyBigInt, MontyBool, MontyBytes, MontyClassInstance, MontyDataclass, MontyDate, MontyDateTime, MontyDict, MontyEllipsis, MontyExceptionValue, MontyFileHandle, MontyFloat, MontyFrozenSet, MontyInt, MontyList, MontyNamedTuple, MontyNone, MontyNotImplemented, MontyOpaque, MontyPath, MontySet, MontyString, MontyTime, MontyTimeDelta, MontyTimeZone, MontyTuple
+  MontyValue: permits final class MontyBigInt extends MontyValue
+  MontyValue: permits final class MontyBool extends MontyValue
+  MontyValue: permits final class MontyBytes extends MontyValue
+  MontyValue: permits final class MontyClassInstance extends MontyValue
+  MontyValue: permits final class MontyDataclass extends MontyValue
+  MontyValue: permits final class MontyDate extends MontyValue
+  MontyValue: permits final class MontyDateTime extends MontyValue
+  MontyValue: permits final class MontyDict extends MontyValue
+  MontyValue: permits final class MontyEllipsis extends MontyValue
+  MontyValue: permits final class MontyExceptionValue extends MontyValue
+  MontyValue: permits final class MontyFileHandle extends MontyValue
+  MontyValue: permits final class MontyFloat extends MontyValue
+  MontyValue: permits final class MontyFrozenSet extends MontyValue
+  MontyValue: permits final class MontyInt extends MontyValue
+  MontyValue: permits final class MontyList extends MontyValue
+  MontyValue: permits final class MontyNamedTuple extends MontyValue
+  MontyValue: permits final class MontyNone extends MontyValue
+  MontyValue: permits final class MontyNotImplemented extends MontyValue
+  MontyValue: permits final class MontyOpaque extends MontyValue
+  MontyValue: permits final class MontyPath extends MontyValue
+  MontyValue: permits final class MontySet extends MontyValue
+  MontyValue: permits final class MontyString extends MontyValue
+  MontyValue: permits final class MontyTime extends MontyValue
+  MontyValue: permits final class MontyTimeDelta extends MontyValue
+  MontyValue: permits final class MontyTimeZone extends MontyValue
+  MontyValue: permits final class MontyTuple extends MontyValue
 
 [members: src/platform/os_call_exception.dart]
 final class OsCallException implements Exception

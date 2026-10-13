@@ -699,15 +699,16 @@ List<String> _printDeclaration(Element element) {
     for (final member in _membersOf(element))
       if (_printMember(member) case final line?) '  $name.$line',
     if (element is ClassElement && element.isSealed)
-      '  $name: permits ${_permitted(element).join(', ')}',
+      for (final subtype in _permitted(element)) '  $name: permits $subtype',
   ]..sort();
 
   return [_printHead(element), ...members];
 }
 
-/// Every subtype of the sealed class [sealed], private ones included, and
-/// those of each sealed subtype in turn: exhaustive switches over [sealed]
-/// break when one is added, so the list is API.
+/// The declaration line of every subtype of the sealed class [sealed],
+/// private ones included, and of each sealed subtype's in turn: exhaustive
+/// switches over [sealed] depend on which subtypes exist and on what each
+/// one extends and implements, so all of it is API.
 List<String> _permitted(ClassElement sealed) {
   final found = <String>{};
   final pending = [sealed];
@@ -727,7 +728,7 @@ List<String> _permitted(ClassElement sealed) {
         if (candidate is MixinElement) ...candidate.superclassConstraints,
       ];
       if (!supertypes.any((type) => type.element == parent)) continue;
-      if (found.add(_typeNames.of(candidate)) &&
+      if (found.add(_printHead(candidate)) &&
           candidate is ClassElement &&
           candidate.isSealed) {
         pending.add(candidate);
@@ -735,7 +736,7 @@ List<String> _permitted(ClassElement sealed) {
     }
   }
 
-  return found.isEmpty ? const ['(none)'] : (found.toList()..sort());
+  return found.isEmpty ? const ['nothing'] : (found.toList()..sort());
 }
 
 /// The declaration's own line: modifiers, kind, name, type parameters,
@@ -1215,6 +1216,15 @@ String Function(String) _privateBase(String members) =>
       'final class MontyLimits extends _BoundaryProbeBase {\n',
     );
 
+/// A private subtype of the sealed `VfsNode` with `VfsFile`'s members,
+/// declaring [implements].
+String _hiddenNode(String implements) =>
+    '\nfinal class _BoundaryProbeNode extends VfsNode$implements {\n'
+    "  @override String path = '';\n"
+    "  @override VfsContent content = VfsText('');\n"
+    '  @override int get permissions => 0;\n'
+    '}\n';
+
 /// Two declarations named `Item`, both in public signatures.
 final _sameNames = <String, String Function(String)>{
   'lib/src/boundary_probe_a.dart': (_) => 'class Item {}\n',
@@ -1368,10 +1378,12 @@ extension type ProbeObject(int raw) implements Object
 base mixin ProbeOn on ProbeBase<int>
 sealed class ProbeSealed
   ProbeSealed.new: constructor()
-  ProbeSealed: permits (none)
+  ProbeSealed: permits nothing
 sealed class ProbeShape
   ProbeShape.new: constructor()
-  ProbeShape: permits ProbeSquare, _ProbeCircle, _ProbeRound
+  ProbeShape: permits final class ProbeSquare extends ProbeShape
+  ProbeShape: permits final class _ProbeCircle extends _ProbeRound
+  ProbeShape: permits sealed class _ProbeRound implements ProbeShape
 final class ProbeSquare extends ProbeShape
   ProbeSquare.new: constructor()
 probeCallback: settable variable void Function()?
@@ -1729,12 +1741,22 @@ final _controls = [
   _Control(
     'private subtype added to a sealed class',
     _Verdict.golden,
-    '+ VfsNode: permits VfsDir, VfsFile, _BoundaryProbeNode',
+    '+ VfsNode: permits final class _BoundaryProbeNode extends VfsNode',
     {
       'lib/src/mount/vfs_node.dart': (s) =>
           '$s\nfinal class _BoundaryProbeNode extends VfsNode {}\n',
     },
-    alsoMentions: ['- VfsNode: permits VfsDir, VfsFile'],
+  ),
+  _Control(
+    'private subtype of a sealed class stops implementing a public one',
+    _Verdict.golden,
+    '- VfsNode: permits final class _BoundaryProbeNode extends VfsNode '
+        'implements VfsFile',
+    {'lib/src/mount/vfs_node.dart': (s) => '$s${_hiddenNode('')}'},
+    base: {
+      'lib/src/mount/vfs_node.dart': (s) =>
+          '$s${_hiddenNode(' implements VfsFile')}',
+    },
   ),
   _Control(
     'multi-line default value prints the same with CRLF line endings',
