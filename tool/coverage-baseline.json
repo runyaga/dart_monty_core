@@ -351,6 +351,11 @@
       "hit": 8,
       "pct": 100.0
     },
+    "lib/src/worker/process_channel.dart": {
+      "found": 167,
+      "hit": 161,
+      "pct": 96.41
+    },
     "lib/src/worker/proto_session.dart": {
       "found": 172,
       "hit": 162,
@@ -366,6 +371,11 @@
       "hit": 91,
       "pct": 100.0
     },
+    "lib/src/worker/worker_locator.dart": {
+      "found": 16,
+      "hit": 14,
+      "pct": 87.5
+    },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
       "hit": 0,
@@ -373,8 +383,8 @@
     }
   },
   "total": {
-    "found": 4555,
-    "hit": 3274,
-    "pct": 71.88
+    "found": 4738,
+    "hit": 3449,
+    "pct": 72.79
   }
 }
