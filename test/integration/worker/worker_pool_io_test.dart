@@ -10,10 +10,12 @@ import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
 import '_worker_harness.dart';
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
@@ -65,6 +67,30 @@ void main() {
     // The process that was already starting is killed as it arrives; the
     // tearDown fails the test if it is still running.
   });
+
+  test(
+    'an idle worker that closed its stdout is killed when discarded',
+    () async {
+      // Stdout closed, still running: the channel is no longer usable, but
+      // the process lives on unless the pool stops it.
+      const mute = WorkerExecutable(
+        '/bin/sh',
+        args: ['-c', 'exec 1>&-; exec /bin/sleep 30'],
+      );
+      final pool = await WorkerPool.start(
+        const PoolOptions(maxProcesses: 1),
+        () => PendingSpawn((_) => ProcessChannel.spawn(mute)),
+      );
+      addTearDown(pool.close);
+      final first = onlyItem(ProcessChannel.live);
+      while (first.isAlive) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      final lease = await pool.acquire();
+      addTearDown(lease.kill);
+      await first.exitCode.timeout(const Duration(seconds: 5));
+    },
+  );
 
   test('defaultMaxProcesses is the processor count', () {
     expect(defaultMaxProcesses(), Platform.numberOfProcessors);

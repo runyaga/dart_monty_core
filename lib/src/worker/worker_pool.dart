@@ -126,7 +126,10 @@ final class WorkerPool {
       while (_idleWorkers.isNotEmpty) {
         final worker = _idleWorkers.removeLast();
         if (worker.channel.isAlive) return WorkerLease._(this, worker);
-        // Died while idle; this acquire or a later one replaces it.
+        // Unusable while idle; this acquire or a later one replaces it. Its
+        // process may still run (stdout closed, say), so it is stopped, as
+        // upstream's kill-on-drop does.
+        worker.channel.kill();
         _liveWorkers--;
       }
       if (_liveWorkers < maxProcesses) {

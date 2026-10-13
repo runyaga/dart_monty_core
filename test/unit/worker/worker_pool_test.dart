@@ -240,11 +240,12 @@ void main() {
 
     test('discards a worker that died while idle', () async {
       final p = await pool(const PoolOptions(maxProcesses: 1));
-      starts.at(0).channel.kill();
+      final dead = starts.at(0).channel..kill();
       final [a] = await acquireEach(p, 1);
       expect(a.workerId, 2);
       expect(starts.all, hasLength(2));
       expect(p.liveWorkers, 1);
+      expect(dead.kills, 2, reason: 'killed again on discard');
       await a.release();
     });
 
