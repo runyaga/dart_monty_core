@@ -9,11 +9,11 @@
     },
     "dart_monty_core_native.wasm": {
       "bytes": 15181915,
-      "sha256": "04454b4a7a23d438e0edf60cac8c5637df8c2b3b9b0d0380c912594312a23d48"
+      "sha256": "2baa50d543bf30102f6149b40679ca27850a3bf07f778546f59b0294122c6328"
     },
     "dart_monty_core_proto_worker.wasm": {
       "bytes": 16399286,
-      "sha256": "2f04da2db3e812c839173de3529e64026821882d61d794fa71ff23c5f68e64f3"
+      "sha256": "5bcc0d7d4f44aed08f9277c8a6272d89c062629a42ae648a2169dddaa3f3cffd"
     },
     "dart_monty_core_worker.js": {
       "bytes": 52955,
@@ -22,6 +22,6 @@
   },
   "monty_tag": "v0.0.23",
   "native_commit": "3ff62af878b9743368bf1a2b5944695c040ca931",
-  "source_sha256": "1f462da7c97e9d28f2bae47fb1039f02a5da1b62b8aec82360f64c0939291393",
-  "worker_source_sha256": "17d6692aa5f1293c89a272ade47cb1294516935bf153d537debc14d9e63f7074"
+  "source_sha256": "0c086ba5defd340b6a4b6b3b5a699944500696a0b90593cb70b40207e1ac8299",
+  "worker_source_sha256": "f703225183c6a12a4faee43518bbb825d6d742c1f51de393c8c380eab6ef1645"
 }

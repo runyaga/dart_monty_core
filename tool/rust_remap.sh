@@ -27,5 +27,8 @@ remap_rustflags() {
   local root="${1:?remap_rustflags needs the repo root}" sep=$'\x1f'
   local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
   local rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
-  printf '%s' "--remap-path-prefix=$cargo_home=/cargo$sep--remap-path-prefix=$rustup_home=/rustup$sep--remap-path-prefix=$root=/src"
+  # rustc applies the LAST matching mapping, so the checkout goes first: a
+  # cargo or rustup home inside the checkout (CARGO_HOME=<repo>/.cargo) must
+  # still map to /cargo or /rustup, not to /src/.cargo.
+  printf '%s' "--remap-path-prefix=$root=/src$sep--remap-path-prefix=$cargo_home=/cargo$sep--remap-path-prefix=$rustup_home=/rustup"
 }
