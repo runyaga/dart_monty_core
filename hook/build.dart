@@ -87,26 +87,143 @@ void main(List<String> args) async {
         );
       }
 
-      for (final sub in _cargoPaths(os, arch, libName)) {
-        final f = File.fromUri(nativeDir.resolve(sub));
-        if (f.existsSync() && f.lengthSync() > 0) {
-          _publishAtomically(f, outFile);
-          _addAsset(output, input.packageName, outFile.uri);
-          _declareInputs(output, nativeDir, testHooksMarker);
+      final built = _firstBuilt(nativeDir, _cargoPaths(os, arch, libName));
+      if (built == null) {
+        throw StateError(
+          'cargo build succeeded but $libName not found in target directories.',
+        );
+      }
+      _publishAtomically(built, outFile);
+      _addAsset(output, input.packageName, outFile.uri);
+      _declareInputs(output, nativeDir, testHooksMarker);
 
-          return;
-        }
+      // The worker cdylib, for `dart build cli` self-relaunch. Built ONLY
+      // when the root package opts in; every other consumer runs exactly the
+      // one cargo build above and gets exactly the one asset.
+      if (_wantsWorker(input)) {
+        await _buildWorker(input, output, nativeDir, os, arch, targetArgs);
       }
 
-      throw StateError(
-        'cargo build succeeded but $libName not found in target directories.',
-      );
+      return;
     }
 
     throw StateError(
       'native/Cargo.toml not found — clone the full monorepo to build from source.',
     );
   });
+}
+
+/// The root package's opt-in to the worker cdylib, from its pubspec:
+///
+/// ```yaml
+/// hooks:
+///   user_defines:
+///     dart_monty_core:
+///       build_worker: true
+/// ```
+///
+/// Absent or `false` means no worker library. Any other value is a mistake
+/// in that pubspec, reported rather than read as either answer.
+bool _wantsWorker(BuildInput input) {
+  final value = input.userDefines['build_worker'];
+  if (value == null || value == false) return false;
+  if (value == true) return true;
+  throw StateError(
+    'dart_monty_core: the user_define build_worker must be true or false, '
+    'got ${value.runtimeType} $value.',
+  );
+}
+
+/// Builds native/worker's cdylib and adds it as the code asset that
+/// `lib/src/worker/self_relaunch.dart` binds `dart_monty_worker_main` from.
+Future<void> _buildWorker(
+  BuildInput input,
+  BuildOutputBuilder output,
+  Uri nativeDir,
+  OS os,
+  Architecture arch,
+  List<String> targetArgs,
+) async {
+  final libName = switch (os) {
+    OS.macOS => 'libdart_monty_worker.dylib',
+    OS.windows => 'dart_monty_worker.dll',
+    _ => 'libdart_monty_worker.so',
+  };
+  final workerDir = nativeDir.resolve('worker/');
+  // `--lib` builds the cdylib (and the rlib the executable links), with the
+  // release profile the executable ships with. `--locked`, as above:
+  // native/worker/Cargo.lock is seeded from upstream's and a fresh resolve is
+  // known to fail.
+  final result = await Process.run('cargo', [
+    'build',
+    '--locked',
+    '--release',
+    '--lib',
+    ...targetArgs,
+  ], workingDirectory: Directory.fromUri(workerDir).path);
+  if (result.exitCode != 0) {
+    throw StateError(
+      'cargo build of the worker library failed.\n'
+      'stdout:\n${result.stdout}\n'
+      'stderr:\n${result.stderr}',
+    );
+  }
+  final built = _firstBuilt(workerDir, _cargoPaths(os, arch, libName));
+  if (built == null) {
+    throw StateError(
+      'cargo build succeeded but $libName not found in target directories.',
+    );
+  }
+  // Its own directory: with native/.test-hooks present the in-process
+  // library goes to `<arch>-test-hooks/`, so `<arch>/` may not exist yet.
+  final outFile = File.fromUri(
+    input.outputDirectoryShared.resolve('$arch/$libName'),
+  );
+  outFile.parent.createSync(recursive: true);
+  _publishAtomically(built, outFile);
+  output.assets.code.add(
+    CodeAsset(
+      package: input.packageName,
+      name: 'src/worker/self_relaunch.dart',
+      linkMode: DynamicLoadingBundled(),
+      file: outFile.uri,
+    ),
+  );
+  _declareWorkerInputs(output, workerDir);
+}
+
+/// What the worker library is built from: native/worker's manifest, lock and
+/// build script, every Rust source under `src/` and `upstream/`, and the
+/// toolchain file it shares with native/ (declared by [_declareInputs]).
+void _declareWorkerInputs(BuildOutputBuilder output, Uri workerDir) {
+  final deps = <Uri>[
+    workerDir.resolve('Cargo.toml'),
+    workerDir.resolve('Cargo.lock'),
+    workerDir.resolve('build.rs'),
+  ];
+  final workerConfig = workerDir.resolve('.cargo/config.toml');
+  if (File.fromUri(workerConfig).existsSync()) {
+    deps.add(workerConfig);
+  }
+  for (final sub in const ['src/', 'upstream/']) {
+    final dir = Directory.fromUri(workerDir.resolve(sub));
+    for (final e in dir.listSync(recursive: true)) {
+      if (e is File && e.path.endsWith('.rs')) {
+        deps.add(e.uri);
+      }
+    }
+  }
+  output.dependencies.addAll(deps);
+}
+
+/// The first non-empty file among [candidates], relative to [crateDir].
+File? _firstBuilt(Uri crateDir, List<String> candidates) {
+  for (final sub in candidates) {
+    final f = File.fromUri(crateDir.resolve(sub));
+    if (f.existsSync() && f.lengthSync() > 0) return f;
+  }
+
+  return null;
 }
 
 /// Installs the std library for [triple] via rustup, if rustup is present.

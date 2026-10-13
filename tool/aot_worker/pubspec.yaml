@@ -1,0 +1,21 @@
+# A `dart build cli` consumer of dart_monty_core that opts in to the worker
+# library and runs E0 case s10 through a self-relaunched worker. CI's
+# `test-aot` job builds and runs it; it is not published.
+#
+# Its own package because the opt-in is read from the ROOT package's pubspec:
+# core's own builds, and every consumer without these lines, get no worker
+# library and run no extra cargo build.
+name: dart_monty_core_aot_worker
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  dart_monty_core:
+    path: ../..
+
+hooks:
+  user_defines:
+    dart_monty_core:
+      build_worker: true

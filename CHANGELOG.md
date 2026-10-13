@@ -47,6 +47,17 @@
   surface as a typed `MontyCrashedError`, after which a fresh worker must
   answer. `PARITY_PIN` is now one workflow-level value, shared with the
   `parity` job.
+- Internal self-relaunch for `dart build cli` apps: the app runs a copy of
+  itself as its worker, served by a worker library the build hook bundles.
+  The hook builds that library ONLY when the root package opts in with
+  `hooks: user_defines: dart_monty_core: build_worker: true` in its
+  pubspec; without it the hook runs the same single cargo build and emits
+  the same single asset as before. The app must call
+  `runMontyWorkerIfChild(args)` first in `main`. Not exported: nothing
+  outside `lib/src/worker/` can reach it yet. CI's `test-aot` job builds a
+  consumer that opts in (`tool/aot_worker/`) and runs E0 case s10 through
+  the relaunched worker against upstream's recorded outcome, and checks that
+  the existing probe, which does not opt in, bundles one library only.
 
 ### Changed
 

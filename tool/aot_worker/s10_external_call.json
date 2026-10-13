@@ -1,0 +1,20 @@
+{
+  "case": "s10_external_call",
+  "source": "E0 case s10; expected outcome recorded from pydantic_monty 1.1.0 (the pinned upstream), engine ref, backend py",
+  "code": "r = fetch(1, mode='x')\nr + '!'",
+  "externals": {
+    "fetch": [{"return": {"t": "str", "v": "ok"}}]
+  },
+  "expected": {
+    "value": {"t": "str", "v": "ok!"},
+    "exception": null,
+    "prints": [],
+    "ext_calls": [
+      {
+        "name": "fetch",
+        "args": [{"t": "int", "v": "1"}],
+        "kwargs": {"mode": {"t": "str", "v": "x"}}
+      }
+    ]
+  }
+}

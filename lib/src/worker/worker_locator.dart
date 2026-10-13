@@ -8,6 +8,8 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:dart_monty_core/src/worker/self_relaunch.dart';
+import 'package:meta/meta.dart';
 
 /// The worker executable's path inside the package, for [abi]:
 /// `src/bin/<os>-<arch>/dart_monty_worker`, with `.exe` on Windows.
@@ -24,16 +26,56 @@ String workerPackagePath(Abi abi) {
 
 /// The [WorkerLaunch] to use on this host.
 ///
-/// In order: [explicit] if given; then the package-relative executable for
-/// [abi] (default: this host's), resolved through `Isolate.resolvePackageUri`,
-/// which works under `dart run` and `dart test` but not in AOT. Throws
-/// [StateError] listing what was tried if neither yields a worker.
-Future<WorkerLaunch> locateWorker({WorkerLaunch? explicit, Abi? abi}) async {
+/// In order:
+/// 1. [explicit], if given.
+/// 2. Under the JIT (`dart run`, `dart test`): the package-relative
+///    executable for [abi] (default: this host's), resolved through
+///    `Isolate.resolvePackageUri`.
+/// 3. In an AOT executable: [SelfRelaunch], if `runMontyWorkerIfChild` ran
+///    first in `main` and the worker library is bundled. Package URIs are
+///    not consulted there: an AOT executable resolves them against the
+///    package config of the machine that built it, when that file still
+///    exists, and to null otherwise, depending on the working directory.
+///
+/// Otherwise throws [StateError] naming what was tried. [isAot],
+/// [resolvePackageUri] and [canSelfRelaunch] replace the runtime's answers
+/// in tests.
+Future<WorkerLaunch> locateWorker({
+  WorkerLaunch? explicit,
+  Abi? abi,
+  @visibleForTesting bool isAot = const bool.fromEnvironment('dart.vm.product'),
+  @visibleForTesting Future<Uri?> Function(Uri)? resolvePackageUri,
+  @visibleForTesting bool Function()? canSelfRelaunch,
+}) async {
   if (explicit != null) return explicit;
-  final packageUri = Uri.parse(
-    'package:dart_monty_core/${workerPackagePath(abi ?? Abi.current())}',
+
+  return isAot
+      ? _selfRelaunch(canSelfRelaunch ?? selfRelaunchAvailable)
+      : _packageExecutable(abi ?? Abi.current(), resolvePackageUri ?? _resolve);
+}
+
+/// Step 3: [SelfRelaunch] if [ready] says this process can serve it.
+WorkerLaunch _selfRelaunch(bool Function() ready) {
+  if (ready()) return const SelfRelaunch();
+
+  throw StateError(
+    'No dart_monty_core worker found. This AOT executable can only '
+    'relaunch itself as one, which needs runMontyWorkerIfChild(args) as '
+    'the first statement of main and the worker library bundled (root '
+    'pubspec: hooks: user_defines: dart_monty_core: build_worker: true). '
+    'Or pass a WorkerExecutable.',
   );
-  final resolved = await _resolve(packageUri);
+}
+
+/// Step 2: the package-relative executable for [abi].
+Future<WorkerLaunch> _packageExecutable(
+  Abi abi,
+  Future<Uri?> Function(Uri) resolve,
+) async {
+  final packageUri = Uri.parse(
+    'package:dart_monty_core/${workerPackagePath(abi)}',
+  );
+  final resolved = await resolve(packageUri);
   if (resolved != null) {
     final file = File.fromUri(resolved);
     if (file.existsSync()) return WorkerExecutable(file.path);
