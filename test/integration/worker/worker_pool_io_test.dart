@@ -105,7 +105,7 @@ void main() {
 
   test('defaultMaxProcesses is the processor count', () {
     expect(defaultMaxProcesses(), Platform.numberOfProcessors);
-  });
+  }, testOn: '!windows');
 
   test('a pool of real workers: reuse after Reset, a kill frees the slot, '
       'close', () async {

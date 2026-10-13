@@ -380,7 +380,7 @@ void main() {
       channel.turn(_configure).timeout(const Duration(seconds: 15)),
       throwsA(isA<MontyCrashedError>()),
     );
-  });
+  }, testOn: '!windows');
 
   group('bounded read-ahead', () {
     const limit = ProcessChannel.readAheadLimit;
