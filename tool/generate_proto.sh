@@ -21,6 +21,28 @@
 #   dart format     the SDK tool/check_sdk_pin.sh enforces, so the committed
 #                   output has no format churn.
 #
+# Four declared field types differ from upstream's, in a working copy of the
+# fetched file (the pinned blob itself is checked out read-only and never
+# edited). Each keeps its wire type, so the bytes on the wire are unchanged;
+# only what package:protobuf does with them changes:
+#
+#   MontyNode.int     sint64 -> uint64   package:protobuf 6.1.0 undoes zigzag
+#                                        with an ARITHMETIC shift, so every
+#                                        |v| >= 2^62 decodes wrongly (2^63-1
+#                                        arrives as -1). As uint64 the raw
+#                                        zigzag value comes through, and
+#                                        lib/src/worker/wire_scalars.dart
+#                                        decodes it with a logical shift.
+#   MontyNode.float   double -> fixed64  package:protobuf writes every NaN as
+#   Complex.real                         7ff8000000000000, dropping its sign
+#   Complex.imag                         and payload, and dart2js can lose
+#                                        them on read. As fixed64 the eight
+#                                        bytes come through as bits, converted
+#                                        to and from a double in the same file.
+#
+# Each substitution must match its upstream line exactly once, so a reshaped
+# upstream file fails here rather than generating something else.
+#
 # CI's `proto-drift` job runs this and fails on `git diff`. That job is also
 # the compensating check for excluding lib/src/worker/proto/ from the analyzer
 # and DCM: generated code is not linted, so it must be proven to be exactly
@@ -40,7 +62,7 @@ WANT_PROTOC='libprotoc 35.1'
 WANT_PLUGIN='25.1.0'
 
 TMP="$(mktemp -d)"
-# chmod first: the fetched .proto is made read-only below.
+# chmod first: the fetched .proto and its working copy are made read-only.
 trap 'chmod -R u+w "$TMP" 2>/dev/null; /bin/rm -rf "$TMP"' EXIT
 
 read -r UPSTREAM COMMIT < <(python3 -I -c '
@@ -51,10 +73,41 @@ print(p["upstream"], p["commit"])')
 echo "--- fetch $PROTO_PATH/$PROTO_FILE @ ${COMMIT:0:12} ---"
 git init -q "$TMP/upstream"
 git -C "$TMP/upstream" fetch -q --depth 1 --filter=blob:none "$UPSTREAM.git" "$COMMIT"
-mkdir -p "$TMP/proto/$(dirname "$PROTO_FILE")"
-git -C "$TMP/upstream" show "$COMMIT:$PROTO_PATH/$PROTO_FILE" > "$TMP/proto/$PROTO_FILE"
+mkdir -p "$TMP/pinned/$(dirname "$PROTO_FILE")" "$TMP/proto/$(dirname "$PROTO_FILE")"
+git -C "$TMP/upstream" show "$COMMIT:$PROTO_PATH/$PROTO_FILE" > "$TMP/pinned/$PROTO_FILE"
+chmod -R a-w "$TMP/pinned"
+BLOB="$(git -C "$TMP/upstream" rev-parse "$COMMIT:$PROTO_PATH/$PROTO_FILE")"
+GOT_BLOB="$(git hash-object "$TMP/pinned/$PROTO_FILE")"
+[ "$GOT_BLOB" = "$BLOB" ] \
+  || { echo "FAIL: fetched $PROTO_FILE hashes to $GOT_BLOB, want $BLOB"; exit 1; }
+echo "blob $BLOB"
+
+echo "--- working copy: 4 field-type substitutions ---"
+python3 -I -c '
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+text = open(src, encoding="utf-8").read()
+# (message, upstream declaration, generated declaration)
+SUBS = [
+    ("MontyNode", "    sint64 int = 5;\n", "    uint64 int = 5;\n"),
+    ("MontyNode", "    double float = 7;\n", "    fixed64 float = 7;\n"),
+    ("Complex", "  optional double real = 1;\n", "  optional fixed64 real = 1;\n"),
+    ("Complex", "  optional double imag = 2;\n", "  optional fixed64 imag = 2;\n"),
+]
+for message, old, new in SUBS:
+    head = "\nmessage " + message + " {\n"
+    if text.count(head) != 1:
+        sys.exit(f"FAIL: message {message} appears {text.count(head)} times, want 1")
+    start = text.index(head)
+    body = text[start:text.index("\n}\n", start) + 1]
+    if text.count(old) != 1 or body.count(old) != 1:
+        sys.exit(f"FAIL: {old.strip()!r} appears {text.count(old)} times "
+                 f"({body.count(old)} in {message}), want exactly 1, in {message}")
+    text = text.replace(old, new)
+    print(f"{message}: {old.strip()} -> {new.strip()}")
+open(dst, "w", encoding="utf-8").write(text)
+' "$TMP/pinned/$PROTO_FILE" "$TMP/proto/$PROTO_FILE"
 chmod -R a-w "$TMP/proto"
-echo "blob $(git -C "$TMP/upstream" rev-parse "$COMMIT:$PROTO_PATH/$PROTO_FILE")"
 
 echo "--- protoc (grpcio-tools, hash-pinned) ---"
 python3 -m venv "$TMP/venv"

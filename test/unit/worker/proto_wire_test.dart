@@ -13,6 +13,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -45,21 +46,19 @@ const _big = '9007199254740993';
 
 /// The value graph both goldens carry; node 13 is the root dict.
 pb.Arena _arena() {
-  pb.MontyNode i(int v) => pb.MontyNode(int_5: Int64(v));
-
   return pb.Arena(
     nodeCount: 14,
     nodes: [
-      pb.MontyNode(int_5: Int64.parseInt(_big)),
-      pb.MontyNode(float: 4),
+      bigIntNode(BigInt.parse(_big)),
+      floatNode(4),
       // A double literal on purpose: the sign of zero is the point.
       // ignore: prefer_int_literals
-      pb.MontyNode(float: -0.0),
-      i(1),
-      i(2),
+      floatNode(-0.0),
+      intNode(1),
+      intNode(2),
       pb.MontyNode(list: pb.Indexes(items: [3, 4])),
-      pb.MontyNode(int_5: Int64.parseInt('-$_big')),
-      for (final k in [10, 20, 30, 40, 50, 60]) i(k),
+      bigIntNode(BigInt.parse('-$_big')),
+      for (final k in [10, 20, 30, 40, 50, 60]) intNode(k),
       pb.MontyNode(
         dict: pb.NodePairs(
           pairs: [
@@ -81,15 +80,19 @@ pb.Arena _arena() {
 void _checkArena(pb.Arena arena, int root) {
   expect(root, 13);
   pb.MontyNode node(int i) => itemAt(arena.nodes, i);
-  expect(node(0).int_5.toString(), _big);
-  expect(node(6).int_5.toString(), '-$_big');
-  expect(node(1).float, 4.0);
+  expect(intOfNode(node(0)).toString(), _big);
+  expect(intOfNode(node(6)).toString(), '-$_big');
+  expect(floatOfNode(node(1)), 4.0);
   final negativeZero = node(2);
   expect(negativeZero.whichKind(), pb.MontyNode_Kind.float);
-  expect(negativeZero.float.isNegative, isTrue, reason: '-0.0 keeps its sign');
+  expect(
+    floatOfNode(negativeZero).isNegative,
+    isTrue,
+    reason: '-0.0 keeps its sign',
+  );
   final pairs = node(root).dict.pairs;
   expect(
-    [for (final p in pairs) node(p.key).int_5.toInt()],
+    [for (final p in pairs) intOfNode(node(p.key)).toInt()],
     [
       10,
       20,

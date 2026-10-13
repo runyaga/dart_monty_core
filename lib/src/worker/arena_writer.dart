@@ -11,12 +11,10 @@
 /// Internal to the package; nothing here is exported.
 library;
 
-import 'dart:typed_data';
-
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
-import 'package:fixnum/fixnum.dart';
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 
 /// Builds one arena from host values.
 ///
@@ -101,9 +99,9 @@ final class ArenaWriter {
 pb.MontyNode? _scalarNode(MontyValue v) => switch (v) {
   MontyNone() => pb.MontyNode(none: pb.Unit()),
   MontyBool(:final value) => pb.MontyNode(boolean: value),
-  MontyInt(:final value) => pb.MontyNode(int_5: Int64(value)),
-  MontyBigInt(:final value) => _bigNode(value),
-  MontyFloat(:final value) => pb.MontyNode(float: value),
+  MontyInt(:final value) => intNode(value),
+  MontyBigInt(:final value) => bigIntNode(value),
+  final MontyFloat f => montyFloatNode(f),
   MontyString(:final value) => pb.MontyNode(str: value),
   MontyBytes(:final value) => pb.MontyNode(bytes: value),
   MontyPath(:final value) => pb.MontyNode(path: value),
@@ -120,26 +118,3 @@ Iterable<MontyValue> _childrenOf(MontyValue v) => switch (v) {
   ],
   _ => const [],
 };
-
-final BigInt _int64Min = -(BigInt.one << 63);
-final BigInt _int64Max = (BigInt.one << 63) - BigInt.one;
-final BigInt _byteMask = BigInt.from(0xff);
-
-/// The proto node for [value]: `int` when it fits in 64 bits, as upstream
-/// emits, otherwise sign and big-endian magnitude.
-pb.MontyNode _bigNode(BigInt value) {
-  if (value >= _int64Min && value <= _int64Max) {
-    return pb.MontyNode(int_5: Int64.parseInt(value.toString()));
-  }
-  final magnitude = value.abs();
-  final bytes = Uint8List((magnitude.bitLength + 7) >> 3);
-  var rest = magnitude;
-  for (var i = bytes.length - 1; i >= 0; i--) {
-    bytes[i] = (rest & _byteMask).toInt();
-    rest >>= 8;
-  }
-
-  return pb.MontyNode(
-    bigint: pb.BigInt(negative: value.isNegative, magnitude: bytes),
-  );
-}

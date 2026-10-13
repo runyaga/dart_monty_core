@@ -182,7 +182,7 @@ class MontyNode extends $pb.GeneratedMessage {
     $core.bool? boolean,
     $fixnum.Int64? int_5,
     BigInt? bigint,
-    $core.double? float,
+    $fixnum.Int64? float,
     $core.String? str,
     $core.List<$core.int>? bytes,
     Uuid? uuid,
@@ -330,11 +330,12 @@ class MontyNode extends $pb.GeneratedMessage {
     ..aOM<Unit>(3, _omitFieldNames ? '' : 'notImplemented',
         subBuilder: Unit.$_createMessage)
     ..aOB(4, _omitFieldNames ? '' : 'boolean')
-    ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'int', $pb.PbFieldType.OS6,
+    ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'int', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<BigInt>(6, _omitFieldNames ? '' : 'bigint',
         subBuilder: BigInt.$_createMessage)
-    ..aD(7, _omitFieldNames ? '' : 'float')
+    ..a<$fixnum.Int64>(7, _omitFieldNames ? '' : 'float', $pb.PbFieldType.OF6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOS(8, _omitFieldNames ? '' : 'str')
     ..a<$core.List<$core.int>>(
         9, _omitFieldNames ? '' : 'bytes', $pb.PbFieldType.OY)
@@ -530,9 +531,9 @@ class MontyNode extends $pb.GeneratedMessage {
   BigInt ensureBigint() => $_ensure(5);
 
   @$pb.TagNumber(7)
-  $core.double get float => $_getN(6);
+  $fixnum.Int64 get float => $_getI64(6);
   @$pb.TagNumber(7)
-  set float($core.double value) => $_setDouble(6, value);
+  set float($fixnum.Int64 value) => $_setInt64(6, value);
   @$pb.TagNumber(7)
   $core.bool hasFloat() => $_has(6);
   @$pb.TagNumber(7)
@@ -1047,8 +1048,8 @@ class BigInt extends $pb.GeneratedMessage {
 /// `double` omits its default on the wire, which would turn `-0.0` into `0.0`.
 class Complex extends $pb.GeneratedMessage {
   factory Complex({
-    $core.double? real,
-    $core.double? imag,
+    $fixnum.Int64? real,
+    $fixnum.Int64? imag,
   }) {
     final result = Complex._();
     if (real != null) result.real = real;
@@ -1069,8 +1070,10 @@ class Complex extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'Complex',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'monty.v1'),
       createEmptyInstance: Complex.$_createMessage)
-    ..aD(1, _omitFieldNames ? '' : 'real')
-    ..aD(2, _omitFieldNames ? '' : 'imag')
+    ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'real', $pb.PbFieldType.OF6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'imag', $pb.PbFieldType.OF6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1094,18 +1097,18 @@ class Complex extends $pb.GeneratedMessage {
   static Complex? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.double get real => $_getN(0);
+  $fixnum.Int64 get real => $_getI64(0);
   @$pb.TagNumber(1)
-  set real($core.double value) => $_setDouble(0, value);
+  set real($fixnum.Int64 value) => $_setInt64(0, value);
   @$pb.TagNumber(1)
   $core.bool hasReal() => $_has(0);
   @$pb.TagNumber(1)
   void clearReal() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $core.double get imag => $_getN(1);
+  $fixnum.Int64 get imag => $_getI64(1);
   @$pb.TagNumber(2)
-  set imag($core.double value) => $_setDouble(1, value);
+  set imag($fixnum.Int64 value) => $_setInt64(1, value);
   @$pb.TagNumber(2)
   $core.bool hasImag() => $_has(1);
   @$pb.TagNumber(2)
