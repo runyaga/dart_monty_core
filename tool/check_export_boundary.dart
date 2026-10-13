@@ -35,6 +35,7 @@
 //
 // Exit codes: 0 pass, 1 a rule failed, 2 the check itself could not run.
 
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:analyzer/dart/analysis/results.dart';
@@ -42,7 +43,8 @@ import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:analyzer/file_system/file_system.dart' show ResourceProvider;
+import 'package:analyzer/file_system/file_system.dart'
+    show Folder, ResourceProvider;
 import 'package:analyzer/file_system/overlay_file_system.dart'
     show OverlayResourceProvider;
 import 'package:analyzer/file_system/physical_file_system.dart'
@@ -176,8 +178,9 @@ void _print(_CheckExportBoundary report, List<String> diff) {
 }
 
 /// Resolves every public library under [root] through [provider], once with
-/// no declared variables and once per condition a conditional `import` or
-/// `export` in lib/ tests, so every branch is selected at least once.
+/// no declared variables and once per combination of the conditions the
+/// conditional `import`s and `export`s under lib/ test, so every branch, and
+/// every branch reachable only through another, is selected.
 Future<_CheckExportBoundary> _analyzeBoundary(
   String root,
   ResourceProvider provider,
@@ -185,12 +188,12 @@ Future<_CheckExportBoundary> _analyzeBoundary(
   final report = _CheckExportBoundary();
   await _analyzeUnder(root, provider, const {}, report);
   final defaults = Map.of(report.names);
-  for (final condition in _conditions(root, provider)) {
+  for (final declared in _platforms(_conditions(root, provider))) {
     final variant = _CheckExportBoundary();
-    await _analyzeUnder(root, provider, condition, variant);
-    final label = condition.entries
+    await _analyzeUnder(root, provider, declared, variant);
+    final label = declared.entries
         .map((entry) => '${entry.key}==${entry.value}')
-        .join();
+        .join(' ');
     report.conditions.add(label);
     report.violations.addAll([
       for (final violation in variant.violations) '[$label] $violation',
@@ -201,6 +204,31 @@ Future<_CheckExportBoundary> _analyzeBoundary(
   }
 
   return report;
+}
+
+/// Above this many combinations the check refuses rather than slow down.
+const _maxPlatforms = 64;
+
+/// Every non-empty assignment of the [conditions]: each name absent or set
+/// to one of the values tested for it.
+List<Map<String, String>> _platforms(Map<String, Set<String>> conditions) {
+  var platforms = [<String, String>{}];
+  for (final MapEntry(:key, :value) in conditions.entries) {
+    platforms = [
+      for (final platform in platforms) ...[
+        platform,
+        for (final option in value.toList()..sort()) {...platform, key: option},
+      ],
+    ];
+    if (platforms.length > _maxPlatforms) {
+      throw StateError(
+        'more than $_maxPlatforms combinations of directive conditions; '
+        'narrow them or raise _maxPlatforms',
+      );
+    }
+  }
+
+  return platforms.where((platform) => platform.isNotEmpty).toList();
 }
 
 Future<void> _analyzeUnder(
@@ -217,7 +245,7 @@ Future<void> _analyzeUnder(
     declaredVariables: declared,
   );
   try {
-    for (final relative in _publicLibraries(root)) {
+    for (final relative in _publicLibraries(root, provider)) {
       final session = collection
           .contextFor('$root/lib/$relative')
           .currentSession;
@@ -233,32 +261,45 @@ Future<void> _analyzeUnder(
   }
 }
 
-/// Every `if (name == value)` a directive under lib/ tests, one map each.
-List<Map<String, String>> _conditions(String root, ResourceProvider provider) {
-  final found = <String, Map<String, String>>{};
-  for (final entity in Directory('$root/lib').listSync(recursive: true)) {
-    if (entity is! File || !entity.path.endsWith('.dart')) continue;
-    final source = provider.getFile(entity.path).readAsStringSync();
+/// Every `if (name == value)` a directive under lib/ tests: name to values.
+Map<String, Set<String>> _conditions(String root, ResourceProvider provider) {
+  final found = SplayTreeMap<String, Set<String>>();
+  for (final path in _dartFiles(root, provider)) {
+    final source = provider.getFile('$root/lib/$path').readAsStringSync();
     final unit = parseString(content: source, throwIfDiagnostics: false).unit;
     for (final directive in unit.directives.whereType<NamespaceDirective>()) {
       for (final configuration in directive.configurations) {
-        final name = configuration.name.toSource();
-        final value = configuration.value?.stringValue ?? 'true';
-        found['$name=$value'] = {name: value};
+        found
+            .putIfAbsent(configuration.name.toSource(), () => {})
+            .add(configuration.value?.stringValue ?? 'true');
       }
     }
   }
 
-  return [for (final key in found.keys.toList()..sort()) ?found[key]];
+  return found;
 }
 
-List<String> _publicLibraries(String root) {
-  final lib = Directory('$root/lib');
-  final found = [
-    for (final entity in lib.listSync(recursive: true))
-      if (entity is File && entity.path.endsWith('.dart'))
-        entity.path.substring(lib.path.length + 1),
-  ]..removeWhere((path) => path.startsWith('src/'));
+List<String> _publicLibraries(String root, ResourceProvider provider) =>
+    _dartFiles(
+      root,
+      provider,
+    ).where((path) => !path.startsWith('src/')).toList();
+
+/// Every `.dart` file under lib/, relative to it, as [provider] sees them
+/// (so a self-test control's in-memory files are included).
+List<String> _dartFiles(String root, ResourceProvider provider) {
+  final lib = '$root/lib';
+  final found = <String>[];
+  final folders = [provider.getFolder(lib)];
+  while (folders.isNotEmpty) {
+    for (final child in folders.removeLast().getChildren()) {
+      if (child is Folder) {
+        folders.add(child);
+      } else if (child.path.endsWith('.dart')) {
+        found.add(child.path.substring(lib.length + 1));
+      }
+    }
+  }
 
   return found..sort();
 }
@@ -553,6 +594,9 @@ final class _Control {
 const _proto =
     "import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart'"
     ' as boundary_probe;\n';
+const _nestedProbe =
+    "import 'package:dart_monty_core/src/boundary_probe_a.dart'"
+    ' as boundary_probe;\n';
 const _valueAnchor = 'sealed class MontyValue {\n';
 const _partAnchor = "part 'monty_value_scalars.dart';";
 
@@ -585,6 +629,26 @@ final _controls = [
       'lib/dart_monty_core.dart': (s) =>
           "${s}export 'src/monty_factory_stub.dart'\n"
           "    if (dart.library.boundary_probe) 'src/worker/frame.dart';\n",
+    },
+  ),
+  _Control(
+    'proto type selected only when two conditions hold together',
+    _Verdict.boundary,
+    'boundary_a==true dart.library.boundary_b==true] dart_monty_core.dart: '
+        'MontyValue.boundaryProbe (signature) names Arena',
+    {
+      'lib/src/boundary_probe_a.dart': (_) =>
+          "export 'boundary_probe_stub.dart'\n"
+          "    if (dart.library.boundary_a) 'boundary_probe_b.dart';\n",
+      'lib/src/boundary_probe_b.dart': (_) =>
+          "export 'boundary_probe_stub.dart'\n"
+          "    if (dart.library.boundary_b) 'worker/proto/monty/v1/monty.pb.dart'"
+          ' show Arena;\n',
+      'lib/src/boundary_probe_stub.dart': (_) => 'class Arena {}\n',
+      'lib/src/platform/monty_value.dart': (s) => _insertAfter(
+        _valueAnchor,
+        '  boundary_probe.Arena? get boundaryProbe => null;\n',
+      )(_insertBefore(_partAnchor, _nestedProbe)(s)),
     },
   ),
   _Control(
