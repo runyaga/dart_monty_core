@@ -371,6 +371,49 @@ void main() {
     }
   });
 
+  test('an error in a Worker that greeted is MontyCrashedError(vanished) '
+      '($backend)', () async {
+    // Greets correctly, then throws on the first request.
+    final url = _scriptUrl(
+      'self.onmessage = () => { '
+      'self.onmessage = () => { throw new Error("boom"); }; '
+      'self.postMessage({ready: true, jspi: false, '
+      'protocol: $workerProtocolVersion}); };',
+    );
+    final ch = await WorkerChannel.spawn(cache, workerUrl: url);
+    _opened.add(ch);
+    await expectLater(
+      ch.turn(_configure()),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.vanished,
+        ),
+      ),
+    );
+    expect(ch.isAlive, isFalse);
+  });
+
+  test('a module served as another type still compiles ($backend)', () async {
+    // The same module from a blob typed application/octet-stream, which
+    // compileStreaming refuses.
+    final response = await _fetchUrl(
+      '$_assets/dart_monty_core_proto_worker.wasm',
+    ).toDart;
+    final bytes = await response.arrayBuffer().toDart;
+    final blobUrl = _createObjectUrl(
+      _Blob(
+        [bytes].toJS,
+        _BlobOptions(type: 'application/octet-stream'),
+      ),
+    );
+    final ch = await _spawn(WasmModuleCache(blobUrl));
+    await _open(ch);
+    expect(await _evalInt(ch, '6 * 7'), 42);
+    await ch.close();
+  });
+
   test('a Worker that never greets is terminated by a cancelled start '
       '($backend)', () async {
     // It loads, ignores Start, and beats on a BroadcastChannel until it is
@@ -503,7 +546,7 @@ String _scriptUrl(String source) => _createObjectUrl(
 
 @JS('Blob')
 extension type const _Blob._(JSObject _) implements JSObject {
-  external factory _Blob(JSArray<JSString> parts, _BlobOptions options);
+  external factory _Blob(JSArray<JSAny> parts, _BlobOptions options);
 }
 
 extension type const _BlobOptions._(JSObject _) implements JSObject {
@@ -512,6 +555,13 @@ extension type const _BlobOptions._(JSObject _) implements JSObject {
 
 @JS('URL.createObjectURL')
 external String _createObjectUrl(_Blob blob);
+
+@JS('fetch')
+external JSPromise<_FetchResponse> _fetchUrl(String url);
+
+extension type const _FetchResponse._(JSObject _) implements JSObject {
+  external JSPromise<JSArrayBuffer> arrayBuffer();
+}
 
 @JS('BroadcastChannel')
 extension type const _BroadcastChannel._(JSObject _) implements JSObject {
