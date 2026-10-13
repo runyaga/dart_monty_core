@@ -89,7 +89,8 @@ HOME_ROOTS=(Users home root)
 #              (tool/rust_remap.sh: /cargo/, /rustup/, /src/) or rustc's own
 #              (/rustc/<hash>/, /rust/deps/). Catches a toolchain outside any
 #              home, such as CARGO_HOME=/opt/rust/cargo, and Windows paths
-#              (drive letter with either slash, or UNC).
+#              (drive letter with either slash, or UNC). Checked twice: split
+#              at every delimiter, and with spaces allowed inside a name.
 #   layout     every cargo-home layout marker (registry/src/, git/checkouts/,
 #              either slash) sits under a /cargo/ that is itself a path root:
 #              after whitespace, a control byte or a quote, or after a Rust
@@ -110,6 +111,10 @@ allowed = (b"/cargo/", b"/rustup/", b"/src/", b"/rustc/", b"/rust/deps/")
 stop = rb"\x00-\x20\x7f\"'`()\[\]<>{},;="
 path = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:[/\\]|\\\\)[^" + stop + rb"]+")
 rust_src = re.compile(rb"\.rs(?::|$)")
+# The same, but a directory name may contain spaces: from a path start up to
+# the first .rs that ends a file name.
+spaced_src = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:[/\\]|\\\\)"
+                        rb"[^\x00-\x1f\x7f\"'`<>]*?\.rs(?![A-Za-z0-9_])")
 marker = re.compile(rb"(?:registry|git)[/\\](?:src|checkouts)[/\\]")
 # Stricter than `stop`: a bracket or parenthesis can be part of a directory
 # name, such as "/opt/Toolchain (stable)/cargo/".
@@ -140,7 +145,11 @@ for f in sorted(glob.glob("lib/assets/*.wasm")):
         rc = 1
         continue
     homes = sum(data.count(d) for d in deny)
-    srcs = [p.group() for p in path.finditer(data) if rust_src.search(p.group())]
+    # Keyed by start offset: both extractors find most paths.
+    srcs = {p.start(): p.group() for p in path.finditer(data)
+            if rust_src.search(p.group())}
+    srcs.update({p.start(): p.group() for p in spaced_src.finditer(data)})
+    srcs = list(srcs.values())
     outside = sum(1 for p in srcs if not p.startswith(allowed))
     layout = sum(1 for m in marker.finditer(data)
                  if not cargo_rooted(data, m.start()))
