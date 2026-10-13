@@ -96,7 +96,7 @@ HOME_ROOTS=(Users home root)
 #              module path (tracing metadata concatenates `a::b::c` and the
 #              file name with no delimiter). Catches /opt/rust/cargo/ inside
 #              such a string, and a toolchain directory whose name contains a
-#              space, parenthesis or bracket.
+#              space (even a trailing one), parenthesis or bracket.
 #
 # A path starts at /, a drive letter or \\ after a delimiter (NUL, space,
 # quote, bracket ...) and runs to the next one; bytes >= 0x80 are path bytes,
@@ -114,6 +114,10 @@ marker = re.compile(rb"(?:registry|git)[/\\](?:src|checkouts)[/\\]")
 # Stricter than `stop`: a bracket or parenthesis can be part of a directory
 # name, such as "/opt/Toolchain (stable)/cargo/".
 root_boundary = re.compile(rb"[\x00-\x20\x7f\"'`]")
+# A space is a root only if no directory component runs into it: catches a
+# cargo home like "/opt/Toolchain /cargo" (trailing space in a name).
+space_in_dir = re.compile(
+    rb"/(?:(?!\.rs)[^/\x00-\x1f])*[ ]/cargo/(?:registry|git)[/\\](?:src|checkouts)[/\\]")
 module_path = re.compile(rb"(?:[A-Za-z_][A-Za-z0-9_]*::)+[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -140,6 +144,7 @@ for f in sorted(glob.glob("lib/assets/*.wasm")):
     outside = sum(1 for p in srcs if not p.startswith(allowed))
     layout = sum(1 for m in marker.finditer(data)
                  if not cargo_rooted(data, m.start()))
+    layout += len(space_in_dir.findall(data))
     if homes or outside or layout:
         print(f"FAIL: {f} embeds build-machine absolute paths: {homes} under a "
               f"home-directory root, {outside} of {len(srcs)} Rust source paths "
