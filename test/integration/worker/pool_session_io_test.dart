@@ -31,14 +31,23 @@ void _ignore(String stream, String text) => _ignored++;
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
 
+/// Above [_runProbe]'s own 60 s, so its kill and message come first.
+const _probeTimeout = Timeout(Duration(seconds: 90));
+
 /// Runs the probe program [name] with the worker's path; its exit code,
 /// stdout and stderr. A probe still running after 60 s is killed and fails
-/// the test, so a probe that cannot exit never outlives it.
+/// the test; the test's own teardown kills it too, so a probe that cannot
+/// exit never outlives its test, whichever timeout fires first. Tests that
+/// run a probe set a timeout above 60 s.
 Future<(int, String, String)> _runProbe(String name) async {
   final probe = await Process.start(Platform.resolvedExecutable, [
     File('test/integration/worker/$name').absolute.path,
     await _workerPath(),
   ]);
+  addTearDown(() async {
+    probe.kill(ProcessSignal.sigkill);
+    await probe.exitCode;
+  });
   final out = probe.stdout.transform(utf8.decoder).join();
   final err = probe.stderr.transform(utf8.decoder).join();
   try {
@@ -311,7 +320,7 @@ void main() {
     final (code, out, err) = await _runProbe('close_exit_probe.dart');
     expect(code, 0, reason: err);
     expect(out, 'closed\n');
-  });
+  }, timeout: _probeTimeout);
 
   test(
     'no print callback: fragments reach the process stdout and stderr',
@@ -321,5 +330,6 @@ void main() {
       expect(out, 'ab\n');
       expect(err, 'e\n');
     },
+    timeout: _probeTimeout,
   );
 }

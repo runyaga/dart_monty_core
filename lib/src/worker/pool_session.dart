@@ -48,9 +48,11 @@ abstract interface class PoolSession {
   /// A `time.sleep` is waited by the session, cut to the OS policy's
   /// system-sleep maximum (10 s by default). An `asyncio.sleep` is answered
   /// through the futures protocol, which this driver does not run yet; until
-  /// it does, such a sleep is declined and raises in the sandbox. On a type-checking session a
-  /// snippet the check rejects throws [MontyTypeCheckError] without running;
-  /// [skipTypeCheck] skips the check for this snippet. Past the session's
+  /// it does, such a sleep is declined and raises in the sandbox.
+  ///
+  /// On a type-checking session a snippet the check rejects throws
+  /// [MontyTypeCheckError] without running; [skipTypeCheck] skips the check
+  /// for this snippet. Past the session's
   /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
   /// `RuntimeError`.
   Future<MontyValue> feedRun(
