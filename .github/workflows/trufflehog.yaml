@@ -102,38 +102,3 @@ jobs:
           # This pins the scanner: the 3.99.2 tag, held to its manifest-list
           # digest so a re-pushed tag cannot change it. Bump it with the SHA.
           version: 3.99.2@sha256:47a84bc18a0d04a165498bbbd3bacfd84176661cbc91f8e0f85467f6a771e99a
-
-  notify-failure:
-    runs-on: ubuntu-latest
-    needs: [trufflehog]
-    if: failure()
-    timeout-minutes: 2
-    # Posts to a Slack webhook; the GitHub token is not used.
-    permissions: {}
-    env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_NOTIFY_URL }}
-    steps:
-      # Built with jq, not by pasting expressions into JSON: a commit message
-      # with a `"` or a backslash made the payload unparseable, and the alert
-      # was lost exactly when it was needed.
-      - name: Build the Slack payload
-        if: env.SLACK_WEBHOOK_URL != ''
-        env:
-          WORKFLOW: ${{ github.workflow }}
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-          MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          jq -n \
-            --arg text ":rotating_light: $WORKFLOW failed on $BRANCH:"$'\n'"$MESSAGE"$'\n'"$RUN_URL" \
-            '{channel: "#dart_monty_core", username: "dart_monty_core",
-              text: $text, icon_emoji: ":ghost:"}' \
-            > "$RUNNER_TEMP/slack-payload.json"
-      - name: Notify Slack on failure
-        if: env.SLACK_WEBHOOK_URL != ''
-        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
-        # The action reads the URL from SLACK_WEBHOOK_URL, but since v2 it
-        # exits "Missing input!" unless webhook-type names the technique.
-        with:
-          webhook-type: incoming-webhook
-          payload-file-path: ${{ runner.temp }}/slack-payload.json
