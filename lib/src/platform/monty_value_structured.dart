@@ -20,6 +20,9 @@ final class MontyEllipsis extends MontyValue {
       const MontyEllipsis();
 
   @override
+  int get _graphKind => _kFixed;
+
+  @override
   Map<String, Object?> toJson() => {'__type': 'ellipsis'};
 
   /// There is no Dart equivalent of `...`, so the sentinel represents itself.
@@ -167,27 +170,24 @@ final class MontyNamedTuple extends MontyValue {
   final List<MontyValue> values;
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'namedtuple',
-    'type_name': typeName,
-    'field_names': fieldNames,
-    'values': values.map((e) => e.toJson()).toList(),
-  };
+  int get _graphKind => _kNamedTuple;
+
+  @override
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   @override
   Map<String, Object?> get dartValue => toJson();
 
+  // Compares the type and field names too, where Python compares a named
+  // tuple as a plain tuple: a recorded divergence.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyNamedTuple &&
-          other.typeName == typeName &&
-          _deepEq.equals(other.fieldNames, fieldNames) &&
-          _deepEq.equals(other.values, values));
+      (other is MontyNamedTuple && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode =>
-      Object.hash(typeName, _deepEq.hash(fieldNames), _deepEq.hash(values));
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() =>
@@ -248,6 +248,9 @@ final class MontyNotImplemented extends MontyValue {
 
   factory MontyNotImplemented._fromMap(Map<String, dynamic> _) =>
       const MontyNotImplemented();
+
+  @override
+  int get _graphKind => _kFixed;
 
   @override
   Map<String, Object?> toJson() => {'__type': 'not_implemented'};
@@ -326,16 +329,10 @@ final class MontyClassType {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyClassType &&
-          other.name == name &&
-          other.id == id &&
-          other.hostDefined == hostDefined &&
-          other.isDataclass == isDataclass &&
-          _deepEq.equals(other.attrs, attrs));
+      (other is MontyClassType && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode =>
-      Object.hash(name, id, hostDefined, isDataclass, _deepEq.hash(attrs));
+  int get hashCode => _MontyValueGraph.hash(this);
 }
 
 /// A Python class instance crossing the host boundary.
@@ -438,8 +435,10 @@ final class MontyClassInstance extends MontyValue {
   bool get isDataclass => classType.isDataclass;
 
   /// The attribute values as plain Dart objects.
-  Map<String, Object?> get dartAttrs =>
-      attrs.map((k, v) => MapEntry(k, v.dartValue));
+  ///
+  /// One projection covers every attribute, so a value shared between two
+  /// attributes is one object here too.
+  Map<String, Object?> get dartAttrs => _MontyValueGraph.dartAttrs(attrs);
 
   /// Hydrates this instance into a Dart object via [factory].
   ///
@@ -455,36 +454,28 @@ final class MontyClassInstance extends MontyValue {
       factory(dartAttrs);
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'class_instance',
-    'class_type': {
-      'name': classType.name,
-      'id': classType.id,
-      'host_defined': classType.hostDefined,
-      'is_dataclass': classType.isDataclass,
-      'attrs': MontyDict.ofStrings(classType.attrs).toJson(),
-    },
-    'instance_id': instanceId,
-    'attrs': MontyDict.ofStrings(attrs).toJson(),
-  };
+  int get _graphKind => _kInstance;
+
+  @override
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   @override
   Map<String, Object?> get dartValue => toJson();
 
+  /// The class name and the attribute count. The attributes themselves are
+  /// not rendered: a shared or deeply nested value would make that unbounded.
   @override
   String toString() =>
-      'MontyClassInstance(${classType.name}, attrs: $dartAttrs)';
+      'MontyClassInstance(${classType.name}, ${attrs.length} attrs)';
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyClassInstance &&
-          other.classType == classType &&
-          other.instanceId == instanceId &&
-          _deepEq.equals(other.attrs, attrs));
+      (other is MontyClassInstance && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode => Object.hash(classType, instanceId, _deepEq.hash(attrs));
+  int get hashCode => _MontyValueGraph.hash(this);
 }
 
 /// Represents a Python `@dataclass` value. ENCODE-ONLY as of monty v0.0.23.
@@ -577,9 +568,9 @@ final class MontyDataclass extends MontyValue {
 
   /// The attribute values converted to plain Dart objects via
   /// [MontyValue.dartValue]. Convenient for hydrating into a
-  /// user-supplied class.
-  Map<String, Object?> get dartAttrs =>
-      attrs.map((k, v) => MapEntry(k, v.dartValue));
+  /// user-supplied class. One projection covers every attribute, so a value
+  /// shared between two attributes is one object here too.
+  Map<String, Object?> get dartAttrs => _MontyValueGraph.dartAttrs(attrs);
 
   /// Hydrates this dataclass into a Dart object via [factory].
   ///
@@ -608,14 +599,11 @@ final class MontyDataclass extends MontyValue {
       factory(dartAttrs);
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'dataclass',
-    'name': name,
-    'type_id': typeId,
-    'field_names': fieldNames,
-    'attrs': MontyDict.ofStrings(attrs).toJson(),
-    'frozen': frozen,
-  };
+  int get _graphKind => _kDataclass;
+
+  @override
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   @override
   Map<String, Object?> get dartValue => toJson();
@@ -623,21 +611,10 @@ final class MontyDataclass extends MontyValue {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyDataclass &&
-          other.name == name &&
-          other.typeId == typeId &&
-          _deepEq.equals(other.fieldNames, fieldNames) &&
-          _deepEq.equals(other.attrs, attrs) &&
-          other.frozen == frozen);
+      (other is MontyDataclass && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode => Object.hash(
-    name,
-    typeId,
-    _deepEq.hash(fieldNames),
-    _deepEq.hash(attrs),
-    frozen,
-  );
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() => 'MontyDataclass($name, ${attrs.length} attrs)';

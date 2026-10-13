@@ -26,6 +26,9 @@ final class MontyDate extends MontyValue {
   final int day;
 
   @override
+  int get _graphKind => _kFixed;
+
+  @override
   Map<String, Object?> toJson() => {
     '__type': 'date',
     'year': year,
@@ -195,6 +198,9 @@ final class MontyTimeDelta extends MontyValue {
 
   /// The number of microseconds (0-999999).
   final int microseconds;
+
+  @override
+  int get _graphKind => _kFixed;
 
   @override
   Map<String, Object?> toJson() => {

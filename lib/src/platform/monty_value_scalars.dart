@@ -11,6 +11,9 @@ final class MontyNone extends MontyValue {
   const MontyNone();
 
   @override
+  int get _graphKind => _kFixed;
+
+  @override
   Null toJson() => null;
 
   @override
@@ -36,6 +39,9 @@ final class MontyBool extends MontyValue {
 
   /// The underlying boolean value.
   final bool value;
+
+  @override
+  int get _graphKind => _kFixed;
 
   @override
   bool toJson() => value;
@@ -69,6 +75,9 @@ final class MontyInt extends MontyValue {
   /// [MontyInt] at all there. Values past it decode as [MontyBigInt] on every
   /// backend, and encode as the bigint envelope so the digits survive.
   static final BigInt _exactIntLimit = BigInt.from(1) << 53;
+
+  @override
+  int get _graphKind => _kFixed;
 
   @override
   Object toJson() {
@@ -111,6 +120,9 @@ final class MontyFloat extends MontyValue {
 
   /// The underlying double value.
   final double value;
+
+  @override
+  int get _graphKind => _kFixed;
 
   @override
   Object toJson() {

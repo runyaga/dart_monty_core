@@ -47,18 +47,26 @@ final class MontyList extends MontyValue {
   final List<MontyValue> items;
 
   @override
-  List<Object?> toJson() => items.map((e) => e.toJson()).toList();
+  int get _graphKind => _kList;
+
+  // toJson, dartValue, == and hashCode walk the value as a graph: a node
+  // shared by several parents is visited once, deep nesting cannot overflow
+  // the stack, and a value that contains itself is a StateError (except that
+  // it equals itself). See monty_value_graph.dart.
+  @override
+  List<Object?> toJson() => _MontyValueGraph.nodeToJson(this) as List<Object?>;
 
   @override
-  List<Object?> get dartValue => items.map((e) => e.dartValue).toList();
+  List<Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as List<Object?>;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyList && _deepEq.equals(other.items, items));
+      (other is MontyList && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode => _deepEq.hash(items);
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() => 'MontyList(${items.length} items)';
@@ -80,21 +88,23 @@ final class MontyTuple extends MontyValue {
   final List<MontyValue> items;
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'tuple',
-    'value': items.map((e) => e.toJson()).toList(),
-  };
+  int get _graphKind => _kTuple;
 
   @override
-  List<Object?> get dartValue => items.map((e) => e.dartValue).toList();
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
+
+  @override
+  List<Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as List<Object?>;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyTuple && _deepEq.equals(other.items, items));
+      (other is MontyTuple && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode => _deepEq.hash(items);
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() => 'MontyTuple(${items.length} items)';
@@ -206,26 +216,11 @@ final class MontyDict extends MontyValue {
     return out;
   }
 
+  /// Mirrors the encoder on the Rust side: string-keyed dicts take the compact
+  /// object form, everything else the entries form.
   @override
-  Map<String, Object?> toJson() {
-    // Mirror the encoder on the Rust side: string-keyed dicts take the compact
-    // object form, everything else the entries form. Keeps the wire
-    // byte-identical to what the two classes emitted.
-    final strings = asStringMap;
-    if (strings != null) {
-      return {
-        '__type': 'dict',
-        'value': strings.map((k, v) => MapEntry(k, v.toJson())),
-      };
-    }
-
-    return {
-      '__type': 'dict',
-      'entries': [
-        for (final (k, v) in pairs) [k.toJson(), v.toJson()],
-      ],
-    };
-  }
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   /// A `Map<String, Object?>` when every key is a string, else a list of
   /// two-element `[key, value]` lists.
@@ -236,44 +231,19 @@ final class MontyDict extends MontyValue {
   /// would collapse into one map entry and silently lose the other. The pair
   /// list preserves both.
   @override
-  Object? get dartValue {
-    final strings = asStringMap;
-    if (strings != null) {
-      return strings.map((k, v) => MapEntry(k, v.dartValue));
-    }
+  Object? get dartValue => _MontyValueGraph.nodeDartValue(this);
 
-    return [
-      for (final (k, v) in pairs) [k.dartValue, v.dartValue],
-    ];
-  }
+  // Order-insensitive, matching the sandbox: the (key, value) pairs compare as
+  // a multiset, so a dict built with a duplicate key compares as it always
+  // did. Commutative hash: equal dicts hash equally whatever order their pairs
+  // arrived in.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyDict && _MontyValueGraph.equals(this, other));
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! MontyDict || other.pairs.length != pairs.length) return false;
-
-    // Order-insensitive, matching the sandbox. Monty collapses equal keys
-    // before the value ever reaches the wire, so no two pairs share a key and
-    // multiset equality is exactly key-mapping equality.
-    //
-    // Records compare structurally, so `remove` matches a pair by both halves.
-    // Consuming each match is what keeps this a MULTISET comparison rather than
-    // a subset test.
-    final remaining = [...other.pairs];
-    for (final pair in pairs) {
-      if (!remaining.remove(pair)) return false;
-    }
-
-    return remaining.isEmpty;
-  }
-
-  @override
-  // Commutative on purpose: equal dicts must hash equally whatever order their
-  // pairs arrived in, so this folds with `+` rather than hashing the list.
-  int get hashCode => pairs.fold(
-    0,
-    (acc, p) => acc + Object.hash(p.$1, p.$2),
-  );
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() => 'MontyDict(${pairs.length} entries)';
@@ -295,13 +265,15 @@ final class MontySet extends MontyValue {
   final List<MontyValue> items;
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'set',
-    'value': items.map((e) => e.toJson()).toList(),
-  };
+  int get _graphKind => _kSet;
 
   @override
-  List<Object?> get dartValue => items.map((e) => e.dartValue).toList();
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
+
+  @override
+  List<Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as List<Object?>;
 
   @override
   // Order-insensitive, matching the sandbox. `crates/monty/src/types/set.rs`
@@ -318,21 +290,15 @@ final class MontySet extends MontyValue {
   //
   // `+` rather than upstream's XOR on purpose: XOR cancels duplicates, so a
   // forged `{"__type": "set", "value": [1, 1]}` would hash like the EMPTY set.
-  // Both are commutative; only one of them survives a hostile payload.
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! MontySet || other.items.length != items.length) return false;
-
-    final remaining = [...other.items];
-    for (final item in items) {
-      if (!remaining.remove(item)) return false;
-    }
-
-    return remaining.isEmpty;
-  }
+  // Both are commutative; only one of them survives a hostile payload. Each
+  // element hash is mixed before the sum, so small consecutive element hashes
+  // rarely collide.
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontySet && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode => items.fold(0, (acc, e) => acc + e.hashCode);
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() => 'MontySet(${items.length} items)';
@@ -354,13 +320,15 @@ final class MontyFrozenSet extends MontyValue {
   final List<MontyValue> items;
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'frozenset',
-    'value': items.map((e) => e.toJson()).toList(),
-  };
+  int get _graphKind => _kFrozenSet;
 
   @override
-  List<Object?> get dartValue => items.map((e) => e.dartValue).toList();
+  Map<String, Object?> toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
+
+  @override
+  List<Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as List<Object?>;
 
   @override
   // Order-insensitive, matching the sandbox. `crates/monty/src/types/set.rs`
@@ -377,23 +345,15 @@ final class MontyFrozenSet extends MontyValue {
   //
   // `+` rather than upstream's XOR on purpose: XOR cancels duplicates, so a
   // forged `{"__type": "set", "value": [1, 1]}` would hash like the EMPTY set.
-  // Both are commutative; only one of them survives a hostile payload.
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! MontyFrozenSet || other.items.length != items.length) {
-      return false;
-    }
-
-    final remaining = [...other.items];
-    for (final item in items) {
-      if (!remaining.remove(item)) return false;
-    }
-
-    return remaining.isEmpty;
-  }
+  // Both are commutative; only one of them survives a hostile payload. Each
+  // element hash is mixed before the sum, so small consecutive element hashes
+  // rarely collide.
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyFrozenSet && _MontyValueGraph.equals(this, other));
 
   @override
-  int get hashCode => items.fold(0, (acc, e) => acc + e.hashCode);
+  int get hashCode => _MontyValueGraph.hash(this);
 
   @override
   String toString() => 'MontyFrozenSet(${items.length} items)';

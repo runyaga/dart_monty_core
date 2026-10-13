@@ -83,6 +83,31 @@
   magnitude converts in one step instead of one shift per byte (1 MiB:
   minutes before, about 0.2 s now). On dart2js, a `MontyInt` outside the
   64-bit range is now sent as a big integer instead of being truncated.
+- `MontyValue`'s `==`, `hashCode`, `toJson` and `dartValue` no longer hang on
+  shared values or overflow the stack on deep ones. A value whose parts are
+  shared, as `x = [x, x]` repeated in Python makes it, used to cost 2^d (24
+  levels took 0.3–3 s, 40 hung); 10,000 levels of nesting overflowed the
+  stack (2,000 on dart2js). Each operation now recurses within a budget (400
+  levels, 2^22 visits) and past it continues as a memoised walk on an
+  explicit stack: a 10,000-level shared value takes a few milliseconds and
+  100,000 levels of nesting tens of milliseconds. On ordinary values the
+  results are unchanged, including hash values, except that a set's hash now
+  mixes each element's hash before summing. `toJson` and `dartValue` build a
+  shared part once, so it is one object in the output (`json.encode` of that
+  output still writes it out each time). Attribute maps compare their
+  entries as before, whatever the maps' own key equality. A value a host
+  builds to contain itself equals itself; otherwise `==`, `hashCode`, `toJson` and `dartValue`
+  on it throw `StateError`. Work is not bounded for crafted values: many
+  colliding hashes, or equal values shared differently on alternating levels.
+- `MontyValue.fromDart` no longer recurses, so deep `List`s and `Map`s
+  convert; a Dart object reached twice becomes one shared value, and a `List`
+  or `Map` that contains itself is an `ArgumentError` instead of a stack
+  overflow. `-0.0` and the infinities become `MontyFloat` on dart2js too
+  (they became `MontyInt` there, including in callback return values). A `DateTime` keeps its milliseconds;
+  only the microseconds within the millisecond were kept.
+- `MontyClassInstance.toString` shows the class name and attribute count
+  instead of every attribute, which expanded shared values and overflowed on
+  deep ones.
 - Worker groundwork (internal, no public API): the wasm module frees the
   previous turn's reply before running the next one, so it no longer counts
   against that turn's `max_memory` (two consecutive large replies raised a
