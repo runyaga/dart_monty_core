@@ -21,6 +21,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '../../unit/worker/_kind_round_trips.dart';
 import '_worker_harness.dart';
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
@@ -203,6 +204,12 @@ void main() {
       ),
     );
     expect((v as MontyTuple).items, everyElement(const MontyFloat(1)));
+  });
+
+  kindRoundTripTests('vm', () async {
+    final channel = await _configured();
+
+    return (channel.turn, channel.close);
   });
 
   test('Configure, Feed 1 + 1, Shutdown', () async {

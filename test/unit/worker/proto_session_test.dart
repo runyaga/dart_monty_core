@@ -357,18 +357,18 @@ void main() {
     );
 
     test(
-      'an argument outside the subset fails the call, not the session',
+      'an argument with no value class yet fails the call, not the session',
       () async {
         final ch = _configured([
           answer([
-            _functionCall('f', [pb.MontyNode(ellipsis: pb.Unit())], args: [0]),
+            _functionCall('f', [_complex], args: [0]),
           ]),
           answer([completeNone()]),
         ]);
         final s = await ProtoSession.open(ch);
         var called = false;
         await s.feed(
-          'f(...)',
+          'f(1j)',
           externals: {
             'f': (args, kwargs) {
               called = true;
@@ -380,7 +380,7 @@ void main() {
         expect(called, isFalse);
         final error = itemAt(ch.requests, 2).resumeCall.result.error;
         expect(error.excType, 'RuntimeError');
-        expect(error.message, contains('ellipsis'));
+        expect(error.message, contains('complex'));
       },
     );
 
@@ -666,18 +666,19 @@ void main() {
     });
 
     test(
-      'a value outside the subset in Complete throws, worker still in step',
+      'a value with no value class yet in Complete throws, worker still in '
+      'step',
       () async {
         final ch = _configured([
           answer([
-            complete([pb.MontyNode(repr: '<object>')]),
+            complete([_complex]),
           ]),
           answer([
             complete([pb.MontyNode(boolean: true)]),
           ]),
         ]);
         final s = await ProtoSession.open(ch);
-        await expectLater(s.feed('object()'), throwsUnsupportedError);
+        await expectLater(s.feed('1j'), throwsUnsupportedError);
         expect((await s.feed('True')).value, const MontyBool(true));
       },
     );
@@ -769,3 +770,8 @@ void main() {
     });
   });
 }
+
+/// A `complex` node: a kind the reader checks but has no value class for yet.
+final pb.MontyNode _complex = pb.MontyNode(
+  complex: pb.Complex(real: doubleToBits(0), imag: doubleToBits(1)),
+);

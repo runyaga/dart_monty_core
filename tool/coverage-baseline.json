@@ -341,10 +341,15 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/src/worker/arena_nodes.dart": {
+      "found": 145,
+      "hit": 145,
+      "pct": 100.0
+    },
     "lib/src/worker/arena_reader.dart": {
-      "found": 60,
-      "hit": 59,
-      "pct": 98.33
+      "found": 214,
+      "hit": 212,
+      "pct": 99.07
     },
     "lib/src/worker/arena_writer.dart": {
       "found": 53,
@@ -371,6 +376,16 @@
       "hit": 162,
       "pct": 94.19
     },
+    "lib/src/worker/python_keys.dart": {
+      "found": 93,
+      "hit": 92,
+      "pct": 98.92
+    },
+    "lib/src/worker/python_rules.dart": {
+      "found": 68,
+      "hit": 68,
+      "pct": 100.0
+    },
     "lib/src/worker/self_relaunch.dart": {
       "found": 5,
       "hit": 4,
@@ -382,9 +397,9 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_channel.dart": {
-      "found": 47,
-      "hit": 42,
-      "pct": 89.36
+      "found": 48,
+      "hit": 43,
+      "pct": 89.58
     },
     "lib/src/worker/worker_connection.dart": {
       "found": 91,
@@ -403,8 +418,8 @@
     }
   },
   "total": {
-    "found": 5369,
-    "hit": 4077,
-    "pct": 75.94
+    "found": 5830,
+    "hit": 4536,
+    "pct": 77.8
   }
 }

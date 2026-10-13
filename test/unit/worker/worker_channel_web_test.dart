@@ -27,6 +27,8 @@ import 'package:dart_monty_core/src/worker/worker_connection.dart'
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '_kind_round_trips.dart';
+
 /// The package's lib/ as the test server exposes it.
 const _assets = 'packages/dart_monty_core/assets';
 const _workerUrl = '$_assets/dart_monty_core_proto_worker.js';
@@ -161,6 +163,13 @@ void main() {
     }
     _opened.clear();
     expect(alive, 0, reason: 'a test left $alive Worker(s) running');
+  });
+
+  kindRoundTripTests(backend, () async {
+    final ch = await _spawn(cache);
+    await _open(ch);
+
+    return (ch.turn, ch.close);
   });
 
   test('JSPI is detected on Chrome; protocol matches ($backend)', () async {
