@@ -2,11 +2,12 @@
 /// that many bytes of protobuf.
 ///
 /// Mirrors upstream `crates/monty-proto/src/frame.rs` at the pinned tag,
-/// including `MAX_FRAME_LEN` and the two stream failures its `FrameReader`
-/// distinguishes: a length prefix over the maximum, and EOF inside a frame.
-/// Pure Dart, shared by every channel: a process pipe delivers arbitrary
-/// chunks ([FrameDecoder]); the wasm worker returns one buffered turn
-/// ([Frame.split]).
+/// including `MAX_FRAME_LEN`, `DEFAULT_MAX_DECODE_BYTES`, the outbound size
+/// check made before a body is allocated, and the failures its `FrameReader`
+/// distinguishes: a length prefix over the maximum, EOF inside a frame, and a
+/// body that does not decode (`frame_scan.dart`). Pure Dart, shared by every
+/// channel: a process pipe delivers arbitrary chunks ([FrameDecoder]); the
+/// wasm worker returns one buffered turn ([Frame.split]).
 ///
 /// Internal to the package; nothing here is exported.
 library;
@@ -15,6 +16,7 @@ import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:dart_monty_core/src/worker/encoded_length.dart';
 import 'package:protobuf/protobuf.dart';
 
 /// Whole-frame operations: encode a message, prefix a body, split a reply.
@@ -22,15 +24,34 @@ abstract final class Frame {
   /// Upstream's `MAX_FRAME_LEN` (256 MiB): the largest body a frame may carry.
   static const int maxLength = 256 * 1024 * 1024;
 
+  /// Upstream's `DEFAULT_MAX_DECODE_BYTES` (1 GiB): what decoding one frame
+  /// may allocate in all, charged before each allocation.
+  static const int maxDecodeBytes = maxLength * 4;
+
   /// Bytes in the little-endian length prefix.
   static const int prefixLength = 4;
 
   /// Encodes [message] as one frame: prefix and body in a single buffer.
   ///
-  /// Throws [FrameTooLargeException] if the body exceeds [Frame.maxLength],
-  /// before anything is sent, so the stream stays in sync.
-  static Uint8List encode(GeneratedMessage message) =>
-      wrap(message.writeToBuffer());
+  /// Throws [FrameTooLargeException] if the body would exceed [limit]. The
+  /// length is computed from the message first, as upstream's
+  /// `encode_framed_into` does, so an oversized body is never built, and
+  /// nothing is sent: the stream stays in sync.
+  static Uint8List encode(GeneratedMessage message, {int limit = maxLength}) {
+    final length = EncodedLength.of(message);
+    if (length > limit) throw FrameTooLargeException(length, limit);
+    final writer = CodedBufferWriter();
+    message.writeToCodedBufferWriter(writer);
+    final body = writer.lengthInBytes;
+    // Never taken while EncodedLength agrees with the writer; the cap holds
+    // even if it did not.
+    if (body > limit) throw FrameTooLargeException(body, limit);
+    final out = Uint8List(prefixLength + body);
+    ByteData.sublistView(out).setUint32(0, body, Endian.little);
+    writer.writeTo(out, prefixLength);
+
+    return out;
+  }
 
   /// Prefixes [body] with its length: [encode] for bytes already encoded.
   ///
@@ -82,6 +103,22 @@ final class FrameTooLargeException extends FrameException {
   String toString() =>
       'FrameTooLargeException: frame of $length bytes exceeds maximum of '
       '$max bytes';
+}
+
+/// A whole frame arrived whose body does not decode as upstream decodes it:
+/// malformed protobuf, invalid UTF-8, a node upstream rejects, or a frame
+/// that exhausts the decode budget.
+///
+/// Upstream's `FrameError::Decode`; its pool discards the worker.
+final class FrameDecodeException extends FrameException {
+  /// Creates the error for the reason upstream's decoder would give.
+  const FrameDecodeException(this.reason);
+
+  /// What was wrong with the body.
+  final String reason;
+
+  @override
+  String toString() => 'FrameDecodeException: frame decode error: $reason';
 }
 
 /// The stream ended inside a frame: the peer died while writing.

@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
@@ -228,7 +229,10 @@ final class WorkerConnection implements MontyChannel {
       throw _die(CrashCause.vanished, 'unreadable turn reply: $e');
     }
     for (final body in bodies) {
-      final event = pb.ChildEvent.fromBuffer(body);
+      final (event, unreadable) = _decode(body);
+      if (event == null) {
+        throw _die(CrashCause.vanished, 'unreadable turn reply: $unreadable');
+      }
       switch (event.whichKind()) {
         case pb.ChildEvent_Kind.print:
           _deliver(event.print, onPrint);
@@ -310,5 +314,14 @@ final class OnceAsync<T> {
       _value = null;
       rethrow;
     }
+  }
+}
+
+/// One event decoded as upstream decodes it, or why it cannot be.
+(pb.ChildEvent?, FrameException?) _decode(Uint8List body) {
+  try {
+    return (FrameScan.decodeChildEvent(body), null);
+  } on FrameException catch (e) {
+    return (null, e);
   }
 }

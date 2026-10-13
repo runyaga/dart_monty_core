@@ -15,10 +15,10 @@ import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:meta/meta.dart';
-import 'package:protobuf/protobuf.dart';
 
 /// The worker's exit code when its allocator's hard limit is breached:
 /// upstream's `OOM_EXIT_CODE`.
@@ -391,11 +391,9 @@ final class _EventStream {
     if (_error != null) return;
     try {
       for (final body in _decoder.add(chunk)) {
-        _queue.add(pb.ChildEvent.fromBuffer(body));
+        _queue.add(FrameScan.decodeChildEvent(body));
       }
     } on FrameException catch (error) {
-      _desync(error);
-    } on InvalidProtocolBufferException catch (error) {
       _desync(error);
     }
     _wakeUp();

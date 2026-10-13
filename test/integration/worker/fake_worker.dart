@@ -63,6 +63,12 @@ Future<void> _handle(String scenario, pb.ParentRequest request) async {
       await _write([0xff, 0xff, 0xff, 0xff]);
     case 'garbage':
       await _write(Frame.wrap([0xff, 0xff, 0xff, 0xff, 0xff]));
+    case 'upstream-rejects':
+      // Complete { values { nodes: [ { str: "\xc3\x28" } ] } }: invalid
+      // UTF-8, which package:protobuf alone parses and upstream rejects.
+      await _write(
+        Frame.wrap([0x32, 8, 0x12, 6, 0x12, 4, 0x42, 2, 0xc3, 0x28]),
+      );
     case 'stderr':
       stderr
         ..write('x' * 10240)
