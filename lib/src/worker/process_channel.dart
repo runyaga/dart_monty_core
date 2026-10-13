@@ -135,7 +135,7 @@ final class ProcessChannel implements MontyChannel {
   @override
   Future<pb.ChildEvent> turn(
     pb.ParentRequest request, {
-    void Function(pb.Print print)? onPrint,
+    PrintHandler? onPrint,
   }) async {
     if (_busy) {
       throw StateError('ProcessChannel.turn: a turn is already in flight');
@@ -177,13 +177,13 @@ final class ProcessChannel implements MontyChannel {
     _events.cancel();
   }
 
-  /// Reads events up to the turn's end, handing each `Print` to [onPrint].
+  /// Reads events up to the turn's end, handing each `Print` to [onPrint]
+  /// and awaiting it before reading on: while it waits, the read-ahead
+  /// fills to [readAheadLimit] and the worker then blocks on its write.
   ///
   /// An [onPrint] that throws does not desynchronise the stream: the rest
   /// of the turn is still read, then its first error is rethrown.
-  Future<pb.ChildEvent> _readTurn(
-    void Function(pb.Print print)? onPrint,
-  ) async {
+  Future<pb.ChildEvent> _readTurn(PrintHandler? onPrint) async {
     (Object, StackTrace)? printFailure;
     for (;;) {
       final event = await _events.next();
@@ -199,8 +199,9 @@ final class ProcessChannel implements MontyChannel {
 
         return event;
       }
+      if (onPrint == null) continue;
       try {
-        onPrint?.call(event.print);
+        await onPrint(event.print);
       } on Object catch (error, stack) {
         printFailure ??= (error, stack);
       }

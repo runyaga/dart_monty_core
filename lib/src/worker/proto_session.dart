@@ -62,16 +62,29 @@ final class ProtoSession {
   /// [inputs] are bound as global names before the code runs. A call to a
   /// name in [externals] runs that function; [onOsCall] answers OS calls,
   /// which are declined without it. [onPrint] sees each run of printed text
-  /// as it arrives; the result also lists it all.
+  /// as it arrives, and its future is awaited before the next one; the
+  /// result also lists them all, unless [FeedOptions.collectPrints] is false.
+  ///
+  /// [options] adjust the feed (see [FeedOptions]). A snippet a
+  /// type-checking session's check rejects throws [MontyTypeCheckError].
   Future<FeedResult> feed(
     String code, {
     Map<String, MontyValue> inputs = const {},
     Map<String, ProtoExternalFunction> externals = const {},
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
+    FeedOptions options = const FeedOptions(),
   }) => _guard(() async {
-    final sink = _PrintSink(onPrint, _channel.kill);
-    var request = pb.ParentRequest(feed: _feedRequest(code, inputs));
+    final sink = _PrintSink(
+      onPrint,
+      _channel.kill,
+      collect: options.collectPrints,
+      abandoned: options.abandoned,
+    );
+    final feed = _feedRequest(code, inputs);
+    if (options.skipTypeCheck) feed.skipTypeCheck = true;
+    final systemSleepMax = options.systemSleepMax;
+    var request = pb.ParentRequest(feed: feed);
     for (;;) {
       final pb.ChildEvent event;
       try {
@@ -89,7 +102,7 @@ final class ProtoSession {
           List.unmodifiable(sink.prints),
         );
       }
-      request = await _answer(event, externals, onOsCall);
+      request = await _answer(event, externals, onOsCall, systemSleepMax);
     }
   });
 
@@ -117,8 +130,14 @@ final class ProtoSession {
     pb.ChildEvent event,
     Map<String, ProtoExternalFunction> externals,
     ProtoOsCallHandler? onOsCall,
+    Duration? systemSleepMax,
   ) async => switch (event.whichKind()) {
     pb.ChildEvent_Kind.error => _throwRaised(event.error.exception),
+    // Only a type-checking session's feed may end this way.
+    pb.ChildEvent_Kind.typingError when _config.typeCheck =>
+      throw MontyTypeCheckError(
+        event.typingError.diagnostics,
+      ),
     pb.ChildEvent_Kind.nameLookup => _answerNameLookup(
       event.nameLookup.name,
       externals,
@@ -127,6 +146,10 @@ final class ProtoSession {
       event.functionCall,
       externals,
     ),
+    pb.ChildEvent_Kind.osCall
+        when systemSleepMax != null &&
+            event.osCall.whichCall() == pb.OsCall_Call.systemSleep =>
+      await _sleep(event.osCall, systemSleepMax),
     pb.ChildEvent_Kind.osCall => await _answerOsCall(event.osCall, onOsCall),
     // Never sent without the request that asks for it (futures, type
     // checking, dumps), or not a feed's answer at all.
@@ -161,30 +184,45 @@ final class ProtoSession {
   }
 }
 
-/// Collects a feed's prints and passes each to the caller's callback.
+/// Collects a feed's prints and passes each to the caller's callback,
+/// awaiting it before the next.
 ///
 /// A throwing callback must not escape into the channel mid-turn, and the
 /// feed cannot carry on without it: the worker may be suspended on a call
 /// nobody will answer, or never end the turn at all. So the first failure
 /// kills the worker at once, later prints are dropped, and the driver
 /// rethrows the failure when the turn returns.
+///
+/// Nothing more is delivered once the feed is abandoned (its worker killed
+/// by a deadline or a close while a callback ran): a callback that finally
+/// returns does not lead to the next one.
 final class _PrintSink {
-  _PrintSink(this._onPrint, this._kill);
+  _PrintSink(
+    this._onPrint,
+    this._kill, {
+    required bool collect,
+    bool Function()? abandoned,
+  }) : _collect = collect,
+       _abandoned = abandoned;
 
   final List<(String, String)> prints = [];
   final ProtoPrintCallback? _onPrint;
   final void Function() _kill;
+  final bool Function()? _abandoned;
+  final bool _collect;
   (Object, StackTrace)? _failure;
 
-  void add(pb.Print print) {
-    if (_failure != null) return;
+  Future<void> add(pb.Print print) async {
     for (final segment in print.segments) {
+      if (_failure != null || (_abandoned?.call() ?? false)) return;
       final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
           ? 'stderr'
           : 'stdout';
-      prints.add((stream, segment.text));
+      if (_collect) prints.add((stream, segment.text));
+      final onPrint = _onPrint;
+      if (onPrint == null) continue;
       try {
-        _onPrint?.call(stream, segment.text);
+        await onPrint(stream, segment.text);
       } on Object catch (error, stack) {
         _failure = (error, stack);
         _kill();
@@ -202,6 +240,63 @@ final class _PrintSink {
   }
 }
 
+/// How one [ProtoSession.feed] runs.
+final class FeedOptions {
+  /// The options; see each field.
+  const FeedOptions({
+    this.collectPrints = true,
+    this.systemSleepMax,
+    this.skipTypeCheck = false,
+    this.abandoned,
+  });
+
+  /// Whether [FeedResult.prints] lists everything printed.
+  final bool collectPrints;
+
+  /// When set, a `time.sleep` the worker hands to the parent is waited by
+  /// the driver, cut to this length, and answered with `None` (upstream's
+  /// automatic driver); when null the sleep is declined.
+  final Duration? systemSleepMax;
+
+  /// Whether a type-checking session skips the check for this snippet.
+  final bool skipTypeCheck;
+
+  /// Whether the caller has given up on the feed; once true, no further
+  /// print is delivered.
+  final bool Function()? abandoned;
+}
+
+/// A snippet the session's type check rejected; it did not run, and the
+/// session stays usable.
+///
+/// Internal until C3 designs the public typing error.
+final class MontyTypeCheckError implements Exception {
+  /// Creates the error for [diagnostics].
+  const MontyTypeCheckError(this.diagnostics);
+
+  /// The diagnostics, rendered in the session's type-check format.
+  final String diagnostics;
+
+  @override
+  String toString() => 'MontyTypeCheckError: $diagnostics';
+}
+
+/// Waits a system sleep, cut to [max], and answers it with `None`.
+Future<pb.ParentRequest> _sleep(pb.OsCall call, Duration max) async {
+  final seconds = call.systemSleep.seconds;
+  // A delay that is not a finite, non-negative number waits the ceiling,
+  // as upstream counts an invalid worker delay.
+  final micros = seconds.isFinite && seconds >= 0
+      ? seconds * Duration.microsecondsPerSecond
+      : double.infinity;
+  final wait = micros >= max.inMicroseconds
+      ? max
+      : Duration(microseconds: micros.round());
+  await Future<void>.delayed(wait);
+
+  return _resumeValue(call.callId, const MontyNone());
+}
+
 /// Session settings, sent to the worker in `Configure`.
 final class SessionConfig {
   /// Creates the settings. A null limit leaves the worker's default.
@@ -210,6 +305,15 @@ final class SessionConfig {
     this.maxMemoryBytes,
     this.maxRecursionDepth,
     this.maxFeedDuration,
+    this.maxTurnDuration,
+    this.maxSuspensions,
+    this.assertMessageAnnotations,
+    this.printFlushInterval,
+    this.typeCheck = false,
+    this.typeCheckStubs,
+    this.typeCheckFormat,
+    this.typeCheckColor = false,
+    this.osPolicy,
   });
 
   /// The file name tracebacks report for fed code.
@@ -225,26 +329,81 @@ final class SessionConfig {
   /// The longest one feed may run, enforced by the worker.
   final Duration? maxFeedDuration;
 
+  /// The longest one turn of a feed may run (each resume starts a new
+  /// turn), enforced by the worker.
+  final Duration? maxTurnDuration;
+
+  /// How many times a feed may suspend for the host before the parent
+  /// aborts it; null is upstream's default, 1000. Enforced by the parent.
+  final int? maxSuspensions;
+
+  /// Whether each fed snippet is type-checked before it runs.
+  final bool typeCheck;
+
+  /// Stub file contents for the type check.
+  final String? typeCheckStubs;
+
+  /// How the type check renders its diagnostics: one of [typeCheckFormats];
+  /// null is `full`.
+  final String? typeCheckFormat;
+
+  /// Whether the `full` and `concise` diagnostics carry ANSI colour.
+  final bool typeCheckColor;
+
+  /// The clock, zone, sleep and randomness the session gets; null is the
+  /// worker's default. The protocol's own message until C3 designs
+  /// `OsPolicy`.
+  final pb.OsPolicy? osPolicy;
+
+  /// The longest one `time.sleep` the parent waits for this session: the
+  /// policy's system-sleep maximum, else upstream's 10 s.
+  Duration get systemSleepMax {
+    final sleep = osPolicy?.sleep;
+    if (sleep != null && sleep.hasSystem() && sleep.system.hasMaxMicros()) {
+      return Duration(microseconds: sleep.system.maxMicros.toInt());
+    }
+
+    return const Duration(seconds: 10);
+  }
+
+  /// How many bytes of each operand an `assert` failure message shows; 0
+  /// turns the annotations off, null keeps the worker's default (120).
+  final int? assertMessageAnnotations;
+
+  /// How long the worker may hold printed text before it sends it; zero
+  /// sends each line as it ends, null keeps the worker's default.
+  final Duration? printFlushInterval;
+
   pb.Configure _toProto() {
-    final memory = maxMemoryBytes;
-    final recursion = maxRecursionDepth;
-    final feed = maxFeedDuration;
-    final hasLimits = memory != null || recursion != null || feed != null;
+    final flush = printFlushInterval;
+    final format = typeCheckFormat;
 
     return pb.Configure(
       scriptName: scriptName,
       protocolVersion: protocolVersion,
       montyVersion: _driverVersion,
-      limits: hasLimits
-          ? pb.ResourceLimits(
-              maxMemoryBytes: memory == null ? null : Int64(memory),
-              maxRecursionDepth: recursion == null ? null : Int64(recursion),
-              maxFeedDurationMicros: feed == null
-                  ? null
-                  : Int64(feed.inMicroseconds),
-            )
-          : null,
+      limits: _limits(),
+      assertMessageAnnotations: assertMessageAnnotations,
+      printFlushIntervalMs: flush?.inMilliseconds,
+      typeCheck: typeCheck ? true : null,
+      typeCheckStubs: typeCheckStubs,
+      typeCheckFormat: format == null ? null : _typeCheckFormat(format),
+      typeCheckColor: typeCheckColor ? true : null,
+      osPolicy: osPolicy,
     );
+  }
+
+  /// The limits that are set, or null when none is.
+  pb.ResourceLimits? _limits() {
+    final limits = pb.ResourceLimits(
+      maxMemoryBytes: _int64(maxMemoryBytes),
+      maxRecursionDepth: _int64(maxRecursionDepth),
+      maxFeedDurationMicros: _int64(maxFeedDuration?.inMicroseconds),
+      maxTurnDurationMicros: _int64(maxTurnDuration?.inMicroseconds),
+      maxSuspensions: _int64(maxSuspensions),
+    );
+
+    return limits == pb.ResourceLimits() ? null : limits;
   }
 }
 
@@ -272,8 +431,10 @@ typedef ProtoOsCallHandler =
       Map<String, MontyValue> kwargs,
     );
 
-/// Receives one run of printed text, as it arrives.
-typedef ProtoPrintCallback = void Function(String stream, String text);
+/// Receives one run of printed text, as it arrives; a returned future is
+/// awaited before the next run is delivered.
+typedef ProtoPrintCallback =
+    FutureOr<void> Function(String stream, String text);
 
 /// What a feed produced.
 final class FeedResult {
@@ -487,3 +648,26 @@ MontyStackFrame _frame(pb.StackFrame f) => MontyStackFrame(
   hideCaret: f.hideCaret,
   hideFrameName: f.hideFrameName,
 );
+
+/// The diagnostic formats `typeCheckFormat` takes, as upstream names them.
+const Map<String, pb.TypeCheckFormat> typeCheckFormats = {
+  'full': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_FULL,
+  'concise': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_CONCISE,
+  'azure': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_AZURE,
+  'json': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_JSON,
+  'jsonlines': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_JSON_LINES,
+  'rdjson': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_RDJSON,
+  'pylint': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_PYLINT,
+  'gitlab': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITLAB,
+  'github': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
+};
+
+Int64? _int64(int? value) => value == null ? null : Int64(value);
+
+pb.TypeCheckFormat _typeCheckFormat(String name) =>
+    typeCheckFormats[name] ??
+    (throw ArgumentError.value(
+      name,
+      'typeCheckFormat',
+      'must be one of ${typeCheckFormats.keys.join(', ')}',
+    ));

@@ -388,7 +388,7 @@ sf oracle_ffi 500 dart test test/integration/oracle_ffi_test.dart test/integrati
 # source no longer compiles, passes this step.
 worker_vm(){ bash tool/build_worker.sh --check &&
   dart test test/integration/worker -p vm --tags=worker --coverage="$OUT/cov"; }
-sf worker_vm 80 worker_vm
+sf worker_vm 100 worker_vm
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made

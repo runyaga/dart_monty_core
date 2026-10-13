@@ -30,6 +30,15 @@ pb.ParentRequest _feed(String code) =>
 
 final _configure = pb.ParentRequest(configure: pb.Configure());
 
+/// Waits until [condition] holds, polling; fails the test after 10 s.
+Future<void> _until(bool Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('condition never held');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
 /// The [MontyCrashedError] that [future] fails with.
 ///
 /// Captured through the matcher: catching an Error is what the analyzer's
@@ -77,6 +86,40 @@ void main() {
         (pb.PrintStream.PRINT_STREAM_STDERR, 'err:1 + 1'),
       ]);
       expect(channel.isAlive, isTrue);
+    });
+
+    test('an async onPrint is awaited before the next event', () async {
+      final channel = await _spawn('serve');
+      expect(
+        (await channel.turn(_configure)).whichKind(),
+        pb.ChildEvent_Kind.ok,
+      );
+      final gates = <Completer<void>>[];
+      // A tear-off, not a closure literal, so that it also compiles where
+      // onPrint is a `void Function`.
+      Future<void> gated(pb.Print _) {
+        final gate = Completer<void>();
+        gates.add(gate);
+
+        return gate.future;
+      }
+
+      var ended = false;
+      final end = channel
+          .turn(_feed('a'), onPrint: gated)
+          .whenComplete(() => ended = true);
+      await _until(() => gates.isNotEmpty);
+      // The worker wrote both Prints and the Complete together; while the
+      // first callback waits, nothing after it is delivered.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(gates, hasLength(1));
+      expect(ended, isFalse);
+      itemAt(gates, 0).complete();
+      await _until(() => gates.length == 2);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(ended, isFalse);
+      itemAt(gates, 1).complete();
+      expect((await end).whichKind(), pb.ChildEvent_Kind.complete);
     });
 
     test('an onPrint that throws keeps the stream in sync', () async {

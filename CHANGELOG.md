@@ -157,6 +157,41 @@
   display cases on the VM, dart2js and dart2wasm; CI's `parity` job checks
   the baked cases (`tool/generate_display_fixtures.py`) against the pinned
   suite.
+- Internal session mechanics over the worker pool, in the shape of
+  upstream's `AsyncMonty` and `AsyncMontySession`. Nothing is exported
+  until the API cutover.
+  - A pool can be started, checked out and closed; `withPool` and
+    `withSession` close what they open on every exit path. Each takes
+    one internal options record for now.
+  - `feedRun` takes inputs, host functions and OS calls. Feeds on one
+    session are serialized as upstream's are. A second feed waits for
+    the turn in flight, then runs if the first feed has finished. It
+    fails if the first feed is suspended on a host call, or if the
+    session has closed.
+  - Closing a session sends `Reset` and returns its worker to the pool.
+    If a host callback is running at the time, the suspended run fails as
+    finished once the callback returns. A turn in flight is killed.
+  - `requestTimeout` bounds each protocol turn, print delivery included,
+    but never host callbacks. Upstream's feed and turn duration backstops
+    apply to execution turns.
+  - A worker that exits with code 65 surfaces as a `MemoryError` and ends
+    its session.
+  - Upstream's suspension budget is enforced. Past `maxSuspensions` host
+    calls (1000 by default) the feed is aborted with an in-sandbox
+    `RuntimeError`.
+  - A `time.sleep` is waited by the session itself. It is cut to the OS
+    policy's maximum, which is 10 s by default.
+  - Type checking and the OS policy are passed through to the worker as
+    internal records until their public shapes exist. A type-check
+    rejection does not end the session.
+  - Print callbacks may be async. Each one is awaited, in order, before
+    the next event is read. With no callback, printed text goes to the
+    process's own stdout and stderr on native (written non-blocking, each
+    flush awaited) and to the console in a browser.
+  - CI's `parity-e0` job also runs the pinned parity suite's E0 cases
+    through the session on vm, dart2js and dart2wasm. Every counted case
+    must match upstream on each backend. `PARITY_PIN` moves to the suite
+    that adds the session engine.
 
 ### Changed
 

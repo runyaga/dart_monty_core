@@ -129,7 +129,7 @@ final class WorkerConnection implements MontyChannel {
   @override
   Future<pb.ChildEvent> turn(
     pb.ParentRequest request, {
-    void Function(pb.Print print)? onPrint,
+    PrintHandler? onPrint,
   }) async {
     _checkUsable();
     // `_inTurn`, not `_pending`, is the guard: the reply clears `_pending`
@@ -142,7 +142,7 @@ final class WorkerConnection implements MontyChannel {
       _port.post(frame);
       final (events, outcome) = await pending.future;
 
-      return _finishTurn(events, outcome, onPrint);
+      return await _finishTurn(events, outcome, onPrint);
     } finally {
       _inTurn = false;
     }
@@ -217,11 +217,11 @@ final class WorkerConnection implements MontyChannel {
     if (_closed || _closing != null) throw StateError('channel is closed');
   }
 
-  pb.ChildEvent _finishTurn(
+  Future<pb.ChildEvent> _finishTurn(
     Uint8List events,
     int outcome,
-    void Function(pb.Print print)? onPrint,
-  ) {
+    PrintHandler? onPrint,
+  ) async {
     final List<Uint8List> bodies;
     try {
       bodies = Frame.split(events);
@@ -235,7 +235,7 @@ final class WorkerConnection implements MontyChannel {
       }
       switch (event.whichKind()) {
         case pb.ChildEvent_Kind.print:
-          _deliver(event.print, onPrint);
+          await _deliver(event.print, onPrint);
         case pb.ChildEvent_Kind.fatalError:
           throw _die(CrashCause.fatal, event.fatalError.message);
         case _:
@@ -252,12 +252,13 @@ final class WorkerConnection implements MontyChannel {
     throw _die(CrashCause.vanished, 'turn reply without a turn-ending event');
   }
 
-  /// Hands [print] to [onPrint]. A callback that throws, or that kills the
-  /// channel, abandons the turn: the events after the Print are never
-  /// delivered, so a Worker waiting on one of them must not be reused.
-  void _deliver(pb.Print print, void Function(pb.Print print)? onPrint) {
+  /// Hands [print] to [onPrint] and awaits it. A callback that throws, or
+  /// that kills the channel, abandons the turn: the events after the Print
+  /// are never delivered, so a Worker waiting on one of them must not be
+  /// reused.
+  Future<void> _deliver(pb.Print print, PrintHandler? onPrint) async {
     try {
-      onPrint?.call(print);
+      await onPrint?.call(print);
     } on Object {
       _die(CrashCause.killed, 'onPrint threw; turn abandoned');
       rethrow;

@@ -7,21 +7,25 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'dart:async';
+
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+
+/// Receives one `Print` during a turn. The turn awaits it before it reads
+/// the next event, so prints are delivered one at a time, in order.
+typedef PrintHandler = FutureOr<void> Function(pb.Print print);
 
 /// One request in; zero or more `Print`s out, then exactly one turn-ending
 /// event.
 abstract interface class MontyChannel {
   /// Sends [request] and completes with the event that ends its turn.
   ///
-  /// Each `Print` before it goes to [onPrint]. A `FatalError`, the worker
-  /// ending, or [kill] during the turn throws [MontyCrashedError], as does
-  /// any later turn. One turn at a time: a second concurrent call throws
-  /// [StateError].
-  Future<pb.ChildEvent> turn(
-    pb.ParentRequest request, {
-    void Function(pb.Print print)? onPrint,
-  });
+  /// Each `Print` before it goes to [onPrint], whose future is awaited
+  /// before the next event is read. A `FatalError`, the worker ending, or
+  /// [kill] during the turn throws [MontyCrashedError], as does any later
+  /// turn. One turn at a time: a second concurrent call, one from inside
+  /// [onPrint] included, throws [StateError].
+  Future<pb.ChildEvent> turn(pb.ParentRequest request, {PrintHandler? onPrint});
 
   /// Asks the worker to shut down, waits a grace period for it to exit, then
   /// kills it. Idempotent. During a turn it kills at once.

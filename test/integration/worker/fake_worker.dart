@@ -64,6 +64,11 @@ Future<String> _handle(String scenario, pb.ParentRequest request) async {
       await _serve(request, ignoreShutdown: scenario == 'ignore-shutdown');
     case 'oom':
       exit(65);
+    case 'oom-on-feed':
+      // Configure is accepted; the first Feed exits as a refused
+      // allocation does.
+      if (request.whichKind() == pb.ParentRequest_Kind.feed) exit(65);
+      await _send(pb.ChildEvent(ok: pb.Ok()));
     case 'eof':
       exit(0);
     case 'torn':

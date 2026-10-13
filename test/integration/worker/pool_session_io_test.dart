@@ -1,0 +1,359 @@
+// MontyPool and its sessions against the real worker executable
+// (tool/build_worker.sh, or the CI artefact), and against the fake worker
+// for the memory-limit exit: the session path end to end on the VM.
+@Tags(['worker'])
+@TestOn('vm')
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/spawn_handle.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:test/test.dart';
+
+import '../../_accessors.dart';
+import '_worker_harness.dart';
+
+/// Every session's memory is bounded.
+const _limits = SessionConfig(maxMemoryBytes: 64 * 1024 * 1024);
+
+/// What a test passes as `printCallback` when it does not look at prints.
+void _ignore(String stream, String text) => _ignored++;
+
+/// How many prints [_ignore] dropped; never looked at.
+var _ignored = 0;
+
+/// Above [_runProbe]'s own 60 s, so its kill and message come first.
+const _probeTimeout = Timeout(Duration(seconds: 90));
+
+/// Runs the probe program [name] with the worker's path; its exit code,
+/// stdout and stderr. A probe still running after 60 s is killed and fails
+/// the test; the test's own teardown kills it too, so a probe that cannot
+/// exit never outlives its test, whichever timeout fires first. Tests that
+/// run a probe set a timeout above 60 s.
+Future<(int, String, String)> _runProbe(String name) async {
+  final probe = await Process.start(Platform.resolvedExecutable, [
+    File('test/integration/worker/$name').absolute.path,
+    await _workerPath(),
+  ]);
+  addTearDown(() async {
+    probe.kill(ProcessSignal.sigkill);
+    await probe.exitCode;
+  });
+  final out = probe.stdout.transform(utf8.decoder).join();
+  final err = probe.stderr.transform(utf8.decoder).join();
+  try {
+    final code = await probe.exitCode.timeout(const Duration(seconds: 60));
+
+    return (code, await out, await err);
+  } on TimeoutException {
+    probe.kill(ProcessSignal.sigkill);
+    await probe.exitCode;
+    fail('$name did not exit within 60 s; stderr: ${await err}');
+  }
+}
+
+Future<String> _workerPath() async =>
+    ((await realWorker()) as WorkerExecutable).path;
+
+void main() {
+  expectNoWorkersLeftAfterEachTest();
+
+  test('feedRun, prints in order, Reset on close, the worker reused', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final prints = <(String, String)>[];
+        final value = await pool.withSession(
+          (s) => s.feedRun(
+            "import sys\nprint('one')\nprint('two', file=sys.stderr)\n"
+            'x = 41\nx + 1',
+            printCallback: (stream, text) async {
+              // Each callback finishes before the next starts.
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              prints.add((stream, text));
+            },
+          ),
+          options: _limits,
+        );
+        expect(value, const MontyInt(42));
+        expect(prints.map((p) => p.$1).toSet(), {'stdout', 'stderr'});
+        expect(prints.map((p) => p.$2).join(), 'one\ntwo\n');
+        expect(pool.idleWorkers, 1);
+        final worker = onlyItem(ProcessChannel.live);
+
+        // The same process, reset: the global is gone.
+        await pool.withSession(
+          (s) async {
+            await expectLater(
+              s.feedRun('x', printCallback: _ignore),
+              throwsA(
+                isA<MontyScriptError>().having(
+                  (e) => e.excType,
+                  'excType',
+                  'NameError',
+                ),
+              ),
+            );
+            // The session runs on after an in-band error.
+            expect(
+              await s.feedRun('2 * 3', printCallback: _ignore),
+              const MontyInt(6),
+            );
+          },
+          options: _limits,
+        );
+        expect(ProcessChannel.live, [worker]);
+      },
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
+    );
+  });
+
+  test('close during host code: Reset now, the drive fails later', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final session = await pool.checkout(
+          options: _limits,
+        );
+        final entered = Completer<void>();
+        final release = Completer<MontyValue>();
+        final run = session.feedRun(
+          'host()',
+          externals: {
+            'host': (args, kwargs) {
+              entered.complete();
+
+              return release.future;
+            },
+          },
+          printCallback: _ignore,
+        );
+        final failed = expectLater(run, throwsA(isA<StateError>()));
+        await entered.future;
+        await session.close();
+        expect(pool.idleWorkers, 1);
+        release.complete(const MontyInt(1));
+        await failed;
+        // The worker took its Reset and serves the next session.
+        expect(
+          await pool.withSession(
+            (s) => s.feedRun('7', printCallback: _ignore),
+            options: _limits,
+          ),
+          const MontyInt(7),
+        );
+      },
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
+    );
+  });
+
+  test(
+    'requestTimeout kills a turn that runs on; the slot is reused',
+    () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(
+            options: _limits,
+          );
+          final first = onlyItem(ProcessChannel.live);
+          await expectLater(
+            session.feedRun('while True:\n    pass', printCallback: _ignore),
+            throwsA(
+              isA<MontyCrashedError>().having(
+                (e) => e.cause,
+                'cause',
+                CrashCause.killed,
+              ),
+            ),
+          );
+          await first.exitCode.timeout(const Duration(seconds: 5));
+          await session.close();
+          expect(pool.liveWorkers, 0);
+          expect(
+            await pool.withSession(
+              (s) => s.feedRun('1 + 1', printCallback: _ignore),
+              options: _limits,
+            ),
+            const MontyInt(2),
+          );
+        },
+        options: PoolOptions(
+          maxProcesses: 1,
+          requestTimeout: const Duration(milliseconds: 500),
+          workerLocation: await _workerPath(),
+        ),
+      );
+    },
+  );
+
+  test(
+    'within the feed backstop the sandbox raises TimeoutError itself',
+    () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(
+            options: const SessionConfig(
+              maxMemoryBytes: 64 * 1024 * 1024,
+              maxFeedDuration: Duration(milliseconds: 200),
+            ),
+          );
+          // The sandbox raises TimeoutError itself, within its budget.
+          await expectLater(
+            session.feedRun('while True:\n    pass', printCallback: _ignore),
+            throwsA(
+              isA<MontyScriptError>().having(
+                (e) => e.excType,
+                'excType',
+                'TimeoutError',
+              ),
+            ),
+          );
+          await session.close();
+        },
+        options: PoolOptions(
+          maxProcesses: 1,
+          workerLocation: await _workerPath(),
+        ),
+      );
+    },
+  );
+
+  test('time.sleep is waited by the session', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final clock = Stopwatch()..start();
+        final value = await pool.withSession(
+          (s) => s.feedRun(
+            'import time\ntime.sleep(0.05)\n7',
+            printCallback: _ignore,
+          ),
+          options: _limits,
+        );
+        expect(value, const MontyInt(7));
+        expect(
+          clock.elapsed,
+          greaterThanOrEqualTo(const Duration(milliseconds: 45)),
+        );
+      },
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
+    );
+  });
+
+  test('past 1000 host calls the feed fails in the sandbox', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final session = await pool.checkout(
+          options: _limits,
+        );
+        var calls = 0;
+        await expectLater(
+          session.feedRun(
+            'while True:\n    f()',
+            externals: {'f': (args, kwargs) => MontyInt(++calls)},
+            printCallback: _ignore,
+          ),
+          throwsA(
+            isA<MontyScriptError>()
+                .having((e) => e.excType, 'excType', 'RuntimeError')
+                .having((e) => e.message, 'message', contains('1000')),
+          ),
+        );
+        expect(calls, lessThanOrEqualTo(1000));
+        expect(
+          await session.feedRun('calls_left = 1', printCallback: _ignore),
+          const MontyNone(),
+        );
+        await session.close();
+      },
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
+    );
+  });
+
+  test('a type-checking session rejects a mistyped snippet', () async {
+    await MontyPool.withPool(
+      (pool) => pool.withSession(
+        (s) async {
+          await expectLater(
+            s.feedRun('x: int = "a"', printCallback: _ignore),
+            throwsA(isA<MontyTypeCheckError>()),
+          );
+          expect(
+            await s.feedRun('y: int = 2\ny', printCallback: _ignore),
+            const MontyInt(2),
+          );
+        },
+        options: const SessionConfig(
+          maxMemoryBytes: 64 * 1024 * 1024,
+          typeCheck: true,
+        ),
+      ),
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
+    );
+  });
+
+  test('exit 65 is a MemoryError that finishes the session', () async {
+    final pool = await MontyPool.startWith(
+      const PoolOptions(maxProcesses: 1),
+      open: () =>
+          PendingSpawn((_) => ProcessChannel.spawn(fakeWorker('oom-on-feed'))),
+    );
+    addTearDown(pool.close);
+    final session = await pool.checkout();
+    await expectLater(
+      // The same call twice on purpose: once alive, once finished.
+      // ignore: prefer-moving-to-variable
+      session.feedRun('1', printCallback: _ignore),
+      throwsA(
+        isA<MontyScriptError>()
+            .having((e) => e.excType, 'excType', 'MemoryError')
+            .having((e) => e.message, 'message', contains('memory limit')),
+      ),
+    );
+    expect(pool.liveWorkers, 0);
+    await expectLater(
+      // The same call again on purpose: now the session is finished.
+      // ignore: prefer-moving-to-variable
+      session.feedRun('1', printCallback: _ignore),
+      throwsA(isA<StateError>()),
+    );
+    await session.close();
+  });
+
+  test('a busy close leaves nothing that keeps the process alive', () async {
+    final (code, out, err) = await _runProbe('close_exit_probe.dart');
+    expect(code, 0, reason: err);
+    expect(out, 'closed\n');
+  }, timeout: _probeTimeout);
+
+  test(
+    'no print callback: fragments reach the process stdout and stderr',
+    () async {
+      final (code, out, err) = await _runProbe('default_print_probe.dart');
+      expect(code, 0, reason: err);
+      expect(out, 'ab\n');
+      expect(err, 'e\n');
+    },
+    timeout: _probeTimeout,
+  );
+}

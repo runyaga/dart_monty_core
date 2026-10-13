@@ -110,6 +110,53 @@ void main() {
     });
   });
 
+  group('type check', () {
+    test(
+      'a TypingError ends the feed in-band on a type-checking session',
+      () async {
+        final ch = _configured([
+          answer([
+            pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'oops')),
+          ]),
+        ]);
+        final s = await ProtoSession.open(
+          ch,
+          const SessionConfig(typeCheck: true, typeCheckFormat: 'github'),
+        );
+        expect(
+          onlyItem(ch.requests).configure.typeCheckFormat,
+          pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
+        );
+        await expectLater(
+          s.feed('x: int = ""'),
+          throwsA(
+            isA<MontyTypeCheckError>().having(
+              (e) => '$e',
+              'toString',
+              'MontyTypeCheckError: oops',
+            ),
+          ),
+        );
+        expect(ch.kills, 0);
+      },
+    );
+
+    test('an unknown format is refused before Configure is sent', () async {
+      final ch = _configured([]);
+      await expectLater(
+        ProtoSession.open(ch, const SessionConfig(typeCheckFormat: 'nope')),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('jsonlines'),
+          ),
+        ),
+      );
+      expect(ch.requests, isEmpty);
+    });
+  });
+
   group('feed', () {
     test('returns the decoded value', () async {
       final ch = _configured([

@@ -40,7 +40,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: 34d490c28995094d21783b9268d9445be5c23fac
+  PARITY_PIN: c1044cd90a117d95603c4c8d8537a695051a0583
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
@@ -387,7 +387,7 @@ jobs:
     needs: [changes, worker-rust]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -442,9 +442,25 @@ jobs:
         run: |
           python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-worker \
             --json /tmp/parity-e0/worker.json --markdown /tmp/parity-e0/worker.md
+      # The same E0 cases through the internal pool session (C1-3a): one pool
+      # per run, its one worker Reset and reused from case to case.
+      - name: E0 through the session on the VM
+        if: success() || failure()
+        run: python3 -I .parity/tool/parity/run.py vm --engine session --core . --out /tmp/parity-e0
+      - name: E0 through the session on dart2js
+        if: success() || failure()
+        run: python3 -I .parity/tool/parity/run.py dart2js --engine session --core . --out /tmp/parity-e0
+      - name: E0 through the session on dart2wasm
+        if: success() || failure()
+        run: python3 -I .parity/tool/parity/run.py dart2wasm --engine session --core . --out /tmp/parity-e0
+      - name: Assert E0 through the session (every counted case MATCH on every backend)
+        if: success() || failure()
+        run: |
+          python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-e0 --engine session \
+            --json /tmp/parity-e0/e0-session.json --markdown /tmp/parity-e0/e0-session.md
       - name: Publish the E0 and worker tables
         if: success() || failure()
-        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
+        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md /tmp/parity-e0/e0-session.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: success() || failure()
         with:
@@ -1006,15 +1022,16 @@ jobs:
       # Artifacts do not keep the executable bit.
       - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
       - name: Test (worker tag)
-        # Floor under the 95 tests registered once the display cases joined
-        # (20 of them; 36 when this job was added). The path is
+        # Floor under the 106 tests registered once the pool-session tests
+        # joined (11 of them; 95 with the display cases, 36 when this job
+        # was added). The path is
         # load-bearing: without it every suite in test/ loads, the wasm ones fail
         # to, and each skipped suite writes an empty hitmap.
         run: |
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 80 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 100 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob
