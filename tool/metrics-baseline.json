@@ -10,7 +10,6 @@
     "lib/src/mount/open_call.dart": 3,
     "lib/src/platform/base_monty_platform.dart": 1,
     "lib/src/platform/inputs_encoder.dart": 2,
-    "lib/src/platform/monty_value.dart": 1,
     "lib/src/repl/ffi_repl_bindings.dart": 1,
     "lib/src/repl/monty_repl.dart": 7,
     "lib/src/repl/wasm_repl_bindings.dart": 1,
@@ -20,11 +19,11 @@
     "lib/src/wasm/wasm_core_bindings.dart": 2
   },
   "by_metric": {
-    "cyclomatic-complexity": 6,
+    "cyclomatic-complexity": 5,
     "lines-of-code": 11,
     "maximum-nesting-level": 1,
     "number-of-methods": 12,
     "number-of-parameters": 2
   },
-  "total": 32
+  "total": 31
 }
