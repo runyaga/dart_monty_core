@@ -218,6 +218,18 @@ void main() {
       expect(far.microsecond, 1000);
     });
 
+    test("a local DateTime implies its own zone, whatever the host's", () {
+      // A host in UTC cannot tell a local instant's zone from the default,
+      // so the derivation is checked on a stand-in local DateTime too.
+      final instant = _LocalInstant(DateTime.utc(2020, 7, 2, 1, 4, 5, 678));
+      final policy = _policy(OsPolicy(fixedDatetime: instant));
+      final zone = policy.timezone.fixed;
+      expect(zone.offsetSeconds, 7200);
+      expect(zone.name, 'X');
+      expect(policy.fixed.unixSeconds, Int64(1593651845));
+      expect(policy.fixed.microsecond, 678000);
+    });
+
     test('the zone a frozen instant implies, unless one is given', () {
       final utc = _policy(OsPolicy(fixedDatetime: DateTime.utc(2020)));
       expect(utc.timezone.hasUtc(), isTrue);
@@ -447,6 +459,48 @@ void main() {
   });
 
   group('limits past u64::MAX', () {
+    test('a duration dart2js holds past 2^63 or 2^64 µs saturates', () {
+      // Only dart2js has such a Duration; elsewhere this is 2^63 - 1 µs.
+      final huge = math.pow(2, 64).toInt();
+      if (huge.toDouble() < 18446744073709551616.0) return;
+      final past64 = Duration(microseconds: huge);
+      final past63 = Duration(microseconds: math.pow(2, 63).toInt());
+      final limits = ResourceLimits(
+        maxFeedDuration: past64,
+        maxTurnDuration: past63,
+        maxTotalSleep: past64,
+      )..validate();
+      final wire = limits.toProto();
+      expect(
+        wire.maxFeedDurationMicros.toStringUnsigned(),
+        '18446744073709551615',
+      );
+      expect(
+        wire.maxTurnDurationMicros.toStringUnsigned(),
+        '9223372036854775808',
+      );
+      expect(
+        wire.maxTotalSleepMicros.toStringUnsigned(),
+        '18446744073709551615',
+      );
+      expect(
+        _policy(
+          OsPolicy(sleepSystemMax: past64),
+        ).sleep.system.maxMicros.toStringUnsigned(),
+        '18446744073709551615',
+      );
+      // Past u64::MAX seconds, Rust has no Duration at all.
+      expect(
+        ResourceLimits(
+          maxFeedDuration: Duration(microseconds: huge * huge),
+        ).validate,
+        _refused(
+          'cannot convert float seconds to Duration: value is either too '
+          'big or NaN',
+        ),
+      );
+    });
+
     test('an int dart2js holds past 2^64 is refused, as upstream', () {
       // Only dart2js has such an int; elsewhere this is 2^63 - 1.
       final huge = math.pow(2, 64).toInt();
@@ -488,4 +542,29 @@ void main() {
       pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
     );
   });
+}
+
+/// A local DateTime in a zone 2 hours east of UTC named `X`, on any host.
+final class _LocalInstant implements DateTime {
+  const _LocalInstant(this._utc);
+
+  final DateTime _utc;
+
+  @override
+  bool get isUtc => false;
+
+  @override
+  Duration get timeZoneOffset => const Duration(hours: 2);
+
+  @override
+  String get timeZoneName => 'X';
+
+  @override
+  int get millisecondsSinceEpoch => _utc.millisecondsSinceEpoch;
+
+  @override
+  int get microsecond => 0;
+
+  @override
+  Object? noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

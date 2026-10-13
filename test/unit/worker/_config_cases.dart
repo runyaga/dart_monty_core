@@ -262,7 +262,8 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
             : local.timeZoneName;
         expect(
           (value as MontyString).value,
-          "('$wall', ('$name', '$name'), ${-offset})",
+          // On dart2js -0 would print as -0.0; Python's is 0.
+          "('$wall', ('$name', '$name'), ${offset == 0 ? 0 : -offset})",
         );
       } finally {
         await session.close();

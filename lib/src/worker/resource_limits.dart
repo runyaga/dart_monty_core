@@ -98,9 +98,9 @@ final class ResourceLimits {
     gcInterval: _u64(gcInterval),
     maxRecursionDepth: Int64(maxRecursionDepth ?? defaultMaxRecursionDepth),
     maxSuspensions: Int64(maxSuspensions ?? defaultMaxSuspensions),
-    maxFeedDurationMicros: _u64(maxFeedDuration?.inMicroseconds),
-    maxTurnDurationMicros: _u64(maxTurnDuration?.inMicroseconds),
-    maxTotalSleepMicros: _u64(maxTotalSleep?.inMicroseconds),
+    maxFeedDurationMicros: _micros(maxFeedDuration),
+    maxTurnDurationMicros: _micros(maxTurnDuration),
+    maxTotalSleepMicros: _micros(maxTotalSleep),
   );
 }
 
@@ -113,6 +113,32 @@ const int defaultMaxSuspensions = 1000;
 /// Upstream's text for a negative duration (Rust's `try_from_secs_f64`).
 const String negativeDurationText =
     'cannot convert float seconds to Duration: value is negative';
+
+/// Rust's `try_from_secs_f64` refusal of [d], or null when Rust has such a
+/// `Duration`: not negative, and at most `u64::MAX` seconds, which only a
+/// dart2js [Duration] can pass.
+String? durationRefusal(Duration d) {
+  if (d.isNegative) return negativeDurationText;
+  if (d.inMicroseconds.toDouble() >= _twoTo64 * 1000000) {
+    return 'cannot convert float seconds to Duration: value is either too '
+        'big or NaN';
+  }
+
+  return null;
+}
+
+/// [d] in wire microseconds, saturating at `u64::MAX` as upstream's
+/// `micros_field` does; past 2^63 (dart2js only) as the u64's bits.
+Int64 durationMicros(Duration d) {
+  final micros = d.inMicroseconds;
+  final asDouble = micros.toDouble();
+  if (asDouble >= _twoTo64) return Int64(-1);
+  if (asDouble < _twoTo63) return Int64(micros);
+
+  return Int64.parseInt('${BigInt.from(micros) - (BigInt.one << 64)}');
+}
+
+const double _twoTo63 = _twoTo64 / 2;
 
 void _unsigned(int? value, String name) {
   if (value == null) return;
@@ -132,9 +158,8 @@ void _unsigned(int? value, String name) {
 const double _twoTo64 = 18446744073709551616.0;
 
 void _duration(Duration? value, String name) {
-  if (value != null && value.isNegative) {
-    throw ArgumentError.value(value, name, negativeDurationText);
-  }
+  final refusal = value == null ? null : durationRefusal(value);
+  if (refusal != null) throw ArgumentError.value(value, name, refusal);
 }
 
 /// Rust's `Debug` for a `Duration`, which upstream's limit messages print:
@@ -225,3 +250,5 @@ BigInt _divideToNearestEven(BigInt n, BigInt d) {
 }
 
 Int64? _u64(int? value) => value == null ? null : Int64(value);
+
+Int64? _micros(Duration? value) => value == null ? null : durationMicros(value);

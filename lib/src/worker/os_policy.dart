@@ -198,11 +198,12 @@ final class OsPolicy {
   void _validateSleepMax() {
     final max = sleepSystemMax;
     if (max == null) return;
-    if (max.isNegative) {
+    final refusal = durationRefusal(max);
+    if (refusal != null) {
       throw ArgumentError.value(
         max,
         'sleepSystemMax',
-        'invalid sleep_system_max: $negativeDurationText',
+        'invalid sleep_system_max: $refusal',
       );
     }
     final mode = sleep ?? 'system';
@@ -404,4 +405,4 @@ pb.FixedDateTime _fixed(DateTime instant) {
 /// [max] in wire microseconds; [uncappedSleep] is `u64::MAX`, which the
 /// uint64 field holds as the 64-bit pattern of -1.
 Int64 _sleepMicros(Duration max) =>
-    max == uncappedSleep ? Int64(-1) : Int64(max.inMicroseconds);
+    max == uncappedSleep ? Int64(-1) : durationMicros(max);

@@ -642,11 +642,12 @@ MontyStackFrame _frame(pb.StackFrame f) => MontyStackFrame(
 /// Throws [ArgumentError] for a negative print flush interval, with
 /// upstream's message.
 void validatePrintFlushInterval(Duration? interval) {
-  if (interval != null && interval.isNegative) {
+  final refusal = interval == null ? null : durationRefusal(interval);
+  if (refusal != null) {
     throw ArgumentError.value(
       interval,
       'printFlushInterval',
-      'invalid print_flush_interval: $negativeDurationText',
+      'invalid print_flush_interval: $refusal',
     );
   }
 }
