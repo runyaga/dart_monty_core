@@ -54,12 +54,14 @@
 // Exit codes: 0 pass, 1 a rule failed, 2 the check itself could not run.
 
 import 'dart:collection';
+import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -705,6 +707,32 @@ List<String> _printDeclaration(Element element) {
   return [_printHead(element), ...members];
 }
 
+/// The declaration lines of [element]'s supertypes in this package, other
+/// than [sealed], transitively: a subtype can reach a public type through a
+/// private ancestor.
+Iterable<String> _ancestors(InterfaceElement element, ClassElement sealed) {
+  final seen = <InterfaceElement>{element, sealed};
+  final pending = [element];
+  final heads = <String>[];
+  while (pending.isNotEmpty) {
+    final current = pending.removeLast();
+    for (final type in [
+      ?current.supertype,
+      ...current.mixins,
+      ...current.interfaces,
+      if (current is MixinElement) ...current.superclassConstraints,
+    ]) {
+      final ancestor = type.element;
+      if (_isOwn(ancestor.library.uri) && seen.add(ancestor)) {
+        heads.add(_printHead(ancestor));
+        pending.add(ancestor);
+      }
+    }
+  }
+
+  return heads;
+}
+
 /// The declaration line of every subtype of the sealed class [sealed],
 /// private ones included, and of each sealed subtype's in turn: exhaustive
 /// switches over [sealed] depend on which subtypes exist and on what each
@@ -733,8 +761,14 @@ List<String> _permitted(ClassElement sealed) {
           candidate.isSealed) {
         pending.add(candidate);
       }
+      found.addAll(_ancestors(candidate, sealed).map((head) => 'via $head'));
     }
   }
+
+  // An ancestor that is itself a permitted subtype is listed once, as one.
+  found.removeWhere(
+    (line) => line.startsWith('via ') && found.contains(line.substring(4)),
+  );
 
   return found.isEmpty ? const ['nothing'] : (found.toList()..sort());
 }
@@ -770,6 +804,7 @@ String _printHead(Element element) {
       ..._variableModifiers(element),
       'variable',
       _type(element.type),
+      ?_constantValue(element),
     ], prefix: '$name: '),
     ExecutableElement() => _printExecutable(element, name),
     _ => throw StateError(
@@ -844,8 +879,12 @@ String? _printMember(Element member) {
       if (member.isExternal) 'external',
       if (member.isCovariant) 'covariant',
       ..._variableModifiers(member),
-      if (member.isEnumConstant) 'enum value' else 'field',
+      if (member.isEnumConstant)
+        'enum value #${_enumIndex(member)}'
+      else
+        'field',
       _type(member.type),
+      ?_constantValue(member),
     ], prefix: '$name: '),
     PropertyAccessorElement(isOriginVariable: true) => null,
     ExecutableElement() => _printExecutable(member, name),
@@ -915,7 +954,13 @@ String _parameters(
     final name = parameter.isNamed || positionalNames
         ? ' ${_nameOf(parameter)}'
         : '';
-    final value = _oneLine(parameter.defaultValueCode);
+    final source = _oneLine(parameter.defaultValueCode);
+    final resolved = source != null && _reference.hasMatch(source)
+        ? _constant(parameter.computeConstantValue())
+        : null;
+    final value = resolved == null || resolved == source
+        ? source
+        : '$source ($resolved)';
 
     return _words([
       if (parameter.isCovariant) 'covariant',
@@ -942,6 +987,43 @@ String _parameters(
     if (optional.isNotEmpty) '[${optional.join(', ')}]',
     if (keyed.isNotEmpty) '{${keyed.join(', ')}}',
   ].join(', ')})';
+}
+
+/// A default value that only names a constant: the printer adds the value,
+/// since changing the constant changes the default.
+final _reference = RegExp(r'^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$');
+
+/// The position of the enum value [field] among its enum's values: `index`
+/// and the order of `values` are API.
+int _enumIndex(FieldElement field) =>
+    (field.enclosingElement as EnumElement).constants.indexOf(field);
+
+/// `= value` for a `const` variable whose value [_constant] can print.
+String? _constantValue(PropertyInducingElement element) {
+  if (!element.isConst || element is FieldElement && element.isEnumConstant) {
+    return null;
+  }
+  final value = _constant(element.computeConstantValue());
+
+  return value == null ? null : '= $value';
+}
+
+/// A constant's value when it is null, a bool, a number, a string or an
+/// enum value; null for anything else, which the golden then leaves out.
+String? _constant(DartObject? value) {
+  if (value == null) return null;
+  if (value.isNull) return 'null';
+  final simple =
+      value.toBoolValue() ?? value.toIntValue() ?? value.toDoubleValue();
+  if (simple != null) return '$simple';
+  if (value.toStringValue() case final text?) {
+    return _oneLine(jsonEncode(text));
+  }
+  if (value.variable case final FieldElement field when field.isEnumConstant) {
+    return '${_nameOf(field.enclosingElement)}.${_nameOf(field)}';
+  }
+
+  return null;
 }
 
 /// [source] on one line, as the golden is line-based: line endings
@@ -1225,6 +1307,17 @@ String _hiddenNode(String implements) =>
     '  @override int get permissions => 0;\n'
     '}\n';
 
+/// A private subtype of the sealed `VfsNode` that reaches `VfsFile` only
+/// through a private ancestor, which declares [implements].
+String _hiddenAncestor(String implements) =>
+    '\nabstract class _BoundaryProbeBase$implements {\n'
+    "  String path = '';\n"
+    "  VfsContent content = VfsText('');\n"
+    '  int get permissions => 0;\n'
+    '}\n'
+    'final class _BoundaryProbeHidden extends _BoundaryProbeBase\n'
+    '    implements VfsNode {}\n';
+
 /// Two declarations named `Item`, both in public signatures.
 final _sameNames = <String, String Function(String)>{
   'lib/src/boundary_probe_a.dart': (_) => 'class Item {}\n',
@@ -1345,7 +1438,7 @@ final class Probe<T extends num> extends ProbeBase<T> with ProbeMixin
   Probe.limit: final field int?
   Probe.make: factory constructor()
   Probe.map: method<R extends Object?>(R Function(T) f, {(int, {String s})? record}) -> R
-  Probe.max: static const field int
+  Probe.max: static const field int = 9
   Probe.name=: setter(String value)
   Probe.new: const constructor(T value, {String label = 'x', required bool flag, int? limit = 3})
   Probe.pending: late final settable field int
@@ -1365,8 +1458,8 @@ extension type ProbeId(int raw) implements int
 interface class ProbeInterface
   ProbeInterface.new: constructor()
 enum ProbeKind
-  ProbeKind.a: static const enum value ProbeKind
-  ProbeKind.b: static const enum value ProbeKind
+  ProbeKind.a: static const enum value #0 ProbeKind
+  ProbeKind.b: static const enum value #1 ProbeKind
   ProbeKind.values: static const field List<ProbeKind>
 mixin ProbeMixin
   ProbeMixin.mixed: getter -> int
@@ -1387,7 +1480,7 @@ sealed class ProbeShape
 final class ProbeSquare extends ProbeShape
   ProbeSquare.new: constructor()
 probeCallback: settable variable void Function()?
-probeConst: const variable int
+probeConst: const variable int = 1
 probeDynamic: settable variable dynamic
 probeFunction: function<T>(T value, {int? count, (String,)? one}) -> int
 probeFutureOr: function() -> FutureOr@dart:async<int>
@@ -1757,6 +1850,44 @@ final _controls = [
       'lib/src/mount/vfs_node.dart': (s) =>
           '$s${_hiddenNode(' implements VfsFile')}',
     },
+  ),
+  _Control(
+    'private ancestor of a sealed subtype stops implementing a public type',
+    _Verdict.golden,
+    '- VfsNode: permits via abstract class _BoundaryProbeBase '
+        'implements VfsFile',
+    {'lib/src/mount/vfs_node.dart': (s) => '$s${_hiddenAncestor('')}'},
+    base: {
+      'lib/src/mount/vfs_node.dart': (s) =>
+          '$s${_hiddenAncestor(' implements VfsFile')}',
+    },
+  ),
+  _Control(
+    'enum values reordered',
+    _Verdict.golden,
+    '+ MountMode.readWrite: static const enum value #0 MountMode',
+    {
+      'lib/src/mount/mount_mode.dart': (s) => _replaceOnce(
+        _replaceOnce(s, '  readOnly,\n', ''),
+        '  readWrite,\n',
+        '  readWrite,\n  readOnly,\n',
+      ),
+    },
+  ),
+  _Control(
+    'constant named by a default value changed',
+    _Verdict.golden,
+    'int? memoryUsageLimit = defaultMemoryUsageLimit (200000000)})',
+    {
+      'lib/src/mount/vfs_limits.dart': (s) => _replaceOnce(
+        s,
+        'defaultMemoryUsageLimit = 100000000;',
+        'defaultMemoryUsageLimit = 200000000;',
+      ),
+    },
+    alsoMentions: [
+      '+ defaultMemoryUsageLimit: const variable int = 200000000',
+    ],
   ),
   _Control(
     'multi-line default value prints the same with CRLF line endings',

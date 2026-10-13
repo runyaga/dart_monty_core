@@ -215,14 +215,14 @@ final class MontyMemoryFile implements VfsFile
 class MountDir
   MountDir.memoryUsageLimit: final field int?
   MountDir.mode: final field MountMode
-  MountDir.new: const constructor({required String virtualPath, MountMode mode = MountMode.readWrite, int? writeBytesLimit, int? memoryUsageLimit = defaultMemoryUsageLimit})
+  MountDir.new: const constructor({required String virtualPath, MountMode mode = MountMode.readWrite, int? writeBytesLimit, int? memoryUsageLimit = defaultMemoryUsageLimit (100000000)})
   MountDir.virtualPath: final field String
   MountDir.writeBytesLimit: final field int?
 
 [members: src/mount/mount_mode.dart]
 enum MountMode
-  MountMode.readOnly: static const enum value MountMode
-  MountMode.readWrite: static const enum value MountMode
+  MountMode.readOnly: static const enum value #0 MountMode
+  MountMode.readWrite: static const enum value #1 MountMode
   MountMode.values: static const field List<MountMode>
 
 [members: src/mount/open_call.dart]
@@ -265,8 +265,8 @@ final class VfsText extends VfsContent
   VfsText.text: final field String
 
 [members: src/mount/vfs_limits.dart]
-defaultMemoryUsageLimit: const variable int
-entryMemoryUsage: const variable int
+defaultMemoryUsageLimit: const variable int = 100000000
+entryMemoryUsage: const variable int = 256
 formatBytesPretty: function(int bytes) -> String
 
 [members: src/mount/vfs_node.dart]
@@ -402,7 +402,7 @@ final class MontyInternalError extends Error
 [members: src/platform/monty_limits.dart]
 final class MontyLimits
   MontyLimits.==: operator(Object other) -> bool
-  MontyLimits.defaultMaxSuspensions: static const field int
+  MontyLimits.defaultMaxSuspensions: static const field int = 1000
   MontyLimits.fromJson: factory constructor(Map<String, dynamic> json)
   MontyLimits.hasEngineLimits: getter -> bool
   MontyLimits.hashCode: getter -> int
@@ -765,12 +765,12 @@ final class MontyOpaque extends MontyValue
   MontyOpaque.toJson: method() -> Map<String, Object?>
   MontyOpaque.toString: method() -> String
 enum MontyOpaqueKind
-  MontyOpaqueKind.builtin: static const enum value MontyOpaqueKind
-  MontyOpaqueKind.cycle: static const enum value MontyOpaqueKind
+  MontyOpaqueKind.builtin: static const enum value #2 MontyOpaqueKind
+  MontyOpaqueKind.cycle: static const enum value #4 MontyOpaqueKind
   MontyOpaqueKind.fromWireTag: static method(String tag) -> MontyOpaqueKind?
-  MontyOpaqueKind.function: static const enum value MontyOpaqueKind
-  MontyOpaqueKind.repr: static const enum value MontyOpaqueKind
-  MontyOpaqueKind.type: static const enum value MontyOpaqueKind
+  MontyOpaqueKind.function: static const enum value #1 MontyOpaqueKind
+  MontyOpaqueKind.repr: static const enum value #3 MontyOpaqueKind
+  MontyOpaqueKind.type: static const enum value #0 MontyOpaqueKind
   MontyOpaqueKind.values: static const field List<MontyOpaqueKind>
   MontyOpaqueKind.wireTag: final field String
 final class MontyPath extends MontyValue
@@ -902,9 +902,9 @@ class MontyRepl
   MontyRepl.scriptName: getter -> String?
   MontyRepl.snapshot: method() -> Future<Uint8List@dart:typed_data>
 enum ReplContinuationMode
-  ReplContinuationMode.complete: static const enum value ReplContinuationMode
-  ReplContinuationMode.incompleteBlock: static const enum value ReplContinuationMode
-  ReplContinuationMode.incompleteImplicit: static const enum value ReplContinuationMode
+  ReplContinuationMode.complete: static const enum value #0 ReplContinuationMode
+  ReplContinuationMode.incompleteBlock: static const enum value #2 ReplContinuationMode
+  ReplContinuationMode.incompleteImplicit: static const enum value #1 ReplContinuationMode
   ReplContinuationMode.values: static const field List<ReplContinuationMode>
 
 [members: src/repl/repl_platform.dart]
