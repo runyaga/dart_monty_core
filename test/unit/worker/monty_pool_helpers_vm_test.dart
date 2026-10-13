@@ -82,7 +82,7 @@ void main() {
 
   test("withSession takes exactly checkout's named parameters", () {
     final methods = _namedParameters(source);
-    expect(methods['checkout'], hasLength(4));
+    expect(methods['checkout'], hasLength(9));
     expect(_differences(methods, 'withSession', 'checkout'), isEmpty);
   });
 
@@ -94,13 +94,14 @@ void main() {
       return source.replaceFirst(from, to);
     }
 
-    final defaultChanged = once(
-      "String scriptName = 'main.py',\n    SessionLimits? limits,\n    int? "
-          'assertMessageAnnotations,\n    Duration? printFlushInterval,\n  }) '
-          'async {\n    final session',
-      "String scriptName = 'other.py',\n    SessionLimits? limits,\n    int? "
-          'assertMessageAnnotations,\n    Duration? printFlushInterval,\n  }) '
-          'async {\n    final session',
+    // withSession's copy of the default: the last one in the file.
+    const from = "String scriptName = 'main.py',";
+    final at = source.lastIndexOf(from);
+    expect(at, greaterThan(source.indexOf(from)));
+    final defaultChanged = source.replaceRange(
+      at,
+      at + from.length,
+      "String scriptName = 'other.py',",
     );
     expect(
       _differences(

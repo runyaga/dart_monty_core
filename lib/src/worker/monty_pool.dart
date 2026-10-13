@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 
 import 'package:dart_monty_core/src/worker/pool_session.dart';
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
@@ -108,26 +109,50 @@ final class MontyPool {
   }
 
   /// Dedicates a worker to a new session, configured with [scriptName] (the
-  /// file name tracebacks report), [limits], [assertMessageAnnotations]
-  /// (bytes of each operand an `assert` failure shows; 0 turns them off)
-  /// and [printFlushInterval] (how long the worker may hold printed text).
+  /// file name tracebacks report), [limits], the type check ([typeCheck],
+  /// with [typeCheckStubs], [typeCheckFormat] (one of [typeCheckFormats];
+  /// null is `full`) and [typeCheckColor]), [assertMessageAnnotations]
+  /// (bytes of each operand an `assert` failure shows; 0 turns them off),
+  /// [printFlushInterval] (how long the worker may hold printed text) and
+  /// [osPolicy] (the clock, zone, sleep and randomness the session gets).
   ///
-  /// Waits for a free worker up to the pool's `checkoutTimeout`, then throws
-  /// [TimeoutException]. Throws [StateError] once the pool is closed.
+  /// Throws [ArgumentError] for an unknown [typeCheckFormat], before any
+  /// worker is taken. Waits for a free worker up to the pool's
+  /// `checkoutTimeout`, then throws [TimeoutException]. Throws [StateError]
+  /// once the pool is closed.
   Future<PoolSession> checkout({
     String scriptName = 'main.py',
     SessionLimits? limits,
+    bool typeCheck = false,
+    String? typeCheckStubs,
+    String? typeCheckFormat,
+    bool typeCheckColor = false,
     int? assertMessageAnnotations,
     Duration? printFlushInterval,
+    pb.OsPolicy? osPolicy,
   }) async {
+    if (typeCheckFormat != null &&
+        !typeCheckFormats.containsKey(typeCheckFormat)) {
+      throw ArgumentError.value(
+        typeCheckFormat,
+        'typeCheckFormat',
+        'must be one of ${typeCheckFormats.keys.join(', ')}',
+      );
+    }
     final config = SessionConfig(
       scriptName: scriptName,
       maxMemoryBytes: limits?.maxMemoryBytes,
       maxRecursionDepth: limits?.maxRecursionDepth,
       maxFeedDuration: limits?.maxFeedDuration,
       maxTurnDuration: limits?.maxTurnDuration,
+      maxSuspensions: limits?.maxSuspensions,
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushInterval: printFlushInterval,
+      typeCheck: typeCheck,
+      typeCheckStubs: typeCheckStubs,
+      typeCheckFormat: typeCheckFormat,
+      typeCheckColor: typeCheckColor,
+      osPolicy: osPolicy,
     );
 
     return openPoolSession(await _pool.acquire(), _pool.options, config);
@@ -140,14 +165,24 @@ final class MontyPool {
     Future<T> Function(PoolSession session) body, {
     String scriptName = 'main.py',
     SessionLimits? limits,
+    bool typeCheck = false,
+    String? typeCheckStubs,
+    String? typeCheckFormat,
+    bool typeCheckColor = false,
     int? assertMessageAnnotations,
     Duration? printFlushInterval,
+    pb.OsPolicy? osPolicy,
   }) async {
     final session = await checkout(
       scriptName: scriptName,
       limits: limits,
+      typeCheck: typeCheck,
+      typeCheckStubs: typeCheckStubs,
+      typeCheckFormat: typeCheckFormat,
+      typeCheckColor: typeCheckColor,
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushInterval: printFlushInterval,
+      osPolicy: osPolicy,
     );
     try {
       return await body(session);

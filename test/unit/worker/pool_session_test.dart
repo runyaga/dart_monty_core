@@ -94,6 +94,8 @@ pb.ChildEvent _lookup(String name) =>
   return (seen, (stream, text) => seen.add((stream, text)));
 }
 
+Duration _ms(int n) => Duration(milliseconds: n);
+
 /// What a test passes as `printCallback` when it does not look at prints.
 void _ignore(String stream, String text) => _ignored++;
 
@@ -648,6 +650,37 @@ void main() {
       );
     });
 
+    test('feed backstop: a worker cannot rewind its feed clock', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('f')]),
+        answer([_call('f', feedMicros: 150000)]),
+        // Reports less than before, mid-feed.
+        answer([_call('f', feedMicros: 1000)]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(
+        Workers([ch]),
+        feedGrace: const Duration(milliseconds: 100),
+        turnGrace: null,
+      );
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        limits: const SessionLimits(
+          maxFeedDuration: Duration(milliseconds: 200),
+        ),
+      );
+      await expectLater(
+        session.feedRun(
+          'f(); f()',
+          externals: {'f': (args, kwargs) => const MontyNone()},
+          printCallback: _ignore,
+        ),
+        // Still 200 - 150 + 100, not 200 - 1 + 100.
+        throwsA(_crashed(CrashCause.killed, contains('0:00:00.150000'))),
+      );
+    });
+
     test('turn backstop: the turn budget plus its grace', () async {
       final ch = ScriptedChannel([_configureOk, hangAfter([])]);
       final pool = await _pool(
@@ -667,6 +700,206 @@ void main() {
         session.feedRun('while True: pass', printCallback: _ignore),
         throwsA(_crashed(CrashCause.killed, contains('0:00:00.030000'))),
       );
+    });
+  });
+
+  group('suspension budget', () {
+    test('past maxSuspensions the feed is aborted in the sandbox', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('f')]),
+        // The second and third suspensions; the third is over a budget of 2
+        // and never handed over.
+        for (var i = 0; i < 2; i++) answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('RuntimeError', 'suspension limit 2 exceeded'),
+        ]),
+        answer([_int(4)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        limits: const SessionLimits(maxSuspensions: 2),
+      );
+      var calls = 0;
+      await expectLater(
+        session.feedRun(
+          'while True: f()',
+          externals: {'f': (args, kwargs) => MontyInt(++calls)},
+          printCallback: _ignore,
+        ),
+        throwsA(
+          isA<MontyScriptError>()
+              .having((e) => e.excType, 'excType', 'RuntimeError')
+              .having((e) => e.message, 'message', contains('limit 2')),
+        ),
+      );
+      expect(calls, 1);
+      final abort = itemAt(ch.requests, 4).abortFeed.exception;
+      expect(abort.excType, 'RuntimeError');
+      expect(abort.message, 'suspension limit 2 exceeded');
+      expect(itemAt(ch.requests, 0).configure.limits.maxSuspensions, Int64(2));
+      // The session runs on.
+      expect(
+        await session.feedRun('4', printCallback: _ignore),
+        const MontyInt(4),
+      );
+    });
+
+    test('the default budget is 1000', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('f')]),
+        for (var i = 0; i < 999; i++) answer([_call('f')]),
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('RuntimeError', 'suspension limit 1000 exceeded'),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      await expectLater(
+        session.feedRun(
+          'while True: f()',
+          externals: {'f': (args, kwargs) => const MontyNone()},
+          printCallback: _ignore,
+        ),
+        throwsA(isA<MontyScriptError>()),
+      );
+      expect(ch.remaining, 0);
+      expect(_lastKind(ch), pb.ParentRequest_Kind.abortFeed);
+    });
+
+    test('an abort answered with anything but Error kills', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('f')]),
+        answer([completeNone()]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        limits: const SessionLimits(maxSuspensions: 0),
+      );
+      await expectLater(
+        session.feedRun('f()', printCallback: _ignore),
+        throwsA(_crashed(CrashCause.killed, contains('AbortFeed'))),
+      );
+      expect(pool.liveWorkers, 0);
+    });
+  });
+
+  group('system sleep', () {
+    pb.ChildEvent sleep(double seconds) => pb.ChildEvent(
+      osCall: pb.OsCall(
+        callId: 3,
+        systemSleep: pb.OsCall_Sleep(seconds: seconds),
+      ),
+    );
+
+    test('is waited and answered with None, without an os handler', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([sleep(0.05)]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(1)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final clock = Stopwatch()..start();
+      expect(
+        await session.feedRun('time.sleep(0.05)', printCallback: _ignore),
+        const MontyInt(1),
+      );
+      expect(clock.elapsed, greaterThanOrEqualTo(_ms(45)));
+      final resume = itemAt(ch.requests, 2).resumeCall;
+      expect(resume.callId, 3);
+      expect(resume.result.hasReturnValue(), isTrue);
+      expect(itemAt(resume.values.nodes, 0).hasNone(), isTrue);
+    });
+
+    test(
+      "is cut to the policy's maximum; a bad delay waits the maximum",
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([sleep(30)]),
+          answer([sleep(double.nan)]),
+          answer([_int(1)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final policy = pb.OsPolicy(
+          sleep: pb.SleepMode(system: pb.SystemSleep(maxMicros: Int64(20000))),
+        );
+        final session = await pool.checkout(osPolicy: policy);
+        final clock = Stopwatch()..start();
+        await session.feedRun('time.sleep(30)', printCallback: _ignore);
+        expect(clock.elapsed, lessThan(const Duration(seconds: 5)));
+        expect(clock.elapsed, greaterThanOrEqualTo(_ms(35)));
+        expect(itemAt(ch.requests, 0).configure.osPolicy, policy);
+      },
+    );
+  });
+
+  group('type check', () {
+    test('Configure carries the settings; a rejection is in-band', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'bad: int')),
+        ]),
+        expecting(pb.ParentRequest_Kind.feed, [_int(5)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        typeCheck: true,
+        typeCheckStubs: 'x: int',
+        typeCheckFormat: 'concise',
+        typeCheckColor: true,
+      );
+      final configure = itemAt(ch.requests, 0).configure;
+      expect(configure.typeCheck, isTrue);
+      expect(configure.typeCheckStubs, 'x: int');
+      expect(
+        configure.typeCheckFormat,
+        pb.TypeCheckFormat.TYPE_CHECK_FORMAT_CONCISE,
+      );
+      expect(configure.typeCheckColor, isTrue);
+      await expectLater(
+        session.feedRun('x: int = "a"', printCallback: _ignore),
+        throwsA(
+          isA<MontyTypeCheckError>().having(
+            (e) => e.diagnostics,
+            'diagnostics',
+            'bad: int',
+          ),
+        ),
+      );
+      expect(itemAt(ch.requests, 1).feed.skipTypeCheck, isFalse);
+      expect(
+        await session.feedRun(
+          'x: int = "a"',
+          skipTypeCheck: true,
+          printCallback: _ignore,
+        ),
+        const MontyInt(5),
+      );
+      expect(itemAt(ch.requests, 2).feed.skipTypeCheck, isTrue);
+    });
+
+    test('an unknown format is refused before a worker is taken', () async {
+      final workers = Workers([]);
+      final pool = await _pool(workers);
+      addTearDown(pool.close);
+      await expectLater(
+        pool.checkout(typeCheck: true, typeCheckFormat: 'fancy'),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(workers.started, isEmpty);
+      expect(pool.liveWorkers, 0);
     });
   });
 

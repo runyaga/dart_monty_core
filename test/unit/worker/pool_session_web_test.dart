@@ -16,6 +16,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
+import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:test/test.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
@@ -147,6 +148,81 @@ void main() {
       requestTimeout: const Duration(seconds: 1),
     );
   });
+
+  test('time.sleep is waited by the session ($_backend)', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final clock = Stopwatch()..start();
+        final value = await pool.withSession(
+          (s) => s.feedRun(
+            'import time\ntime.sleep(0.05)\n7',
+            printCallback: _ignore,
+          ),
+          limits: _limits,
+        );
+        expect(value, const MontyInt(7));
+        expect(
+          clock.elapsed,
+          greaterThanOrEqualTo(const Duration(milliseconds: 45)),
+        );
+      },
+      maxProcesses: 1,
+    );
+  });
+
+  test(
+    'past 1000 host calls the feed fails in the sandbox ($_backend)',
+    () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(limits: _limits);
+          var calls = 0;
+          await expectLater(
+            session.feedRun(
+              'while True:\n    f()',
+              externals: {'f': (args, kwargs) => MontyInt(++calls)},
+              printCallback: _ignore,
+            ),
+            throwsA(
+              isA<MontyScriptError>()
+                  .having((e) => e.excType, 'excType', 'RuntimeError')
+                  .having((e) => e.message, 'message', contains('1000')),
+            ),
+          );
+          expect(calls, lessThanOrEqualTo(1000));
+          expect(
+            await session.feedRun('calls_left = 1', printCallback: _ignore),
+            const MontyNone(),
+          );
+          await session.close();
+        },
+        maxProcesses: 1,
+      );
+    },
+  );
+
+  test(
+    'a type-checking session rejects a mistyped snippet ($_backend)',
+    () async {
+      await MontyPool.withPool(
+        (pool) => pool.withSession(
+          (s) async {
+            await expectLater(
+              s.feedRun('x: int = "a"', printCallback: _ignore),
+              throwsA(isA<MontyTypeCheckError>()),
+            );
+            expect(
+              await s.feedRun('y: int = 2\ny', printCallback: _ignore),
+              const MontyInt(2),
+            );
+          },
+          limits: _limits,
+          typeCheck: true,
+        ),
+        maxProcesses: 1,
+      );
+    },
+  );
 
   test('no print callback: each fragment reaches the console on its '
       'stream ($_backend)', () async {

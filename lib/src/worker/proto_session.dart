@@ -64,6 +64,12 @@ final class ProtoSession {
   /// which are declined without it. [onPrint] sees each run of printed text
   /// as it arrives, and its future is awaited before the next one; the
   /// result also lists them all, unless [collectPrints] is false.
+  ///
+  /// With [systemSleepMax] set, a `time.sleep` the worker hands to the
+  /// parent is waited here, cut to that length, and answered with `None`
+  /// (upstream's automatic driver); without it the sleep is declined.
+  /// [skipTypeCheck] skips a type-checking session's check for this
+  /// snippet; a snippet the check rejects throws [MontyTypeCheckError].
   Future<FeedResult> feed(
     String code, {
     Map<String, MontyValue> inputs = const {},
@@ -71,9 +77,13 @@ final class ProtoSession {
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
     bool collectPrints = true,
+    Duration? systemSleepMax,
+    bool skipTypeCheck = false,
   }) => _guard(() async {
     final sink = _PrintSink(onPrint, _channel.kill, collect: collectPrints);
-    var request = pb.ParentRequest(feed: _feedRequest(code, inputs));
+    final feed = _feedRequest(code, inputs);
+    if (skipTypeCheck) feed.skipTypeCheck = true;
+    var request = pb.ParentRequest(feed: feed);
     for (;;) {
       final pb.ChildEvent event;
       try {
@@ -91,7 +101,7 @@ final class ProtoSession {
           List.unmodifiable(sink.prints),
         );
       }
-      request = await _answer(event, externals, onOsCall);
+      request = await _answer(event, externals, onOsCall, systemSleepMax);
     }
   });
 
@@ -119,8 +129,14 @@ final class ProtoSession {
     pb.ChildEvent event,
     Map<String, ProtoExternalFunction> externals,
     ProtoOsCallHandler? onOsCall,
+    Duration? systemSleepMax,
   ) async => switch (event.whichKind()) {
     pb.ChildEvent_Kind.error => _throwRaised(event.error.exception),
+    // Only a type-checking session's feed may end this way.
+    pb.ChildEvent_Kind.typingError when _config.typeCheck =>
+      throw MontyTypeCheckError(
+        event.typingError.diagnostics,
+      ),
     pb.ChildEvent_Kind.nameLookup => _answerNameLookup(
       event.nameLookup.name,
       externals,
@@ -129,6 +145,10 @@ final class ProtoSession {
       event.functionCall,
       externals,
     ),
+    pb.ChildEvent_Kind.osCall
+        when systemSleepMax != null &&
+            event.osCall.whichCall() == pb.OsCall_Call.systemSleep =>
+      await _sleep(event.osCall, systemSleepMax),
     pb.ChildEvent_Kind.osCall => await _answerOsCall(event.osCall, onOsCall),
     // Never sent without the request that asks for it (futures, type
     // checking, dumps), or not a feed's answer at all.
@@ -209,6 +229,37 @@ final class _PrintSink {
   }
 }
 
+/// A snippet the session's type check rejected; it did not run, and the
+/// session stays usable.
+///
+/// Internal until C3 designs the public typing error.
+final class MontyTypeCheckError implements Exception {
+  /// Creates the error for [diagnostics].
+  const MontyTypeCheckError(this.diagnostics);
+
+  /// The diagnostics, rendered in the session's type-check format.
+  final String diagnostics;
+
+  @override
+  String toString() => 'MontyTypeCheckError: $diagnostics';
+}
+
+/// Waits a system sleep, cut to [max], and answers it with `None`.
+Future<pb.ParentRequest> _sleep(pb.OsCall call, Duration max) async {
+  final seconds = call.systemSleep.seconds;
+  // A delay that is not a finite, non-negative number waits the ceiling,
+  // as upstream counts an invalid worker delay.
+  final micros = seconds.isFinite && seconds >= 0
+      ? seconds * Duration.microsecondsPerSecond
+      : double.infinity;
+  final wait = micros >= max.inMicroseconds
+      ? max
+      : Duration(microseconds: micros.round());
+  await Future<void>.delayed(wait);
+
+  return _resumeValue(call.callId, const MontyNone());
+}
+
 /// Session settings, sent to the worker in `Configure`.
 final class SessionConfig {
   /// Creates the settings. A null limit leaves the worker's default.
@@ -218,8 +269,14 @@ final class SessionConfig {
     this.maxRecursionDepth,
     this.maxFeedDuration,
     this.maxTurnDuration,
+    this.maxSuspensions,
     this.assertMessageAnnotations,
     this.printFlushInterval,
+    this.typeCheck = false,
+    this.typeCheckStubs,
+    this.typeCheckFormat,
+    this.typeCheckColor = false,
+    this.osPolicy,
   });
 
   /// The file name tracebacks report for fed code.
@@ -239,6 +296,39 @@ final class SessionConfig {
   /// turn), enforced by the worker.
   final Duration? maxTurnDuration;
 
+  /// How many times a feed may suspend for the host before the parent
+  /// aborts it; null is upstream's default, 1000. Enforced by the parent.
+  final int? maxSuspensions;
+
+  /// Whether each fed snippet is type-checked before it runs.
+  final bool typeCheck;
+
+  /// Stub file contents for the type check.
+  final String? typeCheckStubs;
+
+  /// How the type check renders its diagnostics: one of [typeCheckFormats];
+  /// null is `full`.
+  final String? typeCheckFormat;
+
+  /// Whether the `full` and `concise` diagnostics carry ANSI colour.
+  final bool typeCheckColor;
+
+  /// The clock, zone, sleep and randomness the session gets; null is the
+  /// worker's default. The protocol's own message until C3 designs
+  /// `OsPolicy`.
+  final pb.OsPolicy? osPolicy;
+
+  /// The longest one `time.sleep` the parent waits for this session: the
+  /// policy's system-sleep maximum, else upstream's 10 s.
+  Duration get systemSleepMax {
+    final sleep = osPolicy?.sleep;
+    if (sleep != null && sleep.hasSystem() && sleep.system.hasMaxMicros()) {
+      return Duration(microseconds: sleep.system.maxMicros.toInt());
+    }
+
+    return const Duration(seconds: 10);
+  }
+
   /// How many bytes of each operand an `assert` failure message shows; 0
   /// turns the annotations off, null keeps the worker's default (120).
   final int? assertMessageAnnotations;
@@ -252,9 +342,15 @@ final class SessionConfig {
     final recursion = maxRecursionDepth;
     final feed = maxFeedDuration;
     final turn = maxTurnDuration;
+    final suspensions = maxSuspensions;
     final hasLimits =
-        memory != null || recursion != null || feed != null || turn != null;
+        memory != null ||
+        recursion != null ||
+        feed != null ||
+        turn != null ||
+        suspensions != null;
     final flush = printFlushInterval;
+    final format = typeCheckFormat;
 
     return pb.Configure(
       scriptName: scriptName,
@@ -270,10 +366,16 @@ final class SessionConfig {
               maxTurnDurationMicros: turn == null
                   ? null
                   : Int64(turn.inMicroseconds),
+              maxSuspensions: suspensions == null ? null : Int64(suspensions),
             )
           : null,
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushIntervalMs: flush?.inMilliseconds,
+      typeCheck: typeCheck ? true : null,
+      typeCheckStubs: typeCheckStubs,
+      typeCheckFormat: format == null ? null : _typeCheckFormat(format),
+      typeCheckColor: typeCheckColor ? true : null,
+      osPolicy: osPolicy,
     );
   }
 }
@@ -519,3 +621,24 @@ MontyStackFrame _frame(pb.StackFrame f) => MontyStackFrame(
   hideCaret: f.hideCaret,
   hideFrameName: f.hideFrameName,
 );
+
+/// The diagnostic formats `typeCheckFormat` takes, as upstream names them.
+const Map<String, pb.TypeCheckFormat> typeCheckFormats = {
+  'full': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_FULL,
+  'concise': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_CONCISE,
+  'azure': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_AZURE,
+  'json': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_JSON,
+  'jsonlines': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_JSON_LINES,
+  'rdjson': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_RDJSON,
+  'pylint': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_PYLINT,
+  'gitlab': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITLAB,
+  'github': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
+};
+
+pb.TypeCheckFormat _typeCheckFormat(String name) =>
+    typeCheckFormats[name] ??
+    (throw ArgumentError.value(
+      name,
+      'typeCheckFormat',
+      'must be one of ${typeCheckFormats.keys.join(', ')}',
+    ));

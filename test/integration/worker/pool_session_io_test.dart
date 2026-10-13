@@ -13,6 +13,7 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
@@ -183,6 +184,78 @@ void main() {
       );
     },
   );
+
+  test('time.sleep is waited by the session', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final clock = Stopwatch()..start();
+        final value = await pool.withSession(
+          (s) => s.feedRun(
+            'import time\ntime.sleep(0.05)\n7',
+            printCallback: _ignore,
+          ),
+          limits: _limits,
+        );
+        expect(value, const MontyInt(7));
+        expect(
+          clock.elapsed,
+          greaterThanOrEqualTo(const Duration(milliseconds: 45)),
+        );
+      },
+      maxProcesses: 1,
+      workerLocation: await _workerPath(),
+    );
+  });
+
+  test('past 1000 host calls the feed fails in the sandbox', () async {
+    await MontyPool.withPool(
+      (pool) async {
+        final session = await pool.checkout(limits: _limits);
+        var calls = 0;
+        await expectLater(
+          session.feedRun(
+            'while True:\n    f()',
+            externals: {'f': (args, kwargs) => MontyInt(++calls)},
+            printCallback: _ignore,
+          ),
+          throwsA(
+            isA<MontyScriptError>()
+                .having((e) => e.excType, 'excType', 'RuntimeError')
+                .having((e) => e.message, 'message', contains('1000')),
+          ),
+        );
+        expect(calls, lessThanOrEqualTo(1000));
+        expect(
+          await session.feedRun('calls_left = 1', printCallback: _ignore),
+          const MontyNone(),
+        );
+        await session.close();
+      },
+      maxProcesses: 1,
+      workerLocation: await _workerPath(),
+    );
+  });
+
+  test('a type-checking session rejects a mistyped snippet', () async {
+    await MontyPool.withPool(
+      (pool) => pool.withSession(
+        (s) async {
+          await expectLater(
+            s.feedRun('x: int = "a"', printCallback: _ignore),
+            throwsA(isA<MontyTypeCheckError>()),
+          );
+          expect(
+            await s.feedRun('y: int = 2\ny', printCallback: _ignore),
+            const MontyInt(2),
+          );
+        },
+        limits: _limits,
+        typeCheck: true,
+      ),
+      maxProcesses: 1,
+      workerLocation: await _workerPath(),
+    );
+  });
 
   test('exit 65 is a MemoryError that finishes the session', () async {
     final pool = await MontyPool.startWith(

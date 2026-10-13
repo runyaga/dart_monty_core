@@ -44,12 +44,20 @@ abstract interface class PoolSession {
   /// future is awaited before the next event is read. Without one, the text
   /// goes to the process's stdout and stderr on native and to the console
   /// in a browser.
+  ///
+  /// A `time.sleep` is waited by the session, cut to the OS policy's
+  /// system-sleep maximum (10 s by default). On a type-checking session a
+  /// snippet the check rejects throws [MontyTypeCheckError] without running;
+  /// [skipTypeCheck] skips the check for this snippet. Past the session's
+  /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
+  /// `RuntimeError`.
   Future<MontyValue> feedRun(
     String code, {
     Map<String, MontyValue>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     ProtoOsCallHandler? os,
+    bool skipTypeCheck = false,
   });
 
   /// Ends the session and gives its slot back, exactly once.
@@ -75,6 +83,7 @@ final class SessionLimits {
     this.maxRecursionDepth,
     this.maxFeedDuration,
     this.maxTurnDuration,
+    this.maxSuspensions,
   });
 
   /// The interpreter's heap limit.
@@ -89,6 +98,10 @@ final class SessionLimits {
   /// The longest one turn may execute; each answer to a host call starts a
   /// new turn.
   final Duration? maxTurnDuration;
+
+  /// How many times the session may suspend for the host before the parent
+  /// aborts its feed; null is upstream's default, 1000.
+  final int? maxSuspensions;
 }
 
 /// Configures a session on [lease]'s worker; on failure the worker is
@@ -105,6 +118,7 @@ Future<PoolSession> openPoolSession(
       hold,
       channel,
       await ProtoSession.open(channel, config),
+      config.systemSleepMax,
     );
     // A dead worker is an outcome to map here, as upstream maps it.
     // ignore: avoid_catching_errors
@@ -145,11 +159,12 @@ final class _Hold {
 }
 
 final class _LeasedSession implements PoolSession {
-  _LeasedSession(this._hold, this._channel, this._proto);
+  _LeasedSession(this._hold, this._channel, this._proto, this._sleepMax);
 
   final _Hold _hold;
   final _SessionChannel _channel;
   final ProtoSession _proto;
+  final Duration _sleepMax;
   Future<void>? _closing;
 
   @override
@@ -159,6 +174,7 @@ final class _LeasedSession implements PoolSession {
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     ProtoOsCallHandler? os,
+    bool skipTypeCheck = false,
   }) async {
     if (_hold.isFinished) throw _finishedError();
     try {
@@ -169,6 +185,8 @@ final class _LeasedSession implements PoolSession {
         onOsCall: os,
         onPrint: printCallback ?? defaultPrint,
         collectPrints: false,
+        systemSleepMax: _sleepMax,
+        skipTypeCheck: skipTypeCheck,
       );
 
       return result.value;
@@ -201,6 +219,11 @@ StateError _finishedError() => StateError('the session is finished');
 /// The session's view of its worker: the lease's channel, with each turn
 /// refused once the session is finished and bounded by its deadline.
 ///
+/// It also keeps upstream's suspension budget: the session's suspensions are
+/// counted, and one past `maxSuspensions` (default 1000) is not handed to
+/// the driver. The feed is aborted in its place with an in-sandbox
+/// `RuntimeError`, which the driver then sees as the turn's answer.
+///
 /// A turn's deadline is the pool's `requestTimeout`; an execution turn's is
 /// also bounded by what the feed budget has left and by the turn budget,
 /// each plus its grace (upstream's duration backstops). Past it the worker
@@ -216,8 +239,13 @@ final class _SessionChannel implements MontyChannel {
   final PoolOptions _options;
   final SessionConfig _config;
 
-  /// Execution time the running feed has used, as the worker last reported.
+  /// Execution time the running feed has used, as the worker reported it:
+  /// never lowered within a feed, so a worker cannot loosen its own
+  /// backstop.
   Duration _feedUsed = Duration.zero;
+
+  /// Suspensions this session has received.
+  int _suspensions = 0;
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
@@ -228,17 +256,20 @@ final class _SessionChannel implements MontyChannel {
     PrintHandler? onPrint,
   }) async {
     if (_hold.isFinished) throw _finishedError();
-    final channel = _hold.lease.channel;
-    final limit = _deadline(request);
     inTurn = true;
     try {
-      final turn = channel.turn(request, onPrint: onPrint);
-      final event = limit == null
-          ? await turn
-          : await turn.timeout(limit, onTimeout: () => _expire(limit));
-      _feedUsed = Duration(microseconds: event.feedExecutionMicros.toInt());
-
-      return event;
+      final event = await _exchange(request, onPrint);
+      if (!_isSuspension(event)) return event;
+      final limit = _config.maxSuspensions ?? defaultMaxSuspensions;
+      if (++_suspensions <= limit) return event;
+      final reply = await _exchange(_abort(limit), onPrint);
+      final kind = reply.whichKind();
+      if (kind == pb.ChildEvent_Kind.error) return reply;
+      kill();
+      throw MontyCrashedError(
+        CrashCause.killed,
+        message: 'protocol desync: AbortFeed was answered with ${kind.name}',
+      );
     } finally {
       inTurn = false;
     }
@@ -250,6 +281,22 @@ final class _SessionChannel implements MontyChannel {
 
   @override
   void kill() => _hold.lease.kill();
+
+  /// One request and its turn-ending event, within the request's deadline.
+  Future<pb.ChildEvent> _exchange(
+    pb.ParentRequest request,
+    PrintHandler? onPrint,
+  ) async {
+    final limit = _deadline(request);
+    final turn = _hold.lease.channel.turn(request, onPrint: onPrint);
+    final event = limit == null
+        ? await turn
+        : await turn.timeout(limit, onTimeout: () => _expire(limit));
+    final used = Duration(microseconds: event.feedExecutionMicros.toInt());
+    if (used > _feedUsed) _feedUsed = used;
+
+    return event;
+  }
 
   Never _expire(Duration limit) {
     kill();
@@ -279,6 +326,29 @@ final class _SessionChannel implements MontyChannel {
     return _earliest(_earliest(timeout, feed), turn);
   }
 }
+
+/// Upstream's `DEFAULT_MAX_SUSPENSIONS`.
+const int defaultMaxSuspensions = 1000;
+
+/// Turn-ending events that wait for a host answer.
+bool _isSuspension(pb.ChildEvent event) => switch (event.whichKind()) {
+  pb.ChildEvent_Kind.functionCall ||
+  pb.ChildEvent_Kind.osCall ||
+  pb.ChildEvent_Kind.nameLookup ||
+  pb.ChildEvent_Kind.resolveFutures => true,
+  _ => false,
+};
+
+/// Aborts the running feed past [limit] suspensions, with upstream's
+/// exception.
+pb.ParentRequest _abort(int limit) => pb.ParentRequest(
+  abortFeed: pb.AbortFeed(
+    exception: pb.RaisedException(
+      excType: 'RuntimeError',
+      message: 'suspension limit $limit exceeded',
+    ),
+  ),
+);
 
 /// Requests that run sandbox code, which the duration backstops bound.
 bool _isExecution(pb.ParentRequest request) => switch (request.whichKind()) {
