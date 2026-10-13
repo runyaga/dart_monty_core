@@ -171,6 +171,14 @@
     apply to execution turns.
   - A worker that exits with code 65 surfaces as a `MemoryError` and ends
     its session.
+  - Upstream's suspension budget is enforced. Past `maxSuspensions` host
+    calls (1000 by default) the feed is aborted with an in-sandbox
+    `RuntimeError`.
+  - A `time.sleep` is waited by the session itself. It is cut to the OS
+    policy's maximum, which is 10 s by default.
+  - Type checking and the OS policy are passed through to the worker as
+    internal records until their public shapes exist. A type-check
+    rejection does not end the session.
   - Print callbacks may be async. Each one is awaited, in order, before
     the next event is read. With no callback, printed text goes to the
     process's own stdout and stderr on native (written non-blocking, each
