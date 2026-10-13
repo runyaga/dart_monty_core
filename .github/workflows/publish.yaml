@@ -4,6 +4,8 @@ on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
 
+permissions: {}
+
 jobs:
   publish:
     name: Build assets & publish
@@ -13,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # Assets are committed to git (Mode A). No rebuild or force-stage
       # step is needed — dart pub publish picks up whatever is in the

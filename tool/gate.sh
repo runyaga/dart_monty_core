@@ -212,6 +212,10 @@ s  workflows_ok bash tool/check_workflows_valid.sh
 # A tag or branch pin (`@v7`, `@stable`) is a pointer the action's owner can
 # move; the next run executes whatever it points at, with this repo's token.
 s  action_pins  bash tool/check_action_pins.sh
+# A workflow without a top-level `permissions:` gets the repository's default
+# token; a checkout without `persist-credentials: false` leaves that token in
+# .git/config for every later step to read.
+s  wf_tokens    python3 -I tool/check_workflow_tokens.py
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
@@ -531,7 +535,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=51
+EXPECT_STEPS=52
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {
