@@ -28,6 +28,17 @@
   the module, `tool/check_asset_freshness.sh` now also hashes `native/worker/`,
   and `tool/check_worker_wasm_size.sh` holds it to 5.75 MB gzipped. The
   existing in-process assets are unchanged.
+- Internal `ProcessChannel`: drives a worker executable over framed stdio,
+  one turn at a time, and reports a dead worker as a typed
+  `MontyCrashedError` (`outOfMemory` for exit 65, `fatal` for a
+  `FatalError`, `vanished` for EOF, a torn frame or a signal, `killed` for
+  the parent's kill) with the exit code and the last 4 KiB of stderr. The
+  worker starts with an empty environment (plus `SystemRoot` on Windows).
+  `tool/build_worker.sh` builds the executable into the gitignored
+  `lib/src/bin/<os>-<arch>/`; it is not shipped in this release. Not
+  exported. Its tests carry the `worker` tag, now excluded from the VM unit
+  runs, and run in CI's `test-worker-vm` job and the gate's `worker_vm`
+  step.
 
 ### Changed
 

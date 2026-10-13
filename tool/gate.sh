@@ -20,7 +20,9 @@
 # The gate is READ-ONLY: it validates the tree as it stands, including the
 # committed binaries in lib/assets/. If you changed native/ or js/, run
 # `bash tool/prebuild.sh` FIRST — the gate will not rebuild for you, and step 1
-# (asset_fresh) fails if you forget.
+# (asset_fresh) fails if you forget. Likewise run `bash tool/build_worker.sh`
+# once, and again after changing native/worker/: step worker_vm tests the
+# executable it writes to the gitignored lib/src/bin/.
 #
 # Logs land in <outdir> (default: .gate-logs/, gitignored), one file per step
 # plus SUMMARY.txt.
@@ -315,7 +317,7 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # in 5s with it on. (CI's 5m53s for the same step is the runner, not the
 # instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
 # still writes nothing the read-only check can see.
-sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example --coverage="$OUT/cov"
+sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker --coverage="$OUT/cov"
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
@@ -354,6 +356,20 @@ ns cargo_deny    cargo deny check
 # .json serve both.
 sf ffi_features 800 dart test $(ls test/integration/ffi_*_test.dart) test/integration/repros --run-skipped --tags=ffi -p vm --coverage="$OUT/cov"
 sf oracle_ffi 500 dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi --coverage="$OUT/cov"
+# ProcessChannel against the fake worker and the real one. NEEDS THE WORKER
+# BUILT FIRST (`bash tool/build_worker.sh`), as asset_fresh needs prebuild.sh:
+# the gate does not build, and the real-worker tests FAIL, naming that command,
+# rather than skip when it is missing. Its coverage joins $OUT/cov because no
+# other suite loads process_channel.dart.
+# THE PATH IS LOAD-BEARING. Without it the runner loads every suite in test/,
+# and a skipped suite still writes its (empty) hitmap into the shared
+# --coverage dir, overwriting what unit_tests and ffi_features recorded there.
+# Measured: lib-wide coverage read 9.18% instead of 68.84%.
+# build_worker.sh --check first: without it a stale executable, or one whose
+# source no longer compiles, passes this step.
+worker_vm(){ bash tool/build_worker.sh --check &&
+  dart test test/integration/worker -p vm --tags=worker --coverage="$OUT/cov"; }
+sf worker_vm 30 worker_vm
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made
@@ -512,7 +528,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=49
+EXPECT_STEPS=50
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

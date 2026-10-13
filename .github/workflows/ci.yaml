@@ -511,7 +511,7 @@ jobs:
         # instruction, late.
         run: |
           set -o pipefail
-          dart test --exclude-tags=ffi,wasm,integration,ladder \
+          dart test --exclude-tags=ffi,wasm,integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
           bash tool/assert_test_count.sh /tmp/unit-test.log 700 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
@@ -779,6 +779,75 @@ jobs:
           path: native/worker/target/release/dart_monty_worker
           if-no-files-found: error
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # ProcessChannel: the fake-worker crash tests and the real-worker smoke
+  # ---------------------------------------------------------------------------
+  # The `worker` tag is skipped by default (dart_test.yaml), so this is the one
+  # job that runs it. It tests the executable worker-rust built and uploaded,
+  # not a second build: the tested binary is the shipped one. Its coverage is
+  # merged in coverage-merge, since no other suite loads lib/src/worker/
+  # process_channel.dart.
+  test-worker-vm:
+    name: Worker channel tests (VM)
+    needs: [changes, worker-rust]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      # `dart test` runs hook/build.dart, which builds the in-process native
+      # crate; restore what test-ffi cached rather than build it cold. Restore
+      # only, for the reason given in the `test` job.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      - name: Download the worker executable
+        uses: actions/download-artifact@v8
+        with:
+          name: dart_monty_worker-linux-x64
+          path: lib/src/bin/linux-x64
+      # Where tool/build_worker.sh puts it and worker_locator.dart looks.
+      # Artifacts do not keep the executable bit.
+      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - name: Test (worker tag)
+        # Floor under the 36 tests registered when this job was added. The path is
+        # load-bearing: without it every suite in test/ loads, the wasm ones fail
+        # to, and each skipped suite writes an empty hitmap.
+        run: |
+          set -o pipefail
+          dart test test/integration/worker -p vm --tags=worker \
+            --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
+          bash tool/assert_test_count.sh /tmp/worker-test.log 30 worker
+      - name: Generate worker LCOV
+        run: |
+          shopt -s globstar nullglob
+          if ! compgen -G "coverage-worker/**/*.json" > /dev/null 2>&1; then
+            echo "FAIL: --coverage=coverage-worker produced no hitmap JSON."
+            exit 1
+          fi
+          dart run coverage:format_coverage \
+            --lcov --in=coverage-worker --out=coverage-worker/lcov.info \
+            --report-on=lib
+      - name: Upload worker lcov artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: lcov-worker
+          path: coverage-worker/lcov.info
+          if-no-files-found: error
+          retention-days: 1
 
   # ---------------------------------------------------------------------------
   # Build WASM binary (wasm32-wasip1)
@@ -1292,7 +1361,7 @@ jobs:
   # back in with --baseline. This job is checkout + python3.
   coverage-merge:
     name: Coverage (merged, lib-wide) + ratchet
-    needs: [changes, test, test-ffi, test-worker-web]
+    needs: [changes, test, test-ffi, test-worker-web, test-worker-vm]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1321,6 +1390,11 @@ jobs:
         with:
           name: lcov-worker-web
           path: coverage-web
+      - name: Download worker tracefile
+        uses: actions/download-artifact@v8
+        with:
+          name: lcov-worker
+          path: coverage-worker
       - name: Merge and report
         # R3: `lcov -a` needs identical absolute paths in every input. Every job
         # here runs in /home/runner/work/dart_monty_core/dart_monty_core, and
@@ -1333,7 +1407,8 @@ jobs:
             --out-dir coverage \
             --browser coverage-web/lcov.info \
             coverage/lcov.info \
-            coverage-ffi/lcov.info
+            coverage-ffi/lcov.info \
+            coverage-worker/lcov.info
       - name: Coverage ratchet (no per-file decrease)
         # The floor under the merge. Without it the reclassification is a
         # one-off: new native code lands, the FFI conformance corpus does not
