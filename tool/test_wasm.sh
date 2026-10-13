@@ -48,7 +48,6 @@
 set -euo pipefail
 
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
-JS_DIR="$PKG/js"
 ASSETS_DIR="$PKG/lib/assets"
 INTEG_WEB="$PKG/test/integration/web"
 SKIP_BUILD=false
@@ -106,13 +105,14 @@ echo ""
 # Step 1: Build WASM binary
 # -------------------------------------------------------
 if [ "$SKIP_BUILD" = false ]; then
-  echo "--- Building WASM binary (cargo wasm32-wasip1) ---"
-  cd "$PKG/native"
+  echo "--- Building WASM binary + JS bridge (tool/build_native_wasm.sh) ---"
   # native/rust-toolchain.toml lists no targets; add the one built here.
-  if command -v rustup >/dev/null 2>&1; then rustup target add wasm32-wasip1; fi
-  cargo build --target wasm32-wasip1 --release
-  mkdir -p "$ASSETS_DIR"
-  cp target/wasm32-wasip1/release/dart_monty_core_native.wasm "$ASSETS_DIR/"
+  if command -v rustup >/dev/null 2>&1; then
+    (cd "$PKG/native" && rustup target add wasm32-wasip1)
+  fi
+  # The committed-asset recipe, not a bare cargo build: it writes lib/assets/,
+  # so it must remap build-machine paths exactly as tool/prebuild.sh does.
+  bash "$PKG/tool/build_native_wasm.sh"
   echo "  WASM binary: OK ($(du -sh "$ASSETS_DIR/dart_monty_core_native.wasm" | cut -f1))"
 else
   echo "--- Skipping WASM binary build (--skip-build) ---"
@@ -127,23 +127,7 @@ fi
 # -------------------------------------------------------
 # Step 2: Build JS bridge (npm + esbuild)
 # -------------------------------------------------------
-if [ "$SKIP_BUILD" = false ]; then
-  echo ""
-  echo "--- Building JS bridge (npm) ---"
-  if ! command -v npm &>/dev/null; then
-    echo "ERROR: npm not found. Install Node.js to build the JS bridge."
-    exit 1
-  fi
-  cd "$JS_DIR"
-  npm install --silent
-  # build.js copies the WASM binary from native/target/ into assets/ under the
-  # deployed name (dart_monty_core_native.wasm) —
-  # point it at our assets dir by running it from there
-  node build.js
-  echo "  JS bridge: OK"
-else
-  echo "--- Skipping JS bridge build (--skip-build) ---"
-fi
+# Built in Step 1 by tool/build_native_wasm.sh (js/build.js).
 
 for f in dart_monty_core_bridge.js dart_monty_core_worker.js; do
   if [ ! -f "$ASSETS_DIR/$f" ]; then

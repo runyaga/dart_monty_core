@@ -14,6 +14,10 @@
 #
 # These files are committed to git (Mode A asset distribution).
 #
+# The recipes are tool/build_native_wasm.sh (in-process engine + JS glue) and
+# tool/build_worker_wasm.sh (proto worker); both remap build-machine paths
+# through tool/rust_remap.sh.
+#
 # Regenerate assets locally when native/, native/worker/ or js/ source changes:
 #
 #   bash tool/prebuild.sh                 # every asset
@@ -44,18 +48,7 @@ echo "[prebuild] Ensuring wasm32-wasip1 target is installed..."
 (cd native && rustup target add wasm32-wasip1)
 
 if [ "$SCOPE" = all ]; then
-  echo "[prebuild] Building Rust WASM binary..."
-  cd native
-  cargo build --release --target wasm32-wasip1
-  cd "$ROOT"
-
-  echo "[prebuild] Installing JS bridge deps..."
-  cd js
-  npm install
-
-  echo "[prebuild] Bundling bridge + worker + copying WASM..."
-  node build.js
-  cd "$ROOT"
+  bash tool/build_native_wasm.sh
 fi
 
 bash tool/build_worker_wasm.sh

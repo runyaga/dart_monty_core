@@ -11,6 +11,7 @@
 # =============================================================================
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+source tool/rust_remap.sh
 
 # The Dart SDK's bundled wasm-opt (binaryen), so the O7 asset is optimised by
 # the same binaryen as the SDK CI pins. `dart` may be the SDK's own launcher
@@ -37,21 +38,14 @@ build_worker_wasm() {
   local wasm_opt raw out=lib/assets/dart_monty_core_proto_worker.wasm
   wasm_opt="$(sdk_wasm_opt)"
   echo "[prebuild] Building the proto worker wasm (native/worker, profile mixd)..."
-  # Panic locations embed source paths. Remap the cargo home and the checkout
-  # so the committed module carries neither the builder's home directory nor
-  # where the repo was cloned; the bytes then depend less on the machine.
-  # CARGO_ENCODED_RUSTFLAGS, not RUSTFLAGS: cargo splits RUSTFLAGS on spaces
-  # (a home or checkout path with one breaks the flag), and an inherited
-  # CARGO_ENCODED_RUSTFLAGS would silently override RUSTFLAGS. Arguments are
-  # separated by 0x1f; this sets the whole value, so nothing is inherited.
+  # Build-machine paths are remapped by tool/rust_remap.sh (see there).
   #
   # --target-dir is explicit so `raw` below is the module THIS build wrote: an
   # inherited CARGO_TARGET_DIR (or a configured one) would otherwise build
   # elsewhere and leave an older module at the path wasm-opt reads.
-  local cargo_home="${CARGO_HOME:-$HOME/.cargo}" sep=$'\x1f'
   local target_dir="$PWD/native/worker/target"
   (cd native/worker && env -u RUSTFLAGS \
-    CARGO_ENCODED_RUSTFLAGS="--remap-path-prefix=$cargo_home=/cargo$sep--remap-path-prefix=$PWD=/src" \
+    CARGO_ENCODED_RUSTFLAGS="$(remap_rustflags "$PWD")" \
     cargo build --locked --profile mixd --lib --target wasm32-wasip1 \
       --target-dir "$target_dir")
   raw="$target_dir/wasm32-wasip1/mixd/dart_monty_worker.wasm"
