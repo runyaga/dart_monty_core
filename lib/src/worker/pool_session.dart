@@ -340,7 +340,11 @@ StateError _pendingError() =>
 /// is killed and the turn fails with [MontyCrashedError]. Time spent in
 /// host callbacks is never counted: it falls between turns.
 final class _SessionChannel implements MontyChannel {
-  _SessionChannel(this._hold, this._options, this._config);
+  _SessionChannel(this._hold, this._options, this._config)
+    : _sleepLimit = switch (_config.limits?.maxTotalSleep) {
+        final limit? => nanosOf(limit),
+        null => null,
+      };
 
   /// Whether a protocol turn is in flight.
   bool inTurn = false;
@@ -368,6 +372,11 @@ final class _SessionChannel implements MontyChannel {
   /// The system sleep this session has been charged, in nanoseconds as
   /// upstream's `Duration`; capped sleeps at their cap.
   BigInt _slept = BigInt.zero;
+
+  /// The sleep budget in force, in nanoseconds: `maxTotalSleep`, tightened
+  /// by any smaller limit a worker reply reports (upstream's
+  /// `update_from`); null while there is none.
+  BigInt? _sleepLimit;
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
@@ -425,12 +434,13 @@ final class _SessionChannel implements MontyChannel {
     final event = await channel.turn(request, onPrint: onPrint);
     final used = Duration(microseconds: event.feedExecutionMicros.toInt());
     if (used > _feedUsed) _feedUsed = used;
+    _adoptSleepLimit(event);
     if (!_isSuspension(event)) return event;
     final limits = _config.limits;
     final limit = limits?.maxSuspensions ?? defaultMaxSuspensions;
     final exceeded = ++_suspensions > limit
         ? _raised('RuntimeError', 'suspension limit $limit exceeded')
-        : _chargeSleep(event, limits?.maxTotalSleep);
+        : _chargeSleep(event);
     if (exceeded == null) return event;
     final reply = await channel.turn(
       pb.ParentRequest(abortFeed: pb.AbortFeed(exception: exceeded)),
@@ -445,12 +455,12 @@ final class _SessionChannel implements MontyChannel {
     );
   }
 
-  /// Charges [event], if it is a system sleep, against [limit] (upstream's
-  /// `charge_sleep`): the delay as the session will wait it, cut to the
-  /// system-sleep maximum, a delay that is not a valid duration counting as
-  /// that maximum. A sleep that would pass [limit] is not charged; the
-  /// exception to abort the feed with is returned instead.
-  pb.RaisedException? _chargeSleep(pb.ChildEvent event, Duration? limit) {
+  /// Charges [event], if it is a system sleep, against the sleep budget
+  /// (upstream's `charge_sleep`): the delay as the session will wait it, cut
+  /// to the system-sleep maximum, a delay that is not a valid duration
+  /// counting as that maximum. A sleep that would pass the budget is not
+  /// charged; the exception to abort the feed with is returned instead.
+  pb.RaisedException? _chargeSleep(pb.ChildEvent event) {
     if (event.whichKind() != pb.ChildEvent_Kind.osCall ||
         event.osCall.whichCall() != pb.OsCall_Call.systemSleep) {
       return null;
@@ -461,16 +471,28 @@ final class _SessionChannel implements MontyChannel {
     final sum = _slept + delay;
     // Saturating, as Rust's Duration::saturating_add.
     final total = sum > durationMaxNanos ? durationMaxNanos : sum;
-    if (limit != null && total > nanosOf(limit)) {
+    final limit = _sleepLimit;
+    if (limit != null && total > limit) {
       return _raised(
         'TimeoutError',
         'sleep limit exceeded: ${rustDurationNanos(total)} > '
-            '${rustDuration(limit)}',
+            '${rustDurationNanos(limit)}',
       );
     }
     _slept = total;
 
     return null;
+  }
+
+  /// Tightens the sleep budget to the one [event] reports, if smaller: a
+  /// reply can only lower it.
+  void _adoptSleepLimit(pb.ChildEvent event) {
+    if (!event.hasMaxTotalSleepMicros()) return;
+    final reported =
+        BigInt.parse(event.maxTotalSleepMicros.toStringUnsigned()) *
+        BigInt.from(1000);
+    final current = _sleepLimit;
+    if (current == null || reported < current) _sleepLimit = reported;
   }
 
   /// The deadline passed: kill the worker and fail [done].

@@ -1282,6 +1282,30 @@ void main() {
       }
     });
 
+    test("the worker's echoed sleep limit tightens the session's", () async {
+      // Upstream's update_from: a reply reporting a smaller limit (a loaded
+      // dump's, or a saturated one) is the limit from then on.
+      final echoed = sleep(0.15)..maxTotalSleepMicros = Int64(100000);
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([echoed]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('TimeoutError', 'sleep limit exceeded: 150ms > 100ms'),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxTotalSleep: Duration(seconds: 1)),
+        ),
+      );
+      await expectLater(
+        session.feedRun('...', printCallback: _ignore),
+        timedOut('sleep limit exceeded: 150ms > 100ms'),
+      );
+    });
+
     test('no limit: sleeps are waited, never charged against one', () async {
       final ch = ScriptedChannel([
         _configureOk,
