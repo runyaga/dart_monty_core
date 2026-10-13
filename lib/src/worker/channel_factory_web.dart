@@ -41,7 +41,7 @@ int defaultMaxProcesses() {
 
 Future<String> _findBase() async {
   try {
-    return await resolveAssetBase(_isScript);
+    return await resolveAssetBase(workerScriptServed);
   } on Object {
     // A failed search is not cached: a later start tries again.
     _found = null;
@@ -49,30 +49,5 @@ Future<String> _findBase() async {
   }
 }
 
-/// Whether [url] answers with something other than a page: a dev server
-/// that falls back to index.html for unknown paths must not count.
-Future<bool> _isScript(String url) async {
-  try {
-    final response = await _fetch(url.toJS).toDart;
-    final type = response.headers.get('content-type'.toJS)?.toDart ?? '';
-
-    return response.ok && !type.startsWith('text/html');
-  } on Object {
-    return false;
-  }
-}
-
 @JS('navigator.hardwareConcurrency')
 external int? get _hardwareConcurrency;
-
-@JS('fetch')
-external JSPromise<_Response> _fetch(JSString url);
-
-extension type const _Response._(JSObject _) implements JSObject {
-  external bool get ok;
-  external _Headers get headers;
-}
-
-extension type const _Headers._(JSObject _) implements JSObject {
-  external JSString? get(JSString name);
-}

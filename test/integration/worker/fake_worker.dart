@@ -40,11 +40,11 @@ const bigFramePrefixPrints = 48;
 const bigFrameSuffixPrints = 32;
 
 Future<void> main(List<String> args) async {
-  scenario = args.firstOrNull ?? 'serve';
+  var scenario = args.firstOrNull ?? 'serve';
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
-      await _handle(pb.ParentRequest.fromBuffer(body));
+      scenario = await _handle(scenario, pb.ParentRequest.fromBuffer(body));
     }
   }
   if (scenario != 'ignore-shutdown') exit(0);
@@ -53,11 +53,10 @@ Future<void> main(List<String> args) async {
   Timer(const Duration(hours: 1), () => exit(0));
 }
 
-/// The scenario in force; `flood` and `big-frame` switch to `idle` once they
-/// have sent everything.
-String scenario = 'serve';
-
-Future<void> _handle(pb.ParentRequest request) async {
+/// Answers [request] as [scenario] says, and returns the scenario for the
+/// next request: `flood` and `big-frame` switch to `idle` once they have
+/// sent everything.
+Future<String> _handle(String scenario, pb.ParentRequest request) async {
   switch (scenario) {
     case 'serve':
     case 'ignore-shutdown':
@@ -136,7 +135,8 @@ Future<void> _handle(pb.ParentRequest request) async {
         await _send(_numbered(i, floodPrintLength));
       }
       await _send(_completeNone);
-      scenario = 'idle';
+
+      return 'idle';
     case 'big-frame':
       // Ok, 3 MiB of Prints, one 8 MiB Print written in 64 KiB pieces,
       // 2 MiB more Prints, then a Complete: a frame larger than the
@@ -153,7 +153,8 @@ Future<void> _handle(pb.ParentRequest request) async {
         await _send(_numbered(bigFramePrefixPrints + 1 + i, floodPrintLength));
       }
       await _send(_completeNone);
-      scenario = 'idle';
+
+      return 'idle';
     case 'idle':
       // Everything was sent up front; only Shutdown is answered.
       if (request.whichKind() == pb.ParentRequest_Kind.shutdown) exit(0);
@@ -161,6 +162,8 @@ Future<void> _handle(pb.ParentRequest request) async {
       stderr.writeln('fake_worker: unknown scenario $scenario');
       exit(2);
   }
+
+  return scenario;
 }
 
 /// Feed → two Prints (stdout, then stderr) and Complete;

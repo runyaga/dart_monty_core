@@ -37,7 +37,7 @@ final class PendingSpawn implements SpawnHandle {
     // A cancelled start's failure is reported through [ready]'s own error;
     // nothing else may surface it.
     _ready.future.ignore();
-    unawaited(start(_cancelled.future).then(_arrived, onError: _failed));
+    unawaited(_run(start));
   }
 
   final _cancelled = Completer<void>();
@@ -61,10 +61,19 @@ final class PendingSpawn implements SpawnHandle {
         CrashCause.killed,
         message: 'the worker start was cancelled',
       ),
+      StackTrace.current,
     );
   }
 
-  void _arrived(MontyChannel channel) {
+  Future<void> _run(ChannelStart start) async {
+    final MontyChannel channel;
+    try {
+      channel = await start(_cancelled.future);
+    } on Object catch (error, stack) {
+      if (!_ready.isCompleted) _ready.completeError(error, stack);
+
+      return;
+    }
     if (_cancelled.isCompleted) {
       channel.kill();
 
@@ -72,9 +81,5 @@ final class PendingSpawn implements SpawnHandle {
     }
     _channel = channel;
     _ready.complete(channel);
-  }
-
-  void _failed(Object error, StackTrace stack) {
-    if (!_ready.isCompleted) _ready.completeError(error, stack);
   }
 }

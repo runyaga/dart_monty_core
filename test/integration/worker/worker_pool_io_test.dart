@@ -72,20 +72,28 @@ void main() {
 
   test('a pool of real workers: reuse after Reset, a kill frees the slot, '
       'close', () async {
-    final pool = await WorkerPool.start(maxProcesses: 1);
+    final pool = await WorkerPool.start(
+      const PoolOptions(maxProcesses: 1),
+    );
     addTearDown(pool.close);
     expect(ProcessChannel.live, hasLength(1));
 
+    // Three checkouts on purpose, one after another: each is its own lease.
+    // ignore: prefer-moving-to-variable
     final a = await pool.acquire();
-    final pid = (a.channel as ProcessChannel).pid;
-    await a.channel.turn(_configure);
-    await a.channel.turn(pb.ParentRequest(feed: pb.Feed(code: 'x = 41')));
+    final first = a.channel as ProcessChannel;
+    final pid = first.pid;
+    await first.turn(_configure);
+    await first.turn(pb.ParentRequest(feed: pb.Feed(code: 'x = 41')));
     await a.release();
 
+    // The second checkout: the same worker, reset.
+    // ignore: prefer-moving-to-variable
     final b = await pool.acquire();
-    expect((b.channel as ProcessChannel).pid, pid, reason: 'reused');
-    await b.channel.turn(_configure);
-    final lookup = await b.channel.turn(
+    final second = b.channel as ProcessChannel;
+    expect(second.pid, pid, reason: 'reused');
+    await second.turn(_configure);
+    final lookup = await second.turn(
       pb.ParentRequest(feed: pb.Feed(code: 'x')),
     );
     expect(
@@ -96,9 +104,12 @@ void main() {
     b.kill();
     expect(pool.liveWorkers, 0);
 
+    // The third checkout: a new worker, since b's was killed.
+    // ignore: prefer-moving-to-variable
     final c = await pool.acquire();
-    expect((c.channel as ProcessChannel).pid, isNot(pid));
-    await c.channel.turn(_configure);
+    final third = c.channel as ProcessChannel;
+    expect(third.pid, isNot(pid));
+    await third.turn(_configure);
     await c.release();
     await pool.close();
     expect(ProcessChannel.live, isEmpty);

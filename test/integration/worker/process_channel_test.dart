@@ -13,6 +13,7 @@ import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
 import '_worker_harness.dart';
 import 'fake_worker.dart'
     show
@@ -375,7 +376,7 @@ void main() {
       var last = -1;
       var stableSince = DateTime.now();
       while (DateTime.now().isBefore(deadline)) {
-        final now = channel.readAheadBytes;
+        final now = channel.readAhead.now;
         if (now != last) {
           last = now;
           stableSince = DateTime.now();
@@ -405,7 +406,8 @@ void main() {
       // 32 MiB arrive with no turn reading them.
       final held = await settled(channel);
       expect(held, greaterThanOrEqualTo(limit));
-      expect(channel.peakReadAheadBytes, lessThan(limit + (1 << 20)));
+      final bounded = lessThan(limit + (1 << 20));
+      expect(channel.readAhead.peak, bounded);
 
       // Nothing was dropped: the next turn reads every Print, in order,
       // then the Complete.
@@ -419,8 +421,9 @@ void main() {
       expect(end.whichKind(), pb.ChildEvent_Kind.complete);
       expect(numbers(texts), List.generate(floodPrints, (i) => i));
       expect(texts.every((t) => t.length == floodPrintLength), isTrue);
-      expect(channel.readAheadBytes, 0);
-      expect(channel.peakReadAheadBytes, lessThan(limit + (1 << 20)));
+      final afterward = channel.readAhead;
+      expect(afterward.now, 0);
+      expect(afterward.peak, bounded);
     });
 
     test('a frame larger than the limit completes; later ones wait', () async {
@@ -435,7 +438,7 @@ void main() {
       final held = await settled(channel);
       expect(held, greaterThan(before + bigPrintLength));
       expect(
-        channel.peakReadAheadBytes,
+        channel.readAhead.peak,
         lessThan(before + bigPrintLength + (1 << 20)),
       );
 
@@ -454,7 +457,7 @@ void main() {
           (i) => i,
         ),
       );
-      expect(texts[bigFramePrefixPrints].length, bigPrintLength);
+      expect(itemAt(texts, bigFramePrefixPrints).length, bigPrintLength);
     });
   });
 
@@ -478,17 +481,26 @@ void main() {
     late StreamController<List<int>> bytes;
     late EventQueue queue;
 
+    var desyncs = 0;
+
     setUp(() {
-      bytes = StreamController<List<int>>();
-      queue = EventQueue(bytes.stream, limit: limit, onDesync: () {});
+      desyncs = 0;
+      bytes = StreamController();
+      queue = EventQueue(bytes.stream, limit: limit, onDesync: () => desyncs++);
       addTearDown(queue.cancel);
+      addTearDown(() => expect(desyncs, 0));
     });
 
     /// Lets the subscription deliver what was added.
-    Future<void> pump() => Future<void>.delayed(Duration.zero);
+    Future<void> pump() => Future.delayed(Duration.zero);
 
-    Future<String> nextText() async =>
-        (await queue.next())!.print.segments.single.text;
+    /// Reads one event per entry of [texts] and checks its Print's text.
+    Future<void> expectTexts(List<String> texts) async {
+      for (final text in texts) {
+        final event = await queue.next() ?? fail('the queue ended');
+        expect(onlyItem(event.print.segments).text, text);
+      }
+    }
 
     test('pauses at the limit when no frame is part-received', () async {
       bytes.add(frame('a' * 600));
@@ -498,7 +510,7 @@ void main() {
       await pump();
       expect(queue.readAhead, greaterThanOrEqualTo(limit));
       expect(bytes.isPaused, isTrue);
-      expect(await nextText(), 'a' * 600);
+      await expectTexts(['a' * 600]);
       expect(bytes.isPaused, isFalse, reason: 'under the limit again');
     });
 
@@ -524,13 +536,12 @@ void main() {
         await pump();
         expect(queue.readAhead, greaterThan(limit + 5000));
         expect(bytes.isPaused, isTrue, reason: 'paused once it ended');
-        expect(await nextText(), 'a' * 600);
-        expect(await nextText(), 'b' * 600);
+        await expectTexts(['a' * 600, 'b' * 600]);
         expect(bytes.isPaused, isTrue, reason: 'still over the limit');
-        expect(await nextText(), 'c' * 5000);
+        await expectTexts(['c' * 5000]);
         expect(bytes.isPaused, isFalse);
         bytes.add(next.skip(3).toList());
-        expect(await nextText(), 'd');
+        await expectTexts(['d']);
       },
     );
   });

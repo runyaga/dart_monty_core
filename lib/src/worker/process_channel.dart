@@ -112,13 +112,11 @@ final class ProcessChannel implements MontyChannel {
   /// Completes with the worker's exit code.
   Future<int> get exitCode => _process.exitCode;
 
-  /// Wire bytes of the frames received and not yet read by a turn.
+  /// Wire bytes of the frames received and not yet read by a turn: `now`,
+  /// and the most it has been, `peak`.
   @visibleForTesting
-  int get readAheadBytes => _events.readAhead;
-
-  /// The most [readAheadBytes] has been.
-  @visibleForTesting
-  int get peakReadAheadBytes => _events.peakReadAhead;
+  ({int now, int peak}) get readAhead =>
+      (now: _events.readAhead, peak: _events.peakReadAhead);
 
   @override
   bool get isAlive =>

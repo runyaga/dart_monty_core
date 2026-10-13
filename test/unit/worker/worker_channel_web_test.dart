@@ -433,7 +433,9 @@ void main() {
 
   test('openChannel finds the assets with no workerLocation, and a pool '
       'runs on it ($backend)', () async {
-    final pool = await WorkerPool.start(maxProcesses: 1);
+    final pool = await WorkerPool.start(
+      const PoolOptions(maxProcesses: 1),
+    );
     final lease = await pool.acquire();
     final ch = lease.channel as WorkerChannel;
     _opened.add(ch);
