@@ -67,6 +67,22 @@
 
 ### Fixed
 
+- Worker groundwork (internal, no public API): integers and floats in the
+  worker's value arena are now exact. `tool/generate_proto.sh` declares four
+  fields of its working copy of `monty.proto` with raw 64-bit types
+  (`MontyNode.int` as `uint64`, `MontyNode.float`, `Complex.real` and
+  `Complex.imag` as `fixed64`; the wire bytes are unchanged), and the arena
+  reader and writer do the conversions package:protobuf got wrong: zigzag
+  with a logical shift, so `2**63 - 1` no longer arrives as `-1` and every
+  integer of magnitude 2^62 or more decodes exactly; and doubles through
+  their bits, so a NaN from Python keeps its sign and payload there and
+  back (on dart2js, a Dart double cannot be relied on to show them, but a
+  NaN passed back to Python keeps the bits it arrived with). A NaN made in
+  Dart, such as `double.nan`, is sent as Python's `float('nan')`, whatever
+  the host's own NaN bits are. A big integer's
+  magnitude converts in one step instead of one shift per byte (1 MiB:
+  minutes before, about 0.2 s now). On dart2js, a `MontyInt` outside the
+  64-bit range is now sent as a big integer instead of being truncated.
 - Worker groundwork (internal, no public API): the wasm module frees the
   previous turn's reply before running the next one, so it no longer counts
   against that turn's `max_memory` (two consecutive large replies raised a

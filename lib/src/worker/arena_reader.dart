@@ -18,10 +18,10 @@
 /// new subtype of the sealed, public [MontyValue], which breaks every
 /// exhaustive `switch` over it, and this layer adds no public API.
 ///
-/// Known gap: an `int` node whose magnitude is at least 2^62 decodes wrongly,
-/// because package:protobuf's sint64 (zigzag) decoding uses an arithmetic
-/// shift. Values that size need a workaround below the generated bindings;
-/// until then they are not part of the subset.
+/// Integers decode exactly across the whole i64 range and beyond, and a
+/// float keeps every bit, a NaN's sign and payload included: the generated
+/// bindings hand over the raw wire values, which `wire_scalars.dart`
+/// converts.
 ///
 /// A decoded value can be a graph rather than a tree, and [MontyValue]'s
 /// `==`, `hashCode`, `toJson` and `dartValue` walk a graph as if it were a
@@ -37,7 +37,7 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
-import 'package:fixnum/fixnum.dart';
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 
 /// Reads values out of one arena.
 ///
@@ -79,13 +79,13 @@ final class ArenaReader {
     return _at(index);
   }
 
-  pb.MontyNode _nodeAt(int i) =>
-      _nodes.elementAtOrNull(i) ??
-      (throw StateError('arena node $i is outside the arena'));
+  pb.MontyNode _nodeAt(int i) => _nodes.elementAtOrNull(i) ?? _broken(i);
 
-  MontyValue _at(int i) =>
-      _decoded[i] ??
-      (throw StateError('arena node $i was read before it was decoded'));
+  MontyValue _at(int i) => _decoded[i] ?? _broken(i);
+
+  /// The walk checks every index before it reads a node, and decodes every
+  /// child before its holder, so neither lookup can miss.
+  Never _broken(int i) => throw StateError('arena node $i read out of order');
 
   /// The child indexes of [node], each checked to be below [holder].
   List<int> _childrenOf(pb.MontyNode node, int holder) {
@@ -141,9 +141,9 @@ final BigInt _exactIntLimit = BigInt.one << 53;
 MontyValue? _scalar(pb.MontyNode node) => switch (node.whichKind()) {
   pb.MontyNode_Kind.none => const MontyNone(),
   pb.MontyNode_Kind.boolean => MontyBool(node.boolean),
-  pb.MontyNode_Kind.int_5 => _intValue(_bigFromInt64(node.int_5)),
-  pb.MontyNode_Kind.bigint => _intValue(_bigFromProto(node.bigint)),
-  pb.MontyNode_Kind.float => MontyFloat(node.float),
+  pb.MontyNode_Kind.int_5 => _intValue(intOfNode(node)),
+  pb.MontyNode_Kind.bigint => _intValue(bigIntOfNode(node.bigint)),
+  pb.MontyNode_Kind.float => montyFloatOf(node),
   pb.MontyNode_Kind.str => MontyString(node.str),
   pb.MontyNode_Kind.bytes => MontyBytes(
     Uint8List.fromList(node.bytes).asUnmodifiableView(),
@@ -151,17 +151,6 @@ MontyValue? _scalar(pb.MontyNode node) => switch (node.whichKind()) {
   pb.MontyNode_Kind.path => MontyPath(node.path),
   _ => null,
 };
-
-BigInt _bigFromInt64(Int64 v) => BigInt.parse(v.toString());
-
-BigInt _bigFromProto(pb.BigInt b) {
-  var v = BigInt.zero;
-  for (final byte in b.magnitude) {
-    v = (v << 8) | BigInt.from(byte);
-  }
-
-  return b.negative ? -v : v;
-}
 
 /// [MontyInt] within ±2^53, [MontyBigInt] beyond: the rule the JSON path
 /// already follows.

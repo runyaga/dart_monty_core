@@ -7,6 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -129,7 +130,7 @@ void main() {
     test('typed inputs travel as one arena (E0 s01)', () async {
       final ch = _configured([
         answer([
-          complete([pb.MontyNode(int_5: Int64(42))]),
+          complete([intNode(42)]),
         ]),
       ]);
       final s = await ProtoSession.open(ch);
@@ -148,7 +149,7 @@ void main() {
       expect(refs.keys, ['n', 'a', 'b', 'big']);
       expect(refs['a'], refs['b'], reason: 'one object, one node');
       final nodes = feed.values.nodes;
-      expect(itemAt(nodes, refs['n'] ?? -1).int_5, Int64(41));
+      expect(intOfNode(itemAt(nodes, refs['n'] ?? -1)), BigInt.from(41));
       expect(
         itemAt(nodes, refs['big'] ?? -1).whichKind(),
         pb.MontyNode_Kind.bigint,
@@ -280,7 +281,7 @@ void main() {
           _functionCall(
             'fetch',
             [
-              pb.MontyNode(int_5: Int64(1)),
+              intNode(1),
               pb.MontyNode(str: 'mode'),
               pb.MontyNode(str: 'x'),
             ],
@@ -503,7 +504,7 @@ void main() {
             ]),
           ]),
           answer([
-            complete([pb.MontyNode(int_5: Int64(2))]),
+            complete([intNode(2)]),
           ]),
         ]);
         final s = await ProtoSession.open(ch);
@@ -691,9 +692,9 @@ void main() {
         ]),
         answer([
           complete([
-            pb.MontyNode(int_5: Int64(1)),
-            pb.MontyNode(int_5: Int64(2)),
-            pb.MontyNode(int_5: Int64(3)),
+            intNode(1),
+            intNode(2),
+            intNode(3),
             pb.MontyNode(list: pb.Indexes(items: [0, 1, 2])),
           ]),
         ]),

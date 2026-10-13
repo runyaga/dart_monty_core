@@ -149,7 +149,7 @@ const MontyNode$json = {
       '10': 'notImplemented'
     },
     {'1': 'boolean', '3': 4, '4': 1, '5': 8, '9': 0, '10': 'boolean'},
-    {'1': 'int', '3': 5, '4': 1, '5': 18, '9': 0, '10': 'int'},
+    {'1': 'int', '3': 5, '4': 1, '5': 4, '9': 0, '10': 'int'},
     {
       '1': 'bigint',
       '3': 6,
@@ -159,7 +159,7 @@ const MontyNode$json = {
       '9': 0,
       '10': 'bigint'
     },
-    {'1': 'float', '3': 7, '4': 1, '5': 1, '9': 0, '10': 'float'},
+    {'1': 'float', '3': 7, '4': 1, '5': 6, '9': 0, '10': 'float'},
     {'1': 'str', '3': 8, '4': 1, '5': 9, '9': 0, '10': 'str'},
     {'1': 'bytes', '3': 9, '4': 1, '5': 12, '9': 0, '10': 'bytes'},
     {
@@ -346,8 +346,8 @@ final $typed_data.Uint8List montyNodeDescriptor = $convert.base64Decode(
     'CglNb250eU5vZGUSLAoIZWxsaXBzaXMYASABKAsyDi5tb250eS52MS5Vbml0SABSCGVsbGlwc2'
     'lzEiQKBG5vbmUYAiABKAsyDi5tb250eS52MS5Vbml0SABSBG5vbmUSOQoPbm90X2ltcGxlbWVu'
     'dGVkGAMgASgLMg4ubW9udHkudjEuVW5pdEgAUg5ub3RJbXBsZW1lbnRlZBIaCgdib29sZWFuGA'
-    'QgASgISABSB2Jvb2xlYW4SEgoDaW50GAUgASgSSABSA2ludBIqCgZiaWdpbnQYBiABKAsyEC5t'
-    'b250eS52MS5CaWdJbnRIAFIGYmlnaW50EhYKBWZsb2F0GAcgASgBSABSBWZsb2F0EhIKA3N0ch'
+    'QgASgISABSB2Jvb2xlYW4SEgoDaW50GAUgASgESABSA2ludBIqCgZiaWdpbnQYBiABKAsyEC5t'
+    'b250eS52MS5CaWdJbnRIAFIGYmlnaW50EhYKBWZsb2F0GAcgASgGSABSBWZsb2F0EhIKA3N0ch'
     'gIIAEoCUgAUgNzdHISFgoFYnl0ZXMYCSABKAxIAFIFYnl0ZXMSJAoEdXVpZBgKIAEoCzIOLm1v'
     'bnR5LnYxLlV1aWRIAFIEdXVpZBInCgRsaXN0GAsgASgLMhEubW9udHkudjEuSW5kZXhlc0gAUg'
     'RsaXN0EikKBXR1cGxlGAwgASgLMhEubW9udHkudjEuSW5kZXhlc0gAUgV0dXBsZRI7CgtuYW1l'
@@ -430,8 +430,8 @@ final $typed_data.Uint8List bigIntDescriptor = $convert.base64Decode(
 const Complex$json = {
   '1': 'Complex',
   '2': [
-    {'1': 'real', '3': 1, '4': 1, '5': 1, '9': 0, '10': 'real', '17': true},
-    {'1': 'imag', '3': 2, '4': 1, '5': 1, '9': 1, '10': 'imag', '17': true},
+    {'1': 'real', '3': 1, '4': 1, '5': 6, '9': 0, '10': 'real', '17': true},
+    {'1': 'imag', '3': 2, '4': 1, '5': 6, '9': 1, '10': 'imag', '17': true},
   ],
   '8': [
     {'1': '_real'},
@@ -441,7 +441,7 @@ const Complex$json = {
 
 /// Descriptor for `Complex`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List complexDescriptor = $convert.base64Decode(
-    'CgdDb21wbGV4EhcKBHJlYWwYASABKAFIAFIEcmVhbIgBARIXCgRpbWFnGAIgASgBSAFSBGltYW'
+    'CgdDb21wbGV4EhcKBHJlYWwYASABKAZIAFIEcmVhbIgBARIXCgRpbWFnGAIgASgGSAFSBGltYW'
     'eIAQFCBwoFX3JlYWxCBwoFX2ltYWc=');
 
 @$core.Deprecated('Use namedTupleNodeDescriptor instead')

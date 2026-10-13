@@ -6,14 +6,21 @@ library;
 
 import 'dart:async';
 import 'dart:ffi' show Abi;
+import 'dart:typed_data';
 
+import 'package:dart_monty_core/dart_monty_core.dart'
+    show MontyBigInt, MontyBool, MontyFloat, MontyInt, MontyTuple, MontyValue;
+import 'package:dart_monty_core/src/worker/arena_reader.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
 import '_worker_harness.dart';
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
@@ -69,7 +76,35 @@ int _completeInt(pb.ChildEvent event) {
   final root = complete.values.nodes.elementAtOrNull(complete.value);
   expect(root?.whichKind(), pb.MontyNode_Kind.int_5);
 
-  return root?.int_5.toInt() ?? fail('no root node in $complete');
+  return root == null
+      ? fail('no root node in $complete')
+      : intOfNode(root).toInt();
+}
+
+/// The value a `Complete` carries, decoded by the arena reader.
+MontyValue _completeValue(pb.ChildEvent event) {
+  expect(event.whichKind(), pb.ChildEvent_Kind.complete, reason: '$event');
+
+  return ArenaReader(event.complete.values)[event.complete.value];
+}
+
+BigInt _bigOf(MontyValue v) => switch (v) {
+  MontyInt(:final value) => BigInt.from(value),
+  MontyBigInt(:final value) => value,
+  _ => fail('$v is not an integer'),
+};
+
+/// A feed of [code] with each of [inputs] bound under its name.
+pb.ParentRequest _feedWith(String code, Map<String, MontyValue> inputs) {
+  final writer = ArenaWriter();
+  final refs = [
+    for (final MapEntry(:key, :value) in inputs.entries)
+      pb.NamedRef(name: key, value: writer.add(value)),
+  ];
+
+  return pb.ParentRequest(
+    feed: pb.Feed(code: code, cwd: '/', inputs: refs, values: writer.arena),
+  );
 }
 
 void main() {
@@ -85,6 +120,89 @@ void main() {
         endsWith(workerPackagePath(Abi.current())),
       ),
     );
+  });
+
+  test('integers across the i64 range decode exactly', () async {
+    // package:protobuf's own zigzag decoding gets four of these wrong.
+    final channel = await _configured();
+    for (final code in [
+      '2**62 - 1',
+      '2**62',
+      '-2**62',
+      '-2**62 - 1',
+      '2**63 - 1',
+      '-2**63',
+      '2**64',
+      '-2**64',
+    ]) {
+      final want = _pythonPower(code);
+      expect(
+        _bigOf(_completeValue(await channel.turn(_feed(code)))),
+        want,
+        reason: code,
+      );
+    }
+  });
+
+  test('integers at the i64 edges reach Python exactly', () async {
+    final channel = await _configured();
+    final top = (BigInt.one << 63) - BigInt.one;
+    final bottom = -(BigInt.one << 63);
+    final v = _completeValue(
+      await channel.turn(
+        _feedWith(
+          '(a == 2**63 - 1, b == -2**63, c == 2**62, d == -2**62 - 1, a, b)',
+          {
+            'a': MontyBigInt(top),
+            'b': MontyBigInt(bottom),
+            'c': MontyBigInt(BigInt.one << 62),
+            'd': MontyBigInt(-(BigInt.one << 62) - BigInt.one),
+          },
+        ),
+      ),
+    );
+    final items = (v as MontyTuple).items;
+    expect(items.take(4), everyElement(const MontyBool(true)));
+    expect(_bigOf(itemAt(items, 4)), top);
+    expect(_bigOf(itemAt(items, 5)), bottom);
+  });
+
+  test("a NaN's sign survives Python -> Dart -> Python", () async {
+    final channel = await _configured();
+    final nan = _completeValue(await channel.turn(_feed("float('nan')")));
+    final negative = _completeValue(
+      await channel.turn(_feed("-float('nan')")),
+    );
+    expect(_bits(nan), '7ff8000000000000');
+    expect(_bits(negative), 'fff8000000000000');
+    // Python sees the sign of the NaN it is given, and hands back the same
+    // bits.
+    final back = _completeValue(
+      await channel.turn(
+        _feedWith('import math\n(math.copysign(1.0, x), x)', {'x': negative}),
+      ),
+    );
+    final items = (back as MontyTuple).items;
+    expect(itemAt(items, 0), const MontyFloat(-1));
+    expect(_bits(itemAt(items, 1)), 'fff8000000000000');
+  });
+
+  test("a NaN made in Dart reaches Python as float('nan')", () async {
+    // double.nan's bits are the host's (fff8... on x86_64); -double.nan
+    // flips the sign. Neither came from Python, so both go as 7ff8...
+    final channel = await _configured();
+    final v = _completeValue(
+      await channel.turn(
+        _feedWith(
+          'import math\n(math.copysign(1.0, a), math.copysign(1.0, b))',
+          {
+            'a': const MontyFloat(double.nan),
+            'b': const MontyFloat(-double.nan),
+          },
+        ),
+      ),
+    );
+    expect((v as MontyTuple).items, everyElement(const MontyFloat(1)));
   });
 
   test('Configure, Feed 1 + 1, Shutdown', () async {
@@ -151,3 +269,22 @@ void main() {
     expect(_completeInt(await fresh.turn(_feed('1 + 1'))), 2);
   });
 }
+
+/// The value of a `2**n` expression in [code], as Python computes it.
+BigInt _pythonPower(String code) {
+  final m = RegExp(r'^(-?)2\*\*(\d+)(?: - 1)?$').firstMatch(code);
+  if (m == null) fail('unexpected expression $code');
+  final power = BigInt.one << int.parse(m[2] ?? '');
+  final signed = m[1] == '-' ? -power : power;
+
+  return code.endsWith(' - 1') ? signed - BigInt.one : signed;
+}
+
+/// The IEEE 754 bits of a decoded float, as 16 hex digits.
+String _bits(MontyValue v) => switch (v) {
+  MontyFloat(:final value) => [
+    for (final b in (ByteData(8)..setFloat64(0, value)).buffer.asUint8List())
+      b.toRadixString(16).padLeft(2, '0'),
+  ].join(),
+  _ => fail('$v is not a float'),
+};

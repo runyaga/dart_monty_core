@@ -332,13 +332,13 @@
       "pct": 0.0
     },
     "lib/src/worker/arena_reader.dart": {
-      "found": 69,
-      "hit": 67,
-      "pct": 97.1
+      "found": 60,
+      "hit": 59,
+      "pct": 98.33
     },
     "lib/src/worker/arena_writer.dart": {
-      "found": 66,
-      "hit": 66,
+      "found": 53,
+      "hit": 53,
       "pct": 100.0
     },
     "lib/src/worker/frame.dart": {
@@ -366,6 +366,11 @@
       "hit": 4,
       "pct": 80.0
     },
+    "lib/src/worker/wire_scalars.dart": {
+      "found": 56,
+      "hit": 56,
+      "pct": 100.0
+    },
     "lib/src/worker/worker_channel.dart": {
       "found": 47,
       "hit": 42,
@@ -388,8 +393,8 @@
     }
   },
   "total": {
-    "found": 4753,
-    "hit": 3464,
-    "pct": 72.88
+    "found": 4787,
+    "hit": 3499,
+    "pct": 73.09
   }
 }

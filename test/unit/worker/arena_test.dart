@@ -8,15 +8,13 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
-import 'package:fixnum/fixnum.dart';
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
 
 pb.Arena _arena(List<pb.MontyNode> nodes) =>
     pb.Arena(nodeCount: nodes.length, nodes: nodes);
-
-pb.MontyNode _int(int v) => pb.MontyNode(int_5: Int64(v));
 
 pb.Indexes _ix(List<int> items) => pb.Indexes(items: items);
 
@@ -53,8 +51,8 @@ void main() {
     test('scalars', () {
       expect(_decode([pb.MontyNode(none: pb.Unit())]), const MontyNone());
       expect(_decode([pb.MontyNode(boolean: true)]), const MontyBool(true));
-      expect(_decode([_int(-41)]), const MontyInt(-41));
-      expect(_decode([pb.MontyNode(float: 1.5)]), const MontyFloat(1.5));
+      expect(_decode([intNode(-41)]), const MontyInt(-41));
+      expect(_decode([floatNode(1.5)]), const MontyFloat(1.5));
       expect(
         _decode([pb.MontyNode(str: 'héllo ✓')]),
         const MontyString('héllo ✓'),
@@ -69,13 +67,13 @@ void main() {
     });
 
     test('an integral float stays a float on every compiler', () {
-      final v = _decode([pb.MontyNode(float: 4)]);
+      final v = _decode([floatNode(4)]);
       expect(v, isA<MontyFloat>());
     });
 
     test('-0.0 keeps its sign', () {
       // ignore: prefer_int_literals -- the sign of zero is the point.
-      final zero = _decode([pb.MontyNode(float: -0.0)]);
+      final zero = _decode([floatNode(-0.0)]);
       expect(_bits((zero as MontyFloat).value), '8000000000000000');
     });
 
@@ -85,15 +83,13 @@ void main() {
         '-9007199254740992': const MontyInt(-9007199254740992),
         '9007199254740993': MontyBigInt(_two53 + BigInt.one),
         '-9007199254740993': MontyBigInt(-_two53 - BigInt.one),
-        // The int arm's edge for this PR: package:protobuf decodes sint64
-        // wrongly from |v| >= 2^62 (a known bug, worked around in M3).
-        '4611686018427387903': MontyBigInt(BigInt.parse('4611686018427387903')),
-        '-4611686018427387904': MontyBigInt(
-          BigInt.parse('-4611686018427387904'),
+        '9223372036854775807': MontyBigInt(BigInt.parse('9223372036854775807')),
+        '-9223372036854775808': MontyBigInt(
+          BigInt.parse('-9223372036854775808'),
         ),
       };
       for (final MapEntry(:key, :value) in cases.entries) {
-        final v = _decode([pb.MontyNode(int_5: Int64.parseInt(key))]);
+        final v = _decode([bigIntNode(BigInt.parse(key))]);
         expect(v, value, reason: key);
         expect(v.runtimeType, value.runtimeType, reason: key);
       }
@@ -118,11 +114,11 @@ void main() {
     });
 
     test('containers, in order', () {
-      final one = _int(1);
+      final one = intNode(1);
       final v = _decode([
         one,
         pb.MontyNode(str: 'one'),
-        _int(-3),
+        intNode(-3),
         pb.MontyNode(none: pb.Unit()),
         pb.MontyNode(list: _ix([0])),
         pb.MontyNode(
@@ -141,7 +137,7 @@ void main() {
         (const MontyInt(-3), const MontyNone()),
         (const MontyString('one'), const MontyList([MontyInt(1)])),
       ]);
-      final three = _int(3);
+      final three = intNode(3);
       expect(
         _decode([
           three,
@@ -173,8 +169,8 @@ void main() {
     test('a node referenced three times is one Dart object (E0 s04)', () {
       // a = [1, 2]; [a, a, [a]]
       final v = _decode([
-        _int(1),
-        _int(2),
+        intNode(1),
+        intNode(2),
         pb.MontyNode(list: _ix([0, 1])),
         pb.MontyNode(list: _ix([2])),
         pb.MontyNode(list: _ix([2, 2, 3])),
@@ -196,7 +192,7 @@ void main() {
 
     test('decoded containers are unmodifiable', () {
       final v = _decode([
-        _int(1),
+        intNode(1),
         pb.MontyNode(list: _ix([0])),
       ]);
       expect(
@@ -208,7 +204,9 @@ void main() {
     test('kinds outside the subset are refused by name', () {
       for (final node in [
         pb.MontyNode(ellipsis: pb.Unit()),
-        pb.MontyNode(complex: pb.Complex(real: 1, imag: 2)),
+        pb.MontyNode(
+          complex: pb.Complex(real: doubleToBits(1), imag: doubleToBits(2)),
+        ),
         pb.MontyNode(repr: '<object>'),
         pb.MontyNode(cycle: '[...]'),
         pb.MontyNode(date: pb.Date(year: 2026, month: 1, day: 2)),
@@ -237,13 +235,13 @@ void main() {
       );
       expect(
         () => _decode([
-          _int(1),
+          intNode(1),
           pb.MontyNode(list: _ix([5])),
         ]),
         throwsFormatException,
       );
-      expect(() => _decode([_int(1)], 1), throwsFormatException);
-      expect(() => _decode([_int(1)], -1), throwsFormatException);
+      expect(() => _decode([intNode(1)], 1), throwsFormatException);
+      expect(() => _decode([intNode(1)], -1), throwsFormatException);
     });
 
     test('100,000 levels of nesting decode without recursion', () {
