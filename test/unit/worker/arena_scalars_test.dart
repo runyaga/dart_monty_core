@@ -62,6 +62,9 @@ const _nanBits = [
   'fff0000000000001', // negative signalling NaN
 ];
 
+/// Python's `float('nan')`: what upstream's host sends for a NaN.
+const String _pyNan = '7ff8000000000000';
+
 /// True on dart2js, where a Dart `int` is a JavaScript number.
 const bool _isJs = identical(1, 1.0);
 
@@ -215,23 +218,57 @@ void main() {
         },
       );
 
-      test(
-        '$bits encodes ${_isJs ? 'as a NaN (dart2js)' : 'as the same bits'}',
-        () {
-          final written = _written(MontyFloat(_double(bits)));
-          expect(
-            _double(_toHex(_hex(written).sublist(1).reversed.toList())).isNaN,
-            isTrue,
-          );
-          if (!_isJs) expect(written, _floatNode(bits));
-        },
-      );
+      test("$bits built in Dart is sent as Python's float('nan')", () {
+        // Only a NaN decoded from the worker carries bits to send back. One
+        // made in Dart is sent as upstream's host sends float('nan').
+        expect(_written(MontyFloat(_double(bits))), _floatNode(_pyNan));
+      });
 
       test('$bits round-trips through the reader and writer', () {
         final v = _read(_hex(_floatNode(bits)));
         expect(_written(v), _floatNode(bits));
       });
     }
+
+    test('a NaN made in Dart is sent as float("nan"), 7ff8...', () {
+      // double.nan is 0.0 / 0.0, whose bits are the host's: fff8... on
+      // x86_64. Python's float('nan') is 7ff8... everywhere, and that is
+      // what upstream's host sends.
+      final zero = _double('0000000000000000');
+      final negativeZero = _double('8000000000000000');
+      final infinity = _double('7ff0000000000000');
+      final negativeNan = _double('fff8000000000000');
+      for (final nan in [
+        double.nan,
+        -double.nan,
+        zero / negativeZero,
+        infinity + double.negativeInfinity,
+        negativeNan,
+      ]) {
+        expect(_written(MontyFloat(nan)), _floatNode(_pyNan));
+      }
+    });
+
+    test('-0.0 and infinities built in Dart keep their bits', () {
+      // ignore: prefer_int_literals -- the sign of zero is the point.
+      expect(_written(const MontyFloat(-0.0)), _floatNode('8000000000000000'));
+      expect(
+        _written(const MontyFloat(double.negativeInfinity)),
+        _floatNode('fff0000000000000'),
+      );
+    });
+
+    test('a worker-decoded -nan goes back as fff8...', () {
+      final negative = _read(_hex(_floatNode('fff8000000000000')));
+      expect(_written(negative), _floatNode('fff8000000000000'));
+      final writer = ArenaWriter()..add(MontyList([negative, negative]));
+      final floats = [
+        for (final n in writer.arena.nodes)
+          if (n.hasFloat()) _toHex(n.writeToBuffer()),
+      ];
+      expect(floats, isNotEmpty);
+      expect(floats, everyElement(_floatNode('fff8000000000000')));
+    });
 
     test("a NaN keeps its own bits, not another NaN's", () {
       final a = _read(_hex(_floatNode('fff8000000000000')));
@@ -249,9 +286,7 @@ void main() {
       final payload = _floatNode('7ff8000000000001');
       expect(hexAt(itemAt(pair, 1)), payload);
       expect(hexAt(y), payload);
-      // A NaN built in Dart sends its own bits. Those of double.nan are the
-      // host's (0.0 / 0.0): fff8... on x86_64, 7ff8... on arm64.
-      expect(hexAt(z), _floatNode(_bitsOf(double.nan)));
+      expect(hexAt(z), _floatNode(_pyNan));
     });
   });
 

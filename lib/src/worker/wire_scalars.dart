@@ -8,8 +8,9 @@
 ///
 /// - zigzag, with a logical shift, for the full i64 range;
 /// - IEEE 754 bits to and from a double, through two 32-bit halves, so a
-///   NaN's sign and payload survive in both directions (see [montyFloatOf]
-///   for dart2js);
+///   NaN from the worker keeps its sign and payload there and back (see
+///   [montyFloatOf] for dart2js), and a NaN made in Dart is sent as Python's
+///   `float('nan')` (see [montyFloatNode]);
 /// - a big integer's magnitude to and from bytes in one step, linear in its
 ///   length.
 ///
@@ -81,11 +82,21 @@ MontyFloat montyFloatOf(pb.MontyNode node) {
   return value;
 }
 
-/// A node carrying [value]: its double's bits, or for a NaN that
-/// [montyFloatOf] decoded, the bits it arrived with.
+/// Python's `float('nan')`, 7ff8000000000000.
+final Int64 _pythonNan = Int64.fromInts(0x7ff80000, 0);
+
+/// A node carrying [value].
+///
+/// A non-NaN double is sent bit for bit, `-0.0` included. A NaN that
+/// [montyFloatOf] decoded is sent with the bits it arrived with. Any other
+/// NaN was made in Dart, and is sent as Python's `float('nan')`, as
+/// upstream's host sends a NaN: `double.nan` is `0.0 / 0.0`, whose bits are
+/// the host's (fff8000000000000 on x86_64), and Python would read that as a
+/// negative NaN.
 pb.MontyNode montyFloatNode(MontyFloat value) => pb.MontyNode(
-  float:
-      (value.value.isNaN ? _nanBits[value] : null) ?? doubleToBits(value.value),
+  float: value.value.isNaN
+      ? _nanBits[value] ?? _pythonNan
+      : doubleToBits(value.value),
 );
 
 /// A node carrying the double [value], bit for bit.

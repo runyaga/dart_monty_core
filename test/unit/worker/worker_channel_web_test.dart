@@ -199,6 +199,21 @@ void main() {
     await ch.close();
   });
 
+  test(
+    "a NaN made in Dart reaches Python as float('nan') ($backend)",
+    () async {
+      final ch = await _spawn(cache);
+      await _open(ch);
+      final v = await _eval(
+        ch,
+        'import math\n(math.copysign(1.0, a), math.copysign(1.0, b))',
+        {'a': const MontyFloat(double.nan), 'b': const MontyFloat(-double.nan)},
+      );
+      expect((v as MontyTuple).items, everyElement(const MontyFloat(1)));
+      await ch.close();
+    },
+  );
+
   test("a NaN's sign survives Python -> Dart -> Python ($backend)", () async {
     final ch = await _spawn(cache);
     await _open(ch);

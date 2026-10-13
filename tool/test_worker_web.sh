@@ -19,14 +19,14 @@
 # by 8 points for a reason that has nothing to do with this suite.
 #
 # Each compiler's run has its own test-count floor: `dart test` exits 0 on a
-# tag filter that matches nothing. 11 tests per compiler observed.
+# tag filter that matches nothing. 12 tests per compiler observed.
 #
 # Usage: bash tool/test_worker_web.sh [--coverage DIR]
 # =============================================================================
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FLOOR=10
+FLOOR=11
 COV=()
 if [ "${1:-}" = "--coverage" ]; then
   [ -n "${2:-}" ] || { echo "FAIL: --coverage needs a directory"; exit 2; }

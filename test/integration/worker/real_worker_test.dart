@@ -187,6 +187,24 @@ void main() {
     expect(_bits(itemAt(items, 1)), 'fff8000000000000');
   });
 
+  test("a NaN made in Dart reaches Python as float('nan')", () async {
+    // double.nan's bits are the host's (fff8... on x86_64); -double.nan
+    // flips the sign. Neither came from Python, so both go as 7ff8...
+    final channel = await _configured();
+    final v = _completeValue(
+      await channel.turn(
+        _feedWith(
+          'import math\n(math.copysign(1.0, a), math.copysign(1.0, b))',
+          {
+            'a': const MontyFloat(double.nan),
+            'b': const MontyFloat(-double.nan),
+          },
+        ),
+      ),
+    );
+    expect((v as MontyTuple).items, everyElement(const MontyFloat(1)));
+  });
+
   test('Configure, Feed 1 + 1, Shutdown', () async {
     final channel = await _configured();
     expect(_completeInt(await channel.turn(_feed('1 + 1'))), 2);
