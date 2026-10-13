@@ -90,7 +90,7 @@ final class WorkerChannel implements MontyChannel {
   @override
   Future<pb.ChildEvent> turn(
     pb.ParentRequest request, {
-    void Function(pb.Print print)? onPrint,
+    PrintHandler? onPrint,
   }) => _connection.turn(request, onPrint: onPrint);
 
   @override

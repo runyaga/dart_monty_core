@@ -296,8 +296,13 @@ final class PoolOptions {
     this.checkoutTimeout,
     this.requestTimeout,
     this.maxCheckoutsPerWorker,
+    this.feedDurationLimitGrace = defaultDurationLimitGrace,
+    this.turnDurationLimitGrace = defaultDurationLimitGrace,
     this.workerLocation,
   });
+
+  /// Upstream's `DEFAULT_DURATION_LIMIT_GRACE`.
+  static const Duration defaultDurationLimitGrace = Duration(seconds: 1);
 
   /// Workers [WorkerPool.start] spawns eagerly.
   final int minProcesses;
@@ -315,6 +320,17 @@ final class PoolOptions {
 
   /// Checkouts a worker serves before it is retired; unbounded when null.
   final int? maxCheckoutsPerWorker;
+
+  /// How far past what a session's `maxFeedDuration` has left the parent
+  /// lets an execution turn run before it kills the worker; null leaves the
+  /// feed budget unguarded by the parent (upstream
+  /// `feed_duration_limit_grace`).
+  final Duration? feedDurationLimitGrace;
+
+  /// How far past a session's `maxTurnDuration` the parent lets an
+  /// execution turn run before it kills the worker; null leaves the turn
+  /// budget unguarded by the parent (upstream `turn_duration_limit_grace`).
+  final Duration? turnDurationLimitGrace;
 
   /// Where the worker is found: an executable on native, an asset base URL
   /// on the web; null to search the usual places.

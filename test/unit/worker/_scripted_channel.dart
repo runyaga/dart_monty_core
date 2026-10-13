@@ -42,7 +42,7 @@ final class ScriptedChannel implements MontyChannel {
   @override
   Future<pb.ChildEvent> turn(
     pb.ParentRequest request, {
-    void Function(pb.Print print)? onPrint,
+    PrintHandler? onPrint,
   }) async {
     if (!_isAlive) {
       throw MontyCrashedError(CrashCause.killed, message: 'channel is dead');
@@ -71,7 +71,7 @@ final class ScriptedChannel implements MontyChannel {
       if (e.whichKind() != pb.ChildEvent_Kind.print) {
         throw StateError('only Print may precede the turn end');
       }
-      onPrint?.call(e.print);
+      await onPrint?.call(e.print);
     }
     final end = itemAt(events, events.length - 1);
     if (end.whichKind() == pb.ChildEvent_Kind.fatalError) {
@@ -102,11 +102,11 @@ final class ScriptedChannel implements MontyChannel {
   /// the turn: only [kill] does.
   Future<pb.ChildEvent> _hang(
     List<pb.ChildEvent> prints,
-    void Function(pb.Print print)? onPrint,
+    PrintHandler? onPrint,
   ) async {
     for (final p in prints) {
       if (_killed.isCompleted) break;
-      onPrint?.call(p.print);
+      await onPrint?.call(p.print);
       await Future<void>.delayed(Duration.zero);
     }
     await _killed.future;

@@ -62,15 +62,17 @@ final class ProtoSession {
   /// [inputs] are bound as global names before the code runs. A call to a
   /// name in [externals] runs that function; [onOsCall] answers OS calls,
   /// which are declined without it. [onPrint] sees each run of printed text
-  /// as it arrives; the result also lists it all.
+  /// as it arrives, and its future is awaited before the next one; the
+  /// result also lists them all, unless [collectPrints] is false.
   Future<FeedResult> feed(
     String code, {
     Map<String, MontyValue> inputs = const {},
     Map<String, ProtoExternalFunction> externals = const {},
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
+    bool collectPrints = true,
   }) => _guard(() async {
-    final sink = _PrintSink(onPrint, _channel.kill);
+    final sink = _PrintSink(onPrint, _channel.kill, collect: collectPrints);
     var request = pb.ParentRequest(feed: _feedRequest(code, inputs));
     for (;;) {
       final pb.ChildEvent event;
@@ -161,7 +163,8 @@ final class ProtoSession {
   }
 }
 
-/// Collects a feed's prints and passes each to the caller's callback.
+/// Collects a feed's prints and passes each to the caller's callback,
+/// awaiting it before the next.
 ///
 /// A throwing callback must not escape into the channel mid-turn, and the
 /// feed cannot carry on without it: the worker may be suspended on a call
@@ -169,22 +172,26 @@ final class ProtoSession {
 /// kills the worker at once, later prints are dropped, and the driver
 /// rethrows the failure when the turn returns.
 final class _PrintSink {
-  _PrintSink(this._onPrint, this._kill);
+  _PrintSink(this._onPrint, this._kill, {required bool collect})
+    : _collect = collect;
 
   final List<(String, String)> prints = [];
   final ProtoPrintCallback? _onPrint;
   final void Function() _kill;
+  final bool _collect;
   (Object, StackTrace)? _failure;
 
-  void add(pb.Print print) {
-    if (_failure != null) return;
+  Future<void> add(pb.Print print) async {
     for (final segment in print.segments) {
+      if (_failure != null) return;
       final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
           ? 'stderr'
           : 'stdout';
-      prints.add((stream, segment.text));
+      if (_collect) prints.add((stream, segment.text));
+      final onPrint = _onPrint;
+      if (onPrint == null) continue;
       try {
-        _onPrint?.call(stream, segment.text);
+        await onPrint(stream, segment.text);
       } on Object catch (error, stack) {
         _failure = (error, stack);
         _kill();
@@ -210,6 +217,9 @@ final class SessionConfig {
     this.maxMemoryBytes,
     this.maxRecursionDepth,
     this.maxFeedDuration,
+    this.maxTurnDuration,
+    this.assertMessageAnnotations,
+    this.printFlushInterval,
   });
 
   /// The file name tracebacks report for fed code.
@@ -225,11 +235,26 @@ final class SessionConfig {
   /// The longest one feed may run, enforced by the worker.
   final Duration? maxFeedDuration;
 
+  /// The longest one turn of a feed may run (each resume starts a new
+  /// turn), enforced by the worker.
+  final Duration? maxTurnDuration;
+
+  /// How many bytes of each operand an `assert` failure message shows; 0
+  /// turns the annotations off, null keeps the worker's default (120).
+  final int? assertMessageAnnotations;
+
+  /// How long the worker may hold printed text before it sends it; zero
+  /// sends each line as it ends, null keeps the worker's default.
+  final Duration? printFlushInterval;
+
   pb.Configure _toProto() {
     final memory = maxMemoryBytes;
     final recursion = maxRecursionDepth;
     final feed = maxFeedDuration;
-    final hasLimits = memory != null || recursion != null || feed != null;
+    final turn = maxTurnDuration;
+    final hasLimits =
+        memory != null || recursion != null || feed != null || turn != null;
+    final flush = printFlushInterval;
 
     return pb.Configure(
       scriptName: scriptName,
@@ -242,8 +267,13 @@ final class SessionConfig {
               maxFeedDurationMicros: feed == null
                   ? null
                   : Int64(feed.inMicroseconds),
+              maxTurnDurationMicros: turn == null
+                  ? null
+                  : Int64(turn.inMicroseconds),
             )
           : null,
+      assertMessageAnnotations: assertMessageAnnotations,
+      printFlushIntervalMs: flush?.inMilliseconds,
     );
   }
 }
@@ -272,8 +302,10 @@ typedef ProtoOsCallHandler =
       Map<String, MontyValue> kwargs,
     );
 
-/// Receives one run of printed text, as it arrives.
-typedef ProtoPrintCallback = void Function(String stream, String text);
+/// Receives one run of printed text, as it arrives; a returned future is
+/// awaited before the next run is delivered.
+typedef ProtoPrintCallback =
+    FutureOr<void> Function(String stream, String text);
 
 /// What a feed produced.
 final class FeedResult {

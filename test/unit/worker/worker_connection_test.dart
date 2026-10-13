@@ -2,6 +2,7 @@
 // channel's turn logic against a scripted WorkerPort. Pure Dart, so it runs on
 // the VM, dart2js and dart2wasm through the unit and unit_web steps; the real
 // Worker is exercised by worker_channel_web_test.dart.
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
@@ -10,6 +11,8 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
 import 'package:test/test.dart';
+
+import '../../_accessors.dart';
 
 /// Records what the connection sends and whether it terminated the Worker.
 final class _FakePort implements WorkerPort {
@@ -229,6 +232,34 @@ void main() {
       expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
       expect(prints, ['a', 'b']);
       expect(c.isAlive, isTrue);
+    });
+
+    test('an async onPrint is awaited before the next event', () async {
+      final c = _accept(_FakePort());
+      final gates = <Completer<void>>[];
+      // A tear-off, not a closure literal, so that it also compiles where
+      // onPrint is a `void Function`.
+      Future<void> gated(pb.Print _) {
+        final gate = Completer<void>();
+        gates.add(gate);
+
+        return gate.future;
+      }
+
+      var ended = false;
+      final done = c
+          .turn(_feed, onPrint: gated)
+          .whenComplete(() => ended = true);
+      c.onReply(_frames([_print('a'), _print('b'), _ok]), outcomeContinue);
+      await pumpEventQueue();
+      expect(gates, hasLength(1));
+      expect(ended, isFalse);
+      itemAt(gates, 0).complete();
+      await pumpEventQueue();
+      expect(gates, hasLength(2));
+      expect(ended, isFalse);
+      itemAt(gates, 1).complete();
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
     });
 
     test('a kill from inside onPrint fails the turn as killed', () async {
