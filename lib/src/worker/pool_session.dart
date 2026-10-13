@@ -184,9 +184,11 @@ final class _LeasedSession implements PoolSession {
         externals: externals ?? const {},
         onOsCall: os,
         onPrint: printCallback ?? defaultPrint,
-        collectPrints: false,
-        systemSleepMax: _sleepMax,
-        skipTypeCheck: skipTypeCheck,
+        options: FeedOptions(
+          collectPrints: false,
+          systemSleepMax: _sleepMax,
+          skipTypeCheck: skipTypeCheck,
+        ),
       );
 
       return result.value;

@@ -63,26 +63,26 @@ final class ProtoSession {
   /// name in [externals] runs that function; [onOsCall] answers OS calls,
   /// which are declined without it. [onPrint] sees each run of printed text
   /// as it arrives, and its future is awaited before the next one; the
-  /// result also lists them all, unless [collectPrints] is false.
+  /// result also lists them all, unless [FeedOptions.collectPrints] is false.
   ///
-  /// With [systemSleepMax] set, a `time.sleep` the worker hands to the
-  /// parent is waited here, cut to that length, and answered with `None`
-  /// (upstream's automatic driver); without it the sleep is declined.
-  /// [skipTypeCheck] skips a type-checking session's check for this
-  /// snippet; a snippet the check rejects throws [MontyTypeCheckError].
+  /// [options] adjust the feed (see [FeedOptions]). A snippet a
+  /// type-checking session's check rejects throws [MontyTypeCheckError].
   Future<FeedResult> feed(
     String code, {
     Map<String, MontyValue> inputs = const {},
     Map<String, ProtoExternalFunction> externals = const {},
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
-    bool collectPrints = true,
-    Duration? systemSleepMax,
-    bool skipTypeCheck = false,
+    FeedOptions options = const FeedOptions(),
   }) => _guard(() async {
-    final sink = _PrintSink(onPrint, _channel.kill, collect: collectPrints);
+    final sink = _PrintSink(
+      onPrint,
+      _channel.kill,
+      collect: options.collectPrints,
+    );
     final feed = _feedRequest(code, inputs);
-    if (skipTypeCheck) feed.skipTypeCheck = true;
+    if (options.skipTypeCheck) feed.skipTypeCheck = true;
+    final systemSleepMax = options.systemSleepMax;
     var request = pb.ParentRequest(feed: feed);
     for (;;) {
       final pb.ChildEvent event;
@@ -229,6 +229,27 @@ final class _PrintSink {
   }
 }
 
+/// How one [ProtoSession.feed] runs.
+final class FeedOptions {
+  /// The options; see each field.
+  const FeedOptions({
+    this.collectPrints = true,
+    this.systemSleepMax,
+    this.skipTypeCheck = false,
+  });
+
+  /// Whether [FeedResult.prints] lists everything printed.
+  final bool collectPrints;
+
+  /// When set, a `time.sleep` the worker hands to the parent is waited by
+  /// the driver, cut to this length, and answered with `None` (upstream's
+  /// automatic driver); when null the sleep is declined.
+  final Duration? systemSleepMax;
+
+  /// Whether a type-checking session skips the check for this snippet.
+  final bool skipTypeCheck;
+}
+
 /// A snippet the session's type check rejected; it did not run, and the
 /// session stays usable.
 ///
@@ -338,17 +359,6 @@ final class SessionConfig {
   final Duration? printFlushInterval;
 
   pb.Configure _toProto() {
-    final memory = maxMemoryBytes;
-    final recursion = maxRecursionDepth;
-    final feed = maxFeedDuration;
-    final turn = maxTurnDuration;
-    final suspensions = maxSuspensions;
-    final hasLimits =
-        memory != null ||
-        recursion != null ||
-        feed != null ||
-        turn != null ||
-        suspensions != null;
     final flush = printFlushInterval;
     final format = typeCheckFormat;
 
@@ -356,19 +366,7 @@ final class SessionConfig {
       scriptName: scriptName,
       protocolVersion: protocolVersion,
       montyVersion: _driverVersion,
-      limits: hasLimits
-          ? pb.ResourceLimits(
-              maxMemoryBytes: memory == null ? null : Int64(memory),
-              maxRecursionDepth: recursion == null ? null : Int64(recursion),
-              maxFeedDurationMicros: feed == null
-                  ? null
-                  : Int64(feed.inMicroseconds),
-              maxTurnDurationMicros: turn == null
-                  ? null
-                  : Int64(turn.inMicroseconds),
-              maxSuspensions: suspensions == null ? null : Int64(suspensions),
-            )
-          : null,
+      limits: _limits(),
       assertMessageAnnotations: assertMessageAnnotations,
       printFlushIntervalMs: flush?.inMilliseconds,
       typeCheck: typeCheck ? true : null,
@@ -377,6 +375,19 @@ final class SessionConfig {
       typeCheckColor: typeCheckColor ? true : null,
       osPolicy: osPolicy,
     );
+  }
+
+  /// The limits that are set, or null when none is.
+  pb.ResourceLimits? _limits() {
+    final limits = pb.ResourceLimits(
+      maxMemoryBytes: _int64(maxMemoryBytes),
+      maxRecursionDepth: _int64(maxRecursionDepth),
+      maxFeedDurationMicros: _int64(maxFeedDuration?.inMicroseconds),
+      maxTurnDurationMicros: _int64(maxTurnDuration?.inMicroseconds),
+      maxSuspensions: _int64(maxSuspensions),
+    );
+
+    return limits == pb.ResourceLimits() ? null : limits;
   }
 }
 
@@ -634,6 +645,8 @@ const Map<String, pb.TypeCheckFormat> typeCheckFormats = {
   'gitlab': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITLAB,
   'github': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
 };
+
+Int64? _int64(int? value) => value == null ? null : Int64(value);
 
 pb.TypeCheckFormat _typeCheckFormat(String name) =>
     typeCheckFormats[name] ??
