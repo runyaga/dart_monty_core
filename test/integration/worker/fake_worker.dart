@@ -85,6 +85,14 @@ Future<void> _handle(String scenario, pb.ParentRequest request) async {
         'exec >/dev/null; sleep 6',
       ], mode: ProcessStartMode.inheritStdio);
       exit(0);
+    case 'hold-stdout':
+      // Exits without answering, leaving a child that holds stdout open
+      // for 6 s: no EOF arrives until it ends.
+      await Process.start('/bin/sh', [
+        '-c',
+        'exec 2>/dev/null; sleep 6',
+      ], mode: ProcessStartMode.inheritStdio);
+      exit(0);
     case 'env':
       stderr.writeln((Platform.environment.keys.toList()..sort()).join(','));
       await stderr.flush();

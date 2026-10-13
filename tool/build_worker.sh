@@ -49,19 +49,38 @@ stamp="$dest.stamp"
 
 sha() { shasum -a 256 | awk '{print $1}'; }
 
-# Every input of the build, by content: paths and bytes, sorted.
-source_hash() {
+# Every input of the build: source paths and bytes, sorted, then the
+# compiler and its settings.
+build_inputs() {
   {
     find native/worker/src native/worker/upstream -type f -print
-    # Cargo configuration native/worker inherits, as well as its own.
-    find native/.cargo native/worker/.cargo -maxdepth 1 -type f \
+    # Cargo configuration native/worker inherits, as well as its own. (A
+    # CARGO_HOME config is hashed by content below: it lives outside the
+    # repository, so its path would differ between machines.)
+    find .cargo native/.cargo native/worker/.cargo -maxdepth 1 -type f \
       -name 'config*' -print 2>/dev/null || true
     printf '%s\n' native/worker/Cargo.toml native/worker/Cargo.lock \
       native/worker/build.rs native/rust-toolchain.toml
   } | LC_ALL=C sort | while read -r f; do
     printf '%s %s\n' "$f" "$(sha < "$f")"
-  done | sha
+  done
+  # The compiler the toolchain file resolves to today (a floating `stable`
+  # moves), and every environment input that changes codegen: the tested
+  # binary must be the one these settings build.
+  (cd native/worker && rustc -vV)
+  for v in RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_RUSTFLAGS \
+    CARGO_BUILD_TARGET CARGO_PROFILE_RELEASE_OPT_LEVEL CARGO_PROFILE_RELEASE_LTO \
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS \
+    CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS CARGO_PROFILE_RELEASE_PANIC; do
+    printf '%s=%s\n' "$v" "${!v-}"
+  done
+  for f in "${CARGO_HOME:-$HOME/.cargo}"/config "${CARGO_HOME:-$HOME/.cargo}"/config.toml; do
+    [ -f "$f" ] && printf 'cargo-home %s\n' "$(sha < "$f")"
+  done
+  return 0
 }
+
+source_hash() { build_inputs | sha; }
 
 stamp_line() { printf 'source %s exe %s\n' "$(source_hash)" "$(sha < "$dest")"; }
 
@@ -76,8 +95,9 @@ case "${1:-}" in
       exit 1
     fi
     if [ "$(stamp_line)" != "$(cat "$stamp")" ]; then
-      echo "build_worker: $dest is STALE: native/worker changed since it was" >&2
-      echo "  built, or the executable was replaced. Run: bash tool/build_worker.sh" >&2
+      echo "build_worker: $dest is STALE: a build input (source, Cargo config," >&2
+      echo "  compiler, flags) changed, or the executable was replaced." >&2
+      echo "  Run: bash tool/build_worker.sh" >&2
       exit 1
     fi
     echo "build_worker: $dest is fresh"

@@ -49,9 +49,13 @@ final class ProcessChannel implements MontyChannel {
   /// the kill's signal.
   static const Duration fatalExitGrace = Duration(milliseconds: 100);
 
-  /// How long a crash report or [close] waits, after the exit code, for the
-  /// rest of stderr before it stops listening.
-  static const Duration stderrDrainGrace = Duration(seconds: 1);
+  /// How long, after the worker exits, each of its pipes may take to end
+  /// before this channel stops listening to it.
+  ///
+  /// The exit code can arrive before the last of the output, so the
+  /// channel waits; a process that inherited a pipe can hold it open
+  /// forever, so the wait is bounded.
+  static const Duration pipeDrainGrace = Duration(seconds: 1);
 
   /// How long [close] waits for the worker to exit after `Shutdown`.
   static const Duration shutdownGrace = Duration(seconds: 2);
@@ -189,7 +193,7 @@ final class ProcessChannel implements MontyChannel {
       (_, workerOomExitCode) => CrashCause.outOfMemory,
       _ => CrashCause.vanished,
     };
-    await _stderr.drain(stderrDrainGrace);
+    await _stderr.drain(pipeDrainGrace);
     final tail = _stderr.text;
 
     return _crash ??= MontyCrashedError(
@@ -231,13 +235,14 @@ final class ProcessChannel implements MontyChannel {
     }
     await _exitWithin(shutdownGrace);
     _events.cancel();
-    await _stderr.drain(stderrDrainGrace);
+    await _stderr.drain(pipeDrainGrace);
   }
 
   Future<void> _reapOnExit() async {
     await _process.exitCode;
     _exited = true;
     _live.remove(this);
+    await _events.endWithin(pipeDrainGrace);
   }
 }
 
@@ -304,6 +309,7 @@ final class _EventStream {
   final _decoder = FrameDecoder();
   final _queue = Queue<pb.ChildEvent>();
   StreamSubscription<List<int>>? _subscription;
+  final _closed = Completer<void>();
   Completer<void>? _wake;
   Object? _error;
   bool _ended = false;
@@ -333,6 +339,17 @@ final class _EventStream {
   void cancel() {
     _cancelled = true;
     _queue.clear();
+    unawaited(_subscription?.cancel());
+    _subscription = null;
+    _wakeUp();
+  }
+
+  /// Waits up to [grace] for the output to end, then ends it: frames
+  /// already received are still returned, and nothing more is read.
+  Future<void> endWithin(Duration grace) async {
+    await _closed.future.timeout(grace, onTimeout: () => null);
+    if (_ended) return;
+    _ended = true;
     unawaited(_subscription?.cancel());
     _subscription = null;
     _wakeUp();
@@ -369,6 +386,7 @@ final class _EventStream {
 
   void _end() {
     _ended = true;
+    if (!_closed.isCompleted) _closed.complete();
     if (_error == null) {
       try {
         _decoder.close();

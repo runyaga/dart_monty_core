@@ -190,6 +190,20 @@ void main() {
       testOn: '!windows',
     );
 
+    test(
+      'a worker that exits while a descendant holds stdout still crashes',
+      () async {
+        final watch = Stopwatch()..start();
+        final channel = await _spawn('hold-stdout');
+        final crash = await _crashOf(channel.turn(_configure));
+        expect(crash.cause, CrashCause.vanished);
+        expect(crash.exitCode, 0);
+        // The descendant holds stdout for 6 s; the drain gives up after 1 s.
+        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+      },
+      testOn: '!windows',
+    );
+
     test('a crash is final: every later turn throws the same error', () async {
       final channel = await _spawn('oom');
       final crashes = [
