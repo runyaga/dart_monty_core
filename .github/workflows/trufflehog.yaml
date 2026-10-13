@@ -44,8 +44,10 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
+          zero=0000000000000000000000000000000000000000
           base=''
           head=''
+          skip=false
           case "$EVENT" in
             pull_request)
               # Every commit the PR adds over its base, however it was pushed.
@@ -54,25 +56,34 @@ jobs:
               ;;
             push)
               head=$AFTER
-              if [ "$BEFORE" != 0000000000000000000000000000000000000000 ] &&
+              if [ "$AFTER" = "$zero" ]; then
+                # A deleted branch: no commits.
+                skip=true
+              elif [ "$BEFORE" != "$zero" ] &&
                 git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
                 # A fast-forward: only the new commits.
                 base=$BEFORE
               elif [ "$REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
                 # A new or force-pushed branch: everything not on the default
-                # branch.
-                base=$(git merge-base "origin/$DEFAULT_BRANCH" "$AFTER")
+                # branch, or all of its history when it shares none with it.
+                # merge-base exits 1 for no common ancestor, 128 for a bad
+                # commit; only the first is a full scan.
+                rc=0
+                base=$(git merge-base "origin/$DEFAULT_BRANCH" "$AFTER") || rc=$?
+                [ "$rc" -le 1 ] || exit "$rc"
               fi
               # Otherwise the default branch was rewritten: its whole history.
               ;;
           esac
-          if [ -n "$head" ] && [ "$base" = "$head" ]; then
+          if [ "$skip" = true ]; then
+            echo "No commits to scan: the push deleted the branch."
+          elif [ -n "$head" ] && [ "$base" = "$head" ]; then
             echo "No commits to scan: $head is already on the base."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            skip=true
           else
             echo "Scanning ${base:-(root)}..${head:-(all branches)}"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "head=$head" >> "$GITHUB_OUTPUT"
       - name: TruffleHog scan
