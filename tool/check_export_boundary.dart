@@ -36,7 +36,11 @@
 // members. A declaration prints its kind, modifiers, type parameters with
 // bounds and supertypes; each public member prints its kind, modifiers,
 // parameters (position, `required`, `covariant`, name, type and default
-// value source) and type. The printer is this tool's own and reads only the
+// value source) and type. Types are named with their library wherever the
+// bare name could mean another declaration, and when two printed
+// declarations share a name, an `[exports: <path>]` section records which
+// one each public library exports. The printer is this tool's own and reads
+// only the
 // element model: the analyzer's display-string formatter is never called (the
 // check fails if this file names it), so an analyzer upgrade changes the
 // golden only where the element model changes.
@@ -116,6 +120,9 @@ final class _CheckExportBoundary {
   /// Every own declaration rule 2 reached.
   final Set<Element> declarations = {};
 
+  /// What each public library's exported names refer to.
+  final Map<String, Map<String, Element>> exports = {};
+
   /// The names and member sections together, as the golden lists them.
   Map<String, List<String>> get sections => {...names, ...members};
 
@@ -189,13 +196,17 @@ void _print(_CheckExportBoundary report, List<String> diff) {
   for (final MapEntry(:key, :value) in report.names.entries) {
     stdout.writeln('$key: ${value.length} exported names');
   }
-  final printed = report.members.values.expand((lines) => lines);
+  final printed = [
+    for (final MapEntry(:key, :value) in report.members.entries)
+      if (key.startsWith('members: ')) ...value,
+  ];
   final members = printed.where((line) => line.startsWith(' ')).length;
   stdout
     ..writeln('${unique.length} unique exported names')
     ..writeln(
       '${printed.length - members} declarations and $members public members '
-      'in ${report.members.length} declaring libraries',
+      'from ${report.declarations.map((e) => e.library).toSet().length} '
+      'declaring libraries',
     )
     ..writeln(
       'also analysed with: '
@@ -303,7 +314,9 @@ Future<void> _analyzeUnder(
       _checkLibrary(relative, result.element, report);
     }
     // Printed while the collection is alive: the elements belong to it.
-    report.members.addAll(_printDeclarations(report.declarations));
+    report.members
+      ..addAll(_printDeclarations(report.declarations))
+      ..addAll(_printAmbiguousExports(report.exports));
   } finally {
     await collection.dispose();
   }
@@ -361,6 +374,7 @@ void _checkLibrary(
   // A top-level variable exports a getter `x` and a setter `x=`: one name,
   // two elements, and both are walked.
   final exported = library.exportNamespace.definedNames2;
+  report.exports[name] = Map.of(exported);
   report.names[name] = {
     for (final key in exported.keys) key.replaceFirst(_setterSuffix, ''),
   }.toList()..sort();
@@ -623,6 +637,13 @@ final class _TypeNames {
     }
   }
 
+  /// Whether more than one printed declaration is named [name].
+  bool isAmbiguous(String name) => (_own[name] ?? 0) > 1;
+
+  /// `Never`, bare unless a type parameter takes its name.
+  String never() =>
+      _typeParameters.contains('Never') ? 'Never@dart:core' : 'Never';
+
   String of(Element element) {
     final name = _nameOf(element);
     final library = element.library;
@@ -639,6 +660,32 @@ final class _TypeNames {
 
     return fromCore == element && !shadowed ? name : '$name@${library.uri}';
   }
+}
+
+/// For each public library, the declaring library of every exported name
+/// that more than one printed declaration bears, in an `exports: <path>`
+/// section: which of two `Item`s a library exports is API.
+Map<String, List<String>> _printAmbiguousExports(
+  Map<String, Map<String, Element>> exports,
+) {
+  final sections = <String, List<String>>{};
+  for (final MapEntry(key: library, value: names) in exports.entries) {
+    final lines = <String>{};
+    for (final MapEntry(:key, :value) in names.entries) {
+      final declaration = _declarationOf(value);
+      if (declaration == null) continue;
+      if (!_typeNames.isAmbiguous(_nameOf(declaration))) continue;
+      final path = declaration.library!.uri.toString().substring(
+        _package.length,
+      );
+      lines.add('${key.replaceFirst(_setterSuffix, '')}: $path');
+    }
+    if (lines.isNotEmpty) {
+      sections['exports: $library'] = lines.toList()..sort();
+    }
+  }
+
+  return sections;
 }
 
 String _sortKey(Element element) =>
@@ -861,12 +908,14 @@ String _parameters(
   ].join(', ')})';
 }
 
-/// [source] on one line, as the golden is line-based: backslash, newline
-/// and carriage return escaped, reversibly.
+/// [source] on one line, as the golden is line-based: line endings
+/// normalized to `\n` (a CRLF checkout prints the same), then backslash and
+/// newline escaped, reversibly.
 String? _oneLine(String? source) => source
-    ?.replaceAll(r'\', r'\\')
-    .replaceAll('\n', r'\n')
-    .replaceAll('\r', r'\r');
+    ?.replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
+    .replaceAll(r'\', r'\\')
+    .replaceAll('\n', r'\n');
 
 /// The tool's canonical text for [type]: the alias when the type was written
 /// through one, type arguments, and `?` for a nullable type.
@@ -888,7 +937,7 @@ String _type(DartType type) {
     DynamicType() => 'dynamic',
     VoidType() => 'void',
     InvalidType() => throw StateError('an unresolved type in a signature'),
-    NeverType() => 'Never$suffix',
+    NeverType() => '${_typeNames.never()}$suffix',
     InterfaceType(:final element, :final typeArguments) =>
       '${_typeNames.of(element)}${_arguments(typeArguments)}$suffix',
     TypeParameterType(:final element) => '${_nameOf(element)}$suffix',
@@ -972,7 +1021,9 @@ String _renderGolden(Map<String, List<String>> names) {
     ..writeln('# Every name each public library exports, one section per')
     ..writeln('# library, then every declaration those names reach, with its')
     ..writeln('# public members, once, in a "members:" section for the library')
-    ..writeln('# that declares it. tool/check_export_boundary.dart fails on')
+    ..writeln('# that declares it (and, for a name two of them share, an')
+    ..writeln('# "exports:" section saying which one each library exports).')
+    ..writeln('# tool/check_export_boundary.dart fails on')
     ..writeln('# any difference. A diff here is a public API change: review')
     ..writeln('# it as one, then regenerate this file with')
     ..writeln('#   $_command --update');
@@ -1144,10 +1195,10 @@ String _items(String take) =>
 
 /// A class whose type parameter is named `String`; `take` takes the type
 /// [prefix] names: `core.` for dart:core's, empty for the type parameter.
-String _shadow(String prefix) =>
+String _shadow(String prefix, {String type = 'String'}) =>
     "import 'dart:core' as core;\n"
-    'class BoundaryProbe<String> {\n'
-    '  void take(${prefix}String x) {}\n'
+    'class BoundaryProbe<$type> {\n'
+    '  void take($prefix$type x) {}\n'
     '}\n';
 
 /// A default value whose source spans two lines and holds a backslash.
@@ -1597,6 +1648,44 @@ final _controls = [
     {'lib/boundary_probe_shadow.dart': (_) => _shadow('')},
     base: {'lib/boundary_probe_shadow.dart': (_) => _shadow('core.')},
     alsoMentions: ['+ BoundaryProbe.take: method(String x) -> void'],
+  ),
+  _Control(
+    'parameter switched from Never to a type parameter of its name',
+    _Verdict.golden,
+    '- BoundaryProbe.take: method(Never@dart:core x) -> void',
+    {'lib/boundary_probe_shadow.dart': (_) => _shadow('', type: 'Never')},
+    base: {
+      'lib/boundary_probe_shadow.dart': (_) => _shadow('core.', type: 'Never'),
+    },
+    alsoMentions: ['+ BoundaryProbe.take: method(Never x) -> void'],
+  ),
+  _Control(
+    'public library re-exports the other of two same-named types',
+    _Verdict.golden,
+    '+ Item: src/boundary_probe_b.dart',
+    {
+      ..._sameNames,
+      'lib/boundary_probe_items.dart': (_) => _items('a'),
+      'lib/boundary_probe_reexport.dart': (_) =>
+          "export 'src/boundary_probe_b.dart';\n",
+    },
+    base: {
+      ..._sameNames,
+      'lib/boundary_probe_items.dart': (_) => _items('a'),
+      'lib/boundary_probe_reexport.dart': (_) =>
+          "export 'src/boundary_probe_a.dart';\n",
+    },
+    alsoMentions: ['- Item: src/boundary_probe_a.dart'],
+  ),
+  _Control(
+    'multi-line default value prints the same with CRLF line endings',
+    _Verdict.pass,
+    '',
+    {
+      'lib/boundary_probe_lines.dart': (_) =>
+          _multiLine.replaceAll('\n', '\r\n'),
+    },
+    base: {'lib/boundary_probe_lines.dart': (_) => _multiLine},
   ),
   _Control(
     'multi-line default value round-trips through the golden',

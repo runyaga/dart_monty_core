@@ -1,7 +1,9 @@
 # Every name each public library exports, one section per
 # library, then every declaration those names reach, with its
 # public members, once, in a "members:" section for the library
-# that declares it. tool/check_export_boundary.dart fails on
+# that declares it (and, for a name two of them share, an
+# "exports:" section saying which one each library exports).
+# tool/check_export_boundary.dart fails on
 # any difference. A diff here is a public API change: review
 # it as one, then regenerate this file with
 #   dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --update
