@@ -209,6 +209,9 @@ s  wire_contract bash tool/check_wire_contract.sh
 # `env:` key took CI out for 13 commits here while `yaml.safe_load` passed the
 # whole time -- PyYAML keeps the last duplicate, GitHub rejects the document.
 s  workflows_ok bash tool/check_workflows_valid.sh
+# A tag or branch pin (`@v7`, `@stable`) is a pointer the action's owner can
+# move; the next run executes whatever it points at, with this repo's token.
+s  action_pins  bash tool/check_action_pins.sh
 s  corpus_check  bash tool/check_fixture_corpus.sh
 # The record, checked the same way the code is. A `!` commit touching lib/ must
 # reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
@@ -528,7 +531,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=50
+EXPECT_STEPS=51
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

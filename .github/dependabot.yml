@@ -1,0 +1,9 @@
+# Proposes bumps to the SHA-pinned actions in .github/ (tool/check_action_pins
+# rejects any `uses:` that is not a commit SHA). Dependabot updates the SHA and
+# the `# vN` comment together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
