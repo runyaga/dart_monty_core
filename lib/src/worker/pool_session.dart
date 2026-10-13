@@ -140,8 +140,30 @@ final class _Hold {
   /// Whether [_LeasedSession.close] ran.
   bool closed = false;
 
+  final _abandoned = Completer<pb.ChildEvent>();
+
   /// Whether no call can run any more: closed, or the worker gone.
   bool get isFinished => closed || lease.isReleased;
+
+  /// Fails, never completes normally, once [abandon] runs: the turn in
+  /// flight races it, so a close need not wait for a turn stuck in a print
+  /// callback.
+  Future<pb.ChildEvent> get abandoned => _abandoned.future;
+
+  /// Kills the worker during a turn and fails that turn at once.
+  void abandon() {
+    lease.kill();
+    if (_abandoned.isCompleted) return;
+    // Nobody may be listening if the turn ended meanwhile.
+    _abandoned.future.ignore();
+    _abandoned.completeError(
+      MontyCrashedError(
+        CrashCause.killed,
+        message: 'the session was closed during a turn',
+      ),
+      StackTrace.current,
+    );
+  }
 
   /// The worker is gone: free its slot (once), and report [crash] as the
   /// call's error, a memory-limit exit as upstream's `MemoryError`.
@@ -206,7 +228,7 @@ final class _LeasedSession implements PoolSession {
     final lease = _hold.lease;
     _hold.closed = true;
     if (lease.isReleased) return;
-    if (_channel.inTurn) return lease.kill();
+    if (_channel.inTurn) return _hold.abandon();
     try {
       await lease.release();
     } on Object catch (_) {
@@ -260,18 +282,15 @@ final class _SessionChannel implements MontyChannel {
     if (_hold.isFinished) throw _finishedError();
     inTurn = true;
     try {
-      final event = await _exchange(request, onPrint);
-      if (!_isSuspension(event)) return event;
-      final limit = _config.maxSuspensions ?? defaultMaxSuspensions;
-      if (++_suspensions <= limit) return event;
-      final reply = await _exchange(_abort(limit), onPrint);
-      final kind = reply.whichKind();
-      if (kind == pb.ChildEvent_Kind.error) return reply;
-      kill();
-      throw MontyCrashedError(
-        CrashCause.killed,
-        message: 'protocol desync: AbortFeed was answered with ${kind.name}',
-      );
+      // One deadline for the whole turn: print delivery, and an abort the
+      // suspension budget sends in its place, as upstream's request_turn.
+      final limit = _deadline(request);
+      final work = _turnWithBudget(request, onPrint);
+      final bounded = limit == null
+          ? work
+          : work.timeout(limit, onTimeout: () => _expire(limit));
+
+      return await Future.any([bounded, _hold.abandoned]);
     } finally {
       inTurn = false;
     }
@@ -284,20 +303,27 @@ final class _SessionChannel implements MontyChannel {
   @override
   void kill() => _hold.lease.kill();
 
-  /// One request and its turn-ending event, within the request's deadline.
-  Future<pb.ChildEvent> _exchange(
+  /// [request]'s turn-ending event; a suspension past the budget is
+  /// replaced by the reply to the `AbortFeed` sent in its place.
+  Future<pb.ChildEvent> _turnWithBudget(
     pb.ParentRequest request,
     PrintHandler? onPrint,
   ) async {
-    final limit = _deadline(request);
-    final turn = _hold.lease.channel.turn(request, onPrint: onPrint);
-    final event = limit == null
-        ? await turn
-        : await turn.timeout(limit, onTimeout: () => _expire(limit));
+    final channel = _hold.lease.channel;
+    final event = await channel.turn(request, onPrint: onPrint);
     final used = Duration(microseconds: event.feedExecutionMicros.toInt());
     if (used > _feedUsed) _feedUsed = used;
-
-    return event;
+    if (!_isSuspension(event)) return event;
+    final limit = _config.maxSuspensions ?? defaultMaxSuspensions;
+    if (++_suspensions <= limit) return event;
+    final reply = await channel.turn(_abort(limit), onPrint: onPrint);
+    final kind = reply.whichKind();
+    if (kind == pb.ChildEvent_Kind.error) return reply;
+    kill();
+    throw MontyCrashedError(
+      CrashCause.killed,
+      message: 'protocol desync: AbortFeed was answered with ${kind.name}',
+    );
   }
 
   Never _expire(Duration limit) {

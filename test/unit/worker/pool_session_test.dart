@@ -539,6 +539,34 @@ void main() {
       expect(pool.liveWorkers, 0);
     });
 
+    test('during a turn stuck in a print callback: fails at once', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'x')]),
+          completeNone(),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final entered = Completer<void>();
+      final never = Completer<void>();
+      final run = session.feedRun(
+        'print("x")',
+        printCallback: (stream, text) {
+          entered.complete();
+
+          return never.future;
+        },
+      );
+      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      await entered.future;
+      await session.close();
+      await failed.timeout(const Duration(seconds: 5));
+      expect(pool.liveWorkers, 0);
+    });
+
     test('after pool close: the session runs on, then is killed', () async {
       final ch = ScriptedChannel([
         _configureOk,
@@ -769,6 +797,30 @@ void main() {
       );
       expect(ch.remaining, 0);
       expect(_lastKind(ch), pb.ParentRequest_Kind.abortFeed);
+    });
+
+    test('the abort runs under the turn deadline it replaces', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('f')]),
+        // The abort is never answered.
+        hangAfter([]),
+      ]);
+      final pool = await _pool(
+        Workers([ch]),
+        feedGrace: _ms(10),
+        turnGrace: null,
+      );
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        limits: SessionLimits(maxSuspensions: 0, maxFeedDuration: _ms(20)),
+      );
+      await expectLater(
+        session.feedRun('f()', printCallback: _ignore),
+        throwsA(_crashed(CrashCause.killed, contains('0:00:00.030000'))),
+      );
+      expect(_lastKind(ch), pb.ParentRequest_Kind.abortFeed);
+      expect(pool.liveWorkers, 0);
     });
 
     test('an abort answered with anything but Error kills', () async {
