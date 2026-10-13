@@ -40,7 +40,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: 762d8e0ccf8bda22df0e81a1d3f5afde2f7b3e2f
+  PARITY_PIN: 34d490c28995094d21783b9268d9445be5c23fac
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
@@ -338,6 +338,14 @@ jobs:
           restore-keys: pub-${{ runner.os }}-
       - name: The suite's upstream pins are this tree's
         run: python3 -I .parity/tool/check_core_upstream.py --core .
+      # The traceback renderer's tests read the suite's display cases, baked
+      # into test/unit/worker/_display_fixtures.g.dart; the baked file must be
+      # the pinned commit's. (pub get: the generator formats with this
+      # package's language version.)
+      - name: The baked display fixtures are the pinned suite's
+        run: |
+          dart pub get
+          python3 -I tool/generate_display_fixtures.py .parity --check
       - name: Run on the VM (FFI)
         run: python3 -I .parity/tool/parity/run.py vm --core . --out /tmp/parity
       - name: Run on dart2js
@@ -998,14 +1006,15 @@ jobs:
       # Artifacts do not keep the executable bit.
       - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
       - name: Test (worker tag)
-        # Floor under the 36 tests registered when this job was added. The path is
+        # Floor under the 95 tests registered once the display cases joined
+        # (20 of them; 36 when this job was added). The path is
         # load-bearing: without it every suite in test/ loads, the wasm ones fail
         # to, and each skipped suite writes an empty hitmap.
         run: |
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 30 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 80 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob

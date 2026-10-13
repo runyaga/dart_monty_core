@@ -421,6 +421,11 @@
       "hit": 75,
       "pct": 100.0
     },
+    "lib/src/worker/raised_record.dart": {
+      "found": 85,
+      "hit": 85,
+      "pct": 100.0
+    },
     "lib/src/worker/self_relaunch.dart": {
       "found": 5,
       "hit": 4,
@@ -463,8 +468,8 @@
     }
   },
   "total": {
-    "found": 6787,
-    "hit": 5485,
-    "pct": 80.82
+    "found": 6872,
+    "hit": 5570,
+    "pct": 81.05
   }
 }

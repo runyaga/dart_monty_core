@@ -30,6 +30,7 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '_display_cases.dart';
 import '_kind_round_trips.dart';
 
 /// The package's lib/ as the test server exposes it.
@@ -169,6 +170,13 @@ void main() {
   });
 
   kindRoundTripTests(backend, () async {
+    final ch = await _spawn(cache);
+    await _open(ch);
+
+    return (ch.turn, ch.close);
+  });
+
+  displayFixtureTests(backend, () async {
     final ch = await _spawn(cache);
     await _open(ch);
 
