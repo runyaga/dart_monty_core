@@ -2,12 +2,14 @@ import 'dart:convert';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/double_text.dart';
+import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:meta/meta.dart';
 
 part 'monty_value_scalars.dart';
 part 'monty_value_collections.dart';
 part 'monty_value_datetime.dart';
 part 'monty_value_structured.dart';
+part 'monty_value_graph.dart';
 
 const _deepEq = DeepCollectionEquality();
 
@@ -59,38 +61,19 @@ sealed class MontyValue {
   /// Handles:
   /// - `MontyValue` instances (passed through)
   /// - `null`, `bool`, `int`, `double`, `String`
-  /// - `DateTime` (→ [MontyDateTime] in UTC)
+  /// - `DateTime` (→ [MontyDateTime] in UTC, to the microsecond)
   /// - `List` (elements recursively converted)
-  /// - `Map` (values recursively converted, keys coerced to String)
-  factory MontyValue.fromDart(Object? value) => switch (value) {
-    final MontyValue mv => mv,
-    null => const MontyNone(),
-    final bool b => MontyBool(b),
-    final int n => MontyInt(n),
-    final double d => MontyFloat(d),
-    final String s => MontyString(s),
-    final DateTime dt => MontyDateTime(
-      year: dt.toUtc().year,
-      month: dt.toUtc().month,
-      day: dt.toUtc().day,
-      hour: dt.toUtc().hour,
-      minute: dt.toUtc().minute,
-      second: dt.toUtc().second,
-      microsecond: dt.toUtc().microsecond,
-    ),
-    final List<Object?> l => MontyList(l.map(MontyValue.fromDart).toList()),
-    // Keys convert the same way values do. They used to be forced through
-    // `k.toString()`, which silently turned the Dart map {1: 'a'} into the
-    // Python dict {'1': 'a'} -- a different dict, with no error. Only string
-    // keys could be expressed then; pairs can carry any key monty accepts.
-    final Map<dynamic, dynamic> m => MontyDict([
-      for (final MapEntry(:key, :value) in m.entries)
-        (MontyValue.fromDart(key), MontyValue.fromDart(value)),
-    ]),
-    _ => throw ArgumentError(
-      'Cannot convert ${value.runtimeType} to MontyValue',
-    ),
-  };
+  /// - `Map` (keys and values recursively converted)
+  ///
+  /// `-0.0` and the infinities become [MontyFloat] on every backend. Other
+  /// integral doubles are ambiguous on dart2js, where they pass `is int`;
+  /// pass a [MontyFloat] when the type matters there.
+  ///
+  /// The conversion does not recurse, so nesting depth is not limited by the
+  /// stack. A `List` or `Map` reached twice becomes one value, shared in the
+  /// result; one that contains itself is an [ArgumentError].
+  factory MontyValue.fromDart(Object? value) =>
+      _MontyValueGraph.fromDart(value);
 
   static final Map<String, MontyValue Function(Map<String, dynamic>)>
   _typeFactories = {
@@ -163,6 +146,11 @@ sealed class MontyValue {
   /// Collections recursively unwrap to `List<Object?>` / `Map<String, Object?>`.
   /// Typed wrappers return their `toJson()` map.
   Object? get dartValue;
+
+  /// What the identity-aware walk treats this value as. Containers and
+  /// fixed-size leaves override it; MontyDict, at its method-count limit, is
+  /// recognised here instead.
+  int get _graphKind => this is MontyDict ? _kDict : _kPayload;
 
   /// Decodes the tagged float envelope.
   ///
