@@ -31,15 +31,18 @@ jobs:
               const scope = match[2] ? match[2].toLowerCase() : '';
               const isBreaking = match[3] === '!';
 
-              if (prefixMap[type]) expectedLabels.add(prefixMap[type]);
+              // Own keys only: `constructor: x` must not find Object's.
+              if (Object.hasOwn(prefixMap, type)) expectedLabels.add(prefixMap[type]);
               if (isBreaking) expectedLabels.add('breaking');
               if (scope.includes('deps')) expectedLabels.add('dependencies');
             }
 
-            const { data: currentLabelsData } = await github.rest.issues.listLabelsOnIssue({
+            // Every page: a stale managed label past the first must still go.
+            const currentLabelsData = await github.paginate(github.rest.issues.listLabelsOnIssue, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
+              per_page: 100,
             });
             const currentLabels = currentLabelsData.map(l => l.name);
 
