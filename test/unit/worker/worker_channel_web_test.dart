@@ -411,6 +411,29 @@ void main() {
     expect(beats, after, reason: 'the Worker still runs');
   });
 
+  test('a cancel after the greeting leaves the channel alone '
+      '($backend)', () async {
+    final cancel = Completer<void>();
+    final ch = await WorkerChannel.spawn(
+      cache,
+      workerUrl: _workerUrl,
+      cancelled: cancel.future,
+    );
+    _opened.add(ch);
+    cancel.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(ch.isAlive, isTrue);
+    await _open(ch);
+    await ch.close();
+  });
+
+  test('workerScriptServed: the script yes; a 404 or a bad URL no '
+      '($backend)', () async {
+    expect(await workerScriptServed(_workerUrl), isTrue);
+    expect(await workerScriptServed('$_assets/no_such_worker.js'), isFalse);
+    expect(await workerScriptServed('http://[bad'), isFalse);
+  });
+
   test('a start cancelled before the module is ready creates no Worker '
       '($backend)', () async {
     final unfetched = WasmModuleCache('$_assets/slow_or_missing.wasm');
