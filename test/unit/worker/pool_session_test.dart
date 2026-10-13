@@ -7,8 +7,9 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/dart_monty_core.dart'
+    hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
@@ -104,6 +105,30 @@ void _ignore(String stream, String text) => _ignored++;
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
 
+/// A worker killed at a deadline of [limit] (Rust's Duration format), as
+/// upstream reports a request timeout.
+Matcher _timedOut(String limit) => isA<MontyCrashedError>()
+    .having((e) => e.cause, 'cause', CrashCause.killed)
+    .having((e) => e.timedOut, 'timedOut', isTrue)
+    .having((e) => e.exitStatus, 'exitStatus', isNull)
+    .having(
+      (e) => e.message,
+      'message',
+      'monty worker killed after exceeding request timeout of $limit',
+    )
+    .having((e) => e.exception.excType, 'exception', 'RuntimeError');
+
+/// A worker discarded for answering against the protocol.
+Matcher _violation(String detail) => isA<MontyCrashedError>()
+    .having((e) => e.cause, 'cause', CrashCause.protocol)
+    .having((e) => e.timedOut, 'timedOut', isFalse)
+    .having((e) => e.exitStatus, 'exitStatus', isNull)
+    .having(
+      (e) => e.message,
+      'message',
+      'monty worker protocol error: $detail',
+    );
+
 Matcher _crashed(CrashCause cause, [Object? message]) =>
     isA<MontyCrashedError>()
         .having((e) => e.cause, 'cause', cause)
@@ -182,7 +207,7 @@ void main() {
       addTearDown(pool.close);
       await expectLater(
         pool.checkout(),
-        throwsA(_crashed(CrashCause.killed, contains('Configure'))),
+        throwsA(_violation('unexpected reply to Configure: complete')),
       );
       expect(ch.kills, greaterThan(0));
       expect(pool.liveWorkers, 0);
@@ -197,7 +222,7 @@ void main() {
       addTearDown(pool.close);
       await expectLater(
         pool.checkout(),
-        throwsA(_crashed(CrashCause.killed, contains('no reply within'))),
+        throwsA(_timedOut('20ms')),
       );
       expect(pool.liveWorkers, 0);
     });
@@ -250,8 +275,8 @@ void main() {
       await expectLater(
         session.feedRun('1/0', printCallback: _ignore),
         throwsA(
-          isA<MontyScriptError>().having(
-            (e) => e.excType,
+          isA<MontyRuntimeError>().having(
+            (e) => e.exception.excType,
             'excType',
             'ZeroDivisionError',
           ),
@@ -868,7 +893,7 @@ void main() {
       expect(value, const MontyInt(5));
       await expectLater(
         session.feedRun('while True: pass', printCallback: _ignore),
-        throwsA(_crashed(CrashCause.killed, contains('0:00:00.040000'))),
+        throwsA(_timedOut('40ms')),
       );
       expect(pool.liveWorkers, 0);
       await expectLater(
@@ -894,7 +919,7 @@ void main() {
       final never = Completer<void>();
       await expectLater(
         session.feedRun('print("x")', printCallback: (s, t) => never.future),
-        throwsA(_crashed(CrashCause.killed, contains('no reply within'))),
+        throwsA(_timedOut('30ms')),
       );
       expect(pool.liveWorkers, 0);
     });
@@ -927,7 +952,7 @@ void main() {
           printCallback: _ignore,
         ),
         // 200 - 150 + 100.
-        throwsA(_crashed(CrashCause.killed, contains('0:00:00.150000'))),
+        throwsA(_timedOut('150ms')),
       );
     });
 
@@ -960,7 +985,7 @@ void main() {
           printCallback: _ignore,
         ),
         // Still 200 - 150 + 100, not 200 - 1 + 100.
-        throwsA(_crashed(CrashCause.killed, contains('0:00:00.150000'))),
+        throwsA(_timedOut('150ms')),
       );
     });
 
@@ -983,7 +1008,7 @@ void main() {
       );
       await expectLater(
         session.feedRun('while True: pass', printCallback: _ignore),
-        throwsA(_crashed(CrashCause.killed, contains('0:00:00.030000'))),
+        throwsA(_timedOut('30ms')),
       );
     });
   });
@@ -1018,8 +1043,8 @@ void main() {
           printCallback: _ignore,
         ),
         throwsA(
-          isA<MontyScriptError>()
-              .having((e) => e.excType, 'excType', 'RuntimeError')
+          isA<MontyRuntimeError>()
+              .having((e) => e.exception.excType, 'excType', 'RuntimeError')
               .having((e) => e.message, 'message', contains('limit 2')),
         ),
       );
@@ -1054,7 +1079,7 @@ void main() {
           externals: {'f': (args, kwargs) => const MontyNone()},
           printCallback: _ignore,
         ),
-        throwsA(isA<MontyScriptError>()),
+        throwsA(isA<MontyRuntimeError>()),
       );
       expect(ch.remaining, 0);
       expect(_lastKind(ch), pb.ParentRequest_Kind.abortFeed);
@@ -1083,7 +1108,7 @@ void main() {
       );
       await expectLater(
         session.feedRun('f()', printCallback: _ignore),
-        throwsA(_crashed(CrashCause.killed, contains('0:00:00.030000'))),
+        throwsA(_timedOut('30ms')),
       );
       expect(_lastKind(ch), pb.ParentRequest_Kind.abortFeed);
       expect(pool.liveWorkers, 0);
@@ -1106,7 +1131,11 @@ void main() {
       );
       await expectLater(
         session.feedRun('f()', printCallback: _ignore),
-        throwsA(_crashed(CrashCause.killed, contains('AbortFeed'))),
+        throwsA(
+          _violation(
+            'worker answered AbortFeed with something other than an Error',
+          ),
+        ),
       );
       expect(pool.liveWorkers, 0);
     });
@@ -1177,9 +1206,10 @@ void main() {
     );
 
     Matcher timedOut(String message) => throwsA(
-      isA<MontyScriptError>()
-          .having((e) => e.excType, 'excType', 'TimeoutError')
-          .having((e) => e.message, 'message', message),
+      isA<MontyRuntimeError>()
+          .having((e) => e.exception.excType, 'excType', 'TimeoutError')
+          .having((e) => e.exception.message, 'exception', message)
+          .having((e) => e.message, 'message', 'TimeoutError: $message'),
     );
 
     test('the sleep that passes maxTotalSleep aborts, unwaited', () async {
@@ -1414,9 +1444,9 @@ void main() {
       await expectLater(
         session.feedRun('x: int = "a"', printCallback: _ignore),
         throwsA(
-          isA<MontyTypeCheckError>().having(
-            (e) => e.diagnostics,
-            'diagnostics',
+          isA<MontyTypingError>().having(
+            (e) => e.message,
+            'message',
             'bad: int',
           ),
         ),
@@ -1467,8 +1497,8 @@ void main() {
       await expectLater(
         session.feedRun('x = [0] * 10**9', printCallback: _ignore),
         throwsA(
-          isA<MontyScriptError>()
-              .having((e) => e.excType, 'excType', 'MemoryError')
+          isA<MontyRuntimeError>()
+              .having((e) => e.exception.excType, 'excType', 'MemoryError')
               .having((e) => e.message, 'message', contains('memory limit')),
         ),
       );
@@ -1484,6 +1514,70 @@ void main() {
       // ignore: prefer-moving-to-variable
       await pool.checkout();
       expect(workers.started, [first, second]);
+    });
+
+    test('a dead worker: its exit status, if the OS gave one', () async {
+      for (final (exitCode, status, message) in [
+        (3, 3, 'monty worker crashed: EOF (exit status: 3)'),
+        (-9, null, 'monty worker crashed: EOF (signal: 9)'),
+      ]) {
+        final ch = ScriptedChannel([
+          _configureOk,
+          crash(CrashCause.vanished, 'EOF', exitCode),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        await expectLater(
+          session.feedRun('...', printCallback: _ignore),
+          throwsA(
+            isA<MontyCrashedError>()
+                .having((e) => e.exitStatus, 'exitStatus', status)
+                .having((e) => e.timedOut, 'timedOut', isFalse)
+                .having((e) => e.message, 'message', message)
+                .having((e) => e.exception.message, 'exception', message),
+          ),
+        );
+        expect(pool.liveWorkers, 0);
+      }
+    });
+
+    test('a forged exception: a protocol violation, the session gone', () {
+      return Future.forEach(
+        <pb.ChildEvent, String>{
+          raised('Bogus', 'x'): 'unknown exception type "Bogus"',
+          raised('ValueError', 'x', [
+            pb.StackFrame(filename: 'f', start: pb.CodeLoc(line: 1, column: 1)),
+          ]): 'missing required field StackFrame.end',
+          pb.ChildEvent(error: pb.Error()): '',
+        }.entries,
+        (entry) async {
+          final MapEntry(key: event, value: detail) = entry;
+          final ch = ScriptedChannel([
+            _configureOk,
+            answer([event]),
+          ]);
+          final pool = await _pool(Workers([ch]));
+          addTearDown(pool.close);
+          final session = await pool.checkout();
+          await expectLater(
+            session.feedRun('...', printCallback: _ignore),
+            throwsA(
+              _violation(
+                detail.isEmpty
+                    ? 'error event with no exception'
+                    : 'invalid exception payload: $detail',
+              ),
+            ),
+          );
+          expect(ch.kills, greaterThan(0));
+          expect(pool.liveWorkers, 0);
+          await expectLater(
+            session.feedRun('1', printCallback: _ignore),
+            throwsA(_finished),
+          );
+        },
+      );
     });
 
     test('any other crash is rethrown and frees the slot', () async {

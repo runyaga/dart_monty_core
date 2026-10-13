@@ -45,7 +45,7 @@ final class ScriptedChannel implements MontyChannel {
     PrintHandler? onPrint,
   }) async {
     if (!_isAlive) {
-      throw MontyCrashedError(CrashCause.killed, message: 'channel is dead');
+      throw crashedError(CrashCause.killed, detail: 'channel is dead');
     }
     final sent = pb.ParentRequest.fromBuffer(request.writeToBuffer());
     requests.add(sent);
@@ -63,7 +63,7 @@ final class ScriptedChannel implements MontyChannel {
       ];
     } on _Crash catch (c) {
       _isAlive = false;
-      throw MontyCrashedError(c.cause, message: c.message);
+      throw crashedError(c.cause, detail: c.message, exitCode: c.exitCode);
     } on _Hang catch (h) {
       return _hang(h.prints, onPrint);
     }
@@ -76,9 +76,9 @@ final class ScriptedChannel implements MontyChannel {
     final end = itemAt(events, events.length - 1);
     if (end.whichKind() == pb.ChildEvent_Kind.fatalError) {
       _isAlive = false;
-      throw MontyCrashedError(
+      throw crashedError(
         CrashCause.fatal,
-        message: end.fatalError.message,
+        detail: end.fatalError.message,
       );
     }
 
@@ -110,7 +110,7 @@ final class ScriptedChannel implements MontyChannel {
       await Future<void>.delayed(Duration.zero);
     }
     await _killed.future;
-    throw MontyCrashedError(CrashCause.killed, message: 'killed mid-turn');
+    throw crashedError(CrashCause.killed, detail: 'killed mid-turn');
   }
 }
 
@@ -130,9 +130,10 @@ Reply expecting(
   return events;
 };
 
-/// A worker that dies with [cause] instead of answering.
-Reply crash(CrashCause cause, [String? message]) =>
-    (_) => throw _Crash(cause, message);
+/// A worker that dies with [cause] instead of answering, with [exitCode]
+/// when the OS reported one.
+Reply crash(CrashCause cause, [String? message, int? exitCode]) =>
+    (_) => throw _Crash(cause, message, exitCode);
 
 /// A worker that streams [prints] and then runs until killed.
 Reply hangAfter(List<pb.ChildEvent> prints) =>
@@ -150,10 +151,11 @@ final class _Hang implements Exception {
 
 /// How a [Reply] tells the channel the worker died.
 final class _Crash implements Exception {
-  const _Crash(this.cause, this.message);
+  const _Crash(this.cause, this.message, this.exitCode);
 
   final CrashCause cause;
   final String? message;
+  final int? exitCode;
 
   @override
   String toString() => '_Crash(${cause.name}, $message)';

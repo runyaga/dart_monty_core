@@ -75,6 +75,10 @@ REFUSED = [
 # Checkouts upstream accepts, and a snippet whose value or error shows the
 # setting: (id, checkout kwargs, code).
 RUNS = [
+    # A rejected snippet, in the default format and in concise: the worker's
+    # rendering is the error's display() and str().
+    ('type_check_full', {'type_check': True}, 'x: int = "a"'),
+    ('type_check_concise', {'type_check': True, 'type_check_format': 'concise'}, 'x: int = "a"\ny: str = 1'),
     ('type_check_format_upper', {'type_check': True, 'type_check_format': 'JSON'}, 'x: int = "a"'),
     ('type_check_format_dashed', {'type_check': True, 'type_check_format': 'json-lines'}, 'x: int = "a"'),
     ('frozen_utc', {'os_policy': {'datetime': FROZEN}}, CLOCK),

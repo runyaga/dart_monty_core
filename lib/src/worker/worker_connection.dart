@@ -84,17 +84,17 @@ final class WorkerConnection implements MontyChannel {
   }) {
     if (hello.ready != true) {
       port.terminate();
-      throw MontyCrashedError(
+      throw crashedError(
         CrashCause.vanished,
-        message: hello.error ?? 'the Worker did not start',
+        detail: hello.error ?? 'the Worker did not start',
       );
     }
     final protocol = hello.protocol;
     if (protocol != expectedProtocol) {
       port.terminate();
-      throw MontyCrashedError(
+      throw crashedError(
         CrashCause.fatal,
-        message:
+        detail:
             'worker speaks protocol $protocol; this driver speaks '
             '$expectedProtocol',
       );
@@ -212,7 +212,7 @@ final class WorkerConnection implements MontyChannel {
   void _checkUsable() {
     final crash = _crash;
     if (crash != null) {
-      throw MontyCrashedError(crash.cause, message: crash.message);
+      throw repeatCrash(crash);
     }
     if (_closed || _closing != null) throw StateError('channel is closed');
   }
@@ -265,20 +265,20 @@ final class WorkerConnection implements MontyChannel {
     }
     final crash = _crash;
     if (crash != null) {
-      throw MontyCrashedError(crash.cause, message: crash.message);
+      throw repeatCrash(crash);
     }
   }
 
   /// Marks the connection dead, terminates the Worker and fails any turn in
   /// flight. Returns the error for the caller to throw.
   MontyCrashedError _die(CrashCause cause, String? message) {
-    final crash = _crash ??= MontyCrashedError(cause, message: message);
+    final crash = _crash ??= crashedError(cause, detail: message);
     _port.terminate();
     final pending = _pending;
     _pending = null;
     pending?.completeError(crash, StackTrace.current);
 
-    return MontyCrashedError(crash.cause, message: crash.message);
+    return repeatCrash(crash);
   }
 }
 

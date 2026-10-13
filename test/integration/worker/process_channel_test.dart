@@ -183,14 +183,14 @@ void main() {
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.fatal);
       expect(crash.exitCode, 4);
-      expect(crash.message, fatalMessage);
+      expect(crash.detail, fatalMessage);
     });
 
     test('a FatalError without an exit is killed after the grace', () async {
       final channel = await _spawn('fatal-hang');
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.fatal);
-      expect(crash.message, fatalMessage);
+      expect(crash.detail, fatalMessage);
       if (!Platform.isWindows) {
         expect(crash.exitCode, -ProcessSignal.sigkill.signalNumber);
       }
@@ -201,29 +201,29 @@ void main() {
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.vanished);
       expect(crash.exitCode, 0);
-      expect(crash.message, 'worker exited without ending the turn');
+      expect(crash.detail, 'worker exited without ending the turn');
     });
 
     test('a torn frame is vanished, naming the truncation', () async {
       final channel = await _spawn('torn');
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.vanished);
-      expect(crash.message, contains('FrameTruncatedException'));
-      expect(crash.message, contains('14 bytes'));
+      expect(crash.detail, contains('FrameTruncatedException'));
+      expect(crash.detail, contains('14 bytes'));
     });
 
     test('an oversize length prefix desynchronises: worker killed', () async {
       final channel = await _spawn('oversize');
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.vanished);
-      expect(crash.message, contains('FrameTooLargeException'));
+      expect(crash.detail, contains('FrameTooLargeException'));
     });
 
     test('a frame that is not a ChildEvent desynchronises', () async {
       final channel = await _spawn('garbage');
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.vanished);
-      expect(crash.message, contains('worker output unreadable'));
+      expect(crash.detail, contains('worker output unreadable'));
     });
 
     test('a frame upstream rejects desynchronises: worker killed', () async {
@@ -237,7 +237,7 @@ void main() {
       final channel = await _spawn('upstream-rejects');
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.vanished);
-      expect(crash.message, contains('FrameDecodeException'));
+      expect(crash.detail, contains('FrameDecodeException'));
     });
 
     test('stderr tail: the last 4 KiB, ending with the last line', () async {
@@ -251,7 +251,13 @@ void main() {
       final length = tail?.length ?? 0;
       expect(length, lessThanOrEqualTo(4096));
       expect(length, greaterThan(4000));
-      expect(crash.toString(), contains(stderrLastLine));
+      // Upstream's framing: the exit status the OS reported, after what
+      // the channel saw.
+      expect(crash.exitStatus, 134);
+      expect(
+        crash.message,
+        'monty worker crashed: ${crash.detail} (exit status: 134)',
+      );
     });
 
     test(
@@ -314,7 +320,7 @@ void main() {
       Timer(const Duration(milliseconds: 200), channel.kill);
       final crash = await _crashOf(turn);
       expect(crash.cause, CrashCause.killed);
-      expect(crash.message, 'killed by the parent');
+      expect(crash.detail, 'killed by the parent');
       expect(channel.isAlive, isFalse);
     });
 

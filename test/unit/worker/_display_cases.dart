@@ -1,10 +1,13 @@
-// The traceback renderer against upstream's own renderings: each display
+// The traceback renderer and the errors against upstream's own: each display
 // case of the parity suite (_display_fixtures.g.dart) is fed to a fresh real
 // worker, and the port's display() of the exception the worker raises must
-// equal pydantic-monty 1.1.0's, byte for byte, in each format. Shared by the
+// equal pydantic-monty 1.1.0's, byte for byte, in each format; the error
+// built from it must be upstream's class, with its str(), exception() and
+// traceback() frames. Shared by the
 // VM harness (test/integration/worker/real_worker_test.dart) and the Chrome
 // one (worker_channel_web_test.dart), so vm, dart2js and dart2wasm run the
 // same cases.
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:test/test.dart';
@@ -31,7 +34,9 @@ void displayFixtureTests(String label, OpenWorker configured) {
           ),
         );
         expect(event.whichKind(), pb.ChildEvent_Kind.error, reason: '$event');
-        final record = RaisedRecord.fromWire(event.error.exception);
+        final raised = event.error.exception;
+        final record = RaisedRecord.fromWire(raised);
+        _expectError(raisedError(raised), fixture);
         // Both spellings: the explicit format and the default.
         // ignore: avoid_redundant_argument_values
         expect(record.display('traceback'), fixture.traceback);
@@ -53,4 +58,49 @@ void displayFixtureTests(String label, OpenWorker configured) {
       }
     });
   }
+}
+
+/// [error] is the error upstream raised for [fixture]: its class, `str()`,
+/// `exception()`, frames and `display()`.
+void _expectError(MontyError error, DisplayFixture fixture) {
+  final (
+    String name,
+    List<Frame> frames,
+    String Function([String]) display,
+  ) = switch (error) {
+    MontySyntaxError() => (
+      'MontySyntaxError',
+      error.traceback,
+      error.display,
+    ),
+    MontyRuntimeError() => (
+      'MontyRuntimeError',
+      error.traceback,
+      error.display,
+    ),
+    _ => fail('not a syntax or runtime error: $error'),
+  };
+  expect(name, fixture.errorClass);
+  expect('$error', fixture.str);
+  expect(error.message, fixture.str);
+  expect(error.exception.excType, fixture.exceptionType);
+  expect([error.exception.message], fixture.exceptionArgs);
+  expect(
+    [
+      for (final f in frames)
+        (
+          f.filename,
+          f.line,
+          f.column,
+          f.endLine,
+          f.endColumn,
+          f.functionName,
+          f.sourceLine,
+        ),
+    ],
+    fixture.frames,
+  );
+  expect(display(), fixture.traceback);
+  expect(display('type-msg'), fixture.typeMsg);
+  expect(display('msg'), fixture.msg);
 }

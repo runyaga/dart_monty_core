@@ -222,6 +222,38 @@
     `tool/generate_config_oracle.py` records the cases.
   - `PARITY_PIN` moves to the parity suite that builds the worker's limits
     as `ResourceLimits`.
+- Worker groundwork (internal, no public API): upstream's error family
+  for sessions, `MontyError` (sealed) with `MontySyntaxError`,
+  `MontyRuntimeError`, `MontyTypingError` and `MontyCrashedError`, and
+  `Frame`. The worker path throws them in place of `MontyScriptError`, the
+  internal typing error and the internal crash error; today's public errors
+  are unchanged until the API cutover.
+  - `message` and `toString()` are upstream's `str()`: `Type: message` (or
+    `Type`) for a runtime error, the message for a syntax error, the
+    rendered diagnostics for a typing error. `exception` is upstream's
+    `exception()`, with `''` for an absent message; a crash's is
+    `RuntimeError`. Syntax and runtime errors carry `traceback` (`Frame`s)
+    and `display()`; a typing error's `display()` is the worker's rendering.
+  - `MontyCrashedError` has upstream's `timedOut` (any deadline kill:
+    "monty worker killed after exceeding request timeout of 500ms") and
+    `exitStatus` (the exit code the OS reported; `null` for a signal or a
+    kill), and frames what the channel saw as upstream does
+    ("monty worker crashed: ... (exit status: 1)").
+  - A worker that answers against the protocol is discarded and the call
+    throws `MontyCrashedError` with upstream's message, "monty worker
+    protocol error: ...": an event that cannot follow the request, an
+    `Error` with no exception, a result that does not decode, and a raised
+    exception that fails upstream's checks (an unknown type, a frame
+    without both positions, an end column before the start or more than 2
+    past a one-line preview). Upstream raises a plain `RuntimeError` here;
+    this is the one place `MontyError` catches more.
+  - Checked against pydantic-monty 1.1.0: each of the parity suite's 19
+    display cases now also compares the error class, `str()`,
+    `exception()` and every `Frame` with upstream's, on the VM, dart2js
+    and dart2wasm (`tool/generate_display_fixtures.py` bakes them); a
+    rejected snippet's rendering in the `full`, `concise`, `json` and
+    `jsonlines` formats, and a `requestTimeout` kill's fields, against
+    real workers on the three compilers.
 
 ### Changed
 

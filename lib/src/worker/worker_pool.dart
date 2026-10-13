@@ -233,9 +233,9 @@ final class WorkerPool {
     startupTimeout,
     onTimeout: () {
       handle.cancel();
-      throw MontyCrashedError(
+      throw crashedError(
         CrashCause.killed,
-        message: 'the worker was not ready within $startupTimeout',
+        detail: 'the worker was not ready within $startupTimeout',
       );
     },
   );

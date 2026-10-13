@@ -9,7 +9,12 @@ library;
 
 import 'dart:async';
 
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+
+// The crash every channel reports, and the factories that make it.
+export 'package:dart_monty_core/src/worker/monty_error.dart'
+    show CrashCause, MontyCrashedError, crashedError, repeatCrash;
 
 /// Receives one `Print` during a turn. The turn awaits it before it reads
 /// the next event, so prints are delivered one at a time, in order.
@@ -37,58 +42,4 @@ abstract interface class MontyChannel {
 
   /// Whether a turn can still be sent.
   bool get isAlive;
-}
-
-/// Why a worker stopped answering.
-enum CrashCause {
-  /// The worker's allocator refused an allocation over its hard limit and
-  /// the worker exited with upstream's `OOM_EXIT_CODE` (65).
-  outOfMemory,
-
-  /// The worker sent a `FatalError` and exited: protocol version skew, a
-  /// desynchronised request stream, or a panic.
-  fatal,
-
-  /// The worker ended without a `FatalError`: EOF, a torn frame, a signal
-  /// such as a native stack overflow's abort, or a wasm trap.
-  vanished,
-
-  /// The parent killed it: a deadline, or a close during a turn.
-  killed,
-}
-
-/// The worker died. The parent process survives, and the channel that
-/// reported this is never usable again; recovery is a new channel.
-final class MontyCrashedError extends Error {
-  /// Creates the error for a worker that stopped because of [cause].
-  MontyCrashedError(
-    this.cause, {
-    this.exitCode,
-    this.message,
-    this.stderrTail,
-  });
-
-  /// Why the worker stopped.
-  final CrashCause cause;
-
-  /// The worker process's exit code, on native; negative for a signal.
-  final int? exitCode;
-
-  /// The `FatalError` text, a trap's text, or what the channel saw last.
-  final String? message;
-
-  /// On native, the last 4 KiB or less of the worker's stderr.
-  final String? stderrTail;
-
-  @override
-  String toString() {
-    final parts = [
-      'MontyCrashedError(${cause.name}',
-      if (exitCode != null) 'exit code $exitCode',
-      if (message != null) '$message',
-      if (stderrTail != null) 'stderr: $stderrTail',
-    ];
-
-    return '${parts.join(', ')})';
-  }
 }

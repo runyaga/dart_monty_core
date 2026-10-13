@@ -57,9 +57,9 @@ final class PendingSpawn implements SpawnHandle {
       return;
     }
     _ready.completeError(
-      MontyCrashedError(
+      crashedError(
         CrashCause.killed,
-        message: 'the worker start was cancelled',
+        detail: 'the worker start was cancelled',
       ),
       StackTrace.current,
     );

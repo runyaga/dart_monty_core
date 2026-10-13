@@ -11,13 +11,13 @@ library;
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:dart_monty_core/src/platform/monty_error.dart';
-import 'package:dart_monty_core/src/platform/monty_exception.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/default_print.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
@@ -31,13 +31,14 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 /// A [feedRun] made from inside one of its own session's print callbacks
 /// throws [StateError] at once: that callback runs inside the turn.
 ///
-/// A Python exception throws [MontyScriptError] and the session stays
-/// usable. A dead worker throws [MontyCrashedError]; so does a turn that
-/// outlives the pool's `requestTimeout` or a duration backstop, whose worker
-/// is killed. A worker that exceeds its memory limit throws
-/// [MontyScriptError] with `excType` `MemoryError`. After either of the last
-/// two the session is finished: its slot is free, and every later call
-/// throws [StateError].
+/// A Python exception throws [MontyRuntimeError] (or [MontySyntaxError])
+/// and the session stays usable. A dead worker throws [MontyCrashedError];
+/// so does a turn that outlives the pool's `requestTimeout` or a duration
+/// backstop, whose worker is killed (`timedOut`), and a worker that answers
+/// against the protocol, which is discarded. A worker that exceeds its
+/// memory limit throws [MontyRuntimeError] with a `MemoryError`. After any
+/// of the last four the session is finished: its slot is free, and every
+/// later call throws [StateError].
 abstract interface class PoolSession {
   /// Runs [code] to completion and returns its value: the last expression's,
   /// or [MontyNone].
@@ -58,7 +59,7 @@ abstract interface class PoolSession {
   /// it does, such a sleep is declined and raises in the sandbox.
   ///
   /// On a type-checking session a snippet the check rejects throws
-  /// [MontyTypeCheckError] without running; [skipTypeCheck] skips the check
+  /// [MontyTypingError] without running; [skipTypeCheck] skips the check
   /// for this snippet. Past the session's
   /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
   /// `RuntimeError`; a system sleep that would take the session's sleeps
@@ -100,7 +101,6 @@ Future<PoolSession> openPoolSession(
       config.systemSleepMax,
     );
     // A dead worker is an outcome to map here, as upstream maps it.
-    // ignore: avoid_catching_errors
   } on MontyCrashedError catch (error, stack) {
     Error.throwWithStackTrace(hold.end(error), stack);
   } on Object {
@@ -132,9 +132,9 @@ final class _Hold {
     final current = turn;
     if (current == null || current.isCompleted) return;
     current.completeError(
-      MontyCrashedError(
+      crashedError(
         CrashCause.killed,
-        message: 'the session was closed during a turn',
+        detail: 'the session was closed during a turn',
       ),
       StackTrace.current,
     );
@@ -142,15 +142,16 @@ final class _Hold {
 
   /// The worker is gone: free its slot (once), and report [crash] as the
   /// call's error, a memory-limit exit as upstream's `MemoryError`.
-  Object end(MontyCrashedError crash) {
+  MontyError end(MontyCrashedError crash) {
     lease.kill();
     if (crash.cause != CrashCause.outOfMemory) return crash;
-    const message = 'the worker exceeded its memory limit and was terminated';
 
-    return const MontyScriptError(
-      message,
-      excType: 'MemoryError',
-      exception: MontyException(message: message, excType: 'MemoryError'),
+    return recordError(
+      const RaisedRecord(
+        'MemoryError',
+        'the worker exceeded its memory limit and was terminated',
+        [],
+      ),
     );
   }
 }
@@ -302,7 +303,6 @@ final class _LeasedSession implements PoolSession {
 
       return result.value;
       // A dead worker ends the session; the error is mapped, not swallowed.
-      // ignore: avoid_catching_errors
     } on MontyCrashedError catch (error, stack) {
       Error.throwWithStackTrace(_hold.end(error), stack);
     }
@@ -449,9 +449,8 @@ final class _SessionChannel implements MontyChannel {
     final kind = reply.whichKind();
     if (kind == pb.ChildEvent_Kind.error) return reply;
     kill();
-    throw MontyCrashedError(
-      CrashCause.killed,
-      message: 'protocol desync: AbortFeed was answered with ${kind.name}',
+    throw protocolError(
+      'worker answered AbortFeed with something other than an Error',
     );
   }
 
@@ -500,9 +499,12 @@ final class _SessionChannel implements MontyChannel {
     kill();
     if (done.isCompleted) return;
     done.completeError(
-      MontyCrashedError(
+      crashedError(
         CrashCause.killed,
-        message: 'no reply within $limit; the worker was killed',
+        detail:
+            'monty worker killed after exceeding request timeout of '
+            '${rustDuration(limit)}',
+        timedOut: true,
       ),
       StackTrace.current,
     );

@@ -1022,8 +1022,8 @@ jobs:
       # Artifacts do not keep the executable bit.
       - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
       - name: Test (worker tag)
-        # Floor under the 163 tests registered once the session-settings
-        # oracle cases joined (57 of them; 106 with the pool-session tests,
+        # Floor under the 165 tests registered once the session-settings
+        # oracle cases joined (59 of them; 106 with the pool-session tests,
         # 95 with the display cases, 36 when this job was added). The path is
         # load-bearing: without it every suite in test/ loads, the wasm ones fail
         # to, and each skipped suite writes an empty hitmap.

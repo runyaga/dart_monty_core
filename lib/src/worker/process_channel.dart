@@ -225,10 +225,10 @@ final class ProcessChannel implements MontyChannel {
     await _stderr.drain(pipeDrainGrace);
     final tail = _stderr.text;
 
-    return _crash ??= MontyCrashedError(
+    return _crash ??= crashedError(
       cause,
       exitCode: code,
-      message:
+      detail:
           fatal ?? (_killed ? 'killed by the parent' : _events.describeEnd()),
       stderrTail: tail.isEmpty ? null : tail,
     );
