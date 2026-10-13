@@ -338,19 +338,6 @@ void main() {
       expect(() => ArenaWriter().add(loop), throwsArgumentError);
     });
 
-    test('kinds outside the subset are refused', () {
-      expect(
-        () => ArenaWriter().add(const MontyEllipsis()),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => ArenaWriter().add(
-          const MontyList([MontyDate(year: 2026, month: 1, day: 2)]),
-        ),
-        throwsUnsupportedError,
-      );
-    });
-
     test('100,000 levels of nesting encode without recursion', () {
       MontyValue v = const MontyNone();
       for (var i = 0; i < 100000; i++) {
@@ -358,15 +345,6 @@ void main() {
       }
       final writer = ArenaWriter();
       expect(writer.add(v), 100000);
-    });
-
-    test('a 64-level shared DAG encodes to 65 nodes', () {
-      MontyValue v = const MontyNone();
-      for (var i = 0; i < 64; i++) {
-        v = MontyList([v, v]);
-      }
-      final writer = ArenaWriter()..add(v);
-      expect(writer.arena.nodes, hasLength(65));
     });
   });
 }

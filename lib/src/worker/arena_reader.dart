@@ -46,15 +46,36 @@ import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 
+/// Where class and instance nodes may resolve to objects the host
+/// registered, instead of to proxies.
+///
+/// The reader calls `classType` with the id of every class `type` node and
+/// `instance` with the id of every class instance node, in arena order, as
+/// upstream's decoder consults its instance store. A non-null result is what
+/// the node decodes to; for a class, only where it is reached as a value. An
+/// instance whose class is registered but which is not itself registered
+/// still decodes to a proxy. What a registered object decodes to, and where
+/// the original Dart object becomes observable, is the registry's to decide.
+///
+/// A registered object is hashable as a dict key or set member, by identity.
+typedef HostObjectLookup = ({
+  MontyValue? Function(String classId) classType,
+  MontyValue? Function(String instanceId) instance,
+});
+
 /// Reads values out of one arena.
 ///
 /// The whole arena is checked and built on the first read; two roots naming
 /// the same node give the identical Dart object.
 final class ArenaReader {
-  /// Creates a reader over [arena]'s nodes.
-  ArenaReader(pb.Arena arena) : _nodes = arena.nodes;
+  /// Creates a reader over [arena]'s nodes, resolving registered objects
+  /// through [hosts].
+  ArenaReader(pb.Arena arena, {HostObjectLookup? hosts})
+    : _nodes = arena.nodes,
+      _hosts = hosts;
 
   final List<pb.MontyNode> _nodes;
+  final HostObjectLookup? _hosts;
 
   /// Stages 1 and 2 passed.
   bool _checked = false;
@@ -91,7 +112,7 @@ final class ArenaReader {
       );
     }
     final built = _built ??= _guarded<List<Object>>(
-      () => _Builder(_nodes).build(),
+      () => _Builder(_nodes, _hosts, {}).build(),
     );
 
     final value = _valueIn(built, index);
@@ -130,7 +151,8 @@ final class ArenaReader {
   }
 }
 
-/// Node [i] of [built] as a value: a class node as a value is staged.
+/// Node [i] of [built] as a value: a class node as a value is its registered
+/// object, or staged.
 Object _valueIn(List<Object> built, int i) =>
     switch (built.elementAtOrNull(i)) {
       _ClassNode(:final asValue) => asValue,
@@ -184,16 +206,22 @@ final class _ClassNode {
   /// [MontyClassType], or [_Staged] when its attributes hold a staged kind.
   final Object meta;
 
-  /// [_Staged], until there is a class for a class type value.
+  /// The registered object, or [_Staged] until there is a class for a class
+  /// type value.
   final Object asValue;
 }
 
 /// Stage 3: every node to its value, in arena order.
 final class _Builder {
-  _Builder(this._nodes) : _keys = PythonKeys(_nodes);
+  _Builder(this._nodes, this._hosts, this._registered)
+    : _keys = PythonKeys(_nodes, _registered);
 
   final List<pb.MontyNode> _nodes;
+  final HostObjectLookup? _hosts;
   final List<Object> _built = [];
+
+  /// The registered object each class or instance node resolved to.
+  final Map<int, MontyValue> _registered;
   final PythonKeys _keys;
 
   List<Object> build() {
@@ -281,6 +309,7 @@ final class _Builder {
 
   _ClassNode _classNode(pb.Type type) {
     final id = uuidString(type.id.data);
+    final host = _register(_hosts?.classType(id));
     final attrs = _attrs(type.attrs.pairs);
     final meta = attrs is _Staged
         ? attrs
@@ -294,15 +323,18 @@ final class _Builder {
 
     return _ClassNode(
       meta,
-      _Staged(
-        'the worker sent the class "${type.name}" as a value; this version '
-        'of the package has no class for a class type value',
-      ),
+      host ??
+          _Staged(
+            'the worker sent the class "${type.name}" as a value; this '
+            'version of the package has no class for a class type value',
+          ),
     );
   }
 
   Object _instance(pb.ClassInstanceNode node) {
     final id = uuidString(node.instanceId.data);
+    final host = _register(_hosts?.instance(id));
+    if (host != null) return host;
     // Stage 2 made the instance's class a class node, built before it.
     final classNode = _built.elementAtOrNull(node.classType);
     final meta = classNode is _ClassNode ? classNode.meta : null;
@@ -315,6 +347,13 @@ final class _Builder {
       instanceId: id,
       attrs: attrs as Map<String, MontyValue>,
     );
+  }
+
+  /// [host], recorded as what the node being built resolved to.
+  MontyValue? _register(MontyValue? host) {
+    if (host != null) _registered[_built.length] = host;
+
+    return host;
   }
 
   /// Attribute pairs as upstream's `attrs_dict` reads them: only pairs whose
@@ -420,9 +459,8 @@ final Map<pb.MontyNode_Kind, Object Function(_Builder, pb.MontyNode)> _kinds = {
   pb.MontyNode_Kind.exception: (b, n) => _exception(n.exception),
   pb.MontyNode_Kind.type: (b, n) => b._type(n.type),
   pb.MontyNode_Kind.classInstance: (b, n) => b._instance(n.classInstance),
-  pb.MontyNode_Kind.builtinFunction: (b, n) => _builtinFunction(
-    n.builtinFunction,
-  ),
+  pb.MontyNode_Kind.builtinFunction: (b, n) =>
+      _builtinFunction(n.builtinFunction),
   pb.MontyNode_Kind.function: (b, n) => MontyString(n.function.name),
   pb.MontyNode_Kind.repr: (b, n) => MontyString(n.repr),
   pb.MontyNode_Kind.cycle: (b, n) => MontyString(n.cycle),

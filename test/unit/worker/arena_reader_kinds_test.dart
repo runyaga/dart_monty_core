@@ -17,11 +17,13 @@ import '../../_accessors.dart';
 import '_arena_fixtures.dart';
 
 /// The arena after a wire round trip, so presence survives as it would.
-ArenaReader _reader(List<pb.MontyNode> nodes) => ArenaReader(
-  pb.Arena.fromBuffer(
-    pb.Arena(nodeCount: nodes.length, nodes: nodes).writeToBuffer(),
-  ),
-);
+ArenaReader _reader(List<pb.MontyNode> nodes, {HostObjectLookup? hosts}) =>
+    ArenaReader(
+      pb.Arena.fromBuffer(
+        pb.Arena(nodeCount: nodes.length, nodes: nodes).writeToBuffer(),
+      ),
+      hosts: hosts,
+    );
 
 MontyValue _decode(List<pb.MontyNode> nodes, [int? root]) =>
     _reader(nodes)[root ?? nodes.length - 1];
@@ -369,7 +371,7 @@ void main() {
       final nodes = [
         for (final (a, b, _) in cases) ...[_spec(a), _spec(b)],
       ];
-      final keys = PythonKeys(nodes);
+      final keys = PythonKeys(nodes, {});
       for (final (i, (a, b, equal)) in cases.indexed) {
         final same = keys.keyOf(i * 2) == keys.keyOf(i * 2 + 1);
         expect(same, equal, reason: '$a and $b');
@@ -658,6 +660,86 @@ void main() {
       final watch = Stopwatch()..start();
       expect(_decode(nodes), _setOfLength(1));
       expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+    });
+  });
+
+  group('host objects', () {
+    const registered = MontyString('registered');
+
+    test('registered instances and classes replace their proxies', () {
+      final asked = <String>[];
+      final reader = _reader(
+        [
+          classType('C', id: uuid(1)),
+          instance(0, id: uuid(2), attrs: pairs([])),
+          instance(0, id: uuid(3), attrs: pairs([])),
+          list([0, 1, 2]),
+        ],
+        hosts: (
+          classType: (id) {
+            asked.add('class $id');
+
+            return registered;
+          },
+          instance: (id) {
+            asked.add('instance $id');
+
+            return id.startsWith('02') ? registered : null;
+          },
+        ),
+      );
+      final items = (reader[3] as MontyList).items;
+      expect(identical(itemAt(items, 0), registered), isTrue);
+      expect(identical(itemAt(items, 1), registered), isTrue);
+      // Not registered, though its class is: a proxy.
+      expect(itemAt(items, 2), isA<MontyClassInstance>());
+      expect(asked, [
+        'class 01010101-0101-0101-0101-010101010101',
+        'instance 02020202-0202-0202-0202-020202020202',
+        'instance 03030303-0303-0303-0303-030303030303',
+      ]);
+    });
+
+    test('every class and instance node is asked, reachable or not', () {
+      final asked = <String>[];
+      final reader = _reader(
+        [
+          classType('C', id: uuid(1)),
+          instance(0, id: uuid(2), attrs: pairs([])),
+          n(1),
+        ],
+        hosts: (
+          classType: (id) {
+            asked.add(id);
+
+            return null;
+          },
+          instance: (id) {
+            asked.add(id);
+
+            return null;
+          },
+        ),
+      );
+      expect(reader[2], const MontyInt(1));
+      expect(asked, hasLength(2));
+    });
+
+    test('a registered object is a key by identity', () {
+      const other = MontyString('other');
+      final reader = _reader(
+        [
+          classType('C', id: uuid(1)),
+          // Two nodes for the same registered instance, then another.
+          for (final b in [2, 2, 3]) instance(0, id: uuid(b), attrs: pairs([])),
+          set([1, 2, 3]),
+        ],
+        hosts: (
+          classType: (_) => null,
+          instance: (id) => id.startsWith('02') ? registered : other,
+        ),
+      );
+      expect((reader[4] as MontySet).items, [registered, other]);
     });
   });
 

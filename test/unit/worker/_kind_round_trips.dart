@@ -1,9 +1,11 @@
-// Every node kind through the real worker: Python values decoded by the
-// arena reader. Shared by the VM harness
+// Every node kind through the real worker, both ways: Python values decoded
+// by the arena reader, and Dart values written by the arena writer that
+// Python then checks. Shared by the VM harness
 // (test/integration/worker/real_worker_test.dart) and the Chrome one
 // (worker_channel_web_test.dart), so both run the same cases.
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
@@ -107,9 +109,143 @@ final List<(String, Matcher)> _decodeCases = [
   ),
 ];
 
-pb.ParentRequest _feed(String code) => pb.ParentRequest(
-  feed: pb.Feed(code: code, cwd: '/'),
-);
+/// Inputs, and a Python expression over them that must be `True`.
+final List<(String, Map<String, MontyValue>, String)> _encodeCases = () {
+  const shared = MontyList([MontyInt(1)]);
+
+  return [
+    ('ellipsis', {'x': const MontyEllipsis()}, 'x is ...'),
+    (
+      'NotImplemented',
+      {'x': const MontyNotImplemented()},
+      'x is NotImplemented',
+    ),
+    (
+      'date',
+      {'x': const MontyDate(year: 2026, month: 1, day: 2)},
+      '${_dt}x == datetime.date(2026, 1, 2)',
+    ),
+    (
+      'aware datetime with a name',
+      {
+        'x': const MontyDateTime(
+          year: 2026,
+          month: 1,
+          day: 2,
+          hour: 3,
+          minute: 4,
+          second: 5,
+          microsecond: 6,
+          offsetSeconds: 3600,
+          timezoneName: 'CET',
+        ),
+      },
+      '${_dt}x == datetime.datetime(2026, 1, 2, 2, 4, 5, 6, '
+          'tzinfo=datetime.timezone.utc) and x.tzname() == "CET"',
+    ),
+    (
+      'time with fold',
+      {
+        'x': const MontyTime(
+          hour: 1,
+          minute: 2,
+          second: 3,
+          microsecond: 4,
+          fold: 1,
+        ),
+      },
+      '${_dt}x == datetime.time(1, 2, 3, 4) and x.fold == 1',
+    ),
+    (
+      'timedelta',
+      {'x': const MontyTimeDelta(days: -1, seconds: 5)},
+      '${_dt}x == datetime.timedelta(days=-1, seconds=5)',
+    ),
+    (
+      'timezone with a name',
+      {'x': const MontyTimeZone(offsetSeconds: 3600, name: 'CET')},
+      '${_dt}x.utcoffset(None) == datetime.timedelta(hours=1) and '
+          'x.tzname(None) == "CET"',
+    ),
+    (
+      'a zone name with no UTF-8 form is dropped',
+      {'x': const MontyTimeZone(offsetSeconds: 60, name: '\uD800')},
+      '${_dt}x == datetime.timezone(datetime.timedelta(seconds=60)) and '
+          'x.tzname(None) == "UTC+00:01"',
+    ),
+    (
+      'exception',
+      {'x': const MontyExceptionValue(excType: 'KeyError', message: 'k')},
+      'isinstance(x, KeyError) and x.args == ("k",)',
+    ),
+    (
+      'exception messages with a lone surrogate',
+      {
+        'v': const MontyExceptionValue(
+          excType: 'ValueError',
+          message: 'a\uD800',
+        ),
+        'k': const MontyExceptionValue(excType: 'KeyError', message: 'a\uD800'),
+      },
+      r'''v.args == ("a\ufffd\ufffd\ufffd",) and k.args == ("'a\\ud800'",)''',
+    ),
+    (
+      'builtin function',
+      {'x': const MontyOpaque(MontyOpaqueKind.builtin, 'len')},
+      'x([1, 2]) == 2',
+    ),
+    (
+      'builtin type',
+      {'x': const MontyOpaque(MontyOpaqueKind.type, 'int')},
+      'x is int',
+    ),
+    (
+      'named tuple',
+      {
+        'x': const MontyNamedTuple(
+          typeName: 'P',
+          fieldNames: ['a', 'b'],
+          values: [MontyInt(1), MontyString('b')],
+        ),
+      },
+      'x.a == 1 and x[1] == "b" and len(x) == 2',
+    ),
+    ('a container shared across inputs', {'a': shared, 'b': shared}, 'a is b'),
+    (
+      'a container shared inside one',
+      {
+        'x': const MontyList([shared, shared]),
+      },
+      'x[0] is x[1]',
+    ),
+    (
+      'leaves are distinct objects',
+      {
+        'x': const MontyList([
+          MontyExceptionValue(excType: 'ValueError', message: 'e'),
+          MontyExceptionValue(excType: 'ValueError', message: 'e'),
+        ]),
+      },
+      'x[0] is not x[1]',
+    ),
+  ];
+}();
+
+pb.ParentRequest _feed(
+  String code, [
+  Map<String, MontyValue> inputs = const {},
+]) {
+  final feed = pb.Feed(code: code, cwd: '/');
+  if (inputs.isNotEmpty) {
+    final writer = ArenaWriter();
+    for (final MapEntry(:key, :value) in inputs.entries) {
+      feed.inputs.add(pb.NamedRef(name: key, value: writer.add(value)));
+    }
+    feed.values = writer.arena;
+  }
+
+  return pb.ParentRequest(feed: feed);
+}
 
 MontyValue _value(pb.ChildEvent event) {
   expect(event.whichKind(), pb.ChildEvent_Kind.complete, reason: '$event');
@@ -128,6 +264,29 @@ void kindRoundTripTests(String label, OpenWorker configured) {
     // A staged kind: checked, but no class for it yet.
     final complex = await turn(_feed('1j'));
     expect(() => _value(complex), throwsUnsupportedError);
+    await close();
+  });
+
+  test('every kind the worker accepts reaches Python ($label)', () async {
+    final (turn, close) = await configured();
+    for (final (what, inputs, check) in _encodeCases) {
+      expect(
+        _value(await turn(_feed(check, inputs))),
+        const MontyBool(true),
+        reason: what,
+      );
+    }
+    await close();
+  });
+
+  test('a sandbox instance sent back is the same object ($label)', () async {
+    final (turn, close) = await configured();
+    final c = _value(await turn(_feed('class C:\n    pass\nc = C()\nc')));
+    expect(c, isA<MontyClassInstance>());
+    expect(
+      _value(await turn(_feed('x is c', {'x': c}))),
+      const MontyBool(true),
+    );
     await close();
   });
 }

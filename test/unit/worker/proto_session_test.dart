@@ -356,6 +356,86 @@ void main() {
       },
     );
 
+    // One value per outbound rule of the writer: each is refused before it
+    // reaches the worker, through an input and through a callback return.
+    final refused = <String, MontyValue>{
+      'an unpaired surrogate': const MontyString('\uD800'),
+      'a byte above 255': const MontyBytes([256]),
+      'hour 24': const MontyTime(
+        hour: 24,
+        minute: 0,
+        second: 0,
+        microsecond: 0,
+      ),
+      'an unnormalized timedelta': const MontyTimeDelta(days: 0, seconds: -1),
+      'an offset of a day': const MontyTimeZone(offsetSeconds: 86400),
+      'a zone name without an offset': const MontyDateTime(
+        year: 2026,
+        month: 1,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        timezoneName: 'X',
+      ),
+      'a negative file position': const MontyFileHandle(
+        path: '/x',
+        mode: 'r',
+        position: -1,
+      ),
+      'an unknown exception type': const MontyExceptionValue(excType: 'Nope'),
+      'a short named tuple': const MontyNamedTuple(
+        typeName: 'P',
+        fieldNames: ['x'],
+        values: [],
+      ),
+      'an unhashable set member': const MontySet([MontyList([])]),
+    };
+    for (final MapEntry(key: what, :value) in refused.entries) {
+      test('an input with $what is refused before sending', () async {
+        final ch = _configured([]);
+        final s = await ProtoSession.open(ch);
+        await expectLater(
+          s.feed('x', inputs: {'x': value}),
+          throwsArgumentError,
+        );
+        expect(ch.requests, hasLength(1));
+      });
+
+      test('a callback returning $what fails the call', () async {
+        final ch = _configured([
+          answer([_functionCall('f', [])]),
+          answer([completeNone()]),
+        ]);
+        final s = await ProtoSession.open(ch);
+        await s.feed('f()', externals: {'f': (args, kwargs) => value});
+        final result = itemAt(ch.requests, 2).resumeCall.result;
+        expect(result.whichKind(), pb.ExtFunctionResult_Kind.error);
+        expect(result.error.message, contains('Invalid argument'));
+        expect(result.hasReturnValue(), isFalse);
+      });
+    }
+
+    test('a keyword argument named by a non-str fails the call', () async {
+      final ch = _configured([
+        answer([
+          _functionCall(
+            'f',
+            [intNode(1), intNode(2)],
+            kwargs: [pb.NodePair(key: 0, value: 1)],
+          ),
+        ]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await s.feed(
+        'f()',
+        externals: {'f': (args, kwargs) => const MontyNone()},
+      );
+      final error = itemAt(ch.requests, 2).resumeCall.result.error;
+      expect(error.message, contains('a keyword argument name must be a str'));
+    });
+
     test(
       'an argument with no value class yet fails the call, not the session',
       () async {
