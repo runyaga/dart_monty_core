@@ -51,6 +51,13 @@ void checkNode(pb.MontyNode node) => switch (node.whichKind()) {
   final kind => _checks[kind]?.call(node),
 };
 
+/// Whether [checkNode] has a rule for a node of [kind]. A node of any other
+/// kind passes [checkNode] whatever it holds.
+bool checksKind(pb.MontyNode_Kind kind) =>
+    kind == pb.MontyNode_Kind.notSet ||
+    kind == pb.MontyNode_Kind.uuid ||
+    _checks.containsKey(kind);
+
 /// The kinds upstream checks; the others it converts as they are.
 final Map<pb.MontyNode_Kind, void Function(pb.MontyNode)> _checks = {
   pb.MontyNode_Kind.complex: (n) => _checkComplex(n.complex),

@@ -352,6 +352,61 @@ void main() {
       );
     });
 
+    test('a reply frame upstream rejects is a vanished crash, after the '
+        'Prints before it', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final prints = <String>[];
+      final done = _start(
+        c,
+        onPrint: (p) => prints.add(p.segments.map((s) => s.text).join()),
+      );
+      // Complete { values { nodes: [ { str: "\xc3\x28" } ] } }: invalid
+      // UTF-8, which package:protobuf alone accepts.
+      final body = [0x32, 8, 0x12, 6, 0x12, 4, 0x42, 2, 0xc3, 0x28];
+      expect(
+        pb.ChildEvent.fromBuffer(body).complete.values.nodes,
+        hasLength(1),
+      );
+      final bad = Frame.wrap(body);
+      c.onReply(
+        Uint8List.fromList([
+          ..._frames([_print('before')]),
+          ...bad,
+        ]),
+        outcomeContinue,
+      );
+      await expectLater(
+        done,
+        throwsA(
+          _crashed(CrashCause.vanished, contains('FrameDecodeException')),
+        ),
+      );
+      expect(prints, ['before']);
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+    });
+
+    test('an oversized request is refused before it is posted; the channel '
+        'stays usable', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final node = pb.MontyNode(str: 'x' * (1 << 20));
+      final huge = pb.ParentRequest(
+        feed: pb.Feed(values: pb.Arena(nodes: List.filled(300, node))),
+      );
+      await expectLater(
+        c.turn(huge),
+        throwsA(isA<FrameTooLargeException>()),
+      );
+      expect(port.posted, isEmpty);
+      expect(c.isAlive, isTrue);
+      final done = _start(c);
+      expect(_onlyRequest(port), _feed);
+      c.onReply(_frames([_ok]), outcomeContinue);
+      expect((await done).whichKind(), pb.ChildEvent_Kind.ok);
+    });
+
     test('a reply without a turn-ending event is a vanished crash', () async {
       final c = _accept(_FakePort());
       final done = _start(c);

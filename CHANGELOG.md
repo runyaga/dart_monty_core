@@ -95,6 +95,26 @@
   twice is two nodes. `MontyValue.fromDart` is unchanged. The reader takes
   an internal hook through which a registry of host objects can resolve
   class and instance nodes to registered objects.
+- Worker groundwork, continued (internal, no public API): every frame from
+  the worker is pre-scanned with upstream's decoder rules before
+  package:protobuf parses it, on both channels. A frame upstream rejects is
+  now rejected here too, and the worker is discarded as a `vanished` crash.
+  That covers malformed or overflowing varints, field keys beyond 32 bits, a
+  known field with the wrong wire type, invalid UTF-8 in any string, nested
+  unknown groups past prost's recursion limit, an invalid node anywhere
+  (including in an event arm a later arm replaces), a `FunctionCall.object_id`
+  that is not 16 bytes, and a frame whose decoding would exceed upstream's
+  1 GiB allocation budget. The budget is charged as upstream charges it.
+  Two kinds of value that package:protobuf would misread are rewritten in
+  place first: a boolean whose low 32 bits are zero but which is not zero,
+  and a `PrintStream` number no member names. Strings keep a leading U+FEFF,
+  which Dart's UTF-8 decoder would drop, and a function call's position
+  filename is cut to 256 bytes, as upstream's decoder cuts it. Unknown
+  fields are dropped before the parse, as prost drops them, so they cannot
+  make the parent hold memory upstream's budget never counted. An outbound frame's length is
+  now computed before the frame is encoded. An oversized request throws
+  `FrameTooLargeException` without the body being built, and nothing is
+  sent.
 
 ### Changed
 

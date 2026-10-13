@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:protobuf/protobuf.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
@@ -65,6 +66,63 @@ void main() {
         ),
       );
       expect(Frame.wrap(Uint8List(16), limit: 16).length, 20);
+    });
+  });
+
+  // Upstream checks the encoded length before it allocates the frame
+  // (monty-proto frame.rs:116-143), so an oversized request costs nothing
+  // and leaves the stream in sync.
+  group('outbound size, checked before encoding', () {
+    test('a message of exactly the limit encodes; one byte more does not', () {
+      final request = pb.ParentRequest(feed: pb.Feed(code: 'x' * 300));
+      final length = request.writeToBuffer().length;
+      expect(Frame.encode(request, limit: length).length, length + 4);
+      expect(
+        () => Frame.encode(request, limit: length - 1),
+        throwsA(
+          isA<FrameTooLargeException>()
+              .having((e) => e.length, 'length', length)
+              .having((e) => e.max, 'max', length - 1),
+        ),
+      );
+    });
+
+    test('an oversized request is refused without being written', () {
+      // 300 MiB when written, from one MiB shared by every node.
+      final node = pb.MontyNode(str: 'x' * (1 << 20));
+      final spy = _WriteSpy();
+      final request = pb.ParentRequest(
+        feed: pb.Feed(values: pb.Arena(nodes: List.filled(300, node))),
+      )..unknownFields.mergeGroupField(99, spy);
+      expect(() => Frame.encode(request), _tooLarge);
+      expect(spy.written, isFalse);
+    });
+
+    test('the refusal names the encoded length and the maximum', () {
+      // 2^33 bytes and more when written: no platform could build it.
+      final node = pb.MontyNode(str: 'x' * (1 << 20));
+      final request = pb.ParentRequest(
+        feed: pb.Feed(values: pb.Arena(nodes: List.filled(8192, node))),
+      );
+      const arena = ((1 << 20) + 8) * 8192;
+      const feed = arena + 6;
+      expect(
+        () => Frame.encode(request),
+        throwsA(
+          isA<FrameTooLargeException>()
+              .having((e) => e.length, 'length', feed + 6)
+              .having((e) => e.max, 'max', Frame.maxLength),
+        ),
+      );
+    });
+
+    test('the body is written once, straight after the prefix', () {
+      final spy = _WriteSpy();
+      final request = pb.ParentRequest(feed: pb.Feed(code: 'x = 1'))
+        ..unknownFields.mergeGroupField(99, spy);
+      final frame = Frame.encode(request);
+      expect(spy.written, isTrue);
+      expect(frame.sublist(4), request.writeToBuffer());
     });
   });
 
@@ -316,4 +374,16 @@ void main() {
       );
     });
   });
+}
+
+/// An unknown group, carried by a request, that records whether the request
+/// was ever serialised.
+final class _WriteSpy extends UnknownFieldSet {
+  bool written = false;
+
+  @override
+  void writeToCodedBufferWriter(CodedBufferWriter output) {
+    written = true;
+    super.writeToCodedBufferWriter(output);
+  }
 }

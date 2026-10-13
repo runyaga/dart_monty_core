@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -50,6 +51,7 @@ void main() {
   group('a turn that ends normally', () {
     test('streams Prints in order, then returns the turn end', () async {
       final channel = await _spawn('serve');
+      expect(channel.pid, isPositive);
       final ok = await channel.turn(_configure);
       expect(ok.whichKind(), pb.ChildEvent_Kind.ok);
 
@@ -90,6 +92,28 @@ void main() {
       final first = channel.turn(_feed('a'));
       await expectLater(channel.turn(_feed('b')), throwsStateError);
       await first;
+    });
+
+    test('an oversized request is refused before a byte is written; the '
+        'worker stays in sync', () async {
+      final channel = await _spawn('serve');
+      final node = pb.MontyNode(str: 'x' * (1 << 20));
+      final huge = pb.ParentRequest(
+        feed: pb.Feed(values: pb.Arena(nodes: List.filled(300, node))),
+      );
+      await expectLater(
+        channel.turn(huge),
+        throwsA(isA<FrameTooLargeException>()),
+      );
+      expect(channel.isAlive, isTrue);
+      final prints = <String>[];
+      final end = await channel.turn(
+        _feed('c'),
+        onPrint: (print) =>
+            prints.add(print.segments.map((s) => s.text).join()),
+      );
+      expect(end.whichKind(), pb.ChildEvent_Kind.complete);
+      expect(prints, ['out:c', 'err:c']);
     });
   });
 
@@ -148,6 +172,20 @@ void main() {
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.vanished);
       expect(crash.message, contains('worker output unreadable'));
+    });
+
+    test('a frame upstream rejects desynchronises: worker killed', () async {
+      // The scenario's frame, which package:protobuf alone accepts.
+      expect(
+        pb.ChildEvent.fromBuffer([
+          0x32, 8, 0x12, 6, 0x12, 4, 0x42, 2, 0xc3, 0x28, //
+        ]).complete.values.nodes,
+        hasLength(1),
+      );
+      final channel = await _spawn('upstream-rejects');
+      final crash = await _crashOf(channel.turn(_configure));
+      expect(crash.cause, CrashCause.vanished);
+      expect(crash.message, contains('FrameDecodeException'));
     });
 
     test('stderr tail: the last 4 KiB, ending with the last line', () async {
