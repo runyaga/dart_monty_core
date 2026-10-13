@@ -37,8 +37,9 @@
 
 import 'dart:io';
 
-import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/file_system/file_system.dart' show ResourceProvider;
@@ -46,6 +47,9 @@ import 'package:analyzer/file_system/overlay_file_system.dart'
     show OverlayResourceProvider;
 import 'package:analyzer/file_system/physical_file_system.dart'
     show PhysicalResourceProvider;
+// Not public API: see _analyzeUnder.
+import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart'
+    show AnalysisContextCollectionImpl;
 
 const _package = 'package:dart_monty_core/';
 const _goldenPath = 'tool/export-golden.txt';
@@ -67,6 +71,19 @@ bool _isForbidden(Uri uri) {
 
 final _setterSuffix = RegExp(r'=$');
 
+/// The forbidden file [element] is declared in, if any: its library, or a
+/// part file of it, since a part under lib/src/worker/ can declare members of
+/// a library that lives elsewhere.
+Uri? _forbiddenSource(Element element) {
+  final sources = [
+    ?element.library?.uri,
+    for (final fragment in element.fragments)
+      ?fragment.libraryFragment?.source.uri,
+  ];
+
+  return sources.where(_isForbidden).firstOrNull;
+}
+
 bool _isOwn(Uri uri) => uri.toString().startsWith(_package);
 
 /// What one run of the check found: the report.
@@ -79,6 +96,9 @@ final class _CheckExportBoundary {
 
   /// Forbidden libraries reached through imports only (allowed).
   final Set<String> importOnly = {};
+
+  /// The conditional-directive branches analysed besides the default.
+  final List<String> conditions = [];
 }
 
 Future<void> main(List<String> args) async {
@@ -135,6 +155,10 @@ void _print(_CheckExportBoundary report, List<String> diff) {
   stdout
     ..writeln('${unique.length} unique exported names')
     ..writeln(
+      'also analysed with: '
+      '${report.conditions.isEmpty ? 'none' : report.conditions.join(', ')}',
+    )
+    ..writeln(
       'worker/protobuf libraries reached by import only (allowed): '
       '${report.importOnly.length}',
     );
@@ -151,16 +175,47 @@ void _print(_CheckExportBoundary report, List<String> diff) {
   }
 }
 
-/// Resolves every public library under [root] through [provider].
+/// Resolves every public library under [root] through [provider], once with
+/// no declared variables and once per condition a conditional `import` or
+/// `export` in lib/ tests, so every branch is selected at least once.
 Future<_CheckExportBoundary> _analyzeBoundary(
   String root,
   ResourceProvider provider,
 ) async {
-  final collection = AnalysisContextCollection(
+  final report = _CheckExportBoundary();
+  await _analyzeUnder(root, provider, const {}, report);
+  final defaults = Map.of(report.names);
+  for (final condition in _conditions(root, provider)) {
+    final variant = _CheckExportBoundary();
+    await _analyzeUnder(root, provider, condition, variant);
+    final label = condition.entries
+        .map((entry) => '${entry.key}==${entry.value}')
+        .join();
+    report.conditions.add(label);
+    report.violations.addAll([
+      for (final violation in variant.violations) '[$label] $violation',
+      for (final line in _diffNames(defaults, variant.names))
+        '[$label] exported names differ from the default platform: $line',
+    ]);
+    report.importOnly.addAll(variant.importOnly);
+  }
+
+  return report;
+}
+
+Future<void> _analyzeUnder(
+  String root,
+  ResourceProvider provider,
+  Map<String, String> declared,
+  _CheckExportBoundary report,
+) async {
+  // The public AnalysisContextCollection has no declared-variables
+  // parameter; the implementation class it constructs does.
+  final collection = AnalysisContextCollectionImpl(
     includedPaths: ['$root/lib'],
     resourceProvider: provider,
+    declaredVariables: declared,
   );
-  final report = _CheckExportBoundary();
   try {
     for (final relative in _publicLibraries(root)) {
       final session = collection
@@ -176,8 +231,25 @@ Future<_CheckExportBoundary> _analyzeBoundary(
   } finally {
     await collection.dispose();
   }
+}
 
-  return report;
+/// Every `if (name == value)` a directive under lib/ tests, one map each.
+List<Map<String, String>> _conditions(String root, ResourceProvider provider) {
+  final found = <String, Map<String, String>>{};
+  for (final entity in Directory('$root/lib').listSync(recursive: true)) {
+    if (entity is! File || !entity.path.endsWith('.dart')) continue;
+    final source = provider.getFile(entity.path).readAsStringSync();
+    final unit = parseString(content: source, throwIfDiagnostics: false).unit;
+    for (final directive in unit.directives.whereType<NamespaceDirective>()) {
+      for (final configuration in directive.configurations) {
+        final name = configuration.name.toSource();
+        final value = configuration.value?.stringValue ?? 'true';
+        found['$name=$value'] = {name: value};
+      }
+    }
+  }
+
+  return [for (final key in found.keys.toList()..sort()) ?found[key]];
 }
 
 List<String> _publicLibraries(String root) {
@@ -205,8 +277,7 @@ void _checkLibrary(
   }.toList()..sort();
   final walker = _SignatureWalker(name, report.violations);
   for (final MapEntry(:key, :value) in exported.entries) {
-    final uri = value.library?.uri;
-    if (uri != null && _isForbidden(uri)) {
+    if (_forbiddenSource(value) case final uri?) {
       report.violations.add('$name: exports $key, declared in $uri');
     }
     walker.add(value, key);
@@ -306,9 +377,9 @@ final class _SignatureWalker {
   void _reference(Element element, String path) {
     final uri = element.library?.uri;
     if (uri == null) return;
-    if (_isForbidden(uri)) {
+    if (_forbiddenSource(element) case final source?) {
       _violations.add(
-        '$_library: $path names ${element.displayName}, declared in $uri',
+        '$_library: $path names ${element.displayName}, declared in $source',
       );
     } else if (_isOwn(uri)) {
       add(element, '$path > ${element.displayName}');
@@ -393,12 +464,17 @@ String _renderGolden(Map<String, List<String>> names) {
 }
 
 /// The added (`+`) and removed (`-`) names, per library.
-List<String> _diffGolden(String golden, Map<String, List<String>> names) {
-  final expected = _parseGolden(golden);
+List<String> _diffGolden(String golden, Map<String, List<String>> names) =>
+    _diffNames(_parseGolden(golden), names);
+
+List<String> _diffNames(
+  Map<String, Iterable<String>> expected,
+  Map<String, List<String>> names,
+) {
   final libraries = {...expected.keys, ...names.keys}.toList()..sort();
   final diff = <String>[];
   for (final library in libraries) {
-    final want = expected[library] ?? const <String>{};
+    final want = (expected[library] ?? const <String>[]).toSet();
     final have = (names[library] ?? const <String>[]).toSet();
     final lines = [
       for (final name in have.difference(want)) '  + $name',
@@ -498,6 +574,32 @@ final _controls = [
     {
       'lib/dart_monty_core.dart': (s) =>
           "${s}export 'src/worker/frame.dart' show NoSuchName;\n",
+    },
+  ),
+  _Control(
+    'worker library exported on a conditional branch only',
+    _Verdict.boundary,
+    '==true] dart_monty_core.dart: dart_monty_core.dart > export '
+        'package:dart_monty_core/src/worker/frame.dart',
+    {
+      'lib/dart_monty_core.dart': (s) =>
+          "${s}export 'src/monty_factory_stub.dart'\n"
+          "    if (dart.library.boundary_probe) 'src/worker/frame.dart';\n",
+    },
+  ),
+  _Control(
+    'worker part file declaring an exported name',
+    _Verdict.both,
+    'exports BoundaryProbePart, declared in '
+        'package:dart_monty_core/src/worker/boundary_probe_part.dart',
+    {
+      'lib/src/worker/boundary_probe_part.dart': (_) =>
+          "part of '../platform/monty_value.dart';\n"
+          'final class BoundaryProbePart {}\n',
+      'lib/src/platform/monty_value.dart': _insertAfter(
+        _partAnchor,
+        "\npart '../worker/boundary_probe_part.dart';",
+      ),
     },
   ),
   _Control(
