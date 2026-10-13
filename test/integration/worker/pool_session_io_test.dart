@@ -285,6 +285,15 @@ void main() {
     await session.close();
   });
 
+  test('a busy close leaves nothing that keeps the process alive', () async {
+    final result = await Process.run(Platform.resolvedExecutable, [
+      File('test/integration/worker/close_exit_probe.dart').absolute.path,
+      await _workerPath(),
+    ]).timeout(const Duration(seconds: 60));
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(result.stdout, 'closed\n');
+  });
+
   test(
     'no print callback: fragments reach the process stdout and stderr',
     () async {

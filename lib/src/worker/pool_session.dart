@@ -140,23 +140,19 @@ final class _Hold {
   /// Whether [_LeasedSession.close] ran.
   bool closed = false;
 
-  final _abandoned = Completer<pb.ChildEvent>();
+  /// The turn in flight, if any: what [abandon] fails.
+  Completer<pb.ChildEvent>? turn;
 
   /// Whether no call can run any more: closed, or the worker gone.
   bool get isFinished => closed || lease.isReleased;
 
-  /// Fails, never completes normally, once [abandon] runs: the turn in
-  /// flight races it, so a close need not wait for a turn stuck in a print
-  /// callback.
-  Future<pb.ChildEvent> get abandoned => _abandoned.future;
-
-  /// Kills the worker during a turn and fails that turn at once.
+  /// Kills the worker during a turn and fails that turn at once, so a close
+  /// need not wait for a turn stuck in a print callback.
   void abandon() {
     lease.kill();
-    if (_abandoned.isCompleted) return;
-    // Nobody may be listening if the turn ended meanwhile.
-    _abandoned.future.ignore();
-    _abandoned.completeError(
+    final current = turn;
+    if (current == null || current.isCompleted) return;
+    current.completeError(
       MontyCrashedError(
         CrashCause.killed,
         message: 'the session was closed during a turn',
@@ -210,6 +206,7 @@ final class _LeasedSession implements PoolSession {
           collectPrints: false,
           systemSleepMax: _sleepMax,
           skipTypeCheck: skipTypeCheck,
+          abandoned: () => _hold.isFinished,
         ),
       );
 
@@ -284,13 +281,21 @@ final class _SessionChannel implements MontyChannel {
     try {
       // One deadline for the whole turn: print delivery, and an abort the
       // suspension budget sends in its place, as upstream's request_turn.
+      // The turn ends at the first of: its own end, the deadline, a close.
+      // The timer is cancelled however it ends, so a turn left waiting on
+      // a print callback holds no timer.
       final limit = _deadline(request);
-      final work = _turnWithBudget(request, onPrint);
-      final bounded = limit == null
-          ? work
-          : work.timeout(limit, onTimeout: () => _expire(limit));
-
-      return await Future.any([bounded, _hold.abandoned]);
+      final done = _hold.turn = Completer<pb.ChildEvent>();
+      final timer = limit == null
+          ? null
+          : Timer(limit, () => _expire(done, limit));
+      unawaited(_settle(done, _turnWithBudget(request, onPrint)));
+      try {
+        return await done.future;
+      } finally {
+        timer?.cancel();
+        _hold.turn = null;
+      }
     } finally {
       inTurn = false;
     }
@@ -326,11 +331,16 @@ final class _SessionChannel implements MontyChannel {
     );
   }
 
-  Never _expire(Duration limit) {
+  /// The deadline passed: kill the worker and fail [done].
+  void _expire(Completer<pb.ChildEvent> done, Duration limit) {
     kill();
-    throw MontyCrashedError(
-      CrashCause.killed,
-      message: 'no reply within $limit; the worker was killed',
+    if (done.isCompleted) return;
+    done.completeError(
+      MontyCrashedError(
+        CrashCause.killed,
+        message: 'no reply within $limit; the worker was killed',
+      ),
+      StackTrace.current,
     );
   }
 
@@ -401,4 +411,19 @@ Duration? _earliest(Duration? a, Duration? b) {
   if (b == null) return a;
 
   return a < b ? a : b;
+}
+
+/// Completes [done] with [work]'s outcome, unless it already ended; a
+/// later outcome is dropped.
+Future<void> _settle(
+  Completer<pb.ChildEvent> done,
+  Future<pb.ChildEvent> work,
+) async {
+  try {
+    final event = await work;
+    if (done.isCompleted) return;
+    done.complete(event);
+  } on Object catch (error, stack) {
+    if (!done.isCompleted) done.completeError(error, stack);
+  }
 }

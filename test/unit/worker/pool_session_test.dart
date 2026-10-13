@@ -567,6 +567,37 @@ void main() {
       expect(pool.liveWorkers, 0);
     });
 
+    test('no print is delivered after a busy close', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a'), (_stdout, 'b')]),
+          completeNone(),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final seen = <String>[];
+      final first = Completer<void>();
+      final run = session.feedRun(
+        'print("a", "b")',
+        printCallback: (stream, text) {
+          seen.add(text);
+
+          return text == 'a' ? first.future : null;
+        },
+      );
+      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      await pumpEventQueue();
+      await session.close();
+      await failed;
+      // The stalled callback returns after the call failed: 'b' never comes.
+      first.complete();
+      await pumpEventQueue();
+      expect(seen, ['a']);
+    });
+
     test('after pool close: the session runs on, then is killed', () async {
       final ch = ScriptedChannel([
         _configureOk,

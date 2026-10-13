@@ -79,6 +79,7 @@ final class ProtoSession {
       onPrint,
       _channel.kill,
       collect: options.collectPrints,
+      abandoned: options.abandoned,
     );
     final feed = _feedRequest(code, inputs);
     if (options.skipTypeCheck) feed.skipTypeCheck = true;
@@ -191,19 +192,29 @@ final class ProtoSession {
 /// nobody will answer, or never end the turn at all. So the first failure
 /// kills the worker at once, later prints are dropped, and the driver
 /// rethrows the failure when the turn returns.
+///
+/// Nothing more is delivered once the feed is abandoned (its worker killed
+/// by a deadline or a close while a callback ran): a callback that finally
+/// returns does not lead to the next one.
 final class _PrintSink {
-  _PrintSink(this._onPrint, this._kill, {required bool collect})
-    : _collect = collect;
+  _PrintSink(
+    this._onPrint,
+    this._kill, {
+    required bool collect,
+    bool Function()? abandoned,
+  }) : _collect = collect,
+       _abandoned = abandoned;
 
   final List<(String, String)> prints = [];
   final ProtoPrintCallback? _onPrint;
   final void Function() _kill;
+  final bool Function()? _abandoned;
   final bool _collect;
   (Object, StackTrace)? _failure;
 
   Future<void> add(pb.Print print) async {
     for (final segment in print.segments) {
-      if (_failure != null) return;
+      if (_failure != null || (_abandoned?.call() ?? false)) return;
       final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
           ? 'stderr'
           : 'stdout';
@@ -236,6 +247,7 @@ final class FeedOptions {
     this.collectPrints = true,
     this.systemSleepMax,
     this.skipTypeCheck = false,
+    this.abandoned,
   });
 
   /// Whether [FeedResult.prints] lists everything printed.
@@ -248,6 +260,10 @@ final class FeedOptions {
 
   /// Whether a type-checking session skips the check for this snippet.
   final bool skipTypeCheck;
+
+  /// Whether the caller has given up on the feed; once true, no further
+  /// print is delivered.
+  final bool Function()? abandoned;
 }
 
 /// A snippet the session's type check rejected; it did not run, and the
