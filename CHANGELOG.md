@@ -76,6 +76,25 @@
   reaching one is an `UnsupportedError`. `tool/generate_proto.sh` declares
   `Type.origin` as `int32` (a fifth substitution), so an unknown origin
   number reaches the reader as sent.
+- Worker groundwork, continued (internal, no public API): the arena writer
+  sends every kind the worker accepts as input (ellipsis, `NotImplemented`,
+  named tuples, dates, datetimes, times, timedeltas, time zones, exception
+  values, builtin types and functions, file handles, class instances), and
+  shares nodes as upstream's encoder does: containers and class instances
+  once per Dart object across every `add`, leaves fresh at each reference,
+  and an attribute-less class once per class id. It refuses with
+  `ArgumentError`, before anything is sent, what the worker would reject or
+  protobuf would silently change: bytes outside 0..255, strings with an
+  unpaired surrogate, out-of-range dates, times and offsets, a zone name
+  without an offset, unnormalized timedeltas, unknown exception, type and
+  builtin names, invalid file modes and positions, named tuples Python
+  could not build, and dict keys or set members Python could not hash. As upstream does, an exception message with an unpaired
+  surrogate is converted lossily (a `KeyError`'s as its `repr`) and such a
+  time zone name is dropped, keeping the offset. Values that used to be
+  memoised wholesale now follow upstream's sharing, so a leaf referenced
+  twice is two nodes. `MontyValue.fromDart` is unchanged. The reader takes
+  an internal hook through which a registry of host objects can resolve
+  class and instance nodes to registered objects.
 
 ### Changed
 

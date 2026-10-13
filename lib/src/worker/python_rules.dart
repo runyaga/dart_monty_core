@@ -170,6 +170,25 @@ Iterable<int> _codePoints(String s) sync* {
   }
 }
 
+/// Whether [s] has a UTF-16 surrogate without its pair.
+///
+/// Such a string has no UTF-8 form, so upstream's encoder cannot take it.
+bool hasUnpairedSurrogate(String s) => _codePoints(s).any(_isSurrogate);
+
+/// [s] as PyO3's `to_string_lossy` converts it: encoded as UTF-8 with
+/// `surrogatepass`, then decoded lossily, so each unpaired surrogate's three
+/// bytes become three U+FFFD.
+String lossyString(String s) {
+  final out = StringBuffer();
+  for (final c in _codePoints(s)) {
+    out.write(_isSurrogate(c) ? '\uFFFD\uFFFD\uFFFD' : String.fromCharCode(c));
+  }
+
+  return out.toString();
+}
+
+bool _isSurrogate(int c) => _isLead(c) || _isTrail(c);
+
 bool _isLead(int c) => c >= 0xd800 && c <= 0xdbff;
 
 bool _isTrail(int c) => c >= 0xdc00 && c <= 0xdfff;

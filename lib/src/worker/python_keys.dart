@@ -8,8 +8,8 @@
 ///
 /// - numbers compare by value across `bool`, `int`, `float` and `complex`
 ///   (with a zero imaginary part);
-/// - a NaN, an exception and a file handle are equal only to themselves: to
-///   the same node;
+/// - a NaN, an exception, a file handle, and an object the host registered
+///   are equal only to themselves: to the same node, or the same object;
 /// - text compares by content, whether it came as `str`, a function name, a
 ///   `repr` or a `cycle` placeholder, since all of them decode to `str`;
 /// - tuples and named tuples compare as tuples, frozensets as sets, both
@@ -17,10 +17,6 @@
 /// - aware datetimes compare by instant, aware times by their UTC wall clock,
 ///   naive and aware never; a time zone compares by its offset alone;
 /// - `list`, `dict`, `set` and the class proxies are unhashable.
-///
-/// A registry of host objects (whose class and instance nodes would be
-/// hashable by identity) is not wired in yet; every class and instance node
-/// is a proxy here.
 ///
 /// Each node gets one interned integer: two nodes Python counts as equal get
 /// the same one. A container's key is built from its members' integers, so a
@@ -38,14 +34,17 @@ import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 
 /// Python keys for one arena's nodes.
 final class PythonKeys {
-  /// Keys for the arena's nodes.
-  PythonKeys(this._nodes);
+  /// Keys for the arena's nodes; a class or instance node in the second
+  /// argument decodes to that host object.
+  PythonKeys(this._nodes, this._registered);
 
   final List<pb.MontyNode> _nodes;
+  final Map<int, Object> _registered;
 
   /// Each node's interned key, or why it is unhashable.
   final Map<int, Object> _memo = {};
   final Map<String, int> _interned = {};
+  final Map<Object, int> _objects = Map.identity();
 
   /// The interned key of node [index], whose index the arena has checked.
   ///
@@ -94,6 +93,9 @@ final class PythonKeys {
     final memberKeys = [for (final m in members) _memo[m]];
     final unhashable = memberKeys.whereType<_Unhashable>().firstOrNull;
     if (unhashable != null) return unhashable;
+    if (_registered[i] case final object?) {
+      return _objects.putIfAbsent(object, () => _intern('#${_objects.length}'));
+    }
     final node = _nodeAt(i);
     final signature = (_signatures[node.whichKind()] ?? _unchecked)(
       node,
@@ -152,9 +154,8 @@ _signatures = {
   pb.MontyNode_Kind.builtinFunction: (n, _) => 'B${n.builtinFunction}',
   pb.MontyNode_Kind.exception: (_, _) => null,
   pb.MontyNode_Kind.fileHandle: (_, _) => null,
-  pb.MontyNode_Kind.classInstance: (_, _) => const _Unhashable(
-    'MontyClassProxy',
-  ),
+  pb.MontyNode_Kind.classInstance: (_, _) =>
+      const _Unhashable('MontyClassProxy'),
   pb.MontyNode_Kind.list: (_, _) => const _Unhashable('list'),
   pb.MontyNode_Kind.dict: (_, _) => const _Unhashable('dict'),
   pb.MontyNode_Kind.set: (_, _) => const _Unhashable('set'),

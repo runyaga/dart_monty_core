@@ -311,10 +311,7 @@ pb.ParentRequest _answerNameLookup(
   }
   // The name resolves to a function the child calls back through
   // FunctionCall, so the host keeps the implementation.
-  final arena = pb.Arena(
-    nodeCount: 1,
-    nodes: [pb.MontyNode(function: pb.Function_(name: name))],
-  );
+  final arena = pb.Arena(nodeCount: 1, nodes: [functionNode(name)]);
 
   return pb.ParentRequest(
     resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
