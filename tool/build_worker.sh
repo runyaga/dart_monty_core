@@ -64,16 +64,15 @@ build_inputs() {
   } | LC_ALL=C sort | while read -r f; do
     printf '%s %s\n' "$f" "$(sha < "$f")"
   done
-  # The compiler the toolchain file resolves to today (a floating `stable`
-  # moves), and every environment input that changes codegen: the tested
-  # binary must be the one these settings build.
-  (cd native/worker && rustc -vV)
-  for v in RUSTFLAGS CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_RUSTFLAGS \
-    CARGO_BUILD_TARGET CARGO_PROFILE_RELEASE_OPT_LEVEL CARGO_PROFILE_RELEASE_LTO \
-    CARGO_PROFILE_RELEASE_CODEGEN_UNITS CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS \
-    CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS CARGO_PROFILE_RELEASE_PANIC; do
-    printf '%s=%s\n' "$v" "${!v-}"
-  done
+  # The compiler Cargo will use (RUSTC if set, else the toolchain file's,
+  # which a floating `stable` moves) and every environment setting Cargo
+  # reads that changes codegen: the tested binary must be the one these
+  # settings build. CARGO_TARGET_DIR and CARGO_HOME are locations, not
+  # settings, and stay out.
+  (cd native/worker && "${RUSTC:-rustc}" -vV) || echo "rustc unavailable"
+  env | LC_ALL=C sort | grep -E \
+    '^(RUSTC(_WRAPPER|_WORKSPACE_WRAPPER)?|RUSTFLAGS|CARGO_ENCODED_RUSTFLAGS|CARGO_BUILD_[A-Z_]+|CARGO_PROFILE_[A-Z_]+|CARGO_TARGET_[A-Z0-9_]+_(RUSTFLAGS|LINKER))=' \
+    || true
   for f in "${CARGO_HOME:-$HOME/.cargo}"/config "${CARGO_HOME:-$HOME/.cargo}"/config.toml; do
     [ -f "$f" ] && printf 'cargo-home %s\n' "$(sha < "$f")"
   done
