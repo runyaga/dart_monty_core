@@ -33,6 +33,10 @@ final class WorkerChannel implements MontyChannel {
   /// [forceNoJspi] skips the probe, so the Worker dispatches directly; tests
   /// use it to keep the fallback path green on a browser with JSPI.
   ///
+  /// When [cancelled] completes before the Worker greets, the Worker is
+  /// terminated and the spawn fails with [CrashCause.killed]: a Worker that
+  /// loads but never answers would otherwise wait forever.
+  ///
   /// Throws [MontyCrashedError] if the Worker cannot start
   /// ([CrashCause.vanished]) or speaks another protocol version
   /// ([CrashCause.fatal]).
@@ -40,14 +44,19 @@ final class WorkerChannel implements MontyChannel {
     WasmModuleCache cache, {
     String workerUrl = defaultWorkerUrl,
     bool forceNoJspi = false,
+    Future<void>? cancelled,
   }) async {
-    final module = await cache.module;
+    // A cancel that lands after this is handled at the greeting below.
+    final module = await _moduleUnlessCancelled(cache, cancelled);
     final worker = _Worker(workerUrl.toJS);
     final hello = Completer<WorkerMessage>();
     void first(WorkerMessage m) {
       if (!hello.isCompleted) hello.complete(m);
     }
 
+    if (cancelled != null) {
+      unawaited(_abandonOnCancel(cancelled, worker, hello));
+    }
     worker
       ..onmessage = ((_MessageEvent e) => first(_read(e))).toJS
       ..onerror = ((_ErrorEvent e) => first(
@@ -102,6 +111,59 @@ final class WorkerChannel implements MontyChannel {
       ..onerror = null;
   }
 }
+
+/// [cache]'s module, unless [cancelled] completes first: then
+/// [MontyCrashedError] ([CrashCause.killed]).
+Future<JSObject> _moduleUnlessCancelled(
+  WasmModuleCache cache,
+  Future<void>? cancelled,
+) async {
+  if (cancelled == null) return cache.module;
+  final module = await Future.any([cache.module, _nullOnceDone(cancelled)]);
+
+  return module ?? (throw _cancelledError());
+}
+
+/// Null once [done] completes: the cancel's side of a race with the module.
+Future<JSObject?> _nullOnceDone(Future<void> done) async {
+  await done;
+
+  return null;
+}
+
+/// Terminates [worker] and fails [hello] if [cancelled] completes before
+/// the Worker greets.
+Future<void> _abandonOnCancel(
+  Future<void> cancelled,
+  _Worker worker,
+  Completer<WorkerMessage> hello,
+) async {
+  await cancelled;
+  if (hello.isCompleted) return;
+  worker
+    ..onmessage = null
+    ..onerror = null
+    ..terminate();
+  hello.completeError(_cancelledError(), StackTrace.current);
+}
+
+/// Whether [url] serves something other than an HTML page: a dev server
+/// that answers unknown paths with index.html must not count as having it.
+Future<bool> workerScriptServed(String url) async {
+  try {
+    final response = await _fetch(url.toJS).toDart;
+    final type = response.headers.get('content-type'.toJS)?.toDart ?? '';
+
+    return response.ok && !type.startsWith('text/html');
+  } on Object {
+    return false;
+  }
+}
+
+MontyCrashedError _cancelledError() => MontyCrashedError(
+  CrashCause.killed,
+  message: 'the Worker start was cancelled',
+);
 
 /// The page-lifetime compiled module: fetched and compiled once, lazily, then
 /// posted to every Worker [WorkerChannel.spawn] starts.

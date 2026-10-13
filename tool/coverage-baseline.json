@@ -356,14 +356,39 @@
       "hit": 268,
       "pct": 100.0
     },
+    "lib/src/worker/asset_base.dart": {
+      "found": 7,
+      "hit": 7,
+      "pct": 100.0
+    },
+    "lib/src/worker/channel_factory.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/worker/channel_factory_io.dart": {
+      "found": 5,
+      "hit": 5,
+      "pct": 100.0
+    },
+    "lib/src/worker/channel_factory_stub.dart": {
+      "found": 2,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/worker/channel_factory_web.dart": {
+      "found": 15,
+      "hit": 14,
+      "pct": 93.33
+    },
     "lib/src/worker/encoded_length.dart": {
       "found": 78,
       "hit": 77,
       "pct": 98.72
     },
     "lib/src/worker/frame.dart": {
-      "found": 76,
-      "hit": 76,
+      "found": 79,
+      "hit": 79,
       "pct": 100.0
     },
     "lib/src/worker/frame_scan.dart": {
@@ -377,9 +402,9 @@
       "pct": 100.0
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 169,
-      "hit": 164,
-      "pct": 97.04
+      "found": 205,
+      "hit": 199,
+      "pct": 97.07
     },
     "lib/src/worker/proto_session.dart": {
       "found": 171,
@@ -401,15 +426,20 @@
       "hit": 4,
       "pct": 80.0
     },
+    "lib/src/worker/spawn_handle.dart": {
+      "found": 20,
+      "hit": 20,
+      "pct": 100.0
+    },
     "lib/src/worker/wire_scalars.dart": {
       "found": 56,
       "hit": 56,
       "pct": 100.0
     },
     "lib/src/worker/worker_channel.dart": {
-      "found": 48,
-      "hit": 43,
-      "pct": 89.58
+      "found": 74,
+      "hit": 72,
+      "pct": 97.3
     },
     "lib/src/worker/worker_connection.dart": {
       "found": 95,
@@ -421,6 +451,11 @@
       "hit": 21,
       "pct": 95.45
     },
+    "lib/src/worker/worker_pool.dart": {
+      "found": 141,
+      "hit": 137,
+      "pct": 97.16
+    },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
       "hit": 0,
@@ -428,8 +463,8 @@
     }
   },
   "total": {
-    "found": 6531,
-    "hit": 5234,
-    "pct": 80.14
+    "found": 6786,
+    "hit": 5484,
+    "pct": 80.81
   }
 }

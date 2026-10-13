@@ -10,6 +10,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
 
@@ -18,12 +19,14 @@ import 'package:dart_monty_core/dart_monty_core.dart'
     show MontyBigInt, MontyBool, MontyFloat, MontyInt, MontyTuple, MontyValue;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_channel.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart'
     show workerProtocolVersion;
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -368,6 +371,149 @@ void main() {
     }
   });
 
+  test('an error in a Worker that greeted is MontyCrashedError(vanished) '
+      '($backend)', () async {
+    // Greets correctly, then throws on the first request.
+    final url = _scriptUrl(
+      'self.onmessage = () => { '
+      'self.onmessage = () => { throw new Error("boom"); }; '
+      'self.postMessage({ready: true, jspi: false, '
+      'protocol: $workerProtocolVersion}); };',
+    );
+    final ch = await WorkerChannel.spawn(cache, workerUrl: url);
+    _opened.add(ch);
+    await expectLater(
+      ch.turn(_configure()),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.vanished,
+        ),
+      ),
+    );
+    expect(ch.isAlive, isFalse);
+  });
+
+  test('a module served as another type still compiles ($backend)', () async {
+    // The same module from a blob typed application/octet-stream, which
+    // compileStreaming refuses.
+    final response = await _fetchUrl(
+      '$_assets/dart_monty_core_proto_worker.wasm',
+    ).toDart;
+    final bytes = await response.arrayBuffer().toDart;
+    final blobUrl = _createObjectUrl(
+      _Blob(
+        [bytes].toJS,
+        _BlobOptions(type: 'application/octet-stream'),
+      ),
+    );
+    final ch = await _spawn(WasmModuleCache(blobUrl));
+    await _open(ch);
+    expect(await _evalInt(ch, '6 * 7'), 42);
+    await ch.close();
+  });
+
+  test('a Worker that never greets is terminated by a cancelled start '
+      '($backend)', () async {
+    // It loads, ignores Start, and beats on a BroadcastChannel until it is
+    // terminated.
+    final name = 'c1-silent-${DateTime.now().microsecondsSinceEpoch}';
+    var beats = 0;
+    final channel = _BroadcastChannel(name)
+      ..onmessage = ((JSAny _) => beats++).toJS;
+    // An interop member cannot be torn off.
+    // ignore: unnecessary_lambdas
+    addTearDown(() => channel.close());
+    final url = _scriptUrl(
+      'const c = new BroadcastChannel(${jsonEncode(name)}); '
+      'setInterval(() => c.postMessage(1), 10);',
+    );
+    final cancel = Completer<void>();
+    final spawning = WorkerChannel.spawn(
+      cache,
+      workerUrl: url,
+      cancelled: cancel.future,
+    );
+    while (beats == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    cancel.complete();
+    await expectLater(
+      spawning,
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
+    final after = await _quiet(() => beats);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(beats, after, reason: 'the Worker still runs');
+  });
+
+  test('a cancel after the greeting leaves the channel alone '
+      '($backend)', () async {
+    final cancel = Completer<void>();
+    final ch = await WorkerChannel.spawn(
+      cache,
+      workerUrl: _workerUrl,
+      cancelled: cancel.future,
+    );
+    _opened.add(ch);
+    cancel.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(ch.isAlive, isTrue);
+    await _open(ch);
+    await ch.close();
+  });
+
+  test('workerScriptServed: the script yes; a 404 or a bad URL no '
+      '($backend)', () async {
+    expect(await workerScriptServed(_workerUrl), isTrue);
+    expect(await workerScriptServed('$_assets/no_such_worker.js'), isFalse);
+    expect(await workerScriptServed('http://[bad'), isFalse);
+  });
+
+  test('a start cancelled before the module is ready creates no Worker '
+      '($backend)', () async {
+    final unfetched = WasmModuleCache('$_assets/slow_or_missing.wasm');
+    final cancel = Completer<void>()..complete();
+    await expectLater(
+      WorkerChannel.spawn(
+        unfetched,
+        workerUrl: _workerUrl,
+        cancelled: cancel.future,
+      ),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
+  });
+
+  test('openChannel finds the assets with no workerLocation, and a pool '
+      'runs on it ($backend)', () async {
+    final pool = await WorkerPool.start(
+      const PoolOptions(maxProcesses: 1),
+    );
+    final lease = await pool.acquire();
+    final ch = lease.channel as WorkerChannel;
+    _opened.add(ch);
+    await _open(ch);
+    expect(await _evalInt(ch, '6 * 7'), 42);
+    await lease.release();
+    expect(pool.idleWorkers, 1);
+    await pool.close();
+    expect(ch.isAlive, isFalse);
+    expect(defaultMaxProcesses(), greaterThanOrEqualTo(1));
+  });
+
   test('a Worker that cannot load is MontyCrashedError(vanished) '
       '($backend)', () async {
     await expectLater(
@@ -383,13 +529,24 @@ void main() {
   });
 }
 
+/// Waits until [beats] stops changing for 200 ms.
+Future<int> _quiet(int Function() beats) async {
+  var last = beats();
+  for (;;) {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final now = beats();
+    if (now == last) return now;
+    last = now;
+  }
+}
+
 String _scriptUrl(String source) => _createObjectUrl(
   _Blob([source.toJS].toJS, _BlobOptions(type: 'text/javascript')),
 );
 
 @JS('Blob')
 extension type const _Blob._(JSObject _) implements JSObject {
-  external factory _Blob(JSArray<JSString> parts, _BlobOptions options);
+  external factory _Blob(JSArray<JSAny> parts, _BlobOptions options);
 }
 
 extension type const _BlobOptions._(JSObject _) implements JSObject {
@@ -398,3 +555,18 @@ extension type const _BlobOptions._(JSObject _) implements JSObject {
 
 @JS('URL.createObjectURL')
 external String _createObjectUrl(_Blob blob);
+
+@JS('fetch')
+external JSPromise<_FetchResponse> _fetchUrl(String url);
+
+extension type const _FetchResponse._(JSObject _) implements JSObject {
+  external JSPromise<JSArrayBuffer> arrayBuffer();
+}
+
+@JS('BroadcastChannel')
+extension type const _BroadcastChannel._(JSObject _) implements JSObject {
+  external factory _BroadcastChannel(String name);
+  external JSFunction? get onmessage;
+  external set onmessage(JSFunction? handler);
+  external void close();
+}
