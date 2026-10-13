@@ -14,7 +14,15 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
 import '_worker_harness.dart';
-import 'fake_worker.dart' show fatalMessage, stderrLastLine;
+import 'fake_worker.dart'
+    show
+        bigFramePrefixPrints,
+        bigFrameSuffixPrints,
+        bigPrintLength,
+        fatalMessage,
+        floodPrintLength,
+        floodPrints,
+        stderrLastLine;
 
 pb.ParentRequest _feed(String code) =>
     pb.ParentRequest(feed: pb.Feed(code: code));
@@ -355,6 +363,176 @@ void main() {
         isEmpty,
       );
     });
+  });
+
+  group('bounded read-ahead', () {
+    const limit = ProcessChannel.readAheadLimit;
+
+    /// Waits until [channel]'s read-ahead has not changed for 300 ms, so a
+    /// reader that keeps reading has had the time to show it.
+    Future<int> settled(ProcessChannel channel) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      var last = -1;
+      var stableSince = DateTime.now();
+      while (DateTime.now().isBefore(deadline)) {
+        final now = channel.readAheadBytes;
+        if (now != last) {
+          last = now;
+          stableSince = DateTime.now();
+        } else if (now > 0 &&
+            DateTime.now().difference(stableSince) >
+                const Duration(milliseconds: 300)) {
+          return now;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      return fail('the read-ahead never settled (last: $last bytes)');
+    }
+
+    /// The `#<n>:` numbers of [texts], in order.
+    List<int> numbers(List<String> texts) => [
+      for (final t in texts) int.parse(t.substring(1, t.indexOf(':'))),
+    ];
+
+    test('a flood no turn reads stays bounded and is kept for the next '
+        'turn', () async {
+      final channel = await _spawn('flood');
+      expect(
+        (await channel.turn(_configure)).whichKind(),
+        pb.ChildEvent_Kind.ok,
+      );
+      // 32 MiB arrive with no turn reading them.
+      final held = await settled(channel);
+      expect(held, greaterThanOrEqualTo(limit));
+      expect(channel.peakReadAheadBytes, lessThan(limit + (1 << 20)));
+
+      // Nothing was dropped: the next turn reads every Print, in order,
+      // then the Complete.
+      final texts = <String>[];
+      final end = await channel.turn(
+        _feed('ignored'),
+        onPrint: (print) => texts.addAll([
+          for (final s in print.segments) s.text,
+        ]),
+      );
+      expect(end.whichKind(), pb.ChildEvent_Kind.complete);
+      expect(numbers(texts), List.generate(floodPrints, (i) => i));
+      expect(texts.every((t) => t.length == floodPrintLength), isTrue);
+      expect(channel.readAheadBytes, 0);
+      expect(channel.peakReadAheadBytes, lessThan(limit + (1 << 20)));
+    });
+
+    test('a frame larger than the limit completes; later ones wait', () async {
+      final channel = await _spawn('big-frame');
+      expect(
+        (await channel.turn(_configure)).whichKind(),
+        pb.ChildEvent_Kind.ok,
+      );
+      // 3 MiB, then an 8 MiB frame in 64 KiB pieces: it must finish, not
+      // stall half-read; the 2 MiB after it wait.
+      const before = bigFramePrefixPrints * (floodPrintLength + 8);
+      final held = await settled(channel);
+      expect(held, greaterThan(before + bigPrintLength));
+      expect(
+        channel.peakReadAheadBytes,
+        lessThan(before + bigPrintLength + (1 << 20)),
+      );
+
+      final texts = <String>[];
+      final end = await channel.turn(
+        _feed('ignored'),
+        onPrint: (print) => texts.addAll([
+          for (final s in print.segments) s.text,
+        ]),
+      );
+      expect(end.whichKind(), pb.ChildEvent_Kind.complete);
+      expect(
+        numbers(texts),
+        List.generate(
+          bigFramePrefixPrints + 1 + bigFrameSuffixPrints,
+          (i) => i,
+        ),
+      );
+      expect(texts[bigFramePrefixPrints].length, bigPrintLength);
+    });
+  });
+
+  group('EventQueue, with chosen chunk boundaries', () {
+    const limit = 1000;
+
+    /// A frame carrying a stdout Print of [text].
+    List<int> frame(String text) => Frame.encode(
+      pb.ChildEvent(
+        print: pb.Print(
+          segments: [
+            pb.PrintSegment(
+              stream: pb.PrintStream.PRINT_STREAM_STDOUT,
+              text: text,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    late StreamController<List<int>> bytes;
+    late EventQueue queue;
+
+    setUp(() {
+      bytes = StreamController<List<int>>();
+      queue = EventQueue(bytes.stream, limit: limit, onDesync: () {});
+      addTearDown(queue.cancel);
+    });
+
+    /// Lets the subscription deliver what was added.
+    Future<void> pump() => Future<void>.delayed(Duration.zero);
+
+    Future<String> nextText() async =>
+        (await queue.next())!.print.segments.single.text;
+
+    test('pauses at the limit when no frame is part-received', () async {
+      bytes.add(frame('a' * 600));
+      await pump();
+      expect(bytes.isPaused, isFalse);
+      bytes.add(frame('b' * 600));
+      await pump();
+      expect(queue.readAhead, greaterThanOrEqualTo(limit));
+      expect(bytes.isPaused, isTrue);
+      expect(await nextText(), 'a' * 600);
+      expect(bytes.isPaused, isFalse, reason: 'under the limit again');
+    });
+
+    test(
+      'the frame in flight at the limit completes, then it pauses',
+      () async {
+        final big = frame('c' * 5000);
+        final next = frame('d');
+        // One chunk: two frames, over the limit, then the first 100 bytes of
+        // a large frame.
+        bytes.add([...frame('a' * 600), ...frame('b' * 600), ...big.take(100)]);
+        await pump();
+        expect(queue.readAhead, greaterThanOrEqualTo(limit));
+        expect(bytes.isPaused, isFalse, reason: 'a frame is in flight');
+        // The rest of it in pieces; the last piece also starts the next frame.
+        for (var at = 100; at < big.length - 700; at += 700) {
+          bytes.add(big.sublist(at, at + 700));
+          await pump();
+          expect(bytes.isPaused, isFalse, reason: 'still in flight at $at');
+        }
+        final done = (big.length - 100) ~/ 700 * 700 + 100;
+        bytes.add([...big.sublist(done), ...next.take(3)]);
+        await pump();
+        expect(queue.readAhead, greaterThan(limit + 5000));
+        expect(bytes.isPaused, isTrue, reason: 'paused once it ended');
+        expect(await nextText(), 'a' * 600);
+        expect(await nextText(), 'b' * 600);
+        expect(bytes.isPaused, isTrue, reason: 'still over the limit');
+        expect(await nextText(), 'c' * 5000);
+        expect(bytes.isPaused, isFalse);
+        bytes.add(next.skip(3).toList());
+        expect(await nextText(), 'd');
+      },
+    );
   });
 
   group('registry', () {

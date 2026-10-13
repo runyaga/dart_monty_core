@@ -122,6 +122,28 @@
   now computed before the frame is encoded. An oversized request throws
   `FrameTooLargeException` without the body being built, and nothing is
   sent.
+- Worker groundwork (internal, no public API): a pure-Dart worker pool
+  following upstream `monty-pool`'s lifecycle on every backend. It starts
+  `minProcesses` workers and fails fast; it reuses idle workers, discards
+  ones that died idle, reserves a slot before spawning, and waits up to a
+  checkout timeout at `maxProcesses`. Releasing sends `Reset` and returns
+  the worker, or retires it after `maxCheckoutsPerWorker`. Each checkout
+  holds one single-use lease, so its slot is given back exactly once. A
+  worker not ready within 30 s is cancelled and fails as
+  `MontyCrashedError`, which covers a Web Worker that loads but never
+  greets. Closing the pool refuses new checkouts and reaps idle workers; a
+  checked-out worker is killed when released. One conditional import picks
+  the channel: a process on native, a Web Worker on the web. On the web the
+  Worker's assets are found in Flutter's layout, then the package's, with
+  no init call. The web default for `maxProcesses` is
+  `navigator.hardwareConcurrency` (4 when the browser hides it). Not
+  exported until the API cutover.
+- The internal `ProcessChannel` bounds its read-ahead. Past 4 MiB of
+  received, unread frames it stops reading the worker's stdout, so a
+  worker that prints faster than it is read blocks on its pipe, as under
+  upstream's pool. The frame being received when the limit is reached
+  always completes, and frames that arrive between turns stay queued for
+  the next one.
 
 ### Changed
 

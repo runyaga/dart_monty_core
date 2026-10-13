@@ -10,6 +10,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
 
@@ -18,12 +19,14 @@ import 'package:dart_monty_core/dart_monty_core.dart'
     show MontyBigInt, MontyBool, MontyFloat, MontyInt, MontyTuple, MontyValue;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_channel.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart'
     show workerProtocolVersion;
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -368,6 +371,81 @@ void main() {
     }
   });
 
+  test('a Worker that never greets is terminated by a cancelled start '
+      '($backend)', () async {
+    // It loads, ignores Start, and beats on a BroadcastChannel until it is
+    // terminated.
+    final name = 'c1-silent-${DateTime.now().microsecondsSinceEpoch}';
+    var beats = 0;
+    final channel = _BroadcastChannel(name)
+      ..onmessage = ((JSAny _) => beats++).toJS;
+    // An interop member cannot be torn off.
+    // ignore: unnecessary_lambdas
+    addTearDown(() => channel.close());
+    final url = _scriptUrl(
+      'const c = new BroadcastChannel(${jsonEncode(name)}); '
+      'setInterval(() => c.postMessage(1), 10);',
+    );
+    final cancel = Completer<void>();
+    final spawning = WorkerChannel.spawn(
+      cache,
+      workerUrl: url,
+      cancelled: cancel.future,
+    );
+    while (beats == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    cancel.complete();
+    await expectLater(
+      spawning,
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
+    final after = await _quiet(() => beats);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(beats, after, reason: 'the Worker still runs');
+  });
+
+  test('a start cancelled before the module is ready creates no Worker '
+      '($backend)', () async {
+    final unfetched = WasmModuleCache('$_assets/slow_or_missing.wasm');
+    final cancel = Completer<void>()..complete();
+    await expectLater(
+      WorkerChannel.spawn(
+        unfetched,
+        workerUrl: _workerUrl,
+        cancelled: cancel.future,
+      ),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
+  });
+
+  test('openChannel finds the assets with no workerLocation, and a pool '
+      'runs on it ($backend)', () async {
+    final pool = await WorkerPool.start(maxProcesses: 1);
+    final lease = await pool.acquire();
+    final ch = lease.channel as WorkerChannel;
+    _opened.add(ch);
+    await _open(ch);
+    expect(await _evalInt(ch, '6 * 7'), 42);
+    await lease.release();
+    expect(pool.idleWorkers, 1);
+    await pool.close();
+    expect(ch.isAlive, isFalse);
+    expect(defaultMaxProcesses(), greaterThanOrEqualTo(1));
+  });
+
   test('a Worker that cannot load is MontyCrashedError(vanished) '
       '($backend)', () async {
     await expectLater(
@@ -381,6 +459,17 @@ void main() {
       ),
     );
   });
+}
+
+/// Waits until [beats] stops changing for 200 ms.
+Future<int> _quiet(int Function() beats) async {
+  var last = beats();
+  for (;;) {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    final now = beats();
+    if (now == last) return now;
+    last = now;
+  }
 }
 
 String _scriptUrl(String source) => _createObjectUrl(
@@ -398,3 +487,11 @@ extension type const _BlobOptions._(JSObject _) implements JSObject {
 
 @JS('URL.createObjectURL')
 external String _createObjectUrl(_Blob blob);
+
+@JS('BroadcastChannel')
+extension type const _BroadcastChannel._(JSObject _) implements JSObject {
+  external factory _BroadcastChannel(String name);
+  external JSFunction? get onmessage;
+  external set onmessage(JSFunction? handler);
+  external void close();
+}

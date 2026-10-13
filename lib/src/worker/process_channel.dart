@@ -32,8 +32,9 @@ const int workerOomExitCode = 65;
 /// exiting.
 final class ProcessChannel implements MontyChannel {
   ProcessChannel._(this._process)
-    : _events = _EventStream(
+    : _events = EventQueue(
         _process.stdout,
+        limit: readAheadLimit,
         onDesync: () => _process.kill(ProcessSignal.sigkill),
       ),
       _stderr = _ByteTail(_process.stderr, 4096) {
@@ -60,13 +61,24 @@ final class ProcessChannel implements MontyChannel {
   /// How long [close] waits for the worker to exit after `Shutdown`.
   static const Duration shutdownGrace = Duration(seconds: 2);
 
+  /// How many wire bytes of completed, undelivered frames the channel holds
+  /// before it stops reading the worker's stdout.
+  ///
+  /// The bound holds whether or not a turn is reading: during a turn,
+  /// between turns, and while the caller holds a snapshot. The pipe then
+  /// fills and the worker blocks on its write, as upstream's pool, which
+  /// reads on demand, makes it. The frame being received when the limit is
+  /// passed still completes, whatever its size up to [Frame.maxLength]:
+  /// pausing inside it would deadlock a valid large result.
+  static const int readAheadLimit = 4 * 1024 * 1024;
+
   static final Set<ProcessChannel> _live = {};
 
   /// Every channel whose worker process has not yet exited.
   static Set<ProcessChannel> get live => UnmodifiableSetView(_live);
 
   final Process _process;
-  final _EventStream _events;
+  final EventQueue _events;
   final _ByteTail _stderr;
   MontyCrashedError? _crash;
   bool _killed = false;
@@ -99,6 +111,14 @@ final class ProcessChannel implements MontyChannel {
 
   /// Completes with the worker's exit code.
   Future<int> get exitCode => _process.exitCode;
+
+  /// Wire bytes of the frames received and not yet read by a turn.
+  @visibleForTesting
+  int get readAheadBytes => _events.readAhead;
+
+  /// The most [readAheadBytes] has been.
+  @visibleForTesting
+  int get peakReadAheadBytes => _events.peakReadAhead;
 
   @override
   bool get isAlive =>
@@ -321,22 +341,52 @@ final class SelfRelaunch extends WorkerLaunch {
 };
 
 /// The worker's stdout as decoded events, buffered until a turn reads them.
-final class _EventStream {
-  _EventStream(Stream<List<int>> bytes, {required this.onDesync}) {
+///
+/// Visible for its own tests, which drive it with chosen chunk boundaries.
+///
+/// Holds at most [limit] wire bytes of completed events, plus the frame in
+/// flight when the limit was passed: past it, the subscription pauses at the
+/// next frame end and resumes once a reader takes the queue back under it.
+@visibleForTesting
+final class EventQueue {
+  /// Reads [bytes] as frames, pausing past [limit]; [onDesync] runs once if
+  /// they stop being frames.
+  EventQueue(
+    Stream<List<int>> bytes, {
+    required this.limit,
+    required this.onDesync,
+  }) {
     _subscription = bytes.listen(_add, onDone: _end, onError: _fail);
   }
+
+  /// The read-ahead, in wire bytes, past which reading pauses.
+  final int limit;
 
   /// Called once if the stream stops being readable as frames.
   final void Function() onDesync;
 
   final _decoder = FrameDecoder();
-  final _queue = Queue<pb.ChildEvent>();
+  final _queue = Queue<(pb.ChildEvent, int)>();
   StreamSubscription<List<int>>? _subscription;
   final _closed = Completer<void>();
   Completer<void>? _wake;
   Object? _error;
   bool _ended = false;
   bool _cancelled = false;
+  int _readAhead = 0;
+  int _peakReadAhead = 0;
+
+  /// Over [limit] with a frame part-received: pause once a frame ends.
+  bool _finishingFrame = false;
+
+  /// The worker has exited: read what is left whatever the read-ahead.
+  bool _draining = false;
+
+  /// Wire bytes of the queued events.
+  int get readAhead => _readAhead;
+
+  /// The most [readAhead] has been.
+  int get peakReadAhead => _peakReadAhead;
 
   /// Whether another event can still arrive.
   bool get isOpen => !_ended && !_cancelled && _error == null;
@@ -348,8 +398,13 @@ final class _EventStream {
   Future<pb.ChildEvent?> next() async {
     for (;;) {
       if (_cancelled) return null;
-      final event = _queue.firstOrNull;
-      if (event != null) return _queue.removeFirst();
+      if (_queue.isNotEmpty) {
+        final (event, size) = _queue.removeFirst();
+        _readAhead -= size;
+        if (_readAhead < limit) _resume();
+
+        return event;
+      }
       if (_ended || _error != null) return null;
       final wake = Completer<void>();
       _wake = wake;
@@ -362,6 +417,7 @@ final class _EventStream {
   void cancel() {
     _cancelled = true;
     _queue.clear();
+    _readAhead = 0;
     unawaited(_subscription?.cancel());
     _subscription = null;
     _wakeUp();
@@ -369,7 +425,12 @@ final class _EventStream {
 
   /// Waits up to [grace] for the output to end, then ends it: frames
   /// already received are still returned, and nothing more is read.
+  ///
+  /// Called once the worker has exited, so reading resumes even past the
+  /// limit: what is left is at most what the pipe held.
   Future<void> endWithin(Duration grace) async {
+    _draining = true;
+    _resume();
     await _closed.future.timeout(grace, onTimeout: () => null);
     if (_ended) return;
     _ended = true;
@@ -390,13 +451,44 @@ final class _EventStream {
   void _add(List<int> chunk) {
     if (_error != null) return;
     try {
-      for (final body in _decoder.add(chunk)) {
-        _queue.add(FrameScan.decodeChildEvent(body));
+      final bodies = _decoder.add(chunk);
+      for (final body in bodies) {
+        final size = Frame.prefixLength + body.length;
+        _queue.add((FrameScan.decodeChildEvent(body), size));
+        _readAhead += size;
       }
+      _peakReadAhead = math.max(_peakReadAhead, _readAhead);
+      _bound(completedFrame: bodies.isNotEmpty);
     } on FrameException catch (error) {
       _desync(error);
     }
     _wakeUp();
+  }
+
+  /// Pauses reading once the read-ahead is at [limit], but never inside the
+  /// frame that was in flight when it got there: that frame completes
+  /// first, and only the frames after it wait.
+  void _bound({required bool completedFrame}) {
+    final subscription = _subscription;
+    if (_draining ||
+        _readAhead < limit ||
+        subscription == null ||
+        subscription.isPaused) {
+      return;
+    }
+    if (_decoder.pendingBytes == 0 || (_finishingFrame && completedFrame)) {
+      _finishingFrame = false;
+      subscription.pause();
+    } else {
+      _finishingFrame = true;
+    }
+  }
+
+  /// Reads again after a pause.
+  void _resume() {
+    _finishingFrame = false;
+    final subscription = _subscription;
+    if (subscription != null && subscription.isPaused) subscription.resume();
   }
 
   /// The next byte can no longer be trusted to start a frame.

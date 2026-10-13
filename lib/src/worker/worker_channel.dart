@@ -33,6 +33,10 @@ final class WorkerChannel implements MontyChannel {
   /// [forceNoJspi] skips the probe, so the Worker dispatches directly; tests
   /// use it to keep the fallback path green on a browser with JSPI.
   ///
+  /// When [cancelled] completes before the Worker greets, the Worker is
+  /// terminated and the spawn fails with [CrashCause.killed]: a Worker that
+  /// loads but never answers would otherwise wait forever.
+  ///
   /// Throws [MontyCrashedError] if the Worker cannot start
   /// ([CrashCause.vanished]) or speaks another protocol version
   /// ([CrashCause.fatal]).
@@ -40,12 +44,31 @@ final class WorkerChannel implements MontyChannel {
     WasmModuleCache cache, {
     String workerUrl = defaultWorkerUrl,
     bool forceNoJspi = false,
+    Future<void>? cancelled,
   }) async {
-    final module = await cache.module;
+    final module = await Future.any([
+      cache.module,
+      if (cancelled != null) cancelled.then((_) => null),
+    ]);
+    // A cancel that lands after this is handled at the greeting below.
+    if (module == null) throw _cancelledError();
     final worker = _Worker(workerUrl.toJS);
     final hello = Completer<WorkerMessage>();
     void first(WorkerMessage m) {
       if (!hello.isCompleted) hello.complete(m);
+    }
+
+    if (cancelled != null) {
+      unawaited(
+        cancelled.then((_) {
+          if (hello.isCompleted) return;
+          worker
+            ..onmessage = null
+            ..onerror = null
+            ..terminate();
+          hello.completeError(_cancelledError());
+        }),
+      );
     }
 
     worker
@@ -102,6 +125,11 @@ final class WorkerChannel implements MontyChannel {
       ..onerror = null;
   }
 }
+
+MontyCrashedError _cancelledError() => MontyCrashedError(
+  CrashCause.killed,
+  message: 'the Worker start was cancelled',
+);
 
 /// The page-lifetime compiled module: fetched and compiled once, lazily, then
 /// posted to every Worker [WorkerChannel.spawn] starts.

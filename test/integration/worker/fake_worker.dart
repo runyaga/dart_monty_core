@@ -22,12 +22,29 @@ const stderrLastLine = "thread 'monty-worker' has overflowed its stack";
 /// The message the `fatal` scenario sends.
 const fatalMessage = 'protocol version 999 is not supported';
 
+/// How many `Print` frames the `flood` scenario sends.
+const floodPrints = 512;
+
+/// The text length of each of them: 64 KiB, so 32 MiB in all.
+const int floodPrintLength = 64 * 1024;
+
+/// The text length of the one `Print` the `big-frame` scenario sends in
+/// many chunks: 8 MiB.
+const int bigPrintLength = 8 * 1024 * 1024;
+
+/// The 64 KiB `Print`s the `big-frame` scenario sends before its big one:
+/// 3 MiB, under the channel's read-ahead limit.
+const bigFramePrefixPrints = 48;
+
+/// The 64 KiB `Print`s it sends after the big one: 2 MiB, which must wait.
+const bigFrameSuffixPrints = 32;
+
 Future<void> main(List<String> args) async {
-  final scenario = args.firstOrNull ?? 'serve';
+  scenario = args.firstOrNull ?? 'serve';
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
-      await _handle(scenario, pb.ParentRequest.fromBuffer(body));
+      await _handle(pb.ParentRequest.fromBuffer(body));
     }
   }
   if (scenario != 'ignore-shutdown') exit(0);
@@ -36,7 +53,11 @@ Future<void> main(List<String> args) async {
   Timer(const Duration(hours: 1), () => exit(0));
 }
 
-Future<void> _handle(String scenario, pb.ParentRequest request) async {
+/// The scenario in force; `flood` and `big-frame` switch to `idle` once they
+/// have sent everything.
+String scenario = 'serve';
+
+Future<void> _handle(pb.ParentRequest request) async {
   switch (scenario) {
     case 'serve':
     case 'ignore-shutdown':
@@ -107,6 +128,35 @@ Future<void> _handle(String scenario, pb.ParentRequest request) async {
       exit(0);
     case 'hang':
       break;
+    case 'flood':
+      // Ok, then 32 MiB of Prints and a Complete that no turn asked for yet:
+      // they stay queued for the next turn.
+      await _send(pb.ChildEvent(ok: pb.Ok()));
+      for (var i = 0; i < floodPrints; i++) {
+        await _send(_numbered(i, floodPrintLength));
+      }
+      await _send(_completeNone);
+      scenario = 'idle';
+    case 'big-frame':
+      // Ok, 3 MiB of Prints, one 8 MiB Print written in 64 KiB pieces,
+      // 2 MiB more Prints, then a Complete: a frame larger than the
+      // read-ahead limit completes, and the frames after it wait.
+      await _send(pb.ChildEvent(ok: pb.Ok()));
+      for (var i = 0; i < bigFramePrefixPrints; i++) {
+        await _send(_numbered(i, floodPrintLength));
+      }
+      final big = Frame.encode(_numbered(bigFramePrefixPrints, bigPrintLength));
+      for (var at = 0; at < big.length; at += 64 * 1024) {
+        await _write(big.sublist(at, (at + 64 * 1024).clamp(0, big.length)));
+      }
+      for (var i = 0; i < bigFrameSuffixPrints; i++) {
+        await _send(_numbered(bigFramePrefixPrints + 1 + i, floodPrintLength));
+      }
+      await _send(_completeNone);
+      scenario = 'idle';
+    case 'idle':
+      // Everything was sent up front; only Shutdown is answered.
+      if (request.whichKind() == pb.ParentRequest_Kind.shutdown) exit(0);
     default:
       stderr.writeln('fake_worker: unknown scenario $scenario');
       exit(2);
@@ -124,16 +174,7 @@ Future<void> _serve(
       final code = request.feed.code;
       await _send(_print(pb.PrintStream.PRINT_STREAM_STDOUT, 'out:$code'));
       await _send(_print(pb.PrintStream.PRINT_STREAM_STDERR, 'err:$code'));
-      await _send(
-        pb.ChildEvent(
-          complete: pb.Complete(
-            values: pb.Arena(
-              nodeCount: 1,
-              nodes: [pb.MontyNode(none: pb.Unit())],
-            ),
-          ),
-        ),
-      );
+      await _send(_completeNone);
     case pb.ParentRequest_Kind.shutdown:
       if (ignoreShutdown) return;
       await _send(pb.ChildEvent(ok: pb.Ok()));
@@ -143,6 +184,22 @@ Future<void> _serve(
     default:
       await _send(pb.ChildEvent(ok: pb.Ok()));
   }
+}
+
+final pb.ChildEvent _completeNone = pb.ChildEvent(
+  complete: pb.Complete(
+    values: pb.Arena(nodeCount: 1, nodes: [pb.MontyNode(none: pb.Unit())]),
+  ),
+);
+
+/// A stdout `Print` of [length] characters that starts with `#<n>:`.
+pb.ChildEvent _numbered(int n, int length) {
+  final head = '#$n:';
+
+  return _print(
+    pb.PrintStream.PRINT_STREAM_STDOUT,
+    head + 'x' * (length - head.length),
+  );
 }
 
 pb.ChildEvent _print(pb.PrintStream stream, String text) => pb.ChildEvent(
