@@ -39,6 +39,14 @@
   exported. Its tests carry the `worker` tag, now excluded from the VM unit
   runs, and run in CI's `test-worker-vm` job and the gate's `worker_vm`
   step.
+- CI's new `parity-e0` job runs the pinned parity suite's E0 cases through
+  the worker on vm, dart2js and dart2wasm. Every counted case must match
+  upstream on each backend; `complex` is deferred and reported, not counted.
+  The job also runs the suite's worker crash tests: a deadline kill, a native
+  stack overflow, and a wasm trap under JSPI and under the fallback. Each must
+  surface as a typed `MontyCrashedError`, after which a fresh worker must
+  answer. `PARITY_PIN` is now one workflow-level value, shared with the
+  `parity` job.
 
 ### Changed
 

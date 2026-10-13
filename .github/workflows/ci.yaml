@@ -37,6 +37,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
+# pin for both). A change meant to move parity bumps it in the same PR.
+env:
+  PARITY_PIN: aaca805b36db7d5fdbd4bbefeb4a3565c3c46f44
+
 permissions:
   checks: write
   contents: read
@@ -278,8 +283,6 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      PARITY_PIN: 9fc746cc61fc4f96488e6bcd0c865aea80868e3d
     steps:
       - uses: actions/checkout@v7
       - name: The pin is one full commit SHA
@@ -328,6 +331,79 @@ jobs:
         with:
           name: parity
           path: /tmp/parity
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # The M2 gate: E0 through the worker, on vm, dart2js and dart2wasm
+  # ---------------------------------------------------------------------------
+  # The same pinned suite's `e0` cases (tool/parity/e0.json), run through the
+  # monty-proto worker rather than the public API: the executable worker-rust
+  # built on the VM, the committed lib/assets/dart_monty_core_proto_worker
+  # .{js,wasm} in Chrome on dart2js and dart2wasm. Every counted case must
+  # MATCH upstream on each backend (s07, complex, is deferred and reported,
+  # not counted). Each run also runs the suite's worker crash tests on that
+  # backend: deadline kill, native stack overflow, wasm trap under JSPI and
+  # the forced fallback, each a typed MontyCrashedError and then a fresh
+  # worker answering.
+  parity-e0:
+    name: Parity E0 through the worker (pinned dart_monty_parity; vm, dart2js, dart2wasm)
+    needs: [changes, worker-rust]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: The pin is one full commit SHA
+        run: '[[ "$PARITY_PIN" =~ ^[0-9a-f]{40}$ ]] || { echo "PARITY_PIN must be a full commit SHA, got $PARITY_PIN"; exit 1; }'
+      - uses: actions/checkout@v7
+        with:
+          repository: runyaga/dart_monty_parity
+          ref: ${{ env.PARITY_PIN }}
+          path: .parity
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.5
+      # `dart run` / `dart test` run hook/build.dart, which builds the
+      # in-process native crate; restore the shared cache rather than build
+      # it cold.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@v6
+        with:
+          path: ~/.pub-cache
+          key: pub-parity-${{ runner.os }}-${{ hashFiles('.parity/packages/monty_parity/pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - name: Download the worker executable
+        uses: actions/download-artifact@v8
+        with:
+          name: dart_monty_worker-linux-x64
+          path: lib/src/bin/linux-x64
+      # Where tool/build_worker.sh puts it and worker_locator.dart looks.
+      # Artifacts do not keep the executable bit.
+      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - name: E0 on the VM (worker process) + crash tests
+        run: python3 -I .parity/tool/parity/run.py vm --engine worker --core . --out /tmp/parity-e0
+      - name: E0 on dart2js (Web Worker) + crash tests
+        run: python3 -I .parity/tool/parity/run.py dart2js --engine worker --core . --out /tmp/parity-e0
+      - name: E0 on dart2wasm (Web Worker) + crash tests
+        run: python3 -I .parity/tool/parity/run.py dart2wasm --engine worker --core . --out /tmp/parity-e0
+      - name: Assert E0 (every counted case MATCH on every backend)
+        run: |
+          python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-e0 \
+            --json /tmp/parity-e0/e0.json --markdown /tmp/parity-e0/e0.md
+      - name: Publish the E0 table
+        if: success() || failure()
+        run: '[ -f /tmp/parity-e0/e0.md ] && cat /tmp/parity-e0/e0.md >> "$GITHUB_STEP_SUMMARY" || true'
+      - uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: parity-e0
+          path: /tmp/parity-e0
           retention-days: 14
 
   # ---------------------------------------------------------------------------
