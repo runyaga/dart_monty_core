@@ -2,6 +2,9 @@
 .dart_tool/
 .packages
 pubspec.lock
+# ...except the proto generator's: tool/generate_proto.sh compiles
+# protoc_plugin from it with --enforce-lockfile.
+!tool/proto_gen/pubspec.lock
 build/
 coverage/
 

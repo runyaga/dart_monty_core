@@ -1,0 +1,19 @@
+# The protoc plugin tool/generate_proto.sh compiles, resolved on its own.
+#
+# Its own package so that its pubspec.lock can be committed (the root one is
+# gitignored, as for any library): the generator compiles protoc_plugin AND
+# every transitive dependency from this lock, with `dart pub get
+# --enforce-lockfile`, so a fresh resolve cannot change the emitted code.
+#
+# EXACT, not a caret: the committed lib/src/worker/proto/ is this plugin's
+# output. A plugin release that changes the emitted code must arrive as a
+# deliberate bump here, a re-locked pubspec.lock and a regeneration, which the
+# proto-drift CI job enforces.
+name: dart_monty_core_proto_gen
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  protoc_plugin: 25.1.0

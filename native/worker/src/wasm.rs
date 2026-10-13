@@ -70,6 +70,10 @@ pub extern "C" fn dmw_protocol_version() -> u32 {
 /// `ptr` and `len` must describe a readable buffer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dmw_dispatch(ptr: *const u8, len: usize) -> *const u8 {
+    // Free the previous reply before the turn runs: the allocator charges every
+    // live allocation to the session's memory budget, and the host has already
+    // copied it. `take`, not `clear`, so the capacity goes too.
+    drop(OUT.with_borrow_mut(mem::take));
     let request = if len == 0 {
         &[][..]
     } else {

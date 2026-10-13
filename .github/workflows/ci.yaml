@@ -202,6 +202,9 @@ jobs:
           # monty crate pins, Cargo.lock a subset of upstream's. Offline; the
           # `upstream-pin` job checks the recorded hashes against upstream.
           run python3 -I tool/check_worker_mirror.py --local
+          # ...and its negative controls: path, git, [patch], [replace] and
+          # cargo-config overrides of upstream crates must each fail it.
+          run python3 -I tool/test_check_worker_mirror.py
           run bash tool/check_no_vague_errors.sh
           run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
@@ -223,7 +226,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 23 ] || { echo "FAIL: expected 23 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 24 ] || { echo "FAIL: expected 24 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -376,8 +379,9 @@ jobs:
   # Same shape as `ffigen` above. lib/src/worker/proto/ is committed protoc
   # output for upstream's monty.proto at the commit tool/upstream/upstream-pin.json
   # records, built with the hash-pinned protoc in
-  # tool/upstream/protoc-requirements.lock, protoc_plugin 25.1.0 and the pinned
-  # SDK's formatter. This job regenerates it and fails on any difference.
+  # tool/upstream/protoc-requirements.lock, protoc_plugin 25.1.0 compiled from
+  # the committed tool/proto_gen/pubspec.lock, and the pinned SDK's formatter.
+  # This job regenerates it and fails on any difference.
   #
   # It is also the COMPENSATING CHECK for analysis_options.yaml excluding that
   # directory from the analyzer and DCM, and for the coverage tools excluding it
@@ -401,8 +405,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
+          key: proto-gen-${{ runner.os }}-${{ hashFiles('tool/proto_gen/pubspec.lock') }}
       - name: Generate bindings
         run: bash tool/generate_proto.sh
       - name: Committed bindings match protoc output
@@ -728,7 +731,7 @@ jobs:
   # Its own cargo workspace and Cargo.lock, so its own cache, keyed on that lock.
   # One cargo call builds the executable and the cdylib (two fat-LTO links);
   # the smoke test runs against that same release executable. The wasm module
-  # is built here only to prove it compiles; nothing ships it yet.
+  # is not shipped yet; it is built and driven through its dmw_* exports.
   worker-rust:
     name: Worker crate (fmt + clippy + build + smoke)
     needs: [changes]
@@ -761,6 +764,13 @@ jobs:
         run: cargo test --locked --release
       - name: Build wasm module (mixd)
         run: cargo build --locked --profile mixd --lib --target wasm32-wasip1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      # Consecutive large replies under a bounded max_memory: a turn's reply
+      # must not stay allocated, and charged, through the next turn.
+      - name: Wasm turns (dmw_dispatch under max_memory)
+        run: node ../../tool/test_worker_wasm.mjs target/wasm32-wasip1/mixd/dart_monty_worker.wasm
       - uses: actions/upload-artifact@v7
         with:
           name: dart_monty_worker-linux-x64
