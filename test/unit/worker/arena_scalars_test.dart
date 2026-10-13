@@ -249,7 +249,9 @@ void main() {
       final payload = _floatNode('7ff8000000000001');
       expect(hexAt(itemAt(pair, 1)), payload);
       expect(hexAt(y), payload);
-      expect(hexAt(z), _floatNode('7ff8000000000000'));
+      // A NaN built in Dart sends its own bits. Those of double.nan are the
+      // host's (0.0 / 0.0): fff8... on x86_64, 7ff8... on arm64.
+      expect(hexAt(z), _floatNode(_bitsOf(double.nan)));
     });
   });
 
