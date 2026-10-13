@@ -91,16 +91,16 @@ HOME_ROOTS=(Users home root)
 #              home, such as CARGO_HOME=/opt/rust/cargo, and Windows paths
 #              (drive letter with either slash, or UNC).
 #   layout     every cargo-home layout marker (registry/src/, git/checkouts/,
-#              either slash) sits directly under /cargo/.
+#              either slash) sits under a /cargo/ that is itself a path root:
+#              after a delimiter, or after a Rust module path (tracing
+#              metadata concatenates `a::b::c` and the file name with no
+#              delimiter). Catches /opt/rust/cargo/ inside such a string and
+#              a toolchain directory whose name contains a space.
 #
 # A path starts at /, a drive letter or \\ after a delimiter (NUL, space,
 # quote, bracket ...) and runs to the next one; bytes >= 0x80 are path bytes,
 # so a non-ASCII directory name does not split a path in two.
-#
-# Known limit: a toolchain directory whose name contains a space, outside every
-# HOME_ROOTS entry, splits at the space and can pass. The layout rule cannot be
-# stricter about what precedes /cargo/: tracing metadata concatenates a module
-# path and a file name with no delimiter (`...::arguments/cargo/registry/...`).
+
 leaked_paths() {
   python3 -I - "${HOME_ROOTS[@]}" <<'PY'
 import glob, re, sys
@@ -110,6 +110,19 @@ stop = rb"\x00-\x20\x7f\"'`()\[\]<>{},;="
 path = re.compile(rb"(?<![^" + stop + rb"])(?:/|[A-Za-z]:[/\\]|\\\\)[^" + stop + rb"]+")
 rust_src = re.compile(rb"\.rs(?::|$)")
 marker = re.compile(rb"(?:registry|git)[/\\](?:src|checkouts)[/\\]")
+module_path = re.compile(rb"(?:[A-Za-z_][A-Za-z0-9_]*::)+[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def cargo_rooted(data, at):
+    """True if the marker at `at` sits under a /cargo/ that starts a path."""
+    root = at - len(b"/cargo/")
+    if root < 0 or data[root:at] != b"/cargo/":
+        return False
+    if root == 0 or re.match(rb"[" + stop + rb"]", data[root - 1:root]):
+        return True
+    return module_path.search(data[max(0, root - 256):root]) is not None
+
+
 rc = 0
 for f in sorted(glob.glob("lib/assets/*.wasm")):
     try:
@@ -122,12 +135,12 @@ for f in sorted(glob.glob("lib/assets/*.wasm")):
     srcs = [p.group() for p in path.finditer(data) if rust_src.search(p.group())]
     outside = sum(1 for p in srcs if not p.startswith(allowed))
     layout = sum(1 for m in marker.finditer(data)
-                 if data[max(0, m.start() - 7):m.start()] != b"/cargo/")
+                 if not cargo_rooted(data, m.start()))
     if homes or outside or layout:
         print(f"FAIL: {f} embeds build-machine absolute paths: {homes} under a "
               f"home-directory root, {outside} of {len(srcs)} Rust source paths "
               f"outside the remapped prefixes, {layout} cargo-home paths not "
-              "under /cargo/.")
+              "rooted at /cargo/.")
         rc = 1
 if rc:
     print("  Rebuild through the recipe, which remaps them: bash tool/prebuild.sh")
