@@ -220,6 +220,8 @@
     seeds of every kind, call-host modes, the process clock, sleep modes
     and the sleep budget), on the VM, dart2js and dart2wasm.
     `tool/generate_config_oracle.py` records the cases.
+  - `PARITY_PIN` moves to the parity suite that builds the worker's limits
+    as `ResourceLimits`.
 
 ### Changed
 
