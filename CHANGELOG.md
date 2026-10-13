@@ -161,8 +161,13 @@
   upstream's `AsyncMonty` and `AsyncMontySession`. Nothing is exported
   until the API cutover.
   - A pool can be started, checked out and closed; `withPool` and
-    `withSession` close what they open on every exit path.
-  - `feedRun` takes inputs, host functions and OS calls.
+    `withSession` close what they open on every exit path. Each takes
+    one internal options record for now.
+  - `feedRun` takes inputs, host functions and OS calls. Feeds on one
+    session are serialized as upstream's are. A second feed waits for
+    the turn in flight, then runs if the first feed has finished. It
+    fails if the first feed is suspended on a host call, or if the
+    session has closed.
   - Closing a session sends `Reset` and returns its worker to the pool.
     If a host callback is running at the time, the suspended run fails as
     finished once the callback returns. A turn in flight is killed.
