@@ -21,7 +21,7 @@
 #   dart format     the SDK tool/check_sdk_pin.sh enforces, so the committed
 #                   output has no format churn.
 #
-# Four declared field types differ from upstream's, in a working copy of the
+# Five declared field types differ from upstream's, in a working copy of the
 # fetched file (the pinned blob itself is checked out read-only and never
 # edited). Each keeps its wire type, so the bytes on the wire are unchanged;
 # only what package:protobuf does with them changes:
@@ -39,6 +39,14 @@
 #                                        them on read. As fixed64 the eight
 #                                        bytes come through as bits, converted
 #                                        to and from a double in the same file.
+#   Type.origin       TypeOrigin -> int32  package:protobuf moves an enum
+#                                        number it does not know into unknown
+#                                        fields and keeps the earlier known
+#                                        value, where upstream keeps the last
+#                                        number and rejects it. As int32 the
+#                                        last number comes through, and
+#                                        lib/src/worker/arena_nodes.dart
+#                                        validates it as upstream does.
 #
 # Each substitution must match its upstream line exactly once, so a reshaped
 # upstream file fails here rather than generating something else.
@@ -82,7 +90,7 @@ GOT_BLOB="$(git hash-object "$TMP/pinned/$PROTO_FILE")"
   || { echo "FAIL: fetched $PROTO_FILE hashes to $GOT_BLOB, want $BLOB"; exit 1; }
 echo "blob $BLOB"
 
-echo "--- working copy: 4 field-type substitutions ---"
+echo "--- working copy: 5 field-type substitutions ---"
 python3 -I -c '
 import sys
 src, dst = sys.argv[1], sys.argv[2]
@@ -93,6 +101,7 @@ SUBS = [
     ("MontyNode", "    double float = 7;\n", "    fixed64 float = 7;\n"),
     ("Complex", "  optional double real = 1;\n", "  optional fixed64 real = 1;\n"),
     ("Complex", "  optional double imag = 2;\n", "  optional fixed64 imag = 2;\n"),
+    ("Type", "  TypeOrigin origin = 3;\n", "  int32 origin = 3;\n"),
 ]
 for message, old, new in SUBS:
     head = "\nmessage " + message + " {\n"

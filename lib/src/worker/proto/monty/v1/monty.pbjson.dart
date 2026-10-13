@@ -643,14 +643,7 @@ const Type$json = {
   '2': [
     {'1': 'name', '3': 1, '4': 1, '5': 9, '10': 'name'},
     {'1': 'id', '3': 2, '4': 1, '5': 11, '6': '.monty.v1.Uuid', '10': 'id'},
-    {
-      '1': 'origin',
-      '3': 3,
-      '4': 1,
-      '5': 14,
-      '6': '.monty.v1.TypeOrigin',
-      '10': 'origin'
-    },
+    {'1': 'origin', '3': 3, '4': 1, '5': 5, '10': 'origin'},
     {'1': 'is_dataclass', '3': 4, '4': 1, '5': 8, '10': 'isDataclass'},
     {
       '1': 'attrs',
@@ -666,9 +659,8 @@ const Type$json = {
 /// Descriptor for `Type`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List typeDescriptor = $convert.base64Decode(
     'CgRUeXBlEhIKBG5hbWUYASABKAlSBG5hbWUSHgoCaWQYAiABKAsyDi5tb250eS52MS5VdWlkUg'
-    'JpZBIsCgZvcmlnaW4YAyABKA4yFC5tb250eS52MS5UeXBlT3JpZ2luUgZvcmlnaW4SIQoMaXNf'
-    'ZGF0YWNsYXNzGAQgASgIUgtpc0RhdGFjbGFzcxIpCgVhdHRycxgFIAEoCzITLm1vbnR5LnYxLk'
-    '5vZGVQYWlyc1IFYXR0cnM=');
+    'JpZBIWCgZvcmlnaW4YAyABKAVSBm9yaWdpbhIhCgxpc19kYXRhY2xhc3MYBCABKAhSC2lzRGF0'
+    'YWNsYXNzEikKBWF0dHJzGAUgASgLMhMubW9udHkudjEuTm9kZVBhaXJzUgVhdHRycw==');
 
 @$core.Deprecated('Use classInstanceNodeDescriptor instead')
 const ClassInstanceNode$json = {

@@ -1,5 +1,5 @@
-// The worker value arena (lib/src/worker/arena.dart): every kind of the M2
-// subset both ways, identity, integer and float edge cases, malformed input,
+// The worker value arena (lib/src/worker/arena_*.dart): the M2 subset both
+// ways, identity, integer and float edge cases, malformed input,
 // and depth. Pure Dart, so the unit and unit_web steps run it on the VM,
 // dart2js and dart2wasm.
 import 'dart:typed_data';
@@ -199,30 +199,6 @@ void main() {
         () => (v as MontyList).items.add(const MontyNone()),
         throwsUnsupportedError,
       );
-    });
-
-    test('kinds outside the subset are refused by name', () {
-      for (final node in [
-        pb.MontyNode(ellipsis: pb.Unit()),
-        pb.MontyNode(
-          complex: pb.Complex(real: doubleToBits(1), imag: doubleToBits(2)),
-        ),
-        pb.MontyNode(repr: '<object>'),
-        pb.MontyNode(cycle: '[...]'),
-        pb.MontyNode(date: pb.Date(year: 2026, month: 1, day: 2)),
-        pb.MontyNode(),
-      ]) {
-        expect(
-          () => _decode([node]),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (e) => e.message,
-              'message',
-              contains(node.whichKind().name),
-            ),
-          ),
-        );
-      }
     });
 
     test('a malformed arena is a FormatException', () {

@@ -58,6 +58,24 @@
   consumer that opts in (`tool/aot_worker/`) and runs E0 case s10 through
   the relaunched worker against upstream's recorded outcome, and checks that
   the existing probe, which does not opt in, bundles one library only.
+- Worker groundwork (internal, no public API): the worker's value-arena
+  reader decodes every node kind upstream sends, into today's value
+  classes: ellipsis, `NotImplemented`, named tuples, dates, datetimes,
+  times, timedeltas, time zones, exception values, builtin types and
+  functions (as `MontyOpaque`), class instances (two instances of one class
+  share one `MontyClassType`), paths (normalized as `PurePosixPath`), file
+  handles (canonical mode), and `repr`, `cycle` and output function nodes
+  (as their text). It is as strict as upstream's decoder and no stricter:
+  every node, reachable or not, is checked with upstream's rules and
+  messages, then the references, then the rules of the Python objects
+  upstream builds (dict keys and set members collapse as Python's do and
+  must be hashable; named tuples need valid names and lengths; timedeltas
+  stay within 999999999 days). A failure is a `FormatException`. A
+  `complex`, a class type as a value, and a file position an `int` cannot
+  hold exactly (above 2^63-1, or 2^53 on dart2js) have no value class yet;
+  reaching one is an `UnsupportedError`. `tool/generate_proto.sh` declares
+  `Type.origin` as `int32` (a fifth substitution), so an unknown origin
+  number reaches the reader as sent.
 
 ### Changed
 

@@ -309,6 +309,18 @@ void main() {
       expect(typeOf(pb.Complex(), 2), PbFieldType.OF6);
     });
 
+    test('Type.origin is int32: an unknown number arrives as sent', () {
+      expect(typeOf(pb.Type(), 3), PbFieldType.O3);
+      // package:protobuf would park an unknown enum number in unknown
+      // fields and keep an earlier known one; upstream keeps the last.
+      for (final (bytes, origin) in [
+        ([0x18, 0x01, 0x18, 0x07], 7),
+        ([0x18, 0x07, 0x18, 0x01], 1),
+      ]) {
+        expect(pb.Type.fromBuffer(bytes).origin, origin);
+      }
+    });
+
     test('Complex parts keep proto3 presence, -0.0 and 0.0 included', () {
       final c = pb.Complex.fromBuffer(
         _hex('09${'00' * 8}11${'00' * 7}80'),
