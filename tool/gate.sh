@@ -305,6 +305,15 @@ s  api_exercised bash tool/check_api_exercised.sh
 # ...so it was removed, and this keeps it removed: the precompile names must
 # stay undefined on every type that carried them.
 s  api_absent    bash tool/check_api_absent.sh
+# Nothing under lib/src/worker/ (protobuf, arena, frames, channels) may be
+# exported or named in a public signature; importing it is allowed. The
+# exported names must equal tool/export-golden.txt, so every public API change
+# shows up as a diff of that file. Not `dart run`: that builds the native
+# crate through hook/build.dart, and this reads source only.
+s  export_boundary  dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart
+# ...and its controls: a worker export, a proto type in a public signature and
+# an unlisted export must each fail it; a worker import must not.
+s  export_boundary_selftest dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test
 s  dart_analyze  dart analyze --fatal-infos
 # packages/ IS included, and was not until 2026-09-15. `dart analyze` walks
 # into the nested packages on its own (verified: a deliberate type error in
@@ -535,7 +544,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=52
+EXPECT_STEPS=54
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {
