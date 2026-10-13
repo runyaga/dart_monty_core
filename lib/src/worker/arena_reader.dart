@@ -79,13 +79,13 @@ final class ArenaReader {
     return _at(index);
   }
 
-  pb.MontyNode _nodeAt(int i) =>
-      _nodes.elementAtOrNull(i) ??
-      (throw StateError('arena node $i is outside the arena'));
+  pb.MontyNode _nodeAt(int i) => _nodes.elementAtOrNull(i) ?? _broken(i);
 
-  MontyValue _at(int i) =>
-      _decoded[i] ??
-      (throw StateError('arena node $i was read before it was decoded'));
+  MontyValue _at(int i) => _decoded[i] ?? _broken(i);
+
+  /// The walk checks every index before it reads a node, and decodes every
+  /// child before its holder, so neither lookup can miss.
+  Never _broken(int i) => throw StateError('arena node $i read out of order');
 
   /// The child indexes of [node], each checked to be below [holder].
   List<int> _childrenOf(pb.MontyNode node, int holder) {
