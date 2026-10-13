@@ -15,14 +15,14 @@ import 'dart:js_interop_unsafe';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
 /// Every session's memory is bounded.
-const _limits = SessionLimits(maxMemoryBytes: 64 * 1024 * 1024);
+const _limits = SessionConfig(maxMemoryBytes: 64 * 1024 * 1024);
 
 /// What a test passes as `printCallback` when it does not look at prints.
 void _ignore(String stream, String text) => _ignored++;
@@ -52,7 +52,11 @@ external JSObject get _console;
 
 void main() {
   test('feedRun, prints in order, Reset on close, reuse ($_backend)', () async {
-    final pool = await MontyPool.start(maxProcesses: 1);
+    final pool = await MontyPool.start(
+      options: const PoolOptions(
+        maxProcesses: 1,
+      ),
+    );
     try {
       final prints = <(String, String)>[];
       final value = await pool.withSession(
@@ -64,24 +68,27 @@ void main() {
             prints.add((stream, text));
           },
         ),
-        limits: _limits,
+        options: _limits,
       );
       expect(value, const MontyInt(42));
       expect(prints.map((p) => p.$2).join(), 'one\ntwo\n');
       expect(prints.map((p) => p.$1).toSet(), {'stdout', 'stderr'});
       expect(pool.idleWorkers, 1);
-      await pool.withSession((s) async {
-        await expectLater(
-          s.feedRun('x', printCallback: _ignore),
-          throwsA(
-            isA<MontyScriptError>().having(
-              (e) => e.excType,
-              'excType',
-              'NameError',
+      await pool.withSession(
+        (s) async {
+          await expectLater(
+            s.feedRun('x', printCallback: _ignore),
+            throwsA(
+              isA<MontyScriptError>().having(
+                (e) => e.excType,
+                'excType',
+                'NameError',
+              ),
             ),
-          ),
-        );
-      }, limits: _limits);
+          );
+        },
+        options: _limits,
+      );
       expect(pool.liveWorkers, 1);
     } finally {
       await pool.close();
@@ -90,41 +97,50 @@ void main() {
   });
 
   test('close during host code: Reset now ($_backend)', () async {
-    await MontyPool.withPool((pool) async {
-      final session = await pool.checkout(limits: _limits);
-      final entered = Completer<void>();
-      final release = Completer<MontyValue>();
-      final run = session.feedRun(
-        'host()',
-        externals: {
-          'host': (args, kwargs) {
-            entered.complete();
+    await MontyPool.withPool(
+      (pool) async {
+        final session = await pool.checkout(
+          options: _limits,
+        );
+        final entered = Completer<void>();
+        final release = Completer<MontyValue>();
+        final run = session.feedRun(
+          'host()',
+          externals: {
+            'host': (args, kwargs) {
+              entered.complete();
 
-            return release.future;
+              return release.future;
+            },
           },
-        },
-        printCallback: _ignore,
-      );
-      final failed = expectLater(run, throwsA(isA<StateError>()));
-      await entered.future;
-      await session.close();
-      expect(pool.idleWorkers, 1);
-      release.complete(const MontyInt(1));
-      await failed;
-      expect(
-        await pool.withSession(
-          (s) => s.feedRun('7', printCallback: _ignore),
-          limits: _limits,
-        ),
-        const MontyInt(7),
-      );
-    }, maxProcesses: 1);
+          printCallback: _ignore,
+        );
+        final failed = expectLater(run, throwsA(isA<StateError>()));
+        await entered.future;
+        await session.close();
+        expect(pool.idleWorkers, 1);
+        release.complete(const MontyInt(1));
+        await failed;
+        expect(
+          await pool.withSession(
+            (s) => s.feedRun('7', printCallback: _ignore),
+            options: _limits,
+          ),
+          const MontyInt(7),
+        );
+      },
+      options: const PoolOptions(
+        maxProcesses: 1,
+      ),
+    );
   });
 
   test('requestTimeout ends a turn that runs on ($_backend)', () async {
     await MontyPool.withPool(
       (pool) async {
-        final session = await pool.checkout(limits: _limits);
+        final session = await pool.checkout(
+          options: _limits,
+        );
         await expectLater(
           session.feedRun('while True:\n    pass', printCallback: _ignore),
           throwsA(
@@ -139,13 +155,15 @@ void main() {
         expect(
           await pool.withSession(
             (s) => s.feedRun('1 + 1', printCallback: _ignore),
-            limits: _limits,
+            options: _limits,
           ),
           const MontyInt(2),
         );
       },
-      maxProcesses: 1,
-      requestTimeout: const Duration(seconds: 1),
+      options: const PoolOptions(
+        maxProcesses: 1,
+        requestTimeout: Duration(seconds: 1),
+      ),
     );
   });
 
@@ -158,7 +176,7 @@ void main() {
             'import time\ntime.sleep(0.05)\n7',
             printCallback: _ignore,
           ),
-          limits: _limits,
+          options: _limits,
         );
         expect(value, const MontyInt(7));
         expect(
@@ -166,7 +184,9 @@ void main() {
           greaterThanOrEqualTo(const Duration(milliseconds: 45)),
         );
       },
-      maxProcesses: 1,
+      options: const PoolOptions(
+        maxProcesses: 1,
+      ),
     );
   });
 
@@ -175,7 +195,9 @@ void main() {
     () async {
       await MontyPool.withPool(
         (pool) async {
-          final session = await pool.checkout(limits: _limits);
+          final session = await pool.checkout(
+            options: _limits,
+          );
           var calls = 0;
           await expectLater(
             session.feedRun(
@@ -196,7 +218,9 @@ void main() {
           );
           await session.close();
         },
-        maxProcesses: 1,
+        options: const PoolOptions(
+          maxProcesses: 1,
+        ),
       );
     },
   );
@@ -216,10 +240,14 @@ void main() {
               const MontyInt(2),
             );
           },
-          limits: _limits,
-          typeCheck: true,
+          options: const SessionConfig(
+            maxMemoryBytes: 64 * 1024 * 1024,
+            typeCheck: true,
+          ),
         ),
-        maxProcesses: 1,
+        options: const PoolOptions(
+          maxProcesses: 1,
+        ),
       );
     },
   );
@@ -233,9 +261,11 @@ void main() {
           "print('a', end='')\nprint('b')\nimport sys\n"
           "print('e', file=sys.stderr)\n",
         ),
-        limits: _limits,
+        options: _limits,
       ),
-      maxProcesses: 1,
+      options: const PoolOptions(
+        maxProcesses: 1,
+      ),
     );
     expect(logged.join(), 'ab\n');
     expect(errored.join(), 'e\n');

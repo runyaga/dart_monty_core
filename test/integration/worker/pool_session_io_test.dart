@@ -12,7 +12,6 @@ import 'dart:io';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -23,7 +22,7 @@ import '../../_accessors.dart';
 import '_worker_harness.dart';
 
 /// Every session's memory is bounded.
-const _limits = SessionLimits(maxMemoryBytes: 64 * 1024 * 1024);
+const _limits = SessionConfig(maxMemoryBytes: 64 * 1024 * 1024);
 
 /// What a test passes as `printCallback` when it does not look at prints.
 void _ignore(String stream, String text) => _ignored++;
@@ -81,7 +80,7 @@ void main() {
               prints.add((stream, text));
             },
           ),
-          limits: _limits,
+          options: _limits,
         );
         expect(value, const MontyInt(42));
         expect(prints.map((p) => p.$1).toSet(), {'stdout', 'stderr'});
@@ -90,34 +89,41 @@ void main() {
         final worker = onlyItem(ProcessChannel.live);
 
         // The same process, reset: the global is gone.
-        await pool.withSession((s) async {
-          await expectLater(
-            s.feedRun('x', printCallback: _ignore),
-            throwsA(
-              isA<MontyScriptError>().having(
-                (e) => e.excType,
-                'excType',
-                'NameError',
+        await pool.withSession(
+          (s) async {
+            await expectLater(
+              s.feedRun('x', printCallback: _ignore),
+              throwsA(
+                isA<MontyScriptError>().having(
+                  (e) => e.excType,
+                  'excType',
+                  'NameError',
+                ),
               ),
-            ),
-          );
-          // The session runs on after an in-band error.
-          expect(
-            await s.feedRun('2 * 3', printCallback: _ignore),
-            const MontyInt(6),
-          );
-        }, limits: _limits);
+            );
+            // The session runs on after an in-band error.
+            expect(
+              await s.feedRun('2 * 3', printCallback: _ignore),
+              const MontyInt(6),
+            );
+          },
+          options: _limits,
+        );
         expect(ProcessChannel.live, [worker]);
       },
-      maxProcesses: 1,
-      workerLocation: await _workerPath(),
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
     );
   });
 
   test('close during host code: Reset now, the drive fails later', () async {
     await MontyPool.withPool(
       (pool) async {
-        final session = await pool.checkout(limits: _limits);
+        final session = await pool.checkout(
+          options: _limits,
+        );
         final entered = Completer<void>();
         final release = Completer<MontyValue>();
         final run = session.feedRun(
@@ -141,13 +147,15 @@ void main() {
         expect(
           await pool.withSession(
             (s) => s.feedRun('7', printCallback: _ignore),
-            limits: _limits,
+            options: _limits,
           ),
           const MontyInt(7),
         );
       },
-      maxProcesses: 1,
-      workerLocation: await _workerPath(),
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
     );
   });
 
@@ -156,7 +164,9 @@ void main() {
     () async {
       await MontyPool.withPool(
         (pool) async {
-          final session = await pool.checkout(limits: _limits);
+          final session = await pool.checkout(
+            options: _limits,
+          );
           final first = onlyItem(ProcessChannel.live);
           await expectLater(
             session.feedRun('while True:\n    pass', printCallback: _ignore),
@@ -174,14 +184,16 @@ void main() {
           expect(
             await pool.withSession(
               (s) => s.feedRun('1 + 1', printCallback: _ignore),
-              limits: _limits,
+              options: _limits,
             ),
             const MontyInt(2),
           );
         },
-        maxProcesses: 1,
-        requestTimeout: const Duration(milliseconds: 500),
-        workerLocation: await _workerPath(),
+        options: PoolOptions(
+          maxProcesses: 1,
+          requestTimeout: const Duration(milliseconds: 500),
+          workerLocation: await _workerPath(),
+        ),
       );
     },
   );
@@ -192,7 +204,7 @@ void main() {
       await MontyPool.withPool(
         (pool) async {
           final session = await pool.checkout(
-            limits: const SessionLimits(
+            options: const SessionConfig(
               maxMemoryBytes: 64 * 1024 * 1024,
               maxFeedDuration: Duration(milliseconds: 200),
             ),
@@ -210,8 +222,10 @@ void main() {
           );
           await session.close();
         },
-        maxProcesses: 1,
-        workerLocation: await _workerPath(),
+        options: PoolOptions(
+          maxProcesses: 1,
+          workerLocation: await _workerPath(),
+        ),
       );
     },
   );
@@ -225,7 +239,7 @@ void main() {
             'import time\ntime.sleep(0.05)\n7',
             printCallback: _ignore,
           ),
-          limits: _limits,
+          options: _limits,
         );
         expect(value, const MontyInt(7));
         expect(
@@ -233,15 +247,19 @@ void main() {
           greaterThanOrEqualTo(const Duration(milliseconds: 45)),
         );
       },
-      maxProcesses: 1,
-      workerLocation: await _workerPath(),
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
     );
   });
 
   test('past 1000 host calls the feed fails in the sandbox', () async {
     await MontyPool.withPool(
       (pool) async {
-        final session = await pool.checkout(limits: _limits);
+        final session = await pool.checkout(
+          options: _limits,
+        );
         var calls = 0;
         await expectLater(
           session.feedRun(
@@ -262,8 +280,10 @@ void main() {
         );
         await session.close();
       },
-      maxProcesses: 1,
-      workerLocation: await _workerPath(),
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
     );
   });
 
@@ -280,11 +300,15 @@ void main() {
             const MontyInt(2),
           );
         },
-        limits: _limits,
-        typeCheck: true,
+        options: const SessionConfig(
+          maxMemoryBytes: 64 * 1024 * 1024,
+          typeCheck: true,
+        ),
       ),
-      maxProcesses: 1,
-      workerLocation: await _workerPath(),
+      options: PoolOptions(
+        maxProcesses: 1,
+        workerLocation: await _workerPath(),
+      ),
     );
   });
 

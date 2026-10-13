@@ -9,7 +9,6 @@ library;
 import 'dart:async';
 
 import 'package:dart_monty_core/src/worker/pool_session.dart';
-import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
@@ -33,40 +32,16 @@ final class MontyPool {
 
   final WorkerPool _pool;
 
-  /// Starts a pool with [minProcesses] workers ready, failing if any of
-  /// them cannot start (upstream `AsyncMonty`'s parameters).
+  /// Starts a pool as [options] say, with `minProcesses` workers ready,
+  /// failing if any of them cannot start (upstream `AsyncMonty`).
   ///
-  /// [maxProcesses] defaults to the processor count on native and to
-  /// `navigator.hardwareConcurrency` (or 4) in a browser. [checkoutTimeout]
-  /// bounds a [checkout]'s wait for a free worker (forever when null).
-  /// [requestTimeout] bounds every protocol turn: a worker that has not
-  /// answered by then is killed. [maxCheckoutsPerWorker] retires a worker
-  /// after that many sessions. [feedDurationLimitGrace] and
-  /// [turnDurationLimitGrace] are how far past a session's own feed and turn
-  /// budgets the parent waits before it kills the worker; null turns that
-  /// backstop off. [workerLocation] is the worker executable on native and
-  /// the assets' base URL in a browser; null searches the usual places.
+  /// [PoolOptions] carries upstream's settings: the pool's size, the
+  /// checkout and request timeouts, recycling, the two duration-backstop
+  /// graces and the worker's location. An internal record until the
+  /// cutover decides the public signature.
   static Future<MontyPool> start({
-    int minProcesses = 1,
-    int? maxProcesses,
-    Duration? checkoutTimeout,
-    Duration? requestTimeout,
-    int? maxCheckoutsPerWorker,
-    Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace,
-    Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace,
-    String? workerLocation,
-  }) => startWith(
-    PoolOptions(
-      minProcesses: minProcesses,
-      maxProcesses: maxProcesses,
-      checkoutTimeout: checkoutTimeout,
-      requestTimeout: requestTimeout,
-      maxCheckoutsPerWorker: maxCheckoutsPerWorker,
-      feedDurationLimitGrace: feedDurationLimitGrace,
-      turnDurationLimitGrace: turnDurationLimitGrace,
-      workerLocation: workerLocation,
-    ),
-  );
+    PoolOptions options = const PoolOptions(),
+  }) => startWith(options);
 
   /// [start] with [options], and [open] in place of the platform's channel
   /// factory: for tests, and for harnesses that must see each worker.
@@ -77,30 +52,14 @@ final class MontyPool {
   }) async =>
       MontyPool._(await WorkerPool.start(options, open, startupTimeout));
 
-  /// Runs [body] with a pool started with [start]'s parameters, and closes
-  /// the pool however [body] ends: the form of upstream's
+  /// Runs [body] with a pool started as [start] does with [options], and
+  /// closes the pool however [body] ends: the form of upstream's
   /// `async with AsyncMonty()`.
   static Future<T> withPool<T>(
     Future<T> Function(MontyPool pool) body, {
-    int minProcesses = 1,
-    int? maxProcesses,
-    Duration? checkoutTimeout,
-    Duration? requestTimeout,
-    int? maxCheckoutsPerWorker,
-    Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace,
-    Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace,
-    String? workerLocation,
+    PoolOptions options = const PoolOptions(),
   }) async {
-    final pool = await start(
-      minProcesses: minProcesses,
-      maxProcesses: maxProcesses,
-      checkoutTimeout: checkoutTimeout,
-      requestTimeout: requestTimeout,
-      maxCheckoutsPerWorker: maxCheckoutsPerWorker,
-      feedDurationLimitGrace: feedDurationLimitGrace,
-      turnDurationLimitGrace: turnDurationLimitGrace,
-      workerLocation: workerLocation,
-    );
+    final pool = await start(options: options);
     try {
       return await body(pool);
     } finally {
@@ -108,82 +67,38 @@ final class MontyPool {
     }
   }
 
-  /// Dedicates a worker to a new session, configured with [scriptName] (the
-  /// file name tracebacks report), [limits], the type check ([typeCheck],
-  /// with [typeCheckStubs], [typeCheckFormat] (one of [typeCheckFormats];
-  /// null is `full`) and [typeCheckColor]), [assertMessageAnnotations]
-  /// (bytes of each operand an `assert` failure shows; 0 turns them off),
-  /// [printFlushInterval] (how long the worker may hold printed text) and
-  /// [osPolicy] (the clock, zone, sleep and randomness the session gets).
+  /// Dedicates a worker to a new session configured as [options] say: its
+  /// script name, limits, type check, assert annotations, print flush
+  /// interval and OS policy ([SessionConfig], an internal record until the
+  /// cutover).
   ///
-  /// Throws [ArgumentError] for an unknown [typeCheckFormat], before any
+  /// Throws [ArgumentError] for an unknown `typeCheckFormat`, before any
   /// worker is taken. Waits for a free worker up to the pool's
   /// `checkoutTimeout`, then throws [TimeoutException]. Throws [StateError]
   /// once the pool is closed.
   Future<PoolSession> checkout({
-    String scriptName = 'main.py',
-    SessionLimits? limits,
-    bool typeCheck = false,
-    String? typeCheckStubs,
-    String? typeCheckFormat,
-    bool typeCheckColor = false,
-    int? assertMessageAnnotations,
-    Duration? printFlushInterval,
-    pb.OsPolicy? osPolicy,
+    SessionConfig options = const SessionConfig(),
   }) async {
-    if (typeCheckFormat != null &&
-        !typeCheckFormats.containsKey(typeCheckFormat)) {
+    final format = options.typeCheckFormat;
+    if (format != null && !typeCheckFormats.containsKey(format)) {
       throw ArgumentError.value(
-        typeCheckFormat,
+        format,
         'typeCheckFormat',
         'must be one of ${typeCheckFormats.keys.join(', ')}',
       );
     }
-    final config = SessionConfig(
-      scriptName: scriptName,
-      maxMemoryBytes: limits?.maxMemoryBytes,
-      maxRecursionDepth: limits?.maxRecursionDepth,
-      maxFeedDuration: limits?.maxFeedDuration,
-      maxTurnDuration: limits?.maxTurnDuration,
-      maxSuspensions: limits?.maxSuspensions,
-      assertMessageAnnotations: assertMessageAnnotations,
-      printFlushInterval: printFlushInterval,
-      typeCheck: typeCheck,
-      typeCheckStubs: typeCheckStubs,
-      typeCheckFormat: typeCheckFormat,
-      typeCheckColor: typeCheckColor,
-      osPolicy: osPolicy,
-    );
 
-    return openPoolSession(await _pool.acquire(), _pool.options, config);
+    return openPoolSession(await _pool.acquire(), _pool.options, options);
   }
 
-  /// Runs [body] with a session from [checkout]'s parameters, and closes
+  /// Runs [body] with a session from [checkout] with [options], and closes
   /// the session however [body] ends: the form of upstream's
   /// `async with pool.checkout()`.
   Future<T> withSession<T>(
     Future<T> Function(PoolSession session) body, {
-    String scriptName = 'main.py',
-    SessionLimits? limits,
-    bool typeCheck = false,
-    String? typeCheckStubs,
-    String? typeCheckFormat,
-    bool typeCheckColor = false,
-    int? assertMessageAnnotations,
-    Duration? printFlushInterval,
-    pb.OsPolicy? osPolicy,
+    SessionConfig options = const SessionConfig(),
   }) async {
-    final session = await checkout(
-      scriptName: scriptName,
-      limits: limits,
-      typeCheck: typeCheck,
-      typeCheckStubs: typeCheckStubs,
-      typeCheckFormat: typeCheckFormat,
-      typeCheckColor: typeCheckColor,
-      assertMessageAnnotations: assertMessageAnnotations,
-      printFlushInterval: printFlushInterval,
-      osPolicy: osPolicy,
-    );
+    final session = await checkout(options: options);
     try {
       return await body(session);
     } finally {

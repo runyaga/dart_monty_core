@@ -1,7 +1,9 @@
-// The scoped helpers repeat the parameters of the calls they wrap:
-// MontyPool.withPool those of start, withSession those of checkout. Read
-// from the source with package:analyzer, so a parameter added, renamed,
-// retyped or given another default on one side only fails here.
+// The scoped helpers take the same settings as the calls they wrap:
+// MontyPool.withPool those of start, withSession those of checkout (one
+// internal options record each until the cutover decides the public
+// signatures). Read from the source with package:analyzer, so a parameter
+// added, renamed, retyped or given another default on one side only fails
+// here.
 //
 // VM only: package:analyzer reads files through dart:io.
 @Tags(['unit', 'vm-only'])
@@ -18,10 +20,10 @@ import 'package:test/test.dart';
 
 const _source = 'lib/src/worker/monty_pool.dart';
 
-/// The difference a changed `scriptName` default on withSession reports.
-const _scriptNameDiff =
-    "scriptName: withSession (String, 'other.py'), "
-    "checkout (String, 'main.py')";
+/// The difference a retyped `options` on withPool reports.
+const _retypedDiff =
+    'options: withPool (Object, const PoolOptions()), '
+    'start (PoolOptions, const PoolOptions())';
 
 /// Each named parameter of each method in [source]: name -> (type, default).
 Map<String, Map<String, (String, String?)>> _namedParameters(String source) {
@@ -76,53 +78,60 @@ void main() {
 
   test("withPool takes exactly start's named parameters", () {
     final methods = _namedParameters(source);
-    expect(methods['start'], hasLength(8));
+    expect(methods['start'], {
+      'options': ('PoolOptions', 'const PoolOptions()'),
+    });
     expect(_differences(methods, 'withPool', 'start'), isEmpty);
   });
 
   test("withSession takes exactly checkout's named parameters", () {
     final methods = _namedParameters(source);
-    expect(methods['checkout'], hasLength(9));
+    expect(methods['checkout'], {
+      'options': ('SessionConfig', 'const SessionConfig()'),
+    });
     expect(_differences(methods, 'withSession', 'checkout'), isEmpty);
   });
 
   test('a default, a type or a parameter changed on one side is caught', () {
-    // The check against copies of the real source, each broken one way.
-    String once(String from, String to) {
-      expect(from.allMatches(source), isNotEmpty, reason: from);
+    // The check against copies of the real source, each broken one way:
+    // always the helper's copy, the last one in the file.
+    String last(String from, String to) {
+      final at = source.lastIndexOf(from);
+      expect(at, greaterThan(source.indexOf(from)), reason: from);
 
-      return source.replaceFirst(from, to);
+      return source.replaceRange(at, at + from.length, to);
     }
 
-    // withSession's copy of the default: the last one in the file.
-    const from = "String scriptName = 'main.py',";
-    final at = source.lastIndexOf(from);
-    expect(at, greaterThan(source.indexOf(from)));
-    final defaultChanged = source.replaceRange(
-      at,
-      at + from.length,
-      "String scriptName = 'other.py',",
-    );
-    expect(
-      _differences(
-        _namedParameters(defaultChanged),
-        'withSession',
-        'checkout',
+    final defaultChanged = _namedParameters(
+      last(
+        'SessionConfig options = const SessionConfig()',
+        "SessionConfig options = const SessionConfig(scriptName: 'x.py')",
       ),
-      [_scriptNameDiff],
     );
-    final typeChanged = once('int? maxProcesses,', 'num? maxProcesses,');
     expect(
-      _differences(_namedParameters(typeChanged), 'withPool', 'start'),
-      hasLength(1),
+      _differences(defaultChanged, 'withSession', 'checkout'),
+      [contains("SessionConfig(scriptName: 'x.py')")],
     );
-    final dropped = once(
-      '    String? workerLocation,\n  }) async {',
+    final retyped = _namedParameters(
+      last(
+        'PoolOptions options = const PoolOptions()',
+        'Object options = const PoolOptions()',
+      ),
+    );
+    expect(_differences(retyped, 'withPool', 'start'), [_retypedDiff]);
+    // withPool's signature is the only one ending in `}) async {`.
+    const withPoolEnd =
+        '    PoolOptions options = const PoolOptions(),\n  }) async {';
+    expect(withPoolEnd.allMatches(source).length, 1);
+    final extra = source.replaceFirst(
+      withPoolEnd,
+      '    PoolOptions options = const PoolOptions(),\n'
+      '    int extra = 0,\n'
       '  }) async {',
     );
     expect(
-      _differences(_namedParameters(dropped), 'withPool', 'start'),
-      ['workerLocation: withPool null, start (String?, null)'],
+      _differences(_namedParameters(extra), 'withPool', 'start'),
+      ['extra: withPool (int, 0), start null'],
     );
   });
 }

@@ -120,15 +120,15 @@ void main() {
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
       await pool.checkout(
-        scriptName: 'case.py',
-        limits: const SessionLimits(
+        options: const SessionConfig(
+          scriptName: 'case.py',
           maxMemoryBytes: 1 << 24,
           maxRecursionDepth: 50,
           maxFeedDuration: Duration(milliseconds: 1500),
           maxTurnDuration: Duration(milliseconds: 250),
+          assertMessageAnnotations: 0,
+          printFlushInterval: Duration(milliseconds: 5),
         ),
-        assertMessageAnnotations: 0,
-        printFlushInterval: const Duration(milliseconds: 5),
       );
       final configure = onlyItem(ch.requests).configure;
       expect(configure.scriptName, 'case.py');
@@ -258,8 +258,55 @@ void main() {
         const MontyInt(2),
       );
     });
+  });
 
-    test('a second call while one runs throws StateError', () async {
+  group('concurrent feeds (serialized as upstream)', () {
+    /// A first feed whose turn waits on [gate] in its print callback, so it
+    /// holds the turn while later feeds are queued.
+    Future<MontyValue> heldFeed(PoolSession s, Completer<void> gate) =>
+        s.feedRun('print("held")\n1', printCallback: (_, _) => gate.future);
+
+    test('a feed queued behind a turn runs after it, in order', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'held\n')]),
+          _int(1),
+        ]),
+        answer([_int(2)]),
+        answer([_int(3)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final gate = Completer<void>();
+      final done = <int>[];
+      Future<void> run(Future<MontyValue> feed) async {
+        done.add(((await feed) as MontyInt).value);
+      }
+
+      final all = Future.wait([
+        run(heldFeed(session, gate)),
+        run(session.feedRun('2', printCallback: _ignore)),
+        run(session.feedRun('3', printCallback: _ignore)),
+      ]);
+      await pumpEventQueue();
+      // The later feeds wait for the turn; nothing more was sent.
+      expect(ch.requests, hasLength(2));
+      gate.complete();
+      await all;
+      expect(done, [1, 2, 3]);
+      expect(
+        [for (final r in ch.requests.skip(1)) r.feed.code],
+        [
+          'print("held")\n1',
+          '2',
+          '3',
+        ],
+      );
+    });
+
+    test('a feed while another is suspended on a host call fails', () async {
       final release = Completer<MontyValue>();
       final ch = ScriptedChannel([
         _configureOk,
@@ -285,10 +332,44 @@ void main() {
       await entered.future;
       await expectLater(
         session.feedRun('1', printCallback: _ignore),
-        throwsA(isA<StateError>()),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('suspension'),
+          ),
+        ),
       );
       release.complete(const MontyNone());
       expect(await first, const MontyNone());
+    });
+
+    test('a queued feed fails as finished when the session closes', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'held\n')]),
+          _int(1),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final gate = Completer<void>();
+      final held = expectLater(
+        heldFeed(session, gate),
+        throwsA(_crashed(CrashCause.killed)),
+      );
+      final queued = expectLater(
+        session.feedRun('2', printCallback: _ignore),
+        throwsA(_finished),
+      );
+      await pumpEventQueue();
+      await session.close();
+      await held;
+      await queued;
+      expect(ch.requests, hasLength(2));
+      expect(pool.liveWorkers, 0);
     });
   });
 
@@ -702,7 +783,7 @@ void main() {
       );
       addTearDown(pool.close);
       final session = await pool.checkout(
-        limits: const SessionLimits(
+        options: const SessionConfig(
           maxFeedDuration: Duration(milliseconds: 200),
         ),
       );
@@ -733,7 +814,7 @@ void main() {
       );
       addTearDown(pool.close);
       final session = await pool.checkout(
-        limits: const SessionLimits(
+        options: const SessionConfig(
           maxFeedDuration: Duration(milliseconds: 200),
         ),
       );
@@ -758,7 +839,7 @@ void main() {
       );
       addTearDown(pool.close);
       final session = await pool.checkout(
-        limits: const SessionLimits(
+        options: const SessionConfig(
           maxFeedDuration: Duration(milliseconds: 1),
           maxTurnDuration: Duration(milliseconds: 20),
         ),
@@ -786,7 +867,9 @@ void main() {
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
       final session = await pool.checkout(
-        limits: const SessionLimits(maxSuspensions: 2),
+        options: const SessionConfig(
+          maxSuspensions: 2,
+        ),
       );
       var calls = 0;
       await expectLater(
@@ -852,7 +935,10 @@ void main() {
       );
       addTearDown(pool.close);
       final session = await pool.checkout(
-        limits: SessionLimits(maxSuspensions: 0, maxFeedDuration: _ms(20)),
+        options: SessionConfig(
+          maxSuspensions: 0,
+          maxFeedDuration: _ms(20),
+        ),
       );
       await expectLater(
         session.feedRun('f()', printCallback: _ignore),
@@ -871,7 +957,9 @@ void main() {
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
       final session = await pool.checkout(
-        limits: const SessionLimits(maxSuspensions: 0),
+        options: const SessionConfig(
+          maxSuspensions: 0,
+        ),
       );
       await expectLater(
         session.feedRun('f()', printCallback: _ignore),
@@ -924,7 +1012,11 @@ void main() {
         final policy = pb.OsPolicy(
           sleep: pb.SleepMode(system: pb.SystemSleep(maxMicros: Int64(20000))),
         );
-        final session = await pool.checkout(osPolicy: policy);
+        final session = await pool.checkout(
+          options: SessionConfig(
+            osPolicy: policy,
+          ),
+        );
         final clock = Stopwatch()..start();
         await session.feedRun('time.sleep(30)', printCallback: _ignore);
         expect(clock.elapsed, lessThan(const Duration(seconds: 5)));
@@ -946,10 +1038,12 @@ void main() {
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
       final session = await pool.checkout(
-        typeCheck: true,
-        typeCheckStubs: 'x: int',
-        typeCheckFormat: 'concise',
-        typeCheckColor: true,
+        options: const SessionConfig(
+          typeCheck: true,
+          typeCheckStubs: 'x: int',
+          typeCheckFormat: 'concise',
+          typeCheckColor: true,
+        ),
       );
       final configure = itemAt(ch.requests, 0).configure;
       expect(configure.typeCheck, isTrue);
@@ -986,7 +1080,12 @@ void main() {
       final pool = await _pool(workers);
       addTearDown(pool.close);
       await expectLater(
-        pool.checkout(typeCheck: true, typeCheckFormat: 'fancy'),
+        pool.checkout(
+          options: const SessionConfig(
+            typeCheck: true,
+            typeCheckFormat: 'fancy',
+          ),
+        ),
         throwsA(isA<ArgumentError>()),
       );
       expect(workers.started, isEmpty);
@@ -1058,7 +1157,9 @@ void main() {
       addTearDown(pool.close);
       final value = await pool.withSession(
         (s) => s.feedRun('9', printCallback: _ignore),
-        scriptName: 'scoped.py',
+        options: const SessionConfig(
+          scriptName: 'scoped.py',
+        ),
       );
       expect(value, const MontyInt(9));
       expect(pool.idleWorkers, 1);
@@ -1079,8 +1180,10 @@ void main() {
             seen = pool;
             throw StateError('body');
           },
-          minProcesses: 0,
-          workerLocation: 'unused',
+          options: const PoolOptions(
+            minProcesses: 0,
+            workerLocation: 'unused',
+          ),
         ),
         throwsA(isA<StateError>().having((e) => e.message, 'm', 'body')),
       );
@@ -1090,7 +1193,12 @@ void main() {
 
     test('withPool returns the body value', () async {
       expect(
-        await MontyPool.withPool((pool) async => 7, minProcesses: 0),
+        await MontyPool.withPool(
+          (pool) async => 7,
+          options: const PoolOptions(
+            minProcesses: 0,
+          ),
+        ),
         7,
       );
     });

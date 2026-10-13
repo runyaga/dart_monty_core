@@ -21,8 +21,13 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
-/// Every call is async. One call at a time: a second [feedRun] while one
-/// runs, or one made from inside a print callback, throws [StateError].
+/// Every call is async. Protocol turns are serialized, as upstream's are: a
+/// [feedRun] made while another feed's turn is in flight waits for that
+/// turn, then runs if the other feed has finished, or throws [StateError]
+/// if it is suspended on a host call (upstream's "feed called while a
+/// suspension is awaiting an answer"), or if the session closed meanwhile.
+/// A [feedRun] made from inside one of its own session's print callbacks
+/// throws [StateError] at once: that callback runs inside the turn.
 ///
 /// A Python exception throws [MontyScriptError] and the session stays
 /// usable. A dead worker throws [MontyCrashedError]; so does a turn that
@@ -73,39 +78,6 @@ abstract interface class PoolSession {
   /// worker, and that call fails with [MontyCrashedError]
   /// ([CrashCause.killed]). Never throws. Idempotent.
   Future<void> close();
-}
-
-/// A session's resource limits, sent to the worker in `Configure`; null
-/// leaves the worker's default.
-///
-/// An internal record until the cutover, when C3's `ResourceLimits`
-/// replaces it.
-final class SessionLimits {
-  /// The limits; see each field.
-  const SessionLimits({
-    this.maxMemoryBytes,
-    this.maxRecursionDepth,
-    this.maxFeedDuration,
-    this.maxTurnDuration,
-    this.maxSuspensions,
-  });
-
-  /// The interpreter's heap limit.
-  final int? maxMemoryBytes;
-
-  /// The interpreter's recursion limit.
-  final int? maxRecursionDepth;
-
-  /// The longest one feed may execute.
-  final Duration? maxFeedDuration;
-
-  /// The longest one turn may execute; each answer to a host call starts a
-  /// new turn.
-  final Duration? maxTurnDuration;
-
-  /// How many times the session may suspend for the host before the parent
-  /// aborts its feed; null is upstream's default, 1000.
-  final int? maxSuspensions;
 }
 
 /// Configures a session on [lease]'s worker; on failure the worker is
@@ -189,6 +161,9 @@ final class _LeasedSession implements PoolSession {
   final Duration _sleepMax;
   Future<void>? _closing;
 
+  /// The feed running now, if any.
+  Future<MontyValue>? _active;
+
   @override
   Future<MontyValue> feedRun(
     String code, {
@@ -198,27 +173,30 @@ final class _LeasedSession implements PoolSession {
     ProtoOsCallHandler? os,
     bool skipTypeCheck = false,
   }) async {
-    if (_hold.isFinished) throw _finishedError();
-    try {
-      final result = await _proto.feed(
-        code,
-        inputs: inputs ?? const {},
-        externals: externals ?? const {},
-        onOsCall: os,
-        onPrint: printCallback ?? defaultPrint,
-        options: FeedOptions(
-          collectPrints: false,
-          systemSleepMax: _sleepMax,
-          skipTypeCheck: skipTypeCheck,
-          abandoned: () => _hold.isFinished,
-        ),
+    if (Zone.current[_printZone] == this) {
+      throw StateError(
+        'a print callback cannot call its own session: it runs inside the '
+        'turn',
       );
-
-      return result.value;
-      // A dead worker ends the session; the error is mapped, not swallowed.
-      // ignore: avoid_catching_errors
-    } on MontyCrashedError catch (error, stack) {
-      Error.throwWithStackTrace(_hold.end(error), stack);
+    }
+    // Checked and taken in one synchronous step after each wait, so two
+    // queued feeds cannot both find the turn free.
+    while (!_mayStart()) {
+      await _nextChance();
+    }
+    final drive = _drive(
+      code,
+      inputs: inputs,
+      externals: externals,
+      printCallback: printCallback,
+      os: os,
+      skipTypeCheck: skipTypeCheck,
+    );
+    _active = drive;
+    try {
+      return await drive;
+    } finally {
+      if (identical(_active, drive)) _active = null;
     }
   }
 
@@ -237,9 +215,75 @@ final class _LeasedSession implements PoolSession {
       // which is all a close promises (upstream swallows this too).
     }
   }
+
+  /// Whether a feed may start now: no other feed is running. Throws
+  /// [StateError] when it never can: the session is finished, or the other
+  /// feed is suspended on a host call (upstream's turn lock then hands the
+  /// turn to this feed, which refuses).
+  bool _mayStart() {
+    if (_hold.isFinished) throw _finishedError();
+    if (_active == null) return true;
+    if (!_channel.inTurn && _channel.pendingSuspension) {
+      throw StateError('feed called while a suspension is awaiting an answer');
+    }
+
+    return false;
+  }
+
+  /// Waits for the turn in flight to end, or, between turns, for the
+  /// running feed to return.
+  Future<void> _nextChance() async {
+    final active = _active;
+    if (_channel.inTurn || active == null) return _channel.turnEnded;
+    try {
+      await active;
+    } on Object catch (_) {
+      // Its failure is its own caller's; this feed only waited for it.
+    }
+  }
+
+  Future<MontyValue> _drive(
+    String code, {
+    required Map<String, MontyValue>? inputs,
+    required Map<String, ProtoExternalFunction>? externals,
+    required ProtoPrintCallback? printCallback,
+    required ProtoOsCallHandler? os,
+    required bool skipTypeCheck,
+  }) async {
+    final print = printCallback ?? defaultPrint;
+    try {
+      final result = await _proto.feed(
+        code,
+        inputs: inputs ?? const {},
+        externals: externals ?? const {},
+        onOsCall: os,
+        // Marked, so a call back into this session from inside it is
+        // refused rather than left waiting on the turn it is part of.
+        onPrint: (stream, text) => runZoned(
+          () => print(stream, text),
+          zoneValues: {_printZone: this},
+        ),
+        options: FeedOptions(
+          collectPrints: false,
+          systemSleepMax: _sleepMax,
+          skipTypeCheck: skipTypeCheck,
+          abandoned: () => _hold.isFinished,
+        ),
+      );
+
+      return result.value;
+      // A dead worker ends the session; the error is mapped, not swallowed.
+      // ignore: avoid_catching_errors
+    } on MontyCrashedError catch (error, stack) {
+      Error.throwWithStackTrace(_hold.end(error), stack);
+    }
+  }
 }
 
 StateError _finishedError() => StateError('the session is finished');
+
+/// The zone key a session's print callbacks run under.
+final Object _printZone = Object();
 
 /// The session's view of its worker: the lease's channel, with each turn
 /// refused once the session is finished and bounded by its deadline.
@@ -259,6 +303,15 @@ final class _SessionChannel implements MontyChannel {
 
   /// Whether a protocol turn is in flight.
   bool inTurn = false;
+
+  /// Whether the last turn ended in a suspension still awaiting the host's
+  /// answer (upstream's `pending`).
+  bool pendingSuspension = false;
+
+  Completer<void> _turnEnded = Completer<void>()..complete();
+
+  /// Completes when the turn in flight ends (at once if none is).
+  Future<void> get turnEnded => _turnEnded.future;
 
   final _Hold _hold;
   final PoolOptions _options;
@@ -282,6 +335,8 @@ final class _SessionChannel implements MontyChannel {
   }) async {
     if (_hold.isFinished) throw _finishedError();
     inTurn = true;
+    pendingSuspension = false;
+    final ended = _turnEnded = Completer<void>();
     try {
       // One deadline for the whole turn: print delivery, and an abort the
       // suspension budget sends in its place, as upstream's request_turn.
@@ -295,13 +350,17 @@ final class _SessionChannel implements MontyChannel {
           : Timer(limit, () => _expire(done, limit));
       unawaited(_settle(done, _turnWithBudget(request, onPrint)));
       try {
-        return await done.future;
+        final event = await done.future;
+        pendingSuspension = _isSuspension(event);
+
+        return event;
       } finally {
         timer?.cancel();
         _hold.turn = null;
       }
     } finally {
       inTurn = false;
+      ended.complete();
     }
   }
 
