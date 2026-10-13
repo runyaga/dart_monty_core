@@ -367,8 +367,8 @@
       "pct": 80.0
     },
     "lib/src/worker/wire_scalars.dart": {
-      "found": 53,
-      "hit": 53,
+      "found": 56,
+      "hit": 56,
       "pct": 100.0
     },
     "lib/src/worker/worker_channel.dart": {
@@ -393,8 +393,8 @@
     }
   },
   "total": {
-    "found": 4784,
-    "hit": 3496,
-    "pct": 73.08
+    "found": 4787,
+    "hit": 3499,
+    "pct": 73.09
   }
 }
