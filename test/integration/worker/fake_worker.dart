@@ -28,6 +28,11 @@ const floodPrints = 512;
 /// The text length of each of them: 64 KiB, so 32 MiB in all.
 const int floodPrintLength = 64 * 1024;
 
+/// The `exit-leaving-writer` descendant has written this many Prints before
+/// its worker exits: fewer than the channel's read-ahead limit holds (64), so
+/// writing them cannot block on a parent that has paused reading.
+const descendantReadyPrints = 48;
+
 /// The text length of the one `Print` the `big-frame` scenario sends in
 /// many chunks: 8 MiB.
 const int bigPrintLength = 8 * 1024 * 1024;
@@ -41,7 +46,7 @@ const bigFrameSuffixPrints = 32;
 
 Future<void> main(List<String> args) async {
   var scenario = args.firstOrNull ?? 'serve';
-  if (scenario == 'writer') return _writeAfterParentExits();
+  if (scenario == 'writer') return _writeAfterParentExits(args[1]);
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
@@ -165,12 +170,32 @@ Future<String> _handle(String scenario, pb.ParentRequest request) async {
       // Ok, then exit, leaving a descendant that inherited stdout and keeps
       // writing valid Prints after this process is gone.
       await _send(pb.ChildEvent(ok: pb.Ok()));
-      await Process.start(Platform.resolvedExecutable, [
-        Platform.script.toFilePath(),
-        'writer',
-      ], mode: ProcessStartMode.inheritStdio);
-      await Future<void>.delayed(const Duration(seconds: 2));
-      exit(0);
+      final dir = Directory.systemTemp.createTempSync('writer');
+      final marker = File('${dir.path}/ready');
+      var code = 0;
+      try {
+        await Process.start(Platform.resolvedExecutable, [
+          Platform.script.toFilePath(),
+          'writer',
+          marker.path,
+        ], mode: ProcessStartMode.inheritStdio);
+        // Exits only once the descendant has written, however long it took
+        // to start: a fixed wait
+        // loses that race on a loaded machine, and the
+        // drain then has nothing to read.
+        final deadline = DateTime.now().add(const Duration(seconds: 25));
+        while (!marker.existsSync()) {
+          if (DateTime.now().isAfter(deadline)) {
+            stderr.writeln('fake_worker: the descendant never wrote enough');
+            code = 3;
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+      exit(code);
     case 'idle':
       // Everything was sent up front; only Shutdown is answered.
       if (request.whichKind() == pb.ParentRequest_Kind.shutdown) exit(0);
@@ -207,10 +232,15 @@ Future<void> _serve(
 
 /// The `writer` descendant: 32 MiB of Prints on the inherited stdout,
 /// reading nothing, and gone after 20 s whatever happened.
-Future<void> _writeAfterParentExits() async {
+Future<void> _writeAfterParentExits(String marker) async {
   Timer(const Duration(seconds: 20), () => exit(0));
+  // Starts late, as a descendant does on a loaded machine: longer than the
+  // parent's drain grace, so the worker must wait for the first frame.
+  await Future<void>.delayed(const Duration(seconds: 4));
   for (var i = 0; i < floodPrints; i++) {
     await _send(_numbered(i, floodPrintLength));
+    // Enough is in the pipe: the worker may exit now.
+    if (i == descendantReadyPrints - 1) File(marker).createSync();
   }
   exit(0);
 }

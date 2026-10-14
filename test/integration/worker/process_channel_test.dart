@@ -20,6 +20,7 @@ import 'fake_worker.dart'
         bigFramePrefixPrints,
         bigFrameSuffixPrints,
         bigPrintLength,
+        descendantReadyPrints,
         fatalMessage,
         floodPrintLength,
         floodPrints,
@@ -548,9 +549,19 @@ void main() {
         (await channel.turn(_configure)).whichKind(),
         pb.ChildEvent_Kind.ok,
       );
-      await channel.exitCode;
-      // Draining after the exit reads what the pipe held, no more.
-      await settled(channel);
+      // The worker exits only after the descendant has written.
+      expect(await channel.exitCode, 0);
+      // Those Prints were in the pipe or the queue at the exit, so the
+      // drain read them; it reads what the pipe held, no more.
+      expect(
+        await settled(channel),
+        greaterThanOrEqualTo(descendantReadyPrints * floodPrintLength),
+      );
+      // The drain ends at most a grace after the exit; the peak is read
+      // after it, so what the drain read is all in it.
+      await Future<void>.delayed(
+        ProcessChannel.pipeDrainGrace + const Duration(milliseconds: 500),
+      );
       expect(
         channel.readAhead.peak,
         lessThan(limit + ProcessChannel.drainAllowance + (1 << 20)),
