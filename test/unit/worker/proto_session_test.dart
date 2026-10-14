@@ -627,14 +627,25 @@ void main() {
     );
 
     test(
-      'OS calls are declined: no handler, null, not-handled, other ops',
+      'OS calls are declined: no handler, null, not-handled',
       () async {
         pb.ChildEvent os(int id, pb.OsCall call) =>
             pb.ChildEvent(osCall: call..callId = id);
         final ch = _configured([
           answer([os(1, pb.OsCall(exists: '/a'))]),
           answer([os(2, pb.OsCall(isFile: '/b'))]),
-          answer([os(3, pb.OsCall(getenv: pb.OsCall_Getenv(key: 'HOME')))]),
+          answer([
+            os(
+              3,
+              pb.OsCall(
+                getenv: pb.OsCall_Getenv(key: 'HOME'),
+                values: pb.Arena(
+                  nodeCount: 1,
+                  nodes: [pb.MontyNode(none: pb.Unit())],
+                ),
+              ),
+            ),
+          ]),
           answer([os(4, pb.OsCall(readBytes: '/c'))]),
           answer([completeNone()]),
         ]);
@@ -651,7 +662,12 @@ void main() {
             return null;
           },
         );
-        expect(names, ['Path.exists', 'Path.is_file', 'Path.read_bytes']);
+        expect(names, [
+          'Path.exists',
+          'Path.is_file',
+          'os.getenv',
+          'Path.read_bytes',
+        ]);
         for (var i = 2; i <= 5; i++) {
           expect(
             itemAt(ch.requests, i).resumeCall.result.whichKind(),

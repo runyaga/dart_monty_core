@@ -40,7 +40,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: 2a463ada72ed56bb51e682a2baa151f23f9e316f
+  PARITY_PIN: 3fd4b08a3a3301874acb17a40544426fda3b4bfe
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
@@ -458,9 +458,17 @@ jobs:
         run: |
           python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-e0 --engine session \
             --json /tmp/parity-e0/e0-session.json --markdown /tmp/parity-e0/e0-session.md
-      - name: Publish the E0 and worker tables
+      # The suite's C1 gate (tool/parity/c1-gate.json), from the same session
+      # runs: every case and probe of a landed row MATCH on every backend,
+      # with no named exception, and every row's cases and probes run.
+      - name: Assert the C1 gate through the session
         if: success() || failure()
-        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md /tmp/parity-e0/e0-session.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
+        run: |
+          python3 -I .parity/tool/parity/score.py /tmp/parity-e0 --assert-gate \
+            --json /tmp/parity-e0/gate.json --markdown /tmp/parity-e0/gate.md
+      - name: Publish the E0, worker and gate tables
+        if: success() || failure()
+        run: 'for f in /tmp/parity-e0/e0.md /tmp/parity-e0/worker.md /tmp/parity-e0/e0-session.md /tmp/parity-e0/gate.md; do [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"; done; true'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: success() || failure()
         with:

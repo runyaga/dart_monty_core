@@ -287,6 +287,43 @@
       bound;
     - with no callback and the app's own stdout left undrained, timers keep
       running, and `requestTimeout` and `close` still end the stalled call.
+- Internal step-by-step driving of a pool session, in the shape of
+  upstream's `feed_start` and its async snapshots. Nothing is exported
+  until the API cutover.
+  - `feedStart` returns at each suspension: a function snapshot (a host
+    call or an OS call, with its name, arguments, call id, eager-await bit
+    and source position), a name-lookup snapshot or a future snapshot, or
+    the completion. Each is resumed once: with a value, an exception or a
+    future; as not handled (OS calls); or automatically from the feed's
+    host functions and OS handler. An answer is checked before the
+    snapshot is spent, so a refused one leaves it resumable. While a
+    snapshot is unanswered the session refuses a new feed, as upstream's
+    does.
+  - Pending futures settle incrementally: a future snapshot takes results
+    for some of its call ids and reports the rest again.
+  - Host functions can be coroutines. One the sandbox awaits with nothing
+    else to run is awaited in place; any other gets a pending future,
+    settled as it completes. `asyncio.sleep` is waited the same way, so
+    gathered sleeps overlap.
+  - The OS handler gets every OS call with upstream's name and arguments,
+    not only the path calls, except the system sleeps a `feedRun` waits
+    itself (a snapshot's `resumeAuto` hands those to the handler too); a
+    handler's future is awaited and its value is the answer, except for
+    `asyncio.sleep`.
+  - The sleep budget now charges `asyncio.sleep` as well as `time.sleep`,
+    as upstream's pool does, and a worker reply can tighten the suspension
+    budget too. The suspension budget counts snapshot turns.
+  - A manual answer too large to send fails with upstream's
+    `RuntimeError`; the snapshot is spent and the call stays pending.
+  - Closing a session ends its sleeps at once, a running `feedRun`'s as
+    well as a held snapshot's: no timer outlives the session, and the feed
+    fails as finished.
+  - An async OS handler that declines `asyncio.sleep` (null, or
+    `OsCallNotHandledException`) leaves the sleep's `None`; it no longer
+    raises `RuntimeError`.
+  - CI's `parity-e0` job asserts the parity suite's C1 gate through the
+    session on vm, dart2js and dart2wasm, now with the snapshot, futures,
+    OS-call and budget rows. `PARITY_PIN` moves to that suite.
 
 ### Changed
 
