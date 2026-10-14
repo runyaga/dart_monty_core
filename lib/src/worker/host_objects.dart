@@ -403,8 +403,11 @@ final class ClassType<T extends Object> {
   Object convertValue(String name, Object item) =>
       _convert?.call(name, item) ?? item;
 
+  /// What `getattr` on the class finds: a constant, else a classmethod.
   Object _attribute(String name) =>
-      (value.attributes[name] ?? (throw _error(name)))();
+      value.attributes[name]?.call() ??
+      value.methods[name] ??
+      (throw _error(name));
 
   ExternalException _error(String name) =>
       _noAttribute("type object '${value.name}'", name);
@@ -472,13 +475,11 @@ final class ClassInstance<T extends Object> {
   ) {
     final policy = policies.allowedMethods;
     if (name == '__call__' || !_allows(policy, name)) throw _error(name);
-    final method = _method(name) ?? (policy == 'all' ? null : _callable(name));
+    // Under 'all' only a method the class defines qualifies; what is
+    // called is still what the attribute resolves to.
+    if (policy == 'all' && _method(name) == null) throw _error(name);
 
-    return _converted(
-      this,
-      name,
-      (method ?? (throw _error(name)))(args, kwargs),
-    );
+    return _converted(this, name, _callable(name)(args, kwargs));
   }
 
   /// The hook: this wrapper's, or else its class's.
@@ -502,10 +503,12 @@ final class ClassInstance<T extends Object> {
     ),
   };
 
+  /// What `getattr` on the instance finds: its own data first, then its
+  /// methods (bound), then its class's constants.
   Object _attribute(String name) {
     final read = _members.fields[name] ?? _members.properties[name];
     if (read != null) return read(value);
-    // As `getattr` on an instance finds its class's constants.
+    if (_method(name) case final method?) return method;
     final constant = classType.value.attributes[name];
 
     return (constant ?? (throw _error(name)))();

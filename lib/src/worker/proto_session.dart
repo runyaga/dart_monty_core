@@ -195,6 +195,7 @@ final class ProtoSession {
     // A new session, as upstream's next checkout of the worker is.
     _cwdSet = false;
     _loaded = false;
+    objects.clear();
     await _configure();
   });
 

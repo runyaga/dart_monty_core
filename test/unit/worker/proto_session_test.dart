@@ -7,6 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/frame.dart'
     show FrameTooLargeException;
+import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException;
@@ -54,6 +55,12 @@ pb.StackFrame _frame(String name, int line, {String? preview}) => pb.StackFrame(
   end: pb.CodeLoc(line: line, column: 9),
   frameName: name,
   previewLine: preview,
+);
+
+/// A host object a session can register.
+final ClassInstance<Object> _hostBox = ClassInstance(
+  Object(),
+  classType: ClassType(const HostClass('Box')),
 );
 
 void main() {
@@ -1135,12 +1142,15 @@ void main() {
         ch,
         const SessionConfig(limits: ResourceLimits(maxRecursionDepth: 50)),
       );
+      s.objects.register(_hostBox);
       await s.reset();
       expect(ch.remaining, 0);
       expect(
         itemAt(ch.requests, 2).configure.limits.maxRecursionDepth,
         Int64(50),
       );
+      // A reset session holds no host objects, as a new checkout holds none.
+      expect(s.objects[_hostBox.id], isNull);
     });
 
     test('a Reset answered with anything but Ok is a desync', () async {

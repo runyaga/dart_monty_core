@@ -140,6 +140,15 @@ final HostClass<_Box> _callableField = HostClass(
   ),
 );
 
+/// A class whose method `run` is shadowed by an instance field.
+final HostClass<_Box> _shadowedMethod = HostClass(
+  'Box',
+  instance: HostMembers(
+    fields: {'run': (b) => const MontyInt(7)},
+    methods: {'run': (b, args, kwargs) => const MontyInt(1)},
+  ),
+);
+
 /// A class whose constant is a class, which has no value class yet.
 final HostClass<_Box> _withClassConstant = HostClass(
   'Holder',
@@ -414,6 +423,43 @@ void main() {
         () => all.callMethod('callback', const [], const {}),
         throwsA(isA<ExternalException>()),
       );
+    });
+
+    test('the instance attribute wins over a method of the same name', () {
+      final shadowed = ClassInstance(
+        _Box(1),
+        classType: ClassType(_shadowedMethod),
+        policies: const HostPolicies(allowedMethods: 'all'),
+      );
+      expect(
+        () => shadowed.callMethod('run', const [], const {}),
+        throwsA(
+          isA<ExternalException>().having(
+            (e) => e.message,
+            'message',
+            "'int' object is not callable",
+          ),
+        ),
+      );
+    });
+
+    test('a method read as an attribute reaches the hook', () {
+      final read = ClassInstance(
+        _Box(1),
+        classType: ClassType(_boxClass),
+        policies: const HostPolicies(eagerAttrs: ['bump'], lazyAttrs: ['bump']),
+        convertValue: (name, value) =>
+            value is HostMethod ? const MontyString('callable') : value,
+      );
+      expect(read.eagerAttributes(), {'bump': const MontyString('callable')});
+      expect(read.lookupLazyAttr('bump'), const MontyString('callable'));
+      final type = ClassType(
+        _constClass,
+        policies: const HostPolicies(lazyAttrs: ['describe']),
+        convertValue: (name, value) =>
+            value is HostMethod ? const MontyString('classmethod') : value,
+      );
+      expect(type.lookupLazyAttr('describe'), const MontyString('classmethod'));
     });
 
     test('a class serves its constants lazily', () {
