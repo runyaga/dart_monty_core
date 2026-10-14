@@ -206,6 +206,27 @@ void main() {
       await fake.close();
     });
 
+    test('a crash after a partial gather ends the session at once', () async {
+      // A dead worker owes the gather nothing: no further wait.
+      final fake = FakeMontySession()
+        ..willCall('f')
+        ..willCall('f')
+        ..willAwait([0, 1], gathered: true)
+        ..willCall('g')
+        ..willCrash();
+      final a = await fake.feedStart('x') as FunctionSnapshot;
+      final b = await a.resume(const ExternalFuture()) as FunctionSnapshot;
+      final wait = await b.resume(const ExternalFuture()) as FutureSnapshot;
+      final g =
+          await wait.resume({0: const ExternalReturnValue(MontyInt(1))})
+              as FunctionSnapshot;
+      await expectLater(
+        g.resume(const ExternalFuture()),
+        throwsA(isA<MontyCrashedError>()),
+      );
+      await fake.close();
+    });
+
     test('willCrash finishes the session', () async {
       final fake = FakeMontySession()..willCrash(timedOut: true);
       await expectLater(

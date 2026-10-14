@@ -1294,6 +1294,59 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
+    'a failure a gather still owes raises when it settles',
+    feeds: [_branches],
+    script: (f) => f
+      ..willCall('f', args: [_int(1)])
+      ..willCall('f', args: [_int(2)])
+      ..willAwait([0, 1])
+      ..willCall('g', args: [_int(1)])
+      ..willAwait([2])
+      ..willReturn(_none),
+    run: (s) async {
+      final a = await s.start(0);
+      final b = await s.next<FunctionSnapshot>(
+        a,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final wait = await s.next<FunctionSnapshot>(
+        b,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final g = await s.next<FutureSnapshot>(
+        wait,
+        (w) => w.resume({0: ExternalReturnValue(_int(1))}),
+      );
+      final both = await s.next<FunctionSnapshot>(
+        g,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      await s.next<FutureSnapshot>(
+        both,
+        (w) => w.resume({
+          1: const ExternalException('ValueError', 'sibling'),
+          2: ExternalReturnValue(_int(5)),
+        }),
+      );
+    },
+    trace: [
+      'snap call f#0(MontyInt(1))',
+      'snap call f#1(MontyInt(2))',
+      'snap futures [0, 1]',
+      'snap call g#2(MontyInt(1))',
+      'snap futures [1, 2]',
+      'MontyRuntimeError ValueError: sibling | ValueError: sibling',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '0/b0 value MontyInt(1)',
+      '2 future',
+      '1/b1 raise ValueError: sibling',
+      '2/b1 value MontyInt(5)',
+    ],
+  ),
+  Scenario(
     'a gather still owed a future waits for it before the end',
     feeds: [_branches],
     script: (f) => f

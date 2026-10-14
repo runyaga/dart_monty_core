@@ -297,7 +297,8 @@ final class _Feed {
   /// owes: the worker cannot end the feed while it is blocked on them.
   /// Null when the owed ids settled already and the script runs on.
   pb.ChildEvent? _end(FakeEnd end) {
-    if (_outstanding.isEmpty) {
+    // A dead worker owes nothing.
+    if (_outstanding.isEmpty || end is FakeCrash) {
       isOver = true;
 
       return _ending(end, _index);
@@ -383,12 +384,13 @@ final class _Feed {
     final settled = _settleBatch(futures);
     final awaited = _awaited;
     final remaining = awaited.difference(settled);
-    _outstanding.removeAll(settled);
     // A failure Python awaits raises at once, the batch's first one as the
-    // worker takes them in order.
+    // worker takes them in order; so does one a gather still owes.
+    final watched = {...awaited, ..._outstanding};
+    _outstanding.removeAll(settled);
     final failed = futures.results
         .map((r) => r.callId)
-        .where(awaited.contains)
+        .where(watched.contains)
         .firstWhereOrNull((id) => _calls[id] is _Failed);
     if (failed != null) return _raiseFirstFailure([failed]);
     final runsOn =

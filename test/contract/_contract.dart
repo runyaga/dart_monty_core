@@ -34,8 +34,11 @@
 //     unblocked or from after the gather. The fake runs on when the next
 //     event past any prints is a call, a lookup or a hold, and otherwise
 //     waits for the rest first; ids it ran on without are waited for
-//     before the feed ends. A failure among them then raises at the end,
-//     where the worker raises it when it settles.
+//     before the feed ends; a failure among them raises when it settles.
+//  9. OS answers. The worker checks an OS call's answer against the
+//     operation (a file handle for `open`, no future for an operation that
+//     takes none); the fake takes any value the writer takes. A handler
+//     test that relies on those checks runs against a real session.
 import 'dart:async';
 import 'dart:convert';
 
