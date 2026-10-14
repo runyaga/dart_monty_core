@@ -14,12 +14,7 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
 // The crash every channel reports, and the factories that make it.
 export 'package:dart_monty_core/src/worker/monty_error.dart'
-    show
-        CrashCause,
-        MontyCrashedError,
-        crashedError,
-        repeatCrash,
-        sendingRequest;
+    show CrashCause, MontyCrashedError, crashedError, sendingRequest;
 
 /// Receives one `Print` during a turn. The turn awaits it before it reads
 /// the next event, so prints are delivered one at a time, in order.
@@ -48,3 +43,14 @@ abstract interface class MontyChannel {
   /// Whether a turn can still be sent.
   bool get isAlive;
 }
+
+/// [crash] again, for a later call on a channel it ended: the same error,
+/// a fresh object, so each call has its own stack trace.
+MontyCrashedError repeatCrash(MontyCrashedError crash) => crashedError(
+  crash.cause,
+  detail: crash.detail,
+  exitCode: crash.exitCode,
+  stderrTail: crash.stderrTail,
+  timedOut: crash.timedOut,
+  context: crash.context,
+);

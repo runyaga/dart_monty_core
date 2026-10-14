@@ -308,17 +308,6 @@ const Map<int, String> _signalNames = {
 MontyCrashedError protocolError(String detail) =>
     crashedError(CrashCause.protocol, detail: detail);
 
-/// The same crash again, for a later call on the dead channel.
-MontyCrashedError repeatCrash(MontyCrashedError crash) => MontyCrashedError._(
-  crash.message,
-  cause: crash.cause,
-  timedOut: crash.timedOut,
-  detail: crash.detail,
-  exitCode: crash.exitCode,
-  stderrTail: crash.stderrTail,
-  context: crash.context,
-);
-
 String _summary(RaisedRecord record) {
   final text = record.message;
 

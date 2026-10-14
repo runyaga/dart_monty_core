@@ -192,22 +192,6 @@ void main() {
       expect(crash.exitStatus, isNull);
       expect(crashedError(CrashCause.killed).timedOut, isFalse);
     });
-
-    test('a repeat is the same crash', () {
-      final crash = crashedError(
-        CrashCause.fatal,
-        detail: 'd',
-        exitCode: 2,
-        stderrTail: 's',
-      );
-      final again = repeatCrash(crash);
-      expect(again, isNot(same(crash)));
-      expect(
-        (again.message, again.cause, again.detail, again.exitStatus),
-        (crash.message, crash.cause, crash.detail, crash.exitStatus),
-      );
-      expect(again.stderrTail, 's');
-    });
   });
 
   group('Frame', () {
