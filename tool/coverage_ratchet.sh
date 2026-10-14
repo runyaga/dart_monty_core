@@ -22,6 +22,7 @@
 # Usage:
 #   bash tool/coverage_ratchet.sh TRACEFILE            # check
 #   bash tool/coverage_ratchet.sh TRACEFILE --update   # regenerate the baseline
+#   bash tool/coverage_ratchet.sh --self-test          # the controls
 #
 # TRACEFILE is coverage/honest.info from tool/coverage_report.sh. Feeding it a
 # RAW lcov.info instead would be a silent downgrade — the raw file omits every
@@ -33,6 +34,79 @@
 # the check fails only on a decrease, measured against the base branch's copy.
 # =============================================================================
 set -uo pipefail
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+
+# --self-test: the controls, each against a throwaway repository whose base
+# commit holds three lib/ files and the baseline recorded from them.
+self_test() {
+  local tmp rc=0
+  tmp="$(mktemp -d)"; trap '/bin/rm -rf "$tmp"' RETURN
+  tmp="$(cd "$tmp" && pwd -P)"
+  local repo="$tmp/repo"
+  mkdir -p "$repo/lib/src" "$repo/tool" || return 1
+  # trace <path:hit/found>...: an lcov tracefile, lines 1..found, the first
+  # `hit` of them hit.
+  trace() {
+    local spec f hf h n i
+    for spec in "$@"; do
+      f="${spec%%:*}"; hf="${spec#*:}"; h="${hf%/*}"; n="${hf#*/}"
+      echo "SF:$repo/$f"
+      i=1; while [ "$i" -le "$n" ]; do
+        if [ "$i" -le "$h" ]; then echo "DA:$i,1"; else echo "DA:$i,0"; fi
+        i=$((i + 1))
+      done
+      echo "end_of_record"
+    done > "$tmp/trace.info"
+  }
+  git init -q "$repo" && (
+    cd "$repo" && git config user.email t@t && git config user.name t &&
+    for f in a b c; do echo "// $f" > "lib/src/$f.dart"; done &&
+    trace lib/src/a.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4 &&
+    bash "$SELF" "$tmp/trace.info" --update >/dev/null &&
+    git add -A && git commit -qm base
+  ) || return 1
+  local base
+  base="$(git -C "$repo" rev-parse HEAD)"
+  reset(){ git -C "$repo" checkout -q -f "$base" && git -C "$repo" clean -qfd; }
+  commit(){ git -C "$repo" add -A && git -C "$repo" commit -qm x; }
+  # run <name> <expected exit> <base ref or ''> [text the output must hold]
+  run() {
+    local name="$1" want="$2" ref="$3" grep_for="${4:-}" out got=0
+    out="$(cd "$repo" && RATCHET_BASE_REF="$ref" bash "$SELF" "$tmp/trace.info" 2>&1)" || got=1
+    if [ "$got" != "$want" ]; then
+      echo "SELF-TEST FAIL: $name (expected exit $want, got $got)"; echo "$out"; rc=1
+    elif [ -n "$grep_for" ] && ! printf '%s\n' "$out" | grep -qF -- "$grep_for"; then
+      echo "SELF-TEST FAIL: $name (output lacks '$grep_for')"; echo "$out"; rc=1
+    else echo "ok: $name"; fi
+  }
+
+  reset; trace lib/src/a.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "nothing changed" 0 "$base"
+  reset; git -C "$repo" rm -q lib/src/a.dart; commit
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "deletes a 100% file, nothing else: passes" 0 "$base" "DELETED"
+  run "the same deletion without a base ref: VANISHED" 1 "" "VANISHED"
+  trace lib/src/b.dart:1/4 lib/src/c.dart:1/4
+  run "deletes a file and lowers another: FILE DECREASE" 1 "$base" "FILE DECREASE"
+  reset; echo '// d' > "$repo/lib/src/d.dart"; commit
+  trace lib/src/a.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4 lib/src/d.dart:0/8
+  run "keeps every file, lowers the total: TOTAL DECREASE" 1 "$base" "TOTAL DECREASE"
+  reset; git -C "$repo" rm -q lib/src/a.dart; echo '// d' > "$repo/lib/src/d.dart"; commit
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4 lib/src/d.dart:0/8
+  run "deletes a file, adds an untested one: TOTAL DECREASE" 1 "$base" "TOTAL DECREASE"
+  reset; git -C "$repo" mv lib/src/a.dart lib/src/a2.dart; commit
+  trace lib/src/a2.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "renames a file: the old path DELETED, the new one counted" 0 "$base" "DELETED"
+  reset; trace lib/src/a.dart:4/4 lib/src/b.dart:2/4
+  run "keeps a file the tracefile lacks: fails" 1 "$base"
+  reset; /bin/rm "$repo/lib/src/a.dart"
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "deletes a file in the working tree only: DELETED" 0 "$base" "DELETED"
+  [ "$rc" = 0 ] && echo "PASS: coverage ratchet self-test"
+  return "$rc"
+}
+if [ "${1:-}" = --self-test ]; then self_test; exit $?; fi
+
 cd "$(git rev-parse --show-toplevel)"
 
 BASELINE=tool/coverage-baseline.json
