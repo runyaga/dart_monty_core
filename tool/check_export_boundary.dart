@@ -1279,29 +1279,34 @@ const _nestedProbe =
 const _valueAnchor = 'sealed class MontyValue {\n';
 const _partAnchor = "part 'monty_value_scalars.dart';";
 
-const _limitsAnchor = 'final class MontyLimits {\n';
-const _limitsFile = 'lib/src/platform/monty_limits.dart';
-const _frameAnchor =
-    'static List<MontyStackFrame> listFromJson(List<Object?> jsonList)';
-const _frameFile = 'lib/src/platform/monty_stack_frame.dart';
 const _memoryFile = 'lib/src/mount/monty_memory_file.dart';
+const _memoryAnchor = 'final class MontyMemoryFile implements VfsFile {\n';
+const _listSignature =
+    'static List<MontyMemoryFile> listFromJson(List<Object?> jsonList)';
+const _mountFile = 'lib/src/mount/mount_dir.dart';
 
-/// A public method with a bounded type parameter, added to MontyLimits.
+/// A static method whose parameter's type a control changes, added to
+/// MontyMemoryFile.
+String Function(String) _listProbe(String signature) =>
+    _insertAfter(_memoryAnchor, '  $signature => const [];\n');
+
+/// A public method with a bounded type parameter, added to MontyMemoryFile.
 String Function(String) _boundProbe(String bound) => _insertAfter(
-  _limitsAnchor,
+  _memoryAnchor,
   '  T boundaryProbe<T extends $bound>(T value) => value;\n',
 );
 
-/// MontyLimits extending a private class, whose public members are
+/// MontyMemoryFile extending a private class, whose public members are
 /// inherited: [members] is that class's body.
 String Function(String) _privateBase(String members) =>
     (s) => _replaceOnce(
       s,
-      _limitsAnchor,
+      _memoryAnchor,
       'abstract class _BoundaryProbeBase {\n'
       '  const _BoundaryProbeBase();\n'
       '$members}\n'
-      'final class MontyLimits extends _BoundaryProbeBase {\n',
+      'final class MontyMemoryFile extends _BoundaryProbeBase '
+      'implements VfsFile {\n',
     );
 
 /// A private subtype of the sealed `VfsNode` with `VfsFile`'s members,
@@ -1613,10 +1618,10 @@ final _controls = [
   _Control(
     'public member added',
     _Verdict.golden,
-    '+ MontyLimits.boundaryProbe: getter -> int',
+    '+ MontyMemoryFile.boundaryProbe: getter -> int',
     {
-      _limitsFile: _insertAfter(
-        _limitsAnchor,
+      _memoryFile: _insertAfter(
+        _memoryAnchor,
         '  int get boundaryProbe => 0;\n',
       ),
     },
@@ -1624,28 +1629,28 @@ final _controls = [
   _Control(
     'public member removed',
     _Verdict.golden,
-    '- MontyLimits.defaultMaxSuspensions: static const field int',
-    {
-      _limitsFile: (s) => _replaceOnce(
-        s,
-        '  static const int defaultMaxSuspensions = 1000;',
-        '',
+    '- MontyMemoryFile.boundaryProbe: static const field int',
+    {_memoryFile: (s) => s},
+    base: {
+      _memoryFile: _insertAfter(
+        _memoryAnchor,
+        '  static const int boundaryProbe = 1;\n',
       ),
     },
   ),
   _Control(
     'constructor removed',
     _Verdict.golden,
-    '- MontyLimits.jsAligned: factory constructor({int? maxMemory, '
-        'double? maxDurationSecs, int? maxRecursionDepth})',
+    '- MontyMemoryFile.new: factory constructor(String path, '
+        'Object content, {int permissions = 0x1A4})',
     {
-      _limitsFile: (s) => _replaceOnce(
+      _memoryFile: (s) => _replaceOnce(
         s,
-        'factory MontyLimits.jsAligned({',
-        'static MontyLimits jsAligned({',
+        '  factory MontyMemoryFile(',
+        '  static MontyMemoryFile create(',
       ),
     },
-    alsoMentions: ['+ MontyLimits.jsAligned: static method('],
+    alsoMentions: ['+ MontyMemoryFile.create: static method('],
   ),
   _Control(
     'parameter renamed',
@@ -1664,28 +1669,24 @@ final _controls = [
   _Control(
     'parameter type changed',
     _Verdict.golden,
-    '+ MontyStackFrame.listFromJson: '
-        'static method(Iterable<Object?> jsonList) -> List<MontyStackFrame>',
+    '+ MontyMemoryFile.listFromJson: '
+        'static method(Iterable<Object?> jsonList) -> List<MontyMemoryFile>',
     {
-      _frameFile: (s) => _replaceOnce(
-        s,
-        _frameAnchor,
-        _frameAnchor.replaceFirst('(List<', '(Iterable<'),
+      _memoryFile: _listProbe(
+        'static List<MontyMemoryFile> listFromJson(Iterable<Object?> jsonList)',
       ),
     },
+    base: {_memoryFile: _listProbe(_listSignature)},
   ),
   _Control(
     'nullability of a type argument changed',
     _Verdict.golden,
-    '+ MontyStackFrame.listFromJson: '
-        'static method(List<Object> jsonList) -> List<MontyStackFrame>',
+    '+ MontyMemoryFile.listFromJson: '
+        'static method(List<Object> jsonList) -> List<MontyMemoryFile>',
     {
-      _frameFile: (s) => _replaceOnce(
-        s,
-        _frameAnchor,
-        _frameAnchor.replaceFirst('Object?', 'Object'),
-      ),
+      _memoryFile: _listProbe(_listSignature.replaceFirst('Object?', 'Object')),
     },
+    base: {_memoryFile: _listProbe(_listSignature)},
   ),
   _Control(
     'default value changed',
@@ -1703,44 +1704,43 @@ final _controls = [
   _Control(
     'const dropped from a constructor',
     _Verdict.golden,
-    '+ MontyLimits.new: constructor({int? memoryBytes,',
+    '+ MountDir.new: constructor({required String virtualPath,',
     {
-      _limitsFile: (s) =>
-          _replaceOnce(s, '  const MontyLimits({', '  MontyLimits({'),
+      _mountFile: (s) => _replaceOnce(s, '  const MountDir({', '  MountDir({'),
     },
-    alsoMentions: ['- MontyLimits.new: const constructor('],
+    alsoMentions: ['- MountDir.new: const constructor('],
   ),
   _Control(
     'static member made an instance member',
     _Verdict.golden,
-    '+ MontyStackFrame.listFromJson: '
-        'method(List<Object?> jsonList) -> List<MontyStackFrame>',
+    '+ MontyMemoryFile.listFromJson: '
+        'method(List<Object?> jsonList) -> List<MontyMemoryFile>',
     {
-      _frameFile: (s) => _replaceOnce(
-        s,
-        _frameAnchor,
-        _frameAnchor.replaceFirst('static ', ''),
-      ),
+      _memoryFile: _listProbe(_listSignature.replaceFirst('static ', '')),
     },
+    base: {_memoryFile: _listProbe(_listSignature)},
   ),
   _Control(
     'final class made base',
     _Verdict.golden,
-    '+ base class MontyLimits',
+    '+ base class MontyMemoryFile',
     {
-      _limitsFile: (s) =>
-          _replaceOnce(s, _limitsAnchor, 'base class MontyLimits {\n'),
+      _memoryFile: (s) => _replaceOnce(
+        s,
+        _memoryAnchor,
+        'base class MontyMemoryFile implements VfsFile {\n',
+      ),
     },
-    alsoMentions: ['- final class MontyLimits'],
+    alsoMentions: ['- final class MontyMemoryFile'],
   ),
   _Control(
     'type parameter bound changed',
     _Verdict.golden,
-    '+ MontyLimits.boundaryProbe: method<T extends int>(T value) -> T',
-    {_limitsFile: _boundProbe('int')},
-    base: {_limitsFile: _boundProbe('num')},
+    '+ MontyMemoryFile.boundaryProbe: method<T extends int>(T value) -> T',
+    {_memoryFile: _boundProbe('int')},
+    base: {_memoryFile: _boundProbe('num')},
     alsoMentions: [
-      '- MontyLimits.boundaryProbe: method<T extends num>(T value) -> T',
+      '- MontyMemoryFile.boundaryProbe: method<T extends num>(T value) -> T',
     ],
   ),
   _Control(
@@ -1748,15 +1748,15 @@ final _controls = [
     _Verdict.pass,
     '',
     {
-      _limitsFile: _insertAfter(
-        _limitsAnchor,
+      _memoryFile: _insertAfter(
+        _memoryAnchor,
         '  int get _boundaryProbe => 0;\n'
         '  int get boundaryProbeUse => _boundaryProbe;\n',
       ),
     },
     base: {
-      _limitsFile: _insertAfter(
-        _limitsAnchor,
+      _memoryFile: _insertAfter(
+        _memoryAnchor,
         '  int get boundaryProbeUse => 0;\n',
       ),
     },
@@ -1765,26 +1765,26 @@ final _controls = [
     'member of a private supertype inherited by a public class',
     _Verdict.golden,
     '+ _BoundaryProbeBase.inherited: getter -> int',
-    {_limitsFile: _privateBase('  int get inherited => 0;\n')},
-    base: {_limitsFile: _privateBase('')},
+    {_memoryFile: _privateBase('  int get inherited => 0;\n')},
+    base: {_memoryFile: _privateBase('')},
   ),
   _Control(
     'implicit setter removed',
     _Verdict.golden,
-    '- MontyLimits.boundaryProbe: late final settable field int',
+    '- MontyMemoryFile.boundaryProbe: late final settable field int',
     {
-      _limitsFile: _insertAfter(
-        _limitsAnchor,
+      _memoryFile: _insertAfter(
+        _memoryAnchor,
         '  late final int boundaryProbe = 0;\n',
       ),
     },
     base: {
-      _limitsFile: _insertAfter(
-        _limitsAnchor,
+      _memoryFile: _insertAfter(
+        _memoryAnchor,
         '  late final int boundaryProbe;\n',
       ),
     },
-    alsoMentions: ['+ MontyLimits.boundaryProbe: late final field int'],
+    alsoMentions: ['+ MontyMemoryFile.boundaryProbe: late final field int'],
   ),
   _Control(
     'parameter switched between two types of one name',
