@@ -447,8 +447,8 @@
       "pct": 99.38
     },
     "lib/src/worker/pool_session.dart": {
-      "found": 335,
-      "hit": 330,
+      "found": 336,
+      "hit": 331,
       "pct": 98.51
     },
     "lib/src/worker/process_channel.dart": {
@@ -523,8 +523,8 @@
     }
   },
   "total": {
-    "found": 7879,
-    "hit": 6579,
+    "found": 7880,
+    "hit": 6580,
     "pct": 83.5
   }
 }
