@@ -5,6 +5,8 @@
 // protocol on the VM, dart2js and dart2wasm without a worker.
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/frame.dart'
+    show FrameTooLargeException;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
@@ -215,13 +217,15 @@ void main() {
       );
     });
 
-    test('no inputs sends no arena', () async {
+    test('no inputs sends an empty arena, as upstream does', () async {
       final ch = _configured([
         answer([completeNone()]),
       ]);
       final s = await ProtoSession.open(ch);
       await s.feed('pass');
-      expect(itemAt(ch.requests, 1).feed.hasValues(), isFalse);
+      final feed = itemAt(ch.requests, 1).feed;
+      expect(feed.hasValues(), isTrue);
+      expect(feed.values, pb.Arena());
     });
 
     test('prints stream in order to onPrint and the result (E0 s09)', () async {
@@ -972,6 +976,129 @@ void main() {
         expect((await s.feed('True')).value, const MontyBool(true));
       },
     );
+  });
+
+  group('Feed on the wire, as upstream 1.1.0 sends it', () {
+    // The bytes of each `ParentRequest`, as monty-pool 1.1.0's
+    // `Checkout::feed_with_cwd` builds it (no mounts, no explicit cwd) and
+    // prost encodes it: the arena always present, zero and empty fields left
+    // out, `cwd` "/" on the session's first feed only.
+    const firstNoInputs = '1a0c0a0531202b20311a002a012f';
+    const laterNoInputs = '1a090a0531202b20311a00';
+    const firstTwoInputs =
+        '1a240a0561202b206212030a016112050a016210011a0c08021202280a12044202'
+        '68692a012f';
+    const laterOneInput = '1a100a016112030a01611a0608011202280a';
+
+    String hexOf(pb.ParentRequest request) => [
+      for (final b in request.writeToBuffer())
+        b.toRadixString(16).padLeft(2, '0'),
+    ].join();
+
+    List<String> feedsSent(ScriptedChannel ch) => [
+      for (final r in ch.requests)
+        if (r.whichKind() == pb.ParentRequest_Kind.feed) hexOf(r),
+    ];
+
+    const code = '1 + 1';
+    final done = answer([completeNone()]);
+
+    /// Feeds [code] [times] times, each completing.
+    Future<void> feedTimes(ProtoSession s, int times) async {
+      for (var i = 0; i < times; i++) {
+        await s.feed(code);
+      }
+    }
+
+    test(
+      'the first feed switches to "/", later ones keep the directory',
+      () async {
+        final ch = _configured([done, done]);
+        await feedTimes(await ProtoSession.open(ch), 2);
+        expect(feedsSent(ch), [firstNoInputs, laterNoInputs]);
+      },
+    );
+
+    test("inputs: the first ref's zero index is left out", () async {
+      final ch = _configured([done, done]);
+      final s = await ProtoSession.open(ch);
+      await s.feed(
+        'a + b',
+        inputs: {'a': const MontyInt(5), 'b': const MontyString('hi')},
+      );
+      await s.feed('a', inputs: {'a': const MontyInt(5)});
+      expect(feedsSent(ch), [firstTwoInputs, laterOneInput]);
+    });
+
+    test('a feed the type check refuses leaves the directory unset', () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'x')),
+        ]),
+        done,
+        done,
+      ]);
+      final s = await ProtoSession.open(
+        ch,
+        const SessionConfig(typeCheck: true),
+      );
+      await expectLater(s.feed(code), throwsA(isA<MontyTypingError>()));
+      await feedTimes(s, 2);
+      expect(feedsSent(ch), [firstNoInputs, firstNoInputs, laterNoInputs]);
+    });
+
+    test('a Python error still sets the directory', () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            error: pb.Error(
+              exception: pb.RaisedException(
+                excType: 'ValueError',
+                message: 'x',
+              ),
+            ),
+          ),
+        ]),
+        done,
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(s.feed(code), throwsA(isA<MontyRuntimeError>()));
+      await feedTimes(s, 1);
+      expect(feedsSent(ch), [firstNoInputs, laterNoInputs]);
+    });
+
+    test(
+      'an oversized feed is never sent, so the next is still first',
+      () async {
+        final ch = ScriptedChannel([
+          expecting(pb.ParentRequest_Kind.configure, [ok()]),
+          done,
+        ], frameLimit: 64);
+        final s = await ProtoSession.open(ch);
+        await expectLater(
+          s.feed('x' * 100),
+          throwsA(isA<FrameTooLargeException>()),
+        );
+        await feedTimes(s, 1);
+        expect(feedsSent(ch), [firstNoInputs]);
+      },
+    );
+
+    test("after reset the next feed is a new session's first", () async {
+      final accepted = [ok()];
+      final ch = _configured([
+        done,
+        expecting(pb.ParentRequest_Kind.reset, accepted),
+        expecting(pb.ParentRequest_Kind.configure, accepted),
+        done,
+      ]);
+      final s = await ProtoSession.open(ch);
+      for (final resetFirst in [false, true]) {
+        if (resetFirst) await s.reset();
+        await s.feed(code);
+      }
+      expect(feedsSent(ch), [firstNoInputs, firstNoInputs]);
+    });
   });
 
   group('session', () {

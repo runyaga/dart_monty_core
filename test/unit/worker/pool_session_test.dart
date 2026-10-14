@@ -229,6 +229,26 @@ void main() {
     });
   });
 
+  group('working directory', () {
+    test('the first feed, stepped or run, switches to "/"; later ones keep '
+        'the directory', () async {
+      final done = expecting(pb.ParentRequest_Kind.feed, [completeNone()]);
+      final ch = ScriptedChannel([_configureOk, done, done, _resetOk]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      await session.feedStart('1', printCallback: _ignore);
+      await session.feedRun('2', printCallback: _ignore);
+      await session.close();
+      final feeds = [
+        for (final r in ch.requests)
+          if (r.whichKind() == pb.ParentRequest_Kind.feed) r.feed,
+      ];
+      expect([for (final f in feeds) f.hasCwd()], [true, false]);
+      expect(feeds.firstOrNull?.cwd, '/');
+    });
+  });
+
   group('feedRun', () {
     test('returns the value; inputs, externals and os get through', () async {
       final ch = ScriptedChannel([
