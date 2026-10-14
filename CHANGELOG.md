@@ -305,9 +305,11 @@
     else to run is awaited in place; any other gets a pending future,
     settled as it completes. `asyncio.sleep` is waited the same way, so
     gathered sleeps overlap.
-  - Every OS call reaches the OS handler with upstream's name and
-    arguments, not only the path calls; a handler's future is awaited and
-    its value is the answer, except for `asyncio.sleep`.
+  - The OS handler gets every OS call with upstream's name and arguments,
+    not only the path calls, except the system sleeps a `feedRun` waits
+    itself (a snapshot's `resumeAuto` hands those to the handler too); a
+    handler's future is awaited and its value is the answer, except for
+    `asyncio.sleep`.
   - The sleep budget now charges `asyncio.sleep` as well as `time.sleep`,
     as upstream's pool does, and a worker reply can tighten the suspension
     budget too. The suspension budget counts snapshot turns.
