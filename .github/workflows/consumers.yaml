@@ -93,6 +93,12 @@ jobs:
           node-version: '24'
       - name: Flutter's Dart is the repo's pinned Dart
         run: bash tool/check_sdk_pin.sh
+      # Excluded from the root analysis (no Flutter SDK in the `gate` job).
+      - name: Analyze the Flutter probe
+        working-directory: tool/consumers/flutter_web
+        run: |
+          flutter pub get
+          flutter analyze --fatal-infos
       - name: Flutter and Flutter --wasm read 2
         run: |
           bash tool/consumers/run.sh flutter
