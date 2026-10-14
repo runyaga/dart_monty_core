@@ -523,6 +523,41 @@ void main() {
       },
     );
 
+    test('every path OS call reaches the handler by upstream name', () async {
+      final calls = {
+        'Path.exists': pb.OsCall(exists: '/p'),
+        'Path.is_file': pb.OsCall(isFile: '/p'),
+        'Path.is_dir': pb.OsCall(isDir: '/p'),
+        'Path.is_symlink': pb.OsCall(isSymlink: '/p'),
+        'Path.read_text': pb.OsCall(readText: '/p'),
+        'Path.read_bytes': pb.OsCall(readBytes: '/p'),
+        'Path.stat': pb.OsCall(stat: '/p'),
+        'Path.iterdir': pb.OsCall(iterdir: '/p'),
+        'Path.resolve': pb.OsCall(resolve: '/p'),
+        'Path.absolute': pb.OsCall(absolute: '/p'),
+        'Path.unlink': pb.OsCall(unlink: '/p'),
+        'Path.rmdir': pb.OsCall(rmdir: '/p'),
+      };
+      final ch = _configured([
+        for (final call in calls.values) answer([pb.ChildEvent(osCall: call)]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      final seen = <(String, List<MontyValue>)>[];
+      await s.feed(
+        '...',
+        onOsCall: (name, args, kwargs) {
+          seen.add((name, args));
+
+          return const MontyNone();
+        },
+      );
+      expect([for (final (name, _) in seen) name], calls.keys);
+      for (final (_, args) in seen) {
+        expect(args, [const MontyPath('/p')]);
+      }
+    });
+
     test(
       'an OS call reaches the handler with upstream name and a path (E0 s11)',
       () async {
