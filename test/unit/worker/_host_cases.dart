@@ -58,7 +58,7 @@ FutureOr<Object> _add(List<MontyValue> args, Map<String, MontyValue> kw) =>
 final HostClass<Point> pointClass = HostClass(
   'Point',
   isDataclass: true,
-  instance: HostMembers(
+  instance: (
     fields: {'x': (p) => MontyInt(p.x), 'y': (p) => MontyInt(p.y)},
     properties: {
       'norm1': (p) => MontyInt(p.x.abs() + p.y.abs()),
@@ -92,8 +92,15 @@ final HostClass<Point> pointClass = HostClass(
 Object? _policy(Object? spec) =>
     spec is List<Object?> ? spec.cast<String>().toList() : spec;
 
-HostPolicies _policies(Map<String, Object?> map) {
-  return HostPolicies(
+/// The wrappers' policies, as a record.
+typedef _Policies = ({
+  Object? eagerAttrs,
+  Object? lazyAttrs,
+  Object? allowedMethods,
+});
+
+_Policies _policies(Map<String, Object?> map) {
+  return (
     eagerAttrs: _policy(map['eager']),
     lazyAttrs: _policy(map['lazy']),
     allowedMethods: _policy(map['methods']),
@@ -139,7 +146,7 @@ Object _wrapper(
       init: options['init'] == true,
       instancePolicies: switch (options['instance']) {
         final Map<String, Object?> instance => _policies(instance),
-        _ => HostPolicies.none,
+        _ => (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
       },
       convertValue: options['convert'] == 'redact' ? _redact : null,
     ),

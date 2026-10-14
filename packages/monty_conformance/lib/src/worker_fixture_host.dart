@@ -114,7 +114,20 @@ final Map<String, HostClass<_Fixture>> _fixtureClasses = {};
 /// `dispatch_instance_attr` serves (`dimensions` on the points, `boom`,
 /// which raises `KeyError` on the host, on `MutablePoint`). Any other name
 /// is absent (an `AttributeError`).
-final HostMembers<_Fixture> _fixtureMembers = HostMembers(
+final ({
+  Map<String, Object Function(_Fixture self)> fields,
+  Map<String, Object Function(_Fixture self)> properties,
+  Map<
+    String,
+    FutureOr<Object> Function(
+      _Fixture self,
+      List<MontyValue> args,
+      Map<String, MontyValue> kwargs,
+    )
+  >
+  methods,
+})
+_fixtureMembers = (
   fields: {
     for (final name in ['x', 'y', 'name', 'active'])
       name: (f) => f.attrs[name] ?? (throw _absent(f, name)),
@@ -127,6 +140,7 @@ final HostMembers<_Fixture> _fixtureMembers = HostMembers(
         ? throw const ExternalException('KeyError', 'boom')
         : throw _absent(f, 'boom'),
   },
+  methods: const {},
 );
 
 ExternalException _absent(_Fixture f, String name) => ExternalException(
@@ -175,9 +189,10 @@ final class WorkerFixtureRegistry {
         id: _uuid(fixture.typeId),
       ),
       id: instanceId,
-      policies: HostPolicies(
+      policies: (
         eagerAttrs: fixture.attrs.keys.toList(),
         lazyAttrs: 'all',
+        allowedMethods: null,
       ),
     );
   }

@@ -25,7 +25,7 @@ final List<String> _ran = [];
 
 final HostClass<_Box> _boxClass = HostClass(
   'Box',
-  instance: HostMembers(
+  instance: (
     fields: {
       'n': (b) {
         _ran.add('n');
@@ -62,7 +62,14 @@ _Box _newBox(List<MontyValue> args, Map<String, MontyValue> kwargs) {
   return _Box(0);
 }
 
-const _all = HostPolicies(
+/// The wrappers' policies, as a record.
+typedef _Policies = ({
+  Object? eagerAttrs,
+  Object? lazyAttrs,
+  Object? allowedMethods,
+});
+
+const _Policies _all = (
   eagerAttrs: 'all',
   lazyAttrs: 'all',
   allowedMethods: 'all',
@@ -78,7 +85,7 @@ pb.Uuid _wire(String id) => pb.Uuid(
   ],
 );
 
-ClassInstance<_Box> _box(int id, {_Box? value, HostPolicies policies = _all}) =>
+ClassInstance<_Box> _box(int id, {_Box? value, _Policies policies = _all}) =>
     ClassInstance(
       value ?? _Box(1),
       classType: ClassType(_boxClass, id: _id(100)),
@@ -103,17 +110,21 @@ pb.RaisedException _raised(pb.ParentRequest request) =>
 /// A class whose property raises on the host.
 final HostClass<_Box> _raising = HostClass(
   'Box',
-  instance: HostMembers(
+  instance: (
+    fields: const {},
     properties: {
       'boom': (b) => throw const ExternalException('KeyError', 'boom'),
     },
+    methods: const {},
   ),
 );
 
 /// A class with an async method.
 final HostClass<_Box> _slow = HostClass(
   'Box',
-  instance: HostMembers(
+  instance: (
+    fields: const {},
+    properties: const {},
     methods: {
       'later': (b, args, kwargs) => Future.value(const MontyInt(5)),
     },
@@ -130,13 +141,15 @@ final HostClass<_Box> _constClass = HostClass(
 /// A class with a callable field and a plain one.
 final HostClass<_Box> _callableField = HostClass(
   'Box',
-  instance: HostMembers(
+  instance: (
     fields: {
       'callback': (b) =>
           (List<MontyValue> args, Map<String, MontyValue> kw) =>
               const MontyInt(42),
       'number': (b) => const MontyInt(7),
     },
+    properties: const {},
+    methods: const {},
   ),
 );
 
@@ -154,8 +167,9 @@ final HostClass<_Box> _callableConstant = HostClass(
 /// A class whose method `run` is shadowed by an instance field.
 final HostClass<_Box> _shadowedMethod = HostClass(
   'Box',
-  instance: HostMembers(
+  instance: (
     fields: {'run': (b) => const MontyInt(7)},
+    properties: const {},
     methods: {'run': (b, args, kwargs) => const MontyInt(1)},
   ),
 );
@@ -169,13 +183,17 @@ final HostClass<_Box> _withClassConstant = HostClass(
 /// A class whose one field is a class.
 final HostClass<_Box> _withClassField = HostClass(
   'Box',
-  instance: HostMembers(fields: {'kind': (b) => ClassType(_constClass)}),
+  instance: (
+    fields: {'kind': (b) => ClassType(_constClass)},
+    properties: const {},
+    methods: const {},
+  ),
 );
 
 /// A class whose field reads are recorded in [order].
 HostClass<_Box> _orderClass(List<String> order) => HostClass(
   'Box',
-  instance: HostMembers(
+  instance: (
     fields: {
       for (final name in ['a', 'b'])
         name: (b) {
@@ -184,6 +202,8 @@ HostClass<_Box> _orderClass(List<String> order) => HostClass(
           return const MontyNone();
         },
     },
+    properties: const {},
+    methods: const {},
   ),
 );
 
@@ -205,7 +225,11 @@ void main() {
         () => ClassInstance(
           _Box(1),
           classType: ClassType(_boxClass),
-          policies: const HostPolicies(lazyAttrs: 'n'),
+          policies: const (
+            eagerAttrs: null,
+            lazyAttrs: 'n',
+            allowedMethods: null,
+          ),
         ),
         _argumentError(
           "lazy_attrs must be 'all', None or a set of names, got 'n'",
@@ -214,7 +238,11 @@ void main() {
       expect(
         () => ClassType(
           _boxClass,
-          instancePolicies: const HostPolicies(eagerAttrs: 'x'),
+          instancePolicies: const (
+            eagerAttrs: 'x',
+            lazyAttrs: null,
+            allowedMethods: null,
+          ),
         ),
         _argumentError(contains('instance_eager_attrs must be')),
       );
@@ -238,6 +266,45 @@ void main() {
     });
   });
 
+  // Divergence host-wrapper-identity-eq. Upstream's wrappers are
+  // dataclasses (class_instance.py:39, 164, 216): two wrappers with equal
+  // fields compare equal, and hash() raises TypeError ("unhashable type").
+  // Dart cannot make an object unhashable, so `==` and `hashCode` are
+  // identity. Python's answers below are pydantic-monty 1.1.0's, run on the
+  // same pairs.
+  group('recorded divergence host-wrapper-identity-eq', () {
+    final box = _Box(1);
+    final typeId = _id(100);
+    final instanceId = _id(1);
+    final type = ClassType(_boxClass, id: typeId);
+    final twinType = ClassType(_boxClass, id: typeId);
+    final instance = ClassInstance(box, classType: type, id: instanceId);
+    final twin = ClassInstance(box, classType: type, id: instanceId);
+
+    // (description, Dart's answer, Python's answer)
+    final cases = [
+      ('two instance wrappers with equal fields', instance == twin, true),
+      ('two class wrappers with equal fields', type == twinType, true),
+    ];
+    for (final (what, dart, python) in cases) {
+      test('$what: Dart $dart, Python $python', () {
+        expect(dart, isNot(python), reason: 'listed as a divergence');
+        expect(dart, isFalse);
+      });
+    }
+
+    test('a wrapper equals itself, and its hash is its identity hash', () {
+      for (final w in <Object>[instance, type]) {
+        expect(w == w, isTrue);
+        expect(w.hashCode, identityHashCode(w));
+      }
+    });
+
+    test('equal-field wrappers are two keys in a set', () {
+      expect({instance, twin, type, twinType}, hasLength(4));
+    });
+  });
+
   group('the registry (upstream InstanceStore)', () {
     test('instances and classes share one id namespace', () {
       final objects = HostObjects()..register(_box(1));
@@ -255,7 +322,11 @@ void main() {
 
     test('the same object re-sent with a new wrapper replaces its policy', () {
       final box = _Box(1);
-      final closed = _box(1, value: box, policies: HostPolicies.none);
+      final closed = _box(
+        1,
+        value: box,
+        policies: (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
+      );
       final open = _box(1, value: box);
       final objects = HostObjects()
         ..register(closed)
@@ -363,7 +434,11 @@ void main() {
       final box = ClassInstance(
         _Box(1),
         classType: ClassType(_boxClass),
-        policies: HostPolicies(lazyAttrs: allowed, allowedMethods: allowed),
+        policies: (
+          eagerAttrs: null,
+          lazyAttrs: allowed,
+          allowedMethods: allowed,
+        ),
       );
       allowed.add('bump');
       expect(
@@ -376,7 +451,11 @@ void main() {
       final box = ClassInstance(
         _Box(1),
         classType: ClassType(_constClass),
-        policies: const HostPolicies(lazyAttrs: 'all'),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: 'all',
+          allowedMethods: null,
+        ),
       );
       expect(box.lookupLazyAttr('KIND'), const MontyString('box'));
     });
@@ -386,7 +465,11 @@ void main() {
       final attrs = ClassInstance(
         _Box(1),
         classType: ClassType(_boxClass),
-        policies: const HostPolicies(eagerAttrs: ['n', 'n']),
+        policies: const (
+          eagerAttrs: ['n', 'n'],
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
         convertValue: (name, value) => MontyInt(++calls),
       ).eagerAttributes();
       expect(attrs, {'n': const MontyInt(2)});
@@ -396,7 +479,11 @@ void main() {
       final box = ClassInstance(
         _Box(1),
         classType: ClassType(_constClass),
-        policies: const HostPolicies(allowedMethods: 'all'),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: 'all',
+        ),
       );
       expect(
         await box.callMethod('describe', const [], const {}),
@@ -408,7 +495,11 @@ void main() {
       final granted = ClassInstance(
         _Box(1),
         classType: ClassType(_callableField),
-        policies: const HostPolicies(allowedMethods: ['callback', 'number']),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: ['callback', 'number'],
+        ),
       );
       expect(
         await granted.callMethod('callback', const [], const {}),
@@ -428,7 +519,11 @@ void main() {
       final read = ClassInstance(
         _Box(1),
         classType: ClassType(_callableField),
-        policies: const HostPolicies(eagerAttrs: 'all', lazyAttrs: 'all'),
+        policies: const (
+          eagerAttrs: 'all',
+          lazyAttrs: 'all',
+          allowedMethods: null,
+        ),
       );
       expect(
         read.eagerAttributes()['callback'],
@@ -443,7 +538,11 @@ void main() {
       final all = ClassInstance(
         _Box(1),
         classType: ClassType(_callableField),
-        policies: const HostPolicies(allowedMethods: 'all'),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: 'all',
+        ),
       );
       expect(
         () => all.callMethod('callback', const [], const {}),
@@ -455,7 +554,11 @@ void main() {
       final shadowed = ClassInstance(
         _Box(1),
         classType: ClassType(_shadowedMethod),
-        policies: const HostPolicies(allowedMethods: 'all'),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: 'all',
+        ),
       );
       expect(
         () => shadowed.callMethod('run', const [], const {}),
@@ -473,7 +576,11 @@ void main() {
       final read = ClassInstance(
         _Box(1),
         classType: ClassType(_boxClass),
-        policies: const HostPolicies(eagerAttrs: ['bump'], lazyAttrs: ['bump']),
+        policies: const (
+          eagerAttrs: ['bump'],
+          lazyAttrs: ['bump'],
+          allowedMethods: null,
+        ),
         convertValue: (name, value) =>
             value is BoundMethod ? const MontyString('callable') : value,
       );
@@ -481,7 +588,11 @@ void main() {
       expect(read.lookupLazyAttr('bump'), const MontyString('callable'));
       final type = ClassType(
         _constClass,
-        policies: const HostPolicies(lazyAttrs: ['describe']),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: ['describe'],
+          allowedMethods: null,
+        ),
         convertValue: (name, value) =>
             value is BoundMethod ? const MontyString('classmethod') : value,
       );
@@ -489,7 +600,11 @@ void main() {
       // An instance method read from the class is a function too.
       final plain = ClassType(
         _boxClass,
-        policies: const HostPolicies(eagerAttrs: ['bump'], lazyAttrs: ['bump']),
+        policies: const (
+          eagerAttrs: ['bump'],
+          lazyAttrs: ['bump'],
+          allowedMethods: null,
+        ),
       );
       expect(
         plain.eagerAttributes()['bump'],
@@ -512,7 +627,11 @@ void main() {
         ClassInstance(
           _Box(1),
           classType: ClassType(_boxClass),
-          policies: const HostPolicies(eagerAttrs: ['bump']),
+          policies: const (
+            eagerAttrs: ['bump'],
+            lazyAttrs: null,
+            allowedMethods: null,
+          ),
         ),
       );
       final nodes = writer.arena.nodes;
@@ -523,7 +642,14 @@ void main() {
       expect(value.function.name, 'bump');
       // Lazily, through the session's answer.
       writer.add(
-        _box(5, policies: const HostPolicies(lazyAttrs: ['bump'])),
+        _box(
+          5,
+          policies: const (
+            eagerAttrs: null,
+            lazyAttrs: ['bump'],
+            allowedMethods: null,
+          ),
+        ),
       );
       final lookup = HostAnswers(
         objects: objects,
@@ -539,7 +665,11 @@ void main() {
       final box = ClassInstance(
         _Box(1),
         classType: ClassType(_callableConstant),
-        policies: const HostPolicies(eagerAttrs: ['twice'], lazyAttrs: 'all'),
+        policies: const (
+          eagerAttrs: ['twice'],
+          lazyAttrs: 'all',
+          allowedMethods: null,
+        ),
       );
       final aFunction = isA<BoundMethod>();
       expect(box.eagerAttributes()['twice'], aFunction);
@@ -547,12 +677,20 @@ void main() {
       // The class's eager 'all' skips it; a listed name reads it.
       final all = ClassType(
         _callableConstant,
-        policies: const HostPolicies(eagerAttrs: 'all'),
+        policies: const (
+          eagerAttrs: 'all',
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
       );
       expect(all.eagerAttributes().keys, ['KIND']);
       final listed = ClassType(
         _callableConstant,
-        policies: const HostPolicies(eagerAttrs: ['twice']),
+        policies: const (
+          eagerAttrs: ['twice'],
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
       );
       expect(listed.eagerAttributes()['twice'], aFunction);
     });
@@ -560,7 +698,11 @@ void main() {
     test('a class serves its constants lazily', () {
       final type = ClassType(
         _constClass,
-        policies: const HostPolicies(lazyAttrs: ['KIND']),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: ['KIND'],
+          allowedMethods: null,
+        ),
       );
       expect(type.lookupLazyAttr('KIND'), const MontyString('box'));
       expect(
@@ -574,7 +716,11 @@ void main() {
       ClassInstance(
         _Box(1),
         classType: ClassType(_orderClass(order)),
-        policies: const HostPolicies(eagerAttrs: ['a', 'b']),
+        policies: const (
+          eagerAttrs: ['a', 'b'],
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
         convertValue: (name, value) {
           order.add('convert $name');
 
@@ -622,8 +768,14 @@ void main() {
     test('one wrapper is one node; its class is shared by id', () {
       final objects = HostObjects();
       final writer = ArenaWriter(objects: objects);
-      final box = _box(1, policies: HostPolicies.none);
-      final other = _box(2, policies: HostPolicies.none);
+      final box = _box(
+        1,
+        policies: (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
+      );
+      final other = _box(
+        2,
+        policies: (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
+      );
       final a = writer.add(box);
       expect(writer.add(box), a);
       final b = writer.add(other);
@@ -669,7 +821,10 @@ void main() {
     test('two nodes for one registered object are one object and one key', () {
       final objects = HostObjects();
       final writer = ArenaWriter(objects: objects);
-      final box = _box(1, policies: HostPolicies.none);
+      final box = _box(
+        1,
+        policies: (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
+      );
       final first = writer.add(box);
       // A second node with the same instance id, as a worker could send.
       final arena = writer.arena;
@@ -706,7 +861,11 @@ void main() {
         _Box(1),
         classType: ClassType(_withClassField),
         id: _id(9),
-        policies: const HostPolicies(eagerAttrs: 'all'),
+        policies: const (
+          eagerAttrs: 'all',
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
       );
       final index = writer.add(box);
       final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
@@ -739,10 +898,18 @@ void main() {
         classType: ClassType(
           HostClass(
             'Box',
-            instance: HostMembers(fields: {'me': (b) => looped}),
+            instance: (
+              fields: {'me': (b) => looped},
+              properties: const {},
+              methods: const {},
+            ),
           ),
         ),
-        policies: const HostPolicies(eagerAttrs: 'all'),
+        policies: const (
+          eagerAttrs: 'all',
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
       );
       expect(
         () => ArenaWriter(objects: HostObjects()).add(looped),
@@ -763,7 +930,11 @@ void main() {
         _Box(1),
         classType: ClassType(
           _withClassConstant,
-          policies: const HostPolicies(eagerAttrs: 'all'),
+          policies: const (
+            eagerAttrs: 'all',
+            lazyAttrs: null,
+            allowedMethods: null,
+          ),
         ),
       );
       final index = writer.add(box);
@@ -775,7 +946,11 @@ void main() {
     test('each future answer is its own encoding: the last policy wins', () {
       final objects = HostObjects();
       final box = _Box(1);
-      final closed = _box(1, value: box, policies: HostPolicies.none);
+      final closed = _box(
+        1,
+        value: box,
+        policies: (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
+      );
       final open = _box(1, value: box);
       futuresRequest([
         (1, ExternalAnswer.value(closed)),
@@ -791,7 +966,11 @@ void main() {
         _Box(1),
         classType: ClassType(_boxClass, id: _id(7)),
         id: _id(8),
-        policies: const HostPolicies(eagerAttrs: ['absent']),
+        policies: const (
+          eagerAttrs: ['absent'],
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
       );
       expect(
         () => ArenaWriter(objects: objects).add(failing),
