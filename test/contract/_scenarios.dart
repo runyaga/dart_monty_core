@@ -33,6 +33,10 @@ const _sleeps =
     'await asyncio.gather(asyncio.sleep(0, result=1), '
     'asyncio.sleep(0, result=2))';
 
+const _gatherCheck =
+    'import asyncio\na = fa()\nb = fb()\nc = fc()\nawait a\n'
+    'await asyncio.gather(b, c)';
+
 const _branches =
     'import asyncio\n'
     'async def one():\n    v = await f(1)\n    return await g(v)\n'
@@ -942,6 +946,38 @@ final List<Scenario> scenarios = [
       '1 future',
       '1/b0 raise ValueError: second',
       '0/b0 raise KeyError: first',
+    ],
+  ),
+  Scenario(
+    'a gather checks its arguments before it observes a failure',
+    feeds: [_gatherCheck],
+    script: (f) => f
+      ..willCall('fa')
+      ..willCall('fb')
+      ..willCall('fc')
+      ..willAwait([0])
+      ..willAwait([1, 2], gathered: true)
+      ..willReturn(_none),
+    run: (s) => s.run(
+      0,
+      externals: {
+        'fa': s.async('fa', _after(150, _int(1))),
+        'fb': s.async('fb', _failAfter(0, 'b')),
+        'fc': s.fn('fc', (_, _) => _int(1)),
+      },
+    ),
+    trace: [
+      'call fa()',
+      'call fb()',
+      'call fc()',
+      'MontyRuntimeError TypeError: An asyncio.Future, a coroutine or an awaitable is required | TypeError: An asyncio.Future, a coroutine or an awaitable is required',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '2 value MontyInt(1)',
+      '1/b0 raise ValueError: b',
+      '0/b1 value MontyInt(1)',
     ],
   ),
   Scenario(

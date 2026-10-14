@@ -256,7 +256,7 @@ String showArgs(List<MontyValue> args, Map<String, MontyValue> kwargs) {
 /// [value] as the trace writes it, unambiguously: strings and paths
 /// quoted, containers, bytes and named tuples with their contents, and a
 /// float the same on every platform (dart2js writes an integral double
-/// without its `.0`). Other kinds use their own `toString()`.
+/// without its `.0`). Other kinds are written as their JSON form.
 String showValue(MontyValue value) => switch (value) {
   MontyString(value: final text) => 'MontyString(${jsonEncode(text)})',
   MontyPath(value: final path) => 'MontyPath(${jsonEncode(path)})',
@@ -270,7 +270,9 @@ String showValue(MontyValue value) => switch (value) {
   MontyDict(:final pairs) => 'MontyDict{${pairs.map(_showPair).join(', ')}}',
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     'MontyNamedTuple($typeName, $fieldNames, ${_showAll(values)})',
-  _ => '$value',
+  MontyNone() || MontyBool() || MontyInt() || MontyBigInt() => '$value',
+  // Every other kind whole, as its JSON form.
+  _ => jsonEncode(value.toJson()),
 };
 
 String _showAll(List<MontyValue> items) => items.map(showValue).join(', ');

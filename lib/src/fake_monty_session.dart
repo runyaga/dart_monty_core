@@ -360,6 +360,11 @@ final class _OsArgs {
     _ => throw bad(),
   };
 
+  Int64 size() => switch (args.firstOrNull) {
+    MontyInt(:final value) when value >= 0 => Int64(value),
+    _ => throw bad(),
+  };
+
   bool flag(String key) => switch (kwargs[key]) {
     MontyBool(:final value) => value,
     null => false,
@@ -436,7 +441,7 @@ final Map<String, pb.OsCall Function(_OsArgs a)> _osCalls = {
   'date.today': (_) => pb.OsCall(dateToday: pb.Unit()),
   'datetime.now': (a) => pb.OsCall(dateTimeNow: a.now()),
   'os.urandom': (a) => pb.OsCall(
-    urandom: pb.OsCall_Urandom(size: Int64(a.float().toInt())),
+    urandom: pb.OsCall_Urandom(size: a.size()),
   ),
   'time.time': (a) => pb.OsCall(time: pb.OsCall_TimeCall(caller: a.str(0))),
   'time.sleep': (a) => pb.OsCall(sleep: pb.OsCall_Sleep(seconds: a.float())),

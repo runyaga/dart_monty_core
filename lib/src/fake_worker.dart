@@ -324,6 +324,12 @@ final class _Feed {
   /// a plain value raises `TypeError` (awaitable.md), and the rest are
   /// waited on. Null when the script runs on.
   pb.ChildEvent? _await(FakeAwait wait) {
+    // A gather checks every argument is awaitable before it awaits any.
+    if (wait.gathered) {
+      if (_firstPlain(_calls, wait.callIds) case final value?) {
+        return _raise(_notAwaitable(value, gathered: true));
+      }
+    }
     final pending = <int>{};
     for (final id in wait.callIds) {
       switch (_calls[id]) {
@@ -527,6 +533,15 @@ pb.RaisedException? _unknownId(
     excType: 'RuntimeError',
     message: 'unknown call_id ${unknown.callId}, expected one of: $advertised',
   );
+}
+
+/// The first of [ids] answered with a plain value Python cannot await.
+MontyValue? _firstPlain(Map<int, _CallState> calls, List<int> ids) {
+  for (final id in ids) {
+    if (calls[id] case _Plain(wrapped: false, :final value)) return value;
+  }
+
+  return null;
 }
 
 /// The `Error` event ending a feed with [exception], without its traceback.
