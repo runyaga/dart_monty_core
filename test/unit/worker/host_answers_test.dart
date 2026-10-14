@@ -399,6 +399,13 @@ void main() {
       expect(result.error.message, AsyncDecline.message);
     });
 
+    test("AsyncDecline's text is its message", () {
+      expect(
+        const AsyncDecline().toString(),
+        'AsyncDecline: ${AsyncDecline.message}',
+      );
+    });
+
     test("ExternalException's text names its type and message", () {
       expect(
         const ExternalException('ValueError').toString(),

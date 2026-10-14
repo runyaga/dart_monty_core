@@ -635,6 +635,9 @@ final class AsyncDecline implements Exception {
   static const String message =
       'Cannot convert OsCallNotHandledException to Monty value: an OS '
       'handler declines only by throwing it synchronously';
+
+  @override
+  String toString() => 'AsyncDecline: $message';
 }
 
 /// `ResumeCall` declining [callId]'s OS call.
