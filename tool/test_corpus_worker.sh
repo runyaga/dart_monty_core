@@ -9,7 +9,7 @@
 #   bash tool/test_corpus_worker.sh firefox dart2wasm
 #
 # `native` needs the worker executable (tool/build_worker.sh, or CI's artefact).
-# The browser legs drive the COMMITTED lib/assets/dart_monty_core_proto_worker
+# The browser legs drive the COMMITTED lib/assets/dart_monty_core_worker
 # .{js,wasm} and need the browser on PATH (Firefox: FIREFOX_EXECUTABLE is not
 # read by `dart test`; put it on PATH).
 #

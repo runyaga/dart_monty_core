@@ -355,7 +355,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # The same pinned suite's `e0` cases (tool/parity/e0.json), run through the
   # monty-proto worker rather than the public API: the executable worker-rust
-  # built on the VM, the committed lib/assets/dart_monty_core_proto_worker
+  # built on the VM, the committed lib/assets/dart_monty_core_worker
   # .{js,wasm} in Chrome on dart2js and dart2wasm. Every counted case must
   # MATCH upstream on each backend (s07, complex, is deferred and reported,
   # not counted). Each run also runs the suite's worker crash tests on that
@@ -1406,7 +1406,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # WorkerChannel in Chrome against the COMMITTED proto worker wasm
   # ---------------------------------------------------------------------------
-  # lib/assets/dart_monty_core_proto_worker.{js,wasm} through WorkerChannel on
+  # lib/assets/dart_monty_core_worker.{js,wasm} through WorkerChannel on
   # both Dart web compilers: two Workers sharing one compiled Module, a wasm
   # trap surfacing as MontyCrashedError with a working replacement, kill,
   # protocol skew, and `jspi == true` on Chrome plus the forced-fallback

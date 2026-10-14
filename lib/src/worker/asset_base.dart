@@ -17,10 +17,10 @@ const String packageAssetBase = 'packages/dart_monty_core/assets';
 const List<String> assetBases = [flutterAssetBase, packageAssetBase];
 
 /// The worker script under [base].
-String workerScriptUrl(String base) => '$base/dart_monty_core_proto_worker.js';
+String workerScriptUrl(String base) => '$base/dart_monty_core_worker.js';
 
 /// The worker module under [base].
-String workerWasmUrl(String base) => '$base/dart_monty_core_proto_worker.wasm';
+String workerWasmUrl(String base) => '$base/dart_monty_core_worker.wasm';
 
 /// The first of [assetBases] whose worker script [exists]; throws
 /// [StateError] naming every URL tried when none does.

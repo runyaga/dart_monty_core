@@ -7,9 +7,9 @@
 #   lib/assets/dart_monty_core_bridge.js         (IIFE main-thread bridge)
 #   lib/assets/dart_monty_core_worker.js         (ESM WASM worker)
 #   lib/assets/dart_monty_core_native.wasm       (Rust engine compiled to WASI)
-#   lib/assets/dart_monty_core_proto_worker.wasm (native/worker, O7 profile)
+#   lib/assets/dart_monty_core_worker.wasm (native/worker, O7 profile)
 #
-# lib/assets/dart_monty_core_proto_worker.js is NOT built: it is the
+# lib/assets/dart_monty_core_worker.js is NOT built: it is the
 # hand-written Web Worker that runs the proto worker wasm, edited in place.
 #
 # These files are committed to git (Mode A asset distribution).

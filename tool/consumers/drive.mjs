@@ -12,7 +12,7 @@
 // What it checks, beyond "the DOM reads 2":
 //   - no uncaught exception and no console error (Chrome's own
 //     "Failed to load resource" line for the one allowed 404 below excepted);
-//   - dart_monty_core_proto_worker.js and .wasm were each served 200 from the
+//   - dart_monty_core_worker.js and .wasm were each served 200 from the
 //     layout's base (--layout), so a page that found its worker somewhere else
 //     fails;
 //   - the only non-2xx request for a worker asset is the other layout's
@@ -40,7 +40,7 @@ const BASES = {
   flutter: 'assets/packages/dart_monty_core/lib/assets',
   package: 'packages/dart_monty_core/assets',
 };
-const WORKER = 'dart_monty_core_proto_worker';
+const WORKER = 'dart_monty_core_worker';
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.map': 'application/json',

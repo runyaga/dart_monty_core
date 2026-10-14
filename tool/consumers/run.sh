@@ -30,7 +30,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT_ROOT="$HERE/build"
-ASSET_STEM=dart_monty_core_proto_worker
+ASSET_STEM=dart_monty_core_worker
 PROTO_ASSETS=("$ASSET_STEM.js" "$ASSET_STEM.wasm")
 
 fail() { echo "FAIL: $*"; exit 1; }

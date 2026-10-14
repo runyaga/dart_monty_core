@@ -9,43 +9,15 @@ build/
 coverage/
 
 # Rust
-native/target/
 native/worker/target/
 # Worker executables from tool/build_worker.sh (contributor and CI builds).
 lib/src/bin/
-# native/Cargo.lock IS committed (deliberately un-ignored during the monty 0.19
-# upgrade). Cargo's "libraries don't commit lockfiles" convention does not apply
-# here: hook/build.dart compiles this crate as a TOP-LEVEL package on every
-# consumer's `pub get`, so it behaves like an application and the lockfile is
-# honoured. Without it every consumer re-resolves transitively and can get a
-# broken tree — which happened for real: fresh resolution picked get-size2
-# 0.10.3, whose GetSize impl targets a different compact_str major than
-# ruff_python_ast 0.0.3 uses, so the build failed with an unsatisfied trait
-# bound in a dependency we do not control. Upstream monty pins get-size2 0.10.1
-# in its own committed lockfile and builds fine.
-
-# JS bridge build deps
-js/node_modules/
-
 # DCM local config contains credentials — never commit
 .dcm.yaml
 
 # assets/ JS/WASM files ARE committed to git (Mode A asset distribution).
 # Regenerate with: bash tool/prebuild.sh
 # CI verifies no drift on every PR.
-
-# WASM test runner staging (copied from assets/ before each test run)
-test/integration/web/dart_monty_core_bridge.js
-test/integration/web/dart_monty_core_worker.js
-test/integration/web/dart_monty_core_native.wasm
-test/integration/web/wasm_runner.dart.js
-test/integration/web/wasm_runner.dart.js.map
-test/integration/web/wasm_runner.dart.js.deps
-
-# WASM unit-test staging (copied by tool/test_wasm_unit.sh, removed on exit)
-test/integration/dart_monty_core_bridge.js
-test/integration/dart_monty_core_worker.js
-test/integration/dart_monty_core_native.wasm
 
 # macOS
 .DS_Store

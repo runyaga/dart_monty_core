@@ -550,7 +550,7 @@ void main() {
         workerScriptUrl(packageAssetBase),
       ]);
       expect(await resolveAssetBase((_) async => true), flutterAssetBase);
-      expect(workerWasmUrl('b'), 'b/dart_monty_core_proto_worker.wasm');
+      expect(workerWasmUrl('b'), 'b/dart_monty_core_worker.wasm');
     });
 
     test('no assets anywhere: a StateError naming what was tried', () {

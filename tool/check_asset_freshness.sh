@@ -2,32 +2,14 @@
 # =============================================================================
 # Are the committed assets stale relative to their sources?
 # =============================================================================
-# lib/assets/{dart_monty_core_bridge.js,dart_monty_core_worker.js,
-# dart_monty_core_native.wasm,dart_monty_core_proto_worker.wasm} are COMMITTED
-# build artefacts. The wasm build is NOT byte-reproducible -- an unchanged tree
+# lib/assets/dart_monty_core_worker.wasm is a COMMITTED build artefact (its
+# loader, dart_monty_core_worker.js, is hand-written source). The wasm build is NOT byte-reproducible -- an unchanged tree
 # yields different bytes -- so `git diff` on the blob can never tell you whether
 # the asset matches the crate.
 #
-# Hashing the OUTPUT is therefore useless. Hashing the INPUT is not: native/src,
-# native/Cargo.{toml,lock}, js/src and the build recipes are ordinary files and
-# hash deterministically.
-#
-# This is the layer that needs no one to remember anything:
-#
-#   source hash    (here)          stale asset, mechanical, cannot be forgotten
-#   WIRE_FORMAT_VERSION            deliberate format change, declared by hand
-#   repr differential              wrong values, behavioural
-#
-# The middle layer alone is not enough: change the encoding, forget to bump the
-# version, forget to rebuild, and both sides report v1 and agree. This catches
-# that, because the hash is DERIVED rather than declared.
-#
-# TWO RECORDS, because there are two independent builds. `source_sha256` covers
-# the in-process engine (native/, js/); `worker_source_sha256` covers the proto
-# worker wasm (native/worker/, built by `tool/prebuild.sh --worker-only`). One
-# combined hash would let a worker-only rebuild re-record the in-process assets
-# as fresh without rebuilding them, and rebuilding them would rewrite committed
-# bytes for no source change.
+# Hashing the OUTPUT is therefore useless. Hashing the INPUT is not:
+# native/worker/, the shared toolchain file and the build recipes are ordinary
+# files and hash deterministically.
 #
 # It also fails if any committed lib/assets/*.wasm embeds a build-machine
 # absolute path (see leaked_paths below). The recipes remap those away
@@ -35,9 +17,9 @@
 # the builder's home directory into every published copy of the package.
 #
 # Usage:
-#   bash tool/check_asset_freshness.sh                   # verify both
-#   bash tool/check_asset_freshness.sh --update [SCOPE]  # re-record; SCOPE is
-#       all (default), native or worker. tool/prebuild.sh does this.
+#   bash tool/check_asset_freshness.sh                   # verify
+#   bash tool/check_asset_freshness.sh --update [worker] # re-record;
+#       tool/prebuild.sh does this.
 # =============================================================================
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -53,17 +35,7 @@ hash_files() {
   done | shasum -a 256 | awk '{print $1}'
 }
 
-# Everything the in-process assets are built FROM, recipe included.
-source_hash() {
-  {
-    find native/src -type f -name '*.rs' -print0 2>/dev/null
-    printf '%s\0' native/Cargo.toml native/Cargo.lock native/build.rs \
-      tool/build_native_wasm.sh tool/rust_remap.sh js/build.js
-    find js/src -type f -name '*.js' -print0 2>/dev/null
-  } | hash_files
-}
-
-# Everything lib/assets/dart_monty_core_proto_worker.wasm is built FROM: every
+# Everything lib/assets/dart_monty_core_worker.wasm is built FROM: every
 # file under native/worker/ (sources, the verbatim upstream copy, manifest,
 # lock, build.rs), the toolchain file it shares, and the build recipe (cargo
 # profile, wasm-opt flags, path remapping). target/ is build output.
@@ -166,40 +138,31 @@ sys.exit(rc)
 PY
 }
 
-HAVE=$(source_hash)
 HAVE_WORKER=$(worker_source_hash)
 
 if [ "${1:-}" = "--update" ]; then
   SCOPE="${2:-all}"
   case "$SCOPE" in
-    all|native|worker) ;;
-    *) echo "FAIL: --update scope is all, native or worker (got '$SCOPE')"
+    all|worker) ;;
+    *) echo "FAIL: --update scope is worker (got '$SCOPE')"
        exit 2 ;;
   esac
-  python3 - "$SCOPE" "$HAVE" "$HAVE_WORKER" <<'PY'
+  python3 - "$SCOPE" "$HAVE_WORKER" <<'PY'
 import hashlib, json, sys
-scope, have, have_worker = sys.argv[1:4]
+scope, have_worker = sys.argv[1:3]
 p = 'tool/wasm-provenance.json'
 try:
     d = json.load(open(p))
 except FileNotFoundError:
     d = {}
-if scope in ('all', 'native'):
-    d['source_sha256'] = have
-    for name in ('dart_monty_core_native.wasm', 'dart_monty_core_bridge.js',
-                 'dart_monty_core_worker.js'):
-        blob = open(f'lib/assets/{name}', 'rb').read()
-        d.setdefault('assets', {})[name] = {
-            'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest()}
-    d['_source_sha256_comment'] = (
-        'sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs, js/src/**.js, '
-        'js/build.js, tool/build_native_wasm.sh and tool/rust_remap.sh -- '
-        'the INPUTS to the committed assets. The assets themselves are not '
-        'byte-reproducible, so hashing them proves nothing; hashing what they are '
-        'built from proves everything that matters. Updated by tool/prebuild.sh.')
-    print(f"  recorded source_sha256 = {have[:16]}…")
+for k in ('source_sha256', '_source_sha256_comment', 'monty_tag',
+          'native_commit'):
+    d.pop(k, None)
+for k in ('dart_monty_core_native.wasm', 'dart_monty_core_bridge.js',
+          'dart_monty_core_worker.js', 'dart_monty_core_proto_worker.wasm'):
+    d.get('assets', {}).pop(k, None)
 if scope in ('all', 'worker'):
-    name = 'dart_monty_core_proto_worker.wasm'
+    name = 'dart_monty_core_worker.wasm'
     blob = open(f'lib/assets/{name}', 'rb').read()
     d.setdefault('assets', {})[name] = {
         'bytes': len(blob), 'sha256': hashlib.sha256(blob).hexdigest()}
@@ -207,7 +170,7 @@ if scope in ('all', 'worker'):
     d['_worker_source_sha256_comment'] = (
         'sha256 over every file under native/worker/ (target/ excluded), '
         'native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to '
-        'lib/assets/dart_monty_core_proto_worker.wasm. Updated by '
+        'lib/assets/dart_monty_core_worker.wasm. Updated by '
         'tool/prebuild.sh, either scope.')
     print(f"  recorded worker_source_sha256 = {have_worker[:16]}…")
 with open(p, 'w') as fh:
@@ -228,32 +191,16 @@ fi
 recorded() {
   python3 -c "import json,sys;print(json.load(open('$RECORD')).get(sys.argv[1],''))" "$1"
 }
-WANT=$(recorded source_sha256)
 WANT_WORKER=$(recorded worker_source_sha256)
 
-if [ -z "$WANT" ] || [ -z "$WANT_WORKER" ]; then
-  echo "FAIL: $RECORD lacks source_sha256 or worker_source_sha256."
+if [ -z "$WANT_WORKER" ]; then
+  echo "FAIL: $RECORD lacks worker_source_sha256."
   echo "  Run: bash tool/prebuild.sh   (or: bash tool/check_asset_freshness.sh --update)"
   exit 1
 fi
 
-if [ "$HAVE" != "$WANT" ]; then
-  echo "FAIL: the committed assets in lib/assets/ are STALE."
-  echo "  asset sources hash to : $HAVE"
-  echo "  assets were built from: $WANT"
-  echo
-  echo "  Something under native/src, native/Cargo.{toml,lock}, js/src or a recipe"
-  echo "  (tool/build_native_wasm.sh, tool/rust_remap.sh, js/build.js) changed"
-  echo "  since the assets were last built, so the FFI path is running your"
-  echo "  change and the WASM path is running the old one. That divergence is"
-  echo "  invisible to \`git diff\` — the wasm build is not byte-reproducible."
-  echo
-  echo "  Fix:  bash tool/prebuild.sh   (rebuilds and re-records)"
-  exit 1
-fi
-
 if [ "$HAVE_WORKER" != "$WANT_WORKER" ]; then
-  echo "FAIL: lib/assets/dart_monty_core_proto_worker.wasm is STALE."
+  echo "FAIL: lib/assets/dart_monty_core_worker.wasm is STALE."
   echo "  worker sources hash to : $HAVE_WORKER"
   echo "  the wasm was built from: $WANT_WORKER"
   echo
@@ -262,12 +209,11 @@ if [ "$HAVE_WORKER" != "$WANT_WORKER" ]; then
   echo "  wasm was last built, so the browser WorkerChannel runs a module that"
   echo "  recipe did not produce."
   echo
-  echo "  Fix:  bash tool/prebuild.sh --worker-only   (rebuilds and re-records)"
+  echo "  Fix:  bash tool/prebuild.sh   (rebuilds and re-records)"
   exit 1
 fi
 
 [ "$PATHS_RC" -eq 0 ] || exit 1
 
-echo "OK: committed assets match their sources ($HAVE)"
-echo "OK: proto worker wasm matches native/worker ($HAVE_WORKER)"
+echo "OK: worker wasm matches native/worker ($HAVE_WORKER)"
 echo "OK: no committed wasm embeds a build-machine absolute path"
