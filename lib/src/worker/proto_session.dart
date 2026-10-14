@@ -10,16 +10,12 @@ library;
 
 import 'dart:async';
 
-import 'package:collection/collection.dart';
-
-import 'package:dart_monty_core/src/platform/monty_error.dart';
-import 'package:dart_monty_core/src/platform/monty_exception.dart';
-import 'package:dart_monty_core/src/platform/monty_stack_frame.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -34,8 +30,11 @@ const String _driverVersion = 'dart_monty_core';
 
 /// One Python session on one worker.
 ///
-/// A Python exception in fed code throws [MontyScriptError] (or
+/// A Python exception in fed code throws [MontyRuntimeError] (or
 /// [MontySyntaxError]) carrying the traceback, and the session stays usable.
+/// A worker that answers against the protocol is killed, and the call
+/// throws [MontyCrashedError] with upstream's `monty worker protocol error`
+/// message.
 /// A dead worker throws [MontyCrashedError], and the session is over: open a
 /// new one on a new channel.
 ///
@@ -72,7 +71,7 @@ final class ProtoSession {
   /// result also lists them all, unless [FeedOptions.collectPrints] is false.
   ///
   /// [options] adjust the feed (see [FeedOptions]). A snippet a
-  /// type-checking session's check rejects throws [MontyTypeCheckError].
+  /// type-checking session's check rejects throws [MontyTypingError].
   Future<FeedResult> feed(
     String code, {
     Map<String, MontyValue> inputs = const {},
@@ -101,10 +100,8 @@ final class ProtoSession {
       }
       sink.rethrowFailure();
       if (event.whichKind() == pb.ChildEvent_Kind.complete) {
-        final complete = event.complete;
-
         return FeedResult(
-          ArenaReader(complete.values)[complete.value],
+          _value(event.complete),
           List.unmodifiable(sink.prints),
         );
       }
@@ -142,12 +139,11 @@ final class ProtoSession {
     ProtoOsCallHandler? onOsCall,
     Duration? systemSleepMax,
   ) async => switch (event.whichKind()) {
-    pb.ChildEvent_Kind.error => _throwRaised(event.error.exception),
+    pb.ChildEvent_Kind.error => _throwRaised(event.error),
     // Only a type-checking session's feed may end this way.
-    pb.ChildEvent_Kind.typingError when _config.typeCheck =>
-      throw MontyTypeCheckError(
-        event.typingError.diagnostics,
-      ),
+    pb.ChildEvent_Kind.typingError when _config.typeCheck => throw typingError(
+      event.typingError.diagnostics,
+    ),
     pb.ChildEvent_Kind.nameLookup => _answerNameLookup(
       event.nameLookup.name,
       externals,
@@ -163,8 +159,27 @@ final class ProtoSession {
     pb.ChildEvent_Kind.osCall => await _answerOsCall(event.osCall, onOsCall),
     // Never sent without the request that asks for it (futures, type
     // checking, dumps), or not a feed's answer at all.
-    _ => _desync('Feed', event),
+    _ => _violation('unexpected event: ${event.whichKind().name}'),
   };
+
+  /// The value [complete] carries; one that does not decode is a protocol
+  /// violation (upstream's "invalid payload from worker").
+  MontyValue _value(pb.Complete complete) {
+    try {
+      return ArenaReader(complete.values)[complete.value];
+    } on FormatException catch (e) {
+      _violation('invalid payload from worker: ${e.message}');
+    }
+  }
+
+  /// Throws the error an `Error` event is. One whose exception fails
+  /// upstream's checks is a protocol violation, and the worker is killed.
+  Never _throwRaised(pb.Error event) {
+    if (!event.hasException()) _violation('error event with no exception');
+    final error = raisedError(event.exception);
+    if (error is MontyCrashedError) _channel.kill();
+    throw error;
+  }
 
   /// Runs [body] as the one request in flight.
   Future<T> _guard<T>(Future<T> Function() body) async {
@@ -181,16 +196,15 @@ final class ProtoSession {
     }
   }
 
-  /// The worker answered [request] with an event that cannot follow it, so
-  /// its state is unknown: kill it rather than guess.
-  Never _desync(String request, pb.ChildEvent event) {
+  /// The worker answered [request] with an event that cannot follow it.
+  Never _desync(String request, pb.ChildEvent event) =>
+      _violation('unexpected reply to $request: ${event.whichKind().name}');
+
+  /// The worker answered against the protocol, so its state is unknown:
+  /// kill it rather than guess (upstream's `protocol_violation`).
+  Never _violation(String detail) {
     _channel.kill();
-    throw MontyCrashedError(
-      CrashCause.killed,
-      message:
-          'protocol desync: $request was answered with '
-          '${event.whichKind().name}',
-    );
+    throw protocolError(detail);
   }
 }
 
@@ -274,21 +288,6 @@ final class FeedOptions {
   /// Whether the caller has given up on the feed; once true, no further
   /// print is delivered.
   final bool Function()? abandoned;
-}
-
-/// A snippet the session's type check rejected; it did not run, and the
-/// session stays usable.
-///
-/// Internal until C3 designs the public typing error.
-final class MontyTypeCheckError implements Exception {
-  /// Creates the error for [diagnostics].
-  const MontyTypeCheckError(this.diagnostics);
-
-  /// The diagnostics, rendered in the session's type-check format.
-  final String diagnostics;
-
-  @override
-  String toString() => 'MontyTypeCheckError: $diagnostics';
 }
 
 /// Waits a system sleep, cut to [max], and answers it with `None`.
@@ -598,46 +597,6 @@ pb.RaisedException _raisedFrom(Object error) => switch (error) {
     ),
   _ => pb.RaisedException(excType: 'RuntimeError', message: '$error'),
 };
-
-/// Throws the in-band error a Python exception maps to.
-Never _throwRaised(pb.RaisedException raised) {
-  final traceback = [for (final f in raised.traceback) _frame(f)];
-  final innermost = traceback.lastOrNull;
-  final message = raised.hasMessage() ? raised.message : '';
-  final exception = MontyException(
-    message: message,
-    excType: raised.excType,
-    traceback: List.unmodifiable(traceback),
-    filename: innermost?.filename,
-    lineNumber: innermost?.startLine,
-    columnNumber: innermost?.startColumn,
-    sourceCode: innermost?.previewLine,
-  );
-  if (raised.excType == 'SyntaxError') {
-    throw MontySyntaxError(
-      message,
-      excType: raised.excType,
-      exception: exception,
-    );
-  }
-  throw MontyScriptError(
-    message,
-    excType: raised.excType,
-    exception: exception,
-  );
-}
-
-MontyStackFrame _frame(pb.StackFrame f) => MontyStackFrame(
-  filename: f.filename,
-  startLine: f.start.line,
-  startColumn: f.start.column,
-  endLine: f.hasEnd() ? f.end.line : null,
-  endColumn: f.hasEnd() ? f.end.column : null,
-  frameName: f.hasFrameName() ? f.frameName : null,
-  previewLine: f.hasPreviewLine() ? f.previewLine : null,
-  hideCaret: f.hideCaret,
-  hideFrameName: f.hideFrameName,
-);
 
 /// Throws [ArgumentError] for a negative print flush interval, with
 /// upstream's message.

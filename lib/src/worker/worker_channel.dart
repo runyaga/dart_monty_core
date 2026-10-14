@@ -160,9 +160,9 @@ Future<bool> workerScriptServed(String url) async {
   }
 }
 
-MontyCrashedError _cancelledError() => MontyCrashedError(
+MontyCrashedError _cancelledError() => crashedError(
   CrashCause.killed,
-  message: 'the Worker start was cancelled',
+  detail: 'the Worker start was cancelled',
 );
 
 /// The page-lifetime compiled module: fetched and compiled once, lazily, then

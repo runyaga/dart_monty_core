@@ -15,13 +15,15 @@
 /// The record keeps the wire's absent message apart from an empty one: the
 /// renderer prints `Type` for the first and `Type: ` for the second.
 ///
-/// The frames are rendered as given: the checks upstream applies to a
-/// raised exception before rendering it (present positions, columns within
-/// the preview line) are not made here.
+/// [RaisedRecord.checked] applies upstream's checks on a raised exception
+/// before it is rendered (a known type, present positions, columns within
+/// the preview line); [RaisedRecord.fromWire] renders the frames as given.
 ///
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'package:dart_monty_core/src/worker/arena_nodes.dart'
+    show exceptionTypeNames, rustDebug;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
 /// How many identical consecutive frames are shown before the rest collapse
@@ -42,6 +44,28 @@ final class RaisedRecord {
     raised.hasMessage() ? raised.message : null,
     List.unmodifiable(raised.traceback.map(TracebackFrame.fromWire)),
   );
+
+  /// The exception [raised] carries, after upstream's checks
+  /// (`monty-proto`'s conversion of a `RaisedException`): its type must be
+  /// one upstream knows, and each frame must have both positions and, for a
+  /// span on one line with a preview line, an end column neither before the
+  /// start column nor more than 2 past the preview's characters (a span
+  /// over several lines is not checked). A frame's columns decide the caret
+  /// padding and width, so this keeps an untrusted worker from making the
+  /// renderer misplace carets or allocate without bound.
+  ///
+  /// Throws [InvalidRaisedException] with upstream's reason when a check
+  /// fails.
+  factory RaisedRecord.checked(pb.RaisedException raised) {
+    if (!exceptionTypeNames.contains(raised.excType)) {
+      throw InvalidRaisedException(
+        'unknown exception type ${rustDebug(raised.excType)}',
+      );
+    }
+    raised.traceback.forEach(_checkFrame);
+
+    return RaisedRecord.fromWire(raised);
+  }
 
   /// The exception type's name.
   final String excType;
@@ -265,4 +289,45 @@ List<String> _rustLines(String text) {
   }
 
   return lines;
+}
+
+/// A raised exception that fails upstream's checks; [detail] is upstream's
+/// reason (its `ProtoConvertError` text).
+final class InvalidRaisedException implements Exception {
+  /// Creates the failure for [detail].
+  const InvalidRaisedException(this.detail);
+
+  /// Upstream's reason.
+  final String detail;
+
+  @override
+  String toString() => 'InvalidRaisedException: $detail';
+}
+
+void _checkFrame(pb.StackFrame frame) {
+  if (!frame.hasStart()) {
+    throw const InvalidRaisedException(
+      'missing required field StackFrame.start',
+    );
+  }
+  if (!frame.hasEnd()) {
+    throw const InvalidRaisedException('missing required field StackFrame.end');
+  }
+  final start = frame.start;
+  final end = frame.end;
+  if (!frame.hasPreviewLine() || start.line != end.line) return;
+  if (end.column < start.column) {
+    throw InvalidRaisedException(
+      'invalid value for StackFrame.end.column: ${end.column} is before '
+      'start column ${start.column}',
+    );
+  }
+  // Characters as Rust counts them: Unicode scalar values.
+  final chars = frame.previewLine.runes.length;
+  if (end.column > chars + 2) {
+    throw InvalidRaisedException(
+      'invalid value for StackFrame.end.column: ${end.column} is beyond '
+      'the $chars-character preview line',
+    );
+  }
 }

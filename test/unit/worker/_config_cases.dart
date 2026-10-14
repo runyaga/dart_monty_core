@@ -8,7 +8,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/dart_monty_core.dart'
+    hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
@@ -81,6 +83,11 @@ final Map<String, SessionConfig> configCases = {
   'seed_nan': _seed(const RandomSeed.float(double.nan)),
   'seed_inf': _seed(const RandomSeed.float(double.infinity)),
   'seed_negative_inf': _seed(const RandomSeed.float(double.negativeInfinity)),
+  'type_check_full': const SessionConfig(typeCheck: true),
+  'type_check_concise': const SessionConfig(
+    typeCheck: true,
+    typeCheckFormat: 'concise',
+  ),
   'type_check_format_upper': const SessionConfig(
     typeCheck: true,
     typeCheckFormat: 'JSON',
@@ -198,10 +205,18 @@ Future<String> _outcome(
     );
 
     return 'value: ${(value as MontyString).value}';
-  } on MontyTypeCheckError catch (e) {
-    return 'MontyTypingError: ${e.diagnostics}';
-  } on MontyScriptError catch (e) {
-    return 'MontyRuntimeError: ${e.excType}: ${e.message}';
+  } on MontyTypingError catch (e) {
+    // Upstream's str() and display() are the same rendering, and its
+    // exception() is TypeError('').
+    expect('$e', e.display());
+    expect(
+      e.exception,
+      const MontyExceptionValue(excType: 'TypeError', message: ''),
+    );
+
+    return 'MontyTypingError: ${e.display()}';
+  } on MontyRuntimeError catch (e) {
+    return "MontyRuntimeError: ${e.display('type-msg')}";
   } finally {
     await session.close();
   }
@@ -212,7 +227,7 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.
-    expect(configOracle.length, greaterThanOrEqualTo(55));
+    expect(configOracle.length, greaterThanOrEqualTo(57));
   });
 
   for (final MapEntry(key: id, value: (:code, :outcome))

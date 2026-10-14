@@ -1,38 +1,44 @@
-// MontyCrashedError is pure Dart and shared by the native and web channels,
-// so it is tested on every compiler.
+// The channel's crash helpers (lib/src/worker/monty_channel.dart). Pure
+// Dart: vm, dart2js and dart2wasm.
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('MontyCrashedError.toString', () {
-    test('names only the cause when that is all it has', () {
-      expect(
-        MontyCrashedError(CrashCause.killed).toString(),
-        'MontyCrashedError(killed)',
+  group('repeatCrash', () {
+    test('a repeat is the same crash', () {
+      final crash = crashedError(
+        CrashCause.fatal,
+        detail: 'd',
+        exitCode: 2,
+        stderrTail: 's',
       );
+      final again = repeatCrash(crash);
+      expect(again, isNot(same(crash)));
+      expect(
+        (again.message, again.cause, again.detail, again.exitStatus),
+        (crash.message, crash.cause, crash.detail, crash.exitStatus),
+      );
+      expect(again.stderrTail, 's');
+      expect(again.timedOut, crash.timedOut);
     });
 
-    test('names every field it has, in order', () {
-      expect(
-        MontyCrashedError(
-          CrashCause.fatal,
-          exitCode: 4,
-          message: 'm',
-          stderrTail: 's',
-        ).toString(),
-        'MontyCrashedError(fatal, exit code 4, m, stderr: s)',
+    test('a deadline kill and a context are kept too', () {
+      final killed = repeatCrash(
+        crashedError(
+          CrashCause.killed,
+          detail: 'monty worker killed after exceeding request timeout of 1s',
+          timedOut: true,
+        ),
       );
-    });
-
-    test('a negative exit code is a signal', () {
+      expect(killed.timedOut, isTrue);
       expect(
-        MontyCrashedError(CrashCause.vanished, exitCode: -9).toString(),
-        'MontyCrashedError(vanished, exit code -9)',
+        killed.message,
+        'monty worker killed after exceeding request timeout of 1s',
       );
+      final lost = repeatCrash(
+        crashedError(CrashCause.vanished, context: sendingRequest),
+      );
+      expect(lost.message, 'monty worker crashed while sending a request');
     });
-  });
-
-  test('is an Error, not an Exception: a dead worker is not recoverable', () {
-    expect(MontyCrashedError(CrashCause.outOfMemory), isA<Error>());
   });
 }

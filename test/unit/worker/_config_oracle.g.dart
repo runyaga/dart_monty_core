@@ -125,6 +125,16 @@ const Map<String, ({String? code, String outcome})> configOracle = {
     code: null,
     outcome: 'ValueError: random_start seed must be finite, not -inf',
   ),
+  'type_check_full': (
+    code: 'x: int = "a"',
+    outcome:
+        'MontyTypingError: error[invalid-assignment]: Object of type `Literal["a"]` is not assignable to `int`\n --> main.py:1:10\n  |\n1 | x: int = "a"\n  |    ---   ^^^ Incompatible value of type `Literal["a"]`\n  |    |\n  |    Declared type\n\n',
+  ),
+  'type_check_concise': (
+    code: 'x: int = "a"\ny: str = 1',
+    outcome:
+        'MontyTypingError: main.py:1:10: error[invalid-assignment] Object of type `Literal["a"]` is not assignable to `int`\nmain.py:2:10: error[invalid-assignment] Object of type `Literal[1]` is not assignable to `str`\n',
+  ),
   'type_check_format_upper': (
     code: 'x: int = "a"',
     outcome:

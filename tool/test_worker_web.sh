@@ -19,8 +19,8 @@
 # by 8 points for a reason that has nothing to do with this suite.
 #
 # Each compiler's run has its own test-count floor: `dart test` exits 0 on a
-# tag filter that matches nothing. 106 tests per compiler observed (22
-# channel tests, 20 display cases, 7 pool-session tests, 57 session-settings
+# tag filter that matches nothing. 108 tests per compiler observed (22
+# channel tests, 20 display cases, 7 pool-session tests, 59 session-settings
 # oracle cases).
 #
 # The coverage run loads one suite at a time (`-j 1`). Chrome's precise

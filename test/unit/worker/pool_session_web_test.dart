@@ -12,8 +12,9 @@ import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
-import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/dart_monty_core.dart'
+    hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -89,8 +90,8 @@ void main() {
           await expectLater(
             s.feedRun('x', printCallback: _ignore),
             throwsA(
-              isA<MontyScriptError>().having(
-                (e) => e.excType,
+              isA<MontyRuntimeError>().having(
+                (e) => e.exception.excType,
                 'excType',
                 'NameError',
               ),
@@ -154,11 +155,27 @@ void main() {
         await expectLater(
           session.feedRun('while True:\n    pass', printCallback: _ignore),
           throwsA(
-            isA<MontyCrashedError>().having(
-              (e) => e.cause,
-              'cause',
-              CrashCause.killed,
-            ),
+            isA<MontyCrashedError>()
+                .having((e) => e.cause, 'cause', CrashCause.killed)
+                // Upstream's MontyCrashedError for a request_timeout kill.
+                .having((e) => e.timedOut, 'timedOut', isTrue)
+                .having((e) => e.exitStatus, 'exitStatus', isNull)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'monty worker killed after exceeding request '
+                      'timeout of 1s',
+                )
+                .having(
+                  (e) => e.exception,
+                  'exception',
+                  const MontyExceptionValue(
+                    excType: 'RuntimeError',
+                    message:
+                        'monty worker killed after exceeding request '
+                        'timeout of 1s',
+                  ),
+                ),
           ),
         );
         expect(pool.liveWorkers, 0);
@@ -216,8 +233,8 @@ void main() {
               printCallback: _ignore,
             ),
             throwsA(
-              isA<MontyScriptError>()
-                  .having((e) => e.excType, 'excType', 'RuntimeError')
+              isA<MontyRuntimeError>()
+                  .having((e) => e.exception.excType, 'excType', 'RuntimeError')
                   .having((e) => e.message, 'message', contains('1000')),
             ),
           );
@@ -243,7 +260,7 @@ void main() {
           (s) async {
             await expectLater(
               s.feedRun('x: int = "a"', printCallback: _ignore),
-              throwsA(isA<MontyTypeCheckError>()),
+              throwsA(isA<MontyTypingError>()),
             );
             expect(
               await s.feedRun('y: int = 2\ny', printCallback: _ignore),

@@ -72,10 +72,9 @@ pb.ChildEvent _print(String text) => pb.ChildEvent(
 final pb.ChildEvent _ok = pb.ChildEvent(ok: pb.Ok());
 final pb.ParentRequest _feed = pb.ParentRequest(feed: pb.Feed(code: '1 + 1'));
 
-Matcher _crashed(CrashCause cause, [Object? message]) =>
-    isA<MontyCrashedError>()
-        .having((e) => e.cause, 'cause', cause)
-        .having((e) => e.message, 'message', message ?? anything);
+Matcher _crashed(CrashCause cause, [Object? detail]) => isA<MontyCrashedError>()
+    .having((e) => e.cause, 'cause', cause)
+    .having((e) => e.detail, 'detail', detail ?? anything);
 
 final Matcher _throwsKilled = throwsA(_crashed(CrashCause.killed));
 final Matcher _throwsVanished = throwsA(_crashed(CrashCause.vanished));
@@ -549,24 +548,6 @@ void main() {
       await c.close();
       expect(port.posted, isEmpty);
       expect(port.terminated, 1);
-    });
-  });
-
-  group('MontyCrashedError', () {
-    test('toString names the cause and what is known', () {
-      expect(
-        MontyCrashedError(CrashCause.killed).toString(),
-        'MontyCrashedError(killed)',
-      );
-      expect(
-        MontyCrashedError(
-          CrashCause.outOfMemory,
-          exitCode: 65,
-          message: 'EOF',
-          stderrTail: 'oom',
-        ).toString(),
-        'MontyCrashedError(outOfMemory, exit code 65, EOF, stderr: oom)',
-      );
     });
   });
 }

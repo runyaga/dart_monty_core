@@ -299,7 +299,7 @@ void main() {
     await ch.close();
   });
 
-  test('kill mid-turn is MontyCrashedError(killed) ($backend)', () async {
+  test('kill mid-turn is crashedError(killed) ($backend)', () async {
     final ch = await _spawn(cache);
     await _open(ch);
     final spinning = expectLater(
@@ -321,7 +321,7 @@ void main() {
 
   for (final noJspi in [false, true]) {
     final mode = noJspi ? 'forced fallback' : 'JSPI';
-    test('a wasm trap is MontyCrashedError(vanished); a replacement '
+    test('a wasm trap is crashedError(vanished); a replacement '
         'Worker works ($mode, $backend)', () async {
       final ch = await _spawn(cache, forceNoJspi: noJspi);
       expect(ch.jspi, !noJspi);
@@ -335,7 +335,7 @@ void main() {
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.vanished)
               // Chrome's text for a wasm stack overflow; CI runs Chrome.
-              .having((e) => e.message, 'message', contains('RangeError')),
+              .having((e) => e.detail, 'detail', contains('RangeError')),
         ),
       );
       expect(ch.isAlive, isFalse);
@@ -379,7 +379,7 @@ void main() {
     }
   });
 
-  test('an error in a Worker that greeted is MontyCrashedError(vanished) '
+  test('an error in a Worker that greeted is crashedError(vanished) '
       '($backend)', () async {
     // Greets correctly, then throws on the first request.
     final url = _scriptUrl(
@@ -522,7 +522,7 @@ void main() {
     expect(defaultMaxProcesses(), greaterThanOrEqualTo(1));
   });
 
-  test('a Worker that cannot load is MontyCrashedError(vanished) '
+  test('a Worker that cannot load is crashedError(vanished) '
       '($backend)', () async {
     await expectLater(
       WorkerChannel.spawn(cache, workerUrl: '$_assets/no_such_worker.js'),

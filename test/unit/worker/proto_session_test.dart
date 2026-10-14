@@ -3,8 +3,9 @@
 // in-band errors, reset, crashes and protocol desync. The replies are the
 // monty-proto messages a worker sends, so this pins the driver's half of the
 // protocol on the VM, dart2js and dart2wasm without a worker.
-import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/dart_monty_core.dart'
+    hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -100,7 +101,7 @@ void main() {
       );
     });
 
-    test('any other answer kills the worker as a desync', () async {
+    test('any other answer kills the worker: a protocol violation', () async {
       final ch = ScriptedChannel([
         answer([completeNone()]),
       ]);
@@ -108,8 +109,13 @@ void main() {
         ProtoSession.open(ch),
         throwsA(
           isA<MontyCrashedError>()
-              .having((e) => e.cause, 'cause', CrashCause.killed)
-              .having((e) => e.message, 'message', contains('Configure')),
+              .having((e) => e.cause, 'cause', CrashCause.protocol)
+              .having(
+                (e) => e.message,
+                'message',
+                'monty worker protocol error: unexpected reply to Configure: '
+                    'complete',
+              ),
         ),
       );
       expect(ch.kills, 1);
@@ -136,10 +142,10 @@ void main() {
         await expectLater(
           s.feed('x: int = ""'),
           throwsA(
-            isA<MontyTypeCheckError>().having(
+            isA<MontyTypingError>().having(
               (e) => '$e',
               'toString',
-              'MontyTypeCheckError: oops',
+              'oops',
             ),
           ),
         );
@@ -320,7 +326,7 @@ void main() {
         answer([raised('NameError', "name 'nope' is not defined")]),
       ]);
       final s = await ProtoSession.open(ch);
-      await expectLater(s.feed('nope'), throwsA(isA<MontyScriptError>()));
+      await expectLater(s.feed('nope'), throwsA(isA<MontyRuntimeError>()));
       expect(
         itemAt(ch.requests, 2).resumeNameLookup.whichKind(),
         pb.ResumeNameLookup_Kind.undefined,
@@ -377,7 +383,7 @@ void main() {
         answer([raised('NameError')]),
       ]);
       final s = await ProtoSession.open(ch);
-      await expectLater(s.feed('gone()'), throwsA(isA<MontyScriptError>()));
+      await expectLater(s.feed('gone()'), throwsA(isA<MontyRuntimeError>()));
       expect(itemAt(ch.requests, 2).resumeCall.result.notFound, 'gone');
     });
 
@@ -517,6 +523,41 @@ void main() {
       },
     );
 
+    test('every path OS call reaches the handler by upstream name', () async {
+      final calls = {
+        'Path.exists': pb.OsCall(exists: '/p'),
+        'Path.is_file': pb.OsCall(isFile: '/p'),
+        'Path.is_dir': pb.OsCall(isDir: '/p'),
+        'Path.is_symlink': pb.OsCall(isSymlink: '/p'),
+        'Path.read_text': pb.OsCall(readText: '/p'),
+        'Path.read_bytes': pb.OsCall(readBytes: '/p'),
+        'Path.stat': pb.OsCall(stat: '/p'),
+        'Path.iterdir': pb.OsCall(iterdir: '/p'),
+        'Path.resolve': pb.OsCall(resolve: '/p'),
+        'Path.absolute': pb.OsCall(absolute: '/p'),
+        'Path.unlink': pb.OsCall(unlink: '/p'),
+        'Path.rmdir': pb.OsCall(rmdir: '/p'),
+      };
+      final ch = _configured([
+        for (final call in calls.values) answer([pb.ChildEvent(osCall: call)]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      final seen = <(String, List<MontyValue>)>[];
+      await s.feed(
+        '...',
+        onOsCall: (name, args, kwargs) {
+          seen.add((name, args));
+
+          return const MontyNone();
+        },
+      );
+      expect([for (final (name, _) in seen) name], calls.keys);
+      for (final (_, args) in seen) {
+        expect(args, [const MontyPath('/p')]);
+      }
+    });
+
     test(
       'an OS call reaches the handler with upstream name and a path (E0 s11)',
       () async {
@@ -596,7 +637,7 @@ void main() {
         answer([raised('PermissionError')]),
       ]);
       final s = await ProtoSession.open(ch);
-      await expectLater(s.feed('read'), throwsA(isA<MontyScriptError>()));
+      await expectLater(s.feed('read'), throwsA(isA<MontyRuntimeError>()));
       final resume = itemAt(ch.requests, 2).resumeCall;
       expect(resume.callId, 9);
       expect(resume.result.whichKind(), pb.ExtFunctionResult_Kind.notHandled);
@@ -642,36 +683,28 @@ void main() {
         ]);
         final s = await ProtoSession.open(ch);
         final seen = <String>[];
-        MontyScriptError? error;
+        MontyRuntimeError? error;
         try {
           await s.feed('outer()', onPrint: (_, text) => seen.add(text));
-        } on MontyScriptError catch (e) {
+        } on MontyRuntimeError catch (e) {
           error = e;
         }
         expect(seen, ['before\n']);
-        expect(error, isNot(isA<MontySyntaxError>()));
-        expect(error?.excType, 'ValueError');
-        expect(error?.message, 'bad 7');
-        final exception = error?.exception;
-        expect(exception?.excType, 'ValueError');
-        expect(exception?.message, 'bad 7');
+        expect(error?.message, 'ValueError: bad 7');
+        expect(error?.exception.excType, 'ValueError');
+        expect(error?.exception.message, 'bad 7');
+        final traceback = error?.traceback ?? const <Frame>[];
         expect(
-          [
-            for (final f in exception?.traceback ?? <MontyStackFrame>[])
-              f.frameName,
-          ],
+          [for (final f in traceback) f.functionName],
           ['<module>', 'outer', 'inner'],
         );
-        final inner = itemAt(exception?.traceback ?? <MontyStackFrame>[], 2);
+        final inner = itemAt(traceback, 2);
         expect(inner.filename, 'main.py');
-        expect(inner.startLine, 2);
-        expect(inner.startColumn, 1);
+        expect(inner.line, 2);
+        expect(inner.column, 1);
         expect(inner.endLine, 2);
         expect(inner.endColumn, 9);
-        // The innermost frame also fills the single-location fields.
-        expect(exception?.lineNumber, 2);
-        expect(exception?.filename, 'main.py');
-        expect(exception?.sourceCode, "    raise ValueError(f'bad {x}')");
+        expect(inner.sourceLine, "    raise ValueError(f'bad {x}')");
 
         // The session survives.
         expect((await s.feed('1 + 1')).value, const MontyInt(2));
@@ -688,11 +721,9 @@ void main() {
       await expectLater(
         s.feed('def ('),
         throwsA(
-          isA<MontySyntaxError>().having(
-            (e) => e.exception?.lineNumber,
-            'line',
-            1,
-          ),
+          isA<MontySyntaxError>()
+              .having((e) => e.message, 'message', 'invalid syntax')
+              .having((e) => onlyItem(e.traceback).line, 'line', 1),
         ),
       );
     });
@@ -709,8 +740,8 @@ void main() {
       await expectLater(
         s.feed('x = [0] * 10**9'),
         throwsA(
-          isA<MontyScriptError>().having(
-            (e) => e.excType,
+          isA<MontyRuntimeError>().having(
+            (e) => e.exception.excType,
             'excType',
             'MemoryError',
           ),
@@ -719,7 +750,7 @@ void main() {
       await s.feed('pass');
     });
 
-    test('an exception with no message has an empty one', () async {
+    test('an exception with no message: Type, and an empty one', () async {
       final ch = _configured([
         answer([raised('KeyboardInterrupt')]),
       ]);
@@ -727,10 +758,15 @@ void main() {
       await expectLater(
         s.feed('raise KeyboardInterrupt'),
         throwsA(
-          isA<MontyScriptError>()
-              .having((e) => e.message, 'message', '')
-              .having((e) => e.exception?.traceback, 'traceback', isEmpty)
-              .having((e) => e.exception?.lineNumber, 'line', isNull),
+          isA<MontyRuntimeError>()
+              .having((e) => e.message, 'message', 'KeyboardInterrupt')
+              .having((e) => e.exception.message, 'exception', '')
+              .having((e) => e.traceback, 'traceback', isEmpty)
+              .having(
+                (e) => e.display('type-msg'),
+                'type-msg',
+                'KeyboardInterrupt',
+              ),
         ),
       );
     });
@@ -774,6 +810,39 @@ void main() {
       );
     });
 
+    test('a result that does not decode: a protocol violation', () async {
+      // An arena whose root points past its nodes.
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            complete: pb.Complete(
+              value: 5,
+              values: pb.Arena(
+                nodeCount: 1,
+                nodes: [pb.MontyNode(none: pb.Unit())],
+              ),
+            ),
+          ),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('x'),
+        throwsA(
+          isA<MontyCrashedError>()
+              .having((e) => e.cause, 'cause', CrashCause.protocol)
+              .having(
+                (e) => e.message,
+                'message',
+                startsWith(
+                  'monty worker protocol error: invalid payload from worker: ',
+                ),
+              ),
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
     test('an event that cannot end a feed kills the worker', () async {
       for (final event in [
         ok(),
@@ -789,8 +858,12 @@ void main() {
           s.feed('x'),
           throwsA(
             isA<MontyCrashedError>()
-                .having((e) => e.cause, 'cause', CrashCause.killed)
-                .having((e) => e.message, 'message', contains('desync')),
+                .having((e) => e.cause, 'cause', CrashCause.protocol)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  startsWith('monty worker protocol error: unexpected event'),
+                ),
           ),
           reason: event.whichKind().name,
         );
@@ -875,7 +948,7 @@ void main() {
           isA<MontyCrashedError>().having(
             (e) => e.message,
             'message',
-            contains('Reset'),
+            'monty worker protocol error: unexpected reply to Reset: complete',
           ),
         ),
       );
