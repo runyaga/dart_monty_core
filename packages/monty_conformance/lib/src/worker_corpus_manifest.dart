@@ -112,16 +112,6 @@ const workerCorpusDivergences = <String, CorpusDivergence>{
         "name_error__undefined_call_chained.py's source (measured); the "
         'frame file `<python-input-N>` is normalised by the runner',
   ),
-  'lookup-cannot-raise': CorpusDivergence(
-    'lookup-cannot-raise',
-    "Upstream's harness answers a lazy attribute lookup on a host instance "
-        'with an exception (`MutablePoint.boom` raises KeyError on the '
-        'host). The wire has that answer (`ResumeNameLookup.exception`), '
-        "but the driver's `NameLookupSnapshot.resume` has no form for it, "
-        'so the sandbox sees the attribute undefined.',
-    'lib/src/worker/monty_snapshot.dart NameLookupSnapshot.resume (value or '
-        'undefined only)',
-  ),
   'browser-int-limit': CorpusDivergence(
     'browser-int-limit',
     'The browser build is wasm32: a size or count past 2**31 - 1 overflows '
@@ -267,14 +257,6 @@ const workerCorpusExpected = <ExpectedFailure>[
         '    snap(1)\n'
         '    ~~~~~~~\n'
         "NameError: name 'snap' is not defined",
-  ),
-
-  // lookup-cannot-raise
-  ExpectedFailure(
-    'dataclass__basic.py',
-    'lookup-cannot-raise',
-    'expected no error, got '
-        "AttributeError: 'MutablePoint' object has no attribute 'boom'",
   ),
 
   // browser-int-limit

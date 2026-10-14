@@ -52,17 +52,29 @@ import 'package:fixnum/fixnum.dart';
 ///
 /// The reader calls `classType` with the id of every class `type` node and
 /// `instance` with the id of every class instance node, in arena order, as
-/// upstream's decoder consults its instance store. A non-null result is what
-/// the node decodes to; for a class, only where it is reached as a value. An
-/// instance whose class is registered but which is not itself registered
-/// still decodes to a proxy. What a registered object decodes to, and where
-/// the original Dart object becomes observable, is the registry's to decide.
+/// upstream's decoder consults its instance store. A [MontyValue] result is
+/// what the node decodes to; for a class, only where it is reached as a
+/// value. Any other non-null result is the host object registered for the
+/// node, which is not yet a [MontyValue]: the node decodes as a proxy, and
+/// [hostObjectOf] that proxy is the result. An instance whose class is
+/// registered but which is not itself registered still decodes to a plain
+/// proxy.
 ///
 /// A registered object is hashable as a dict key or set member, by identity.
 typedef HostObjectLookup = ({
-  MontyValue? Function(String classId) classType,
-  MontyValue? Function(String instanceId) instance,
+  Object? Function(String classId) classType,
+  Object? Function(String instanceId) instance,
 });
+
+final Expando<Object> _hostObjects = Expando('host object');
+
+/// The host object a decoded [value] stands for: the registered object its
+/// instance node resolved to through a [HostObjectLookup], or null. Upstream
+/// decodes such a node to the original object; until the host-object
+/// wrappers join the [MontyValue] family, the node decodes to its proxy and
+/// this recovers the object.
+Object? hostObjectOf(MontyValue value) =>
+    value is MontyClassInstance ? _hostObjects[value] : null;
 
 /// Reads values out of one arena.
 ///
@@ -310,7 +322,8 @@ final class _Builder {
 
   _ClassNode _classNode(pb.Type type) {
     final id = uuidString(type.id.data);
-    final host = _register(_hosts?.classType(id));
+    final found = _hosts?.classType(id);
+    final host = _register(found is MontyValue ? found : null);
     final attrs = _attrs(type.attrs.pairs);
     final meta = attrs is _Staged
         ? attrs
@@ -334,20 +347,25 @@ final class _Builder {
 
   Object _instance(pb.ClassInstanceNode node) {
     final id = uuidString(node.instanceId.data);
-    final host = _register(_hosts?.instance(id));
-    if (host != null) return host;
+    final found = _hosts?.instance(id);
+    if (found is MontyValue) return _registered[_built.length] = found;
     // Stage 2 made the instance's class a class node, built before it.
     final classNode = _built.elementAtOrNull(node.classType);
     final meta = classNode is _ClassNode ? classNode.meta : null;
     if (meta is! MontyClassType) return meta ?? (throw StateError('$node'));
     final attrs = _attrs(node.attrs.pairs);
     if (attrs is _Staged) return attrs;
-
-    return MontyClassInstance(
+    final proxy = MontyClassInstance(
       classType: meta,
       instanceId: id,
       attrs: attrs as Map<String, MontyValue>,
     );
+    if (found != null) {
+      _registered[_built.length] = proxy;
+      _hostObjects[proxy] = found;
+    }
+
+    return proxy;
   }
 
   /// [host], recorded as what the node being built resolved to.

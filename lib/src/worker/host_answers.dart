@@ -12,9 +12,10 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
-    show exceptionTypeNames;
+    show exceptionTypeNames, uuidString;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -259,9 +260,22 @@ Duration cappedSleep(double seconds, Duration max) {
 /// awaits the call with nothing else to run (`allow_eager_await`), and
 /// otherwise started and answered with a pending future, settled when the
 /// sandbox blocks on it.
+///
+/// A method call or lazy attribute read on a host object goes to the
+/// wrapper [objects] registered under its id. A method's future is a
+/// coroutine's, as an `async def` method's coroutine is upstream.
 final class HostAnswers {
-  /// The answers for one feed.
-  HostAnswers({this.externals = const {}, this.os, this.systemSleepMax});
+  /// The answers for one feed, its host objects in [objects] (a fresh
+  /// registry without one).
+  HostAnswers({
+    this.externals = const {},
+    this.os,
+    this.systemSleepMax,
+    HostObjects? objects,
+  }) : objects = objects ?? HostObjects();
+
+  /// The session's host objects.
+  final HostObjects objects;
 
   /// The host functions, by the name the sandbox calls.
   final Map<String, ProtoExternalFunction> externals;
@@ -292,7 +306,12 @@ final class HostAnswers {
   /// included.
   Future<pb.ParentRequest?> answer(pb.ChildEvent event) async =>
       switch (event.whichKind()) {
-        pb.ChildEvent_Kind.nameLookup => lookup(event.nameLookup.name),
+        pb.ChildEvent_Kind.nameLookup => lookup(
+          event.nameLookup.name,
+          objectId: event.nameLookup.hasObjectId()
+              ? uuidString(event.nameLookup.objectId.data)
+              : null,
+        ),
         pb.ChildEvent_Kind.functionCall => await call(event.functionCall),
         pb.ChildEvent_Kind.osCall => await osCall(
           event.osCall,
@@ -302,8 +321,10 @@ final class HostAnswers {
         _ => null,
       };
 
-  /// Answers the host function call [call].
+  /// Answers the host function call [call]; one with an object id is a
+  /// method call on that host object.
   Future<pb.ParentRequest> call(pb.FunctionCall call) async {
+    if (call.hasObjectId()) return _methodCall(this, call);
     final name = call.functionName;
     final function = externals[name];
     if (function == null) {
@@ -313,20 +334,24 @@ final class HostAnswers {
     // this driver cannot carry fails the call in Python, and the worker,
     // suspended on it, still gets its answer.
     FutureOr<MontyValue> invoke() {
-      final reader = ArenaReader(call.values);
+      final reader = ArenaReader(call.values, hosts: objects.lookup);
       final args = [for (final a in call.args) reader[a]];
 
       return function(args, _kwargs(reader, call.kwargs));
     }
 
-    if (!isCoroutine(function)) return _resumeWith(call.callId, invoke);
+    if (!isCoroutine(function)) {
+      return _resumeWith(call.callId, invoke, objects);
+    }
 
     return _coroutine(call.callId, call.allowEagerAwait, _started(invoke));
   }
 
-  /// Answers a lookup of [name]: a host function by that name resolves to
-  /// itself, which the worker calls back; anything else is undefined.
-  pb.ParentRequest lookup(String name) {
+  /// Answers a lookup of [name]: with [objectId], a lazy attribute of that
+  /// host object; otherwise a host function by that name resolves to
+  /// itself, which the worker calls back, and anything else is undefined.
+  pb.ParentRequest lookup(String name, {String? objectId}) {
+    if (objectId != null) return _attribute(objects, objectId, name);
     if (!externals.containsKey(name)) {
       return pb.ParentRequest(
         resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
@@ -376,7 +401,10 @@ final class HostAnswers {
       results.add(_settled.removeFirst());
     }
 
-    return futuresRequest(results.map((r) => (r.$1, r.$2.result)));
+    return futuresRequest(
+      results.map((r) => (r.$1, r.$2.result)),
+      objects: objects,
+    );
   }
 
   /// Ends this feed's host side: every system sleep still waiting ends now,
@@ -417,7 +445,9 @@ final class HostAnswers {
     final callId = call.callId;
     try {
       final answer = handler(name, args, kwargs);
-      if (answer is MontyValue) return resumeValue(callId, answer);
+      if (answer is MontyValue) {
+        return resumeValue(callId, answer, objects: objects);
+      }
       // For `asyncio.sleep` a future is the call's coroutine. Its value is
       // ignored: the sandbox keeps the sleep's own result.
       if (acceptsFuture(name)) {
@@ -428,7 +458,11 @@ final class HostAnswers {
         );
       }
 
-      return resumeValue(callId, await _undeclined(answer));
+      return resumeValue(
+        callId,
+        await _undeclined(answer),
+        objects: objects,
+      );
     } on OsCallNotHandledException {
       // Only a synchronous throw lands here; a decline from a future is an
       // AsyncDecline.
@@ -444,10 +478,14 @@ final class HostAnswers {
   Future<pb.ParentRequest> _coroutine(
     int callId,
     bool eager,
-    Future<MontyValue> work,
+    Future<Object> work,
   ) async {
     final outcome = _Outcome.of(work);
-    if (eager) return futuresRequest([(callId, (await outcome).result)]);
+    if (eager) {
+      return futuresRequest([
+        (callId, (await outcome).result),
+      ], objects: objects);
+    }
     _running.add(callId);
     unawaited(_settleWhenDone(callId, outcome));
 
@@ -474,7 +512,7 @@ final class HostAnswers {
   Future<pb.ParentRequest> _slept(int callId, Duration wait) async {
     await _wait(wait);
 
-    return resumeValue(callId, const MontyNone());
+    return resumeValue(callId, const MontyNone(), objects: objects);
   }
 
   /// Queues [callId]'s [outcome] once it is known, and wakes a [settle]
@@ -489,13 +527,61 @@ final class HostAnswers {
   }
 }
 
+/// Answers a method call on the host object [call] names: refused for an
+/// underscore name other than `__call__` before anything else, as
+/// upstream refuses one; then dispatched to the registered wrapper. A
+/// future result is a coroutine's.
+Future<pb.ParentRequest> _methodCall(
+  HostAnswers host,
+  pb.FunctionCall call,
+) async {
+  final objects = host.objects;
+  final FutureOr<Object> result;
+  try {
+    checkHostMethodName(call.functionName);
+    final reader = ArenaReader(call.values, hosts: objects.lookup);
+    result = objects.callMethod(
+      uuidString(call.objectId.data),
+      call.functionName,
+      [for (final a in call.args) reader[a]],
+      _kwargs(reader, call.kwargs),
+    );
+  } on Object catch (error) {
+    return _failed(call.callId, error);
+  }
+  if (result is Future<Object>) {
+    return host._coroutine(call.callId, call.allowEagerAwait, result);
+  }
+
+  return _resumeWith(call.callId, () => result, objects);
+}
+
+/// A lazy attribute [name] of the host object [id]: its value, undefined
+/// when it is not exposed, or the exception reading it raised.
+pb.ParentRequest _attribute(HostObjects objects, String id, String name) {
+  pb.ResumeNameLookup answer;
+  try {
+    final value = objects.lookupLazyAttr(id, name);
+    answer = pb.ResumeNameLookup(undefined: pb.Unit());
+    if (value != null) {
+      final writer = ArenaWriter(objects: objects);
+      final index = writer.add(value);
+      answer = pb.ResumeNameLookup(values: writer.arena, value: index);
+    }
+  } on Object catch (error) {
+    answer = pb.ResumeNameLookup(error: raisedFrom(error));
+  }
+
+  return pb.ParentRequest(resumeNameLookup: answer);
+}
+
 /// A coroutine's outcome: a value or a throw.
 final class _Outcome {
-  const _Outcome.value(MontyValue this.value) : error = null;
+  const _Outcome.value(Object this.value) : error = null;
 
   const _Outcome.error(Object this.error) : value = null;
 
-  final MontyValue? value;
+  final Object? value;
   final Object? error;
 
   ExternalAnswer get result {
@@ -506,7 +592,7 @@ final class _Outcome {
         : ExternalAnswer.value(v);
   }
 
-  static Future<_Outcome> of(Future<MontyValue> work) async {
+  static Future<_Outcome> of(Future<Object> work) async {
     try {
       return _Outcome.value(await work);
     } on Object catch (error) {
@@ -518,29 +604,35 @@ final class _Outcome {
 /// A settled answer as the wire carries it: a value or a raised exception.
 final class ExternalAnswer {
   /// The call returned [value].
-  const ExternalAnswer.value(MontyValue this.value) : error = null;
+  const ExternalAnswer.value(Object this.value) : error = null;
 
   /// The call raised [error].
   const ExternalAnswer.error(pb.RaisedException this.error) : value = null;
 
-  /// The value, when the call returned one.
-  final MontyValue? value;
+  /// The value, when the call returned one: a [MontyValue] or a host
+  /// object's wrapper.
+  final Object? value;
 
   /// The exception, when the call raised one.
   final pb.RaisedException? error;
 }
 
 /// `ResumeFutures` settling each (call id, answer) of [results], their
-/// values in one arena. A value the writer refuses settles its future with
-/// the exception the refusal raises instead ([raisedFrom]).
-pb.ParentRequest futuresRequest(Iterable<(int, ExternalAnswer)> results) {
-  final writer = ArenaWriter();
+/// values in one arena, host objects registered in [objects]. A value the
+/// writer refuses settles its future with the exception the refusal raises
+/// instead ([raisedFrom]); with [strict] the refusal is thrown.
+pb.ParentRequest futuresRequest(
+  Iterable<(int, ExternalAnswer)> results, {
+  HostObjects? objects,
+  bool strict = false,
+}) {
+  final writer = ArenaWriter(objects: objects);
   final out = <pb.FutureResult>[];
   for (final (callId, answer) in results) {
     out.add(
       pb.FutureResult(
         callId: callId == 0 ? null : callId,
-        result: _wire(answer, writer),
+        result: _wire(answer, writer, strict: strict),
       ),
     );
   }
@@ -550,22 +642,24 @@ pb.ParentRequest futuresRequest(Iterable<(int, ExternalAnswer)> results) {
   );
 }
 
-pb.ExtFunctionResult _wire(ExternalAnswer answer, ArenaWriter writer) {
+pb.ExtFunctionResult _wire(
+  ExternalAnswer answer,
+  ArenaWriter writer, {
+  required bool strict,
+}) {
   final value = answer.value;
   if (value == null) {
     return pb.ExtFunctionResult(
       error: answer.error ?? pb.RaisedException(excType: 'RuntimeError'),
     );
   }
+  if (strict) return pb.ExtFunctionResult(returnValue: writer.add(value));
   try {
-    // Checked alone first: a refused value may leave nodes behind, which
-    // must not reach the shared arena.
-    ArenaWriter().add(value);
+    // A refused value leaves no nodes behind in the shared arena.
+    return pb.ExtFunctionResult(returnValue: writer.tryAdd(value));
   } on Object catch (error) {
     return pb.ExtFunctionResult(error: raisedFrom(error));
   }
-
-  return pb.ExtFunctionResult(returnValue: writer.add(value));
 }
 
 Map<String, MontyValue> _kwargs(ArenaReader reader, List<pb.NodePair> pairs) {
@@ -584,23 +678,27 @@ Map<String, MontyValue> _kwargs(ArenaReader reader, List<pb.NodePair> pairs) {
   return kwargs;
 }
 
-/// [call]'s keyword arguments, in order.
-Map<String, MontyValue> callKwargs(pb.FunctionCall call) =>
-    _kwargs(ArenaReader(call.values), call.kwargs);
+/// [call]'s keyword arguments, in order, host objects resolved through
+/// [hosts].
+Map<String, MontyValue> callKwargs(
+  pb.FunctionCall call, {
+  HostObjectLookup? hosts,
+}) => _kwargs(ArenaReader(call.values, hosts: hosts), call.kwargs);
 
-/// [call]'s positional arguments.
-List<MontyValue> callArgs(pb.FunctionCall call) {
-  final reader = ArenaReader(call.values);
+/// [call]'s positional arguments, host objects resolved through [hosts].
+List<MontyValue> callArgs(pb.FunctionCall call, {HostObjectLookup? hosts}) {
+  final reader = ArenaReader(call.values, hosts: hosts);
 
   return [for (final a in call.args) reader[a]];
 }
 
 Future<pb.ParentRequest> _resumeWith(
   int callId,
-  FutureOr<MontyValue> Function() body,
+  FutureOr<Object> Function() body,
+  HostObjects objects,
 ) async {
   try {
-    return resumeValue(callId, await body());
+    return resumeValue(callId, await body(), objects: objects);
   } on Object catch (error) {
     return _resume(callId, pb.ExtFunctionResult(error: raisedFrom(error)));
   }
@@ -648,9 +746,14 @@ pb.ParentRequest _notHandled(int callId) =>
 pb.ParentRequest _failed(int callId, Object error) =>
     _resume(callId, pb.ExtFunctionResult(error: raisedFrom(error)));
 
-/// `ResumeCall` answering [callId] with [value].
-pb.ParentRequest resumeValue(int callId, MontyValue value) {
-  final writer = ArenaWriter();
+/// `ResumeCall` answering [callId] with [value], a [MontyValue] or a host
+/// object's wrapper, registered in [objects].
+pb.ParentRequest resumeValue(
+  int callId,
+  Object value, {
+  HostObjects? objects,
+}) {
+  final writer = ArenaWriter(objects: objects);
   final index = writer.add(value);
 
   return _resume(

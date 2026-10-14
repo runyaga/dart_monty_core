@@ -15,6 +15,7 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
@@ -45,6 +46,10 @@ const String _driverVersion = 'dart_monty_core';
 /// [close] must be called: it is what ends the worker.
 final class ProtoSession {
   ProtoSession._(this._channel, this._config);
+
+  /// The host objects sent into this session, by id: the registry its
+  /// inputs, answers and results resolve through. A load empties it.
+  final HostObjects objects = HostObjects();
 
   final MontyChannel _channel;
   final SessionConfig _config;
@@ -78,7 +83,9 @@ final class ProtoSession {
 
   /// Runs [code] and completes with its value.
   ///
-  /// [inputs] are bound as global names before the code runs. A call to a
+  /// [inputs] are bound as global names before the code runs: each a
+  /// [MontyValue] or a host object's wrapper, which registers in [objects].
+  /// A call to a
   /// name in [externals] runs that function and answers with its value, or,
   /// for a function marked with [coroutine], settles it through the futures
   /// protocol ([HostAnswers]). [onOsCall] answers OS calls, which are
@@ -95,7 +102,7 @@ final class ProtoSession {
   /// type-checking session's check rejects throws [MontyTypingError].
   Future<FeedResult> feed(
     String code, {
-    Map<String, MontyValue> inputs = const {},
+    Map<String, Object> inputs = const {},
     Map<String, ProtoExternalFunction> externals = const {},
     OsHandler? onOsCall,
     ProtoPrintCallback? onPrint,
@@ -106,6 +113,7 @@ final class ProtoSession {
       externals: externals,
       os: onOsCall,
       systemSleepMax: options.systemSleepMax,
+      objects: objects,
     ),
     inputs: inputs,
     onPrint: onPrint,
@@ -118,7 +126,7 @@ final class ProtoSession {
   Future<FeedResult> drive(
     String code,
     HostAnswers host, {
-    Map<String, MontyValue> inputs = const {},
+    Map<String, Object> inputs = const {},
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
   }) => _guard(() async {
@@ -131,6 +139,7 @@ final class ProtoSession {
       code,
       inputs,
       skipTypeCheck: options.skipTypeCheck,
+      objects: objects,
     );
     try {
       for (;;) {
@@ -169,7 +178,10 @@ final class ProtoSession {
   /// violation (upstream's "invalid payload from worker").
   MontyValue valueOf(pb.Complete complete) {
     try {
-      return ArenaReader(complete.values)[complete.value];
+      return ArenaReader(
+        complete.values,
+        hosts: objects.lookup,
+      )[complete.value];
     } on FormatException catch (e) {
       _violation('invalid payload from worker: ${e.message}');
     }
@@ -321,6 +333,9 @@ extension ProtoSessionTransfer on ProtoSession {
   /// reports in place of the load (bytes it cannot read) is thrown, and the
   /// session runs on as it was.
   Future<(pb.ChildEvent?, String?)> load(List<int> state) => _guard(() async {
+    // Host objects are never part of a dump: a loaded session starts with
+    // none (upstream's instance store starts empty).
+    objects.clear();
     final event = await _channel.turn(
       pb.ParentRequest(load: pb.Load(state: state)),
     );
@@ -554,20 +569,22 @@ final class FeedResult {
 /// default with no mounts, which a worker session never has.
 const String defaultCwd = '/';
 
-/// The `Feed` request running [code] with [inputs] bound first.
+/// The `Feed` request running [code] with [inputs] bound first; a host
+/// object's wrapper among them registers in [objects].
 ///
 /// Encoded as upstream's pool encodes it: the arena always present (empty
 /// without inputs) and proto3 defaults left out, as prost leaves them out.
 /// The `cwd` is the session's to add (see [ProtoSession]).
 pb.ParentRequest feedRequest(
   String code,
-  Map<String, MontyValue> inputs, {
+  Map<String, Object> inputs, {
   bool skipTypeCheck = false,
+  HostObjects? objects,
 }) {
   final feed = pb.Feed();
   if (code.isNotEmpty) feed.code = code;
   if (skipTypeCheck) feed.skipTypeCheck = true;
-  final writer = ArenaWriter();
+  final writer = ArenaWriter(objects: objects);
   for (final MapEntry(:key, :value) in inputs.entries) {
     final index = encodingInput(() => writer.add(value));
     feed.inputs.add(

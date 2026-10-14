@@ -14,6 +14,8 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
+import 'package:dart_monty_core/src/worker/arena_reader.dart'
+    show HostObjectLookup;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/default_print.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
@@ -50,7 +52,9 @@ abstract interface class PoolSession {
   /// Runs [code] to completion and returns its value: the last expression's,
   /// or [MontyNone].
   ///
-  /// [inputs] are bound as global names first. A call to a name in
+  /// [inputs] are bound as global names first: values, or host objects'
+  /// wrappers, whose members the session serves (`host_objects.dart`).
+  /// A call to a name in
   /// [externals] runs that function, outside the turn: it may take as long
   /// as it likes, and `requestTimeout` does not count it. [os] answers OS
   /// calls; without it they are declined.
@@ -89,7 +93,7 @@ abstract interface class PoolSession {
   /// `TimeoutError`.
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, MontyValue>? inputs,
+    Map<String, Object>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
@@ -109,7 +113,7 @@ abstract interface class PoolSession {
   /// as to a feed's turns.
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, MontyValue>? inputs,
+    Map<String, Object>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
@@ -313,7 +317,7 @@ final class _LeasedSession implements PoolSession {
   @override
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, MontyValue>? inputs,
+    Map<String, Object>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
@@ -325,7 +329,7 @@ final class _LeasedSession implements PoolSession {
       () => _drive(
         code,
         inputs: inputs,
-        host: _hostFor(_config, externals, os),
+        host: _hostFor(_proto, _config, externals, os),
         printCallback: printCallback,
         skipTypeCheck: skipTypeCheck,
       ),
@@ -336,7 +340,7 @@ final class _LeasedSession implements PoolSession {
   @override
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, MontyValue>? inputs,
+    Map<String, Object>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
@@ -345,14 +349,19 @@ final class _LeasedSession implements PoolSession {
     _hold.used = true;
     final drive = _FeedDrive(
       this,
-      _hostFor(_config, externals, os),
+      _hostFor(_proto, _config, externals, os),
       printCallback ?? defaultPrint,
     );
     _snapshots = drive;
 
     return _withTurn(
       () => drive.step(
-        feedRequest(code, inputs ?? const {}, skipTypeCheck: skipTypeCheck),
+        feedRequest(
+          code,
+          inputs ?? const {},
+          skipTypeCheck: skipTypeCheck,
+          objects: _proto.objects,
+        ),
       ),
       feed: true,
     );
@@ -382,7 +391,7 @@ final class _LeasedSession implements PoolSession {
     _hold.claimFresh();
     final drive = _FeedDrive(
       this,
-      _hostFor(_config, externals, os),
+      _hostFor(_proto, _config, externals, os),
       printCallback ?? defaultPrint,
     );
     _snapshots = drive;
@@ -519,7 +528,7 @@ final class _LeasedSession implements PoolSession {
 
   Future<MontyValue> _drive(
     String code, {
-    required Map<String, MontyValue>? inputs,
+    required Map<String, Object>? inputs,
     required HostAnswers host,
     required ProtoPrintCallback? printCallback,
     required bool skipTypeCheck,
@@ -584,6 +593,7 @@ ProtoPrintCallback _printingIn(Object session, ProtoPrintCallback print) =>
 /// The host side of one feed of a session with [config]: [externals] and
 /// [os], and system sleeps waited up to the session's maximum.
 HostAnswers _hostFor(
+  ProtoSession session,
   SessionConfig config,
   Map<String, ProtoExternalFunction>? externals,
   OsHandler? os,
@@ -591,6 +601,7 @@ HostAnswers _hostFor(
   externals: externals ?? const {},
   os: os,
   systemSleepMax: config.systemSleepMax,
+  objects: session.objects,
 );
 
 StateError _pendingError() =>
@@ -625,7 +636,7 @@ final class _FeedDrive implements SnapshotDriver {
     final callId = snapshot.callId;
     final request = switch (result) {
       ExternalReturnValue(:final value) => encodingInput(
-        () => resumeValue(callId, value),
+        () => resumeValue(callId, value, objects: _host.objects),
       ),
       ExternalException(:final excType, :final message, :final attributes) =>
         resumeWith(
@@ -683,7 +694,7 @@ final class _FeedDrive implements SnapshotDriver {
   @override
   Future<MontySnapshot> resumeLookup(
     NameLookupSnapshot snapshot,
-    MontyValue? value,
+    Object? value,
   ) {
     final pb.ParentRequest request;
     if (value == null) {
@@ -691,7 +702,7 @@ final class _FeedDrive implements SnapshotDriver {
         resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
       );
     } else {
-      final writer = ArenaWriter();
+      final writer = ArenaWriter(objects: _host.objects);
       final index = encodingInput(() => writer.add(value));
       request = pb.ParentRequest(
         resumeNameLookup: pb.ResumeNameLookup(
@@ -706,7 +717,10 @@ final class _FeedDrive implements SnapshotDriver {
 
   @override
   Future<MontySnapshot> resumeLookupAuto(NameLookupSnapshot snapshot) =>
-      _resume(snapshot, _host.lookup(snapshot.variableName));
+      _resume(
+        snapshot,
+        _host.lookup(snapshot.variableName, objectId: snapshot.objectId),
+      );
 
   @override
   Future<MontySnapshot> resumeFutures(
@@ -718,9 +732,6 @@ final class _FeedDrive implements SnapshotDriver {
       checkExternalResult(result);
       switch (result) {
         case ExternalReturnValue(:final value):
-          // Encoded alone first, so a value the writer refuses throws here,
-          // before the snapshot is spent.
-          encodingInput(() => ArenaWriter().add(value));
           answers.add((key, ExternalAnswer.value(value)));
         case ExternalException(
           :final excType,
@@ -734,7 +745,13 @@ final class _FeedDrive implements SnapshotDriver {
       }
     }
 
-    return _resume(snapshot, futuresRequest(answers));
+    // A value the writer refuses throws here, before the snapshot is spent.
+    return _resume(
+      snapshot,
+      encodingInput(
+        () => futuresRequest(answers, objects: _host.objects, strict: true),
+      ),
+    );
   }
 
   @override
@@ -855,6 +872,7 @@ final class _FeedDrive implements SnapshotDriver {
         this,
         script,
         event.functionCall,
+        _host.objects.lookup,
       ),
       pb.ChildEvent_Kind.osCall => _osSnapshot(
         this,
@@ -890,6 +908,7 @@ FunctionSnapshot _callSnapshot(
   SnapshotDriver driver,
   String script,
   pb.FunctionCall call,
+  HostObjectLookup hosts,
 ) => FunctionSnapshot(
   driver,
   _position(call.position),
@@ -899,8 +918,8 @@ FunctionSnapshot _callSnapshot(
   isOsFunction: false,
   allowEagerAwait: call.allowEagerAwait,
   objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
-  arguments: () => callArgs(call),
-  keywords: () => callKwargs(call),
+  arguments: () => callArgs(call, hosts: hosts),
+  keywords: () => callKwargs(call, hosts: hosts),
 );
 
 /// The snapshot of an OS [call], for [driver] under [script]. A payload
