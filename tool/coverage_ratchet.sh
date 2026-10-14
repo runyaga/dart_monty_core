@@ -28,8 +28,9 @@
 # unloaded library — so this script refuses a tracefile that does not account
 # for every lib/**/*.dart.
 #
-# Baseline: tool/coverage-baseline.json. Regenerate it in the SAME commit that
-# justifies the change, exactly as the DCM baseline is handled.
+# Baseline: tool/coverage-baseline.json, recorded on main after each merge by
+# tool/record_coverage_baseline.sh. A PR does NOT commit it when coverage rises:
+# the check fails only on a decrease, measured against the base branch's copy.
 # =============================================================================
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -82,10 +83,6 @@ fi
 # request. Unset -- every local run -- behaves exactly as before, because a
 # local run has no base to compare against and blocking it would just train
 # people to skip the gate.
-# Captured BEFORE the base-ref swap below reassigns BASELINE. The gain check
-# needs the file this branch actually ships; the regression check needs the
-# base branch's.
-OWN_BASELINE="$BASELINE"
 
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   # THE REF ITSELF MUST RESOLVE FIRST, and this check is the difference between
@@ -124,18 +121,31 @@ if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   fi
 fi
 
-BASELINE="$BASELINE" OWN_BASELINE="$OWN_BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
+BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
 import json, os, sys
 
 root = os.getcwd()
 baseline_path = os.environ['BASELINE']
-# The baseline the GAIN is measured against, which is NOT always the one the
-# REGRESSION is measured against. See the long note at the gain check below.
-own_baseline_path = os.environ.get('OWN_BASELINE') or baseline_path
 update = os.environ['UPDATE'] == '1'
 tracefile = os.environ['TRACEFILE']
 
 # The documented exclusions, kept in step with tool/coverage_report.sh.
+def _nonfinite(c):
+    print(f'FAIL: non-finite number {c} in a baseline file; refusing it.')
+    sys.exit(1)
+
+
+def load_json(path):
+    with open(path) as fh:
+        d = json.load(fh, parse_constant=_nonfinite)
+    # 1e999 overflows to inf without going through parse_constant.
+    pcts = [d['total']['pct']] + [v['pct'] for v in d['by_file'].values()]
+    if not all(isinstance(p, (int, float)) and 0 <= p <= 100 for p in pcts):
+        print(f'FAIL: {path} has a coverage percentage outside 0..100.')
+        sys.exit(1)
+    return d
+
+
 EXCLUDE = ('lib/src/ffi/generated/', 'lib/src/worker/proto/',
            'lib/src/platform/mock_monty_platform.dart')
 
@@ -215,7 +225,7 @@ if not os.path.exists(baseline_path):
     print(f'  bash tool/coverage_ratchet.sh {tracefile} --update')
     sys.exit(1)
 
-base = json.load(open(baseline_path))
+base = load_json(baseline_path)
 bt, bf = base['total'], base['by_file']
 violations = []
 
@@ -247,42 +257,22 @@ if violations:
     print(f'\nFAIL — {len(violations)} ratchet violation(s):')
     for v in violations:
         print(f'  {v}')
-    print('\nFix them, or if the drop is intentional and justified, regenerate')
-    print('the baseline IN THE SAME COMMIT and say why in the commit body:')
+    print('\nFix them. A drop that is intentional and justified needs a')
+    print('maintainer to lower the baseline on the base branch first:')
     print(f'  bash tool/coverage_ratchet.sh {tracefile} --update')
     sys.exit(1)
 
-# Same one-way-ratchet defect as tool/dcm_ratchet.sh, same fix. Printing
-# "Consider: --update" and exiting 0 means a coverage GAIN is never captured:
-# the baseline stays low and the percentage can slide back down to it with the
-# gate green. A gain now FAILS until the baseline records it.
-# THE TWO DIRECTIONS READ DIFFERENT BASELINES, AND THAT IS THE WHOLE POINT.
+# A GAIN IS NOT A FAILURE, AND NO PR HAS TO RECORD ONE.
 #
-# REGRESSION is measured against the BASE BRANCH's baseline, above: a PR must
-# not be able to lower its own bar.
-#
-# A RECORDED GAIN is measured against THIS BRANCH's baseline. Measured
-# 2026-09-19 on PR #169: with RATCHET_BASE_REF set, `bt` is origin/main's copy,
-# so a PR that raised coverage 66.57% -> 66.64% failed here, ran the `--update`
-# the failure prints, and FAILED AGAIN IDENTICALLY -- the updated file is never
-# read. There was no edit that could pass. A gate that demands an action, and
-# then ignores that action, is worse than no gate: it teaches people the check
-# is broken and to look for the override.
-own = json.load(open(own_baseline_path)) if os.path.exists(own_baseline_path) \
-    else base
-if current['total']['pct'] > own['total']['pct']:
-    gain = current['total']['pct'] - own['total']['pct']
-    print(f"\nFAIL — coverage is {gain:.2f} points ABOVE this branch's "
-          f"baseline ({own['total']['pct']}%).")
-    print("  Good news that has to be recorded or it is not kept: a baseline")
-    print("  left low lets coverage slide back with the gate still green.")
-    print("  Raise it IN THIS COMMIT:")
-    print(f"      bash tool/coverage_ratchet.sh {tracefile} --update")
-    sys.exit(1)
-
-if own['total']['pct'] > bt['pct']:
-    print(f"note: this branch raises the recorded baseline "
-          f"{bt['pct']}% -> {own['total']['pct']}%.")
+# This block used to FAIL when lib-wide coverage was above the branch's own
+# baseline, forcing every PR that raised coverage to also commit a regenerated
+# tool/coverage-baseline.json. That put the baseline in every PR's diff, a
+# guaranteed rebase conflict between sibling PRs. The baseline is now recorded
+# on main after merge (tool/record_coverage_baseline.sh), so the ratchet only
+# fails on decreases, against the BASE branch's copy, above. That a PR does not
+# edit the baseline file at all is checked on its diff against the merge-base
+# (tool/check_changelog_fragments.sh), which stays correct when main's baseline
+# moves while the PR is open; comparing file contents here would not.
 
 print('PASS — no file below its baseline')
 PY

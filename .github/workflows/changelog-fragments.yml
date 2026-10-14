@@ -1,0 +1,37 @@
+name: Changelog fragments
+
+# A PR that changes lib/ adds changes/<slug>.md; nobody but the assembly PR
+# edits CHANGELOG.md. Its own workflow, not a ci.yaml job, because it must
+# re-run when a label or the PR body changes (labeled / unlabeled / edited),
+# and doing that to ci.yaml would restart the whole test matrix.
+# See tool/check_changelog_fragments.sh and changes/README.md.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fragments:
+    name: Changelog fragment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # fetch-depth: 0: the check diffs against the merge-base with the base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Labels and body reach the script through the environment only, never
+      # by interpolation into the shell command.
+      - name: Check fragments
+        env:
+          BASE_REF: ${{ format('origin/{0}', github.base_ref) }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bash tool/check_changelog_fragments.sh "$BASE_REF"
