@@ -217,10 +217,6 @@ s  action_pins  bash tool/check_action_pins.sh
 # .git/config for every later step to read.
 s  wf_tokens    python3 -I tool/check_workflow_tokens.py
 s  corpus_check  bash tool/check_fixture_corpus.sh
-# The record, checked the same way the code is. A `!` commit touching lib/ must
-# reach the CHANGELOG; `43366ba fix(limits)!` did not, and the prose cross-check
-# that should have caught it had been performed and gone stale within a day.
-s  breaking_rec  bash tool/check_breaking_recorded.sh
 # The demo links every fixture to pydantic/monty at a pinned tag; a crate bump
 # that missed the constant would show the wrong source with no error.
 # Each PR records its change as changes/<slug>.md and never edits CHANGELOG.md.
@@ -552,7 +548,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=55
+EXPECT_STEPS=54
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

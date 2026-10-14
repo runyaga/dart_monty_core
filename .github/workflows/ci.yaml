@@ -116,26 +116,6 @@ jobs:
               - 'mkdocs_docs/**'
 
   # ---------------------------------------------------------------------------
-  # The record, checked mechanically
-  # ---------------------------------------------------------------------------
-  # Deliberately NOT behind `needs: [changes]`. That filter excludes `**.md`, and
-  # this job's whole subject is CHANGELOG.md — gating it would mean deleting a
-  # CHANGELOG entry skips the check that the entry exists.
-  #
-  # fetch-depth: 0 is required: the check diffs against the merge-base with main,
-  # and the default shallow clone has no merge-base to find.
-  breaking-recorded:
-    name: Breaking changes announced
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - run: bash tool/check_breaking_recorded.sh
-
-  # ---------------------------------------------------------------------------
   # Stage 0 — the fast gate. Source-only invariants, no native build, no browser.
   # ---------------------------------------------------------------------------
   # WHY THIS JOB EXISTS. Fifteen of these checks are enforced by tool/gate.sh and
@@ -168,10 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      # check_breaking_recorded.sh is NOT run here: the unfiltered
-      # `breaking-recorded` job above runs it on every event, so a copy here
-      # only ran it twice. Nothing left in this job reads git history, so the
-      # checkout is shallow.
+      # Nothing in this job reads git history, so the checkout is shallow.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false

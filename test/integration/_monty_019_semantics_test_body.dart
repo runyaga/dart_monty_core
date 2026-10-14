@@ -109,7 +109,7 @@ void runMonty019SemanticsTests() {
     // fails
     // SILENTLY in consumer code: a handler matching 'Open' simply stops
     // matching
-    // and falls through. See BREAKING-LEDGER.md row 4.
+    // and falls through.
     test('the open() OS-call is dispatched as op "open"', () async {
       final seen = <String>[];
       final r = await Monty('open("/m/a.txt", "r")\n').run(
