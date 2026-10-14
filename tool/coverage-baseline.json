@@ -16,6 +16,26 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/src/fake_answers.dart": {
+      "found": 38,
+      "hit": 37,
+      "pct": 97.37
+    },
+    "lib/src/fake_monty_session.dart": {
+      "found": 191,
+      "hit": 187,
+      "pct": 97.91
+    },
+    "lib/src/fake_script.dart": {
+      "found": 39,
+      "hit": 39,
+      "pct": 100.0
+    },
+    "lib/src/fake_worker.dart": {
+      "found": 275,
+      "hit": 263,
+      "pct": 95.64
+    },
     "lib/src/ffi/ffi_core_bindings.dart": {
       "found": 202,
       "hit": 186,
@@ -528,8 +548,8 @@
     }
   },
   "total": {
-    "found": 8205,
-    "hit": 6905,
-    "pct": 84.16
+    "found": 8748,
+    "hit": 7431,
+    "pct": 84.95
   }
 }
