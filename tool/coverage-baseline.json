@@ -417,8 +417,13 @@
       "pct": 98.67
     },
     "lib/src/worker/monty_channel.dart": {
-      "found": 8,
-      "hit": 8,
+      "found": 7,
+      "hit": 7,
+      "pct": 100.0
+    },
+    "lib/src/worker/monty_error.dart": {
+      "found": 68,
+      "hit": 68,
       "pct": 100.0
     },
     "lib/src/worker/monty_pool.dart": {
@@ -432,19 +437,19 @@
       "pct": 99.38
     },
     "lib/src/worker/pool_session.dart": {
-      "found": 183,
-      "hit": 179,
-      "pct": 97.81
+      "found": 187,
+      "hit": 183,
+      "pct": 97.86
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 205,
-      "hit": 199,
-      "pct": 97.07
+      "found": 210,
+      "hit": 204,
+      "pct": 97.14
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 234,
-      "hit": 226,
-      "pct": 96.58
+      "found": 211,
+      "hit": 211,
+      "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
       "found": 95,
@@ -457,8 +462,8 @@
       "pct": 100.0
     },
     "lib/src/worker/raised_record.dart": {
-      "found": 85,
-      "hit": 85,
+      "found": 108,
+      "hit": 108,
       "pct": 100.0
     },
     "lib/src/worker/resource_limits.dart": {
@@ -508,8 +513,8 @@
     }
   },
   "total": {
-    "found": 7413,
-    "hit": 6106,
-    "pct": 82.37
+    "found": 7489,
+    "hit": 6190,
+    "pct": 82.65
   }
 }
