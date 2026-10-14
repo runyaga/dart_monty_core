@@ -9,14 +9,12 @@
 #   dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --update
 
 [dart_monty_core.dart]
-Monty
 MontyBigInt
 MontyBool
 MontyBytes
 MontyCallback
 MontyClassInstance
 MontyClassType
-MontyComplete
 MontyCrashError
 MontyDataclass
 MontyDate
@@ -30,29 +28,19 @@ MontyExceptionValue
 MontyFileHandle
 MontyFloat
 MontyFrozenSet
-MontyFutureCapable
 MontyInt
 MontyInternalError
 MontyLimits
 MontyList
 MontyMemoryFile
-MontyNameLookup
 MontyNamedTuple
 MontyNone
 MontyNotImplemented
 MontyOpaque
 MontyOpaqueKind
-MontyOsCall
 MontyPanicError
 MontyPath
-MontyPending
-MontyPlatform
-MontyProgress
-MontyRepl
-MontyResolveFutures
 MontyResourceError
-MontyResourceUsage
-MontyResult
 MontyScriptError
 MontySet
 MontyStackFrame
@@ -70,40 +58,26 @@ MountMode
 OsCallException
 OsCallHandler
 OsCallNotHandledException
-ReplContinuationMode
-ReplPlatform
 VfsBytes
 VfsContent
 VfsDir
 VfsFile
 VfsNode
 VfsText
-assignmentPattern
-captureLastExpression
-createPlatformMonty
 defaultMemoryUsageLimit
 entryMemoryUsage
-extractAssignmentTargets
 formatBytesPretty
-inputsToCode
-isExpression
 memoryMountedOsHandler
 osCallNoHandlerDefault
 resolveOpenCall
-statementPrefixes
-toPythonLiteral
 
 [dart_monty_core_testing.dart]
-MockCallHistory
-MockMontyPlatform
-Monty
 MontyBigInt
 MontyBool
 MontyBytes
 MontyCallback
 MontyClassInstance
 MontyClassType
-MontyComplete
 MontyCrashError
 MontyDataclass
 MontyDate
@@ -117,29 +91,19 @@ MontyExceptionValue
 MontyFileHandle
 MontyFloat
 MontyFrozenSet
-MontyFutureCapable
 MontyInt
 MontyInternalError
 MontyLimits
 MontyList
 MontyMemoryFile
-MontyNameLookup
 MontyNamedTuple
 MontyNone
 MontyNotImplemented
 MontyOpaque
 MontyOpaqueKind
-MontyOsCall
 MontyPanicError
 MontyPath
-MontyPending
-MontyPlatform
-MontyProgress
-MontyRepl
-MontyResolveFutures
 MontyResourceError
-MontyResourceUsage
-MontyResult
 MontyScriptError
 MontySet
 MontyStackFrame
@@ -157,28 +121,18 @@ MountMode
 OsCallException
 OsCallHandler
 OsCallNotHandledException
-ReplContinuationMode
-ReplPlatform
 VfsBytes
 VfsContent
 VfsDir
 VfsFile
 VfsNode
 VfsText
-assignmentPattern
-captureLastExpression
-createPlatformMonty
 defaultMemoryUsageLimit
 entryMemoryUsage
-extractAssignmentTargets
 formatBytesPretty
-inputsToCode
-isExpression
 memoryMountedOsHandler
 osCallNoHandlerDefault
 resolveOpenCall
-statementPrefixes
-toPythonLiteral
 
 [unsafe_callback_file.dart]
 VfsCallbackFile
@@ -188,17 +142,6 @@ VfsWriteCallback
 [members: src/externals.dart]
 typedef MontyCallback = FutureOr@dart:async<Object?> Function(List<Object?>, Map<String, Object?>?)
 typedef OsCallHandler = FutureOr@dart:async<Object?> Function(String, List<Object?>, Map<String, Object?>?)
-
-[members: src/monty.dart]
-class Monty
-  Monty.exec: static method(String code, {Map<String, Object?>? inputs, Map<String, MontyCallback> externalFunctions = const {}, Map<String, MontyCallback> externalAsyncFunctions = const {}, MontyLimits? limits, String scriptName = 'main.py', OsCallHandler? osHandler, void Function(String, String)? printCallback}) -> Future<MontyResult>
-  Monty.new: factory constructor(String code, {String scriptName = 'main.py'})
-  Monty.run: method({Map<String, Object?>? inputs, Map<String, MontyCallback> externalFunctions = const {}, Map<String, MontyCallback> externalAsyncFunctions = const {}, MontyLimits? limits, OsCallHandler? osHandler, void Function(String, String)? printCallback}) -> Future<MontyResult>
-  Monty.scriptName: getter -> String
-  Monty.typeCheck: static method(String code, {String? prefixCode, String scriptName = 'main.py'}) -> Future<List<MontyTypingError>>
-
-[members: src/monty_factory_stub.dart]
-createPlatformMonty: function() -> MontyPlatform
 
 [members: src/mount/memory_mounted_os_handler.dart]
 memoryMountedOsHandler: function({required List<MountDir> mounts, required List<VfsFile> files, OsCallHandler? fallthrough}) -> OsCallHandler
@@ -285,63 +228,6 @@ sealed class VfsNode
   VfsNode: permits abstract interface class VfsFile implements VfsNode
   VfsNode: permits final class VfsDir extends VfsNode
 
-[members: src/platform/code_capture.dart]
-assignmentPattern: final variable RegExp
-captureLastExpression: function(String userCode) -> (String, bool)
-extractAssignmentTargets: function(String code) -> Set<String>
-isExpression: function(String line) -> bool
-statementPrefixes: const variable List<String>
-
-[members: src/platform/inputs_encoder.dart]
-inputsToCode: function(Map<String, Object?> inputs) -> String
-toPythonLiteral: function(Object? value) -> String
-
-[members: src/platform/mock_monty_platform.dart]
-final class MockCallHistory
-  MockCallHistory.lastResolveFuturesErrors: getter -> Map<int, String>?
-  MockCallHistory.lastResolveFuturesResults: getter -> Map<int, Object?>?
-  MockCallHistory.lastRestoreData: getter -> Uint8List@dart:typed_data?
-  MockCallHistory.lastResumeErrorMessage: getter -> String?
-  MockCallHistory.lastResumeReturnValue: getter -> Object?
-  MockCallHistory.lastRunCode: getter -> String?
-  MockCallHistory.lastRunLimits: getter -> MontyLimits?
-  MockCallHistory.lastRunScriptName: getter -> String?
-  MockCallHistory.lastStartCode: getter -> String?
-  MockCallHistory.lastStartExternalFunctions: getter -> List<String>?
-  MockCallHistory.lastStartLimits: getter -> MontyLimits?
-  MockCallHistory.lastStartScriptName: getter -> String?
-  MockCallHistory.new: constructor()
-  MockCallHistory.resolveFuturesErrorsList: final field List<Map<int, String>?>
-  MockCallHistory.resolveFuturesResultsList: final field List<Map<int, Object?>>
-  MockCallHistory.restoreDataList: final field List<Uint8List@dart:typed_data>
-  MockCallHistory.resumeAsFutureCount: settable field int
-  MockCallHistory.resumeErrorMessages: final field List<String>
-  MockCallHistory.resumeReturnValues: final field List<Object?>
-  MockCallHistory.runCodes: final field List<String>
-  MockCallHistory.runLimitsList: final field List<MontyLimits?>
-  MockCallHistory.runScriptNamesList: final field List<String?>
-  MockCallHistory.startCodes: final field List<String>
-  MockCallHistory.startExternalFunctionsList: final field List<List<String>?>
-  MockCallHistory.startLimitsList: final field List<MontyLimits?>
-  MockCallHistory.startScriptNamesList: final field List<String?>
-class MockMontyPlatform extends MontyPlatform with MontyStateMixin implements MontySnapshotCapable, MontyFutureCapable
-  MockMontyPlatform.backendName: getter -> String
-  MockMontyPlatform.dispose: method() -> Future<void>
-  MockMontyPlatform.enqueueProgress: method(MontyProgress progress) -> void
-  MockMontyPlatform.history: final field MockCallHistory
-  MockMontyPlatform.new: constructor()
-  MockMontyPlatform.resolveFutures: method(Map<int, Object?> results, {Map<int, String>? errors}) -> Future<MontyProgress>
-  MockMontyPlatform.restore: method(Uint8List@dart:typed_data data) -> Future<MontyPlatform>
-  MockMontyPlatform.restoreResult: settable field MontyPlatform?
-  MockMontyPlatform.resume: method(Object? returnValue) -> Future<MontyProgress>
-  MockMontyPlatform.resumeAsFuture: method() -> Future<MontyProgress>
-  MockMontyPlatform.resumeWithError: method(String errorMessage) -> Future<MontyProgress>
-  MockMontyPlatform.run: method(String code, {MontyLimits? limits, String? scriptName}) -> Future<MontyResult>
-  MockMontyPlatform.runResult: settable field MontyResult?
-  MockMontyPlatform.snapshot: method() -> Future<Uint8List@dart:typed_data>
-  MockMontyPlatform.snapshotData: settable field Uint8List@dart:typed_data?
-  MockMontyPlatform.start: method(String code, {List<String>? externalFunctions, MontyLimits? limits, String? scriptName}) -> Future<MontyProgress>
-
 [members: src/platform/monty_error.dart]
 class MontyCrashError extends MontyError
   MontyCrashError.new: const constructor([String message = 'Interpreter crashed unexpectedly'])
@@ -387,12 +273,6 @@ final class MontyException implements Exception
   MontyException.toString: method() -> String
   MontyException.traceback: final field List<MontyStackFrame>
 
-[members: src/platform/monty_future_capable.dart]
-abstract class MontyFutureCapable extends MontyPlatform
-  MontyFutureCapable.new: constructor()
-  MontyFutureCapable.resolveFutures: abstract method(Map<int, Object?> results, {Map<int, String>? errors}) -> Future<MontyProgress>
-  MontyFutureCapable.resumeAsFuture: abstract method() -> Future<MontyProgress>
-
 [members: src/platform/monty_internal_error.dart]
 final class MontyInternalError extends Error
   MontyInternalError.message: final field String
@@ -415,113 +295,6 @@ final class MontyLimits
   MontyLimits.toJson: method() -> Map<String, dynamic>
   MontyLimits.toString: method() -> String
 
-[members: src/platform/monty_platform.dart]
-abstract class MontyPlatform
-  MontyPlatform.dispose: method() -> Future<void>
-  MontyPlatform.new: constructor()
-  MontyPlatform.resume: method(Object? returnValue) -> Future<MontyProgress>
-  MontyPlatform.resumeNameLookup: method(String name, Object? value) -> Future<MontyProgress>
-  MontyPlatform.resumeNameLookupUndefined: method(String name) -> Future<MontyProgress>
-  MontyPlatform.resumeNotFound: method(String fnName) -> Future<MontyProgress>
-  MontyPlatform.resumeWithError: method(String errorMessage) -> Future<MontyProgress>
-  MontyPlatform.resumeWithException: method(String excType, String errorMessage) -> Future<MontyProgress>
-  MontyPlatform.run: method(String code, {MontyLimits? limits, String? scriptName}) -> Future<MontyResult>
-  MontyPlatform.start: method(String code, {List<String>? externalFunctions, MontyLimits? limits, String? scriptName}) -> Future<MontyProgress>
-  MontyPlatform.typeCheck: method(String code, {String? prefixCode, String scriptName = 'main.py'}) -> Future<String?>
-
-[members: src/platform/monty_progress.dart]
-final class MontyComplete extends MontyProgress
-  MontyComplete.==: operator(Object other) -> bool
-  MontyComplete.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyComplete.hashCode: getter -> int
-  MontyComplete.new: const constructor({required MontyResult result})
-  MontyComplete.output: getter -> MontyValue
-  MontyComplete.result: final field MontyResult
-  MontyComplete.toJson: method() -> Map<String, dynamic>
-  MontyComplete.toString: method() -> String
-final class MontyNameLookup extends MontyProgress
-  MontyNameLookup.==: operator(Object other) -> bool
-  MontyNameLookup.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyNameLookup.hashCode: getter -> int
-  MontyNameLookup.new: const constructor({required String variableName})
-  MontyNameLookup.toJson: method() -> Map<String, dynamic>
-  MontyNameLookup.toString: method() -> String
-  MontyNameLookup.variableName: final field String
-final class MontyOsCall extends MontyProgress
-  MontyOsCall.==: operator(Object other) -> bool
-  MontyOsCall.args: final field List<MontyValue>
-  MontyOsCall.callId: final field int
-  MontyOsCall.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyOsCall.hashCode: getter -> int
-  MontyOsCall.kwargs: final field Map<String, MontyValue>?
-  MontyOsCall.new: const constructor({required String operationName, required List<MontyValue> args, Map<String, MontyValue>? kwargs, int callId = 0})
-  MontyOsCall.operationName: final field String
-  MontyOsCall.toJson: method() -> Map<String, dynamic>
-  MontyOsCall.toString: method() -> String
-final class MontyPending extends MontyProgress
-  MontyPending.==: operator(Object other) -> bool
-  MontyPending.args: final field List<MontyValue>
-  MontyPending.callId: final field int
-  MontyPending.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyPending.functionName: final field String
-  MontyPending.hashCode: getter -> int
-  MontyPending.kwargs: final field Map<String, MontyValue>?
-  MontyPending.methodCall: final field bool
-  MontyPending.new: const constructor({required String functionName, required List<MontyValue> args, Map<String, MontyValue>? kwargs, int callId = 0, bool methodCall = false})
-  MontyPending.toJson: method() -> Map<String, dynamic>
-  MontyPending.toString: method() -> String
-sealed class MontyProgress
-  MontyProgress.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyProgress.new: const constructor()
-  MontyProgress.toJson: abstract method() -> Map<String, dynamic>
-  MontyProgress: permits final class MontyComplete extends MontyProgress
-  MontyProgress: permits final class MontyNameLookup extends MontyProgress
-  MontyProgress: permits final class MontyOsCall extends MontyProgress
-  MontyProgress: permits final class MontyPending extends MontyProgress
-  MontyProgress: permits final class MontyResolveFutures extends MontyProgress
-final class MontyResolveFutures extends MontyProgress
-  MontyResolveFutures.==: operator(Object other) -> bool
-  MontyResolveFutures.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyResolveFutures.hashCode: getter -> int
-  MontyResolveFutures.new: const constructor({required List<int> pendingCallIds})
-  MontyResolveFutures.pendingCallIds: final field List<int>
-  MontyResolveFutures.toJson: method() -> Map<String, dynamic>
-  MontyResolveFutures.toString: method() -> String
-
-[members: src/platform/monty_resource_usage.dart]
-final class MontyResourceUsage
-  MontyResourceUsage.==: operator(Object other) -> bool
-  MontyResourceUsage.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyResourceUsage.hashCode: getter -> int
-  MontyResourceUsage.memoryBytesUsed: final field int
-  MontyResourceUsage.new: const constructor({required int memoryBytesUsed, required int timeElapsedMs, required int stackDepthUsed})
-  MontyResourceUsage.stackDepthUsed: final field int
-  MontyResourceUsage.timeElapsedMs: final field int
-  MontyResourceUsage.toJson: method() -> Map<String, dynamic>
-  MontyResourceUsage.toString: method() -> String
-
-[members: src/platform/monty_result.dart]
-final class MontyResult
-  MontyResult.==: operator(Object other) -> bool
-  MontyResult.error: final field MontyException?
-  MontyResult.excType: getter -> String?
-  MontyResult.fromJson: factory constructor(Map<String, dynamic> json)
-  MontyResult.hashCode: getter -> int
-  MontyResult.isError: getter -> bool
-  MontyResult.new: const constructor({required MontyResourceUsage usage, required MontyValue value, MontyException? error, String? printOutput})
-  MontyResult.ok: getter -> bool
-  MontyResult.printOutput: final field String?
-  MontyResult.toJson: method() -> Map<String, dynamic>
-  MontyResult.toString: method() -> String
-  MontyResult.usage: final field MontyResourceUsage
-  MontyResult.value: final field MontyValue
-
-[members: src/platform/monty_snapshot_capable.dart]
-abstract class MontySnapshotCapable
-  MontySnapshotCapable.new: constructor()
-  MontySnapshotCapable.restore: abstract method(Uint8List@dart:typed_data data) -> Future<MontyPlatform>
-  MontySnapshotCapable.snapshot: abstract method() -> Future<Uint8List@dart:typed_data>
-
 [members: src/platform/monty_stack_frame.dart]
 final class MontyStackFrame
   MontyStackFrame.==: operator(Object other) -> bool
@@ -540,19 +313,6 @@ final class MontyStackFrame
   MontyStackFrame.startLine: final field int
   MontyStackFrame.toJson: method() -> Map<String, dynamic>
   MontyStackFrame.toString: method() -> String
-
-[members: src/platform/monty_state_mixin.dart]
-mixin MontyStateMixin
-  MontyStateMixin.assertActive: method(String method) -> void
-  MontyStateMixin.assertIdle: method(String method) -> void
-  MontyStateMixin.assertNotDisposed: method(String method) -> void
-  MontyStateMixin.backendName: abstract getter -> String
-  MontyStateMixin.isActive: getter -> bool
-  MontyStateMixin.isDisposed: getter -> bool
-  MontyStateMixin.isIdle: getter -> bool
-  MontyStateMixin.markActive: method() -> void
-  MontyStateMixin.markDisposed: method() -> void
-  MontyStateMixin.markIdle: method() -> void
 
 [members: src/platform/monty_typing_error.dart]
 final class MontyTypingError
@@ -883,42 +643,3 @@ final class OsCallNotHandledException implements Exception
   OsCallNotHandledException.new: const constructor([String? fnName])
   OsCallNotHandledException.toString: method() -> String
 osCallNoHandlerDefault: function(String op, List<Object?> args) -> ({String excType, String message})
-
-[members: src/repl/monty_repl.dart]
-class MontyRepl
-  MontyRepl.clearState: method() -> Future<void>
-  MontyRepl.detectContinuation: method(String source) -> Future<ReplContinuationMode>
-  MontyRepl.dispose: method() -> Future<void>
-  MontyRepl.feedRun: method(String code, {Map<String, MontyCallback> externalFunctions = const {}, Map<String, MontyCallback> externalAsyncFunctions = const {}, OsCallHandler? osHandler, Map<String, Object?>? inputs, void Function(String, String)? printCallback}) -> Future<MontyResult>
-  MontyRepl.feedStart: method(String code, {List<String>? externalFunctions}) -> Future<MontyProgress>
-  MontyRepl.new: constructor({String? scriptName, String? preamble, MontyLimits? limits})
-  MontyRepl.resolveFutures: method(Map<int, Object?> results, {Map<int, String>? errors}) -> Future<MontyProgress>
-  MontyRepl.restore: method(Uint8List@dart:typed_data bytes) -> Future<void>
-  MontyRepl.resume: method(Object? returnValue) -> Future<MontyProgress>
-  MontyRepl.resumeAsFuture: method() -> Future<MontyProgress>
-  MontyRepl.resumeNotFound: method(String fnName) -> Future<MontyProgress>
-  MontyRepl.resumeWithError: method(String errorMessage) -> Future<MontyProgress>
-  MontyRepl.resumeWithException: method(String excType, String errorMessage) -> Future<MontyProgress>
-  MontyRepl.scriptName: getter -> String?
-  MontyRepl.snapshot: method() -> Future<Uint8List@dart:typed_data>
-enum ReplContinuationMode
-  ReplContinuationMode.complete: static const enum value #0 ReplContinuationMode
-  ReplContinuationMode.incompleteBlock: static const enum value #2 ReplContinuationMode
-  ReplContinuationMode.incompleteImplicit: static const enum value #1 ReplContinuationMode
-  ReplContinuationMode.values: static const field List<ReplContinuationMode>
-
-[members: src/repl/repl_platform.dart]
-class ReplPlatform implements MontyFutureCapable
-  ReplPlatform.dispose: method() -> Future<void>
-  ReplPlatform.new: const constructor({required MontyRepl repl})
-  ReplPlatform.resolveFutures: method(Map<int, Object?> results, {Map<int, String>? errors}) -> Future<MontyProgress>
-  ReplPlatform.resume: method(Object? returnValue) -> Future<MontyProgress>
-  ReplPlatform.resumeAsFuture: method() -> Future<MontyProgress>
-  ReplPlatform.resumeNameLookup: method(String name, Object? value) -> Future<MontyProgress>
-  ReplPlatform.resumeNameLookupUndefined: method(String name) -> Future<MontyProgress>
-  ReplPlatform.resumeNotFound: method(String fnName) -> Future<MontyProgress>
-  ReplPlatform.resumeWithError: method(String errorMessage) -> Future<MontyProgress>
-  ReplPlatform.resumeWithException: method(String excType, String errorMessage) -> Future<MontyProgress>
-  ReplPlatform.run: method(String code, {MontyLimits? limits, String? scriptName}) -> Future<MontyResult>
-  ReplPlatform.start: method(String code, {List<String>? externalFunctions, MontyLimits? limits, String? scriptName}) -> Future<MontyProgress>
-  ReplPlatform.typeCheck: method(String code, {String? prefixCode, String scriptName = 'main.py'}) -> Future<String?>
