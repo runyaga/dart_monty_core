@@ -35,7 +35,9 @@ final class FixtureOutcome {
     this.excType,
     this.message,
     this.traceback = const [],
+    this.renderedTraceback,
     this.value,
+    this.valueRepr,
   });
 
   /// An outcome from a raised or returned [exception], or a clean [value].
@@ -63,8 +65,19 @@ final class FixtureOutcome {
   /// The frames the backend reported, outermost first.
   final List<MontyStackFrame> traceback;
 
+  /// The traceback exactly as the backend rendered it, when it renders one
+  /// itself (the worker engine does). Compared in place of rendering
+  /// [traceback] here.
+  final String? renderedTraceback;
+
   /// The value the fixture evaluated to, when it completed.
   final MontyValue? value;
+
+  /// The value's Python `repr()`, when the backend renders one itself (the
+  /// worker engine does, for the kinds it can). Compared with the
+  /// directive's text, as upstream compares `py_repr()`, in place of value
+  /// equality.
+  final String? valueRepr;
 }
 
 /// Judges [outcome] against [expectation].
@@ -95,10 +108,16 @@ String? adjudicateFixture(
 
       return 'expected no error, got ${_describe(outcome)}';
 
-    case ExpectReturn(value: final fixtureValue):
+    case ExpectReturn(value: final fixtureValue, :final repr):
       final expected = MontyValue.fromDart(fixtureValue);
       if (raised != null) {
         return 'expected $expected, got error ${_describe(outcome)}';
+      }
+      final actualRepr = outcome.valueRepr;
+      if (actualRepr != null && repr != null) {
+        if (actualRepr == repr) return null;
+
+        return 'repr mismatch: expected $repr, got $actualRepr';
       }
       if (outcome.value == expected) return null;
 
@@ -125,11 +144,9 @@ String? adjudicateFixture(
             '(value ${outcome.value})';
       }
       if (traceback != null) {
-        final actual = renderMontyTraceback(
-          raised,
-          outcome.message,
-          outcome.traceback,
-        );
+        final actual =
+            outcome.renderedTraceback ??
+            renderMontyTraceback(raised, outcome.message, outcome.traceback);
         if (actual == traceback) return null;
 
         return 'traceback mismatch:\n--- expected\n$traceback\n'

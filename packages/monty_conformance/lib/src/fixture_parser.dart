@@ -40,12 +40,16 @@ sealed class FixtureExpectation {
 
 /// The fixture declared `# Return=<repr>`: it must complete with that value.
 final class ExpectReturn extends FixtureExpectation {
-  /// Creates an [ExpectReturn] expecting [value].
-  const ExpectReturn(this.value);
+  /// Creates an [ExpectReturn] expecting [value]; [repr] is the directive's
+  /// text, which is what upstream compares (`py_repr()`).
+  const ExpectReturn(this.value, {this.repr});
 
   /// The parsed Python repr, as a plain Dart value. Compare against a real
   /// result with `MontyValue.fromDart(value)`.
   final Object? value;
+
+  /// The `# Return=` text verbatim, e.g. `[[...]]`.
+  final String? repr;
 }
 
 /// The fixture declared `# Return.str=<text>`: it must complete with a value
@@ -127,6 +131,7 @@ const knownFixtureDirectives = <String>{
   'run-async',
   'mount-fs',
   'gc-interval',
+  'timezone',
   'skip-cpython-windows',
   'cpython-main-module',
   'Raise',
@@ -181,6 +186,32 @@ bool fixtureIsRunAsync(String source) => _hasConfig(source, 'run-async');
 /// meaning the fixture expects a `root` Path variable pointing to a
 /// pre-populated virtual filesystem.
 bool fixtureMountsFs(String source) => _hasConfig(source, 'mount-fs');
+
+/// The integer a `# gc-interval=<N>` directive names, or null when [source]
+/// has none (upstream's `parse_usize_directive`: the value ends at the first
+/// whitespace).
+int? fixtureGcInterval(String source) {
+  final line = _commentLines(
+    _lines(source),
+  ).where((c) => c.startsWith('gc-interval=')).firstOrNull;
+  if (line == null) return null;
+
+  return int.tryParse(
+    line.substring('gc-interval='.length).split(RegExp(r'\s')).first,
+  );
+}
+
+/// The IANA zone a `# timezone=<NAME>` directive names, or null when
+/// [source] has none (upstream's `parse_str_directive`: the value ends at the
+/// first whitespace).
+String? fixtureTimezone(String source) {
+  final line = _commentLines(
+    _lines(source),
+  ).where((c) => c.startsWith('timezone=')).firstOrNull;
+  if (line == null) return null;
+
+  return line.substring('timezone='.length).split(RegExp(r'\s')).first;
+}
 
 /// Why the directives in [lines] are malformed, or null when well formed.
 String? _directiveProblem(List<String> lines, {required bool hasTraceback}) {
@@ -303,7 +334,9 @@ FixtureExpectation _parseLastLine(List<String> lines) {
     );
   }
   if (last.startsWith('# Return=')) {
-    return ExpectReturn(_parseReturnValue(last.substring('# Return='.length)));
+    final raw = last.substring('# Return='.length);
+
+    return ExpectReturn(_parseReturnValue(raw), repr: raw);
   }
   if (last.startsWith('# Raise=')) {
     return _parseRaise(last.substring('# Raise='.length));

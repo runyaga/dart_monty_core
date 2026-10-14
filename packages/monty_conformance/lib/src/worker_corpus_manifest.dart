@@ -1,0 +1,335 @@
+// The expected outcomes of the upstream 1.1.0 corpus on the worker engine.
+//
+// Every corpus file the engine fails is listed here, tied to a divergence ID
+// and a reason, and a run is judged against the list in BOTH directions: a
+// failing file that is not listed is a regression, and a listed file that now
+// passes is a stale entry to delete. Nothing is skipped. The list may only
+// shrink; adding to it is a decision, made with the divergence it names.
+//
+// The manifest is Dart, not a data file, because the browser runs read it too
+// and a page has no filesystem.
+
+/// Where a divergence applies.
+enum WorkerCorpusProfile {
+  /// The native worker executable, on the VM.
+  native,
+
+  /// The Web Worker, dart2js or dart2wasm, in any browser.
+  browser,
+}
+
+/// A recorded divergence between the worker engine and upstream's datatest.
+final class CorpusDivergence {
+  /// Creates a [CorpusDivergence].
+  const CorpusDivergence(this.id, this.summary, this.source);
+
+  /// The stable ID an expected failure names.
+  final String id;
+
+  /// What differs, and why that is not a defect of this package.
+  final String summary;
+
+  /// Where the divergence is recorded or decided.
+  final String source;
+}
+
+/// A corpus file expected to fail, and why.
+final class ExpectedFailure {
+  /// Creates an [ExpectedFailure] of [file] under [divergence].
+  const ExpectedFailure(
+    this.file,
+    this.divergence,
+    this.contains, {
+    this.profiles = const {
+      WorkerCorpusProfile.native,
+      WorkerCorpusProfile.browser,
+    },
+  });
+
+  /// The corpus file name.
+  final String file;
+
+  /// The ID of the [CorpusDivergence] this belongs to.
+  final String divergence;
+
+  /// Text the failure reason must contain: a listed file that fails for
+  /// another reason is not the divergence it was listed for.
+  final String contains;
+
+  /// The profiles the failure is expected in.
+  final Set<WorkerCorpusProfile> profiles;
+}
+
+/// The recorded divergences, by ID.
+const workerCorpusDivergences = <String, CorpusDivergence>{
+  'worker-no-test-hooks': CorpusDivergence(
+    'worker-no-test-hooks',
+    'Upstream runs its datatest with the engine built with `test-hooks`, '
+        'which adds `sys.setrecursionlimit` and the `gc` module for these '
+        'fixtures. The shipped worker is built without it, as every '
+        'consumer receives it, so it has neither.',
+    'upstream crates/monty-datatest/Cargo.toml (features = ["test-hooks"]); '
+        'native/Cargo.toml: "NEVER enabled in shipped builds"',
+  ),
+  'cycle-marker-is-str': CorpusDivergence(
+    'cycle-marker-is-str',
+    'A returned cyclic container carries the wire marker `[...]` / `{...}` '
+        "as a Python `str`, as upstream's Python host maps the wire's "
+        "`cycle` node; the fixtures state `py_repr()` of upstream's "
+        'in-process `MontyObject`, which prints the marker bare.',
+    "C2 arena reader: `cycle` is mapped as upstream's Python host maps it "
+        '(lib/src/worker/arena_reader.dart); pydantic_monty 1.1.0 returns '
+        'the same `str`',
+  ),
+  'worker-undefined-call-span': CorpusDivergence(
+    'worker-undefined-call-span',
+    'A call to an undefined name suspends in the worker as a host function '
+        'call; the NameError its refusal raises spans the whole call '
+        '(`aaa_func()`), where the in-process engine raises it at the name '
+        '(`aaa_func`). Same traceback otherwise.',
+    'pydantic_monty 1.1.0 prints the same wider span for '
+        "name_error__undefined_call_chained.py's source (measured); the "
+        'frame file `<python-input-N>` is normalised by the runner',
+  ),
+  'lookup-cannot-raise': CorpusDivergence(
+    'lookup-cannot-raise',
+    "Upstream's harness answers a lazy attribute lookup on a host instance "
+        'with an exception (`MutablePoint.boom` raises KeyError on the '
+        'host). The wire has that answer (`ResumeNameLookup.exception`), '
+        "but the driver's `NameLookupSnapshot.resume` has no form for it, "
+        'so the sandbox sees the attribute undefined.',
+    'lib/src/worker/monty_snapshot.dart NameLookupSnapshot.resume (value or '
+        'undefined only)',
+  ),
+  'browser-int-limit': CorpusDivergence(
+    'browser-int-limit',
+    'The browser build is wasm32: a size or count past 2**31 - 1 overflows '
+        "where the native worker's 64-bit word does not. Upstream's own "
+        'browser build fails these four files identically.',
+    'KNOWN-DIVERGENCE of the browser target, decided with the oracle '
+        'rule: pydantic_monty 1.1.0 is the reference, and `@pydantic/monty` '
+        '1.1.0 `/wasm` (the wasm32 build) fails the same four '
+        'files with the same exceptions (measured on Chrome 155)',
+  ),
+};
+
+/// Every corpus file expected to fail on the shipped worker.
+const workerCorpusExpected = <ExpectedFailure>[
+  // worker-no-test-hooks
+  ExpectedFailure(
+    'functools__gc.py',
+    'worker-no-test-hooks',
+    "No module named 'gc'",
+  ),
+  ExpectedFailure(
+    'itertools__gc.py',
+    'worker-no-test-hooks',
+    "No module named 'gc'",
+  ),
+  ExpectedFailure(
+    'refcount__exec_namespace.py',
+    'worker-no-test-hooks',
+    "No module named 'gc'",
+  ),
+  ExpectedFailure(
+    'json__dumps_recursion.py',
+    'worker-no-test-hooks',
+    "no attribute 'setrecursionlimit'",
+  ),
+  ExpectedFailure(
+    'recursion__deep_copy.py',
+    'worker-no-test-hooks',
+    "no attribute 'setrecursionlimit'",
+  ),
+  ExpectedFailure(
+    'recursion__deep_repr.py',
+    'worker-no-test-hooks',
+    "no attribute 'setrecursionlimit'",
+  ),
+  ExpectedFailure(
+    'recursion__limit_depth.py',
+    'worker-no-test-hooks',
+    "no attribute 'setrecursionlimit'",
+  ),
+
+  // cycle-marker-is-str
+  ExpectedFailure(
+    'pyobject__cycle_dict_self.py',
+    'cycle-marker-is-str',
+    "got {'self': '{...}'}",
+  ),
+  ExpectedFailure(
+    'pyobject__cycle_list_dict.py',
+    'cycle-marker-is-str',
+    "got [{'list': '[...]'}]",
+  ),
+  ExpectedFailure(
+    'pyobject__cycle_list_self.py',
+    'cycle-marker-is-str',
+    "got ['[...]']",
+  ),
+  ExpectedFailure(
+    'pyobject__cycle_multiple_refs.py',
+    'cycle-marker-is-str',
+    "got [['[...]'], ['[...]']]",
+  ),
+
+  // worker-undefined-call-span
+  ExpectedFailure(
+    'name_error__undefined_call_chained.py',
+    'worker-undefined-call-span',
+    'traceback mismatch',
+  ),
+  ExpectedFailure(
+    'name_error__undefined_call_in_expr.py',
+    'worker-undefined-call-span',
+    'traceback mismatch',
+  ),
+  ExpectedFailure(
+    'name_error__undefined_call_in_function.py',
+    'worker-undefined-call-span',
+    'traceback mismatch',
+  ),
+  ExpectedFailure(
+    'name_error__undefined_call_with_args.py',
+    'worker-undefined-call-span',
+    'traceback mismatch',
+  ),
+  ExpectedFailure(
+    'name_error__undefined_global.py',
+    'worker-undefined-call-span',
+    'traceback mismatch',
+  ),
+  ExpectedFailure(
+    'traceback__undefined_call.py',
+    'worker-undefined-call-span',
+    'traceback mismatch',
+  ),
+
+  // lookup-cannot-raise
+  ExpectedFailure(
+    'dataclass__basic.py',
+    'lookup-cannot-raise',
+    "'MutablePoint' object has no attribute 'boom'",
+  ),
+
+  // browser-int-limit
+  ExpectedFailure(
+    'itertools__combinatoric.py',
+    'browser-int-limit',
+    'Python int too large to convert to C ssize_t',
+    profiles: {WorkerCorpusProfile.browser},
+  ),
+  ExpectedFailure(
+    'itertools__tee.py',
+    'browser-int-limit',
+    'Python int too large to convert to C ssize_t',
+    profiles: {WorkerCorpusProfile.browser},
+  ),
+  ExpectedFailure(
+    'random__errors.py',
+    'browser-int-limit',
+    'Cannot convert negative int',
+    profiles: {WorkerCorpusProfile.browser},
+  ),
+  ExpectedFailure(
+    'range__ops.py',
+    'browser-int-limit',
+    'assert 4294967295 == 9223372036854775807',
+    profiles: {WorkerCorpusProfile.browser},
+  ),
+];
+
+/// How a recursion-set file ends on a browser whose JSPI probe failed: what
+/// upstream's own browser build (`@pydantic/monty` 1.1.0 `/wasm`) did with the
+/// file on Chrome 155 (5 fresh pages each, a recorded measurement).
+enum RecursionOutcome {
+  /// The worker died: `MontyCrashedError`.
+  crashes,
+
+  /// The file ran to its end.
+  passes,
+
+  /// Not measured on upstream's browser build; the run refuses to judge it.
+  unrecorded,
+}
+
+/// The 7-file recursion set. With the Worker's JSPI probe succeeding each
+/// file must meet its own directives, as on native (no entry above lists
+/// them). With it failing, each file's outcome must equal upstream's browser
+/// build's, recorded here.
+const workerRecursionSetNoJspi = <String, RecursionOutcome>{
+  'collections__deque.py': RecursionOutcome.crashes,
+  'dataclass__repr_eq.py': RecursionOutcome.crashes,
+  'dict__eq_self_referential.py': RecursionOutcome.crashes,
+  'generic_alias.py': RecursionOutcome.passes,
+  'list__eq_self_referential.py': RecursionOutcome.passes,
+  'recursion__deep_hash.py': RecursionOutcome.unrecorded,
+  'recursion__deep_isinstance.py': RecursionOutcome.unrecorded,
+};
+
+/// How a run's failures differ from the manifest for [profile]; empty when
+/// they match exactly.
+///
+/// [failures] maps each failing file to its reason. [corpus] is the file set
+/// that ran, so an entry for a file that is not in it is itself a problem.
+List<String> checkAgainstManifest(
+  Map<String, String> failures,
+  WorkerCorpusProfile profile,
+  Iterable<String> corpus,
+) {
+  final problems = <String>[];
+  final expected = {
+    for (final e in workerCorpusExpected)
+      if (e.profiles.contains(profile)) e.file: e,
+  };
+  final files = corpus.toSet();
+  for (final MapEntry(:key, :value) in failures.entries) {
+    final entry = expected[key];
+    if (entry == null) {
+      problems.add('REGRESSION $key: not an expected failure\n  $value');
+    } else if (!value.contains(entry.contains)) {
+      problems.add(
+        'CHANGED $key: expected a failure containing '
+        '"${entry.contains}" (${entry.divergence}), got\n  $value',
+      );
+    }
+  }
+  for (final file in expected.keys) {
+    if (!files.contains(file)) {
+      problems.add('MISSING $file: expected failure is not in the corpus');
+    } else if (!failures.containsKey(file)) {
+      problems.add('STALE $file: listed as a failure but it now passes');
+    }
+  }
+
+  return problems;
+}
+
+/// What is wrong with the manifest itself; empty when it is well formed.
+List<String> manifestProblems(Iterable<String> corpus) {
+  final problems = <String>[];
+  final files = corpus.toSet();
+  final seen = <String>{};
+  for (final e in workerCorpusExpected) {
+    if (!workerCorpusDivergences.containsKey(e.divergence)) {
+      problems.add('${e.file}: unknown divergence ${e.divergence}');
+    }
+    if (!files.contains(e.file)) problems.add('${e.file}: not in the corpus');
+    if (!seen.add(e.file)) problems.add('${e.file}: listed twice');
+    if (e.contains.isEmpty) problems.add('${e.file}: no reason text');
+  }
+  for (final id in workerCorpusDivergences.keys) {
+    if (!workerCorpusExpected.any((e) => e.divergence == id)) {
+      problems.add('divergence $id names no file');
+    }
+  }
+  for (final file in workerRecursionSetNoJspi.keys) {
+    if (!files.contains(file)) problems.add('$file: not in the corpus');
+    if (seen.contains(file)) {
+      problems.add('$file: a recursion-set file is also an expected failure');
+    }
+  }
+
+  return problems;
+}
