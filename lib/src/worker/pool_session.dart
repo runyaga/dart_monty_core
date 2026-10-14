@@ -514,13 +514,17 @@ final class _FeedDrive implements SnapshotDriver {
     // it runs fails the turn below.
     if (_session._hold.isFinished) throw _finishedError();
     final event = _suspended;
-    // Host code runs outside the turn, as upstream's does: a close meanwhile
-    // Resets the worker, and the resume then fails as finished.
-    final request = snapshot.isOsFunction
-        ? await _host.osCall(event.osCall, parentSleeps: false)
-        : await _host.call(event.functionCall);
 
-    return _session._withTurn(() => step(request), feed: false);
+    // Host code runs outside the protocol turn, as upstream's does, but
+    // inside the session's call: a close meanwhile Resets the worker and
+    // fails the resume at once, and the host's late answer is dropped.
+    return _session._withTurn(() async {
+      final request = snapshot.isOsFunction
+          ? await _host.osCall(event.osCall, parentSleeps: false)
+          : await _host.call(event.functionCall);
+
+      return step(request);
+    }, feed: false);
   }
 
   @override
@@ -582,18 +586,23 @@ final class _FeedDrive implements SnapshotDriver {
   Future<MontySnapshot> resumeFuturesAuto(FutureSnapshot snapshot) async {
     snapshot.spend();
     if (_session._hold.isFinished) throw _finishedError();
-    final pb.ParentRequest request;
-    try {
-      request = await _host.settle();
-      // Nothing can settle the worker's wait: the session ends, as upstream
-      // discards the checkout, and the error is rethrown.
-      // ignore: avoid_catching_errors
-    } on StateError {
-      _session._hold.lease.kill();
-      rethrow;
-    }
 
-    return _session._withTurn(() => step(request), feed: false);
+    // The wait is inside the session's call, as resumeCallAuto's host code
+    // is: a close meanwhile fails the resume at once.
+    return _session._withTurn(() async {
+      final pb.ParentRequest request;
+      try {
+        request = await _host.settle();
+        // Nothing can settle the worker's wait: the session ends, as
+        // upstream discards the checkout, and the error is rethrown.
+        // ignore: avoid_catching_errors
+      } on StateError {
+        _session._hold.lease.kill();
+        rethrow;
+      }
+
+      return step(request);
+    }, feed: false);
   }
 
   /// Sends [request] as one turn and returns the snapshot of how it ended.

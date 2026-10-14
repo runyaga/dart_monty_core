@@ -424,6 +424,52 @@ void main() {
       },
     );
 
+    test(
+      'a close while resumeAuto waits on host code fails it at once',
+      () async {
+        final (s, _) = await _session([
+          answer([_call('f', 1)]),
+          _resetOk,
+        ]);
+        final never = Completer<MontyValue>();
+        final snap =
+            await s.feedStart(
+                  'f()',
+                  externals: {'f': (args, kwargs) => never.future},
+                )
+                as FunctionSnapshot;
+        final resumed = expectLater(snap.resumeAuto(), throwsA(_finished));
+        await pumpEventQueue();
+        await s.close();
+        await resumed;
+        expect(never.isCompleted, isFalse);
+      },
+    );
+
+    test('a close while resumeAuto waits on a pending coroutine fails it at '
+        'once', () async {
+      final (s, _) = await _session([
+        answer([_call('af', 1)]),
+        answer([
+          _futures([1]),
+        ]),
+        _resetOk,
+      ]);
+      final never = Completer<MontyValue>();
+      final call =
+          await s.feedStart(
+                'await af()',
+                externals: {'af': coroutine((args, kwargs) => never.future)},
+              )
+              as FunctionSnapshot;
+      final futures = await call.resumeAuto() as FutureSnapshot;
+      final resumed = expectLater(futures.resumeAuto(), throwsA(_finished));
+      await pumpEventQueue();
+      await s.close();
+      await resumed;
+      expect(never.isCompleted, isFalse);
+    });
+
     test('resumeAuto after a close runs no host code', () async {
       final (s, _) = await _session([
         answer([

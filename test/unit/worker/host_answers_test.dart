@@ -1,6 +1,8 @@
 // OS calls as upstream presents them to a host, and the host's system
 // sleeps and coroutines (host_answers.dart).
 // Pure Dart: vm, dart2js and dart2wasm.
+import 'dart:async';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -229,23 +231,37 @@ void main() {
       );
     });
 
-    test(
-      'gathered sleeps run at once: they settle in deadline order',
-      () async {
-        final host = HostAnswers(systemSleepMax: const Duration(seconds: 10));
-        // All three timers start before any ends, so the shortest settles
-        // first, whatever order they were started in.
-        for (final (id, delay) in [(1, 0.3), (2, 0.1), (3, 0.2)]) {
-          await host.osCall(asyncSleep(id, delay), parentSleeps: true);
-        }
-        final order = <int>[];
-        while (order.length < 3) {
-          final request = await host.settle();
-          order.addAll(request.resumeFutures.results.map((r) => r.callId));
-        }
-        expect(order, [2, 3, 1]);
-      },
-    );
+    test('gathered sleeps run at once: all are armed before any ends, and '
+        'each settles when its timer fires', () async {
+      // The timers are held, not run: no wall clock decides the order.
+      final held = <Duration, _HeldTimer>{};
+      await runZoned(
+        () async {
+          final host = HostAnswers(
+            systemSleepMax: const Duration(seconds: 10),
+          );
+          for (final (id, delay) in [(1, 0.3), (2, 0.1), (3, 0.2)]) {
+            await host.osCall(asyncSleep(id, delay), parentSleeps: true);
+          }
+          expect(held.keys.toSet(), {
+            const Duration(milliseconds: 300),
+            const Duration(milliseconds: 100),
+            const Duration(milliseconds: 200),
+          });
+          final order = <int>[];
+          for (final ms in [100, 200, 300]) {
+            held[Duration(milliseconds: ms)]!.fire();
+            final request = await host.settle();
+            order.addAll(request.resumeFutures.results.map((r) => r.callId));
+          }
+          expect(order, [2, 3, 1]);
+        },
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) =>
+              held[duration] = _HeldTimer(callback),
+        ),
+      );
+    });
 
     test('an async handler declining asyncio.sleep settles it with None, '
         'as a null answer does', () async {
@@ -298,4 +314,28 @@ void main() {
       expect(normalizeVirtualPath(key), value, reason: key);
     }
   });
+}
+
+/// A timer that runs only when the test fires it.
+final class _HeldTimer implements Timer {
+  _HeldTimer(this._callback);
+
+  final void Function() _callback;
+  bool _isActive = true;
+
+  /// Runs the callback now, unless cancelled or already run.
+  void fire() {
+    if (!_isActive) return;
+    _isActive = false;
+    _callback();
+  }
+
+  @override
+  void cancel() => _isActive = false;
+
+  @override
+  bool get isActive => _isActive;
+
+  @override
+  int get tick => _isActive ? 0 : 1;
 }
