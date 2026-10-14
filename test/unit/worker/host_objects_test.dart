@@ -127,6 +127,25 @@ final HostClass<_Box> _constClass = HostClass(
   methods: {'describe': (args, kwargs) => const MontyString('a box')},
 );
 
+/// A class with a callable field and a plain one.
+final HostClass<_Box> _callableField = HostClass(
+  'Box',
+  instance: HostMembers(
+    fields: {
+      'callback': (b) =>
+          (List<MontyValue> args, Map<String, MontyValue> kw) =>
+              const MontyInt(42),
+      'number': (b) => const MontyInt(7),
+    },
+  ),
+);
+
+/// A class whose constant is a class, which has no value class yet.
+final HostClass<_Box> _withClassConstant = HostClass(
+  'Holder',
+  attributes: {'OTHER': () => ClassType(_constClass)},
+);
+
 /// A class whose one field is a class.
 final HostClass<_Box> _withClassField = HostClass(
   'Box',
@@ -365,6 +384,50 @@ void main() {
       );
     });
 
+    test('an explicit grant calls what the attribute holds', () async {
+      final granted = ClassInstance(
+        _Box(1),
+        classType: ClassType(_callableField),
+        policies: const HostPolicies(allowedMethods: ['callback', 'number']),
+      );
+      expect(
+        await granted.callMethod('callback', const [], const {}),
+        const MontyInt(42),
+      );
+      expect(
+        () => granted.callMethod('number', const [], const {}),
+        throwsA(
+          isA<ExternalException>().having(
+            (e) => e.message,
+            'message',
+            "'int' object is not callable",
+          ),
+        ),
+      );
+      // Under 'all' only the class's methods qualify.
+      final all = ClassInstance(
+        _Box(1),
+        classType: ClassType(_callableField),
+        policies: const HostPolicies(allowedMethods: 'all'),
+      );
+      expect(
+        () => all.callMethod('callback', const [], const {}),
+        throwsA(isA<ExternalException>()),
+      );
+    });
+
+    test('a class serves its constants lazily', () {
+      final type = ClassType(
+        _constClass,
+        policies: const HostPolicies(lazyAttrs: ['KIND']),
+      );
+      expect(type.lookupLazyAttr('KIND'), const MontyString('box'));
+      expect(
+        () => type.lookupLazyAttr('OTHER'),
+        throwsA(isA<ExternalException>()),
+      );
+    });
+
     test('eager attributes are all read before the hook runs', () {
       final order = <String>[];
       ClassInstance(
@@ -526,6 +589,59 @@ void main() {
         hosts: objects.lookup,
       );
       expect(hostObjectOf(itemAt(args, 1)), same(box));
+    });
+
+    test('an instance inside itself is a cycle', () {
+      late final ClassInstance<_Box> looped;
+      looped = ClassInstance(
+        _Box(1),
+        classType: ClassType(
+          HostClass(
+            'Box',
+            instance: HostMembers(fields: {'me': (b) => looped}),
+          ),
+        ),
+        policies: const HostPolicies(eagerAttrs: 'all'),
+      );
+      expect(
+        () => ArenaWriter(objects: HostObjects()).add(looped),
+        throwsA(
+          isA<PythonRefusal>().having(
+            (e) => e.text,
+            'text',
+            'Circular reference detected',
+          ),
+        ),
+      );
+    });
+
+    test('a registered instance decodes whatever its class holds', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      final box = ClassInstance(
+        _Box(1),
+        classType: ClassType(
+          _withClassConstant,
+          policies: const HostPolicies(eagerAttrs: 'all'),
+        ),
+      );
+      final index = writer.add(box);
+      final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
+      expect(hostObjectOf(decoded), same(box));
+      expect((decoded as MontyClassInstance).classType.name, 'Holder');
+    });
+
+    test('each future answer is its own encoding: the last policy wins', () {
+      final objects = HostObjects();
+      final box = _Box(1);
+      final closed = _box(1, value: box, policies: HostPolicies.none);
+      final open = _box(1, value: box);
+      futuresRequest([
+        (1, ExternalAnswer.value(closed)),
+        (2, ExternalAnswer.value(open)),
+        (3, ExternalAnswer.value(closed)),
+      ], objects: objects);
+      expect(objects[_one], same(closed));
     });
 
     test('a refused instance registers neither it nor its class', () {

@@ -636,6 +636,7 @@ pb.ParentRequest futuresRequest(
   final writer = ArenaWriter(objects: objects);
   final out = <pb.FutureResult>[];
   for (final (callId, answer) in results) {
+    writer.separate();
     out.add(
       pb.FutureResult(
         callId: callId == 0 ? null : callId,

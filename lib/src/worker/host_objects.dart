@@ -461,32 +461,45 @@ final class ClassInstance<T extends Object> {
   }
 
   /// Calls method [name] on [value]. `__call__` is always refused on an
-  /// instance; under `'all'` only [HostMembers.methods] qualify.
+  /// instance. Under `'all'` only the class's methods qualify; a name
+  /// granted explicitly calls whatever the attribute holds, as upstream
+  /// calls what `getattr` returns.
   FutureOr<Object> callMethod(
     String name,
     List<MontyValue> args,
     Map<String, MontyValue> kwargs,
   ) {
-    // As `getattr` on an instance finds the class's classmethods and
-    // staticmethods too.
-    final method =
-        _members.methods[name] ??
-        switch (classType.value.methods[name]) {
-          final HostMethod m => (T _, a, k) => m(a, k),
-          null => null,
-        };
-    if (name == '__call__' ||
-        method == null ||
-        !_allows(policies.allowedMethods, name)) {
-      throw _error(name);
-    }
+    final policy = policies.allowedMethods;
+    if (name == '__call__' || !_allows(policy, name)) throw _error(name);
+    final method = _method(name) ?? (policy == 'all' ? null : _callable(name));
 
-    return _converted(this, name, method(value, args, kwargs));
+    return _converted(
+      this,
+      name,
+      (method ?? (throw _error(name)))(args, kwargs),
+    );
   }
 
   /// The hook: this wrapper's, or else its class's.
   Object convertValue(String name, Object item) =>
       _convert?.call(name, item) ?? classType.convertValue(name, item);
+
+  /// A method defined on the class: an instance method bound to [value],
+  /// or a classmethod or staticmethod, as `getattr` finds them.
+  HostMethod? _method(String name) => switch (_members.methods[name]) {
+    final HostInstanceMethod<T> m => (args, kwargs) => m(value, args, kwargs),
+    null => classType.value.methods[name],
+  };
+
+  /// The attribute [name] as a callable: a [HostMethod] it holds, or
+  /// `TypeError` for any other value.
+  HostMethod _callable(String name) => switch (_attribute(name)) {
+    final HostMethod m => m,
+    final other => throw ExternalException(
+      'TypeError',
+      "'${_typeName(other)}' object is not callable",
+    ),
+  };
 
   Object _attribute(String name) {
     final read = _members.fields[name] ?? _members.properties[name];
@@ -550,9 +563,27 @@ void checkHostMethodName(String name) {
   }
 }
 
-String _idOf(Object wrapper) => switch (wrapper) {
-  ClassInstance(:final id) || ClassType(:final id) => id,
-  _ => throw ArgumentError.value(wrapper, 'wrapper', 'not a host object'),
+String _idOf(Object wrapper) => wrapper is ClassInstance<Object>
+    ? wrapper.id
+    : (wrapper as ClassType<Object>).id;
+
+/// The Python type name of a value a host attribute holds.
+String _typeName(Object value) => switch (value) {
+  ClassInstance(:final classType) => classType.value.name,
+  MontyInt() || MontyBigInt() => 'int',
+  MontyFloat() => 'float',
+  MontyString() => 'str',
+  MontyBool() => 'bool',
+  MontyNone() => 'NoneType',
+  _ => _otherTypeName(value),
+};
+
+String _otherTypeName(Object value) => switch (value) {
+  MontyList() => 'list',
+  MontyTuple() => 'tuple',
+  MontyDict() => 'dict',
+  ClassType() => 'type',
+  _ => '${value.runtimeType}',
 };
 
 Object _valueOf(Object wrapper) => switch (wrapper) {

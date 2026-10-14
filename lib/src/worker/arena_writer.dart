@@ -113,6 +113,14 @@ final class ArenaWriter {
     return done;
   }
 
+  /// Starts a value independent of those added so far: none of their
+  /// nodes is shared with it, and a wrapper met again is registered and
+  /// read again, as upstream encodes each future's answer on its own.
+  void separate() {
+    _containers.clear();
+    _classes.clear();
+  }
+
   /// [add], leaving the arena as it was when [value] is refused, so the
   /// writer stays usable for other values.
   int tryAdd(Object value) {
