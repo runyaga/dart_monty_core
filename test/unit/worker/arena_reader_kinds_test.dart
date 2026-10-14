@@ -755,7 +755,7 @@ void main() {
         [for (final (k, v) in entries) (hostObjectOf(k), v)],
         [(first, const MontyInt(2)), (other, const MontyInt(3))],
       );
-      expect(identical(hostObjectOf(entries.first.$1), first), isTrue);
+      expect(identical(hostObjectOf(firstItem(entries).$1), first), isTrue);
     });
 
     test('registered objects equal only to themselves stay apart', () {

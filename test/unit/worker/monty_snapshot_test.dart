@@ -1153,17 +1153,20 @@ void main() {
     test("ExternalReturnValue equality is its value's", () {
       // Upstream's is a TypedDict, so a dict, compared by value
       // (pydantic_monty/__init__.py:235-238).
-      String eq(Object a, Object b) => 'value: ${a == b ? 'True' : 'False'}';
-      expect(eq(_ret(1), _ret(1)), workerClassOracle['return_value_equal']);
-      expect(eq(_ret(1), _ret(2)), workerClassOracle['return_value_unequal']);
-      expect(_ret(1).hashCode, _ret(1).hashCode);
-      expect(_ret(1), isNot(const ExternalFuture()));
-      final list = ExternalReturnValue(MontyList([MontyInt(_n(1))]));
-      expect(list, ExternalReturnValue(MontyList([MontyInt(_n(1))])));
-      expect(
-        list.hashCode,
-        ExternalReturnValue(MontyList([MontyInt(_n(1))])).hashCode,
-      );
+      // Each built anew, so equal ones are distinct objects.
+      final [one, alsoOne, two] = [
+        for (final n in [1, 1, 2]) _ret(n),
+      ];
+      expect(identical(one, alsoOne), isFalse);
+      expect(_py(one == alsoOne), workerClassOracle['return_value_equal']);
+      expect(_py(one == two), workerClassOracle['return_value_unequal']);
+      expect(one.hashCode, alsoOne.hashCode);
+      expect(one, isNot(const ExternalFuture()));
+      final [list, sameList] = [
+        for (final n in [1, 1]) ExternalReturnValue(MontyList([MontyInt(n)])),
+      ];
+      expect(list, sameList);
+      expect(list.hashCode, sameList.hashCode);
     });
 
     test(
@@ -1174,22 +1177,24 @@ void main() {
         ]);
         final snap = await s.feedStart('f(1, a=2, b=3)') as FunctionSnapshot;
         expect(
-          'value: ${identical(snap.kwargs, snap.kwargs) ? 'True' : 'False'}',
+          _py(_sameEachRead(() => snap.kwargs)),
           workerClassOracle['kwargs_same_object'],
         );
         expect('value: ${_repr(snap.kwargs)}', workerClassOracle['kwargs']);
-        snap.kwargs['c'] = const MontyInt(4);
+        // Each change is made through one read and seen through the next.
+        for (final (id, change)
+            in <(String, void Function(Map<String, MontyValue>))>[
+              ('kwargs_after_set', (k) => k['c'] = const MontyInt(4)),
+              ('kwargs_after_del', (k) => k.remove('a')),
+            ]) {
+          expect(
+            'value: ${_repr(_changed(snap, change))}',
+            workerClassOracle[id],
+            reason: id,
+          );
+        }
         expect(
-          'value: ${_repr(snap.kwargs)}',
-          workerClassOracle['kwargs_after_set'],
-        );
-        snap.kwargs.remove('a');
-        expect(
-          'value: ${_repr(snap.kwargs)}',
-          workerClassOracle['kwargs_after_del'],
-        );
-        expect(
-          'value: ${identical(snap.args, snap.args) ? 'True' : 'False'}',
+          _py(_sameEachRead(() => snap.args)),
           workerClassOracle['args_same_object'],
         );
         // A tuple: upstream's `TypeError` on item assignment.
@@ -1253,7 +1258,8 @@ void main() {
         workerClassOracle['range_u32_max'],
         startsWith('value: SourceRange('),
       );
-      final max = SourceRange('f', _n(0xFFFFFFFF), _n(0xFFFFFFFF));
+      final u32Max = _n(0xFFFFFFFF);
+      final max = SourceRange('f', u32Max, u32Max);
       expect((max.start, max.end), (0xFFFFFFFF, 0xFFFFFFFF));
       expect(workerClassOracle['range_reversed'], startsWith('value: '));
       final reversed = SourceRange('f', _n(5), _n(1));
@@ -1271,10 +1277,33 @@ void main() {
 }
 
 /// [n], as a value the compiler cannot make constant.
-int _n(int n) => [n].single;
+int _n(int n) => int.parse('$n');
 
 /// A return of [n], built anew each time.
 ExternalReturnValue _ret(int n) => ExternalReturnValue(MontyInt(_n(n)));
+
+/// [snap]'s kwargs read again after [change] was made through a first read.
+Map<String, MontyValue> _changed(
+  FunctionSnapshot snap,
+  void Function(Map<String, MontyValue>) change,
+) {
+  final [first, again] = [
+    for (var i = 0; i < 2; i++) snap.kwargs,
+  ];
+  change(first);
+
+  return again;
+}
+
+/// [b] as Python shows a bool, as an outcome.
+String _py(bool b) => 'value: ${b ? 'True' : 'False'}';
+
+/// Whether two reads of [read] give the identical object.
+bool _sameEachRead(Object Function() read) {
+  final [a, b] = [for (var i = 0; i < 2; i++) read()];
+
+  return identical(a, b);
+}
 
 /// The suspension of `f(1, a=2, b=3)`.
 pb.ChildEvent _callKw() {
