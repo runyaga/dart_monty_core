@@ -25,6 +25,7 @@ import '_attribute_cases.dart';
 import '_config_cases.dart';
 import '_cwd_cases.dart';
 import '_host_code_cases.dart';
+import '_restore_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
@@ -63,6 +64,26 @@ void main() {
   configOracleTests(
     _backend,
     () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
+  );
+  restoreOracleTests(
+    _backend,
+    (options) => MontyPool.start(options: options),
+  );
+
+  test(
+    'workerPid is null: a Web Worker has no process id ($_backend)',
+    () async {
+      await MontyPool.withPool(
+        (pool) => pool.withSession((s) async {
+          expect(
+            await s.feedRun('1', printCallback: _ignore),
+            const MontyInt(1),
+          );
+          expect(s.workerPid, isNull);
+        }, options: _limits),
+        options: const PoolOptions(maxProcesses: 1),
+      );
+    },
   );
   attributeSessionTests(
     _backend,

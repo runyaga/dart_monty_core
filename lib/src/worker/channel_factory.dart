@@ -1,8 +1,8 @@
 /// Which `MontyChannel` a new worker gets: the pool's only conditional
 /// import. A process on native, a Web Worker in the browser.
 ///
-/// Each half provides `SpawnHandle openChannel({String? workerLocation})`
-/// and `int defaultMaxProcesses()`.
+/// Each half provides `SpawnHandle openChannel({String? workerLocation})`,
+/// `int? channelPid(MontyChannel channel)` and `int defaultMaxProcesses()`.
 ///
 /// Internal to the package; nothing here is exported.
 library;

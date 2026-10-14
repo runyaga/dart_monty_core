@@ -390,6 +390,10 @@ final class WorkerLease {
   /// The worker's pool-unique id; a reused worker keeps it.
   int get workerId => _worker.id;
 
+  /// The worker's process id; null on the web, and once the lease has
+  /// ended.
+  int? get pid => _isReleased ? null : chf.channelPid(_worker.channel);
+
   /// Whether the slot has been given back.
   bool get isReleased => _isReleased;
 

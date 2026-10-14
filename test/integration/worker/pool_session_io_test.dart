@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 
 import '../../_accessors.dart';
 import '../../unit/worker/_config_cases.dart';
+import '../../unit/worker/_restore_cases.dart';
 import '_worker_harness.dart';
 
 /// Every session's memory is bounded.
@@ -99,6 +100,7 @@ void main() {
     'vm',
     () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
   );
+  restoreOracleTests('vm', (options) => MontyPool.start(options: options));
 
   test('feedRun, prints in order, Reset on close, the worker reused', () async {
     await MontyPool.withPool(
@@ -798,4 +800,65 @@ void main() {
     },
     timeout: _probeTimeout,
   );
+
+  group('workerPid and the finalizer (q2)', () {
+    test("workerPid is the worker process's id; null in a turn and once "
+        'closed', () async {
+      final pool = await MontyPool.start(
+        options: const PoolOptions(maxProcesses: 1),
+      );
+      try {
+        final session = await pool.checkout(options: _limits);
+        final pid = session.workerPid;
+        expect(pid, ProcessChannel.live.single.pid);
+        int? inTurn = -1;
+        await session.feedRun(
+          'print(1)',
+          printCallback: (stream, text) => inTurn = session.workerPid,
+        );
+        expect(inTurn, isNull);
+        expect(session.workerPid, pid);
+        await session.close();
+        expect(session.workerPid, isNull);
+      } finally {
+        await pool.close();
+      }
+    });
+
+    test('a session dropped without close gives its worker back once '
+        'collected', () async {
+      final pool = await MontyPool.start(
+        options: const PoolOptions(maxProcesses: 1),
+      );
+      try {
+        // The only reference to the session dies with this call.
+        Future<void> drop() async {
+          final session = await pool.checkout(options: _limits);
+          expect(await session.feedRun('1 + 1'), const MontyInt(2));
+        }
+
+        await drop();
+        expect(pool.liveWorkers, 1);
+        // Allocate until the collector runs the finalizer, which kills the
+        // worker and frees its slot.
+        final deadline = DateTime.now().add(const Duration(seconds: 30));
+        var churn = <List<int>>[];
+        while (pool.liveWorkers > 0) {
+          if (DateTime.now().isAfter(deadline)) {
+            fail('the dropped session was never finalized');
+          }
+          churn = [for (var i = 0; i < 64; i++) List<int>.filled(1 << 16, i)];
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        expect(churn, isNotEmpty);
+        // The slot is free: a new checkout gets a new worker.
+        await pool.withSession(
+          (s) async => expect(await s.feedRun('3'), const MontyInt(3)),
+          options: _limits,
+        );
+      } finally {
+        await pool.close();
+      }
+    }, timeout: const Timeout(Duration(seconds: 60)));
+  });
 }

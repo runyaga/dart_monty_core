@@ -8,6 +8,8 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
 import 'package:meta/meta.dart';
@@ -210,6 +212,9 @@ abstract interface class SnapshotDriver {
   /// Settles [snapshot]'s pending futures as the feed's host coroutines
   /// finish.
   Future<MontySnapshot> resumeFuturesAuto(FutureSnapshot snapshot);
+
+  /// The session suspended at [snapshot], as the worker's opaque bytes.
+  Future<Uint8List> dumpSnapshot(SuspendedSnapshot snapshot);
 }
 
 /// A suspension: the state shared by the three kinds.
@@ -235,6 +240,14 @@ sealed class SuspendedSnapshot extends MontySnapshot {
     if (_isSpent) throw StateError('snapshot has already been resumed');
     _isSpent = true;
   }
+
+  /// The session suspended here, as opaque bytes that the session's
+  /// `loadSnapshot` restores, in this session's worker or another
+  /// (upstream's `dump`). The snapshot stays unspent.
+  ///
+  /// Throws [StateError] once the snapshot has been resumed, and once the
+  /// session is finished.
+  Future<Uint8List> dump() => _driver.dumpSnapshot(this);
 }
 
 /// Suspended on a host function call or, when [isOsFunction], an OS call

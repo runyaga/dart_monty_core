@@ -5,6 +5,7 @@ library;
 
 import 'dart:io';
 
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
@@ -21,6 +22,11 @@ SpawnHandle openChannel({String? workerLocation}) => PendingSpawn((_) async {
 
   return ProcessChannel.spawn(launch);
 });
+
+/// [channel]'s process id: a worker process's, else (a channel some test
+/// or harness made) null.
+int? channelPid(MontyChannel channel) =>
+    channel is ProcessChannel ? channel.pid : null;
 
 /// The processor count, as upstream's `available_parallelism`.
 int defaultMaxProcesses() => Platform.numberOfProcessors;

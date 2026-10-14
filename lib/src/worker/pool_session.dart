@@ -10,6 +10,7 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
@@ -25,6 +26,7 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:fixnum/fixnum.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
@@ -114,6 +116,55 @@ abstract interface class PoolSession {
     bool skipTypeCheck = false,
   });
 
+  /// Restores [state], a dump taken between feeds, into this session
+  /// (upstream's `load_session`). The dump brings its own globals, script
+  /// name, limits, type check and working directory; this session's
+  /// settings for them no longer apply.
+  ///
+  /// Only for a fresh session: once it has been fed or loaded, a load
+  /// throws [StateError]. A dump taken mid-feed throws [StateError] too, and
+  /// the session is then finished. Bytes the worker cannot load throw
+  /// [MontyRuntimeError], and the session runs on, still unloaded.
+  ///
+  /// The bytes are trusted: load only an unmodified dump from a compatible
+  /// producer whose provenance the caller has checked. Loading does not
+  /// validate them, and an invalid dump has no guarantee of correctness or
+  /// availability.
+  Future<void> loadSession(Uint8List state);
+
+  /// Restores [state], a dump taken mid-feed (by [dump] while a suspension
+  /// waited, or by a snapshot's `dump`), and returns the suspension it
+  /// re-announces (upstream's `load_snapshot`). [externals], [os] and
+  /// [printCallback] are [feedStart]'s, kept for the snapshots' `resumeAuto`;
+  /// a restored [FutureSnapshot]'s coroutines are gone, so its `resumeAuto`
+  /// fails.
+  ///
+  /// As [loadSession]: only for a fresh session, the same trust contract,
+  /// and a dump taken between feeds throws [StateError] and finishes the
+  /// session. The re-announced suspension counts against the dump's
+  /// suspension budget, under this session's limit as a ceiling: with a
+  /// limit of 0 it aborts the load with an in-sandbox `RuntimeError`.
+  Future<MontySnapshot> loadSnapshot(
+    Uint8List state, {
+    Map<String, ProtoExternalFunction>? externals,
+    ProtoPrintCallback? printCallback,
+    OsHandler? os,
+  });
+
+  /// The session, idle or suspended, as opaque bytes that [loadSession] or
+  /// [loadSnapshot] restores, in this worker or another (upstream's
+  /// `dump`). The session runs on as it was.
+  ///
+  /// It runs between protocol turns, so a host function may dump its own
+  /// session while its call waits; from inside a print callback it throws
+  /// [StateError]. An error the worker reports instead (a dump too large to
+  /// send) is thrown as [MontyRuntimeError], and the session is unchanged.
+  Future<Uint8List> dump();
+
+  /// The worker's process id: diagnostics and tests. Null on the web, once
+  /// the session is finished, and while a protocol turn is in flight.
+  int? get workerPid;
+
   /// Ends the session and gives its slot back, exactly once.
   ///
   /// With no protocol turn in flight (idle, or a host callback running) it
@@ -122,6 +173,10 @@ abstract interface class PoolSession {
   /// interrupted, and its result is dropped when it comes. With a turn in
   /// flight it kills the worker, and that call fails with
   /// [MontyCrashedError] ([CrashCause.killed]). Never throws. Idempotent.
+  ///
+  /// A session collected without a close has its worker killed and its
+  /// slot freed by a finalizer. That is a backstop only: a finalizer may
+  /// never run, so every session must still be closed.
   Future<void> close();
 }
 
@@ -195,9 +250,18 @@ final class _Hold {
   }
 }
 
+/// Kills the worker of a session collected without [PoolSession.close] and
+/// frees its slot (q2). Its token is the session's lease, not the session,
+/// so it takes the lease's one exactly-once release. Best effort: a
+/// finalizer may never run, so a session must still be closed.
+final Finalizer<WorkerLease> _dropped = Finalizer((lease) => lease.kill());
+
 final class _LeasedSession implements PoolSession {
   _LeasedSession(this._hold, this._channel, this._proto, this._config) {
     _channel.onSuspended = _handOff;
+    // A live snapshot holds its drive, and so this session: a suspended
+    // run is never collected.
+    _dropped.attach(this, _hold.lease, detach: _hold);
   }
 
   final _Hold _hold;
@@ -227,6 +291,14 @@ final class _LeasedSession implements PoolSession {
   /// taken it: a new feed must queue behind it.
   bool _reserved = false;
 
+  /// Whether the session has been fed or loaded: a load is only for a fresh
+  /// session (upstream's `used`).
+  bool _used = false;
+
+  @override
+  int? get workerPid =>
+      _hold.isFinished || _channel.inTurn ? null : _hold.lease.pid;
+
   @override
   Future<MontyValue> feedRun(
     String code, {
@@ -235,16 +307,20 @@ final class _LeasedSession implements PoolSession {
     ProtoPrintCallback? printCallback,
     OsHandler? os,
     bool skipTypeCheck = false,
-  }) => _withTurn(
-    () => _drive(
-      code,
-      inputs: inputs,
-      host: _host(externals, os),
-      printCallback: printCallback,
-      skipTypeCheck: skipTypeCheck,
-    ),
-    feed: true,
-  );
+  }) {
+    _used = true;
+
+    return _withTurn(
+      () => _drive(
+        code,
+        inputs: inputs,
+        host: _host(externals, os),
+        printCallback: printCallback,
+        skipTypeCheck: skipTypeCheck,
+      ),
+      feed: true,
+    );
+  }
 
   @override
   Future<MontySnapshot> feedStart(
@@ -255,6 +331,7 @@ final class _LeasedSession implements PoolSession {
     OsHandler? os,
     bool skipTypeCheck = false,
   }) {
+    _used = true;
     final drive = _FeedDrive(
       this,
       _host(externals, os),
@@ -271,10 +348,75 @@ final class _LeasedSession implements PoolSession {
   }
 
   @override
+  Future<void> loadSession(Uint8List state) async {
+    _claimFresh();
+    final (event, _) = await _withTurn(() => _proto.load(state), feed: false);
+    if (event != null) {
+      _discard();
+      throw StateError(
+        'this dump is a suspended snapshot — use load_snapshot() to resume it',
+      );
+    }
+  }
+
+  @override
+  Future<MontySnapshot> loadSnapshot(
+    Uint8List state, {
+    Map<String, ProtoExternalFunction>? externals,
+    ProtoPrintCallback? printCallback,
+    OsHandler? os,
+  }) async {
+    _claimFresh();
+    final drive = _FeedDrive(
+      this,
+      _host(externals, os),
+      printCallback ?? defaultPrint,
+    );
+    _snapshots = drive;
+
+    return _withTurn(() => drive.restore(state), feed: false);
+  }
+
+  @override
+  Future<Uint8List> dump() async {
+    _refuseInPrint();
+    if (_hold.isFinished) throw _finishedError();
+
+    // The channel holds it until any turn in flight is over.
+    return _proto.dump();
+  }
+
+  /// Claims the session for a load, which only a fresh one takes.
+  void _claimFresh() {
+    if (_used) {
+      throw StateError(
+        'load_session / load_snapshot is only valid on a fresh session, '
+        'before any feed_run / feed_start / load_session / load_snapshot',
+      );
+    }
+    _used = true;
+  }
+
+  /// A load that restored the wrong kind of dump leaves a worker that
+  /// cannot be trusted: the session ends, as upstream discards it.
+  void _discard() => _hold.lease.kill();
+
+  /// Throws [StateError] inside one of this session's print callbacks.
+  void _refuseInPrint() {
+    if (_inPrintCallback(this)) {
+      throw StateError(
+        'a print callback cannot call its own session: it runs inside the '
+        'turn',
+      );
+    }
+  }
+
+  @override
   Future<void> close() => _closing ??= _close();
 
   Future<void> _close() async {
     _hold.closed = true;
+    _dropped.detach(_hold);
     // Sleeps end now: no timer outlives the session, and a drive waiting on
     // one goes on to fail as finished.
     _feedHost?.dispose();
@@ -305,12 +447,7 @@ final class _LeasedSession implements PoolSession {
     Future<T> Function() body, {
     required bool feed,
   }) async {
-    if (_inPrintCallback(this)) {
-      throw StateError(
-        'a print callback cannot call its own session: it runs inside the '
-        'turn',
-      );
-    }
+    _refuseInPrint();
     if (_hold.isFinished) throw _finishedError();
     // Null when the turn is free now: no await, so the body below starts
     // in this same synchronous step and no other call can slip in.
@@ -456,11 +593,16 @@ StateError _pendingError() =>
 /// snapshots' `resumeAuto` gives (with the coroutines they started), and
 /// where its prints go. It resumes the snapshots it hands out.
 final class _FeedDrive implements SnapshotDriver {
-  _FeedDrive(this._session, this._host, this._print);
+  _FeedDrive(this._session, this._host, this._print)
+    : _scriptName = _session._config.scriptName;
 
   final _LeasedSession _session;
   final HostAnswers _host;
   final ProtoPrintCallback _print;
+
+  /// The script name the drive's snapshots report: the session's, or a
+  /// restored dump's.
+  String _scriptName;
 
   /// The suspension the drive's unspent snapshot stands for. A resume spends
   /// its snapshot before the next one exists, so only the latest snapshot
@@ -611,6 +753,43 @@ final class _FeedDrive implements SnapshotDriver {
     }, feed: false);
   }
 
+  @override
+  Future<Uint8List> dumpSnapshot(SuspendedSnapshot snapshot) async {
+    final session = _session.._refuseInPrint();
+    // Checked once the turn is free, as upstream checks under the lock: a
+    // resume in flight has spent the snapshot.
+    await session._channel.idle();
+    if (snapshot.isSpent) {
+      throw StateError('cannot dump a snapshot that has already been resumed');
+    }
+    if (session._hold.isFinished) throw _finishedError();
+
+    return session._proto.dump();
+  }
+
+  /// Loads [state] and returns the snapshot of the suspension it
+  /// re-announces, under the dump's script name. An idle dump finishes the
+  /// session.
+  Future<MontySnapshot> restore(Uint8List state) async {
+    try {
+      final (event, scriptName) = await _session._proto.load(state);
+      if (event == null) {
+        _session._discard();
+        throw StateError(
+          'this dump is an idle session — use load_session() to restore it',
+        );
+      }
+      // The dump's own, unless the worker did not say.
+      _scriptName = scriptName ?? _scriptName;
+      _suspended = event;
+
+      return _suspension(event);
+    } on Object {
+      _host.dispose();
+      rethrow;
+    }
+  }
+
   /// Sends [request] as one turn and returns the snapshot of how it ended.
   /// A feed that ends, done or failed, ends its sleeps too.
   Future<MontySnapshot> step(pb.ParentRequest request) async {
@@ -656,7 +835,7 @@ final class _FeedDrive implements SnapshotDriver {
 
   /// The snapshot of the suspension [event].
   SuspendedSnapshot _suspension(pb.ChildEvent event) {
-    final script = _session._config.scriptName;
+    final script = _scriptName;
 
     return switch (event.whichKind()) {
       pb.ChildEvent_Kind.functionCall => _callSnapshot(event.functionCall),
@@ -686,7 +865,7 @@ final class _FeedDrive implements SnapshotDriver {
   FunctionSnapshot _callSnapshot(pb.FunctionCall call) => FunctionSnapshot(
     this,
     _position(call.position),
-    _session._config.scriptName,
+    _scriptName,
     functionName: call.functionName,
     callId: call.callId,
     isOsFunction: false,
@@ -702,7 +881,7 @@ final class _FeedDrive implements SnapshotDriver {
     return FunctionSnapshot(
       this,
       _position(call.position),
-      _session._config.scriptName,
+      _scriptName,
       functionName: name,
       callId: call.callId,
       isOsFunction: true,
@@ -740,21 +919,39 @@ SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
 /// says when the feed must be aborted instead. A worker reply can only
 /// tighten a limit.
 ///
+/// It also holds the feed and turn duration budgets the parent backstops.
+/// A reply sets either only where there is none: ordinary replies echo the
+/// session's, a `Load` reply reports the dump's.
+///
 /// Loading a dump follows upstream (`checkout.rs` `begin_load`, `forget`,
 /// `end_load`): [beginLoad] keeps the two limits as ceilings and restarts
-/// both counts; the `Load` reply, when it is `Ok` or a suspension, adopts the
-/// dump on those terms, and a re-announced suspension is counted and charged
+/// both counts, and forgets both duration budgets, so a dump keeps its own
+/// (O9); the `Load` reply, when it is `Ok` or a suspension, adopts the dump
+/// on those terms, and a re-announced suspension is counted and charged
 /// again as it arrives. Any other reply, or none ([endLoad]), puts the
 /// budget back as it was before the load.
 final class SessionBudget {
   /// A fresh budget for [config]: its limits, nothing used.
   SessionBudget(SessionConfig config)
-    : _suspensionLimit = config.limits?.maxSuspensions ?? defaultMaxSuspensions,
+    : _feedBudget = config.limits?.maxFeedDuration,
+      _turnBudget = config.limits?.maxTurnDuration,
+      _suspensionLimit = config.limits?.maxSuspensions ?? defaultMaxSuspensions,
       _sleepLimit = switch (config.limits?.maxTotalSleep) {
         final limit? => nanosOf(limit),
         null => null,
       },
       _systemSleepCap = config.systemSleepCapNanos;
+
+  /// The feed's duration budget, which the parent backstops: the session's
+  /// `maxFeedDuration`, or a loaded dump's; null while there is none.
+  Duration? get feedBudget => _feedBudget;
+  Duration? _feedBudget;
+
+  /// Each execution turn's duration budget, which the parent backstops:
+  /// the session's `maxTurnDuration`, or a loaded dump's; null while there
+  /// is none.
+  Duration? get turnBudget => _turnBudget;
+  Duration? _turnBudget;
 
   /// How many suspensions the session may make before the next one aborts
   /// its feed: `maxSuspensions`, or a smaller limit a reply reported.
@@ -781,13 +978,23 @@ final class SessionBudget {
 
   /// The budget as it was before a load whose reply has not yet decided
   /// it (upstream's `pending_load_budget`).
-  (int, BigInt?, int, BigInt)? _beforeLoad;
+  _Saved? _beforeLoad;
 
   /// Starts loading a dump: the budget is saved, then both counts restart
-  /// while both limits stay, as ceilings on the dump's (upstream's
-  /// `begin_load` and `forget`).
+  /// while both limits stay, as ceilings on the dump's, and both duration
+  /// budgets are forgotten, to be the dump's (upstream's `begin_load` and
+  /// `forget`).
   void beginLoad() {
-    _beforeLoad = (_suspensionLimit, _sleepLimit, _suspensions, _slept);
+    _beforeLoad = (
+      feed: _feedBudget,
+      turn: _turnBudget,
+      suspensionLimit: _suspensionLimit,
+      sleepLimit: _sleepLimit,
+      suspensions: _suspensions,
+      slept: _slept,
+    );
+    _feedBudget = null;
+    _turnBudget = null;
     _suspensions = 0;
     _slept = BigInt.zero;
   }
@@ -828,18 +1035,27 @@ final class SessionBudget {
     return _chargeSleep(event);
   }
 
-  void _restore((int, BigInt?, int, BigInt) saved) {
-    final (savedLimit, savedSleepLimit, savedCount, savedSlept) = saved;
-    _suspensionLimit = savedLimit;
-    _sleepLimit = savedSleepLimit;
-    _suspensions = savedCount;
-    _slept = savedSlept;
+  void _restore(_Saved saved) {
+    _feedBudget = saved.feed;
+    _turnBudget = saved.turn;
+    _suspensionLimit = saved.suspensionLimit;
+    _sleepLimit = saved.sleepLimit;
+    _suspensions = saved.suspensions;
+    _slept = saved.slept;
   }
 
-  /// Tightens either limit to the one [event] reports, if smaller. Both
-  /// arrive as u64s and are compared exactly, unsigned: a dart2js `int` may
-  /// hold a limit of 2^63 or more, which `Int64` would read as negative.
+  /// Sets either duration budget [event] reports where there is none, and
+  /// tightens either limit to the one it reports, if smaller (upstream's
+  /// `update_from`). The limits arrive as u64s and are compared exactly,
+  /// unsigned: a dart2js `int` may hold a limit of 2^63 or more, which
+  /// `Int64` would read as negative.
   void _adoptLimits(pb.ChildEvent event) {
+    if (_feedBudget == null && event.hasMaxFeedDurationMicros()) {
+      _feedBudget = _durationOfMicros(event.maxFeedDurationMicros);
+    }
+    if (_turnBudget == null && event.hasMaxTurnDurationMicros()) {
+      _turnBudget = _durationOfMicros(event.maxTurnDurationMicros);
+    }
     if (event.hasMaxTotalSleepMicros()) {
       final reported =
           BigInt.parse(event.maxTotalSleepMicros.toStringUnsigned()) *
@@ -883,6 +1099,32 @@ final class SessionBudget {
   }
 }
 
+/// A [SessionBudget] as [SessionBudget.beginLoad] saves it.
+typedef _Saved = ({
+  Duration? feed,
+  Duration? turn,
+  int suspensionLimit,
+  BigInt? sleepLimit,
+  int suspensions,
+  BigInt slept,
+});
+
+/// The most microseconds a reported duration budget is taken as: 2^53 - 1,
+/// which every backend's `int` holds exactly (285 years; upstream's u64
+/// goes further, past any deadline that could ever fire).
+const int _maxBudgetMicros = 0x1fffffffffffff;
+
+/// [micros], a u64, as a [Duration], saturating at [_maxBudgetMicros].
+Duration _durationOfMicros(Int64 micros) {
+  final value = BigInt.parse(micros.toStringUnsigned());
+
+  return Duration(
+    microseconds: value > BigInt.from(_maxBudgetMicros)
+        ? _maxBudgetMicros
+        : value.toInt(),
+  );
+}
+
 /// The delay of [event]'s system sleep, `time.sleep` or `asyncio.sleep`
 /// (upstream charges both); null for any other event.
 double? _systemSleepSeconds(pb.ChildEvent event) {
@@ -918,8 +1160,8 @@ pb.RaisedException _raised(String type, String message) =>
 /// is killed and the turn fails with [MontyCrashedError]. Time spent in
 /// host callbacks is never counted: it falls between turns.
 final class _SessionChannel implements MontyChannel {
-  _SessionChannel(this._hold, this._options, this._config)
-    : _budget = SessionBudget(_config);
+  _SessionChannel(this._hold, this._options, SessionConfig config)
+    : _budget = SessionBudget(config);
 
   /// Whether a protocol turn is in flight.
   bool inTurn = false;
@@ -934,7 +1176,6 @@ final class _SessionChannel implements MontyChannel {
 
   final _Hold _hold;
   final PoolOptions _options;
-  final SessionConfig _config;
 
   /// Execution time the running feed has used, as the worker reported it:
   /// never lowered within a feed, so a worker cannot loosen its own
@@ -948,15 +1189,37 @@ final class _SessionChannel implements MontyChannel {
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
 
+  /// Completes when the turn in flight ends.
+  Completer<void>? _turnOver;
+
+  /// Waits until no protocol turn is in flight: a dump, which runs between
+  /// a feed's turns, may otherwise meet one.
+  Future<void> idle() async {
+    while (inTurn) {
+      await (_turnOver ??= Completer<void>()).future;
+    }
+  }
+
   @override
   Future<pb.ChildEvent> turn(
     pb.ParentRequest request, {
     PrintHandler? onPrint,
   }) async {
+    // Turns are serialized, as upstream's checkout lock serializes them: a
+    // feed's next turn waits for a dump made from its host code. A free
+    // channel starts the turn in this same synchronous step.
+    if (inTurn) await idle();
     if (_hold.isFinished) throw _finishedError();
     final wasPending = pendingSuspension;
+    // A dump leaves the session as it was, suspended or not (upstream
+    // keeps `pending` across a Dump, an error reply included).
+    final dump = request.whichKind() == pb.ParentRequest_Kind.dump;
+    final load = request.whichKind() == pb.ParentRequest_Kind.load;
     inTurn = true;
     pendingSuspension = false;
+    // The dump carries its own budget: the reply re-adopts it, or the
+    // session's comes back (upstream's restore: begin_load, end_load).
+    if (load) _budget.beginLoad();
     try {
       // One deadline for the whole turn: print delivery, and an abort the
       // suspension budget sends in its place, as upstream's request_turn.
@@ -971,7 +1234,7 @@ final class _SessionChannel implements MontyChannel {
       unawaited(_settle(done, _turnWithBudget(request, onPrint)));
       try {
         final event = await done.future;
-        pendingSuspension = isSuspension(event);
+        pendingSuspension = dump ? wasPending : isSuspension(event);
 
         return event;
       } on FrameTooLargeException catch (error, stack) {
@@ -989,8 +1252,12 @@ final class _SessionChannel implements MontyChannel {
         _hold.turn = null;
       }
     } finally {
+      if (load) _budget.endLoad();
       inTurn = false;
-      if (pendingSuspension) onSuspended?.call();
+      final over = _turnOver;
+      _turnOver = null;
+      over?.complete();
+      if (pendingSuspension && !dump) onSuspended?.call();
     }
   }
 
@@ -1062,12 +1329,12 @@ final class _SessionChannel implements MontyChannel {
       _feedUsed = Duration.zero;
     }
     final feed = _backstop(
-      _config.limits?.maxFeedDuration,
+      _budget.feedBudget,
       _feedUsed,
       _options.feedDurationLimitGrace,
     );
     final turn = _backstop(
-      _config.limits?.maxTurnDuration,
+      _budget.turnBudget,
       Duration.zero,
       _options.turnDurationLimitGrace,
     );

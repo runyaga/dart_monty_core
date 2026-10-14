@@ -7,6 +7,7 @@ library;
 import 'dart:js_interop';
 
 import 'package:dart_monty_core/src/worker/asset_base.dart';
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_channel.dart';
 
@@ -31,6 +32,9 @@ SpawnHandle openChannel({String? workerLocation}) =>
         cancelled: cancelled,
       );
     });
+
+/// Null: a Web Worker has no process id.
+int? channelPid(MontyChannel channel) => null;
 
 /// `navigator.hardwareConcurrency`, or 4 when the browser hides it.
 int defaultMaxProcesses() {

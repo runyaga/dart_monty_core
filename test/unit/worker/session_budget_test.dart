@@ -295,4 +295,81 @@ void main() {
       expect(budget.suspensions, 0);
     });
   });
+
+  group('duration budgets: the dump keeps its own (O9)', () {
+    /// An event reporting the feed and turn budgets given, in micros.
+    pb.ChildEvent reporting(pb.ChildEvent event, {int? feed, int? turn}) {
+      if (feed != null) event.maxFeedDurationMicros = Int64(feed);
+      if (turn != null) event.maxTurnDurationMicros = Int64(turn);
+
+      return event;
+    }
+
+    SessionBudget timed({Duration? feed, Duration? turn}) => SessionBudget(
+      SessionConfig(
+        limits: ResourceLimits(maxFeedDuration: feed, maxTurnDuration: turn),
+      ),
+    );
+
+    (Duration?, Duration?) budgets(SessionBudget budget) =>
+        (budget.feedBudget, budget.turnBudget);
+
+    const second = Duration(seconds: 1);
+    const ms = Duration(milliseconds: 1);
+
+    test("the session's limits; none without", () {
+      expect(budgets(timed(feed: second, turn: ms)), (second, ms));
+      expect(budgets(timed()), (null, null));
+      expect(budgets(SessionBudget(const SessionConfig())), (null, null));
+    });
+
+    test('a reply sets a budget only where there is none', () {
+      // update_from: `if self.feed_budget.is_none()`; a budget in force is
+      // never changed, larger or smaller.
+      final budget = timed(feed: second)
+        ..admit(reporting(_ok(), feed: 5, turn: 7));
+      expect(budgets(budget), (second, const Duration(microseconds: 7)));
+      budget.admit(reporting(_ok(), feed: 10000000, turn: 1));
+      expect(budgets(budget), (second, const Duration(microseconds: 7)));
+    });
+
+    test("a load forgets the session's; the Load reply's are adopted", () {
+      final budget = timed(feed: second, turn: second)
+        ..beginLoad()
+        ..admit(reporting(_ok(), feed: 2000000))
+        ..endLoad();
+      expect(budgets(budget), (const Duration(seconds: 2), null));
+    });
+
+    test('a re-announced suspension adopts them too', () {
+      final budget = timed(feed: second)
+        ..beginLoad()
+        ..admit(reporting(_call(), turn: 3000))
+        ..endLoad();
+      expect(budgets(budget), (null, const Duration(milliseconds: 3)));
+    });
+
+    test("a refused load puts the session's back", () {
+      final budget = timed(feed: second, turn: ms)
+        ..beginLoad()
+        ..admit(reporting(_error(), feed: 5, turn: 5));
+      expect(budgets(budget), (second, ms));
+    });
+
+    test("no reply at all: endLoad puts the session's back", () {
+      final budget = timed(feed: second)
+        ..beginLoad()
+        ..endLoad();
+      expect(budgets(budget), (second, null));
+    });
+
+    test('a reported u64 past what a Duration holds is a budget, not '
+        'negative', () {
+      final budget = timed()..admit(reporting(_ok(), feed: -1, turn: -1));
+      final (feed, turn) = budgets(budget);
+      expect(feed!.isNegative, isFalse);
+      expect(turn, feed);
+      expect(feed, greaterThan(const Duration(days: 365 * 280)));
+    });
+  });
 }

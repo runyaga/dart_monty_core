@@ -17,7 +17,8 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 /// [withPool] and [withSession] are the way to use it: they close what they
 /// open on every exit path. A live worker keeps the Dart process from
 /// exiting, so a pool from [start] and a session from [checkout] must each
-/// be closed.
+/// be closed. (A session collected unclosed has its worker killed by a
+/// finalizer, but only if the collector runs it, which nothing guarantees.)
 ///
 /// With [start]'s default `checkoutTimeout` of null a [checkout] waits for
 /// a free worker forever, as upstream's does: a pool whose every worker is
