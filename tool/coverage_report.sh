@@ -147,8 +147,6 @@ EXCLUDE=(
 # compile and this script exits 1 with the compiler's own message.
 # -----------------------------------------------------------------------------
 VM_UNLOADABLE=(
-  'lib/src/wasm/wasm_bindings_js.dart'
-  'lib/src/repl/repl_factory_web.dart'
   'lib/src/worker/worker_channel.dart'
   'lib/src/worker/channel_factory_web.dart'
   'lib/src/worker/default_print_web.dart'

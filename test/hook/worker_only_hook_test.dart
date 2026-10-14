@@ -32,11 +32,10 @@ Directory _workerOnlyRoot() {
   File(
     'native/rust-toolchain.toml',
   ).copySync('${native.path}/rust-toolchain.toml');
-  // The Cargo configuration native/worker inherits from native/.
+  // A Cargo configuration native/worker inherits from native/, so the test
+  // sees the hook declare a parent's config.
   Directory('${native.path}/.cargo').createSync();
-  File(
-    'native/.cargo/config.toml',
-  ).copySync('${native.path}/.cargo/config.toml');
+  File('${native.path}/.cargo/config.toml').writeAsStringSync('# fixture\n');
   expect(File('${native.path}/Cargo.toml').existsSync(), isFalse);
 
   return tmp;
@@ -118,20 +117,11 @@ void main() {
     timeout: const Timeout(Duration(minutes: 30)),
   );
 
-  test(
-    'without native/Cargo.toml or the opt-in, the hook fails as before',
-    () async {
-      final root = _workerOnlyRoot();
-      await expectLater(
-        _runHook(root),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('native/Cargo.toml not found'),
-          ),
-        ),
-      );
-    },
-  );
+  test('without the opt-in, the hook builds nothing', () async {
+    final root = _workerOnlyRoot();
+    final output = await _runHook(root);
+
+    expect(output.assets.code, isEmpty);
+    expect(output.dependencies, isEmpty);
+  });
 }
