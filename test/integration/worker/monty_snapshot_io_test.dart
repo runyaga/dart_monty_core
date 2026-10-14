@@ -121,23 +121,40 @@ void main() {
 
   test('asyncio.sleep in feedRun: gathered tasks overlap', () async {
     await _withSession((s) async {
-      // Each task records who has started by the time its sleep ends: all
-      // three, when the sleeps overlap; sleeps waited one after another
-      // would give [3], [3, 1], [3, 1, 2]. No timing involved.
-      // And the gather of 1.2 s, 0.4 s and 0.8 s sleeps takes about the
-      // longest, not the 2.4 s sum (0.8 s of margin either side).
-      final clock = Stopwatch()..start();
-      final value = await s.feedRun(
-        'import asyncio\nstarted = []\nasync def a(n):\n'
-        '    started.append(n)\n    await asyncio.sleep(0.4 * n)\n'
-        '    return list(started)\nawait asyncio.gather(a(3), a(1), a(2))',
-        printCallback: _ignore,
+      // The three sleeps' timers are held, not run: all three are armed
+      // before any ends only if the sleeps overlap (sleeps waited one after
+      // another would arm one at a time, and the second never). Then they
+      // are fired in deadline order, and each task, ending, sees all three
+      // started. No wall clock involved; the timeout only bounds a hang.
+      final held = <_HeldTimer>[];
+      final armed = Completer<void>();
+      final run = runZoned(
+        () => s.feedRun(
+          'import asyncio\nstarted = []\nasync def a(n):\n'
+          '    started.append(n)\n    await asyncio.sleep(0.4 * n)\n'
+          '    return list(started)\nawait asyncio.gather(a(3), a(1), a(2))',
+          printCallback: _ignore,
+        ),
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+            if (!_gatheredSleeps.contains(duration)) {
+              return parent.createTimer(zone, duration, callback);
+            }
+            final timer = _HeldTimer(duration, callback);
+            held.add(timer);
+            if (held.length == _gatheredSleeps.length) armed.complete();
+
+            return timer;
+          },
+        ),
       );
-      final took = clock.elapsed;
+      await armed.future.timeout(const Duration(seconds: 20));
+      held.sort((a, b) => a.duration.compareTo(b.duration));
+      for (final timer in held) {
+        timer.fire();
+      }
       const all = MontyList([MontyInt(3), MontyInt(1), MontyInt(2)]);
-      expect(value, const MontyList([all, all, all]));
-      expect(took, greaterThanOrEqualTo(const Duration(milliseconds: 1100)));
-      expect(took, lessThan(const Duration(seconds: 2)));
+      expect(await run, const MontyList([all, all, all]));
       expect(
         await s.feedRun(
           'import asyncio\nawait asyncio.sleep(0.01, result=7)',
@@ -287,4 +304,38 @@ void main() {
       );
     });
   });
+}
+
+/// The delays the gathered-sleeps test holds: `asyncio.sleep(0.4 * n)` for
+/// n in 1..3, as the session waits them.
+final Set<Duration> _gatheredSleeps = {
+  const Duration(milliseconds: 400),
+  const Duration(milliseconds: 800),
+  const Duration(milliseconds: 1200),
+};
+
+/// A timer that runs only when the test fires it.
+final class _HeldTimer implements Timer {
+  _HeldTimer(this.duration, this._callback);
+
+  /// The delay it was created with.
+  final Duration duration;
+  final void Function() _callback;
+  bool _active = true;
+
+  /// Runs the callback now, unless cancelled or already run.
+  void fire() {
+    if (!_active) return;
+    _active = false;
+    _callback();
+  }
+
+  @override
+  void cancel() => _active = false;
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => _active ? 0 : 1;
 }

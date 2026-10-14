@@ -308,6 +308,35 @@ void main() {
     });
   });
 
+  test('a close during a feedRun sleep ends its timer and fails the feed '
+      'as finished', () async {
+    final (s, _) = await _session([
+      answer([
+        _os(pb.OsCall(callId: 1, systemSleep: pb.OsCall_Sleep(seconds: 9))),
+      ]),
+      _resetOk,
+    ]);
+    final sleeps = <Timer>[];
+    final run = runZoned(
+      () => s.feedRun('time.sleep(9)'),
+      zoneSpecification: ZoneSpecification(
+        createTimer: (self, parent, zone, duration, f) {
+          final timer = parent.createTimer(zone, duration, f);
+          if (duration == const Duration(seconds: 9)) sleeps.add(timer);
+
+          return timer;
+        },
+      ),
+    );
+    await pumpEventQueue();
+    final sleep = onlyItem(sleeps);
+    expect(sleep.isActive, isTrue);
+    final failed = expectLater(run, throwsA(_finished));
+    await s.close();
+    expect(sleep.isActive, isFalse);
+    await failed;
+  });
+
   group('feedStart, failure paths', () {
     test('prints reach the callback during a step', () async {
       final seen = <String>[];

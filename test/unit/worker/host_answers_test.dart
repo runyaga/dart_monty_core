@@ -247,6 +247,26 @@ void main() {
       },
     );
 
+    test('an async handler declining asyncio.sleep settles it with None, '
+        'as a null answer does', () async {
+      for (final eager in [true, false]) {
+        final host = HostAnswers(
+          os: (name, args, kwargs) async =>
+              throw const OsCallNotHandledException(),
+        );
+        final call = pb.OsCall(
+          callId: 1,
+          allowEagerAwait: eager,
+          asyncSleep: pb.OsCall_AsyncSleep(delay: 0),
+        );
+        var answer = await host.osCall(call, parentSleeps: true);
+        if (!eager) answer = await host.settle();
+        final result = onlyItem(answer.resumeFutures.results).result;
+        expect(result.hasError(), isFalse, reason: 'eager: $eager');
+        expect(result.hasReturnValue(), isTrue, reason: 'eager: $eager');
+      }
+    });
+
     test('dispose ends every waiting sleep at once', () async {
       final host = HostAnswers(systemSleepMax: const Duration(seconds: 10));
       await host.osCall(asyncSleep(1, 5), parentSleeps: true);

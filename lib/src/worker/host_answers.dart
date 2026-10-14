@@ -33,8 +33,10 @@ typedef ProtoExternalFunction =
 /// [OsCallNotHandledException], to decline: Python then sees the call's own
 /// no-handler error. Throw [OsCallException] to raise a chosen exception;
 /// any other throw raises `RuntimeError` with its text. For `asyncio.sleep`
-/// a returned [Future] is the call's coroutine, which the sandbox awaits;
-/// for every other call it is awaited and its value is the answer.
+/// a returned [Future] is the call's coroutine, which the sandbox awaits; a
+/// decline from it, null or [OsCallNotHandledException], leaves the sleep's
+/// own `None`. For every other call it is awaited and its value is the
+/// answer.
 typedef ProtoOsCallHandler =
     FutureOr<MontyValue?> Function(
       String name,
@@ -587,9 +589,15 @@ Future<pb.ParentRequest> _resumeWith(
 Future<MontyValue> _started(FutureOr<MontyValue> Function() invoke) =>
     Future.sync(invoke);
 
-/// [answer]'s value, `None` for none.
-Future<MontyValue> _orNone(Future<MontyValue?> answer) async =>
-    await answer ?? const MontyNone();
+/// [answer]'s value, `None` for none or for a decline.
+Future<MontyValue> _orNone(Future<MontyValue?> answer) async {
+  try {
+    return await answer ?? const MontyNone();
+  } on OsCallNotHandledException {
+    // A decline, like a null answer: the sandbox keeps the sleep's `None`.
+    return const MontyNone();
+  }
+}
 
 /// `ResumeCall` declining [callId]'s OS call.
 pb.ParentRequest _notHandled(int callId) =>
