@@ -214,18 +214,33 @@ final class HostPolicies {
   /// The methods the sandbox may call.
   final Object? allowedMethods;
 
-  /// Throws [ArgumentError] for a policy upstream refuses; [prefix] names
-  /// the field as upstream does (`instance_` for a class's instance
-  /// policies).
-  void check([String prefix = '']) {
-    _check('${prefix}eager_attrs', eagerAttrs);
-    _check('${prefix}lazy_attrs', lazyAttrs);
-    _check('${prefix}allowed_methods', allowedMethods);
-  }
+  /// These policies as a wrapper keeps them, copied as upstream's
+  /// `__post_init__` normalises them: the eager names a fixed list (the send
+  /// order), the others fixed sets, so later changes to the caller's
+  /// collections expose nothing. Throws [ArgumentError] for a policy
+  /// upstream refuses; [prefix] names the field as upstream does
+  /// (`instance_` for a class's instance policies).
+  HostPolicies normalized([String prefix = '']) => HostPolicies(
+    eagerAttrs: _normalize(
+      '${prefix}eager_attrs',
+      eagerAttrs,
+      List.unmodifiable,
+    ),
+    lazyAttrs: _normalize('${prefix}lazy_attrs', lazyAttrs, Set.unmodifiable),
+    allowedMethods: _normalize(
+      '${prefix}allowed_methods',
+      allowedMethods,
+      Set.unmodifiable,
+    ),
+  );
 
-  static void _check(String field, Object? policy) {
-    if (policy == null || policy == 'all') return;
-    if (policy is Iterable<String>) return;
+  static Object? _normalize(
+    String field,
+    Object? policy,
+    Iterable<String> Function(Iterable<String>) collect,
+  ) {
+    if (policy == null || policy == 'all') return policy;
+    if (policy is Iterable<String>) return collect(policy);
     final shown = policy is String ? "'$policy'" : '$policy';
     throw ArgumentError.value(
       policy,
@@ -301,15 +316,14 @@ final class ClassType<T extends Object> {
   ClassType(
     this.value, {
     String? id,
-    this.policies = HostPolicies.none,
+    HostPolicies policies = HostPolicies.none,
     this.init = false,
-    this.instancePolicies = HostPolicies.none,
+    HostPolicies instancePolicies = HostPolicies.none,
     ConvertValue? convertValue,
   }) : id = id == null ? _typeIds.putIfAbsent(value, _uuid4) : _checkedId(id),
-       _convert = convertValue {
-    policies.check();
-    instancePolicies.check('instance_');
-  }
+       policies = policies.normalized(),
+       instancePolicies = instancePolicies.normalized('instance_'),
+       _convert = convertValue;
 
   /// The class.
   final HostClass<T> value;
@@ -331,13 +345,13 @@ final class ClassType<T extends Object> {
 
   /// The class constants sent with the class: `'all'` sends every public
   /// one, a list exactly those, each through [convertValue].
-  Map<String, Object> eagerAttributes() => {
+  Map<String, Object> eagerAttributes() => _convertAll(this, {
     for (final name in _eagerNames(
       policies.eagerAttrs,
       value.attributes.keys,
     ))
-      name: convertValue(name, _attribute(name)),
-  };
+      name: _attribute(name),
+  });
 
   /// A lazy class attribute; `AttributeError` when [name] is not exposed.
   Object lookupLazyAttr(String name) {
@@ -409,12 +423,11 @@ final class ClassInstance<T extends Object> {
     this.value, {
     required this.classType,
     String? id,
-    this.policies = HostPolicies.none,
+    HostPolicies policies = HostPolicies.none,
     ConvertValue? convertValue,
   }) : id = id == null ? _uuid4() : _checkedId(id),
-       _convert = convertValue {
-    policies.check();
-  }
+       policies = policies.normalized(),
+       _convert = convertValue;
 
   /// The instance.
   final T value;
@@ -434,10 +447,10 @@ final class ClassInstance<T extends Object> {
 
   /// The attributes sent with the instance: `'all'` sends every public
   /// field, a list exactly those names, each through [convertValue].
-  Map<String, Object> eagerAttributes() => {
+  Map<String, Object> eagerAttributes() => _convertAll(this, {
     for (final name in _eagerNames(policies.eagerAttrs, _members.fields.keys))
-      name: convertValue(name, _attribute(name)),
-  };
+      name: _attribute(name),
+  });
 
   /// A lazy attribute; `AttributeError` when [name] is not exposed. Any
   /// other throw is raised in the sandbox.
@@ -470,13 +483,27 @@ final class ClassInstance<T extends Object> {
 
   Object _attribute(String name) {
     final read = _members.fields[name] ?? _members.properties[name];
+    if (read != null) return read(value);
+    // As `getattr` on an instance finds its class's constants.
+    final constant = classType.value.attributes[name];
 
-    return (read ?? (throw _error(name)))(value);
+    return (constant ?? (throw _error(name)))();
   }
 
   ExternalException _error(String name) =>
       _noAttribute("'${classType.value.name}' object", name);
 }
+
+/// [raw], every value read first, then each through [wrapper]'s hook, as
+/// upstream's `get_eager_attrs` reads them all before converting.
+Map<String, Object> _convertAll(Object wrapper, Map<String, Object> raw) => {
+  for (final MapEntry(:key, :value) in raw.entries)
+    key: switch (wrapper) {
+      ClassInstance() => wrapper.convertValue(key, value),
+      ClassType() => wrapper.convertValue(key, value),
+      _ => value,
+    },
+};
 
 /// [result] through [wrapper]'s hook once it is known: a future's value
 /// after it completes.

@@ -233,8 +233,13 @@ final class _Builder {
   final HostObjectLookup? _hosts;
   final List<Object> _built = [];
 
-  /// The registered object each class or instance node resolved to.
-  final Map<int, MontyValue> _registered;
+  /// The registered object each class or instance node resolved to: the
+  /// host object itself, so two nodes for one object are one key.
+  final Map<int, Object> _registered;
+
+  /// The proxy each host object decoded to, so two nodes for one object
+  /// are one Dart object, as upstream's are the one original object.
+  final Map<Object, MontyClassInstance> _carriers = Map.identity();
   final PythonKeys _keys;
 
   List<Object> build() {
@@ -349,6 +354,14 @@ final class _Builder {
     final id = uuidString(node.instanceId.data);
     final found = _hosts?.instance(id);
     if (found is MontyValue) return _registered[_built.length] = found;
+    if ((found, _carriers[found]) case (
+      final Object host,
+      final MontyClassInstance carrier,
+    )) {
+      _registered[_built.length] = host;
+
+      return carrier;
+    }
     // Stage 2 made the instance's class a class node, built before it.
     final classNode = _built.elementAtOrNull(node.classType);
     final meta = classNode is _ClassNode ? classNode.meta : null;
@@ -361,8 +374,9 @@ final class _Builder {
       attrs: attrs as Map<String, MontyValue>,
     );
     if (found != null) {
-      _registered[_built.length] = proxy;
+      _registered[_built.length] = found;
       _hostObjects[proxy] = found;
+      _carriers[found] = proxy;
     }
 
     return proxy;

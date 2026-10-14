@@ -716,11 +716,18 @@ final class _FeedDrive implements SnapshotDriver {
   }
 
   @override
-  Future<MontySnapshot> resumeLookupAuto(NameLookupSnapshot snapshot) =>
-      _resume(
-        snapshot,
+  Future<MontySnapshot> resumeLookupAuto(NameLookupSnapshot snapshot) async {
+    snapshot.spend();
+    // No host code for a session already finished, as resumeCallAuto.
+    if (_session._hold.isFinished) throw _finishedError();
+
+    return _session._withTurn(
+      () => step(
         _host.lookup(snapshot.variableName, objectId: snapshot.objectId),
-      );
+      ),
+      feed: false,
+    );
+  }
 
   @override
   Future<MontySnapshot> resumeFutures(

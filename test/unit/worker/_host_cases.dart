@@ -37,7 +37,7 @@ final class Point {
   final int y;
 }
 
-int _int(List<MontyValue> args, int i) => montyArg<int>(args, i);
+int _int(List<MontyValue> args, int i) => montyArg(args, i);
 
 Point _construct(List<MontyValue> args, Map<String, MontyValue> kwargs) =>
     switch (args) {

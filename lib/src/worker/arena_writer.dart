@@ -137,7 +137,7 @@ final class ArenaWriter {
     if (child is MontyClassType) return _enterClass(child, open, stack);
     if (child is _HostClass) return _enterHostClass(child, open, stack);
     if (child is ClassType<Object>) {
-      return _enterHostClass(_HostClass.of(child, _host(child)), open, stack);
+      return _enterHostClass(_HostClass.of(child), open, stack);
     }
     if (_containers[child] case final id?) return id;
     if (child is ClassInstance<Object>) {
@@ -212,7 +212,7 @@ final class ArenaWriter {
         'Circular reference detected',
       );
     }
-    final type = _HostClass.of(w.classType, objects, overwrite: false);
+    final type = _HostClass.of(w.classType, overwrite: false);
     final attrs = _raising(w, w.eagerAttributes);
     objects.register(w);
     open.add(w);
@@ -238,6 +238,12 @@ final class ArenaWriter {
   /// fresh node without them (upstream's `enter_class_type`).
   int? _enterHostClass(_HostClass c, Set<Object> open, List<_Frame> stack) {
     final w = c.wrapper;
+    final objects = _host(w);
+    if (c.overwrite) {
+      objects.register(w);
+    } else {
+      objects.registerIfAbsent(w);
+    }
     if (_containers[w] case final id?) return id;
     final node = MontyClassType(
       name: w.value.name,
@@ -353,27 +359,26 @@ final class ArenaWriter {
 /// A host class as one crossing meets it: its wrapper, registered, and its
 /// eager attributes, read anew at each meeting as upstream reads them.
 final class _HostClass {
-  const _HostClass._(this.wrapper, this.attrs);
+  const _HostClass._(this.wrapper, this.attrs, {required this.overwrite});
 
-  /// [wrapper], registered in [objects]: replacing an entry when it crosses
-  /// as a value, only into a free id when an instance carries it.
+  /// [wrapper] with its eager attributes read now. It registers when its
+  /// node is entered (upstream's `enter_class_type`): replacing an entry
+  /// when it crosses as a value ([overwrite]), only into a free id when an
+  /// instance carries it.
   factory _HostClass.of(
-    ClassType<Object> wrapper,
-    HostObjects objects, {
+    ClassType<Object> wrapper, {
     bool overwrite = true,
-  }) {
-    final attrs = _raising(wrapper, wrapper.eagerAttributes);
-    if (overwrite) {
-      objects.register(wrapper);
-    } else {
-      objects.registerIfAbsent(wrapper);
-    }
-
-    return _HostClass._(wrapper, attrs);
-  }
+  }) => _HostClass._(
+    wrapper,
+    _raising(wrapper, wrapper.eagerAttributes),
+    overwrite: overwrite,
+  );
 
   final ClassType<Object> wrapper;
   final Map<String, Object> attrs;
+
+  /// Whether the wrapper replaces an entry for its id.
+  final bool overwrite;
 }
 
 /// [read]'s result; a Python exception it raises ([ExternalException]) is

@@ -120,6 +120,27 @@ final HostClass<_Box> _slow = HostClass(
   ),
 );
 
+/// A class with a class constant.
+final HostClass<_Box> _constClass = HostClass(
+  'Box',
+  attributes: {'KIND': () => const MontyString('box')},
+);
+
+/// A class whose field reads are recorded in [order].
+HostClass<_Box> _orderClass(List<String> order) => HostClass(
+  'Box',
+  instance: HostMembers(
+    fields: {
+      for (final name in ['a', 'b'])
+        name: (b) {
+          order.add('read $name');
+
+          return const MontyNone();
+        },
+    },
+  ),
+);
+
 /// The first box's id, and the box class's.
 final String _one = _id(1);
 final String _classId = _id(100);
@@ -290,6 +311,46 @@ void main() {
     });
   });
 
+  group('wrapper semantics', () {
+    test('a policy is copied: a later change to the list exposes nothing', () {
+      final allowed = ['n'];
+      final box = ClassInstance(
+        _Box(1),
+        classType: ClassType(_boxClass),
+        policies: HostPolicies(lazyAttrs: allowed, allowedMethods: allowed),
+      );
+      allowed.add('bump');
+      expect(
+        () => box.callMethod('bump', const [], const {}),
+        throwsA(isA<ExternalException>()),
+      );
+    });
+
+    test('an instance reads its class constants, as getattr does', () {
+      final box = ClassInstance(
+        _Box(1),
+        classType: ClassType(_constClass),
+        policies: const HostPolicies(lazyAttrs: 'all'),
+      );
+      expect(box.lookupLazyAttr('KIND'), const MontyString('box'));
+    });
+
+    test('eager attributes are all read before the hook runs', () {
+      final order = <String>[];
+      ClassInstance(
+        _Box(1),
+        classType: ClassType(_orderClass(order)),
+        policies: const HostPolicies(eagerAttrs: ['a', 'b']),
+        convertValue: (name, value) {
+          order.add('convert $name');
+
+          return value;
+        },
+      ).eagerAttributes();
+      expect(order, ['read a', 'read b', 'convert a', 'convert b']);
+    });
+  });
+
   group('lazy attributes', () {
     test('a raise other than AttributeError reaches the sandbox', () {
       final objects = HostObjects();
@@ -356,12 +417,59 @@ void main() {
     test('tryAdd leaves the arena as it was on a refusal', () {
       final writer = ArenaWriter(objects: HostObjects())
         ..add(const MontyInt(1));
+      // The child is emitted and remembered before the refusal.
+      const child = MontyList([MontyInt(2)]);
       expect(
-        () => writer.tryAdd(MontyList([_selfNested()])),
+        () => writer.tryAdd(MontyList([child, _selfNested()])),
         throwsA(anything),
       );
-      expect(writer.arena.nodes, hasLength(1));
+      final nodes = writer.arena.nodes;
+      expect(nodes, hasLength(1));
       expect(writer.arena.nodeCount, 1);
+      // Written again, the child is a fresh, valid node.
+      final again = writer.add(child);
+      expect(again, lessThan(nodes.length));
+      expect(ArenaReader(writer.arena)[again], child);
+    });
+
+    test('two nodes for one registered object are one object and one key', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      final box = _box(1, policies: HostPolicies.none);
+      final first = writer.add(box);
+      // A second node with the same instance id, as a worker could send.
+      final arena = writer.arena;
+      final nodes = arena.nodes;
+      final second = nodes.length;
+      nodes.add(itemAt(nodes, first).deepCopy());
+      nodes.add(pb.MontyNode(set: pb.Indexes(items: [first, second])));
+      arena.nodeCount = nodes.length;
+      final reader = ArenaReader(arena, hosts: objects.lookup);
+      expect(identical(reader[first], reader[second]), isTrue);
+      final members = (reader[second + 1] as MontySet).items;
+      expect(members, hasLength(1));
+    });
+
+    test('a refused instance registers neither it nor its class', () {
+      final objects = HostObjects();
+      final failing = ClassInstance(
+        _Box(1),
+        classType: ClassType(_boxClass, id: _id(7)),
+        id: _id(8),
+        policies: const HostPolicies(eagerAttrs: ['absent']),
+      );
+      expect(
+        () => ArenaWriter(objects: objects).add(failing),
+        throwsA(
+          isA<PythonRefusal>().having(
+            (e) => e.excType,
+            'excType',
+            'AttributeError',
+          ),
+        ),
+      );
+      expect(objects[_id(7)], isNull);
+      expect(objects[_id(8)], isNull);
     });
 
     test('a registered instance decodes to a proxy that recovers it', () {
