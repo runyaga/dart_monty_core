@@ -549,8 +549,10 @@ void main() {
         pb.ChildEvent_Kind.ok,
       );
       await channel.exitCode;
-      // Draining after the exit reads what the pipe held, no more.
-      await settled(channel);
+      // The descendant wrote past the limit before the worker exited, so
+      // the read-ahead reached it; draining after the exit reads what the
+      // pipe held, no more.
+      expect(await settled(channel), greaterThanOrEqualTo(limit));
       expect(
         channel.readAhead.peak,
         lessThan(limit + ProcessChannel.drainAllowance + (1 << 20)),
