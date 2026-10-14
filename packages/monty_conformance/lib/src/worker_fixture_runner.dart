@@ -52,9 +52,9 @@ const int workerFixtureMaxMemory = 256 * 1024 * 1024;
 ///     FIXTURE_RESULT:{"name":"<file>","ok":false,"reason":"<msg>"}
 ///     FIXTURE_DONE:{"total":<n>,"passed":<n>,"failed":<n>}
 ///
-/// Returns the failing fixtures' reasons by name. [only] restricts the run to
-/// the named files (a debugging aid; the gate runs them all).
-Future<Map<String, String>> runWorkerFixtureCorpus({
+/// Returns what ran and what failed. [only] restricts the run to the named
+/// files (a debugging aid; the gate runs them all).
+Future<WorkerCorpusRun> runWorkerFixtureCorpus({
   required MontyPool pool,
   required void Function(String) log,
   Map<String, String>? corpus,
@@ -62,12 +62,12 @@ Future<Map<String, String>> runWorkerFixtureCorpus({
 }) async {
   final fixtures = corpus ?? fixtureCorpusV1;
   final failures = <String, String>{};
+  final executed = <String>[];
   var passed = 0;
-  var total = 0;
 
   for (final MapEntry(:key, :value) in fixtures.entries) {
     if (only != null && !only.contains(key)) continue;
-    total++;
+    executed.add(key);
     String? reason;
     try {
       reason = await _runOne(pool, key, value);
@@ -87,11 +87,27 @@ Future<Map<String, String>> runWorkerFixtureCorpus({
     }
   }
   log(
-    'FIXTURE_DONE:{"total":$total,"passed":$passed,'
+    'FIXTURE_DONE:{"total":${executed.length},"passed":$passed,'
     '"failed":${failures.length}}',
   );
 
-  return failures;
+  return WorkerCorpusRun(executed, failures);
+}
+
+/// What a corpus run did: every fixture it ran, in order, and the reason for
+/// each one that failed.
+final class WorkerCorpusRun {
+  /// Creates a [WorkerCorpusRun].
+  const WorkerCorpusRun(this.executed, this.failures);
+
+  /// The fixture files run, each once, in corpus order.
+  final List<String> executed;
+
+  /// Why each failing fixture failed, by file.
+  final Map<String, String> failures;
+
+  /// How many of [executed] passed.
+  int get passed => executed.length - failures.length;
 }
 
 /// Runs one fixture; null when it met its expectation, else why not.

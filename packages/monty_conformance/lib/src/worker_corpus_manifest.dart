@@ -35,16 +35,30 @@ final class CorpusDivergence {
 
 /// A corpus file expected to fail, and why.
 final class ExpectedFailure {
-  /// Creates an [ExpectedFailure] of [file] under [divergence].
+  /// Creates an [ExpectedFailure] of [file] under [divergence], whose failure
+  /// reason is exactly [reason].
   const ExpectedFailure(
     this.file,
     this.divergence,
-    this.contains, {
+    this.reason, {
     this.profiles = const {
       WorkerCorpusProfile.native,
       WorkerCorpusProfile.browser,
     },
-  });
+  }) : tail = false;
+
+  /// An [ExpectedFailure] whose failure reason ENDS with [reason]: a
+  /// traceback mismatch states the expected traceback first, which is the
+  /// fixture's own, and the actual one last, which is what is recorded.
+  const ExpectedFailure.tail(
+    this.file,
+    this.divergence,
+    this.reason, {
+    this.profiles = const {
+      WorkerCorpusProfile.native,
+      WorkerCorpusProfile.browser,
+    },
+  }) : tail = true;
 
   /// The corpus file name.
   final String file;
@@ -52,12 +66,19 @@ final class ExpectedFailure {
   /// The ID of the [CorpusDivergence] this belongs to.
   final String divergence;
 
-  /// Text the failure reason must contain: a listed file that fails for
-  /// another reason is not the divergence it was listed for.
-  final String contains;
+  /// The failure reason, as the adjudicator words it: a listed file that
+  /// fails for any other reason is not the divergence it was listed for.
+  final String reason;
+
+  /// Whether [reason] is the end of the failure reason rather than all of it.
+  final bool tail;
 
   /// The profiles the failure is expected in.
   final Set<WorkerCorpusProfile> profiles;
+
+  /// Whether [actual] is the failure this entry records.
+  bool matches(String actual) =>
+      tail ? actual.endsWith(reason) : actual == reason;
 }
 
 /// The recorded divergences, by ID.
@@ -119,63 +140,67 @@ const workerCorpusExpected = <ExpectedFailure>[
   ExpectedFailure(
     'functools__gc.py',
     'worker-no-test-hooks',
-    "No module named 'gc'",
+    "expected no error, got ModuleNotFoundError: No module named 'gc'",
   ),
   ExpectedFailure(
     'itertools__gc.py',
     'worker-no-test-hooks',
-    "No module named 'gc'",
+    "expected no error, got ModuleNotFoundError: No module named 'gc'",
   ),
   ExpectedFailure(
     'refcount__exec_namespace.py',
     'worker-no-test-hooks',
-    "No module named 'gc'",
+    "expected no error, got ModuleNotFoundError: No module named 'gc'",
   ),
   ExpectedFailure(
     'json__dumps_recursion.py',
     'worker-no-test-hooks',
-    "no attribute 'setrecursionlimit'",
+    'expected no error, got '
+        "AttributeError: module 'sys' has no attribute 'setrecursionlimit'",
   ),
   ExpectedFailure(
     'recursion__deep_copy.py',
     'worker-no-test-hooks',
-    "no attribute 'setrecursionlimit'",
+    'expected no error, got '
+        "AttributeError: module 'sys' has no attribute 'setrecursionlimit'",
   ),
   ExpectedFailure(
     'recursion__deep_repr.py',
     'worker-no-test-hooks',
-    "no attribute 'setrecursionlimit'",
+    'expected no error, got '
+        "AttributeError: module 'sys' has no attribute 'setrecursionlimit'",
   ),
   ExpectedFailure(
     'recursion__limit_depth.py',
     'worker-no-test-hooks',
-    "no attribute 'setrecursionlimit'",
+    'expected no error, got '
+        "AttributeError: module 'sys' has no attribute 'setrecursionlimit'",
   ),
 
   // cycle-marker-is-str
   ExpectedFailure(
     'pyobject__cycle_dict_self.py',
     'cycle-marker-is-str',
-    "got {'self': '{...}'}",
+    "repr mismatch: expected {'self': {...}}, got {'self': '{...}'}",
   ),
   ExpectedFailure(
     'pyobject__cycle_list_dict.py',
     'cycle-marker-is-str',
-    "got [{'list': '[...]'}]",
+    "repr mismatch: expected [{'list': [...]}], got [{'list': '[...]'}]",
   ),
   ExpectedFailure(
     'pyobject__cycle_list_self.py',
     'cycle-marker-is-str',
-    "got ['[...]']",
+    "repr mismatch: expected [[...]], got ['[...]']",
   ),
   ExpectedFailure(
     'pyobject__cycle_multiple_refs.py',
     'cycle-marker-is-str',
-    "got [['[...]'], ['[...]']]",
+    "repr mismatch: expected [[[...]], [[...]]], got [['[...]'], ['[...]']]",
   ),
 
   // worker-undefined-call-span
-  ExpectedFailure(
+  ExpectedFailure.tail(
     'name_error__undefined_call_chained.py',
     'worker-undefined-call-span',
     '--- actual\n'
@@ -185,7 +210,7 @@ const workerCorpusExpected = <ExpectedFailure>[
         '        ~~~~~~~~~~\n'
         "NameError: name 'aaa_func' is not defined",
   ),
-  ExpectedFailure(
+  ExpectedFailure.tail(
     'name_error__undefined_call_in_expr.py',
     'worker-undefined-call-span',
     '--- actual\n'
@@ -195,7 +220,7 @@ const workerCorpusExpected = <ExpectedFailure>[
         '            ~~~~~~~~~~~~~~\n'
         "NameError: name 'missing_func' is not defined",
   ),
-  ExpectedFailure(
+  ExpectedFailure.tail(
     'name_error__undefined_call_in_function.py',
     'worker-undefined-call-span',
     '--- actual\n'
@@ -209,7 +234,7 @@ const workerCorpusExpected = <ExpectedFailure>[
         '           ~~~~~~~~~~~~~~\n'
         "NameError: name 'missing_func' is not defined",
   ),
-  ExpectedFailure(
+  ExpectedFailure.tail(
     'name_error__undefined_call_with_args.py',
     'worker-undefined-call-span',
     '--- actual\n'
@@ -220,7 +245,7 @@ const workerCorpusExpected = <ExpectedFailure>[
         '    ~~~~~~~~~~~~~~~~~~~~~\n'
         "NameError: name 'missing_func' is not defined",
   ),
-  ExpectedFailure(
+  ExpectedFailure.tail(
     'name_error__undefined_global.py',
     'worker-undefined-call-span',
     '--- actual\n'
@@ -230,7 +255,7 @@ const workerCorpusExpected = <ExpectedFailure>[
         '    ~~~~~~~~~~~~~~\n'
         "NameError: name 'unknown_func' is not defined",
   ),
-  ExpectedFailure(
+  ExpectedFailure.tail(
     'traceback__undefined_call.py',
     'worker-undefined-call-span',
     '--- actual\n'
@@ -248,32 +273,36 @@ const workerCorpusExpected = <ExpectedFailure>[
   ExpectedFailure(
     'dataclass__basic.py',
     'lookup-cannot-raise',
-    "'MutablePoint' object has no attribute 'boom'",
+    'expected no error, got '
+        "AttributeError: 'MutablePoint' object has no attribute 'boom'",
   ),
 
   // browser-int-limit
   ExpectedFailure(
     'itertools__combinatoric.py',
     'browser-int-limit',
-    'Python int too large to convert to C ssize_t',
+    'expected no error, got '
+        'OverflowError: Python int too large to convert to C ssize_t',
     profiles: {WorkerCorpusProfile.browser},
   ),
   ExpectedFailure(
     'itertools__tee.py',
     'browser-int-limit',
-    'Python int too large to convert to C ssize_t',
+    'expected no error, got '
+        'OverflowError: Python int too large to convert to C ssize_t',
     profiles: {WorkerCorpusProfile.browser},
   ),
   ExpectedFailure(
     'random__errors.py',
     'browser-int-limit',
-    'Cannot convert negative int',
+    'expected no error, got ValueError: Cannot convert negative int',
     profiles: {WorkerCorpusProfile.browser},
   ),
   ExpectedFailure(
     'range__ops.py',
     'browser-int-limit',
-    'assert 4294967295 == 9223372036854775807',
+    'expected no error, got '
+        'AssertionError: assert 4294967295 == 9223372036854775807',
     profiles: {WorkerCorpusProfile.browser},
   ),
 ];
@@ -323,10 +352,11 @@ List<String> checkAgainstManifest(
     final entry = expected[key];
     if (entry == null) {
       problems.add('REGRESSION $key: not an expected failure\n  $value');
-    } else if (!value.contains(entry.contains)) {
+    } else if (!entry.matches(value)) {
       problems.add(
-        'CHANGED $key: expected a failure containing '
-        '"${entry.contains}" (${entry.divergence}), got\n  $value',
+        'CHANGED $key: expected the failure '
+        '${entry.tail ? 'ending ' : ''}"${entry.reason}" '
+        '(${entry.divergence}), got\n  $value',
       );
     }
   }
@@ -352,7 +382,7 @@ List<String> manifestProblems(Iterable<String> corpus) {
     }
     if (!files.contains(e.file)) problems.add('${e.file}: not in the corpus');
     if (!seen.add(e.file)) problems.add('${e.file}: listed twice');
-    if (e.contains.isEmpty) problems.add('${e.file}: no reason text');
+    if (e.reason.isEmpty) problems.add('${e.file}: no reason text');
   }
   for (final id in workerCorpusDivergences.keys) {
     if (!workerCorpusExpected.any((e) => e.divergence == id)) {

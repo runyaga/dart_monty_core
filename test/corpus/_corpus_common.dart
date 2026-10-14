@@ -93,7 +93,8 @@ void manifestTests() {
 /// Runs the whole corpus on [target]'s pool and judges it against the
 /// manifest; prints the scorecard line.
 Future<void> runCorpusChecks(CorpusTarget target) async {
-  final failures = await _runAll(target.startPool);
+  final run = await _runAll(target.startPool);
+  final failures = run.failures;
   final noJspi = target.jspi == false;
   final problems = <String>[
     ...checkAgainstManifest(
@@ -111,11 +112,18 @@ Future<void> runCorpusChecks(CorpusTarget target) async {
     for (final e in workerCorpusExpected)
       if (e.profiles.contains(target.profile)) e.file,
   };
+  // Every corpus file ran, once: the totals below are what ran, not what the
+  // corpus holds.
+  expect(
+    run.executed,
+    fixtureCorpusV1.keys.toList(),
+    reason: 'the run must execute every corpus file, once each, in order',
+  );
   // The scorecard line the CI job prints, per backend.
   // ignore: avoid_print
   print(
-    'CORPUS ${target.label}: total=${fixtureCorpusV1.length} '
-    'passed=${fixtureCorpusV1.length - failures.length} '
+    'CORPUS ${target.label}: total=${run.executed.length} '
+    'passed=${run.passed} '
     'divergent=${failures.length} jspi=${target.jspi} '
     'listed=${listed.length}',
   );
@@ -131,9 +139,9 @@ Future<void> runCorpusChecks(CorpusTarget target) async {
 /// environment from it. What this asserts is that no file ends any way but a
 /// pass or a crashed worker (the two outcomes upstream's browser build has).
 Future<void> runRecursionSetFallback(String label, MontyPool pool) async {
-  final Map<String, String> failures;
+  final WorkerCorpusRun run;
   try {
-    failures = await runWorkerFixtureCorpus(
+    run = await runWorkerFixtureCorpus(
       pool: pool,
       log: (_) {},
       only: workerRecursionSetNoJspi.keys.toSet(),
@@ -141,6 +149,12 @@ Future<void> runRecursionSetFallback(String label, MontyPool pool) async {
   } finally {
     await pool.close();
   }
+  final failures = run.failures;
+  expect(
+    run.executed.toSet(),
+    workerRecursionSetNoJspi.keys.toSet(),
+    reason: 'the whole recursion set must run',
+  );
   final outcomes = {
     for (final f in workerRecursionSetNoJspi.keys)
       f: failures.containsKey(f) ? 'fails' : 'passes',
@@ -161,12 +175,17 @@ Future<void> runRecursionSetFallback(String label, MontyPool pool) async {
 /// The strict adjudicator, with the worker as the engine under it.
 void adjudicatorSelfTests() {
   group('the strict adjudicator judges worker outcomes', () {
-    Future<Map<String, String>> judge(Map<String, String> corpus) =>
-        MontyPool.withPool(
-          (pool) =>
-              runWorkerFixtureCorpus(pool: pool, log: (_) {}, corpus: corpus),
-          options: corpusPoolOptions,
-        );
+    Future<Map<String, String>> judge(Map<String, String> corpus) async {
+      final run = await MontyPool.withPool(
+        (pool) =>
+            runWorkerFixtureCorpus(pool: pool, log: (_) {}, corpus: corpus),
+        options: corpusPoolOptions,
+      );
+      // Each control ran: a verdict on nothing is not a pass.
+      expect(run.executed, corpus.keys.toList());
+
+      return run.failures;
+    }
 
     test('controls that meet their directives pass', () async {
       expect(
@@ -239,7 +258,7 @@ void adjudicatorSelfTests() {
   });
 }
 
-Future<Map<String, String>> _runAll(
+Future<WorkerCorpusRun> _runAll(
   Future<MontyPool> Function() start, {
   Set<String>? only,
 }) async {
