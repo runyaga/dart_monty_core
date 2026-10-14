@@ -112,12 +112,12 @@ final class ExternalException extends ExternalSettledResult
       other is ExternalException &&
       other.excType == excType &&
       other.message == message &&
-      _sameAttributes(other.attributes, attributes);
+      _sameAttributes(_byName(other.attributes), _byName(attributes));
 
   @override
   int get hashCode {
     var h = 0;
-    for (final MapEntry(:key, :value) in attributes.entries) {
+    for (final MapEntry(:key, :value) in _byName(attributes).entries) {
       h = (h + Object.hash(key, value)) & 0x7fffffff;
     }
 
@@ -129,18 +129,16 @@ final class ExternalException extends ExternalSettledResult
       'ExternalException($excType${message == null ? '' : ', $message'})';
 }
 
-/// Whether [a] and [b] hold equal values under equal keys, the keys compared
-/// as strings: the maps' own lookup rules (a custom comparator) play no part,
-/// as they play none in [ExternalException.hashCode].
-bool _sameAttributes(Map<String, MontyValue> a, Map<String, MontyValue> b) {
-  final left = {for (final MapEntry(:key, :value) in a.entries) key: value};
-  final right = {for (final MapEntry(:key, :value) in b.entries) key: value};
+/// [attributes] as a plain map keyed by string value: a map's own lookup
+/// rules (a custom comparator, identity) play no part in equality or the
+/// hash.
+Map<String, MontyValue> _byName(Map<String, MontyValue> attributes) => {
+  for (final MapEntry(:key, :value) in attributes.entries) key: value,
+};
 
-  return left.length == right.length &&
-      left.entries.every(
-        (e) => right.containsKey(e.key) && right[e.key] == e.value,
-      );
-}
+bool _sameAttributes(Map<String, MontyValue> a, Map<String, MontyValue> b) =>
+    a.length == b.length &&
+    a.entries.every((e) => b.containsKey(e.key) && b[e.key] == e.value);
 
 /// The call is asynchronous: the sandbox gets a pending future for it, to be
 /// settled through a [FutureSnapshot] (upstream's `ExternalFuture`).

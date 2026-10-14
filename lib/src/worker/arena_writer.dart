@@ -493,12 +493,21 @@ pb.Exception _exception(MontyExceptionValue e) {
     );
   }
   final message = switch (e.message) {
-    final m? when hasUnpairedSurrogate(m) =>
-      e.excType == 'KeyError' ? pythonRepr(m) : lossyString(m),
-    final m => m ?? (e.excType == 'SyntaxError' ? 'None' : ''),
+    final m? => exceptionArg(e.excType, m),
+    null => e.excType == 'SyntaxError' ? 'None' : '',
   };
 
   return pb.Exception(excType: e.excType, arg: message);
+}
+
+/// An exception's [message] as upstream's `exception_arg` reads it: as it
+/// is, or, when it has an unpaired surrogate, `str(exc)` converted lossily.
+/// A `KeyError`'s `str` is the `repr` of its key, which escapes the
+/// surrogate.
+String exceptionArg(String excType, String message) {
+  if (!hasUnpairedSurrogate(message)) return message;
+
+  return excType == 'KeyError' ? pythonRepr(message) : lossyString(message);
 }
 
 /// A builtin type or function crosses back as the builtin it names; the
@@ -654,13 +663,16 @@ final class PythonRefusal extends ArgumentError {
 /// `colno` (non-negative `int`) attributes. A missing or mistyped one drops
 /// the payload, and a `doc` over 64 KiB of UTF-8 is left out while the rest
 /// is kept (`JsonErrorData::MAX_DOC_LEN`). Every other type's attributes
-/// stay with the host.
+/// stay with the host. The message is read as [exceptionArg] reads it.
 pb.RaisedException raisedException(
   String excType,
   String? message,
   Map<String, MontyValue> attributes,
 ) {
-  final raised = pb.RaisedException(excType: excType, message: message);
+  final raised = pb.RaisedException(
+    excType: excType,
+    message: message == null ? null : exceptionArg(excType, message),
+  );
   if (excType == 'json.JSONDecodeError') {
     if (_jsonData(attributes) case final json?) {
       raised.data = pb.ExcData(json: json);

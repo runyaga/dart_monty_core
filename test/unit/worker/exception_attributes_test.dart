@@ -459,6 +459,28 @@ void main() {
       expect(same.hashCode, plain.hashCode);
     });
 
+    test('keys equal as strings but distinct objects hash alike', () {
+      // Two distinct String objects spelling 'pos'.
+      String spelled() => String.fromCharCodes(const [0x70, 0x6f, 0x73]);
+      final a = spelled();
+      final b = spelled();
+      final twice = Map<String, MontyValue>.identity()
+        ..[a] = const MontyInt(1)
+        ..[b] = const MontyInt(1);
+      final dup = ExternalException('ValueError', 'm', twice);
+      const plain = ExternalException('ValueError', 'm', {'pos': MontyInt(1)});
+      expect(dup == plain, plain == dup);
+      if (dup == plain) expect(dup.hashCode, plain.hashCode);
+    });
+
+    test("a message with an unpaired surrogate is sent as upstream's "
+        'exception_arg reads it', () {
+      final lossy = raisedException('ValueError', 'a\uD800', const {});
+      expect(lossy.message, 'a\uFFFD\uFFFD\uFFFD');
+      final key = raisedFrom(const ExternalException('KeyError', 'k\uD800'));
+      expect(key.message, r"'k\ud800'");
+    });
+
     test('a JSON error with all five sends the json arm', () {
       final raised = raisedException('json.JSONDecodeError', 'm', full);
       expect(raised.excType, 'json.JSONDecodeError');
