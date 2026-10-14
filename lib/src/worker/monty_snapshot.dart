@@ -29,11 +29,21 @@ sealed class MontySnapshot {
 @immutable
 final class SourceRange {
   /// A range of [filename] from byte [start] to byte [end] (exclusive).
-  const SourceRange(this.filename, this.start, this.end);
+  ///
+  /// Throws [ArgumentError] when [start] or [end] is outside 0..2^32-1, as
+  /// upstream's constructor takes `u32`s. A reversed range, or one past the
+  /// end of its source, is accepted, as upstream accepts it. [filename] is
+  /// kept as given.
+  SourceRange(this.filename, this.start, this.end) {
+    _checkOffset(start, 'start');
+    _checkOffset(end, 'end');
+  }
+
+  const SourceRange._unknown() : filename = '', start = 0, end = 0;
 
   /// The range a worker that sent no position reports: an empty file name
   /// and an empty range at offset 0 (upstream `SourceRange::unknown`).
-  static const SourceRange unknown = SourceRange('', 0, 0);
+  static const SourceRange unknown = SourceRange._unknown();
 
   /// The source the range is in, named as a traceback frame names it:
   /// `<python-input-N>` for the session's N-th feed, `<string>` inside an
@@ -60,6 +70,15 @@ final class SourceRange {
   String toString() => 'SourceRange($filename, $start, $end)';
 }
 
+/// The largest offset a [SourceRange] holds: `u32::MAX`.
+const int _maxOffset = 0xFFFFFFFF;
+
+void _checkOffset(int offset, String name) {
+  if (offset < 0 || offset > _maxOffset) {
+    throw RangeError.range(offset, 0, _maxOffset, name);
+  }
+}
+
 /// A host's answer to a suspended call: upstream's `ExternalResult`.
 sealed class ExternalResult {
   const ExternalResult();
@@ -72,6 +91,9 @@ sealed class ExternalSettledResult extends ExternalResult {
 }
 
 /// The call returned [value].
+///
+/// Two are equal when their values are, as upstream's is a dict.
+@immutable
 final class ExternalReturnValue extends ExternalSettledResult {
   /// The call returned [value].
   const ExternalReturnValue(this.value);
@@ -81,6 +103,13 @@ final class ExternalReturnValue extends ExternalSettledResult {
   /// [MontyValue] family at the cutover, and this narrows to it; any other
   /// object is refused by the resume with Python's `TypeError`.
   final Object value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExternalReturnValue && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
 }
 
 /// The call raised a Python exception of type [excType] with [message] and
@@ -299,9 +328,10 @@ final class FunctionSnapshot extends SuspendedSnapshot {
   /// a value this driver cannot read.
   List<MontyValue> get args => _args ??= List.unmodifiable(_arguments());
 
-  /// The keyword arguments, in order, read on first use.
-  Map<String, MontyValue> get kwargs =>
-      _kwargs ??= Map.unmodifiable(_keywords());
+  /// The keyword arguments, in order, read on first use: the same mutable
+  /// map on every read, as upstream's dict. Changing it changes no answer:
+  /// [resumeAuto] calls with the arguments the worker sent.
+  Map<String, MontyValue> get kwargs => _kwargs ??= Map.of(_keywords());
 
   /// Answers the call with [result] and runs to the next suspension or the
   /// end. An [ExternalFuture] leaves the call pending, to be settled

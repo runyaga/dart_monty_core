@@ -7,6 +7,7 @@
 // dart2js and dart2wasm.
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
@@ -28,6 +29,7 @@ import 'package:test/test.dart';
 
 import '../../_accessors.dart';
 import '_scripted_channel.dart';
+import '_worker_class_oracle.g.dart';
 
 /// A pool over the scripted [channel], none started up front.
 Future<MontyPool> _pool(ScriptedChannel channel) {
@@ -165,7 +167,7 @@ void main() {
       expect(call.isOsFunction, isFalse);
       expect(call.allowEagerAwait, isFalse);
       expect(call.objectId, isNull);
-      expect(call.position, const SourceRange('<python-input-0>', 4, 13));
+      expect(call.position, SourceRange('<python-input-0>', 4, 13));
       expect(call.scriptName, 'job.py');
       final done = await call.resume(const ExternalReturnValue(MontyInt(5)));
       expect(done, isA<SessionComplete>());
@@ -197,7 +199,7 @@ void main() {
       ]);
       final first = await s.feedStart('t = 1 + missing') as NameLookupSnapshot;
       expect(first.variableName, 'missing');
-      expect(first.position, const SourceRange('<python-input-0>', 8, 15));
+      expect(first.position, SourceRange('<python-input-0>', 8, 15));
       final second =
           await first.resume(value: const MontyInt(41)) as NameLookupSnapshot;
       final lookup = itemAt(ch.requests, 2).resumeNameLookup;
@@ -523,10 +525,10 @@ void main() {
     });
 
     test('SourceRange is a value', () {
-      const a = SourceRange('<string>', 1, 2);
-      expect(a, const SourceRange('<string>', 1, 2));
-      expect(a.hashCode, const SourceRange('<string>', 1, 2).hashCode);
-      expect(a, isNot(const SourceRange('<string>', 1, 3)));
+      final a = SourceRange('<string>', 1, 2);
+      expect(a, SourceRange('<string>', 1, 2));
+      expect(a.hashCode, SourceRange('<string>', 1, 2).hashCode);
+      expect(a, isNot(SourceRange('<string>', 1, 3)));
       expect('$a', 'SourceRange(<string>, 1, 2)');
     });
   });
@@ -668,7 +670,7 @@ void main() {
       expect(itemAt(ch.requests, 2).resumeCall.result.future, 1);
       final both = await b.resume(const ExternalFuture()) as FutureSnapshot;
       expect(both.pendingCallIds, [1, 2]);
-      expect(both.position, const SourceRange('<python-input-0>', 10, 20));
+      expect(both.position, SourceRange('<python-input-0>', 10, 20));
       final rest =
           await both.resume({1: const ExternalReturnValue(MontyInt(10))})
               as FutureSnapshot;
@@ -1144,6 +1146,164 @@ void main() {
       expect(_last(ch).whichKind(), pb.ParentRequest_Kind.abortFeed);
     });
   });
+
+  // Upstream's members, measured on pydantic-monty 1.1.0 by
+  // tool/generate_worker_class_oracle.py (_worker_class_oracle.g.dart).
+  group("upstream's members", () {
+    test("ExternalReturnValue equality is its value's", () {
+      // Upstream's is a TypedDict, so a dict, compared by value
+      // (pydantic_monty/__init__.py:235-238).
+      String eq(Object a, Object b) => 'value: ${a == b ? 'True' : 'False'}';
+      expect(eq(_ret(1), _ret(1)), workerClassOracle['return_value_equal']);
+      expect(eq(_ret(1), _ret(2)), workerClassOracle['return_value_unequal']);
+      expect(_ret(1).hashCode, _ret(1).hashCode);
+      expect(_ret(1), isNot(const ExternalFuture()));
+      final list = ExternalReturnValue(MontyList([MontyInt(_n(1))]));
+      expect(list, ExternalReturnValue(MontyList([MontyInt(_n(1))])));
+      expect(
+        list.hashCode,
+        ExternalReturnValue(MontyList([MontyInt(_n(1))])).hashCode,
+      );
+    });
+
+    test(
+      'kwargs is the same mutable map on every read; args a fixed list',
+      () async {
+        final (s, _) = await _session([
+          answer([_callKw()]),
+        ]);
+        final snap = await s.feedStart('f(1, a=2, b=3)') as FunctionSnapshot;
+        expect(
+          'value: ${identical(snap.kwargs, snap.kwargs) ? 'True' : 'False'}',
+          workerClassOracle['kwargs_same_object'],
+        );
+        expect('value: ${_repr(snap.kwargs)}', workerClassOracle['kwargs']);
+        snap.kwargs['c'] = const MontyInt(4);
+        expect(
+          'value: ${_repr(snap.kwargs)}',
+          workerClassOracle['kwargs_after_set'],
+        );
+        snap.kwargs.remove('a');
+        expect(
+          'value: ${_repr(snap.kwargs)}',
+          workerClassOracle['kwargs_after_del'],
+        );
+        expect(
+          'value: ${identical(snap.args, snap.args) ? 'True' : 'False'}',
+          workerClassOracle['args_same_object'],
+        );
+        // A tuple: upstream's `TypeError` on item assignment.
+        expect(workerClassOracle['args_set'], startsWith('TypeError: '));
+        expect(() => snap.args[0] = const MontyInt(9), throwsUnsupportedError);
+      },
+    );
+
+    test(
+      'a changed kwargs does not change what resumeAuto calls with',
+      () async {
+        // Upstream dispatches from the call it received, not from the dict
+        // `kwargs` returned (snapshot.rs:917-923).
+        final (s, _) = await _session([
+          answer([_callKw()]),
+          answer([_int(0)]),
+        ]);
+        Map<String, MontyValue>? seen;
+        final snap =
+            await s.feedStart(
+                  'f(1, a=2, b=3)',
+                  externals: {
+                    'f': (args, kwargs) {
+                      seen = Map.of(kwargs);
+
+                      return const MontyNone();
+                    },
+                  },
+                )
+                as FunctionSnapshot;
+        snap.kwargs
+          ..clear()
+          ..['z'] = const MontyInt(0);
+        await snap.resumeAuto();
+        expect(seen, {'a': const MontyInt(2), 'b': const MontyInt(3)});
+      },
+    );
+
+    test("SourceRange's offsets are u32s", () {
+      // Upstream's constructor takes u32s (exceptions.rs:597-602): Python's
+      // OverflowError, Dart's ArgumentError (D-036).
+      for (final (id, start, end) in [
+        ('range_start_negative', -1, 0),
+        ('range_end_negative', 0, -1),
+        ('range_start_too_large', 0x100000000, 0),
+        ('range_end_too_large', 0, 0x100000000),
+      ]) {
+        expect(
+          workerClassOracle[id],
+          startsWith('OverflowError: '),
+          reason: id,
+        );
+        expect(
+          () => SourceRange('f', _n(start), _n(end)),
+          throwsArgumentError,
+          reason: id,
+        );
+      }
+      // The bounds, and a reversed range, are accepted.
+      expect(
+        workerClassOracle['range_u32_max'],
+        startsWith('value: SourceRange('),
+      );
+      final max = SourceRange('f', _n(0xFFFFFFFF), _n(0xFFFFFFFF));
+      expect((max.start, max.end), (0xFFFFFFFF, 0xFFFFFFFF));
+      expect(workerClassOracle['range_reversed'], startsWith('value: '));
+      final reversed = SourceRange('f', _n(5), _n(1));
+      expect((reversed.start, reversed.end), (5, 1));
+    });
+
+    test('a hand-built SourceRange keeps its file name whole', () {
+      final range = SourceRange('é' * 200, 0, 0);
+      expect(
+        'value: ${utf8.encode(range.filename).length}',
+        workerClassOracle['range_long_filename_bytes'],
+      );
+    });
+  });
+}
+
+/// [n], as a value the compiler cannot make constant.
+int _n(int n) => [n].single;
+
+/// A return of [n], built anew each time.
+ExternalReturnValue _ret(int n) => ExternalReturnValue(MontyInt(_n(n)));
+
+/// The suspension of `f(1, a=2, b=3)`.
+pb.ChildEvent _callKw() {
+  final writer = ArenaWriter();
+  final call = pb.FunctionCall(
+    functionName: 'f',
+    callId: 1,
+    args: [writer.add(const MontyInt(1))],
+  );
+  for (final (k, v) in [('a', 2), ('b', 3)]) {
+    call.kwargs.add(
+      pb.NodePair(
+        key: writer.add(MontyString(k)),
+        value: writer.add(MontyInt(v)),
+      ),
+    );
+  }
+
+  return pb.ChildEvent(functionCall: call..values = writer.arena);
+}
+
+/// [kwargs] of ints as Python's `repr` of the dict.
+String _repr(Map<String, MontyValue> kwargs) {
+  final items = [
+    for (final MapEntry(:key, :value) in kwargs.entries)
+      "'$key': ${(value as MontyInt).value}",
+  ];
+
+  return '{${items.join(', ')}}';
 }
 
 /// Lets the event loop run until [done] holds.

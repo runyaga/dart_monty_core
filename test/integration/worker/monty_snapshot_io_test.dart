@@ -71,7 +71,7 @@ void main() {
       expect(snap.args, [const MontyInt(2)]);
       expect(snap.kwargs, {'k': const MontyString('é')});
       // Upstream's (pydantic-monty 1.1.0) range, in UTF-8 bytes.
-      expect(snap.position, const SourceRange('<python-input-0>', 10, 22));
+      expect(snap.position, SourceRange('<python-input-0>', 10, 22));
       expect(snap.scriptName, 'main.py');
       final done = await snap.resume(const ExternalReturnValue(MontyInt(5)));
       expect((done as SessionComplete).output, const MontyInt(5));

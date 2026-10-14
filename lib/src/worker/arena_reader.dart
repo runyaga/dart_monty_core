@@ -61,7 +61,8 @@ import 'package:fixnum/fixnum.dart';
 /// registered but which is not itself registered still decodes to a plain
 /// proxy.
 ///
-/// A registered object is hashable as a dict key or set member, by identity.
+/// A registered object is hashable as a dict key or set member, by its own
+/// `==` and `hashCode`.
 typedef HostObjectLookup = ({
   Object? Function(String classId) classType,
   Object? Function(String instanceId) instance,

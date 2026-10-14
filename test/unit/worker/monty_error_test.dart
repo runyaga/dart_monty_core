@@ -11,6 +11,7 @@ import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_worker_class_oracle.g.dart';
 
 /// A frame on [line], from [start] to [end], with [preview] if given.
 pb.StackFrame _frame({
@@ -227,6 +228,43 @@ void main() {
       final b = frameOf();
       expect(a == b, isFalse);
       expect(a == a, isTrue);
+    });
+
+    test("toString is upstream's str(frame)", () {
+      // Measured on pydantic-monty 1.1.0 (_worker_class_oracle.g.dart).
+      for (final f in workerClassFrames) {
+        final error =
+            _raised('ZeroDivisionError', 'division by zero', [
+                  pb.StackFrame(
+                    filename: f.filename,
+                    start: pb.CodeLoc(line: f.line, column: f.column),
+                    end: pb.CodeLoc(line: f.endLine, column: f.endColumn),
+                    frameName: f.functionName,
+                  ),
+                ])
+                as MontyRuntimeError;
+        expect('${onlyItem(error.traceback)}', f.str);
+      }
+    });
+
+    test("toString names a nameless frame '<module>' and inserts fields "
+        'unescaped', () {
+      // exceptions.rs:554-564: `unwrap_or("<module>")`, and the values
+      // formatted with `{}`, not `repr`.
+      final error =
+          _raised('ValueError', 'v', [
+                pb.StackFrame(
+                  filename: "it's.py",
+                  start: pb.CodeLoc(line: 2, column: 3),
+                  end: pb.CodeLoc(line: 2, column: 4),
+                ),
+              ])
+              as MontyRuntimeError;
+      expect(
+        '${onlyItem(error.traceback)}',
+        "Frame(filename='it's.py', line=2, column=3, "
+            "function_name='<module>')",
+      );
     });
 
     test('the traceback cannot be changed', () {

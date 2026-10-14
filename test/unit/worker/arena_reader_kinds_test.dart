@@ -11,6 +11,7 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
+import 'package:meta/meta.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
@@ -725,21 +726,54 @@ void main() {
       expect(asked, hasLength(2));
     });
 
-    test('a registered object is a key by identity', () {
-      const other = MontyString('other');
+    test('a registered object is a key by its own == and hashCode', () {
+      // Upstream decodes the node to the original object and inserts it
+      // with Python's own hash and equality (decode.rs:106-120, 144-165):
+      // equal objects collapse, the first key keeping the last value.
+      // Built at run time, so the two equal keys are distinct objects.
+      final [first, same, other] = [
+        for (final n in [1, 1, 2]) _Key(n),
+      ];
+      final objects = {'02': first, '03': same, '04': other};
       final reader = _reader(
         [
           classType('C', id: uuid(1)),
-          // Two nodes for the same registered instance, then another.
-          for (final b in [2, 2, 3]) instance(0, id: uuid(b), attrs: pairs([])),
+          for (final b in [2, 3, 4]) instance(0, id: uuid(b), attrs: pairs([])),
+          set([1, 2, 3]),
+          for (final v in [1, 2, 3]) n(v),
+          dict([(1, 5), (2, 6), (3, 7)]),
+        ],
+        hosts: (
+          classType: (_) => null,
+          instance: (id) => objects[id.substring(0, 2)],
+        ),
+      );
+      final members = (reader[4] as MontySet).items;
+      expect([for (final m in members) hostObjectOf(m)], [first, other]);
+      final entries = (reader[8] as MontyDict).pairs;
+      expect(
+        [for (final (k, v) in entries) (hostObjectOf(k), v)],
+        [(first, const MontyInt(2)), (other, const MontyInt(3))],
+      );
+      expect(identical(hostObjectOf(entries.first.$1), first), isTrue);
+    });
+
+    test('registered objects equal only to themselves stay apart', () {
+      final a = Object();
+      final b = Object();
+      final reader = _reader(
+        [
+          classType('C', id: uuid(1)),
+          for (final x in [2, 2, 3]) instance(0, id: uuid(x), attrs: pairs([])),
           set([1, 2, 3]),
         ],
         hosts: (
           classType: (_) => null,
-          instance: (id) => id.startsWith('02') ? registered : other,
+          instance: (id) => id.startsWith('02') ? a : b,
         ),
       );
-      expect((reader[4] as MontySet).items, [registered, other]);
+      final members = (reader[4] as MontySet).items;
+      expect([for (final m in members) hostObjectOf(m)], [a, b]);
     });
   });
 
@@ -780,4 +814,18 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
     });
   });
+}
+
+/// A host object equal to any other with the same [n].
+@immutable
+final class _Key {
+  const _Key(this.n);
+
+  final int n;
+
+  @override
+  bool operator ==(Object other) => other is _Key && other.n == n;
+
+  @override
+  int get hashCode => n.hashCode;
 }

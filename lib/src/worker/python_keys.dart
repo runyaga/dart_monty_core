@@ -8,8 +8,10 @@
 ///
 /// - numbers compare by value across `bool`, `int`, `float` and `complex`
 ///   (with a zero imaginary part);
-/// - a NaN, an exception, a file handle, and an object the host registered
-///   are equal only to themselves: to the same node, or the same object;
+/// - a NaN, an exception and a file handle are equal only to themselves:
+///   to the same node;
+/// - an object the host registered compares by its own `==` and
+///   `hashCode`, as upstream inserts the original object with Python's;
 /// - text compares by content, whether it came as `str`, a function name, a
 ///   `repr` or a `cycle` placeholder, since all of them decode to `str`;
 /// - tuples and named tuples compare as tuples, frozensets as sets, both
@@ -44,7 +46,7 @@ final class PythonKeys {
   /// Each node's interned key, or why it is unhashable.
   final Map<int, Object> _memo = {};
   final Map<String, int> _interned = {};
-  final Map<Object, int> _objects = Map.identity();
+  final Map<Object, int> _objects = {};
 
   /// The interned key of node [index], whose index the arena has checked.
   ///
