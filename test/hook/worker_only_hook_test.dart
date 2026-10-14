@@ -17,6 +17,7 @@ import 'package:hooks/hooks.dart';
 import 'package:test/test.dart';
 
 import '../../hook/build.dart' as hook;
+import '../_accessors.dart';
 
 /// A package root with native/worker/ (a link to this checkout's, so cargo
 /// reuses its target directory) and native/rust-toolchain.toml, and without
@@ -91,8 +92,9 @@ void main() {
       expect(assets.map((a) => a.id), [
         'package:dart_monty_core/src/worker/self_relaunch.dart',
       ]);
-      final library = File.fromUri(assets.single.file!);
-      expect(library.lengthSync(), greaterThan(0));
+      final file = onlyItem(assets).file;
+      expect(file, isNotNull);
+      expect(File.fromUri(file ?? Uri()).lengthSync(), greaterThan(0));
 
       // The toolchain is the worker's own declared input, not one it relied
       // on the old crate's declarations for.

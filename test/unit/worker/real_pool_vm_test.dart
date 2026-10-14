@@ -25,7 +25,7 @@ void main() {
         expect(ProcessChannel.live, hasLength(1));
 
         return pool.withSession(
-          (s) => s.feedRun('6 * 7', printCallback: (_, _) {}),
+          (s) => s.feedRun('6 * 7'),
           options: const SessionConfig(
             limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
           ),
