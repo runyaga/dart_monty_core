@@ -2,6 +2,27 @@
 // session and as a script on FakeMontySession, gives a host-visible trace
 // (host calls, prints, snapshots, the end) and the host's answers. Both
 // sides are compared with the same expected lists.
+//
+// WHERE THE FAKE DOES NOT MATCH THE WORKER: the listed exceptions. Each is
+// left out of the comparison here, by name, never skipped silently.
+//  1. Positions. A snapshot's `position` is the worker's source range; the
+//     fake has none (`SourceRange.unknown`). showSnapshot leaves it out.
+//  2. Frames. A worker error carries its traceback with source lines and
+//     end positions; the fake's has none, or with `willRaise(line:)` one
+//     frame with no source line. Only filename, line, column and function
+//     name are compared ('frames are named per feed'); `display()` is not.
+//  3. Pending-id order. A `FutureSnapshot`'s `pendingCallIds` lists every
+//     pending host future in the worker's hash-map order (upstream
+//     `scheduler.rs` `pending_call_ids`); the fake lists them ascending.
+//     showSnapshot sorts them.
+//  4. Before the cutover there is no `MontyHostFunction`: the scenarios
+//     that pass a function as a value (in inputs, as an alias, a replaced
+//     entry, a function nested in an argument) and an invalid lookup value
+//     run on the cutover candidate (C4 pre-cutover.md, refusals.md).
+//  5. Type names. The plain-value `TypeError` names the value's Python
+//     type; the suite checks `int` only (pythonTypeName in the fake).
+//  6. What the fake does not do: run Python, type-check, enforce limits
+//     (the session's own budgets still apply). No scenario depends on them.
 import 'dart:async';
 
 import 'package:collection/collection.dart';
