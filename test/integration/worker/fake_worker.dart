@@ -46,7 +46,9 @@ const bigFrameSuffixPrints = 32;
 
 Future<void> main(List<String> args) async {
   var scenario = args.firstOrNull ?? 'serve';
-  if (scenario == 'writer') return _writeAfterParentExits(args[1]);
+  if (args case ['writer', final path, ...]) {
+    return _writeAfterParentExits(path);
+  }
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
