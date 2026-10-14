@@ -346,6 +346,43 @@ restoreOracle = {
       (step: ['feed', 'b', 'y: int = "a"\nrepr(y)'], outcome: 'value: \'a\''),
     ],
   ),
+  'type_check_after_aborted_load': (
+    pool: <String, Object>{},
+    steps: [
+      (
+        step: [
+          'open',
+          'a',
+          <String, Object>{'type_check': true},
+        ],
+        outcome: 'ok',
+      ),
+      (
+        step: ['start', 'a', 'import os\nrepr(os.getenv("X"))'],
+        outcome:
+            'os os.getenv args=[\'X\', None] kwargs={} script=main.py at=<python-input-0>:15-29',
+      ),
+      (step: ['snapdump', 'a'], outcome: 'dumped'),
+      (
+        step: [
+          'open',
+          'b',
+          <String, Object>{'max_suspensions': 0},
+        ],
+        outcome: 'ok',
+      ),
+      (
+        step: ['load_snapshot', 'b', 'a'],
+        outcome: 'MontyRuntimeError: RuntimeError: suspension limit 0 exceeded',
+      ),
+      (
+        step: ['feed', 'b', 'x: int = "a"\nrepr(x)'],
+        outcome:
+            'MontyTypingError: error[invalid-assignment]: Object of type `Literal["a"]` is not assignable to `int`\n --> main.py:1:10\n  |\n1 | x: int = "a"\n  |    ---   ^^^ Incompatible value of type `Literal["a"]`\n  |    |\n  |    Declared type\n2 | repr(x)\n  |\n\n',
+      ),
+      (step: ['feed', 'b', 'repr(2)'], outcome: 'value: 2'),
+    ],
+  ),
   'script_name_after_load_session': (
     pool: <String, Object>{},
     steps: [

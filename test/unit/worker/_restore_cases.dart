@@ -80,7 +80,12 @@ String _describe(MontySnapshot snapshot) {
   String at(SuspendedSnapshot s) =>
       'script=${s.scriptName} at=${s.position.filename}:'
       '${s.position.start}-${s.position.end}';
-  String int(MontyValue v) => '${(v as MontyInt).value}';
+  // An int, None, or a str as Python's repr shows a plain one.
+  String int(MontyValue v) => switch (v) {
+    MontyNone() => 'None',
+    MontyString(:final value) => "'$value'",
+    _ => '${(v as MontyInt).value}',
+  };
   String named(Map<String, MontyValue> kwargs) => [
     for (final k in kwargs.keys.toList()..sort()) '$k: ${int(kwargs[k]!)}',
   ].join(', ');
@@ -236,7 +241,7 @@ final class _Run {
 void restoreOracleTests(String label, StartPool start) {
   test('the restore oracle is complete ($label)', () {
     // The floor: a regeneration that lost cases must not pass as green.
-    expect(restoreOracle.length, greaterThanOrEqualTo(32));
+    expect(restoreOracle.length, greaterThanOrEqualTo(33));
   });
 
   for (final MapEntry(key: id, value: (:pool, :steps))

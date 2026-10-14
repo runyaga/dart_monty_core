@@ -2578,6 +2578,32 @@ void main() {
       expect(ch.remaining, 0);
     });
 
+    test('a feed made after a resume, both while a dump runs, waits for the '
+        'resume and then runs', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+        expecting(pb.ParentRequest_Kind.feed, [_int(3)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      final dump = session.dump();
+      final resumed = snapshot.resume(const ExternalReturnValue(MontyNone()));
+      final feed = session.feedRun('3', printCallback: _ignore);
+      expect(await dump, [1]);
+      expect(await resumed, isA<SessionComplete>());
+      expect(await feed, const MontyInt(3));
+      expect(ch.remaining, 0);
+    });
+
     test('a close while a dump runs fails the feed waiting on host code at '
         'once', () async {
       // The Dump is never answered: only the close's kill ends it.

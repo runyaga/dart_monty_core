@@ -56,8 +56,8 @@ final class ProtoSession {
   /// directory, `os.chdir` included (upstream's `Checkout.cwd_set`).
   bool _cwdSet = false;
 
-  /// Whether a dump was loaded: the session's type check is then the
-  /// dump's, so any feed may meet a typing rejection.
+  /// Whether a load reached the worker: the session's type check may then
+  /// be the dump's, so any feed may meet a typing rejection.
   bool _loaded = false;
 
   /// Configures a session on [channel].
@@ -324,15 +324,18 @@ extension ProtoSessionTransfer on ProtoSession {
     final event = await _channel.turn(
       pb.ParentRequest(load: pb.Load(state: state)),
     );
+    // The worker answered, so it may hold the dump's type check: one it
+    // adopted and the budget then aborted (an Error), as well as one it
+    // took. Any later feed may meet a typing rejection, as upstream's may.
+    _loaded = true;
     final kind = event.whichKind();
     if (kind == pb.ChildEvent_Kind.error) _throwRaised(event.error);
     if (kind != pb.ChildEvent_Kind.ok && !isSuspension(event)) {
       _desync('Load', event);
     }
     // The adopted dump carries the working directory (checkout.rs
-    // `restore`), and its own type check.
+    // `restore`, only once the load succeeded).
     _cwdSet = true;
-    _loaded = true;
 
     return (
       kind == pb.ChildEvent_Kind.ok ? null : event,

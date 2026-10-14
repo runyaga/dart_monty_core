@@ -500,10 +500,14 @@ final class _LeasedSession implements PoolSession {
   /// feed's host call, or an answer that was refused as too large to send,
   /// which leaves the suspension pending after its feed failed.
   ///
-  /// A dump in flight leaves it so: a feed made meanwhile is refused at
-  /// once, rather than queued behind the call that suspended.
+  /// A dump in flight leaves it so while no call's turn waits behind it: a
+  /// feed made from host code meanwhile is refused at once, rather than
+  /// queued behind the call that suspended. Behind a waiting turn (a
+  /// resume) the feed queues, to be checked once that call is over, as
+  /// upstream checks under its lock.
   bool get _suspended =>
-      (!_channel.inTurn || _channel.dumping) && _channel.pendingSuspension;
+      _channel.pendingSuspension &&
+      (!_channel.inTurn || (_channel.dumping && _channel.waitingCalls == 0));
 
   /// Hands the turn to the oldest waiting feed, which then starts, or
   /// fails and hands it on.
@@ -1197,6 +1201,10 @@ final class _SessionChannel implements MontyChannel {
   /// turns and belongs to none of them.
   bool dumping = false;
 
+  /// Turns other than dumps waiting for the channel: a call's next turn,
+  /// queued behind a dump.
+  int waitingCalls = 0;
+
   /// Whether the last turn ended in a suspension still awaiting the host's
   /// answer (upstream's `pending`).
   bool pendingSuspension = false;
@@ -1236,11 +1244,13 @@ final class _SessionChannel implements MontyChannel {
     // Turns are serialized, as upstream's checkout lock serializes them: a
     // feed's next turn waits for a dump made from its host code. A free
     // channel starts the turn in this same synchronous step.
+    final waiting = request.whichKind() == pb.ParentRequest_Kind.dump ? 0 : 1;
     while (inTurn) {
+      waitingCalls += waiting;
       await turnOver;
+      waitingCalls -= waiting;
     }
     final wasPending = _take(request);
-    final dump = request.whichKind() == pb.ParentRequest_Kind.dump;
     try {
       // One deadline for the whole turn: print delivery, and an abort the
       // suspension budget sends in its place, as upstream's request_turn.
@@ -1255,7 +1265,7 @@ final class _SessionChannel implements MontyChannel {
       unawaited(_settle(done, _turnWithBudget(request, onPrint)));
       try {
         final event = await done.future;
-        pendingSuspension = dump ? wasPending : isSuspension(event);
+        pendingSuspension = dumping ? wasPending : isSuspension(event);
 
         return event;
       } on FrameTooLargeException catch (error, stack) {

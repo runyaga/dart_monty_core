@@ -153,6 +153,13 @@ CASES: list[tuple[str, dict[str, Any], list[list[Any]]]] = [
         ['open', 'b', {'type_check': True}], ['load_session', 'b', 'a'],
         ['feed', 'b', 'y: int = "a"\nrepr(y)'],
     ]),
+    # A load aborted over budget still adopted the dump, type check included.
+    ('type_check_after_aborted_load', {}, [
+        ['open', 'a', {'type_check': True}],
+        ['start', 'a', 'import os\nrepr(os.getenv("X"))'], ['snapdump', 'a'],
+        ['open', 'b', {'max_suspensions': 0}], ['load_snapshot', 'b', 'a'],
+        ['feed', 'b', 'x: int = "a"\nrepr(x)'], ['feed', 'b', 'repr(2)'],
+    ]),
     # A load_session leaves feed_start's snapshots under the session's name.
     ('script_name_after_load_session', {}, [
         ['open', 'a', {'script_name': 'a.py'}], ['dump', 'a'],
