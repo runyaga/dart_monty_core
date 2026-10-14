@@ -83,10 +83,6 @@ fi
 # request. Unset -- every local run -- behaves exactly as before, because a
 # local run has no base to compare against and blocking it would just train
 # people to skip the gate.
-# Captured BEFORE the base-ref swap below reassigns BASELINE. The gain check
-# needs the file this branch actually ships; the regression check needs the
-# base branch's.
-OWN_BASELINE="$BASELINE"
 
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   # THE REF ITSELF MUST RESOLVE FIRST, and this check is the difference between
@@ -125,14 +121,11 @@ if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   fi
 fi
 
-BASELINE="$BASELINE" OWN_BASELINE="$OWN_BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
+BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
 import json, os, sys
 
 root = os.getcwd()
 baseline_path = os.environ['BASELINE']
-# The baseline the GAIN is measured against, which is NOT always the one the
-# REGRESSION is measured against. See the long note at the gain check below.
-own_baseline_path = os.environ.get('OWN_BASELINE') or baseline_path
 update = os.environ['UPDATE'] == '1'
 tracefile = os.environ['TRACEFILE']
 
@@ -276,21 +269,10 @@ if violations:
 # tool/coverage-baseline.json. That put the baseline in every PR's diff, a
 # guaranteed rebase conflict between sibling PRs. The baseline is now recorded
 # on main after merge (tool/record_coverage_baseline.sh), so the ratchet only
-# fails on decreases, against the BASE branch's copy, above.
-own = load_json(own_baseline_path) if os.path.exists(own_baseline_path) \
-    else None
-if own_baseline_path != baseline_path:
-    # A PR does not edit the baseline at all. A rise is not needed (main records
-    # it after merge), a lower floor would be inherited by the next PR, and a
-    # floor above measured coverage would fail main's own CI after the merge.
-    # A justified decrease is a maintainer's direct baseline commit on main.
-    if (not os.path.exists(own_baseline_path)
-            or os.path.islink(own_baseline_path) or own != base):
-        print('FAIL: this branch edits or deletes tool/coverage-baseline.json.')
-        print('  PRs do not touch the baseline; main records it after merge.')
-        print('  Restore it: git checkout origin/main -- '
-              'tool/coverage-baseline.json')
-        sys.exit(1)
+# fails on decreases, against the BASE branch's copy, above. That a PR does not
+# edit the baseline file at all is checked on its diff against the merge-base
+# (tool/check_changelog_fragments.sh), which stays correct when main's baseline
+# moves while the PR is open; comparing file contents here would not.
 
 print('PASS — no file below its baseline')
 PY

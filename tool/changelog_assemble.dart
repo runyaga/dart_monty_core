@@ -210,6 +210,9 @@ void main(List<String> args) {
       dry = true;
     } else if (args[i] == '--version' && i + 1 < args.length) {
       version = args[++i];
+      if (!RegExp(r'^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$').hasMatch(version)) {
+        _fail('--version needs X.Y.Z, got "$version"');
+      }
     } else {
       _fail('usage: changelog_assemble.dart [--version X.Y.Z] [--dry-run]');
     }

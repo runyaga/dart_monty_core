@@ -13,7 +13,10 @@
 #   2. A PR does not edit CHANGELOG.md, unless it has the `changelog-assembly`
 #      label (the assembly or release PR). That label also allows removing
 #      fragments already on the base branch, and waives nothing else.
-#   3. Every changes/*.md in the tree is well formed: it starts with a
+#   3. A PR does not touch tool/coverage-baseline.json. Main records it after
+#      merge (tool/record_coverage_baseline.sh); a PR-edited floor could be
+#      lowered for the next PR or set above measured coverage.
+#   4. Every changes/*.md in the tree is well formed: it starts with a
 #      `### <Section>` header (Added, Changed, Fixed, Breaking, Removed,
 #      Deprecated, Security or Internal) and every section has a body.
 #
@@ -97,7 +100,7 @@ PY
 }
 
 check_pr() {
-  local base="$1" mb rc=0 status path lib=0 chg=0 frag=0 oldfrag=0 f
+  local base="$1" mb rc=0 status path lib=0 chg=0 cov=0 frag=0 oldfrag=0 f
   mb="$(git -C "$REPO" merge-base "$base" HEAD)" ||
     { echo "FAIL: no merge-base with $base (fetch-depth: 0?)"; return 1; }
   while IFS= read -r -d '' status && IFS= read -r -d '' path; do
@@ -105,6 +108,7 @@ check_pr() {
     case "$path" in
       lib/*) lib=1 ;;
       CHANGELOG.md) chg=1 ;;
+      tool/coverage-baseline.json) cov=1 ;;
       changes/README.md) ;;
       changes/*/*) ;;
       changes/*.md) if [ "$status" = "A" ]; then frag=$((frag + 1)); else oldfrag=1; fi ;;
@@ -119,6 +123,12 @@ check_pr() {
     echo "FAIL: this PR edits CHANGELOG.md. Add a fragment changes/<slug>.md"
     echo "      instead; CHANGELOG.md is assembled at release time. (An"
     echo "      assembly or release PR carries the changelog-assembly label.)"
+    rc=1
+  fi
+  if [ "$cov" = 1 ]; then
+    echo "FAIL: this PR edits tool/coverage-baseline.json. PRs do not touch it;"
+    echo "      the baseline is recorded on main after merge, and the coverage"
+    echo "      ratchet already passes when coverage rises."
     rc=1
   fi
   if [ "$oldfrag" = 1 ] && ! has_label changelog-assembly; then
@@ -197,6 +207,8 @@ self_test() {
   run "indented heading-like line: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n' > "$tmp/changes/.hid.md"; commit
   run "hidden fragment: must FAIL" 1 '[]' ''
+  reset; mkdir -p "$tmp/tool"; echo '{}' > "$tmp/tool/coverage-baseline.json"; commit
+  run "adds/edits the coverage baseline: must FAIL" 1 '["no-changelog"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
   run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
   # Fragments already on the base branch (a new base holding old.md).

@@ -49,7 +49,7 @@ trap 'rm -f "$FLAT"' EXIT
   for f in "$PKG"/changes/*.md; do
     [ -f "$f" ] && [ "$(basename "$f")" != README.md ] && cat "$f"
   done; true; } |
-  tr '\n' ' ' | tr -s ' ' > "$FLAT"
+  tr -d '\r' | tr '\n' ' ' | tr -s ' ' > "$FLAT"
 
 BASE="${1:-}"
 if [ -z "$BASE" ]; then
