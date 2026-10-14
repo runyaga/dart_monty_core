@@ -462,8 +462,8 @@
       "pct": 97.17
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 151,
-      "hit": 151,
+      "found": 160,
+      "hit": 160,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -528,8 +528,8 @@
     }
   },
   "total": {
-    "found": 8046,
-    "hit": 6746,
-    "pct": 83.84
+    "found": 8055,
+    "hit": 6755,
+    "pct": 83.86
   }
 }
