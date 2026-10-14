@@ -400,8 +400,7 @@ final class _Feed {
         .where(watched.contains)
         .firstWhereOrNull((id) => _calls[id] is _Failed);
     if (failed != null) {
-      // A failed gather member cancels what the gather owes; a branch's not.
-      if (wait.gathered || owed.contains(failed)) _outstanding.clear();
+      _settleDebts(_outstanding, owed, settled, failed, _calls);
 
       return _raiseFirstFailure([failed]);
     }
@@ -532,6 +531,24 @@ pb.RaisedException? _unknownId(
   return pb.RaisedException(
     excType: 'RuntimeError',
     message: 'unknown call_id ${unknown.callId}, expected one of: $advertised',
+  );
+}
+
+/// After [failed] raised from a batch settling [settled]: an owed member
+/// failing cancels the gather's [debts]; any other owed failure in the
+/// batch stays owed, to raise in its turn.
+void _settleDebts(
+  Set<int> debts,
+  Set<int> owed,
+  Set<int> settled,
+  int failed,
+  Map<int, _CallState> calls,
+) {
+  if (owed.contains(failed)) debts.clear();
+  debts.addAll(
+    settled.where(
+      (id) => id != failed && owed.contains(id) && calls[id] is _Failed,
+    ),
   );
 }
 
