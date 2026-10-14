@@ -574,10 +574,10 @@ void main() {
         );
         expect(raised.excType, 'json.JSONDecodeError');
         expect(raised.data.json.pos, Int64(6));
-        // An unknown type is any other throw.
+        // An unknown type is an ArgumentError, thrown like any other.
         expect(
           raisedFrom(const ExternalException('NoSuchError', 'm')).excType,
-          'RuntimeError',
+          'Exception',
         );
       },
     );

@@ -21,7 +21,7 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 
 export 'package:dart_monty_core/src/worker/host_answers.dart'
-    show ProtoExternalFunction, ProtoOsCallHandler, coroutine;
+    show OsHandler, ProtoExternalFunction, coroutine;
 
 /// The monty-proto schema version this driver speaks: upstream's
 /// `PROTOCOL_VERSION` at the pinned tag.
@@ -92,7 +92,7 @@ final class ProtoSession {
     String code, {
     Map<String, MontyValue> inputs = const {},
     Map<String, ProtoExternalFunction> externals = const {},
-    ProtoOsCallHandler? onOsCall,
+    OsHandler? onOsCall,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
   }) => drive(

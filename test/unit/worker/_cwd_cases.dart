@@ -5,6 +5,8 @@
 // (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
 // cases.
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/os_call_exception.dart'
+    show OsCallNotHandledException;
 import 'package:test/test.dart';
 
 import '_attribute_cases.dart' show WithSession;
@@ -34,7 +36,7 @@ void cwdSessionTests(String label, WithSession withSession) {
           "os.chdir('/data')",
           printCallback: _ignore,
           os: (name, args, kwargs) {
-            if (name != 'Path.stat') return null;
+            if (name != 'Path.stat') throw const OsCallNotHandledException();
             stats.add(args);
 
             return _dirStat;

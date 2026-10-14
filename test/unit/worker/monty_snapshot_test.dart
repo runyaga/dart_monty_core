@@ -818,7 +818,7 @@ void main() {
 
                   return name == 'Path.read_text'
                       ? const MontyString('text')
-                      : null;
+                      : throw const OsCallNotHandledException();
                 },
               )
               as FunctionSnapshot;
@@ -927,7 +927,9 @@ void main() {
           calls.add((name, args, kwargs));
           await Future<void>.delayed(Duration.zero);
 
-          return name == 'Path.write_text' ? const MontyInt(2) : null;
+          return name == 'Path.write_text'
+              ? const MontyInt(2)
+              : throw const OsCallNotHandledException();
         },
       );
       expect(value, const MontyInt(2));
@@ -962,7 +964,7 @@ void main() {
           externals: {
             'af': coroutine(
               (args, kwargs) => Future.error(
-                const OsCallException('no', pythonExceptionType: 'ValueError'),
+                const ExternalException('ValueError', 'no'),
               ),
             ),
           },
@@ -972,7 +974,7 @@ void main() {
     );
 
     test(
-      "a coroutine's value the writer refuses settles as RuntimeError",
+      "a coroutine's value the writer refuses settles as Exception",
       () async {
         final (s, ch) = await _session([
           answer([_call('af', 1)]),
@@ -987,7 +989,7 @@ void main() {
             'af': coroutine((args, kwargs) => Future.value(_unhashableKey)),
           },
         );
-        expect(_settled(itemAt(ch.requests, 3)), {1: 'RuntimeError'});
+        expect(_settled(itemAt(ch.requests, 3)), {1: 'Exception'});
       },
     );
 
@@ -1004,7 +1006,9 @@ void main() {
       var calls = 0;
       await s.feedRun(
         'sleeps',
-        os: (name, args, kwargs) => calls++ == 0 ? const MontyNone() : null,
+        os: (name, args, kwargs) => calls++ == 0
+            ? const MontyNone()
+            : throw const OsCallNotHandledException(),
       );
       expect(itemAt(ch.requests, 2).resumeCall.result.hasReturnValue(), isTrue);
       expect(itemAt(ch.requests, 3).resumeCall.result.hasNotHandled(), isTrue);
@@ -1017,7 +1021,7 @@ void main() {
       ]);
       await s.feedRun('bad', os: (name, args, kwargs) => const MontyNone());
       final error = itemAt(ch.requests, 2).resumeCall.result.error;
-      expect(error.excType, 'RuntimeError');
+      expect(error.excType, 'Exception');
     });
   });
 

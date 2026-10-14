@@ -153,13 +153,18 @@ void checkExternalResult(ExternalResult result) {
   if (result case ExternalException(
     :final excType,
   ) when !exceptionTypeNames.contains(excType)) {
-    throw ArgumentError.value(
-      excType,
-      'excType',
-      "Unknown exception type: '$excType'",
-    );
+    throw unknownExcType(excType);
   }
 }
+
+/// The [ArgumentError] for an [ExternalException] naming [excType], which is
+/// not one of upstream's exception types (upstream raises `TypeError`
+/// "Unknown exception type").
+ArgumentError unknownExcType(String excType) => ArgumentError.value(
+  excType,
+  'excType',
+  "Unknown exception type: '$excType'",
+);
 
 /// The run completed with [output] (the public `MontyComplete` at the
 /// cutover).

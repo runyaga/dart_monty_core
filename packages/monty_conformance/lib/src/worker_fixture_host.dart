@@ -12,11 +12,17 @@
 // `fixture_externals.dart` / `fixture_os_handler.dart`, which model monty
 // 0.0.23's harness and go with that engine.
 
+// The worker's ExternalException is internal to dart_monty_core until the
+// cutover exports it.
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 
 /// The host functions a `# call-external` fixture may name (the arms of
 /// upstream's `dispatch_external_call` and the names its lookup resolves to
@@ -372,13 +378,10 @@ MontyValue _fileStat(int mode, int size) =>
 MontyValue _dirStat(int mode) =>
     _statResult(mode < 0x200 ? mode | 16384 : mode, 2, 4096);
 
-OsCallException _errno(String type, int errno, String text, String path) =>
-    OsCallException(
-      '[Errno $errno] $text: ${_pyRepr(path)}',
-      pythonExceptionType: type,
-    );
+ExternalException _errno(String type, int errno, String text, String path) =>
+    ExternalException(type, '[Errno $errno] $text: ${_pyRepr(path)}');
 
-OsCallException _notFound(String path) =>
+ExternalException _notFound(String path) =>
     _errno('FileNotFoundError', 2, 'No such file or directory', path);
 
 String _pyRepr(String s) =>
@@ -447,9 +450,8 @@ final class WorkerFixtureOs {
 
   bool _isDir(String p) => _dirs.contains(p);
 
-  /// `ProtoOsCallHandler`: null declines, as upstream's handler panics on
-  /// nothing it does not model.
-  FutureOr<MontyValue?> call(
+  /// An `OsHandler`: a call it does not model is declined.
+  FutureOr<MontyValue> call(
     String name,
     List<MontyValue> args,
     Map<String, MontyValue> kwargs,
@@ -466,7 +468,7 @@ final class WorkerFixtureOs {
         // The sandbox has already capped the delay (`thread::sleep`).
         final seconds = (args.first as MontyFloat).value;
 
-        return Future<MontyValue?>.delayed(
+        return Future<MontyValue>.delayed(
           Duration(microseconds: (seconds * 1e6).round()),
           () => const MontyNone(),
         );
@@ -502,9 +504,9 @@ final class WorkerFixtureOs {
         try {
           return MontyString(utf8.decode(file.$1));
         } on FormatException catch (e) {
-          throw OsCallException(
+          throw ExternalException(
+            'UnicodeDecodeError',
             _decodeMessage(file.$1, e.offset),
-            pythonExceptionType: 'UnicodeDecodeError',
           );
         }
       case 'Path.read_bytes':
@@ -592,7 +594,7 @@ final class WorkerFixtureOs {
         return _rename(path(0), path(1));
     }
 
-    return null;
+    throw const OsCallNotHandledException();
   }
 
   /// The paths directly inside directory [p].
@@ -671,7 +673,7 @@ final class WorkerFixtureOs {
   }
 
   /// Why a read of [p] found no file: it is a directory, or absent.
-  OsCallException _noFile(String p) => real && _isDir(p)
+  ExternalException _noFile(String p) => real && _isDir(p)
       ? _errno('IsADirectoryError', 21, 'Is a directory', p)
       : _notFound(p);
 

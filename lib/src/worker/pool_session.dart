@@ -90,7 +90,7 @@ abstract interface class PoolSession {
     Map<String, MontyValue>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
-    ProtoOsCallHandler? os,
+    OsHandler? os,
     bool skipTypeCheck = false,
   });
 
@@ -110,7 +110,7 @@ abstract interface class PoolSession {
     Map<String, MontyValue>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
-    ProtoOsCallHandler? os,
+    OsHandler? os,
     bool skipTypeCheck = false,
   });
 
@@ -233,7 +233,7 @@ final class _LeasedSession implements PoolSession {
     Map<String, MontyValue>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
-    ProtoOsCallHandler? os,
+    OsHandler? os,
     bool skipTypeCheck = false,
   }) => _withTurn(
     () => _drive(
@@ -252,7 +252,7 @@ final class _LeasedSession implements PoolSession {
     Map<String, MontyValue>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
-    ProtoOsCallHandler? os,
+    OsHandler? os,
     bool skipTypeCheck = false,
   }) {
     final drive = _FeedDrive(
@@ -389,7 +389,7 @@ final class _LeasedSession implements PoolSession {
   /// waited up to the session's maximum.
   HostAnswers _host(
     Map<String, ProtoExternalFunction>? externals,
-    ProtoOsCallHandler? os,
+    OsHandler? os,
   ) => HostAnswers(
     externals: externals ?? const {},
     os: os,
