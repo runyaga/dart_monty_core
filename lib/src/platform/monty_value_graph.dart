@@ -97,11 +97,22 @@ int _payloadCharge(Object v) => switch (v) {
 
 int _textCharge(Object v) => switch (v) {
   MontyExceptionValue(:final excType, :final message) =>
-    (excType.length + (message?.length ?? 0)) >> 4,
+    ((excType.length + (message?.length ?? 0)) >> 4) +
+        _attributesCharge(exceptionAttributes(v)),
   MontyOpaque(:final text) => text.length >> 4,
   MontyFileHandle(:final path, :final mode) => (path.length + mode.length) >> 4,
   _ => _zoneNameCharge(v),
 };
+
+/// An exception's attributes, charged as their keys and leaf values are.
+int _attributesCharge(Map<String, MontyValue> attributes) {
+  var units = 0;
+  for (final MapEntry(:key, :value) in attributes.entries) {
+    units += (key.length >> 4) + _payloadCharge(value);
+  }
+
+  return units;
+}
 
 int _zoneNameCharge(Object v) => switch (v) {
   MontyDateTime(:final timezoneName) ||

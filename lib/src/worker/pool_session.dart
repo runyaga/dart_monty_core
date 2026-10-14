@@ -475,13 +475,16 @@ final class _FeedDrive implements SnapshotDriver {
     checkExternalResult(result);
     final callId = snapshot.callId;
     final request = switch (result) {
-      ExternalReturnValue(:final value) => resumeValue(callId, value),
-      ExternalException(:final excType, :final message) => resumeWith(
-        callId,
-        pb.ExtFunctionResult(
-          error: pb.RaisedException(excType: excType, message: message),
-        ),
+      ExternalReturnValue(:final value) => encodingInput(
+        () => resumeValue(callId, value),
       ),
+      ExternalException(:final excType, :final message, :final attributes) =>
+        resumeWith(
+          callId,
+          pb.ExtFunctionResult(
+            error: raisedException(excType, message, attributes),
+          ),
+        ),
       ExternalFuture() => resumeWith(
         callId,
         pb.ExtFunctionResult(future: callId),
@@ -540,7 +543,7 @@ final class _FeedDrive implements SnapshotDriver {
       );
     } else {
       final writer = ArenaWriter();
-      final index = writer.add(value);
+      final index = encodingInput(() => writer.add(value));
       request = pb.ParentRequest(
         resumeNameLookup: pb.ResumeNameLookup(
           values: writer.arena,
@@ -568,14 +571,16 @@ final class _FeedDrive implements SnapshotDriver {
         case ExternalReturnValue(:final value):
           // Encoded alone first, so a value the writer refuses throws here,
           // before the snapshot is spent.
-          ArenaWriter().add(value);
+          encodingInput(() => ArenaWriter().add(value));
           answers.add((key, ExternalAnswer.value(value)));
-        case ExternalException(:final excType, :final message):
+        case ExternalException(
+          :final excType,
+          :final message,
+          :final attributes,
+        ):
           answers.add((
             key,
-            ExternalAnswer.error(
-              pb.RaisedException(excType: excType, message: message),
-            ),
+            ExternalAnswer.error(raisedException(excType, message, attributes)),
           ));
       }
     }

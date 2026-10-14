@@ -45,6 +45,7 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
+import 'package:fixnum/fixnum.dart';
 
 /// Where class and instance nodes may resolve to objects the host
 /// registered, instead of to proxies.
@@ -417,6 +418,11 @@ const bool _webInts = identical(1, 1.0);
 /// Beyond it an integer decodes as [MontyBigInt], as on the JSON path, so a
 /// value's Dart type does not depend on the compiler.
 final BigInt _exactIntLimit = BigInt.one << 53;
+
+/// An unsigned 64-bit wire field as Python's `int`: [MontyInt] up to 2^53,
+/// [MontyBigInt] beyond.
+MontyValue unsignedValue(Int64 v) =>
+    _intValue(BigInt.parse(v.toStringUnsigned()));
 
 /// [MontyInt] within ±2^53, [MontyBigInt] beyond: the rule the JSON path
 /// already follows.

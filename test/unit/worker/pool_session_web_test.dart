@@ -21,6 +21,7 @@ import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_attribute_cases.dart';
 import '_config_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
@@ -60,6 +61,13 @@ void main() {
   configOracleTests(
     _backend,
     () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
+  );
+  attributeSessionTests(
+    _backend,
+    (body) => MontyPool.withPool(
+      (pool) => pool.withSession(body, options: _limits),
+      options: const PoolOptions(maxProcesses: 1),
+    ),
   );
 
   test('feedRun, prints in order, Reset on close, reuse ($_backend)', () async {

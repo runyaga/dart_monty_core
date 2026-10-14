@@ -451,7 +451,6 @@ void main() {
     // One value per outbound rule of the writer: each is refused before it
     // reaches the worker, through an input and through a callback return.
     final refused = <String, MontyValue>{
-      'an unpaired surrogate': const MontyString('\uD800'),
       'a byte above 255': const MontyBytes([256]),
       'hour 24': const MontyTime(
         hour: 24,
@@ -507,6 +506,42 @@ void main() {
         expect(result.hasReturnValue(), isFalse);
       });
     }
+
+    // A refusal Python makes too surfaces as Python's error (C3-4).
+    test("an input with an unpaired surrogate throws upstream's error "
+        'before sending', () async {
+      final ch = _configured([]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('x', inputs: {'x': const MontyString('\uD800')}),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.message,
+            'message',
+            "UnicodeEncodeError: 'utf-8' codec can't encode character "
+                r"'\ud800' in position 0: surrogates not allowed",
+          ),
+        ),
+      );
+      expect(ch.requests, hasLength(1));
+    });
+
+    test('a callback returning an unpaired surrogate raises '
+        'UnicodeEncodeError in the sandbox', () async {
+      final ch = _configured([
+        answer([_functionCall('f', [])]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await s.feed(
+        'f()',
+        externals: {'f': (args, kwargs) => const MontyString('\uD800')},
+      );
+      final result = itemAt(ch.requests, 2).resumeCall.result;
+      expect(result.error.excType, 'UnicodeEncodeError');
+      expect(result.error.message, contains('surrogates not allowed'));
+      expect(result.hasReturnValue(), isFalse);
+    });
 
     test('a keyword argument named by a non-str fails the call', () async {
       final ch = _configured([

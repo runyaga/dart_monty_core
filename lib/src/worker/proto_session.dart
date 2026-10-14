@@ -479,7 +479,8 @@ pb.ParentRequest feedRequest(
   if (inputs.isNotEmpty) {
     final writer = ArenaWriter();
     for (final MapEntry(:key, :value) in inputs.entries) {
-      feed.inputs.add(pb.NamedRef(name: key, value: writer.add(value)));
+      final index = encodingInput(() => writer.add(value));
+      feed.inputs.add(pb.NamedRef(name: key, value: index));
     }
     feed.values = writer.arena;
   }

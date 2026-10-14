@@ -43,6 +43,8 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_rules.dart';
+import 'package:dart_monty_core/src/worker/raised_record.dart'
+    show maxPayloadLength;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 
@@ -102,10 +104,11 @@ final class ArenaWriter {
     if (container == null) return _emit(_leaf(v));
     final (children, build) = container;
     if (!open.add(v)) {
-      throw ArgumentError.value(
+      throw PythonRefusal(
         v,
-        'value',
         'contains itself; a cycle cannot be sent to the worker',
+        'ValueError',
+        'Circular reference detected',
       );
     }
     if (v case MontyNamedTuple(:final typeName, :final fieldNames)) {
@@ -582,11 +585,12 @@ pb.Uuid _uuid(Object holder, String id) {
 
 /// [text], after checking it has a UTF-8 form.
 String _checkText(Object holder, String text, String what) {
-  if (hasUnpairedSurrogate(text)) {
-    throw ArgumentError.value(
+  if (surrogateEncodeError(text) case final error?) {
+    throw PythonRefusal(
       holder,
-      'value',
       'the $what has an unpaired UTF-16 surrogate, which has no UTF-8 form',
+      'UnicodeEncodeError',
+      error,
     );
   }
 
@@ -623,3 +627,84 @@ T _check<T>(MontyValue holder, void Function() rules, T Function() build) {
 int? _nz(int v) => v == 0 ? null : v;
 
 String? _nzs(String v) => v.isEmpty ? null : v;
+
+/// A refusal Python makes too: upstream's conversion of the same value
+/// raises [excType] with [text] (a cycle's `ValueError`, an unpaired
+/// surrogate's `UnicodeEncodeError`).
+///
+/// It is an [ArgumentError] for the writer's callers; a session surfaces it
+/// as upstream does on each path: [excType] at the caller of an input or a
+/// manual resume, or raised in the sandbox for an automatic answer.
+final class PythonRefusal extends ArgumentError {
+  /// The refusal of [holder], described by [message]; Python's is [excType]
+  /// with [text].
+  PythonRefusal(Object holder, String message, this.excType, this.text)
+    : super.value(holder, 'value', message);
+
+  /// The Python exception type upstream raises.
+  final String excType;
+
+  /// Its message.
+  final String text;
+}
+
+/// The `RaisedException` a host's answered exception is, as upstream's
+/// `exc_py_to_monty` converts a live one: only a `json.JSONDecodeError`
+/// keeps structured data, from its `msg`, `doc` (`str`), `pos`, `lineno` and
+/// `colno` (non-negative `int`) attributes. A missing or mistyped one drops
+/// the payload, and a `doc` over 64 KiB of UTF-8 is left out while the rest
+/// is kept (`JsonErrorData::MAX_DOC_LEN`). Every other type's attributes
+/// stay with the host.
+pb.RaisedException raisedException(
+  String excType,
+  String? message,
+  Map<String, MontyValue> attributes,
+) {
+  final raised = pb.RaisedException(excType: excType, message: message);
+  if (excType == 'json.JSONDecodeError') {
+    if (_jsonData(attributes) case final json?) {
+      raised.data = pb.ExcData(json: json);
+    }
+  }
+
+  return raised;
+}
+
+pb.JsonErrorData? _jsonData(Map<String, MontyValue> attributes) {
+  final msg = _pythonStr(attributes['msg']);
+  final doc = _pythonStr(attributes['doc']);
+  final pos = _usize(attributes['pos']);
+  final lineno = _usize(attributes['lineno']);
+  final colno = _usize(attributes['colno']);
+  if (msg == null ||
+      doc == null ||
+      pos == null ||
+      lineno == null ||
+      colno == null) {
+    return null;
+  }
+
+  return pb.JsonErrorData(
+    msg: msg,
+    doc: utf8Length(doc) <= maxPayloadLength ? doc : null,
+    pos: pos,
+    lineno: lineno,
+    colno: colno,
+  );
+}
+
+/// [value] as PyO3 extracts a Rust `String`: a `str` with a UTF-8 form.
+String? _pythonStr(MontyValue? value) => switch (value) {
+  MontyString(value: final text) when !hasUnpairedSurrogate(text) => text,
+  _ => null,
+};
+
+/// [value] as PyO3 extracts a 64-bit `usize`: an `int` (a `bool` among
+/// them) from 0 to 2^64 - 1.
+Int64? _usize(MontyValue? value) => switch (value) {
+  MontyBool(value: final b) => b ? Int64.ONE : Int64.ZERO,
+  MontyInt(value: final n) when n >= 0 => Int64(n),
+  MontyBigInt(value: final n) when !n.isNegative && n.bitLength <= 64 =>
+    Int64.parseHex(n.toRadixString(16)),
+  _ => null,
+};

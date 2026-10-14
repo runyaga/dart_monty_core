@@ -315,12 +315,46 @@ final class MontyExceptionValue extends MontyValue {
       identical(this, other) ||
       (other is MontyExceptionValue &&
           other.excType == excType &&
-          other.message == message);
+          other.message == message &&
+          _sameAttributes(
+            exceptionAttributes(this),
+            exceptionAttributes(other),
+          ));
 
   @override
-  int get hashCode => Object.hash(excType, message);
+  int get hashCode {
+    final attributes = exceptionAttributes(this);
+
+    return attributes.isEmpty
+        ? Object.hash(excType, message)
+        : Object.hash(excType, message, _attributesHash(attributes));
+  }
 
   @override
   String toString() =>
       'MontyExceptionValue($excType${message == null ? '' : ': $message'})';
+}
+
+/// Whether two exceptions' attributes hold the same keys with equal values.
+/// The values are leaves (exceptionWithAttributes), compared by their own
+/// rules, so `MontyInt(1)` equals `MontyBigInt(1)` here too.
+bool _sameAttributes(Map<String, MontyValue> a, Map<String, MontyValue> b) {
+  if (a.length != b.length) return false;
+  for (final MapEntry(:key, :value) in a.entries) {
+    final other = b[key];
+    if (other == null || other != value) return false;
+  }
+
+  return true;
+}
+
+/// A hash of [attributes] that does not depend on their order, as
+/// [_sameAttributes] does not.
+int _attributesHash(Map<String, MontyValue> attributes) {
+  var h = 0;
+  for (final MapEntry(:key, :value) in attributes.entries) {
+    h = (h + Object.hash(key, value)) & _hashMask;
+  }
+
+  return h;
 }

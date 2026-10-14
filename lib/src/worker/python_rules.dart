@@ -187,6 +187,60 @@ String lossyString(String s) {
   return out.toString();
 }
 
+/// The length of [s] in UTF-8 bytes; an unpaired surrogate counts as the
+/// three bytes `surrogatepass` gives it.
+int utf8Length(String s) {
+  var bytes = 0;
+  for (var i = 0; i < s.length; i++) {
+    final c = s.codeUnitAt(i);
+    if (c < 0x80) {
+      bytes += 1;
+    } else if (c < 0x800) {
+      bytes += 2;
+    } else if (_isLead(c) &&
+        i + 1 < s.length &&
+        _isTrail(s.codeUnitAt(i + 1))) {
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+
+  return bytes;
+}
+
+/// The message of the `UnicodeEncodeError` Python raises encoding [s] as
+/// UTF-8, or null when [s] has no unpaired surrogate.
+///
+/// As CPython's strict UTF-8 encoder: the error covers the first run of
+/// consecutive surrogate code points, and positions count code points, a
+/// valid pair being one.
+String? surrogateEncodeError(String s) {
+  // The first run of surrogates: where it starts, its length and its first.
+  var start = -1;
+  var length = 0;
+  var first = 0;
+  for (final (i, c) in _codePoints(s).indexed) {
+    if (!_isSurrogate(c)) {
+      if (start >= 0) break;
+      continue;
+    }
+    if (start < 0) {
+      start = i;
+      first = c;
+    }
+    length++;
+  }
+  if (start < 0) return null;
+  const head = "'utf-8' codec can't encode";
+  const tail = 'surrogates not allowed';
+
+  return length == 1
+      ? "$head character '\\u${_hex(first, 4)}' in position $start: $tail"
+      : '$head characters in position $start-${start + length - 1}: $tail';
+}
+
 bool _isSurrogate(int c) => _isLead(c) || _isTrail(c);
 
 bool _isLead(int c) => c >= 0xd800 && c <= 0xdbff;
