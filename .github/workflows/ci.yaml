@@ -7,7 +7,16 @@ on:
   # green tick because their base was outside the filter, and fixing the filter
   # did NOT re-evaluate them; editing a base branch fires no PR event. Three
   # close/reopens were needed to unstick them.
+  #
+  # `force_all: true` runs every job even where the path filter would skip it
+  # (a dispatch has no label to ask with). The record cited by a release tag:
+  # the TAG change is Markdown only, which the `changes` filter excludes.
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Run every job regardless of the path filter (release record)'
+        type: boolean
+        default: false
   push:
     # `integration/**` IS A RELEASE LINE, NOT A TOPIC BRANCH. Measured
     # 2026-09-16: SIX commits on integration/0.23 -- d6cf573, 38be183, e033b70,
@@ -56,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      code: ${{ steps.override.outputs.code }}
       docs: ${{ steps.filter.outputs.docs }}
     # paths-filter lists a pull request's files through the API.
     permissions:
@@ -114,6 +123,38 @@ jobs:
               - 'docs/**'
               - 'mkdocs.yml'
               - 'mkdocs_docs/**'
+      # Release override. A PR labelled `release`, or a dispatch with
+      # `force_all: true`, makes `code` true whatever the filter said, so the
+      # Markdown-only TAG change runs every job (a skipped job is not green).
+      # The label is read from the event payload AND the live PR: a re-run
+      # replays the original payload, so a label added after the PR opened
+      # would otherwise never count. `docs` is left as the filter set it.
+      - name: Apply the release override
+        id: override
+        env:
+          FILTER_CODE: ${{ steps.filter.outputs.code }}
+          FORCE_ALL: ${{ inputs.force_all }}
+          PAYLOAD_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          code="$FILTER_CODE"
+          reason=""
+          if [ "$FORCE_ALL" = "true" ]; then
+            code=true; reason="force_all input"
+          fi
+          labels="$(printf '%s' "$PAYLOAD_LABELS" | jq -r '.[]?' 2>/dev/null || true)"
+          if [ -n "$PR_NUMBER" ]; then
+            live="$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/labels" --paginate --jq '.[].name' 2>/dev/null || true)"
+            labels="$labels
+          $live"
+          fi
+          if printf '%s\n' "$labels" | grep -qxF release; then
+            code=true; reason="release label"
+          fi
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "code=${code} (filter said ${FILTER_CODE}${reason:+; forced by ${reason}})"
 
   # ---------------------------------------------------------------------------
   # Stage 0 — the fast gate. Source-only invariants, no native build, no browser.
@@ -193,6 +234,9 @@ jobs:
           # The coverage ratchet's controls (deleted vs vanished files, and
           # the lib-wide total over the files a change keeps).
           run bash tool/coverage_ratchet.sh --self-test
+          # The ratchet's base ref per event: a push compares with its first
+          # parent, so a merge that deletes lib files is DELETED, not VANISHED.
+          run bash tool/ci_ratchet_base.sh --self-test
           run bash tool/check_fixture_links.sh
           run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
@@ -236,7 +280,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 31 ] || { echo "FAIL: expected 31 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 32 ] || { echo "FAIL: expected 32 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -1721,6 +1765,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # A push is compared with its first parent (tool/ci_ratchet_base.sh).
+          fetch-depth: 2
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
@@ -1776,15 +1822,15 @@ jobs:
         # excuses passes green -- reproduced 2026-09-14: a 228-hit regression in
         # monty_repl.dart with a matching baseline edit returned "PASS -- no file
         # below its baseline", exit 0. With the base ref set, the same pair fails
-        # naming both the FILE and TOTAL decrease. Empty on a push (no base to
-        # compare), which leaves the old behaviour and is why the fallback says
-        # so out loud rather than skipping silently.
-        env:
-          RATCHET_BASE_REF: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+        # naming both the FILE and TOTAL decrease. On a push (and a dispatch) the
+        # base is the commit's first parent: with none, every file the merge
+        # deleted read as VANISHED, the run failed before `lcov-merged` was
+        # uploaded, and the after-merge baseline recording could not happen.
+        # tool/ci_ratchet_base.sh picks the ref, and fails rather than return
+        # an empty one.
         run: |
-          if [ -n "${RATCHET_BASE_REF:-}" ]; then
-            git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
-          fi
+          RATCHET_BASE_REF="$(bash tool/ci_ratchet_base.sh)"
+          export RATCHET_BASE_REF
           bash tool/coverage_ratchet.sh coverage/honest.info
       - name: Upload merged coverage
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
