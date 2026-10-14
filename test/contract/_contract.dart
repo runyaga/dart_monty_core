@@ -1,0 +1,362 @@
+// The contract suite's harness: one scenario, run as Python on a real
+// session and as a script on FakeMontySession, gives a host-visible trace
+// (host calls, prints, snapshots, the end) and the host's answers. Both
+// sides are compared with the same expected lists.
+import 'dart:async';
+
+import 'package:collection/collection.dart';
+
+import 'package:dart_monty_core/src/fake_answers.dart';
+import 'package:dart_monty_core/src/fake_monty_session.dart';
+import 'package:dart_monty_core/src/platform/exception_attributes.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart';
+import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
+import 'package:dart_monty_core/src/worker/pool_session.dart';
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/spawn_handle.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:test/test.dart';
+
+/// A host function body.
+typedef Body =
+    FutureOr<MontyValue> Function(
+      List<MontyValue> args,
+      Map<String, MontyValue> kwargs,
+    );
+
+/// One contract scenario.
+final class Scenario {
+  /// A scenario named [name]: [feeds] for the real session, [script] for the
+  /// fake, [run] the host code both sides run, and what both must show.
+  const Scenario(
+    this.name, {
+    required this.feeds,
+    required this.script,
+    required this.run,
+    required this.trace,
+    required this.answers,
+    this.config = const SessionConfig(),
+  });
+
+  /// The scenario's name.
+  final String name;
+
+  /// The Python of each feed, in order.
+  final List<String> feeds;
+
+  /// The fake's script: what the feeds' Python does.
+  final void Function(FakeMontySession fake) script;
+
+  /// The host code, the same on both sides.
+  final Future<void> Function(Side side) run;
+
+  /// The expected trace.
+  final List<String> trace;
+
+  /// The expected answers, as [showAnswer] writes them.
+  final List<String> answers;
+
+  /// The real session's settings.
+  final SessionConfig config;
+}
+
+/// One side's run: the session, the feeds' code and what the host saw.
+final class Side {
+  /// A side over [session].
+  Side(this.session, this.feeds, {required this.isFake});
+
+  /// The session under test.
+  final PoolSession session;
+
+  /// The scenario's feeds.
+  final List<String> feeds;
+
+  /// Whether [session] is the fake.
+  final bool isFake;
+
+  /// What the host saw, in order.
+  final List<String> trace = [];
+
+  /// The errors the feeds and resumes ended with, in order.
+  final List<Object> errors = [];
+
+  /// The code of feed [i].
+  String code(int i) =>
+      feeds.elementAtOrNull(i) ?? (throw RangeError.index(i, feeds, 'i'));
+
+  /// The host function [name], recording each call before running [body]
+  /// (a call returning `None` when no body is given).
+  ProtoExternalFunction fn(String name, [Body? body]) => (args, kwargs) {
+    trace.add('call $name${showArgs(args, kwargs)}');
+
+    return body == null ? const MontyNone() : body(args, kwargs);
+  };
+
+  /// The host coroutine [name], as [fn].
+  ProtoExternalFunction async(String name, [Body? body]) =>
+      coroutine(fn(name, body));
+
+  /// An OS handler recording each call before running [body].
+  OsHandler os(
+    FutureOr<MontyValue> Function(
+      String name,
+      List<MontyValue> args,
+      Map<String, MontyValue> kwargs,
+    )
+    body,
+  ) => (name, args, kwargs) {
+    trace.add('os $name${showArgs(args, kwargs)}');
+
+    return body(name, args, kwargs);
+  };
+
+  /// The print callback: each fragment joins the one before it when both
+  /// are prints to the same stream (trace.md).
+  void printer(String stream, String text) {
+    final head = 'print[$stream] ';
+    if (trace.isNotEmpty && trace.last.startsWith(head)) {
+      trace.last = '${trace.last}$text';
+    } else {
+      trace.add('$head$text');
+    }
+  }
+
+  /// Runs feed [i] to its end and records the end.
+  Future<void> run(
+    int i, {
+    Map<String, MontyValue>? inputs,
+    Map<String, ProtoExternalFunction>? externals,
+    OsHandler? os,
+  }) => end(
+    () => session.feedRun(
+      code(i),
+      inputs: inputs,
+      externals: externals,
+      os: os,
+      printCallback: printer,
+    ),
+  );
+
+  /// Records how [body] ended: its value or its error.
+  Future<void> end(Future<MontyValue> Function() body) async =>
+      trace.add(await outcome(body));
+
+  /// How [body] ended, as the trace writes it.
+  Future<String> outcome(Future<MontyValue> Function() body) async {
+    try {
+      return 'value ${showValue(await body())}';
+    } on Object catch (error) {
+      errors.add(error);
+
+      return showError(error);
+    }
+  }
+
+  /// Starts feed [i] and records where it stopped.
+  Future<MontySnapshot?> start(
+    int i, {
+    Map<String, MontyValue>? inputs,
+    Map<String, ProtoExternalFunction>? externals,
+    OsHandler? os,
+  }) => step(
+    () => session.feedStart(
+      code(i),
+      inputs: inputs,
+      externals: externals,
+      os: os,
+      printCallback: printer,
+    ),
+  );
+
+  /// Resumes [at] with [resume] when it is a [T], recording where that
+  /// stopped; otherwise records what [at] was instead, and returns null.
+  Future<MontySnapshot?> next<T extends MontySnapshot>(
+    MontySnapshot? at,
+    Future<MontySnapshot> Function(T snapshot) resume,
+  ) async {
+    if (at is T) return step(() => resume(at));
+    trace.add('expected a $T, not $at');
+
+    return null;
+  }
+
+  /// Records where [body], a start or a resume, stopped; null when it threw.
+  Future<MontySnapshot?> step(Future<MontySnapshot> Function() body) async {
+    try {
+      final snapshot = await body();
+      trace.add(showSnapshot(snapshot));
+
+      return snapshot;
+    } on Object catch (error) {
+      trace.add(showError(error));
+      errors.add(error);
+
+      return null;
+    }
+  }
+}
+
+/// [args] and [kwargs] as the trace writes them.
+String showArgs(List<MontyValue> args, Map<String, MontyValue> kwargs) {
+  final shown = [
+    for (final a in args) showValue(a),
+    for (final MapEntry(:key, :value) in kwargs.entries)
+      '$key=${showValue(value)}',
+  ];
+
+  return '(${shown.join(', ')})';
+}
+
+/// [value] as the trace writes it: a float the same on every platform
+/// (dart2js writes an integral double without its `.0`).
+String showValue(MontyValue value) => switch (value) {
+  MontyFloat(value: final v) when v == v.truncateToDouble() && v.isFinite =>
+    'MontyFloat(${v.toInt()}.0)',
+  _ => '$value',
+};
+
+/// [snapshot] as the trace writes it. Positions are left out: the fake has
+/// none (a listed exception).
+String showSnapshot(MontySnapshot snapshot) => switch (snapshot) {
+  SessionComplete(:final output) => 'complete ${showValue(output)}',
+  FunctionSnapshot(
+    :final functionName,
+    :final callId,
+    :final isOsFunction,
+    :final allowEagerAwait,
+    :final args,
+    :final kwargs,
+  ) =>
+    'snap ${isOsFunction ? 'os' : 'call'} $functionName#$callId'
+        '${allowEagerAwait ? ' eager' : ''}${showArgs(args, kwargs)}',
+  NameLookupSnapshot(:final variableName) => 'snap lookup $variableName',
+  // Upstream lists the pending ids in hash order; the fake ascending.
+  FutureSnapshot(:final pendingCallIds) =>
+    'snap futures ${[...pendingCallIds]..sort()}',
+};
+
+/// [error] as the trace writes it: its class, `exception` and
+/// `toString()`.
+String showError(Object error) => switch (error) {
+  MontyCrashedError(:final cause, :final timedOut) =>
+    'crashed ${cause.name}${timedOut ? ' timedOut' : ''}',
+  MontyError(:final exception) =>
+    '${error.runtimeType} ${exception.excType}: ${exception.message}'
+        '${_attributes(exception)}'
+        ' | $error',
+  _ => '${error.runtimeType}: $error',
+};
+
+String _attributes(MontyExceptionValue exception) {
+  final attributes = exceptionAttributes(exception);
+
+  return attributes.isEmpty ? '' : ' $attributes';
+}
+
+/// [entry] as the expected answers write it.
+String showAnswer(FakeAnswer entry) {
+  final id = entry.callId == null ? '-' : '${entry.callId}';
+  final batch = entry.batch == null ? '' : '/b${entry.batch}';
+  final answer = switch (entry.answer) {
+    null => 'none',
+    ExternalReturnValue(:final value) => 'value ${showValue(value)}',
+    ExternalException(:final excType, :final message, :final attributes) =>
+      'raise $excType: $message${attributes.isEmpty ? '' : ' $attributes'}',
+    ExternalFuture() => 'future',
+  };
+
+  return '$id$batch $answer';
+}
+
+/// A channel that records the answers in every request it forwards.
+final class RecordingChannel implements MontyChannel {
+  /// Forwards to [_inner], recording into [log].
+  const RecordingChannel(this._inner, this.log);
+
+  /// What the session answered.
+  final FakeAnswers log;
+
+  final MontyChannel _inner;
+
+  @override
+  Future<pb.ChildEvent> turn(
+    pb.ParentRequest request, {
+    PrintHandler? onPrint,
+  }) {
+    log.add(request);
+
+    return _inner.turn(request, onPrint: onPrint);
+  }
+
+  @override
+  Future<void> close() => _inner.close();
+
+  @override
+  void kill() => _inner.kill();
+
+  @override
+  bool get isAlive => _inner.isAlive;
+}
+
+/// What one side showed.
+typedef Outcome = ({List<String> trace, List<String> answers, Side side});
+
+/// Runs [scenario] on a real session from a pool over [open].
+Future<Outcome> runReal(Scenario scenario, OpenChannel open) async {
+  final log = FakeAnswers();
+  final pool = await MontyPool.startWith(
+    const PoolOptions(minProcesses: 0, maxProcesses: 1),
+    open: () {
+      final inner = open();
+
+      return PendingSpawn(
+        (_) async => RecordingChannel(await inner.ready, log),
+      );
+    },
+  );
+  try {
+    final session = await pool.checkout(options: scenario.config);
+    final side = Side(session, scenario.feeds, isFake: false);
+    try {
+      await scenario.run(side);
+    } finally {
+      await session.close();
+    }
+
+    return (
+      trace: side.trace,
+      answers: [for (final a in log.answers) showAnswer(a)],
+      side: side,
+    );
+  } finally {
+    await pool.close();
+  }
+}
+
+/// Runs [scenario] on a fake session.
+Future<Outcome> runFake(Scenario scenario) async {
+  final fake = FakeMontySession();
+  scenario.script(fake);
+  final side = Side(fake, scenario.feeds, isFake: true);
+  try {
+    await scenario.run(side);
+  } finally {
+    await fake.close();
+  }
+
+  return (
+    trace: side.trace,
+    answers: [for (final a in fake.answers) showAnswer(a)],
+    side: side,
+  );
+}
+
+/// Checks [outcome] against [scenario]'s expectations.
+void expectOutcome(Scenario scenario, Outcome outcome) {
+  expect(outcome.trace, scenario.trace, reason: 'trace');
+  expect(outcome.answers, scenario.answers, reason: 'answers');
+}
