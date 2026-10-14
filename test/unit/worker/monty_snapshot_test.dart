@@ -446,6 +446,30 @@ void main() {
       },
     );
 
+    test('host code that closes the session at once, then never answers: '
+        'resumeAuto fails as finished', () async {
+      final (s, _) = await _session([
+        answer([_call('f', 1)]),
+        _resetOk,
+      ]);
+      final never = Completer<MontyValue>();
+      late final PoolSession session;
+      final snap =
+          await s.feedStart(
+                'f()',
+                externals: {
+                  'f': (args, kwargs) {
+                    unawaited(session.close());
+
+                    return never.future;
+                  },
+                },
+              )
+              as FunctionSnapshot;
+      session = s;
+      await expectLater(snap.resumeAuto(), throwsA(_finished));
+    });
+
     test('a close while resumeAuto waits on a pending coroutine fails it at '
         'once', () async {
       final (s, _) = await _session([

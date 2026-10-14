@@ -325,14 +325,15 @@ final class _LeasedSession implements PoolSession {
         _refuse();
       }
     }
+    // The call's own outcome: the body's, unless a close while a host
+    // callback runs fails it first (the body then ends unwatched). It is in
+    // place before the body starts, so host code that closes the session
+    // before its first await fails it too.
+    final outcome = _outcome = Completer<Object?>();
+    _active = outcome.future;
     // A body that throws before its first await (an input the writer
     // refuses) still releases the turn below.
-    final run = Future.sync(body);
-    // The call's own outcome: the body's, unless a close while a host
-    // callback runs fails it first (the body then ends unwatched).
-    final outcome = _outcome = Completer<Object?>();
-    unawaited(_settle(outcome, run));
-    _active = outcome.future;
+    unawaited(_settle(outcome, Future.sync(body)));
     try {
       return await outcome.future as T;
     } finally {
