@@ -16,8 +16,10 @@
 ///
 /// Internal to the package; nothing here is exported. A host describes a
 /// class with [HostClass] and wraps it with [ClassType] and
-/// [ClassInstance]; policies and members are records, and everything else
-/// here is `@internal` plumbing for the session, the writer and the reader.
+/// [ClassInstance]; policies and members are records, and a method
+/// attribute reaches the `convertValue` hook as a [BoundMethod]. Everything
+/// else here is `@internal` plumbing for the session, the writer and the
+/// reader.
 ///
 /// Both wrappers' `==` and `hashCode` are identity (divergence
 /// `host-wrapper-identity-eq`): upstream's are dataclasses, equal when their
@@ -127,8 +129,9 @@ final class HostObjects {
 /// A method read as an attribute, as `getattr` returns a bound method or a
 /// classmethod: callable from Dart, and sent into the sandbox as a function
 /// named [name], as upstream's encoder sends any callable. Made only by the
-/// wrappers; a host never builds one.
-@internal
+/// wrappers; a host's `convertValue` hook receives one for a method
+/// attribute, as upstream's `convert_value` receives the bound method (a
+/// Dart closure has no `__name__`, so the name travels with it).
 final class BoundMethod {
   /// [function], read under [name].
   const BoundMethod(this.name, this.function);
