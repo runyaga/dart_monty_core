@@ -460,6 +460,23 @@ void main() {
             value is BoundMethod ? const MontyString('classmethod') : value,
       );
       expect(type.lookupLazyAttr('describe'), const MontyString('classmethod'));
+      // An instance method read from the class is a function too.
+      final plain = ClassType(
+        _boxClass,
+        policies: const HostPolicies(eagerAttrs: ['bump'], lazyAttrs: ['bump']),
+      );
+      expect(
+        plain.eagerAttributes()['bump'],
+        isA<BoundMethod>().having((m) => m.name, 'name', 'bump'),
+      );
+      expect(plain.lookupLazyAttr('bump'), isA<BoundMethod>());
+      expect(
+        () => (plain.lookupLazyAttr('bump') as BoundMethod).function(
+          const [],
+          const {},
+        ),
+        throwsA(isA<ExternalException>()),
+      );
     });
 
     test('a method read without a hook crosses as a function', () {

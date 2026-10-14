@@ -142,17 +142,8 @@ final class ArenaWriter {
   /// Emits a leaf, finds an emitted container, or opens a frame for a
   /// container and returns null.
   int? _step(Object child, Set<Object> open, List<_Frame> stack) {
-    if (child is MontyClassType) return _enterClass(child, open, stack);
-    if (child is BoundMethod) return _emit(functionNode(child.name));
-    if (child is _HostClass) return _enterHostClass(child, open, stack);
-    if (child is ClassType<Object>) {
-      return _enterHostClass(_HostClass.of(child), open, stack);
-    }
+    if (child is! MontyValue) return _hostStep(child, open, stack);
     if (_containers[child] case final id?) return id;
-    if (child is ClassInstance<Object>) {
-      return _enterInstance(child, open, stack);
-    }
-    if (child is! MontyValue) throw _unconvertible(child);
     final v = child;
     final container = _container(v);
     if (container == null) return _emit(_leaf(v));
@@ -174,6 +165,23 @@ final class ArenaWriter {
     return null;
   }
 
+  /// [_step] for what is not a [MontyValue]: a class's metadata, a host
+  /// object's wrapper or a method read from one; anything else is refused.
+  int? _hostStep(Object child, Set<Object> open, List<_Frame> stack) =>
+      switch (child) {
+        final MontyClassType type => _enterClass(type, open, stack),
+        BoundMethod(:final name) => _emit(functionNode(name)),
+        final _HostClass type => _enterHostClass(type, open, stack),
+        final ClassType<Object> w => _enterHostClass(
+          _HostClass.of(w),
+          open,
+          stack,
+        ),
+        final ClassInstance<Object> w =>
+          _containers[w] ?? _enterInstance(w, open, stack),
+        _ => throw _unconvertible(child),
+      };
+
   /// An instance's class: one node per id while it has no attributes, as
   /// upstream's encoder keeps them; one per reference otherwise, since class
   /// metadata reached through an instance carries no identity of its own.
@@ -190,9 +198,6 @@ final class ArenaWriter {
 
     return null;
   }
-
-  /// A class's id as the uuid it names, whatever the hex digits' case.
-  String _classKey(MontyClassType type) => type.id.toLowerCase();
 
   /// The session registry a wrapper registers in; a writer without one
   /// refuses it.
@@ -364,6 +369,9 @@ final class ArenaWriter {
     return arena.nodes.length - 1;
   }
 }
+
+/// A class's id as the uuid it names, whatever the hex digits' case.
+String _classKey(MontyClassType type) => type.id.toLowerCase();
 
 /// A host class as one crossing meets it: its wrapper, registered, and its
 /// eager attributes, read anew at each meeting as upstream reads them.

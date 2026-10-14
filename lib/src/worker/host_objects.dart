@@ -417,13 +417,25 @@ final class ClassType<T extends Object> {
   Object convertValue(String name, Object item) =>
       _convert?.call(name, item) ?? item;
 
-  /// What `getattr` on the class finds: a constant, else a classmethod.
+  /// What `getattr` on the class finds: a constant, else a classmethod,
+  /// else an instance method (the plain function, sent by name).
   Object _attribute(String name) =>
       value.attributes[name]?.call() ??
       switch (value.methods[name]) {
         final HostMethod m => BoundMethod(name, m),
+        null when value.instance.methods.containsKey(name) => BoundMethod(
+          name,
+          (args, kwargs) => throw _unbound(name),
+        ),
         null => throw _error(name),
       };
+
+  /// An instance method read from the class has no receiver; it is never
+  /// called through the class, whose method calls are classmethods only.
+  ExternalException _unbound(String name) => ExternalException(
+    'TypeError',
+    "unbound method '${value.name}.$name' needs an instance",
+  );
 
   ExternalException _error(String name) =>
       _noAttribute("type object '${value.name}'", name);
