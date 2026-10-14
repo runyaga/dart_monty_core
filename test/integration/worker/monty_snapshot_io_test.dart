@@ -321,21 +321,21 @@ final class _HeldTimer implements Timer {
   /// The delay it was created with.
   final Duration duration;
   final void Function() _callback;
-  bool _active = true;
+  bool _isActive = true;
 
   /// Runs the callback now, unless cancelled or already run.
   void fire() {
-    if (!_active) return;
-    _active = false;
+    if (!_isActive) return;
+    _isActive = false;
     _callback();
   }
 
   @override
-  void cancel() => _active = false;
+  void cancel() => _isActive = false;
 
   @override
-  bool get isActive => _active;
+  bool get isActive => _isActive;
 
   @override
-  int get tick => _active ? 0 : 1;
+  int get tick => _isActive ? 0 : 1;
 }

@@ -130,7 +130,11 @@ final class ProtoSession {
             List.unmodifiable(sink.prints),
           );
         }
-        request = await answerSuspension(event, host);
+        // A ResolveFutures with no coroutine started is out of step with
+        // this driver (upstream discards the checkout).
+        request =
+            await host.answer(event) ??
+            _violation('unexpected event: ${event.whichKind().name}');
       }
     } finally {
       host.dispose();
@@ -150,25 +154,15 @@ final class ProtoSession {
     return _turnEnd(await _feedTurn(request, sink));
   });
 
-  /// The answer [host] gives the suspension [event], as [feed] answers it:
-  /// a system sleep is waited by the parent. A `ResolveFutures` with no
-  /// coroutine started is a desync: the worker is killed.
-  Future<pb.ParentRequest> answerSuspension(
-    pb.ChildEvent event,
-    HostAnswers host,
-  ) async => switch (event.whichKind()) {
-    pb.ChildEvent_Kind.nameLookup => host.lookup(event.nameLookup.name),
-    pb.ChildEvent_Kind.functionCall => await host.call(event.functionCall),
-    pb.ChildEvent_Kind.osCall => await host.osCall(
-      event.osCall,
-      parentSleeps: true,
-    ),
-    // With nothing started, nothing can settle the worker's wait: it is
-    // out of step with this driver (upstream discards the checkout).
-    pb.ChildEvent_Kind.resolveFutures when host.hasPending =>
-      await host.settle(),
-    _ => _unexpected(event),
-  };
+  /// The value [complete] carries; one that does not decode is a protocol
+  /// violation (upstream's "invalid payload from worker").
+  MontyValue valueOf(pb.Complete complete) {
+    try {
+      return ArenaReader(complete.values)[complete.value];
+    } on FormatException catch (e) {
+      _violation('invalid payload from worker: ${e.message}');
+    }
+  }
 
   /// Drops all session state, then configures a fresh session on the same
   /// worker.
@@ -229,18 +223,8 @@ final class ProtoSession {
     ),
     // Never sent without the request that asks for it (dumps), or not
     // a feed's answer at all.
-    _ => _unexpected(event),
+    _ => _violation('unexpected event: ${event.whichKind().name}'),
   };
-
-  /// The value [complete] carries; one that does not decode is a protocol
-  /// violation (upstream's "invalid payload from worker").
-  MontyValue valueOf(pb.Complete complete) {
-    try {
-      return ArenaReader(complete.values)[complete.value];
-    } on FormatException catch (e) {
-      _violation('invalid payload from worker: ${e.message}');
-    }
-  }
 
   /// Throws the error an `Error` event is. One whose exception fails
   /// upstream's checks is a protocol violation, and the worker is killed.
@@ -269,10 +253,6 @@ final class ProtoSession {
   /// The worker answered [request] with an event that cannot follow it.
   Never _desync(String request, pb.ChildEvent event) =>
       _violation('unexpected reply to $request: ${event.whichKind().name}');
-
-  /// The worker sent [event] where a feed's turn cannot end that way.
-  Never _unexpected(pb.ChildEvent event) =>
-      _violation('unexpected event: ${event.whichKind().name}');
 
   /// The worker answered against the protocol, so its state is unknown:
   /// kill it rather than guess (upstream's `protocol_violation`).

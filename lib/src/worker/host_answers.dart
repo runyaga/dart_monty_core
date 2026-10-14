@@ -277,6 +277,22 @@ final class HostAnswers {
   /// Whether a started coroutine has not been delivered yet.
   bool get hasPending => _running.isNotEmpty || _settled.isNotEmpty;
 
+  /// The answer to the suspension [event], as a feed gives it: a system
+  /// sleep is waited by the parent. Null for an event that is no suspension
+  /// this side can answer, a `ResolveFutures` with no coroutine started
+  /// included.
+  Future<pb.ParentRequest?> answer(pb.ChildEvent event) async =>
+      switch (event.whichKind()) {
+        pb.ChildEvent_Kind.nameLookup => lookup(event.nameLookup.name),
+        pb.ChildEvent_Kind.functionCall => await call(event.functionCall),
+        pb.ChildEvent_Kind.osCall => await osCall(
+          event.osCall,
+          parentSleeps: true,
+        ),
+        pb.ChildEvent_Kind.resolveFutures when hasPending => await settle(),
+        _ => null,
+      };
+
   /// Answers the host function call [call].
   Future<pb.ParentRequest> call(pb.FunctionCall call) async {
     final name = call.functionName;

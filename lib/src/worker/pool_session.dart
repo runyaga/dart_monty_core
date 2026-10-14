@@ -270,17 +270,6 @@ final class _LeasedSession implements PoolSession {
     );
   }
 
-  /// The host side of one feed: [externals] and [os], and system sleeps
-  /// waited up to the session's maximum.
-  HostAnswers _host(
-    Map<String, ProtoExternalFunction>? externals,
-    ProtoOsCallHandler? os,
-  ) => HostAnswers(
-    externals: externals ?? const {},
-    os: os,
-    systemSleepMax: _config.systemSleepMax,
-  );
-
   @override
   Future<void> close() => _closing ??= _close();
 
@@ -394,6 +383,17 @@ final class _LeasedSession implements PoolSession {
     _reserved = true;
     _waiters.removeFirst().complete();
   }
+
+  /// The host side of one feed: [externals] and [os], and system sleeps
+  /// waited up to the session's maximum.
+  HostAnswers _host(
+    Map<String, ProtoExternalFunction>? externals,
+    ProtoOsCallHandler? os,
+  ) => HostAnswers(
+    externals: externals ?? const {},
+    os: os,
+    systemSleepMax: _config.systemSleepMax,
+  );
 
   /// [print] marked, so a call back into this session from inside it is
   /// refused rather than left waiting on the turn it is part of.
