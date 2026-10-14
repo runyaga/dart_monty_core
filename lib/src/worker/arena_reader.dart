@@ -41,6 +41,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart' show wrappedValue;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
@@ -52,17 +53,29 @@ import 'package:fixnum/fixnum.dart';
 ///
 /// The reader calls `classType` with the id of every class `type` node and
 /// `instance` with the id of every class instance node, in arena order, as
-/// upstream's decoder consults its instance store. A non-null result is what
-/// the node decodes to; for a class, only where it is reached as a value. An
-/// instance whose class is registered but which is not itself registered
-/// still decodes to a proxy. What a registered object decodes to, and where
-/// the original Dart object becomes observable, is the registry's to decide.
+/// upstream's decoder consults its instance store. A [MontyValue] result is
+/// what the node decodes to; for a class, only where it is reached as a
+/// value. Any other non-null result is the host object registered for the
+/// node, which is not yet a [MontyValue]: the node decodes as a proxy, and
+/// [hostObjectOf] that proxy is the result. An instance whose class is
+/// registered but which is not itself registered still decodes to a plain
+/// proxy.
 ///
 /// A registered object is hashable as a dict key or set member, by identity.
 typedef HostObjectLookup = ({
-  MontyValue? Function(String classId) classType,
-  MontyValue? Function(String instanceId) instance,
+  Object? Function(String classId) classType,
+  Object? Function(String instanceId) instance,
 });
+
+final Expando<Object> _hostObjects = Expando('host object');
+
+/// The host object a decoded [value] stands for: the registered object its
+/// instance node resolved to through a [HostObjectLookup], or null. Upstream
+/// decodes such a node to the original object; until the host-object
+/// wrappers join the [MontyValue] family, the node decodes to its proxy and
+/// this recovers the object.
+Object? hostObjectOf(MontyValue value) =>
+    value is MontyClassInstance ? _hostObjects[value] : null;
 
 /// Reads values out of one arena.
 ///
@@ -221,8 +234,13 @@ final class _Builder {
   final HostObjectLookup? _hosts;
   final List<Object> _built = [];
 
-  /// The registered object each class or instance node resolved to.
-  final Map<int, MontyValue> _registered;
+  /// The registered object each class or instance node resolved to: the
+  /// host object itself, so two nodes for one object are one key.
+  final Map<int, Object> _registered;
+
+  /// The proxy each host object decoded to, so two nodes for one object
+  /// are one Dart object, as upstream's are the one original object.
+  final Map<Object, MontyClassInstance> _carriers = Map.identity();
   final PythonKeys _keys;
 
   List<Object> build() {
@@ -310,7 +328,8 @@ final class _Builder {
 
   _ClassNode _classNode(pb.Type type) {
     final id = uuidString(type.id.data);
-    final host = _register(_hosts?.classType(id));
+    final found = _hosts?.classType(id);
+    final host = _register(found is MontyValue ? found : null);
     final attrs = _attrs(type.attrs.pairs);
     final meta = attrs is _Staged
         ? attrs
@@ -334,13 +353,14 @@ final class _Builder {
 
   Object _instance(pb.ClassInstanceNode node) {
     final id = uuidString(node.instanceId.data);
-    final host = _register(_hosts?.instance(id));
-    if (host != null) return host;
+    final found = _hosts?.instance(id);
+    if (found is MontyValue) return _registered[_built.length] = found;
     // Stage 2 made the instance's class a class node, built before it.
     final classNode = _built.elementAtOrNull(node.classType);
     final meta = classNode is _ClassNode ? classNode.meta : null;
-    if (meta is! MontyClassType) return meta ?? (throw StateError('$node'));
     final attrs = _attrs(node.attrs.pairs);
+    if (found != null) return _hostInstance(found, node, meta, attrs);
+    if (meta is! MontyClassType) return meta ?? (throw StateError('$node'));
     if (attrs is _Staged) return attrs;
 
     return MontyClassInstance(
@@ -348,6 +368,38 @@ final class _Builder {
       instanceId: id,
       attrs: attrs as Map<String, MontyValue>,
     );
+  }
+
+  /// The node of a registered host object [found]: one proxy per wrapped
+  /// object, keyed by that object, whatever the node's attributes. Upstream
+  /// decodes it to the original object without reading them, so a staged
+  /// attribute leaves the proxy without attributes instead of failing.
+  MontyClassInstance _hostInstance(
+    Object found,
+    pb.ClassInstanceNode node,
+    Object? meta,
+    Object attrs,
+  ) {
+    final key = wrappedValue(found);
+    _registered[_built.length] = key;
+    if (_carriers[key] case final carrier?) return carrier;
+    final type = _nodeAt(_nodes, node.classType).type;
+    final proxy = MontyClassInstance(
+      classType: meta is MontyClassType
+          ? meta
+          : MontyClassType(
+              name: type.name,
+              id: uuidString(type.id.data),
+              hostDefined: type.origin == originHost,
+              isDataclass: type.isDataclass,
+              attrs: const {},
+            ),
+      instanceId: uuidString(node.instanceId.data),
+      attrs: attrs is Map<String, MontyValue> ? attrs : const {},
+    );
+    _hostObjects[proxy] = found;
+
+    return _carriers[key] = proxy;
   }
 
   /// [host], recorded as what the node being built resolved to.

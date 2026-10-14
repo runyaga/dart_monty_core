@@ -24,6 +24,7 @@ import 'package:test/test.dart';
 import '_attribute_cases.dart';
 import '_config_cases.dart';
 import '_cwd_cases.dart';
+import '_host_cases.dart';
 import '_host_code_cases.dart';
 import '_restore_cases.dart';
 
@@ -66,6 +67,10 @@ void main() {
     () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
   );
   restoreOracleTests(
+    _backend,
+    (options) => MontyPool.start(options: options),
+  );
+  hostOracleTests(
     _backend,
     (options) => MontyPool.start(options: options),
   );

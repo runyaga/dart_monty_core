@@ -76,8 +76,11 @@ final class ExternalReturnValue extends ExternalSettledResult {
   /// The call returned [value].
   const ExternalReturnValue(this.value);
 
-  /// What the call returned.
-  final MontyValue value;
+  /// What the call returned: a [MontyValue], or a host object's
+  /// `ClassInstance` or `ClassType` wrapper. The wrappers join the
+  /// [MontyValue] family at the cutover, and this narrows to it; any other
+  /// object is refused by the resume with Python's `TypeError`.
+  final Object value;
 }
 
 /// The call raised a Python exception of type [excType] with [message] and
@@ -194,10 +197,11 @@ abstract interface class SnapshotDriver {
   /// handler.
   Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot);
 
-  /// Answers [snapshot]'s lookup with [value], or as undefined when null.
+  /// Answers [snapshot]'s lookup with [value] (a [MontyValue] or a host
+  /// object's wrapper), or as undefined when null.
   Future<MontySnapshot> resumeLookup(
     NameLookupSnapshot snapshot,
-    MontyValue? value,
+    Object? value,
   );
 
   /// Answers [snapshot]'s lookup from the feed's host functions.
@@ -335,13 +339,17 @@ final class NameLookupSnapshot extends SuspendedSnapshot {
   /// plain name.
   final String? objectId;
 
-  /// Binds the name to [value] and runs on; with no value the name is
-  /// undefined, and the sandbox raises `NameError`.
-  Future<MontySnapshot> resume({MontyValue? value}) =>
+  /// Binds the name to [value] (a [MontyValue] or a host object's wrapper)
+  /// and runs on; with no value the name is undefined, and the sandbox
+  /// raises `NameError`, or `AttributeError` for a lazy attribute.
+  Future<MontySnapshot> resume({Object? value}) =>
       _driver.resumeLookup(this, value);
 
-  /// Resolves the name from the feed's host functions, as `feedRun` would,
-  /// and runs on.
+  /// Resolves the name as `feedRun` would, and runs on: a plain name from
+  /// the feed's host functions, a lazy attribute ([objectId] set) through
+  /// the host object the session registered under that id. The host
+  /// object's lookup may raise: an `AttributeError` leaves the attribute
+  /// undefined, any other exception is raised in the sandbox.
   Future<MontySnapshot> resumeAuto() => _driver.resumeLookupAuto(this);
 }
 

@@ -12,8 +12,8 @@
 // `fixture_externals.dart` / `fixture_os_handler.dart`, which model monty
 // 0.0.23's harness and go with that engine.
 
-// The worker's ExternalException is internal to dart_monty_core until the
-// cutover exports it.
+// The worker's ExternalException and the host-object wrappers are internal
+// to dart_monty_core until the cutover exports them.
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
@@ -21,6 +21,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException;
 
@@ -63,8 +64,8 @@ final class HostReturn extends HostOutcome {
   /// Creates a [HostReturn].
   const HostReturn(this.value);
 
-  /// The value.
-  final MontyValue value;
+  /// The value: a [MontyValue], or a registered instance's wrapper.
+  final Object value;
 }
 
 /// The call raises [excType] with [message].
@@ -106,6 +107,47 @@ final class _Fixture {
   }
 }
 
+/// One host class per fixture class name.
+final Map<String, HostClass<_Fixture>> _fixtureClasses = {};
+
+/// A fixture's members: its attributes, and the properties
+/// `dispatch_instance_attr` serves (`dimensions` on the points, `boom`,
+/// which raises `KeyError` on the host, on `MutablePoint`). Any other name
+/// is absent (an `AttributeError`).
+final ({
+  Map<String, Object Function(_Fixture self)> fields,
+  Map<String, Object Function(_Fixture self)> properties,
+  Map<
+    String,
+    FutureOr<Object> Function(
+      _Fixture self,
+      List<MontyValue> args,
+      Map<String, MontyValue> kwargs,
+    )
+  >
+  methods,
+})
+_fixtureMembers = (
+  fields: {
+    for (final name in ['x', 'y', 'name', 'active'])
+      name: (f) => f.attrs[name] ?? (throw _absent(f, name)),
+  },
+  properties: {
+    'dimensions': (f) => f.className == 'Point' || f.className == 'MutablePoint'
+        ? const MontyInt(2)
+        : throw _absent(f, 'dimensions'),
+    'boom': (f) => f.className == 'MutablePoint'
+        ? throw const ExternalException('KeyError', 'boom')
+        : throw _absent(f, 'boom'),
+  },
+  methods: const {},
+);
+
+ExternalException _absent(_Fixture f, String name) => ExternalException(
+  'AttributeError',
+  "'${f.className}' object has no attribute '$name'",
+);
+
 /// A canonical uuid string for `MontyUuid::from_u128(n)`.
 String _uuid(int n) {
   final hex = n.toRadixString(16).padLeft(32, '0');
@@ -126,27 +168,37 @@ final class WorkerFixtureRegistry {
   int _next = 1;
   final Map<String, _Fixture> _instances = {};
 
-  MontyValue _register(_Fixture fixture) {
+  /// [fixture] as the sandbox receives it: a host object whose fields
+  /// cross eagerly and whose properties the session answers lazily
+  /// (`dispatch_instance_attr`) through the wrapper.
+  Object _register(_Fixture fixture) {
     final instanceId = _uuid(0x1000 + _next);
     _next++;
     _instances[instanceId] = fixture;
 
-    return MontyClassInstance(
-      classType: MontyClassType(
-        name: fixture.className,
+    return ClassInstance(
+      fixture,
+      classType: ClassType(
+        _fixtureClasses.putIfAbsent(fixture.className, () {
+          return HostClass<_Fixture>(
+            fixture.className,
+            isDataclass: true,
+            instance: _fixtureMembers,
+          );
+        }),
         id: _uuid(fixture.typeId),
-        hostDefined: true,
-        isDataclass: true,
-        attrs: const {},
       ),
-      instanceId: instanceId,
-      attrs: fixture.attrs,
+      id: instanceId,
+      policies: (
+        eagerAttrs: fixture.attrs.keys.toList(),
+        lazyAttrs: 'all',
+        allowedMethods: null,
+      ),
     );
   }
 
-  MontyValue _point(int x, int y) => _register(
-    _Fixture('Point', 1, {'x': MontyInt(x), 'y': MontyInt(y)}),
-  );
+  Object _point(int x, int y) =>
+      _register(_Fixture('Point', 1, {'x': MontyInt(x), 'y': MontyInt(y)}));
 
   /// `dispatch_external_call`.
   HostOutcome call(
@@ -313,23 +365,6 @@ final class WorkerFixtureRegistry {
       'AttributeError',
       "'$cls' object has no attribute '$method'",
     );
-  }
-
-  /// `dispatch_instance_attr`: a lazy attribute of a registered instance, or
-  /// null for one that is genuinely absent (an `AttributeError`). A returned
-  /// [HostRaise] is a property that raises on the host.
-  HostOutcome? attribute(String name, String instanceId) {
-    final fixture = _instances[instanceId.toLowerCase()];
-    if (fixture == null) return null;
-    if ((fixture.className == 'Point' || fixture.className == 'MutablePoint') &&
-        name == 'dimensions') {
-      return const HostReturn(MontyInt(2));
-    }
-    if (fixture.className == 'MutablePoint' && name == 'boom') {
-      return const HostRaise('KeyError', 'boom');
-    }
-
-    return null;
   }
 }
 

@@ -19,6 +19,13 @@
 ///
 /// It sends every kind the worker accepts as input except a host function,
 /// whose node [functionNode] builds for the registry that owns callables.
+///
+/// It also sends host objects, given as their [ClassInstance] and
+/// [ClassType] wrappers, as upstream's encoder sends them: each wrapper is
+/// registered in the session's [HostObjects] as it is met, its eager
+/// attributes read through the wrapper, and one wrapper is one node, as a
+/// container is. The class an instance carries is registered only if its
+/// id is free. Any other object is refused with Python's `TypeError`.
 /// Before emitting, it refuses with [ArgumentError] what upstream's encoder
 /// or the worker's decoder would not accept, rather than letting protobuf
 /// send something else: a cycle, a byte outside 0..255, a string with an
@@ -41,6 +48,9 @@ library;
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_rules.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart'
@@ -55,11 +65,17 @@ pb.MontyNode functionNode(String name, {String? docstring}) => pb.MontyNode(
 
 /// Builds one arena from host values.
 final class ArenaWriter {
+  /// A writer whose host objects register in [objects]; without it a
+  /// host-object wrapper is refused.
+  ArenaWriter({HostObjects? objects}) : _objects = objects;
+
   /// The arena built so far; put it in the message that carries the roots.
   final pb.Arena arena = pb.Arena();
 
-  /// The node of each container already emitted.
-  final Map<MontyValue, int> _containers = Map.identity();
+  final HostObjects? _objects;
+
+  /// The node of each container and host-object wrapper already emitted.
+  final Map<Object, int> _containers = Map.identity();
 
   /// The node of each attribute-less class already emitted, by class id.
   final Map<String, int> _classes = {};
@@ -72,8 +88,11 @@ final class ArenaWriter {
   /// Throws [ArgumentError] for a value upstream would refuse (see the
   /// library comment), including one that contains itself, and
   /// [UnsupportedError] for a [MontyDataclass]. A refused value may leave
-  /// nodes for its children in [arena]; discard the writer.
-  int add(MontyValue value) {
+  /// nodes for its children in [arena]; discard the writer, or use [tryAdd].
+  ///
+  /// [value] is a [MontyValue] or a host-object wrapper; a wrapper's own
+  /// throws (its eager attributes, its hook) propagate.
+  int add(Object value) {
     // The containers and classes on the stack.
     final open = Set<Object>.identity();
     final stack = <_Frame>[];
@@ -94,12 +113,38 @@ final class ArenaWriter {
     return done;
   }
 
+  /// Starts a value independent of those added so far: none of their
+  /// nodes is shared with it, and a wrapper met again is registered and
+  /// read again, as upstream encodes each future's answer on its own.
+  void separate() {
+    _containers.clear();
+    _classes.clear();
+  }
+
+  /// [add], leaving the arena as it was when [value] is refused, so the
+  /// writer stays usable for other values.
+  int tryAdd(Object value) {
+    final nodes = arena.nodes;
+    // Read before the add, used only if it fails.
+    // ignore: move-variable-closer-to-its-usage
+    final mark = nodes.length;
+    try {
+      return add(value);
+    } on Object {
+      nodes.length = mark;
+      arena.nodeCount = mark;
+      _containers.removeWhere((_, id) => id >= mark);
+      _classes.removeWhere((_, id) => id >= mark);
+      rethrow;
+    }
+  }
+
   /// Emits a leaf, finds an emitted container, or opens a frame for a
   /// container and returns null.
   int? _step(Object child, Set<Object> open, List<_Frame> stack) {
-    if (child is MontyClassType) return _enterClass(child, open, stack);
-    final v = child as MontyValue;
-    if (_containers[v] case final id?) return id;
+    if (child is! MontyValue) return _hostStep(child, open, stack);
+    if (_containers[child] case final id?) return id;
+    final v = child;
     final container = _container(v);
     if (container == null) return _emit(_leaf(v));
     final (children, build) = container;
@@ -120,6 +165,23 @@ final class ArenaWriter {
     return null;
   }
 
+  /// [_step] for what is not a [MontyValue]: a class's metadata, a host
+  /// object's wrapper or a method read from one; anything else is refused.
+  int? _hostStep(Object child, Set<Object> open, List<_Frame> stack) =>
+      switch (child) {
+        final MontyClassType type => _enterClass(type, open, stack),
+        BoundMethod(:final name) => _emit(functionNode(name)),
+        final _HostClass type => _enterHostClass(type, open, stack),
+        final ClassType<Object> w => _enterHostClass(
+          _HostClass.of(w),
+          open,
+          stack,
+        ),
+        final ClassInstance<Object> w =>
+          _containers[w] ?? _enterInstance(w, open, stack),
+        _ => throw _unconvertible(child),
+      };
+
   /// An instance's class: one node per id while it has no attributes, as
   /// upstream's encoder keeps them; one per reference otherwise, since class
   /// metadata reached through an instance carries no identity of its own.
@@ -137,8 +199,83 @@ final class ArenaWriter {
     return null;
   }
 
-  /// A class's id as the uuid it names, whatever the hex digits' case.
-  String _classKey(MontyClassType type) => type.id.toLowerCase();
+  /// The session registry a wrapper registers in; a writer without one
+  /// refuses it.
+  HostObjects _host(Object wrapper) =>
+      _objects ??
+      (throw ArgumentError.value(
+        wrapper,
+        'value',
+        'a host object needs a session to register in',
+      ));
+
+  /// A host-object wrapper: registered, then opened with its class first
+  /// and its eager attributes after, as upstream's encoder opens it. A
+  /// wrapper met again inside itself is a cycle.
+  int? _enterInstance(
+    ClassInstance<Object> w,
+    Set<Object> open,
+    List<_Frame> stack,
+  ) {
+    final objects = _host(w);
+    if (open.contains(w)) {
+      throw PythonRefusal(
+        w,
+        'contains itself; a cycle cannot be sent to the worker',
+        'ValueError',
+        'Circular reference detected',
+      );
+    }
+    final type = _HostClass.of(w.classType, overwrite: false);
+    final attrs = _raising(w, w.eagerAttributes);
+    objects.register(w);
+    open.add(w);
+    stack.add(
+      _Frame(
+        w,
+        [type, ..._attrChildren(attrs)],
+        (ids) => pb.MontyNode(
+          classInstance: pb.ClassInstanceNode(
+            classType: _nz(ids.firstOrNull ?? 0),
+            instanceId: _uuid(w, w.id),
+            attrs: _pairs(ids.skip(1)),
+          ),
+        ),
+      ),
+    );
+
+    return null;
+  }
+
+  /// A host class: registered, then one node per wrapper, shared by id
+  /// while it has no attributes; met again inside its own attributes, a
+  /// fresh node without them (upstream's `enter_class_type`).
+  int? _enterHostClass(_HostClass c, Set<Object> open, List<_Frame> stack) {
+    final w = c.wrapper;
+    final objects = _host(w);
+    if (c.overwrite) {
+      objects.register(w);
+    } else {
+      objects.registerIfAbsent(w);
+    }
+    if (_containers[w] case final id?) return id;
+    final node = MontyClassType(
+      name: w.value.name,
+      id: w.id,
+      hostDefined: true,
+      isDataclass: w.value.isDataclass,
+      attrs: const {},
+    );
+    if (open.contains(w)) return _emit(_classNode(node, const []));
+    final shared = c.attrs.isEmpty ? _classes[w.id] : null;
+    if (shared != null) return _containers[w] = shared;
+    open.add(w);
+    stack.add(
+      _Frame(w, _attrChildren(c.attrs), (ids) => _classNode(node, ids)),
+    );
+
+    return null;
+  }
 
   /// Refuses a dict, set or frozenset with a key or member Python could not
   /// hash, as Python's constructor would.
@@ -199,8 +336,13 @@ final class ArenaWriter {
     switch (frame.source) {
       case final MontyClassType type when type.attrs.isEmpty:
         _classes.putIfAbsent(_classKey(type), () => id);
+      case final ClassType<Object> w:
+        if (frame.children.isEmpty) _classes.putIfAbsent(w.id, () => id);
+        _containers[w] = id;
       case final MontyValue v:
         _containers[v] = id;
+      case final ClassInstance<Object> w:
+        _containers[w] = id;
     }
     open.remove(frame.source);
 
@@ -227,6 +369,60 @@ final class ArenaWriter {
     return arena.nodes.length - 1;
   }
 }
+
+/// A class's id as the uuid it names, whatever the hex digits' case.
+String _classKey(MontyClassType type) => type.id.toLowerCase();
+
+/// A host class as one crossing meets it: its wrapper, registered, and its
+/// eager attributes, read anew at each meeting as upstream reads them.
+final class _HostClass {
+  const _HostClass._(this.wrapper, this.attrs, {required this.overwrite});
+
+  /// [wrapper] with its eager attributes read now. It registers when its
+  /// node is entered (upstream's `enter_class_type`): replacing an entry
+  /// when it crosses as a value ([overwrite]), only into a free id when an
+  /// instance carries it.
+  factory _HostClass.of(
+    ClassType<Object> wrapper, {
+    bool overwrite = true,
+  }) => _HostClass._(
+    wrapper,
+    _raising(wrapper, wrapper.eagerAttributes),
+    overwrite: overwrite,
+  );
+
+  final ClassType<Object> wrapper;
+  final Map<String, Object> attrs;
+
+  /// Whether the wrapper replaces an entry for its id.
+  final bool overwrite;
+}
+
+/// [read]'s result; a Python exception it raises ([ExternalException]) is
+/// a [PythonRefusal] of [holder], so it reaches the caller of an input or a
+/// manual resume as upstream's conversion failure does.
+T _raising<T>(Object holder, T Function() read) {
+  try {
+    return read();
+  } on ExternalException catch (e) {
+    throw PythonRefusal(
+      holder,
+      'its host code raised ${e.excType}',
+      e.excType,
+      e.message ?? '',
+    );
+  }
+}
+
+/// Python's `TypeError` for a host object that is neither a value nor a
+/// wrapper (upstream: "Cannot convert ... to Monty value").
+PythonRefusal _unconvertible(Object value) => PythonRefusal(
+  value,
+  'is neither a MontyValue nor a host-object wrapper',
+  'TypeError',
+  'Cannot convert ${value.runtimeType} to Monty value — wrap class '
+      'instances in ClassInstance(...)',
+);
 
 /// A container or class being emitted: its children, and the nodes of those
 /// emitted so far.
@@ -314,7 +510,7 @@ String? _unhashableType(MontyValue v) => switch (v) {
 
 /// Attributes as children: each name as the `str` it is sent as, then its
 /// value.
-List<Object> _attrChildren(Map<String, MontyValue> attrs) => [
+List<Object> _attrChildren(Map<String, Object> attrs) => [
   for (final MapEntry(:key, :value) in attrs.entries) ...[
     MontyString(key),
     value,

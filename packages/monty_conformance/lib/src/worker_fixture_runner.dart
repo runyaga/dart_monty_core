@@ -174,10 +174,8 @@ void _discard(String stream, String text) {}
 /// upstream's datatest compiles the fixture under its own file name and the
 /// fixtures state that name. The frame's line, function and source text are
 /// untouched.
-String _named(String traceback, String name) => traceback.replaceAll(
-  RegExp(r'File "<python-input-\d+>"'),
-  'File "$name"',
-);
+String _named(String traceback, String name) =>
+    traceback.replaceAll(RegExp(r'File "<python-input-\d+>"'), 'File "$name"');
 
 /// CPython's `repr()` of [value] for the kinds a `# Return=` directive can
 /// name (None, bool, int, float, str, list, tuple, dict), cycles as `[...]`
@@ -325,15 +323,10 @@ Future<MontyValue> _drive(
             ? await wait.resumeAuto()
             : await wait.resume(results);
 
-      case NameLookupSnapshot(:final variableName, :final objectId?) &&
-          final lookup:
-        final found = registry.attribute(variableName, objectId);
-        snapshot = await switch (found) {
-          HostReturn(:final value) => lookup.resume(value: value),
-          // A property that raises on the host: the worker's lookup answer
-          // has no exception form, so the sandbox sees the name undefined.
-          _ => lookup.resume(),
-        };
+      // A lazy attribute of a host object: the session answers it through
+      // the instance's wrapper, a raising property included.
+      case NameLookupSnapshot(objectId: _?) && final lookup:
+        snapshot = await lookup.resumeAuto();
 
       case NameLookupSnapshot(:final variableName) && final lookup:
         if (mount) {

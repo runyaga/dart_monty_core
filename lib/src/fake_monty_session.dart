@@ -215,7 +215,7 @@ final class FakeMontySession implements PoolSession {
   @override
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, MontyValue>? inputs,
+    Map<String, Object>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
@@ -234,7 +234,7 @@ final class FakeMontySession implements PoolSession {
   @override
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, MontyValue>? inputs,
+    Map<String, Object>? inputs,
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
