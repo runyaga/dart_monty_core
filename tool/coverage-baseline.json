@@ -472,8 +472,8 @@
       "pct": 98.95
     },
     "lib/src/worker/python_rules.dart": {
-      "found": 99,
-      "hit": 99,
+      "found": 101,
+      "hit": 101,
       "pct": 100.0
     },
     "lib/src/worker/raised_record.dart": {
@@ -528,8 +528,8 @@
     }
   },
   "total": {
-    "found": 8055,
-    "hit": 6755,
+    "found": 8057,
+    "hit": 6757,
     "pct": 83.86
   }
 }
