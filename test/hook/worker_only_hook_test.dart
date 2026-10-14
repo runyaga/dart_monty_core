@@ -20,8 +20,8 @@ import '../../hook/build.dart' as hook;
 import '../_accessors.dart';
 
 /// A package root with native/worker/ (a link to this checkout's, so cargo
-/// reuses its target directory) and native/rust-toolchain.toml, and without
-/// native/Cargo.toml.
+/// reuses its target directory), native/rust-toolchain.toml and
+/// native/.cargo/config.toml, and without native/Cargo.toml.
 Directory _workerOnlyRoot() {
   final tmp = Directory.systemTemp.createTempSync('worker_only_hook_');
   addTearDown(() => tmp.deleteSync(recursive: true));
@@ -32,6 +32,11 @@ Directory _workerOnlyRoot() {
   File(
     'native/rust-toolchain.toml',
   ).copySync('${native.path}/rust-toolchain.toml');
+  // The Cargo configuration native/worker inherits from native/.
+  Directory('${native.path}/.cargo').createSync();
+  File(
+    'native/.cargo/config.toml',
+  ).copySync('${native.path}/.cargo/config.toml');
   expect(File('${native.path}/Cargo.toml').existsSync(), isFalse);
 
   return tmp;
@@ -101,6 +106,7 @@ void main() {
       final deps = output.dependencies.map((u) => u.toFilePath()).toSet();
       final native = '${root.path}/native';
       expect(deps, contains('$native/rust-toolchain.toml'));
+      expect(deps, contains('$native/.cargo/config.toml'));
       expect(deps, contains('$native/worker/Cargo.toml'));
       expect(deps, contains('$native/worker/Cargo.lock'));
       expect(

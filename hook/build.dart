@@ -204,9 +204,10 @@ Future<void> _buildWorker(
 }
 
 /// What the worker library is built from: native/worker's manifest, lock and
-/// build script, every Rust source under `src/` and `upstream/`, and
-/// [toolchain], the toolchain file it shares with native/ (declared here too,
-/// so the worker's inputs do not depend on the in-process crate's build).
+/// build script, the Cargo configuration it inherits, every Rust source under
+/// `src/` and `upstream/`, and [toolchain], the toolchain file it shares with
+/// native/ (declared here too, so the worker's inputs do not depend on the
+/// in-process crate's build).
 void _declareWorkerInputs(
   BuildOutputBuilder output,
   Uri workerDir, {
@@ -218,9 +219,18 @@ void _declareWorkerInputs(
     workerDir.resolve('build.rs'),
     toolchain,
   ];
-  final workerConfig = workerDir.resolve('.cargo/config.toml');
-  if (File.fromUri(workerConfig).existsSync()) {
-    deps.add(workerConfig);
+  // Cargo reads `.cargo/config.toml` (or the older `.cargo/config`) from
+  // native/worker/ and every directory above it: native/'s and the package
+  // root's change the worker's rustflags and linker as much as its own does.
+  // Declared here, not left to [_declareInputs], which does not run without
+  // native/Cargo.toml. Only when present, for the reason given there.
+  for (final up in const ['', '../', '../../']) {
+    for (final name in const ['.cargo/config.toml', '.cargo/config']) {
+      final config = workerDir.resolve('$up$name');
+      if (File.fromUri(config).existsSync()) {
+        deps.add(config);
+      }
+    }
   }
   for (final sub in const ['src/', 'upstream/']) {
     final dir = Directory.fromUri(workerDir.resolve(sub));

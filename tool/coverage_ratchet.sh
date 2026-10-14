@@ -102,7 +102,11 @@ self_test() {
   run "keeps a file the tracefile lacks: fails" 1 "$base"
   reset; /bin/rm "$repo/lib/src/a.dart"
   trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
-  run "deletes a file in the working tree only: DELETED" 0 "$base" "DELETED"
+  run "removes a file the commit keeps (working tree only): VANISHED" 1 "$base" "VANISHED"
+  reset; git -C "$repo" rm -q lib/src/a.dart; commit
+  git -C "$repo" checkout -q "$base" -- lib/src/a.dart
+  trace lib/src/a.dart:0/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "deleted in the commit, restored in the tree: not DELETED" 1 "$base" "FILE DECREASE"
   [ "$rc" = 0 ] && echo "PASS: coverage ratchet self-test"
   return "$rc"
 }
@@ -205,14 +209,15 @@ fi
 # without them: otherwise deleting a well-covered file lowers the PR's total
 # below a base figure that still counts it, and the PR cannot fix that by
 # recording a baseline (it may not edit it). A deletion is read from git,
-# never inferred from absence: a path counts only if `git diff` against the
-# base reports it deleted (renames as a delete plus an add) and it is not in
-# the working tree. Without RATCHET_BASE_REF there is no base to diff against,
+# never inferred from absence: a path counts only if `git diff` from the base
+# to the COMMITTED head reports it deleted (renames as a delete plus an add)
+# and it is not in the working tree either. A file removed from the working
+# tree but still in HEAD is not deleted by the change, and stays VANISHED. Without RATCHET_BASE_REF there is no base to diff against,
 # and every absent baseline file stays VANISHED.
 DELETED=""
 if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   if ! DELETED="$(git diff --name-only --no-renames --diff-filter=D \
-      "${RATCHET_BASE_REF}" -- lib/)"; then
+      "${RATCHET_BASE_REF}" HEAD -- lib/)"; then
     echo "FAIL: cannot list the files deleted since ${RATCHET_BASE_REF}."
     exit 1
   fi

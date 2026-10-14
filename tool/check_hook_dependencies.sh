@@ -135,6 +135,11 @@ else
   FAIL=1
 fi
 need "toolchain: nativeDir.resolve('rust-toolchain.toml')," "native/rust-toolchain.toml as the worker's toolchain"
+# The Cargo configuration native/worker inherits (its own, native/'s and the
+# package root's): _declareInputs declares native/'s only when it runs.
+need_in _declareWorkerInputs "const ['', '../', '../../']" "the .cargo configs of native/worker and its parents"
+need_in _declareWorkerInputs "const ['.cargo/config.toml', '.cargo/config']" "both Cargo config file names"
+need_in _declareWorkerInputs "deps.add(config);" "each Cargo config found"
 need_in _declareWorkerInputs "const ['src/', 'upstream/']" "a walk of native/worker/src and upstream/"
 need_in _declareWorkerInputs "dir.listSync(recursive: true)" "a recursive walk of each"
 need_in _declareWorkerInputs "deps.add(e.uri)" "each .rs file found by that walk"
