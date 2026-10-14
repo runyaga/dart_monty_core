@@ -177,11 +177,11 @@ final List<Scenario> scenarios = [
       ..willReturn(_str('x')),
     run: (s) => s.run(0, os: s.os((_, _, _) => _str('x'))),
     trace: [
-      'os os.getenv(MontyString(A), MontyNone())',
-      'value MontyString(x)',
+      'os os.getenv(MontyString("A"), MontyNone())',
+      'value MontyString("x")',
     ],
     answers: [
-      '0 value MontyString(x)',
+      '0 value MontyString("x")',
     ],
   ),
   Scenario(
@@ -192,7 +192,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(0, os: s.os(_decline)),
     trace: [
-      'os Path.read_text(MontyPath(/a/b.txt))',
+      'os Path.read_text(MontyPath("/a/b.txt"))',
       "MontyRuntimeError PermissionError: Permission denied: '/a/b.txt' | PermissionError: Permission denied: '/a/b.txt'",
     ],
     answers: [
@@ -207,7 +207,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(0, os: s.os(_decline)),
     trace: [
-      "os Path.exists(MontyPath(/a'b))",
+      'os Path.exists(MontyPath("/a\'b"))',
       'MontyRuntimeError PermissionError: Permission denied: "/a\'b" | PermissionError: Permission denied: "/a\'b"',
     ],
     answers: [
@@ -222,7 +222,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(0, os: s.os(_decline)),
     trace: [
-      'os os.getenv(MontyString(A), MontyNone())',
+      'os os.getenv(MontyString("A"), MontyNone())',
       "MontyRuntimeError RuntimeError: 'os.getenv' is not supported in this environment | RuntimeError: 'os.getenv' is not supported in this environment",
     ],
     answers: [
@@ -242,7 +242,7 @@ final List<Scenario> scenarios = [
       'value MontyInt(9)',
     ],
     answers: [
-      '- value MontyString(x)',
+      '- value MontyString("x")',
       '0 value MontyInt(9)',
     ],
   ),
@@ -371,12 +371,12 @@ final List<Scenario> scenarios = [
       await s.next<FunctionSnapshot>(second, (c) => c.resumeNotHandled());
     },
     trace: [
-      'snap os os.getenv#0(MontyString(A), MontyNone())',
-      'snap os os.getenv#1(MontyString(B), MontyNone())',
+      'snap os os.getenv#0(MontyString("A"), MontyNone())',
+      'snap os os.getenv#1(MontyString("B"), MontyNone())',
       "MontyRuntimeError RuntimeError: 'os.getenv' is not supported in this environment | RuntimeError: 'os.getenv' is not supported in this environment",
     ],
     answers: [
-      '0 value MontyString(a)',
+      '0 value MontyString("a")',
       '1 none',
     ],
   ),
@@ -514,15 +514,15 @@ final List<Scenario> scenarios = [
       os: s.os((_, _, _) => _str('x')),
     ),
     trace: [
-      'os os.getenv(MontyString(A), MontyNone())',
+      'os os.getenv(MontyString("A"), MontyNone())',
       'call f()',
-      'os os.getenv(MontyString(B), MontyNone())',
-      'value MontyString(x)',
+      'os os.getenv(MontyString("B"), MontyNone())',
+      'value MontyString("x")',
     ],
     answers: [
-      '0 value MontyString(x)',
+      '0 value MontyString("x")',
       '1 value MontyNone()',
-      '2 value MontyString(x)',
+      '2 value MontyString("x")',
     ],
   ),
   Scenario(
@@ -750,11 +750,11 @@ final List<Scenario> scenarios = [
       ..willReturn(_str('hi')),
     run: (s) => s.run(0, os: s.os((_, _, _) async => _str('hi'))),
     trace: [
-      'os Path.read_text(MontyPath(/f.txt))',
-      'value MontyString(hi)',
+      'os Path.read_text(MontyPath("/f.txt"))',
+      'value MontyString("hi")',
     ],
     answers: [
-      '0 value MontyString(hi)',
+      '0 value MontyString("hi")',
     ],
   ),
   Scenario(
@@ -859,6 +859,105 @@ final List<Scenario> scenarios = [
       '1 future',
       '0/b0 value MontyInt(10)',
       '1/b1 value MontyInt(11)',
+    ],
+  ),
+  Scenario(
+    'a gather settled in part, then a print, waits for the rest first',
+    feeds: [
+      "import asyncio\nr = await asyncio.gather(f(0), f(1))\nprint('done')\nr",
+    ],
+    script: (f) => f
+      ..willCall('f', args: [_int(0)])
+      ..willCall('f', args: [_int(1)])
+      ..willAwait([0, 1], gathered: true)
+      ..willPrint('done\n')
+      ..willReturn(MontyList([_int(10), _int(11)])),
+    run: (s) async {
+      final first = await s.start(0);
+      final second = await s.next<FunctionSnapshot>(
+        first,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final wait = await s.next<FunctionSnapshot>(
+        second,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final rest = await s.next<FutureSnapshot>(
+        wait,
+        (w) => w.resume({0: ExternalReturnValue(_int(10))}),
+      );
+      await s.next<FutureSnapshot>(
+        rest,
+        (w) => w.resume({1: const ExternalException('ValueError', 'late')}),
+      );
+    },
+    trace: [
+      'snap call f#0(MontyInt(0))',
+      'snap call f#1(MontyInt(1))',
+      'snap futures [0, 1]',
+      'snap futures [1]',
+      'MontyRuntimeError ValueError: late | ValueError: late',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '0/b0 value MontyInt(10)',
+      '1/b1 raise ValueError: late',
+    ],
+  ),
+  Scenario(
+    'two failures in one batch raise in the batch order',
+    feeds: ['import asyncio\nawait asyncio.gather(f(0), f(1))'],
+    script: (f) => f
+      ..willCall('f', args: [_int(0)])
+      ..willCall('f', args: [_int(1)])
+      ..willAwait([0, 1], gathered: true)
+      ..willReturn(_none),
+    run: (s) async {
+      final first = await s.start(0);
+      final second = await s.next<FunctionSnapshot>(
+        first,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final wait = await s.next<FunctionSnapshot>(
+        second,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      await s.next<FutureSnapshot>(
+        wait,
+        (w) => w.resume({
+          1: const ExternalException('ValueError', 'second'),
+          0: const ExternalException('KeyError', 'first'),
+        }),
+      );
+    },
+    trace: [
+      'snap call f#0(MontyInt(0))',
+      'snap call f#1(MontyInt(1))',
+      'snap futures [0, 1]',
+      'MontyRuntimeError ValueError: second | ValueError: second',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '1/b0 raise ValueError: second',
+      '0/b0 raise KeyError: first',
+    ],
+  ),
+  Scenario(
+    'an OS call that is not a sleep is not awaitable',
+    feeds: ["import os\nx = os.getenv('A')\nawait x"],
+    script: (f) => f
+      ..willCallOs('os.getenv', args: [_str('A'), _none])
+      ..willAwait([0])
+      ..willReturn(_none),
+    run: (s) => s.run(0, os: s.os((_, _, _) => _str('hello'))),
+    trace: [
+      'os os.getenv(MontyString("A"), MontyNone())',
+      "MontyRuntimeError TypeError: 'str' object can't be awaited | TypeError: 'str' object can't be awaited",
+    ],
+    answers: [
+      '0 value MontyString("hello")',
     ],
   ),
   Scenario(
@@ -1195,6 +1294,44 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
+    'a gather still owed a future waits for it before the end',
+    feeds: [_branches],
+    script: (f) => f
+      ..willCall('f', args: [_int(1)])
+      ..willCall('f', args: [_int(2)])
+      ..willAwait([0, 1])
+      ..willCall('g', args: [_int(1)])
+      ..willAwait([2])
+      ..willReturn(MontyList([_int(5), _int(2)])),
+    run: (s) => s.run(
+      0,
+      externals: {
+        'f': s.async(
+          'f',
+          (args, _) => Future.delayed(
+            Duration(milliseconds: args.firstOrNull == _int(1) ? 0 : 150),
+            () => args.firstOrNull ?? _none,
+          ),
+        ),
+        'g': s.async('g', _after(0, _int(5))),
+      },
+    ),
+    trace: [
+      'call f(MontyInt(1))',
+      'call f(MontyInt(2))',
+      'call g(MontyInt(1))',
+      'value MontyList[MontyInt(5), MontyInt(2)]',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '0/b0 value MontyInt(1)',
+      '2 future',
+      '2/b1 value MontyInt(5)',
+      '1/b2 value MontyInt(2)',
+    ],
+  ),
+  Scenario(
     'an awaited asyncio.sleep takes a plain value (feedRun)',
     feeds: ['import asyncio\nawait asyncio.sleep(0, result=7)'],
     config: const SessionConfig(osPolicy: OsPolicy(sleep: 'call_host')),
@@ -1298,7 +1435,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(0, externals: {'f': s.fn('f')}),
     trace: [
-      'call f(MontyPath(/a/b/c))',
+      'call f(MontyPath("/a/b/c"))',
       'value MontyNone()',
     ],
     answers: [

@@ -32,11 +32,11 @@ sealed class _CallState {
 
 /// Answered with a plain value, not a future.
 final class _Plain extends _CallState {
-  const _Plain(this.value, {required this.os});
+  const _Plain(this.value, {required this.wrapped});
 
-  /// Whether an OS call answered it: upstream wraps an OS call's answer
-  /// itself, so Python may await it (os-awaits.md).
-  final bool os;
+  /// Whether the worker wrapped the value in a settled future, as it wraps
+  /// an `asyncio.sleep`'s (os-awaits.md), so Python may await it.
+  final bool wrapped;
 
   final MontyValue value;
 }
@@ -219,6 +219,10 @@ final class _Feed {
   /// The ids the last wait listed.
   List<int> _advertised = const [];
 
+  /// Ids a gather still waits on after a partial settlement let the script
+  /// run on.
+  final Set<int> _outstanding = {};
+
   /// Plays the events up to the next suspension or the end.
   Future<pb.ChildEvent> play(PrintHandler? onPrint) async {
     for (;;) {
@@ -228,25 +232,8 @@ final class _Feed {
           await onPrint?.call(_printOf(event));
         case FakeHold(:final gate):
           await _hold(gate);
-        case FakeCatch():
-          throw StateError(
-            'FakeMontySession: willCatch() follows no answer that raised',
-          );
-        case FakeCall(:final callId):
-          _calls[callId] = const _Pending();
-          _at = event;
-
-          return event.event;
-        case FakeLookup(:final name):
-          _at = event;
-
-          return pb.ChildEvent(nameLookup: pb.NameLookup(name: name));
-        case FakeAwait():
-          if (_await(event) case final next?) return next;
-        case FakeEnd():
-          isOver = true;
-
-          return _ending(event, _index);
+        case _:
+          if (_suspend(event) case final next?) return next;
       }
     }
   }
@@ -282,6 +269,46 @@ final class _Feed {
     };
   }
 
+  /// Plays [event], one that suspends or ends the feed: the event the
+  /// worker sends, or null when the script runs on.
+  pb.ChildEvent? _suspend(FakeEvent event) {
+    switch (event) {
+      case FakeCall(:final callId):
+        _calls[callId] = const _Pending();
+        _at = event;
+
+        return event.event;
+      case FakeLookup(:final name):
+        _at = event;
+
+        return pb.ChildEvent(nameLookup: pb.NameLookup(name: name));
+      case FakeAwait():
+        return _await(event);
+      case FakeEnd():
+        return _end(event);
+      case FakeCatch() || FakePrint() || FakeHold():
+        throw StateError(
+          'FakeMontySession: willCatch() follows no answer that raised',
+        );
+    }
+  }
+
+  /// Ends the feed with [end], or first waits for what a gather still
+  /// owes: the worker cannot end the feed while it is blocked on them.
+  /// Null when the owed ids settled already and the script runs on.
+  pb.ChildEvent? _end(FakeEnd end) {
+    if (_outstanding.isEmpty) {
+      isOver = true;
+
+      return _ending(end, _index);
+    }
+    _events.addFirst(end);
+    final owed = FakeAwait(_outstanding.toList()..sort(), gathered: true);
+    _outstanding.clear();
+
+    return _await(owed);
+  }
+
   /// Keeps the protocol turn in flight until [gate] opens; a kill
   /// meanwhile ends it as a dead worker's.
   Future<void> _hold(Future<void> gate) async {
@@ -299,7 +326,7 @@ final class _Feed {
     for (final id in wait.callIds) {
       switch (_calls[id]) {
         // Settled, or an OS call's value, which upstream wraps itself.
-        case _Settled() || _Plain(os: true):
+        case _Settled() || _Plain(wrapped: true):
           break;
         case _Plain(:final value):
           return _raise(_notAwaitable(value, gathered: wait.gathered));
@@ -340,41 +367,40 @@ final class _Feed {
   /// A batch naming an id the wait did not list ends the feed, as the
   /// worker refuses it. One that settles nothing Python awaits repeats the
   /// wait (rewait.md). A partial one runs the script on when its next event
-  /// is one an unblocked branch can make (a call, a lookup, a print, a
-  /// hold); before anything else (an await or the end) the worker is still
-  /// blocked on the rest, and waits again for them (waits.md).
+  /// past any prints is one an unblocked branch can make (a call, a lookup,
+  /// a hold); before an await or the end the worker is still blocked on
+  /// the rest, and waits again for them (waits.md). Ids it ran on without
+  /// stay owed, and are waited for before the feed ends.
   pb.ChildEvent? _settleWait(
     FakeAwait wait,
     pb.ResumeFutures futures,
   ) {
-    final advertised = _advertised;
-    for (final result in futures.results) {
-      if (!advertised.contains(result.callId)) {
-        isOver = true;
+    if (_unknownId(_advertised, futures) case final refused?) {
+      isOver = true;
 
-        return _uncatchable(
-          pb.RaisedException(
-            excType: 'RuntimeError',
-            message:
-                'unknown call_id ${result.callId}, expected one of: '
-                '$advertised',
-          ),
-        );
-      }
+      return _uncatchable(refused);
     }
     final settled = _settleBatch(futures);
-    final remaining = _awaited.difference(settled);
-    final failed = wait.callIds
-        .where(settled.contains)
-        .firstWhereOrNull(
-          (id) => _calls[id] is _Failed,
-        );
-    // A failure Python awaits raises at once, ending the wait.
+    final awaited = _awaited;
+    final remaining = awaited.difference(settled);
+    _outstanding.removeAll(settled);
+    // A failure Python awaits raises at once, the batch's first one as the
+    // worker takes them in order.
+    final failed = futures.results
+        .map((r) => r.callId)
+        .where(awaited.contains)
+        .firstWhereOrNull((id) => _calls[id] is _Failed);
     if (failed != null) return _raiseFirstFailure([failed]);
     final runsOn =
-        remaining.length < _awaited.length &&
-        (remaining.isEmpty || _isBranchEvent(_events.firstOrNull));
-    if (runsOn) return null;
+        remaining.length < awaited.length &&
+        (remaining.isEmpty ||
+            _isBranchEvent(_events.firstWhereOrNull((e) => e is! FakePrint)));
+    if (runsOn) {
+      // The rest stay owed: the feed cannot end before they settle.
+      _outstanding.addAll(remaining);
+
+      return null;
+    }
     _at = wait;
     _awaited = remaining;
 
@@ -411,8 +437,9 @@ final class _Feed {
 
   pb.ChildEvent? _answerValue(FakeCall call, MontyValue value) {
     final id = call.callId;
-    _calls[id] = _Plain(value, os: call.os);
-    if (call.os && acceptsFuture(call.name)) _shiftAfter(id);
+    final wrapped = call.os && acceptsFuture(call.name);
+    _calls[id] = _Plain(value, wrapped: wrapped);
+    if (wrapped) _shiftAfter(id);
     // Python awaits an eager call at once; an OS call takes a plain value
     // (os-awaits.md).
     if (call.eager && !call.os) {
@@ -477,6 +504,23 @@ final class _Feed {
   }
 }
 
+/// The worker's refusal of a batch [futures] naming an id its wait did not
+/// list as [advertised]; null when every id was listed.
+pb.RaisedException? _unknownId(
+  List<int> advertised,
+  pb.ResumeFutures futures,
+) {
+  final unknown = futures.results.firstWhereOrNull(
+    (r) => !advertised.contains(r.callId),
+  );
+  if (unknown == null) return null;
+
+  return pb.RaisedException(
+    excType: 'RuntimeError',
+    message: 'unknown call_id ${unknown.callId}, expected one of: $advertised',
+  );
+}
+
 /// The `Error` event ending a feed with [exception], without its traceback.
 pb.ChildEvent _uncatchable(pb.RaisedException exception) => pb.ChildEvent(
   error: pb.Error(
@@ -488,12 +532,11 @@ pb.ChildEvent _uncatchable(pb.RaisedException exception) => pb.ChildEvent(
   ),
 );
 
-/// Whether [event] is one a branch a settlement unblocked can make.
+/// Whether [event], the next one past any prints, is one a branch a
+/// settlement unblocked can make: a call, a lookup or a hold. An await or
+/// the end means the gather has not returned yet.
 bool _isBranchEvent(FakeEvent? event) =>
-    event is FakeCall ||
-    event is FakeLookup ||
-    event is FakePrint ||
-    event is FakeHold;
+    event is FakeCall || event is FakeLookup || event is FakeHold;
 
 /// The requests that answer a suspension.
 const Set<pb.ParentRequest_Kind> _answers = {

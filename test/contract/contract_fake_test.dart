@@ -106,11 +106,11 @@ void main() {
       }
 
       expect(await answersWith(const MontyString('ok')), [
-        '0 value MontyString(ok)',
+        '0 value MontyString("ok")',
       ]);
       expect(
         await answersWith(const MontyString('\uD800')),
-        isNot(['0 value MontyString(ok)']),
+        isNot(['0 value MontyString("ok")']),
       );
     });
   });
@@ -407,7 +407,7 @@ void main() {
           '2 future',
           '3 none',
           '4 none',
-          '- value MontyString(found)',
+          '- value MontyString("found")',
           '- none',
           '2/b0 value MontyInt(3)',
         ],

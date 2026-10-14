@@ -29,7 +29,15 @@
 //     system sleep policy makes no host call yet takes an id too; a script
 //     cannot show it, so later calls number one lower on the fake. Not in
 //     the suite.
+//  8. Partial gathers. After a batch settles part of a gather, a script
+//     cannot say whether its next events come from a branch the batch
+//     unblocked or from after the gather. The fake runs on when the next
+//     event past any prints is a call, a lookup or a hold, and otherwise
+//     waits for the rest first; ids it ran on without are waited for
+//     before the feed ends. A failure among them then raises at the end,
+//     where the worker raises it when it settles.
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:collection/collection.dart';
 
@@ -238,10 +246,14 @@ String showArgs(List<MontyValue> args, Map<String, MontyValue> kwargs) {
   return '(${shown.join(', ')})';
 }
 
-/// [value] as the trace writes it, containers with their contents, and a
+/// [value] as the trace writes it, unambiguously: strings and paths
+/// quoted, containers, bytes and named tuples with their contents, and a
 /// float the same on every platform (dart2js writes an integral double
-/// without its `.0`).
+/// without its `.0`). Other kinds use their own `toString()`.
 String showValue(MontyValue value) => switch (value) {
+  MontyString(value: final text) => 'MontyString(${jsonEncode(text)})',
+  MontyPath(value: final path) => 'MontyPath(${jsonEncode(path)})',
+  MontyBytes(value: final bytes) => 'MontyBytes$bytes',
   MontyFloat(value: final v) when v == v.truncateToDouble() && v.isFinite =>
     'MontyFloat(${v.toInt()}.0)',
   MontyList(:final items) => 'MontyList[${_showAll(items)}]',
@@ -249,6 +261,8 @@ String showValue(MontyValue value) => switch (value) {
   MontySet(:final items) => 'MontySet{${_showAll(items)}}',
   MontyFrozenSet(:final items) => 'MontyFrozenSet{${_showAll(items)}}',
   MontyDict(:final pairs) => 'MontyDict{${pairs.map(_showPair).join(', ')}}',
+  MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
+    'MontyNamedTuple($typeName, $fieldNames, ${_showAll(values)})',
   _ => '$value',
 };
 
