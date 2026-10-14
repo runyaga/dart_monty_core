@@ -224,6 +224,10 @@ s  corpus_check  bash tool/check_fixture_corpus.sh
 # format and the check's own negative controls: a lib/ change with no fragment,
 # a direct CHANGELOG.md edit and a malformed fragment must each fail it.
 s  changelog_frag bash tool/check_changelog_fragments.sh --self-test
+# The coverage ratchet's controls: a file the change deletes is DELETED and
+# leaves the lib-wide comparison; a kept file that lost coverage, a total
+# dragged down by a new file, and a deletion without a base ref still fail.
+s  cov_ratchet_selftest bash tool/coverage_ratchet.sh --self-test
 s  fixture_links bash tool/check_fixture_links.sh
 # Same shape as fixture_links, one level up: the published pages state which
 # build they are, and nothing compiles an HTML shell, so the string rots
@@ -548,7 +552,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=54
+EXPECT_STEPS=55
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

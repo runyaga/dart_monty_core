@@ -190,6 +190,9 @@ jobs:
           # Changelog fragments: format of changes/*.md and the PR rule's
           # negative controls. The PR-level rule is changelog-fragments.yml.
           run bash tool/check_changelog_fragments.sh --self-test
+          # The coverage ratchet's controls (deleted vs vanished files, and
+          # the lib-wide total over the files a change keeps).
+          run bash tool/coverage_ratchet.sh --self-test
           run bash tool/check_fixture_links.sh
           run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
@@ -233,7 +236,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 30 ] || { echo "FAIL: expected 30 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 31 ] || { echo "FAIL: expected 31 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
