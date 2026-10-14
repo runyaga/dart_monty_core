@@ -33,7 +33,7 @@ SECTIONS='Added|Changed|Fixed|Breaking|Removed|Deprecated|Security|Internal'
 
 lint_fragments() {
   local rc=0 f n=0
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     [ -n "$f" ] || continue
     case "$f" in
       changes/README.md) continue ;;
@@ -70,7 +70,8 @@ if cur is not None and not has_body:
 sys.exit(0 if ok else 1)
 PY
     then rc=1; fi
-  done < <({ git -C "$REPO" ls-files 'changes/*'; git -C "$REPO" ls-files -o --exclude-standard 'changes/*'; } | sort -u)
+  done < <({ git -C "$REPO" ls-files -z 'changes/*'
+             git -C "$REPO" ls-files -z -o --exclude-standard 'changes/*'; } | sort -zu)
   return $rc
 }
 
@@ -78,7 +79,7 @@ check_pr() {
   local base="$1" mb rc=0 status path lib=0 chg=0 frag=0 f
   mb="$(git -C "$REPO" merge-base "$base" HEAD)" ||
     { echo "FAIL: no merge-base with $base (fetch-depth: 0?)"; return 1; }
-  while IFS=$'\t' read -r status path; do
+  while IFS= read -r -d '' status && IFS= read -r -d '' path; do
     [ -n "$path" ] || continue
     case "$path" in
       lib/*) lib=1 ;;
@@ -87,10 +88,11 @@ check_pr() {
       changes/*/*) ;;
       changes/*.md) [ "$status" = "A" ] && frag=$((frag + 1)) ;;
     esac
-  done < <(git -C "$REPO" diff --name-status --no-renames "$mb" HEAD)
+  done < <(git -C "$REPO" diff -z --name-status --no-renames "$mb" HEAD)
 
   local labels="${PR_LABELS:-[]}" body="${PR_BODY:-}"
-  has_label(){ printf '%s' "$labels" | grep -qF "\"$1\""; }
+  # Exact membership in the JSON array, not a substring of its text.
+  has_label(){ python3 -I -c 'import json,sys; sys.exit(0 if sys.argv[1] in json.loads(sys.argv[2]) else 1)' "$1" "$labels"; }
 
   if [ "$chg" = 1 ] && ! has_label changelog-assembly; then
     echo "FAIL: this PR edits CHANGELOG.md. Add a fragment changes/<slug>.md"
@@ -152,6 +154,10 @@ self_test() {
   run "malformed fragment: must FAIL" 1 '["no-changelog"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n' > "$tmp/changes/empty.md"; commit
   run "fragment header with no body: must FAIL" 1 '[]' ''
+  reset; echo b > "$tmp/lib/caf"$'\303\251'".dart"; commit
+  run "non-ASCII lib path, no fragment: must FAIL" 1 '[]' ''
+  reset; echo x >> "$tmp/CHANGELOG.md"; commit
+  run "label that merely contains the waiver text: must FAIL" 1 '["x\"changelog-assembly"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; echo x >> "$tmp/CHANGELOG.md"; commit
   run "lib change, assembly label alone: must FAIL" 1 '["changelog-assembly"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n### End\n\n- y\n' > "$tmp/changes/end.md"; commit

@@ -265,15 +265,21 @@ own = json.load(open(own_baseline_path)) if os.path.exists(own_baseline_path) \
     else base
 if own_baseline_path != baseline_path:
     # A PR may not LOWER the floor it hands to the next PR. A rise is ignored
-    # (main records it after merge); a lowered file or total is refused.
-    lowered = [f for f, v in own['by_file'].items()
-               if f in bf and v['pct'] < bf[f]['pct']]
+    # (main records it after merge); a lowered, dropped or deleted entry, or a
+    # lowered total, is refused.
+    if not os.path.exists(own_baseline_path):
+        print('FAIL: this branch deletes tool/coverage-baseline.json. Restore:')
+        print('    git checkout origin/main -- tool/coverage-baseline.json')
+        sys.exit(1)
+    ob = own['by_file']
+    lowered = [f for f in bf if f not in ob or ob[f]['pct'] < bf[f]['pct']]
     if own['total']['pct'] < bt['pct'] or lowered:
         print('FAIL: this branch lowers tool/coverage-baseline.json below the')
         print('  base branch\'s. A PR does not edit the baseline; restore it:')
         print('    git checkout origin/main -- tool/coverage-baseline.json')
         for f in lowered[:10]:
-            print(f"    {f}: {bf[f]['pct']}% -> {own['by_file'][f]['pct']}%")
+            now = f"{ob[f]['pct']}%" if f in ob else 'removed'
+            print(f"    {f}: {bf[f]['pct']}% -> {now}")
         sys.exit(1)
     if own['total']['pct'] > bt['pct']:
         print(f"note: this branch's own baseline file ({own['total']['pct']}%) "
