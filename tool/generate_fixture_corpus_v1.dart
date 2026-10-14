@@ -53,6 +53,21 @@ void main(List<String> args) {
     return;
   }
 
+  // The hashes above name the committed tree; the files are read from the
+  // working tree, so it must have no edit, deletion or stray file in it.
+  final dirty = _git(checkout, [
+    'status',
+    '--porcelain',
+    '--untracked-files=all',
+    '--',
+    _corpusPath,
+  ]);
+  if (dirty.isNotEmpty) {
+    _fail("the checkout's $_corpusPath differs from its commit:\n$dirty");
+
+    return;
+  }
+
   final dir = fs.directory('$checkout/$_corpusPath');
   final files =
       dir
@@ -85,19 +100,30 @@ void main(List<String> args) {
     final literal = json
         .encode(file.readAsStringSync())
         .replaceAll(r'$', r'\$');
-    buf.writeln("  '${file.basename}': $literal,");
+    // As `dart format` lays it out, so the committed file survives the
+    // formatter: one line when it fits in 80 columns, else the value on its
+    // own line.
+    final entry = "  '${file.basename}': $literal,";
+    if (entry.length <= 80) {
+      buf.writeln(entry);
+    } else {
+      buf
+        ..writeln("  '${file.basename}':")
+        ..writeln('      $literal,');
+    }
   }
   buf.writeln('};');
 
   final out = fs.file(_outPath);
+  final text = buf.toString();
   if (check) {
-    if (!out.existsSync() || out.readAsStringSync() != buf.toString()) {
+    if (!out.existsSync() || out.readAsStringSync() != text) {
       _fail('$_outPath differs from the pinned corpus; regenerate it');
     }
 
     return;
   }
-  out.writeAsStringSync(buf.toString());
+  out.writeAsStringSync(text);
   stderr.writeln('Generated $_outPath with ${files.length} fixtures.');
 }
 

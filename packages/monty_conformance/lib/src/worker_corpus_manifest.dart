@@ -178,32 +178,70 @@ const workerCorpusExpected = <ExpectedFailure>[
   ExpectedFailure(
     'name_error__undefined_call_chained.py',
     'worker-undefined-call-span',
-    'traceback mismatch',
+    '--- actual\n'
+        'Traceback (most recent call last):\n'
+        '  File "name_error__undefined_call_chained.py", line 1, in <module>\n'
+        '    x = aaa_func() + bbb_func()\n'
+        '        ~~~~~~~~~~\n'
+        "NameError: name 'aaa_func' is not defined",
   ),
   ExpectedFailure(
     'name_error__undefined_call_in_expr.py',
     'worker-undefined-call-span',
-    'traceback mismatch',
+    '--- actual\n'
+        'Traceback (most recent call last):\n'
+        '  File "name_error__undefined_call_in_expr.py", line 1, in <module>\n'
+        '    x = 1 + missing_func()\n'
+        '            ~~~~~~~~~~~~~~\n'
+        "NameError: name 'missing_func' is not defined",
   ),
   ExpectedFailure(
     'name_error__undefined_call_in_function.py',
     'worker-undefined-call-span',
-    'traceback mismatch',
+    '--- actual\n'
+        'Traceback (most recent call last):\n'
+        '  File "name_error__undefined_call_in_function.py", '
+        'line 5, in <module>\n'
+        '    outer()\n'
+        '    ~~~~~~~\n'
+        '  File "name_error__undefined_call_in_function.py", line 2, in outer\n'
+        '    return missing_func()\n'
+        '           ~~~~~~~~~~~~~~\n'
+        "NameError: name 'missing_func' is not defined",
   ),
   ExpectedFailure(
     'name_error__undefined_call_with_args.py',
     'worker-undefined-call-span',
-    'traceback mismatch',
+    '--- actual\n'
+        'Traceback (most recent call last):\n'
+        '  File "name_error__undefined_call_with_args.py", '
+        'line 1, in <module>\n'
+        '    missing_func(1, 2, 3)\n'
+        '    ~~~~~~~~~~~~~~~~~~~~~\n'
+        "NameError: name 'missing_func' is not defined",
   ),
   ExpectedFailure(
     'name_error__undefined_global.py',
     'worker-undefined-call-span',
-    'traceback mismatch',
+    '--- actual\n'
+        'Traceback (most recent call last):\n'
+        '  File "name_error__undefined_global.py", line 2, in <module>\n'
+        '    unknown_func()\n'
+        '    ~~~~~~~~~~~~~~\n'
+        "NameError: name 'unknown_func' is not defined",
   ),
   ExpectedFailure(
     'traceback__undefined_call.py',
     'worker-undefined-call-span',
-    'traceback mismatch',
+    '--- actual\n'
+        'Traceback (most recent call last):\n'
+        '  File "traceback__undefined_call.py", line 5, in <module>\n'
+        '    foo()\n'
+        '    ~~~~~\n'
+        '  File "traceback__undefined_call.py", line 2, in foo\n'
+        '    snap(1)\n'
+        '    ~~~~~~~\n'
+        "NameError: name 'snap' is not defined",
   ),
 
   // lookup-cannot-raise
@@ -242,16 +280,13 @@ const workerCorpusExpected = <ExpectedFailure>[
 
 /// How a recursion-set file ends on a browser whose JSPI probe failed: what
 /// upstream's own browser build (`@pydantic/monty` 1.1.0 `/wasm`) did with the
-/// file on Chrome 155 (5 fresh pages each, a recorded measurement).
+/// file on Chrome 155 (5 fresh pages each; the same build and 7-file harness).
 enum RecursionOutcome {
   /// The worker died: `MontyCrashedError`.
   crashes,
 
   /// The file ran to its end.
   passes,
-
-  /// Not measured on upstream's browser build; the run refuses to judge it.
-  unrecorded,
 }
 
 /// The 7-file recursion set. With the Worker's JSPI probe succeeding each
@@ -264,8 +299,8 @@ const workerRecursionSetNoJspi = <String, RecursionOutcome>{
   'dict__eq_self_referential.py': RecursionOutcome.crashes,
   'generic_alias.py': RecursionOutcome.passes,
   'list__eq_self_referential.py': RecursionOutcome.passes,
-  'recursion__deep_hash.py': RecursionOutcome.unrecorded,
-  'recursion__deep_isinstance.py': RecursionOutcome.unrecorded,
+  'recursion__deep_hash.py': RecursionOutcome.passes,
+  'recursion__deep_isinstance.py': RecursionOutcome.passes,
 };
 
 /// How a run's failures differ from the manifest for [profile]; empty when

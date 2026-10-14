@@ -24,13 +24,13 @@ cd "$(git rev-parse --show-toplevel)"
 leg="${1:-}"
 compiler="${2:-}"
 case "$leg" in
-  native) args=(-p vm); floor=9; scorecard='CORPUS native: total=643' ;;
+  native) args=(-p vm); floor=10; scorecard='CORPUS native: total=643' ;;
   chrome|firefox)
     case "$compiler" in
       dart2js|dart2wasm) ;;
       *) echo "usage: $0 native | {chrome|firefox} {dart2js|dart2wasm}" >&2; exit 2 ;;
     esac
-    args=(-p "$leg" -c "$compiler"); floor=17; scorecard="CORPUS $compiler: total=643"
+    args=(-p "$leg" -c "$compiler"); floor=18; scorecard="CORPUS $compiler: total=643"
     ;;
   *) echo "usage: $0 native | {chrome|firefox} {dart2js|dart2wasm}" >&2; exit 2 ;;
 esac

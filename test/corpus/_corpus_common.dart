@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:meta/meta.dart';
 import 'package:monty_conformance/worker_conformance.dart';
 import 'package:test/test.dart';
 
@@ -60,6 +61,33 @@ void manifestTests() {
     expect(manifestProblems(fixtureCorpusV1.keys), isEmpty);
     expect(fixtureCorpusV1, hasLength(643));
   });
+
+  test(
+    "the no-JSPI branch is judged against upstream's recorded outcomes",
+    () {
+      const crashed = 'the worker crashed: boom';
+      final recorded = {
+        for (final e in workerRecursionSetNoJspi.entries)
+          if (e.value == RecursionOutcome.crashes) e.key: crashed,
+      };
+      expect(recursionSetProblems(recorded), isEmpty);
+      // A file that should crash and passes, one that should pass and crashes,
+      // and one that fails some other way: each is a problem.
+      final names = workerRecursionSetNoJspi.keys.toList();
+      expect(
+        recursionSetProblems({...recorded}..remove(names.first)),
+        hasLength(1),
+      );
+      expect(
+        recursionSetProblems({...recorded, 'generic_alias.py': crashed}),
+        hasLength(1),
+      );
+      expect(
+        recursionSetProblems({...recorded, names.first: 'value mismatch'}),
+        hasLength(1),
+      );
+    },
+  );
 }
 
 /// Runs the whole corpus on [target]'s pool and judges it against the
@@ -77,7 +105,7 @@ Future<void> runCorpusChecks(CorpusTarget target) async {
       target.profile,
       fixtureCorpusV1.keys,
     ),
-    if (noJspi) ..._recursionSetProblems(failures),
+    if (noJspi) ...recursionSetProblems(failures),
   ];
   final listed = {
     for (final e in workerCorpusExpected)
@@ -229,7 +257,8 @@ Future<Map<String, String>> _runAll(
 
 /// How [failures] differ from upstream's browser build on the recursion set,
 /// for a run whose JSPI probe failed.
-List<String> _recursionSetProblems(Map<String, String> failures) {
+@visibleForTesting
+List<String> recursionSetProblems(Map<String, String> failures) {
   final problems = <String>[];
   for (final MapEntry(:key, :value) in workerRecursionSetNoJspi.entries) {
     final reason = failures[key];
@@ -242,11 +271,6 @@ List<String> _recursionSetProblems(Map<String, String> failures) {
         if (reason != null) {
           problems.add("$key: upstream's browser build passes; got $reason");
         }
-      case RecursionOutcome.unrecorded:
-        problems.add(
-          '$key: no upstream-browser outcome is recorded for a browser '
-          'without JSPI; measure it before judging this branch',
-        );
     }
   }
 
