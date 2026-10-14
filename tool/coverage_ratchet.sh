@@ -11,8 +11,9 @@
 # This ratchets per file instead. Any per-file percentage decrease fails. Any
 # file that was in the baseline and is now ABSENT from the tracefile fails —
 # absence is how Dart coverage lies (see tool/coverage_report.sh), so "the file
-# vanished" must never read as "the file is fine". Improving is always allowed
-# and never required.
+# vanished" must never read as "the file is fine". A file the change deletes
+# (git says so, against RATCHET_BASE_REF) is DELETED instead, and passes.
+# Improving is always allowed and never required.
 #
 # It also ratchets the lib-wide total, which is what stops the one case a
 # per-file rule cannot see: a brand-new file at 0%. New files are not a failure
@@ -22,6 +23,7 @@
 # Usage:
 #   bash tool/coverage_ratchet.sh TRACEFILE            # check
 #   bash tool/coverage_ratchet.sh TRACEFILE --update   # regenerate the baseline
+#   bash tool/coverage_ratchet.sh --self-test          # the controls
 #
 # TRACEFILE is coverage/honest.info from tool/coverage_report.sh. Feeding it a
 # RAW lcov.info instead would be a silent downgrade — the raw file omits every
@@ -33,6 +35,83 @@
 # the check fails only on a decrease, measured against the base branch's copy.
 # =============================================================================
 set -uo pipefail
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+
+# --self-test: the controls, each against a throwaway repository whose base
+# commit holds three lib/ files and the baseline recorded from them.
+self_test() {
+  local tmp rc=0
+  tmp="$(mktemp -d)"; trap '/bin/rm -rf "$tmp"' RETURN
+  tmp="$(cd "$tmp" && pwd -P)"
+  local repo="$tmp/repo"
+  mkdir -p "$repo/lib/src" "$repo/tool" || return 1
+  # trace <path:hit/found>...: an lcov tracefile, lines 1..found, the first
+  # `hit` of them hit.
+  trace() {
+    local spec f hf h n i
+    for spec in "$@"; do
+      f="${spec%%:*}"; hf="${spec#*:}"; h="${hf%/*}"; n="${hf#*/}"
+      echo "SF:$repo/$f"
+      i=1; while [ "$i" -le "$n" ]; do
+        if [ "$i" -le "$h" ]; then echo "DA:$i,1"; else echo "DA:$i,0"; fi
+        i=$((i + 1))
+      done
+      echo "end_of_record"
+    done > "$tmp/trace.info"
+  }
+  git init -q "$repo" && (
+    cd "$repo" && git config user.email t@t && git config user.name t &&
+    for f in a b c; do echo "// $f" > "lib/src/$f.dart"; done &&
+    trace lib/src/a.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4 &&
+    bash "$SELF" "$tmp/trace.info" --update >/dev/null &&
+    git add -A && git commit -qm base
+  ) || return 1
+  local base
+  base="$(git -C "$repo" rev-parse HEAD)"
+  reset(){ git -C "$repo" checkout -q -f "$base" && git -C "$repo" clean -qfd; }
+  commit(){ git -C "$repo" add -A && git -C "$repo" commit -qm x; }
+  # run <name> <expected exit> <base ref or ''> [text the output must hold]
+  run() {
+    local name="$1" want="$2" ref="$3" grep_for="${4:-}" out got=0
+    out="$(cd "$repo" && RATCHET_BASE_REF="$ref" bash "$SELF" "$tmp/trace.info" 2>&1)" || got=1
+    if [ "$got" != "$want" ]; then
+      echo "SELF-TEST FAIL: $name (expected exit $want, got $got)"; echo "$out"; rc=1
+    elif [ -n "$grep_for" ] && ! printf '%s\n' "$out" | grep -qF -- "$grep_for"; then
+      echo "SELF-TEST FAIL: $name (output lacks '$grep_for')"; echo "$out"; rc=1
+    else echo "ok: $name"; fi
+  }
+
+  reset; trace lib/src/a.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "nothing changed" 0 "$base"
+  reset; git -C "$repo" rm -q lib/src/a.dart; commit
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "deletes a 100% file, nothing else: passes" 0 "$base" "DELETED"
+  run "the same deletion without a base ref: VANISHED" 1 "" "VANISHED"
+  trace lib/src/b.dart:1/4 lib/src/c.dart:1/4
+  run "deletes a file and lowers another: FILE DECREASE" 1 "$base" "FILE DECREASE"
+  reset; echo '// d' > "$repo/lib/src/d.dart"; commit
+  trace lib/src/a.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4 lib/src/d.dart:0/8
+  run "keeps every file, lowers the total: TOTAL DECREASE" 1 "$base" "TOTAL DECREASE"
+  reset; git -C "$repo" rm -q lib/src/a.dart; echo '// d' > "$repo/lib/src/d.dart"; commit
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4 lib/src/d.dart:0/8
+  run "deletes a file, adds an untested one: TOTAL DECREASE" 1 "$base" "TOTAL DECREASE"
+  reset; git -C "$repo" mv lib/src/a.dart lib/src/a2.dart; commit
+  trace lib/src/a2.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "renames a file: the old path DELETED, the new one counted" 0 "$base" "DELETED"
+  reset; trace lib/src/a.dart:4/4 lib/src/b.dart:2/4
+  run "keeps a file the tracefile lacks: fails" 1 "$base"
+  reset; /bin/rm "$repo/lib/src/a.dart"
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "removes a file the commit keeps (working tree only): VANISHED" 1 "$base" "VANISHED"
+  reset; git -C "$repo" rm -q lib/src/a.dart; commit
+  git -C "$repo" checkout -q "$base" -- lib/src/a.dart
+  trace lib/src/a.dart:0/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "deleted in the commit, restored in the tree: not DELETED" 1 "$base" "FILE DECREASE"
+  [ "$rc" = 0 ] && echo "PASS: coverage ratchet self-test"
+  return "$rc"
+}
+if [ "${1:-}" = --self-test ]; then self_test; exit $?; fi
+
 cd "$(git rev-parse --show-toplevel)"
 
 BASELINE=tool/coverage-baseline.json
@@ -121,7 +200,30 @@ if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   fi
 fi
 
-BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" python3 - <<'PY'
+# ---------------------------------------------------------------------------
+# A FILE THE PR DELETES IS NOT A FILE THAT VANISHED.
+# ---------------------------------------------------------------------------
+# The comparison baseline is the base branch's, so it still lists every file
+# the PR removes from lib/. Those are reported as DELETED rather than
+# VANISHED, and the lib-wide total they are compared with is recomputed
+# without them: otherwise deleting a well-covered file lowers the PR's total
+# below a base figure that still counts it, and the PR cannot fix that by
+# recording a baseline (it may not edit it). A deletion is read from git,
+# never inferred from absence: a path counts only if `git diff` from the base
+# to the COMMITTED head reports it deleted (renames as a delete plus an add)
+# and it is not in the working tree either. A file removed from the working
+# tree but still in HEAD is not deleted by the change, and stays VANISHED. Without RATCHET_BASE_REF there is no base to diff against,
+# and every absent baseline file stays VANISHED.
+DELETED=""
+if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
+  if ! DELETED="$(git diff --name-only --no-renames --diff-filter=D \
+      "${RATCHET_BASE_REF}" HEAD -- lib/)"; then
+    echo "FAIL: cannot list the files deleted since ${RATCHET_BASE_REF}."
+    exit 1
+  fi
+fi
+
+BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" DELETED="$DELETED" python3 - <<'PY'
 import json, os, sys
 
 root = os.getcwd()
@@ -229,8 +331,23 @@ base = load_json(baseline_path)
 bt, bf = base['total'], base['by_file']
 violations = []
 
+deleted = sorted(p for p in os.environ['DELETED'].splitlines()
+                 if p in bf and not os.path.exists(p))
+# The base total over the baseline files this PR keeps (F3). Unchanged when
+# it deletes none, so every other PR is compared exactly as before.
+if deleted:
+    kept = [v for p, v in bf.items() if p not in deleted]
+    k_hit = sum(v['hit'] for v in kept)
+    k_found = sum(v['found'] for v in kept)
+    cmp_total = {'hit': k_hit, 'found': k_found,
+                 'pct': round(100.0 * k_hit / k_found, 2) if k_found else 0.0}
+else:
+    cmp_total = bt
+
 for path, prev in sorted(bf.items()):
     now = by_file.get(path)
+    if path in deleted:
+        continue
     if now is None:
         violations.append(
             f"VANISHED      {path}: was {prev['pct']}% "
@@ -241,14 +358,22 @@ for path, prev in sorted(bf.items()):
             f"({prev['hit']}/{prev['found']} -> {now['hit']}/{now['found']})")
 
 new_files = sorted(set(by_file) - set(bf))
-if current['total']['pct'] < bt['pct']:
+ct = cmp_total
+if current['total']['pct'] < ct['pct']:
     violations.append(
-        f"TOTAL DECREASE lib-wide: {bt['pct']}% -> {current['total']['pct']}% "
-        f"({bt['hit']}/{bt['found']} -> {tot_hit}/{tot_found})")
+        f"TOTAL DECREASE lib-wide: {ct['pct']}% -> {current['total']['pct']}% "
+        f"({ct['hit']}/{ct['found']} -> {tot_hit}/{tot_found})")
 
 print(f"coverage: {current['total']['pct']}% ({tot_hit}/{tot_found}) "
       f"vs baseline {bt['pct']}% ({bt['hit']}/{bt['found']}), "
       f"{len(by_file)} files vs {len(bf)}")
+if deleted:
+    print(f"  compared with the baseline over the files kept: {ct['pct']}% "
+          f"({ct['hit']}/{ct['found']}), {len(deleted)} deleted file(s) "
+          f"excluded")
+for d in deleted:
+    print(f"  DELETED       {d}: was {bf[d]['pct']}% "
+          f"({bf[d]['hit']}/{bf[d]['found']}), removed by this change")
 for n in new_files:
     print(f"  new file: {n} at {by_file[n]['pct']}% "
           f"({by_file[n]['hit']}/{by_file[n]['found']})")

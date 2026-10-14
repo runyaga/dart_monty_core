@@ -62,7 +62,7 @@ need() {  # need <pattern> <what it guards>
 # for native/, _declareWorkerInputs for native/worker/), so a whole-file match
 # for a statement they share is satisfied by either one, and deleting it from
 # the other stays green (found in review, by mutation).
-fn_body() { printf '%s\n' "$CODE" | awk -v h="void $1(" 'index($0, h) == 1 {f=1} f {print} f && /^}/ {exit}'; }
+fn_body() { printf '%s\n' "$CODE" | awk -v h="void $1(" 'index($0, h) == 1 {f=1} f {print} f && /^}$/ {exit}'; }
 need_in() {
   if fn_body "$1" | grep -qF "$2"; then
     echo "  ok  $1 declares $3"
@@ -123,11 +123,28 @@ need "if (_wantsWorker(input)) {" "the worker build behind that opt-in"
 for f in Cargo.toml Cargo.lock build.rs; do
   need_in _declareWorkerInputs "workerDir.resolve('$f')" "native/worker/$f"
 done
+# The toolchain file, declared by the worker itself: with native/Cargo.toml
+# gone, _declareInputs (which also declares it) no longer runs.
+# A list element of its own line: the parameter declaration
+# (`required Uri toolchain,`) must not satisfy it.
+if fn_body _declareWorkerInputs | grep -qE '^[[:space:]]*toolchain,$'; then
+  echo "  ok  _declareWorkerInputs declares its toolchain parameter"
+else
+  echo "FAIL: _declareWorkerInputs in $HOOK no longer declares its toolchain"
+  echo "      parameter (native/rust-toolchain.toml) in its deps list"
+  FAIL=1
+fi
+need "toolchain: nativeDir.resolve('rust-toolchain.toml')," "native/rust-toolchain.toml as the worker's toolchain"
+# The Cargo configuration native/worker inherits (its own, native/'s and the
+# package root's): _declareInputs declares native/'s only when it runs.
+need_in _declareWorkerInputs "const ['', '../', '../../']" "the .cargo configs of native/worker and its parents"
+need_in _declareWorkerInputs "const ['.cargo/config.toml', '.cargo/config']" "both Cargo config file names"
+need_in _declareWorkerInputs "deps.add(config);" "each Cargo config found"
 need_in _declareWorkerInputs "const ['src/', 'upstream/']" "a walk of native/worker/src and upstream/"
 need_in _declareWorkerInputs "dir.listSync(recursive: true)" "a recursive walk of each"
 need_in _declareWorkerInputs "deps.add(e.uri)" "each .rs file found by that walk"
 need_in _declareWorkerInputs "output.dependencies.addAll(deps)" "the collected list to the runner"
-need "_declareWorkerInputs(output, workerDir);" "the worker's inputs, after its build"
+need "_declareWorkerInputs(" "the worker's inputs, after its build"
 # Exactly one call site of the worker build, and it is the gated one: a
 # second, ungated call would build it for every consumer.
 WORKER_CALLS=$(printf '%s' "$CODE" | grep -cF "await _buildWorker(")
@@ -135,6 +152,27 @@ if [ "$WORKER_CALLS" = 1 ]; then
   echo "  ok  builds the worker library from exactly one (gated) call"
 else
   echo "FAIL: expected exactly 1 call of _buildWorker, found $WORKER_CALLS"
+  FAIL=1
+fi
+
+# ...and that call is NOT inside the in-process crate's
+# `if (cargoToml.existsSync()) {` branch, so the worker still builds when
+# native/Cargo.toml is gone (the old engine's removal). Brace depth from that
+# `if` to its closing brace, on the comment-stripped source.
+INSIDE=$(printf '%s\n' "$CODE" | awk '
+  index($0, "if (cargoToml.existsSync()) {") { inb = 1; d = 0 }
+  inb {
+    if (index($0, "await _buildWorker(")) hit = 1
+    d += gsub(/\{/, "{"); d -= gsub(/\}/, "}")
+    if (d <= 0) inb = 0
+  }
+  END { print hit ? "yes" : "no" }')
+if [ "$INSIDE" = no ] && printf '%s' "$CODE" | grep -qF "if (cargoToml.existsSync()) {"; then
+  echo "  ok  builds the worker outside the in-process crate's branch"
+else
+  echo "FAIL: the worker build sits inside if (cargoToml.existsSync()) { ... }"
+  echo "      (or that branch is gone): without native/Cargo.toml the opted-in"
+  echo "      worker library would not build."
   FAIL=1
 fi
 

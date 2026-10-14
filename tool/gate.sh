@@ -224,6 +224,10 @@ s  corpus_check  bash tool/check_fixture_corpus.sh
 # format and the check's own negative controls: a lib/ change with no fragment,
 # a direct CHANGELOG.md edit and a malformed fragment must each fail it.
 s  changelog_frag bash tool/check_changelog_fragments.sh --self-test
+# The coverage ratchet's controls: a file the change deletes is DELETED and
+# leaves the lib-wide comparison; a kept file that lost coverage, a total
+# dragged down by a new file, and a deletion without a base ref still fail.
+s  cov_ratchet_selftest bash tool/coverage_ratchet.sh --self-test
 s  fixture_links bash tool/check_fixture_links.sh
 # Same shape as fixture_links, one level up: the published pages state which
 # build they are, and nothing compiles an HTML shell, so the string rots
@@ -337,7 +341,13 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # in 5s with it on. (CI's 5m53s for the same step is the runner, not the
 # instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
 # still writes nothing the read-only check can see.
-sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker --coverage="$OUT/cov"
+# The worker executable first, as worker_vm below: an untagged unit test may
+# start a real pool (test/unit/worker/real_pool_vm_test.dart). The gate does
+# not build; build_worker.sh --check fails, naming the build command, when the
+# worker is missing or stale.
+unit_tests(){ bash tool/build_worker.sh --check &&
+  dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker --coverage="$OUT/cov"; }
+sf unit_tests 700 unit_tests
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
@@ -548,7 +558,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=54
+EXPECT_STEPS=55
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

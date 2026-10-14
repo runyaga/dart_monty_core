@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 
-void main(List<String> args) async {
+Future<void> main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
 
@@ -49,14 +49,20 @@ void main(List<String> args) async {
     );
     outFile.parent.createSync(recursive: true);
     final cargoToml = File.fromUri(nativeDir.resolve('Cargo.toml'));
+    if (!cargoToml.existsSync() && !_wantsWorker(input)) {
+      throw StateError(
+        'native/Cargo.toml not found — clone the full monorepo to build from '
+        'source.',
+      );
+    }
+    final triple = _rustTriple(os, arch);
+    final targetArgs = triple != null ? ['--target', triple] : <String>[];
+    if (triple != null) {
+      await _ensureRustTarget(triple, Directory.fromUri(nativeDir).path);
+    }
 
     if (cargoToml.existsSync()) {
       // Contributor path: always run cargo (handles incremental builds).
-      final triple = _rustTriple(os, arch);
-      final targetArgs = triple != null ? ['--target', triple] : <String>[];
-      if (triple != null) {
-        await _ensureRustTarget(triple, Directory.fromUri(nativeDir).path);
-      }
       // A marker file (not an env var) is used because native-assets build
       // hooks run hermetically and don't inherit host env vars. The file is
       // gitignored and only tool/test_cm.sh creates it — never in shipped
@@ -96,20 +102,15 @@ void main(List<String> args) async {
       _publishAtomically(built, outFile);
       _addAsset(output, input.packageName, outFile.uri);
       _declareInputs(output, nativeDir, testHooksMarker);
-
-      // The worker cdylib, for `dart build cli` self-relaunch. Built ONLY
-      // when the root package opts in; every other consumer runs exactly the
-      // one cargo build above and gets exactly the one asset.
-      if (_wantsWorker(input)) {
-        await _buildWorker(input, output, nativeDir, os, arch, targetArgs);
-      }
-
-      return;
     }
 
-    throw StateError(
-      'native/Cargo.toml not found — clone the full monorepo to build from source.',
-    );
+    // The worker cdylib, for `dart build cli` self-relaunch. Built ONLY when
+    // the root package opts in; every other consumer runs exactly the one
+    // cargo build above and gets exactly the one asset. Outside the in-process
+    // crate's branch, so it builds from native/worker/ alone.
+    if (_wantsWorker(input)) {
+      await _buildWorker(input, output, nativeDir, os, arch, targetArgs);
+    }
   });
 }
 
@@ -150,6 +151,12 @@ Future<void> _buildWorker(
     _ => 'libdart_monty_worker.so',
   };
   final workerDir = nativeDir.resolve('worker/');
+  if (!File.fromUri(workerDir.resolve('Cargo.toml')).existsSync()) {
+    throw StateError(
+      'native/worker/Cargo.toml not found — the worker library '
+      '(build_worker: true) builds from source in the full repository.',
+    );
+  }
   // `--lib` builds the cdylib (and the rlib the executable links), with the
   // release profile the executable ships with. `--locked`, as above:
   // native/worker/Cargo.lock is seeded from upstream's and a fresh resolve is
@@ -189,21 +196,41 @@ Future<void> _buildWorker(
       file: outFile.uri,
     ),
   );
-  _declareWorkerInputs(output, workerDir);
+  _declareWorkerInputs(
+    output,
+    workerDir,
+    toolchain: nativeDir.resolve('rust-toolchain.toml'),
+  );
 }
 
 /// What the worker library is built from: native/worker's manifest, lock and
-/// build script, every Rust source under `src/` and `upstream/`, and the
-/// toolchain file it shares with native/ (declared by [_declareInputs]).
-void _declareWorkerInputs(BuildOutputBuilder output, Uri workerDir) {
+/// build script, the Cargo configuration it inherits, every Rust source under
+/// `src/` and `upstream/`, and [toolchain], the toolchain file it shares with
+/// native/ (declared here too, so the worker's inputs do not depend on the
+/// in-process crate's build).
+void _declareWorkerInputs(
+  BuildOutputBuilder output,
+  Uri workerDir, {
+  required Uri toolchain,
+}) {
   final deps = <Uri>[
     workerDir.resolve('Cargo.toml'),
     workerDir.resolve('Cargo.lock'),
     workerDir.resolve('build.rs'),
+    toolchain,
   ];
-  final workerConfig = workerDir.resolve('.cargo/config.toml');
-  if (File.fromUri(workerConfig).existsSync()) {
-    deps.add(workerConfig);
+  // Cargo reads `.cargo/config.toml` (or the older `.cargo/config`) from
+  // native/worker/ and every directory above it: native/'s and the package
+  // root's change the worker's rustflags and linker as much as its own does.
+  // Declared here, not left to [_declareInputs], which does not run without
+  // native/Cargo.toml. Only when present, for the reason given there.
+  for (final up in const ['', '../', '../../']) {
+    for (final name in const ['.cargo/config.toml', '.cargo/config']) {
+      final config = workerDir.resolve('$up$name');
+      if (File.fromUri(config).existsSync()) {
+        deps.add(config);
+      }
+    }
   }
   for (final sub in const ['src/', 'upstream/']) {
     final dir = Directory.fromUri(workerDir.resolve(sub));
