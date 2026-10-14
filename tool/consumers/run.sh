@@ -56,6 +56,9 @@ selftest() {
   expect_reject "no result written" --root "$HERE/selftest" --page never.html --skip-assets --timeout 3000
   expect_reject "expected \"2\"" --root "$HERE/selftest" --page wrong.html --skip-assets --timeout 3000
   expect_reject "console.error: boom" --root "$HERE/selftest" --page error.html --skip-assets --timeout 3000
+  # An application's own console.error is never exempted, even when it imitates
+  # Chrome's message for an allowed 404.
+  expect_reject "console.error: Failed to load resource" --root "$HERE/selftest" --page fakeload.html --skip-assets --timeout 3000
   # A page that writes 2 but never fetches the worker assets must fail the
   # asset check when one is asked for.
   expect_reject "was not served 200" --root "$HERE/selftest" --page ok.html --layout package --timeout 3000
@@ -104,6 +107,11 @@ pins_of() {
   esac
 }
 
+drive_pinned() { # drive_pinned <name> <outdir>
+  # shellcheck disable=SC2046  # pins_of prints separate words
+  drive --root "$2" --layout "$(layout_of "$1")" --timeout 45000 $(pins_of "$1")
+}
+
 damage() { # damage <name> <outdir> <mode>
   local base="$2/$(base_of "$1")"
   [ -f "$base/${PROTO_ASSETS[0]}" ] || fail "negative control: no worker script at $base (the build did not ship it)"
@@ -121,10 +129,14 @@ run_one() { # run_one <name> <negative-mode|"">
   local t0=$SECONDS
   build "$name" "$out" || fail "$name: build failed"
   echo "  build: $((SECONDS - t0))s"
-  [ -z "$mode" ] || damage "$name" "$out" "$mode"
+  if [ -n "$mode" ]; then
+    # The very build about to be damaged must pass first, so a failure after
+    # the damage is the damage and not a build that never worked.
+    drive_pinned "$name" "$out" >/dev/null || fail "$name: the undamaged build did not pass; a negative control proves nothing"
+    damage "$name" "$out" "$mode"
+  fi
   local log rc
-  # shellcheck disable=SC2046  # pins_of prints separate words
-  log=$(drive --root "$out" --layout "$(layout_of "$name")" --timeout 45000 $(pins_of "$name") 2>&1)
+  log=$(drive_pinned "$name" "$out" 2>&1)
   rc=$?
   printf '%s\n' "$log" | cut -c1-600
   if [ -z "$mode" ]; then
@@ -136,7 +148,11 @@ run_one() { # run_one <name> <negative-mode|"">
     # read 2.
     [ "$rc" -eq 1 ] || fail "$name ($mode): the driver exited $rc, expected 1 (a damaged build must fail)"
     printf '%s\n' "$log" | grep -q "driver error" && fail "$name ($mode): a driver error, not a verdict"
-    printf '%s\n' "$log" | grep -q "FAIL: .*$ASSET_STEM" || fail "$name ($mode): the verdict names no worker asset failure"
+    # The page must have ATTEMPTED the damaged asset and been refused (a 404),
+    # and the compiler's own output must have loaded: a build that never got as
+    # far as starting the worker is a different failure.
+    printf '%s\n' "$log" | grep -q "FAIL: worker asset request failed: 404 .*$ASSET_STEM" || fail "$name ($mode): no 404 for a worker asset in the verdict"
+    printf '%s\n' "$log" | grep -q "required request not served" && fail "$name ($mode): the compiler's output never loaded"
     printf '%s\n' "$log" | grep -q '"result":"2"' && fail "$name ($mode): the damaged page still read 2"
     echo "PASS $name ($mode): failed as it must"
   fi

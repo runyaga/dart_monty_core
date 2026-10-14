@@ -131,12 +131,17 @@ try {
   const consoleErrors = [];
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
-    if (m.method === 'Runtime.exceptionThrown') consoleErrors.push('exception: ' + (m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text));
-    if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push('console.error: ' + m.params.args.map(x => x.value ?? x.description).join(' '));
-    if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') consoleErrors.push(`log: ${m.params.entry.text} ${m.params.entry.url ?? ''}`);
+    if (m.method === 'Runtime.exceptionThrown') consoleErrors.push({ kind: 'exception', text: 'exception: ' + (m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text) });
+    if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') consoleErrors.push({ kind: 'console', text: 'console.error: ' + m.params.args.map(x => x.value ?? x.description).join(' ') });
+    if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') consoleErrors.push({ kind: 'log', text: `log: ${m.params.entry.text} ${m.params.entry.url ?? ''}`, source: m.params.entry.source, message: m.params.entry.text, url: m.params.entry.url ?? '' });
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); }
   };
-  await new Promise(r => (ws.onopen = r));
+  await new Promise((ok, bad) => {
+    ws.onopen = ok;
+    ws.onerror = () => bad(new Error('the DevTools socket failed to open'));
+    ws.onclose = () => bad(new Error('the DevTools socket closed before it opened'));
+    setTimeout(() => bad(new Error('the DevTools socket did not open in 15s')), 15000);
+  });
   // Every CDP command is bounded and fails when the socket closes, so a hung
   // renderer or a dead Chrome reaches cleanup instead of waiting forever.
   const send = (method, params = {}) => new Promise((ok, bad) => {
@@ -178,8 +183,11 @@ try {
   }
   for (const r of requests) if (r.status >= 400 && !allowed404.has(r.path) && !r.path.includes(WORKER)) failures.push(`request failed: ${r.status} ${r.path}`);
   for (const e of consoleErrors) {
-    if (/Failed to load resource/.test(e) && [...allowed404].some(p => e.includes(p))) continue;
-    failures.push(e.slice(0, 400));
+    // Only Chrome's own network-error entry for a permitted 404 is exempt; an
+    // application's console.error or an exception never is.
+    if (e.kind === 'log' && e.source === 'network' && /^Failed to load resource/.test(e.message)
+        && [...allowed404].some(p => e.url === `${origin}${p}`)) continue;
+    failures.push(e.text.slice(0, 400));
   }
   ws.close();
 } catch (e) {
