@@ -84,9 +84,21 @@ bool acceptsFuture(String name) =>
 typedef OsCallParts = (String, List<MontyValue>, Map<String, MontyValue>);
 
 /// [call]'s OS function name, positional and keyword arguments, as upstream
-/// presents an OS call to a host (`OsFunctionCall::to_args`). Throws
-/// [FormatException] for a call with no arm set.
-OsCallParts osCallParts(pb.OsCall call) {
+/// presents an OS call to a host (`OsFunctionCall::to_args`), host objects
+/// resolved through [hosts]. Throws [FormatException] for a call with no
+/// arm set.
+OsCallParts osCallParts(pb.OsCall call, {HostObjectLookup? hosts}) {
+  if (call.whichCall() == pb.OsCall_Call.getenv) {
+    // The default is any value, a host object's included.
+    return (
+      'os.getenv',
+      [
+        MontyString(call.getenv.key),
+        ArenaReader(call.values, hosts: hosts)[call.getenv.default_2],
+      ],
+      _noKwargs,
+    );
+  }
   final parts = _osCalls[call.whichCall()];
   if (parts == null) {
     throw const FormatException('invalid OS call payload: no call');
@@ -168,11 +180,6 @@ final Map<pb.OsCall_Call, OsCallParts Function(pb.OsCall)> _osCalls = {
   pb.OsCall_Call.rename: (c) => (
     'Path.rename',
     [_path(c.rename.src), _path(c.rename.dst)],
-    _noKwargs,
-  ),
-  pb.OsCall_Call.getenv: (c) => (
-    'os.getenv',
-    [MontyString(c.getenv.key), ArenaReader(c.values)[c.getenv.default_2]],
     _noKwargs,
   ),
   pb.OsCall_Call.getEnviron: (_) => ('os.environ', const [], _noKwargs),
@@ -378,7 +385,7 @@ final class HostAnswers {
     if (handler == null) return _notHandled(call.callId);
     final OsCallParts parts;
     try {
-      parts = osCallParts(call);
+      parts = osCallParts(call, hosts: objects.lookup);
     } on Object catch (error) {
       return _failed(call.callId, error);
     }

@@ -345,13 +345,13 @@ final class ClassType<T extends Object> {
 
   /// The class constants sent with the class: `'all'` sends every public
   /// one, a list exactly those, each through [convertValue].
-  Map<String, Object> eagerAttributes() => _convertAll(this, {
+  Map<String, Object> eagerAttributes() => _convertAll(this, [
     for (final name in _eagerNames(
       policies.eagerAttrs,
       value.attributes.keys,
     ))
-      name: _attribute(name),
-  });
+      (name, _attribute(name)),
+  ]);
 
   /// A lazy class attribute; `AttributeError` when [name] is not exposed.
   Object lookupLazyAttr(String name) {
@@ -447,10 +447,10 @@ final class ClassInstance<T extends Object> {
 
   /// The attributes sent with the instance: `'all'` sends every public
   /// field, a list exactly those names, each through [convertValue].
-  Map<String, Object> eagerAttributes() => _convertAll(this, {
+  Map<String, Object> eagerAttributes() => _convertAll(this, [
     for (final name in _eagerNames(policies.eagerAttrs, _members.fields.keys))
-      name: _attribute(name),
-  });
+      (name, _attribute(name)),
+  ]);
 
   /// A lazy attribute; `AttributeError` when [name] is not exposed. Any
   /// other throw is raised in the sandbox.
@@ -467,7 +467,14 @@ final class ClassInstance<T extends Object> {
     List<MontyValue> args,
     Map<String, MontyValue> kwargs,
   ) {
-    final method = _members.methods[name];
+    // As `getattr` on an instance finds the class's classmethods and
+    // staticmethods too.
+    final method =
+        _members.methods[name] ??
+        switch (classType.value.methods[name]) {
+          final HostMethod m => (T _, a, k) => m(a, k),
+          null => null,
+        };
     if (name == '__call__' ||
         method == null ||
         !_allows(policies.allowedMethods, name)) {
@@ -495,9 +502,13 @@ final class ClassInstance<T extends Object> {
 }
 
 /// [raw], every value read first, then each through [wrapper]'s hook, as
-/// upstream's `get_eager_attrs` reads them all before converting.
-Map<String, Object> _convertAll(Object wrapper, Map<String, Object> raw) => {
-  for (final MapEntry(:key, :value) in raw.entries)
+/// upstream's `get_eager_attrs` reads them all before converting: a name
+/// listed twice is read and converted twice, and the later value is kept.
+Map<String, Object> _convertAll(
+  Object wrapper,
+  List<(String, Object)> raw,
+) => {
+  for (final (key, value) in raw)
     key: switch (wrapper) {
       ClassInstance() => wrapper.convertValue(key, value),
       ClassType() => wrapper.convertValue(key, value),

@@ -886,6 +886,7 @@ final class _FeedDrive implements SnapshotDriver {
         script,
         event.osCall,
         _session._hold.lease,
+        _host.objects.lookup,
       ),
       pb.ChildEvent_Kind.nameLookup => NameLookupSnapshot(
         this,
@@ -937,10 +938,11 @@ FunctionSnapshot _osSnapshot(
   String script,
   pb.OsCall call,
   WorkerLease lease,
+  HostObjectLookup hosts,
 ) {
   final OsCallParts parts;
   try {
-    parts = osCallParts(call);
+    parts = osCallParts(call, hosts: hosts);
   } on FormatException catch (error) {
     lease.kill();
     throw protocolError('invalid OS call payload: ${error.message}');

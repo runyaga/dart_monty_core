@@ -81,10 +81,6 @@ final HostClass<Point> pointClass = HostClass(
       'later': (p, args, kwargs) => Future.value(MontyInt(p.x * 10)),
       'fails': (p, args, kwargs) =>
           throw const ExternalException('ValueError', 'no sum today'),
-      // A classmethod and a staticmethod are functions on the class, so an
-      // instance's 'all' reaches them too.
-      'describe': (p, args, kwargs) => _describe(args, kwargs),
-      'add': (p, args, kwargs) => _add(args, kwargs),
     },
   ),
   attributes: {'ORIGIN_NAME': () => const MontyString('origin')},

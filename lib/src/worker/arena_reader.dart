@@ -41,6 +41,8 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart'
+    show ClassInstance, ClassType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
@@ -354,32 +356,55 @@ final class _Builder {
     final id = uuidString(node.instanceId.data);
     final found = _hosts?.instance(id);
     if (found is MontyValue) return _registered[_built.length] = found;
-    if ((found, _carriers[found]) case (
-      final Object host,
-      final MontyClassInstance carrier,
-    )) {
-      _registered[_built.length] = host;
-
-      return carrier;
-    }
     // Stage 2 made the instance's class a class node, built before it.
     final classNode = _built.elementAtOrNull(node.classType);
     final meta = classNode is _ClassNode ? classNode.meta : null;
-    if (meta is! MontyClassType) return meta ?? (throw StateError('$node'));
     final attrs = _attrs(node.attrs.pairs);
+    if (found != null) return _hostInstance(found, node, meta, attrs);
+    if (meta is! MontyClassType) return meta ?? (throw StateError('$node'));
     if (attrs is _Staged) return attrs;
-    final proxy = MontyClassInstance(
+
+    return MontyClassInstance(
       classType: meta,
       instanceId: id,
       attrs: attrs as Map<String, MontyValue>,
     );
-    if (found != null) {
-      _registered[_built.length] = found;
-      _hostObjects[proxy] = found;
-      _carriers[found] = proxy;
-    }
+  }
 
-    return proxy;
+  /// The node of a registered host object [found]: one proxy per wrapped
+  /// object, keyed by that object, whatever the node's attributes. Upstream
+  /// decodes it to the original object without reading them, so a staged
+  /// attribute leaves the proxy without attributes instead of failing.
+  MontyClassInstance _hostInstance(
+    Object found,
+    pb.ClassInstanceNode node,
+    Object? meta,
+    Object attrs,
+  ) {
+    final key = switch (found) {
+      ClassInstance(:final value) => value,
+      ClassType(:final value) => value,
+      _ => found,
+    };
+    _registered[_built.length] = key;
+    if (_carriers[key] case final carrier?) return carrier;
+    final type = _nodeAt(_nodes, node.classType).type;
+    final proxy = MontyClassInstance(
+      classType: meta is MontyClassType
+          ? meta
+          : MontyClassType(
+              name: type.name,
+              id: uuidString(type.id.data),
+              hostDefined: type.origin == originHost,
+              isDataclass: type.isDataclass,
+              attrs: const {},
+            ),
+      instanceId: uuidString(node.instanceId.data),
+      attrs: attrs is Map<String, MontyValue> ? attrs : const {},
+    );
+    _hostObjects[proxy] = found;
+
+    return _carriers[key] = proxy;
   }
 
   /// [host], recorded as what the node being built resolved to.

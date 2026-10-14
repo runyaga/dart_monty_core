@@ -124,6 +124,13 @@ final HostClass<_Box> _slow = HostClass(
 final HostClass<_Box> _constClass = HostClass(
   'Box',
   attributes: {'KIND': () => const MontyString('box')},
+  methods: {'describe': (args, kwargs) => const MontyString('a box')},
+);
+
+/// A class whose one field is a class.
+final HostClass<_Box> _withClassField = HostClass(
+  'Box',
+  instance: HostMembers(fields: {'kind': (b) => ClassType(_constClass)}),
 );
 
 /// A class whose field reads are recorded in [order].
@@ -335,6 +342,29 @@ void main() {
       expect(box.lookupLazyAttr('KIND'), const MontyString('box'));
     });
 
+    test('a name listed twice is read and converted twice', () {
+      var calls = 0;
+      final attrs = ClassInstance(
+        _Box(1),
+        classType: ClassType(_boxClass),
+        policies: const HostPolicies(eagerAttrs: ['n', 'n']),
+        convertValue: (name, value) => MontyInt(++calls),
+      ).eagerAttributes();
+      expect(attrs, {'n': const MontyInt(2)});
+    });
+
+    test('an instance reaches its class methods, as getattr does', () async {
+      final box = ClassInstance(
+        _Box(1),
+        classType: ClassType(_constClass),
+        policies: const HostPolicies(allowedMethods: 'all'),
+      );
+      expect(
+        await box.callMethod('describe', const [], const {}),
+        const MontyString('a box'),
+      );
+    });
+
     test('eager attributes are all read before the hook runs', () {
       final order = <String>[];
       ClassInstance(
@@ -448,6 +478,54 @@ void main() {
       expect(identical(reader[first], reader[second]), isTrue);
       final members = (reader[second + 1] as MontySet).items;
       expect(members, hasLength(1));
+    });
+
+    test('two wrappers of one object decode as one object and one key', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      final shared = _Box(1);
+      final a = writer.add(_box(1, value: shared));
+      final b = writer.add(_box(2, value: shared));
+      final arena = writer.arena;
+      final nodes = arena.nodes
+        ..add(pb.MontyNode(set: pb.Indexes(items: [a, b])));
+      arena.nodeCount = nodes.length;
+      final reader = ArenaReader(arena, hosts: objects.lookup);
+      expect((reader[nodes.length - 1] as MontySet).items, hasLength(1));
+    });
+
+    test('a registered instance decodes whatever its attributes hold', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      // A class as an attribute value has no value class yet (staged).
+      final box = ClassInstance(
+        _Box(1),
+        classType: ClassType(_withClassField),
+        id: _id(9),
+        policies: const HostPolicies(eagerAttrs: 'all'),
+      );
+      final index = writer.add(box);
+      final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
+      expect(hostObjectOf(decoded), same(box));
+      expect(
+        () => ArenaReader(writer.arena)[index],
+        throwsA(isA<UnsupportedError>()),
+      );
+    });
+
+    test('an os.getenv default resolves a registered object', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      final box = _box(1);
+      final index = writer.add(box);
+      final (_, args, _) = osCallParts(
+        pb.OsCall(
+          getenv: pb.OsCall_Getenv(key: 'K', default_2: index),
+          values: writer.arena,
+        ),
+        hosts: objects.lookup,
+      );
+      expect(hostObjectOf(itemAt(args, 1)), same(box));
     });
 
     test('a refused instance registers neither it nor its class', () {
