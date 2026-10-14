@@ -115,6 +115,20 @@ final class HostObjects {
   }
 }
 
+/// A method read as an attribute, as `getattr` returns a bound method or a
+/// classmethod: callable from Dart, and sent into the sandbox as a function
+/// named [name], as upstream's encoder sends any callable.
+final class BoundMethod {
+  /// [function], read under [name].
+  const BoundMethod(this.name, this.function);
+
+  /// The attribute name it was read under.
+  final String name;
+
+  /// The method, its receiver bound.
+  final HostMethod function;
+}
+
 /// A class-level method: a classmethod or staticmethod upstream.
 typedef HostMethod =
     FutureOr<Object> Function(
@@ -406,8 +420,10 @@ final class ClassType<T extends Object> {
   /// What `getattr` on the class finds: a constant, else a classmethod.
   Object _attribute(String name) =>
       value.attributes[name]?.call() ??
-      value.methods[name] ??
-      (throw _error(name));
+      switch (value.methods[name]) {
+        final HostMethod m => BoundMethod(name, m),
+        null => throw _error(name),
+      };
 
   ExternalException _error(String name) =>
       _noAttribute("type object '${value.name}'", name);
@@ -496,6 +512,7 @@ final class ClassInstance<T extends Object> {
   /// The attribute [name] as a callable: a [HostMethod] it holds, or
   /// `TypeError` for any other value.
   HostMethod _callable(String name) => switch (_attribute(name)) {
+    BoundMethod(:final function) => function,
     final HostMethod m => m,
     final other => throw ExternalException(
       'TypeError',
@@ -508,7 +525,7 @@ final class ClassInstance<T extends Object> {
   Object _attribute(String name) {
     final read = _members.fields[name] ?? _members.properties[name];
     if (read != null) return read(value);
-    if (_method(name) case final method?) return method;
+    if (_method(name) case final method?) return BoundMethod(name, method);
     final constant = classType.value.attributes[name];
 
     return (constant ?? (throw _error(name)))();

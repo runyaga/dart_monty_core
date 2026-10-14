@@ -449,7 +449,7 @@ void main() {
         classType: ClassType(_boxClass),
         policies: const HostPolicies(eagerAttrs: ['bump'], lazyAttrs: ['bump']),
         convertValue: (name, value) =>
-            value is HostMethod ? const MontyString('callable') : value,
+            value is BoundMethod ? const MontyString('callable') : value,
       );
       expect(read.eagerAttributes(), {'bump': const MontyString('callable')});
       expect(read.lookupLazyAttr('bump'), const MontyString('callable'));
@@ -457,9 +457,38 @@ void main() {
         _constClass,
         policies: const HostPolicies(lazyAttrs: ['describe']),
         convertValue: (name, value) =>
-            value is HostMethod ? const MontyString('classmethod') : value,
+            value is BoundMethod ? const MontyString('classmethod') : value,
       );
       expect(type.lookupLazyAttr('describe'), const MontyString('classmethod'));
+    });
+
+    test('a method read without a hook crosses as a function', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      final index = writer.add(
+        ClassInstance(
+          _Box(1),
+          classType: ClassType(_boxClass),
+          policies: const HostPolicies(eagerAttrs: ['bump']),
+        ),
+      );
+      final nodes = writer.arena.nodes;
+      final value = itemAt(
+        nodes,
+        onlyItem(itemAt(nodes, index).classInstance.attrs.pairs).value,
+      );
+      expect(value.function.name, 'bump');
+      // Lazily, through the session's answer.
+      writer.add(
+        _box(5, policies: const HostPolicies(lazyAttrs: ['bump'])),
+      );
+      final lookup = HostAnswers(
+        objects: objects,
+      ).lookup('bump', objectId: _id(5)).resumeNameLookup;
+      expect(
+        itemAt(lookup.values.nodes, lookup.value).function.name,
+        'bump',
+      );
     });
 
     test('a class serves its constants lazily', () {

@@ -143,6 +143,7 @@ final class ArenaWriter {
   /// container and returns null.
   int? _step(Object child, Set<Object> open, List<_Frame> stack) {
     if (child is MontyClassType) return _enterClass(child, open, stack);
+    if (child is BoundMethod) return _emit(functionNode(child.name));
     if (child is _HostClass) return _enterHostClass(child, open, stack);
     if (child is ClassType<Object>) {
       return _enterHostClass(_HostClass.of(child), open, stack);
