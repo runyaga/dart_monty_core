@@ -54,15 +54,35 @@ if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
   echo "FAIL: no successful push CI run for ${HEAD_SHA:0:7} yet. Wait for it."
   exit 1
 fi
+# Provenance, for a run found above and for one passed with --run-id alike: it
+# must be the successful push-CI run of main at THIS commit, or the recorded
+# floor could be stale or come from an unrelated branch.
+META="$(gh run view "$RUN_ID" -R "$REPO" --json headSha,headBranch,event,conclusion,workflowName \
+  --jq '[.headSha,.headBranch,.event,.conclusion,.workflowName]|join(" ")')" ||
+  { echo "FAIL: cannot read run $RUN_ID"; exit 1; }
+if [ "$META" != "$HEAD_SHA main push success CI" ]; then
+  echo "FAIL: run $RUN_ID is '$META', not the successful push CI run of main at $HEAD_SHA"
+  exit 1
+fi
 
 TMP="$(mktemp -d)"
 trap '/bin/rm -rf "$TMP"' EXIT
-gh run download "$RUN_ID" -R "$REPO" -n lcov-merged -D "$TMP" 2>/dev/null
-if [ ! -s "$TMP/honest.info" ]; then
-  echo "note: run $RUN_ID has no lcov-merged artifact (a docs-only merge skips"
-  echo "      the coverage job). Nothing to record."
-  exit 0
+if ! gh run download "$RUN_ID" -R "$REPO" -n lcov-merged -D "$TMP"; then
+  # No artifact is fine ONLY when the coverage job legitimately did not run
+  # (a docs-only merge). Anything else (expired artifact, auth, network) is a
+  # failure, not a skip.
+  CONC="$(gh run view "$RUN_ID" -R "$REPO" --json jobs \
+    --jq '[.jobs[] | select(.name | startswith("Coverage (merged")) | .conclusion][0]')" || exit 1
+  if [ "$CONC" = "skipped" ]; then
+    echo "note: the coverage job was skipped in run $RUN_ID (docs-only merge)."
+    echo "      Nothing to record."
+    exit 0
+  fi
+  echo "FAIL: could not download lcov-merged from run $RUN_ID (coverage job: ${CONC:-absent})."
+  echo "      Artifacts expire after one day; re-run CI on main, then retry."
+  exit 1
 fi
+[ -s "$TMP/honest.info" ] || { echo "FAIL: artifact has no honest.info"; exit 1; }
 
 # The artifact was written on a CI runner, so its SF: paths are the runner's
 # absolute checkout. Re-root them onto this checkout; every measured file is
@@ -81,6 +101,13 @@ if [ "$DRY" = "1" ]; then
 fi
 git add tool/coverage-baseline.json &&
   git commit -q -m "chore(coverage): record baseline at ${HEAD_SHA:0:7}" \
-    -- tool/coverage-baseline.json &&
-  git push origin main || { echo "FAIL: commit or push refused"; exit 1; }
+    -- tool/coverage-baseline.json || { echo "FAIL: commit failed"; exit 1; }
+if ! git push origin main; then
+  # Branch protection refused it (the pusher is not allowed to bypass required
+  # checks). Leave main exactly as it was; the baseline stays where it is.
+  git reset -q --hard "$HEAD_SHA"
+  echo "FAIL: push to main refused; local main reset. Branch protection must"
+  echo "      let the maintainer running this script push to main."
+  exit 1
+fi
 echo "recorded baseline at ${HEAD_SHA:0:7}"

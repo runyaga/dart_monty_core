@@ -209,7 +209,9 @@ void main(List<String> args) {
             .listSync()
             .whereType<File>()
             .where(
-              (f) => f.path.endsWith('.md') && !f.path.endsWith('README.md'),
+              (f) =>
+                  f.path.endsWith('.md') &&
+                  f.uri.pathSegments.last != 'README.md',
             )
             .toList()
           ..sort((a, b) => a.path.compareTo(b.path)))

@@ -11,7 +11,7 @@
 #   1. A PR that changes lib/ adds at least one changes/<slug>.md, unless it has
 #      the `no-changelog` label or a PR-body line starting `no-changelog`.
 #   2. A PR does not edit CHANGELOG.md, unless it has the `changelog-assembly`
-#      label (the assembly or release PR).
+#      label (the assembly or release PR). That label waives only this rule.
 #   3. Every changes/*.md in the tree is well formed: it starts with a
 #      `### <Section>` header (Added, Changed, Fixed, Breaking, Removed,
 #      Deprecated, Security or Internal) and every section has a body.
@@ -35,7 +35,14 @@ lint_fragments() {
   local rc=0 f n=0
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    case "$f" in changes/README.md) continue ;; esac
+    case "$f" in
+      changes/README.md) continue ;;
+      changes/*/*) echo "  $f: nested paths are not assembled; use changes/<slug>.md"
+                   rc=1; continue ;;
+      changes/*.md) ;;
+      *) echo "  $f: only changes/<slug>.md files belong in changes/"
+         rc=1; continue ;;
+    esac
     n=$((n + 1))
     if ! python3 -I - "$REPO/$f" "$SECTIONS" <<'PY'
 import re, sys
@@ -48,21 +55,22 @@ if first is None or not hdr.match(first):
     print(f'  {path}: must start with a "### <Section>" header '
           f'({sections.replace("|", ", ")})')
     sys.exit(1)
-body, ok = None, True
-for l in lines + ['### End']:
+cur, has_body, ok = None, False, True
+for l in lines:
     if l.startswith('### '):
-        if body is not None and not body:
-            print(f'  {path}: a section has no body'); ok = False
-        body = False if hdr.match(l) or l == '### End' else None
-        if not hdr.match(l) and l != '### End':
+        if cur is not None and not has_body:
+            print(f'  {path}: section "{cur}" has no body'); ok = False
+        if not hdr.match(l):
             print(f'  {path}: unknown section header {l!r}'); ok = False
-            body = True
-    elif body is False and l.strip():
-        body = True
+        cur, has_body = l[4:].strip(), False
+    elif l.strip():
+        has_body = True
+if cur is not None and not has_body:
+    print(f'  {path}: section "{cur}" has no body'); ok = False
 sys.exit(0 if ok else 1)
 PY
     then rc=1; fi
-  done < <(git -C "$REPO" ls-files 'changes/*.md'; git -C "$REPO" ls-files -o --exclude-standard 'changes/*.md')
+  done < <({ git -C "$REPO" ls-files 'changes/*'; git -C "$REPO" ls-files -o --exclude-standard 'changes/*'; } | sort -u)
   return $rc
 }
 
@@ -76,6 +84,7 @@ check_pr() {
       lib/*) lib=1 ;;
       CHANGELOG.md) chg=1 ;;
       changes/README.md) ;;
+      changes/*/*) ;;
       changes/*.md) [ "$status" = "A" ] && frag=$((frag + 1)) ;;
     esac
   done < <(git -C "$REPO" diff --name-status --no-renames "$mb" HEAD)
@@ -93,8 +102,6 @@ check_pr() {
     if has_label no-changelog ||
        printf '%s\n' "$body" | grep -qiE '^[[:space:]]*no-changelog\b'; then
       echo "note: lib/ changed with no fragment; exempt (no-changelog)."
-    elif has_label changelog-assembly; then
-      echo "note: lib/ changed with no fragment; exempt (changelog-assembly)."
     else
       echo "FAIL: this PR changes lib/ but adds no changes/<slug>.md."
       echo "      Add one (see changes/README.md), or label the PR no-changelog"
@@ -145,6 +152,12 @@ self_test() {
   run "malformed fragment: must FAIL" 1 '["no-changelog"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n' > "$tmp/changes/empty.md"; commit
   run "fragment header with no body: must FAIL" 1 '[]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; echo x >> "$tmp/CHANGELOG.md"; commit
+  run "lib change, assembly label alone: must FAIL" 1 '["changelog-assembly"]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n### End\n\n- y\n' > "$tmp/changes/end.md"; commit
+  run "unknown section header: must FAIL" 1 '[]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
+  run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
   [ "$rc" = 0 ] && lint_fragments && echo "self-test passed" || rc=1
   return $rc
 }

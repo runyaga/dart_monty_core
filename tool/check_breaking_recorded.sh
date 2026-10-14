@@ -45,7 +45,10 @@ FLAT="$(mktemp)"
 trap 'rm -f "$FLAT"' EXIT
 # A breaking PR's anchor lives in its changes/<slug>.md fragment until release
 # assembly folds the fragment into CHANGELOG.md, so both are searched.
-{ cat "$CHANGELOG"; cat "$PKG"/changes/*.md 2>/dev/null || true; } |
+{ cat "$CHANGELOG"
+  for f in "$PKG"/changes/*.md; do
+    [ -f "$f" ] && [ "$(basename "$f")" != README.md ] && cat "$f"
+  done; true; } |
   tr '\n' ' ' | tr -s ' ' > "$FLAT"
 
 BASE="${1:-}"

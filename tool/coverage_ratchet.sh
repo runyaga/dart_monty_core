@@ -263,10 +263,22 @@ if violations:
 # fails on decreases, against the BASE branch's copy, above.
 own = json.load(open(own_baseline_path)) if os.path.exists(own_baseline_path) \
     else base
-if own['total']['pct'] > bt['pct']:
-    print(f"note: this branch's own baseline file ({own['total']['pct']}%) is "
-          f"above the base's ({bt['pct']}%). It is ignored: PRs do not commit "
-          f"the baseline; main records it after merge.")
+if own_baseline_path != baseline_path:
+    # A PR may not LOWER the floor it hands to the next PR. A rise is ignored
+    # (main records it after merge); a lowered file or total is refused.
+    lowered = [f for f, v in own['by_file'].items()
+               if f in bf and v['pct'] < bf[f]['pct']]
+    if own['total']['pct'] < bt['pct'] or lowered:
+        print('FAIL: this branch lowers tool/coverage-baseline.json below the')
+        print('  base branch\'s. A PR does not edit the baseline; restore it:')
+        print('    git checkout origin/main -- tool/coverage-baseline.json')
+        for f in lowered[:10]:
+            print(f"    {f}: {bf[f]['pct']}% -> {own['by_file'][f]['pct']}%")
+        sys.exit(1)
+    if own['total']['pct'] > bt['pct']:
+        print(f"note: this branch's own baseline file ({own['total']['pct']}%) "
+              f"is above the base's ({bt['pct']}%). It is ignored: PRs do not "
+              f"commit the baseline; main records it after merge.")
 
 print('PASS — no file below its baseline')
 PY
