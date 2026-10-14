@@ -129,9 +129,10 @@ void main() {
         final failed = expectLater(run, throwsA(isA<StateError>()));
         await entered.future;
         await session.close();
+        // The call fails with the close; the callback has not returned.
+        await failed.timeout(const Duration(seconds: 5));
         expect(pool.idleWorkers, 1);
         release.complete(const MontyInt(1));
-        await failed;
         expect(
           await pool.withSession(
             (s) => s.feedRun('7', printCallback: _ignore),
@@ -297,4 +298,217 @@ void main() {
     expect(logged.join(), 'ab\n');
     expect(errored.join(), 'e\n');
   });
+  group('print failure (upstream binding)', () {
+    test('then completion: the failure wins, the session runs on '
+        '($_backend)', () async {
+      await MontyPool.withPool(
+        (pool) => pool.withSession(
+          (s) async {
+            final seen = <String>[];
+            await expectLater(
+              s.feedRun(
+                "print('a')\nprint('b')\nx = 41\nx + 1",
+                printCallback: (stream, text) {
+                  seen.add(text);
+                  throw StateError('sink');
+                },
+              ),
+              throwsA(
+                isA<StateError>().having((e) => e.message, 'message', 'sink'),
+              ),
+            );
+            expect(seen, hasLength(1));
+            expect(
+              await s.feedRun('x', printCallback: _ignore),
+              const MontyInt(41),
+            );
+          },
+          options: _limits,
+        ),
+        options: const PoolOptions(maxProcesses: 1),
+      );
+    });
+
+    test('then a suspension: the session is discarded ($_backend)', () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(options: _limits);
+          var calls = 0;
+          await expectLater(
+            session.feedRun(
+              "print('a')\nf()\n7",
+              externals: {'f': (args, kwargs) => MontyInt(++calls)},
+              printCallback: (stream, text) => throw StateError('sink'),
+            ),
+            throwsA(
+              isA<StateError>().having((e) => e.message, 'message', 'sink'),
+            ),
+          );
+          expect(calls, 0);
+          expect(pool.liveWorkers, 0);
+          await expectLater(
+            session.feedRun('1', printCallback: _ignore),
+            throwsA(isA<StateError>()),
+          );
+          await session.close();
+          expect(
+            await pool.withSession(
+              (s) => s.feedRun('2', printCallback: _ignore),
+              options: _limits,
+            ),
+            const MontyInt(2),
+          );
+        },
+        options: const PoolOptions(maxProcesses: 1),
+      );
+    });
+  });
+
+  group('print stall (gate)', () {
+    for (final byClose in [false, true]) {
+      final how = byClose ? 'close' : 'requestTimeout';
+      test('a callback that never completes, ended by $how: the call '
+          'fails, the slot serves a new checkout ($_backend)', () async {
+        await MontyPool.withPool(
+          (pool) async {
+            final session = await pool.checkout(options: _limits);
+            final entered = Completer<void>();
+            final never = Completer<void>();
+            final run = session.feedRun(
+              "print('x')\n1",
+              printCallback: (stream, text) {
+                if (!entered.isCompleted) entered.complete();
+
+                return never.future;
+              },
+            );
+            final failed = expectLater(
+              run,
+              throwsA(
+                isA<MontyCrashedError>().having(
+                  (e) => e.cause,
+                  'cause',
+                  CrashCause.killed,
+                ),
+              ),
+            );
+            await entered.future;
+            if (byClose) await session.close();
+            await failed.timeout(const Duration(seconds: 10));
+            expect(pool.liveWorkers, 0);
+            expect(
+              await pool.withSession(
+                (s) => s.feedRun('1 + 1', printCallback: _ignore),
+                options: _limits,
+              ),
+              const MontyInt(2),
+            );
+            never.complete();
+            await session.close();
+          },
+          options: PoolOptions(
+            maxProcesses: 1,
+            requestTimeout: byClose ? null : const Duration(seconds: 1),
+          ),
+        );
+      });
+    }
+  });
+
+  group('close while busy (q8 gates)', () {
+    test('during a turn, after feedRun(...).timeout: close ends it '
+        '($_backend)', () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(options: _limits);
+          await expectLater(
+            session
+                .feedRun('while True:\n    pass', printCallback: _ignore)
+                .timeout(const Duration(milliseconds: 300)),
+            throwsA(isA<TimeoutException>()),
+          );
+          await session.close().timeout(const Duration(seconds: 5));
+          expect(pool.liveWorkers, 0);
+          expect(
+            await pool.withSession(
+              (s) => s.feedRun('4', printCallback: _ignore),
+              options: _limits,
+            ),
+            const MontyInt(4),
+          );
+        },
+        options: const PoolOptions(maxProcesses: 1),
+      );
+    });
+
+    test('during an unresolved host call: the call fails at once, close '
+        'returns, the worker is reset and reused ($_backend)', () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(options: _limits);
+          final entered = Completer<void>();
+          final run = session.feedRun(
+            'x = 1\nnever()',
+            externals: {
+              'never': (args, kwargs) {
+                entered.complete();
+
+                return Completer<MontyValue>().future;
+              },
+            },
+            printCallback: _ignore,
+          );
+          await entered.future;
+          final failed = expectLater(run, throwsA(isA<StateError>()));
+          await session.close().timeout(const Duration(seconds: 5));
+          // The pending call fails at once; the callback never returns.
+          await failed.timeout(const Duration(seconds: 5));
+          expect(pool.idleWorkers, 1);
+          await pool.withSession(
+            (s) async {
+              await expectLater(
+                s.feedRun('x', printCallback: _ignore),
+                throwsA(isA<MontyRuntimeError>()),
+              );
+            },
+            options: _limits,
+          );
+          expect(pool.liveWorkers, 1);
+        },
+        options: const PoolOptions(maxProcesses: 1),
+      );
+    });
+
+    test('twice: the second close is a no-op ($_backend)', () async {
+      await MontyPool.withPool(
+        (pool) async {
+          final session = await pool.checkout(options: _limits);
+          final run = session.feedRun(
+            'while True:\n    pass',
+            printCallback: _ignore,
+          );
+          final failed = expectLater(run, throwsA(isA<MontyCrashedError>()));
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await Future.wait([session.close(), session.close()]);
+          await session.close();
+          await failed;
+          expect(pool.liveWorkers, 0);
+          expect(
+            await pool.withSession(
+              (s) => s.feedRun('5', printCallback: _ignore),
+              options: _limits,
+            ),
+            const MontyInt(5),
+          );
+        },
+        options: const PoolOptions(maxProcesses: 1),
+      );
+    });
+  });
+
+  // The outbound outcomes are not repeated here: a real 257 MiB value is
+  // seconds of synchronous work in the page, which starves the other suites
+  // sharing the browser. The session's outcomes run on dart2js and dart2wasm
+  // in pool_session_test.dart, and the Worker channel's own refusal before
+  // posting in worker_connection_test.dart.
 }

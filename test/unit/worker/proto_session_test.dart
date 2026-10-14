@@ -273,35 +273,68 @@ void main() {
       },
     );
 
-    test('a throwing onPrint ends a feed that never finishes', () async {
-      // `while True: print('x')`: the turn only ends if the driver kills it.
+    test('a throwing onPrint before a completed turn keeps the worker; the '
+        'failure wins', () async {
       final ch = _configured([
-        hangAfter([
-          for (var i = 0; i < 1000; i++) printed([(_stdout, 'x\n')]),
+        answer([
+          printed([(_stdout, 'a')]),
+          printed([(_stdout, 'b')]),
+          complete([intNode(1)]),
+        ]),
+        answer([
+          complete([intNode(2)]),
         ]),
       ]);
       final s = await ProtoSession.open(ch);
       var calls = 0;
       await expectLater(
-        s
-            .feed(
-              'while True: print("x")',
-              onPrint: (_, _) {
-                calls++;
-                throw StateError('boom');
-              },
-            )
-            .timeout(const Duration(seconds: 5)),
+        s.feed(
+          'print("a"); print("b"); 1',
+          onPrint: (_, _) {
+            calls++;
+            throw StateError('boom');
+          },
+        ),
         throwsA(
           isA<StateError>().having((e) => e.message, 'message', 'boom'),
         ),
       );
-      expect(ch.kills, 1);
-      expect(
-        calls,
-        1,
-        reason: 'no more prints are delivered after the failure',
+      expect(calls, 1, reason: 'no more prints are delivered after it');
+      expect(ch.kills, 0);
+      expect((await s.feed('2')).value, const MontyInt(2));
+    });
+
+    test('a throwing onPrint drains an endless turn; its kill ends the feed '
+        'with the failure', () async {
+      // `while True: print('x')`: the turn only ends when it is killed (by a
+      // deadline, above this driver), and the print failure still wins.
+      final ch = _configured([
+        hangAfter([
+          for (var i = 0; i < 100; i++) printed([(_stdout, 'x\n')]),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      var calls = 0;
+      var done = false;
+      final feed = s.feed(
+        'while True: print("x")',
+        onPrint: (_, _) {
+          calls++;
+          throw StateError('boom');
+        },
       );
+      final failed = expectLater(
+        feed.whenComplete(() => done = true),
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'boom'),
+        ),
+      );
+      await pumpEventQueue(times: 300);
+      expect(done, isFalse);
+      expect(ch.kills, 0);
+      ch.kill();
+      await failed;
+      expect(calls, 1);
     });
 
     test('a name in externals resolves to a function node', () async {

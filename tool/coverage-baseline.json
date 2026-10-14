@@ -437,18 +437,18 @@
       "pct": 99.38
     },
     "lib/src/worker/pool_session.dart": {
-      "found": 187,
-      "hit": 183,
-      "pct": 97.86
+      "found": 196,
+      "hit": 192,
+      "pct": 97.96
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 210,
-      "hit": 204,
-      "pct": 97.14
+      "found": 212,
+      "hit": 206,
+      "pct": 97.17
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 211,
-      "hit": 211,
+      "found": 219,
+      "hit": 219,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -513,8 +513,8 @@
     }
   },
   "total": {
-    "found": 7489,
-    "hit": 6190,
-    "pct": 82.65
+    "found": 7508,
+    "hit": 6209,
+    "pct": 82.7
   }
 }
