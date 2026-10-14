@@ -278,29 +278,18 @@ if violations:
 # on main after merge (tool/record_coverage_baseline.sh), so the ratchet only
 # fails on decreases, against the BASE branch's copy, above.
 own = load_json(own_baseline_path) if os.path.exists(own_baseline_path) \
-    else base
+    else None
 if own_baseline_path != baseline_path:
-    # A PR may not LOWER the floor it hands to the next PR. A rise is ignored
-    # (main records it after merge); a lowered, dropped or deleted entry, or a
-    # lowered total, is refused.
-    if not os.path.exists(own_baseline_path):
-        print('FAIL: this branch deletes tool/coverage-baseline.json. Restore:')
-        print('    git checkout origin/main -- tool/coverage-baseline.json')
+    # A PR does not edit the baseline at all. A rise is not needed (main records
+    # it after merge), a lower floor would be inherited by the next PR, and a
+    # floor above measured coverage would fail main's own CI after the merge.
+    # A justified decrease is a maintainer's direct baseline commit on main.
+    if not os.path.exists(own_baseline_path) or own != base:
+        print('FAIL: this branch edits or deletes tool/coverage-baseline.json.')
+        print('  PRs do not touch the baseline; main records it after merge.')
+        print('  Restore it: git checkout origin/main -- '
+              'tool/coverage-baseline.json')
         sys.exit(1)
-    ob = own['by_file']
-    lowered = [f for f in bf if f not in ob or ob[f]['pct'] < bf[f]['pct']]
-    if own['total']['pct'] < bt['pct'] or lowered:
-        print('FAIL: this branch lowers tool/coverage-baseline.json below the')
-        print('  base branch\'s. A PR does not edit the baseline; restore it:')
-        print('    git checkout origin/main -- tool/coverage-baseline.json')
-        for f in lowered[:10]:
-            now = f"{ob[f]['pct']}%" if f in ob else 'removed'
-            print(f"    {f}: {bf[f]['pct']}% -> {now}")
-        sys.exit(1)
-    if own['total']['pct'] > bt['pct']:
-        print(f"note: this branch's own baseline file ({own['total']['pct']}%) "
-              f"is above the base's ({bt['pct']}%). It is ignored: PRs do not "
-              f"commit the baseline; main records it after merge.")
 
 print('PASS — no file below its baseline')
 PY

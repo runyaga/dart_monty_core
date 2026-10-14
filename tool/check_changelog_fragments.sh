@@ -11,7 +11,8 @@
 #   1. A PR that changes lib/ adds at least one changes/<slug>.md, unless it has
 #      the `no-changelog` label or a PR-body line starting `no-changelog`.
 #   2. A PR does not edit CHANGELOG.md, unless it has the `changelog-assembly`
-#      label (the assembly or release PR). That label waives only this rule.
+#      label (the assembly or release PR). That label also allows removing
+#      fragments already on the base branch, and waives nothing else.
 #   3. Every changes/*.md in the tree is well formed: it starts with a
 #      `### <Section>` header (Added, Changed, Fixed, Breaking, Removed,
 #      Deprecated, Security or Internal) and every section has a body.
@@ -92,7 +93,7 @@ PY
 }
 
 check_pr() {
-  local base="$1" mb rc=0 status path lib=0 chg=0 frag=0 f
+  local base="$1" mb rc=0 status path lib=0 chg=0 frag=0 oldfrag=0 f
   mb="$(git -C "$REPO" merge-base "$base" HEAD)" ||
     { echo "FAIL: no merge-base with $base (fetch-depth: 0?)"; return 1; }
   while IFS= read -r -d '' status && IFS= read -r -d '' path; do
@@ -102,7 +103,7 @@ check_pr() {
       CHANGELOG.md) chg=1 ;;
       changes/README.md) ;;
       changes/*/*) ;;
-      changes/*.md) [ "$status" = "A" ] && frag=$((frag + 1)) ;;
+      changes/*.md) if [ "$status" = "A" ]; then frag=$((frag + 1)); else oldfrag=1; fi ;;
     esac
   done < <(git -C "$REPO" diff -z --name-status --no-renames "$mb" HEAD)
 
@@ -114,6 +115,12 @@ check_pr() {
     echo "FAIL: this PR edits CHANGELOG.md. Add a fragment changes/<slug>.md"
     echo "      instead; CHANGELOG.md is assembled at release time. (An"
     echo "      assembly or release PR carries the changelog-assembly label.)"
+    rc=1
+  fi
+  if [ "$oldfrag" = 1 ] && ! has_label changelog-assembly; then
+    echo "FAIL: this PR deletes or edits a fragment that is already on the"
+    echo "      base branch. Only the assembly PR (changelog-assembly label)"
+    echo "      removes fragments; to correct one, add a new fragment."
     rc=1
   fi
   if [ "$lib" = 1 ] && [ "$frag" = 0 ]; then
@@ -188,6 +195,14 @@ self_test() {
   run "hidden fragment: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
   run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
+  # Fragments already on the base branch (a new base holding old.md).
+  reset; printf '### Added\n\n- y\n' > "$tmp/changes/old.md"; commit
+  base="$(git -C "$tmp" rev-parse HEAD)"
+  git -C "$tmp" rm -q changes/old.md && git -C "$tmp" commit -qm del
+  run "deletes a fragment from base: must FAIL" 1 '[]' ''
+  run "deletes a fragment, assembly label" 0 '["changelog-assembly"]' ''
+  reset; printf '### Added\n\n- z\n' > "$tmp/changes/old.md"; commit
+  run "rewrites a fragment from base: must FAIL" 1 '[]' ''
   [ "$rc" = 0 ] && lint_fragments && echo "self-test passed" || rc=1
   return $rc
 }
