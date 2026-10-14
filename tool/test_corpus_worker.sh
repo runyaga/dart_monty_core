@@ -35,6 +35,10 @@ case "$leg" in
   *) echo "usage: $0 native | {chrome|firefox} {dart2js|dart2wasm}" >&2; exit 2 ;;
 esac
 
+# package:test starts Firefox with a window; a runner with no display needs it
+# headless, which Firefox reads from the environment.
+[ "$leg" = firefox ] && export MOZ_HEADLESS=1
+
 log="$(mktemp)"
 trap '/bin/rm -f "$log"' EXIT
 dart test test/corpus "${args[@]}" --tags=corpus-worker 2>&1 | tee "$log"
