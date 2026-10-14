@@ -28,9 +28,10 @@ const floodPrints = 512;
 /// The text length of each of them: 64 KiB, so 32 MiB in all.
 const int floodPrintLength = 64 * 1024;
 
-/// The `exit-leaving-writer` descendant has written this many Prints, more
-/// than the channel's read-ahead limit holds, before its worker exits.
-const descendantReadyPrints = 72;
+/// The `exit-leaving-writer` descendant has written this many Prints before
+/// its worker exits: fewer than the channel's read-ahead limit holds (64), so
+/// writing them cannot block on a parent that has paused reading.
+const descendantReadyPrints = 48;
 
 /// The text length of the one `Print` the `big-frame` scenario sends in
 /// many chunks: 8 MiB.
@@ -178,10 +179,10 @@ Future<String> _handle(String scenario, pb.ParentRequest request) async {
           'writer',
           marker.path,
         ], mode: ProcessStartMode.inheritStdio);
-        // Exits only once the descendant has written past the parent's
-        // read-ahead limit, however long it took to start: a fixed wait
-        // loses that race on a loaded machine, and the drain then has
-        // nothing to read.
+        // Exits only once the descendant has written, however long it took
+        // to start: a fixed wait
+        // loses that race on a loaded machine, and the
+        // drain then has nothing to read.
         final deadline = DateTime.now().add(const Duration(seconds: 25));
         while (!marker.existsSync()) {
           if (DateTime.now().isAfter(deadline)) {
@@ -238,9 +239,8 @@ Future<void> _writeAfterParentExits(String marker) async {
   await Future<void>.delayed(const Duration(seconds: 4));
   for (var i = 0; i < floodPrints; i++) {
     await _send(_numbered(i, floodPrintLength));
-    // Past the parent's read-ahead limit (64 frames of 64 KiB): the worker
-    // may exit now.
-    if (i == descendantReadyPrints) File(marker).createSync();
+    // Enough is in the pipe: the worker may exit now.
+    if (i == descendantReadyPrints - 1) File(marker).createSync();
   }
   exit(0);
 }
