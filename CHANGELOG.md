@@ -254,6 +254,8 @@
     rejected snippet's rendering in the `full`, `concise`, `json` and
     `jsonlines` formats, and a `requestTimeout` kill's fields, against
     real workers on the three compilers.
+  - `PARITY_PIN` moves to the parity suite whose worker engine records
+    the error family's errors.
 
 ### Changed
 
