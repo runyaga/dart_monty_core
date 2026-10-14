@@ -4,6 +4,7 @@
 // ExternalException's attributes sent as upstream sends a live exception's;
 // and the writer's refusals that Python makes too. Pure Dart: vm, dart2js
 // and dart2wasm.
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -437,6 +438,25 @@ void main() {
         isNot(const ExternalException('ValueError')),
       );
       expect(const ExternalException('ValueError').attributes, isEmpty);
+    });
+
+    test("equality compares keys as strings, whatever the map's rules", () {
+      final folded = SplayTreeMap<String, MontyValue>(
+        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      )..['POS'] = const MontyInt(1);
+      const plain = ExternalException('ValueError', 'm', {
+        'pos': MontyInt(1),
+      });
+      final custom = ExternalException('ValueError', 'm', folded);
+      expect(plain == custom, isFalse);
+      expect(custom == plain, isFalse);
+      final same = ExternalException(
+        'ValueError',
+        'm',
+        SplayTreeMap<String, MontyValue>()..['pos'] = const MontyInt(1),
+      );
+      expect(same, plain);
+      expect(same.hashCode, plain.hashCode);
     });
 
     test('a JSON error with all five sends the json arm', () {
