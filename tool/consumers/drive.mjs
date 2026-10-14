@@ -124,7 +124,7 @@ try {
     chrome.on('exit', c => bad(new Error(`Chrome exited ${c} before it listened`)));
     setTimeout(() => bad(new Error('Chrome did not start in 30s')), 30000);
   });
-  const target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page');
+  const target = (await (await fetch(`http://127.0.0.1:${port}/json`, { signal: AbortSignal.timeout(15000) })).json()).find(t => t.type === 'page');
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   let id = 0;
   const pending = new Map();
