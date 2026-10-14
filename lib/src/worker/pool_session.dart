@@ -25,6 +25,7 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:fixnum/fixnum.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
@@ -732,17 +733,185 @@ SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
     ? SourceRange.unknown
     : SourceRange(range.filename, range.start, range.end);
 
+/// The suspension and sleep budgets of one checkout: the limits in force
+/// and what the session has used of them.
+///
+/// The count is per checkout, not per feed: every turn-ending event goes
+/// through [admit], which counts a suspension, charges a system sleep, and
+/// says when the feed must be aborted instead. A worker reply can only
+/// tighten a limit.
+///
+/// Loading a dump follows upstream (`checkout.rs` `begin_load`, `forget`,
+/// `end_load`): [beginLoad] keeps the two limits as ceilings and restarts
+/// both counts; the `Load` reply, when it is `Ok` or a suspension, adopts the
+/// dump on those terms, and a re-announced suspension is counted and charged
+/// again as it arrives. Any other reply, or none ([endLoad]), puts the
+/// budget back as it was before the load.
+final class SessionBudget {
+  /// A fresh budget for [config]: its limits, nothing used.
+  SessionBudget(SessionConfig config)
+    : _suspensionLimit = config.limits?.maxSuspensions ?? defaultMaxSuspensions,
+      _sleepLimit = switch (config.limits?.maxTotalSleep) {
+        final limit? => nanosOf(limit),
+        null => null,
+      },
+      _systemSleepCap = config.systemSleepCapNanos;
+
+  /// How many suspensions the session may make before the next one aborts
+  /// its feed: `maxSuspensions`, or a smaller limit a reply reported.
+  int get suspensionLimit => _suspensionLimit;
+  int _suspensionLimit;
+
+  /// The most the session's system sleeps may add up to, in nanoseconds as
+  /// upstream's `Duration`: `maxTotalSleep`, or a smaller limit a reply
+  /// reported; null while there is none.
+  BigInt? get sleepLimit => _sleepLimit;
+  BigInt? _sleepLimit;
+
+  /// Suspensions counted so far, the one that passed the limit included.
+  int get suspensions => _suspensions;
+  int _suspensions = 0;
+
+  /// System sleep charged so far, in nanoseconds; capped sleeps at their
+  /// cap.
+  BigInt get slept => _slept;
+  BigInt _slept = BigInt.zero;
+
+  /// The longest one system sleep is charged, in nanoseconds.
+  final BigInt _systemSleepCap;
+
+  /// The budget as it was before a load whose reply has not yet decided
+  /// it (upstream's `pending_load_budget`).
+  (int, BigInt?, int, BigInt)? _beforeLoad;
+
+  /// Starts loading a dump: the budget is saved, then both counts restart
+  /// while both limits stay, as ceilings on the dump's (upstream's
+  /// `begin_load` and `forget`).
+  void beginLoad() {
+    _beforeLoad = (_suspensionLimit, _sleepLimit, _suspensions, _slept);
+    _suspensions = 0;
+    _slept = BigInt.zero;
+  }
+
+  /// Ends a load: if no reply decided it (the request was refused before it
+  /// was sent, or the worker died first), the budget saved by [beginLoad]
+  /// comes back (upstream's `end_load`).
+  void endLoad() {
+    if (_beforeLoad case final saved?) _restore(saved);
+    _beforeLoad = null;
+  }
+
+  /// Records the turn-ending [event] (upstream's `update_from`, then its
+  /// checks): adopts any smaller limit it reports, counts it if it is a
+  /// suspension and charges it if it is a system sleep.
+  ///
+  /// Returns the exception to abort the feed with in its place, or null: a
+  /// suspension past [suspensionLimit] is a `RuntimeError`; a system sleep
+  /// that would pass [sleepLimit] is a `TimeoutError` and is not charged.
+  ///
+  /// The first event after [beginLoad] settles the load: `Ok` or a
+  /// suspension adopts the dump; anything else restores the budget saved
+  /// before the load, then is recorded on it.
+  pb.RaisedException? admit(pb.ChildEvent event) {
+    if (_beforeLoad case final saved?) {
+      _beforeLoad = null;
+      if (event.whichKind() != pb.ChildEvent_Kind.ok && !isSuspension(event)) {
+        _restore(saved);
+      }
+    }
+    _adoptLimits(event);
+    if (!isSuspension(event)) return null;
+    final limit = _suspensionLimit;
+    if (++_suspensions > limit) {
+      return _raised('RuntimeError', 'suspension limit $limit exceeded');
+    }
+
+    return _chargeSleep(event);
+  }
+
+  void _restore((int, BigInt?, int, BigInt) saved) {
+    final (savedLimit, savedSleepLimit, savedCount, savedSlept) = saved;
+    _suspensionLimit = savedLimit;
+    _sleepLimit = savedSleepLimit;
+    _suspensions = savedCount;
+    _slept = savedSlept;
+  }
+
+  /// Tightens either limit to the one [event] reports, if smaller. Both
+  /// arrive as u64s; a suspension limit past what an `int` holds cannot be
+  /// the smaller.
+  void _adoptLimits(pb.ChildEvent event) {
+    if (event.hasMaxTotalSleepMicros()) {
+      final reported =
+          BigInt.parse(event.maxTotalSleepMicros.toStringUnsigned()) *
+          BigInt.from(1000);
+      final current = _sleepLimit;
+      if (current == null || reported < current) _sleepLimit = reported;
+    }
+    if (event.hasMaxSuspensions()) {
+      final reported = event.maxSuspensions;
+      if (!reported.isNegative && reported < Int64(_suspensionLimit)) {
+        _suspensionLimit = reported.toInt();
+      }
+    }
+  }
+
+  /// Charges [event], if it is a system sleep, against the sleep budget
+  /// (upstream's `charge_sleep`): the delay as the session will wait it, cut
+  /// to the system-sleep maximum, a delay that is not a valid duration
+  /// counting as that maximum. A sleep that would pass the budget is not
+  /// charged; the exception to abort the feed with is returned instead.
+  pb.RaisedException? _chargeSleep(pb.ChildEvent event) {
+    final seconds = _systemSleepSeconds(event);
+    if (seconds == null) return null;
+    final cap = _systemSleepCap;
+    final requested = nanosFromSeconds(seconds) ?? cap;
+    final delay = requested < cap ? requested : cap;
+    final sum = _slept + delay;
+    // Saturating, as Rust's Duration::saturating_add.
+    final total = sum > durationMaxNanos ? durationMaxNanos : sum;
+    final limit = _sleepLimit;
+    if (limit != null && total > limit) {
+      return _raised(
+        'TimeoutError',
+        'sleep limit exceeded: ${rustDurationNanos(total)} > '
+            '${rustDurationNanos(limit)}',
+      );
+    }
+    _slept = total;
+
+    return null;
+  }
+}
+
+/// The delay of [event]'s system sleep, `time.sleep` or `asyncio.sleep`
+/// (upstream charges both); null for any other event.
+double? _systemSleepSeconds(pb.ChildEvent event) {
+  if (event.whichKind() != pb.ChildEvent_Kind.osCall) return null;
+  final call = event.osCall;
+
+  return switch (call.whichCall()) {
+    pb.OsCall_Call.systemSleep => call.systemSleep.seconds,
+    pb.OsCall_Call.asyncSystemSleep => call.asyncSystemSleep.delay,
+    _ => null,
+  };
+}
+
+/// The exception a feed is aborted with.
+pb.RaisedException _raised(String type, String message) =>
+    pb.RaisedException(excType: type, message: message);
+
 /// The session's view of its worker: the lease's channel, with each turn
 /// refused once the session is finished and bounded by its deadline.
 ///
-/// It also keeps upstream's suspension budget: the session's suspensions are
-/// counted, and one past `maxSuspensions` (default 1000) is not handed to
-/// the driver. The feed is aborted in its place with an in-sandbox
-/// `RuntimeError`, which the driver then sees as the turn's answer. Its
-/// system sleeps, `time.sleep` and `asyncio.sleep` alike, are charged
-/// against `maxTotalSleep` the same way, before they are waited: the one
-/// that would pass it aborts the feed with an in-sandbox `TimeoutError`. A
-/// worker reply can only tighten either limit.
+/// It also keeps upstream's suspension and sleep budgets ([SessionBudget]):
+/// the checkout's suspensions are counted, and one past `maxSuspensions`
+/// (default 1000) is not handed to the driver. The feed is aborted in its
+/// place with an in-sandbox `RuntimeError`, which the driver then sees as
+/// the turn's answer. Its system sleeps, `time.sleep` and `asyncio.sleep`
+/// alike, are charged against `maxTotalSleep` the same way, before they are
+/// waited: the one that would pass it aborts the feed with an in-sandbox
+/// `TimeoutError`. A worker reply can only tighten either limit.
 ///
 /// A turn's deadline is the pool's `requestTimeout`; an execution turn's is
 /// also bounded by what the feed budget has left and by the turn budget,
@@ -751,12 +920,7 @@ SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
 /// host callbacks is never counted: it falls between turns.
 final class _SessionChannel implements MontyChannel {
   _SessionChannel(this._hold, this._options, this._config)
-    : _suspensionLimit =
-          _config.limits?.maxSuspensions ?? defaultMaxSuspensions,
-      _sleepLimit = switch (_config.limits?.maxTotalSleep) {
-        final limit? => nanosOf(limit),
-        null => null,
-      };
+    : _budget = SessionBudget(_config);
 
   /// Whether a protocol turn is in flight.
   bool inTurn = false;
@@ -778,21 +942,9 @@ final class _SessionChannel implements MontyChannel {
   /// backstop.
   Duration _feedUsed = Duration.zero;
 
-  /// Suspensions this session has received.
-  int _suspensions = 0;
-
-  /// The system sleep this session has been charged, in nanoseconds as
-  /// upstream's `Duration`; capped sleeps at their cap.
-  BigInt _slept = BigInt.zero;
-
-  /// The suspension budget in force: `maxSuspensions`, tightened by any
-  /// smaller limit a worker reply reports (upstream's `update_from`).
-  int _suspensionLimit;
-
-  /// The sleep budget in force, in nanoseconds: `maxTotalSleep`, tightened
-  /// by any smaller limit a worker reply reports (upstream's
-  /// `update_from`); null while there is none.
-  BigInt? _sleepLimit;
+  /// The checkout's suspension and sleep budgets, which a turn-ending event
+  /// is admitted against.
+  final SessionBudget _budget;
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
@@ -861,16 +1013,7 @@ final class _SessionChannel implements MontyChannel {
     final event = await channel.turn(request, onPrint: onPrint);
     final used = Duration(microseconds: event.feedExecutionMicros.toInt());
     if (used > _feedUsed) _feedUsed = used;
-    _adoptSleepLimit(event);
-    if (event.hasMaxSuspensions()) {
-      final reported = event.maxSuspensions.toInt();
-      if (reported < _suspensionLimit) _suspensionLimit = reported;
-    }
-    if (!isSuspension(event)) return event;
-    final limit = _suspensionLimit;
-    final exceeded = ++_suspensions > limit
-        ? _raised('RuntimeError', 'suspension limit $limit exceeded')
-        : _chargeSleep(event);
+    final exceeded = _budget.admit(event);
     if (exceeded == null) return event;
     final pb.ChildEvent reply;
     try {
@@ -884,49 +1027,17 @@ final class _SessionChannel implements MontyChannel {
       throw inContext(crash, abortingFeed);
     }
     final kind = reply.whichKind();
-    if (kind == pb.ChildEvent_Kind.error) return reply;
+    if (kind == pb.ChildEvent_Kind.error) {
+      // The reply's limits count as any event's do; an Error suspends
+      // nothing, so it cannot itself be over budget.
+      _budget.admit(reply);
+
+      return reply;
+    }
     kill();
     throw protocolError(
       'worker answered AbortFeed with something other than an Error',
     );
-  }
-
-  /// Charges [event], if it is a system sleep, against the sleep budget
-  /// (upstream's `charge_sleep`): the delay as the session will wait it, cut
-  /// to the system-sleep maximum, a delay that is not a valid duration
-  /// counting as that maximum. A sleep that would pass the budget is not
-  /// charged; the exception to abort the feed with is returned instead.
-  pb.RaisedException? _chargeSleep(pb.ChildEvent event) {
-    final seconds = _systemSleepSeconds(event);
-    if (seconds == null) return null;
-    final cap = _config.systemSleepCapNanos;
-    final requested = nanosFromSeconds(seconds) ?? cap;
-    final delay = requested < cap ? requested : cap;
-    final sum = _slept + delay;
-    // Saturating, as Rust's Duration::saturating_add.
-    final total = sum > durationMaxNanos ? durationMaxNanos : sum;
-    final limit = _sleepLimit;
-    if (limit != null && total > limit) {
-      return _raised(
-        'TimeoutError',
-        'sleep limit exceeded: ${rustDurationNanos(total)} > '
-            '${rustDurationNanos(limit)}',
-      );
-    }
-    _slept = total;
-
-    return null;
-  }
-
-  /// Tightens the sleep budget to the one [event] reports, if smaller: a
-  /// reply can only lower it.
-  void _adoptSleepLimit(pb.ChildEvent event) {
-    if (!event.hasMaxTotalSleepMicros()) return;
-    final reported =
-        BigInt.parse(event.maxTotalSleepMicros.toStringUnsigned()) *
-        BigInt.from(1000);
-    final current = _sleepLimit;
-    if (current == null || reported < current) _sleepLimit = reported;
   }
 
   /// The deadline passed: kill the worker and fail [done].
@@ -966,19 +1077,6 @@ final class _SessionChannel implements MontyChannel {
   }
 }
 
-/// The delay of [event]'s system sleep, `time.sleep` or `asyncio.sleep`
-/// (upstream charges both); null for any other event.
-double? _systemSleepSeconds(pb.ChildEvent event) {
-  if (event.whichKind() != pb.ChildEvent_Kind.osCall) return null;
-  final call = event.osCall;
-
-  return switch (call.whichCall()) {
-    pb.OsCall_Call.systemSleep => call.systemSleep.seconds,
-    pb.OsCall_Call.asyncSystemSleep => call.asyncSystemSleep.delay,
-    _ => null,
-  };
-}
-
 /// An oversized request, as upstream reports it: a `RuntimeError` the
 /// caller can catch, the session still usable.
 MontyError _oversized(FrameTooLargeException error) => recordError(
@@ -989,10 +1087,6 @@ MontyError _oversized(FrameTooLargeException error) => recordError(
     const [],
   ),
 );
-
-/// The exception a feed is aborted with.
-pb.RaisedException _raised(String type, String message) =>
-    pb.RaisedException(excType: type, message: message);
 
 /// Requests that run sandbox code, which the duration backstops bound.
 bool _isExecution(pb.ParentRequest request) => switch (request.whichKind()) {

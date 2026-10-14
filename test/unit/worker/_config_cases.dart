@@ -164,6 +164,32 @@ final Map<String, SessionConfig> configCases = {
     const ResourceLimits(maxTotalSleep: Duration(milliseconds: 10)),
   ),
   'recursion_limit': _limits(const ResourceLimits(maxRecursionDepth: 20)),
+  'suspensions_exceeded': _limits(const ResourceLimits(maxSuspensions: 2)),
+  'suspensions_uncatchable': _limits(const ResourceLimits(maxSuspensions: 2)),
+  'suspensions_zero': _limits(const ResourceLimits(maxSuspensions: 0)),
+  'suspensions_zero_unused': _limits(const ResourceLimits(maxSuspensions: 0)),
+  'suspensions_zero_name_lookup': _limits(
+    const ResourceLimits(maxSuspensions: 0),
+  ),
+  'suspensions_name_lookup': _limits(const ResourceLimits(maxSuspensions: 1)),
+  'suspensions_default': const SessionConfig(),
+  'suspensions_before_sleep_limit': _limits(
+    const ResourceLimits(
+      maxSuspensions: 0,
+      maxTotalSleep: Duration(milliseconds: 10),
+    ),
+  ),
+  'suspensions_asyncio_sleep_zero': _limits(
+    const ResourceLimits(maxSuspensions: 1),
+  ),
+};
+
+/// The Dart form of each oracle sequence's checkout, by id.
+final Map<String, SessionConfig> sequenceCases = {
+  'suspensions_per_checkout': _limits(const ResourceLimits(maxSuspensions: 2)),
+  'total_sleep_per_checkout': _limits(
+    const ResourceLimits(maxTotalSleep: Duration(milliseconds: 50)),
+  ),
 };
 
 /// Cases whose outcome is recorded apart from upstream's, with the reason:
@@ -197,6 +223,16 @@ Future<String> _outcome(
   }
   try {
     if (code == null) fail('core accepted a setting upstream refuses');
+
+    return await _fed(session, code);
+  } finally {
+    await session.close();
+  }
+}
+
+/// The outcome of feeding [code] to [session], in the oracle's form.
+Future<String> _fed(PoolSession session, String code) async {
+  try {
     // The snippets print nothing; what they might is kept off the console.
     final printed = StringBuffer();
     final value = await session.feedRun(
@@ -217,8 +253,6 @@ Future<String> _outcome(
     return 'MontyTypingError: ${e.display()}';
   } on MontyRuntimeError catch (e) {
     return "MontyRuntimeError: ${e.display('type-msg')}";
-  } finally {
-    await session.close();
   }
 }
 
@@ -227,7 +261,7 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.
-    expect(configOracle.length, greaterThanOrEqualTo(57));
+    expect(configOracle.length, greaterThanOrEqualTo(66));
   });
 
   for (final MapEntry(key: id, value: (:code, :outcome))
@@ -244,6 +278,30 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
           expect(actual, contains(outcome.substring(kind.length)));
         } else {
           expect(actual, 'ArgumentError: ${outcome.substring(kind.length)}');
+        }
+      } finally {
+        await pool.close();
+      }
+    });
+  }
+
+  test('every oracle sequence has a Dart form ($label)', () {
+    expect(sequenceCases.keys.toSet(), configSequences.keys.toSet());
+    expect(configSequences.length, greaterThanOrEqualTo(2));
+  });
+
+  for (final MapEntry(key: id, value: feeds) in configSequences.entries) {
+    test('sequence $id matches upstream, feed by feed ($label)', () async {
+      final pool = await start();
+      try {
+        final session = await pool.checkout(options: sequenceCases[id]!);
+        try {
+          final actual = [
+            for (final (:code, outcome: _) in feeds) await _fed(session, code),
+          ];
+          expect(actual, [for (final (code: _, :outcome) in feeds) outcome]);
+        } finally {
+          await session.close();
         }
       } finally {
         await pool.close();

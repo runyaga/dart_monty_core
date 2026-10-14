@@ -1624,6 +1624,90 @@ void main() {
       );
     });
 
+    test("a reply's limit is unsigned: u64::MAX does not tighten", () async {
+      // Upstream's update_from takes min(limit, reported) over u64s, so a
+      // reply reporting u64::MAX leaves the checkout's limit as it was; a
+      // smaller one (here 1) is the limit from then on.
+      final huge = _call('f')..maxSuspensions = Int64(-1);
+      final one = _call('f')..maxSuspensions = Int64.ONE;
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([huge]),
+        answer([one]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('RuntimeError', 'suspension limit 1 exceeded'),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxSuspensions: 5),
+        ),
+      );
+      await expectLater(
+        session.feedRun(
+          'f(); f()',
+          externals: {'f': (args, kwargs) => const MontyNone()},
+          printCallback: _ignore,
+        ),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.exception.message,
+            'exception',
+            'suspension limit 1 exceeded',
+          ),
+        ),
+      );
+      expect(ch.remaining, 0);
+    });
+
+    test("the abort's reply tightens the limit too", () async {
+      // Upstream passes every event, the AbortFeed's Error included,
+      // through update_from.
+      final call = _call('f');
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([call]),
+        answer([call]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('RuntimeError', 'suspension limit 1 exceeded')
+            ..maxSuspensions = Int64.ZERO,
+        ]),
+        expecting(pb.ParentRequest_Kind.feed, [call]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('RuntimeError', 'suspension limit 0 exceeded'),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxSuspensions: 1),
+        ),
+      );
+      final externals = {'f': (_, _) => const MontyNone()};
+      for (var i = 0; i < 2; i++) {
+        await expectLater(
+          session.feedRun(
+            'f(); f()',
+            externals: externals,
+            printCallback: _ignore,
+          ),
+          throwsA(isA<MontyRuntimeError>()),
+        );
+      }
+      expect(ch.remaining, 0);
+      // The aborts core sent: the second names the tightened limit.
+      expect(
+        [
+          for (final i in [3, 5])
+            itemAt(ch.requests, i).abortFeed.exception.message,
+        ],
+        ['suspension limit 1 exceeded', 'suspension limit 0 exceeded'],
+      );
+    });
+
     test('the default budget is 1000', () async {
       final ch = ScriptedChannel([
         _configureOk,
