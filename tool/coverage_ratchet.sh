@@ -137,6 +137,16 @@ update = os.environ['UPDATE'] == '1'
 tracefile = os.environ['TRACEFILE']
 
 # The documented exclusions, kept in step with tool/coverage_report.sh.
+def _nonfinite(c):
+    print(f'FAIL: non-finite number {c} in a baseline file; refusing it.')
+    sys.exit(1)
+
+
+def load_json(path):
+    with open(path) as fh:
+        return json.load(fh, parse_constant=_nonfinite)
+
+
 EXCLUDE = ('lib/src/ffi/generated/', 'lib/src/worker/proto/',
            'lib/src/platform/mock_monty_platform.dart')
 
@@ -216,7 +226,7 @@ if not os.path.exists(baseline_path):
     print(f'  bash tool/coverage_ratchet.sh {tracefile} --update')
     sys.exit(1)
 
-base = json.load(open(baseline_path))
+base = load_json(baseline_path)
 bt, bf = base['total'], base['by_file']
 violations = []
 
@@ -261,7 +271,7 @@ if violations:
 # guaranteed rebase conflict between sibling PRs. The baseline is now recorded
 # on main after merge (tool/record_coverage_baseline.sh), so the ratchet only
 # fails on decreases, against the BASE branch's copy, above.
-own = json.load(open(own_baseline_path)) if os.path.exists(own_baseline_path) \
+own = load_json(own_baseline_path) if os.path.exists(own_baseline_path) \
     else base
 if own_baseline_path != baseline_path:
     # A PR may not LOWER the floor it hands to the next PR. A rise is ignored

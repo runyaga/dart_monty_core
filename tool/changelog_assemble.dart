@@ -42,6 +42,8 @@ Map<String, String> parseFragment(String name, String text) {
         throw FormatException('$name: unknown section "$s"');
       }
       cur = out.putIfAbsent(s, StringBuffer.new);
+    } else if (line.startsWith('## ') || line.startsWith('# ')) {
+      throw FormatException('$name: release-level heading in a fragment');
     } else if (cur != null) {
       cur.writeln(line);
     } else if (line.trim().isNotEmpty) {

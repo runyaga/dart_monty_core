@@ -39,6 +39,8 @@ lint_fragments() {
       changes/README.md) continue ;;
       changes/*/*) echo "  $f: nested paths are not assembled; use changes/<slug>.md"
                    rc=1; continue ;;
+      changes/.*) echo "  $f: hidden files are not assembled; rename it"
+                  rc=1; continue ;;
       changes/*.md) ;;
       *) echo "  $f: only changes/<slug>.md files belong in changes/"
          rc=1; continue ;;
@@ -50,6 +52,11 @@ path, sections = sys.argv[1], sys.argv[2]
 text = open(path, encoding='utf-8').read()
 lines = [l for l in text.splitlines()]
 first = next((l for l in lines if l.strip()), None)
+for i, l in enumerate(lines, 1):
+    if l.startswith('## ') or l.startswith('# '):
+        print(f'  {path}:{i}: release-level heading in a fragment (use ### '
+              f'sections only; assembly splits CHANGELOG.md on ## lines)')
+        sys.exit(1)
 hdr = re.compile(r'^### (%s)\s*$' % sections)
 if first is None or not hdr.match(first):
     print(f'  {path}: must start with a "### <Section>" header '
@@ -162,6 +169,10 @@ self_test() {
   run "lib change, assembly label alone: must FAIL" 1 '["changelog-assembly"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n### End\n\n- y\n' > "$tmp/changes/end.md"; commit
   run "unknown section header: must FAIL" 1 '[]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n```\n## Example\n```\n' > "$tmp/changes/h.md"; commit
+  run "release-level heading in fragment: must FAIL" 1 '[]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n' > "$tmp/changes/.hid.md"; commit
+  run "hidden fragment: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
   run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
   [ "$rc" = 0 ] && lint_fragments && echo "self-test passed" || rc=1
