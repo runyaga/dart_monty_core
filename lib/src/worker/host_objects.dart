@@ -102,7 +102,8 @@ final class HostObjects {
 
   void _checkNoAlias(String id, Object wrapper) {
     final existing = _objects[id];
-    if (existing != null && !identical(_valueOf(existing), _valueOf(wrapper))) {
+    if (existing != null &&
+        !identical(wrappedValue(existing), wrappedValue(wrapper))) {
       throw PythonRefusal(
         wrapper,
         'its id is bound to a different object in this session',
@@ -586,7 +587,9 @@ String _otherTypeName(Object value) => switch (value) {
   _ => '${value.runtimeType}',
 };
 
-Object _valueOf(Object wrapper) => switch (wrapper) {
+/// The object a host-object [wrapper] wraps: what upstream's store
+/// resolves its id to, and what identity is judged by.
+Object wrappedValue(Object wrapper) => switch (wrapper) {
   ClassInstance(:final value) => value,
   ClassType(:final value) => value,
   _ => wrapper,

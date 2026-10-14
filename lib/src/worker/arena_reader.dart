@@ -41,8 +41,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
-import 'package:dart_monty_core/src/worker/host_objects.dart'
-    show ClassInstance, ClassType;
+import 'package:dart_monty_core/src/worker/host_objects.dart' show wrappedValue;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
@@ -381,11 +380,7 @@ final class _Builder {
     Object? meta,
     Object attrs,
   ) {
-    final key = switch (found) {
-      ClassInstance(:final value) => value,
-      ClassType(:final value) => value,
-      _ => found,
-    };
+    final key = wrappedValue(found);
     _registered[_built.length] = key;
     if (_carriers[key] case final carrier?) return carrier;
     final type = _nodeAt(_nodes, node.classType).type;
