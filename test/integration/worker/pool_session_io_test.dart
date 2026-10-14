@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 
 import '../../_accessors.dart';
 import '../../unit/worker/_config_cases.dart';
+import '../../unit/worker/_restore_cases.dart';
 import '_worker_harness.dart';
 
 /// Every session's memory is bounded.
@@ -50,8 +51,10 @@ const _probeTimeout = Timeout(Duration(seconds: 90));
 Future<(int, String, String)> _runProbe(
   String name, {
   bool drainStdout = true,
+  List<String> vmArgs = const [],
 }) async {
   final probe = await Process.start(Platform.resolvedExecutable, [
+    ...vmArgs,
     File('test/integration/worker/$name').absolute.path,
     await _workerPath(),
   ]);
@@ -99,6 +102,7 @@ void main() {
     'vm',
     () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
   );
+  restoreOracleTests('vm', (options) => MontyPool.start(options: options));
 
   test('feedRun, prints in order, Reset on close, the worker reused', () async {
     await MontyPool.withPool(
@@ -798,4 +802,45 @@ void main() {
     },
     timeout: _probeTimeout,
   );
+
+  group('workerPid and the finalizer (q2)', () {
+    test("workerPid is the worker process's id; null in a turn and once "
+        'closed', () async {
+      final pool = await MontyPool.start(
+        options: const PoolOptions(maxProcesses: 1),
+      );
+      try {
+        final session = await pool.checkout(options: _limits);
+        final pid = session.workerPid;
+        expect(pid, onlyItem(ProcessChannel.live).pid);
+        int? inTurn = -1;
+        await session.feedRun(
+          'print(1)',
+          printCallback: (stream, text) => inTurn = session.workerPid,
+        );
+        expect(inTurn, isNull);
+        expect(session.workerPid, pid);
+        await session.close();
+        expect(session.workerPid, isNull);
+      } finally {
+        await pool.close();
+      }
+    });
+
+    test(
+      'a session dropped without close gives its worker back once '
+      'collected (GC forced through the VM service)',
+      () async {
+        final (code, out, err) = await _runProbe(
+          'finalize_probe.dart',
+          vmArgs: ['--enable-vm-service=0'],
+        );
+        // The VM announces its service on stdout first.
+        final lines = out.trim().split('\n');
+        expect(itemAt(lines, lines.length - 1), 'finalized', reason: err);
+        expect(code, 0, reason: err);
+      },
+      timeout: _probeTimeout,
+    );
+  });
 }

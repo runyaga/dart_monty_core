@@ -7,11 +7,13 @@
 // Pure Dart: vm, dart2js and dart2wasm.
 import 'dart:async';
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -139,6 +141,19 @@ final Matcher _finished = isA<StateError>().having(
   (e) => e.message,
   'message',
   contains('finished'),
+);
+
+/// Expects a feed on [session] to be refused: a suspension is pending.
+Future<void> _refusedAsPending(PoolSession session) => expectLater(
+  session.feedRun('1', printCallback: _ignore),
+  throwsA(_pending),
+);
+
+/// A feed refused while a suspension waits for its answer.
+final Matcher _pending = isA<StateError>().having(
+  (e) => e.message,
+  'message',
+  'feed called while a suspension is awaiting an answer',
 );
 
 void main() {
@@ -2337,6 +2352,525 @@ void main() {
         ),
         7,
       );
+    });
+  });
+
+  group('dump and load', () {
+    /// A `DumpResult` of [bytes].
+    pb.ChildEvent dumped(List<int> bytes) =>
+        pb.ChildEvent(dumpResult: pb.DumpResult(state: bytes));
+
+    final state = Uint8List.fromList([1, 2, 3]);
+
+    test('a dump keeps a suspension pending: a feed is still refused, and '
+        'the snapshot still resumes', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([7]),
+        ]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          raised('MemoryError', 'dump too large'),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      expect(await session.dump(), [7]);
+      // The same feed, refused before and after the next dump.
+      await _refusedAsPending(session);
+      // An error reply to a Dump does not end the feed either (upstream
+      // keeps the pending call).
+      await expectLater(
+        snapshot.dump(),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.exception.excType,
+            'excType',
+            'MemoryError',
+          ),
+        ),
+      );
+      await _refusedAsPending(session);
+      expect(
+        await snapshot.resume(const ExternalReturnValue(MontyInt(1))),
+        isA<SessionComplete>(),
+      );
+      expect(ch.remaining, 0);
+    });
+
+    test('a dump waits for the turn in flight, as upstream takes the '
+        'session lock', () async {
+      final release = Completer<void>();
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'x')]),
+          _int(1),
+        ]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([9]),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final printing = Completer<void>();
+      final order = <String>[];
+      Future<void> feeding() async {
+        await session.feedRun(
+          'print("x")',
+          printCallback: (stream, text) async {
+            printing.complete();
+            await release.future;
+          },
+        );
+        order.add('feed');
+      }
+
+      Future<void> dumping() async => order.add('dump ${await session.dump()}');
+
+      final feed = feeding();
+      await printing.future;
+      expect(session.workerPid, isNull, reason: 'a turn is in flight');
+      final dump = dumping();
+      await pumpEventQueue();
+      expect(order, isEmpty);
+      release.complete();
+      await Future.wait([feed, dump]);
+      expect(order, ['feed', 'dump [9]']);
+    });
+
+    test('a feed made while a dump runs is refused once the dump ends: the '
+        'suspension is still pending', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      final dump = session.dump();
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        throwsA(_pending),
+      );
+      expect(await dump, [1]);
+      expect(
+        await snapshot.resume(const ExternalReturnValue(MontyNone())),
+        isA<SessionComplete>(),
+      );
+      expect(ch.remaining, 0);
+    });
+
+    test('a feed queued behind a dump from host code is refused, not left '
+        'waiting', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      Object? refused;
+      Future<Uint8List>? dump;
+      final value = await session.feedRun(
+        'f()',
+        externals: {
+          'f': (args, kwargs) async {
+            dump = session.dump();
+            try {
+              await session.feedRun('1', printCallback: _ignore);
+              // The refusal is the outcome under test.
+              // ignore: avoid_catching_errors
+            } on StateError catch (e) {
+              refused = e;
+            }
+
+            return const MontyNone();
+          },
+        },
+        printCallback: _ignore,
+      );
+      expect(value, const MontyInt(2));
+      expect(refused, _pending);
+      expect(await dump, [1]);
+    }, timeout: const Timeout(Duration(seconds: 5)));
+
+    test(
+      "a snapshot's dump is checked and sent in one step: a free channel "
+      'takes it at once, and a resume made meanwhile spends it first',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([_call('f')]),
+          expecting(pb.ParentRequest_Kind.dump, [
+            dumped([1]),
+          ]),
+          // The second dump is never sent: the resume is next.
+          expecting(pb.ParentRequest_Kind.resumeCall, [_int(3)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final snapshot =
+            await session.feedStart('f()', printCallback: _ignore)
+                as FunctionSnapshot;
+        final sent = ch.requests.length;
+        final first = snapshot.dump();
+        // Sent before this test's next statement: nothing can come between
+        // the check and the send.
+        expect(ch.requests.length, sent + 1);
+        // Busy now: this one waits, and a resume made meanwhile spends the
+        // snapshot before the dump's check.
+        final second = expectLater(
+          snapshot.dump(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'cannot dump a snapshot that has already been resumed',
+            ),
+          ),
+        );
+        final resumed = snapshot.resume(
+          const ExternalReturnValue(MontyNone()),
+        );
+        expect(await first, [1]);
+        await second;
+        expect(await resumed, isA<SessionComplete>());
+        expect(ch.remaining, 0);
+      },
+    );
+
+    test('a feed and a resume made while a dump runs: the feed is refused, '
+        'the resume runs after the dump', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      final dump = session.dump();
+      final feed = session.feedRun('1', printCallback: _ignore);
+      final resumed = snapshot.resume(const ExternalReturnValue(MontyNone()));
+      await expectLater(feed, throwsA(_pending));
+      expect(await dump, [1]);
+      expect(await resumed, isA<SessionComplete>());
+      expect(ch.remaining, 0);
+    });
+
+    test('a feed made after a resume, both while a dump runs, waits for the '
+        'resume and then runs', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+        expecting(pb.ParentRequest_Kind.feed, [_int(3)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      final dump = session.dump();
+      final resumed = snapshot.resume(const ExternalReturnValue(MontyNone()));
+      final feed = session.feedRun('3', printCallback: _ignore);
+      expect(await dump, [1]);
+      expect(await resumed, isA<SessionComplete>());
+      expect(await feed, const MontyInt(3));
+      expect(ch.remaining, 0);
+    });
+
+    test('a close while a dump runs fails the feed waiting on host code at '
+        'once', () async {
+      // The Dump is never answered: only the close's kill ends it.
+      final hung = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(Workers([hung]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final never = Completer<MontyValue>();
+      final dumping = Completer<void>();
+      Future<Uint8List>? dump;
+      final feed = session.feedRun(
+        'f()',
+        externals: {
+          'f': (args, kwargs) {
+            dump = session.dump();
+            dumping.complete();
+
+            return never.future;
+          },
+        },
+        printCallback: _ignore,
+      );
+      await dumping.future;
+      await pumpEventQueue();
+      final feedFails = expectLater(feed, throwsA(_finished));
+      final dumpFails = expectLater(dump, throwsA(isA<MontyCrashedError>()));
+      await session.close();
+      await feedFails;
+      await dumpFails;
+      expect(pool.liveWorkers, 0);
+    }, timeout: const Timeout(Duration(seconds: 5)));
+
+    test('a dump from inside a print callback throws StateError', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'x')]),
+          _call('f'),
+        ]),
+        answer([
+          printed([(_stdout, 'y')]),
+          _int(1),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      Object? fromSession;
+      final snapshot =
+          await session.feedStart(
+                'f()',
+                printCallback: (stream, text) async {
+                  try {
+                    await session.dump();
+                  } on Object catch (e) {
+                    fromSession = e;
+                  }
+                },
+              )
+              as FunctionSnapshot;
+      expect(fromSession, isA<StateError>());
+      expect(
+        await snapshot.resume(const ExternalReturnValue(MontyNone())),
+        isA<SessionComplete>(),
+      );
+      expect(ch.remaining, 0);
+    });
+
+    test("a Load the worker refuses puts back the session's budgets, then "
+        'records the reply', () async {
+      // Upstream restores the pre-load budget, then records the reply on it
+      // (checkout.rs abort_if_over_budget, update_from): the session's feed
+      // backstop is back, and the reply's suspension limit tightens.
+      final refusal = raised('RuntimeError', 'not a monty dump')
+        ..maxSuspensions = Int64.ZERO;
+      final ch = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [refusal]),
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.abortFeed, [
+          raised('RuntimeError', 'suspension limit 0 exceeded'),
+        ]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(Workers([ch]), feedGrace: Duration.zero);
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: SessionConfig(
+          limits: ResourceLimits(maxFeedDuration: _ms(30)),
+        ),
+      );
+      await expectLater(
+        session.loadSession(state),
+        throwsA(isA<MontyRuntimeError>()),
+      );
+      expect(itemAt(ch.requests, 1).load.state, state);
+      await expectLater(
+        session.feedRun('f()', printCallback: _ignore),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.exception.message,
+            'message',
+            'suspension limit 0 exceeded',
+          ),
+        ),
+      );
+      await expectLater(
+        session.feedRun('while True: pass', printCallback: _ignore),
+        throwsA(_timedOut('30ms')),
+      );
+    }, timeout: const Timeout(Duration(seconds: 5)));
+
+    test("a load adopts the dump's feed budget: the session's is "
+        'forgotten', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [
+          ok()..maxFeedDurationMicros = Int64(30000),
+        ]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(Workers([ch]), feedGrace: Duration.zero);
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxFeedDuration: Duration(seconds: 30)),
+        ),
+      );
+      await session.loadSession(state);
+      await expectLater(
+        session.feedRun('while True: pass', printCallback: _ignore),
+        throwsA(_timedOut('30ms')),
+      );
+    }, timeout: const Timeout(Duration(seconds: 5)));
+
+    test("a load adopts the dump's turn budget, and none when the dump has "
+        'none', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [ok()]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(
+        Workers([ch]),
+        requestTimeout: _ms(200),
+        turnGrace: Duration.zero,
+      );
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: SessionConfig(
+          limits: ResourceLimits(maxTurnDuration: _ms(20)),
+        ),
+      );
+      await session.loadSession(state);
+      // The session's 20 ms backstop went with the load; requestTimeout
+      // is all that is left.
+      await expectLater(
+        session.feedRun('while True: pass', printCallback: _ignore),
+        throwsA(_timedOut('200ms')),
+      );
+    });
+
+    test('loadSnapshot keeps its host functions for resumeAuto, and the '
+        "dump's script name", () async {
+      final reannounced = _call('f')..restoredScriptName = 'dumped.py';
+      final ch = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [reannounced]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(5)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final calls = <String>[];
+      final snapshot =
+          await session.loadSnapshot(
+                state,
+                externals: {
+                  'f': (args, kwargs) {
+                    calls.add('f');
+
+                    return const MontyInt(4);
+                  },
+                },
+                printCallback: _ignore,
+              )
+              as FunctionSnapshot;
+      expect(snapshot.scriptName, 'dumped.py');
+      expect(
+        await snapshot.resumeAuto(),
+        isA<SessionComplete>().having(
+          (c) => c.output,
+          'output',
+          const MontyInt(5),
+        ),
+      );
+      expect(calls, ['f']);
+    });
+
+    test("a restored FutureSnapshot's coroutines are gone: resumeAuto ends "
+        'the session', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [
+          pb.ChildEvent(
+            resolveFutures: pb.ResolveFutures(pendingCallIds: [1]),
+          ),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.loadSnapshot(state, printCallback: _ignore)
+              as FutureSnapshot;
+      await expectLater(snapshot.resumeAuto(), throwsA(isA<StateError>()));
+      expect(ch.kills, greaterThan(0));
+      expect(pool.liveWorkers, 0);
+    });
+
+    test('a Dump or a Load answered out of turn kills the worker', () async {
+      final dumping = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.dump, [ok()]),
+      ]);
+      final loading = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [_int(1)]),
+      ]);
+      final pool = await _pool(Workers([dumping, loading]), maxProcesses: 2);
+      addTearDown(pool.close);
+      // One checkout per worker.
+      final [a, b] = await Future.wait([
+        for (var i = 0; i < 2; i++) pool.checkout(),
+      ]);
+      await expectLater(
+        a.dump(),
+        throwsA(_violation('unexpected reply to Dump: ok')),
+      );
+      await expectLater(
+        b.loadSession(state),
+        throwsA(_violation('unexpected reply to Load: complete')),
+      );
+      expect([dumping.kills, loading.kills], everyElement(greaterThan(0)));
+      expect(pool.liveWorkers, 0);
+    });
+
+    test('workerPid: null for a channel with no process, and once '
+        'finished', () async {
+      final ch = ScriptedChannel([_configureOk, _resetOk]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      expect(session.workerPid, isNull);
+      await session.close();
+      expect(session.workerPid, isNull);
+      await expectLater(session.dump(), throwsA(_finished));
     });
   });
 }

@@ -9,6 +9,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
@@ -54,6 +55,10 @@ final class ProtoSession {
   /// carries [defaultCwd]; afterwards none does, and the worker keeps its
   /// directory, `os.chdir` included (upstream's `Checkout.cwd_set`).
   bool _cwdSet = false;
+
+  /// Whether a load reached the worker: the session's type check may then
+  /// be the dump's, so any feed may meet a typing rejection.
+  bool _loaded = false;
 
   /// Configures a session on [channel].
   ///
@@ -177,6 +182,7 @@ final class ProtoSession {
     if (event.whichKind() != pb.ChildEvent_Kind.ok) _desync('Reset', event);
     // A new session, as upstream's next checkout of the worker is.
     _cwdSet = false;
+    _loaded = false;
     await _configure();
   });
 
@@ -238,10 +244,12 @@ final class ProtoSession {
     pb.ChildEvent_Kind.osCall ||
     pb.ChildEvent_Kind.resolveFutures => event,
     pb.ChildEvent_Kind.error => _throwRaised(event.error),
-    // Only a type-checking session's feed may end this way.
-    pb.ChildEvent_Kind.typingError when _config.typeCheck => throw typingError(
-      event.typingError.diagnostics,
-    ),
+    // Only a type-checking session's feed may end this way, or a loaded
+    // one's, whose type check is the dump's.
+    pb.ChildEvent_Kind.typingError when _config.typeCheck || _loaded =>
+      throw typingError(
+        event.typingError.diagnostics,
+      ),
     // Never sent without the request that asks for it (dumps), or not
     // a feed's answer at all.
     _ => _violation('unexpected event: ${event.whichKind().name}'),
@@ -281,6 +289,59 @@ final class ProtoSession {
     _channel.kill();
     throw protocolError(detail);
   }
+}
+
+/// Moving a session between workers: [dump] and [load], upstream's `Dump`
+/// and `Load`.
+extension ProtoSessionTransfer on ProtoSession {
+  /// The session, idle or suspended, as the worker's opaque bytes
+  /// (upstream's `Dump`); a pending suspension stays pending.
+  ///
+  /// Not one of the session's requests: a pool session's dump runs between
+  /// the turns of a feed, as upstream's does, and the caller keeps it off a
+  /// turn in flight. An error the worker reports in place of the bytes is
+  /// thrown, and the session runs on.
+  Future<Uint8List> dump() async {
+    final event = await _channel.turn(pb.ParentRequest(dump: pb.Dump()));
+
+    return switch (event.whichKind()) {
+      pb.ChildEvent_Kind.dumpResult => Uint8List.fromList(
+        event.dumpResult.state,
+      ),
+      pb.ChildEvent_Kind.error => _throwRaised(event.error),
+      _ => _desync('Dump', event),
+    };
+  }
+
+  /// Restores [state], a dump, into this fresh session (upstream's `Load`):
+  /// the re-announced suspension, or null for a dump taken between feeds,
+  /// with the dump's script name when the worker reports it.
+  ///
+  /// The dump carries the session's working directory. An error the worker
+  /// reports in place of the load (bytes it cannot read) is thrown, and the
+  /// session runs on as it was.
+  Future<(pb.ChildEvent?, String?)> load(List<int> state) => _guard(() async {
+    final event = await _channel.turn(
+      pb.ParentRequest(load: pb.Load(state: state)),
+    );
+    // The worker answered, so it may hold the dump's type check: one it
+    // adopted and the budget then aborted (an Error), as well as one it
+    // took. Any later feed may meet a typing rejection, as upstream's may.
+    _loaded = true;
+    final kind = event.whichKind();
+    if (kind == pb.ChildEvent_Kind.error) _throwRaised(event.error);
+    if (kind != pb.ChildEvent_Kind.ok && !isSuspension(event)) {
+      _desync('Load', event);
+    }
+    // The adopted dump carries the working directory (checkout.rs
+    // `restore`, only once the load succeeded).
+    _cwdSet = true;
+
+    return (
+      kind == pb.ChildEvent_Kind.ok ? null : event,
+      event.hasRestoredScriptName() ? event.restoredScriptName : null,
+    );
+  });
 }
 
 /// Collects a feed's prints and passes each to the caller's callback,

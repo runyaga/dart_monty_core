@@ -3,6 +3,7 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 
 /// Always throws [UnsupportedError]: this platform has no worker channel,
@@ -11,6 +12,9 @@ SpawnHandle openChannel({String? workerLocation}) => throw UnsupportedError(
   'no monty worker channel on this platform '
   '(workerLocation: ${workerLocation ?? 'none'})',
 );
+
+/// Null: there is no worker process.
+int? channelPid(MontyChannel _) => null;
 
 /// One.
 int defaultMaxProcesses() => 1;
