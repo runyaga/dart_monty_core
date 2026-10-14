@@ -438,6 +438,30 @@ void main() {
     );
   }, testOn: '!windows');
 
+  test('a worker lost before a large request is written: sending it', () async {
+    // A "worker" with no stdout that never reads its stdin: the request is
+    // larger than the pipe, so it is still being written when the output
+    // ends.
+    final channel = await ProcessChannel.spawn(
+      const WorkerExecutable(
+        '/bin/sh',
+        args: ['-c', 'exec 1>&-; exec /bin/sleep 30'],
+      ),
+    );
+    addTearDown(channel.close);
+    final large = pb.ParentRequest(feed: pb.Feed(code: 'x' * (2 << 20)));
+    await expectLater(
+      channel.turn(large).timeout(const Duration(seconds: 15)),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.message,
+          'message',
+          startsWith('monty worker crashed while sending a request'),
+        ),
+      ),
+    );
+  }, testOn: '!windows');
+
   group('bounded read-ahead', () {
     const limit = ProcessChannel.readAheadLimit;
 

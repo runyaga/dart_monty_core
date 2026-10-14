@@ -93,8 +93,9 @@ final class ProcessChannel implements MontyChannel {
   MontyCrashedError? _crash;
   bool _killed = false;
 
-  /// Whether the last request could not be written: a worker found gone
-  /// then was lost while sending it (upstream's context).
+  /// Whether the request in flight is not yet all written, or could not
+  /// be: a worker found gone then was lost while sending it (upstream's
+  /// context).
   bool _unsent = false;
   bool _closed = false;
   bool _busy = false;
@@ -151,8 +152,11 @@ final class ProcessChannel implements MontyChannel {
     _busy = true;
     try {
       final stdin = _process.stdin;
-      // The add is synchronous, so the frame is queued at once; a frame
-      // that is not all written is recorded for _crashed.
+      // The add is synchronous, so the frame is queued at once. Until it
+      // is all written the request counts as unsent, as upstream sends a
+      // request whole before it reads: a worker lost meanwhile was lost
+      // while sending it.
+      _unsent = true;
       final written = () async {
         final sent = await _written(isAlive, stdin, frame);
         _unsent = !sent;
