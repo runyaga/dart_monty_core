@@ -284,7 +284,8 @@ if own_baseline_path != baseline_path:
     # it after merge), a lower floor would be inherited by the next PR, and a
     # floor above measured coverage would fail main's own CI after the merge.
     # A justified decrease is a maintainer's direct baseline commit on main.
-    if not os.path.exists(own_baseline_path) or own != base:
+    if (not os.path.exists(own_baseline_path)
+            or os.path.islink(own_baseline_path) or own != base):
         print('FAIL: this branch edits or deletes tool/coverage-baseline.json.')
         print('  PRs do not touch the baseline; main records it after merge.')
         print('  Restore it: git checkout origin/main -- '

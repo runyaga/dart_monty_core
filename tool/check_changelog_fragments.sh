@@ -46,6 +46,10 @@ lint_fragments() {
       *) echo "  $f: only changes/<slug>.md files belong in changes/"
          rc=1; continue ;;
     esac
+    if [ -L "$REPO/$f" ]; then
+      echo "  $f: symlinks are not supported; a fragment is a regular file"
+      rc=1; continue
+    fi
     n=$((n + 1))
     if ! python3 -I - "$REPO/$f" "$SECTIONS" <<'PY'
 import re, sys
@@ -196,6 +200,8 @@ self_test() {
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
   run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
   # Fragments already on the base branch (a new base holding old.md).
+  reset; printf '### Added\n\n- y\n' > "$tmp/t.txt"; ln -s ../t.txt "$tmp/changes/link.md"; commit
+  run "symlink fragment: must FAIL" 1 '[]' ''
   reset; printf '### Added\n\n- y\n' > "$tmp/changes/old.md"; commit
   base="$(git -C "$tmp" rev-parse HEAD)"
   git -C "$tmp" rm -q changes/old.md && git -C "$tmp" commit -qm del

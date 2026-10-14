@@ -211,9 +211,13 @@ void main(List<String> args) {
     }
   }
   final dir = Directory('changes');
+  if (dir.existsSync() &&
+      dir.listSync(followLinks: false).any((e) => e is Link)) {
+    _fail('changes/ holds a symlink; fragments are regular files');
+  }
   final files = dir.existsSync()
       ? (dir
-            .listSync()
+            .listSync(followLinks: false)
             .whereType<File>()
             .where(
               (f) =>
