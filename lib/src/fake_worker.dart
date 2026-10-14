@@ -297,8 +297,9 @@ final class _Feed {
   /// owes: the worker cannot end the feed while it is blocked on them.
   /// Null when the owed ids settled already and the script runs on.
   pb.ChildEvent? _end(FakeEnd end) {
-    // A dead worker owes nothing.
-    if (_outstanding.isEmpty || end is FakeCrash) {
+    // Only a return needs the gather done: a raise or a dead worker ends
+    // the feed whatever it still waits on.
+    if (_outstanding.isEmpty || end is! FakeReturn) {
       isOver = true;
 
       return _ending(end, _index);
@@ -392,7 +393,12 @@ final class _Feed {
         .map((r) => r.callId)
         .where(watched.contains)
         .firstWhereOrNull((id) => _calls[id] is _Failed);
-    if (failed != null) return _raiseFirstFailure([failed]);
+    if (failed != null) {
+      // The gather fails with it: caught, it owes nothing more.
+      _outstanding.clear();
+
+      return _raiseFirstFailure([failed]);
+    }
     final runsOn =
         remaining.length < awaited.length &&
         (remaining.isEmpty ||

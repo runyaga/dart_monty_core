@@ -206,6 +206,26 @@ void main() {
       await fake.close();
     });
 
+    test('a raise after a partial gather does not wait for it', () async {
+      final fake = FakeMontySession()
+        ..willCall('f')
+        ..willCall('f')
+        ..willAwait([0, 1], gathered: true)
+        ..willCall('g')
+        ..willRaise('ValueError', message: 'x');
+      final a = await fake.feedStart('x') as FunctionSnapshot;
+      final b = await a.resume(const ExternalFuture()) as FunctionSnapshot;
+      final wait = await b.resume(const ExternalFuture()) as FutureSnapshot;
+      final g =
+          await wait.resume({0: const ExternalReturnValue(MontyInt(1))})
+              as FunctionSnapshot;
+      await expectLater(
+        g.resume(const ExternalReturnValue(MontyInt(2))),
+        throwsA(isA<MontyRuntimeError>()),
+      );
+      await fake.close();
+    });
+
     test('a crash after a partial gather ends the session at once', () async {
       // A dead worker owes the gather nothing: no further wait.
       final fake = FakeMontySession()
