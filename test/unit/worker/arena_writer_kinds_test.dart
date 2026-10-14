@@ -246,6 +246,43 @@ void main() {
       attrs['self'] = MontyList([i]);
       expect(() => ArenaWriter().add(i), _refused('contains itself'));
     });
+
+    test('a class met again through its own attributes has none', () {
+      // A class constant that is an instance of its class: upstream's
+      // encoder sends the class again without attributes
+      // (python/encode.rs, enter_class_type), here as two of them.
+      final classAttrs = <String, MontyValue>{};
+      final type = _class(attrs: classAttrs);
+      classAttrs['RED'] = _instance(type, '01');
+      classAttrs['BLUE'] = _instance(type, '02');
+      final writer = ArenaWriter();
+      final root = writer.add(_instance(type, '03'));
+      final nodes = writer.arena.nodes;
+      final outer = itemAt(
+        nodes,
+        itemAt(nodes, root).classInstance.classType,
+      ).type;
+      final pairs = outer.attrs.pairs;
+      expect(pairs, hasLength(2));
+      for (final pair in pairs) {
+        final constant = itemAt(nodes, pair.value).classInstance;
+        final again = itemAt(nodes, constant.classType).type;
+        expect(again.hasAttrs(), isFalse);
+        expect(again.name, 'P');
+        expect(again.id, outer.id);
+        expect(again.isDataclass, isTrue);
+      }
+      expect(nodes.where((n) => n.hasType()), hasLength(3));
+    });
+
+    test('an instance met again through its own class is refused', () {
+      // Upstream refuses it as well: the instance is still being sent.
+      final classAttrs = <String, MontyValue>{};
+      final type = _class(attrs: classAttrs);
+      final red = _instance(type, '01');
+      classAttrs['RED'] = red;
+      expect(() => ArenaWriter().add(red), _refused('contains itself'));
+    });
   });
 
   group('outbound checks mirror the reader', () {
@@ -521,23 +558,42 @@ void main() {
       }
     });
 
-    test('named tuples Python could not build', () {
-      expect(
-        () => ArenaWriter().add(
-          const MontyNamedTuple(
-            typeName: 'P',
-            fieldNames: ['x', 'y'],
-            values: [MontyNone()],
+    test('named tuples: any names, as upstream sends them', () {
+      // Upstream's encoder sends a tuple's `_fields` unchecked and the
+      // worker accepts every name, `rename=True`'s `_0` included.
+      const names = ['_0', 'x', '_2', 'def', '1x', '', 'x'];
+      final writer = ArenaWriter();
+      final root = writer.add(
+        MontyNamedTuple(
+          typeName: 'm.def',
+          fieldNames: names,
+          values: [for (var i = 0; i < names.length; i++) MontyInt(i)],
+        ),
+      );
+      final node = itemAt(writer.arena.nodes, root).namedTuple;
+      expect(node.typeName, 'm.def');
+      expect(node.fieldNames, names);
+      expect(node.values, hasLength(names.length));
+    });
+
+    test('a named tuple with more or fewer values than names', () {
+      for (final values in [
+        const [MontyNone()],
+        const [MontyNone(), MontyNone(), MontyNone()],
+      ]) {
+        expect(
+          () => ArenaWriter().add(
+            MontyNamedTuple(
+              typeName: 'P',
+              fieldNames: const ['x', 'y'],
+              values: values,
+            ),
           ),
-        ),
-        _refused('Expected 2 arguments, got 1'),
-      );
-      expect(
-        () => ArenaWriter().add(
-          const MontyNamedTuple(typeName: 'def', fieldNames: [], values: []),
-        ),
-        _refused('cannot be a keyword'),
-      );
+          _refused(
+            'NamedTuple field_names and values must have the same length',
+          ),
+        );
+      }
     });
 
     test('class and instance ids must be uuids', () {
