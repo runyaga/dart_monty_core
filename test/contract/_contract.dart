@@ -261,8 +261,7 @@ String showValue(MontyValue value) => switch (value) {
   MontyString(value: final text) => 'MontyString(${jsonEncode(text)})',
   MontyPath(value: final path) => 'MontyPath(${jsonEncode(path)})',
   MontyBytes(value: final bytes) => 'MontyBytes$bytes',
-  MontyFloat(value: final v) when v == v.truncateToDouble() && v.isFinite =>
-    'MontyFloat(${v.toInt()}.0)',
+  MontyFloat(value: final v) => 'MontyFloat(${_showFloat(v)})',
   MontyList(:final items) => 'MontyList[${_showAll(items)}]',
   MontyTuple(:final items) => 'MontyTuple(${_showAll(items)})',
   MontySet(:final items) => 'MontySet{${_showAll(items)}}',
@@ -274,6 +273,17 @@ String showValue(MontyValue value) => switch (value) {
   // Every other kind whole, as its JSON form.
   _ => jsonEncode(value.toJson()),
 };
+
+/// [v] exactly and the same on every platform: an integral double below
+/// 2^53 with its `.0` and sign, a larger one in exponent form.
+String _showFloat(double v) {
+  if (!v.isFinite || v != v.truncateToDouble()) return '$v';
+  final magnitude = v.abs();
+  if (magnitude >= 9007199254740992) return v.toStringAsExponential();
+  final sign = v.isNegative ? '-' : '';
+
+  return '$sign${magnitude.toInt()}.0';
+}
 
 String _showAll(List<MontyValue> items) => items.map(showValue).join(', ');
 
@@ -315,7 +325,13 @@ String showError(Object error) => switch (error) {
 String _attributes(MontyExceptionValue exception) {
   final attributes = exceptionAttributes(exception);
 
-  return attributes.isEmpty ? '' : ' $attributes';
+  if (attributes.isEmpty) return '';
+  final shown = [
+    for (final MapEntry(:key, :value) in attributes.entries)
+      '$key: ${showValue(value)}',
+  ];
+
+  return ' {${shown.join(', ')}}';
 }
 
 /// [entry] as the expected answers write it.

@@ -8,6 +8,7 @@
 // so a mismatch reads against them directly; some are longer than 80.
 // ignore_for_file: lines_longer_than_80_chars
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 
@@ -310,7 +311,29 @@ final List<Scenario> scenarios = [
     ),
     run: (s) => s.run(0),
     trace: [
-      "MontyRuntimeError json.JSONDecodeError: Expecting ',' delimiter: line 1 column 2 (char 1) {msg: MontyString(Expecting ',' delimiter), doc: MontyString({), pos: MontyInt(1), lineno: MontyInt(1), colno: MontyInt(2)} | json.JSONDecodeError: Expecting ',' delimiter: line 1 column 2 (char 1)",
+      'MontyRuntimeError json.JSONDecodeError: Expecting \',\' delimiter: line 1 column 2 (char 1) {msg: MontyString("Expecting \',\' delimiter"), doc: MontyString("{"), pos: MontyInt(1), lineno: MontyInt(1), colno: MontyInt(2)} | json.JSONDecodeError: Expecting \',\' delimiter: line 1 column 2 (char 1)',
+    ],
+    answers: [],
+  ),
+  Scenario(
+    'a raised Unicode error keeps its attributes',
+    feeds: [r"b'a\xff'.decode()"],
+    script: (f) => f.willRaise(
+      'UnicodeDecodeError',
+      message:
+          "'utf-8' codec can't decode byte 0xff in position 1: "
+          'invalid start byte',
+      attributes: {
+        'encoding': _str('utf-8'),
+        'object': MontyBytes(Uint8List.fromList([97, 255])),
+        'start': _int(1),
+        'end': _int(2),
+        'reason': _str('invalid start byte'),
+      },
+    ),
+    run: (s) => s.run(0),
+    trace: [
+      'MontyRuntimeError UnicodeDecodeError: \'utf-8\' codec can\'t decode byte 0xff in position 1: invalid start byte {encoding: MontyString("utf-8"), object: MontyBytes[97, 255], start: MontyInt(1), end: MontyInt(2), reason: MontyString("invalid start byte")} | UnicodeDecodeError: \'utf-8\' codec can\'t decode byte 0xff in position 1: invalid start byte',
     ],
     answers: [],
   ),

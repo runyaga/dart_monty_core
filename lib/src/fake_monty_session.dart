@@ -170,7 +170,7 @@ final class FakeMontySession implements PoolSession {
     if (!exceptionTypeNames.contains(excType)) throw unknownExcType(excType);
     _script.add(
       FakeRaise(
-        raisedException(excType, message, attributes),
+        _sandboxException(excType, message, attributes),
         line: line,
         column: column,
       ),
@@ -311,6 +311,54 @@ final class FakeMontySession implements PoolSession {
 
     return _session = await pool.checkout();
   }
+}
+
+/// The exception the worker sends for a sandbox-raised [excType]: the
+/// host-answer form, plus a Unicode error's payload from [attributes]
+/// (`encoding`, `object`, `start`, `end`, `reason`), which only the worker
+/// sends.
+pb.RaisedException _sandboxException(
+  String excType,
+  String? message,
+  Map<String, MontyValue> attributes,
+) {
+  final raised = raisedException(excType, message, attributes);
+  if (_unicodeData(attributes) case final data?
+      when excType.startsWith(
+        'Unicode',
+      )) {
+    raised.data = pb.ExcData(unicode: data);
+  }
+
+  return raised;
+}
+
+pb.UnicodeErrorData? _unicodeData(Map<String, MontyValue> attributes) {
+  if (attributes case {
+    'encoding': MontyString(value: final encoding),
+    'start': MontyInt(value: final start),
+    'end': MontyInt(value: final end),
+    'reason': MontyString(value: final reason),
+  } when start >= 0 && end >= 0) {
+    final data = pb.UnicodeErrorData(
+      encoding: encoding,
+      start: Int64(start),
+      end: Int64(end),
+      reason: reason,
+    );
+    switch (attributes['object']) {
+      case MontyBytes(:final value):
+        data.objectBytes = value;
+      case MontyString(:final value):
+        data.objectStr = value;
+      default:
+        return null;
+    }
+
+    return data;
+  }
+
+  return null;
 }
 
 final UnsupportedError _noDump = UnsupportedError(
