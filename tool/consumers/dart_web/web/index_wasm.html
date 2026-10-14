@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>dart_monty_core consumer probe (Dart web, wasm)</title>
+  </head>
+  <body>
+    <pre id="result"></pre>
+    <script type="module">
+      const { compileStreaming } = await import('./main.mjs');
+      const app = await compileStreaming(fetch('main.wasm'));
+      const instance = await app.instantiate({});
+      instance.invokeMain();
+    </script>
+  </body>
+</html>

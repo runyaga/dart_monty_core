@@ -1,0 +1,10 @@
+# Its own options, so the root's exclusion of this directory (the Dart-only
+# `gate` job has no Flutter SDK) does not apply when the Flutter job analyzes it.
+analyzer:
+  exclude:
+    - build/**
+    - web/**
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
