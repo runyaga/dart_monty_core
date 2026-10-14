@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 
 import '_attribute_cases.dart';
 import '_config_cases.dart';
+import '_cwd_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
@@ -63,6 +64,13 @@ void main() {
     () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
   );
   attributeSessionTests(
+    _backend,
+    (body) => MontyPool.withPool(
+      (pool) => pool.withSession(body, options: _limits),
+      options: const PoolOptions(maxProcesses: 1),
+    ),
+  );
+  cwdSessionTests(
     _backend,
     (body) => MontyPool.withPool(
       (pool) => pool.withSession(body, options: _limits),

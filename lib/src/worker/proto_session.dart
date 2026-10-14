@@ -49,6 +49,12 @@ final class ProtoSession {
   final SessionConfig _config;
   bool _busy = false;
 
+  /// Whether the worker's working directory has been established: a feed
+  /// reached it and was not refused by the type check. Until then each feed
+  /// carries [defaultCwd]; afterwards none does, and the worker keeps its
+  /// directory, `os.chdir` included (upstream's `Checkout.cwd_set`).
+  bool _cwdSet = false;
+
   /// Configures a session on [channel].
   ///
   /// Throws [ArgumentError] for a setting upstream refuses, before anything
@@ -169,6 +175,8 @@ final class ProtoSession {
   Future<void> reset() => _guard(() async {
     final event = await _channel.turn(pb.ParentRequest(reset: pb.Reset()));
     if (event.whichKind() != pb.ChildEvent_Kind.ok) _desync('Reset', event);
+    // A new session, as upstream's next checkout of the worker is.
+    _cwdSet = false;
     await _configure();
   });
 
@@ -179,16 +187,29 @@ final class ProtoSession {
   /// place of the turn's outcome, a crash included; a suspension the failed
   /// feed leaves is never answered, so the worker is killed rather than
   /// left waiting.
+  ///
+  /// A `Feed` without a `cwd` is given [defaultCwd] while the session's
+  /// working directory is not yet established, as upstream's pool does.
   Future<pb.ChildEvent> _feedTurn(
     pb.ParentRequest request,
     _PrintSink sink,
   ) async {
+    final feed = request.whichKind() == pb.ParentRequest_Kind.feed;
+    if (feed && !_cwdSet && request.feed.cwd.isEmpty) {
+      request.feed.cwd = defaultCwd;
+    }
     final pb.ChildEvent event;
     try {
       event = await _channel.turn(request, onPrint: sink.add);
     } on Object {
       sink.rethrowFailure();
       rethrow;
+    }
+    // The worker adopts the directory after its type check and before it
+    // runs the code, so every reply but a typing rejection means it took
+    // effect. A request never sent (oversized) threw above.
+    if (feed && event.whichKind() != pb.ChildEvent_Kind.typingError) {
+      _cwdSet = true;
     }
     if (sink.failed && isSuspension(event)) _channel.kill();
     sink.rethrowFailure();
@@ -468,22 +489,34 @@ final class FeedResult {
   final List<(String, String)> prints;
 }
 
+/// The working directory a session's first feed switches to: upstream's
+/// default with no mounts, which a worker session never has.
+const String defaultCwd = '/';
+
 /// The `Feed` request running [code] with [inputs] bound first.
+///
+/// Encoded as upstream's pool encodes it: the arena always present (empty
+/// without inputs) and proto3 defaults left out, as prost leaves them out.
+/// The `cwd` is the session's to add (see [ProtoSession]).
 pb.ParentRequest feedRequest(
   String code,
   Map<String, MontyValue> inputs, {
   bool skipTypeCheck = false,
 }) {
-  final feed = pb.Feed(code: code);
+  final feed = pb.Feed();
+  if (code.isNotEmpty) feed.code = code;
   if (skipTypeCheck) feed.skipTypeCheck = true;
-  if (inputs.isNotEmpty) {
-    final writer = ArenaWriter();
-    for (final MapEntry(:key, :value) in inputs.entries) {
-      final index = encodingInput(() => writer.add(value));
-      feed.inputs.add(pb.NamedRef(name: key, value: index));
-    }
-    feed.values = writer.arena;
+  final writer = ArenaWriter();
+  for (final MapEntry(:key, :value) in inputs.entries) {
+    final index = encodingInput(() => writer.add(value));
+    feed.inputs.add(
+      pb.NamedRef(
+        name: key.isEmpty ? null : key,
+        value: index == 0 ? null : index,
+      ),
+    );
   }
+  feed.values = writer.arena;
 
   return pb.ParentRequest(feed: feed);
 }
