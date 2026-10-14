@@ -20,8 +20,9 @@ import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
-import 'package:fixnum/fixnum.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 
 /// The monty-proto schema version this driver speaks: upstream's
 /// `PROTOCOL_VERSION` at the pinned tag.
@@ -47,10 +48,15 @@ final class ProtoSession {
   bool _busy = false;
 
   /// Configures a session on [channel].
+  ///
+  /// Throws [ArgumentError] for a setting upstream refuses, before anything
+  /// is sent, and for one the worker refuses (an IANA zone name it does not
+  /// know), killing the worker.
   static Future<ProtoSession> open(
     MontyChannel channel, [
     SessionConfig config = const SessionConfig(),
   ]) async {
+    config.validate();
     final session = ProtoSession._(channel, config);
     await session._guard(session._configure);
 
@@ -120,9 +126,13 @@ final class ProtoSession {
   Future<void> _configure() async {
     final request = pb.ParentRequest(configure: _config._toProto());
     final event = await _channel.turn(request);
-    if (event.whichKind() != pb.ChildEvent_Kind.ok) {
-      _desync('Configure', event);
-    }
+    final kind = event.whichKind();
+    if (kind == pb.ChildEvent_Kind.ok) return;
+    if (kind != pb.ChildEvent_Kind.error) _desync('Configure', event);
+    // The worker refused a setting: one only it can check (an IANA zone
+    // name, against its zone database), so the caller's argument.
+    _channel.kill();
+    throw ArgumentError(event.error.exception.message);
   }
 
   /// The request that answers a suspension [event] during a feed.
@@ -297,45 +307,28 @@ Future<pb.ParentRequest> _sleep(pb.OsCall call, Duration max) async {
   return _resumeValue(call.callId, const MontyNone());
 }
 
-/// Session settings, sent to the worker in `Configure`.
+/// Session settings, sent to the worker in `Configure`: the parameters of
+/// upstream's `checkout`, as one record until the cutover.
 final class SessionConfig {
-  /// Creates the settings. A null limit leaves the worker's default.
+  /// Creates the settings. A null setting keeps upstream's default.
   const SessionConfig({
     this.scriptName = 'main.py',
-    this.maxMemoryBytes,
-    this.maxRecursionDepth,
-    this.maxFeedDuration,
-    this.maxTurnDuration,
-    this.maxSuspensions,
-    this.assertMessageAnnotations,
-    this.printFlushInterval,
+    this.limits,
     this.typeCheck = false,
     this.typeCheckStubs,
     this.typeCheckFormat,
     this.typeCheckColor = false,
+    this.assertMessageAnnotations,
+    this.printFlushInterval,
     this.osPolicy,
   });
 
   /// The file name tracebacks report for fed code.
   final String scriptName;
 
-  /// The interpreter's heap limit. Exceeding it raises `MemoryError` in
-  /// Python; the session survives.
-  final int? maxMemoryBytes;
-
-  /// The interpreter's recursion limit.
-  final int? maxRecursionDepth;
-
-  /// The longest one feed may run, enforced by the worker.
-  final Duration? maxFeedDuration;
-
-  /// The longest one turn of a feed may run (each resume starts a new
-  /// turn), enforced by the worker.
-  final Duration? maxTurnDuration;
-
-  /// How many times a feed may suspend for the host before the parent
-  /// aborts it; null is upstream's default, 1000. Enforced by the parent.
-  final int? maxSuspensions;
+  /// The session's resource limits; null leaves every one off, the
+  /// recursion depth and suspensions at 1000.
+  final ResourceLimits? limits;
 
   /// Whether each fed snippet is type-checked before it runs.
   final bool typeCheck;
@@ -343,36 +336,46 @@ final class SessionConfig {
   /// Stub file contents for the type check.
   final String? typeCheckStubs;
 
-  /// How the type check renders its diagnostics: one of [typeCheckFormats];
-  /// null is `full`.
+  /// How the type check renders its diagnostics: one of [typeCheckFormats],
+  /// ASCII case ignored; null is `full`.
   final String? typeCheckFormat;
 
   /// Whether the `full` and `concise` diagnostics carry ANSI colour.
   final bool typeCheckColor;
 
-  /// The clock, zone, sleep and randomness the session gets; null is the
-  /// worker's default. The protocol's own message until C3 designs
-  /// `OsPolicy`.
-  final pb.OsPolicy? osPolicy;
-
-  /// The longest one `time.sleep` the parent waits for this session: the
-  /// policy's system-sleep maximum, else upstream's 10 s.
-  Duration get systemSleepMax {
-    final sleep = osPolicy?.sleep;
-    if (sleep != null && sleep.hasSystem() && sleep.system.hasMaxMicros()) {
-      return Duration(microseconds: sleep.system.maxMicros.toInt());
-    }
-
-    return const Duration(seconds: 10);
-  }
-
   /// How many bytes of each operand an `assert` failure message shows; 0
-  /// turns the annotations off, null keeps the worker's default (120).
+  /// turns the annotations off (upstream's `False`), null keeps the
+  /// worker's default (120, upstream's `True`).
   final int? assertMessageAnnotations;
 
   /// How long the worker may hold printed text before it sends it; zero
   /// sends each line as it ends, null keeps the worker's default.
   final Duration? printFlushInterval;
+
+  /// The clock, zone, sleep and randomness the session gets; null is
+  /// upstream's default policy.
+  final OsPolicy? osPolicy;
+
+  /// The longest one `time.sleep` the parent waits for this session: the
+  /// policy's system-sleep maximum, else upstream's 10 s.
+  Duration get systemSleepMax =>
+      osPolicy?.systemSleepMax ?? const OsPolicy().systemSleepMax;
+
+  /// The longest one system sleep is charged, in nanoseconds (see
+  /// [OsPolicy.systemSleepCapNanos]).
+  BigInt get systemSleepCapNanos =>
+      (osPolicy ?? const OsPolicy()).systemSleepCapNanos;
+
+  /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
+  /// message, before any frame is sent.
+  void validate() {
+    limits?.validate();
+    final format = typeCheckFormat;
+    if (format != null) parseTypeCheckFormat(format);
+    validateAssertMessageAnnotations(assertMessageAnnotations);
+    validatePrintFlushInterval(printFlushInterval);
+    osPolicy?.validate();
+  }
 
   pb.Configure _toProto() {
     final flush = printFlushInterval;
@@ -382,28 +385,15 @@ final class SessionConfig {
       scriptName: scriptName,
       protocolVersion: protocolVersion,
       montyVersion: _driverVersion,
-      limits: _limits(),
+      limits: limits?.toProto(),
       assertMessageAnnotations: assertMessageAnnotations,
-      printFlushIntervalMs: flush?.inMilliseconds,
+      printFlushIntervalMs: flush == null ? null : printFlushIntervalMs(flush),
       typeCheck: typeCheck ? true : null,
       typeCheckStubs: typeCheckStubs,
-      typeCheckFormat: format == null ? null : _typeCheckFormat(format),
+      typeCheckFormat: format == null ? null : parseTypeCheckFormat(format),
       typeCheckColor: typeCheckColor ? true : null,
-      osPolicy: osPolicy,
+      osPolicy: osPolicy?.toProto(),
     );
-  }
-
-  /// The limits that are set, or null when none is.
-  pb.ResourceLimits? _limits() {
-    final limits = pb.ResourceLimits(
-      maxMemoryBytes: _int64(maxMemoryBytes),
-      maxRecursionDepth: _int64(maxRecursionDepth),
-      maxFeedDurationMicros: _int64(maxFeedDuration?.inMicroseconds),
-      maxTurnDurationMicros: _int64(maxTurnDuration?.inMicroseconds),
-      maxSuspensions: _int64(maxSuspensions),
-    );
-
-    return limits == pb.ResourceLimits() ? null : limits;
   }
 }
 
@@ -649,6 +639,43 @@ MontyStackFrame _frame(pb.StackFrame f) => MontyStackFrame(
   hideFrameName: f.hideFrameName,
 );
 
+/// Throws [ArgumentError] for a negative print flush interval, with
+/// upstream's message.
+void validatePrintFlushInterval(Duration? interval) {
+  final refusal = interval == null ? null : durationRefusal(interval);
+  if (refusal != null) {
+    throw ArgumentError.value(
+      interval,
+      'printFlushInterval',
+      'invalid print_flush_interval: $refusal',
+    );
+  }
+}
+
+/// The wire's flush interval in milliseconds: 0 for zero, else at least 1
+/// and at most `u32::MAX` (upstream's `flush_interval_ms`).
+int printFlushIntervalMs(Duration interval) {
+  if (interval == Duration.zero) return 0;
+  final ms = interval.inMilliseconds;
+  if (ms < 1) return 1;
+
+  return ms > _u32Max ? _u32Max : ms;
+}
+
+const int _u32Max = 0xffffffff;
+
+/// Throws [ArgumentError] unless [value] is in 0..2^32 - 1, with upstream's
+/// message. (Upstream spells 0 `False`, which this `int?` takes as 0.)
+void validateAssertMessageAnnotations(int? value) {
+  if (value != null && (value < 0 || value > _u32Max)) {
+    throw ArgumentError.value(
+      value,
+      'assertMessageAnnotations',
+      'assert_message_annotations int value must be between 1 and 2**32 - 1',
+    );
+  }
+}
+
 /// The diagnostic formats `typeCheckFormat` takes, as upstream names them.
 const Map<String, pb.TypeCheckFormat> typeCheckFormats = {
   'full': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_FULL,
@@ -662,12 +689,21 @@ const Map<String, pb.TypeCheckFormat> typeCheckFormats = {
   'github': pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
 };
 
-Int64? _int64(int? value) => value == null ? null : Int64(value);
+/// The format [name] names, matched as upstream matches it (ASCII case
+/// ignored, `json-lines` also accepted); throws [ArgumentError] with
+/// upstream's message for any other name.
+pb.TypeCheckFormat parseTypeCheckFormat(String name) {
+  final key = _asciiLower(name);
 
-pb.TypeCheckFormat _typeCheckFormat(String name) =>
-    typeCheckFormats[name] ??
-    (throw ArgumentError.value(
-      name,
-      'typeCheckFormat',
-      'must be one of ${typeCheckFormats.keys.join(', ')}',
-    ));
+  return typeCheckFormats[key == 'json-lines' ? 'jsonlines' : key] ??
+      (throw ArgumentError.value(
+        name,
+        'typeCheckFormat',
+        "unknown type check format '$name', expected one of: "
+            '${typeCheckFormats.keys.join(', ')}',
+      ));
+}
+
+String _asciiLower(String s) => String.fromCharCodes(
+  s.codeUnits.map((c) => c >= 0x41 && c <= 0x5a ? c + 0x20 : c),
+);

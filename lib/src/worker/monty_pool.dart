@@ -72,21 +72,15 @@ final class MontyPool {
   /// interval and OS policy ([SessionConfig], an internal record until the
   /// cutover).
   ///
-  /// Throws [ArgumentError] for an unknown `typeCheckFormat`, before any
-  /// worker is taken. Waits for a free worker up to the pool's
-  /// `checkoutTimeout`, then throws [TimeoutException]. Throws [StateError]
-  /// once the pool is closed.
+  /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
+  /// message, before any worker is taken; and for an IANA zone name the
+  /// worker does not know, once it has tried it. Waits for a free worker up
+  /// to the pool's `checkoutTimeout`, then throws [TimeoutException].
+  /// Throws [StateError] once the pool is closed.
   Future<PoolSession> checkout({
     SessionConfig options = const SessionConfig(),
   }) async {
-    final format = options.typeCheckFormat;
-    if (format != null && !typeCheckFormats.containsKey(format)) {
-      throw ArgumentError.value(
-        format,
-        'typeCheckFormat',
-        'must be one of ${typeCheckFormats.keys.join(', ')}',
-      );
-    }
+    options.validate();
 
     return openPoolSession(await _pool.acquire(), _pool.options, options);
   }

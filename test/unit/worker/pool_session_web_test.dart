@@ -16,13 +16,18 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
+
+import '_config_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
 /// Every session's memory is bounded.
-const _limits = SessionConfig(maxMemoryBytes: 64 * 1024 * 1024);
+const _limits = SessionConfig(
+  limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
+);
 
 /// What a test passes as `printCallback` when it does not look at prints.
 void _ignore(String stream, String text) => _ignored++;
@@ -51,6 +56,11 @@ external JSObject get _console;
 }
 
 void main() {
+  configOracleTests(
+    _backend,
+    () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
+  );
+
   test('feedRun, prints in order, Reset on close, reuse ($_backend)', () async {
     final pool = await MontyPool.start(
       options: const PoolOptions(
@@ -241,7 +251,7 @@ void main() {
             );
           },
           options: const SessionConfig(
-            maxMemoryBytes: 64 * 1024 * 1024,
+            limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
             typeCheck: true,
           ),
         ),

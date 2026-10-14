@@ -7,6 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
@@ -58,9 +59,11 @@ void main() {
         ch,
         const SessionConfig(
           scriptName: 'case.py',
-          maxMemoryBytes: 268435456,
-          maxRecursionDepth: 200,
-          maxFeedDuration: Duration(milliseconds: 1500),
+          limits: ResourceLimits(
+            maxMemory: 268435456,
+            maxRecursionDepth: 200,
+            maxFeedDuration: Duration(milliseconds: 1500),
+          ),
         ),
       );
       final configure = onlyItem(ch.requests).configure;
@@ -69,7 +72,10 @@ void main() {
       expect(configure.limits.maxMemoryBytes, Int64(268435456));
       expect(configure.limits.maxRecursionDepth, Int64(200));
       expect(configure.limits.maxFeedDurationMicros, Int64(1500000));
-      expect(configure.limits.hasMaxSuspensions(), isFalse);
+      // Upstream sends the two limits that cannot be off, at 1000 unset.
+      expect(configure.limits.maxSuspensions, Int64(1000));
+      expect(configure.limits.hasGcInterval(), isFalse);
+      expect(configure.limits.hasMaxTotalSleepMicros(), isFalse);
     });
 
     test('no limits set sends no limits message', () async {
@@ -698,7 +704,7 @@ void main() {
       ]);
       final s = await ProtoSession.open(
         ch,
-        const SessionConfig(maxMemoryBytes: 16 << 20),
+        const SessionConfig(limits: ResourceLimits(maxMemory: 16 << 20)),
       );
       await expectLater(
         s.feed('x = [0] * 10**9'),
@@ -848,7 +854,7 @@ void main() {
       ]);
       final s = await ProtoSession.open(
         ch,
-        const SessionConfig(maxRecursionDepth: 50),
+        const SessionConfig(limits: ResourceLimits(maxRecursionDepth: 50)),
       );
       await s.reset();
       expect(ch.remaining, 0);
