@@ -43,7 +43,10 @@ LEDGER="$PKG/tool/breaking-ledger.tsv"
 # whitespace-flattened CHANGELOG so a line break cannot break a check.
 FLAT="$(mktemp)"
 trap 'rm -f "$FLAT"' EXIT
-tr '\n' ' ' < "$CHANGELOG" | tr -s ' ' > "$FLAT"
+# A breaking PR's anchor lives in its changes/<slug>.md fragment until release
+# assembly folds the fragment into CHANGELOG.md, so both are searched.
+{ cat "$CHANGELOG"; cat "$PKG"/changes/*.md 2>/dev/null || true; } |
+  tr '\n' ' ' | tr -s ' ' > "$FLAT"
 
 BASE="${1:-}"
 if [ -z "$BASE" ]; then

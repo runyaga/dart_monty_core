@@ -520,6 +520,20 @@ test target separately — a bare `cargo llvm-cov` understates this crate badly,
 for the reason documented at the top of that script), not by `cargo llvm-cov`
 alone.
 
+**Changelog.** Do not edit `CHANGELOG.md` in a PR. A PR that changes `lib/`
+adds a fragment, `changes/<slug>.md` (format in
+[`changes/README.md`](changes/README.md)); CI fails without one unless the PR
+has the `no-changelog` label or a body line starting `no-changelog:`. At tag or
+release time a maintainer folds the fragments into `CHANGELOG.md` and deletes
+them: `dart tool/changelog_assemble.dart [--version X.Y.Z]`, in a PR labeled
+`changelog-assembly`.
+
+**Coverage baseline.** `tool/coverage-baseline.json` is not part of a PR. CI
+fails a PR only if a file's coverage, or lib-wide coverage, drops below the
+base branch's baseline; a rise needs no baseline edit. After a merge, a
+maintainer runs `bash tool/record_coverage_baseline.sh` on main to record the
+new baseline from main's CI coverage.
+
 Further contributor docs:
 [`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
 (whether a test is worth running) and
