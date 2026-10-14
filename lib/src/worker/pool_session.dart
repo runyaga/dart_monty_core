@@ -442,10 +442,17 @@ final class _SessionChannel implements MontyChannel {
         ? _raised('RuntimeError', 'suspension limit $limit exceeded')
         : _chargeSleep(event);
     if (exceeded == null) return event;
-    final reply = await channel.turn(
-      pb.ParentRequest(abortFeed: pb.AbortFeed(exception: exceeded)),
-      onPrint: onPrint,
-    );
+    final pb.ChildEvent reply;
+    try {
+      reply = await channel.turn(
+        pb.ParentRequest(abortFeed: pb.AbortFeed(exception: exceeded)),
+        onPrint: onPrint,
+      );
+    } on MontyCrashedError catch (crash) {
+      // Lost while the abort was written: upstream's context says so.
+      if (crash.context != sendingRequest) rethrow;
+      throw inContext(crash, abortingFeed);
+    }
     final kind = reply.whichKind();
     if (kind == pb.ChildEvent_Kind.error) return reply;
     kill();

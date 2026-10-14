@@ -63,7 +63,12 @@ final class ScriptedChannel implements MontyChannel {
       ];
     } on _Crash catch (c) {
       _isAlive = false;
-      throw crashedError(c.cause, detail: c.message, exitCode: c.exitCode);
+      throw crashedError(
+        c.cause,
+        detail: c.message,
+        exitCode: c.exitCode,
+        context: c.context,
+      );
     } on _Hang catch (h) {
       return _hang(h.prints, onPrint);
     }
@@ -131,9 +136,14 @@ Reply expecting(
 };
 
 /// A worker that dies with [cause] instead of answering, with [exitCode]
-/// when the OS reported one.
-Reply crash(CrashCause cause, [String? message, int? exitCode]) =>
-    (_) => throw _Crash(cause, message, exitCode);
+/// when the OS reported one, while the parent was [context].
+Reply crash(
+  CrashCause cause, [
+  String? message,
+  int? exitCode,
+  String? context,
+]) =>
+    (_) => throw _Crash(cause, message, exitCode, context);
 
 /// A worker that streams [prints] and then runs until killed.
 Reply hangAfter(List<pb.ChildEvent> prints) =>
@@ -151,11 +161,12 @@ final class _Hang implements Exception {
 
 /// How a [Reply] tells the channel the worker died.
 final class _Crash implements Exception {
-  const _Crash(this.cause, this.message, this.exitCode);
+  const _Crash(this.cause, this.message, this.exitCode, this.context);
 
   final CrashCause cause;
   final String? message;
   final int? exitCode;
+  final String? context;
 
   @override
   String toString() => '_Crash(${cause.name}, $message)';

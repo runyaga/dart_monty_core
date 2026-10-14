@@ -112,6 +112,10 @@ void main() {
         '${crashedError(CrashCause.vanished, detail: 'trap')}',
         'monty worker crashed while waiting for a reply',
       );
+      expect(
+        '${crashedError(CrashCause.vanished, context: sendingRequest)}',
+        'monty worker crashed while sending a request',
+      );
       // A signal Rust names, and one it would not on every platform.
       expect(
         '${crashedError(CrashCause.fatal, detail: 'x', exitCode: -6)}',

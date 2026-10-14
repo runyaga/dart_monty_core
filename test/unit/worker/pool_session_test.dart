@@ -1114,6 +1114,32 @@ void main() {
       expect(pool.liveWorkers, 0);
     });
 
+    test('a worker lost while the abort is written: aborting a feed', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('f')]),
+        crash(CrashCause.vanished, 'EPIPE', 1, sendingRequest),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout(
+        options: const SessionConfig(
+          limits: ResourceLimits(maxSuspensions: 0),
+        ),
+      );
+      await expectLater(
+        session.feedRun('f()', printCallback: _ignore),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.message,
+            'message',
+            'monty worker crashed while aborting a feed (exit status: 1)',
+          ),
+        ),
+      );
+      expect(_lastKind(ch), pb.ParentRequest_Kind.abortFeed);
+    });
+
     test('an abort answered with anything but Error kills', () async {
       final ch = ScriptedChannel([
         _configureOk,

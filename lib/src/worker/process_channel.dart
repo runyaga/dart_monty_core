@@ -92,6 +92,10 @@ final class ProcessChannel implements MontyChannel {
   final _ByteTail _stderr;
   MontyCrashedError? _crash;
   bool _killed = false;
+
+  /// Whether the last request could not be written: a worker found gone
+  /// then was lost while sending it (upstream's context).
+  bool _unsent = false;
   bool _closed = false;
   bool _busy = false;
   bool _exited = false;
@@ -147,10 +151,15 @@ final class ProcessChannel implements MontyChannel {
     _busy = true;
     try {
       final stdin = _process.stdin;
-      final sending = isAlive && _added(stdin, frame)
-          ? _flushed(stdin)
-          : Future.value(false);
-      unawaited(_endOutputIfUnsent(sending, _events));
+      // The add is synchronous, so the frame is queued at once; a frame
+      // that is not all written is recorded for _crashed.
+      final written = () async {
+        final sent = await _written(isAlive, stdin, frame);
+        _unsent = !sent;
+
+        return sent;
+      }();
+      unawaited(_endOutputIfUnsent(written, _events));
       // Read while the request is still being written: a worker paused on
       // a full stdout reads no stdin until the parent reads again, so a
       // request larger than the pipe would otherwise never be sent. A
@@ -160,7 +169,7 @@ final class ProcessChannel implements MontyChannel {
 
       // _flushed catches every failure, so nothing can go uncaught here.
       // ignore: avoid-uncaught-future-errors
-      return await sending ? event : throw await _crashed();
+      return await written ? event : throw await _crashed();
     } finally {
       _busy = false;
     }
@@ -231,6 +240,7 @@ final class ProcessChannel implements MontyChannel {
       detail:
           fatal ?? (_killed ? 'killed by the parent' : _events.describeEnd()),
       stderrTail: tail.isEmpty ? null : tail,
+      context: _unsent ? sendingRequest : null,
     );
   }
 
@@ -297,6 +307,10 @@ Map<String, String> workerEnvironment({
 Future<void> _endOutputIfUnsent(Future<bool> sending, EventQueue events) async {
   if (!await sending) await events.endWithin(ProcessChannel.pipeDrainGrace);
 }
+
+/// Whether [frame] was all written to [stdin] of a worker that was [alive].
+Future<bool> _written(bool alive, IOSink stdin, List<int> frame) async =>
+    alive && _added(stdin, frame) && await _flushed(stdin);
 
 /// Whether [frame] could be added to [stdin]; false once it is closed.
 bool _added(IOSink stdin, List<int> frame) {

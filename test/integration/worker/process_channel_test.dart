@@ -427,7 +427,14 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 500));
     await expectLater(
       channel.turn(_configure).timeout(const Duration(seconds: 15)),
-      throwsA(isA<MontyCrashedError>()),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.message,
+          'message',
+          // Upstream's context for a worker lost while writing to it.
+          startsWith('monty worker crashed while sending a request'),
+        ),
+      ),
     );
   }, testOn: '!windows');
 

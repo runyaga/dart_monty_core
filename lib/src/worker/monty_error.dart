@@ -96,6 +96,7 @@ final class MontyCrashedError extends MontyError {
     this.detail,
     this.exitCode,
     this.stderrTail,
+    this.context,
   }) : super._(
          message,
          MontyExceptionValue(excType: 'RuntimeError', message: message),
@@ -125,6 +126,10 @@ final class MontyCrashedError extends MontyError {
 
   /// On native, the last 4 KiB or less of the worker's stderr. Internal.
   final String? stderrTail;
+
+  /// What the parent was doing when it found the worker gone, for a
+  /// vanished worker; null is [waitingForReply]. Internal.
+  final String? context;
 }
 
 /// Why a worker stopped answering.
@@ -216,15 +221,17 @@ MontyTypingError typingError(String diagnostics) =>
 ///
 /// [detail] is what the channel saw, kept for diagnostics. The message is
 /// upstream's `PoolError` text: `monty worker crashed: <detail>` for a
-/// worker that announced its end (`FatalError`), `monty worker crashed
-/// while waiting for a reply` for one that vanished, each with the exit
-/// status when known; [detail] alone for a worker the parent killed.
+/// worker that announced its end (`FatalError`), and for one that vanished
+/// `monty worker crashed while` what the parent was doing ([context],
+/// [waitingForReply] by default), each with the exit status when known;
+/// [detail] alone for a worker the parent killed.
 MontyCrashedError crashedError(
   CrashCause cause, {
   String? detail,
   int? exitCode,
   String? stderrTail,
   bool timedOut = false,
+  String? context,
 }) {
   final status = switch (exitCode) {
     null => '',
@@ -238,7 +245,7 @@ MontyCrashedError crashedError(
     // reported by what the parent was doing, as upstream's PoolError.
     CrashCause.fatal => 'monty worker crashed: ${detail ?? ''}$status',
     CrashCause.vanished || CrashCause.outOfMemory =>
-      'monty worker crashed while waiting for a reply$status',
+      'monty worker crashed while ${context ?? waitingForReply}$status',
   };
 
   return MontyCrashedError._(
@@ -248,8 +255,30 @@ MontyCrashedError crashedError(
     detail: detail,
     exitCode: exitCode,
     stderrTail: stderrTail,
+    context: context,
   );
 }
+
+/// Upstream's contexts for a worker that vanished: what the parent was
+/// doing when it found the worker gone.
+const String waitingForReply = 'waiting for a reply';
+
+/// See [waitingForReply]: the request could not be written.
+const String sendingRequest = 'sending a request';
+
+/// See [waitingForReply]: an `AbortFeed` could not be written.
+const String abortingFeed = 'aborting a feed';
+
+/// [crash] found while the parent was [context] instead.
+MontyCrashedError inContext(MontyCrashedError crash, String context) =>
+    crashedError(
+      crash.cause,
+      detail: crash.detail,
+      exitCode: crash.exitCode,
+      stderrTail: crash.stderrTail,
+      timedOut: crash.timedOut,
+      context: context,
+    );
 
 /// A signal as Rust's `ExitStatus` shows it: `signal: 9 (SIGKILL)` for the
 /// signals numbered alike on Linux and macOS, the number alone otherwise.
@@ -287,6 +316,7 @@ MontyCrashedError repeatCrash(MontyCrashedError crash) => MontyCrashedError._(
   detail: crash.detail,
   exitCode: crash.exitCode,
   stderrTail: crash.stderrTail,
+  context: crash.context,
 );
 
 String _summary(RaisedRecord record) {
