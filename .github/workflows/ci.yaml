@@ -563,7 +563,9 @@ jobs:
   # ---------------------------------------------------------------------------
   test:
     name: Dart test (JIT)
-    needs: [changes]
+    # worker-rust: the worker executable, so an untagged unit test may start a
+    # real pool (test/unit/worker/real_pool_vm_test.dart).
+    needs: [changes, worker-rust]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -597,6 +599,15 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
+      # The executable worker-rust built, where tool/build_worker.sh puts it
+      # and worker_locator.dart looks (as in test-worker-vm). Artifacts do not
+      # keep the executable bit.
+      - name: Download the worker executable
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dart_monty_worker-linux-x64
+          path: lib/src/bin/linux-x64
+      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
       # analyze, format and the source-only check_*.sh scripts that used to be
       # repeated here run in `gate`, which runs on every code OR docs change
       # (a superset of this job's trigger). This job is the tests.
@@ -812,6 +823,16 @@ jobs:
           if pgrep -f -- --dart-monty-core-worker; then
             echo "FAIL: a relaunched worker is still running"; exit 1
           fi
+      # The hook with native/Cargo.toml absent and the opt-in set still
+      # builds the worker library (the tree the old engine's removal leaves).
+      # Run after the opted-in consumer above, which built the same cdylib
+      # configuration into native/worker/target; the test links that crate.
+      - name: Hook builds the worker without the old crate
+        run: |
+          set -o pipefail
+          dart test test/hook -p vm --run-skipped --tags=integration \
+            2>&1 | tee /tmp/hook-test.log
+          bash tool/assert_test_count.sh /tmp/hook-test.log 2 hook
 
   # ---------------------------------------------------------------------------
   # GitHub Pages render gate — the deployed site must load in a real browser

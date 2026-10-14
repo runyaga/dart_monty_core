@@ -341,7 +341,13 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # in 5s with it on. (CI's 5m53s for the same step is the runner, not the
 # instrumentation.) $OUT is under .gate-logs/, which is gitignored, so this
 # still writes nothing the read-only check can see.
-sf unit_tests 700 dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker --coverage="$OUT/cov"
+# The worker executable first, as worker_vm below: an untagged unit test may
+# start a real pool (test/unit/worker/real_pool_vm_test.dart). The gate does
+# not build; build_worker.sh --check fails, naming the build command, when the
+# worker is missing or stale.
+unit_tests(){ bash tool/build_worker.sh --check &&
+  dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker --coverage="$OUT/cov"; }
+sf unit_tests 700 unit_tests
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
