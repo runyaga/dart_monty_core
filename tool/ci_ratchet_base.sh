@@ -6,7 +6,8 @@
 # RATCHET_BASE_REF.
 #
 #   pull_request   origin/$GITHUB_BASE_REF (fetched, depth 1), as before.
-#   anything else  the first parent of HEAD (push to main, workflow_dispatch).
+#   anything else  the first parent of HEAD (push to main, workflow_dispatch),
+#                  except for a baseline-recording commit (below): HEAD itself.
 #
 # WHY THE PUSH CASE IS NOT EMPTY. With no base ref, tool/coverage_ratchet.sh
 # has no way to tell a deleted file from a vanished one: every baseline file
@@ -16,6 +17,16 @@
 # needs a successful push run of that commit, could not record. The first
 # parent of a squash or merge commit is main as it was before the change, so
 # comparing with it applies the same DELETED rule the PR passed with.
+#
+# THE RECORDING COMMIT IS THE ONE EXCEPTION. After a deleting merge M,
+# tool/record_coverage_baseline.sh commits the new baseline R on top of it. At R
+# the first parent M still carries the OLD baseline, which lists the deleted
+# files, and `git diff M R -- lib/` holds no deletion, so they would read as
+# VANISHED and R's own run would fail. A commit that changes
+# tool/coverage-baseline.json is compared with itself (HEAD): its baseline is
+# the freshly recorded one, and the tracefile must still not fall below it. This
+# only widens the push case, where the baseline is only ever written by that
+# recorder; a PR cannot reach it.
 #
 # A push whose HEAD has no parent in the checkout (a shallow clone, a root
 # commit) FAILS instead of falling back to the empty ref: that fallback is the
@@ -44,6 +55,10 @@ resolve() {
     echo "  needs fetch-depth >= 2. Refusing to run the ratchet with no base:" >&2
     echo "  every file the change deleted would read as VANISHED." >&2
     return 1
+  fi
+  if ! git diff --quiet 'HEAD^1' HEAD -- tool/coverage-baseline.json; then
+    git rev-parse --verify 'HEAD^{commit}'
+    return 0
   fi
   git rev-parse --verify 'HEAD^1^{commit}'
 }
@@ -108,6 +123,17 @@ self_test() {
   else echo "SELF-TEST FAIL: empty base ref did not report VANISHED"; echo "$out"; rc=1; fi
   trace lib/src/b.dart:1/4 lib/src/c.dart:1/4
   run "push: a deletion does not excuse a FILE DECREASE" 1 "FILE DECREASE" push ""
+
+  # The recording commit R after that deletion merge M: the baseline is
+  # regenerated from the post-deletion tracefile, nothing else changes.
+  reset; git -C "$repo" rm -q lib/src/a.dart test/a_test.dart; commit
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  (cd "$repo" && bash "$RATCHET" "$tmp/trace.info" --update >/dev/null) && commit
+  run "push: the baseline-recording commit after a deletion merge passes" 0 "" push ""
+  # It is not a way round the rule: a recording commit still cannot sit below
+  # the baseline it records, and the merge before it keeps its DELETED proof.
+  git -C "$repo" checkout -q -f HEAD^1
+  run "push: the deleting merge itself, once more, is DELETED" 0 "DELETED" push ""
 
   # A push that keeps every file but drops one from the tracefile still fails.
   reset; echo '// b2' >> "$repo/lib/src/b.dart"; commit
