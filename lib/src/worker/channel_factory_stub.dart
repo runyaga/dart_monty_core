@@ -14,7 +14,7 @@ SpawnHandle openChannel({String? workerLocation}) => throw UnsupportedError(
 );
 
 /// Null: there is no worker process.
-int? channelPid(MontyChannel channel) => null;
+int? channelPid(MontyChannel _) => null;
 
 /// One.
 int defaultMaxProcesses() => 1;

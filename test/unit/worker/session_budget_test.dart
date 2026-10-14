@@ -326,11 +326,14 @@ void main() {
     test('a reply sets a budget only where there is none', () {
       // update_from: `if self.feed_budget.is_none()`; a budget in force is
       // never changed, larger or smaller.
-      final budget = timed(feed: second)
-        ..admit(reporting(_ok(), feed: 5, turn: 7));
-      expect(budgets(budget), (second, const Duration(microseconds: 7)));
-      budget.admit(reporting(_ok(), feed: 10000000, turn: 1));
-      expect(budgets(budget), (second, const Duration(microseconds: 7)));
+      const seven = Duration(microseconds: 7);
+      final budget = timed(feed: second);
+      final states = <(Duration?, Duration?)>[];
+      for (final (feed, turn) in [(5, 7), (10000000, 1)]) {
+        budget.admit(reporting(_ok(), feed: feed, turn: turn));
+        states.add(budgets(budget));
+      }
+      expect(states, [(second, seven), (second, seven)]);
     });
 
     test("a load forgets the session's; the Load reply's are adopted", () {
@@ -367,7 +370,7 @@ void main() {
         'negative', () {
       final budget = timed()..admit(reporting(_ok(), feed: -1, turn: -1));
       final (feed, turn) = budgets(budget);
-      expect(feed!.isNegative, isFalse);
+      expect(feed?.isNegative, isFalse);
       expect(turn, feed);
       expect(feed, greaterThan(const Duration(days: 365 * 280)));
     });

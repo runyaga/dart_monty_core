@@ -18,6 +18,7 @@ import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
 import '_restore_oracle.g.dart';
 
 /// Starts a pool with [options].
@@ -129,6 +130,13 @@ final class _Run {
   final Map<String, MontySnapshot> _spent = {};
   final Map<String, Uint8List> _dumps = {};
 
+  /// Closes every session the case opened.
+  Future<void> closeAll() async {
+    for (final session in _sessions.values) {
+      await session.close();
+    }
+  }
+
   /// The outcome of [step], in the oracle's form.
   Future<String> step(List<Object> step) async {
     try {
@@ -140,9 +148,11 @@ final class _Run {
 
   Future<String> _step(List<Object> step) async {
     final [op as String, name as String, ...rest] = step;
+    // A step's one argument; `close` and the dumps have none.
+    final arg = rest.isEmpty ? '' : onlyItem(rest);
     if (op == 'open') {
       _sessions[name] = await _pool.checkout(
-        options: _sessionConfig(rest.single as Map<String, Object>),
+        options: _sessionConfig(arg as Map<String, Object>),
       );
 
       return 'ok';
@@ -155,27 +165,27 @@ final class _Run {
         return 'ok';
       case 'feed':
         return _value(
-          await session.feedRun(rest.single as String, printCallback: _ignore),
+          await session.feedRun(arg as String, printCallback: _ignore),
         );
       case 'feed_dumping':
         final ext = coroutine((args, kwargs) async {
           _dumps[name] = await session.dump();
 
-          return MontyInt((args.single as MontyInt).value + 1);
+          return MontyInt((onlyItem(args) as MontyInt).value + 1);
         });
 
         return _value(
           await session.feedRun(
-            rest.single as String,
+            arg as String,
             externals: {'ext': ext},
             printCallback: _ignore,
           ),
         );
       case 'chdir':
         await session.feedRun(
-          "import os\nos.chdir('${rest.single}')",
+          "import os\nos.chdir('$arg')",
           printCallback: _ignore,
-          os: (name, args, kwargs) => name == 'Path.stat'
+          os: (call, args, kwargs) => call == 'Path.stat'
               ? _dirStat
               : throw const OsCallNotHandledException(),
         );
@@ -184,7 +194,7 @@ final class _Run {
       case 'start':
         return _describe(
           _snapshots[name] = await session.feedStart(
-            rest.single as String,
+            arg as String,
             printCallback: _ignore,
           ),
         );
@@ -194,23 +204,26 @@ final class _Run {
         return 'dumped';
       case 'snapdump' || 'olddump':
         final snapshot = (op == 'snapdump' ? _snapshots : _spent)[name];
-        _dumps[name] = await (snapshot! as SuspendedSnapshot).dump();
+        if (snapshot is! SuspendedSnapshot) {
+          throw StateError('no suspension to dump: $snapshot');
+        }
+        _dumps[name] = await snapshot.dump();
 
         return 'dumped';
       case 'load_session':
-        await session.loadSession(_state(rest.single as String));
+        await session.loadSession(_state(arg as String));
 
         return 'ok';
       case 'load_snapshot':
         return _describe(
           _snapshots[name] = await session.loadSnapshot(
-            _state(rest.single as String),
+            _state(arg as String),
             printCallback: _ignore,
           ),
         );
       case 'resume':
         final snapshot = _spent[name] = _snapshots[name]!;
-        final value = MontyInt(rest.single as int);
+        final value = MontyInt(arg as int);
 
         return _describe(
           _snapshots[name] = await switch (snapshot) {
@@ -229,12 +242,6 @@ final class _Run {
       : _dumps[source]!;
 
   String _value(MontyValue value) => 'value: ${(value as MontyString).value}';
-
-  Future<void> closeAll() async {
-    for (final session in _sessions.values) {
-      await session.close();
-    }
-  }
 }
 
 /// The tests, each case on a pool from [start], closed at its end.

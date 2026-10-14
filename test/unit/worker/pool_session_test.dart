@@ -143,6 +143,12 @@ final Matcher _finished = isA<StateError>().having(
   contains('finished'),
 );
 
+/// Expects a feed on [session] to be refused: a suspension is pending.
+Future<void> _refusedAsPending(PoolSession session) => expectLater(
+  session.feedRun('1', printCallback: _ignore),
+  throwsA(_pending),
+);
+
 /// A feed refused while a suspension waits for its answer.
 final Matcher _pending = isA<StateError>().having(
   (e) => e.message,
@@ -2376,10 +2382,8 @@ void main() {
           await session.feedStart('f()', printCallback: _ignore)
               as FunctionSnapshot;
       expect(await session.dump(), [7]);
-      await expectLater(
-        session.feedRun('1', printCallback: _ignore),
-        throwsA(_pending),
-      );
+      // The same feed, refused before and after the next dump.
+      await _refusedAsPending(session);
       // An error reply to a Dump does not end the feed either (upstream
       // keeps the pending call).
       await expectLater(
@@ -2392,10 +2396,7 @@ void main() {
           ),
         ),
       );
-      await expectLater(
-        session.feedRun('1', printCallback: _ignore),
-        throwsA(_pending),
-      );
+      await _refusedAsPending(session);
       expect(
         await snapshot.resume(const ExternalReturnValue(MontyInt(1))),
         isA<SessionComplete>(),
@@ -2421,18 +2422,23 @@ void main() {
       final session = await pool.checkout();
       final printing = Completer<void>();
       final order = <String>[];
-      final feed = session
-          .feedRun(
-            'print("x")',
-            printCallback: (stream, text) async {
-              printing.complete();
-              await release.future;
-            },
-          )
-          .then((value) => order.add('feed'));
+      Future<void> feeding() async {
+        await session.feedRun(
+          'print("x")',
+          printCallback: (stream, text) async {
+            printing.complete();
+            await release.future;
+          },
+        );
+        order.add('feed');
+      }
+
+      Future<void> dumping() async => order.add('dump ${await session.dump()}');
+
+      final feed = feeding();
       await printing.future;
       expect(session.workerPid, isNull, reason: 'a turn is in flight');
-      final dump = session.dump().then((bytes) => order.add('dump $bytes'));
+      final dump = dumping();
       await pumpEventQueue();
       expect(order, isEmpty);
       release.complete();
@@ -2533,13 +2539,8 @@ void main() {
         expect(ch.requests.length, sent + 1);
         // Busy now: this one waits, and a resume made meanwhile spends the
         // snapshot before the dump's check.
-        final second = snapshot.dump();
-        final resumed = snapshot.resume(
-          const ExternalReturnValue(MontyNone()),
-        );
-        expect(await first, [1]);
-        await expectLater(
-          second,
+        final second = expectLater(
+          snapshot.dump(),
           throwsA(
             isA<StateError>().having(
               (e) => e.message,
@@ -2548,6 +2549,11 @@ void main() {
             ),
           ),
         );
+        final resumed = snapshot.resume(
+          const ExternalReturnValue(MontyNone()),
+        );
+        expect(await first, [1]);
+        await second;
         expect(await resumed, isA<SessionComplete>());
         expect(ch.remaining, 0);
       },
@@ -2839,18 +2845,19 @@ void main() {
       ]);
       final pool = await _pool(Workers([dumping, loading]), maxProcesses: 2);
       addTearDown(pool.close);
-      final a = await pool.checkout();
+      // One checkout per worker.
+      final [a, b] = await Future.wait([
+        for (var i = 0; i < 2; i++) pool.checkout(),
+      ]);
       await expectLater(
         a.dump(),
         throwsA(_violation('unexpected reply to Dump: ok')),
       );
-      final b = await pool.checkout();
       await expectLater(
         b.loadSession(state),
         throwsA(_violation('unexpected reply to Load: complete')),
       );
-      expect(dumping.kills, greaterThan(0));
-      expect(loading.kills, greaterThan(0));
+      expect([dumping.kills, loading.kills], everyElement(greaterThan(0)));
       expect(pool.liveWorkers, 0);
     });
 

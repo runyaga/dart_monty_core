@@ -53,6 +53,10 @@ Future<void> _useAndDrop(MontyPool pool) async {
       limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
     ),
   );
-  final value = await session.feedRun('1 + 1', printCallback: (_, _) {});
+  final printed = StringBuffer();
+  final value = await session.feedRun(
+    '1 + 1',
+    printCallback: (_, text) => printed.write(text),
+  );
   if (value != const MontyInt(2)) throw StateError('unexpected $value');
 }

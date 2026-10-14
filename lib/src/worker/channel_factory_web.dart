@@ -34,7 +34,7 @@ SpawnHandle openChannel({String? workerLocation}) =>
     });
 
 /// Null: a Web Worker has no process id.
-int? channelPid(MontyChannel channel) => null;
+int? channelPid(MontyChannel _) => null;
 
 /// `navigator.hardwareConcurrency`, or 4 when the browser hides it.
 int defaultMaxProcesses() {

@@ -812,7 +812,7 @@ void main() {
       try {
         final session = await pool.checkout(options: _limits);
         final pid = session.workerPid;
-        expect(pid, ProcessChannel.live.single.pid);
+        expect(pid, onlyItem(ProcessChannel.live).pid);
         int? inTurn = -1;
         await session.feedRun(
           'print(1)',
@@ -836,7 +836,8 @@ void main() {
           vmArgs: ['--enable-vm-service=0'],
         );
         // The VM announces its service on stdout first.
-        expect(out.trim().split('\n').last, 'finalized', reason: err);
+        final lines = out.trim().split('\n');
+        expect(itemAt(lines, lines.length - 1), 'finalized', reason: err);
         expect(code, 0, reason: err);
       },
       timeout: _probeTimeout,

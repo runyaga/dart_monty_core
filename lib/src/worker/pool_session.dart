@@ -217,6 +217,12 @@ final class _Hold {
   /// session (upstream's `used`).
   bool used = false;
 
+  /// The turn in flight, if any: what [abandon] fails.
+  Completer<pb.ChildEvent>? turn;
+
+  /// Whether no call can run any more: closed, or the worker gone.
+  bool get isFinished => closed || lease.isReleased;
+
   /// Claims the session for a load, which only a fresh one takes.
   void claimFresh() {
     if (used) {
@@ -227,12 +233,6 @@ final class _Hold {
     }
     used = true;
   }
-
-  /// The turn in flight, if any: what [abandon] fails.
-  Completer<pb.ChildEvent>? turn;
-
-  /// Whether no call can run any more: closed, or the worker gone.
-  bool get isFinished => closed || lease.isReleased;
 
   /// Kills the worker during a turn and fails that turn at once, so a close
   /// need not wait for a turn stuck in a print callback.
@@ -378,7 +378,7 @@ final class _LeasedSession implements PoolSession {
     Map<String, ProtoExternalFunction>? externals,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
-  }) async {
+  }) => Future.sync(() {
     _hold.claimFresh();
     final drive = _FeedDrive(
       this,
@@ -388,7 +388,7 @@ final class _LeasedSession implements PoolSession {
     _snapshots = drive;
 
     return _withTurn(() => drive.restore(state), feed: false);
-  }
+  });
 
   @override
   Future<Uint8List> dump() async {
@@ -1287,6 +1287,13 @@ final class _SessionChannel implements MontyChannel {
     }
   }
 
+  /// The session's close owns the worker's end; the driver never closes.
+  @override
+  Future<void> close() async => kill();
+
+  @override
+  void kill() => _hold.lease.kill();
+
   /// Takes the channel for [request], now free, and returns whether a
   /// suspension was pending.
   ///
@@ -1326,13 +1333,6 @@ final class _SessionChannel implements MontyChannel {
     over?.complete();
     if (pendingSuspension && !dump) onSuspended?.call();
   }
-
-  /// The session's close owns the worker's end; the driver never closes.
-  @override
-  Future<void> close() async => kill();
-
-  @override
-  void kill() => _hold.lease.kill();
 
   /// [request]'s turn-ending event; a suspension past the budget, or a
   /// system sleep past the sleep budget, is replaced by the reply to the
