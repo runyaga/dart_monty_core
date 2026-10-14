@@ -23,8 +23,8 @@ that changes `lib/`. Exempt a PR with the `no-changelog` label, or a PR-body
 line starting `no-changelog:` and a reason. A PR must not edit `CHANGELOG.md`;
 only the assembly or release PR (label `changelog-assembly`) does.
 
-A breaking change also needs its row in `tool/breaking-ledger.tsv`; the ledger
-anchor may point at fragment text until assembly moves it into `CHANGELOG.md`.
+A breaking change goes in a `### Breaking` section of its fragment. Release
+notes are the only record of breaking changes; nothing else tracks them.
 
 To assemble (at tag or release time, in its own PR):
 
