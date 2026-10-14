@@ -360,13 +360,22 @@ final class ClassType<T extends Object> {
 
   /// The class constants sent with the class: `'all'` sends every public
   /// one, a list exactly those, each through [convertValue].
-  Map<String, Object> eagerAttributes() => _convertAll(this, [
-    for (final name in _eagerNames(
-      policies.eagerAttrs,
-      value.attributes.keys,
-    ))
-      (name, _attribute(name)),
-  ]);
+  ///
+  /// `'all'` skips a constant that holds a function, as upstream's
+  /// `_is_class_machinery` skips callables; a name listed explicitly is
+  /// read whatever it holds.
+  Map<String, Object> eagerAttributes() {
+    final all = policies.eagerAttrs == 'all';
+
+    return _convertAll(this, [
+      for (final name in _eagerNames(
+        policies.eagerAttrs,
+        value.attributes.keys,
+      ))
+        if (_attribute(name) case final read when !all || read is! BoundMethod)
+          (name, read),
+    ]);
+  }
 
   /// A lazy class attribute; `AttributeError` when [name] is not exposed.
   Object lookupLazyAttr(String name) {
@@ -540,7 +549,7 @@ final class ClassInstance<T extends Object> {
     if (_method(name) case final method?) return BoundMethod(name, method);
     final constant = classType.value.attributes[name];
 
-    return (constant ?? (throw _error(name)))();
+    return _named(name, (constant ?? (throw _error(name)))());
   }
 
   ExternalException _error(String name) =>

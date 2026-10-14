@@ -140,6 +140,17 @@ final HostClass<_Box> _callableField = HostClass(
   ),
 );
 
+/// A class with a plain constant and one holding a function.
+final HostClass<_Box> _callableConstant = HostClass(
+  'Box',
+  attributes: {
+    'KIND': () => const MontyString('box'),
+    'twice': () =>
+        (List<MontyValue> args, Map<String, MontyValue> kw) =>
+            const MontyInt(2),
+  },
+);
+
 /// A class whose method `run` is shadowed by an instance field.
 final HostClass<_Box> _shadowedMethod = HostClass(
   'Box',
@@ -521,6 +532,29 @@ void main() {
         itemAt(lookup.values.nodes, lookup.value).function.name,
         'bump',
       );
+    });
+
+    test('a class constant holding a function', () {
+      // Read through an instance, it is a function.
+      final box = ClassInstance(
+        _Box(1),
+        classType: ClassType(_callableConstant),
+        policies: const HostPolicies(eagerAttrs: ['twice'], lazyAttrs: 'all'),
+      );
+      final aFunction = isA<BoundMethod>();
+      expect(box.eagerAttributes()['twice'], aFunction);
+      expect(box.lookupLazyAttr('twice'), aFunction);
+      // The class's eager 'all' skips it; a listed name reads it.
+      final all = ClassType(
+        _callableConstant,
+        policies: const HostPolicies(eagerAttrs: 'all'),
+      );
+      expect(all.eagerAttributes().keys, ['KIND']);
+      final listed = ClassType(
+        _callableConstant,
+        policies: const HostPolicies(eagerAttrs: ['twice']),
+      );
+      expect(listed.eagerAttributes()['twice'], aFunction);
     });
 
     test('a class serves its constants lazily', () {
