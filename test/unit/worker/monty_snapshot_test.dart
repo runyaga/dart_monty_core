@@ -9,7 +9,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
-    hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
+    hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';

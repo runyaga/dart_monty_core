@@ -22,8 +22,6 @@
 library;
 
 export 'src/externals.dart';
-export 'src/monty.dart';
-export 'src/monty_factory.dart';
 export 'src/mount/memory_mounted_os_handler.dart';
 export 'src/mount/monty_memory_file.dart';
 export 'src/mount/mount_dir.dart';
@@ -36,23 +34,14 @@ export 'src/mount/vfs_content.dart';
 export 'src/mount/vfs_limits.dart'
     show defaultMemoryUsageLimit, entryMemoryUsage, formatBytesPretty;
 export 'src/mount/vfs_node.dart';
-export 'src/platform/code_capture.dart';
-export 'src/platform/inputs_encoder.dart';
 // The backend-adapter layer is not exported: monty_core_bindings.dart,
 // repl_bindings.dart and wire_json.dart. Consumers use MontyProgress /
 // MontyResult instead. See a5c8b4d.
 export 'src/platform/monty_error.dart';
 export 'src/platform/monty_exception.dart';
-export 'src/platform/monty_future_capable.dart';
 export 'src/platform/monty_internal_error.dart';
 export 'src/platform/monty_limits.dart';
-export 'src/platform/monty_platform.dart';
-export 'src/platform/monty_progress.dart';
-export 'src/platform/monty_resource_usage.dart';
-export 'src/platform/monty_result.dart';
 export 'src/platform/monty_stack_frame.dart';
 export 'src/platform/monty_typing_error.dart';
 export 'src/platform/monty_value.dart';
 export 'src/platform/os_call_exception.dart';
-export 'src/repl/monty_repl.dart';
-export 'src/repl/repl_platform.dart';

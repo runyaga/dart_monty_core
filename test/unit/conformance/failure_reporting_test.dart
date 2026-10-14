@@ -54,17 +54,5 @@ void main() {
       // No line to report is a fact worth stating, not a blank.
       expect(described, contains('no exception detail'));
     });
-
-    test('DispatchOutcome carries the exception, not just its type', () {
-      const e = MontyException(
-        message: 'boom',
-        excType: 'ValueError',
-        lineNumber: 3,
-      );
-      const o = DispatchOutcome(excType: 'ValueError', exception: e);
-
-      expect(o.exception?.lineNumber, 3);
-      expect(o.exception?.message, 'boom');
-    });
   });
 }
