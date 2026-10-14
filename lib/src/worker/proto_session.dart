@@ -11,14 +11,17 @@ library;
 import 'dart:async';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+
+export 'package:dart_monty_core/src/worker/host_answers.dart'
+    show ProtoExternalFunction, ProtoOsCallHandler, coroutine;
 
 /// The monty-proto schema version this driver speaks: upstream's
 /// `PROTOCOL_VERSION` at the pinned tag.
@@ -65,10 +68,12 @@ final class ProtoSession {
   /// Runs [code] and completes with its value.
   ///
   /// [inputs] are bound as global names before the code runs. A call to a
-  /// name in [externals] runs that function; [onOsCall] answers OS calls,
-  /// which are declined without it. [onPrint] sees each run of printed text
-  /// as it arrives, and its future is awaited before the next one; the
-  /// result also lists them all, unless [FeedOptions.collectPrints] is false.
+  /// name in [externals] runs that function and answers with its value, or,
+  /// for a function marked with [coroutine], settles it through the futures
+  /// protocol ([HostAnswers]). [onOsCall] answers OS calls, which are
+  /// declined without it. [onPrint] sees each run of printed text as it
+  /// arrives, and its future is awaited before the next one; the result
+  /// also lists them all, unless [FeedOptions.collectPrints] is false.
   ///
   /// A failing [onPrint] follows upstream's binding: later prints are not
   /// delivered, the turn is still read to its end, and then the failure is
@@ -84,27 +89,86 @@ final class ProtoSession {
     ProtoOsCallHandler? onOsCall,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
+  }) => drive(
+    code,
+    HostAnswers(
+      externals: externals,
+      os: onOsCall,
+      systemSleepMax: options.systemSleepMax,
+    ),
+    inputs: inputs,
+    onPrint: onPrint,
+    options: options,
+  );
+
+  /// Runs [code] as [feed] does, its suspensions answered by [host], which
+  /// is disposed when the feed ends. [FeedOptions.systemSleepMax] is
+  /// [host]'s, not [options]'.
+  Future<FeedResult> drive(
+    String code,
+    HostAnswers host, {
+    Map<String, MontyValue> inputs = const {},
+    ProtoPrintCallback? onPrint,
+    FeedOptions options = const FeedOptions(),
   }) => _guard(() async {
     final sink = _PrintSink(
       onPrint,
       collect: options.collectPrints,
       abandoned: options.abandoned,
     );
-    final feed = _feedRequest(code, inputs);
-    if (options.skipTypeCheck) feed.skipTypeCheck = true;
-    final systemSleepMax = options.systemSleepMax;
-    var request = pb.ParentRequest(feed: feed);
-    for (;;) {
-      final event = await _feedTurn(request, sink);
-      if (event.whichKind() == pb.ChildEvent_Kind.complete) {
-        return FeedResult(
-          _value(event.complete),
-          List.unmodifiable(sink.prints),
-        );
+    var request = feedRequest(
+      code,
+      inputs,
+      skipTypeCheck: options.skipTypeCheck,
+    );
+    try {
+      for (;;) {
+        final event = _turnEnd(await _feedTurn(request, sink));
+        if (event.whichKind() == pb.ChildEvent_Kind.complete) {
+          return FeedResult(
+            valueOf(event.complete),
+            List.unmodifiable(sink.prints),
+          );
+        }
+        request = await answerSuspension(event, host);
       }
-      request = await _answer(event, externals, onOsCall, systemSleepMax);
+    } finally {
+      host.dispose();
     }
   });
+
+  /// Sends [request] as one turn and returns how it ended: `Complete` or a
+  /// suspension. A Python exception throws as [feed]'s do; prints go to
+  /// [onPrint] as [feed]'s do. For step-by-step driving.
+  Future<pb.ChildEvent> step(
+    pb.ParentRequest request, {
+    ProtoPrintCallback? onPrint,
+    bool Function()? abandoned,
+  }) => _guard(() async {
+    final sink = _PrintSink(onPrint, collect: false, abandoned: abandoned);
+
+    return _turnEnd(await _feedTurn(request, sink));
+  });
+
+  /// The answer [host] gives the suspension [event], as [feed] answers it:
+  /// a system sleep is waited by the parent. A `ResolveFutures` with no
+  /// coroutine started is a desync: the worker is killed.
+  Future<pb.ParentRequest> answerSuspension(
+    pb.ChildEvent event,
+    HostAnswers host,
+  ) async => switch (event.whichKind()) {
+    pb.ChildEvent_Kind.nameLookup => host.lookup(event.nameLookup.name),
+    pb.ChildEvent_Kind.functionCall => await host.call(event.functionCall),
+    pb.ChildEvent_Kind.osCall => await host.osCall(
+      event.osCall,
+      parentSleeps: true,
+    ),
+    // With nothing started, nothing can settle the worker's wait: it is
+    // out of step with this driver (upstream discards the checkout).
+    pb.ChildEvent_Kind.resolveFutures when host.hasPending =>
+      await host.settle(),
+    _ => _unexpected(event),
+  };
 
   /// Drops all session state, then configures a fresh session on the same
   /// worker.
@@ -150,39 +214,27 @@ final class ProtoSession {
     throw ArgumentError(event.error.exception.message);
   }
 
-  /// The request that answers a suspension [event] during a feed.
-  Future<pb.ParentRequest> _answer(
-    pb.ChildEvent event,
-    Map<String, ProtoExternalFunction> externals,
-    ProtoOsCallHandler? onOsCall,
-    Duration? systemSleepMax,
-  ) async => switch (event.whichKind()) {
+  /// [event] when it ends a feed's turn (`Complete` or a suspension);
+  /// throws the error it reports otherwise.
+  pb.ChildEvent _turnEnd(pb.ChildEvent event) => switch (event.whichKind()) {
+    pb.ChildEvent_Kind.complete ||
+    pb.ChildEvent_Kind.nameLookup ||
+    pb.ChildEvent_Kind.functionCall ||
+    pb.ChildEvent_Kind.osCall ||
+    pb.ChildEvent_Kind.resolveFutures => event,
     pb.ChildEvent_Kind.error => _throwRaised(event.error),
     // Only a type-checking session's feed may end this way.
     pb.ChildEvent_Kind.typingError when _config.typeCheck => throw typingError(
       event.typingError.diagnostics,
     ),
-    pb.ChildEvent_Kind.nameLookup => _answerNameLookup(
-      event.nameLookup.name,
-      externals,
-    ),
-    pb.ChildEvent_Kind.functionCall => await _answerCall(
-      event.functionCall,
-      externals,
-    ),
-    pb.ChildEvent_Kind.osCall
-        when systemSleepMax != null &&
-            event.osCall.whichCall() == pb.OsCall_Call.systemSleep =>
-      await _sleep(event.osCall, systemSleepMax),
-    pb.ChildEvent_Kind.osCall => await _answerOsCall(event.osCall, onOsCall),
-    // Never sent without the request that asks for it (futures, type
-    // checking, dumps), or not a feed's answer at all.
-    _ => _violation('unexpected event: ${event.whichKind().name}'),
+    // Never sent without the request that asks for it (dumps), or not
+    // a feed's answer at all.
+    _ => _unexpected(event),
   };
 
   /// The value [complete] carries; one that does not decode is a protocol
   /// violation (upstream's "invalid payload from worker").
-  MontyValue _value(pb.Complete complete) {
+  MontyValue valueOf(pb.Complete complete) {
     try {
       return ArenaReader(complete.values)[complete.value];
     } on FormatException catch (e) {
@@ -217,6 +269,10 @@ final class ProtoSession {
   /// The worker answered [request] with an event that cannot follow it.
   Never _desync(String request, pb.ChildEvent event) =>
       _violation('unexpected reply to $request: ${event.whichKind().name}');
+
+  /// The worker sent [event] where a feed's turn cannot end that way.
+  Never _unexpected(pb.ChildEvent event) =>
+      _violation('unexpected event: ${event.whichKind().name}');
 
   /// The worker answered against the protocol, so its state is unknown:
   /// kill it rather than guess (upstream's `protocol_violation`).
@@ -323,22 +379,6 @@ final class FeedOptions {
   final bool Function()? abandoned;
 }
 
-/// Waits a system sleep, cut to [max], and answers it with `None`.
-Future<pb.ParentRequest> _sleep(pb.OsCall call, Duration max) async {
-  final seconds = call.systemSleep.seconds;
-  // A delay that is not a finite, non-negative number waits the ceiling,
-  // as upstream counts an invalid worker delay.
-  final micros = seconds.isFinite && seconds >= 0
-      ? seconds * Duration.microsecondsPerSecond
-      : double.infinity;
-  final wait = micros >= max.inMicroseconds
-      ? max
-      : Duration(microseconds: micros.round());
-  await Future<void>.delayed(wait);
-
-  return _resumeValue(call.callId, const MontyNone());
-}
-
 /// Session settings, sent to the worker in `Configure`: the parameters of
 /// upstream's `checkout`, as one record until the cutover.
 final class SessionConfig {
@@ -429,30 +469,6 @@ final class SessionConfig {
   }
 }
 
-/// A host function Python can call by name.
-///
-/// Throw [OsCallException] to raise a chosen Python exception class; any
-/// other throw raises `RuntimeError` with its text.
-typedef ProtoExternalFunction =
-    FutureOr<MontyValue> Function(
-      List<MontyValue> args,
-      Map<String, MontyValue> kwargs,
-    );
-
-/// Answers an OS call such as `Path.read_text`.
-///
-/// [name] is upstream's dotted name and [args] its arguments (a
-/// [MontyPath] for the `Path` methods). Return null, or throw
-/// [OsCallNotHandledException], to decline: Python then sees the call's own
-/// no-handler error. Throw [OsCallException] to raise a chosen exception;
-/// any other throw raises `RuntimeError` with its text.
-typedef ProtoOsCallHandler =
-    FutureOr<MontyValue?> Function(
-      String name,
-      List<MontyValue> args,
-      Map<String, MontyValue> kwargs,
-    );
-
 /// Receives one run of printed text, as it arrives; a returned future is
 /// awaited before the next run is delivered.
 typedef ProtoPrintCallback =
@@ -472,164 +488,24 @@ final class FeedResult {
   final List<(String, String)> prints;
 }
 
-pb.Feed _feedRequest(String code, Map<String, MontyValue> inputs) {
+/// The `Feed` request running [code] with [inputs] bound first.
+pb.ParentRequest feedRequest(
+  String code,
+  Map<String, MontyValue> inputs, {
+  bool skipTypeCheck = false,
+}) {
   final feed = pb.Feed(code: code);
-  if (inputs.isEmpty) return feed;
-  final writer = ArenaWriter();
-  for (final MapEntry(:key, :value) in inputs.entries) {
-    feed.inputs.add(pb.NamedRef(name: key, value: writer.add(value)));
-  }
-
-  return feed..values = writer.arena;
-}
-
-pb.ParentRequest _answerNameLookup(
-  String name,
-  Map<String, ProtoExternalFunction> externals,
-) {
-  if (!externals.containsKey(name)) {
-    return pb.ParentRequest(
-      resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
-    );
-  }
-  // The name resolves to a function the child calls back through
-  // FunctionCall, so the host keeps the implementation.
-  final arena = pb.Arena(nodeCount: 1, nodes: [functionNode(name)]);
-
-  return pb.ParentRequest(
-    resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
-  );
-}
-
-Future<pb.ParentRequest> _answerCall(
-  pb.FunctionCall call,
-  Map<String, ProtoExternalFunction> externals,
-) async {
-  final function = externals[call.functionName];
-  if (function == null) {
-    return _resume(
-      call.callId,
-      pb.ExtFunctionResult(notFound: call.functionName),
-    );
-  }
-
-  // Decoding the arguments is inside the guarded body too: an argument this
-  // driver cannot carry fails the call in Python, and the worker, suspended
-  // on it, still gets its answer.
-  return _resumeWith(call.callId, () {
-    final reader = ArenaReader(call.values);
-    final args = [for (final a in call.args) reader[a]];
-
-    return function(args, _kwargs(reader, call.kwargs));
-  });
-}
-
-Future<pb.ParentRequest> _answerOsCall(
-  pb.OsCall call,
-  ProtoOsCallHandler? handler,
-) async {
-  final named = _osCallName(call);
-  final notHandled = _resume(
-    call.callId,
-    pb.ExtFunctionResult(notHandled: pb.Unit()),
-  );
-  if (handler == null || named == null) return notHandled;
-  final (name, path) = named;
-  try {
-    final value = await handler(name, [MontyPath(path)], const {});
-    if (value == null) return notHandled;
-
-    return _resumeValue(call.callId, value);
-  } on OsCallNotHandledException {
-    return notHandled;
-  } on Object catch (error) {
-    return _resume(
-      call.callId,
-      pb.ExtFunctionResult(error: _raisedFrom(error)),
-    );
-  }
-}
-
-/// Upstream's name and the path for the OS calls whose only argument is a
-/// path; null for the rest, which this driver declines.
-(String, String)? _osCallName(pb.OsCall call) {
-  final entry = _pathCalls[call.whichCall()];
-  if (entry == null) return null;
-  final (name, path) = entry;
-
-  return (name, path(call));
-}
-
-final Map<pb.OsCall_Call, (String, String Function(pb.OsCall))> _pathCalls = {
-  pb.OsCall_Call.exists: ('Path.exists', (c) => c.exists),
-  pb.OsCall_Call.isFile: ('Path.is_file', (c) => c.isFile),
-  pb.OsCall_Call.isDir: ('Path.is_dir', (c) => c.isDir),
-  pb.OsCall_Call.isSymlink: ('Path.is_symlink', (c) => c.isSymlink),
-  pb.OsCall_Call.readText: ('Path.read_text', (c) => c.readText),
-  pb.OsCall_Call.readBytes: ('Path.read_bytes', (c) => c.readBytes),
-  pb.OsCall_Call.stat: ('Path.stat', (c) => c.stat),
-  pb.OsCall_Call.iterdir: ('Path.iterdir', (c) => c.iterdir),
-  pb.OsCall_Call.resolve: ('Path.resolve', (c) => c.resolve),
-  pb.OsCall_Call.absolute: ('Path.absolute', (c) => c.absolute),
-  pb.OsCall_Call.unlink: ('Path.unlink', (c) => c.unlink),
-  pb.OsCall_Call.rmdir: ('Path.rmdir', (c) => c.rmdir),
-};
-
-Map<String, MontyValue> _kwargs(ArenaReader reader, List<pb.NodePair> pairs) {
-  final kwargs = <String, MontyValue>{};
-  for (final pair in pairs) {
-    final key = reader[pair.key];
-    if (key is! MontyString) {
-      throw FormatException(
-        'a keyword argument name must be a str; the worker sent a '
-        '${key.runtimeType}',
-      );
+  if (skipTypeCheck) feed.skipTypeCheck = true;
+  if (inputs.isNotEmpty) {
+    final writer = ArenaWriter();
+    for (final MapEntry(:key, :value) in inputs.entries) {
+      feed.inputs.add(pb.NamedRef(name: key, value: writer.add(value)));
     }
-    kwargs[key.value] = reader[pair.value];
+    feed.values = writer.arena;
   }
 
-  return kwargs;
+  return pb.ParentRequest(feed: feed);
 }
-
-Future<pb.ParentRequest> _resumeWith(
-  int callId,
-  FutureOr<MontyValue> Function() body,
-) async {
-  try {
-    return _resumeValue(callId, await body());
-  } on Object catch (error) {
-    return _resume(callId, pb.ExtFunctionResult(error: _raisedFrom(error)));
-  }
-}
-
-pb.ParentRequest _resumeValue(int callId, MontyValue value) {
-  final writer = ArenaWriter();
-  final index = writer.add(value);
-
-  return _resume(
-    callId,
-    pb.ExtFunctionResult(returnValue: index),
-    writer.arena,
-  );
-}
-
-pb.ParentRequest _resume(
-  int callId,
-  pb.ExtFunctionResult result, [
-  pb.Arena? values,
-]) => pb.ParentRequest(
-  resumeCall: pb.ResumeCall(callId: callId, result: result, values: values),
-);
-
-/// The Python exception a host callback's throw becomes.
-pb.RaisedException _raisedFrom(Object error) => switch (error) {
-  OsCallException(:final message, :final pythonExceptionType) =>
-    pb.RaisedException(
-      excType: pythonExceptionType ?? 'RuntimeError',
-      message: message,
-    ),
-  _ => pb.RaisedException(excType: 'RuntimeError', message: '$error'),
-};
 
 /// Throws [ArgumentError] for a negative print flush interval, with
 /// upstream's message.

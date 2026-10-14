@@ -12,10 +12,14 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/worker/arena_nodes.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/default_print.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart';
@@ -63,18 +67,45 @@ abstract interface class PoolSession {
   /// on. For a host function's answer the suspension stays pending: every
   /// later feed throws [StateError], and only [close] recovers the worker.
   ///
+  /// A host function marked with [coroutine] is a coroutine, as an
+  /// `async def` host function is upstream: a call the sandbox awaits with
+  /// nothing else to run is awaited in place, any other gets a pending
+  /// future the sandbox awaits later, settled when its Dart future
+  /// completes.
+  ///
   /// A `time.sleep` is waited by the session, cut to the OS policy's
-  /// system-sleep maximum (10 s by default). An `asyncio.sleep` is answered
-  /// through the futures protocol, which this driver does not run yet; until
-  /// it does, such a sleep is declined and raises in the sandbox.
+  /// system-sleep maximum (10 s by default). An `asyncio.sleep` is waited
+  /// the same way through the futures protocol, so sibling tasks run
+  /// meanwhile.
   ///
   /// On a type-checking session a snippet the check rejects throws
   /// [MontyTypingError] without running; [skipTypeCheck] skips the check
   /// for this snippet. Past the session's
   /// `maxSuspensions` host calls the feed is aborted with an in-sandbox
-  /// `RuntimeError`; a system sleep that would take the session's sleeps
-  /// past `maxTotalSleep` aborts it with an in-sandbox `TimeoutError`.
+  /// `RuntimeError`; a system sleep, either kind, that would take the
+  /// session's sleeps past `maxTotalSleep` aborts it with an in-sandbox
+  /// `TimeoutError`.
   Future<MontyValue> feedRun(
+    String code, {
+    Map<String, MontyValue>? inputs,
+    Map<String, ProtoExternalFunction>? externals,
+    ProtoPrintCallback? printCallback,
+    ProtoOsCallHandler? os,
+    bool skipTypeCheck = false,
+  });
+
+  /// Starts [code] and returns at its first suspension, or its end: each
+  /// host function call, OS call (system sleeps included), name lookup and
+  /// wait on pending futures is a [MontySnapshot] for the caller to answer
+  /// (upstream's `feed_start`). The parameters are [feedRun]'s; [externals]
+  /// and [os] are kept for the snapshots' `resumeAuto`, never consulted
+  /// otherwise.
+  ///
+  /// While a suspension is unanswered the session refuses a new feed with
+  /// [StateError] ("feed called while a suspension is awaiting an
+  /// answer"). The budgets, the deadlines and [close] apply to each resume
+  /// as to a feed's turns.
+  Future<MontySnapshot> feedStart(
     String code, {
     Map<String, MontyValue>? inputs,
     Map<String, ProtoExternalFunction>? externals,
@@ -108,7 +139,7 @@ Future<PoolSession> openPoolSession(
       hold,
       channel,
       await ProtoSession.open(channel, config),
-      config.systemSleepMax,
+      config,
     );
     // A dead worker was mapped by the channel; any failure frees the slot.
   } on Object {
@@ -165,22 +196,28 @@ final class _Hold {
 }
 
 final class _LeasedSession implements PoolSession {
-  _LeasedSession(this._hold, this._channel, this._proto, this._sleepMax) {
+  _LeasedSession(this._hold, this._channel, this._proto, this._config) {
     _channel.onSuspended = _handOff;
   }
 
   final _Hold _hold;
   final _SessionChannel _channel;
   final ProtoSession _proto;
-  final Duration _sleepMax;
+  final SessionConfig _config;
   Future<void>? _closing;
 
-  /// The feed running now, if any.
-  Future<MontyValue>? _active;
+  /// The feed or resume running now, if any.
+  Future<Object?>? _active;
 
-  /// The running feed's outcome, which a close may fail before its drive
+  /// The running call's outcome, which a close may fail before its drive
   /// ends.
-  Completer<MontyValue>? _outcome;
+  Completer<Object?>? _outcome;
+
+  /// The running `feedRun`'s host side, whose sleeps a close ends.
+  HostAnswers? _feedHost;
+
+  /// The latest `feedStart`'s drive, whose sleeps a close ends.
+  _FeedDrive? _snapshots;
 
   /// Feeds waiting for the turn, oldest first (upstream's turn lock is
   /// first come, first served).
@@ -198,52 +235,61 @@ final class _LeasedSession implements PoolSession {
     ProtoPrintCallback? printCallback,
     ProtoOsCallHandler? os,
     bool skipTypeCheck = false,
-  }) async {
-    if (_inPrintCallback(this)) {
-      throw StateError(
-        'a print callback cannot call its own session: it runs inside the '
-        'turn',
-      );
-    }
-    if (_hold.isFinished) throw _finishedError();
-    // Null when the turn is free now: no await, so the drive below starts
-    // in this same synchronous step and no other feed can slip in.
-    final wait = _turnWait();
-    if (wait != null) {
-      await wait;
-      // From here to the drive's start is one synchronous step: the turn
-      // stays reserved until this feed holds it, so no new feed can slip
-      // in between.
-      _reserved = false;
-      if (_hold.isFinished || _active != null || _suspended) _refuse();
-    }
-    final drive = _drive(
+  }) => _withTurn(
+    () => _drive(
       code,
       inputs: inputs,
-      externals: externals,
+      host: _host(externals, os),
       printCallback: printCallback,
-      os: os,
       skipTypeCheck: skipTypeCheck,
+    ),
+    feed: true,
+  );
+
+  @override
+  Future<MontySnapshot> feedStart(
+    String code, {
+    Map<String, MontyValue>? inputs,
+    Map<String, ProtoExternalFunction>? externals,
+    ProtoPrintCallback? printCallback,
+    ProtoOsCallHandler? os,
+    bool skipTypeCheck = false,
+  }) {
+    final drive = _FeedDrive(
+      this,
+      _host(externals, os),
+      printCallback ?? defaultPrint,
     );
-    // The call's own outcome: the drive's, unless a close while a host
-    // callback runs fails it first (the drive then ends unwatched).
-    final outcome = _outcome = Completer<MontyValue>();
-    unawaited(_settle(outcome, drive));
-    _active = outcome.future;
-    try {
-      return await outcome.future;
-    } finally {
-      _active = null;
-      _outcome = null;
-      _handOff();
-    }
+    _snapshots = drive;
+
+    return _withTurn(
+      () => drive.step(
+        feedRequest(code, inputs ?? const {}, skipTypeCheck: skipTypeCheck),
+      ),
+      feed: true,
+    );
   }
+
+  /// The host side of one feed: [externals] and [os], and system sleeps
+  /// waited up to the session's maximum.
+  HostAnswers _host(
+    Map<String, ProtoExternalFunction>? externals,
+    ProtoOsCallHandler? os,
+  ) => HostAnswers(
+    externals: externals ?? const {},
+    os: os,
+    systemSleepMax: _config.systemSleepMax,
+  );
 
   @override
   Future<void> close() => _closing ??= _close();
 
   Future<void> _close() async {
     _hold.closed = true;
+    // Sleeps end now: no timer outlives the session, and a drive waiting on
+    // one goes on to fail as finished.
+    _feedHost?.dispose();
+    _snapshots?._host.dispose();
     // Queued feeds fail as finished, one after another.
     _handOff();
     // A host callback is running (no turn in flight): its call fails now,
@@ -263,15 +309,59 @@ final class _LeasedSession implements PoolSession {
     }
   }
 
-  /// What this feed must wait on to hold the turn, or null when the turn
+  /// Runs [body] holding the turn, after any running drive or resume and
+  /// any feed queued before it. A feed ([feed]) is refused while a
+  /// suspension awaits an answer.
+  Future<T> _withTurn<T>(
+    Future<T> Function() body, {
+    required bool feed,
+  }) async {
+    if (_inPrintCallback(this)) {
+      throw StateError(
+        'a print callback cannot call its own session: it runs inside the '
+        'turn',
+      );
+    }
+    if (_hold.isFinished) throw _finishedError();
+    // Null when the turn is free now: no await, so the body below starts
+    // in this same synchronous step and no other call can slip in.
+    final wait = _turnWait(feed: feed);
+    if (wait != null) {
+      await wait;
+      // From here to the body's start is one synchronous step: the turn
+      // stays reserved until this call holds it, so no new feed can slip
+      // in between.
+      _reserved = false;
+      if (_hold.isFinished || _active != null || (feed && _suspended)) {
+        _refuse();
+      }
+    }
+    // A body that throws before its first await (an input the writer
+    // refuses) still releases the turn below.
+    final run = Future.sync(body);
+    // The call's own outcome: the body's, unless a close while a host
+    // callback runs fails it first (the body then ends unwatched).
+    final outcome = _outcome = Completer<Object?>();
+    unawaited(_settle(outcome, run));
+    _active = outcome.future;
+    try {
+      return await outcome.future as T;
+    } finally {
+      _active = null;
+      _outcome = null;
+      _handOff();
+    }
+  }
+
+  /// What this call must wait on to hold the turn, or null when the turn
   /// is free now.
   ///
   /// With nobody ahead and the worker suspended (on a host call, or on an
   /// answer that was too large to send), upstream's turn lock is free and
-  /// the feed would take it, then refuse: so it throws at once.
-  Future<void>? _turnWait() {
+  /// a [feed] would take it, then refuse: so it throws at once.
+  Future<void>? _turnWait({required bool feed}) {
     final queueFree = _waiters.isEmpty && !_reserved;
-    if (queueFree && _suspended) throw _pendingError();
+    if (feed && queueFree && _suspended) throw _pendingError();
 
     return _active != null || !queueFree ? _waitForTurn() : null;
   }
@@ -305,41 +395,45 @@ final class _LeasedSession implements PoolSession {
     _waiters.removeFirst().complete();
   }
 
-  Future<MontyValue> _drive(
-    String code, {
-    required Map<String, MontyValue>? inputs,
-    required Map<String, ProtoExternalFunction>? externals,
-    required ProtoPrintCallback? printCallback,
-    required ProtoOsCallHandler? os,
-    required bool skipTypeCheck,
-  }) async {
-    final print = printCallback ?? defaultPrint;
-    // A dead worker is mapped and its slot freed by the session channel, at
-    // the transport. A MontyCrashedError that reaches here unmapped was
-    // thrown by a host callback, or by the driver after it killed the
-    // worker; either passes through as is.
-    final result = await _proto.feed(
-      code,
-      inputs: inputs ?? const {},
-      externals: externals ?? const {},
-      onOsCall: os,
-      // Marked, so a call back into this session from inside it is
-      // refused rather than left waiting on the turn it is part of.
-      onPrint: (stream, text) => runZoned(
+  /// [print] marked, so a call back into this session from inside it is
+  /// refused rather than left waiting on the turn it is part of.
+  ProtoPrintCallback _printing(ProtoPrintCallback print) =>
+      (stream, text) => runZoned(
         () => print(stream, text),
         zoneValues: {
           _printZone: {..._printingSessions(), this},
         },
-      ),
-      options: FeedOptions(
-        collectPrints: false,
-        systemSleepMax: _sleepMax,
-        skipTypeCheck: skipTypeCheck,
-        abandoned: () => _hold.isFinished,
-      ),
-    );
+      );
 
-    return result.value;
+  Future<MontyValue> _drive(
+    String code, {
+    required Map<String, MontyValue>? inputs,
+    required HostAnswers host,
+    required ProtoPrintCallback? printCallback,
+    required bool skipTypeCheck,
+  }) async {
+    _feedHost = host;
+    try {
+      // A dead worker is mapped and its slot freed by the session channel,
+      // at the transport. A MontyCrashedError that reaches here unmapped was
+      // thrown by a host callback, or by the driver after it killed the
+      // worker; either passes through as is.
+      final result = await _proto.drive(
+        code,
+        host,
+        inputs: inputs ?? const {},
+        onPrint: _printing(printCallback ?? defaultPrint),
+        options: FeedOptions(
+          collectPrints: false,
+          skipTypeCheck: skipTypeCheck,
+          abandoned: () => _hold.isFinished,
+        ),
+      );
+
+      return result.value;
+    } finally {
+      if (identical(_feedHost, host)) _feedHost = null;
+    }
   }
 }
 
@@ -357,6 +451,272 @@ bool _inPrintCallback(Object session) => _printingSessions().contains(session);
 StateError _pendingError() =>
     StateError('feed called while a suspension is awaiting an answer');
 
+/// One `feedStart`'s drive: the session it runs on, the answers its
+/// snapshots' `resumeAuto` gives (with the coroutines they started), and
+/// where its prints go. It resumes the snapshots it hands out.
+final class _FeedDrive implements SnapshotDriver {
+  _FeedDrive(this._session, this._host, this._print);
+
+  final _LeasedSession _session;
+  final HostAnswers _host;
+  final ProtoPrintCallback _print;
+
+  /// The suspension the drive's unspent snapshot stands for. A resume spends
+  /// its snapshot before the next one exists, so only the latest snapshot
+  /// can be unspent.
+  pb.ChildEvent _suspended = pb.ChildEvent();
+
+  @override
+  Future<MontySnapshot> resumeCall(
+    FunctionSnapshot snapshot,
+    ExternalResult result,
+  ) {
+    checkExternalResult(result);
+    final callId = snapshot.callId;
+    final request = switch (result) {
+      ExternalReturnValue(:final value) => resumeValue(callId, value),
+      ExternalException(:final excType, :final message) => resumeWith(
+        callId,
+        pb.ExtFunctionResult(
+          error: pb.RaisedException(excType: excType, message: message),
+        ),
+      ),
+      ExternalFuture() => resumeWith(
+        callId,
+        pb.ExtFunctionResult(future: callId),
+      ),
+    };
+
+    return _resume(snapshot, request);
+  }
+
+  @override
+  Future<MontySnapshot> resumeNotHandled(FunctionSnapshot snapshot) {
+    if (!snapshot.isOsFunction) {
+      throw StateError(
+        'resume_not_handled() is only valid for OS function snapshots',
+      );
+    }
+
+    return _resume(
+      snapshot,
+      resumeWith(
+        snapshot.callId,
+        pb.ExtFunctionResult(notHandled: pb.Unit()),
+      ),
+    );
+  }
+
+  @override
+  Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot) async {
+    snapshot.spend();
+    // No host code for a session already finished; one that finishes while
+    // it runs fails the turn below.
+    if (_session._hold.isFinished) throw _finishedError();
+    final event = _suspended;
+    // Host code runs outside the turn, as upstream's does: a close meanwhile
+    // Resets the worker, and the resume then fails as finished.
+    final request = snapshot.isOsFunction
+        ? await _host.osCall(event.osCall, parentSleeps: false)
+        : await _host.call(event.functionCall);
+
+    return _session._withTurn(() => step(request), feed: false);
+  }
+
+  @override
+  Future<MontySnapshot> resumeLookup(
+    NameLookupSnapshot snapshot,
+    MontyValue? value,
+  ) {
+    final pb.ParentRequest request;
+    if (value == null) {
+      request = pb.ParentRequest(
+        resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
+      );
+    } else {
+      final writer = ArenaWriter();
+      final index = writer.add(value);
+      request = pb.ParentRequest(
+        resumeNameLookup: pb.ResumeNameLookup(
+          values: writer.arena,
+          value: index,
+        ),
+      );
+    }
+
+    return _resume(snapshot, request);
+  }
+
+  @override
+  Future<MontySnapshot> resumeLookupAuto(NameLookupSnapshot snapshot) =>
+      _resume(snapshot, _host.lookup(snapshot.variableName));
+
+  @override
+  Future<MontySnapshot> resumeFutures(
+    FutureSnapshot snapshot,
+    Map<int, ExternalSettledResult> results,
+  ) {
+    final answers = <(int, ExternalAnswer)>[];
+    for (final MapEntry(:key, value: result) in results.entries) {
+      checkExternalResult(result);
+      switch (result) {
+        case ExternalReturnValue(:final value):
+          // Encoded alone first, so a value the writer refuses throws here,
+          // before the snapshot is spent.
+          ArenaWriter().add(value);
+          answers.add((key, ExternalAnswer.value(value)));
+        case ExternalException(:final excType, :final message):
+          answers.add((
+            key,
+            ExternalAnswer.error(
+              pb.RaisedException(excType: excType, message: message),
+            ),
+          ));
+      }
+    }
+
+    return _resume(snapshot, futuresRequest(answers));
+  }
+
+  @override
+  Future<MontySnapshot> resumeFuturesAuto(FutureSnapshot snapshot) async {
+    snapshot.spend();
+    if (_session._hold.isFinished) throw _finishedError();
+    final pb.ParentRequest request;
+    try {
+      request = await _host.settle();
+      // Nothing can settle the worker's wait: the session ends, as upstream
+      // discards the checkout, and the error is rethrown.
+      // ignore: avoid_catching_errors
+    } on StateError {
+      _session._hold.lease.kill();
+      rethrow;
+    }
+
+    return _session._withTurn(() => step(request), feed: false);
+  }
+
+  /// Sends [request] as one turn and returns the snapshot of how it ended.
+  /// A feed that ends, done or failed, ends its sleeps too.
+  Future<MontySnapshot> step(pb.ParentRequest request) async {
+    try {
+      final snapshot = await _step(request);
+      if (snapshot is SessionComplete) _host.dispose();
+
+      return snapshot;
+    } on Object {
+      _host.dispose();
+      rethrow;
+    }
+  }
+
+  Future<MontySnapshot> _step(pb.ParentRequest request) async {
+    final session = _session;
+    // A dead worker, or a request too large to send, is mapped by the
+    // session channel, at the transport.
+    final event = await session._proto.step(
+      request,
+      onPrint: session._printing(_print),
+      abandoned: () => session._hold.isFinished,
+    );
+    if (event.whichKind() == pb.ChildEvent_Kind.complete) {
+      final complete = event.complete;
+
+      return SessionComplete(session._proto.valueOf(complete));
+    }
+    _suspended = event;
+
+    return _suspension(event);
+  }
+
+  /// Spends [snapshot] and sends [request], already built and checked.
+  Future<MontySnapshot> _resume(
+    SuspendedSnapshot snapshot,
+    pb.ParentRequest request,
+  ) {
+    snapshot.spend();
+
+    return _session._withTurn(() => step(request), feed: false);
+  }
+
+  /// The snapshot of the suspension [event].
+  SuspendedSnapshot _suspension(pb.ChildEvent event) {
+    final script = _session._config.scriptName;
+
+    return switch (event.whichKind()) {
+      pb.ChildEvent_Kind.functionCall => _callSnapshot(event.functionCall),
+      pb.ChildEvent_Kind.osCall => _osSnapshot(event.osCall),
+      pb.ChildEvent_Kind.nameLookup => NameLookupSnapshot(
+        this,
+        _position(event.nameLookup.position),
+        script,
+        variableName: event.nameLookup.name,
+        objectId: event.nameLookup.hasObjectId()
+            ? uuidString(event.nameLookup.objectId.data)
+            : null,
+      ),
+      pb.ChildEvent_Kind.resolveFutures => FutureSnapshot(
+        this,
+        _position(event.resolveFutures.position),
+        script,
+        pendingCallIds: event.resolveFutures.pendingCallIds,
+      ),
+      // coverage:ignore-start
+      // ProtoSession.step returns turn ends only, and step took Complete.
+      _ => throw StateError('not a suspension: ${event.whichKind().name}'),
+      // coverage:ignore-end
+    };
+  }
+
+  FunctionSnapshot _callSnapshot(pb.FunctionCall call) => FunctionSnapshot(
+    this,
+    _position(call.position),
+    _session._config.scriptName,
+    functionName: call.functionName,
+    callId: call.callId,
+    isOsFunction: false,
+    allowEagerAwait: call.allowEagerAwait,
+    objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
+    arguments: () => callArgs(call),
+    keywords: () => callKwargs(call),
+  );
+
+  FunctionSnapshot _osSnapshot(pb.OsCall call) {
+    final (name, args, kwargs) = _osParts(call);
+
+    return FunctionSnapshot(
+      this,
+      _position(call.position),
+      _session._config.scriptName,
+      functionName: name,
+      callId: call.callId,
+      isOsFunction: true,
+      // A worker's eager bit on a call no future may answer is dropped, as
+      // upstream drops it.
+      allowEagerAwait: call.allowEagerAwait && acceptsFuture(name),
+      arguments: () => args,
+      keywords: () => kwargs,
+    );
+  }
+
+  /// [call]'s name and arguments; a payload upstream could never produce is
+  /// a protocol violation, which ends the session.
+  OsCallParts _osParts(pb.OsCall call) {
+    try {
+      return osCallParts(call);
+    } on FormatException catch (error) {
+      _session._hold.lease.kill();
+      throw protocolError('invalid OS call payload: ${error.message}');
+    }
+  }
+}
+
+/// [range] as a [SourceRange]; an unset one (a worker that predates the
+/// field) is [SourceRange.unknown], as upstream reads it.
+SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
+    ? SourceRange.unknown
+    : SourceRange(range.filename, range.start, range.end);
+
 /// The session's view of its worker: the lease's channel, with each turn
 /// refused once the session is finished and bounded by its deadline.
 ///
@@ -364,9 +724,10 @@ StateError _pendingError() =>
 /// counted, and one past `maxSuspensions` (default 1000) is not handed to
 /// the driver. The feed is aborted in its place with an in-sandbox
 /// `RuntimeError`, which the driver then sees as the turn's answer. Its
-/// system sleeps are charged against `maxTotalSleep` the same way, before
-/// they are waited: the one that would pass it aborts the feed with an
-/// in-sandbox `TimeoutError`.
+/// system sleeps, `time.sleep` and `asyncio.sleep` alike, are charged
+/// against `maxTotalSleep` the same way, before they are waited: the one
+/// that would pass it aborts the feed with an in-sandbox `TimeoutError`. A
+/// worker reply can only tighten either limit.
 ///
 /// A turn's deadline is the pool's `requestTimeout`; an execution turn's is
 /// also bounded by what the feed budget has left and by the turn budget,
@@ -375,7 +736,9 @@ StateError _pendingError() =>
 /// host callbacks is never counted: it falls between turns.
 final class _SessionChannel implements MontyChannel {
   _SessionChannel(this._hold, this._options, this._config)
-    : _sleepLimit = switch (_config.limits?.maxTotalSleep) {
+    : _suspensionLimit =
+          _config.limits?.maxSuspensions ?? defaultMaxSuspensions,
+      _sleepLimit = switch (_config.limits?.maxTotalSleep) {
         final limit? => nanosOf(limit),
         null => null,
       };
@@ -406,6 +769,10 @@ final class _SessionChannel implements MontyChannel {
   /// The system sleep this session has been charged, in nanoseconds as
   /// upstream's `Duration`; capped sleeps at their cap.
   BigInt _slept = BigInt.zero;
+
+  /// The suspension budget in force: `maxSuspensions`, tightened by any
+  /// smaller limit a worker reply reports (upstream's `update_from`).
+  int _suspensionLimit;
 
   /// The sleep budget in force, in nanoseconds: `maxTotalSleep`, tightened
   /// by any smaller limit a worker reply reports (upstream's
@@ -480,9 +847,12 @@ final class _SessionChannel implements MontyChannel {
     final used = Duration(microseconds: event.feedExecutionMicros.toInt());
     if (used > _feedUsed) _feedUsed = used;
     _adoptSleepLimit(event);
+    if (event.hasMaxSuspensions()) {
+      final reported = event.maxSuspensions.toInt();
+      if (reported < _suspensionLimit) _suspensionLimit = reported;
+    }
     if (!isSuspension(event)) return event;
-    final limits = _config.limits;
-    final limit = limits?.maxSuspensions ?? defaultMaxSuspensions;
+    final limit = _suspensionLimit;
     final exceeded = ++_suspensions > limit
         ? _raised('RuntimeError', 'suspension limit $limit exceeded')
         : _chargeSleep(event);
@@ -512,12 +882,10 @@ final class _SessionChannel implements MontyChannel {
   /// counting as that maximum. A sleep that would pass the budget is not
   /// charged; the exception to abort the feed with is returned instead.
   pb.RaisedException? _chargeSleep(pb.ChildEvent event) {
-    if (event.whichKind() != pb.ChildEvent_Kind.osCall ||
-        event.osCall.whichCall() != pb.OsCall_Call.systemSleep) {
-      return null;
-    }
+    final seconds = _systemSleepSeconds(event);
+    if (seconds == null) return null;
     final cap = _config.systemSleepCapNanos;
-    final requested = nanosFromSeconds(event.osCall.systemSleep.seconds) ?? cap;
+    final requested = nanosFromSeconds(seconds) ?? cap;
     final delay = requested < cap ? requested : cap;
     final sum = _slept + delay;
     // Saturating, as Rust's Duration::saturating_add.
@@ -581,6 +949,19 @@ final class _SessionChannel implements MontyChannel {
 
     return _earliest(_earliest(timeout, feed), turn);
   }
+}
+
+/// The delay of [event]'s system sleep, `time.sleep` or `asyncio.sleep`
+/// (upstream charges both); null for any other event.
+double? _systemSleepSeconds(pb.ChildEvent event) {
+  if (event.whichKind() != pb.ChildEvent_Kind.osCall) return null;
+  final call = event.osCall;
+
+  return switch (call.whichCall()) {
+    pb.OsCall_Call.systemSleep => call.systemSleep.seconds,
+    pb.OsCall_Call.asyncSystemSleep => call.asyncSystemSleep.delay,
+    _ => null,
+  };
 }
 
 /// An oversized request, as upstream reports it: a `RuntimeError` the
