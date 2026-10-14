@@ -2440,6 +2440,119 @@ void main() {
       expect(order, ['feed', 'dump [9]']);
     });
 
+    test('a feed made while a dump runs is refused once the dump ends: the '
+        'suspension is still pending', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      final dump = session.dump();
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        throwsA(_pending),
+      );
+      expect(await dump, [1]);
+      expect(
+        await snapshot.resume(const ExternalReturnValue(MontyNone())),
+        isA<SessionComplete>(),
+      );
+      expect(ch.remaining, 0);
+    });
+
+    test('a feed queued behind a dump from host code is refused, not left '
+        'waiting', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      Object? refused;
+      Future<Uint8List>? dump;
+      final value = await session.feedRun(
+        'f()',
+        externals: {
+          'f': (args, kwargs) async {
+            dump = session.dump();
+            try {
+              await session.feedRun('1', printCallback: _ignore);
+              // The refusal is the outcome under test.
+              // ignore: avoid_catching_errors
+            } on StateError catch (e) {
+              refused = e;
+            }
+
+            return const MontyNone();
+          },
+        },
+        printCallback: _ignore,
+      );
+      expect(value, const MontyInt(2));
+      expect(refused, _pending);
+      expect(await dump, [1]);
+    }, timeout: const Timeout(Duration(seconds: 5)));
+
+    test(
+      "a snapshot's dump is checked and sent in one step: a free channel "
+      'takes it at once, and a resume made meanwhile spends it first',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([_call('f')]),
+          expecting(pb.ParentRequest_Kind.dump, [
+            dumped([1]),
+          ]),
+          // The second dump is never sent: the resume is next.
+          expecting(pb.ParentRequest_Kind.resumeCall, [_int(3)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final snapshot =
+            await session.feedStart('f()', printCallback: _ignore)
+                as FunctionSnapshot;
+        final sent = ch.requests.length;
+        final first = snapshot.dump();
+        // Sent before this test's next statement: nothing can come between
+        // the check and the send.
+        expect(ch.requests.length, sent + 1);
+        // Busy now: this one waits, and a resume made meanwhile spends the
+        // snapshot before the dump's check.
+        final second = snapshot.dump();
+        final resumed = snapshot.resume(
+          const ExternalReturnValue(MontyNone()),
+        );
+        expect(await first, [1]);
+        await expectLater(
+          second,
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'cannot dump a snapshot that has already been resumed',
+            ),
+          ),
+        );
+        expect(await resumed, isA<SessionComplete>());
+        expect(ch.remaining, 0);
+      },
+    );
+
     test('a dump from inside a print callback throws StateError', () async {
       final ch = ScriptedChannel([
         _configureOk,
@@ -2625,6 +2738,32 @@ void main() {
               as FutureSnapshot;
       await expectLater(snapshot.resumeAuto(), throwsA(isA<StateError>()));
       expect(ch.kills, greaterThan(0));
+      expect(pool.liveWorkers, 0);
+    });
+
+    test('a Dump or a Load answered out of turn kills the worker', () async {
+      final dumping = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.dump, [ok()]),
+      ]);
+      final loading = ScriptedChannel([
+        _configureOk,
+        expecting(pb.ParentRequest_Kind.load, [_int(1)]),
+      ]);
+      final pool = await _pool(Workers([dumping, loading]), maxProcesses: 2);
+      addTearDown(pool.close);
+      final a = await pool.checkout();
+      await expectLater(
+        a.dump(),
+        throwsA(_violation('unexpected reply to Dump: ok')),
+      );
+      final b = await pool.checkout();
+      await expectLater(
+        b.loadSession(state),
+        throwsA(_violation('unexpected reply to Load: complete')),
+      );
+      expect(dumping.kills, greaterThan(0));
+      expect(loading.kills, greaterThan(0));
       expect(pool.liveWorkers, 0);
     });
 

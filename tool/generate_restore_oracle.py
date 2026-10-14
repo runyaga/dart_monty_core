@@ -50,9 +50,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'test/unit/worker/_restore_oracle.g.dart'
 
 SUSPEND = 'import time\ntime.sleep(0)\n'
-# Long enough that a parent backstop of 100 ms would end it: about 0.6 s on
-# a native worker.
+# Finite, and some 50 times longer than a 10 ms parent backstop: about 0.6 s
+# on a native worker. (Were it ever faster, the forgotten-budget cases would
+# pass vacuously; the scripted pool_session_test cases still pin the rule.)
 WORK = 'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)'
+SPIN = 'while True:\n    pass'
 NO_GRACE = {'feed_duration_limit_grace': 0.0, 'turn_duration_limit_grace': 0.0}
 
 # (id, pool kwargs, steps).
@@ -195,17 +197,17 @@ CASES: list[tuple[str, dict[str, Any], list[list[Any]]]] = [
     # its parent backstop (no grace) does not end the feed.
     ('feed_duration_forgotten', NO_GRACE, [
         ['open', 'a', {}], ['dump', 'a'],
-        ['open', 'b', {'max_feed_duration_secs': 0.1}], ['load_session', 'b', 'a'],
+        ['open', 'b', {'max_feed_duration_secs': 0.01}], ['load_session', 'b', 'a'],
         ['feed', 'b', WORK],
     ]),
     ('turn_duration_forgotten', NO_GRACE, [
         ['open', 'a', {}], ['dump', 'a'],
-        ['open', 'b', {'max_turn_duration_secs': 0.1}], ['load_session', 'b', 'a'],
+        ['open', 'b', {'max_turn_duration_secs': 0.01}], ['load_session', 'b', 'a'],
         ['feed', 'b', WORK],
     ]),
     ('feed_duration_from_dump', {}, [
         ['open', 'a', {'max_feed_duration_secs': 0.1}], ['dump', 'a'],
-        ['open', 'b', {}], ['load_session', 'b', 'a'], ['feed', 'b', WORK],
+        ['open', 'b', {}], ['load_session', 'b', 'a'], ['feed', 'b', SPIN],
     ]),
     # A finished session dumps nothing.
     ('dump_closed', {}, [['open', 'a', {}], ['close', 'a'], ['dump', 'a']]),

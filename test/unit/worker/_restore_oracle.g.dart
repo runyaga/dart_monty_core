@@ -699,7 +699,7 @@ restoreOracle = {
         step: [
           'open',
           'b',
-          <String, Object>{'max_feed_duration_secs': 0.1},
+          <String, Object>{'max_feed_duration_secs': 0.01},
         ],
         outcome: 'ok',
       ),
@@ -726,7 +726,7 @@ restoreOracle = {
         step: [
           'open',
           'b',
-          <String, Object>{'max_turn_duration_secs': 0.1},
+          <String, Object>{'max_turn_duration_secs': 0.01},
         ],
         outcome: 'ok',
       ),
@@ -756,11 +756,7 @@ restoreOracle = {
       (step: ['open', 'b', <String, Object>{}], outcome: 'ok'),
       (step: ['load_session', 'b', 'a'], outcome: 'ok'),
       (
-        step: [
-          'feed',
-          'b',
-          'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)',
-        ],
+        step: ['feed', 'b', 'while True:\n    pass'],
         outcome:
             'MontyRuntimeError: TimeoutError: feed time limit exceeded: \u{2026} > 100ms',
       ),

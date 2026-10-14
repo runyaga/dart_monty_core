@@ -42,6 +42,10 @@ dev_dependencies:
     path: packages/monty_conformance
   test: ^1.25.0
   very_good_analysis: ^10.0.0
+  # The finalizer probe (test/integration/worker/finalize_probe.dart) forces
+  # a full collection through its own VM service. Already in the graph
+  # transitively, through package:test.
+  vm_service: ^15.0.0
 
 # Flutter consumers reference these via `- package: dart_monty_core`
 # under their own `flutter.assets`. Non-Flutter tooling ignores this

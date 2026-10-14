@@ -51,8 +51,10 @@ const _probeTimeout = Timeout(Duration(seconds: 90));
 Future<(int, String, String)> _runProbe(
   String name, {
   bool drainStdout = true,
+  List<String> vmArgs = const [],
 }) async {
   final probe = await Process.start(Platform.resolvedExecutable, [
+    ...vmArgs,
     File('test/integration/worker/$name').absolute.path,
     await _workerPath(),
   ]);
@@ -825,40 +827,19 @@ void main() {
       }
     });
 
-    test('a session dropped without close gives its worker back once '
-        'collected', () async {
-      final pool = await MontyPool.start(
-        options: const PoolOptions(maxProcesses: 1),
-      );
-      try {
-        // The only reference to the session dies with this call.
-        Future<void> drop() async {
-          final session = await pool.checkout(options: _limits);
-          expect(await session.feedRun('1 + 1'), const MontyInt(2));
-        }
-
-        await drop();
-        expect(pool.liveWorkers, 1);
-        // Allocate until the collector runs the finalizer, which kills the
-        // worker and frees its slot.
-        final deadline = DateTime.now().add(const Duration(seconds: 30));
-        var churn = <List<int>>[];
-        while (pool.liveWorkers > 0) {
-          if (DateTime.now().isAfter(deadline)) {
-            fail('the dropped session was never finalized');
-          }
-          churn = [for (var i = 0; i < 64; i++) List<int>.filled(1 << 16, i)];
-          await Future<void>.delayed(const Duration(milliseconds: 5));
-        }
-        expect(churn, isNotEmpty);
-        // The slot is free: a new checkout gets a new worker.
-        await pool.withSession(
-          (s) async => expect(await s.feedRun('3'), const MontyInt(3)),
-          options: _limits,
+    test(
+      'a session dropped without close gives its worker back once '
+      'collected (GC forced through the VM service)',
+      () async {
+        final (code, out, err) = await _runProbe(
+          'finalize_probe.dart',
+          vmArgs: ['--enable-vm-service=0'],
         );
-      } finally {
-        await pool.close();
-      }
-    }, timeout: const Timeout(Duration(seconds: 60)));
+        // The VM announces its service on stdout first.
+        expect(out.trim().split('\n').last, 'finalized', reason: err);
+        expect(code, 0, reason: err);
+      },
+      timeout: _probeTimeout,
+    );
   });
 }

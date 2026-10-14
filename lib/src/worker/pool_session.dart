@@ -213,6 +213,21 @@ final class _Hold {
   /// Whether [_LeasedSession.close] ran.
   bool closed = false;
 
+  /// Whether the session has been fed or loaded: a load is only for a fresh
+  /// session (upstream's `used`).
+  bool used = false;
+
+  /// Claims the session for a load, which only a fresh one takes.
+  void claimFresh() {
+    if (used) {
+      throw StateError(
+        'load_session / load_snapshot is only valid on a fresh session, '
+        'before any feed_run / feed_start / load_session / load_snapshot',
+      );
+    }
+    used = true;
+  }
+
   /// The turn in flight, if any: what [abandon] fails.
   Completer<pb.ChildEvent>? turn;
 
@@ -291,10 +306,6 @@ final class _LeasedSession implements PoolSession {
   /// taken it: a new feed must queue behind it.
   bool _reserved = false;
 
-  /// Whether the session has been fed or loaded: a load is only for a fresh
-  /// session (upstream's `used`).
-  bool _used = false;
-
   @override
   int? get workerPid =>
       _hold.isFinished || _channel.inTurn ? null : _hold.lease.pid;
@@ -308,13 +319,13 @@ final class _LeasedSession implements PoolSession {
     OsHandler? os,
     bool skipTypeCheck = false,
   }) {
-    _used = true;
+    _hold.used = true;
 
     return _withTurn(
       () => _drive(
         code,
         inputs: inputs,
-        host: _host(externals, os),
+        host: _hostFor(_config, externals, os),
         printCallback: printCallback,
         skipTypeCheck: skipTypeCheck,
       ),
@@ -331,10 +342,10 @@ final class _LeasedSession implements PoolSession {
     OsHandler? os,
     bool skipTypeCheck = false,
   }) {
-    _used = true;
+    _hold.used = true;
     final drive = _FeedDrive(
       this,
-      _host(externals, os),
+      _hostFor(_config, externals, os),
       printCallback ?? defaultPrint,
     );
     _snapshots = drive;
@@ -349,10 +360,12 @@ final class _LeasedSession implements PoolSession {
 
   @override
   Future<void> loadSession(Uint8List state) async {
-    _claimFresh();
+    _hold.claimFresh();
     final (event, _) = await _withTurn(() => _proto.load(state), feed: false);
     if (event != null) {
-      _discard();
+      // A worker restored to the wrong kind of dump cannot be trusted: the
+      // session ends, as upstream discards it.
+      _hold.lease.kill();
       throw StateError(
         'this dump is a suspended snapshot — use load_snapshot() to resume it',
       );
@@ -366,10 +379,10 @@ final class _LeasedSession implements PoolSession {
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   }) async {
-    _claimFresh();
+    _hold.claimFresh();
     final drive = _FeedDrive(
       this,
-      _host(externals, os),
+      _hostFor(_config, externals, os),
       printCallback ?? defaultPrint,
     );
     _snapshots = drive;
@@ -379,36 +392,11 @@ final class _LeasedSession implements PoolSession {
 
   @override
   Future<Uint8List> dump() async {
-    _refuseInPrint();
+    _refuseInPrint(this);
     if (_hold.isFinished) throw _finishedError();
 
     // The channel holds it until any turn in flight is over.
     return _proto.dump();
-  }
-
-  /// Claims the session for a load, which only a fresh one takes.
-  void _claimFresh() {
-    if (_used) {
-      throw StateError(
-        'load_session / load_snapshot is only valid on a fresh session, '
-        'before any feed_run / feed_start / load_session / load_snapshot',
-      );
-    }
-    _used = true;
-  }
-
-  /// A load that restored the wrong kind of dump leaves a worker that
-  /// cannot be trusted: the session ends, as upstream discards it.
-  void _discard() => _hold.lease.kill();
-
-  /// Throws [StateError] inside one of this session's print callbacks.
-  void _refuseInPrint() {
-    if (_inPrintCallback(this)) {
-      throw StateError(
-        'a print callback cannot call its own session: it runs inside the '
-        'turn',
-      );
-    }
   }
 
   @override
@@ -447,7 +435,7 @@ final class _LeasedSession implements PoolSession {
     Future<T> Function() body, {
     required bool feed,
   }) async {
-    _refuseInPrint();
+    _refuseInPrint(this);
     if (_hold.isFinished) throw _finishedError();
     // Null when the turn is free now: no await, so the body below starts
     // in this same synchronous step and no other call can slip in.
@@ -490,11 +478,8 @@ final class _LeasedSession implements PoolSession {
     final queueFree = _waiters.isEmpty && !_reserved;
     if (feed && queueFree && _suspended) throw _pendingError();
 
-    return _active != null || !queueFree ? _waitForTurn() : null;
-  }
-
-  /// Queues for the turn and waits to be handed it.
-  Future<void> _waitForTurn() {
+    if (_active == null && queueFree) return null;
+    // Queued, to be handed the turn.
     final turn = Completer<void>();
     _waiters.add(turn);
 
@@ -522,27 +507,6 @@ final class _LeasedSession implements PoolSession {
     _waiters.removeFirst().complete();
   }
 
-  /// The host side of one feed: [externals] and [os], and system sleeps
-  /// waited up to the session's maximum.
-  HostAnswers _host(
-    Map<String, ProtoExternalFunction>? externals,
-    OsHandler? os,
-  ) => HostAnswers(
-    externals: externals ?? const {},
-    os: os,
-    systemSleepMax: _config.systemSleepMax,
-  );
-
-  /// [print] marked, so a call back into this session from inside it is
-  /// refused rather than left waiting on the turn it is part of.
-  ProtoPrintCallback _printing(ProtoPrintCallback print) =>
-      (stream, text) => runZoned(
-        () => print(stream, text),
-        zoneValues: {
-          _printZone: {..._printingSessions(), this},
-        },
-      );
-
   Future<MontyValue> _drive(
     String code, {
     required Map<String, MontyValue>? inputs,
@@ -560,7 +524,7 @@ final class _LeasedSession implements PoolSession {
         code,
         host,
         inputs: inputs ?? const {},
-        onPrint: _printing(printCallback ?? defaultPrint),
+        onPrint: _printingIn(this, printCallback ?? defaultPrint),
         options: FeedOptions(
           collectPrints: false,
           skipTypeCheck: skipTypeCheck,
@@ -585,6 +549,39 @@ Set<Object> _printingSessions() =>
     (Zone.current[_printZone] as Set<Object>?) ?? const {};
 
 bool _inPrintCallback(Object session) => _printingSessions().contains(session);
+
+/// Throws [StateError] inside one of [session]'s print callbacks: they run
+/// inside the turn, so a call back into it would wait on itself.
+void _refuseInPrint(Object session) {
+  if (_inPrintCallback(session)) {
+    throw StateError(
+      'a print callback cannot call its own session: it runs inside the '
+      'turn',
+    );
+  }
+}
+
+/// [print] marked as [session]'s, so a call back into that session from
+/// inside it is refused rather than left waiting on the turn it is part of.
+ProtoPrintCallback _printingIn(Object session, ProtoPrintCallback print) =>
+    (stream, text) => runZoned(
+      () => print(stream, text),
+      zoneValues: {
+        _printZone: {..._printingSessions(), session},
+      },
+    );
+
+/// The host side of one feed of a session with [config]: [externals] and
+/// [os], and system sleeps waited up to the session's maximum.
+HostAnswers _hostFor(
+  SessionConfig config,
+  Map<String, ProtoExternalFunction>? externals,
+  OsHandler? os,
+) => HostAnswers(
+  externals: externals ?? const {},
+  os: os,
+  systemSleepMax: config.systemSleepMax,
+);
 
 StateError _pendingError() =>
     StateError('feed called while a suspension is awaiting an answer');
@@ -755,10 +752,15 @@ final class _FeedDrive implements SnapshotDriver {
 
   @override
   Future<Uint8List> dumpSnapshot(SuspendedSnapshot snapshot) async {
-    final session = _session.._refuseInPrint();
-    // Checked once the turn is free, as upstream checks under the lock: a
-    // resume in flight has spent the snapshot.
-    await session._channel.idle();
+    final session = _session;
+    _refuseInPrint(session);
+    final channel = session._channel;
+    // Checked with the channel free, in the same synchronous step as the
+    // Dump is sent, as upstream checks under the lock: a resume in flight
+    // has spent the snapshot.
+    while (channel.inTurn) {
+      await channel.turnOver;
+    }
     if (snapshot.isSpent) {
       throw StateError('cannot dump a snapshot that has already been resumed');
     }
@@ -774,7 +776,8 @@ final class _FeedDrive implements SnapshotDriver {
     try {
       final (event, scriptName) = await _session._proto.load(state);
       if (event == null) {
-        _session._discard();
+        // The wrong kind of dump: the session ends, as upstream discards it.
+        _session._hold.lease.kill();
         throw StateError(
           'this dump is an idle session — use load_session() to restore it',
         );
@@ -810,7 +813,7 @@ final class _FeedDrive implements SnapshotDriver {
     // session channel, at the transport.
     final event = await session._proto.step(
       request,
-      onPrint: session._printing(_print),
+      onPrint: _printingIn(session, _print),
       abandoned: () => session._hold.isFinished,
     );
     if (event.whichKind() == pb.ChildEvent_Kind.complete) {
@@ -838,8 +841,17 @@ final class _FeedDrive implements SnapshotDriver {
     final script = _scriptName;
 
     return switch (event.whichKind()) {
-      pb.ChildEvent_Kind.functionCall => _callSnapshot(event.functionCall),
-      pb.ChildEvent_Kind.osCall => _osSnapshot(event.osCall),
+      pb.ChildEvent_Kind.functionCall => _callSnapshot(
+        this,
+        script,
+        event.functionCall,
+      ),
+      pb.ChildEvent_Kind.osCall => _osSnapshot(
+        this,
+        script,
+        event.osCall,
+        _session._hold.lease,
+      ),
       pb.ChildEvent_Kind.nameLookup => NameLookupSnapshot(
         this,
         _position(event.nameLookup.position),
@@ -861,48 +873,57 @@ final class _FeedDrive implements SnapshotDriver {
       // coverage:ignore-end
     };
   }
+}
 
-  FunctionSnapshot _callSnapshot(pb.FunctionCall call) => FunctionSnapshot(
-    this,
+/// The snapshot of a host function [call], for [driver] under [script].
+FunctionSnapshot _callSnapshot(
+  SnapshotDriver driver,
+  String script,
+  pb.FunctionCall call,
+) => FunctionSnapshot(
+  driver,
+  _position(call.position),
+  script,
+  functionName: call.functionName,
+  callId: call.callId,
+  isOsFunction: false,
+  allowEagerAwait: call.allowEagerAwait,
+  objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
+  arguments: () => callArgs(call),
+  keywords: () => callKwargs(call),
+);
+
+/// The snapshot of an OS [call], for [driver] under [script]. A payload
+/// upstream could never produce is a protocol violation, which ends the
+/// session: [lease] is killed.
+FunctionSnapshot _osSnapshot(
+  SnapshotDriver driver,
+  String script,
+  pb.OsCall call,
+  WorkerLease lease,
+) {
+  final OsCallParts parts;
+  try {
+    parts = osCallParts(call);
+  } on FormatException catch (error) {
+    lease.kill();
+    throw protocolError('invalid OS call payload: ${error.message}');
+  }
+  final (name, args, kwargs) = parts;
+
+  return FunctionSnapshot(
+    driver,
     _position(call.position),
-    _scriptName,
-    functionName: call.functionName,
+    script,
+    functionName: name,
     callId: call.callId,
-    isOsFunction: false,
-    allowEagerAwait: call.allowEagerAwait,
-    objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
-    arguments: () => callArgs(call),
-    keywords: () => callKwargs(call),
+    isOsFunction: true,
+    // A worker's eager bit on a call no future may answer is dropped, as
+    // upstream drops it.
+    allowEagerAwait: call.allowEagerAwait && acceptsFuture(name),
+    arguments: () => args,
+    keywords: () => kwargs,
   );
-
-  FunctionSnapshot _osSnapshot(pb.OsCall call) {
-    final (name, args, kwargs) = _osParts(call);
-
-    return FunctionSnapshot(
-      this,
-      _position(call.position),
-      _scriptName,
-      functionName: name,
-      callId: call.callId,
-      isOsFunction: true,
-      // A worker's eager bit on a call no future may answer is dropped, as
-      // upstream drops it.
-      allowEagerAwait: call.allowEagerAwait && acceptsFuture(name),
-      arguments: () => args,
-      keywords: () => kwargs,
-    );
-  }
-
-  /// [call]'s name and arguments; a payload upstream could never produce is
-  /// a protocol violation, which ends the session.
-  OsCallParts _osParts(pb.OsCall call) {
-    try {
-      return osCallParts(call);
-    } on FormatException catch (error) {
-      _session._hold.lease.kill();
-      throw protocolError('invalid OS call payload: ${error.message}');
-    }
-  }
 }
 
 /// [range] as a [SourceRange]; an unset one (a worker that predates the
@@ -1192,13 +1213,10 @@ final class _SessionChannel implements MontyChannel {
   /// Completes when the turn in flight ends.
   Completer<void>? _turnOver;
 
-  /// Waits until no protocol turn is in flight: a dump, which runs between
-  /// a feed's turns, may otherwise meet one.
-  Future<void> idle() async {
-    while (inTurn) {
-      await (_turnOver ??= Completer<void>()).future;
-    }
-  }
+  /// Completes when the turn in flight ends. A caller that must find the
+  /// channel free rechecks [inTurn] after it, in the same synchronous step
+  /// as what it then does: another waiter may have taken the channel first.
+  Future<void> get turnOver => (_turnOver ??= Completer<void>()).future;
 
   @override
   Future<pb.ChildEvent> turn(
@@ -1208,18 +1226,11 @@ final class _SessionChannel implements MontyChannel {
     // Turns are serialized, as upstream's checkout lock serializes them: a
     // feed's next turn waits for a dump made from its host code. A free
     // channel starts the turn in this same synchronous step.
-    if (inTurn) await idle();
-    if (_hold.isFinished) throw _finishedError();
-    final wasPending = pendingSuspension;
-    // A dump leaves the session as it was, suspended or not (upstream
-    // keeps `pending` across a Dump, an error reply included).
+    while (inTurn) {
+      await turnOver;
+    }
+    final wasPending = _take(request);
     final dump = request.whichKind() == pb.ParentRequest_Kind.dump;
-    final load = request.whichKind() == pb.ParentRequest_Kind.load;
-    inTurn = true;
-    pendingSuspension = false;
-    // The dump carries its own budget: the reply re-adopts it, or the
-    // session's comes back (upstream's restore: begin_load, end_load).
-    if (load) _budget.beginLoad();
     try {
       // One deadline for the whole turn: print delivery, and an abort the
       // suspension budget sends in its place, as upstream's request_turn.
@@ -1252,13 +1263,45 @@ final class _SessionChannel implements MontyChannel {
         _hold.turn = null;
       }
     } finally {
-      if (load) _budget.endLoad();
-      inTurn = false;
-      final over = _turnOver;
-      _turnOver = null;
-      over?.complete();
-      if (pendingSuspension && !dump) onSuspended?.call();
+      _give(request);
     }
+  }
+
+  /// Takes the channel for [request], now free, and returns whether a
+  /// suspension was pending.
+  ///
+  /// A feed is refused while one is: checked with the channel held, as
+  /// upstream checks `pending` under its lock, so a feed that waited out a
+  /// dump still finds it. A dump leaves the session as it was, suspended or
+  /// not (upstream keeps `pending` across a Dump, an error reply included).
+  /// A load starts with the dump's budget to come (upstream's restore:
+  /// `begin_load`).
+  bool _take(pb.ParentRequest request) {
+    if (_hold.isFinished) throw _finishedError();
+    final kind = request.whichKind();
+    final wasPending = pendingSuspension;
+    if (kind == pb.ParentRequest_Kind.feed && wasPending) {
+      throw _pendingError();
+    }
+    inTurn = true;
+    if (kind != pb.ParentRequest_Kind.dump) pendingSuspension = false;
+    if (kind == pb.ParentRequest_Kind.load) _budget.beginLoad();
+
+    return wasPending;
+  }
+
+  /// Gives the channel back after [request]'s turn, however it ended: a
+  /// load no reply decided gets the session's budget back (`end_load`),
+  /// the next waiting turn may start, and a turn that left a suspension
+  /// pending frees the session's turn while the host answers (after a dump
+  /// too, so a feed queued behind it learns the session is suspended).
+  void _give(pb.ParentRequest request) {
+    if (request.whichKind() == pb.ParentRequest_Kind.load) _budget.endLoad();
+    inTurn = false;
+    final over = _turnOver;
+    _turnOver = null;
+    over?.complete();
+    if (pendingSuspension) onSuspended?.call();
   }
 
   /// The session's close owns the worker's end; the driver never closes.
