@@ -43,6 +43,14 @@
 //     operation (a file handle for `open`, no future for an operation that
 //     takes none); the fake takes any value the writer takes. A handler
 //     test that relies on those checks runs against a real session.
+// 10. Unreadable answers. The fake reads each answer back with the
+//     session's reader, which refuses a few values the worker takes (a
+//     named tuple with a `_0` field, the reader's open follow-up). Such an
+//     answer fails the fake's feed with FormatException, loudly; the real
+//     side records it as unreadable and sends it unchanged.
+// 11. Sandbox identities. The worker checks that a class instance or type
+//     an answer carries exists in the sandbox; the fake does not, so an
+//     answer holding another session's object passes on the fake.
 import 'dart:async';
 import 'dart:convert';
 
@@ -352,10 +360,13 @@ String showAnswer(FakeAnswer entry) {
 /// A channel that records the answers in every request it forwards.
 final class RecordingChannel implements MontyChannel {
   /// Forwards to [_inner], recording into [log].
-  const RecordingChannel(this._inner, this.log);
+  RecordingChannel(this._inner, this.log);
 
   /// What the session answered.
   final FakeAnswers log;
+
+  /// The answers the reader could not read back (listed exception 10).
+  final List<FormatException> unreadable = [];
 
   final MontyChannel _inner;
 
@@ -364,7 +375,13 @@ final class RecordingChannel implements MontyChannel {
     pb.ParentRequest request, {
     PrintHandler? onPrint,
   }) {
-    log.add(request);
+    // Recording never changes what the real side does: an answer the
+    // reader cannot read back is recorded as unreadable, and still sent.
+    try {
+      log.add(request);
+    } on FormatException catch (error) {
+      unreadable.add(error);
+    }
 
     return _inner.turn(request, onPrint: onPrint);
   }
