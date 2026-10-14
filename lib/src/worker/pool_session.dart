@@ -411,10 +411,12 @@ final class _LeasedSession implements PoolSession {
     _snapshots?._host.dispose();
     // Queued feeds fail as finished, one after another.
     _handOff();
-    // A host callback is running (no turn in flight): its call fails now,
-    // and the callback's result, when it comes, is dropped.
+    // A host callback is running (no turn of its own in flight: none, or a
+    // dump's): its call fails now, and the callback's result, when it
+    // comes, is dropped.
     final pending = _outcome;
-    if (!_channel.inTurn && pending != null && !pending.isCompleted) {
+    final ownTurn = _channel.inTurn && !_channel.dumping;
+    if (!ownTurn && pending != null && !pending.isCompleted) {
       pending.completeError(_finishedError(), StackTrace.current);
     }
     final lease = _hold.lease;
@@ -497,7 +499,11 @@ final class _LeasedSession implements PoolSession {
   /// Whether the worker waits for an answer to a suspension: the running
   /// feed's host call, or an answer that was refused as too large to send,
   /// which leaves the suspension pending after its feed failed.
-  bool get _suspended => !_channel.inTurn && _channel.pendingSuspension;
+  ///
+  /// A dump in flight leaves it so: a feed made meanwhile is refused at
+  /// once, rather than queued behind the call that suspended.
+  bool get _suspended =>
+      (!_channel.inTurn || _channel.dumping) && _channel.pendingSuspension;
 
   /// Hands the turn to the oldest waiting feed, which then starts, or
   /// fails and hands it on.
@@ -1187,6 +1193,10 @@ final class _SessionChannel implements MontyChannel {
   /// Whether a protocol turn is in flight.
   bool inTurn = false;
 
+  /// Whether the turn in flight is a dump's, which runs between a call's
+  /// turns and belongs to none of them.
+  bool dumping = false;
+
   /// Whether the last turn ended in a suspension still awaiting the host's
   /// answer (upstream's `pending`).
   bool pendingSuspension = false;
@@ -1284,7 +1294,8 @@ final class _SessionChannel implements MontyChannel {
       throw _pendingError();
     }
     inTurn = true;
-    if (kind != pb.ParentRequest_Kind.dump) pendingSuspension = false;
+    dumping = kind == pb.ParentRequest_Kind.dump;
+    if (!dumping) pendingSuspension = false;
     if (kind == pb.ParentRequest_Kind.load) _budget.beginLoad();
 
     return wasPending;
@@ -1293,15 +1304,17 @@ final class _SessionChannel implements MontyChannel {
   /// Gives the channel back after [request]'s turn, however it ended: a
   /// load no reply decided gets the session's budget back (`end_load`),
   /// the next waiting turn may start, and a turn that left a suspension
-  /// pending frees the session's turn while the host answers (after a dump
-  /// too, so a feed queued behind it learns the session is suspended).
+  /// pending frees the session's turn while the host answers. A dump
+  /// changes neither: the call it ran beside still holds the turn.
   void _give(pb.ParentRequest request) {
     if (request.whichKind() == pb.ParentRequest_Kind.load) _budget.endLoad();
+    final dump = dumping;
     inTurn = false;
+    dumping = false;
     final over = _turnOver;
     _turnOver = null;
     over?.complete();
-    if (pendingSuspension) onSuspended?.call();
+    if (pendingSuspension && !dump) onSuspended?.call();
   }
 
   /// The session's close owns the worker's end; the driver never closes.

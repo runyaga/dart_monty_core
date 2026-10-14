@@ -2553,6 +2553,67 @@ void main() {
       },
     );
 
+    test('a feed and a resume made while a dump runs: the feed is refused, '
+        'the resume runs after the dump', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        expecting(pb.ParentRequest_Kind.dump, [
+          dumped([1]),
+        ]),
+        expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot =
+          await session.feedStart('f()', printCallback: _ignore)
+              as FunctionSnapshot;
+      final dump = session.dump();
+      final feed = session.feedRun('1', printCallback: _ignore);
+      final resumed = snapshot.resume(const ExternalReturnValue(MontyNone()));
+      await expectLater(feed, throwsA(_pending));
+      expect(await dump, [1]);
+      expect(await resumed, isA<SessionComplete>());
+      expect(ch.remaining, 0);
+    });
+
+    test('a close while a dump runs fails the feed waiting on host code at '
+        'once', () async {
+      // The Dump is never answered: only the close's kill ends it.
+      final hung = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(Workers([hung]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final never = Completer<MontyValue>();
+      final dumping = Completer<void>();
+      Future<Uint8List>? dump;
+      final feed = session.feedRun(
+        'f()',
+        externals: {
+          'f': (args, kwargs) {
+            dump = session.dump();
+            dumping.complete();
+
+            return never.future;
+          },
+        },
+        printCallback: _ignore,
+      );
+      await dumping.future;
+      await pumpEventQueue();
+      final feedFails = expectLater(feed, throwsA(_finished));
+      final dumpFails = expectLater(dump, throwsA(isA<MontyCrashedError>()));
+      await session.close();
+      await feedFails;
+      await dumpFails;
+      expect(pool.liveWorkers, 0);
+    }, timeout: const Timeout(Duration(seconds: 5)));
+
     test('a dump from inside a print callback throws StateError', () async {
       final ch = ScriptedChannel([
         _configureOk,
