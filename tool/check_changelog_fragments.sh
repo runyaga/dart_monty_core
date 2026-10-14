@@ -36,6 +36,10 @@ lint_fragments() {
   local rc=0 f n=0
   while IFS= read -r -d '' f; do
     [ -n "$f" ] || continue
+    if [ -L "$REPO/$f" ]; then
+      echo "  $f: symlinks are not supported; use a regular file"
+      rc=1; continue
+    fi
     case "$f" in
       changes/README.md) continue ;;
       changes/*/*) echo "  $f: nested paths are not assembled; use changes/<slug>.md"
@@ -46,10 +50,6 @@ lint_fragments() {
       *) echo "  $f: only changes/<slug>.md files belong in changes/"
          rc=1; continue ;;
     esac
-    if [ -L "$REPO/$f" ]; then
-      echo "  $f: symlinks are not supported; a fragment is a regular file"
-      rc=1; continue
-    fi
     n=$((n + 1))
     if ! python3 -I - "$REPO/$f" "$SECTIONS" <<'PY'
 import re, sys
@@ -200,6 +200,8 @@ self_test() {
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
   run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
   # Fragments already on the base branch (a new base holding old.md).
+  reset; ln -sf ../t.txt "$tmp/changes/README.md"; commit
+  run "symlinked README: must FAIL" 1 '["no-changelog"]' ''
   reset; printf '### Added\n\n- y\n' > "$tmp/t.txt"; ln -s ../t.txt "$tmp/changes/link.md"; commit
   run "symlink fragment: must FAIL" 1 '[]' ''
   reset; printf '### Added\n\n- y\n' > "$tmp/changes/old.md"; commit

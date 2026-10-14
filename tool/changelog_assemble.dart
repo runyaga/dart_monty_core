@@ -34,7 +34,7 @@ final _header = RegExp(r'^### (\S.*?)\s*$');
 Map<String, String> parseFragment(String name, String text) {
   final out = <String, StringBuffer>{};
   StringBuffer? cur;
-  for (final line in text.split('\n')) {
+  for (final line in text.replaceAll('\r\n', '\n').split('\n')) {
     final t = line.trimLeft();
     if (t.startsWith('```') || t.startsWith('~~~')) {
       throw FormatException('$name: fenced code blocks are not supported');
@@ -121,7 +121,7 @@ String assemble(
   String? version,
   String date = '',
 }) {
-  final lines = changelog.split('\n');
+  final lines = changelog.replaceAll('\r\n', '\n').split('\n');
   final uIdx = lines.indexWhere((l) => l.trim() == '## Unreleased');
   if (uIdx < 0) {
     throw const FormatException('CHANGELOG.md has no ## Unreleased');
@@ -159,6 +159,10 @@ void _selfTest() {
     'Changed': ['- chg'],
     'Breaking': ['- brk'],
   };
+  final crlf = assemble(base.replaceAll('\n', '\r\n'), e);
+  if (crlf != assemble(base, e)) {
+    _fail('self-test: CRLF changelog assembled differently');
+  }
   final out = assemble(base, e);
   void need(String what, {required bool ok}) {
     if (!ok) {
