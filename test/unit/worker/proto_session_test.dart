@@ -775,6 +775,39 @@ void main() {
       );
     });
 
+    test('a result that does not decode: a protocol violation', () async {
+      // An arena whose root points past its nodes.
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            complete: pb.Complete(
+              value: 5,
+              values: pb.Arena(
+                nodeCount: 1,
+                nodes: [pb.MontyNode(none: pb.Unit())],
+              ),
+            ),
+          ),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('x'),
+        throwsA(
+          isA<MontyCrashedError>()
+              .having((e) => e.cause, 'cause', CrashCause.protocol)
+              .having(
+                (e) => e.message,
+                'message',
+                startsWith(
+                  'monty worker protocol error: invalid payload from worker: ',
+                ),
+              ),
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
     test('an event that cannot end a feed kills the worker', () async {
       for (final event in [
         ok(),

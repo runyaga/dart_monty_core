@@ -7,6 +7,7 @@
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
@@ -324,6 +325,19 @@ void main() {
       expect(
         _raised('ValueError', 'x', [_frame(start: 9, end: 1)]),
         isA<MontyRuntimeError>(),
+      );
+    });
+
+    test("the failure names upstream's reason", () {
+      expect(
+        () => RaisedRecord.checked(pb.RaisedException(excType: 'Nope')),
+        throwsA(
+          isA<InvalidRaisedException>().having(
+            (e) => '$e',
+            'toString',
+            'InvalidRaisedException: unknown exception type "Nope"',
+          ),
+        ),
       );
     });
 
