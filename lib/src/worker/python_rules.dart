@@ -173,7 +173,18 @@ Iterable<int> _codePoints(String s) sync* {
 /// Whether [s] has a UTF-16 surrogate without its pair.
 ///
 /// Such a string has no UTF-8 form, so upstream's encoder cannot take it.
-bool hasUnpairedSurrogate(String s) => _codePoints(s).any(_isSurrogate);
+///
+/// A loop, not `_codePoints(s).any(_isSurrogate)`: that tear-off makes
+/// `dart compile wasm` (3.13.5) abort with "Conversion between non-reference
+/// types (from f64 to i64)" in any app that reaches it, and the consumer
+/// probes (tool/consumers) are such apps.
+bool hasUnpairedSurrogate(String s) {
+  for (final c in _codePoints(s)) {
+    if (_isSurrogate(c)) return true;
+  }
+
+  return false;
+}
 
 /// [s] as PyO3's `to_string_lossy` converts it: encoded as UTF-8 with
 /// `surrogatepass`, then decoded lossily, so each unpaired surrogate's three

@@ -1,0 +1,106 @@
+name: Consumer startup
+
+# Two minimal consumer apps (tool/consumers/) start the worker pool with no
+# workerLocation and no init call, run `1 + 1` in headless Chrome and read 2,
+# on both web compilers. A plain Dart web app (dart2js, dart2wasm; the package
+# asset layout) and a Flutter web app (flutter build web, with and without
+# --wasm; the Flutter asset layout). The unit tests cover the probe order; only
+# a real app proves a consumer's build ships the worker where the factory looks.
+#
+# Its own workflow, not a ci.yaml job: it runs on the paths below and nightly,
+# and a `schedule:` on ci.yaml would run every job there too. Neither job is a
+# required check. The Flutter job is the slow one (an SDK install and two
+# builds); the nightly run catches a Flutter or Chrome release that breaks
+# startup without any change here.
+on:
+  schedule:
+    - cron: '45 3 * * *'   # daily 03:45 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'tool/consumers/**'
+      - 'tool/check_sdk_pin.sh'
+      - '.github/workflows/consumers.yaml'
+  pull_request:
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'tool/consumers/**'
+      - 'tool/check_sdk_pin.sh'
+      - '.github/workflows/consumers.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  consumer-web:
+    name: Consumer startup (Dart web, dart2js + dart2wasm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      # The driver needs a global WebSocket (Node 22+).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - name: Driver self-test (a page that never writes the result must fail)
+        run: bash tool/consumers/run.sh selftest
+      - name: dart2js and dart2wasm read 2
+        run: |
+          bash tool/consumers/run.sh dart-js
+          bash tool/consumers/run.sh dart-wasm
+      - name: Negative controls (assets removed, asset path broken)
+        run: |
+          for t in dart-js dart-wasm; do
+            for m in remove-assets remove-wasm break-path; do
+              bash tool/consumers/run.sh "$t" --negative "$m" || exit 1
+            done
+          done
+
+  consumer-flutter-web:
+    name: Consumer startup (Flutter web, JS + wasm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # The Flutter release whose bundled Dart is the repo's pinned Dart
+      # (tool/check_sdk_pin.sh checks that, below). Bump both together.
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+          cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - name: Flutter's Dart is the repo's pinned Dart
+        run: bash tool/check_sdk_pin.sh
+      - name: Flutter and Flutter --wasm read 2
+        run: |
+          bash tool/consumers/run.sh flutter
+          bash tool/consumers/run.sh flutter-wasm
+      - name: Negative controls (assets removed, asset path broken)
+        run: |
+          for t in flutter flutter-wasm; do
+            for m in remove-assets remove-wasm break-path; do
+              bash tool/consumers/run.sh "$t" --negative "$m" || exit 1
+            done
+          done

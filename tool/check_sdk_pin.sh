@@ -38,4 +38,37 @@ if [ "$LOCAL" != "$PIN" ]; then
   exit 1
 fi
 
+# The Flutter pin: `flutter-version:` in the consumer workflow names a Flutter
+# release, and that release must bundle the Dart pinned above, or the Flutter
+# consumer probe builds with a different compiler than every other job.
+# Flutter releases are not queryable offline, so the check is on the Flutter
+# that is installed: when `flutter` is on PATH and is the pinned release, its
+# bundled Dart must be $PIN. A different Flutter on a developer machine is
+# only a note; in CI (the consumer job installs the pinned release) it fails.
+FPINS=$(grep -hE '^[[:space:]]*flutter-version:[[:space:]]*[0-9]' .github/workflows/*.y*ml \
+  | sed -E 's/^[[:space:]]*flutter-version:[[:space:]]*([^[:space:]#]+).*/\1/' | sort -u)
+FN=$(printf '%s\n' "$FPINS" | grep -c . || true)
+if [ "$FN" -ne 1 ]; then
+  echo "FAIL: expected exactly one exact flutter-version pin in .github/workflows, found $FN."
+  exit 1
+fi
+if command -v flutter >/dev/null 2>&1; then
+  FMACHINE=$(flutter --version --machine 2>/dev/null)
+  FLOCAL=$(printf '%s' "$FMACHINE" | sed -nE 's/.*"frameworkVersion": *"([^"]+)".*/\1/p')
+  FDART=$(printf '%s' "$FMACHINE" | sed -nE 's/.*"dartSdkVersion": *"([^"]+)".*/\1/p')
+  if [ "$FLOCAL" = "$FPINS" ]; then
+    if [ "$FDART" != "$PIN" ]; then
+      echo "FAIL: Flutter $FPINS bundles Dart ${FDART:-unknown}; the repo pins Dart $PIN."
+      echo "  Move flutter-version to a release that bundles $PIN, or move the Dart pin."
+      exit 1
+    fi
+    echo "PASS — Flutter $FPINS bundles Dart $FDART"
+  elif [ -n "${CI:-}" ]; then
+    echo "FAIL: flutter on PATH is ${FLOCAL:-unknown}; the workflow pins $FPINS."
+    exit 1
+  else
+    echo "note: flutter on PATH is ${FLOCAL:-unknown}, not the pinned $FPINS; Flutter's bundled Dart not checked."
+  fi
+fi
+
 echo "PASS — workflows and local dart all on $PIN"
