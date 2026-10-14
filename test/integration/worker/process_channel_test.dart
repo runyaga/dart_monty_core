@@ -341,11 +341,6 @@ void main() {
       await channel.turn(_configure);
       await Future.wait([channel.close(), channel.close()]);
       expect(await channel.exitCode, 0);
-      // The drain ends at most a grace after the exit; the peak is read
-      // after it, so what the drain read is all in it.
-      await Future<void>.delayed(
-        ProcessChannel.pipeDrainGrace + const Duration(milliseconds: 500),
-      );
       expect(channel.isAlive, isFalse);
       await expectLater(channel.turn(_configure), throwsStateError);
     });
@@ -561,6 +556,11 @@ void main() {
       expect(
         await settled(channel),
         greaterThanOrEqualTo(descendantReadyPrints * floodPrintLength),
+      );
+      // The drain ends at most a grace after the exit; the peak is read
+      // after it, so what the drain read is all in it.
+      await Future<void>.delayed(
+        ProcessChannel.pipeDrainGrace + const Duration(milliseconds: 500),
       );
       expect(
         channel.readAhead.peak,
