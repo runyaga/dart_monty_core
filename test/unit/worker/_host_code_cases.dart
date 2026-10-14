@@ -8,6 +8,7 @@
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart'
     show OsCallNotHandledException;
+import 'package:dart_monty_core/src/worker/host_answers.dart' show AsyncDecline;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
@@ -16,6 +17,8 @@ import 'package:dart_monty_core/src/worker/proto_session.dart'
     show SessionConfig;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:test/test.dart';
+
+import '../../_accessors.dart';
 
 /// Runs a test body with a session configured by [config] on a one-worker
 /// pool.
@@ -113,7 +116,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
             MontyString('X'),
           ]),
         );
-        final (name, args, kwargs) = calls.single;
+        final (name, args, kwargs) = onlyItem(calls);
         expect(name, 'datetime.now');
         expect(args, [const MontyNone()]);
         expect(kwargs, isEmpty);
@@ -127,6 +130,40 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
             'import datetime\ndatetime.datetime.now()',
             printCallback: _ignore,
             os: (name, args, kwargs) => const MontyNone(),
+          ),
+          const MontyNone(),
+        );
+      });
+    });
+
+    test('a decline from a future is no decline: TypeError, as upstream '
+        'raises for a NOT_HANDLED a coroutine returns', () async {
+      const sleepHost = SessionConfig(
+        limits: _bounded,
+        osPolicy: OsPolicy(datetime: 'call_host', sleep: 'call_host'),
+      );
+      await withSession(sleepHost, (s) async {
+        for (final code in [
+          'import datetime\ndatetime.datetime.now()',
+          'import asyncio\nawait asyncio.sleep(0.01)',
+        ]) {
+          await expectLater(
+            s.feedRun(
+              code,
+              printCallback: _ignore,
+              os: (name, args, kwargs) async =>
+                  throw const OsCallNotHandledException(),
+            ),
+            throwsA(_runtime('TypeError', AsyncDecline.message)),
+            reason: code,
+          );
+        }
+        // A coroutine's value is not the sleep's: it still returns None.
+        expect(
+          await s.feedRun(
+            'import asyncio\nawait asyncio.sleep(0.01)',
+            printCallback: _ignore,
+            os: (name, args, kwargs) async => const MontyInt(5),
           ),
           const MontyNone(),
         );

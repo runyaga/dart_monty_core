@@ -667,7 +667,7 @@ void main() {
     );
 
     test(
-      'OS calls are declined: OsCallNotHandledException, sync or async',
+      'OS calls are declined by OsCallNotHandledException',
       () async {
         pb.ChildEvent os(int id, pb.OsCall call) =>
             pb.ChildEvent(osCall: call..callId = id);
@@ -695,10 +695,6 @@ void main() {
           'os',
           onOsCall: (name, args, kwargs) {
             names.add(name);
-            if (name == 'Path.read_bytes') {
-              return Future.error(const OsCallNotHandledException());
-            }
-
             throw const OsCallNotHandledException();
           },
         );

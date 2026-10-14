@@ -267,8 +267,8 @@ void main() {
       );
     });
 
-    test('an async handler declining asyncio.sleep settles it with None, '
-        'as a null answer does', () async {
+    test('a decline from a future fails asyncio.sleep with TypeError, as '
+        "upstream's coroutine returning NOT_HANDLED does", () async {
       for (final eager in [true, false]) {
         final host = HostAnswers(
           os: (name, args, kwargs) async =>
@@ -282,8 +282,8 @@ void main() {
         var answer = await host.osCall(call, parentSleeps: true);
         if (!eager) answer = await host.settle();
         final result = onlyItem(answer.resumeFutures.results).result;
-        expect(result.hasError(), isFalse, reason: 'eager: $eager');
-        expect(result.hasReturnValue(), isTrue, reason: 'eager: $eager');
+        expect(result.error.excType, 'TypeError', reason: 'eager: $eager');
+        expect(result.error.message, AsyncDecline.message);
       }
     });
 
@@ -376,15 +376,38 @@ void main() {
       expect(result.hasNotHandled(), isFalse);
     });
 
-    test('OsCallNotHandledException declines, sync or async', () async {
-      for (final handler in <OsHandler>[
-        (name, args, kwargs) => throw const OsCallNotHandledException(),
-        (name, args, kwargs) async => throw const OsCallNotHandledException(),
-      ]) {
-        final host = HostAnswers(os: handler);
-        final answer = await host.osCall(now, parentSleeps: true);
-        expect(answer.resumeCall.result.hasNotHandled(), isTrue);
-      }
+    test('OsCallNotHandledException thrown synchronously declines', () async {
+      final host = HostAnswers(
+        os: (name, args, kwargs) => throw const OsCallNotHandledException(),
+      );
+      final answer = await host.osCall(now, parentSleeps: true);
+      expect(answer.resumeCall.result.hasNotHandled(), isTrue);
+    });
+
+    test('from a future it raises TypeError, as a NOT_HANDLED a coroutine '
+        'returns does upstream', () async {
+      final host = HostAnswers(
+        os: (name, args, kwargs) =>
+            Future.error(const OsCallNotHandledException()),
+      );
+      final result = (await host.osCall(
+        now,
+        parentSleeps: true,
+      )).resumeCall.result;
+      expect(result.hasNotHandled(), isFalse);
+      expect(result.error.excType, 'TypeError');
+      expect(result.error.message, AsyncDecline.message);
+    });
+
+    test("ExternalException's text names its type and message", () {
+      expect(
+        const ExternalException('ValueError').toString(),
+        'ExternalException(ValueError)',
+      );
+      expect(
+        const ExternalException('ValueError', 'm').toString(),
+        'ExternalException(ValueError, m)',
+      );
     });
 
     test(

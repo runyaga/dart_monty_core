@@ -38,12 +38,14 @@ typedef ProtoExternalFunction =
 /// is the answer; [MontyNone] is `None`. Throw [OsCallNotHandledException]
 /// to decline (upstream's `NOT_HANDLED`): the worker then raises the call's
 /// own default, `PermissionError` naming the path for a filesystem call and
-/// `RuntimeError` for the rest. Throw [ExternalException] to raise a chosen
+/// `RuntimeError` for the rest. Only a synchronous throw declines, as only a
+/// synchronously returned `NOT_HANDLED` does upstream; a returned [Future]
+/// that fails with it raises `TypeError` ([AsyncDecline]), so an `async`
+/// handler cannot decline. Throw [ExternalException] to raise a chosen
 /// exception; any other throw raises `Exception` with its text
 /// ([raisedFrom]). For `asyncio.sleep` a returned [Future] is the call's
-/// coroutine, which the sandbox awaits; a decline from it leaves the
-/// sleep's own `None`. For every other call it is awaited and its value is
-/// the answer.
+/// coroutine, which the sandbox awaits. For every other call it is awaited
+/// and its value is the answer.
 typedef OsHandler =
     FutureOr<MontyValue> Function(
       String name,
@@ -414,23 +416,22 @@ final class HostAnswers {
     final (name, args, kwargs) = parts;
     final callId = call.callId;
     try {
+      final answer = handler(name, args, kwargs);
+      if (answer is MontyValue) return resumeValue(callId, answer);
+      // For `asyncio.sleep` a future is the call's coroutine. Its value is
+      // ignored: the sandbox keeps the sleep's own result.
       if (acceptsFuture(name)) {
-        final answer = handler(name, args, kwargs);
-        // A future is the call's coroutine. Its value is ignored: the
-        // sandbox keeps `asyncio.sleep`'s own result.
-        if (answer is Future<MontyValue>) {
-          return await _coroutine(
-            callId,
-            call.allowEagerAwait,
-            _orNone(answer),
-          );
-        }
-
-        return resumeValue(callId, answer);
+        return await _coroutine(
+          callId,
+          call.allowEagerAwait,
+          _undeclined(answer),
+        );
       }
 
-      return resumeValue(callId, await handler(name, args, kwargs));
+      return resumeValue(callId, await _undeclined(answer));
     } on OsCallNotHandledException {
+      // Only a synchronous throw lands here; a decline from a future is an
+      // AsyncDecline.
       return _notHandled(callId);
     } on Object catch (error) {
       return _failed(callId, error);
@@ -609,14 +610,31 @@ Future<pb.ParentRequest> _resumeWith(
 Future<MontyValue> _started(FutureOr<MontyValue> Function() invoke) =>
     Future.sync(invoke);
 
-/// [answer]'s value, `None` for a decline.
-Future<MontyValue> _orNone(Future<MontyValue> answer) async {
+/// [answer]'s value; an [OsCallNotHandledException] it fails with is an
+/// [AsyncDecline].
+Future<MontyValue> _undeclined(Future<MontyValue> answer) async {
   try {
     return await answer;
   } on OsCallNotHandledException {
-    // The sandbox keeps the sleep's own `None`.
-    return const MontyNone();
+    throw const AsyncDecline();
   }
+}
+
+/// An [OsCallNotHandledException] an OS handler's future failed with.
+///
+/// Upstream declines only a synchronous `NOT_HANDLED`. One a coroutine
+/// returns is a value it cannot convert, raised in the sandbox as
+/// `TypeError` ("Cannot convert pydantic_monty._NotHandledSentinel to Monty
+/// value"), for `asyncio.sleep` too; [raisedFrom] raises this as that
+/// `TypeError`.
+final class AsyncDecline implements Exception {
+  /// A decline from a future.
+  const AsyncDecline();
+
+  /// The `TypeError`'s message: upstream's, naming the Dart class.
+  static const String message =
+      'Cannot convert OsCallNotHandledException to Monty value: an OS '
+      'handler declines only by throwing it synchronously';
 }
 
 /// `ResumeCall` declining [callId]'s OS call.
@@ -685,6 +703,10 @@ pb.RaisedException raisedFrom(Object error) => switch (error) {
       when exceptionTypeNames.contains(excType) =>
     raisedException(excType, message ?? '', attributes),
   ExternalException(:final excType) => _fallback(unknownExcType(excType)),
+  AsyncDecline() => pb.RaisedException(
+    excType: 'TypeError',
+    message: AsyncDecline.message,
+  ),
   _ => _fallback(error),
 };
 
