@@ -256,7 +256,7 @@ void main() {
       expect(crash.exitStatus, 134);
       expect(
         crash.message,
-        'monty worker crashed: ${crash.detail} (exit status: 134)',
+        'monty worker crashed while waiting for a reply (exit status: 134)',
       );
     });
 

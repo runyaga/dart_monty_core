@@ -1518,8 +1518,18 @@ void main() {
 
     test('a dead worker: its exit status, if the OS gave one', () async {
       for (final (exitCode, status, message) in [
-        (3, 3, 'monty worker crashed: EOF (exit status: 3)'),
-        (-9, null, 'monty worker crashed: EOF (signal: 9)'),
+        (
+          3,
+          3,
+          'monty worker crashed while waiting for a reply '
+              '(exit status: 3)',
+        ),
+        (
+          -9,
+          null,
+          'monty worker crashed while waiting for a reply '
+              '(signal: 9 (SIGKILL))',
+        ),
       ]) {
         final ch = ScriptedChannel([
           _configureOk,

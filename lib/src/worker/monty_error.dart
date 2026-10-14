@@ -214,9 +214,11 @@ MontyTypingError typingError(String diagnostics) =>
 
 /// A dead or killed worker.
 ///
-/// [detail] is what the channel saw. The message frames it as upstream's
-/// does: `monty worker crashed: <detail>` with the exit status when known,
-/// [detail] alone for a worker the parent killed.
+/// [detail] is what the channel saw, kept for diagnostics. The message is
+/// upstream's `PoolError` text: `monty worker crashed: <detail>` for a
+/// worker that announced its end (`FatalError`), `monty worker crashed
+/// while waiting for a reply` for one that vanished, each with the exit
+/// status when known; [detail] alone for a worker the parent killed.
 MontyCrashedError crashedError(
   CrashCause cause, {
   String? detail,
@@ -226,13 +228,17 @@ MontyCrashedError crashedError(
 }) {
   final status = switch (exitCode) {
     null => '',
-    final code when code < 0 => ' (signal: ${-code})',
+    final code when code < 0 => ' (${_signal(-code)})',
     final code => ' (exit status: $code)',
   };
   final message = switch (cause) {
     CrashCause.killed => detail ?? 'monty worker killed',
     CrashCause.protocol => 'monty worker protocol error: $detail',
-    _ => 'monty worker crashed: ${detail ?? 'no reason given'}$status',
+    // A worker that announced its end says why; one that vanished is
+    // reported by what the parent was doing, as upstream's PoolError.
+    CrashCause.fatal => 'monty worker crashed: ${detail ?? ''}$status',
+    CrashCause.vanished || CrashCause.outOfMemory =>
+      'monty worker crashed while waiting for a reply$status',
   };
 
   return MontyCrashedError._(
@@ -244,6 +250,29 @@ MontyCrashedError crashedError(
     stderrTail: stderrTail,
   );
 }
+
+/// A signal as Rust's `ExitStatus` shows it: `signal: 9 (SIGKILL)` for the
+/// signals numbered alike on Linux and macOS, the number alone otherwise.
+String _signal(int signal) {
+  final name = _signalNames[signal];
+
+  return name == null ? 'signal: $signal' : 'signal: $signal ($name)';
+}
+
+const Map<int, String> _signalNames = {
+  1: 'SIGHUP',
+  2: 'SIGINT',
+  3: 'SIGQUIT',
+  4: 'SIGILL',
+  5: 'SIGTRAP',
+  6: 'SIGABRT',
+  8: 'SIGFPE',
+  9: 'SIGKILL',
+  11: 'SIGSEGV',
+  13: 'SIGPIPE',
+  14: 'SIGALRM',
+  15: 'SIGTERM',
+};
 
 /// A worker that answered against the protocol: upstream's message,
 /// `monty worker protocol error: <detail>`. The caller discards the worker.

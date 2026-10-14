@@ -106,11 +106,20 @@ void main() {
       );
       expect(
         '${crashedError(CrashCause.vanished, detail: 'EOF', exitCode: -9)}',
-        'monty worker crashed: EOF (signal: 9)',
+        'monty worker crashed while waiting for a reply (signal: 9 (SIGKILL))',
       );
       expect(
         '${crashedError(CrashCause.vanished, detail: 'trap')}',
-        'monty worker crashed: trap',
+        'monty worker crashed while waiting for a reply',
+      );
+      // A signal Rust names, and one it would not on every platform.
+      expect(
+        '${crashedError(CrashCause.fatal, detail: 'x', exitCode: -6)}',
+        'monty worker crashed: x (signal: 6 (SIGABRT))',
+      );
+      expect(
+        '${crashedError(CrashCause.vanished, exitCode: -10)}',
+        'monty worker crashed while waiting for a reply (signal: 10)',
       );
       expect(
         '${crashedError(CrashCause.killed, detail: 'closed during a turn')}',

@@ -335,7 +335,7 @@ void main() {
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.vanished)
               // Chrome's text for a wasm stack overflow; CI runs Chrome.
-              .having((e) => e.message, 'message', contains('RangeError')),
+              .having((e) => e.detail, 'detail', contains('RangeError')),
         ),
       );
       expect(ch.isAlive, isFalse);

@@ -237,8 +237,10 @@
   - `MontyCrashedError` has upstream's `timedOut` (any deadline kill:
     "monty worker killed after exceeding request timeout of 500ms") and
     `exitStatus` (the exit code the OS reported; `null` for a signal or a
-    kill), and frames what the channel saw as upstream does
-    ("monty worker crashed: ... (exit status: 1)").
+    kill), and upstream's message: "monty worker crashed: <reason>" for a
+    worker that announced its end, "monty worker crashed while waiting for
+    a reply" for one that vanished, each with the exit status
+    ("(exit status: 1)", "(signal: 9 (SIGKILL))") when known.
   - A worker that answers against the protocol is discarded and the call
     throws `MontyCrashedError` with upstream's message, "monty worker
     protocol error: ...": an event that cannot follow the request, an
