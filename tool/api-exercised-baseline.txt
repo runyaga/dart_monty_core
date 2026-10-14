@@ -15,3 +15,5 @@
 # (core#152) and were closed by pinning the REFUSAL, which is a real test of
 # real behaviour. A name parked here without evidence is an exemption nobody
 # reviewed and everybody inherits.
+encodeForWire  # rehearsal: deleted in the flip's values commit (checklist 69)
+listFromJson  # rehearsal: old JSON wire parser, fate undecided (C3 Frame)

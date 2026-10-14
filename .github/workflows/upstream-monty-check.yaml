@@ -39,7 +39,7 @@ jobs:
           #     ##[error]Unable to process file command 'output' successfully.
           #     ##[error]Invalid format 'v0.0.18'
           # That is why this scheduled job has failed every run.
-          CURRENT_TAG=$(grep -oP 'tag = "\K[^"]*' native/Cargo.toml | head -1 || echo "unknown")
+          CURRENT_TAG=$(python3 -c "import json;print(json.load(open('tool/upstream/upstream-pin.json'))['tag'])" || echo "unknown")
           CURRENT_VERSION="${CURRENT_TAG#v}"
 
           # Refuse to write a multi-line value rather than corrupt the whole
@@ -99,7 +99,6 @@ jobs:
           4. Run FFI integration tests: \`dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi\`
           5. Check for new \`MontyObject\` variants in \`convert.rs\`
           6. Un-xfail any fixtures that now pass
-          7. Regenerate fixture corpus if test_cases changed: \`dart tool/generate_fixture_corpus.dart\`
           BODY
           )"
         env:

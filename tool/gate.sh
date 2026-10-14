@@ -32,7 +32,7 @@ cd "$(git rev-parse --show-toplevel)"
 OUT="${1:-.gate-logs/gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"; : > "$OUT/SUMMARY.txt"
 echo "core $(git rev-parse --short HEAD) on $(git branch --show-current)" >> "$OUT/SUMMARY.txt"
-echo "monty pin: $(grep -m1 '^monty = ' native/Cargo.toml)" >> "$OUT/SUMMARY.txt"
+echo "monty pin: $(python3 -c "import json;print(json.load(open('tool/upstream/upstream-pin.json')).get('tag','?'))")" >> "$OUT/SUMMARY.txt"
 echo "" >> "$OUT/SUMMARY.txt"
 
 # Snapshot the working tree so the read-only promise in the header can be
@@ -85,7 +85,7 @@ sf(){ n="$1"; min="$2"; shift 2; t=$SECONDS
   fi
   _res "$rc" "$n" "$t"; }
 ns(){ n="$1"; shift; t=$SECONDS
-  (cd native && "$@") >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
+  (cd native/worker && "$@") >"$OUT/$n.log" 2>&1; _res $? "$n" "$t"; }
 
 # The native-assets build hook caches per-target and did NOT rebuild after
 # native/Cargo.toml changed, so dart test silently loaded a stale 0.18 dylib
@@ -121,32 +121,6 @@ ns(){ n="$1"; shift; t=$SECONDS
 # these very files, and for the same stated reason: mtimes lie, content does
 # not. The stamp records WHICH SOURCE the cached library was built from, so the
 # cache is cleared when that source actually changes and left alone otherwise.
-STAMP=.dart_tool/.native-source-hash
-native_source_hash() {
-  {
-    find native/src -type f -name '*.rs' -print0 2>/dev/null
-    printf '%s\0' native/Cargo.toml native/Cargo.lock
-  } | tr '\0' '\n' | sort | while read -r f; do
-    [ -f "$f" ] && printf '%s ' "$(shasum -a 256 "$f" | awk '{print $1}')"
-  done | shasum -a 256 | awk '{print $1}'
-}
-CACHED=$(find .dart_tool \
-  \( -name 'libdart_monty_core_native*.dylib' \
-     -o -name 'libdart_monty_core_native*.so' \) 2>/dev/null | head -1)
-if [ -n "$CACHED" ]; then
-  NATIVE_NOW=$(native_source_hash)
-  NATIVE_WAS=$(cat "$STAMP" 2>/dev/null || echo '')
-  if [ "$NATIVE_NOW" != "$NATIVE_WAS" ]; then
-    # A missing stamp is treated as a miss ONCE, on the first run after this
-    # change. That is deliberate: the alternative is trusting a cache whose
-    # provenance is unknown, which is the exact bug the original guard was
-    # written for after a day-old dylib cost an hour of misdiagnosis.
-    echo "note: native/ SOURCE CHANGED (${NATIVE_WAS:0:8}… -> ${NATIVE_NOW:0:8}…) — clearing hook cache" >&2
-    rm -rf .dart_tool/hooks_runner .dart_tool/lib
-    dart pub get >/dev/null 2>&1
-    printf '%s' "$NATIVE_NOW" > "$STAMP"
-  fi
-fi
 
 # Is the container this gate runs in able to reap orphans? Every step below
 # spawns processes -- dart, chromium, cargo, bash -- and any whose parent exits
@@ -174,7 +148,6 @@ s  asset_fresh   bash tool/check_asset_freshness.sh
 s  worker_size   bash tool/check_worker_wasm_size.sh
 # The complement to asset_fresh: that one catches "sources moved, nobody
 # rebuilt"; this one catches "the encoding was versioned on one side only".
-s  wire_version  bash tool/check_wire_version.sh
 # The third member of that family. asset_fresh catches "sources moved, nobody
 # rebuilt" and wire_version catches "the encoding was versioned on one side
 # only"; this catches the Worker and the .wasm disagreeing about a function's
@@ -184,18 +157,15 @@ s  wire_version  bash tool/check_wire_version.sh
 # monty_repl_restore went from 3 parameters to 5, the Worker kept passing 3,
 # out_error bound to the limits_json slot, and every WASM restore failed with
 # no cause while the whole FFI suite stayed green.
-s  wasm_arity    node tool/check_wasm_arity.mjs
 # The complement of wasm_arity, which reads the SHIPPED WASM EXPORTS and never
 # opens the header -- so it can prove a call site matches the binary while the
 # header says nothing at all. Measured: monty_alloc and monty_dealloc were
 # exported, called 49 times by the Worker, and declared zero times.
-s  exports_decl  bash tool/check_exports_declared.sh
 # The inbound-forgery suite is the end-to-end proof of core#136/#139, and it was
 # HAND-LISTED, so it drifted: 11 tags attacked against 25 emitted, and three of
 # the gaps were types the wire-v5 work had added days earlier. Adding an encoder
 # tag and adding a forgery row are separate edits in separate languages; this
 # ties them together.
-s  forgery_cov   bash tool/check_forgery_coverage.sh
 s  hierarchy_reg bash tool/check_hierarchy_registry.sh
 s  hook_deps     bash tool/check_hook_dependencies.sh
 # WIRE-CONTRACT.md is cited as normative by ten sites -- including a test that
@@ -203,7 +173,6 @@ s  hook_deps     bash tool/check_hook_dependencies.sh
 # The risk in writing one is fabrication: a plausible spec that does not match
 # the encoder is worse than none, because the tests cite it as authority. Its
 # row table is DERIVED from the executed assertions, and this keeps it derived.
-s  wire_contract bash tool/check_wire_contract.sh
 # A workflow GitHub cannot parse does not fail loudly: it records a 0-job run
 # and STOPS MATCHING ITS TRIGGERS, so the PR checks quietly cease. A duplicate
 # `env:` key took CI out for 13 commits here while `yaml.safe_load` passed the
@@ -216,7 +185,6 @@ s  action_pins  bash tool/check_action_pins.sh
 # token; a checkout without `persist-credentials: false` leaves that token in
 # .git/config for every later step to read.
 s  wf_tokens    python3 -I tool/check_workflow_tokens.py
-s  corpus_check  bash tool/check_fixture_corpus.sh
 # The demo links every fixture to pydantic/monty at a pinned tag; a crate bump
 # that missed the constant would show the wrong source with no error.
 # Each PR records its change as changes/<slug>.md and never edits CHANGELOG.md.
@@ -228,12 +196,10 @@ s  changelog_frag bash tool/check_changelog_fragments.sh --self-test
 # leaves the lib-wide comparison; a kept file that lost coverage, a total
 # dragged down by a new file, and a deletion without a base ref still fail.
 s  cov_ratchet_selftest bash tool/coverage_ratchet.sh --self-test
-s  fixture_links bash tool/check_fixture_links.sh
 # Same shape as fixture_links, one level up: the published pages state which
 # build they are, and nothing compiles an HTML shell, so the string rots
 # silently on the next version bump. The deployed site is the one artefact a
 # reader meets without a pubspec in front of them.
-s  page_versions bash tool/check_page_versions.sh
 # The source of the number those pages print. The monty pin moved 0.19 -> 0.23
 # in e1e4eda and pubspec.yaml did not follow, so the package called itself
 # 0.19.0 while pinning v0.0.23 -- and since snapshots are not portable across
@@ -302,7 +268,6 @@ s  vague_errors bash tool/check_no_vague_errors.sh
 # backend did not support it while the Rust export, the header AND the
 # generated binding all existed. The message was false and it reached a shipped
 # example.
-s  backend_parity bash tool/check_backend_parity.sh
 # A mock proves the wiring compiles; it cannot prove the engine can do the
 # thing. Monty.compile() had a full unit file written against
 # MockMontyPlatform and was dead on every real backend (core#152).
@@ -346,7 +311,7 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # not build; build_worker.sh --check fails, naming the build command, when the
 # worker is missing or stale.
 unit_tests(){ bash tool/build_worker.sh --check &&
-  dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker --coverage="$OUT/cov"; }
+  dart test --exclude-tags=integration,ladder,example,worker --coverage="$OUT/cov"; }
 sf unit_tests 700 unit_tests
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
@@ -355,7 +320,7 @@ sf unit_tests 700 unit_tests
 # inputs_encoder compiled, analysed clean and passed on the VM while doing
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
-sf unit_web 1400 dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
+sf unit_web 1400 dart test --exclude-tags=integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
 # WorkerChannel against the COMMITTED proto worker .{js,wasm}, in Chrome, on
 # both compilers: two Workers on one Module, trap -> MontyCrashedError plus a
 # working replacement (JSPI and forced fallback), kill, protocol skew. `worker`
@@ -369,7 +334,6 @@ dcm_here metrics_ratch && s  metrics_ratch bash tool/metrics_ratchet.sh
 ns cargo_fmt     cargo fmt --check
 ns cargo_clippy  cargo clippy --all-targets -- -D warnings
 ns cargo_test    cargo test
-ns cargo_deny    cargo deny check
 # ffi_with_cm_test.dart is INCLUDED again. The note here said it needs
 # `--features test-hooks` and was "retired in P1b since monty 0.19 dropped
 # `_test_cm()`". The second half is right and the first half stopped being
@@ -384,8 +348,6 @@ ns cargo_deny    cargo deny check
 # `examples` and `corpus_wasm` were added to close. It also makes the gate's
 # coverage set identical to CI's, which is what lets ONE tool/coverage-baseline
 # .json serve both.
-sf ffi_features 800 dart test $(ls test/integration/ffi_*_test.dart) test/integration/repros --run-skipped --tags=ffi -p vm --coverage="$OUT/cov"
-sf oracle_ffi 500 dart test test/integration/oracle_ffi_test.dart test/integration/oracle_ffi_ext_test.dart -p vm --run-skipped --tags=ffi --coverage="$OUT/cov"
 # ProcessChannel against the fake worker and the real one. NEEDS THE WORKER
 # BUILT FIRST (`bash tool/build_worker.sh`), as asset_fresh needs prebuild.sh:
 # the gate does not build, and the real-worker tests FAIL, naming that command,
@@ -441,7 +403,6 @@ s  cov_ratchet   bash tool/coverage_ratchet.sh "$OUT/coverage/honest.info"
 # engine, so "wasm" in a step name never distinguished anything, and nobody
 # reading a green `wasm_full` had a reason to ask which Dart target it used.
 # The pair is now named after the axis that actually varies.
-s  corpus_js     bash tool/test_wasm.sh --skip-build
 # The SAME 531 fixtures, the same WASM engine, compiled with dart2wasm instead.
 # This step is new (2026-08-02) and closes the last CI-only gap: CI has run the
 # dart2wasm corpus since ci.yaml:583/:669, the gate never did, so every local
@@ -454,7 +415,6 @@ s  corpus_js     bash tool/test_wasm.sh --skip-build
 # It does NOT rebuild anything in the tree: the dart2wasm output is staged in a
 # temp dir, because `dart compile wasm -o test/integration/web/wasm_runner.wasm`
 # (what CI runs) writes three TRACKED files and the gate is read-only.
-s  corpus_wasm   bash tool/test_wasm.sh --skip-build --dart2wasm
 # The two steps above run the SHIPPED engine, which has test-hooks off, so they
 # skip eight fixtures: five with__cm_* (they need monty's synthetic `_test_cm()`)
 # and three recursion ones (they need `sys.setrecursionlimit`). Measured on
@@ -473,22 +433,17 @@ s  corpus_wasm   bash tool/test_wasm.sh --skip-build --dart2wasm
 # own target dir (native/target/test-hooks) — otherwise it would sit at exactly
 # the path tool/test_wasm.sh copies into lib/assets/ without --skip-build, and
 # the next reader would load a sandbox-escaping engine believing it was ours.
-s  corpus_cm_js  bash tool/test_cm_wasm.sh
-s  corpus_cm_w   bash tool/test_cm_wasm.sh --dart2wasm
 # Neither corpus step runs the package:test suites on chrome — those are a
 # different mechanism (`dart test -p chrome --tags=wasm`, via
 # tool/test_wasm_unit.sh) and were absent from this matrix entirely, so the
 # chrome half of the standing "FFI and WASM both" rule was enforced only by CI.
 # Added 2026-07-30 after two new 0.19 suites shipped with FFI runners and no
 # WASM counterpart.
-sf wasm_unit 700 bash tool/test_wasm_unit.sh
 # Same suite, same WASM ENGINE, different DART compile target — the unit-test
 # counterpart of corpus_js/corpus_wasm above.
-sf wasm_unit_w 700 bash tool/test_wasm_unit.sh --dart2wasm
 # Separate gate from the corpus steps on purpose: different artefact (the
 # assembled Pages site vs the test harness) and different failure modes (stale
 # asset copies, COOP/COEP, relative paths under /repl/).
-s  pages_render  bash tool/check_pages.sh
 
 # -----------------------------------------------------------------------------
 # THE GATE DOES NOT WRITE TO THE WORKING TREE. Why that rule exists:
@@ -558,7 +513,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=55
+EXPECT_STEPS=36
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

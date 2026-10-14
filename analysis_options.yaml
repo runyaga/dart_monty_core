@@ -11,7 +11,6 @@ analyzer:
     - '**/*.freezed.dart'
     - 'build/**'
     - 'native/**'
-    - 'lib/src/ffi/generated/**'
     # The Flutter consumer probe needs the Flutter SDK, which the Dart-only
     # `gate` job does not install (package:flutter does not resolve here).
     # THE COMPENSATING CHECK is the `consumer-flutter-web` job in

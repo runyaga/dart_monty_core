@@ -35,21 +35,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-SCOPE=all
+SCOPE=worker
 case "${1:-}" in
-  "") ;;
-  --worker-only) SCOPE=worker ;;
-  *) echo "usage: bash tool/prebuild.sh [--worker-only]" >&2; exit 2 ;;
+  ""|--worker-only) ;;
+  *) echo "usage: bash tool/prebuild.sh" >&2; exit 2 ;;
 esac
 
 echo "[prebuild] Repo root: $ROOT"
 echo "[prebuild] Ensuring wasm32-wasip1 target is installed..."
 # In native/, so it lands on the toolchain native/rust-toolchain.toml selects.
-(cd native && rustup target add wasm32-wasip1)
+(cd native/worker && rustup target add wasm32-wasip1)
 
-if [ "$SCOPE" = all ]; then
-  bash tool/build_native_wasm.sh
-fi
 
 bash tool/build_worker_wasm.sh
 

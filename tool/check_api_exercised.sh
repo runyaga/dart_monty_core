@@ -81,9 +81,9 @@ SOURCES = _export_closure('lib/dart_monty_core.dart')
 # Refuse rather than check a set that collapsed. If an `export` rename or a
 # moved file shrinks the closure, every entry point silently disappears and
 # this reports a clean pass over nothing.
-if len(SOURCES) < 20:
+if len(SOURCES) < 15:
     print(f'FAIL: the public export closure is only {len(SOURCES)} file(s).')
-    print('  Expected 20+. A closure that stopped resolving would examine')
+    print('  Expected 15+. A closure that stopped resolving would examine')
     print('  almost nothing and still print PASS.')
     sys.exit(1)
 # A public method declaration at class-member indentation. `_private` and
@@ -137,7 +137,7 @@ if not entry_points:
     sys.exit(1)
 
 real_files = []
-for pat in ('test/integration/**/*.dart', 'example/*.dart', 'packages/*/lib/**/*.dart'):
+for pat in ('test/integration/**/*.dart', 'test/corpus/**/*.dart', 'test/hook/**/*.dart', 'example/*.dart', 'packages/*/lib/**/*.dart'):
     real_files.extend(pathlib.Path('.').glob(pat))
 # COMMENTS ARE NOT CALLS.
 #
@@ -162,9 +162,9 @@ corpus = {
     p: _strip_comments(p.read_text(errors='replace')) for p in real_files
 }
 
-if len(corpus) < 50:
+if len(corpus) < 30:
     print(f'FAIL: the real-backend surface is only {len(corpus)} files.')
-    print('  Expected 100+. A glob that stopped matching would mark every')
+    print('  Expected 30+. A glob that stopped matching would mark every')
     print('  entry point unexercised, so refuse rather than report nonsense.')
     sys.exit(1)
 

@@ -36,10 +36,10 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Rust: cargo fmt --check ---"
 if command -v cargo &>/dev/null; then
-  if cargo fmt --check --manifest-path "$PKG/native/Cargo.toml" 2>&1; then
+  if cargo fmt --check --manifest-path "$PKG/native/worker/Cargo.toml" 2>&1; then
     ok "cargo fmt"
   else
-    fail "cargo fmt: run 'cargo fmt' in native/ to fix"
+    fail "cargo fmt: run 'cargo fmt' in native/worker/ to fix"
   fi
 else
   echo "  SKIP: cargo not found"
@@ -66,9 +66,6 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Dart: format check ---"
 if command -v dart &>/dev/null; then
-  # Note: --exclude is not supported in all Dart versions; the generated
-  # bindings file is always pre-formatted by generate_bindings.sh, so it
-  # is safe to include lib/ without any special exclusion.
   if dart format \
       --line-length=80 \
       --set-exit-if-changed \
@@ -83,8 +80,6 @@ else
 fi
 echo ""
 
-# ---------------------------------------------------------------------------
-# 4. FFI bindings staleness check
 # ---------------------------------------------------------------------------
 echo "--- FFI bindings: staleness check ---"
 # Only relevant when the C header is part of this commit.
