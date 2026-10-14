@@ -308,6 +308,13 @@
 
 ### Fixed
 
+- Worker groundwork (internal, no public API): the value writer now sends a
+  class met again through its own attributes (a class constant that is an
+  instance of the class) as the class without attributes, as upstream's
+  encoder does, instead of refusing it as a cycle. A named tuple's field
+  names are sent as they are, `rename=True`'s `_0` included, since upstream's
+  encoder and worker accept any names; only a value count that differs from
+  the field count is refused, with the worker's message.
 - Worker groundwork (internal, no public API): an exception value without a
   message is sent with an argument, as upstream's encoder sends `str(exc)`:
   `''`, so the sandbox sees `RuntimeError('')`, not `RuntimeError()`; for

@@ -10,7 +10,9 @@
 /// - a leaf (a scalar, a string, a date, an exception value, a file
 ///   handle) is a fresh node at each reference;
 /// - the class of an instance is a node of its own, shared by class id while
-///   the class has no attributes, and fresh otherwise.
+///   the class has no attributes, and fresh otherwise;
+/// - a class met again through its own attributes (a class constant that is
+///   an instance of the class) is a fresh node without attributes.
 ///
 /// It walks an explicit stack, so nesting depth is bounded by memory, not by
 /// the Dart call stack.
@@ -22,9 +24,11 @@
 /// send something else: a cycle, a byte outside 0..255, a string with an
 /// unpaired UTF-16 surrogate, a date, time or offset out of range, a
 /// timedelta that is not normalized, an unknown exception, type or builtin
-/// name, an invalid file mode or position, and a named tuple Python could not
-/// build. Following upstream, an exception message with an unpaired surrogate
-/// is converted lossily instead, and a time zone name with one is dropped.
+/// name, an invalid file mode or position, and a named tuple whose values
+/// do not match its field names in number. Field names are sent as they are,
+/// as upstream's encoder sends a tuple's `_fields`. Following upstream, an
+/// exception message with an unpaired surrogate is converted lossily
+/// instead, and a time zone name with one is dropped.
 ///
 /// [MontyDataclass] has no node (upstream folded it into the class
 /// instance), and a [MontyOpaque] rendering of a function, `repr` or cycle
@@ -68,7 +72,8 @@ final class ArenaWriter {
   /// [UnsupportedError] for a [MontyDataclass]. A refused value may leave
   /// nodes for its children in [arena]; discard the writer.
   int add(MontyValue value) {
-    final open = Set<MontyValue>.identity();
+    // The containers and classes on the stack.
+    final open = Set<Object>.identity();
     final stack = <_Frame>[];
     var done = _step(value, open, stack);
     // `done` is null right after a frame was opened, so a frame is open.
@@ -89,8 +94,8 @@ final class ArenaWriter {
 
   /// Emits a leaf, finds an emitted container, or opens a frame for a
   /// container and returns null.
-  int? _step(Object child, Set<MontyValue> open, List<_Frame> stack) {
-    if (child is MontyClassType) return _enterClass(child, stack);
+  int? _step(Object child, Set<Object> open, List<_Frame> stack) {
+    if (child is MontyClassType) return _enterClass(child, open, stack);
     final v = child as MontyValue;
     if (_containers[v] case final id?) return id;
     final container = _container(v);
@@ -115,9 +120,13 @@ final class ArenaWriter {
   /// An instance's class: one node per id while it has no attributes, as
   /// upstream's encoder keeps them; one per reference otherwise, since class
   /// metadata reached through an instance carries no identity of its own.
-  int? _enterClass(MontyClassType type, List<_Frame> stack) {
+  /// A class met again while its own attributes are being emitted is a
+  /// fresh node without them, as upstream's encoder sends it.
+  int? _enterClass(MontyClassType type, Set<Object> open, List<_Frame> stack) {
+    if (open.contains(type)) return _emit(_classNode(type, const []));
     final shared = type.attrs.isEmpty ? _classes[_classKey(type)] : null;
     if (shared != null) return shared;
+    open.add(type);
     stack.add(
       _Frame(type, _attrChildren(type.attrs), (ids) => _classNode(type, ids)),
     );
@@ -182,15 +191,15 @@ final class ArenaWriter {
     return _hashable[key];
   }
 
-  int _complete(_Frame frame, Set<MontyValue> open) {
+  int _complete(_Frame frame, Set<Object> open) {
     final id = _emit(frame.build(frame.ids));
     switch (frame.source) {
       case final MontyClassType type when type.attrs.isEmpty:
         _classes.putIfAbsent(_classKey(type), () => id);
       case final MontyValue v:
         _containers[v] = id;
-        open.remove(v);
     }
+    open.remove(frame.source);
 
     return id;
   }
@@ -324,8 +333,14 @@ void _checkNamedTuple(
   for (final name in [typeName, ...fieldNames]) {
     _checkText(v, name, 'named tuple name');
   }
-  final error = namedTupleError(typeName, fieldNames, v.values.length);
-  if (error != null) throw ArgumentError.value(v, 'value', error);
+  // The worker's one rule for a named tuple input; it accepts any names.
+  if (v.values.length != fieldNames.length) {
+    throw ArgumentError.value(
+      v,
+      'value',
+      'NamedTuple field_names and values must have the same length',
+    );
+  }
 }
 
 /// The node for a leaf [v].
