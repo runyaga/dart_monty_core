@@ -70,6 +70,11 @@ final class ProtoSession {
   /// as it arrives, and its future is awaited before the next one; the
   /// result also lists them all, unless [FeedOptions.collectPrints] is false.
   ///
+  /// A failing [onPrint] follows upstream's binding: later prints are not
+  /// delivered, the turn is still read to its end, and then the failure is
+  /// thrown in place of the turn's outcome. The session survives a turn that
+  /// completed or raised; one that ended suspended kills the worker.
+  ///
   /// [options] adjust the feed (see [FeedOptions]). A snippet a
   /// type-checking session's check rejects throws [MontyTypingError].
   Future<FeedResult> feed(
@@ -82,7 +87,6 @@ final class ProtoSession {
   }) => _guard(() async {
     final sink = _PrintSink(
       onPrint,
-      _channel.kill,
       collect: options.collectPrints,
       abandoned: options.abandoned,
     );
@@ -91,14 +95,7 @@ final class ProtoSession {
     final systemSleepMax = options.systemSleepMax;
     var request = pb.ParentRequest(feed: feed);
     for (;;) {
-      final pb.ChildEvent event;
-      try {
-        event = await _channel.turn(request, onPrint: sink.add);
-      } on Object {
-        sink.rethrowFailure();
-        rethrow;
-      }
-      sink.rethrowFailure();
+      final event = await _feedTurn(request, sink);
       if (event.whichKind() == pb.ChildEvent_Kind.complete) {
         return FeedResult(
           _value(event.complete),
@@ -119,6 +116,27 @@ final class ProtoSession {
 
   /// Ends the worker. Idempotent.
   Future<void> close() => _channel.close();
+
+  /// One turn of a feed, its prints to [sink]. A print failure is thrown in
+  /// place of the turn's outcome, a crash included; a suspension the failed
+  /// feed leaves is never answered, so the worker is killed rather than
+  /// left waiting.
+  Future<pb.ChildEvent> _feedTurn(
+    pb.ParentRequest request,
+    _PrintSink sink,
+  ) async {
+    final pb.ChildEvent event;
+    try {
+      event = await _channel.turn(request, onPrint: sink.add);
+    } on Object {
+      sink.rethrowFailure();
+      rethrow;
+    }
+    if (sink.failed && isSuspension(event)) _channel.kill();
+    sink.rethrowFailure();
+
+    return event;
+  }
 
   Future<void> _configure() async {
     final request = pb.ParentRequest(configure: _config._toProto());
@@ -211,19 +229,18 @@ final class ProtoSession {
 /// Collects a feed's prints and passes each to the caller's callback,
 /// awaiting it before the next.
 ///
-/// A throwing callback must not escape into the channel mid-turn, and the
-/// feed cannot carry on without it: the worker may be suspended on a call
-/// nobody will answer, or never end the turn at all. So the first failure
-/// kills the worker at once, later prints are dropped, and the driver
-/// rethrows the failure when the turn returns.
+/// A throwing callback must not escape into the channel mid-turn. As in
+/// upstream's binding, the first failure is recorded and later prints are
+/// dropped; the turn runs to its end, and the driver then throws the
+/// failure.
 ///
 /// Nothing more is delivered once the feed is abandoned (its worker killed
 /// by a deadline or a close while a callback ran): a callback that finally
-/// returns does not lead to the next one.
+/// returns does not lead to the next one, and one that finally throws is
+/// not recorded.
 final class _PrintSink {
   _PrintSink(
-    this._onPrint,
-    this._kill, {
+    this._onPrint, {
     required bool collect,
     bool Function()? abandoned,
   }) : _collect = collect,
@@ -231,14 +248,13 @@ final class _PrintSink {
 
   final List<(String, String)> prints = [];
   final ProtoPrintCallback? _onPrint;
-  final void Function() _kill;
   final bool Function()? _abandoned;
   final bool _collect;
   (Object, StackTrace)? _failure;
 
   Future<void> add(pb.Print print) async {
     for (final segment in print.segments) {
-      if (_failure != null || (_abandoned?.call() ?? false)) return;
+      if (_failure != null || _isAbandoned) return;
       final stream = segment.stream == pb.PrintStream.PRINT_STREAM_STDERR
           ? 'stderr'
           : 'stdout';
@@ -248,13 +264,20 @@ final class _PrintSink {
       try {
         await onPrint(stream, segment.text);
       } on Object catch (error, stack) {
-        _failure = (error, stack);
-        _kill();
+        // A failure from a callback that ended after the feed was abandoned
+        // is ignored, like any late result: the abandonment is the outcome.
+        if (!_isAbandoned) _failure = (error, stack);
 
         return;
       }
     }
   }
+
+  /// Whether the caller has given up on the feed.
+  bool get _isAbandoned => _abandoned?.call() ?? false;
+
+  /// Whether the callback failed.
+  bool get failed => _failure != null;
 
   /// Throws the callback's failure, if there was one.
   void rethrowFailure() {
@@ -263,6 +286,16 @@ final class _PrintSink {
     }
   }
 }
+
+/// Whether [event] ends a turn in a suspension that waits for the host's
+/// answer (upstream's `left_suspended`).
+bool isSuspension(pb.ChildEvent event) => switch (event.whichKind()) {
+  pb.ChildEvent_Kind.functionCall ||
+  pb.ChildEvent_Kind.osCall ||
+  pb.ChildEvent_Kind.nameLookup ||
+  pb.ChildEvent_Kind.resolveFutures => true,
+  _ => false,
+};
 
 /// How one [ProtoSession.feed] runs.
 final class FeedOptions {

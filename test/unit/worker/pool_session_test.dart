@@ -2,8 +2,9 @@
 // pool_session.dart) over scripted workers: checkout and Configure, feedRun,
 // print delivery in order, idle close and Reset, close during host code,
 // requestTimeout and the duration backstops on turns only, the memory-limit
-// exit, and the scoped helpers. No worker runs. Pure Dart: vm, dart2js and
-// dart2wasm.
+// exit, and the scoped helpers; and the failure paths: a failing or stalled
+// print callback, close while busy, and oversized requests. No worker runs.
+// Pure Dart: vm, dart2js and dart2wasm.
 import 'dart:async';
 import 'dart:collection';
 
@@ -604,34 +605,6 @@ void main() {
       expect(seen, [('stdout', 'before\n'), ('stdout', 'after\n')]);
     });
 
-    test('a throwing callback kills the worker, frees the slot', () async {
-      final ch = ScriptedChannel([
-        _configureOk,
-        answer([
-          printed([(_stdout, 'x')]),
-          completeNone(),
-        ]),
-      ]);
-      final pool = await _pool(Workers([ch]));
-      addTearDown(pool.close);
-      final session = await pool.checkout();
-      await expectLater(
-        session.feedRun(
-          'print("x")',
-          printCallback: (stream, text) async => throw StateError('sink'),
-        ),
-        throwsA(
-          isA<StateError>().having((e) => e.message, 'message', 'sink'),
-        ),
-      );
-      expect(ch.kills, greaterThan(0));
-      expect(pool.liveWorkers, 0);
-      await expectLater(
-        session.feedRun('1', printCallback: _ignore),
-        throwsA(_finished),
-      );
-    });
-
     test('a call from inside a print callback throws StateError', () async {
       final ch = ScriptedChannel([
         _configureOk,
@@ -658,6 +631,573 @@ void main() {
       expect(inner, isA<StateError>());
       await session.close();
       expect(pool.idleWorkers, 1);
+    });
+  });
+
+  group('print failure (upstream binding)', () {
+    test('then completion: later prints are dropped, the failure wins, the '
+        'session runs on', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a'), (_stdout, 'b')]),
+          printed([(_stdout, 'c')]),
+          _int(1),
+        ]),
+        answer([_int(2)]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final seen = <String>[];
+      await expectLater(
+        session.feedRun(
+          'print("a", "b")\nprint("c")\n1',
+          printCallback: (stream, text) {
+            seen.add(text);
+            throw StateError('sink');
+          },
+        ),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+      );
+      expect(seen, ['a']);
+      // The turn was read to its end and the worker kept.
+      expect(ch.kills, 0);
+      expect(
+        await session.feedRun('2', printCallback: _ignore),
+        const MontyInt(2),
+      );
+      await session.close();
+      expect(pool.idleWorkers, 1);
+    });
+
+    test('then a Python exception: the failure wins', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a')]),
+          raised('KeyError', 'k'),
+        ]),
+        answer([_int(5)]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      await expectLater(
+        session.feedRun(
+          'print("a")\nraise KeyError("k")',
+          printCallback: (stream, text) async => throw StateError('sink'),
+        ),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+      );
+      expect(ch.kills, 0);
+      expect(
+        await session.feedRun('5', printCallback: _ignore),
+        const MontyInt(5),
+      );
+      await session.close();
+    });
+
+    test('then a suspension: the session is discarded, its slot serves a new '
+        'checkout', () async {
+      final first = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a')]),
+          _lookup('f'),
+        ]),
+      ]);
+      final second = ScriptedChannel([
+        _configureOk,
+        answer([_int(3)]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([first, second]));
+      addTearDown(pool.close);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final session = await pool.checkout();
+      var calls = 0;
+      await expectLater(
+        session.feedRun(
+          'print("a")\nf()',
+          externals: {'f': (args, kwargs) => MontyInt(++calls)},
+          printCallback: (stream, text) async => throw StateError('sink'),
+        ),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+      );
+      // Nobody answers the suspension: the worker is killed, not left
+      // waiting for a resume.
+      expect(calls, 0);
+      expect(first.kills, greaterThan(0));
+      expect(_lastKind(first), pb.ParentRequest_Kind.feed);
+      expect(pool.liveWorkers, 0);
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        throwsA(_finished),
+      );
+      await session.close();
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final next = await pool.checkout();
+      expect(
+        await next.feedRun('3', printCallback: _ignore),
+        const MontyInt(3),
+      );
+      await next.close();
+    });
+
+    test('then a crash: the failure still wins', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        hangAfter([
+          printed([(_stdout, 'a')]),
+          printed([(_stdout, 'b')]),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]), requestTimeout: _ms(30));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      var calls = 0;
+      await expectLater(
+        session.feedRun(
+          'while True: print("x")',
+          printCallback: (stream, text) {
+            calls++;
+            throw StateError('sink');
+          },
+        ),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+      );
+      expect(calls, 1);
+      expect(pool.liveWorkers, 0);
+    });
+  });
+
+  group('print failure and a dead worker', () {
+    test('a failure, then the worker dies: the failure wins and the slot is '
+        'freed without a close', () async {
+      final first = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a')]),
+          fatal('panic'),
+        ]),
+      ]);
+      final second = ScriptedChannel([
+        _configureOk,
+        answer([_int(9)]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([first, second]));
+      addTearDown(pool.close);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final session = await pool.checkout();
+      await expectLater(
+        session.feedRun(
+          'print("a")\nboom()',
+          printCallback: (stream, text) async => throw StateError('sink'),
+        ),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+      );
+      expect(pool.liveWorkers, 0);
+      // The failed session is not closed: its slot must already be free.
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final next = await pool.checkout().timeout(const Duration(seconds: 5));
+      expect(
+        await next.feedRun('9', printCallback: _ignore),
+        const MontyInt(9),
+      );
+      await next.close();
+      await session.close();
+    });
+
+    test('a callback that closes its session, then throws: the close '
+        'wins, the late failure is ignored', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a')]),
+          completeNone(),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      await expectLater(
+        session.feedRun(
+          'print("a")',
+          printCallback: (stream, text) {
+            unawaited(session.close());
+            throw StateError('late');
+          },
+        ),
+        throwsA(_crashed(CrashCause.killed)),
+      );
+      expect(pool.liveWorkers, 0);
+    });
+
+    for (final cause in [CrashCause.killed, CrashCause.outOfMemory]) {
+      test('a callback that throws MontyCrashedError(${cause.name}) is a '
+          'print failure like any other: rethrown as is, the worker '
+          'kept', () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([
+            printed([(_stdout, 'a')]),
+            _int(1),
+          ]),
+          answer([_int(2)]),
+          _resetOk,
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        // As if the callback awaited another session that crashed.
+        final elsewhere = crashedError(cause, detail: 'elsewhere');
+        await expectLater(
+          session.feedRun(
+            'print("a")\n1',
+            printCallback: (stream, text) async => throw elsewhere,
+          ),
+          throwsA(same(elsewhere)),
+        );
+        expect(ch.kills, 0);
+        expect(
+          await session.feedRun('2', printCallback: _ignore),
+          const MontyInt(2),
+        );
+        await session.close();
+        expect(pool.idleWorkers, 1);
+      });
+    }
+  });
+
+  group('print stall (gate)', () {
+    // A print callback that never completes, ended once by requestTimeout
+    // and once by close: the call fails at once, the slot is released once
+    // and serves a new checkout, and the callback's late return is ignored.
+    for (final byClose in [false, true]) {
+      final how = byClose ? 'close' : 'requestTimeout';
+      test('ended by $how: the call fails, the slot serves a new '
+          'checkout', () async {
+        final stalled = ScriptedChannel([
+          _configureOk,
+          answer([
+            printed([(_stdout, 'x')]),
+            printed([(_stdout, 'y')]),
+            completeNone(),
+          ]),
+        ]);
+        final fresh = ScriptedChannel([
+          _configureOk,
+          answer([_int(4)]),
+          _resetOk,
+        ]);
+        final pool = await _pool(
+          Workers([stalled, fresh]),
+          requestTimeout: byClose ? null : _ms(40),
+        );
+        addTearDown(pool.close);
+        // Each checkout takes the slot anew, on purpose.
+        // ignore: prefer-moving-to-variable
+        final session = await pool.checkout();
+        final seen = <String>[];
+        final entered = Completer<void>();
+        final never = Completer<void>();
+        final run = session.feedRun(
+          'print("x")\nprint("y")',
+          printCallback: (stream, text) {
+            seen.add(text);
+            if (!entered.isCompleted) entered.complete();
+
+            return never.future;
+          },
+        );
+        final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+        await entered.future;
+        if (byClose) await session.close();
+        await failed.timeout(const Duration(seconds: 5));
+        expect(stalled.kills, greaterThan(0));
+        expect(pool.liveWorkers, 0);
+        // Each checkout takes the slot anew, on purpose.
+        // ignore: prefer-moving-to-variable
+        final next = await pool.checkout().timeout(const Duration(seconds: 5));
+        expect(
+          await next.feedRun('4', printCallback: _ignore),
+          const MontyInt(4),
+        );
+        // The stalled callback returns at last: nothing follows from it.
+        never.complete();
+        await pumpEventQueue();
+        expect(seen, ['x']);
+        await session.close();
+        await next.close();
+        expect(pool.idleWorkers, 1);
+        expect(pool.liveWorkers, 1);
+      });
+    }
+  });
+
+  group('close while busy (q8 gates)', () {
+    test('during a turn, after feedRun(...).timeout: close ends it', () async {
+      final ch = ScriptedChannel([_configureOk, hangAfter([])]);
+      final fresh = ScriptedChannel([
+        _configureOk,
+        answer([_int(6)]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([ch, fresh]));
+      addTearDown(pool.close);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final session = await pool.checkout();
+      await expectLater(
+        session
+            .feedRun('while True: pass', printCallback: _ignore)
+            .timeout(_ms(30)),
+        throwsA(isA<TimeoutException>()),
+      );
+      await session.close().timeout(const Duration(seconds: 5));
+      expect(ch.kills, greaterThan(0));
+      expect(pool.liveWorkers, 0);
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        throwsA(_finished),
+      );
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final next = await pool.checkout();
+      expect(
+        await next.feedRun('6', printCallback: _ignore),
+        const MontyInt(6),
+      );
+      await next.close();
+    });
+
+    test('during an unresolved host call: the call fails at once, Reset '
+        'now, close returns, the worker serves the next checkout', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('never')]),
+        answer([_call('never')]),
+        _resetOk,
+        _configureOk,
+        answer([_int(8)]),
+        _resetOk,
+      ]);
+      final workers = Workers([ch]);
+      final pool = await _pool(workers);
+      addTearDown(pool.close);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final session = await pool.checkout();
+      final entered = Completer<void>();
+      final run = session.feedRun(
+        'never()',
+        externals: {
+          'never': (args, kwargs) {
+            entered.complete();
+
+            // Never completes: host code is not interrupted.
+            return Completer<MontyValue>().future;
+          },
+        },
+        printCallback: _ignore,
+      );
+      await entered.future;
+      final failed = expectLater(run, throwsA(_finished));
+      await session.close().timeout(const Duration(seconds: 5));
+      // The pending call fails at once, though the callback never returns.
+      await failed.timeout(const Duration(seconds: 5));
+      expect(_lastKind(ch), pb.ParentRequest_Kind.reset);
+      expect(ch.kills, 0);
+      expect(pool.idleWorkers, 1);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final next = await pool.checkout();
+      expect(
+        await next.feedRun('8', printCallback: _ignore),
+        const MontyInt(8),
+      );
+      await next.close();
+      expect(workers.started, hasLength(1));
+    });
+
+    test('twice during a turn: the second close is a no-op, the slot is '
+        'released once', () async {
+      final ch = ScriptedChannel([_configureOk, hangAfter([])]);
+      final fresh = ScriptedChannel([_configureOk, _resetOk]);
+      final pool = await _pool(Workers([ch, fresh]));
+      addTearDown(pool.close);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final session = await pool.checkout();
+      final run = session.feedRun('while True: pass', printCallback: _ignore);
+      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      await pumpEventQueue();
+      await Future.wait([session.close(), session.close()]);
+      await session.close();
+      await failed;
+      expect(pool.liveWorkers, 0);
+      // One slot (maxProcesses 1): a second release would admit two.
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final next = await pool.checkout();
+      var second = false;
+      Future<PoolSession> wait() async {
+        // A further checkout on purpose: it must wait for the slot.
+        final waited = await pool.checkout();
+        second = true;
+
+        return waited;
+      }
+
+      final waiting = wait();
+      await pumpEventQueue();
+      expect(second, isFalse);
+      expect(pool.liveWorkers, 1);
+      // The waiting checkout is refused once the pool closes.
+      final refused = expectLater(
+        waiting,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'the monty '
+                'pool is closed',
+          ),
+        ),
+      );
+      await pool.close();
+      await refused;
+      await next.close();
+    });
+  });
+
+  group('outbound outcomes', () {
+    /// A string whose input or answer is over [_frameLimit].
+    const big = MontyString(
+      'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+      'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    );
+    const frameLimit = 64;
+    final oversized = isA<MontyRuntimeError>()
+        .having((e) => e.exception.excType, 'excType', 'RuntimeError')
+        .having(
+          (e) => e.message,
+          'message',
+          matches(
+            RegExp(
+              r'^RuntimeError: request frame of \d+ bytes exceeds the maximum of 64 '
+              r'bytes$',
+            ),
+          ),
+        );
+
+    test('an oversized input: the call fails, nothing is sent, the session '
+        'runs on', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_int(3)]),
+        _resetOk,
+      ], frameLimit: frameLimit);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      await expectLater(
+        session.feedRun(
+          'len(v)',
+          inputs: {'v': big},
+          printCallback: _ignore,
+        ),
+        throwsA(oversized),
+      );
+      expect(ch.requests, hasLength(1));
+      expect(ch.kills, 0);
+      // The retry, with a value that fits, runs.
+      expect(
+        await session.feedRun(
+          'len(v)',
+          inputs: {'v': const MontyString('abc')},
+          printCallback: _ignore,
+        ),
+        const MontyInt(3),
+      );
+      await session.close();
+      expect(pool.idleWorkers, 1);
+    });
+
+    test('an oversized automatic answer: the error propagates, the '
+        'suspension stays pending, later feeds are refused', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_lookup('g')]),
+        answer([_call('g')]),
+        _resetOk,
+        _configureOk,
+        answer([_int(4)]),
+        _resetOk,
+      ], frameLimit: frameLimit);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final session = await pool.checkout();
+      await expectLater(
+        session.feedRun(
+          'g()\n3',
+          externals: {'g': (args, kwargs) => big},
+          printCallback: _ignore,
+        ),
+        throwsA(oversized),
+      );
+      // The answer never left: the worker still waits for it.
+      // The last request so far: it changes as the test runs.
+      // ignore: prefer-moving-to-variable
+      expect(_lastKind(ch), pb.ParentRequest_Kind.resumeNameLookup);
+      expect(ch.kills, 0);
+      final refusedPending = throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          'feed called while a suspension is awaiting an answer',
+        ),
+      );
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        refusedPending,
+      );
+      // The retry is refused too: upstream recovers no more than this.
+      await expectLater(
+        session.feedRun(
+          'g()\n3',
+          externals: {'g': (args, kwargs) => const MontyString('ok')},
+          printCallback: _ignore,
+        ),
+        refusedPending,
+      );
+      // The last request so far: it changes as the test runs.
+      // ignore: prefer-moving-to-variable
+      expect(_lastKind(ch), pb.ParentRequest_Kind.resumeNameLookup);
+      // close resets the worker, which serves the next checkout.
+      await session.close();
+      // The last request so far: it changes as the test runs.
+      // ignore: prefer-moving-to-variable
+      expect(_lastKind(ch), pb.ParentRequest_Kind.reset);
+      expect(pool.idleWorkers, 1);
+      // Each checkout takes the slot anew, on purpose.
+      // ignore: prefer-moving-to-variable
+      final next = await pool.checkout();
+      expect(
+        await next.feedRun('4', printCallback: _ignore),
+        const MontyInt(4),
+      );
+      await next.close();
     });
   });
 
@@ -734,7 +1274,8 @@ void main() {
       expect(pool.liveWorkers, 0);
     });
 
-    test('during host code: Reset now; the drive fails later', () async {
+    test('during host code: Reset now; the call fails at once; the '
+        "callback's late answer is dropped", () async {
       final ch = ScriptedChannel([
         _configureOk,
         answer([_lookup('slow')]),
@@ -758,14 +1299,17 @@ void main() {
         printCallback: _ignore,
       );
       await entered.future;
+      final failed = expectLater(run, throwsA(_finished));
       await session.close();
+      // The call failed with the close, while the callback still runs.
+      await failed;
       // Reset went out while the callback still ran, and the worker is back.
       expect(_lastKind(ch), pb.ParentRequest_Kind.reset);
       final sent = ch.requests.length;
       expect(pool.idleWorkers, 1);
       expect(ch.kills, 0);
       release.complete(const MontyInt(1));
-      await expectLater(run, throwsA(_finished));
+      await pumpEventQueue();
       // The callback's answer was dropped: nothing was sent after Reset.
       expect(ch.requests, hasLength(sent));
     });

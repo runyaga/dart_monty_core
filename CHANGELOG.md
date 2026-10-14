@@ -169,8 +169,9 @@
     fails if the first feed is suspended on a host call, or if the
     session has closed.
   - Closing a session sends `Reset` and returns its worker to the pool.
-    If a host callback is running at the time, the suspended run fails as
-    finished once the callback returns. A turn in flight is killed.
+    If a host callback is running at the time, the call fails as finished
+    at once; the callback is not interrupted, and its result is dropped.
+    A turn in flight is killed.
   - `requestTimeout` bounds each protocol turn, print delivery included,
     but never host callbacks. Upstream's feed and turn duration backstops
     apply to execution turns.
@@ -258,6 +259,34 @@
     real workers on the three compilers.
   - `PARITY_PIN` moves to the parity suite whose worker engine records
     the error family's errors.
+- Internal session failure paths, following upstream's pool binding.
+  Still not exported.
+  - A print callback that throws no longer kills the worker at once. Later
+    text is not delivered to it, the turn is read to its end, and then the
+    callback's error is thrown in place of the turn's outcome, a Python
+    exception or a crash included. The session runs on after a turn that
+    completed or raised. It is discarded when the turn ended suspended on a
+    host call, which no one would then answer.
+  - A close while a host callback runs now fails the pending call at once,
+    instead of when the callback returns; the callback's late result is
+    dropped.
+  - A request over the 256 MiB frame limit is refused before it is sent,
+    with `MontyRuntimeError` (`RuntimeError: request frame of N bytes
+    exceeds the maximum of M bytes`). Oversized inputs leave the session usable. An oversized
+    answer from a host function leaves the suspension pending: later feeds
+    fail with `StateError` until the session is closed, which resets the
+    worker.
+  - New tests gate the session's failure paths on the VM, dart2js and
+    dart2wasm, against the real worker on native and in the browser:
+    - a print callback that never completes, ended by `requestTimeout` and
+      by `close`, after which the freed slot serves a new checkout;
+    - `close` during a turn (after `feedRun(...).timeout`), during a host
+      call that never returns, and twice.
+    On native, two more gates:
+    - a stalled callback holds the worker's output at the 4 MiB read-ahead
+      bound;
+    - with no callback and the app's own stdout left undrained, timers keep
+      running, and `requestTimeout` and `close` still end the stalled call.
 
 ### Changed
 

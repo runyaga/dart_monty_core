@@ -3,10 +3,14 @@
 // Each turn takes the next scripted reply: the events a worker would send
 // (zero or more Print, then the turn end) or a crash. Requests and events go
 // through the protobuf wire encoding both ways, so a message the real channel
-// could not send fails here too. Pure Dart: runs on vm, dart2js and dart2wasm.
+// could not send fails here too, and a request over the frame limit is
+// refused before it is recorded, as both real channels refuse it before a
+// byte is sent. Pure Dart: runs on vm, dart2js and dart2wasm.
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:dart_monty_core/src/worker/encoded_length.dart';
+import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
@@ -17,8 +21,14 @@ typedef Reply = List<pb.ChildEvent> Function(pb.ParentRequest request);
 
 /// A scripted worker.
 final class ScriptedChannel implements MontyChannel {
-  /// Answers each turn with the next of [script].
-  ScriptedChannel(Iterable<Reply> script) : _remaining = Queue.of(script);
+  /// Answers each turn with the next of [script]; a request whose body is
+  /// over [frameLimit] bytes throws [FrameTooLargeException] instead.
+  ScriptedChannel(Iterable<Reply> script, {this.frameLimit = Frame.maxLength})
+    : _remaining = Queue.of(script);
+
+  /// The largest request body this worker takes: [Frame.maxLength], or less
+  /// so a test can send an oversized request cheaply.
+  final int frameLimit;
 
   /// Every request received, decoded from its wire bytes.
   final List<pb.ParentRequest> requests = [];
@@ -47,6 +57,8 @@ final class ScriptedChannel implements MontyChannel {
     if (!_isAlive) {
       throw crashedError(CrashCause.killed, detail: 'channel is dead');
     }
+    final length = EncodedLength.of(request);
+    if (length > frameLimit) throw FrameTooLargeException(length, frameLimit);
     final sent = pb.ParentRequest.fromBuffer(request.writeToBuffer());
     requests.add(sent);
     if (_remaining.isEmpty) {
