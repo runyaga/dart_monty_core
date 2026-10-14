@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 import '../../_accessors.dart';
 import '../../unit/worker/_attribute_cases.dart';
 import '../../unit/worker/_cwd_cases.dart';
+import '../../unit/worker/_host_code_cases.dart';
 import '_worker_harness.dart';
 
 /// Every session's memory is bounded.
@@ -56,6 +57,10 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
   attributeSessionTests('vm', _withSession);
   cwdSessionTests('vm', _withSession);
+  hostCodeSessionTests(
+    'vm',
+    (config, body) => _withSession(body, options: config),
+  );
 
   test('a host call: name, arguments, position; resumed', () async {
     await _withSession((s) async {

@@ -8,6 +8,8 @@ import 'package:dart_monty_core/dart_monty_core.dart'
 import 'package:dart_monty_core/src/worker/frame.dart'
     show FrameTooLargeException;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -425,7 +427,8 @@ void main() {
     });
 
     test(
-      'a host throw raises in Python; OsCallException picks the class',
+      'a host throw raises in Python; ExternalException picks the class, '
+      'any other throw is Exception',
       () async {
         final ch = _configured([
           answer([_functionCall('f', [], callId: 1)]),
@@ -436,10 +439,8 @@ void main() {
         await s.feed(
           'f(); g()',
           externals: {
-            'f': (args, kwargs) => throw const OsCallException(
-              'no',
-              pythonExceptionType: 'KeyError',
-            ),
+            'f': (args, kwargs) =>
+                throw const ExternalException('KeyError', 'no'),
             'g': (args, kwargs) => throw StateError('broken'),
           },
         );
@@ -447,8 +448,8 @@ void main() {
         expect(f.excType, 'KeyError');
         expect(f.message, 'no');
         final g = itemAt(ch.requests, 3).resumeCall.result.error;
-        expect(g.excType, 'RuntimeError');
-        expect(g.message, contains('broken'));
+        expect(g.excType, 'Exception');
+        expect(g.message, 'Bad state: broken');
       },
     );
 
@@ -590,7 +591,7 @@ void main() {
         );
         expect(called, isFalse);
         final error = itemAt(ch.requests, 2).resumeCall.result.error;
-        expect(error.excType, 'RuntimeError');
+        expect(error.excType, 'Exception');
         expect(error.message, contains('complex'));
       },
     );
@@ -666,7 +667,7 @@ void main() {
     );
 
     test(
-      'OS calls are declined: no handler, null, not-handled',
+      'OS calls are declined: OsCallNotHandledException, sync or async',
       () async {
         pb.ChildEvent os(int id, pb.OsCall call) =>
             pb.ChildEvent(osCall: call..callId = id);
@@ -695,10 +696,10 @@ void main() {
           onOsCall: (name, args, kwargs) {
             names.add(name);
             if (name == 'Path.read_bytes') {
-              throw const OsCallNotHandledException();
+              return Future.error(const OsCallNotHandledException());
             }
 
-            return null;
+            throw const OsCallNotHandledException();
           },
         );
         expect(names, [
@@ -741,10 +742,8 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'read',
-        onOsCall: (name, args, kwargs) => throw const OsCallException(
-          'missing',
-          pythonExceptionType: 'FileNotFoundError',
-        ),
+        onOsCall: (name, args, kwargs) =>
+            throw const ExternalException('FileNotFoundError', 'missing'),
       );
       final error = itemAt(ch.requests, 2).resumeCall.result.error;
       expect(error.excType, 'FileNotFoundError');

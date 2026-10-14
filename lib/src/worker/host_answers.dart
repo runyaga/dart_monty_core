@@ -16,33 +16,36 @@ import 'package:dart_monty_core/src/worker/arena_nodes.dart'
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
-    show ExternalException;
+    show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
 /// A host function Python can call by name.
 ///
-/// Throw [OsCallException] to raise a chosen Python exception class; any
-/// other throw raises `RuntimeError` with its text.
+/// Throw [ExternalException] to raise a chosen Python exception; any other
+/// throw raises `Exception` with its text ([raisedFrom]).
 typedef ProtoExternalFunction =
     FutureOr<MontyValue> Function(
       List<MontyValue> args,
       Map<String, MontyValue> kwargs,
     );
 
-/// Answers an OS call such as `Path.read_text`.
+/// Upstream's `OsHandler`: answers the OS calls such as `Path.read_text`
+/// that no mount covers.
 ///
-/// [name] is upstream's OS function name and [args] and [kwargs] its
-/// arguments, as upstream's `OsFunctionCall::to_args` gives them: a path is a
-/// [MontyPath], lexically normalized. Return null, or throw
-/// [OsCallNotHandledException], to decline: Python then sees the call's own
-/// no-handler error. Throw [OsCallException] to raise a chosen exception;
-/// any other throw raises `RuntimeError` with its text. For `asyncio.sleep`
-/// a returned [Future] is the call's coroutine, which the sandbox awaits; a
-/// decline from it, null or [OsCallNotHandledException], leaves the sleep's
-/// own `None`. For every other call it is awaited and its value is the
-/// answer.
-typedef ProtoOsCallHandler =
-    FutureOr<MontyValue?> Function(
+/// [name] is upstream's OS function name, never validated, and [args] and
+/// [kwargs] its arguments, as upstream's `OsFunctionCall::to_args` gives
+/// them: a path is a [MontyPath], lexically normalized. The returned value
+/// is the answer; [MontyNone] is `None`. Throw [OsCallNotHandledException]
+/// to decline (upstream's `NOT_HANDLED`): the worker then raises the call's
+/// own default, `PermissionError` naming the path for a filesystem call and
+/// `RuntimeError` for the rest. Throw [ExternalException] to raise a chosen
+/// exception; any other throw raises `Exception` with its text
+/// ([raisedFrom]). For `asyncio.sleep` a returned [Future] is the call's
+/// coroutine, which the sandbox awaits; a decline from it leaves the
+/// sleep's own `None`. For every other call it is awaited and its value is
+/// the answer.
+typedef OsHandler =
+    FutureOr<MontyValue> Function(
       String name,
       List<MontyValue> args,
       Map<String, MontyValue> kwargs,
@@ -262,7 +265,7 @@ final class HostAnswers {
   final Map<String, ProtoExternalFunction> externals;
 
   /// The OS handler; without one every OS call is declined.
-  final ProtoOsCallHandler? os;
+  final OsHandler? os;
 
   /// The longest system sleep the parent waits; null declines system sleeps.
   final Duration? systemSleepMax;
@@ -406,7 +409,7 @@ final class HostAnswers {
   Future<pb.ParentRequest> _handle(
     pb.OsCall call,
     OsCallParts parts,
-    ProtoOsCallHandler handler,
+    OsHandler handler,
   ) async {
     final (name, args, kwargs) = parts;
     final callId = call.callId;
@@ -415,7 +418,7 @@ final class HostAnswers {
         final answer = handler(name, args, kwargs);
         // A future is the call's coroutine. Its value is ignored: the
         // sandbox keeps `asyncio.sleep`'s own result.
-        if (answer is Future<MontyValue?>) {
+        if (answer is Future<MontyValue>) {
           return await _coroutine(
             callId,
             call.allowEagerAwait,
@@ -423,13 +426,10 @@ final class HostAnswers {
           );
         }
 
-        return answer == null
-            ? _notHandled(callId)
-            : resumeValue(callId, answer);
+        return resumeValue(callId, answer);
       }
-      final value = await handler(name, args, kwargs);
 
-      return value == null ? _notHandled(callId) : resumeValue(callId, value);
+      return resumeValue(callId, await handler(name, args, kwargs));
     } on OsCallNotHandledException {
       return _notHandled(callId);
     } on Object catch (error) {
@@ -531,7 +531,7 @@ final class ExternalAnswer {
 
 /// `ResumeFutures` settling each (call id, answer) of [results], their
 /// values in one arena. A value the writer refuses settles its future with
-/// the refusal as a `RuntimeError` instead.
+/// the exception the refusal raises instead ([raisedFrom]).
 pb.ParentRequest futuresRequest(Iterable<(int, ExternalAnswer)> results) {
   final writer = ArenaWriter();
   final out = <pb.FutureResult>[];
@@ -609,12 +609,12 @@ Future<pb.ParentRequest> _resumeWith(
 Future<MontyValue> _started(FutureOr<MontyValue> Function() invoke) =>
     Future.sync(invoke);
 
-/// [answer]'s value, `None` for none or for a decline.
-Future<MontyValue> _orNone(Future<MontyValue?> answer) async {
+/// [answer]'s value, `None` for a decline.
+Future<MontyValue> _orNone(Future<MontyValue> answer) async {
   try {
-    return await answer ?? const MontyNone();
+    return await answer;
   } on OsCallNotHandledException {
-    // A decline, like a null answer: the sandbox keeps the sleep's `None`.
+    // The sandbox keeps the sleep's own `None`.
     return const MontyNone();
   }
 }
@@ -658,11 +658,24 @@ pb.ParentRequest _resume(
   ),
 );
 
-/// The Python exception a host callback's throw becomes. A value the writer
-/// refused as Python does ([PythonRefusal]) raises Python's error, as
-/// upstream answers a conversion failure in an automatic answer; an
-/// [ExternalException] of a known type raises that type, with its
-/// attributes sent as upstream sends a live exception's.
+/// The Python exception a throw from host code (a host function, an OS
+/// handler or a coroutine) becomes.
+///
+/// - A value the writer refused as Python does ([PythonRefusal]) raises
+///   Python's error, as upstream answers a conversion failure in an
+///   automatic answer.
+/// - An [ExternalException] raises its type, with its attributes sent as
+///   upstream sends a live exception's. Its message is always sent, `''`
+///   when it has none: upstream reads a raised exception's argument as
+///   `str(exc)` when it has no single `str` one (`exception_arg`), so
+///   `ValueError()` arrives as `ValueError('')`.
+/// - An [ExternalException] whose type upstream does not know is the
+///   [ArgumentError] a manual resume throws for it ([unknownExcType]), and
+///   is raised as any other throw is.
+/// - Any other throw raises `Exception` with its `toString()`: upstream
+///   raises a host exception as its nearest built-in class, and a Dart
+///   object has no Python class, so it takes the fallback a class of the
+///   host's own takes.
 pb.RaisedException raisedFrom(Object error) => switch (error) {
   PythonRefusal(:final excType, :final text) => pb.RaisedException(
     excType: excType,
@@ -670,11 +683,12 @@ pb.RaisedException raisedFrom(Object error) => switch (error) {
   ),
   ExternalException(:final excType, :final message, :final attributes)
       when exceptionTypeNames.contains(excType) =>
-    raisedException(excType, message, attributes),
-  OsCallException(:final message, :final pythonExceptionType) =>
-    pb.RaisedException(
-      excType: pythonExceptionType ?? 'RuntimeError',
-      message: message,
-    ),
-  _ => pb.RaisedException(excType: 'RuntimeError', message: '$error'),
+    raisedException(excType, message ?? '', attributes),
+  ExternalException(:final excType) => _fallback(unknownExcType(excType)),
+  _ => _fallback(error),
 };
+
+/// `Exception` carrying [error]'s text, read as [raisedException] reads a
+/// message.
+pb.RaisedException _fallback(Object error) =>
+    raisedException('Exception', '$error', const {});
