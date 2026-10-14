@@ -372,13 +372,13 @@
       "pct": 100.0
     },
     "lib/src/worker/arena_reader.dart": {
-      "found": 222,
-      "hit": 220,
-      "pct": 99.1
+      "found": 244,
+      "hit": 242,
+      "pct": 99.18
     },
     "lib/src/worker/arena_writer.dart": {
-      "found": 297,
-      "hit": 297,
+      "found": 373,
+      "hit": 373,
       "pct": 100.0
     },
     "lib/src/worker/asset_base.dart": {
@@ -442,9 +442,14 @@
       "pct": 98.67
     },
     "lib/src/worker/host_answers.dart": {
-      "found": 259,
-      "hit": 259,
+      "found": 297,
+      "hit": 297,
       "pct": 100.0
+    },
+    "lib/src/worker/host_objects.dart": {
+      "found": 185,
+      "hit": 173,
+      "pct": 93.51
     },
     "lib/src/worker/monty_channel.dart": {
       "found": 7,
@@ -472,9 +477,9 @@
       "pct": 99.38
     },
     "lib/src/worker/pool_session.dart": {
-      "found": 461,
-      "hit": 455,
-      "pct": 98.7
+      "found": 470,
+      "hit": 464,
+      "pct": 98.72
     },
     "lib/src/worker/process_channel.dart": {
       "found": 212,
@@ -482,8 +487,8 @@
       "pct": 97.17
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 180,
-      "hit": 180,
+      "found": 187,
+      "hit": 187,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -548,8 +553,8 @@
     }
   },
   "total": {
-    "found": 8748,
-    "hit": 7431,
-    "pct": 84.95
+    "found": 9085,
+    "hit": 7756,
+    "pct": 85.37
   }
 }
