@@ -265,4 +265,72 @@ void main() {
       isNotNull,
     );
   });
+
+  group('what a worker engine adds', () {
+    test('# timezone= and # gc-interval= are known directives, read to the '
+        'first space', () {
+      const source =
+          '# timezone=Europe/London  local time\n'
+          '# gc-interval=100  recursive test\n'
+          'x = 1\n';
+      expect(_parse(source), isA<ExpectNoException>());
+      expect(fixtureTimezone(source), 'Europe/London');
+      expect(fixtureGcInterval(source), 100);
+      expect(fixtureTimezone('x = 1\n'), isNull);
+      expect(fixtureGcInterval('x = 1\n'), isNull);
+    });
+
+    test('# Return= is compared by repr when the backend renders one', () {
+      final e = _parse('x = [1]\nx.append(x)\nx\n# Return=[1, [...]]');
+      expect(e, isA<ExpectReturn>());
+      expect(
+        adjudicateFixture(e, const FixtureOutcome(valueRepr: '[1, [...]]')),
+        isNull,
+      );
+      expect(
+        adjudicateFixture(e, const FixtureOutcome(valueRepr: "[1, '[...]']")),
+        contains('repr mismatch'),
+      );
+    });
+
+    test('a traceback the backend rendered is compared as it is', () {
+      final e = _parse(
+        'x\n"""\nTRACEBACK:\n'
+        'Traceback (most recent call last):\n'
+        '  File "t.py", line 1, in <module>\n'
+        '    x\n'
+        '    ~\n'
+        "NameError: name 'x' is not defined\n"
+        '"""\n',
+      );
+      const rendered =
+          'Traceback (most recent call last):\n'
+          '  File "t.py", line 1, in <module>\n'
+          '    x\n'
+          '    ~\n'
+          "NameError: name 'x' is not defined";
+      expect(
+        adjudicateFixture(
+          e,
+          const FixtureOutcome(
+            excType: 'NameError',
+            message: "name 'x' is not defined",
+            renderedTraceback: rendered,
+          ),
+        ),
+        isNull,
+      );
+      expect(
+        adjudicateFixture(
+          e,
+          const FixtureOutcome(
+            excType: 'NameError',
+            message: "name 'x' is not defined",
+            renderedTraceback: 'NameError',
+          ),
+        ),
+        contains('traceback mismatch'),
+      );
+    });
+  });
 }

@@ -47,7 +47,7 @@ cd "$PKG"
 # reproduce byte for byte. Scanning it would make this check demand a change to
 # upstream's test suite, which is exactly backwards. The corpus is DATA;
 # tool/check_fixture_corpus.sh already guards it against drift.
-EXCLUDE_RE='(fixture_corpus\.dart|check_no_vague_errors\.sh)'
+EXCLUDE_RE='(fixture_corpus(_v1)?\.dart|check_no_vague_errors\.sh)'
 
 # Comment lines are exempt: explaining the defect is not committing it. That
 # means `//` AND `///` (dartdoc starts with `//`, so it was already covered)

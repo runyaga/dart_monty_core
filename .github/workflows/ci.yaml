@@ -1462,6 +1462,124 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
+  # The upstream 1.1.0 corpus on the worker, and pool crash recovery
+  # ---------------------------------------------------------------------------
+  # Runs upstream's 643 `test_cases` through the pool session, one session per
+  # fixture, judged by the strict adjudicator against each file's own
+  # directives. Every file the worker fails is listed in the manifest
+  # (packages/monty_conformance/lib/src/worker_corpus_manifest.dart) with a
+  # divergence ID, and a run fails on any difference from the list in either
+  # direction. Not a required check until the cutover; the old corpus jobs
+  # (test-wasm, test-ffi, test-hooks-corpus) keep running meanwhile.
+  #
+  # Native on Linux here, on every PR; macOS arm64 in worker-nightly.yaml.
+  # The browsers are the matrix job below.
+  corpus-worker:
+    name: Upstream corpus (worker, native Linux)
+    needs: [changes, worker-rust]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      # `dart test` runs hook/build.dart, which builds the in-process native
+      # crate; restore what test-ffi cached rather than build it cold. Restore
+      # only, for the reason given in the `test` job.
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      # The embedded corpus is upstream's, at the pinned commit: fetch that
+      # commit read-only and regenerate. The generator refuses a checkout whose
+      # commit or `crates/monty/test_cases` git tree is not the pin's, and
+      # --check fails on any difference from the committed file.
+      - name: The embedded corpus is the pinned upstream corpus
+        run: |
+          set -euo pipefail
+          commit="$(python3 -I -c "import json;print(json.load(open('tool/upstream/upstream-pin.json'))['commit'])")"
+          up="$(mktemp -d)"
+          git init -q "$up"
+          git -C "$up" fetch -q --depth 1 https://github.com/pydantic/monty "$commit"
+          git -C "$up" checkout -q FETCH_HEAD
+          dart tool/generate_fixture_corpus_v1.dart "$up" --check
+      - name: Download the worker executable
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dart_monty_worker-linux-x64
+          path: lib/src/bin/linux-x64
+      # Where tool/build_worker.sh puts it and worker_locator.dart looks.
+      # Artifacts do not keep the executable bit.
+      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - name: Corpus and crash recovery (native)
+        run: bash tool/test_corpus_worker.sh native
+
+  corpus-worker-web:
+    name: Upstream corpus (worker, ${{ matrix.browser }} ${{ matrix.compiler }})
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox]
+        compiler: [dart2js, dart2wasm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      # `dart test` runs hook/build.dart (the in-process crate) whatever the
+      # platform; restore the shared native cache rather than build it cold.
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: native
+          shared-key: native-amd64-v2
+          save-if: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      # The version of the browser this leg judges, in the log beside the
+      # test's own JSPI probe line.
+      - name: Browser version
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          if [ "$BROWSER" = chrome ]; then google-chrome --version; else firefox --version; fi
+      - name: Corpus and crash recovery (${{ matrix.browser }}, ${{ matrix.compiler }})
+        env:
+          BROWSER: ${{ matrix.browser }}
+          COMPILER: ${{ matrix.compiler }}
+        run: bash tool/test_corpus_worker.sh "$BROWSER" "$COMPILER"
+
+  # ---------------------------------------------------------------------------
   # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
   #
   # These need an engine built `--features test-hooks`, which is NEVER shipped

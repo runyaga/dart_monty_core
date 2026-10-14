@@ -26,5 +26,10 @@ tags:
   # tool/build_worker.sh; excluded from the VM unit runs and run on its own:
   # dart test test/integration/worker -p vm --tags=worker
   worker: {}
+  # The upstream 1.1.0 corpus and the pool crash recovery on the worker:
+  # dart test test/corpus -p vm --tags=corpus-worker (and -p chrome / firefox,
+  # -c dart2js / dart2wasm). CI job `corpus-worker`. Carries `worker` too, so
+  # the unit runs that exclude it never load these.
+  corpus-worker: {}
   pending-futures:
     skip: "Pending feat/repl-future-capable. Run with --run-skipped --tags=pending-futures to confirm the spec is still failing."
