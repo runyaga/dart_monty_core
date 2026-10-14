@@ -26,6 +26,7 @@ import '_config_cases.dart';
 import '_cwd_cases.dart';
 import '_host_cases.dart';
 import '_host_code_cases.dart';
+import '_print_cases.dart';
 import '_restore_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
@@ -71,6 +72,10 @@ void main() {
     (options) => MontyPool.start(options: options),
   );
   hostOracleTests(
+    _backend,
+    (options) => MontyPool.start(options: options),
+  );
+  printOracleTests(
     _backend,
     (options) => MontyPool.start(options: options),
   );
@@ -364,7 +369,11 @@ void main() {
                 },
               ),
               throwsA(
-                isA<StateError>().having((e) => e.message, 'message', 'sink'),
+                isA<MontyRuntimeError>().having(
+                  (e) => e.display('type-msg'),
+                  "display('type-msg')",
+                  'Exception: Bad state: sink',
+                ),
               ),
             );
             expect(seen, hasLength(1));
@@ -391,7 +400,11 @@ void main() {
               printCallback: (stream, text) => throw StateError('sink'),
             ),
             throwsA(
-              isA<StateError>().having((e) => e.message, 'message', 'sink'),
+              isA<MontyRuntimeError>().having(
+                (e) => e.display('type-msg'),
+                "display('type-msg')",
+                'Exception: Bad state: sink',
+              ),
             ),
           );
           expect(calls, 0);

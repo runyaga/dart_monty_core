@@ -19,8 +19,9 @@
 # by 8 points for a reason that has nothing to do with this suite.
 #
 # Each compiler's run has its own test-count floor: `dart test` exits 0 on a
-# tag filter that matches nothing. 205 tests per compiler observed, 34 of
-# them the dump and load oracle cases and 19 the host-object oracle cases.
+# tag filter that matches nothing. 241 tests per compiler observed, 34 of
+# them the dump and load oracle cases, 19 the host-object oracle cases and
+# 36 the print-sink oracle cases.
 #
 # The coverage run loads one suite at a time (`-j 1`). Chrome's precise
 # coverage is binary here: each `Profiler.takePreciseCoverage` reports a
@@ -39,7 +40,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FLOOR=200
+FLOOR=230
 COV=()
 if [ "${1:-}" = "--coverage" ]; then
   [ -n "${2:-}" ] || { echo "FAIL: --coverage needs a directory"; exit 2; }

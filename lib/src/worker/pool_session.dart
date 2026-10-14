@@ -63,7 +63,7 @@ abstract interface class PoolSession {
   /// future is awaited before the next event is read. Without one, the text
   /// goes to the process's stdout and stderr on native and to the console
   /// in a browser. A callback that throws gets no more text; the turn runs
-  /// to its end, and then its error is thrown, whatever the turn's outcome.
+  /// to its end, then its error is thrown, as a [MontyError] (`printFailure`).
   /// The session runs on if the turn completed or raised, and is finished if
   /// it ended suspended on a host call. A callback that never completes is
   /// ended by `requestTimeout` or [close], as any turn is.

@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
@@ -107,6 +108,15 @@ void _ignore(String stream, String text) => _ignored++;
 
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
+
+/// The error a print callback's throw is raised as: [MontyRuntimeError]
+/// with the Python exception [excType] and [message], as upstream's
+/// `exc_py_to_monty` classifies a host exception, and no traceback.
+Matcher _printFailure(String excType, String message) =>
+    isA<MontyRuntimeError>()
+        .having((e) => e.exception.excType, 'excType', excType)
+        .having((e) => e.exception.message, 'exception message', message)
+        .having((e) => e.traceback, 'traceback', isEmpty);
 
 /// A worker killed at a deadline of [limit] (Rust's Duration format), as
 /// upstream reports a request timeout.
@@ -694,7 +704,7 @@ void main() {
             throw StateError('sink');
           },
         ),
-        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+        throwsA(_printFailure('Exception', 'Bad state: sink')),
       );
       expect(seen, ['a']);
       // The turn was read to its end and the worker kept.
@@ -725,7 +735,7 @@ void main() {
           'print("a")\nraise KeyError("k")',
           printCallback: (stream, text) async => throw StateError('sink'),
         ),
-        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+        throwsA(_printFailure('Exception', 'Bad state: sink')),
       );
       expect(ch.kills, 0);
       expect(
@@ -761,7 +771,7 @@ void main() {
           externals: {'f': (args, kwargs) => MontyInt(++calls)},
           printCallback: (stream, text) async => throw StateError('sink'),
         ),
-        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+        throwsA(_printFailure('Exception', 'Bad state: sink')),
       );
       // Nobody answers the suspension: the worker is killed, not left
       // waiting for a resume.
@@ -804,10 +814,113 @@ void main() {
             throw StateError('sink');
           },
         ),
-        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+        throwsA(_printFailure('Exception', 'Bad state: sink')),
       );
       expect(calls, 1);
       expect(pool.liveWorkers, 0);
+    });
+  });
+
+  group('print failure classification', () {
+    // The first print raises; the turn completes; the session runs on.
+    Future<Object?> failWith(ProtoPrintCallback callback) async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'a')]),
+          _int(1),
+        ]),
+        answer([_int(2)]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      Object? thrown;
+      try {
+        await session.feedRun('print("a")\n1', printCallback: callback);
+      } on Object catch (e) {
+        thrown = e;
+      }
+      expect(ch.kills, 0);
+      expect(
+        await session.feedRun('2', printCallback: _ignore),
+        const MontyInt(2),
+      );
+      await session.close();
+
+      return thrown;
+    }
+
+    test('an ExternalException raises its type and message', () async {
+      expect(
+        await failWith(
+          (_, _) => throw const ExternalException('KeyError', 'k'),
+        ),
+        _printFailure('KeyError', 'k'),
+      );
+    });
+
+    test('an ExternalException of a type upstream does not know raises '
+        'Exception with the refusal', () async {
+      expect(
+        await failWith((_, _) => throw const ExternalException('NoSuchError')),
+        _printFailure(
+          'Exception',
+          'Invalid argument (excType): '
+              '''Unknown exception type: 'NoSuchError': "NoSuchError"''',
+        ),
+      );
+    });
+
+    test('a SyntaxError is MontySyntaxError, as upstream raises it', () async {
+      expect(
+        await failWith(
+          (_, _) => throw const ExternalException('SyntaxError', 'bad'),
+        ),
+        isA<MontySyntaxError>()
+            .having((e) => e.message, 'message', 'bad')
+            .having(
+              (e) => e.display('type-msg'),
+              'type-msg',
+              'SyntaxError: bad',
+            ),
+      );
+    });
+
+    test('a collector overflow is thrown as the collector threw it, also '
+        'from a callback that calls the collector', () async {
+      final collector = CollectString(maxBytes: 0);
+      Object? overflow;
+      final thrown = await failWith((stream, text) {
+        try {
+          collector(stream, text);
+        } on Object catch (e) {
+          overflow = e;
+          rethrow;
+        }
+      });
+      expect(thrown, same(overflow));
+      expect(
+        thrown,
+        isA<MontyRuntimeError>().having(
+          (e) => e.display('type-msg'),
+          'type-msg',
+          'MemoryError: memory limit exceeded: 1 bytes > 0 bytes',
+        ),
+      );
+    });
+
+    test('any other MontyError a callback throws is a host exception like '
+        'any other: Exception with its text', () async {
+      // As if the callback awaited another session's feed that raised.
+      final elsewhere = raisedError(
+        pb.RaisedException(excType: 'KeyError', message: 'k'),
+      );
+      expect(
+        await failWith((_, _) => throw elsewhere),
+        _printFailure('Exception', 'KeyError: k'),
+      );
     });
   });
 
@@ -836,7 +949,7 @@ void main() {
           'print("a")\nboom()',
           printCallback: (stream, text) async => throw StateError('sink'),
         ),
-        throwsA(isA<StateError>().having((e) => e.message, 'message', 'sink')),
+        throwsA(_printFailure('Exception', 'Bad state: sink')),
       );
       expect(pool.liveWorkers, 0);
       // The failed session is not closed: its slot must already be free.
@@ -878,8 +991,8 @@ void main() {
 
     for (final cause in [CrashCause.killed, CrashCause.outOfMemory]) {
       test('a callback that throws MontyCrashedError(${cause.name}) is a '
-          'print failure like any other: rethrown as is, the worker '
-          'kept', () async {
+          'print failure like any other: raised as Exception with its text, '
+          'the worker kept', () async {
         final ch = ScriptedChannel([
           _configureOk,
           answer([
@@ -899,7 +1012,7 @@ void main() {
             'print("a")\n1',
             printCallback: (stream, text) async => throw elsewhere,
           ),
-          throwsA(same(elsewhere)),
+          throwsA(_printFailure('Exception', elsewhere.message)),
         );
         expect(ch.kills, 0);
         expect(

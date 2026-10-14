@@ -14,12 +14,14 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 
 export 'package:dart_monty_core/src/worker/host_answers.dart'
@@ -366,7 +368,7 @@ extension ProtoSessionTransfer on ProtoSession {
 /// A throwing callback must not escape into the channel mid-turn. As in
 /// upstream's binding, the first failure is recorded and later prints are
 /// dropped; the turn runs to its end, and the driver then throws the
-/// failure.
+/// failure as [printFailure] raises it.
 ///
 /// Nothing more is delivered once the feed is abandoned (its worker killed
 /// by a deadline or a close while a callback ran): a callback that finally
@@ -413,13 +415,30 @@ final class _PrintSink {
   /// Whether the callback failed.
   bool get failed => _failure != null;
 
-  /// Throws the callback's failure, if there was one.
+  /// Throws the callback's failure, if there was one, as [printFailure]
+  /// raises it, with the callback's stack.
   void rethrowFailure() {
     if (_failure case (final error, final stack)) {
-      Error.throwWithStackTrace(error, stack);
+      Error.throwWithStackTrace(printFailure(error), stack);
     }
   }
 }
+
+/// The error a print callback's throw [error] is raised as, in place of the
+/// feed's outcome, as upstream's binding raises a print failure
+/// (`finalize_turn`): a [MontyError] built from the Python exception
+/// upstream's `exc_py_to_monty` would classify it as.
+///
+/// - A collector's overflow ([isCollectorOverflow]) is raised as it is: the
+///   `MemoryError` upstream's collectors raise.
+/// - Any other throw is classified as a host function's is ([raisedFrom]):
+///   an `ExternalException` raises its type and message, anything else
+///   `Exception` with its `toString()`. A `SyntaxError` is
+///   [MontySyntaxError], as upstream's `MontyError::new_err` raises it, and
+///   every other type [MontyRuntimeError]. Neither has a traceback.
+MontyError printFailure(Object error) => isCollectorOverflow(error)
+    ? error as MontyError
+    : recordError(RaisedRecord.fromWire(raisedFrom(error)));
 
 /// Whether [event] ends a turn in a suspension that waits for the host's
 /// answer (upstream's `left_suspended`).
