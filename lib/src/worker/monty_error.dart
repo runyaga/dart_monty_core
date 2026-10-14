@@ -16,7 +16,10 @@
 /// public errors; nothing here is exported.
 library;
 
+import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart'
+    show PythonRefusal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 
@@ -213,6 +216,27 @@ MontyError recordError(RaisedRecord record) => record.excType == 'SyntaxError'
     ? MontySyntaxError._(record)
     : MontyRuntimeError._(record);
 
+/// The error a host value the writer refused ([refusal]) is at the caller
+/// of an input or a manual resume, as upstream's binding raises a
+/// conversion failure there: [MontyRuntimeError] with the Python exception,
+/// and no traceback.
+MontyRuntimeError refusalError(PythonRefusal refusal) =>
+    MontyRuntimeError._(RaisedRecord(refusal.excType, refusal.text, const []));
+
+/// Runs [encode], which writes host values for an input or a manual resume,
+/// throwing a [PythonRefusal] as its [refusalError]. The writer's other
+/// refusals, of values Python cannot build, stay [ArgumentError]s.
+T encodingInput<T>(T Function() encode) {
+  try {
+    return encode();
+    // The writer's refusal is an ArgumentError for its own callers; this is
+    // where it becomes upstream's error.
+    // ignore: avoid_catching_errors
+  } on PythonRefusal catch (refusal) {
+    throw refusalError(refusal);
+  }
+}
+
 /// The error a `TypingError` event's [diagnostics] are.
 MontyTypingError typingError(String diagnostics) =>
     MontyTypingError._(diagnostics);
@@ -316,8 +340,35 @@ String _summary(RaisedRecord record) {
       : '${record.excType}: $text';
 }
 
-MontyExceptionValue _exceptionOf(RaisedRecord record) =>
-    MontyExceptionValue(excType: record.excType, message: record.message ?? '');
+/// The exception upstream's binding builds for [record]
+/// (`exc_monty_to_py`): a Unicode or JSON decode error is rebuilt from its
+/// payload, with the payload's attributes; without one of the right kind it
+/// is a plain `ValueError`, as upstream's fallback is. Its rendering still
+/// names the original type.
+MontyExceptionValue _exceptionOf(RaisedRecord record) {
+  final message = record.message ?? '';
+  final type = record.excType;
+  final kind = _payloadKinds[type];
+  if (kind == null) return MontyExceptionValue(excType: type, message: message);
+  final payload = record.payload;
+  if (payload == null || payload.kind != kind) {
+    return MontyExceptionValue(excType: 'ValueError', message: message);
+  }
+
+  return exceptionWithAttributes(
+    excType: type,
+    message: message,
+    attributes: payload.attributes,
+  );
+}
+
+/// The payload each type is rebuilt from: CPython's `UnicodeDecodeError`
+/// takes a `bytes` object, `UnicodeEncodeError` a `str`.
+const Map<String, PayloadKind> _payloadKinds = {
+  'UnicodeDecodeError': PayloadKind.unicodeBytes,
+  'UnicodeEncodeError': PayloadKind.unicodeStr,
+  'json.JSONDecodeError': PayloadKind.json,
+};
 
 List<Frame> _frames(RaisedRecord record) =>
     List.unmodifiable(record.traceback.map(Frame._));

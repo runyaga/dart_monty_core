@@ -11,8 +11,12 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_exception.dart';
+import 'package:dart_monty_core/src/worker/arena_nodes.dart'
+    show exceptionTypeNames;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
 /// A host function Python can call by name.
@@ -654,8 +658,19 @@ pb.ParentRequest _resume(
   ),
 );
 
-/// The Python exception a host callback's throw becomes.
+/// The Python exception a host callback's throw becomes. A value the writer
+/// refused as Python does ([PythonRefusal]) raises Python's error, as
+/// upstream answers a conversion failure in an automatic answer; an
+/// [ExternalException] of a known type raises that type, with its
+/// attributes sent as upstream sends a live exception's.
 pb.RaisedException raisedFrom(Object error) => switch (error) {
+  PythonRefusal(:final excType, :final text) => pb.RaisedException(
+    excType: excType,
+    message: text,
+  ),
+  ExternalException(:final excType, :final message, :final attributes)
+      when exceptionTypeNames.contains(excType) =>
+    raisedException(excType, message, attributes),
   OsCallException(:final message, :final pythonExceptionType) =>
     pb.RaisedException(
       excType: pythonExceptionType ?? 'RuntimeError',

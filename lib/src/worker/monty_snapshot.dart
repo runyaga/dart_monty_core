@@ -78,20 +78,67 @@ final class ExternalReturnValue extends ExternalSettledResult {
   final MontyValue value;
 }
 
-/// The call raised a Python exception of type [excType] with [message].
+/// The call raised a Python exception of type [excType] with [message] and
+/// [attributes].
 ///
 /// [excType] must be one of upstream's exception type names; a resume that
 /// carries another throws [ArgumentError] and leaves its snapshot unused.
-final class ExternalException extends ExternalSettledResult {
-  /// The call raised [excType] with [message].
-  const ExternalException(this.excType, [this.message]);
+///
+/// The attributes are sent as upstream sends a live host exception's: only
+/// a `json.JSONDecodeError`'s `msg`, `doc`, `pos`, `lineno` and `colno`
+/// reach the sandbox; any other type's stay here.
+@immutable
+final class ExternalException extends ExternalSettledResult
+    implements Exception {
+  /// The call raised [excType] with [message] and [attributes].
+  const ExternalException(
+    this.excType, [
+    this.message,
+    this.attributes = const {},
+  ]);
 
   /// The Python exception type, such as `ValueError`.
   final String excType;
 
   /// The exception's message, or none.
   final String? message;
+
+  /// The exception's attributes by name, such as a `json.JSONDecodeError`'s
+  /// `pos`.
+  final Map<String, MontyValue> attributes;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExternalException &&
+      other.excType == excType &&
+      other.message == message &&
+      _sameAttributes(_byName(other.attributes), _byName(attributes));
+
+  @override
+  int get hashCode {
+    var h = 0;
+    for (final MapEntry(:key, :value) in _byName(attributes).entries) {
+      h = (h + Object.hash(key, value)) & 0x7fffffff;
+    }
+
+    return Object.hash(excType, message, h);
+  }
+
+  @override
+  String toString() =>
+      'ExternalException($excType${message == null ? '' : ', $message'})';
 }
+
+/// [attributes] as a plain map keyed by string value: a map's own lookup
+/// rules (a custom comparator, identity) play no part in equality or the
+/// hash.
+Map<String, MontyValue> _byName(Map<String, MontyValue> attributes) => {
+  for (final MapEntry(:key, :value) in attributes.entries) key: value,
+};
+
+bool _sameAttributes(Map<String, MontyValue> a, Map<String, MontyValue> b) =>
+    a.length == b.length &&
+    a.entries.every((e) => b.containsKey(e.key) && b[e.key] == e.value);
 
 /// The call is asynchronous: the sandbox gets a pending future for it, to be
 /// settled through a [FutureSnapshot] (upstream's `ExternalFuture`).

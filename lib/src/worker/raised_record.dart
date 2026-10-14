@@ -22,9 +22,16 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'dart:typed_data';
+
+import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
     show exceptionTypeNames, rustDebug;
+import 'package:dart_monty_core/src/worker/arena_reader.dart'
+    show unsignedValue;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart' show utf8Length;
+import 'package:fixnum/fixnum.dart';
 
 /// How many identical consecutive frames are shown before the rest collapse
 /// (upstream's `REPEAT_FRAMES_SHOWN`, as CPython).
@@ -36,13 +43,20 @@ const String _indent = '    ';
 /// A raised Python exception: its type, its message and its traceback.
 final class RaisedRecord {
   /// Creates a record. A null [message] is one the wire did not carry.
-  const RaisedRecord(this.excType, this.message, this.traceback);
+  const RaisedRecord(
+    this.excType,
+    this.message,
+    this.traceback, {
+    this.payload,
+  });
 
-  /// The exception [raised] carries, its message null when unset.
+  /// The exception [raised] carries, its message null when unset and its
+  /// structured data sanitised as upstream's conversion does ([payloadOf]).
   factory RaisedRecord.fromWire(pb.RaisedException raised) => RaisedRecord(
     raised.excType,
     raised.hasMessage() ? raised.message : null,
     List.unmodifiable(raised.traceback.map(TracebackFrame.fromWire)),
+    payload: raised.hasData() ? payloadOf(raised.data) : null,
   );
 
   /// The exception [raised] carries, after upstream's checks
@@ -75,6 +89,10 @@ final class RaisedRecord {
 
   /// The frames, outermost first.
   final List<TracebackFrame> traceback;
+
+  /// The structured data the exception carries, or null: none was sent, or
+  /// it was dropped.
+  final ExcPayload? payload;
 
   /// The exception rendered in [format], as upstream's `display()`:
   ///
@@ -331,3 +349,107 @@ void _checkFrame(pb.StackFrame frame) {
     );
   }
 }
+
+/// Which of upstream's `ExcData` arms a payload is, with the kind of object
+/// a Unicode error carries.
+enum PayloadKind {
+  /// A Unicode error on a `bytes` object: a decode error's.
+  unicodeBytes,
+
+  /// A Unicode error on a `str` object: an encode error's.
+  unicodeStr,
+
+  /// A `json.JSONDecodeError`'s.
+  json,
+}
+
+/// A raised exception's structured data (upstream's `ExcData`), as the
+/// attributes the host-side exception gets.
+final class ExcPayload {
+  /// Data of [kind], read as [attributes].
+  const ExcPayload(this.kind, this.attributes);
+
+  /// Which arm it came in.
+  final PayloadKind kind;
+
+  /// Upstream's attribute names and values: `encoding`, `object`, `start`,
+  /// `end` and `reason` for a Unicode error; `msg`, `doc` (`''` when the
+  /// sender dropped it), `pos`, `lineno` and `colno` for a JSON error.
+  final Map<String, MontyValue> attributes;
+}
+
+/// The largest `object`, `encoding`, `reason`, `msg` or `doc`, in UTF-8
+/// bytes or bytes, a payload may carry (upstream's
+/// `UnicodeErrorData::MAX_OBJECT_LEN` and `JsonErrorData::MAX_DOC_LEN`).
+const int maxPayloadLength = 64 * 1024;
+
+/// [data] sanitised as upstream's conversion does
+/// (`monty-proto/src/convert/exception.rs`, `sanitize_unicode_data`,
+/// `sanitize_json_data`): null, the payload dropped, when a string or object
+/// is over [maxPayloadLength], when a Unicode error's range is not a
+/// non-empty slice of its object (bytes for a `bytes` object, characters for
+/// a `str`), when a JSON error's `lineno` or `colno` is 0, or when its `pos`
+/// is past its document. Never a rejection: the exception keeps its type and
+/// message.
+ExcPayload? payloadOf(pb.ExcData data) => switch (data.whichKind()) {
+  pb.ExcData_Kind.unicode => _unicodePayload(data.unicode),
+  pb.ExcData_Kind.json => _jsonPayload(data.json),
+  pb.ExcData_Kind.notSet => null,
+};
+
+ExcPayload? _unicodePayload(pb.UnicodeErrorData data) {
+  if (utf8Length(data.encoding) > maxPayloadLength ||
+      utf8Length(data.reason) > maxPayloadLength) {
+    return null;
+  }
+  final (PayloadKind kind, MontyValue object, int length) object;
+  switch (data.whichObject()) {
+    case pb.UnicodeErrorData_Object.objectBytes:
+      final bytes = data.objectBytes;
+      if (bytes.length > maxPayloadLength) return null;
+      object = (
+        PayloadKind.unicodeBytes,
+        MontyBytes(Uint8List.fromList(bytes).asUnmodifiableView()),
+        bytes.length,
+      );
+    case pb.UnicodeErrorData_Object.objectStr:
+      final text = data.objectStr;
+      if (utf8Length(text) > maxPayloadLength) return null;
+      object = (PayloadKind.unicodeStr, MontyString(text), text.runes.length);
+    case pb.UnicodeErrorData_Object.notSet:
+      return null;
+  }
+  final (kind, value, length) = object;
+  final start = _bounded(data.start, length);
+  final end = _bounded(data.end, length);
+  if (start == null || end == null || start >= end) return null;
+
+  return ExcPayload(kind, {
+    'encoding': MontyString(data.encoding),
+    'object': value,
+    'start': MontyInt(start),
+    'end': MontyInt(end),
+    'reason': MontyString(data.reason),
+  });
+}
+
+ExcPayload? _jsonPayload(pb.JsonErrorData data) {
+  if (utf8Length(data.msg) > maxPayloadLength) return null;
+  final doc = data.hasDoc() ? data.doc : null;
+  if (doc != null && utf8Length(doc) > maxPayloadLength) return null;
+  if (data.lineno.isZero || data.colno.isZero) return null;
+  if (doc != null && _bounded(data.pos, doc.runes.length) == null) return null;
+
+  return ExcPayload(PayloadKind.json, {
+    'msg': MontyString(data.msg),
+    // Upstream's host object takes '' for a document the sender dropped.
+    'doc': MontyString(doc ?? ''),
+    'pos': unsignedValue(data.pos),
+    'lineno': unsignedValue(data.lineno),
+    'colno': unsignedValue(data.colno),
+  });
+}
+
+/// [value], an unsigned 64-bit field, when it is at most [max]; else null.
+int? _bounded(Int64 value, int max) =>
+    value.isNegative || value > max ? null : value.toInt();
