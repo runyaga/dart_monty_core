@@ -50,7 +50,7 @@ void main() {
   late WasmModuleCache cache;
   late String base;
 
-  Future<OpenChannel> open({required bool forceNoJspi}) async =>
+  OpenChannel open({required bool forceNoJspi}) =>
       () => PendingSpawn(
         (cancelled) => WorkerChannel.spawn(
           cache,
@@ -93,7 +93,7 @@ void main() {
         jspi: jspi,
         startPool: () async => MontyPool.startWith(
           corpusPoolOptions,
-          open: await open(forceNoJspi: false),
+          open: open(forceNoJspi: false),
         ),
       );
       await runCorpusChecks(target);
@@ -105,7 +105,7 @@ void main() {
       () async {
         final pool = await MontyPool.startWith(
           corpusPoolOptions,
-          open: await open(forceNoJspi: true),
+          open: open(forceNoJspi: true),
         );
         await runRecursionSetFallback(_backend, pool);
       },

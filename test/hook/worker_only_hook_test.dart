@@ -21,7 +21,7 @@ import '../_accessors.dart';
 
 /// A package root with native/worker/ (a link to this checkout's, so cargo
 /// reuses its target directory), native/rust-toolchain.toml and
-/// native/.cargo/config.toml, and without native/Cargo.toml.
+/// a fixture native/.cargo/config.toml, and without native/Cargo.toml.
 Directory _workerOnlyRoot() {
   final tmp = Directory.systemTemp.createTempSync('worker_only_hook_');
   addTearDown(() => tmp.deleteSync(recursive: true));
@@ -32,11 +32,13 @@ Directory _workerOnlyRoot() {
   File(
     'native/rust-toolchain.toml',
   ).copySync('${native.path}/rust-toolchain.toml');
-  // The Cargo configuration native/worker inherits from native/.
+  // A Cargo configuration for native/worker to inherit from native/, written
+  // here so the test does not depend on a file in the checkout.
   Directory('${native.path}/.cargo').createSync();
-  File(
-    'native/.cargo/config.toml',
-  ).copySync('${native.path}/.cargo/config.toml');
+  File('${native.path}/.cargo/config.toml').writeAsStringSync(
+    '# The wasm32-wasip1 cdylib already links with --no-entry.\n'
+    '[target.wasm32-wasip1]\n',
+  );
   expect(File('${native.path}/Cargo.toml').existsSync(), isFalse);
 
   return tmp;

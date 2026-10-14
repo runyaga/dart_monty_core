@@ -73,18 +73,16 @@ void manifestTests() {
       expect(recursionSetProblems(recorded), isEmpty);
       // A file that should crash and passes, one that should pass and crashes,
       // and one that fails some other way: each is a problem.
-      final names = workerRecursionSetNoJspi.keys.toList();
-      expect(
-        recursionSetProblems({...recorded}..remove(names.first)),
-        hasLength(1),
-      );
+      final [first, ...] = workerRecursionSetNoJspi.keys.toList();
+      final oneProblem = hasLength(1);
+      expect(recursionSetProblems({...recorded}..remove(first)), oneProblem);
       expect(
         recursionSetProblems({...recorded, 'generic_alias.py': crashed}),
-        hasLength(1),
+        oneProblem,
       );
       expect(
-        recursionSetProblems({...recorded, names.first: 'value mismatch'}),
-        hasLength(1),
+        recursionSetProblems({...recorded, first: 'value mismatch'}),
+        oneProblem,
       );
     },
   );
@@ -143,7 +141,7 @@ Future<void> runRecursionSetFallback(String label, MontyPool pool) async {
   try {
     run = await runWorkerFixtureCorpus(
       pool: pool,
-      log: (_) {},
+      log: _discard,
       only: workerRecursionSetNoJspi.keys.toSet(),
     );
   } finally {
@@ -178,7 +176,7 @@ void adjudicatorSelfTests() {
     Future<Map<String, String>> judge(Map<String, String> corpus) async {
       final run = await MontyPool.withPool(
         (pool) =>
-            runWorkerFixtureCorpus(pool: pool, log: (_) {}, corpus: corpus),
+            runWorkerFixtureCorpus(pool: pool, log: _discard, corpus: corpus),
         options: corpusPoolOptions,
       );
       // Each control ran: a verdict on nothing is not a pass.
@@ -266,7 +264,7 @@ Future<WorkerCorpusRun> _runAll(
   try {
     return await runWorkerFixtureCorpus(
       pool: pool,
-      log: (_) {},
+      log: _discard,
       only: only,
     );
   } finally {
@@ -295,3 +293,6 @@ List<String> recursionSetProblems(Map<String, String> failures) {
 
   return problems;
 }
+
+/// Swallows the corpus runner's progress lines.
+final void Function(String) _discard = <String>[].add;

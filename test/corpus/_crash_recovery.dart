@@ -50,20 +50,27 @@ final class CrashCase {
 
 /// A [SpawnHandle] that records the channel it delivers.
 final class _Recording implements SpawnHandle {
-  _Recording(this._inner, List<MontyChannel> seen)
-    : ready = _inner.ready.then((c) {
-        seen.add(c);
-
-        return c;
-      });
-
-  final SpawnHandle _inner;
+  _Recording(SpawnHandle inner, List<MontyChannel> seen)
+    : _inner = inner,
+      ready = _record(inner, seen);
 
   @override
   final Future<MontyChannel> ready;
 
+  final SpawnHandle _inner;
+
   @override
   void cancel() => _inner.cancel();
+
+  static Future<MontyChannel> _record(
+    SpawnHandle inner,
+    List<MontyChannel> seen,
+  ) async {
+    final channel = await inner.ready;
+    seen.add(channel);
+
+    return channel;
+  }
 }
 
 /// A worker that never becomes ready.
@@ -74,20 +81,18 @@ final class _Never implements SpawnHandle {
   Future<MontyChannel> get ready => _never.future;
 
   @override
-  void cancel() {}
+  void cancel() => _never.future.ignore();
 }
 
 /// A "worker" that is the channel that already died.
 final class _Dead implements SpawnHandle {
-  _Dead(this._channel);
-
-  final MontyChannel _channel;
+  _Dead(MontyChannel channel) : ready = Future.value(channel);
 
   @override
-  Future<MontyChannel> get ready async => _channel;
+  final Future<MontyChannel> ready;
 
   @override
-  void cancel() {}
+  void cancel() => ready.ignore();
 }
 
 /// The pool did not recover from the crash.
@@ -124,11 +129,19 @@ Future<void> crashThenReuse(
 }) async {
   final seen = <MontyChannel>[];
   var opened = 0;
-  SpawnHandle second() => switch (bug) {
-    PoolBug.none => _Recording(open(), seen),
-    PoolBug.slotNeverFreed => _Never(),
-    PoolBug.reusesCrashedWorker => _Dead(seen.first),
-  };
+  SpawnHandle second() {
+    switch (bug) {
+      case PoolBug.none:
+        return _Recording(open(), seen);
+      case PoolBug.slotNeverFreed:
+        return _Never();
+      case PoolBug.reusesCrashedWorker:
+        final [crashed, ...] = seen;
+
+        return _Dead(crashed);
+    }
+  }
+
   final pool = await MontyPool.startWith(
     PoolOptions(
       maxProcesses: 1,
@@ -148,8 +161,13 @@ Future<void> crashThenReuse(
       failure = e;
     }
     expect(failure, isA<MontyCrashedError>(), reason: 'the crash');
-    crash.check(failure! as MontyCrashedError);
-    expect(seen.first.isAlive, isFalse, reason: 'the crashed worker is dead');
+    if (failure is MontyCrashedError) crash.check(failure);
+    final [crashedWorker, ...] = seen;
+    expect(
+      crashedWorker.isAlive,
+      isFalse,
+      reason: 'the crashed worker is dead',
+    );
     expect(pool.liveWorkers, 0, reason: 'the crashed slot was freed');
     await session.close();
 
@@ -168,7 +186,11 @@ Future<void> crashThenReuse(
     if (value != const MontyInt(2)) {
       throw RecoveryFailure('the second checkout answered $value, not 2');
     }
-    if (seen.length != 2 || identical(seen.first, seen.last)) {
+    final reused = switch (seen) {
+      [final a, final b] => identical(a, b),
+      _ => true,
+    };
+    if (reused) {
       throw const RecoveryFailure('the crashed worker was reused');
     }
     expect(pool.liveWorkers, 1);
@@ -180,7 +202,10 @@ Future<void> crashThenReuse(
   }
 }
 
-void _ignore(String stream, String text) {}
+/// Where the crashing code's output goes: nobody reads it.
+final _printed = <String>[];
+
+void _ignore(String stream, String text) => _printed.add(text);
 
 /// The crash-recovery tests: each of [cases] on the real [open], and the
 /// two controls on the first case.
@@ -193,7 +218,7 @@ void crashRecoveryTests(
     for (final c in cases) {
       test(c.name, () => crashThenReuse(c, open(c)));
     }
-    final first = cases.first;
+    final [first, ...] = cases;
     test(
       'control: a pool that never frees the crashed slot fails the '
       'second checkout',
