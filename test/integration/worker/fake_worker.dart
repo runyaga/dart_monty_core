@@ -41,7 +41,7 @@ const bigFrameSuffixPrints = 32;
 
 Future<void> main(List<String> args) async {
   var scenario = args.firstOrNull ?? 'serve';
-  if (scenario == 'writer') return _writeAfterParentExits();
+  if (scenario == 'writer') return _writeAfterParentExits(args[1]);
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
@@ -165,11 +165,26 @@ Future<String> _handle(String scenario, pb.ParentRequest request) async {
       // Ok, then exit, leaving a descendant that inherited stdout and keeps
       // writing valid Prints after this process is gone.
       await _send(pb.ChildEvent(ok: pb.Ok()));
+      final marker = File(
+        '${Directory.systemTemp.createTempSync('writer').path}/started',
+      );
       await Process.start(Platform.resolvedExecutable, [
         Platform.script.toFilePath(),
         'writer',
+        marker.path,
       ], mode: ProcessStartMode.inheritStdio);
-      await Future<void>.delayed(const Duration(seconds: 2));
+      // Exits only once the descendant has a frame in the pipe, however
+      // long it took to start: a fixed wait loses that race on a loaded
+      // machine, and the drain then has nothing to read.
+      final deadline = DateTime.now().add(const Duration(seconds: 25));
+      while (!marker.existsSync()) {
+        if (DateTime.now().isAfter(deadline)) {
+          stderr.writeln('fake_worker: the descendant never wrote');
+          exit(3);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      marker.parent.deleteSync(recursive: true);
       exit(0);
     case 'idle':
       // Everything was sent up front; only Shutdown is answered.
@@ -207,10 +222,15 @@ Future<void> _serve(
 
 /// The `writer` descendant: 32 MiB of Prints on the inherited stdout,
 /// reading nothing, and gone after 20 s whatever happened.
-Future<void> _writeAfterParentExits() async {
+Future<void> _writeAfterParentExits(String marker) async {
   Timer(const Duration(seconds: 20), () => exit(0));
+  // Starts late, as a descendant does on a loaded machine: longer than the
+  // parent's drain grace, so the worker must wait for the first frame.
+  await Future<void>.delayed(const Duration(seconds: 4));
   for (var i = 0; i < floodPrints; i++) {
     await _send(_numbered(i, floodPrintLength));
+    // The first frame is in the pipe: the worker may exit now.
+    if (i == 0) File(marker).createSync();
   }
   exit(0);
 }
