@@ -34,7 +34,14 @@ final _header = RegExp(r'^### (\S.*?)\s*$');
 Map<String, String> parseFragment(String name, String text) {
   final out = <String, StringBuffer>{};
   StringBuffer? cur;
+  var fence = false;
   for (final line in text.split('\n')) {
+    final t = line.trimLeft();
+    if (t.startsWith('```') || t.startsWith('~~~')) {
+      fence = !fence;
+    } else if (fence && line.startsWith('### ')) {
+      throw FormatException('$name: "### " line inside a code fence');
+    }
     final m = _header.firstMatch(line);
     if (m != null) {
       final s = m.group(1)!;

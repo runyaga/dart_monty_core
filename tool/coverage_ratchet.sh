@@ -144,7 +144,13 @@ def _nonfinite(c):
 
 def load_json(path):
     with open(path) as fh:
-        return json.load(fh, parse_constant=_nonfinite)
+        d = json.load(fh, parse_constant=_nonfinite)
+    # 1e999 overflows to inf without going through parse_constant.
+    pcts = [d['total']['pct']] + [v['pct'] for v in d['by_file'].values()]
+    if not all(isinstance(p, (int, float)) and 0 <= p <= 100 for p in pcts):
+        print(f'FAIL: {path} has a coverage percentage outside 0..100.')
+        sys.exit(1)
+    return d
 
 
 EXCLUDE = ('lib/src/ffi/generated/', 'lib/src/worker/proto/',

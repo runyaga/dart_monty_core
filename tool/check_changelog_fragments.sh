@@ -57,6 +57,14 @@ for i, l in enumerate(lines, 1):
         print(f'  {path}:{i}: release-level heading in a fragment (use ### '
               f'sections only; assembly splits CHANGELOG.md on ## lines)')
         sys.exit(1)
+fence = False
+for i, l in enumerate(lines, 1):
+    if l.lstrip().startswith(('```', '~~~')):
+        fence = not fence
+    elif fence and l.startswith('### '):
+        print(f'  {path}:{i}: a "### " line inside a code fence would be read '
+              f'as a section by assembly; indent it')
+        sys.exit(1)
 hdr = re.compile(r'^### (%s)\s*$' % sections)
 if first is None or not hdr.match(first):
     print(f'  {path}: must start with a "### <Section>" header '
@@ -171,6 +179,8 @@ self_test() {
   run "unknown section header: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n```\n## Example\n```\n' > "$tmp/changes/h.md"; commit
   run "release-level heading in fragment: must FAIL" 1 '[]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; printf '### Fixed\n\n```\n### Added\n```\n' > "$tmp/changes/f2.md"; commit
+  run "section header inside a code fence: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n' > "$tmp/changes/.hid.md"; commit
   run "hidden fragment: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
