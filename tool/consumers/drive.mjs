@@ -5,6 +5,7 @@
 // Usage:
 //   node tool/consumers/drive.mjs --root <build dir> --layout flutter|package
 //        [--page index.html] [--expect 2] [--timeout 60000] [--skip-assets]
+//        [--require <path>]... [--forbid <path>]...
 //
 // Exit 0 = pass, 1 = fail (the reason is printed), 2 = usage/environment error.
 //
@@ -18,7 +19,13 @@
 //     script probe (the factory tries the Flutter base first, then the
 //     package base), and nothing outside the layout's base served a worker
 //     asset.
-// --skip-assets drops the last two, for the driver's own self-test pages.
+// --require/--forbid name a request path (e.g. /main.dart.wasm) that must / must
+// not have been served 200: they pin WHICH compiler's output ran, because a
+// Flutter --wasm build silently falls back to its JavaScript build when the
+// browser lacks a capability, and `2` alone would pass on either.
+// --skip-assets drops the two asset checks, for the driver's own self-test pages.
+// The page is served cross-origin isolated (COOP/COEP), as a wasm-threaded
+// Flutter build needs.
 //
 // The server is ours so that it records what was actually requested; Chrome's
 // own logs do not report every failed subresource fetch (tool/check_pages.sh
@@ -41,11 +48,12 @@ const MIME = {
 };
 
 function args() {
-  const a = { page: 'index.html', expect: '2', timeout: 60000, skipAssets: false };
+  const a = { page: 'index.html', expect: '2', timeout: 60000, skipAssets: false, require: [], forbid: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--skip-assets') a.skipAssets = true;
+    else if (k === '--require' || k === '--forbid') a[k.slice(2)].push(argv[++i]);
     else if (['--root', '--layout', '--page', '--expect', '--timeout'].includes(k)) a[k.slice(2)] = argv[++i];
     else { console.error(`unknown argument ${k}`); process.exit(2); }
   }
@@ -77,14 +85,21 @@ const server = createServer((req, res) => {
   if (!file.startsWith(root + sep) || !existsSync(file) || !statSync(file).isFile()) status = 404;
   else body = readFileSync(file);
   requests.push({ status, path });
-  res.writeHead(status, { 'content-type': status === 200 ? (MIME[extname(file)] ?? 'application/octet-stream') : 'text/plain' });
+  res.writeHead(status, {
+    'content-type': status === 200 ? (MIME[extname(file)] ?? 'application/octet-stream') : 'text/plain',
+    'cross-origin-opener-policy': 'same-origin',
+    'cross-origin-embedder-policy': 'require-corp',
+  });
   res.end(status === 200 ? body : 'not found');
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const profile = mkdtempSync(join(tmpdir(), 'consumer-drive-'));
-const chrome = spawn(findChrome(), ['--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage',
+const chrome = spawn(findChrome(), ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
+  // Software WebGL: Flutter's skwasm renderer needs WebGL, and without it the
+  // --wasm build quietly loads its JavaScript fallback instead.
+  '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
   `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 const cleanup = async () => {
   const exited = new Promise(r => (chrome.exitCode !== null ? r() : chrome.once('exit', r)));
@@ -93,6 +108,12 @@ const cleanup = async () => {
   server.close();
   try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {}
 };
+
+// Killing the driver must not leave Chrome or its profile behind.
+for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+  process.on(sig, async () => { await cleanup(); process.exit(code); });
+}
+process.on('exit', () => { try { chrome.kill('SIGKILL'); } catch {} });
 
 const failures = [];
 let text = '';
@@ -116,7 +137,15 @@ try {
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); }
   };
   await new Promise(r => (ws.onopen = r));
-  const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+  // Every CDP command is bounded and fails when the socket closes, so a hung
+  // renderer or a dead Chrome reaches cleanup instead of waiting forever.
+  const send = (method, params = {}) => new Promise((ok, bad) => {
+    const i = ++id;
+    const timer = setTimeout(() => { pending.delete(i); bad(new Error(`CDP ${method} timed out`)); }, 20000);
+    pending.set(i, r => { clearTimeout(timer); ok(r); });
+    ws.send(JSON.stringify({ id: i, method, params }));
+  });
+  ws.onclose = () => { for (const [i, r] of pending) { pending.delete(i); r(undefined); } };
   await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
   await send('Page.navigate', { url: `${origin}/${a.page}` });
 
@@ -128,6 +157,9 @@ try {
   }
   if (text.trim() === '') failures.push(`no result written to #result within ${a.timeout} ms`);
   else if (text.trim() !== a.expect) failures.push(`#result is ${JSON.stringify(text.slice(0, 300))}, expected ${JSON.stringify(a.expect)}`);
+
+  for (const p of a.require) if (!requests.some(r => r.status === 200 && r.path === p)) failures.push(`required request not served 200: ${p}`);
+  for (const p of a.forbid) if (requests.some(r => r.status === 200 && r.path === p)) failures.push(`forbidden request was served: ${p}`);
 
   const allowed404 = new Set(['/favicon.ico']);
   if (!a.skipAssets) {

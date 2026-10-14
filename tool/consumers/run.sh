@@ -30,7 +30,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT_ROOT="$HERE/build"
-PROTO_ASSETS=(dart_monty_core_proto_worker.js dart_monty_core_proto_worker.wasm)
+ASSET_STEM=dart_monty_core_proto_worker
+PROTO_ASSETS=("$ASSET_STEM.js" "$ASSET_STEM.wasm")
 
 fail() { echo "FAIL: $*"; exit 1; }
 
@@ -58,6 +59,9 @@ selftest() {
   # A page that writes 2 but never fetches the worker assets must fail the
   # asset check when one is asked for.
   expect_reject "was not served 200" --root "$HERE/selftest" --page ok.html --layout package --timeout 3000
+  # --require pins which compiler's output ran; --forbid its alternative.
+  expect_reject "required request not served 200: /nope.js" --root "$HERE/selftest" --page ok.html --skip-assets --require /nope.js
+  expect_reject "forbidden request was served: /ok.html" --root "$HERE/selftest" --page ok.html --skip-assets --forbid /ok.html
   echo "PASS selftest"
 }
 
@@ -89,6 +93,17 @@ build() { # build <name> <outdir>
 layout_of() { case "$1" in dart-*) echo package ;; *) echo flutter ;; esac; }
 base_of() { case "$1" in dart-*) echo packages/dart_monty_core/assets ;; *) echo assets/packages/dart_monty_core/lib/assets ;; esac; }
 
+# The compiler's own output the page must have loaded: `2` alone would also
+# pass on Flutter --wasm's silent JavaScript fallback.
+pins_of() {
+  case "$1" in
+    dart-js) echo "--require /main.js" ;;
+    dart-wasm) echo "--require /main.wasm" ;;
+    flutter) echo "--require /main.dart.js --forbid /main.dart.wasm" ;;
+    flutter-wasm) echo "--require /main.dart.wasm" ;;
+  esac
+}
+
 damage() { # damage <name> <outdir> <mode>
   local base="$2/$(base_of "$1")"
   [ -f "$base/${PROTO_ASSETS[0]}" ] || fail "negative control: no worker script at $base (the build did not ship it)"
@@ -107,13 +122,22 @@ run_one() { # run_one <name> <negative-mode|"">
   build "$name" "$out" || fail "$name: build failed"
   echo "  build: $((SECONDS - t0))s"
   [ -z "$mode" ] || damage "$name" "$out" "$mode"
-  drive --root "$out" --layout "$(layout_of "$name")" --timeout 45000
-  local rc=$?
+  local log rc
+  # shellcheck disable=SC2046  # pins_of prints separate words
+  log=$(drive --root "$out" --layout "$(layout_of "$name")" --timeout 45000 $(pins_of "$name") 2>&1)
+  rc=$?
+  printf '%s\n' "$log" | cut -c1-600
   if [ -z "$mode" ]; then
     [ "$rc" -eq 0 ] || fail "$name: the probe did not read 2"
     echo "PASS $name"
   else
+    # A damaged build must fail BECAUSE of the damage: a verdict (exit 1), not a
+    # driver error; a worker-asset failure named; and not a page that still
+    # read 2.
     [ "$rc" -eq 1 ] || fail "$name ($mode): the driver exited $rc, expected 1 (a damaged build must fail)"
+    printf '%s\n' "$log" | grep -q "driver error" && fail "$name ($mode): a driver error, not a verdict"
+    printf '%s\n' "$log" | grep -q "FAIL: .*$ASSET_STEM" || fail "$name ($mode): the verdict names no worker asset failure"
+    printf '%s\n' "$log" | grep -q '"result":"2"' && fail "$name ($mode): the damaged page still read 2"
     echo "PASS $name ($mode): failed as it must"
   fi
 }
