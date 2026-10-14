@@ -313,6 +313,12 @@
     budget too. The suspension budget counts snapshot turns.
   - A manual answer too large to send fails with upstream's
     `RuntimeError`; the snapshot is spent and the call stays pending.
+  - Closing a session ends its sleeps at once, a running `feedRun`'s as
+    well as a held snapshot's: no timer outlives the session, and the feed
+    fails as finished.
+  - An async OS handler that declines `asyncio.sleep` (null, or
+    `OsCallNotHandledException`) leaves the sleep's `None`; it no longer
+    raises `RuntimeError`.
   - CI's `parity-e0` job asserts the parity suite's C1 gate through the
     session on vm, dart2js and dart2wasm, now with the snapshot, futures,
     OS-call and budget rows. `PARITY_PIN` moves to that suite.
