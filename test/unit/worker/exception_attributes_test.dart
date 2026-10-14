@@ -4,6 +4,7 @@
 // ExternalException's attributes sent as upstream sends a live exception's;
 // and the writer's refusals that Python makes too. Pure Dart: vm, dart2js
 // and dart2wasm.
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/exception_attributes.dart';
@@ -500,6 +501,16 @@ void main() {
       expect(json.lineno, Int64.ONE);
       expect(json.pos, Int64.parseHex('ffffffffffffffff'));
     });
+
+    test('an int of 2^64, which dart2js can hold, drops the payload', () {
+      // dart2js only: elsewhere an int stops at 2^63 - 1.
+      final two64 = math.pow(2, 64) as int;
+      final raised = raisedException('json.JSONDecodeError', 'm', {
+        ...full,
+        'pos': MontyInt(two64),
+      });
+      expect(raised.hasData(), isFalse);
+    }, testOn: 'dart2js');
 
     test("any other type's attributes are not sent", () {
       final raised = raisedException('UnicodeDecodeError', 'm', {

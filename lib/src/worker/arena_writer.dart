@@ -703,8 +703,13 @@ String? _pythonStr(MontyValue? value) => switch (value) {
 /// them) from 0 to 2^64 - 1.
 Int64? _usize(MontyValue? value) => switch (value) {
   MontyBool(value: final b) => b ? Int64.ONE : Int64.ZERO,
-  MontyInt(value: final n) when n >= 0 => Int64(n),
-  MontyBigInt(value: final n) when !n.isNegative && n.bitLength <= 64 =>
-    Int64.parseHex(n.toRadixString(16)),
+  // On dart2js an int may exceed 64 bits, so its range is checked as a
+  // big int's.
+  MontyInt(value: final n) => _u64(BigInt.from(n)),
+  MontyBigInt(value: final n) => _u64(n),
   _ => null,
 };
+
+Int64? _u64(BigInt n) => !n.isNegative && n.bitLength <= 64
+    ? Int64.parseHex(n.toRadixString(16))
+    : null;
