@@ -391,17 +391,17 @@ final class _Feed {
     final settled = _settleBatch(futures);
     final awaited = _awaited;
     final remaining = awaited.difference(settled);
-    // A failure Python awaits raises at once, the batch's first one as the
-    // worker takes them in order; so does one a gather still owes.
-    final watched = {...awaited, ..._outstanding};
+    // The batch's first failure Python awaits or a gather owes raises now.
+    final owed = {..._outstanding};
+    final watched = {...awaited, ...owed};
     _outstanding.removeAll(settled);
     final failed = futures.results
         .map((r) => r.callId)
         .where(watched.contains)
         .firstWhereOrNull((id) => _calls[id] is _Failed);
     if (failed != null) {
-      // The gather fails with it: caught, it owes nothing more.
-      _outstanding.clear();
+      // A failed gather member cancels what the gather owes; a branch's not.
+      if (wait.gathered || owed.contains(failed)) _outstanding.clear();
 
       return _raiseFirstFailure([failed]);
     }

@@ -366,7 +366,7 @@ final class RecordingChannel implements MontyChannel {
   final FakeAnswers log;
 
   /// The answers the reader could not read back (listed exception 10).
-  final List<FormatException> unreadable = [];
+  final List<Object> unreadable = [];
 
   final MontyChannel _inner;
 
@@ -379,7 +379,10 @@ final class RecordingChannel implements MontyChannel {
     // reader cannot read back is recorded as unreadable, and still sent.
     try {
       log.add(request);
-    } on FormatException catch (error) {
+      // The reader's refusals: FormatException, or UnsupportedError for a
+      // value this platform cannot hold.
+      // ignore: avoid_catches_without_on_clauses
+    } catch (error) {
       unreadable.add(error);
     }
 
