@@ -413,6 +413,21 @@ void main() {
           ),
         ),
       );
+      // Read as an attribute it is a function, named after the attribute.
+      final read = ClassInstance(
+        _Box(1),
+        classType: ClassType(_callableField),
+        policies: const HostPolicies(eagerAttrs: 'all', lazyAttrs: 'all'),
+      );
+      expect(
+        read.eagerAttributes()['callback'],
+        isA<BoundMethod>().having((m) => m.name, 'name', 'callback'),
+      );
+      expect(read.lookupLazyAttr('callback'), isA<BoundMethod>());
+      expect(
+        () => ArenaWriter(objects: HostObjects()).add(read),
+        returnsNormally,
+      );
       // Under 'all' only the class's methods qualify.
       final all = ClassInstance(
         _Box(1),

@@ -420,7 +420,7 @@ final class ClassType<T extends Object> {
   /// What `getattr` on the class finds: a constant, else a classmethod,
   /// else an instance method (the plain function, sent by name).
   Object _attribute(String name) =>
-      value.attributes[name]?.call() ??
+      _maybeNamed(name, value.attributes[name]?.call()) ??
       switch (value.methods[name]) {
         final HostMethod m => BoundMethod(name, m),
         null when value.instance.methods.containsKey(name) => BoundMethod(
@@ -536,7 +536,7 @@ final class ClassInstance<T extends Object> {
   /// methods (bound), then its class's constants.
   Object _attribute(String name) {
     final read = _members.fields[name] ?? _members.properties[name];
-    if (read != null) return read(value);
+    if (read != null) return _named(name, read(value));
     if (_method(name) case final method?) return BoundMethod(name, method);
     final constant = classType.value.attributes[name];
 
@@ -618,6 +618,15 @@ String _otherTypeName(Object value) => switch (value) {
   ClassType() => 'type',
   _ => '${value.runtimeType}',
 };
+
+/// [value], a function held by attribute [name] named after it, so it
+/// crosses as a function as upstream sends any callable (a Dart closure has
+/// no `__name__`; the attribute name stands in).
+Object _named(String name, Object value) =>
+    value is HostMethod ? BoundMethod(name, value) : value;
+
+Object? _maybeNamed(String name, Object? value) =>
+    value == null ? null : _named(name, value);
 
 /// The object a host-object [wrapper] wraps: what upstream's store
 /// resolves its id to, and what identity is judged by.
