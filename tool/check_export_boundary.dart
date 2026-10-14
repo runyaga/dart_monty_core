@@ -1526,7 +1526,7 @@ final _controls = [
         'package:dart_monty_core/src/worker/frame.dart',
     {
       'lib/dart_monty_core.dart': (s) =>
-          "${s}export 'src/monty_factory_stub.dart'\n"
+          "${s}export 'src/externals.dart'\n"
           "    if (dart.library.boundary_probe) 'src/worker/frame.dart';\n",
     },
   ),
@@ -1603,7 +1603,7 @@ final _controls = [
     _Verdict.pass,
     '',
     {
-      'lib/src/monty.dart': (s) =>
+      'lib/src/externals.dart': (s) =>
           "import 'package:dart_monty_core/src/worker/frame.dart';\n$s"
           'int _boundaryProbe() => Frame.maxLength;\n'
           'Object _boundaryProbeUse() => _boundaryProbe;\n',
