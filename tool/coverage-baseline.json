@@ -263,8 +263,8 @@
     },
     "lib/src/platform/os_call_exception.dart": {
       "found": 12,
-      "hit": 10,
-      "pct": 83.33
+      "hit": 12,
+      "pct": 100.0
     },
     "lib/src/platform/value_graph_budget.dart": {
       "found": 6,
@@ -422,8 +422,8 @@
       "pct": 98.67
     },
     "lib/src/worker/host_answers.dart": {
-      "found": 258,
-      "hit": 258,
+      "found": 259,
+      "hit": 259,
       "pct": 100.0
     },
     "lib/src/worker/monty_channel.dart": {
@@ -442,8 +442,8 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_snapshot.dart": {
-      "found": 61,
-      "hit": 61,
+      "found": 62,
+      "hit": 62,
       "pct": 100.0
     },
     "lib/src/worker/os_policy.dart": {
@@ -528,8 +528,8 @@
     }
   },
   "total": {
-    "found": 8057,
-    "hit": 6757,
-    "pct": 83.86
+    "found": 8059,
+    "hit": 6761,
+    "pct": 83.89
   }
 }
