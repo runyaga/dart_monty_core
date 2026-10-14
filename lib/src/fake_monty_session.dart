@@ -276,7 +276,12 @@ final class FakeMontySession implements PoolSession {
     try {
       // The session's close takes its usual path: Reset when idle, a kill
       // with a turn in flight.
-      if (opening != null) await (await opening).close();
+      final session = _session;
+      if (session != null) {
+        await session.close();
+      } else if (opening != null) {
+        await (await opening).close();
+      }
     } finally {
       await _pool?.close();
       await _worker.close();
@@ -286,9 +291,11 @@ final class FakeMontySession implements PoolSession {
   /// Runs [body] on the session over the scripted worker: at once when it
   /// is open, so calls keep their order and timing.
   Future<T> _call<T>(Future<T> Function(PoolSession session) body) {
+    // Refused at once, as a closed session refuses, while the close is
+    // still on its way to the session underneath.
+    if (_isClosed) return Future.error(StateError('the session is finished'));
     final session = _session;
     if (session != null) return body(session);
-    if (_isClosed) return Future.error(StateError('the session is finished'));
 
     return _opened(body);
   }

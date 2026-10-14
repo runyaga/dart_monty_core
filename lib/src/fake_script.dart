@@ -72,6 +72,19 @@ final class FakeCall extends FakeEvent {
 
   /// Whether this is an OS call.
   bool get os => event.whichKind() == pb.ChildEvent_Kind.osCall;
+
+  /// This call with the next id: a call after one the worker gave a second
+  /// id.
+  FakeCall shifted() {
+    final next = event.deepCopy();
+    if (os) {
+      next.osCall.callId = callId + 1;
+    } else {
+      next.functionCall.callId = callId + 1;
+    }
+
+    return FakeCall(name, callId + 1, next, eager: eager);
+  }
 }
 
 /// A bare reference to the undefined name [name]: the worker's
@@ -95,6 +108,12 @@ final class FakeAwait extends FakeEvent {
 
   /// Whether the await is a gather.
   final bool gathered;
+
+  /// This await with each id above [id] one higher.
+  FakeAwait shiftedAfter(int id) => FakeAwait([
+    for (final c in callIds)
+      if (c > id) c + 1 else c,
+  ], gathered: gathered);
 }
 
 /// A print: the worker's `Print`.

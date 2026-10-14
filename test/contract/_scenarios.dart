@@ -28,6 +28,11 @@ const _catchB =
     'a = fa()\nb = fb()\nx = await a\n'
     'try:\n    await b\nexcept ValueError:\n    pass\nx';
 
+const _sleeps =
+    'import asyncio\n'
+    'await asyncio.gather(asyncio.sleep(0, result=1), '
+    'asyncio.sleep(0, result=2))';
+
 const _branches =
     'import asyncio\n'
     'async def one():\n    v = await f(1)\n    return await g(v)\n'
@@ -189,6 +194,21 @@ final List<Scenario> scenarios = [
     trace: [
       'os Path.read_text(MontyPath(/a/b.txt))',
       "MontyRuntimeError PermissionError: Permission denied: '/a/b.txt' | PermissionError: Permission denied: '/a/b.txt'",
+    ],
+    answers: [
+      '0 none',
+    ],
+  ),
+  Scenario(
+    'a declined path is written as Python writes a str',
+    feeds: ["from pathlib import Path\nPath(\"/a'b\").exists()"],
+    script: (f) => f
+      ..willCallOs('Path.exists', args: [const MontyPath("/a'b")])
+      ..willReturn(_none),
+    run: (s) => s.run(0, os: s.os(_decline)),
+    trace: [
+      "os Path.exists(MontyPath(/a'b))",
+      'MontyRuntimeError PermissionError: Permission denied: "/a\'b" | PermissionError: Permission denied: "/a\'b"',
     ],
     answers: [
       '0 none',
@@ -592,7 +612,15 @@ final List<Scenario> scenarios = [
       ..willCall('f', eager: true)
       ..willReturn(_int(1)),
     run: (s) async {
-      final ext = {'f': s.async('f', _after(5, _int(1)))};
+      // The second future settles well after the first, so the batches
+      // do not depend on the machine's timing.
+      var calls = 0;
+      final ext = {
+        'f': s.async(
+          'f',
+          (a, k) => _after(calls++ == 0 ? 0 : 150, _int(1))(a, k),
+        ),
+      };
       await s.run(0, externals: ext);
       await s.run(1, externals: ext);
     },
@@ -691,7 +719,7 @@ final List<Scenario> scenarios = [
           'f': s.async('f', (args, _) async {
             if (args.firstOrNull == _int(0)) {
               await second.future;
-              await Future<void>.delayed(const Duration(milliseconds: 20));
+              await Future<void>.delayed(const Duration(milliseconds: 150));
 
               return _int(10);
             }
@@ -705,7 +733,7 @@ final List<Scenario> scenarios = [
     trace: [
       'call f(MontyInt(0))',
       'call f(MontyInt(1))',
-      'value MontyList(2 items)',
+      'value MontyList[MontyInt(10), MontyInt(11)]',
     ],
     answers: [
       '0 future',
@@ -793,6 +821,136 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
+    'a gather settled in part, by hand, waits for the rest',
+    feeds: ['import asyncio\nawait asyncio.gather(f(0), f(1))'],
+    script: (f) => f
+      ..willCall('f', args: [_int(0)])
+      ..willCall('f', args: [_int(1)])
+      ..willAwait([0, 1], gathered: true)
+      ..willReturn(MontyList([_int(10), _int(11)])),
+    run: (s) async {
+      final first = await s.start(0);
+      final second = await s.next<FunctionSnapshot>(
+        first,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final wait = await s.next<FunctionSnapshot>(
+        second,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      final rest = await s.next<FutureSnapshot>(
+        wait,
+        (w) => w.resume({0: ExternalReturnValue(_int(10))}),
+      );
+      await s.next<FutureSnapshot>(
+        rest,
+        (w) => w.resume({1: ExternalReturnValue(_int(11))}),
+      );
+    },
+    trace: [
+      'snap call f#0(MontyInt(0))',
+      'snap call f#1(MontyInt(1))',
+      'snap futures [0, 1]',
+      'snap futures [1]',
+      'complete MontyList[MontyInt(10), MontyInt(11)]',
+    ],
+    answers: [
+      '0 future',
+      '1 future',
+      '0/b0 value MontyInt(10)',
+      '1/b1 value MontyInt(11)',
+    ],
+  ),
+  Scenario(
+    'a futures batch naming an id the wait did not list',
+    feeds: ['t = f()\nawait t'],
+    script: (f) => f
+      ..willCall('f')
+      ..willAwait([0])
+      ..willReturn(_none),
+    run: (s) async {
+      final call = await s.start(0);
+      final wait = await s.next<FunctionSnapshot>(
+        call,
+        (c) => c.resume(const ExternalFuture()),
+      );
+      await s.next<FutureSnapshot>(
+        wait,
+        (w) => w.resume({99: ExternalReturnValue(_int(1))}),
+      );
+    },
+    trace: [
+      'snap call f#0()',
+      'snap futures [0]',
+      'MontyRuntimeError RuntimeError: unknown call_id 99, expected one of: [0] | RuntimeError: unknown call_id 99, expected one of: [0]',
+    ],
+    answers: [
+      '0 future',
+      '99/b0 value MontyInt(1)',
+    ],
+  ),
+  Scenario(
+    'gathered asyncio.sleep calls take plain values',
+    feeds: [_sleeps],
+    config: const SessionConfig(osPolicy: OsPolicy(sleep: 'call_host')),
+    script: (f) => f
+      ..willCallOs('asyncio.sleep', args: [const MontyFloat(0)])
+      ..willCallOs('asyncio.sleep', args: [const MontyFloat(0)])
+      ..willAwait([0, 1], gathered: true)
+      ..willReturn(MontyList([_int(1), _int(2)])),
+    run: (s) => s.run(0, os: s.os((_, _, _) => _none)),
+    trace: [
+      'os asyncio.sleep(MontyFloat(0.0))',
+      'os asyncio.sleep(MontyFloat(0.0))',
+      'value MontyList[MontyInt(1), MontyInt(2)]',
+    ],
+    answers: [
+      '0 value MontyNone()',
+      '2 value MontyNone()',
+    ],
+  ),
+  Scenario(
+    'an asyncio.sleep answered with a plain value takes a second id',
+    feeds: [
+      'import asyncio\nt = asyncio.sleep(0, result=1)\nf()\nawait t + 1',
+    ],
+    config: const SessionConfig(osPolicy: OsPolicy(sleep: 'call_host')),
+    script: (f) => f
+      ..willCallOs('asyncio.sleep', args: [const MontyFloat(0)])
+      ..willCall('f')
+      ..willAwait([0])
+      ..willReturn(_int(2)),
+    run: (s) =>
+        s.run(0, externals: {'f': s.fn('f')}, os: s.os((_, _, _) => _none)),
+    trace: [
+      'os asyncio.sleep(MontyFloat(0.0))',
+      'call f()',
+      'value MontyInt(2)',
+    ],
+    answers: [
+      '0 value MontyNone()',
+      '2 value MontyNone()',
+    ],
+  ),
+  Scenario(
+    'a feed made while close is on its way is refused',
+    feeds: ['1', '2'],
+    script: (f) => f
+      ..willReturn(_int(1))
+      ..willReturn(_int(2)),
+    run: (s) async {
+      await s.run(0);
+      final closing = s.session.close();
+      await s.run(1);
+      await closing;
+    },
+    trace: [
+      'value MontyInt(1)',
+      'StateError: Bad state: the session is finished',
+    ],
+    answers: [],
+  ),
+  Scenario(
     'a plain value awaited: deferred',
     feeds: ['x = f()\nawait x'],
     script: (f) => f
@@ -854,7 +1012,7 @@ final List<Scenario> scenarios = [
     run: (s) => s.run(
       0,
       externals: {
-        'fa': s.async('fa', _after(30, _int(1))),
+        'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
       },
     ),
@@ -882,7 +1040,7 @@ final List<Scenario> scenarios = [
     run: (s) => s.run(
       0,
       externals: {
-        'fa': s.async('fa', _after(30, _int(1))),
+        'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
       },
     ),
@@ -911,7 +1069,7 @@ final List<Scenario> scenarios = [
     run: (s) => s.run(
       0,
       externals: {
-        'fa': s.async('fa', _after(30, _int(1))),
+        'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
       },
     ),
@@ -981,7 +1139,7 @@ final List<Scenario> scenarios = [
     run: (s) => s.run(
       0,
       externals: {
-        'fa': s.async('fa', _after(30, _int(1))),
+        'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _after(0, _int(2))),
       },
     ),
@@ -1014,7 +1172,7 @@ final List<Scenario> scenarios = [
         'f': s.async(
           'f',
           (args, _) => Future.delayed(
-            Duration(milliseconds: args.firstOrNull == _int(1) ? 0 : 60),
+            Duration(milliseconds: args.firstOrNull == _int(1) ? 0 : 150),
             () => args.firstOrNull ?? _none,
           ),
         ),
@@ -1025,7 +1183,7 @@ final List<Scenario> scenarios = [
       'call f(MontyInt(1))',
       'call f(MontyInt(2))',
       'call g(MontyInt(1))',
-      'value MontyList(2 items)',
+      'value MontyList[MontyInt(5), MontyInt(2)]',
     ],
     answers: [
       '0 future',

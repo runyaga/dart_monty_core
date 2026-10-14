@@ -23,6 +23,12 @@
 //     type; the suite checks `int` only (pythonTypeName in the fake).
 //  6. What the fake does not do: run Python, type-check, enforce limits
 //     (the session's own budgets still apply). No scenario depends on them.
+//  7. Ids with no host call. Upstream gives an awaitable `asyncio.sleep`
+//     answered with a plain value a second call id (`settled_awaitable`);
+//     the fake does the same. A zero-delay `asyncio.sleep` under the
+//     system sleep policy makes no host call yet takes an id too; a script
+//     cannot show it, so later calls number one lower on the fake. Not in
+//     the suite.
 import 'dart:async';
 
 import 'package:collection/collection.dart';
@@ -232,13 +238,24 @@ String showArgs(List<MontyValue> args, Map<String, MontyValue> kwargs) {
   return '(${shown.join(', ')})';
 }
 
-/// [value] as the trace writes it: a float the same on every platform
-/// (dart2js writes an integral double without its `.0`).
+/// [value] as the trace writes it, containers with their contents, and a
+/// float the same on every platform (dart2js writes an integral double
+/// without its `.0`).
 String showValue(MontyValue value) => switch (value) {
   MontyFloat(value: final v) when v == v.truncateToDouble() && v.isFinite =>
     'MontyFloat(${v.toInt()}.0)',
+  MontyList(:final items) => 'MontyList[${_showAll(items)}]',
+  MontyTuple(:final items) => 'MontyTuple(${_showAll(items)})',
+  MontySet(:final items) => 'MontySet{${_showAll(items)}}',
+  MontyFrozenSet(:final items) => 'MontyFrozenSet{${_showAll(items)}}',
+  MontyDict(:final pairs) => 'MontyDict{${pairs.map(_showPair).join(', ')}}',
   _ => '$value',
 };
+
+String _showAll(List<MontyValue> items) => items.map(showValue).join(', ');
+
+String _showPair((MontyValue, MontyValue) pair) =>
+    '${showValue(pair.$1)}: ${showValue(pair.$2)}';
 
 /// [snapshot] as the trace writes it. Positions are left out: the fake has
 /// none (a listed exception).

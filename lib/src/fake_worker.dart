@@ -19,9 +19,11 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/encoded_length.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
-import 'package:dart_monty_core/src/worker/host_answers.dart' show osCallParts;
+import 'package:dart_monty_core/src/worker/host_answers.dart'
+    show acceptsFuture, osCallParts;
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart' show pythonRepr;
 
 /// How far a call the feed made has got.
 sealed class _CallState {
@@ -30,7 +32,11 @@ sealed class _CallState {
 
 /// Answered with a plain value, not a future.
 final class _Plain extends _CallState {
-  const _Plain(this.value);
+  const _Plain(this.value, {required this.os});
+
+  /// Whether an OS call answered it: upstream wraps an OS call's answer
+  /// itself, so Python may await it (os-awaits.md).
+  final bool os;
 
   final MontyValue value;
 }
@@ -210,6 +216,9 @@ final class _Feed {
   /// The ids an await is still waiting on.
   Set<int> _awaited = {};
 
+  /// The ids the last wait listed.
+  List<int> _advertised = const [];
+
   /// Plays the events up to the next suspension or the end.
   Future<pb.ChildEvent> play(PrintHandler? onPrint) async {
     for (;;) {
@@ -268,7 +277,7 @@ final class _Feed {
           _settleBatch(request.resumeFutures).where((id) => id == callId),
         ),
       (pb.ParentRequest_Kind.resumeFutures, final FakeAwait wait) =>
-        _settleWait(wait, _settleBatch(request.resumeFutures)),
+        _settleWait(wait, request.resumeFutures),
       _ => throw _unexpected(kind),
     };
   }
@@ -289,14 +298,15 @@ final class _Feed {
     final pending = <int>{};
     for (final id in wait.callIds) {
       switch (_calls[id]) {
+        // Settled, or an OS call's value, which upstream wraps itself.
+        case _Settled() || _Plain(os: true):
+          break;
         case _Plain(:final value):
           return _raise(_notAwaitable(value, gathered: wait.gathered));
         case _Failed(:final exception):
           return _raise(exception);
         case _Pending():
           pending.add(id);
-        case _Settled():
-          break;
         case null:
           throw StateError(
             'FakeMontySession: willAwait names call $id, which the feed '
@@ -314,26 +324,61 @@ final class _Feed {
   /// The worker's wait: every host future still pending, whatever Python
   /// awaits (upstream's scheduler lists all of them, in hash order; the
   /// fake lists them ascending).
-  pb.ChildEvent _resolveFutures() => pb.ChildEvent(
-    resolveFutures: pb.ResolveFutures(
-      pendingCallIds: [
-        for (final MapEntry(:key, :value) in _calls.entries)
-          if (value is _Pending) key,
-      ]..sort(),
-    ),
-  );
+  pb.ChildEvent _resolveFutures() {
+    final pending = _advertised = [
+      for (final MapEntry(:key, :value) in _calls.entries)
+        if (value is _Pending) key,
+    ]..sort();
 
-  /// After a batch settled [settled] while Python awaits [wait].
-  pb.ChildEvent? _settleWait(FakeAwait wait, Set<int> settled) {
-    if (settled.intersection(_awaited).isEmpty) {
-      // Nothing Python waits on was settled: the worker waits again
-      // (rewait.md).
-      _at = wait;
+    return pb.ChildEvent(
+      resolveFutures: pb.ResolveFutures(pendingCallIds: pending),
+    );
+  }
 
-      return _resolveFutures();
+  /// Settles the batch [futures] while Python awaits [wait].
+  ///
+  /// A batch naming an id the wait did not list ends the feed, as the
+  /// worker refuses it. One that settles nothing Python awaits repeats the
+  /// wait (rewait.md). A partial one runs the script on when its next event
+  /// is one an unblocked branch can make (a call, a lookup, a print, a
+  /// hold); before anything else (an await or the end) the worker is still
+  /// blocked on the rest, and waits again for them (waits.md).
+  pb.ChildEvent? _settleWait(
+    FakeAwait wait,
+    pb.ResumeFutures futures,
+  ) {
+    final advertised = _advertised;
+    for (final result in futures.results) {
+      if (!advertised.contains(result.callId)) {
+        isOver = true;
+
+        return _uncatchable(
+          pb.RaisedException(
+            excType: 'RuntimeError',
+            message:
+                'unknown call_id ${result.callId}, expected one of: '
+                '$advertised',
+          ),
+        );
+      }
     }
+    final settled = _settleBatch(futures);
+    final remaining = _awaited.difference(settled);
+    final failed = wait.callIds
+        .where(settled.contains)
+        .firstWhereOrNull(
+          (id) => _calls[id] is _Failed,
+        );
+    // A failure Python awaits raises at once, ending the wait.
+    if (failed != null) return _raiseFirstFailure([failed]);
+    final runsOn =
+        remaining.length < _awaited.length &&
+        (remaining.isEmpty || _isBranchEvent(_events.firstOrNull));
+    if (runsOn) return null;
+    _at = wait;
+    _awaited = remaining;
 
-    return _raiseFirstFailure(wait.callIds.where(settled.contains));
+    return _resolveFutures();
   }
 
   pb.ChildEvent? _answerCall(FakeCall call, pb.ResumeCall resume) {
@@ -341,15 +386,10 @@ final class _Feed {
     final result = resume.result;
     switch (result.whichKind()) {
       case pb.ExtFunctionResult_Kind.returnValue:
-        final value = ArenaReader(resume.values)[result.returnValue];
-        _calls[id] = _Plain(value);
-        // Python awaits an eager call at once; an OS call takes a plain
-        // value (os-awaits.md).
-        if (call.eager && !call.os) {
-          return _raise(_notAwaitable(value, gathered: false));
-        }
-
-        return null;
+        return _answerValue(
+          call,
+          ArenaReader(resume.values)[result.returnValue],
+        );
       case pb.ExtFunctionResult_Kind.future:
         _calls[id] = const _Pending();
         if (!call.eager) return null;
@@ -367,6 +407,37 @@ final class _Feed {
 
         return _raise(error);
     }
+  }
+
+  pb.ChildEvent? _answerValue(FakeCall call, MontyValue value) {
+    final id = call.callId;
+    _calls[id] = _Plain(value, os: call.os);
+    if (call.os && acceptsFuture(call.name)) _shiftAfter(id);
+    // Python awaits an eager call at once; an OS call takes a plain value
+    // (os-awaits.md).
+    if (call.eager && !call.os) {
+      return _raise(_notAwaitable(value, gathered: false));
+    }
+
+    return null;
+  }
+
+  /// The worker gives an `asyncio.sleep` answered with a plain value a
+  /// second call id, for the settled future it wraps the value in
+  /// (upstream `settled_awaitable`): the calls after [id] each take the
+  /// next id, and the awaits naming them follow.
+  void _shiftAfter(int id) {
+    final rest = [
+      for (final e in _events)
+        switch (e) {
+          FakeCall(:final callId) when callId > id => e.shifted(),
+          FakeAwait() => e.shiftedAfter(id),
+          _ => e,
+        },
+    ];
+    _events
+      ..clear()
+      ..addAll(rest);
   }
 
   /// Records each result of [futures] against its call; the ids settled.
@@ -402,17 +473,27 @@ final class _Feed {
     }
     isOver = true;
 
-    return pb.ChildEvent(
-      error: pb.Error(
-        exception: pb.RaisedException(
-          excType: exception.excType,
-          message: exception.hasMessage() ? exception.message : null,
-          data: exception.hasData() ? exception.data : null,
-        ),
-      ),
-    );
+    return _uncatchable(exception);
   }
 }
+
+/// The `Error` event ending a feed with [exception], without its traceback.
+pb.ChildEvent _uncatchable(pb.RaisedException exception) => pb.ChildEvent(
+  error: pb.Error(
+    exception: pb.RaisedException(
+      excType: exception.excType,
+      message: exception.hasMessage() ? exception.message : null,
+      data: exception.hasData() ? exception.data : null,
+    ),
+  ),
+);
+
+/// Whether [event] is one a branch a settlement unblocked can make.
+bool _isBranchEvent(FakeEvent? event) =>
+    event is FakeCall ||
+    event is FakeLookup ||
+    event is FakePrint ||
+    event is FakeHold;
 
 /// The requests that answer a suspension.
 const Set<pb.ParentRequest_Kind> _answers = {
@@ -503,7 +584,7 @@ pb.RaisedException _notHandled(FakeCall call) {
   if (args.firstOrNull case MontyPath(:final value) when _isFilesystem(name)) {
     return pb.RaisedException(
       excType: 'PermissionError',
-      message: "Permission denied: '$value'",
+      message: 'Permission denied: ${pythonRepr(value)}',
     );
   }
 
