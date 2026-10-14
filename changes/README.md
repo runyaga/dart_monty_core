@@ -13,7 +13,9 @@ A fragment starts with a section header, then the entry:
 ```
 
 Sections: `Added`, `Changed`, `Fixed`, `Breaking`, `Removed`, `Deprecated`,
-`Security`, `Internal`. One fragment may hold several sections. Keep the slug
+`Security`, `Internal`. One fragment may hold several sections. No other line may start with `#` (indented or not), and fenced code blocks
+are not supported: assembly splits `CHANGELOG.md` on heading lines. Use inline
+code. Keep the slug
 short and unique (a feature name, not a PR number you do not have yet).
 
 CI (`.github/workflows/changelog-fragments.yml`) requires a fragment on any PR

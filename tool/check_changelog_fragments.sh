@@ -52,20 +52,21 @@ path, sections = sys.argv[1], sys.argv[2]
 text = open(path, encoding='utf-8').read()
 lines = [l for l in text.splitlines()]
 first = next((l for l in lines if l.strip()), None)
-for i, l in enumerate(lines, 1):
-    if l.startswith('## ') or l.startswith('# '):
-        print(f'  {path}:{i}: release-level heading in a fragment (use ### '
-              f'sections only; assembly splits CHANGELOG.md on ## lines)')
-        sys.exit(1)
-fence = False
-for i, l in enumerate(lines, 1):
-    if l.lstrip().startswith(('```', '~~~')):
-        fence = not fence
-    elif fence and l.startswith('### '):
-        print(f'  {path}:{i}: a "### " line inside a code fence would be read '
-              f'as a section by assembly; indent it')
-        sys.exit(1)
 hdr = re.compile(r'^### (%s)\s*$' % sections)
+# Assembly splits CHANGELOG.md on heading lines, so a fragment may hold only
+# its `### <Section>` headers: no other line may start with '#' (indented or
+# not), and fenced blocks, where a '#' line is ordinary text, are not allowed.
+for i, l in enumerate(lines, 1):
+    t = l.lstrip()
+    if t.startswith(('```', '~~~')):
+        print(f'  {path}:{i}: fenced code blocks are not supported in a '
+              f'fragment; use inline code')
+        sys.exit(1)
+    if t.startswith('#') and not hdr.match(l):
+        if not l.startswith('### ') or t != l:
+            print(f'  {path}:{i}: heading-like line {l!r}; only "### <Section>" '
+                  f'headers are allowed')
+            sys.exit(1)
 if first is None or not hdr.match(first):
     print(f'  {path}: must start with a "### <Section>" header '
           f'({sections.replace("|", ", ")})')
@@ -180,7 +181,9 @@ self_test() {
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n```\n## Example\n```\n' > "$tmp/changes/h.md"; commit
   run "release-level heading in fragment: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Fixed\n\n```\n### Added\n```\n' > "$tmp/changes/f2.md"; commit
-  run "section header inside a code fence: must FAIL" 1 '[]' ''
+  run "fenced block: must FAIL" 1 '[]' ''
+  reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n    ## Example\n' > "$tmp/changes/ind.md"; commit
+  run "indented heading-like line: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; printf '### Added\n\n- x\n' > "$tmp/changes/.hid.md"; commit
   run "hidden fragment: must FAIL" 1 '[]' ''
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
