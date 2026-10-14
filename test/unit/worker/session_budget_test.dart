@@ -6,6 +6,8 @@
 // suspension counts and charges itself again; `begin_load`/`end_load` and
 // `abort_if_over_budget` decide which budget a load leaves). No worker runs.
 // Pure Dart: vm, dart2js and dart2wasm.
+import 'dart:math' as math;
+
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -67,6 +69,9 @@ List<String?> _admit(SessionBudget budget, List<pb.ChildEvent> events) => [
   budget.suspensions,
   budget.slept,
 );
+
+/// Whether ints are JavaScript numbers (dart2js).
+const bool _jsInts = identical(0, 0.0);
 
 const String _over2 = 'RuntimeError: suspension limit 2 exceeded';
 
@@ -144,6 +149,16 @@ void main() {
       expect(_admit(budget, [_call(reports: -1)]), [null]);
       expect(budget.suspensionLimit, 5);
     });
+
+    test('a limit of 2^63 or more (dart2js) is tightened unsigned', () {
+      // Only dart2js holds such an int, and validate accepts it below 2^64.
+      final huge = math.pow(2, 63).toInt();
+      final budget = _budget(maxSuspensions: huge);
+      expect(_admit(budget, [_call(reports: 1), _f]), [
+        null,
+        'RuntimeError: suspension limit 1 exceeded',
+      ]);
+    }, skip: _jsInts ? false : 'an int holds 2^63 only on dart2js');
 
     test('a sleep limit is adopted where there was none, then tightened', () {
       final budget = _budget();

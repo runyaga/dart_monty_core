@@ -25,7 +25,6 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
-import 'package:fixnum/fixnum.dart';
 
 /// A Python session on a worker dedicated to it until [close].
 ///
@@ -838,8 +837,8 @@ final class SessionBudget {
   }
 
   /// Tightens either limit to the one [event] reports, if smaller. Both
-  /// arrive as u64s; a suspension limit past what an `int` holds cannot be
-  /// the smaller.
+  /// arrive as u64s and are compared exactly, unsigned: a dart2js `int` may
+  /// hold a limit of 2^63 or more, which `Int64` would read as negative.
   void _adoptLimits(pb.ChildEvent event) {
     if (event.hasMaxTotalSleepMicros()) {
       final reported =
@@ -849,8 +848,8 @@ final class SessionBudget {
       if (current == null || reported < current) _sleepLimit = reported;
     }
     if (event.hasMaxSuspensions()) {
-      final reported = event.maxSuspensions;
-      if (!reported.isNegative && reported < Int64(_suspensionLimit)) {
+      final reported = BigInt.parse(event.maxSuspensions.toStringUnsigned());
+      if (reported < BigInt.from(_suspensionLimit)) {
         _suspensionLimit = reported.toInt();
       }
     }
