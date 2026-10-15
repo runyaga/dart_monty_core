@@ -271,8 +271,14 @@ bool isKnownZone(String name) {
     if (!_zonePart.hasMatch(part)) return false;
   }
 
-  return hostZoneKnown(name) ?? _zonesByLowerName.contains(name.toLowerCase());
+  return hostZoneKnown(name) ?? isBundledZone(name);
 }
+
+/// Whether the copy of the tz database every worker holds ([tzNames]) has
+/// [name], ignoring ASCII case: the database where there is no host one.
+@visibleForTesting
+bool isBundledZone(String name) =>
+    _zonesByLowerName.contains(name.toLowerCase());
 
 final RegExp _zonePart = RegExp(r'^[A-Za-z0-9._+-]+$');
 

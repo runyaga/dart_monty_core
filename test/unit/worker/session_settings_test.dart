@@ -11,6 +11,7 @@ import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/tz_names.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -294,6 +295,20 @@ void main() {
         const Duration(seconds: 10),
       );
       expect(const SessionConfig().systemSleepMax, const Duration(seconds: 10));
+    });
+  });
+
+  // The worker's bundled tz database (jiff-tzdb, tool/generate_tz_names.py),
+  // which decides where the host has no zoneinfo directory: the web.
+  group('the bundled zone names', () {
+    test('every listed name, in any ASCII case; nothing else', () {
+      for (final name in tzNames) {
+        expect(isBundledZone(name), isTrue, reason: name);
+        expect(isBundledZone(name.toUpperCase()), isTrue, reason: name);
+      }
+      for (final name in ['posixrules', 'Etc/Unknown', 'zone.tab', 'Q/Z']) {
+        expect(isBundledZone(name), isFalse, reason: name);
+      }
     });
   });
 
