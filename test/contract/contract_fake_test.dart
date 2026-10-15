@@ -205,6 +205,20 @@ void main() {
         () => fake.willReturn(const MontyString('\uD800')),
         throwsArgumentError,
       );
+      expect(
+        () => fake.willRaise(
+          'ValueError',
+          attributes: {'note': const MontyString('\uD800')},
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => fake.willRaise(
+          'UnicodeDecodeError',
+          attributes: {'object': const MontyString('\uD800')},
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('willCatch with nothing raised fails the feed', () async {
@@ -710,6 +724,69 @@ void main() {
       expect(
         await snapshot.resume(const ExternalReturnValue(_none)),
         isA<MontyComplete>(),
+      );
+      await fake.close();
+    });
+  });
+
+  // The design types a host's answer as MontyValue (C1 API1): a plain Dart
+  // object is converted with MontyValue.fromDart before it is an answer.
+  group('answers are MontyValue', () {
+    test('ExternalReturnValue takes and holds a MontyValue', () {
+      const answer = ExternalReturnValue(MontyInt(1));
+      // The list takes the static type of the field.
+      expect([answer.value], isA<List<MontyValue>>());
+      const Function make = ExternalReturnValue.new;
+      expect(make, isA<ExternalReturnValue Function(MontyValue)>());
+      expect(make, isNot(isA<ExternalReturnValue Function(Object)>()));
+    });
+
+    test(
+      'a plain Dart value is answered through MontyValue.fromDart',
+      () async {
+        final fake = FakeMontySession()
+          ..willCall('f')
+          ..willCall('g')
+          ..willAwait([1])
+          ..willReturn(_none);
+        final call = await fake.feedStart('f()') as FunctionSnapshot;
+        final next =
+            await call.resume(ExternalReturnValue(MontyValue.fromDart(42)))
+                as FunctionSnapshot;
+        final wait =
+            await next.resume(const ExternalFuture()) as FutureSnapshot;
+        await wait.resume({1: ExternalReturnValue(MontyValue.fromDart('s'))});
+        expect(
+          [for (final a in fake.answers) showAnswer(a)],
+          [
+            '0 value MontyInt(42)',
+            '1 future',
+            '1/b0 value MontyString("s")',
+          ],
+        );
+        await fake.close();
+      },
+    );
+
+    test('NameLookupSnapshot.resume takes a MontyValue', () async {
+      final fake = FakeMontySession()
+        ..willLookUp('x')
+        ..willReturn(_none);
+      final lookup = await fake.feedStart('x') as NameLookupSnapshot;
+      final Function resume = lookup.resume;
+      expect(
+        resume,
+        isA<Future<MontySnapshot> Function({MontyValue? value})>(),
+      );
+      expect(
+        resume,
+        isNot(isA<Future<MontySnapshot> Function({Object? value})>()),
+      );
+      // MontyNone answers Python None; no value leaves the name undefined.
+      await lookup.resume(value: const MontyNone());
+      expect(
+        [for (final a in fake.answers) showAnswer(a)],
+        ['- value MontyNone()'],
       );
       await fake.close();
     });
