@@ -237,7 +237,7 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
         );
         await expectLater(s.feedRun('1'), throwsStateError);
         // The one worker's slot is free for the next checkout.
-        final next = await pool.checkout();
+        final next = await pool.checkout(scriptName: 'next.py');
         expect(await next.feedRun('1 + 1'), const MontyInt(2));
         await next.close();
         await s.close();
