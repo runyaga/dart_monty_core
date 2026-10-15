@@ -270,6 +270,15 @@ bool isKnownZone(String name) {
     if (part.isEmpty || part == '.' || part == '..') return false;
     if (!_zonePart.hasMatch(part)) return false;
   }
+  // jiff's special names, whatever the database (tz/db/mod.rs
+  // `special_time_zone`): `Etc/Unknown` has no IANA name, so upstream
+  // refuses it.
+  switch (name.toLowerCase()) {
+    case 'utc':
+      return true;
+    case 'etc/unknown':
+      return false;
+  }
 
   return hostZoneKnown(name) ?? isBundledZone(name);
 }

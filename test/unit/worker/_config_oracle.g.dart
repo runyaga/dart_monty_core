@@ -256,6 +256,12 @@ const Map<String, ({String? code, String outcome})> configOracle = {
     outcome:
         'value: (\'2020-07-02 04:04:05.678000\', \'2020-07-02\', (\'GMT\', \'BST\'), 0, 1593659045.678, \'+0100 BST\')',
   ),
+  'frozen_zone_utc_mixed_case': (
+    code:
+        'import datetime, time\nrepr((str(datetime.datetime.now()), datetime.date.today().isoformat(), time.tzname, time.timezone, time.time(), datetime.datetime.now().astimezone().strftime("%z %Z")))',
+    outcome:
+        'value: (\'2020-07-02 03:04:05.678000\', \'2020-07-02\', (\'UTC\', \'UTC\'), 0, 1593659045.678, \'+0000 UTC\')',
+  ),
   'frozen_zone_factory': (
     code:
         'import datetime, time\nrepr((str(datetime.datetime.now()), datetime.date.today().isoformat(), time.tzname, time.timezone, time.time(), datetime.datetime.now().astimezone().strftime("%z %Z")))',

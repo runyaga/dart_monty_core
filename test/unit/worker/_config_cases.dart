@@ -154,6 +154,9 @@ final Map<String, SessionConfig> configCases = {
   'frozen_named_zone_case': _policy(
     OsPolicy(fixedDatetime: _frozen, timezone: 'europe/LONDON'),
   ),
+  'frozen_zone_utc_mixed_case': _policy(
+    OsPolicy(fixedDatetime: _frozen, timezone: 'uTc'),
+  ),
   'frozen_zone_factory': _policy(
     OsPolicy(fixedDatetime: _frozen, timezone: 'Factory'),
   ),
@@ -297,7 +300,7 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.
-    expect(configOracle.length, greaterThanOrEqualTo(83));
+    expect(configOracle.length, greaterThanOrEqualTo(84));
   });
 
   for (final MapEntry(key: id, value: (:code, :outcome))

@@ -113,6 +113,8 @@ RUNS = [
     ('frozen_zone_utc', {'os_policy': {'datetime': FROZEN, 'timezone': 'utc'}}, CLOCK),
     # The database's lookup ignores ASCII case.
     ('frozen_named_zone_case', {'os_policy': {'datetime': FROZEN, 'timezone': 'europe/LONDON'}}, CLOCK),
+    # jiff resolves UTC by name, in any ASCII case, whatever the database.
+    ('frozen_zone_utc_mixed_case', {'os_policy': {'datetime': FROZEN, 'timezone': 'uTc'}}, CLOCK),
     ('frozen_zone_factory', {'os_policy': {'datetime': FROZEN, 'timezone': 'Factory'}}, CLOCK),
     ('frozen_zone_link', {'os_policy': {'datetime': FROZEN, 'timezone': 'Europe/Kiev'}}, CLOCK),
     ('datetime_call_host', {'os_policy': {'datetime': 'call_host'}}, CLOCK),

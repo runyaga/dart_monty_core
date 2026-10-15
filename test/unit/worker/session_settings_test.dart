@@ -310,6 +310,16 @@ void main() {
         expect(isBundledZone(name), isFalse, reason: name);
       }
     });
+
+    // jiff's `special_time_zone`, before any database.
+    test('UTC in any ASCII case is known; Etc/Unknown is not', () {
+      for (final name in ['UTC', 'utc', 'uTc']) {
+        expect(isKnownZone(name), isTrue, reason: name);
+      }
+      for (final name in ['Etc/Unknown', 'etc/UNKNOWN']) {
+        expect(isKnownZone(name), isFalse, reason: name);
+      }
+    });
   });
 
   group('RandomSeed', () {

@@ -11,8 +11,8 @@ import 'package:meta/meta.dart';
 
 /// Whether the host's zoneinfo directory resolves [name] as jiff does:
 /// matched ignoring ASCII case against the files under it (not in its
-/// top-level `posix` and `right` directories), and a file that starts with
-/// `TZif`. Null when the host has no zoneinfo directory.
+/// top-level `posix` and `right` directories), and a file whose TZif
+/// structure is whole. Null when the host has no zoneinfo directory.
 bool? hostZoneKnown(String name) => zoneKnownIn(_zones, name);
 
 /// Whether [zones] (from [zoneFilesUnder]) resolve [name]; null for none.
@@ -22,15 +22,57 @@ bool? zoneKnownIn(Map<String, String>? zones, String name) {
   final path = zones[name.toLowerCase()];
   if (path == null) return false;
   try {
-    final file = File(path).openSync();
-    try {
-      return String.fromCharCodes(file.readSync(4)) == 'TZif';
-    } finally {
-      file.closeSync();
-    }
+    return isWholeTzif(File(path).readAsBytesSync());
   } on FileSystemException {
     return false;
   }
+}
+
+/// Whether [data] is TZif (RFC 8536) whose header counts fit the file: the
+/// version 1 block, and for version 2 and later the second block and a
+/// footer between newlines. A truncated or mislabelled file is refused, as
+/// jiff's parse refuses it; the transitions themselves are not checked.
+@visibleForTesting
+bool isWholeTzif(List<int> data) {
+  final v1 = _blockEnd(data, 0, 4);
+  if (v1 == null) return false;
+  if (data[4] == 0) return true;
+  final v2 = _blockEnd(data, v1, 8);
+  if (v2 == null || v2 >= data.length || data[v2] != 0x0A) return false;
+
+  return data.indexOf(0x0A, v2 + 1) > v2;
+}
+
+/// The end of the TZif block whose header starts at [start], with times of
+/// [timeSize] bytes; null when the header or its data does not fit.
+int? _blockEnd(List<int> data, int start, int timeSize) {
+  const headerLength = 44;
+  if (data.length < start + headerLength) return null;
+  if (String.fromCharCodes(data, start, start + 4) != 'TZif') return null;
+  int count(int i) {
+    final at = start + 20 + i * 4;
+
+    return (data[at] << 24) |
+        (data[at + 1] << 16) |
+        (data[at + 2] << 8) |
+        data[at + 3];
+  }
+
+  final [isUt, isStd, leap, times, types, chars] = [
+    for (var i = 0; i < 6; i++) count(i),
+  ];
+  if (types == 0 || chars == 0) return null;
+  final end =
+      start +
+      headerLength +
+      times * (timeSize + 1) +
+      types * 6 +
+      chars +
+      leap * (timeSize + 4) +
+      isStd +
+      isUt;
+
+  return end <= data.length ? end : null;
 }
 
 /// jiff's default directories, after `TZDIR`.
