@@ -406,6 +406,11 @@
       "hit": 14,
       "pct": 93.33
     },
+    "lib/src/worker/collect_streams.dart": {
+      "found": 47,
+      "hit": 47,
+      "pct": 100.0
+    },
     "lib/src/worker/default_print.dart": {
       "found": 0,
       "hit": 0,
@@ -442,8 +447,8 @@
       "pct": 98.67
     },
     "lib/src/worker/host_answers.dart": {
-      "found": 297,
-      "hit": 297,
+      "found": 299,
+      "hit": 299,
       "pct": 100.0
     },
     "lib/src/worker/host_objects.dart": {
@@ -457,8 +462,8 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_error.dart": {
-      "found": 86,
-      "hit": 86,
+      "found": 89,
+      "hit": 89,
       "pct": 100.0
     },
     "lib/src/worker/monty_pool.dart": {
@@ -487,8 +492,8 @@
       "pct": 97.17
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 187,
-      "hit": 187,
+      "found": 190,
+      "hit": 190,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -502,8 +507,8 @@
       "pct": 100.0
     },
     "lib/src/worker/raised_record.dart": {
-      "found": 150,
-      "hit": 150,
+      "found": 157,
+      "hit": 157,
       "pct": 100.0
     },
     "lib/src/worker/resource_limits.dart": {
@@ -553,8 +558,8 @@
     }
   },
   "total": {
-    "found": 9098,
-    "hit": 7769,
-    "pct": 85.39
+    "found": 9160,
+    "hit": 7831,
+    "pct": 85.49
   }
 }
