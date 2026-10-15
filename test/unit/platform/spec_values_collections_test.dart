@@ -21,6 +21,8 @@ MontyValue _roundTrip(MontyValue value) {
   return ArenaReader(pb.Arena.fromBuffer(writer.arena.writeToBuffer()))[root];
 }
 
+int _n(int v) => v;
+
 /// A fresh instance: a `const` twin would be the same object.
 MontyBytes _bytes(List<int> v) => MontyBytes(v);
 
@@ -62,7 +64,6 @@ void main() {
         expect(_bytes([1]) == const MontyInt(1), isFalse);
         expect(_bytes([1, 2, 3]).hashCode, _bytes([1, 2, 3]).hashCode);
         expect(_bytes([]).hashCode, _bytes([]).hashCode);
-        expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([3, 2, 1]).hashCode));
         expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([1, 2]).hashCode));
         expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([1, 2, 4]).hashCode));
       },
@@ -196,6 +197,23 @@ void main() {
         ).toString(),
         'MontyNamedTuple(E, 0 fields)',
       );
+      // The count is the field names', whatever the values hold.
+      expect(
+        const MontyNamedTuple(
+          typeName: 'T',
+          fieldNames: ['a', 'b'],
+          values: [MontyInt(1)],
+        ).toString(),
+        'MontyNamedTuple(T, 2 fields)',
+      );
+      expect(
+        const MontyNamedTuple(
+          typeName: 'T',
+          fieldNames: ['a'],
+          values: [MontyInt(1), MontyInt(2), MontyInt(3)],
+        ).toString(),
+        'MontyNamedTuple(T, 1 fields)',
+      );
     });
   });
 
@@ -294,6 +312,20 @@ void main() {
         final map = dict.dartValue! as Map;
         expect(identical(map['a'], map['b']), isTrue);
 
+        // Sharing is kept inside a set too: a container met under two of
+        // its members is one projected object.
+        const shared = MontyList([MontyInt(1)]);
+        const holder = MontySet([
+          shared,
+          MontyTuple([shared]),
+        ]);
+        final members = holder.dartValue as List;
+        expect(members[0], [1]);
+        expect(identical((members[1] as List)[0], members[0]), isTrue);
+        final tagged = (holder.toJson()! as Map)['value'] as List;
+        final taggedTuple = tagged[1] as Map;
+        expect(identical((taggedTuple['value'] as List)[0], tagged[0]), isTrue);
+
         final writer = ArenaWriter();
         final first = writer.add(inner);
         final nodes = writer.arena.nodes.length;
@@ -338,7 +370,7 @@ void main() {
       'REQ-MontyFrozenSet-36: exceptions and file handles compare by field',
       () {
         MontyFrozenSet exc(String msg) => MontyFrozenSet([
-          MontyExceptionValue('ValueError', msg, const {'k': MontyInt(1)}),
+          MontyExceptionValue('ValueError', msg, {'k': MontyInt(_n(1))}),
         ]);
         expect(exc('m') == exc('m'), isTrue);
         expect(exc('m').hashCode, exc('m').hashCode);

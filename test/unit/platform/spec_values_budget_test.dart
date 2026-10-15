@@ -124,6 +124,16 @@ void _flatBoundary() {
   expect(_fallbacks(() => fits.hashCode), 0);
   expect(_fallbacks(() => over.hashCode), 1);
   expect(over.hashCode, isA<int>());
+  // Comparing two lists costs the same: one visit for the pair of lists, one
+  // for each pair of (here identical) elements.
+  MontyList flat(int n) => MontyList(List.filled(n, const MontyInt(1)));
+  expect(
+    _fallbacks(
+      () => expect(flat((1 << 22) - 1) == flat((1 << 22) - 1), isTrue),
+    ),
+    0,
+  );
+  expect(_fallbacks(() => expect(flat(1 << 22) == flat(1 << 22), isTrue)), 1);
 }
 
 void _charge(
