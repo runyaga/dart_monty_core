@@ -141,7 +141,7 @@ ArenaReader? checkOsCall(pb.OsCall call, {HostObjectLookup? hosts}) {
 /// from worker`) for an arena or root it rejects: the caller discards the
 /// worker. A failure building the Python values is not checked here; it
 /// fails the call in Python, as upstream's `wire_call_arguments` does.
-ArenaReader _checkedArgs(pb.FunctionCall call, HostObjectLookup hosts) {
+ArenaReader checkCallArgs(pb.FunctionCall call, HostObjectLookup? hosts) {
   final reader = ArenaReader(call.values, hosts: hosts);
   try {
     reader.checkRoots([
@@ -385,7 +385,7 @@ final class HostAnswers {
   /// upstream rejects when the frame arrives, before anything else: the
   /// caller discards the worker.
   Future<pb.ParentRequest> call(pb.FunctionCall call) async {
-    final reader = _checkedArgs(call, objects.lookup);
+    final reader = checkCallArgs(call, objects.lookup);
     if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
     final entry = externalLookup[name];

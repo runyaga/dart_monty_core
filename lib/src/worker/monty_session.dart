@@ -713,6 +713,8 @@ final class _FeedDrive implements SnapshotDriver {
     // No host code for a session already finished; one that finishes while
     // it runs fails the turn below.
     if (_session._hold.isFinished) throw _finishedError();
+    // The payload passed upstream's checks when the snapshot was made
+    // (_callSnapshot, _osSnapshot), so the host answer cannot reject it.
     final event = _suspended;
 
     // Host code runs outside the protocol turn, as upstream's does, but
@@ -923,6 +925,7 @@ final class _FeedDrive implements SnapshotDriver {
         this,
         script,
         event.functionCall,
+        _session._hold.lease,
         _host.objects.lookup,
       ),
       pb.ChildEvent_Kind.osCall => _osSnapshot(
@@ -977,25 +980,40 @@ MontyComplete _completion(ProtoSession proto, pb.Complete complete) {
 }
 
 /// The snapshot of a host function [call], for [driver] under [script].
+///
+/// Its arguments arena and roots are checked now, as upstream's
+/// `into_call_args` checks them when the frame arrives: one it rejects is a
+/// protocol violation, which ends the session ([lease] is killed). Their
+/// values are built on each read.
 FunctionSnapshot _callSnapshot(
   SnapshotDriver driver,
   String script,
   pb.FunctionCall call,
+  WorkerLease lease,
   HostObjectLookup hosts,
-) => Snapshots.function(
-  driver,
-  _position(call.position),
-  script,
-  (
-    functionName: call.functionName,
-    callId: call.callId,
-    isOsFunction: false,
-    allowEagerAwait: call.allowEagerAwait,
-    objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
-    arguments: () => callArgs(call, hosts: hosts),
-    keywords: () => callKwargs(call, hosts: hosts),
-  ),
-);
+) {
+  try {
+    checkCallArgs(call, hosts);
+  } on MontyCrashedError {
+    lease.kill();
+    rethrow;
+  }
+
+  return Snapshots.function(
+    driver,
+    _position(call.position),
+    script,
+    (
+      functionName: call.functionName,
+      callId: call.callId,
+      isOsFunction: false,
+      allowEagerAwait: call.allowEagerAwait,
+      objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
+      arguments: () => callArgs(call, hosts: hosts),
+      keywords: () => callKwargs(call, hosts: hosts),
+    ),
+  );
+}
 
 /// The snapshot of an OS [call], for [driver] under [script]. A payload
 /// upstream could never produce is a protocol violation, which ends the

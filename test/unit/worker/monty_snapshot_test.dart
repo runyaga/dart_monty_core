@@ -1098,6 +1098,52 @@ void main() {
       expect(ch.kills, 1);
     });
 
+    // Upstream converts a FunctionCall's arguments when the frame arrives
+    // (checkout.rs:1735-1752, `into_call_args`; a failure is
+    // `convert_turn`'s protocol violation, :1926-1933): the suspension is
+    // never returned, and the worker is discarded.
+    for (final (name, call, detail) in [
+      (
+        'a positional argument',
+        pb.FunctionCall(
+          functionName: 'f',
+          callId: 1,
+          args: [5],
+          values: pb.Arena(nodeCount: 1, nodes: [intNode(1)]),
+        ),
+        'value root 5 is out of range for an arena of 1 nodes',
+      ),
+      (
+        'a keyword argument',
+        pb.FunctionCall(
+          functionName: 'f',
+          callId: 1,
+          kwargs: [pb.NodePair(key: 0, value: 7)],
+          values: pb.Arena(nodeCount: 1, nodes: [intNode(1)]),
+        ),
+        'value root 7 is out of range for an arena of 1 nodes',
+      ),
+    ]) {
+      test('a suspension whose $name root upstream rejects is a protocol '
+          'violation: no snapshot, the worker killed', () async {
+        final (s, ch) = await _session([
+          answer([pb.ChildEvent(functionCall: call)]),
+        ]);
+        await expectLater(
+          s.feedStart('f()'),
+          throwsA(
+            isA<MontyCrashedError>().having(
+              (e) => e.toString(),
+              'message',
+              'monty worker protocol error: invalid payload from worker: '
+                  'invalid value for Arena: $detail',
+            ),
+          ),
+        );
+        expect(ch.kills, 1);
+      });
+    }
+
     test('an OS call no arm describes is a protocol violation, as '
         "upstream's conversion on arrival makes it", () async {
       final (s, ch) = await _session([
