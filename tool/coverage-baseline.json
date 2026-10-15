@@ -462,8 +462,8 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_error.dart": {
-      "found": 89,
-      "hit": 89,
+      "found": 90,
+      "hit": 90,
       "pct": 100.0
     },
     "lib/src/worker/monty_pool.dart": {
@@ -558,8 +558,8 @@
     }
   },
   "total": {
-    "found": 9166,
-    "hit": 7837,
+    "found": 9167,
+    "hit": 7838,
     "pct": 85.5
   }
 }
