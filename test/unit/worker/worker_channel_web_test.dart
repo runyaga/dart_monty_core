@@ -388,6 +388,26 @@ void main() {
     }
   });
 
+  // A module that cannot be fetched or compiled is a spawn failure too,
+  // not the browser's own exception.
+  for (final (name, url, prefix) in [
+    ('a fetch the browser rejects', 'http://127.0.0.1:1/m.wasm', 'fetch '),
+    ('bytes that are not a module', _workerUrl, 'compile '),
+  ]) {
+    test('$name fails spawn as MontyCrashedError ($backend)', () async {
+      await expectLater(
+        WorkerChannel.spawn(WasmModuleCache(url), workerUrl: _workerUrl),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
+            'message',
+            startsWith('failed to spawn monty worker: $prefix$url: '),
+          ),
+        ),
+      );
+    });
+  }
+
   test('an error in a Worker that greeted is crashedError(vanished) '
       '($backend)', () async {
     // Greets correctly, then throws on the first request.

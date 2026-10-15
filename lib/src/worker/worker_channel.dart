@@ -187,11 +187,28 @@ final class WasmModuleCache {
 }
 
 /// Fetches and compiles the module at [wasmUrl].
+///
+/// Throws a spawn failure ([spawnError]) when the fetch is rejected or
+/// answered with an error status, or the bytes do not compile.
 Future<JSObject> _compileModule(String wasmUrl) async {
-  final response = await _fetch(wasmUrl.toJS).toDart;
+  final _Response response;
+  try {
+    response = await _fetch(wasmUrl.toJS).toDart;
+  } on Object catch (error) {
+    throw spawnError('fetch $wasmUrl: $error');
+  }
   if (!response.ok) {
     throw spawnError('fetch $wasmUrl: HTTP ${response.status}');
   }
+  try {
+    return await _compile(response);
+  } on Object catch (error) {
+    throw spawnError('compile $wasmUrl: $error');
+  }
+}
+
+/// [response]'s module, streamed when it is labelled as wasm.
+Future<JSObject> _compile(_Response response) async {
   final type = response.headers.get('content-type'.toJS)?.toDart ?? '';
   // compileStreaming refuses any other MIME type; a server that labels the
   // module wrongly still gets a (non-streaming) compile.

@@ -351,7 +351,11 @@ final class _Wire {
   /// prost's `decode_key`.
   void readKey() {
     readVarint();
-    if (hi != 0) _fail('invalid key value: ${hi * 0x100000000 + lo}');
+    if (hi != 0) {
+      // Unsigned and exact on every backend: a 64-bit int would wrap on the
+      // VM and round on dart2js.
+      _fail('invalid key value: ${(BigInt.from(hi) << 32) + BigInt.from(lo)}');
+    }
     wire = lo & 7;
     if (wire > _fixed32) _fail('invalid wire type value: $wire');
     field = lo ~/ 8;
