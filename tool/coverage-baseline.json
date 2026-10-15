@@ -472,28 +472,28 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_snapshot.dart": {
-      "found": 72,
-      "hit": 72,
+      "found": 75,
+      "hit": 75,
       "pct": 100.0
     },
     "lib/src/worker/os_policy.dart": {
-      "found": 161,
-      "hit": 160,
-      "pct": 99.38
+      "found": 197,
+      "hit": 196,
+      "pct": 99.49
     },
     "lib/src/worker/pool_session.dart": {
-      "found": 470,
-      "hit": 464,
-      "pct": 98.72
+      "found": 477,
+      "hit": 471,
+      "pct": 98.74
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 212,
-      "hit": 206,
-      "pct": 97.17
+      "found": 222,
+      "hit": 216,
+      "pct": 97.3
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 190,
-      "hit": 190,
+      "found": 187,
+      "hit": 187,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -526,6 +526,11 @@
       "hit": 20,
       "pct": 100.0
     },
+    "lib/src/worker/tz_names.g.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
     "lib/src/worker/wire_scalars.dart": {
       "found": 56,
       "hit": 56,
@@ -537,8 +542,8 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_connection.dart": {
-      "found": 95,
-      "hit": 95,
+      "found": 96,
+      "hit": 96,
       "pct": 100.0
     },
     "lib/src/worker/worker_locator.dart": {
@@ -547,9 +552,24 @@
       "pct": 95.45
     },
     "lib/src/worker/worker_pool.dart": {
-      "found": 142,
-      "hit": 138,
-      "pct": 97.18
+      "found": 149,
+      "hit": 148,
+      "pct": 99.33
+    },
+    "lib/src/worker/zone_database.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/worker/zone_database_io.dart": {
+      "found": 46,
+      "hit": 44,
+      "pct": 95.65
+    },
+    "lib/src/worker/zone_database_stub.dart": {
+      "found": 1,
+      "hit": 0,
+      "pct": 0.0
     },
     "lib/unsafe_callback_file.dart": {
       "found": 0,
@@ -558,8 +578,8 @@
     }
   },
   "total": {
-    "found": 9167,
-    "hit": 7838,
-    "pct": 85.5
+    "found": 9275,
+    "hit": 7946,
+    "pct": 85.67
   }
 }
