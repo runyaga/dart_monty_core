@@ -561,7 +561,8 @@ final class FutureSnapshot extends SuspendedSnapshot
   FutureSnapshot.resume: method(Map<int, ExternalSettledResult> results) -> Future<MontySnapshot>
   FutureSnapshot.resumeAuto: method() -> Future<MontySnapshot>
 final class MontyComplete extends MontySnapshot
-  MontyComplete.output: final field MontyValue
+  MontyComplete.output: getter -> MontyValue
+  MontyComplete.toString: method() -> String
 sealed class MontySnapshot
   MontySnapshot.new: const constructor()
   MontySnapshot: permits final class FunctionSnapshot extends SuspendedSnapshot
@@ -579,7 +580,7 @@ final class SourceRange
   SourceRange.end: final field int
   SourceRange.filename: final field String
   SourceRange.hashCode: getter -> int
-  SourceRange.new: constructor(String filename, int start, int end)
+  SourceRange.new: constructor({required String filename, required int start, required int end})
   SourceRange.start: final field int
   SourceRange.toString: method() -> String
   SourceRange.unknown: static const field SourceRange
