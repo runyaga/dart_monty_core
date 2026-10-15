@@ -179,11 +179,14 @@ final class ArenaReader {
 
 /// Node [i] of [built] as a value: a class node as a value is its registered
 /// object, or staged.
-Object _valueIn(List<Object> built, int i) =>
-    switch (built.elementAtOrNull(i)) {
-      _ClassNode(:final asValue) => asValue,
-      final other => other ?? (throw StateError('node $i is not built')),
-    };
+Object _valueIn(List<Object> built, int i) => switch (_builtAt(built, i)) {
+  _ClassNode(:final asValue) => asValue,
+  final other => other,
+};
+
+/// Node [i] of [built], which stage 2 placed below the node reading it.
+Object _builtAt(List<Object> built, int i) =>
+    built.elementAtOrNull(i) ?? (throw StateError('node $i is not built'));
 
 /// Node [i] of [nodes], whose index the arena has checked.
 pb.MontyNode _nodeAt(List<pb.MontyNode> nodes, int i) =>
@@ -369,7 +372,7 @@ final class _Builder {
     final found = _hosts?.instance(id);
     if (found is MontyValue) return _registered[_built.length] = found;
     // Stage 2 made the instance's class a class node, built before it.
-    final meta = (_built[node.classType] as _ClassNode).meta;
+    final meta = (_builtAt(_built, node.classType) as _ClassNode).meta;
     final attrs = _attrs(node.attrs.pairs);
     if (found != null) return _hostInstance(found, node, meta, attrs);
     if (meta is! MontyClassTypeProxy) return meta;

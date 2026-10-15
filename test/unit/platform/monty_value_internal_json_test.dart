@@ -90,10 +90,9 @@ void main() {
 
   test('NotImplemented is one value', () {
     expect(const MontyNotImplemented(), const MontyNotImplemented());
-    expect(
-      const MontyNotImplemented().hashCode,
-      const MontyNotImplemented().hashCode,
-    );
+    const a = MontyNotImplemented();
+    const b = MontyNotImplemented();
+    expect(a.hashCode, b.hashCode);
   });
 
   test('a std-type proxy repr escapes control characters as Python does', () {

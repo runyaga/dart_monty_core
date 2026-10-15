@@ -253,13 +253,14 @@ void main() {
         final channel = await _spawn('upstream-rejects');
         final crash = await _crashOf(channel.turn(_configure));
         expect(crash.cause, CrashCause.protocol);
+        final text = crash.toString();
         expect(
-          crash.toString(),
+          text,
           startsWith(
             'monty worker protocol error: invalid payload from worker: ',
           ),
         );
-        expect(crash.toString(), isNot(contains('Exception')));
+        expect(text, isNot(contains('Exception')));
         expect(channel.isAlive, isFalse);
       },
     );
