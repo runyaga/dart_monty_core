@@ -422,6 +422,68 @@ void main() {
       expect(port.terminated, 1);
     });
 
+    // A payload upstream's decoder rejects, as a whole frame: upstream's
+    // pool reports `invalid payload from worker: ` and prost's `DecodeError`
+    // display (checkout.rs:1688-1689, lib.rs:251). Texts recorded by decoding
+    // each body with monty-proto 1.1.0's `decode_frame`.
+    for (final (name, body, error) in <(String, List<int>, String)>[
+      (
+        'malformed UTF-8 in a str node',
+        [0x32, 8, 0x12, 6, 0x12, 4, 0x42, 2, 0xc3, 0x28],
+        'MontyNode.kind: Complete.values: ChildEvent.kind: '
+            'invalid string value: data is not UTF-8 encoded',
+      ),
+      (
+        'a date outside the date invariants',
+        [
+          0x32, 0x0e, 0x12, 0x0c, 0x12, 0x0a, 0x8a, 0x01, 0x07, 0x08, 0xe8, //
+          0x0f, 0x10, 0x0d, 0x18, 0x01,
+        ],
+        'Complete.values: ChildEvent.kind: '
+            'invalid value for Date.month: 13 is outside the range 1..=12',
+      ),
+      (
+        'a datetime outside the datetime invariants',
+        [
+          0x32, 0x10, 0x12, 0x0e, 0x12, 0x0c, 0x9a, 0x01, 0x09, 0x08, 0xe8, //
+          0x0f, 0x10, 0x01, 0x18, 0x01, 0x20, 0x18,
+        ],
+        'Complete.values: ChildEvent.kind: '
+            'invalid value for DateTime.hour: 24 is outside the range 0..=23',
+      ),
+      (
+        'malformed UTF-8 in a datetime timezoneName',
+        [
+          0x32, 0x12, 0x12, 0x10, 0x12, 0x0e, 0x9a, 0x01, 0x0b, 0x08, 0xe8, //
+          0x0f, 0x10, 0x01, 0x18, 0x01, 0x4a, 0x02, 0xc3, 0x28,
+        ],
+        'DateTime.timezone_name: MontyNode.kind: Complete.values: '
+            'ChildEvent.kind: invalid string value: data is not UTF-8 encoded',
+      ),
+    ]) {
+      test("$name: a protocol violation with upstream's text", () async {
+        final port = _FakePort();
+        final c = _accept(port);
+        final done = _start(c);
+        c.onReply(Frame.wrap(body), outcomeContinue);
+        final MontyCrashedError crash;
+        try {
+          await done;
+          fail('decoded');
+        } on MontyCrashedError catch (e) {
+          crash = e;
+        }
+        expect(
+          crash.toString(),
+          'monty worker protocol error: invalid payload from worker: '
+          'failed to decode Protobuf message: $error',
+        );
+        expect((crash.timedOut, crash.exitStatus), (false, null));
+        expect(c.isAlive, isFalse);
+        expect(port.terminated, 1);
+      });
+    }
+
     test('an oversized request is refused before it is posted; the channel '
         'stays usable', () async {
       final port = _FakePort();

@@ -237,6 +237,69 @@ void attributeSessionTests(String label, WithSession withSession) {
       });
     });
 
+    // Upstream extracts each position as a Rust `usize` (monty-proto 1.1.0
+    // python/exceptions.rs:220-232): a bool is 0 or 1, any int from 0 to
+    // 2^64 - 1 is kept; anything else drops the whole payload. Probed with
+    // pydantic-monty 1.1.0: a host function raising json.JSONDecodeError('bad',
+    // 'ab\ncd', 4) with the attribute replaced, uncaught in the sandbox.
+    test('JSON positions are extracted as upstream extracts a usize', () async {
+      await withSession((s) async {
+        Future<MontyError> answer(Map<String, MontyValue> over) async {
+          final snap =
+              await s.feedStart('f()', printCallback: _ignore)
+                  as FunctionSnapshot;
+
+          return _failure(
+            snap.resume(
+              ExternalException('json.JSONDecodeError', 'm', {
+                'msg': const MontyString('bad'),
+                'doc': const MontyString('ab\ncd'),
+                'pos': const MontyInt(4),
+                'lineno': const MontyInt(2),
+                'colno': const MontyInt(2),
+                ...over,
+              }),
+            ),
+          );
+        }
+
+        BigInt? number(MontyValue? v) => switch (v) {
+          MontyInt(:final value) => BigInt.from(value),
+          MontyBigInt(:final value) => value,
+          _ => null,
+        };
+        final u64Max = (BigInt.one << 64) - BigInt.one;
+        final bools = await answer({
+          'pos': const MontyBool(true),
+          'lineno': const MontyBool(true),
+          'colno': const MontyBool(true),
+        });
+        expect(bools.exception.excType, 'json.JSONDecodeError');
+        expect(
+          [
+            for (final k in ['pos', 'lineno', 'colno'])
+              number(_attrs(bools)[k]),
+          ],
+          [BigInt.one, BigInt.one, BigInt.one],
+        );
+        // A big int in range is extracted too. 2^32 - 1, not 2^64 - 1: the
+        // browser worker is wasm32, whose usize drops a wider position as
+        // upstream's would on wasm32 (D-075).
+        final u32Max = (BigInt.one << 32) - BigInt.one;
+        final wide = await answer({'lineno': MontyBigInt(u32Max)});
+        expect(wide.exception.excType, 'json.JSONDecodeError');
+        expect(number(_attrs(wide)['lineno']), u32Max);
+        for (final lineno in [
+          MontyBigInt(u64Max + BigInt.one),
+          const MontyInt(-1),
+          const MontyFloat(2),
+        ]) {
+          final dropped = await answer({'lineno': lineno});
+          expect(dropped.exception.excType, 'ValueError', reason: '$lineno');
+        }
+      });
+    });
+
     test(
       "a Unicode error's attributes are not sent: ValueError back",
       () async {

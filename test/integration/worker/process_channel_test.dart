@@ -237,6 +237,8 @@ void main() {
       );
       expect((crash.timedOut, crash.exitCode), (false, null));
       expect(channel.isAlive, isFalse);
+      // The worker would wait an hour: the parent kills it.
+      expect(await channel.exitCode, -ProcessSignal.sigkill.signalNumber);
       await expectLater(channel.turn(_configure), throwsA(same(crash)));
     });
 
@@ -253,15 +255,16 @@ void main() {
         final channel = await _spawn('upstream-rejects');
         final crash = await _crashOf(channel.turn(_configure));
         expect(crash.cause, CrashCause.protocol);
-        final text = crash.toString();
         expect(
-          text,
-          startsWith(
-            'monty worker protocol error: invalid payload from worker: ',
-          ),
+          crash.toString(),
+          'monty worker protocol error: invalid payload from worker: '
+          'failed to decode Protobuf message: MontyNode.kind: '
+          'Complete.values: ChildEvent.kind: invalid string value: data is '
+          'not UTF-8 encoded',
         );
-        expect(text, isNot(contains('Exception')));
+        expect((crash.timedOut, crash.exitStatus), (false, null));
         expect(channel.isAlive, isFalse);
+        expect(await channel.exitCode, -ProcessSignal.sigkill.signalNumber);
       },
     );
 
@@ -811,13 +814,28 @@ void main() {
       expect(ProcessChannel.live, isNot(contains(channel)));
     });
 
-    test('a missing executable throws ProcessException', () async {
-      await expectLater(
+    test('a missing executable is a spawn failure, as upstream reports it '
+        '(lib.rs:255, worker.rs:205)', () async {
+      final crash = await _crashOf(
         ProcessChannel.spawn(
           const WorkerExecutable('/nonexistent/dart_monty_worker'),
         ),
-        throwsA(isA<ProcessException>()),
       );
+      expect(crash.cause, CrashCause.spawn);
+      expect(
+        crash.toString(),
+        'failed to spawn monty worker: /nonexistent/dart_monty_worker: '
+        'No such file or directory (os error 2)',
+      );
+      expect((crash.timedOut, crash.exitStatus), (false, null));
+    });
+
+    test('an OS error reads as Rust shows it', () {
+      expect(
+        osErrorText('Permission denied', 13),
+        'Permission denied (os error 13)',
+      );
+      expect(osErrorText('no code', 0), 'no code');
     });
   });
 

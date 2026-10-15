@@ -171,6 +171,10 @@ enum CrashCause {
   /// The worker answered against the protocol (an event that cannot follow
   /// the request, a payload that does not decode); the parent discarded it.
   protocol,
+
+  /// No worker could be started: none was found, or its process could not
+  /// be launched (upstream's `PoolError::Spawn`).
+  spawn,
 }
 
 /// One traceback frame, read-only, as upstream's `Frame`.
@@ -297,18 +301,9 @@ MontyCrashedError crashedError(
     final code when code < 0 => ' (${_signal(-code)})',
     final code => ' (exit status: $code)',
   };
-  final message = switch (cause) {
-    CrashCause.killed => detail ?? 'monty worker killed',
-    CrashCause.protocol => 'monty worker protocol error: $detail',
-    // A worker that announced its end says why; one that vanished is
-    // reported by what the parent was doing, as upstream's PoolError.
-    CrashCause.fatal => 'monty worker crashed: ${detail ?? ''}$status',
-    CrashCause.vanished || CrashCause.outOfMemory =>
-      'monty worker crashed while ${context ?? waitingForReply}$status',
-  };
 
   return MontyCrashedError._(
-    message,
+    _crashMessage(cause, detail, status, context),
     cause: cause,
     timedOut: timedOut,
     detail: detail,
@@ -317,6 +312,24 @@ MontyCrashedError crashedError(
     context: context,
   );
 }
+
+/// Upstream's `PoolError` text for a crash of [cause]; [status] is the
+/// exit status, already formatted.
+String _crashMessage(
+  CrashCause cause,
+  String? detail,
+  String status,
+  String? context,
+) => switch (cause) {
+  CrashCause.killed => detail ?? 'monty worker killed',
+  CrashCause.protocol => 'monty worker protocol error: $detail',
+  CrashCause.spawn => 'failed to spawn monty worker: $detail',
+  // A worker that announced its end says why; one that vanished is
+  // reported by what the parent was doing, as upstream's PoolError.
+  CrashCause.fatal => 'monty worker crashed: ${detail ?? ''}$status',
+  CrashCause.vanished || CrashCause.outOfMemory =>
+    'monty worker crashed while ${context ?? waitingForReply}$status',
+};
 
 /// Upstream's contexts for a worker that vanished: what the parent was
 /// doing when it found the worker gone.
@@ -361,6 +374,11 @@ const Map<int, String> _signalNames = {
   14: 'SIGALRM',
   15: 'SIGTERM',
 };
+
+/// A worker that could not be started: upstream's message,
+/// `failed to spawn monty worker: <detail>` (monty-pool 1.1.0 lib.rs:255).
+MontyCrashedError spawnError(String detail) =>
+    crashedError(CrashCause.spawn, detail: detail);
 
 /// A worker that answered against the protocol: upstream's message,
 /// `monty worker protocol error: <detail>`. The caller discards the worker.

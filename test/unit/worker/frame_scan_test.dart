@@ -207,7 +207,10 @@ void main() {
             isA<FrameDecodeException>().having(
               (e) => e.reason,
               'reason',
-              'frame exceeds decode memory budget',
+              allOf(
+                startsWith('failed to decode Protobuf message: '),
+                endsWith('frame exceeds decode memory budget'),
+              ),
             ),
           ),
         );
@@ -215,13 +218,37 @@ void main() {
     }
   });
 
-  group('upstream rejects', () {
+  // The reason is prost's `DecodeError` display, which upstream's pool puts
+  // after `invalid payload from worker: ` (checkout.rs:1688-1689): the
+  // fixed prefix, the fields being merged innermost first, the description.
+  group('upstream rejects, with its text', () {
+    // A key above 2^63, read whole, as upstream prints it (monty-proto
+    // 1.1.0's `decode_frame` of these bytes).
+    test('a 64-bit key value prints unsigned on every backend', () {
+      expect(
+        () => FrameScan.decodeChildEvent(_bytes('ffffffffffffffffff01')),
+        throwsA(
+          isA<FrameDecodeException>().having(
+            (e) => e.reason,
+            'reason',
+            'failed to decode Protobuf message: '
+                'invalid key value: 18446744073709551615',
+          ),
+        ),
+      );
+    });
+
     for (final fixture in frameFixtures.where((f) => f.error != null)) {
       test(fixture.name, () {
         expect(
           () => FrameScan.decodeChildEvent(_bytes(fixture.hex)),
-          throwsA(isA<FrameDecodeException>()),
-          reason: fixture.error,
+          throwsA(
+            isA<FrameDecodeException>().having(
+              (e) => e.reason,
+              'reason',
+              fixture.error,
+            ),
+          ),
         );
       });
     }

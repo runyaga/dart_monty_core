@@ -37,9 +37,10 @@ final class WorkerChannel implements MontyChannel {
   /// terminated and the spawn fails with [CrashCause.killed]: a Worker that
   /// loads but never answers would otherwise wait forever.
   ///
-  /// Throws [MontyCrashedError] if the Worker cannot start
-  /// ([CrashCause.vanished]) or speaks another protocol version
-  /// ([CrashCause.fatal]).
+  /// Throws [MontyCrashedError] if the module cannot be fetched or compiled
+  /// or the browser refuses the Worker ([CrashCause.spawn]), if the Worker
+  /// cannot start ([CrashCause.vanished]), or if it speaks another protocol
+  /// version ([CrashCause.fatal]).
   static Future<WorkerChannel> spawn(
     WasmModuleCache cache, {
     String workerUrl = defaultWorkerUrl,
@@ -48,7 +49,7 @@ final class WorkerChannel implements MontyChannel {
   }) async {
     // A cancel that lands after this is handled at the greeting below.
     final module = await _moduleUnlessCancelled(cache, cancelled);
-    final worker = _Worker(workerUrl.toJS);
+    final worker = _newWorker(workerUrl);
     final hello = Completer<WorkerMessage>();
     void first(WorkerMessage m) {
       if (!hello.isCompleted) hello.complete(m);
@@ -186,12 +187,39 @@ final class WasmModuleCache {
   int get compileCount => _module.runs;
 }
 
-/// Fetches and compiles the module at [wasmUrl].
-Future<JSObject> _compileModule(String wasmUrl) async {
-  final response = await _fetch(wasmUrl.toJS).toDart;
-  if (!response.ok) {
-    throw StateError('fetch $wasmUrl: HTTP ${response.status}');
+/// A Worker running the script at [url]; a spawn failure ([spawnError]) when
+/// the browser refuses it (a script from another origin, say).
+_Worker _newWorker(String url) {
+  try {
+    return _Worker(url.toJS);
+  } on Object catch (error) {
+    throw spawnError('Worker $url: $error');
   }
+}
+
+/// Fetches and compiles the module at [wasmUrl].
+///
+/// Throws a spawn failure ([spawnError]) when the fetch is rejected or
+/// answered with an error status, or the bytes do not compile.
+Future<JSObject> _compileModule(String wasmUrl) async {
+  final _Response response;
+  try {
+    response = await _fetch(wasmUrl.toJS).toDart;
+  } on Object catch (error) {
+    throw spawnError('fetch $wasmUrl: $error');
+  }
+  if (!response.ok) {
+    throw spawnError('fetch $wasmUrl: HTTP ${response.status}');
+  }
+  try {
+    return await _compile(response);
+  } on Object catch (error) {
+    throw spawnError('compile $wasmUrl: $error');
+  }
+}
+
+/// [response]'s module, streamed when it is labelled as wasm.
+Future<JSObject> _compile(_Response response) async {
   final type = response.headers.get('content-type'.toJS)?.toDart ?? '';
   // compileStreaming refuses any other MIME type; a server that labels the
   // module wrongly still gets a (non-streaming) compile.

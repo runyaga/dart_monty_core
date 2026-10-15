@@ -258,6 +258,8 @@ final class _Frame {
     this.depth,
     this.done, {
     this.unknowns = 0,
+    this.parent,
+    this.via = 0,
   });
 
   final _Message schema;
@@ -271,6 +273,28 @@ final class _Frame {
 
   /// Unknown fields the scan had met when this message began.
   final int unknowns;
+
+  /// The message this one is a field of, and that field's number.
+  final _Frame? parent;
+  final int via;
+
+  /// What prost's `DecodeError` names for an error that [parent]'s merge of
+  /// this message passes up: each field being merged, innermost first, from
+  /// [field] of this message (0 for none), as `Message.field`.
+  ///
+  /// A hand-written decoder (an unnamed schema) names none of its fields.
+  List<String> trail(int field) {
+    final trail = <String>[];
+    var number = field;
+    for (_Frame? at = this; at != null; at = at.parent) {
+      final name = at.schema.name;
+      final label = at.schema.labels[number];
+      if (name != null && label != null) trail.add('$name.$label');
+      number = at.via;
+    }
+
+    return trail;
+  }
 }
 
 /// The frame's bytes, read as prost reads them and rewritten in place.
@@ -327,7 +351,11 @@ final class _Wire {
   /// prost's `decode_key`.
   void readKey() {
     readVarint();
-    if (hi != 0) _fail('invalid key value: ${hi * 0x100000000 + lo}');
+    if (hi != 0) {
+      // Unsigned and exact on every backend: a 64-bit int would wrap on the
+      // VM and round on dart2js.
+      _fail('invalid key value: ${(BigInt.from(hi) << 32) + BigInt.from(lo)}');
+    }
     wire = lo & 7;
     if (wire > _fixed32) _fail('invalid wire type value: $wire');
     field = lo ~/ 8;
@@ -511,39 +539,26 @@ final class _Scan {
   final Uint8List _bytes;
   final _stack = <_Frame>[];
 
-  int run() {
-    _stack.add(
-      _Frame(
-        _childEvent,
-        _State(),
-        0,
-        wire.length,
-        FrameScan.recursionLimit,
-        null,
-      ),
-    );
-    for (
-      var frame = _stack.lastOrNull;
-      frame != null;
-      frame = _stack.lastOrNull
-    ) {
-      if (wire.pos >= frame.end) {
-        _complete(frame);
-        continue;
-      }
-      wire.readKey();
-      final field = wire.field;
-      final spec = frame.schema.fields[field];
-      if (spec == null) {
-        wire.skip(frame.depth);
-        unknowns++;
-        continue;
-      }
-      if (spec.oneof != 0) frame.state.select(spec.oneof, field);
-      spec.read(this, frame, field);
-    }
+  /// Where an error now would be raised: the field of [_at] being read, or
+  /// 0 while a key is read, an unknown field skipped or [_at] completed.
+  _Frame? _at;
+  int _field = 0;
 
-    return budget.charged;
+  /// Scans the frame; returns the bytes charged.
+  ///
+  /// Throws [FrameDecodeException] with prost's `DecodeError` display:
+  /// `failed to decode Protobuf message: `, the fields being merged, then
+  /// the description.
+  int run() {
+    try {
+      return _run();
+    } on FrameDecodeException catch (error) {
+      final trail = _at?.trail(_field) ?? const [];
+      throw FrameDecodeException(
+        'failed to decode Protobuf message: '
+        '${[...trail, error.reason].join(': ')}',
+      );
+    }
   }
 
   /// prost's `encoding::message::merge`: pushes [schema]'s frame.
@@ -565,6 +580,8 @@ final class _Scan {
         parent.depth - 1,
         done,
         unknowns: unknowns,
+        parent: parent,
+        via: _field,
       ),
     );
   }
@@ -664,6 +681,44 @@ final class _Scan {
         'got $length',
       );
     }
+  }
+
+  int _run() {
+    _stack.add(
+      _Frame(
+        _childEvent,
+        _State(),
+        0,
+        wire.length,
+        FrameScan.recursionLimit,
+        null,
+      ),
+    );
+    for (
+      var frame = _stack.lastOrNull;
+      frame != null;
+      frame = _stack.lastOrNull
+    ) {
+      _at = frame;
+      _field = 0;
+      if (wire.pos >= frame.end) {
+        _complete(frame);
+        continue;
+      }
+      wire.readKey();
+      final field = wire.field;
+      final spec = frame.schema.fields[field];
+      if (spec == null) {
+        wire.skip(frame.depth);
+        unknowns++;
+        continue;
+      }
+      if (spec.oneof != 0) frame.state.select(spec.oneof, field);
+      _field = field;
+      spec.read(this, frame, field);
+    }
+
+    return budget.charged;
   }
 
   /// [frame]'s message bytes, without unknown fields if it had any.
@@ -775,11 +830,20 @@ final class _Compactor {
   }
 }
 
-/// A message's fields, by number.
+/// A message's fields, by number, and the names prost's generated decoder
+/// gives its errors.
 final class _Message {
-  const _Message(this.fields);
+  const _Message(this.fields, [this.name, this.labels = const {}]);
 
   final Map<int, _Spec> fields;
+
+  /// The generated struct's name; null for upstream's hand-written decoders
+  /// (`WireArena`, `WireFunctionCall`, `WireIndexes`, `WireNodePairs`,
+  /// `WireNamedTuple`), which name no field.
+  final String? name;
+
+  /// Each field's name in errors: a oneof member's is the oneof's.
+  final Map<int, String> labels;
 }
 
 /// How one field reads.
@@ -990,147 +1054,305 @@ const _Spec _bytes = _BytesSpec(utf8: false);
 
 const int _arenaNodes = 2;
 
-const _Message _unit = _Message({});
-const _Message _uuid = _Message({1: _bytes});
-const _Message _nodePair = _Message({1: _int, 2: _int});
+const _Message _unit = _Message({}, 'Unit');
+const _Message _uuid = _Message(
+  {1: _bytes},
+  'Uuid',
+  {1: 'data'},
+);
+const _Message _nodePair = _Message(
+  {1: _int, 2: _int},
+  'NodePair',
+  {1: 'key', 2: 'value'},
+);
 const _Message _indexes = _Message({1: _Uint32sSpec(references: true)});
 const _Message _nodePairs = _Message({1: _PairsSpec()});
-const _Message _bigInt = _Message({1: _bool, 2: _bytes});
-const _Message _complex = _Message({1: _double, 2: _double});
+const _Message _bigInt = _Message(
+  {1: _bool, 2: _bytes},
+  'BigInt',
+  {1: 'negative', 2: 'magnitude'},
+);
+const _Message _complex = _Message(
+  {1: _double, 2: _double},
+  'Complex',
+  {1: 'real', 2: 'imag'},
+);
 const _Message _namedTuple = _Message({
   1: _str,
   2: _StringsSpec(),
   3: _Uint32sSpec(references: true),
 });
-const _Message _date = _Message({1: _int, 2: _int, 3: _int});
-const _Message _dateTime = _Message({
-  1: _int,
-  2: _int,
-  3: _int,
-  4: _int,
-  5: _int,
-  6: _int,
-  7: _int,
-  8: _int,
-  9: _str,
-});
-const _Message _time = _Message({
-  1: _int,
-  2: _int,
-  3: _int,
-  4: _int,
-  5: _int,
-  6: _str,
-  7: _int,
-});
-const _Message _timeDelta = _Message({1: _int, 2: _int, 3: _int});
-const _Message _timeZone = _Message({1: _int, 2: _str});
-const _Message _exception = _Message({1: _str, 2: _str});
-const _Message _fileHandle = _Message({1: _str, 2: _str, 3: _int});
-const _Message _type = _Message({
-  1: _str,
-  2: _MessageSpec(_uuid),
-  3: _int,
-  4: _bool,
-  5: _MessageSpec(_nodePairs),
-});
-const _Message _classInstance = _Message({
-  1: _int,
-  2: _MessageSpec(_uuid),
-  3: _MessageSpec(_nodePairs),
-});
-const _Message _function = _Message({1: _str, 2: _str});
+const _Message _date = _Message(
+  {1: _int, 2: _int, 3: _int},
+  'Date',
+  {1: 'year', 2: 'month', 3: 'day'},
+);
+const _Message _dateTime = _Message(
+  {
+    1: _int,
+    2: _int,
+    3: _int,
+    4: _int,
+    5: _int,
+    6: _int,
+    7: _int,
+    8: _int,
+    9: _str,
+  },
+  'DateTime',
+  {
+    1: 'year',
+    2: 'month',
+    3: 'day',
+    4: 'hour',
+    5: 'minute',
+    6: 'second',
+    7: 'microsecond',
+    8: 'offset_seconds',
+    9: 'timezone_name',
+  },
+);
+const _Message _time = _Message(
+  {
+    1: _int,
+    2: _int,
+    3: _int,
+    4: _int,
+    5: _int,
+    6: _str,
+    7: _int,
+  },
+  'Time',
+  {
+    1: 'hour',
+    2: 'minute',
+    3: 'second',
+    4: 'microsecond',
+    5: 'offset_seconds',
+    6: 'timezone_name',
+    7: 'fold',
+  },
+);
+const _Message _timeDelta = _Message(
+  {1: _int, 2: _int, 3: _int},
+  'TimeDelta',
+  {1: 'days', 2: 'seconds', 3: 'microseconds'},
+);
+const _Message _timeZone = _Message(
+  {1: _int, 2: _str},
+  'TimeZone',
+  {1: 'offset_seconds', 2: 'name'},
+);
+const _Message _exception = _Message(
+  {1: _str, 2: _str},
+  'Exception',
+  {1: 'exc_type', 2: 'arg'},
+);
+const _Message _fileHandle = _Message(
+  {1: _str, 2: _str, 3: _int},
+  'FileHandle',
+  {1: 'path', 2: 'mode', 3: 'position'},
+);
+const _Message _type = _Message(
+  {
+    1: _str,
+    2: _MessageSpec(_uuid),
+    3: _int,
+    4: _bool,
+    5: _MessageSpec(_nodePairs),
+  },
+  'Type',
+  {1: 'name', 2: 'id', 3: 'origin', 4: 'is_dataclass', 5: 'attrs'},
+);
+const _Message _classInstance = _Message(
+  {
+    1: _int,
+    2: _MessageSpec(_uuid),
+    3: _MessageSpec(_nodePairs),
+  },
+  'ClassInstanceNode',
+  {1: 'class_type', 2: 'instance_id', 3: 'attrs'},
+);
+const _Message _function = _Message(
+  {1: _str, 2: _str},
+  'Function',
+  {1: 'name', 2: 'docstring'},
+);
 
-const _Message _montyNode = _Message({
-  1: _MessageSpec(_unit, oneof: 1),
-  2: _MessageSpec(_unit, oneof: 1),
-  3: _MessageSpec(_unit, oneof: 1),
-  4: _BoolSpec(oneof: 1),
-  5: _VarintSpec(oneof: 1),
-  6: _MessageSpec(_bigInt, oneof: 1),
-  7: _Fixed64Spec(oneof: 1),
-  8: _BytesSpec(utf8: true, oneof: 1),
-  9: _BytesSpec(utf8: false, oneof: 1),
-  10: _MessageSpec(_uuid, oneof: 1),
-  11: _MessageSpec(_indexes, oneof: 1),
-  12: _MessageSpec(_indexes, oneof: 1),
-  13: _MessageSpec(_namedTuple, oneof: 1),
-  14: _MessageSpec(_nodePairs, oneof: 1),
-  15: _MessageSpec(_indexes, oneof: 1),
-  16: _MessageSpec(_indexes, oneof: 1),
-  17: _MessageSpec(_date, oneof: 1),
-  18: _MessageSpec(_time, oneof: 1),
-  19: _MessageSpec(_dateTime, oneof: 1),
-  20: _MessageSpec(_timeDelta, oneof: 1),
-  21: _MessageSpec(_timeZone, oneof: 1),
-  22: _MessageSpec(_exception, oneof: 1),
-  23: _MessageSpec(_type, oneof: 1),
-  24: _MessageSpec(_classInstance, oneof: 1),
-  25: _MessageSpec(_function, oneof: 1),
-  26: _BytesSpec(utf8: true, oneof: 1),
-  27: _BytesSpec(utf8: true, oneof: 1),
-  28: _MessageSpec(_fileHandle, oneof: 1),
-  29: _BytesSpec(utf8: true, oneof: 1),
-  30: _BytesSpec(utf8: true, oneof: 1),
-  31: _MessageSpec(_complex, oneof: 1),
-});
+const _Message _montyNode = _Message(
+  {
+    1: _MessageSpec(_unit, oneof: 1),
+    2: _MessageSpec(_unit, oneof: 1),
+    3: _MessageSpec(_unit, oneof: 1),
+    4: _BoolSpec(oneof: 1),
+    5: _VarintSpec(oneof: 1),
+    6: _MessageSpec(_bigInt, oneof: 1),
+    7: _Fixed64Spec(oneof: 1),
+    8: _BytesSpec(utf8: true, oneof: 1),
+    9: _BytesSpec(utf8: false, oneof: 1),
+    10: _MessageSpec(_uuid, oneof: 1),
+    11: _MessageSpec(_indexes, oneof: 1),
+    12: _MessageSpec(_indexes, oneof: 1),
+    13: _MessageSpec(_namedTuple, oneof: 1),
+    14: _MessageSpec(_nodePairs, oneof: 1),
+    15: _MessageSpec(_indexes, oneof: 1),
+    16: _MessageSpec(_indexes, oneof: 1),
+    17: _MessageSpec(_date, oneof: 1),
+    18: _MessageSpec(_time, oneof: 1),
+    19: _MessageSpec(_dateTime, oneof: 1),
+    20: _MessageSpec(_timeDelta, oneof: 1),
+    21: _MessageSpec(_timeZone, oneof: 1),
+    22: _MessageSpec(_exception, oneof: 1),
+    23: _MessageSpec(_type, oneof: 1),
+    24: _MessageSpec(_classInstance, oneof: 1),
+    25: _MessageSpec(_function, oneof: 1),
+    26: _BytesSpec(utf8: true, oneof: 1),
+    27: _BytesSpec(utf8: true, oneof: 1),
+    28: _MessageSpec(_fileHandle, oneof: 1),
+    29: _BytesSpec(utf8: true, oneof: 1),
+    30: _BytesSpec(utf8: true, oneof: 1),
+    31: _MessageSpec(_complex, oneof: 1),
+  },
+  'MontyNode',
+  {
+    1: 'kind',
+    2: 'kind',
+    3: 'kind',
+    4: 'kind',
+    5: 'kind',
+    6: 'kind',
+    7: 'kind',
+    8: 'kind',
+    9: 'kind',
+    10: 'kind',
+    11: 'kind',
+    12: 'kind',
+    13: 'kind',
+    14: 'kind',
+    15: 'kind',
+    16: 'kind',
+    17: 'kind',
+    18: 'kind',
+    19: 'kind',
+    20: 'kind',
+    21: 'kind',
+    22: 'kind',
+    23: 'kind',
+    24: 'kind',
+    25: 'kind',
+    26: 'kind',
+    27: 'kind',
+    28: 'kind',
+    29: 'kind',
+    30: 'kind',
+    31: 'kind',
+  },
+);
 
 const _Message _arena = _Message({
   1: _NodeCountSpec(),
   _arenaNodes: _NodesSpec(),
 });
 
-const _Message _sourceRange = _Message({1: _str, 2: _int, 3: _int});
+const _Message _sourceRange = _Message(
+  {1: _str, 2: _int, 3: _int},
+  'SourceRange',
+  {1: 'filename', 2: 'start', 3: 'end'},
+);
 
 /// `SourceRange.filename`, and where its last value this occurrence lies.
 const int _filename = 1;
 const int _filenameStart = -2;
 const int _filenameEnd = -3;
-const _Message _callPosition = _Message({
-  _filename: _FilenameSpec(),
-  2: _int,
-  3: _int,
-});
-const _Message _codeLoc = _Message({1: _int, 2: _int});
-const _Message _stackFrame = _Message({
-  1: _str,
-  2: _MessageSpec(_codeLoc),
-  3: _MessageSpec(_codeLoc),
-  4: _str,
-  5: _str,
-  6: _bool,
-  7: _bool,
-});
-const _Message _unicodeErrorData = _Message({
-  1: _str,
-  2: _BytesSpec(utf8: false, oneof: 1),
-  3: _BytesSpec(utf8: true, oneof: 1),
-  4: _int,
-  5: _int,
-  6: _str,
-});
-const _Message _jsonErrorData = _Message({
-  1: _str,
-  2: _str,
-  3: _int,
-  4: _int,
-  5: _int,
-});
-const _Message _excData = _Message({
-  1: _MessageSpec(_unicodeErrorData, oneof: 1),
-  2: _MessageSpec(_jsonErrorData, oneof: 1),
-});
-const _Message _raisedException = _Message({
-  1: _str,
-  2: _str,
-  3: _MessagesSpec(_stackFrame, _stackFrameSize),
-  4: _MessageSpec(_excData),
-});
+const _Message _callPosition = _Message(
+  {
+    _filename: _FilenameSpec(),
+    2: _int,
+    3: _int,
+  },
+  'SourceRange',
+  {1: 'filename', 2: 'start', 3: 'end'},
+);
+const _Message _codeLoc = _Message(
+  {1: _int, 2: _int},
+  'CodeLoc',
+  {1: 'line', 2: 'column'},
+);
+const _Message _stackFrame = _Message(
+  {
+    1: _str,
+    2: _MessageSpec(_codeLoc),
+    3: _MessageSpec(_codeLoc),
+    4: _str,
+    5: _str,
+    6: _bool,
+    7: _bool,
+  },
+  'StackFrame',
+  {
+    1: 'filename',
+    2: 'start',
+    3: 'end',
+    4: 'frame_name',
+    5: 'preview_line',
+    6: 'hide_caret',
+    7: 'hide_frame_name',
+  },
+);
+const _Message _unicodeErrorData = _Message(
+  {
+    1: _str,
+    2: _BytesSpec(utf8: false, oneof: 1),
+    3: _BytesSpec(utf8: true, oneof: 1),
+    4: _int,
+    5: _int,
+    6: _str,
+  },
+  'UnicodeErrorData',
+  {1: 'encoding', 2: 'object', 3: 'object', 4: 'start', 5: 'end', 6: 'reason'},
+);
+const _Message _jsonErrorData = _Message(
+  {
+    1: _str,
+    2: _str,
+    3: _int,
+    4: _int,
+    5: _int,
+  },
+  'JsonErrorData',
+  {1: 'msg', 2: 'doc', 3: 'pos', 4: 'lineno', 5: 'colno'},
+);
+const _Message _excData = _Message(
+  {
+    1: _MessageSpec(_unicodeErrorData, oneof: 1),
+    2: _MessageSpec(_jsonErrorData, oneof: 1),
+  },
+  'ExcData',
+  {1: 'kind', 2: 'kind'},
+);
+const _Message _raisedException = _Message(
+  {
+    1: _str,
+    2: _str,
+    3: _MessagesSpec(_stackFrame, _stackFrameSize),
+    4: _MessageSpec(_excData),
+  },
+  'RaisedException',
+  {1: 'exc_type', 2: 'message', 3: 'traceback', 4: 'data'},
+);
 
-const _Message _printSegment = _Message({1: _PrintStreamSpec(), 2: _str});
-const _Message _print = _Message({
-  1: _MessagesSpec(_printSegment, _segmentSize),
-});
+const _Message _printSegment = _Message(
+  {1: _PrintStreamSpec(), 2: _str},
+  'PrintSegment',
+  {1: 'stream', 2: 'text'},
+);
+const _Message _print = _Message(
+  {
+    1: _MessagesSpec(_printSegment, _segmentSize),
+  },
+  'Print',
+  {1: 'segments'},
+);
 
 const _Message _functionCall = _Message({
   1: _str,
@@ -1143,83 +1365,205 @@ const _Message _functionCall = _Message({
   8: _PositionSpec(),
 });
 
-const _Message _textWrite = _Message({1: _str, 2: _str});
-const _Message _bytesWrite = _Message({1: _str, 2: _bytes});
-const _Message _mkdir = _Message({1: _str, 2: _bool, 3: _bool});
-const _Message _getenv = _Message({1: _str, 2: _int});
-const _Message _oneString = _Message({1: _str});
-const _Message _dateTimeNow = _Message({1: _MessageSpec(_timeZone)});
-const _Message _oneInt = _Message({1: _int});
-const _Message _oneDouble = _Message({1: _double});
+const _Message _textWrite = _Message(
+  {1: _str, 2: _str},
+  'TextWrite',
+  {1: 'path', 2: 'data'},
+);
+const _Message _bytesWrite = _Message(
+  {1: _str, 2: _bytes},
+  'BytesWrite',
+  {1: 'path', 2: 'data'},
+);
+const _Message _mkdir = _Message(
+  {1: _str, 2: _bool, 3: _bool},
+  'Mkdir',
+  {1: 'path', 2: 'parents', 3: 'exist_ok'},
+);
+const _Message _getenv = _Message(
+  {1: _str, 2: _int},
+  'Getenv',
+  {1: 'key', 2: 'default'},
+);
+const _Message _open = _Message(
+  {1: _str, 2: _str},
+  'Open',
+  {1: 'path', 2: 'mode'},
+);
+const _Message _rename = _Message(
+  {1: _str, 2: _str},
+  'Rename',
+  {1: 'src', 2: 'dst'},
+);
+const _Message _timeCall = _Message({1: _str}, 'TimeCall', {1: 'caller'});
+const _Message _dateTimeNow = _Message(
+  {1: _MessageSpec(_timeZone)},
+  'DateTimeNow',
+  {1: 'tz'},
+);
+const _Message _urandom = _Message({1: _int}, 'Urandom', {1: 'size'});
+const _Message _sleep = _Message({1: _double}, 'Sleep', {1: 'seconds'});
+const _Message _asyncSleep = _Message({1: _double}, 'AsyncSleep', {1: 'delay'});
 
-const _Message _osCall = _Message({
-  1: _int,
-  2: _BytesSpec(utf8: true, oneof: 1),
-  3: _BytesSpec(utf8: true, oneof: 1),
-  4: _BytesSpec(utf8: true, oneof: 1),
-  5: _BytesSpec(utf8: true, oneof: 1),
-  6: _BytesSpec(utf8: true, oneof: 1),
-  7: _BytesSpec(utf8: true, oneof: 1),
-  8: _BytesSpec(utf8: true, oneof: 1),
-  9: _BytesSpec(utf8: true, oneof: 1),
-  10: _BytesSpec(utf8: true, oneof: 1),
-  11: _BytesSpec(utf8: true, oneof: 1),
-  12: _BytesSpec(utf8: true, oneof: 1),
-  13: _BytesSpec(utf8: true, oneof: 1),
-  14: _MessageSpec(_textWrite, oneof: 1),
-  15: _MessageSpec(_textWrite, oneof: 1),
-  16: _MessageSpec(_bytesWrite, oneof: 1),
-  17: _MessageSpec(_bytesWrite, oneof: 1),
-  18: _MessageSpec(_textWrite, oneof: 1),
-  19: _MessageSpec(_mkdir, oneof: 1),
-  20: _MessageSpec(_textWrite, oneof: 1),
-  21: _MessageSpec(_getenv, oneof: 1),
-  22: _MessageSpec(_unit, oneof: 1),
-  23: _MessageSpec(_unit, oneof: 1),
-  24: _MessageSpec(_dateTimeNow, oneof: 1),
-  25: _MessageSpec(_oneInt, oneof: 1),
-  26: _MessageSpec(_oneString, oneof: 1),
-  27: _MessageSpec(_oneDouble, oneof: 1),
-  28: _MessageSpec(_oneDouble, oneof: 1),
-  29: _MessageSpec(_oneDouble, oneof: 1),
-  30: _MessageSpec(_oneDouble, oneof: 1),
-  50: _MessageSpec(_arena),
-  51: _bool,
-  52: _MessageSpec(_sourceRange),
-});
+const _Message _osCall = _Message(
+  {
+    1: _int,
+    2: _BytesSpec(utf8: true, oneof: 1),
+    3: _BytesSpec(utf8: true, oneof: 1),
+    4: _BytesSpec(utf8: true, oneof: 1),
+    5: _BytesSpec(utf8: true, oneof: 1),
+    6: _BytesSpec(utf8: true, oneof: 1),
+    7: _BytesSpec(utf8: true, oneof: 1),
+    8: _BytesSpec(utf8: true, oneof: 1),
+    9: _BytesSpec(utf8: true, oneof: 1),
+    10: _BytesSpec(utf8: true, oneof: 1),
+    11: _BytesSpec(utf8: true, oneof: 1),
+    12: _BytesSpec(utf8: true, oneof: 1),
+    13: _BytesSpec(utf8: true, oneof: 1),
+    14: _MessageSpec(_textWrite, oneof: 1),
+    15: _MessageSpec(_textWrite, oneof: 1),
+    16: _MessageSpec(_bytesWrite, oneof: 1),
+    17: _MessageSpec(_bytesWrite, oneof: 1),
+    18: _MessageSpec(_open, oneof: 1),
+    19: _MessageSpec(_mkdir, oneof: 1),
+    20: _MessageSpec(_rename, oneof: 1),
+    21: _MessageSpec(_getenv, oneof: 1),
+    22: _MessageSpec(_unit, oneof: 1),
+    23: _MessageSpec(_unit, oneof: 1),
+    24: _MessageSpec(_dateTimeNow, oneof: 1),
+    25: _MessageSpec(_urandom, oneof: 1),
+    26: _MessageSpec(_timeCall, oneof: 1),
+    27: _MessageSpec(_sleep, oneof: 1),
+    28: _MessageSpec(_asyncSleep, oneof: 1),
+    29: _MessageSpec(_sleep, oneof: 1),
+    30: _MessageSpec(_asyncSleep, oneof: 1),
+    50: _MessageSpec(_arena),
+    51: _bool,
+    52: _MessageSpec(_sourceRange),
+  },
+  'OsCall',
+  {
+    1: 'call_id',
+    50: 'values',
+    51: 'allow_eager_await',
+    52: 'position',
+    2: 'call',
+    3: 'call',
+    4: 'call',
+    5: 'call',
+    6: 'call',
+    7: 'call',
+    8: 'call',
+    9: 'call',
+    10: 'call',
+    11: 'call',
+    12: 'call',
+    13: 'call',
+    14: 'call',
+    15: 'call',
+    16: 'call',
+    17: 'call',
+    18: 'call',
+    19: 'call',
+    20: 'call',
+    21: 'call',
+    22: 'call',
+    23: 'call',
+    24: 'call',
+    25: 'call',
+    26: 'call',
+    27: 'call',
+    28: 'call',
+    29: 'call',
+    30: 'call',
+  },
+);
 
-const _Message _nameLookup = _Message({
-  1: _str,
-  2: _MessageSpec(_uuid),
-  3: _MessageSpec(_sourceRange),
-});
-const _Message _resolveFutures = _Message({
-  1: _Uint32sSpec(references: false),
-  2: _MessageSpec(_sourceRange),
-});
-const _Message _complete = _Message({1: _int, 2: _MessageSpec(_arena)});
-const _Message _error = _Message({1: _MessageSpec(_raisedException)});
-const _Message _oneBytes = _Message({1: _bytes});
+const _Message _nameLookup = _Message(
+  {
+    1: _str,
+    2: _MessageSpec(_uuid),
+    3: _MessageSpec(_sourceRange),
+  },
+  'NameLookup',
+  {1: 'name', 2: 'object_id', 3: 'position'},
+);
+const _Message _resolveFutures = _Message(
+  {
+    1: _Uint32sSpec(references: false),
+    2: _MessageSpec(_sourceRange),
+  },
+  'ResolveFutures',
+  {1: 'pending_call_ids', 2: 'position'},
+);
+const _Message _complete = _Message(
+  {1: _int, 2: _MessageSpec(_arena)},
+  'Complete',
+  {1: 'value', 2: 'values'},
+);
+const _Message _error = _Message(
+  {1: _MessageSpec(_raisedException)},
+  'Error',
+  {1: 'exception'},
+);
+const _Message _typingError = _Message(
+  {1: _str},
+  'TypingError',
+  {1: 'diagnostics'},
+);
+const _Message _dumpResult = _Message({1: _bytes}, 'DumpResult', {1: 'state'});
+const _Message _ok = _Message({}, 'Ok');
+const _Message _fatalError = _Message({1: _str}, 'FatalError', {1: 'message'});
+const _Message _shutdownDump = _Message(
+  {1: _bytes},
+  'ShutdownDump',
+  {1: 'dump'},
+);
 
-const _Message _childEvent = _Message({
-  1: _MessageSpec(_print, oneof: 1),
-  2: _MessageSpec(_functionCall, oneof: 1),
-  3: _MessageSpec(_osCall, oneof: 1),
-  4: _MessageSpec(_nameLookup, oneof: 1),
-  5: _MessageSpec(_resolveFutures, oneof: 1),
-  6: _MessageSpec(_complete, oneof: 1),
-  7: _MessageSpec(_error, oneof: 1),
-  8: _MessageSpec(_oneString, oneof: 1),
-  9: _MessageSpec(_oneBytes, oneof: 1),
-  10: _MessageSpec(_unit, oneof: 1),
-  11: _MessageSpec(_oneString, oneof: 1),
-  12: _MessageSpec(_oneBytes, oneof: 1),
-  20: _int,
-  22: _int,
-  23: _str,
-  24: _int,
-  25: _int,
-  26: _int,
-  27: _int,
-  28: _bytes,
-});
+const _Message _childEvent = _Message(
+  {
+    1: _MessageSpec(_print, oneof: 1),
+    2: _MessageSpec(_functionCall, oneof: 1),
+    3: _MessageSpec(_osCall, oneof: 1),
+    4: _MessageSpec(_nameLookup, oneof: 1),
+    5: _MessageSpec(_resolveFutures, oneof: 1),
+    6: _MessageSpec(_complete, oneof: 1),
+    7: _MessageSpec(_error, oneof: 1),
+    8: _MessageSpec(_typingError, oneof: 1),
+    9: _MessageSpec(_dumpResult, oneof: 1),
+    10: _MessageSpec(_ok, oneof: 1),
+    11: _MessageSpec(_fatalError, oneof: 1),
+    12: _MessageSpec(_shutdownDump, oneof: 1),
+    20: _int,
+    22: _int,
+    23: _str,
+    24: _int,
+    25: _int,
+    26: _int,
+    27: _int,
+    28: _bytes,
+  },
+  'ChildEvent',
+  {
+    1: 'kind',
+    2: 'kind',
+    3: 'kind',
+    4: 'kind',
+    5: 'kind',
+    6: 'kind',
+    7: 'kind',
+    8: 'kind',
+    9: 'kind',
+    10: 'kind',
+    11: 'kind',
+    12: 'kind',
+    20: 'total_execution_micros',
+    22: 'max_suspensions',
+    23: 'restored_script_name',
+    24: 'feed_execution_micros',
+    25: 'max_feed_duration_micros',
+    26: 'max_turn_duration_micros',
+    27: 'max_total_sleep_micros',
+    28: 'session_id',
+  },
+);

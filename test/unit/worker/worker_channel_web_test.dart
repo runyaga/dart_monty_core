@@ -375,11 +375,55 @@ void main() {
     for (var attempt = 1; attempt <= 2; attempt++) {
       await expectLater(
         WorkerChannel.spawn(missing, workerUrl: _workerUrl),
-        throwsA(isStateError),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
+            'message',
+            'failed to spawn monty worker: fetch '
+                '$_assets/no_such_module.wasm: HTTP 404',
+          ),
+        ),
       );
       expect(missing.compileCount, attempt);
     }
   });
+
+  // A Worker script the page may not start (another origin: the browser
+  // throws SecurityError) is a spawn failure too.
+  test('a Worker the browser refuses fails spawn as MontyCrashedError '
+      '($backend)', () async {
+    const url = 'http://127.0.0.1:1/w.js';
+    await expectLater(
+      WorkerChannel.spawn(cache, workerUrl: url),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.toString(),
+          'message',
+          startsWith('failed to spawn monty worker: Worker $url: '),
+        ),
+      ),
+    );
+  });
+
+  // A module that cannot be fetched or compiled is a spawn failure too,
+  // not the browser's own exception.
+  for (final (name, url, prefix) in [
+    ('a fetch the browser rejects', 'http://127.0.0.1:1/m.wasm', 'fetch '),
+    ('bytes that are not a module', _workerUrl, 'compile '),
+  ]) {
+    test('$name fails spawn as MontyCrashedError ($backend)', () async {
+      await expectLater(
+        WorkerChannel.spawn(WasmModuleCache(url), workerUrl: _workerUrl),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
+            'message',
+            startsWith('failed to spawn monty worker: $prefix$url: '),
+          ),
+        ),
+      );
+    });
+  }
 
   test('an error in a Worker that greeted is crashedError(vanished) '
       '($backend)', () async {

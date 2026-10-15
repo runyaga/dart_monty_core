@@ -6,7 +6,7 @@ import 'package:dart_monty_core/src/worker/asset_base.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
+    show MontyCrashedError, MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
@@ -230,6 +230,24 @@ void main() {
       expect(pending.channel.isAlive, isFalse);
     });
 
+    test('a start that is ready after another failed is closed', () async {
+      // A handle that ignores cancel, so it arrives after the failure.
+      final arriving = _LateHandle();
+      final failing = FakeStart();
+      var opened = 0;
+      final started = WorkerPool.start(
+        const PoolOptions(minProcesses: 2, maxProcesses: 2),
+        () => opened++ == 0 ? PendingSpawn(failing.run) : arriving,
+      );
+      failing.failWith(StateError('no worker here'));
+      await pump();
+      final channel = resettable();
+      arriving.arrival.complete(channel);
+      await expectLater(started, throwsA(isA<StateError>()));
+      expect(arriving.cancels, 1);
+      expect(channel.closes, 1);
+    });
+
     test('a worker that never becomes ready fails it', () async {
       starts = FakeStarts(auto: false);
       await expectLater(
@@ -289,7 +307,20 @@ void main() {
       );
       final [a] = await acquireEach(p, 1);
       final clock = Stopwatch()..start();
-      await expectLater(acquireEach(p, 1), throwsA(isA<TimeoutException>()));
+      // Upstream's fixed text (monty-pool 1.1.0 lib.rs:254), whatever the
+      // limit; its class is TimeoutError.
+      final outcome = poolOracle['checkout_timeout']!;
+      expect(outcome, startsWith('TimeoutError: '));
+      await expectLater(
+        acquireEach(p, 1),
+        throwsA(
+          isA<TimeoutException>().having(
+            (e) => e.message,
+            'message',
+            outcome.substring('TimeoutError: '.length),
+          ),
+        ),
+      );
       expect(clock.elapsedMilliseconds, greaterThanOrEqualTo(40));
       expect(p.liveWorkers, 1);
       // The timed-out waiter left no stale entry to swallow the wake-up.
@@ -660,14 +691,15 @@ void main() {
       expect(workerWasmUrl('b'), 'b/dart_monty_core_worker.wasm');
     });
 
-    test('no assets anywhere: a StateError naming what was tried', () {
+    test('no assets anywhere: a spawn failure naming what was tried', () {
       expect(
         resolveAssetBase((_) async => false),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
             'message',
             allOf(
+              startsWith('failed to spawn monty worker: '),
               contains(workerScriptUrl(flutterAssetBase)),
               contains(workerScriptUrl(packageAssetBase)),
             ),
@@ -676,4 +708,16 @@ void main() {
       );
     });
   });
+}
+
+/// A start that becomes ready only when told, whatever cancel says.
+final class _LateHandle implements SpawnHandle {
+  final Completer<MontyChannel> arrival = Completer();
+  int cancels = 0;
+
+  @override
+  Future<MontyChannel> get ready => arrival.future;
+
+  @override
+  void cancel() => cancels++;
 }

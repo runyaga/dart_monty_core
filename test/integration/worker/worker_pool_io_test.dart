@@ -8,9 +8,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
+import 'package:dart_monty_core/src/worker/monty.dart' show Monty;
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
+    show MontyCrashedError, MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -19,10 +20,21 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '../../unit/worker/_pool_oracle.g.dart';
 import '_worker_harness.dart';
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
 const _protocolVersion = 5;
+
+/// The generator's missing executable (tool/generate_pool_oracle.py).
+const _missingWorker = '/nonexistent/dart_monty_worker';
+
+/// Upstream's text for a pool whose worker executable does not exist
+/// (pydantic-monty 1.1.0 raises it as RuntimeError; core as
+/// MontyCrashedError, D-042).
+final String _spawnFailure = poolOracle['spawn_missing_worker']!.substring(
+  'RuntimeError: '.length,
+);
 
 /// Every worker's memory is bounded.
 final _configure = pb.ParentRequest(
@@ -49,9 +61,35 @@ void main() {
     final channel = await openChannel(workerLocation: path).ready;
     addTearDown(channel.close);
     expect((await channel.turn(_configure)).whichKind(), pb.ChildEvent_Kind.ok);
+    // Upstream's `PoolError::Spawn` (lib.rs:255; worker.rs:205 puts the
+    // path before the OS error), as MontyCrashedError (D-042).
     await expectLater(
-      openChannel(workerLocation: '/nonexistent/dart_monty_worker').ready,
-      throwsA(isA<ProcessException>()),
+      openChannel(workerLocation: _missingWorker).ready,
+      throwsA(
+        isA<MontyCrashedError>()
+            .having(
+              (e) => e.toString(),
+              'message',
+              _spawnFailure,
+            )
+            .having((e) => (e.timedOut, e.exitStatus), 'status', (
+              false,
+              null,
+            )),
+      ),
+    );
+  });
+
+  test('Monty.start: a worker that cannot spawn is a MontyCrashedError', () {
+    expect(
+      Monty.start(workerLocation: _missingWorker),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.toString(),
+          'message',
+          _spawnFailure,
+        ),
+      ),
     );
   });
 

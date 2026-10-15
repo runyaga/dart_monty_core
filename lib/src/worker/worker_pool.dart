@@ -238,7 +238,7 @@ final class WorkerPool {
       _waiters.remove(waiter);
       waiter.completeError(
         TimeoutException(
-          'no monty worker became available within $limit',
+          'no monty worker became available within the checkout timeout',
           limit,
         ),
         StackTrace.current,
