@@ -177,13 +177,13 @@ final class Side {
   Future<void> run(
     int i, {
     Map<String, MontyValue>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     OsHandler? os,
   }) => end(
     () => session.feedRun(
       code(i),
       inputs: inputs,
-      externals: externals,
+      externalLookup: externalLookup,
       os: os,
       printCallback: printer,
     ),
@@ -208,13 +208,13 @@ final class Side {
   Future<MontySnapshot?> start(
     int i, {
     Map<String, MontyValue>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     OsHandler? os,
   }) => step(
     () => session.feedStart(
       code(i),
       inputs: inputs,
-      externals: externals,
+      externalLookup: externalLookup,
       os: os,
       printCallback: printer,
     ),

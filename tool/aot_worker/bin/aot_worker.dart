@@ -44,8 +44,8 @@ Future<void> main(List<String> args) async {
     final calls = <Object?>[];
     final result = await session.feed(
       testCase['code']! as String,
-      externals: {
-        'fetch': (positional, named) {
+      externalLookup: {
+        'fetch': (List<MontyValue> positional, Map<String, MontyValue> named) {
           calls.add({
             'name': 'fetch',
             'args': [for (final v in positional) _canon(v)],

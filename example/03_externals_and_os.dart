@@ -5,7 +5,7 @@
 //
 // Python code calls back into Dart two ways:
 //
-//  1. externals — named host functions given to a feed. Python calls them
+//  1. externalLookup — named host functions given to a feed. Python calls them
 //     like any function; each receives the positional and keyword
 //     arguments as MontyValues and returns a MontyValue (or a Future of
 //     one, which is awaited).
@@ -16,7 +16,7 @@
 //     OsCallNotHandledException declines the call, and throwing
 //     ExternalException raises a chosen Python exception.
 //
-// Covers: externals, ExternalException, OsHandler, OsCallNotHandledException,
+// Covers: externalLookup, ExternalException, OsHandler, OsCallNotHandledException,
 //         MontyPath.
 //
 // Run: dart run example/03_externals_and_os.dart
@@ -33,14 +33,14 @@ Future<void> main() async {
 
 // ── External functions ───────────────────────────────────────────────────────
 Future<void> _externalFunctions(MontySession session) async {
-  print('\n── externals ──');
+  print('\n── externalLookup ──');
 
   await session.feedRun(
     '''
 result = add(3, 4)
 greeting = greet(name="World")
 ''',
-    externals: {
+    externalLookup: {
       // Positional arguments arrive in the list.
       'add': (args, _) =>
           MontyInt((args[0] as MontyInt).value + (args[1] as MontyInt).value),
@@ -59,7 +59,7 @@ greeting = greet(name="World")
   // Return structured data; MontyValue.fromDart builds it from Dart.
   await session.feedRun(
     'data = fetch_data()',
-    externals: {
+    externalLookup: {
       'fetch_data': (_, _) async => MontyValue.fromDart({
         'name': 'alice',
         'scores': [98, 87, 92],
@@ -80,7 +80,7 @@ except KeyError as e:
     out = "caught KeyError"
 out
 ''',
-    externals: {
+    externalLookup: {
       'lookup': (args, _) =>
           throw const ExternalException('KeyError', 'missing'),
     },

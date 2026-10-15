@@ -66,7 +66,7 @@ Future<void> main() async {
         session,
         'for i in range(10):\n    ping()',
         'RuntimeError',
-        externals: {'ping': (_, _) => const MontyNone()},
+        externalLookup: {'ping': (_, _) => const MontyNone()},
       );
     }, limits: const ResourceLimits(maxSuspensions: 5));
 
@@ -107,7 +107,7 @@ Future<void> _expectLimit(
   externals,
 }) async {
   try {
-    await session.feedRun(code, externals: externals);
+    await session.feedRun(code, externalLookup: externals);
   } on MontyRuntimeError catch (e) {
     print('raised: $e');
     _check(e.exception.excType == excType, 'expected $excType, got $e');

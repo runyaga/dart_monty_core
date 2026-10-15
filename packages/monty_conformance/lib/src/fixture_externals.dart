@@ -1,8 +1,4 @@
-// HostClass is internal to dart_monty_core; ClassType wraps one.
-// ignore_for_file: implementation_imports
-
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/host_objects.dart' show HostClass;
 
 /// The external functions and name constants that `# call-external` fixtures
 /// expect a host to provide, in the shape the web demo's conformance panel

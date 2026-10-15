@@ -442,7 +442,7 @@ void main() {
         final snap =
             await s.feedStart(
                   'f()',
-                  externals: {'f': (args, kwargs) => never.future},
+                  externalLookup: {'f': (args, kwargs) => never.future},
                 )
                 as FunctionSnapshot;
         final resumed = expectLater(snap.resumeAuto(), throwsA(_finished));
@@ -464,7 +464,7 @@ void main() {
       final snap =
           await s.feedStart(
                 'f()',
-                externals: {
+                externalLookup: {
                   'f': (args, kwargs) {
                     unawaited(session.close());
 
@@ -490,7 +490,9 @@ void main() {
       final call =
           await s.feedStart(
                 'await af()',
-                externals: {'af': coroutine((args, kwargs) => never.future)},
+                externalLookup: {
+                  'af': coroutine((args, kwargs) => never.future),
+                },
               )
               as FunctionSnapshot;
       final futures = await call.resumeAuto() as FutureSnapshot;
@@ -723,7 +725,7 @@ void main() {
           ),
         };
         final a =
-            await s.feedStart('gather', externals: coroutines)
+            await s.feedStart('gather', externalLookup: coroutines)
                 as FunctionSnapshot;
         final b = await a.resumeAuto() as FunctionSnapshot;
         expect(itemAt(ch.requests, 2).resumeCall.result.future, 1);
@@ -748,7 +750,7 @@ void main() {
         final snap =
             await s.feedStart(
                   'await af()',
-                  externals: {
+                  externalLookup: {
                     'af': coroutine(
                       (args, kwargs) => Future.value(const MontyInt(7)),
                     ),
@@ -786,10 +788,12 @@ void main() {
       final first =
           await s.feedStart(
                 'f(4) + g()',
-                externals: {
-                  'f': (args, kwargs) => Future.value(
-                    MontyInt((firstItem(args) as MontyInt).value * 10),
-                  ),
+                externalLookup: {
+                  'f':
+                      (List<MontyValue> args, Map<String, MontyValue> kwargs) =>
+                          Future.value(
+                            MontyInt((firstItem(args) as MontyInt).value * 10),
+                          ),
                 },
               )
               as FunctionSnapshot;
@@ -806,7 +810,10 @@ void main() {
         answer([_int(1)]),
       ]);
       final snap =
-          await s.feedStart('f', externals: {'f': (a, k) => const MontyNone()})
+          await s.feedStart(
+                'f',
+                externalLookup: {'f': (a, k) => const MontyNone()},
+              )
               as NameLookupSnapshot;
       await snap.resumeAuto();
       final lookup = _last(ch).resumeNameLookup;
@@ -868,7 +875,7 @@ void main() {
         final slow = Completer<MontyValue>();
         final run = s.feedRun(
           'await asyncio.gather(af(1), af(2))',
-          externals: {
+          externalLookup: {
             'af': coroutine(
               (args, kwargs) => firstItem(args) == const MontyInt(1)
                   ? slow.future
@@ -975,7 +982,7 @@ void main() {
         ]);
         await s.feedRun(
           'await asyncio.gather(af())',
-          externals: {
+          externalLookup: {
             'af': coroutine(
               (args, kwargs) => Future.error(
                 const ExternalException('ValueError', 'no'),
@@ -999,7 +1006,7 @@ void main() {
         ]);
         await s.feedRun(
           'await asyncio.gather(af())',
-          externals: {
+          externalLookup: {
             'af': coroutine((args, kwargs) => Future.value(_unhashableKey)),
           },
         );
@@ -1046,7 +1053,7 @@ void main() {
       await expectLater(
         s.feedRun(
           'f(1)',
-          externals: {
+          externalLookup: {
             'f': (args, kwargs) {
               called = true;
 
@@ -1277,12 +1284,16 @@ void main() {
         final snap =
             await s.feedStart(
                   'f(1, a=2, b=3)',
-                  externals: {
-                    'f': (args, kwargs) {
-                      seen = Map.of(kwargs);
+                  externalLookup: {
+                    'f':
+                        (
+                          List<MontyValue> args,
+                          Map<String, MontyValue> kwargs,
+                        ) {
+                          seen = Map.of(kwargs);
 
-                      return const MontyNone();
-                    },
+                          return const MontyNone();
+                        },
                   },
                 )
                 as FunctionSnapshot;

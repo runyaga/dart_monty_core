@@ -103,13 +103,13 @@ except RuntimeError as e:
   );
 }
 
-// ── resumeAuto: let the session answer from externals ────────────────────────
+// ── resumeAuto: let the session answer from externalLookup ───────────────────
 Future<void> _auto(MontySession session) async {
   print('\n── resumeAuto ──');
 
   var snapshot = await session.feedStart(
     '[double(i) for i in range(3)]',
-    externals: {
+    externalLookup: {
       'double': (args, _) => MontyInt((args[0] as MontyInt).value * 2),
     },
   );

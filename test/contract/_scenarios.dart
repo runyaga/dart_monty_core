@@ -87,7 +87,7 @@ final List<Scenario> scenarios = [
     script: (f) => f
       ..willCall('f', args: [_int(1)], kwargs: {'k': _int(2)})
       ..willReturn(_int(42)),
-    run: (s) => s.run(0, externals: {'f': s.fn('f', (_, _) => _int(41))}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f', (_, _) => _int(41))}),
     trace: [
       'call f(MontyInt(1), k=MontyInt(2))',
       'value MontyInt(42)',
@@ -104,7 +104,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'f': s.fn(
           'f',
           (_, _) => throw const ExternalException('ValueError', 'bad'),
@@ -127,7 +127,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(
       0,
-      externals: {'f': s.fn('f', (_, _) => throw StateError('broken'))},
+      externalLookup: {'f': s.fn('f', (_, _) => throw StateError('broken'))},
     ),
     trace: [
       'call f()',
@@ -138,7 +138,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'a call to a name missing from the externals',
+    'a call to a name missing from the external lookup',
     feeds: ['f()'],
     script: (f) => f
       ..willCall('f')
@@ -159,7 +159,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'f': s.fn(
           'f',
           (_, _) => throw const ExternalException('SyntaxError', 'no'),
@@ -241,7 +241,7 @@ final List<Scenario> scenarios = [
       ..willLookUp('x')
       ..willCall('x', args: [_int(3)])
       ..willReturn(_int(9)),
-    run: (s) => s.run(0, externals: {'x': s.fn('x', (_, _) => _int(9))}),
+    run: (s) => s.run(0, externalLookup: {'x': s.fn('x', (_, _) => _int(9))}),
     trace: [
       'call x(MontyInt(3))',
       'value MontyInt(9)',
@@ -249,6 +249,34 @@ final List<Scenario> scenarios = [
     answers: [
       '- value MontyString("x")',
       '0 value MontyInt(9)',
+    ],
+  ),
+  Scenario(
+    'a name lookup answered with a value',
+    feeds: ['x + 1'],
+    script: (f) => f
+      ..willLookUp('x')
+      ..willReturn(_int(42)),
+    run: (s) => s.run(0, externalLookup: {'x': _int(41)}),
+    trace: [
+      'value MontyInt(42)',
+    ],
+    answers: [
+      '- value MontyInt(41)',
+    ],
+  ),
+  Scenario(
+    'a call to a name whose external lookup entry is a value',
+    feeds: ['x()'],
+    script: (f) => f
+      ..willCall('x')
+      ..willReturn(_none),
+    run: (s) => s.run(0, externalLookup: {'x': _int(3)}),
+    trace: [
+      "MontyRuntimeError TypeError: 'int' object is not callable | TypeError: 'int' object is not callable",
+    ],
+    answers: [
+      "0 raise TypeError: 'int' object is not callable",
     ],
   ),
   Scenario(
@@ -274,7 +302,7 @@ final List<Scenario> scenarios = [
       ..willPrint('after')
       ..willPrint('!\n')
       ..willReturn(_int(7)),
-    run: (s) => s.run(0, externals: {'f': s.fn('f')}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f')}),
     trace: [
       'print[stdout] before\n',
       'call f()',
@@ -346,7 +374,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_int(5)),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'f': s.fn(
           'f',
           (_, _) => throw const ExternalException('KeyError', 'k'),
@@ -469,7 +497,7 @@ final List<Scenario> scenarios = [
     run: (s) async {
       await s.run(
         0,
-        externals: {
+        externalLookup: {
           'f': s.fn('f', (_, _) async {
             await s.session.close();
 
@@ -499,7 +527,7 @@ final List<Scenario> scenarios = [
         s.outcome(
           () => s.session.feedRun(
             s.code(0),
-            externals: {'f': s.fn('f', (_, _) => _int(1))},
+            externalLookup: {'f': s.fn('f', (_, _) => _int(1))},
           ),
         ),
         s.outcome(() => s.session.feedRun(s.code(1))),
@@ -537,7 +565,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_str('x')),
     run: (s) => s.run(
       0,
-      externals: {'f': s.fn('f')},
+      externalLookup: {'f': s.fn('f')},
       os: s.os((_, _, _) => _str('x')),
     ),
     trace: [
@@ -566,9 +594,9 @@ final List<Scenario> scenarios = [
       ..willReturn(_int(1)),
     run: (s) async {
       final ext = {'f': s.fn('f', (_, _) => _int(1))};
-      await s.run(0, externals: ext);
-      await s.run(1, externals: ext);
-      await s.run(2, externals: ext);
+      await s.run(0, externalLookup: ext);
+      await s.run(1, externalLookup: ext);
+      await s.run(2, externalLookup: ext);
     },
     trace: [
       'call f()',
@@ -648,8 +676,8 @@ final List<Scenario> scenarios = [
           (a, k) => _after(calls++ == 0 ? 0 : 150, _int(1))(a, k),
         ),
       };
-      await s.run(0, externals: ext);
-      await s.run(1, externals: ext);
+      await s.run(0, externalLookup: ext);
+      await s.run(1, externalLookup: ext);
     },
     trace: [
       'call f()',
@@ -683,8 +711,8 @@ final List<Scenario> scenarios = [
         ),
         'f': s.fn('f', (_, _) => _int(1)),
       };
-      await s.run(0, externals: ext);
-      await s.run(1, externals: ext);
+      await s.run(0, externalLookup: ext);
+      await s.run(1, externalLookup: ext);
     },
     trace: [
       'call g()',
@@ -704,7 +732,7 @@ final List<Scenario> scenarios = [
       ..willCall('f', eager: true)
       ..willReturn(_int(3)),
     run: (s) =>
-        s.run(0, externals: {'f': s.async('f', (_, _) async => _int(3))}),
+        s.run(0, externalLookup: {'f': s.async('f', (_, _) async => _int(3))}),
     trace: [
       'call f()',
       'value MontyInt(3)',
@@ -719,7 +747,8 @@ final List<Scenario> scenarios = [
     script: (f) => f
       ..willCall('f', eager: true)
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.async('f', _failAfter(0, 'e'))}),
+    run: (s) =>
+        s.run(0, externalLookup: {'f': s.async('f', _failAfter(0, 'e'))}),
     trace: [
       'call f()',
       'MontyRuntimeError ValueError: e | ValueError: e',
@@ -742,7 +771,7 @@ final List<Scenario> scenarios = [
 
       return s.run(
         0,
-        externals: {
+        externalLookup: {
           'f': s.async('f', (args, _) async {
             if (args.firstOrNull == _int(0)) {
               await second.future;
@@ -790,7 +819,7 @@ final List<Scenario> scenarios = [
     script: (f) => f
       ..willCall('f', eager: true)
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.fn('f', (_, _) => _int(1))}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f', (_, _) => _int(1))}),
     trace: [
       'call f()',
       "MontyRuntimeError TypeError: 'int' object can't be awaited | TypeError: 'int' object can't be awaited",
@@ -983,7 +1012,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
         'fc': s.fn('fc', (_, _) => _int(1)),
@@ -1078,8 +1107,11 @@ final List<Scenario> scenarios = [
       ..willCall('f')
       ..willAwait([0])
       ..willReturn(_int(2)),
-    run: (s) =>
-        s.run(0, externals: {'f': s.fn('f')}, os: s.os((_, _, _) => _none)),
+    run: (s) => s.run(
+      0,
+      externalLookup: {'f': s.fn('f')},
+      os: s.os((_, _, _) => _none),
+    ),
     trace: [
       'os asyncio.sleep(MontyFloat(0.0))',
       'call f()',
@@ -1115,7 +1147,7 @@ final List<Scenario> scenarios = [
       ..willCall('f')
       ..willAwait([0])
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.fn('f', (_, _) => _int(1))}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f', (_, _) => _int(1))}),
     trace: [
       'call f()',
       "MontyRuntimeError TypeError: 'int' object can't be awaited | TypeError: 'int' object can't be awaited",
@@ -1132,7 +1164,7 @@ final List<Scenario> scenarios = [
       ..willCall('f')
       ..willAwait([0, 1], gathered: true)
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.fn('f', (_, _) => _int(1))}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f', (_, _) => _int(1))}),
     trace: [
       'call f()',
       'call f()',
@@ -1150,7 +1182,7 @@ final List<Scenario> scenarios = [
       ..willCall('f')
       ..willAwait([0], gathered: true)
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.fn('f', (_, _) => _int(1))}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f', (_, _) => _int(1))}),
     trace: [
       'call f()',
       'MontyRuntimeError TypeError: An asyncio.Future, a coroutine or an awaitable is required | TypeError: An asyncio.Future, a coroutine or an awaitable is required',
@@ -1169,7 +1201,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_int(1)),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
       },
@@ -1197,7 +1229,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_none),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
       },
@@ -1226,7 +1258,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_int(1)),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _failAfter(0, 'b')),
       },
@@ -1296,7 +1328,7 @@ final List<Scenario> scenarios = [
       ..willReturn(_int(3)),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'fa': s.async('fa', _after(150, _int(1))),
         'fb': s.async('fb', _after(0, _int(2))),
       },
@@ -1326,7 +1358,7 @@ final List<Scenario> scenarios = [
       ..willReturn(MontyList([_int(5), _int(2)])),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'f': s.async(
           'f',
           (args, _) => Future.delayed(
@@ -1417,7 +1449,7 @@ final List<Scenario> scenarios = [
       ..willReturn(MontyList([_int(5), _int(2)])),
     run: (s) => s.run(
       0,
-      externals: {
+      externalLookup: {
         'f': s.async(
           'f',
           (args, _) => Future.delayed(
@@ -1503,7 +1535,8 @@ final List<Scenario> scenarios = [
     script: (f) => f
       ..willCall('f')
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.fn('f', (_, _) => _str('\uD800'))}),
+    run: (s) =>
+        s.run(0, externalLookup: {'f': s.fn('f', (_, _) => _str('\uD800'))}),
     trace: [
       'call f()',
       r"MontyRuntimeError ValueError: 'utf-8' codec can't encode character '\ud800' in position 0: surrogates not allowed | UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' in position 0: surrogates not allowed",
@@ -1545,7 +1578,7 @@ final List<Scenario> scenarios = [
     script: (f) => f
       ..willCall('f', args: [MontyPath('/a/./b//c')])
       ..willReturn(_none),
-    run: (s) => s.run(0, externals: {'f': s.fn('f')}),
+    run: (s) => s.run(0, externalLookup: {'f': s.fn('f')}),
     trace: [
       'call f(MontyPath("/a/b/c"))',
       'value MontyNone()',

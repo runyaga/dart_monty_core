@@ -1,11 +1,7 @@
 /// One session per checkout: a Python session on a worker the pool has
 /// dedicated to it, driven through its single [WorkerLease].
 ///
-/// The interface becomes the public `MontySession` at the cutover; until
-/// then it takes host functions in an internal map and its settings as
-/// internal records.
-///
-/// Internal to the package; nothing here is exported.
+/// [MontySession] is exported; the rest is internal to the package.
 library;
 
 import 'dart:async';
@@ -55,11 +51,38 @@ abstract interface class MontySession {
   /// or [MontyNone].
   ///
   /// [inputs] are bound as global names first: values, or host objects'
-  /// wrappers, whose members the session serves (`host_objects.dart`).
-  /// A call to a name in
-  /// [externals] runs that function, outside the turn: it may take as long
-  /// as it likes, and `requestTimeout` does not count it. [os] answers OS
-  /// calls; without it they are declined.
+  /// wrappers ([ClassInstance], [ClassType]), whose members the session
+  /// serves.
+  ///
+  /// [externalLookup] resolves the names the code leaves undefined, lazily,
+  /// when the code reads one (upstream's `external_lookup`); a name in
+  /// [inputs] too is served by the input. An entry is a host function,
+  /// taking the call's positional and keyword arguments
+  /// (`(List<MontyValue> args, Map<String, MontyValue> kwargs)`) and
+  /// returning a `FutureOr<MontyValue>`, or a value: a [MontyValue] or a
+  /// host object's wrapper. A read of a host function gives a function named by
+  /// its key, and a call to that name runs the entry, outside the turn: it
+  /// may take as long as it likes, and `requestTimeout` does not count it.
+  /// A read of a value converts it then and binds it as a global, so later
+  /// feeds see it without the lookup. A call to a name whose entry is a
+  /// value raises `TypeError` ("'int' object is not callable"), and an
+  /// absent name raises `NameError`. A value the converter refuses (a cyclic
+  /// list, an unpaired surrogate) is not answered: the feed throws its
+  /// [MontyRuntimeError], which a sandbox `try` does not catch, and the
+  /// session is finished, as upstream discards the checkout. An entry that
+  /// is none of these throws [ArgumentError] before anything is sent.
+  ///
+  /// [cwd] switches the sandbox's working directory before the code runs:
+  /// an absolute POSIX path, its trailing slashes trimmed, that
+  /// `os.getcwd()` reports and relative paths resolve against. It lasts
+  /// across feeds, `os.chdir` included, until a feed switches it; without
+  /// one a feed keeps the current directory, `/` for the session's first.
+  /// A relative path or one with a NUL throws [MontyRuntimeError]
+  /// (`ValueError`) before the code runs, and the session runs on; one with
+  /// an unpaired surrogate throws [ArgumentError] (upstream's
+  /// `UnicodeEncodeError`) before anything else.
+  ///
+  /// [os] answers OS calls; without it they are declined.
   ///
   /// [printCallback] receives each run of printed text, in order, and its
   /// future is awaited before the next event is read. Without one, the text
@@ -75,7 +98,7 @@ abstract interface class MontySession {
   /// on. For a host function's answer the suspension stays pending: every
   /// later feed throws [StateError], and only [close] recovers the worker.
   ///
-  /// A host function marked with [coroutine] is a coroutine, as an
+  /// A host function marked with `coroutine` is a coroutine, as an
   /// `async def` host function is upstream: a call the sandbox awaits with
   /// nothing else to run is awaited in place, any other gets a pending
   /// future the sandbox awaits later, settled when its Dart future
@@ -96,8 +119,9 @@ abstract interface class MontySession {
   Future<MontyValue> feedRun(
     String code, {
     Map<String, Object>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     ProtoPrintCallback? printCallback,
+    String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   });
@@ -105,9 +129,9 @@ abstract interface class MontySession {
   /// Starts [code] and returns at its first suspension, or its end: each
   /// host function call, OS call (system sleeps included), name lookup and
   /// wait on pending futures is a [MontySnapshot] for the caller to answer
-  /// (upstream's `feed_start`). The parameters are [feedRun]'s; [externals]
-  /// and [os] are kept for the snapshots' `resumeAuto`, never consulted
-  /// otherwise.
+  /// (upstream's `feed_start`). The parameters are [feedRun]'s; [cwd] holds
+  /// for the whole feed, and [externalLookup] and [os] are kept for the
+  /// snapshots' `resumeAuto`, never consulted otherwise.
   ///
   /// While a suspension is unanswered the session refuses a new feed with
   /// [StateError] ("feed called while a suspension is awaiting an
@@ -116,8 +140,9 @@ abstract interface class MontySession {
   Future<MontySnapshot> feedStart(
     String code, {
     Map<String, Object>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     ProtoPrintCallback? printCallback,
+    String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   });
@@ -140,8 +165,9 @@ abstract interface class MontySession {
 
   /// Restores [state], a dump taken mid-feed (by [dump] while a suspension
   /// waited, or by a snapshot's `dump`), and returns the suspension it
-  /// re-announces (upstream's `load_snapshot`). [externals], [os] and
-  /// [printCallback] are [feedStart]'s, kept for the snapshots' `resumeAuto`;
+  /// re-announces (upstream's `load_snapshot`). [externalLookup], [os] and
+  /// [printCallback] are [feedStart]'s, kept for the snapshots' `resumeAuto`
+  /// (the dump carries its working directory);
   /// a restored [FutureSnapshot]'s coroutines are gone, so its `resumeAuto`
   /// fails.
   ///
@@ -152,7 +178,7 @@ abstract interface class MontySession {
   /// limit of 0 it aborts the load with an in-sandbox `RuntimeError`.
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   });
@@ -320,38 +346,43 @@ final class _LeasedSession implements MontySession {
   Future<MontyValue> feedRun(
     String code, {
     Map<String, Object>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     ProtoPrintCallback? printCallback,
+    String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
-  }) {
+  }) => Future.sync(() {
+    _checkFeedArguments(externalLookup, cwd);
     _hold.used = true;
 
     return _withTurn(
       () => _drive(
         code,
         inputs: inputs,
-        host: _hostFor(_proto, _config, externals, os),
+        cwd: cwd,
+        host: _hostFor(_proto, _config, externalLookup, os),
         printCallback: printCallback,
         skipTypeCheck: skipTypeCheck,
       ),
       feed: true,
     );
-  }
+  });
 
   @override
   Future<MontySnapshot> feedStart(
     String code, {
     Map<String, Object>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     ProtoPrintCallback? printCallback,
+    String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
-  }) {
+  }) => Future.sync(() {
+    _checkFeedArguments(externalLookup, cwd);
     _hold.used = true;
     final drive = _FeedDrive(
       this,
-      _hostFor(_proto, _config, externals, os),
+      _hostFor(_proto, _config, externalLookup, os),
       printCallback ?? defaultPrint,
     );
     _snapshots = drive;
@@ -361,13 +392,14 @@ final class _LeasedSession implements MontySession {
         feedRequest(
           code,
           inputs ?? const {},
+          cwd: cwd,
           skipTypeCheck: skipTypeCheck,
           objects: _proto.objects,
         ),
       ),
       feed: true,
     );
-  }
+  });
 
   @override
   Future<void> loadSession(Uint8List state) async {
@@ -386,14 +418,15 @@ final class _LeasedSession implements MontySession {
   @override
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, Object>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   }) => Future.sync(() {
+    checkExternalLookup(externalLookup);
     _hold.claimFresh();
     final drive = _FeedDrive(
       this,
-      _hostFor(_proto, _config, externals, os),
+      _hostFor(_proto, _config, externalLookup, os),
       printCallback ?? defaultPrint,
     );
     _snapshots = drive;
@@ -531,6 +564,7 @@ final class _LeasedSession implements MontySession {
   Future<MontyValue> _drive(
     String code, {
     required Map<String, Object>? inputs,
+    required String? cwd,
     required HostAnswers host,
     required ProtoPrintCallback? printCallback,
     required bool skipTypeCheck,
@@ -545,6 +579,7 @@ final class _LeasedSession implements MontySession {
         code,
         host,
         inputs: inputs ?? const {},
+        cwd: cwd,
         onPrint: _printingIn(this, printCallback ?? defaultPrint),
         options: FeedOptions(
           collectPrints: false,
@@ -592,15 +627,22 @@ ProtoPrintCallback _printingIn(Object session, ProtoPrintCallback print) =>
       },
     );
 
-/// The host side of one feed of a session with [config]: [externals] and
-/// [os], and system sleeps waited up to the session's maximum.
+/// Throws [ArgumentError] for a feed's [externalLookup] entry or [cwd]
+/// that cannot be sent, before anything else.
+void _checkFeedArguments(Map<String, Object>? externalLookup, String? cwd) {
+  checkCwdText(cwd);
+  checkExternalLookup(externalLookup);
+}
+
+/// The host side of one feed of a session with [config]: [externalLookup]
+/// and [os], and system sleeps waited up to the session's maximum.
 HostAnswers _hostFor(
   ProtoSession session,
   SessionConfig config,
-  Map<String, ProtoExternalFunction>? externals,
+  Map<String, Object>? externalLookup,
   OsHandler? os,
 ) => HostAnswers(
-  externals: externals ?? const {},
+  externalLookup: externalLookup ?? const {},
   os: os,
   systemSleepMax: config.systemSleepMax,
   objects: session.objects,
@@ -723,12 +765,22 @@ final class _FeedDrive implements SnapshotDriver {
     // No host code for a session already finished, as resumeCallAuto.
     if (_session._hold.isFinished) throw _finishedError();
 
-    return _session._withTurn(
-      () => step(
-        _host.lookup(snapshot.variableName, objectId: snapshot.objectId),
-      ),
-      feed: false,
-    );
+    return _session._withTurn(() {
+      final pb.ParentRequest request;
+      try {
+        request = _host.lookup(
+          snapshot.variableName,
+          objectId: snapshot.objectId,
+        );
+      } on Object {
+        // A value the writer refuses is never answered: upstream discards
+        // the checkout.
+        _session._hold.lease.kill();
+        rethrow;
+      }
+
+      return step(request);
+    }, feed: false);
   }
 
   @override

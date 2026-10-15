@@ -7,9 +7,12 @@ and on the web.
 
 ## The two ways to answer
 
-1. **`feedRun(code, externals: {...})`.** The session runs the host
+1. **`feedRun(code, externalLookup: {...})`.** The session runs the host
    function and awaits its `Future` Dart-side before Python resumes. To
-   Python the call is synchronous: it returns a plain value.
+   Python the call is synchronous: it returns a plain value. A function
+   wrapped in `coroutine(...)` is an `async def` function instead: each
+   call is an awaitable that Python awaits, and the session settles it when
+   the Dart future completes.
 2. **`feedStart(code)` and the snapshots.** The caller answers each
    `FunctionSnapshot` itself. `resume(ExternalReturnValue(v))` or
    `resume(ExternalException(type, message))` settles the call at once;
@@ -18,12 +21,12 @@ and on the web.
 
 ## The matrix
 
-| | `externals` (`feedRun`) | snapshot, settled at once | snapshot, `ExternalFuture` |
-|---|---|---|---|
-| bare call `fn(x)` | the value | the value | an awaitable (`type(x).__name__` is `'coroutine'`) |
-| `await fn(x)` | `TypeError: '<type>' object can't be awaited` | the same `TypeError` | the value, once settled |
-| `asyncio.gather(fn(a), fn(b))` | `TypeError` | `TypeError` | all calls are made before any is settled; results in argument order |
-| exception from the host | raised at the call; `try`/`except` catches it | the same | raised at the `await`; `try`/`except` catches it |
+| | `externalLookup` (`feedRun`) | `coroutine(fn)` in `externalLookup` | snapshot, settled at once | snapshot, `ExternalFuture` |
+|---|---|---|---|---|
+| bare call `fn(x)` | the value | an awaitable | the value | an awaitable (`type(x).__name__` is `'coroutine'`) |
+| `await fn(x)` | `TypeError: '<type>' object can't be awaited` | the value | the same `TypeError` | the value, once settled |
+| `asyncio.gather(fn(a), fn(b))` | `TypeError` | the calls run at once; results in argument order | `TypeError` | all calls are made before any is settled; results in argument order |
+| exception from the host | raised at the call; `try`/`except` catches it | raised at the `await` | the same | raised at the `await`; `try`/`except` catches it |
 
 A synchronous answer is not awaitable, so `await` on it fails the way it does
 in CPython. A future answer lets several host calls be in flight at once:

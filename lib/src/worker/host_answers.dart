@@ -17,10 +17,12 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedError, protocolError;
+    show MontyCrashedError, MontyRuntimeError, encodingInput, protocolError;
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show pythonTypeName;
 
 /// A host function Python can call by name.
 ///
@@ -58,9 +60,15 @@ typedef OsHandler =
     );
 
 /// Marks [function] as a coroutine, as an `async def` host function is
-/// upstream: the sandbox gets an awaitable for each call, settled through
-/// the futures protocol when [function]'s future completes. Unmarked, a host
-/// function's returned future is awaited and its value is the call's answer.
+/// upstream: Dart cannot tell an `async` function from one that returns a
+/// [Future], so the mark says which it is.
+///
+/// A call to the returned function, an `externalLookup` entry, is a
+/// coroutine in the sandbox: one the sandbox awaits with nothing else to
+/// run is awaited in place, and any other gets a pending future, settled
+/// when [function]'s future completes, so `asyncio.gather` runs several at
+/// once. Unmarked, a host function's returned future is awaited and its
+/// value is the call's answer.
 ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   FutureOr<MontyValue> marked(
     List<MontyValue> args,
@@ -299,7 +307,7 @@ Duration cappedSleep(double seconds, Duration max) {
       : Duration(microseconds: micros.round());
 }
 
-/// The host's side of one feed: its host functions, OS handler and the
+/// The host's side of one feed: its external lookup, OS handler and the
 /// coroutines it has started, answering the worker's suspensions as
 /// upstream's async binding does.
 ///
@@ -316,7 +324,7 @@ final class HostAnswers {
   /// The answers for one feed, its host objects in [objects] (a fresh
   /// registry without one).
   HostAnswers({
-    this.externals = const {},
+    this.externalLookup = const {},
     this.os,
     this.systemSleepMax,
     HostObjects? objects,
@@ -325,8 +333,10 @@ final class HostAnswers {
   /// The session's host objects.
   final HostObjects objects;
 
-  /// The host functions, by the name the sandbox calls.
-  final Map<String, ProtoExternalFunction> externals;
+  /// What names the sandbox leaves undefined resolve to: a host function
+  /// ([ProtoExternalFunction]), or a value ([MontyValue], or a host
+  /// object's wrapper) converted when the name is read.
+  final Map<String, Object> externalLookup;
 
   /// The OS handler; without one every OS call is declined.
   final OsHandler? os;
@@ -379,10 +389,24 @@ final class HostAnswers {
     final reader = _checkedArgs(call, objects.lookup);
     if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
-    final function = externals[name];
-    if (function == null) {
+    final entry = externalLookup[name];
+    if (entry == null) {
       return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
     }
+    if (entry is! ProtoExternalFunction) {
+      // Upstream calls the entry, whatever it is.
+      return _resume(
+        call.callId,
+        pb.ExtFunctionResult(
+          error: raisedException(
+            'TypeError',
+            "'${_typeName(entry)}' object is not callable",
+            const {},
+          ),
+        ),
+      );
+    }
+    final function = entry;
     // Building the argument values is inside the guarded body too: a value
     // this driver cannot carry fails the call in Python, and the worker,
     // suspended on it, still gets its answer.
@@ -400,19 +424,36 @@ final class HostAnswers {
   }
 
   /// Answers a lookup of [name]: with [objectId], a lazy attribute of that
-  /// host object; otherwise a host function by that name resolves to
-  /// itself, which the worker calls back, and anything else is undefined.
+  /// host object; otherwise [externalLookup]'s entry. A host function
+  /// resolves to a function named [name], its lookup key, which the worker
+  /// calls back; a value is converted now; an absent name is undefined.
+  ///
+  /// A value the writer refuses throws, as [MontyRuntimeError] for one
+  /// Python refuses ([encodingInput]): upstream does not answer it, and
+  /// discards the checkout. The caller ends the session.
   pb.ParentRequest lookup(String name, {String? objectId}) {
     if (objectId != null) return _attribute(objects, objectId, name);
-    if (!externals.containsKey(name)) {
+    final entry = externalLookup[name];
+    if (entry == null) {
       return pb.ParentRequest(
         resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
       );
     }
-    final arena = pb.Arena(nodeCount: 1, nodes: [functionNode(name)]);
+    if (entry is ProtoExternalFunction) {
+      final arena = pb.Arena(nodeCount: 1, nodes: [functionNode(name)]);
+
+      return pb.ParentRequest(
+        resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
+      );
+    }
+    final writer = ArenaWriter(objects: objects);
+    final index = encodingInput(() => writer.add(entry));
 
     return pb.ParentRequest(
-      resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
+      resumeNameLookup: pb.ResumeNameLookup(
+        values: writer.arena,
+        value: index,
+      ),
     );
   }
 
@@ -802,6 +843,34 @@ final class AsyncDecline implements Exception {
 
   @override
   String toString() => 'AsyncDecline: $message';
+}
+
+/// The Python type name of an [HostAnswers.externalLookup] entry that is
+/// no function, as upstream's `'<type>' object is not callable` names it.
+String _typeName(Object entry) => switch (entry) {
+  ClassInstance() => 'ClassInstance',
+  ClassType() => 'ClassType',
+  final MontyValue v => pythonTypeName(v),
+  _ => 'object',
+};
+
+/// Throws [ArgumentError] for an `externalLookup` entry that is neither a
+/// host function, a [MontyValue], nor a host object's wrapper: before
+/// anything is sent, as `inputs` refuses a Dart object it cannot carry.
+void checkExternalLookup(Map<String, Object>? externalLookup) {
+  for (final MapEntry(:key, :value) in (externalLookup ?? const {}).entries) {
+    if (value is ProtoExternalFunction ||
+        value is MontyValue ||
+        value is ClassInstance ||
+        value is ClassType) {
+      continue;
+    }
+    throw ArgumentError.value(
+      value,
+      'externalLookup[$key]',
+      'not a host function, a MontyValue, a ClassInstance or a ClassType',
+    );
+  }
 }
 
 /// `ResumeCall` declining [callId]'s OS call.

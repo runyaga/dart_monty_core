@@ -7,6 +7,7 @@
 // (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
 // cases.
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
@@ -103,8 +104,11 @@ Map<String, Object>? _built(Object? values) => switch (values) {
   _ => throw ArgumentError.value(values, 'values'),
 };
 
+/// [error] as the oracle shows upstream's: a refused `cwd` argument is
+/// upstream's `UnicodeEncodeError`, raised as the binding reads it.
 String _errorText(Object error) => switch (error) {
   StateError(message: 'the session is finished') => 'finished',
+  ArgumentError(name: 'cwd', :final message) => 'UnicodeEncodeError: $message',
   MontyRuntimeError() => "MontyRuntimeError: ${error.display('type-msg')}",
   _ => '${error.runtimeType}: $error',
 };
@@ -149,13 +153,11 @@ Future<String> _step(MontySession s, List<Object?> step) async {
           passed.add('call:$functionName');
           snap = await snap.resumeAuto();
         default:
-          throw StateError('unexpected snapshot $snap');
+          fail('unexpected snapshot $snap');
       }
     }
-  } on StateError catch (e) {
-    if (e.message.startsWith('unexpected snapshot')) rethrow;
-    passed.add(_errorText(e));
-  } on MontyError catch (e) {
+  } on Object catch (e) {
+    if (e is TestFailure) rethrow;
     passed.add(_errorText(e));
   }
 
@@ -181,5 +183,35 @@ void sessionSurfaceTests(String label, WithSession withSession) {
         });
       });
     }
+
+    test('an entry of no supported kind throws ArgumentError before '
+        'anything is sent; the session stays fresh', () async {
+      await withSession((s) async {
+        final bad = <String, Object>{'x': 1};
+        await expectLater(
+          s.loadSnapshot(Uint8List(0), externalLookup: bad),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.name,
+              'name',
+              'externalLookup[x]',
+            ),
+          ),
+        );
+        await expectLater(
+          s.feedStart('1', externalLookup: bad),
+          throwsArgumentError,
+        );
+        await expectLater(
+          s.feedRun('1', externalLookup: bad),
+          throwsArgumentError,
+        );
+        // Still fresh: a load is refused for the bytes, not as used.
+        await expectLater(
+          s.loadSession(Uint8List(0)),
+          throwsA(isA<MontyRuntimeError>()),
+        );
+      });
+    });
   });
 }

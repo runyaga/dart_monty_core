@@ -66,7 +66,7 @@ Future<void> _stubs(MontySession session) async {
   };
   final total = await session.feedRun(
     'total: float = fetch_price("A1") * 2\ntotal',
-    externals: externals,
+    externalLookup: externals,
   );
   print('total = $total');
   _check(total == const MontyFloat(19), 'stubbed call');

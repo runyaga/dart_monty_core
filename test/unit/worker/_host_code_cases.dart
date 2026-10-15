@@ -257,7 +257,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
           await s.feedRun(
             _catchF,
             printCallback: _ignore,
-            externals: {'f': (args, kwargs) => throw StateError('x')},
+            externalLookup: {'f': (args, kwargs) => throw StateError('x')},
           ),
           _caught('Exception', "Exception('Bad state: x')", ['Bad state: x']),
         );
@@ -271,7 +271,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
           await s.feedRun(
             _catchF,
             printCallback: _ignore,
-            externals: {
+            externalLookup: {
               'f': (args, kwargs) =>
                   throw const ExternalException('ValueError'),
             },
@@ -325,7 +325,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
             '  r = (type(e).__name__, e.args)\n'
             'r',
             printCallback: _ignore,
-            externals: {
+            externalLookup: {
               'f': (args, kwargs) =>
                   throw const ExternalException('NoSuchError', 'm'),
             },

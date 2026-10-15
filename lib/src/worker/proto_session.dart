@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/worker/arena_nodes.dart' show rustDebug;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/collect_streams.dart';
@@ -21,6 +22,8 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show surrogateEncodeError;
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 
@@ -83,10 +86,11 @@ final class ProtoSession {
   ///
   /// [inputs] are bound as global names before the code runs: each a
   /// [MontyValue] or a host object's wrapper, which registers in [objects].
-  /// A call to a
-  /// name in [externals] runs that function and answers with its value, or,
-  /// for a function marked with [coroutine], settles it through the futures
-  /// protocol ([HostAnswers]). [onOsCall] answers OS calls, which are
+  /// A name the code
+  /// leaves undefined resolves through [externalLookup]: a call to a host
+  /// function there runs it and answers with its value, or, for a function
+  /// marked with [coroutine], settles it through the futures protocol
+  /// ([HostAnswers]). [onOsCall] answers OS calls, which are
   /// declined without it. [onPrint] sees each run of printed text as it
   /// arrives, and its future is awaited before the next one; the result
   /// also lists them all, unless [FeedOptions.collectPrints] is false.
@@ -101,14 +105,14 @@ final class ProtoSession {
   Future<FeedResult> feed(
     String code, {
     Map<String, Object> inputs = const {},
-    Map<String, ProtoExternalFunction> externals = const {},
+    Map<String, Object> externalLookup = const {},
     OsHandler? onOsCall,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
   }) => drive(
     code,
     HostAnswers(
-      externals: externals,
+      externalLookup: externalLookup,
       os: onOsCall,
       systemSleepMax: options.systemSleepMax,
       objects: objects,
@@ -120,11 +124,16 @@ final class ProtoSession {
 
   /// Runs [code] as [feed] does, its suspensions answered by [host], which
   /// is disposed when the feed ends. [FeedOptions.systemSleepMax] is
-  /// [host]'s, not [options]'.
+  /// [host]'s, not [options]'. [cwd] switches the working directory first
+  /// ([feedRequest]).
+  ///
+  /// A name lookup [host] cannot answer (a value the writer refuses) throws
+  /// its error and kills the worker, as upstream discards the checkout.
   Future<FeedResult> drive(
     String code,
     HostAnswers host, {
     Map<String, Object> inputs = const {},
+    String? cwd,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
   }) => _guard(() async {
@@ -136,6 +145,7 @@ final class ProtoSession {
     var request = feedRequest(
       code,
       inputs,
+      cwd: cwd,
       skipTypeCheck: options.skipTypeCheck,
       objects: objects,
     );
@@ -157,6 +167,13 @@ final class ProtoSession {
           // A payload [host] rejects as upstream does when the frame
           // arrives is a protocol violation: the worker is discarded.
           if (e.cause == CrashCause.protocol) _channel.kill();
+          rethrow;
+        } on Object {
+          // A lookup value the writer refuses is never answered: upstream
+          // discards the checkout, and the worker, still suspended, goes.
+          if (event.whichKind() == pb.ChildEvent_Kind.nameLookup) {
+            _channel.kill();
+          }
           rethrow;
         }
         request =
@@ -600,10 +617,14 @@ const String defaultCwd = '/';
 ///
 /// Encoded as upstream's pool encodes it: the arena always present (empty
 /// without inputs) and proto3 defaults left out, as prost leaves them out.
-/// The `cwd` is the session's to add (see [ProtoSession]).
+/// [cwd] switches the sandbox's working directory before the code runs:
+/// it is checked after [inputs] are encoded, as upstream checks it
+/// ([checkedCwd]). Without it the `cwd` is the session's to add (see
+/// [ProtoSession]).
 pb.ParentRequest feedRequest(
   String code,
   Map<String, Object> inputs, {
+  String? cwd,
   bool skipTypeCheck = false,
   HostObjects? objects,
 }) {
@@ -621,8 +642,38 @@ pb.ParentRequest feedRequest(
     );
   }
   feed.values = writer.arena;
+  if (cwd != null) feed.cwd = checkedCwd(cwd);
 
   return pb.ParentRequest(feed: feed);
+}
+
+/// [cwd] as the worker takes it, its trailing slashes trimmed (`/` for the
+/// root), as upstream's `validate_cwd` gives it.
+///
+/// Throws [MontyRuntimeError] with Python `ValueError` and upstream's text
+/// for a path that is not absolute or holds a NUL; the session runs on.
+String checkedCwd(String cwd) {
+  final String message;
+  if (cwd.contains('\u0000')) {
+    message = 'cwd must not contain NUL bytes: ${rustDebug(cwd)}';
+  } else if (!cwd.startsWith('/')) {
+    message = 'cwd must be an absolute POSIX path: ${rustDebug(cwd)}';
+  } else {
+    final trimmed = cwd.replaceFirst(RegExp(r'/+$'), '');
+
+    return trimmed.isEmpty ? '/' : trimmed;
+  }
+
+  throw recordError(RaisedRecord('ValueError', message, const []));
+}
+
+/// Throws [ArgumentError] for a [cwd] Python cannot pass as a `str` to the
+/// binding: one with an unpaired surrogate, upstream's
+/// `UnicodeEncodeError`, raised before anything else.
+void checkCwdText(String? cwd) {
+  if (cwd == null) return;
+  final unencodable = surrogateEncodeError(cwd);
+  if (unencodable != null) throw ArgumentError.value(cwd, 'cwd', unencodable);
 }
 
 /// Throws [ArgumentError] for a negative print flush interval, with

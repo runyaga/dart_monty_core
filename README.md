@@ -73,10 +73,10 @@ and the call fails with `MontyCrashedError` (`timedOut` is true).
 
 | | |
 |---|---|
-| `feedRun(code, {inputs, externals, printCallback, os, skipTypeCheck})` | Run to the end and return the value of the last expression, or `MontyNone` |
+| `feedRun(code, {inputs, externalLookup, printCallback, cwd, os, skipTypeCheck})` | Run to the end and return the value of the last expression, or `MontyNone` |
 | `feedStart(code, {…})` | Run to the first suspension and return a `MontySnapshot` |
 | `dump()` | The session as bytes, idle or suspended |
-| `loadSession(bytes)` / `loadSnapshot(bytes, {externals, printCallback, os})` | Restore a dump into a fresh session |
+| `loadSession(bytes)` / `loadSnapshot(bytes, {externalLookup, printCallback, os})` | Restore a dump into a fresh session |
 | `workerPid` | The worker's process id (null on the web) |
 | `close()` | End the session; never throws |
 
@@ -86,8 +86,8 @@ and the call fails with `MontyCrashedError` (`timedOut` is true).
 final value = await session.feedRun(
   'f"{greeting}, {fetch(key)}!"',
   inputs: {'greeting': const MontyString('hello'), 'key': const MontyString('k')},
-  externals: {
-    'fetch': (args, kwargs) async =>
+  externalLookup: {
+    'fetch': (List<MontyValue> args, Map<String, MontyValue> kwargs) async =>
         MontyString('value-for-${(args[0] as MontyString).value}'),
   },
 );
@@ -98,10 +98,21 @@ print(value); // MontyString(hello, value-for-k!)
 (`MontyValue.fromDart` converts plain Dart data) or a host object
 (`ClassInstance`, `ClassType`), whose members the session serves.
 
-A host function takes `(List<MontyValue> args, Map<String, MontyValue> kwargs)`
-and returns a `MontyValue`, directly or as a future, which is awaited before
-Python resumes. Throw `ExternalException('ValueError', 'bad key')` to raise a
-chosen Python exception; any other throw raises `Exception` with its text.
+`externalLookup` resolves the names the code leaves undefined, when the code
+reads one (upstream's `external_lookup`). An entry is a host function or a
+value (a `MontyValue`, or a host object); a value is converted when the name
+is read and then bound as a global. A host function takes
+`(List<MontyValue> args, Map<String, MontyValue> kwargs)` and returns a
+`MontyValue`, directly or as a future, which is awaited before Python
+resumes; wrap it in `coroutine(...)` to make it an `async def` function, whose
+calls Python awaits (`asyncio.gather` runs them at once). Throw
+`ExternalException('ValueError', 'bad key')` to raise a chosen Python
+exception; any other throw raises `Exception` with its text. `HostClass`
+describes a Dart class to `ClassInstance` and `ClassType`.
+
+`cwd` switches the sandbox's working directory (`os.getcwd()`, and what
+relative paths resolve against) before the code runs; it lasts across feeds
+until a feed switches it, and starts at `/`.
 
 `printCallback` gets each run of printed text as `(stream, text)`, with
 `stream` `'stdout'` or `'stderr'`. `CollectStreams` and `CollectString` are
@@ -136,7 +147,7 @@ while (snapshot is! MontyComplete) {
 print(snapshot.output); // MontyInt(42)
 ```
 
-`resumeAuto()` answers from the `externals` and `os` given to `feedStart`.
+`resumeAuto()` answers from the `externalLookup` and `os` given to `feedStart`.
 A suspended snapshot's `dump()` can be restored later, in another worker,
 with `loadSnapshot`.
 

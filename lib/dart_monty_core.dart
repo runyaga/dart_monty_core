@@ -61,8 +61,8 @@ export 'src/platform/monty_value.dart'
 export 'src/platform/os_call_not_handled_exception.dart'
     show OsCallNotHandledException;
 export 'src/worker/collect_streams.dart' show CollectStreams, CollectString;
-export 'src/worker/host_answers.dart' show OsHandler;
-export 'src/worker/host_objects.dart' show ClassInstance, ClassType;
+export 'src/worker/host_answers.dart' show OsHandler, coroutine;
+export 'src/worker/host_objects.dart' show ClassInstance, ClassType, HostClass;
 export 'src/worker/monty.dart' show Monty;
 export 'src/worker/monty_error.dart'
     show

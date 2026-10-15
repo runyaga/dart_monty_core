@@ -23,12 +23,12 @@ import 'package:test/test.dart';
 import '_attribute_cases.dart';
 import '_config_cases.dart';
 import '_cwd_cases.dart';
-import '_session_cases.dart';
 import '_host_cases.dart';
 import '_host_code_cases.dart';
 import '_os_handler_cases.dart';
 import '_print_cases.dart';
 import '_restore_cases.dart';
+import '_session_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
@@ -181,7 +181,7 @@ void main() {
         final release = Completer<MontyValue>();
         final run = session.feedRun(
           'host()',
-          externals: {
+          externalLookup: {
             'host': (args, kwargs) {
               entered.complete();
 
@@ -293,7 +293,7 @@ void main() {
           await expectLater(
             session.feedRun(
               'while True:\n    f()',
-              externals: {'f': (args, kwargs) => MontyInt(++calls)},
+              externalLookup: {'f': (args, kwargs) => MontyInt(++calls)},
               printCallback: _ignore,
             ),
             throwsA(
@@ -404,7 +404,7 @@ void main() {
           await expectLater(
             session.feedRun(
               "print('a')\nf()\n7",
-              externals: {'f': (args, kwargs) => MontyInt(++calls)},
+              externalLookup: {'f': (args, kwargs) => MontyInt(++calls)},
               printCallback: (stream, text) => throw StateError('sink'),
             ),
             throwsA(
@@ -520,7 +520,7 @@ void main() {
           final entered = Completer<void>();
           final run = session.feedRun(
             'x = 1\nnever()',
-            externals: {
+            externalLookup: {
               'never': (args, kwargs) {
                 entered.complete();
 

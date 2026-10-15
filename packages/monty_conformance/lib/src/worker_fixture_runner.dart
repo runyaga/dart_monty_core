@@ -252,7 +252,7 @@ Future<MontyValue> _drive(
 
   var snapshot = await session.feedStart(
     source,
-    externals: mount
+    externalLookup: mount
         ? null
         : {
             for (final name in workerFixtureFunctions)

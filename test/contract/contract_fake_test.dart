@@ -96,7 +96,7 @@ void main() {
           ..willCall('f')
           ..willReturn(const MontyInt(7));
         try {
-          await fake.feedRun('f()', externals: {'f': (_, _) => result});
+          await fake.feedRun('f()', externalLookup: {'f': (_, _) => result});
         } on MontyRuntimeError {
           // The refused value raised in the sandbox; the answers say why.
         }
@@ -123,7 +123,7 @@ void main() {
       // The session runs on: completing the segment makes it playable.
       fake.willReturn(const MontyInt(1));
       expect(
-        await fake.feedRun('f()', externals: {'f': (_, _) => _none}),
+        await fake.feedRun('f()', externalLookup: {'f': (_, _) => _none}),
         const MontyInt(1),
       );
       await fake.close();
@@ -200,7 +200,7 @@ void main() {
         ..willCatch()
         ..willReturn(_none);
       await expectLater(
-        fake.feedRun('f()', externals: {'f': (_, _) => _none}),
+        fake.feedRun('f()', externalLookup: {'f': (_, _) => _none}),
         throwsStateError,
       );
       await fake.close();
@@ -401,7 +401,7 @@ void main() {
     }
     fake.willReturn(_none);
     await expectLater(
-      fake.feedRun('x', externals: {'f': (_, _) => _none}),
+      fake.feedRun('x', externalLookup: {'f': (_, _) => _none}),
       throwsA(
         isA<MontyRuntimeError>().having(
           (e) => e.toString(),
@@ -432,7 +432,7 @@ void main() {
         ..willReturn(_none);
       await fake.feedRun(
         'script',
-        externals: {
+        externalLookup: {
           'value': (_, _) => const MontyInt(1),
           'raises': (_, _) => throw const ExternalException('KeyError', 'k'),
           'future': coroutine((_, _) async => const MontyInt(3)),
@@ -454,6 +454,64 @@ void main() {
         ],
       );
       expect(fake.answers.firstOrNull?.answer, isA<ExternalReturnValue>());
+      await fake.close();
+    });
+  });
+
+  group('feed arguments', () {
+    test('a relative cwd raises ValueError before the script plays', () async {
+      final fake = FakeMontySession()..willReturn(const MontyInt(1));
+      await expectLater(
+        fake.feedRun('1', cwd: 'rel'),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.display('type-msg'),
+            'display',
+            'ValueError: cwd must be an absolute POSIX path: "rel"',
+          ),
+        ),
+      );
+      expect(fake.feeds, isEmpty);
+      expect(await fake.feedRun('1', cwd: '/a/'), const MontyInt(1));
+      await fake.close();
+    });
+
+    test('feedStart takes cwd as feedRun does', () async {
+      final fake = FakeMontySession()..willReturn(const MontyInt(2));
+      await expectLater(
+        fake.feedStart('2', cwd: 'a\u0000'),
+        throwsA(isA<MontyRuntimeError>()),
+      );
+      final done = await fake.feedStart('2', cwd: '/');
+      expect((done as MontyComplete).output, const MontyInt(2));
+      await fake.close();
+    });
+
+    test('an unencodable cwd or an entry of no supported kind throws '
+        'ArgumentError before anything is sent', () async {
+      final fake = FakeMontySession()..willReturn(const MontyInt(3));
+      await expectLater(
+        fake.feedRun('3', cwd: '/\ud800'),
+        throwsA(
+          isA<ArgumentError>().having((e) => e.name, 'name', 'cwd'),
+        ),
+      );
+      await expectLater(
+        fake.feedRun('3', externalLookup: {'x': 3}),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.name,
+            'name',
+            'externalLookup[x]',
+          ),
+        ),
+      );
+      await expectLater(
+        fake.feedStart('3', externalLookup: {'x': 'no'}),
+        throwsArgumentError,
+      );
+      expect(fake.feeds, isEmpty);
+      expect(await fake.feedRun('3'), const MontyInt(3));
       await fake.close();
     });
   });

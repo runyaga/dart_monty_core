@@ -10,15 +10,11 @@
 // It speaks the worker's value types (`MontyValue`) and nothing else, so the
 // same code runs on the VM and in a browser.
 
-// HostClass, which a ClassType wraps, is internal to dart_monty_core.
-// ignore_for_file: implementation_imports
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/host_objects.dart' show HostClass;
 
 /// The host functions a `# call-external` fixture may name (the arms of
 /// upstream's `dispatch_external_call` and the names its lookup resolves to

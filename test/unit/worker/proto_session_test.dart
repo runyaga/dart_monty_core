@@ -7,7 +7,6 @@ import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/frame.dart'
     show FrameTooLargeException;
-import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
@@ -386,7 +385,7 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'fetch',
-        externals: {'fetch': (args, kwargs) => const MontyNone()},
+        externalLookup: {'fetch': (args, kwargs) => const MontyNone()},
       );
       final resume = itemAt(ch.requests, 2).resumeNameLookup;
       expect(resume.whichKind(), pb.ResumeNameLookup_Kind.value);
@@ -430,8 +429,8 @@ void main() {
       final calls = <(List<MontyValue>, Map<String, MontyValue>)>[];
       final r = await s.feed(
         "r = fetch(1, mode='x')\nr + '!'",
-        externals: {
-          'fetch': (args, kwargs) {
+        externalLookup: {
+          'fetch': (List<MontyValue> args, Map<String, MontyValue> kwargs) {
             calls.add((args, kwargs));
 
             return const MontyString('ok');
@@ -473,7 +472,7 @@ void main() {
         final s = await ProtoSession.open(ch);
         await s.feed(
           'f(); g()',
-          externals: {
+          externalLookup: {
             'f': (args, kwargs) =>
                 throw const ExternalException('KeyError', 'no'),
             'g': (args, kwargs) => throw StateError('broken'),
@@ -534,7 +533,7 @@ void main() {
           answer([completeNone()]),
         ]);
         final s = await ProtoSession.open(ch);
-        await s.feed('f()', externals: {'f': (args, kwargs) => value});
+        await s.feed('f()', externalLookup: {'f': (args, kwargs) => value});
         final result = itemAt(ch.requests, 2).resumeCall.result;
         expect(result.whichKind(), pb.ExtFunctionResult_Kind.error);
         expect(result.error.message, contains('Invalid argument'));
@@ -570,7 +569,7 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'f()',
-        externals: {'f': (args, kwargs) => const MontyString('\uD800')},
+        externalLookup: {'f': (args, kwargs) => const MontyString('\uD800')},
       );
       final result = itemAt(ch.requests, 2).resumeCall.result;
       expect(result.error.excType, 'UnicodeEncodeError');
@@ -592,7 +591,7 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'f()',
-        externals: {'f': (args, kwargs) => const MontyNone()},
+        externalLookup: {'f': (args, kwargs) => const MontyNone()},
       );
       final error = itemAt(ch.requests, 2).resumeCall.result.error;
       expect(error.message, contains('a keyword argument name must be a str'));
@@ -611,8 +610,8 @@ void main() {
         List<MontyValue>? got;
         await s.feed(
           'f(1j)',
-          externals: {
-            'f': (args, kwargs) {
+          externalLookup: {
+            'f': (List<MontyValue> args, Map<String, MontyValue> kwargs) {
               got = args;
 
               return const MontyNone();
@@ -1054,7 +1053,7 @@ void main() {
       await expectLater(
         s.feed(
           'f(1)',
-          externals: {
+          externalLookup: {
             'f': (args, kwargs) {
               called = true;
 
@@ -1098,7 +1097,10 @@ void main() {
       ]);
       final s = await ProtoSession.open(ch);
       await expectLater(
-        s.feed('f(k=1)', externals: {'f': (args, kwargs) => const MontyNone()}),
+        s.feed(
+          'f(k=1)',
+          externalLookup: {'f': (args, kwargs) => const MontyNone()},
+        ),
         violation(
           'invalid payload from worker: invalid value for Arena: value root 9 '
           'is out of range for an arena of 2 nodes',

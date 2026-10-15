@@ -564,4 +564,36 @@ sessionOracle = {
       outcome: 'MontyRuntimeError: ValueError: Circular reference detected',
     ),
   ],
+  'cwd_surrogate': [
+    (
+      step: <Object?>[
+        'run',
+        'import os\nrepr(os.getcwd())',
+        null,
+        '/a\u{d800}',
+        null,
+      ],
+      outcome:
+          'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 2: surrogates not allowed',
+    ),
+    (
+      step: <Object?>['run', 'import os\nrepr(os.getcwd())', null, null, null],
+      outcome: 'value: \'/\'',
+    ),
+  ],
+  'cwd_surrogate_first': [
+    (
+      step: <Object?>[
+        'run',
+        'import os\nrepr(os.getcwd())',
+        null,
+        'r\u{d800}',
+        <String, Object?>{
+          'a': <Object?>['cyclic'],
+        },
+      ],
+      outcome:
+          'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 1: surrogates not allowed',
+    ),
+  ],
 };

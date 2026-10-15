@@ -11,6 +11,7 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart' show rustDebug;
 
 /// Python's `str.isidentifier()`.
@@ -343,3 +344,29 @@ String _rustCharDebug(int c) {
 }
 
 String _unquoted(String debug) => debug.substring(1, debug.length - 1);
+
+/// The Python type name of [value], as a `TypeError` names it.
+String pythonTypeName(MontyValue value) =>
+    _typeNames[value.runtimeType] ?? 'object';
+
+const Map<Type, String> _typeNames = {
+  MontyNone: 'NoneType',
+  MontyBool: 'bool',
+  MontyInt: 'int',
+  MontyBigInt: 'int',
+  MontyFloat: 'float',
+  MontyString: 'str',
+  MontyBytes: 'bytes',
+  MontyList: 'list',
+  MontyTuple: 'tuple',
+  MontyDict: 'dict',
+  MontySet: 'set',
+  MontyFrozenSet: 'frozenset',
+  MontyPath: 'PosixPath',
+  MontyDate: 'date',
+  MontyDateTime: 'datetime',
+  MontyTime: 'time',
+  MontyTimeDelta: 'timedelta',
+  MontyTimeZone: 'timezone',
+  MontyEllipsis: 'ellipsis',
+};

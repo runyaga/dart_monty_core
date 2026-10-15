@@ -9,7 +9,6 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 

@@ -125,6 +125,10 @@ CASES: list[tuple[str, list[list[Any]]]] = [
     ('cwd_escaped', [run(GETCWD, cwd='rel\x7f\u0085퟿"\\\n')]),
     ('cwd_refused_keeps', [run(GETCWD, cwd='/k'), run(GETCWD, cwd='k'), run(GETCWD)]),
     ('cwd_after_input_refusal', [run(GETCWD, cwd='rel', inputs={'a': ['cyclic']})]),
+    # A str Python cannot encode is refused while the arguments are read,
+    # before anything else.
+    ('cwd_surrogate', [run(GETCWD, cwd='/a\ud800'), run(GETCWD)]),
+    ('cwd_surrogate_first', [run(GETCWD, cwd='r\ud800', inputs={'a': ['cyclic']})]),
 ]
 
 

@@ -1029,8 +1029,8 @@ void main() {
       Object? seen;
       final host = HostAnswers(
         objects: objects,
-        externals: {
-          'f': (args, kwargs) {
+        externalLookup: {
+          'f': (List<MontyValue> args, Map<String, MontyValue> kwargs) {
             seen = onlyItem(args);
 
             return const MontyNone();

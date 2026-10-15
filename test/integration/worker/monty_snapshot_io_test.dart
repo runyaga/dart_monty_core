@@ -181,7 +181,7 @@ void main() {
       final value = await s.feedRun(
         'import asyncio\nawait asyncio.gather(af(1), af(2))',
         printCallback: _ignore,
-        externals: {
+        externalLookup: {
           'af': coroutine((args, kwargs) async {
             final n = (firstItem(args) as MontyInt).value;
             await Future<void>.delayed(Duration(milliseconds: (3 - n) * 10));
@@ -282,7 +282,7 @@ void main() {
       final value = await s.feedRun(
         'fetch',
         printCallback: _ignore,
-        externals: {'fetch': (args, kwargs) => const MontyNone()},
+        externalLookup: {'fetch': (args, kwargs) => const MontyNone()},
       );
       expect(value, const MontyString('fetch'));
     });
