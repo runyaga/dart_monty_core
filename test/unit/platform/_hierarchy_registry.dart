@@ -26,20 +26,16 @@
 // because these are thrown types, not values: constructing one proves nothing,
 // and each needs the suite that provokes it from a real backend.
 //
-//   MontyError (sealed root, lib/src/platform/monty_error.dart:20)
-//     // ERROR MontyScriptError    -- Python raised; carries the traceback
-//     // ERROR MontySyntaxError    -- extends MontyScriptError; compile-time
-//     // ERROR MontyPanicError     -- the interpreter aborted
-//     // ERROR MontyCrashError     -- the host process died
-//     // ERROR MontyDisposedError  -- use after close
-//     // ERROR MontyResourceError  -- a declared limit was hit
-//     // ERROR MontySuspensionBudgetExceeded -- the host's suspension bound was hit
+//   MontyError (sealed root, lib/src/worker/monty_error.dart)
+//     // ERROR MontySyntaxError    -- fed code did not parse
+//     // ERROR MontyRuntimeError   -- Python raised and did not catch
+//     // ERROR MontyTypingError    -- the session's type check refused
+//     // ERROR MontyCrashedError   -- the worker is gone
 //
 // NOT under MontyError, and deliberately excluded from that list because they
-// are not part of the sealed hierarchy: MontyException, MontyTypingError,
-// MontyInternalError (extends Error), OsCallException,
-// OsCallNotHandledException, WireFormatMismatch. They are each covered by
-// their own suite; listing them here would imply a `switch` exhaustiveness
+// are not part of the sealed hierarchy: OsCallNotHandledException,
+// ExternalException. They are each covered by their own suite; listing them
+// here would imply a `switch` exhaustiveness
 // this file cannot promise.
 @TestOn('vm || browser')
 library;

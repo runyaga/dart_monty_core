@@ -37,8 +37,8 @@ FAIL=0
 # stop.
 LIB_VALUES=$(grep -rhoE '^final class (Monty[A-Za-z0-9_]+) extends MontyValue' \
   lib/src/platform/ | awk '{print $3}' | LC_ALL=C sort -u)
-LIB_ERRORS=$(grep -rhoE '^(final )?class (Monty[A-Za-z0-9_]+) extends (MontyError|MontyScriptError)' \
-  lib/src/platform/ | sed -E 's/^(final )?class //; s/ extends.*//' | LC_ALL=C sort -u)
+LIB_ERRORS=$(grep -rhoE '^(final )?class (Monty[A-Za-z0-9_]+) extends MontyError' \
+  lib/src/worker/ | sed -E 's/^(final )?class //; s/ extends.*//' | LC_ALL=C sort -u)
 
 # --- what the registry CLAIMS ------------------------------------------------
 REG_VALUES=$(grep -oE "^  '(Monty[A-Za-z0-9_]+)':" "$REG" | tr -d " ':" | LC_ALL=C sort)
