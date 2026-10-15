@@ -88,7 +88,7 @@ if len(SOURCES) < 20:
 # operators are excluded; getters have no parens and are not entry points.
 DECL = re.compile(
     r'^  (?:static\s+)?(?:Future<[^>]*>|Stream<[^>]*>|void|[A-Z][\w<>?,\[\] ]*)\s+'
-    r'([a-z]\w*)\s*\(', re.M)
+    r'([a-z]\w*)\s*(?:<[^>(]*>)?\s*\(', re.M)
 
 # A METHOD IS ONLY A METHOD INSIDE A TYPE BODY.
 #
@@ -194,7 +194,7 @@ if len(corpus) < 45:  # 48 measured at the cutover head (F10)
 
 unexercised = []
 for name in sorted(entry_points):
-    hits = sum(1 for s in corpus.values() if re.search(r'\.' + name + r'\s*\(', s))
+    hits = sum(1 for s in corpus.values() if re.search(r'\.' + name + r'\s*(?:<[^>(]*>)?\s*\(', s))
     if hits == 0:
         unexercised.append(name)
 
