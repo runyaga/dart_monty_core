@@ -572,8 +572,8 @@ sealed class ExternalResult
 final class ExternalReturnValue extends ExternalSettledResult
   ExternalReturnValue.==: operator(Object other) -> bool
   ExternalReturnValue.hashCode: getter -> int
-  ExternalReturnValue.new: const constructor(Object value)
-  ExternalReturnValue.value: final field Object
+  ExternalReturnValue.new: const constructor(MontyValue value)
+  ExternalReturnValue.value: final field MontyValue
 sealed class ExternalSettledResult extends ExternalResult
   ExternalSettledResult.new: const constructor()
   ExternalSettledResult: permits final class ExternalException extends ExternalSettledResult implements Exception
@@ -605,7 +605,7 @@ sealed class MontySnapshot
   MontySnapshot: permits sealed class SuspendedSnapshot extends MontySnapshot
 final class NameLookupSnapshot extends SuspendedSnapshot
   NameLookupSnapshot.objectId: final field String?
-  NameLookupSnapshot.resume: method({Object? value}) -> Future<MontySnapshot>
+  NameLookupSnapshot.resume: method({MontyValue? value}) -> Future<MontySnapshot>
   NameLookupSnapshot.resumeAuto: method() -> Future<MontySnapshot>
   NameLookupSnapshot.variableName: final field String
 final class SourceRange

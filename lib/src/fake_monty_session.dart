@@ -131,7 +131,8 @@ abstract class _FakeScripting {
   /// [line] and [column] (1 by default), named as the worker names the
   /// feed's source.
   ///
-  /// Throws [ArgumentError] for a type that is not upstream's.
+  /// Throws [ArgumentError] for a type that is not upstream's, or for an
+  /// attribute value a worker could not send.
   void willRaise(
     String excType, {
     String? message,
@@ -140,6 +141,7 @@ abstract class _FakeScripting {
     int? column,
   }) {
     if (!exceptionTypeNames.contains(excType)) throw unknownExcType(excType);
+    attributes.values.forEach(ArenaWriter().add);
     _script.add(
       FakeRaise(
         _sandboxException(excType, message, attributes),

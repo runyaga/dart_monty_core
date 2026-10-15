@@ -55,8 +55,8 @@ final class HostReturn extends HostOutcome {
   /// Creates a [HostReturn].
   const HostReturn(this.value);
 
-  /// The value: a [MontyValue], or a registered instance's wrapper.
-  final Object value;
+  /// The value; a registered instance is its `ClassInstance` wrapper.
+  final MontyValue value;
 }
 
 /// The call raises [excType] with [message].
@@ -162,7 +162,7 @@ final class WorkerFixtureRegistry {
   /// [fixture] as the sandbox receives it: a host object whose fields
   /// cross eagerly and whose properties the session answers lazily
   /// (`dispatch_instance_attr`) through the wrapper.
-  Object _register(_Fixture fixture) {
+  MontyValue _register(_Fixture fixture) {
     final instanceId = _uuid(0x1000 + _next);
     _next++;
     _instances[instanceId] = fixture;
@@ -188,7 +188,7 @@ final class WorkerFixtureRegistry {
     );
   }
 
-  Object _point(int x, int y) =>
+  MontyValue _point(int x, int y) =>
       _register(_Fixture('Point', 1, {'x': MontyInt(x), 'y': MontyInt(y)}));
 
   /// `dispatch_external_call`.

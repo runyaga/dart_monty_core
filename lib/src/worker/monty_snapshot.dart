@@ -105,11 +105,9 @@ final class ExternalReturnValue extends ExternalSettledResult {
   /// The call returned [value].
   const ExternalReturnValue(this.value);
 
-  /// What the call returned: a [MontyValue], or a host object's
-  /// `ClassInstance` or `ClassType` wrapper. The wrappers join the
-  /// [MontyValue] family at the cutover, and this narrows to it; any other
-  /// object is refused by the resume with Python's `TypeError`.
-  final Object value;
+  /// What the call returned. A plain Dart value is converted with
+  /// [MontyValue.fromDart] first.
+  final MontyValue value;
 
   @override
   bool operator ==(Object other) =>
@@ -242,11 +240,10 @@ abstract interface class SnapshotDriver {
   /// handler.
   Future<MontySnapshot> resumeCallAuto(FunctionSnapshot snapshot);
 
-  /// Answers [snapshot]'s lookup with [value] (a [MontyValue] or a host
-  /// object's wrapper), or as undefined when null.
+  /// Answers [snapshot]'s lookup with [value], or as undefined when null.
   Future<MontySnapshot> resumeLookup(
     NameLookupSnapshot snapshot,
-    Object? value,
+    MontyValue? value,
   );
 
   /// Answers [snapshot]'s lookup from the feed's host functions.
@@ -382,10 +379,10 @@ final class NameLookupSnapshot extends SuspendedSnapshot {
   /// plain name.
   final String? objectId;
 
-  /// Binds the name to [value] (a [MontyValue] or a host object's wrapper)
-  /// and runs on; with no value the name is undefined, and the sandbox
-  /// raises `NameError`, or `AttributeError` for a lazy attribute.
-  Future<MontySnapshot> resume({Object? value}) =>
+  /// Binds the name to [value] and runs on (`MontyNone` binds Python
+  /// `None`); with no value the name is undefined, and the sandbox raises
+  /// `NameError`, or `AttributeError` for a lazy attribute.
+  Future<MontySnapshot> resume({MontyValue? value}) =>
       _driver.resumeLookup(this, value);
 
   /// Resolves the name as `feedRun` would, and runs on: a plain name from

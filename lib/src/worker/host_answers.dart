@@ -709,8 +709,8 @@ final class ExternalAnswer {
   /// The call raised [error].
   const ExternalAnswer.error(pb.RaisedException this.error) : value = null;
 
-  /// The value, when the call returned one: a [MontyValue] or a host
-  /// object's wrapper.
+  /// The value, when the call returned one: a [MontyValue], a host
+  /// object's wrapper included.
   final Object? value;
 
   /// The exception, when the call raised one.

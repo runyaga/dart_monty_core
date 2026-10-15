@@ -132,6 +132,14 @@ Matcher _printFailure(String excType, String message) =>
         .having((e) => e.exception.message, 'exception message', message)
         .having((e) => e.traceback, 'traceback', isEmpty);
 
+/// A turn failed by a busy close: the worker was killed (C1
+/// close-while-busy.md, C3 error-family.md), worded as upstream's other
+/// kill (`monty-pool/src/lib.rs:249`).
+final Matcher _busyClosed = _crashed(
+  CrashCause.killed,
+  'monty worker killed: the session was closed during a turn',
+);
+
 /// A worker killed at a deadline of [limit] (Rust's Duration format), as
 /// upstream reports a request timeout.
 Matcher _timedOut(String limit) => isA<MontyCrashedError>()
@@ -1203,7 +1211,10 @@ void main() {
             return never.future;
           },
         );
-        final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+        final failed = expectLater(
+          run,
+          throwsA(byClose ? _busyClosed : _crashed(CrashCause.killed)),
+        );
         await entered.future;
         if (byClose) await session.close();
         await failed.timeout(const Duration(seconds: 5));
@@ -1323,7 +1334,7 @@ void main() {
       // ignore: prefer-moving-to-variable
       final session = await pool.checkout();
       final run = session.feedRun('while True: pass', printCallback: _ignore);
-      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      final failed = expectLater(run, throwsA(_busyClosed));
       await pumpEventQueue();
       await Future.wait([session.close(), session.close()]);
       await session.close();
@@ -1612,7 +1623,7 @@ void main() {
       addTearDown(pool.close);
       final session = await pool.checkout();
       final run = session.feedRun('while True: pass', printCallback: _ignore);
-      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      final failed = expectLater(run, throwsA(_busyClosed));
       await pumpEventQueue();
       await session.close();
       await failed;
@@ -1641,7 +1652,7 @@ void main() {
           return never.future;
         },
       );
-      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      final failed = expectLater(run, throwsA(_busyClosed));
       await entered.future;
       await session.close();
       await failed.timeout(const Duration(seconds: 5));
@@ -1669,7 +1680,7 @@ void main() {
           return text == 'a' ? first.future : null;
         },
       );
-      final failed = expectLater(run, throwsA(_crashed(CrashCause.killed)));
+      final failed = expectLater(run, throwsA(_busyClosed));
       await pumpEventQueue();
       await session.close();
       await failed;
