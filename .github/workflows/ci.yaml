@@ -631,8 +631,8 @@ jobs:
           set -o pipefail
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          # FLIP-FLOOR: reset to the flip head's measured unit count.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 700 unit
+          # The cutover head's measured count (1850, CI and local alike).
+          bash tool/assert_test_count.sh /tmp/unit-test.log 1850 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -658,8 +658,8 @@ jobs:
           dart test \
             --exclude-tags=integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
-          # FLIP-FLOOR: reset to the flip head's measured web count.
-          bash tool/assert_test_count.sh /tmp/unit-web.log 1400 "unit (web)"
+          # The cutover head's measured count (3671 over both compilers).
+          bash tool/assert_test_count.sh /tmp/unit-web.log 3671 "unit (web)"
 
       - name: Generate LCOV
         run: |
