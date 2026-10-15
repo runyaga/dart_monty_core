@@ -125,10 +125,10 @@ final class MontyCrashedError extends MontyError {
   /// What the channel saw, before [message] framed it. Internal.
   final String? detail;
 
-  final int? _exitCode;
-
   /// On native, the last 4 KiB or less of the worker's stderr. Internal.
   final String? stderrTail;
+
+  final int? _exitCode;
 
   final String? _context;
 }

@@ -57,7 +57,10 @@
 // 1'. A name declared under lib/src/worker/ may be exported only when it is
 //    on the allowlist: the names sections of tool/export-golden.txt as
 //    committed (read before --update rewrites it), so no second list can
-//    drift from the golden.
+//    drift from the golden. A run with --update still reports a name that
+//    is not on that list, and exits 1, but writes the golden with it: that
+//    is how a name enters the allowlist (the cutover regenerates the golden
+//    this way), and the golden's diff is where a reviewer sees it.
 // 2'. Nothing from the libraries that stay internal for good (the generated
 //    protobuf and package:protobuf, the arena, the channels, the frame
 //    scanner and the wire helpers: _neverPublic) is exported, reached by an
