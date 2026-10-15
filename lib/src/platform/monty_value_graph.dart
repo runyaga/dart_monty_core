@@ -1079,16 +1079,7 @@ final class _MemoEquals {
     final others = ids.entries(b);
     bool cyclicKey((MontyValue, MontyValue) p) => ids.tainted(p.$1);
     if (mine.any(cyclicKey) || others.any(cyclicKey)) {
-      return _MatchFrame(
-        x,
-        y,
-        [
-          for (final (k, v) in mine) MontyTuple([k, v]),
-        ],
-        [
-          for (final (k, v) in others) MontyTuple([k, v]),
-        ],
-      );
+      return _MatchFrame(x, y, _cyclicEntries(a), _cyclicEntries(b));
     }
     final theirs = {for (final (k, v) in others) ids.id(k): v};
     if (mine.length != theirs.length) return null;
@@ -1100,6 +1091,26 @@ final class _MemoEquals {
     }
 
     return _SeqFrame(x, y, [for (final (_, v) in mine) v], ys);
+  }
+
+  /// A dict's entries as (key, value) tuples, its keys collapsed by
+  /// equality itself, each comparison on its own walk: canonical ids cannot
+  /// tell two equal keys apart when one holds itself. Quadratic, and only
+  /// for keys Python could not hash.
+  List<MontyValue> _cyclicEntries(List<(MontyValue, MontyValue)> pairs) {
+    final out = <(MontyValue, MontyValue)>[];
+    for (final (k, v) in pairs) {
+      final i = out.indexWhere((p) => _MemoEquals(_hasher).equals(p.$1, k));
+      if (i < 0) {
+        out.add((k, v));
+      } else {
+        out[i] = ((out.elementAtOrNull(i) ?? (k, v)).$1, v);
+      }
+    }
+
+    return [
+      for (final (k, v) in out) MontyTuple([k, v]),
+    ];
   }
 
   /// The settled result for the pair (x, y), else a new frame, marked open.

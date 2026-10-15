@@ -558,6 +558,11 @@ void main() {
           MontyDict([(y, const MontyInt(1))]),
         ),
         (MontyDict([(x, x)]), MontyDict([(y, x)])),
+        // Equal keys holding themselves collapse, the last value kept.
+        (
+          MontyDict([(x, const MontyInt(1)), (y, const MontyInt(2))]),
+          MontyDict([(x, const MontyInt(2))]),
+        ),
       ]) {
         expect(a == b, isTrue);
         expect(forced.run(() => a == b), isTrue);
@@ -565,6 +570,14 @@ void main() {
       }
       expect(
         forced.run(() => MontySet([x]) == const MontySet([MontyInt(1)])),
+        isFalse,
+      );
+      expect(
+        forced.run(
+          () =>
+              MontyDict([(x, const MontyInt(1)), (y, const MontyInt(2))]) ==
+              MontyDict([(x, const MontyInt(1))]),
+        ),
         isFalse,
       );
       expect(
