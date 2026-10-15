@@ -632,7 +632,7 @@ jobs:
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
           # The cutover head's measured count (1859, CI and local alike).
-          bash tool/assert_test_count.sh /tmp/unit-test.log 1865 unit
+          bash tool/assert_test_count.sh /tmp/unit-test.log 1866 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -659,7 +659,7 @@ jobs:
             --exclude-tags=integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
           # The cutover head's measured count (3689 over both compilers).
-          bash tool/assert_test_count.sh /tmp/unit-web.log 3701 "unit (web)"
+          bash tool/assert_test_count.sh /tmp/unit-web.log 3703 "unit (web)"
 
       - name: Generate LCOV
         run: |

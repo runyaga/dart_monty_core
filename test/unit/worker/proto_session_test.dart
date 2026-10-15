@@ -200,6 +200,14 @@ void main() {
   });
 
   group('feed', () {
+    test('an explicit cwd is sent as upstream validate_cwd gives it: '
+        'trailing slashes trimmed, / for the root', () {
+      expect(feedRequest('1', const {}, cwd: '/tmp/a/').feed.cwd, '/tmp/a');
+      expect(feedRequest('1', const {}, cwd: '///').feed.cwd, '/');
+      expect(feedRequest('1', const {}, cwd: '/a/./b').feed.cwd, '/a/./b');
+      expect(feedRequest('1', const {}).feed.hasCwd(), isFalse);
+    });
+
     test('returns the decoded value', () async {
       final ch = _configured([
         expecting(pb.ParentRequest_Kind.feed, [

@@ -282,6 +282,16 @@ void sessionSurfaceTests(String label, WithSession withSession) {
   });
 }
 
+/// A call on a finished session (upstream: "this checkout has already been
+/// finished").
+final Matcher _finished = throwsA(
+  isA<StateError>().having(
+    (e) => e.message,
+    'message',
+    'the session is finished',
+  ),
+);
+
 /// Runs a body with a one-worker pool.
 typedef WithPool = Future<void> Function(Future<void> Function(Monty pool));
 
@@ -301,7 +311,7 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
           ),
           throwsA(isA<MontyRuntimeError>()),
         );
-        await expectLater(s.feedRun('1'), throwsStateError);
+        await expectLater(s.feedRun('1'), _finished);
         // The one worker's slot is free for the next checkout.
         final next = await pool.checkout(scriptName: 'next.py');
         expect(await next.feedRun('1 + 1'), const MontyInt(2));
@@ -343,7 +353,7 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
           ),
           throwsA(isA<MontyCrashedError>()),
         );
-        await expectLater(s.feedRun('1'), throwsStateError);
+        await expectLater(s.feedRun('1'), _finished);
         final next = await pool.checkout(scriptName: 'next.py');
         expect(await next.feedRun('2'), const MontyInt(2));
         await next.close();
@@ -363,7 +373,10 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
           ),
           throwsArgumentError,
         );
-        await expectLater(s.feedRun('1'), throwsStateError);
+        await expectLater(s.feedRun('1'), _finished);
+        final next = await pool.checkout(scriptName: 'next.py');
+        expect(await next.feedRun('4'), const MontyInt(4));
+        await next.close();
         await s.close();
       });
     });
@@ -420,7 +433,7 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
             ),
           ),
         );
-        await expectLater(s.feedRun('1'), throwsStateError);
+        await expectLater(s.feedRun('1'), _finished);
         final next = await pool.checkout(scriptName: 'next.py');
         expect(await next.feedRun('3'), const MontyInt(3));
         await next.close();
@@ -453,7 +466,7 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
     });
 
     test('a feed the type check rejects does not adopt its cwd '
-        '(upstream: the next feed reports /)', () async {
+        '(upstream: / then /a)', () async {
       await withPool((pool) async {
         final s = await pool.checkout(typeCheck: true);
         await expectLater(
@@ -461,11 +474,18 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
           throwsA(isA<MontyTypingError>()),
         );
         expect(
-          await s.feedRun(
-            'import os\nos.getcwd()',
-            printCallback: _ignore,
-          ),
+          await s.feedRun('import os\nos.getcwd()', printCallback: _ignore),
           const MontyString('/'),
+        );
+        // A directory a feed adopted is kept past a rejected one.
+        await s.feedRun('1', cwd: '/a', printCallback: _ignore);
+        await expectLater(
+          s.feedRun('x: int = "b"', cwd: '/b', printCallback: _ignore),
+          throwsA(isA<MontyTypingError>()),
+        );
+        expect(
+          await s.feedRun('import os\nos.getcwd()', printCallback: _ignore),
+          const MontyString('/a'),
         );
         await s.close();
       });
