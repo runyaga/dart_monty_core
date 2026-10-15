@@ -800,32 +800,15 @@ final class _Interner {
     final open = Set<Object>.identity();
     final stack = [root];
     for (var v = stack.lastOrNull; v != null; v = stack.lastOrNull) {
-      if (_ids.containsKey(v)) {
+      if (_ids.containsKey(v) || _leaf(v)) {
         stack.removeLast();
-        continue;
-      }
-      if (_isEqLeafKind(_kindOf(v))) {
-        stack.removeLast();
-        _ids[v] = _leaves.putIfAbsent(v as MontyValue, () => _next++);
         continue;
       }
       open.add(v);
-      final before = stack.length;
-      for (final c in _children(v)) {
-        if (_ids.containsKey(c)) continue;
-        if (open.contains(c)) {
-          // Identity only: it is still open, so its structure has no id.
-          _ids[c] = _next++;
-          _tainted.add(c);
-          continue;
-        }
-        stack.add(c);
-      }
-      if (stack.length > before) continue;
+      if (_push(v, open, stack)) continue;
       stack.removeLast();
       open.remove(v);
-      if (_children(v).any(_tainted.contains)) _tainted.add(v);
-      _ids[v] = _nodes.putIfAbsent(_signature(v), () => _next++);
+      _finish(v);
     }
 
     return _ids[root] ?? (throw StateError('the value has no id'));
@@ -857,6 +840,39 @@ final class _Interner {
     }
 
     return out;
+  }
+
+  /// Gives a leaf its id, by its own `==`; false for a node.
+  bool _leaf(Object v) {
+    if (!_isEqLeafKind(_kindOf(v))) return false;
+    _ids[v] = _leaves.putIfAbsent(v as MontyValue, () => _next++);
+
+    return true;
+  }
+
+  /// Pushes [v]'s children that have no id yet; false when there are none.
+  /// A child still open (met inside itself) gets an identity-only id.
+  bool _push(Object v, Set<Object> open, List<Object> stack) {
+    final before = stack.length;
+    for (final c in _children(v)) {
+      if (_ids.containsKey(c)) continue;
+      if (open.contains(c)) {
+        // Identity only: it is still open, so its structure has no id.
+        _ids[c] = _next++;
+        _tainted.add(c);
+        continue;
+      }
+      stack.add(c);
+    }
+
+    return stack.length > before;
+  }
+
+  /// Gives the node [v], its children done, the id of its structure.
+  void _finish(Object v) {
+    final keys = v is MontyDict ? [for (final (k, _) in v.pairs) k] : null;
+    if ([...?keys, ..._children(v)].any(_tainted.contains)) _tainted.add(v);
+    _ids[v] = _nodes.putIfAbsent(_signature(v), () => _next++);
   }
 
   /// The nodes [v]'s id depends on: a dict's keys first, then the values
@@ -1036,43 +1052,50 @@ final class _MemoEquals {
     final kind = _eqKind(kx);
     if (kind != _eqKind(ky)) return false;
     // Sets and dicts collapse repeats first, so they compare by canonical id:
-    // linear, on an explicit stack, shared by the whole operation.
-    if (kind == _kSet || kind == _kDict) return _byId(x, y);
+    // linear, on an explicit stack, shared by the whole operation. An id
+    // that rests on a value met inside itself is identity only, so such a
+    // pair goes through a frame instead, memoised and cycle-checked as any.
+    if (kind == _kSet || kind == _kDict) {
+      final same = _hasher.equals(x, y);
+      final ids = _hasher.interner;
+      if (!ids.tainted(x) && !ids.tainted(y)) return same;
+    }
 
     return _pairOrFrame(x, y);
   }
 
-  /// Two sets or two dicts by canonical id; when either holds a value met
-  /// inside itself, whose id is identity only, through a frame instead: a
-  /// set's members matched both ways, a dict's surviving values in key
-  /// order.
-  Object _byId(Object x, Object y) {
-    final ids = _hasher.interner;
-    final same = ids.id(x) == ids.id(y);
-    if (!ids.tainted(x) && !ids.tainted(y)) return same;
-    if ((_setItems(x), _setItems(y)) case (final a?, final b?)) {
-      return _MatchFrame(x, y, a, b);
-    }
-
-    return _dictValues(x, y, (x as MontyDict).pairs, (y as MontyDict).pairs);
-  }
-
-  /// Two dicts' surviving values paired by key id, or false when their keys
-  /// differ.
-  Object _dictValues(
+  /// Two dicts holding a value met inside itself: the surviving values
+  /// paired by key id, or, when a key itself holds such a value (whose id
+  /// is identity only; Python cannot hash one), the entries matched both
+  /// ways as (key, value) pairs. Null when their keys differ.
+  _EqFrame? _dictFrame(
     Object x,
     Object y,
     List<(MontyValue, MontyValue)> a,
     List<(MontyValue, MontyValue)> b,
   ) {
     final ids = _hasher.interner;
-    final theirs = {for (final (k, v) in ids.entries(b)) ids.id(k): v};
     final mine = ids.entries(a);
-    if (mine.length != theirs.length) return false;
+    final others = ids.entries(b);
+    bool cyclicKey((MontyValue, MontyValue) p) => ids.tainted(p.$1);
+    if (mine.any(cyclicKey) || others.any(cyclicKey)) {
+      return _MatchFrame(
+        x,
+        y,
+        [
+          for (final (k, v) in mine) MontyTuple([k, v]),
+        ],
+        [
+          for (final (k, v) in others) MontyTuple([k, v]),
+        ],
+      );
+    }
+    final theirs = {for (final (k, v) in others) ids.id(k): v};
+    if (mine.length != theirs.length) return null;
     final ys = <Object>[];
     for (final (k, _) in mine) {
       final match = theirs[ids.id(k)];
-      if (match == null) return false;
+      if (match == null) return null;
       ys.add(match);
     }
 
@@ -1104,16 +1127,23 @@ final class _MemoEquals {
   }
 
   /// A frame comparing two nodes of one kind (lists, tuples, class
-  /// proxies), or null when something that needs no descent already
-  /// differs.
+  /// proxies, and sets and dicts holding a value met inside itself), or
+  /// null when something that needs no descent already differs.
   _EqFrame? _frameFor(Object x, Object y) => switch ((x, y)) {
     (MontyList(items: final a), MontyList(items: final b)) =>
       a.length == b.length ? _SeqFrame(x, y, a, b) : null,
     (final MontyClassProxy a, final MontyClassProxy b) =>
       _sameClassHeader(a, b) ? _attrsFrame(a, b, a.attrs, b.attrs) : null,
-    _ => switch ((_tupleItems(x), _tupleItems(y))) {
-      (final a?, final b?) =>
+    (MontyDict(pairs: final a), MontyDict(pairs: final b)) => _dictFrame(
+      x,
+      y,
+      a,
+      b,
+    ),
+    _ => switch ((_tupleItems(x), _tupleItems(y), _setItems(x), _setItems(y))) {
+      (final a?, final b?, _, _) =>
         a.length == b.length ? _SeqFrame(x, y, a, b) : null,
+      (_, _, final a?, final b?) => _MatchFrame(x, y, a, b),
       _ => throw _notANode(x),
     },
   };

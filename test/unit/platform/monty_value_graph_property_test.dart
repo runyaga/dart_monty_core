@@ -552,6 +552,12 @@ void main() {
         ),
         (MontySet([x]), MontySet([y])),
         (MontySet([x, x]), MontyFrozenSet([y])),
+        // A key holding itself has no Python counterpart; it still compares.
+        (
+          MontyDict([(x, const MontyInt(1))]),
+          MontyDict([(y, const MontyInt(1))]),
+        ),
+        (MontyDict([(x, x)]), MontyDict([(y, x)])),
       ]) {
         expect(a == b, isTrue);
         expect(forced.run(() => a == b), isTrue);
@@ -569,6 +575,25 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('two distinct dicts that hold themselves are a cycle error', () {
+      // As two lists that hold themselves are: no answer exists, and the
+      // fallback must stop, not loop.
+      MontyDict selfDict() {
+        final pairs = <(MontyValue, MontyValue)>[];
+        final d = MontyDict(pairs);
+        pairs.add((const MontyString('k'), d));
+
+        return d;
+      }
+
+      final a = selfDict();
+      final b = selfDict();
+      expect(() => a == b, throwsStateError);
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      expect(() => forced.run(() => a == b), throwsStateError);
+      expect(a == a, isTrue);
     });
 
     test("both attribute maps' names are charged before they are read", () {
