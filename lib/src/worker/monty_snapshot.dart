@@ -2,7 +2,7 @@
 /// and the answers a host gives to a call.
 ///
 /// The types become the public `MontySnapshot` family and the five
-/// `ExternalResult` names at the cutover ([SessionComplete] then takes the
+/// `ExternalResult` names at the cutover ([MontyComplete] then takes the
 /// name `MontyComplete`); until then they are internal.
 ///
 /// Internal to the package; nothing here is exported.
@@ -207,15 +207,14 @@ ArgumentError unknownExcType(String excType) => ArgumentError.value(
   "Unknown exception type: '$excType'",
 );
 
-/// The run completed with [output] (the public `MontyComplete` at the
-/// cutover).
+/// The run completed with [output].
 ///
 /// As upstream's, [output] is converted on each access: every read gives a
 /// value of its own (a fresh list, say), and a failure to convert is thrown
 /// by the read. Two completions are equal only when identical.
-final class SessionComplete extends MontySnapshot {
+final class MontyComplete extends MontySnapshot {
   /// The run completed with the value its argument gives on each read.
-  const SessionComplete(this._decode);
+  const MontyComplete._(this._decode);
 
   final MontyValue Function() _decode;
 
@@ -304,7 +303,7 @@ sealed class SuspendedSnapshot extends MontySnapshot {
 /// (upstream's `AsyncFunctionSnapshot`).
 final class FunctionSnapshot extends SuspendedSnapshot {
   /// A suspension on the call [callId] to [functionName].
-  FunctionSnapshot(
+  FunctionSnapshot._(
     super.driver,
     super.position,
     super.scriptName, {
@@ -371,7 +370,7 @@ final class FunctionSnapshot extends SuspendedSnapshot {
 /// `AsyncNameLookupSnapshot`).
 final class NameLookupSnapshot extends SuspendedSnapshot {
   /// A suspension on the lookup of [variableName].
-  NameLookupSnapshot(
+  NameLookupSnapshot._(
     super.driver,
     super.position,
     super.scriptName, {
@@ -404,7 +403,7 @@ final class NameLookupSnapshot extends SuspendedSnapshot {
 /// `AsyncFutureSnapshot`).
 final class FutureSnapshot extends SuspendedSnapshot {
   /// A suspension on the futures [pendingCallIds].
-  FutureSnapshot(
+  FutureSnapshot._(
     super.driver,
     super.position,
     super.scriptName, {
@@ -423,4 +422,64 @@ final class FutureSnapshot extends SuspendedSnapshot {
   /// to finish, settles their futures and runs on. With none pending it
   /// ends the session (the worker is killed) and throws [StateError].
   Future<MontySnapshot> resumeAuto() => _driver.resumeFuturesAuto(this);
+}
+
+/// The snapshot factories. Internal: the public show list leaves them out,
+/// so only the session builds snapshots.
+abstract final class Snapshots {
+  /// A completed run with [output].
+  static MontyComplete complete(MontyValue output) => MontyComplete._(output);
+
+  /// A suspension on a host function or OS call.
+  static FunctionSnapshot function(
+    SnapshotDriver driver,
+    SourceRange position,
+    String scriptName, {
+    required String functionName,
+    required int callId,
+    required bool isOsFunction,
+    required bool allowEagerAwait,
+    required List<MontyValue> Function() arguments,
+    required Map<String, MontyValue> Function() keywords,
+    String? objectId,
+  }) => FunctionSnapshot._(
+    driver,
+    position,
+    scriptName,
+    functionName: functionName,
+    callId: callId,
+    isOsFunction: isOsFunction,
+    allowEagerAwait: allowEagerAwait,
+    arguments: arguments,
+    keywords: keywords,
+    objectId: objectId,
+  );
+
+  /// A suspension on a name lookup.
+  static NameLookupSnapshot nameLookup(
+    SnapshotDriver driver,
+    SourceRange position,
+    String scriptName, {
+    required String variableName,
+    String? objectId,
+  }) => NameLookupSnapshot._(
+    driver,
+    position,
+    scriptName,
+    variableName: variableName,
+    objectId: objectId,
+  );
+
+  /// A suspension on pending futures.
+  static FutureSnapshot futures(
+    SnapshotDriver driver,
+    SourceRange position,
+    String scriptName, {
+    required List<int> pendingCallIds,
+  }) => FutureSnapshot._(
+    driver,
+    position,
+    scriptName,
+    pendingCallIds: pendingCallIds,
+  );
 }

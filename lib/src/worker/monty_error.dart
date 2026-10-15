@@ -25,20 +25,21 @@ import 'package:dart_monty_core/src/worker/raised_record.dart';
 
 /// A failure of the sandbox: the one type to catch.
 sealed class MontyError implements Exception {
-  const MontyError._(this.message, this.exception);
+  const MontyError._(this._message, this.exception);
 
-  /// Upstream's `str()` of the error; see each subclass.
-  final String message;
+  /// Upstream's `str()` of the error, which [toString] returns; see each
+  /// subclass.
+  final String _message;
 
   /// The inner Python exception (upstream's `exception()`). Its message is
   /// `''` when the worker sent none.
   final MontyExceptionValue exception;
 
   @override
-  String toString() => message;
+  String toString() => _message;
 }
 
-/// Fed code did not parse. [message] is the parser's message alone.
+/// Fed code did not parse. [toString] is the parser's message alone.
 final class MontySyntaxError extends MontyError {
   MontySyntaxError._(this._record)
     : traceback = _frames(_record),
@@ -55,7 +56,7 @@ final class MontySyntaxError extends MontyError {
   String display([String format = 'traceback']) => _record.display(format);
 }
 
-/// Fed code raised an exception it did not catch: [message] is
+/// Fed code raised an exception it did not catch: [toString] is
 /// `Type: message`, or `Type` when the message is absent or empty. Resource
 /// limits, the suspension and sleep budgets and a memory-limit exit arrive
 /// this way; the session survives each except the last.
@@ -76,7 +77,7 @@ final class MontyRuntimeError extends MontyError {
 }
 
 /// The session's type check rejected a fed snippet, which did not run; the
-/// session survives. [message] is the diagnostics as the worker rendered
+/// session survives. [toString] is the diagnostics as the worker rendered
 /// them, in the session's `typeCheckFormat`.
 final class MontyTypingError extends MontyError {
   const MontyTypingError._(String diagnostics)
@@ -86,21 +87,25 @@ final class MontyTypingError extends MontyError {
       );
 
   /// The diagnostics, as upstream's `display()` (which takes no format).
-  String display() => message;
+  String display() => _message;
 }
 
 /// The worker is gone, and the session with it: it died, was killed at a
-/// deadline, or answered against the protocol. [message] says which.
+/// deadline, or answered against the protocol. [toString] says which.
 final class MontyCrashedError extends MontyError {
   MontyCrashedError._(
     String message, {
-    required this.cause,
+    required CrashCause cause,
     required this.timedOut,
-    this.detail,
-    this.exitCode,
-    this.stderrTail,
+    String? detail,
+    int? exitCode,
+    String? stderrTail,
     String? context,
-  }) : _context = context,
+  }) : _cause = cause,
+       _detail = detail,
+       _exitCode = exitCode,
+       _stderrTail = stderrTail,
+       _context = context,
        super._(
          message,
          MontyExceptionValue(excType: 'RuntimeError', message: message),
@@ -113,31 +118,35 @@ final class MontyCrashedError extends MontyError {
   /// The worker's exit code, when the OS reported one; null for a signal
   /// death, on the web, and for a worker killed at a deadline.
   int? get exitStatus {
-    final code = exitCode;
+    final code = _exitCode;
 
     return timedOut || code == null || code < 0 ? null : code;
   }
 
-  /// Why the worker stopped. Internal: upstream has only [message].
-  final CrashCause cause;
-
-  /// What the channel saw, before [message] framed it. Internal.
-  final String? detail;
-
-  /// The worker process's exit code on native, negative for a signal.
-  /// Internal: [exitStatus] is upstream's.
-  final int? exitCode;
-
-  /// On native, the last 4 KiB or less of the worker's stderr. Internal.
-  final String? stderrTail;
-
+  final CrashCause _cause;
+  final String? _detail;
+  final int? _exitCode;
+  final String? _stderrTail;
   final String? _context;
 }
 
 /// [MontyCrashedError]'s internal members (pass-3 G2): upstream's error has
-/// only its message and [MontyCrashedError.exitStatus]. The public libraries'
-/// `show` lists leave this extension out.
+/// only its message, [MontyCrashedError.timedOut] and
+/// [MontyCrashedError.exitStatus]. The public libraries' `show` lists leave
+/// this extension out.
 extension MontyCrashedErrorInternal on MontyCrashedError {
+  /// Why the worker stopped.
+  CrashCause get cause => _cause;
+
+  /// What the channel saw, before the message framed it.
+  String? get detail => _detail;
+
+  /// The worker process's exit code on native, negative for a signal.
+  int? get exitCode => _exitCode;
+
+  /// On native, the last 4 KiB or less of the worker's stderr.
+  String? get stderrTail => _stderrTail;
+
   /// What the parent was doing when it found the worker gone, for a
   /// vanished worker; null is [waitingForReply].
   String? get context => _context;
