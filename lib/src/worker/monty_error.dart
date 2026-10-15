@@ -192,6 +192,13 @@ final class Frame {
 
   /// The source line, or for a span over several lines the dedented block.
   final String? sourceLine;
+
+  /// Upstream's `str(frame)`: its `repr`, with the fields inserted as they
+  /// are, unquoted and unescaped, and `<module>` for a frame with no name.
+  @override
+  String toString() =>
+      "Frame(filename='$filename', line=$line, column=$column, "
+      "function_name='${functionName ?? '<module>'}')";
 }
 
 /// The error an `Error` event's [raised] exception is: [MontySyntaxError]
