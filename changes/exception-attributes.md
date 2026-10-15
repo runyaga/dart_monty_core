@@ -1,5 +1,0 @@
-### Internal
-
-- Worker sessions read a raised Unicode or JSON decode error's structured data into its exception's attributes, sanitised as upstream drops a bad payload (the Unicode range rule, 64 KiB caps, zero line or column, a position past the document). Without its data such an error reads as `ValueError`, as upstream's host object does. Attributes take part in `==`, `hashCode` and the value walk's budget. Internal until the cutover.
-- `ExternalException(excType, [message, attributes])` (internal): a `json.JSONDecodeError`'s `msg`, `doc`, `pos`, `lineno` and `colno` are sent as upstream sends a live exception's (a `doc` over 64 KiB left out); other types' attributes stay on the host. It has value equality and can be thrown from a host function.
-- The writer's refusals that Python makes too surface by path as upstream's binding does: a cycle (`ValueError: Circular reference detected`) or an unpaired surrogate (`UnicodeEncodeError`) throws `MontyRuntimeError` at an input or a manual resume, which leaves the snapshot retryable, and is raised in the sandbox for an automatic answer. Values Python cannot build stay `ArgumentError`s.
