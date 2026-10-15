@@ -13,8 +13,6 @@ import 'package:dart_monty_core/dart_monty_core.dart'
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';

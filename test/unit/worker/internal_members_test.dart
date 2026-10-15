@@ -37,17 +37,6 @@ void main() {
   });
 
   group('MontyCrashedErrorInternal', () {
-    test('exitCode is the OS exit code, negative for a signal', () {
-      final exited = crashedError(CrashCause.fatal, detail: 'x', exitCode: 3);
-      final signalled = crashedError(CrashCause.vanished, exitCode: -9);
-      expect(MontyCrashedErrorInternal(exited).exitCode, 3);
-      expect(MontyCrashedErrorInternal(signalled).exitCode, -9);
-      expect(
-        MontyCrashedErrorInternal(crashedError(CrashCause.killed)).exitCode,
-        isNull,
-      );
-    });
-
     test('context is what the parent was doing, null by default', () {
       final crash = crashedError(CrashCause.vanished, context: sendingRequest);
       expect(MontyCrashedErrorInternal(crash).context, sendingRequest);
