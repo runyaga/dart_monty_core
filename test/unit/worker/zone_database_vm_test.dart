@@ -5,6 +5,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/worker/zone_database_io.dart';
 import 'package:test/test.dart';
@@ -83,15 +84,24 @@ void main() {
   });
 
   test('a TZif whose counts do not fit the file is refused', () {
-    expect(isWholeTzif(_v1), isTrue);
-    expect(isWholeTzif(_v2), isTrue);
+    expect(isWholeTzif(Uint8List.fromList(_v1)), isTrue);
+    expect(isWholeTzif(Uint8List.fromList(_v2)), isTrue);
     for (final cut in [1, 4, 40]) {
-      expect(isWholeTzif(_v1.sublist(0, _v1.length - cut)), isFalse);
+      expect(
+        isWholeTzif(Uint8List.fromList(_v1.sublist(0, _v1.length - cut))),
+        isFalse,
+      );
     }
     // No local time types, which RFC 8536 forbids.
-    expect(isWholeTzif(_header(0, [0, 0, 0, 0, 0, 0])), isFalse);
+    expect(
+      isWholeTzif(Uint8List.fromList(_header(0, [0, 0, 0, 0, 0, 0]))),
+      isFalse,
+    );
     // A version 2 file without its footer.
-    expect(isWholeTzif(_v2.sublist(0, _v2.length - 6)), isFalse);
+    expect(
+      isWholeTzif(Uint8List.fromList(_v2.sublist(0, _v2.length - 6))),
+      isFalse,
+    );
   });
 
   test("every zone file of the host's database is whole", () {

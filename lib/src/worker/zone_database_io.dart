@@ -6,6 +6,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 
@@ -33,30 +34,27 @@ bool? zoneKnownIn(Map<String, String>? zones, String name) {
 /// footer between newlines. A truncated or mislabelled file is refused, as
 /// jiff's parse refuses it; the transitions themselves are not checked.
 @visibleForTesting
-bool isWholeTzif(List<int> data) {
-  final v1 = _blockEnd(data, 0, 4);
+bool isWholeTzif(Uint8List data) {
+  final bytes = ByteData.sublistView(data);
+  final v1 = _blockEnd(bytes, 0, 4);
   if (v1 == null) return false;
-  if (data[4] == 0) return true;
-  final v2 = _blockEnd(data, v1, 8);
-  if (v2 == null || v2 >= data.length || data[v2] != 0x0A) return false;
+  if (bytes.getUint8(4) == 0) return true;
+  final v2 = _blockEnd(bytes, v1, 8);
+  if (v2 == null || v2 >= data.length || bytes.getUint8(v2) != 0x0A) {
+    return false;
+  }
 
   return data.indexOf(0x0A, v2 + 1) > v2;
 }
 
 /// The end of the TZif block whose header starts at [start], with times of
 /// [timeSize] bytes; null when the header or its data does not fit.
-int? _blockEnd(List<int> data, int start, int timeSize) {
+int? _blockEnd(ByteData data, int start, int timeSize) {
   const headerLength = 44;
-  if (data.length < start + headerLength) return null;
-  if (String.fromCharCodes(data, start, start + 4) != 'TZif') return null;
-  int count(int i) {
-    final at = start + 20 + i * 4;
-
-    return (data[at] << 24) |
-        (data[at + 1] << 16) |
-        (data[at + 2] << 8) |
-        data[at + 3];
-  }
+  const magic = 0x545A6966; // 'TZif'
+  if (data.lengthInBytes < start + headerLength) return null;
+  if (data.getUint32(start) != magic) return null;
+  int count(int i) => data.getUint32(start + 20 + i * 4);
 
   final [isUt, isStd, leap, times, types, chars] = [
     for (var i = 0; i < 6; i++) count(i),
@@ -72,7 +70,7 @@ int? _blockEnd(List<int> data, int start, int timeSize) {
       isStd +
       isUt;
 
-  return end <= data.length ? end : null;
+  return end <= data.lengthInBytes ? end : null;
 }
 
 /// jiff's default directories, after `TZDIR`.
