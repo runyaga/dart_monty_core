@@ -13,6 +13,8 @@ import 'package:dart_monty_core/src/worker/worker_connection.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 
 /// Records what the connection sends and whether it terminated the Worker.
 final class _FakePort implements WorkerPort {

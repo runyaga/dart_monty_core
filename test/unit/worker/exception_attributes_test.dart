@@ -160,7 +160,7 @@ void main() {
         expect(_attrs(error.exception), isEmpty);
         // The rendering still names the original type, as upstream's.
         expect((error as MontyRuntimeError).display('type-msg'), '$type: x');
-        expect(error.message, '$type: x');
+        expect(error.toString(), '$type: x');
       });
     }
 
@@ -654,7 +654,7 @@ void main() {
         throwsA(
           runtimeError
               .having(
-                (e) => e.message,
+                (e) => e.toString(),
                 'message',
                 'ValueError: Circular reference detected',
               )
@@ -674,7 +674,7 @@ void main() {
           runtimeError
               .having((e) => e.exception.excType, 'excType', 'ValueError')
               .having(
-                (e) => e.message,
+                (e) => e.toString(),
                 'message',
                 startsWith("UnicodeEncodeError: 'utf-8' codec"),
               ),

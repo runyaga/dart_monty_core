@@ -1,4 +1,4 @@
-// MontyPool and its sessions (lib/src/worker/monty_pool.dart,
+// Monty and its sessions (lib/src/worker/monty_pool.dart,
 // pool_session.dart) over scripted workers: checkout and Configure, feedRun,
 // print delivery in order, idle close and Reset, close during host code,
 // requestTimeout and the duration backstops on turns only, the memory-limit
@@ -51,13 +51,13 @@ final class Workers {
 }
 
 /// A pool over [workers], none started up front.
-Future<MontyPool> _pool(
+Future<Monty> _pool(
   Workers workers, {
   int maxProcesses = 1,
   Duration? requestTimeout,
   Duration? feedGrace = PoolOptions.defaultDurationLimitGrace,
   Duration? turnGrace = PoolOptions.defaultDurationLimitGrace,
-}) => MontyPool.startWith(
+}) => startMonty(
   PoolOptions(
     minProcesses: 0,
     maxProcesses: maxProcesses,
@@ -144,7 +144,7 @@ Matcher _timedOut(String limit) => isA<MontyCrashedError>()
     .having((e) => e.timedOut, 'timedOut', isTrue)
     .having((e) => e.exitStatus, 'exitStatus', isNull)
     .having(
-      (e) => e.message,
+      (e) => e.toString(),
       'message',
       'monty worker killed after exceeding request timeout of $limit',
     )
@@ -156,7 +156,7 @@ Matcher _violation(String detail) => isA<MontyCrashedError>()
     .having((e) => e.timedOut, 'timedOut', isFalse)
     .having((e) => e.exitStatus, 'exitStatus', isNull)
     .having(
-      (e) => e.message,
+      (e) => e.toString(),
       'message',
       'monty worker protocol error: $detail',
     );
@@ -164,7 +164,7 @@ Matcher _violation(String detail) => isA<MontyCrashedError>()
 Matcher _crashed(CrashCause cause, [Object? message]) =>
     isA<MontyCrashedError>()
         .having((e) => e.cause, 'cause', cause)
-        .having((e) => e.message, 'message', message ?? anything);
+        .having((e) => e.toString(), 'message', message ?? anything);
 
 final Matcher _finished = isA<StateError>().having(
   (e) => e.message,
@@ -173,7 +173,7 @@ final Matcher _finished = isA<StateError>().having(
 );
 
 /// Expects a feed on [session] to be refused: a suspension is pending.
-Future<void> _refusedAsPending(PoolSession session) => expectLater(
+Future<void> _refusedAsPending(MontySession session) => expectLater(
   session.feedRun('1', printCallback: _ignore),
   throwsA(_pending),
 );
@@ -191,8 +191,8 @@ void main() {
       final ch = ScriptedChannel([_configureOk]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      await pool.checkout(
-        options: const SessionConfig(
+      await pool.checkoutWith(
+        const SessionConfig(
           scriptName: 'case.py',
           limits: ResourceLimits(
             maxMemory: 1 << 24,
@@ -357,7 +357,7 @@ void main() {
   group('concurrent feeds (serialized as upstream)', () {
     /// A first feed whose turn waits on [gate] in its print callback, so it
     /// holds the turn while later feeds are queued.
-    Future<MontyValue> heldFeed(PoolSession s, Completer<void> gate) =>
+    Future<MontyValue> heldFeed(MontySession s, Completer<void> gate) =>
         s.feedRun('print("held")\n1', printCallback: (_, _) => gate.future);
 
     test('a feed queued behind a turn runs after it, in order', () async {
@@ -898,7 +898,7 @@ void main() {
           (_, _) => throw const ExternalException('SyntaxError', 'bad'),
         ),
         isA<MontySyntaxError>()
-            .having((e) => e.message, 'message', 'bad')
+            .having((e) => e.toString(), 'message', 'bad')
             .having(
               (e) => e.display('type-msg'),
               'type-msg',
@@ -1137,7 +1137,7 @@ void main() {
             'print("a")\n1',
             printCallback: (stream, text) async => throw elsewhere,
           ),
-          throwsA(_printFailure('Exception', elsewhere.message)),
+          throwsA(_printFailure('Exception', elsewhere.toString())),
         );
         expect(ch.kills, 0);
         expect(
@@ -1322,7 +1322,7 @@ void main() {
       // ignore: prefer-moving-to-variable
       final next = await pool.checkout();
       var second = false;
-      Future<PoolSession> wait() async {
+      Future<MontySession> wait() async {
         // A further checkout on purpose: it must wait for the slot.
         final waited = await pool.checkout();
         second = true;
@@ -1359,7 +1359,7 @@ void main() {
     final oversized = isA<MontyRuntimeError>()
         .having((e) => e.exception.excType, 'excType', 'RuntimeError')
         .having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           matches(
             RegExp(
@@ -1752,8 +1752,8 @@ void main() {
         turnGrace: null,
       );
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(
             maxFeedDuration: Duration(milliseconds: 200),
           ),
@@ -1785,8 +1785,8 @@ void main() {
         turnGrace: null,
       );
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(
             maxFeedDuration: Duration(milliseconds: 200),
           ),
@@ -1812,8 +1812,8 @@ void main() {
         turnGrace: const Duration(milliseconds: 10),
       );
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(
             maxFeedDuration: Duration(milliseconds: 1),
             maxTurnDuration: Duration(milliseconds: 20),
@@ -1842,8 +1842,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(
             maxSuspensions: 2,
           ),
@@ -1859,7 +1859,7 @@ void main() {
         throwsA(
           isA<MontyRuntimeError>()
               .having((e) => e.exception.excType, 'excType', 'RuntimeError')
-              .having((e) => e.message, 'message', contains('limit 2')),
+              .having((e) => e.toString(), 'message', contains('limit 2')),
         ),
       );
       expect(calls, 1);
@@ -1890,8 +1890,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxSuspensions: 5),
         ),
       );
@@ -1931,8 +1931,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxSuspensions: 1),
         ),
       );
@@ -1996,8 +1996,8 @@ void main() {
         turnGrace: null,
       );
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: SessionConfig(
+      final session = await pool.checkoutWith(
+        SessionConfig(
           limits: ResourceLimits(
             maxSuspensions: 0,
             maxFeedDuration: _ms(20),
@@ -2020,8 +2020,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxSuspensions: 0),
         ),
       );
@@ -2029,7 +2029,7 @@ void main() {
         session.feedRun('f()', printCallback: _ignore),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker crashed while aborting a feed (exit status: 1)',
           ),
@@ -2046,8 +2046,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(
             maxSuspensions: 0,
           ),
@@ -2106,8 +2106,8 @@ void main() {
         final pool = await _pool(Workers([ch]));
         addTearDown(pool.close);
         const policy = OsPolicy(sleepSystemMax: Duration(milliseconds: 20));
-        final session = await pool.checkout(
-          options: const SessionConfig(osPolicy: policy),
+        final session = await pool.checkoutWith(
+          const SessionConfig(osPolicy: policy),
         );
         final clock = Stopwatch()..start();
         await session.feedRun('time.sleep(30)', printCallback: _ignore);
@@ -2133,7 +2133,7 @@ void main() {
       isA<MontyRuntimeError>()
           .having((e) => e.exception.excType, 'excType', 'TimeoutError')
           .having((e) => e.exception.message, 'exception', message)
-          .having((e) => e.message, 'message', 'TimeoutError: $message'),
+          .having((e) => e.toString(), 'message', 'TimeoutError: $message'),
     );
 
     test('the sleep that passes maxTotalSleep aborts, unwaited', () async {
@@ -2150,8 +2150,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxTotalSleep: Duration(milliseconds: 100)),
         ),
       );
@@ -2188,8 +2188,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxTotalSleep: Duration(milliseconds: 50)),
           osPolicy: OsPolicy(sleepSystemMax: Duration(milliseconds: 20)),
         ),
@@ -2227,7 +2227,7 @@ void main() {
         ]);
         final pool = await _pool(Workers([ch]));
         addTearDown(pool.close);
-        final session = await pool.checkout(options: config);
+        final session = await pool.checkoutWith(config);
         await expectLater(
           session.feedRun('...', printCallback: _ignore),
           timedOut(message),
@@ -2249,8 +2249,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxTotalSleep: Duration(seconds: 1)),
         ),
       );
@@ -2305,7 +2305,7 @@ void main() {
         final pool = await _pool(workers);
         addTearDown(pool.close);
         await expectLater(
-          pool.checkout(options: config),
+          pool.checkoutWith(config),
           throwsA(isA<ArgumentError>()),
         );
         expect(workers.started, isEmpty);
@@ -2320,8 +2320,8 @@ void main() {
       final pool = await _pool(workers);
       addTearDown(pool.close);
       await expectLater(
-        pool.checkout(
-          options: const SessionConfig(osPolicy: OsPolicy(timezone: 'Q/Z')),
+        pool.checkoutWith(
+          const SessionConfig(osPolicy: OsPolicy(timezone: 'Q/Z')),
         ),
         throwsA(
           isA<ArgumentError>().having(
@@ -2378,8 +2378,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           typeCheck: true,
           typeCheckStubs: 'x: int',
           typeCheckFormat: 'concise',
@@ -2398,7 +2398,7 @@ void main() {
         session.feedRun('x: int = "a"', printCallback: _ignore),
         throwsA(
           isA<MontyTypingError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'bad: int',
           ),
@@ -2421,8 +2421,8 @@ void main() {
       final pool = await _pool(workers);
       addTearDown(pool.close);
       await expectLater(
-        pool.checkout(
-          options: const SessionConfig(
+        pool.checkoutWith(
+          const SessionConfig(
             typeCheck: true,
             typeCheckFormat: 'fancy',
           ),
@@ -2452,7 +2452,7 @@ void main() {
         throwsA(
           isA<MontyRuntimeError>()
               .having((e) => e.exception.excType, 'excType', 'MemoryError')
-              .having((e) => e.message, 'message', contains('memory limit')),
+              .having((e) => e.toString(), 'message', contains('memory limit')),
         ),
       );
       expect(pool.liveWorkers, 0);
@@ -2497,7 +2497,7 @@ void main() {
             isA<MontyCrashedError>()
                 .having((e) => e.exitStatus, 'exitStatus', status)
                 .having((e) => e.timedOut, 'timedOut', isFalse)
-                .having((e) => e.message, 'message', message)
+                .having((e) => e.toString(), 'message', message)
                 .having((e) => e.exception.message, 'exception', message),
           ),
         );
@@ -2570,9 +2570,9 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
-      final value = await pool.withSession(
+      final value = await pool.withSessionWith(
         (s) => s.feedRun('9', printCallback: _ignore),
-        options: const SessionConfig(
+        const SessionConfig(
           scriptName: 'scoped.py',
         ),
       );
@@ -2588,14 +2588,14 @@ void main() {
     });
 
     test('withPool closes the pool however the body ends', () async {
-      MontyPool? seen;
+      Monty? seen;
       await expectLater(
-        MontyPool.withPool<void>(
+        withMonty<void>(
           (pool) async {
             seen = pool;
             throw StateError('body');
           },
-          options: const PoolOptions(
+          const PoolOptions(
             minProcesses: 0,
             workerLocation: 'unused',
           ),
@@ -2608,9 +2608,9 @@ void main() {
 
     test('withPool returns the body value', () async {
       expect(
-        await MontyPool.withPool(
+        await withMonty(
           (pool) async => 7,
-          options: const PoolOptions(
+          const PoolOptions(
             minProcesses: 0,
           ),
         ),
@@ -2663,7 +2663,7 @@ void main() {
       await _refusedAsPending(session);
       expect(
         await snapshot.resume(const ExternalReturnValue(MontyInt(1))),
-        isA<SessionComplete>(),
+        isA<MontyComplete>(),
       );
       expect(ch.remaining, 0);
     });
@@ -2734,7 +2734,7 @@ void main() {
       expect(await dump, [1]);
       expect(
         await snapshot.resume(const ExternalReturnValue(MontyNone())),
-        isA<SessionComplete>(),
+        isA<MontyComplete>(),
       );
       expect(ch.remaining, 0);
     });
@@ -2818,7 +2818,7 @@ void main() {
         );
         expect(await first, [1]);
         await second;
-        expect(await resumed, isA<SessionComplete>());
+        expect(await resumed, isA<MontyComplete>());
         expect(ch.remaining, 0);
       },
     );
@@ -2844,7 +2844,7 @@ void main() {
       final resumed = snapshot.resume(const ExternalReturnValue(MontyNone()));
       await expectLater(feed, throwsA(_pending));
       expect(await dump, [1]);
-      expect(await resumed, isA<SessionComplete>());
+      expect(await resumed, isA<MontyComplete>());
       expect(ch.remaining, 0);
     });
 
@@ -2869,7 +2869,7 @@ void main() {
       final resumed = snapshot.resume(const ExternalReturnValue(MontyNone()));
       final feed = session.feedRun('3', printCallback: _ignore);
       expect(await dump, [1]);
-      expect(await resumed, isA<SessionComplete>());
+      expect(await resumed, isA<MontyComplete>());
       expect(await feed, const MontyInt(3));
       expect(ch.remaining, 0);
     });
@@ -2941,7 +2941,7 @@ void main() {
       expect(fromSession, isA<StateError>());
       expect(
         await snapshot.resume(const ExternalReturnValue(MontyNone())),
-        isA<SessionComplete>(),
+        isA<MontyComplete>(),
       );
       expect(ch.remaining, 0);
     });
@@ -2964,8 +2964,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]), feedGrace: Duration.zero);
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: SessionConfig(
+      final session = await pool.checkoutWith(
+        SessionConfig(
           limits: ResourceLimits(maxFeedDuration: _ms(30)),
         ),
       );
@@ -3001,8 +3001,8 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch]), feedGrace: Duration.zero);
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: const SessionConfig(
+      final session = await pool.checkoutWith(
+        const SessionConfig(
           limits: ResourceLimits(maxFeedDuration: Duration(seconds: 30)),
         ),
       );
@@ -3026,8 +3026,8 @@ void main() {
         turnGrace: Duration.zero,
       );
       addTearDown(pool.close);
-      final session = await pool.checkout(
-        options: SessionConfig(
+      final session = await pool.checkoutWith(
+        SessionConfig(
           limits: ResourceLimits(maxTurnDuration: _ms(20)),
         ),
       );
@@ -3068,7 +3068,7 @@ void main() {
       expect(snapshot.scriptName, 'dumped.py');
       expect(
         await snapshot.resumeAuto(),
-        isA<SessionComplete>().having(
+        isA<MontyComplete>().having(
           (c) => c.output,
           'output',
           const MontyInt(5),

@@ -17,7 +17,7 @@ import 'package:test/test.dart';
 /// Runs a test body with a session on a one-worker pool.
 typedef WithSession =
     Future<void> Function(
-      Future<void> Function(PoolSession s) body,
+      Future<void> Function(MontySession s) body,
     );
 
 void _ignore(String stream, String text) => _ignored++;
@@ -57,7 +57,7 @@ final Matcher _throwsCircular = throwsA(
 );
 
 Matcher _runtime(String message, {String? excType}) => isA<MontyRuntimeError>()
-    .having((e) => e.message, 'message', message)
+    .having((e) => e.toString(), 'message', message)
     .having(
       (e) => e.exception.excType,
       'excType',
@@ -87,7 +87,7 @@ void attributeSessionTests(String label, WithSession withSession) {
           s.feedRun(r"b'a\xff'.decode()", printCallback: _ignore),
         );
         expect(
-          e.message,
+          e.toString(),
           "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in "
           'position 1: invalid start byte',
         );
@@ -111,7 +111,7 @@ void attributeSessionTests(String label, WithSession withSession) {
           ),
         );
         expect(
-          e.message,
+          e.toString(),
           'json.JSONDecodeError: Expecting value: line 1 column 7 (char 6)',
         );
         expect(e.exception.excType, 'json.JSONDecodeError');
@@ -153,7 +153,7 @@ void attributeSessionTests(String label, WithSession withSession) {
                 as FunctionSnapshot;
         final e = await _failure(snap.resume(_jsonError));
         expect(
-          e.message,
+          e.toString(),
           'json.JSONDecodeError: Expecting value: line 1 column 5 (char 4)',
         );
         expect(e.exception.excType, 'json.JSONDecodeError');
@@ -212,7 +212,7 @@ void attributeSessionTests(String label, WithSession withSession) {
           const ExternalException('json.JSONDecodeError', 'm'),
         );
         expect(none.exception.excType, 'ValueError');
-        expect(none.message, 'json.JSONDecodeError: m');
+        expect(none.toString(), 'json.JSONDecodeError: m');
         final mistyped = await answer(
           ExternalException('json.JSONDecodeError', 'm', {
             ..._jsonError.attributes,
@@ -346,7 +346,7 @@ void attributeSessionTests(String label, WithSession withSession) {
         expect(call.isSpent, isFalse);
         final done =
             await call.resume(const ExternalReturnValue(MontyInt(1)))
-                as SessionComplete;
+                as MontyComplete;
         expect(done.output, const MontyInt(1));
 
         final lookup =
@@ -358,7 +358,7 @@ void attributeSessionTests(String label, WithSession withSession) {
         );
         expect(lookup.isSpent, isFalse);
         final looked =
-            await lookup.resume(value: const MontyInt(3)) as SessionComplete;
+            await lookup.resume(value: const MontyInt(3)) as MontyComplete;
         expect(looked.output, const MontyInt(3));
 
         final started =
@@ -375,7 +375,7 @@ void attributeSessionTests(String label, WithSession withSession) {
             await wait.resume({
                   started.callId: const ExternalReturnValue(MontyInt(4)),
                 })
-                as SessionComplete;
+                as MontyComplete;
         expect(settled.output, const MontyInt(4));
       });
     });

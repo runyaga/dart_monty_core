@@ -50,7 +50,7 @@ import 'package:fixnum/fixnum.dart';
 /// memory limit throws [MontyRuntimeError] with a `MemoryError`. After any
 /// of the last four the session is finished: its slot is free, and every
 /// later call throws [StateError].
-abstract interface class PoolSession {
+abstract interface class MontySession {
   /// Runs [code] to completion and returns its value: the last expression's,
   /// or [MontyNone].
   ///
@@ -188,7 +188,7 @@ abstract interface class PoolSession {
 
 /// Configures a session on [lease]'s worker; on failure the worker is
 /// killed and its slot freed before the error is rethrown.
-Future<PoolSession> openPoolSession(
+Future<MontySession> openPoolSession(
   WorkerLease lease,
   PoolOptions options,
   SessionConfig config,
@@ -271,13 +271,13 @@ final class _Hold {
   }
 }
 
-/// Kills the worker of a session collected without [PoolSession.close] and
+/// Kills the worker of a session collected without [MontySession.close] and
 /// frees its slot (q2). Its token is the session's lease, not the session,
 /// so it takes the lease's one exactly-once release. Best effort: a
 /// finalizer may never run, so a session must still be closed.
 final Finalizer<WorkerLease> _dropped = Finalizer((lease) => lease.kill());
 
-final class _LeasedSession implements PoolSession {
+final class _LeasedSession implements MontySession {
   _LeasedSession(this._hold, this._channel, this._proto, this._config) {
     _channel.onSuspended = _handOff;
     // A live snapshot holds its drive, and so this session: a suspended
@@ -834,7 +834,7 @@ final class _FeedDrive implements SnapshotDriver {
   Future<MontySnapshot> step(pb.ParentRequest request) async {
     try {
       final snapshot = await _step(request);
-      if (snapshot is SessionComplete) _host.dispose();
+      if (snapshot is MontyComplete) _host.dispose();
 
       return snapshot;
     } on Object {
@@ -888,7 +888,7 @@ final class _FeedDrive implements SnapshotDriver {
         _session._hold.lease,
         _host.objects.lookup,
       ),
-      pb.ChildEvent_Kind.nameLookup => NameLookupSnapshot(
+      pb.ChildEvent_Kind.nameLookup => Snapshots.nameLookup(
         this,
         _position(event.nameLookup.position),
         script,
@@ -897,7 +897,7 @@ final class _FeedDrive implements SnapshotDriver {
             ? uuidString(event.nameLookup.objectId.data)
             : null,
       ),
-      pb.ChildEvent_Kind.resolveFutures => FutureSnapshot(
+      pb.ChildEvent_Kind.resolveFutures => Snapshots.futures(
         this,
         _position(event.resolveFutures.position),
         script,
@@ -938,7 +938,7 @@ FunctionSnapshot _callSnapshot(
   String script,
   pb.FunctionCall call,
   HostObjectLookup hosts,
-) => FunctionSnapshot(
+) => Snapshots.function(
   driver,
   _position(call.position),
   script,
@@ -970,7 +970,7 @@ FunctionSnapshot _osSnapshot(
   }
   final (name, args, kwargs) = parts;
 
-  return FunctionSnapshot(
+  return Snapshots.function(
     driver,
     _position(call.position),
     script,

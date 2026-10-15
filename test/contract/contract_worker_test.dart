@@ -60,7 +60,7 @@ void main() {
   // hold.md: close while a turn is in flight, a real one blocked in the
   // worker and a held one on the fake, then a later call.
   test('close during a turn in flight', () async {
-    Future<List<String>> closeMidTurn(PoolSession session) async {
+    Future<List<String>> closeMidTurn(MontySession session) async {
       final seen = <String>[];
       Future<void> loop() async {
         try {
@@ -83,7 +83,7 @@ void main() {
       return seen;
     }
 
-    final pool = await MontyPool.startWith(
+    final pool = await startMonty(
       const PoolOptions(minProcesses: 0, maxProcesses: 1),
       open: chf.openChannel,
     );

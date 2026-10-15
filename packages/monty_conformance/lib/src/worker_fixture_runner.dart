@@ -55,7 +55,7 @@ const int workerFixtureMaxMemory = 256 * 1024 * 1024;
 /// Returns what ran and what failed. [only] restricts the run to the named
 /// files (a debugging aid; the gate runs them all).
 Future<WorkerCorpusRun> runWorkerFixtureCorpus({
-  required MontyPool pool,
+  required Monty pool,
   required void Function(String) log,
   Map<String, String>? corpus,
   Set<String>? only,
@@ -111,7 +111,7 @@ final class WorkerCorpusRun {
 }
 
 /// Runs one fixture; null when it met its expectation, else why not.
-Future<String?> _runOne(MontyPool pool, String name, String source) async {
+Future<String?> _runOne(Monty pool, String name, String source) async {
   final expectation = parseFixture(
     source,
     skipCallExternal: false,
@@ -122,10 +122,10 @@ Future<String?> _runOne(MontyPool pool, String name, String source) async {
   final iter = mount || fixtureIsCallExternal(source);
   final timezone = fixtureTimezone(source);
 
-  final PoolSession session;
+  final MontySession session;
   try {
-    session = await pool.checkout(
-      options: SessionConfig(
+    session = await pool.checkoutWith(
+      SessionConfig(
         scriptName: name,
         limits: ResourceLimits(
           maxMemory: workerFixtureMaxMemory,
@@ -250,7 +250,7 @@ String _repr(MontyValue v, List<Object> open) {
 /// `run_iter_loop` and `run_mount_fs_iter_loop`: answers each suspension from
 /// the host registry until the run completes (or raises).
 Future<MontyValue> _drive(
-  PoolSession session,
+  MontySession session,
   String source, {
   required bool mount,
 }) async {
@@ -281,7 +281,7 @@ Future<MontyValue> _drive(
 
   while (true) {
     switch (snapshot) {
-      case SessionComplete(:final output):
+      case MontyComplete(:final output):
         return output;
 
       case FunctionSnapshot(isOsFunction: true) && final call:

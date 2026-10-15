@@ -82,7 +82,7 @@ void _expectError(MontyError error, DisplayFixture fixture) {
   };
   expect(name, fixture.errorClass);
   expect('$error', fixture.str);
-  expect(error.message, fixture.str);
+  expect(error.toString(), fixture.str);
   expect(error.exception.excType, fixture.exceptionType);
   expect([error.exception.message], fixture.exceptionArgs);
   expect(

@@ -91,7 +91,7 @@ void main() {
         label: _backend,
         profile: WorkerCorpusProfile.browser,
         jspi: jspi,
-        startPool: () async => MontyPool.startWith(
+        startPool: () async => startMonty(
           corpusPoolOptions,
           open: open(forceNoJspi: false),
         ),
@@ -103,7 +103,7 @@ void main() {
       'the recursion set under the forced fallback ends in a pass or a '
       'crash ($_backend)',
       () async {
-        final pool = await MontyPool.startWith(
+        final pool = await startMonty(
           corpusPoolOptions,
           open: open(forceNoJspi: true),
         );

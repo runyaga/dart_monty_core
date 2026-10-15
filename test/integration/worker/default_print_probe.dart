@@ -11,7 +11,7 @@ import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
 Future<void> main(List<String> args) async {
-  await MontyPool.withPool(
+  await withMonty(
     (pool) => pool.withSession(
       (session) => session.feedRun(
         "print('a', end='')\n"
@@ -20,7 +20,7 @@ Future<void> main(List<String> args) async {
         "print('e', file=sys.stderr)\n",
       ),
     ),
-    options: PoolOptions(
+    PoolOptions(
       maxProcesses: 1,
       workerLocation: args.firstOrNull,
     ),

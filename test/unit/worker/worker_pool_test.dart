@@ -13,6 +13,8 @@ import 'package:test/test.dart';
 import '../../_accessors.dart';
 import '_pool_oracle.g.dart';
 import '_scripted_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 
 /// A channel that answers every `Reset` with `Ok`, [resets] times.
 ScriptedChannel resettable({int resets = 20}) => ScriptedChannel([

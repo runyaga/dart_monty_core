@@ -42,7 +42,7 @@ MontyError _raised(
 Matcher _invalid(String detail) => isA<MontyCrashedError>()
     .having((e) => e.cause, 'cause', CrashCause.protocol)
     .having(
-      (e) => e.message,
+      (e) => e.toString(),
       'message',
       'monty worker protocol error: invalid exception payload: $detail',
     )
@@ -82,14 +82,14 @@ void main() {
         ('', 'ZeroDivisionError'),
       ]) {
         final error = _raised('ZeroDivisionError', message);
-        expect(error.message, str);
+        expect(error.toString(), str);
         expect('$error', str);
       }
     });
 
     test('MontySyntaxError: the message alone', () {
       final error = _raised('SyntaxError', 'invalid syntax');
-      expect(error.message, 'invalid syntax');
+      expect(error.toString(), 'invalid syntax');
       expect('$error', 'invalid syntax');
       expect('${_raised('SyntaxError')}', '');
     });

@@ -32,6 +32,8 @@ import 'package:test/test.dart';
 
 import '_display_cases.dart';
 import '_kind_round_trips.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 
 /// The package's lib/ as the test server exposes it.
 const _assets = 'packages/dart_monty_core/assets';
@@ -362,7 +364,7 @@ void main() {
       throwsA(
         isA<MontyCrashedError>()
             .having((e) => e.cause, 'cause', CrashCause.fatal)
-            .having((e) => e.message, 'message', contains('protocol 4')),
+            .having((e) => e.toString(), 'message', contains('protocol 4')),
       ),
     );
   });

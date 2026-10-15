@@ -25,6 +25,8 @@ import 'fake_worker.dart'
         floodPrintLength,
         floodPrints,
         stderrLastLine;
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 
 pb.ParentRequest _feed(String code) =>
     pb.ParentRequest(feed: pb.Feed(code: code));
@@ -277,7 +279,7 @@ void main() {
       // the channel saw.
       expect(crash.exitStatus, 134);
       expect(
-        crash.message,
+        crash.toString(),
         'monty worker crashed while waiting for a reply (exit status: 134)',
       );
     });
@@ -457,7 +459,7 @@ void main() {
       channel.turn(_configure).timeout(const Duration(seconds: 15)),
       throwsA(
         isA<MontyCrashedError>().having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           // Upstream's context for a worker lost while writing to it.
           startsWith('monty worker crashed while sending a request'),
@@ -482,7 +484,7 @@ void main() {
       channel.turn(large).timeout(const Duration(seconds: 15)),
       throwsA(
         isA<MontyCrashedError>().having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           startsWith('monty worker crashed while sending a request'),
         ),

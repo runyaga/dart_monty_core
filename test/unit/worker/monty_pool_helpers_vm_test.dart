@@ -1,5 +1,5 @@
 // The scoped helpers take the same settings as the calls they wrap:
-// MontyPool.withPool those of start, withSession those of checkout (one
+// Monty.withPool those of start, withSession those of checkout (one
 // internal options record each until the cutover decides the public
 // signatures). Read from the source with package:analyzer, so a parameter
 // added, renamed, retyped or given another default on one side only fails

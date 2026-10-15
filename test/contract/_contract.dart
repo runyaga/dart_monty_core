@@ -120,7 +120,7 @@ final class Side {
   Side(this.session, this.feeds, {required this.isFake});
 
   /// The session under test.
-  final PoolSession session;
+  final MontySession session;
 
   /// The scenario's feeds.
   final List<String> feeds;
@@ -301,7 +301,7 @@ String _showPair((MontyValue, MontyValue) pair) =>
 /// [snapshot] as the trace writes it. Positions are left out: the fake has
 /// none (a listed exception).
 String showSnapshot(MontySnapshot snapshot) => switch (snapshot) {
-  SessionComplete(:final output) => 'complete ${showValue(output)}',
+  MontyComplete(:final output) => 'complete ${showValue(output)}',
   FunctionSnapshot(
     :final functionName,
     :final callId,
@@ -406,7 +406,7 @@ typedef Outcome = ({List<String> trace, List<String> answers, Side side});
 /// Runs [scenario] on a real session from a pool over [open].
 Future<Outcome> runReal(Scenario scenario, OpenChannel open) async {
   final log = FakeAnswers();
-  final pool = await MontyPool.startWith(
+  final pool = await startMonty(
     const PoolOptions(minProcesses: 0, maxProcesses: 1),
     open: () {
       final inner = open();
@@ -417,7 +417,7 @@ Future<Outcome> runReal(Scenario scenario, OpenChannel open) async {
     },
   );
   try {
-    final session = await pool.checkout(options: scenario.config);
+    final session = await pool.checkoutWith(scenario.config);
     final side = Side(session, scenario.feeds, isFake: false);
     try {
       await scenario.run(side);

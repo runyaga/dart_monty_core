@@ -142,7 +142,7 @@ Future<void> crashThenReuse(
     }
   }
 
-  final pool = await MontyPool.startWith(
+  final pool = await startMonty(
     PoolOptions(
       maxProcesses: 1,
       requestTimeout: crash.requestTimeout,
@@ -152,7 +152,7 @@ Future<void> crashThenReuse(
     startupTimeout: const Duration(seconds: 3),
   );
   try {
-    final session = await pool.checkout(options: crash.config);
+    final session = await pool.checkoutWith(crash.config);
     expect(pool.liveWorkers, 1);
     Object? failure;
     try {
@@ -174,9 +174,9 @@ Future<void> crashThenReuse(
     // The same pool, a new checkout, within the acquisition timeout.
     final MontyValue value;
     try {
-      value = await pool.withSession(
+      value = await pool.withSessionWith(
         (s) => s.feedRun('1 + 1', printCallback: _ignore),
-        options: const SessionConfig(
+        const SessionConfig(
           limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
         ),
       );

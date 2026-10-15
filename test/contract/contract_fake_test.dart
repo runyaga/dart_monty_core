@@ -404,7 +404,7 @@ void main() {
       fake.feedRun('x', externals: {'f': (_, _) => _none}),
       throwsA(
         isA<MontyRuntimeError>().having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           'RuntimeError: suspension limit 1000 exceeded',
         ),
@@ -524,7 +524,7 @@ void main() {
       await expectLater(snapshot.dump(), throwsUnsupportedError);
       expect(
         await snapshot.resume(const ExternalReturnValue(_none)),
-        isA<SessionComplete>(),
+        isA<MontyComplete>(),
       );
       await fake.close();
     });

@@ -19,7 +19,7 @@ Future<void> main() async {
   runApp(const SizedBox.shrink());
   String text;
   try {
-    final value = await MontyPool.withPool(
+    final value = await Monty.withPool(
       (pool) => pool.withSession((session) => session.feedRun('1 + 1')),
     );
     text = '${value.dartValue}';

@@ -33,7 +33,7 @@ void main() {
     CorpusTarget(
       label: 'native',
       profile: WorkerCorpusProfile.native,
-      startPool: () => MontyPool.start(options: corpusPoolOptions),
+      startPool: () => startMonty(corpusPoolOptions),
     ),
   );
 

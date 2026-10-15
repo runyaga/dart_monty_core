@@ -24,6 +24,8 @@ import '../../_accessors.dart';
 import '../../unit/worker/_display_cases.dart';
 import '../../unit/worker/_kind_round_trips.dart';
 import '_worker_harness.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
 const _protocolVersion = 5;
@@ -265,7 +267,7 @@ void main() {
     );
     expect(crash.cause, CrashCause.fatal);
     expect(crash.exitCode, 4);
-    expect(crash.message, contains('999'));
+    expect(crash.toString(), contains('999'));
   });
 
   test('deadline kill, then a fresh worker answers', () async {

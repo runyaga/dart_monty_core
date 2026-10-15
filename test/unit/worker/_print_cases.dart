@@ -20,7 +20,7 @@ import 'package:test/test.dart';
 import '_print_oracle.g.dart';
 
 /// Starts a pool with [options].
-typedef StartPrintPool = Future<MontyPool> Function(PoolOptions options);
+typedef StartPrintPool = Future<Monty> Function(PoolOptions options);
 
 /// A throw of the host's own, which upstream sends as `Exception` with its
 /// text: the oracle's `HostError`.
@@ -36,7 +36,7 @@ final class _HostTrouble implements Exception {
 /// The sink [spec] describes: a collector, or a callback that throws. A
 /// `monty` throw is the [MontyRuntimeError] of an earlier
 /// `raise KeyError('k')` on another session of [pool].
-Future<Object> _sink(List<Object?> spec, MontyPool pool) async {
+Future<Object> _sink(List<Object?> spec, Monty pool) async {
   switch (spec) {
     case ['streams', final max]:
       return max == 'default'
@@ -100,7 +100,7 @@ String _innerText(MontyError e) {
   return 'json.JSONDecodeError($shown)';
 }
 
-Future<MontyError> _earlierError(MontyPool pool) async {
+Future<MontyError> _earlierError(Monty pool) async {
   final other = await pool.checkout();
   try {
     await other.feedRun('raise KeyError("k")', printCallback: _ignore);
@@ -125,7 +125,7 @@ String _repr(MontyValue value) => switch (value) {
 };
 
 String _describe(MontySnapshot snapshot) => switch (snapshot) {
-  SessionComplete(:final output) => 'value: ${_repr(output)}',
+  MontyComplete(:final output) => 'value: ${_repr(output)}',
   NameLookupSnapshot(:final variableName) => 'lookup $variableName',
   _ => throw StateError('unexpected snapshot $snapshot'),
 };
@@ -179,8 +179,8 @@ void printOracleTests(String label, StartPrintPool start) {
             final ProtoPrintCallback f => f,
             _ => throw StateError('not a sink: $made'),
           };
-          final session = await pool.checkout(
-            options: const SessionConfig(printFlushInterval: Duration.zero),
+          final session = await pool.checkoutWith(
+            const SessionConfig(printFlushInterval: Duration.zero),
           );
           MontySnapshot? snapshot;
           final actual = <String>[];

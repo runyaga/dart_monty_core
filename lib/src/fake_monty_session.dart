@@ -191,16 +191,16 @@ class _ScriptedLink {
   bool isClosed = false;
 
   final FakeWorker _worker;
-  Future<PoolSession>? _opening;
-  PoolSession? _session;
-  MontyPool? _pool;
+  Future<MontySession>? _opening;
+  MontySession? _session;
+  Monty? _pool;
   Future<void>? _closing;
 
   Future<void> close() => _closing ??= _close();
 
   /// Runs [body] on the session over the scripted worker: at once when it
   /// is open, so calls keep their order and timing.
-  Future<T> call<T>(Future<T> Function(PoolSession session) body) {
+  Future<T> call<T>(Future<T> Function(MontySession session) body) {
     // Refused at once, as a closed session refuses, while the close is
     // still on its way to the session underneath.
     if (isClosed) return Future.error(StateError('the session is finished'));
@@ -228,11 +228,11 @@ class _ScriptedLink {
     }
   }
 
-  Future<T> _opened<T>(Future<T> Function(PoolSession session) body) async =>
+  Future<T> _opened<T>(Future<T> Function(MontySession session) body) async =>
       body(await (_opening ??= _open()));
 
-  Future<PoolSession> _open() async {
-    final pool = _pool = await MontyPool.startWith(
+  Future<MontySession> _open() async {
+    final pool = _pool = await startMonty(
       const PoolOptions(minProcesses: 0, maxProcesses: 1),
       open: () => PendingSpawn((_) async => _worker),
     );
@@ -265,7 +265,7 @@ class _ScriptedLink {
 /// What it does not do: run Python, type-check, or enforce limits. [dump],
 /// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
 /// [UnsupportedError]. [workerPid] is null.
-final class FakeMontySession extends _FakeScripting implements PoolSession {
+final class FakeMontySession extends _FakeScripting implements MontySession {
   /// A session with nothing scripted.
   FakeMontySession() : this._(FakeScript());
 

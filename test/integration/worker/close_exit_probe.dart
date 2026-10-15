@@ -19,15 +19,15 @@ import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
 Future<void> main(List<String> args) async {
-  final pool = await MontyPool.start(
-    options: PoolOptions(
+  final pool = await startMonty(
+    PoolOptions(
       maxProcesses: 1,
       requestTimeout: const Duration(hours: 1),
       workerLocation: args.firstOrNull,
     ),
   );
-  final session = await pool.checkout(
-    options: const SessionConfig(
+  final session = await pool.checkoutWith(
+    const SessionConfig(
       limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
     ),
   );

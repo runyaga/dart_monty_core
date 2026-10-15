@@ -248,13 +248,13 @@ const List<String> _argumentKinds = [
 
 /// The outcome core reaches for [config] and [code], in the oracle's form.
 Future<String> _outcome(
-  MontyPool pool,
+  Monty pool,
   SessionConfig config,
   String? code,
 ) async {
-  final PoolSession session;
+  final MontySession session;
   try {
-    session = await pool.checkout(options: config);
+    session = await pool.checkoutWith(config);
     // The refusal is the outcome under test.
     // ignore: avoid_catching_errors
   } on ArgumentError catch (e) {
@@ -270,7 +270,7 @@ Future<String> _outcome(
 }
 
 /// The outcome of feeding [code] to [session], in the oracle's form.
-Future<String> _fed(PoolSession session, String code) async {
+Future<String> _fed(MontySession session, String code) async {
   try {
     // The snippets print nothing; what they might is kept off the console.
     final printed = StringBuffer();
@@ -296,7 +296,7 @@ Future<String> _fed(PoolSession session, String code) async {
 }
 
 /// The tests, each case on a pool from [start], closed at its end.
-void configOracleTests(String label, Future<MontyPool> Function() start) {
+void configOracleTests(String label, Future<Monty> Function() start) {
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.
@@ -333,7 +333,7 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
     test('sequence $id matches upstream, feed by feed ($label)', () async {
       final pool = await start();
       try {
-        final session = await pool.checkout(options: sequenceCases[id]!);
+        final session = await pool.checkoutWith(sequenceCases[id]!);
         try {
           final actual = [
             for (final (:code, outcome: _) in feeds) await _fed(session, code),
@@ -359,8 +359,8 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
         '${two(local.hour)}:${two(local.minute)}:${two(local.second)}.678000';
     final pool = await start();
     try {
-      final session = await pool.checkout(
-        options: SessionConfig(osPolicy: OsPolicy(fixedDatetime: local)),
+      final session = await pool.checkoutWith(
+        SessionConfig(osPolicy: OsPolicy(fixedDatetime: local)),
       );
       try {
         final printed = StringBuffer();

@@ -18,6 +18,8 @@ import 'package:test/test.dart';
 
 import '../../_accessors.dart';
 import '_worker_harness.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
 const _protocolVersion = 5;
