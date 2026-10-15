@@ -40,14 +40,17 @@ Future<void> main(List<String> args) async {
       _check(total == const MontyInt(285), 'sum(squares)');
 
       // ── 3. Externals ──────────────────────────────────────────────────────
-      // A call to a name in `externals` runs the Dart function. A returned
+      // A call to a name in `externalLookup` runs the Dart function. A returned
       // Future is awaited, and its value is the call's result.
       final shout = await session.feedRun(
         'shout(msg)',
         inputs: {'msg': const MontyString('hello')},
-        externals: {
-          'shout': (args, _) =>
-              MontyString((args[0] as MontyString).value.toUpperCase()),
+        externalLookup: {
+          'shout': MontyHostFunction(
+            'shout',
+            (args, _) =>
+                MontyString((args[0] as MontyString).value.toUpperCase()),
+          ),
         },
       );
       print(shout.dartValue);
@@ -55,12 +58,12 @@ Future<void> main(List<String> args) async {
 
       final fetched = await session.feedRun(
         'fetch(1) + fetch(2)',
-        externals: {
-          'fetch': (args, _) async {
+        externalLookup: {
+          'fetch': MontyHostFunction('fetch', (args, _) async {
             await Future<void>.delayed(const Duration(milliseconds: 1));
 
             return MontyInt((args[0] as MontyInt).value * 10);
-          },
+          }),
         },
       );
       print('fetch(1) + fetch(2) = ${fetched.dartValue}');

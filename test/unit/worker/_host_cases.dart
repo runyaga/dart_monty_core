@@ -9,7 +9,6 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -112,8 +111,11 @@ Object _redact(String name, Object value) =>
     name == 'x' ? const MontyString('***') : value;
 
 /// The wrappers a case builds, in order, by name.
-Map<String, Object> _build(Map<String, Point> objects, List<Object?> specs) {
-  final built = <String, Object>{};
+Map<String, MontyValue> _build(
+  Map<String, Point> objects,
+  List<Object?> specs,
+) {
+  final built = <String, MontyValue>{};
   for (final entry in specs) {
     if (entry case [final String name, final List<Object?> spec]) {
       built[name] = _wrapper(spec, built, objects);
@@ -124,9 +126,9 @@ Map<String, Object> _build(Map<String, Point> objects, List<Object?> specs) {
 }
 
 /// The wrapper [spec] describes, given the wrappers [built] so far.
-Object _wrapper(
+MontyValue _wrapper(
   List<Object?> spec,
-  Map<String, Object> built,
+  Map<String, MontyValue> built,
   Map<String, Point> objects,
 ) => switch (spec) {
   [
@@ -205,7 +207,7 @@ final class _Run {
 
   final Monty _pool;
   final Map<String, Point> _objects;
-  final Map<String, Object> _wrappers;
+  final Map<String, MontyValue> _wrappers;
   final Map<String, MontySession> _sessions = {};
   final Map<String, Uint8List> _dumps = {};
 

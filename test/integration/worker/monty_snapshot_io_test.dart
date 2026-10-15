@@ -21,6 +21,7 @@ import '../../_accessors.dart';
 import '../../unit/worker/_attribute_cases.dart';
 import '../../unit/worker/_cwd_cases.dart';
 import '../../unit/worker/_host_code_cases.dart';
+import '../../unit/worker/_session_cases.dart';
 import '_worker_harness.dart';
 
 /// Every session's memory is bounded.
@@ -54,6 +55,14 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
   attributeSessionTests('vm', _withSession);
   cwdSessionTests('vm', _withSession);
+  sessionSurfaceTests('vm', _withSession);
+  sessionSurfacePoolTests('vm', (body) async {
+    final location = await realWorker() as WorkerExecutable;
+    await withMonty(
+      body,
+      PoolOptions(maxProcesses: 1, workerLocation: location.path),
+    );
+  });
   hostCodeSessionTests(
     'vm',
     (config, body) => _withSession(body, options: config),
@@ -179,13 +188,16 @@ void main() {
       final value = await s.feedRun(
         'import asyncio\nawait asyncio.gather(af(1), af(2))',
         printCallback: _ignore,
-        externals: {
-          'af': coroutine((args, kwargs) async {
-            final n = (firstItem(args) as MontyInt).value;
-            await Future<void>.delayed(Duration(milliseconds: (3 - n) * 10));
+        externalLookup: {
+          'af': MontyHostFunction(
+            'af',
+            coroutine((args, kwargs) async {
+              final n = (firstItem(args) as MontyInt).value;
+              await Future<void>.delayed(Duration(milliseconds: (3 - n) * 10));
 
-            return MontyInt(n * 10);
-          }),
+              return MontyInt(n * 10);
+            }),
+          ),
         },
       );
       expect(value, const MontyList([MontyInt(10), MontyInt(20)]));
@@ -280,7 +292,12 @@ void main() {
       final value = await s.feedRun(
         'fetch',
         printCallback: _ignore,
-        externals: {'fetch': (args, kwargs) => const MontyNone()},
+        externalLookup: {
+          'fetch': MontyHostFunction(
+            'fetch',
+            (args, kwargs) => const MontyNone(),
+          ),
+        },
       );
       expect(value, const MontyString('fetch'));
     });

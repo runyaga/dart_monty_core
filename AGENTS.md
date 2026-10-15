@@ -55,8 +55,8 @@ break can silently shrink a suite, so every suite has a floor under its test
 count. Raise a floor when a suite grows (set it just below
 the observed count); never lower one to make a run pass. They live in:
 
-- `tool/gate.sh`: `sf unit_tests 700`, `sf unit_web 1400`, `sf worker_vm 165`;
-- `tool/test_worker_web.sh`: `FLOOR=230` (per compiler);
+- `tool/gate.sh`: `sf unit_tests 700`, `sf unit_web 1400`, `sf worker_vm 430`;
+- `tool/test_worker_web.sh`: `FLOOR=358` (per compiler);
 - `tool/test_corpus_worker.sh`: the `floor=` values per leg;
 - `.github/workflows/ci.yaml`: the `assert_test_count.sh` calls (same numbers).
 
@@ -91,10 +91,10 @@ pinned one.
 
 | File | Regenerate | Verify |
 |---|---|---|
-| `test/unit/worker/_*_oracle.g.dart` (config, host, restore, worker_class, print, os_handler) | `PY -I tool/generate_<name>_oracle.py` | same with `--check` |
+| `test/unit/worker/_*_oracle.g.dart` (config, host, restore, worker_class, print, os_handler, session) | `PY -I tool/generate_<name>_oracle.py` | same with `--check` |
 | `test/unit/worker/_display_fixtures.g.dart` | `python3 -I tool/generate_display_fixtures.py <parity checkout>` | same with `--check` |
 | `lib/src/bin/*/dart_monty_worker` | `bash tool/build_worker.sh` | `--check` |
-| `tool/export-golden.txt` | `dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --update` | same without `--update` |
+| `tool/export-golden.txt` | `dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --post-cutover --update` | same without `--update` |
 | `tool/coverage-baseline.json` | maintainer-run `tool/record_coverage_baseline.sh`, from main's successful CI artifact | never in a PR |
 
 `PY` is a Python 3.12 with upstream's oracle installed from the hash-pinned

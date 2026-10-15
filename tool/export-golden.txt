@@ -21,6 +21,7 @@ ExternalSettledResult
 Frame
 FunctionSnapshot
 FutureSnapshot
+HostClass
 Monty
 MontyBigInt
 MontyBool
@@ -74,6 +75,7 @@ VfsBytes
 VfsContent
 VfsFile
 VfsText
+coroutine
 memoryMountedOsHandler
 resolveOpenCall
 runMontyWorkerIfChild
@@ -93,11 +95,11 @@ typedef FakeAnswer = ({ExternalResult? answer, int? batch, int? callId})
 final class FakeMontySession extends _FakeScripting implements MontySession
   FakeMontySession.close: method() -> Future<void>
   FakeMontySession.dump: method() -> Future<Uint8List@dart:typed_data>
-  FakeMontySession.feedRun: method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
-  FakeMontySession.feedStart: method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
+  FakeMontySession.feedRun: method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
+  FakeMontySession.feedStart: method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
   FakeMontySession.isClosed: getter -> bool
   FakeMontySession.loadSession: method(Uint8List@dart:typed_data state) -> Future<void>
-  FakeMontySession.loadSnapshot: method(Uint8List@dart:typed_data state, {Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
+  FakeMontySession.loadSnapshot: method(Uint8List@dart:typed_data state, {Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
   FakeMontySession.new: constructor() redirecting
   FakeMontySession.workerPid: getter -> int?
 abstract class _FakeScripting
@@ -498,6 +500,7 @@ final class CollectString
 [members: src/worker/host_answers.dart]
 typedef OsHandler = FutureOr@dart:async<MontyValue> Function(String, List<MontyValue>, Map<String, MontyValue>)
 typedef ProtoExternalFunction = FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>)
+coroutine: function(ProtoExternalFunction function) -> ProtoExternalFunction
 
 [members: src/worker/monty.dart]
 final class Monty
@@ -540,10 +543,10 @@ final class MontyTypingError extends MontyError
 abstract interface class MontySession
   MontySession.close: abstract method() -> Future<void>
   MontySession.dump: abstract method() -> Future<Uint8List@dart:typed_data>
-  MontySession.feedRun: abstract method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
-  MontySession.feedStart: abstract method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
+  MontySession.feedRun: abstract method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
+  MontySession.feedStart: abstract method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
   MontySession.loadSession: abstract method(Uint8List@dart:typed_data state) -> Future<void>
-  MontySession.loadSnapshot: abstract method(Uint8List@dart:typed_data state, {Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
+  MontySession.loadSnapshot: abstract method(Uint8List@dart:typed_data state, {Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
   MontySession.new: constructor()
   MontySession.workerPid: abstract getter -> int?
 

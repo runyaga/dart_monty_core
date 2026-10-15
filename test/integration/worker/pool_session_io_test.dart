@@ -171,12 +171,12 @@ void main() {
         final release = Completer<MontyValue>();
         final run = session.feedRun(
           'host()',
-          externals: {
-            'host': (args, kwargs) {
+          externalLookup: {
+            'host': MontyHostFunction('host', (args, kwargs) {
               entered.complete();
 
               return release.future;
-            },
+            }),
           },
           printCallback: _ignore,
         );
@@ -325,7 +325,9 @@ void main() {
         await expectLater(
           session.feedRun(
             'while True:\n    f()',
-            externals: {'f': (args, kwargs) => MontyInt(++calls)},
+            externalLookup: {
+              'f': MontyHostFunction('f', (args, kwargs) => MontyInt(++calls)),
+            },
             printCallback: _ignore,
           ),
           throwsA(
@@ -448,7 +450,12 @@ void main() {
           await expectLater(
             session.feedRun(
               "print('a')\nf()\n7",
-              externals: {'f': (args, kwargs) => MontyInt(++calls)},
+              externalLookup: {
+                'f': MontyHostFunction(
+                  'f',
+                  (args, kwargs) => MontyInt(++calls),
+                ),
+              },
               printCallback: (stream, text) => throw StateError('sink'),
             ),
             throwsA(
@@ -627,12 +634,12 @@ void main() {
           final entered = Completer<void>();
           final run = session.feedRun(
             'x = 1\nnever()',
-            externals: {
-              'never': (args, kwargs) {
+            externalLookup: {
+              'never': MontyHostFunction('never', (args, kwargs) {
                 entered.complete();
 
                 return Completer<MontyValue>().future;
-              },
+              }),
             },
             printCallback: _ignore,
           );
@@ -742,7 +749,9 @@ void main() {
           await expectLater(
             session.feedRun(
               'g()\n3',
-              externals: {'g': (args, kwargs) => big()},
+              externalLookup: {
+                'g': MontyHostFunction('g', (args, kwargs) => big()),
+              },
               printCallback: _ignore,
             ),
             throwsA(oversized),
@@ -751,7 +760,12 @@ void main() {
             await expectLater(
               session.feedRun(
                 code,
-                externals: {'g': (args, kwargs) => const MontyString('ok')},
+                externalLookup: {
+                  'g': MontyHostFunction(
+                    'g',
+                    (args, kwargs) => const MontyString('ok'),
+                  ),
+                },
                 printCallback: _ignore,
               ),
               throwsA(

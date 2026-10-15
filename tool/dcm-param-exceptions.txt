@@ -9,3 +9,9 @@ lib/src/worker/monty.dart	Monty.start	8
 lib/src/worker/monty.dart	Monty.withPool	9
 lib/src/worker/monty.dart	Monty.checkout	9
 lib/src/worker/monty.dart	Monty.withSession	10
+lib/src/worker/monty_session.dart	MontySession.feedRun	7
+lib/src/worker/monty_session.dart	MontySession.feedStart	7
+lib/src/worker/monty_session.dart	_LeasedSession.feedRun	7
+lib/src/worker/monty_session.dart	_LeasedSession.feedStart	7
+lib/src/fake_monty_session.dart	FakeMontySession.feedRun	7
+lib/src/fake_monty_session.dart	FakeMontySession.feedStart	7

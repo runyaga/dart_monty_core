@@ -44,8 +44,11 @@ Future<void> main(List<String> args) async {
     final calls = <Object?>[];
     final result = await session.feed(
       testCase['code']! as String,
-      externals: {
-        'fetch': (positional, named) {
+      externalLookup: {
+        'fetch': MontyHostFunction('fetch', (
+          positional,
+          named,
+        ) {
           calls.add({
             'name': 'fetch',
             'args': [for (final v in positional) _canon(v)],
@@ -53,7 +56,7 @@ Future<void> main(List<String> args) async {
           });
 
           return replies.removeAt(0);
-        },
+        }),
       },
     );
     final got = {

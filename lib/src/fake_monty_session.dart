@@ -246,13 +246,13 @@ class _ScriptedLink {
 /// A test queues, in order, what each feed's Python does: the host calls,
 /// OS calls, name lookups and awaits it suspends on, its prints, and how it
 /// ends. The session answers each suspension exactly as a worker-backed
-/// session does, through the same driver: a call through `externals`, an
-/// OS call through `os`, a lookup from `externals`, an await from the host
-/// futures it started. Under `feedStart` each suspension is returned as a
-/// snapshot to resume by hand.
+/// session does, through the same driver: a call through `externalLookup`,
+/// an OS call through `os`, a lookup from `externalLookup`, an await from
+/// the host futures it started. Under `feedStart` each suspension is
+/// returned as a snapshot to resume by hand.
 ///
 /// An answer that raises in the sandbox (a host function's exception, a
-/// name not in `externals`, a declined OS call, a refused value, a failed
+/// name not in `externalLookup`, a declined OS call, a refused value, a failed
 /// future Python awaits) ends the feed with that error, as uncaught Python
 /// would, unless the next scripted event is [willCatch]. The rest of that
 /// feed's events are dropped.
@@ -262,7 +262,9 @@ class _ScriptedLink {
 /// that finds no complete segment throws [StateError]. Call ids count from
 /// 0 within a segment, as a worker numbers them within a feed.
 ///
-/// What it does not do: run Python, type-check, or enforce limits. [dump],
+/// What it does not do: run Python, type-check, enforce limits, or keep a
+/// working directory (`cwd` is checked as a session checks it, and no
+/// Python reads it). [dump],
 /// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
 /// [UnsupportedError]. [workerPid] is null.
 final class FakeMontySession extends _FakeScripting implements MontySession {
@@ -284,17 +286,19 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   }) => _link.call(
     (s) => s.feedRun(
       code,
       inputs: inputs,
-      externals: externals,
+      externalLookup: externalLookup,
       printCallback: printCallback,
+      cwd: cwd,
       os: os,
       skipTypeCheck: skipTypeCheck,
     ),
@@ -303,17 +307,19 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   }) => _link.call(
     (s) => s.feedStart(
       code,
       inputs: inputs,
-      externals: externals,
+      externalLookup: externalLookup,
       printCallback: printCallback,
+      cwd: cwd,
       os: os,
       skipTypeCheck: skipTypeCheck,
     ),
@@ -325,7 +331,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
-    Map<String, ProtoExternalFunction>? externals,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   }) async => throw _noDump;

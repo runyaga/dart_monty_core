@@ -49,7 +49,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: 471d8af224622e6c15444e5163d8b93180fcf38c
+  PARITY_PIN: 96049b72af11743ea3b6fae8c35c0d432f195ae7
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
@@ -632,7 +632,7 @@ jobs:
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
           # The cutover head's measured count (1859, CI and local alike).
-          bash tool/assert_test_count.sh /tmp/unit-test.log 1859 unit
+          bash tool/assert_test_count.sh /tmp/unit-test.log 1866 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -659,7 +659,7 @@ jobs:
             --exclude-tags=integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
           # The cutover head's measured count (3689 over both compilers).
-          bash tool/assert_test_count.sh /tmp/unit-web.log 3689 "unit (web)"
+          bash tool/assert_test_count.sh /tmp/unit-web.log 3703 "unit (web)"
 
       - name: Generate LCOV
         run: |
@@ -878,7 +878,8 @@ jobs:
       # Artifacts do not keep the executable bit.
       - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
       - name: Test (worker tag)
-        # Floor under the 177 tests registered once the session's failure
+        # Floor under the 431 tests registered with the session-surface
+        # oracle cases (C5-s); 177 once the session's failure
         # gates joined (11 of them; 165 with the session-settings oracle
         # cases, 106 with the pool-session tests, 95 with the display cases,
         # 36 when this job was added). The path is
@@ -888,7 +889,7 @@ jobs:
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 165 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 430 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob

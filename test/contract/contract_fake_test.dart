@@ -9,10 +9,13 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 
 import 'package:dart_monty_core/src/fake_monty_session.dart';
+import 'package:dart_monty_core/src/fake_script.dart';
+import 'package:dart_monty_core/src/fake_worker.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:test/test.dart';
 
@@ -45,6 +48,10 @@ Future<bool> _matches(Scenario scenario) async {
 }
 
 const MontyValue _none = MontyNone();
+
+/// An [ArgumentError] for the argument [name].
+Matcher _argumentNamed(String name) =>
+    isA<ArgumentError>().having((e) => e.name, 'name', name);
 
 const List<MontyValue> _noArgs = [];
 
@@ -96,7 +103,10 @@ void main() {
           ..willCall('f')
           ..willReturn(const MontyInt(7));
         try {
-          await fake.feedRun('f()', externals: {'f': (_, _) => result});
+          await fake.feedRun(
+            'f()',
+            externalLookup: {'f': MontyHostFunction('f', (_, _) => result)},
+          );
         } on MontyRuntimeError {
           // The refused value raised in the sandbox; the answers say why.
         }
@@ -123,7 +133,10 @@ void main() {
       // The session runs on: completing the segment makes it playable.
       fake.willReturn(const MontyInt(1));
       expect(
-        await fake.feedRun('f()', externals: {'f': (_, _) => _none}),
+        await fake.feedRun(
+          'f()',
+          externalLookup: {'f': MontyHostFunction('f', (_, _) => _none)},
+        ),
         const MontyInt(1),
       );
       await fake.close();
@@ -200,7 +213,10 @@ void main() {
         ..willCatch()
         ..willReturn(_none);
       await expectLater(
-        fake.feedRun('f()', externals: {'f': (_, _) => _none}),
+        fake.feedRun(
+          'f()',
+          externalLookup: {'f': MontyHostFunction('f', (_, _) => _none)},
+        ),
         throwsStateError,
       );
       await fake.close();
@@ -401,7 +417,10 @@ void main() {
     }
     fake.willReturn(_none);
     await expectLater(
-      fake.feedRun('x', externals: {'f': (_, _) => _none}),
+      fake.feedRun(
+        'x',
+        externalLookup: {'f': MontyHostFunction('f', (_, _) => _none)},
+      ),
       throwsA(
         isA<MontyRuntimeError>().having(
           (e) => e.toString(),
@@ -432,11 +451,17 @@ void main() {
         ..willReturn(_none);
       await fake.feedRun(
         'script',
-        externals: {
-          'value': (_, _) => const MontyInt(1),
-          'raises': (_, _) => throw const ExternalException('KeyError', 'k'),
-          'future': coroutine((_, _) async => const MontyInt(3)),
-          'found': (_, _) => _none,
+        externalLookup: {
+          'value': MontyHostFunction('value', (_, _) => const MontyInt(1)),
+          'raises': MontyHostFunction(
+            'raises',
+            (_, _) => throw const ExternalException('KeyError', 'k'),
+          ),
+          'future': MontyHostFunction(
+            'future',
+            coroutine((_, _) async => const MontyInt(3)),
+          ),
+          'found': MontyHostFunction('found', (_, _) => _none),
         },
         os: (_, _, _) => throw const OsCallNotHandledException(),
       );
@@ -456,6 +481,131 @@ void main() {
       expect(fake.answers.firstOrNull?.answer, isA<ExternalReturnValue>());
       await fake.close();
     });
+  });
+
+  group('feed arguments', () {
+    test('a relative cwd raises ValueError before the script plays', () async {
+      final fake = FakeMontySession()..willReturn(const MontyInt(1));
+      await expectLater(
+        fake.feedRun('1', cwd: 'rel'),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.display('type-msg'),
+            'display',
+            'ValueError: cwd must be an absolute POSIX path: "rel"',
+          ),
+        ),
+      );
+      expect(fake.feeds, isEmpty);
+      expect(await fake.feedRun('1', cwd: '/a/'), const MontyInt(1));
+      await fake.close();
+    });
+
+    test('feedStart takes cwd as feedRun does', () async {
+      final fake = FakeMontySession()..willReturn(const MontyInt(2));
+      await expectLater(
+        fake.feedStart('2', cwd: 'a\u0000'),
+        throwsA(isA<MontyRuntimeError>()),
+      );
+      final done = await fake.feedStart('2', cwd: '/');
+      expect((done as MontyComplete).output, const MontyInt(2));
+      await fake.close();
+    });
+
+    test('an unencodable cwd throws ArgumentError before anything is '
+        'sent', () async {
+      final fake = FakeMontySession()..willReturn(const MontyInt(3));
+      await expectLater(
+        fake.feedRun('3', cwd: '/\ud800'),
+        throwsA(_argumentNamed('cwd')),
+      );
+      expect(fake.feeds, isEmpty);
+      expect(await fake.feedRun('3'), const MontyInt(3));
+      await fake.close();
+    });
+
+    test('feedRun, feedStart and loadSnapshot take inputs and '
+        'externalLookup as Map<String, MontyValue> (REQ '
+        'FakeMontySession-6)', () async {
+      final fake = FakeMontySession();
+      expect(
+        fake.feedRun,
+        isA<
+          Future<MontyValue> Function(
+            String code, {
+            Map<String, MontyValue>? inputs,
+            Map<String, MontyValue>? externalLookup,
+            String? cwd,
+            OsHandler? os,
+            bool skipTypeCheck,
+          })
+        >(),
+      );
+      expect(
+        fake.feedStart,
+        isA<
+          Future<MontySnapshot> Function(
+            String code, {
+            Map<String, MontyValue>? inputs,
+            Map<String, MontyValue>? externalLookup,
+            String? cwd,
+            OsHandler? os,
+            bool skipTypeCheck,
+          })
+        >(),
+      );
+      // Narrowed, not widened: an Object-valued map is a compile error.
+      expect(
+        fake.feedRun,
+        isNot(
+          isA<
+            Future<MontyValue> Function(
+              String code, {
+              Map<String, Object>? externalLookup,
+            })
+          >(),
+        ),
+      );
+      expect(
+        fake.feedStart,
+        isNot(
+          isA<
+            Future<MontySnapshot> Function(
+              String code, {
+              Map<String, Object>? inputs,
+            })
+          >(),
+        ),
+      );
+      expect(
+        fake.loadSnapshot,
+        isNot(
+          isA<
+            Future<MontySnapshot> Function(
+              Uint8List state, {
+              Map<String, Object>? externalLookup,
+            })
+          >(),
+        ),
+      );
+      await fake.close();
+    });
+  });
+
+  test('the fake worker refuses a turn once killed, as a dead channel '
+      'does', () async {
+    final worker = FakeWorker(FakeScript())..kill();
+    expect(worker.isAlive, isFalse);
+    await expectLater(
+      worker.turn(pb.ParentRequest(reset: pb.Reset())),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
   });
 
   group('lifecycle', () {

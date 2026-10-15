@@ -1029,12 +1029,15 @@ void main() {
       Object? seen;
       final host = HostAnswers(
         objects: objects,
-        externals: {
-          'f': (args, kwargs) {
+        externalLookup: {
+          'f': MontyHostFunction('f', (
+            args,
+            kwargs,
+          ) {
             seen = onlyItem(args);
 
             return const MontyNone();
-          },
+          }),
         },
       );
       await host.call(

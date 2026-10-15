@@ -175,7 +175,7 @@ final class _Run {
         return _value(
           await session.feedRun(
             arg as String,
-            externals: {'ext': ext},
+            externalLookup: {'ext': MontyHostFunction('ext', ext)},
             printCallback: _ignore,
           ),
         );

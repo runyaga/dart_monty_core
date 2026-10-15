@@ -464,13 +464,41 @@ void main() {
 
   test('a lookup resolving to a host function writes its index, 0, '
       "explicitly, as upstream's oneof encoder does", () {
-    final host = HostAnswers(externals: {'f': (a, k) => const MontyNone()});
+    final host = HostAnswers(
+      externalLookup: {
+        'f': MontyHostFunction('f', (a, k) => const MontyNone()),
+      },
+    );
     final lookup = host.lookup('f').resumeNameLookup;
     expect(lookup.hasValue(), isTrue);
     expect(lookup.value, 0);
     // Field 2 (varint) with value 0: tag 0x10, then 0x00.
     final bytes = lookup.writeToBuffer();
     expect(bytes.sublist(bytes.length - 2), [0x10, 0x00]);
+  });
+
+  test('a lookup resolving to a host function names it by the lookup key '
+      "and keeps its docstring, as upstream's resolve_name renames the "
+      'converted function', () {
+    final host = HostAnswers(
+      externalLookup: {
+        'alias': MontyHostFunction(
+          'original',
+          (a, k) => const MontyNone(),
+          docstring: 'Doc.',
+        ),
+        'bare': MontyHostFunction('other', (a, k) => const MontyNone()),
+      },
+    );
+    final alias = host.lookup('alias').resumeNameLookup;
+    final aliasFunction = itemAt(alias.values.nodes, alias.value).function;
+    expect(aliasFunction.name, 'alias');
+    expect(aliasFunction.hasDocstring(), isTrue);
+    expect(aliasFunction.docstring, 'Doc.');
+    final bare = host.lookup('bare').resumeNameLookup;
+    final bareFunction = itemAt(bare.values.nodes, bare.value).function;
+    expect(bareFunction.name, 'bare');
+    expect(bareFunction.hasDocstring(), isFalse);
   });
 
   test('normalizeVirtualPath follows normalize_virtual_path', () {

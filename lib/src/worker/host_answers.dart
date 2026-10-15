@@ -17,7 +17,7 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedError, protocolError;
+    show MontyCrashedError, MontyRuntimeError, encodingInput, protocolError;
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -58,9 +58,16 @@ typedef OsHandler =
     );
 
 /// Marks [function] as a coroutine, as an `async def` host function is
-/// upstream: the sandbox gets an awaitable for each call, settled through
-/// the futures protocol when [function]'s future completes. Unmarked, a host
-/// function's returned future is awaited and its value is the call's answer.
+/// upstream: Dart cannot tell an `async` function from one that returns a
+/// [Future], so the mark says which it is.
+///
+/// A call to the returned function, as the `fn` of an `externalLookup`
+/// entry's [MontyHostFunction], is a coroutine in the sandbox: one the
+/// sandbox awaits with nothing else to run is awaited in place, and any
+/// other gets a pending future, settled when [function]'s future
+/// completes, so `asyncio.gather` runs several at once. Unmarked, a host
+/// function's returned future is awaited and its value is the call's
+/// answer.
 ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   FutureOr<MontyValue> marked(
     List<MontyValue> args,
@@ -299,7 +306,7 @@ Duration cappedSleep(double seconds, Duration max) {
       : Duration(microseconds: micros.round());
 }
 
-/// The host's side of one feed: its host functions, OS handler and the
+/// The host's side of one feed: its external lookup, OS handler and the
 /// coroutines it has started, answering the worker's suspensions as
 /// upstream's async binding does.
 ///
@@ -316,7 +323,7 @@ final class HostAnswers {
   /// The answers for one feed, its host objects in [objects] (a fresh
   /// registry without one).
   HostAnswers({
-    this.externals = const {},
+    this.externalLookup = const {},
     this.os,
     this.systemSleepMax,
     HostObjects? objects,
@@ -325,8 +332,10 @@ final class HostAnswers {
   /// The session's host objects.
   final HostObjects objects;
 
-  /// The host functions, by the name the sandbox calls.
-  final Map<String, ProtoExternalFunction> externals;
+  /// What names the sandbox leaves undefined resolve to: a host function
+  /// ([MontyHostFunction]), or any other value, converted when the name is
+  /// read.
+  final Map<String, MontyValue> externalLookup;
 
   /// The OS handler; without one every OS call is declined.
   final OsHandler? os;
@@ -379,10 +388,18 @@ final class HostAnswers {
     final reader = _checkedArgs(call, objects.lookup);
     if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
-    final function = externals[name];
-    if (function == null) {
+    final entry = externalLookup[name];
+    if (entry == null) {
       return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
     }
+    if (entry is! MontyHostFunction) {
+      // Upstream calls the entry, whatever it is.
+      return _resume(
+        call.callId,
+        pb.ExtFunctionResult(error: _notCallable(entry)),
+      );
+    }
+    final function = entry.fn;
     // Building the argument values is inside the guarded body too: a value
     // this driver cannot carry fails the call in Python, and the worker,
     // suspended on it, still gets its answer.
@@ -400,19 +417,41 @@ final class HostAnswers {
   }
 
   /// Answers a lookup of [name]: with [objectId], a lazy attribute of that
-  /// host object; otherwise a host function by that name resolves to
-  /// itself, which the worker calls back, and anything else is undefined.
+  /// host object; otherwise [externalLookup]'s entry. A host function
+  /// resolves to a function named [name], its lookup key, which the worker
+  /// calls back; a value is converted now; an absent name is undefined.
+  ///
+  /// A value the writer refuses throws, as [MontyRuntimeError] for one
+  /// Python refuses ([encodingInput]): upstream does not answer it, and
+  /// discards the checkout. The caller ends the session.
   pb.ParentRequest lookup(String name, {String? objectId}) {
     if (objectId != null) return _attribute(objects, objectId, name);
-    if (!externals.containsKey(name)) {
+    final entry = externalLookup[name];
+    if (entry == null) {
       return pb.ParentRequest(
         resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
       );
     }
-    final arena = pb.Arena(nodeCount: 1, nodes: [functionNode(name)]);
+    if (entry is MontyHostFunction) {
+      // Renamed to its key, as upstream renames the function it converts,
+      // so the call comes back to this entry.
+      final arena = pb.Arena(
+        nodeCount: 1,
+        nodes: [functionNode(name, docstring: entry.docstring)],
+      );
+
+      return pb.ParentRequest(
+        resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
+      );
+    }
+    final writer = ArenaWriter(objects: objects);
+    final index = encodingInput(() => writer.add(entry));
 
     return pb.ParentRequest(
-      resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
+      resumeNameLookup: pb.ResumeNameLookup(
+        values: writer.arena,
+        value: index,
+      ),
     );
   }
 
@@ -803,6 +842,72 @@ final class AsyncDecline implements Exception {
   @override
   String toString() => 'AsyncDecline: $message';
 }
+
+/// The name CPython's `'<type>' object is not callable` gives the host
+/// object an [HostAnswers.externalLookup] entry stands for: the binding
+/// calls the entry itself, so the name is the host type's, as upstream's
+/// Python host object would have it (a `datetime.date`, a
+/// `PurePosixPath`, the wrapper classes), not the sandbox's.
+String _typeName(MontyValue entry) => switch (entry) {
+  ClassInstance() => 'ClassInstance',
+  ClassType() => 'ClassType',
+  // CPython names an exception class without its module; re.PatternError
+  // is an alias of the class named `error`.
+  MontyExceptionValue(excType: 're.PatternError') => 'error',
+  MontyExceptionValue(:final excType) => excType.substring(
+    excType.lastIndexOf('.') + 1,
+  ),
+  MontyNamedTuple(:final typeName) => typeName,
+  _ => _hostTypeNames[entry.runtimeType] ?? 'object',
+};
+
+/// The exception a call to the [HostAnswers.externalLookup] value [entry]
+/// raises: CPython's `TypeError` for a host object that is not callable.
+///
+/// A builtin type ([MontyStdTypeProxy] of kind `type`) is the one value
+/// upstream can call, since it decodes to the Python type itself: `int("42")`
+/// runs on the host. Dart has no Python builtins to run, so that call raises
+/// `TypeError` instead (the recorded divergence
+/// `builtin-type-call-by-name`); a read of the name, such as
+/// `t = p`, gives the sandbox the type, which it calls as upstream does.
+pb.RaisedException _notCallable(MontyValue entry) => raisedException(
+  'TypeError',
+  switch (entry) {
+    MontyStdTypeProxy(kind: 'type', :final name) =>
+      "builtin type '$name' cannot be called from externalLookup by name; "
+          'read the name first',
+    _ => "'${_typeName(entry)}' object is not callable",
+  },
+  const {},
+);
+
+/// The host type each plain [MontyValue] stands for, by CPython name.
+const Map<Type, String> _hostTypeNames = {
+  MontyNone: 'NoneType',
+  MontyBool: 'bool',
+  MontyInt: 'int',
+  MontyBigInt: 'int',
+  MontyFloat: 'float',
+  MontyString: 'str',
+  MontyBytes: 'bytes',
+  MontyList: 'list',
+  MontyTuple: 'tuple',
+  MontyDict: 'dict',
+  MontySet: 'set',
+  MontyFrozenSet: 'frozenset',
+  MontyPath: 'PurePosixPath',
+  MontyDate: 'datetime.date',
+  MontyDateTime: 'datetime.datetime',
+  MontyTime: 'datetime.time',
+  MontyTimeDelta: 'datetime.timedelta',
+  MontyTimeZone: 'datetime.timezone',
+  MontyEllipsis: 'ellipsis',
+  MontyNotImplemented: 'NotImplementedType',
+  // Values that decode upstream to the binding's own proxy classes.
+  MontyFileHandle: 'pydantic_monty.MontyFileHandle',
+  MontyClassProxy: 'pydantic_monty.MontyClassProxy',
+  MontyStdTypeProxy: 'pydantic_monty.MontyStdTypeProxy',
+};
 
 /// `ResumeCall` declining [callId]'s OS call.
 pb.ParentRequest _notHandled(int callId) =>
