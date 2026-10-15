@@ -136,7 +136,7 @@ Future<void> _structured(MontySession s) async {
 
   final p = await s.feedRun('import pathlib\npathlib.Path("/usr/bin")');
   print('path: $p');
-  _check(p == const MontyPath('/usr/bin'), 'path');
+  _check(p == MontyPath('/usr/bin'), 'path');
 
   final nt =
       await s.feedRun('''

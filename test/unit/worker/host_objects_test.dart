@@ -854,7 +854,7 @@ void main() {
     test('a registered instance decodes whatever its attributes hold', () {
       final objects = HostObjects();
       final writer = ArenaWriter(objects: objects);
-      // A class as an attribute value has no value class yet (staged).
+      // A class as an attribute value: a ClassType, which decodes too.
       final box = ClassInstance(
         _Box(1),
         classType: ClassType(_withClassField),
@@ -867,11 +867,11 @@ void main() {
       );
       final index = writer.add(box);
       final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
-      expect(hostObjectOf(decoded), same(box));
-      expect(
-        () => ArenaReader(writer.arena)[index],
-        throwsA(isA<UnsupportedError>()),
-      );
+      expect(decoded, same(box));
+      // Unregistered, the instance is a proxy and its class attribute a
+      // class type proxy.
+      final plain = ArenaReader(writer.arena)[index] as MontyClassProxy;
+      expect(plain.attrs.values.whereType<MontyClassTypeProxy>(), hasLength(1));
     });
 
     test('an os.getenv default resolves a registered object', () {
@@ -886,7 +886,7 @@ void main() {
         ),
         hosts: objects.lookup,
       );
-      expect(hostObjectOf(itemAt(args, 1)), same(box));
+      expect(itemAt(args, 1), same(box));
     });
 
     test('an instance inside itself is a cycle', () {
@@ -937,8 +937,9 @@ void main() {
       );
       final index = writer.add(box);
       final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
-      expect(hostObjectOf(decoded), same(box));
-      expect((decoded as MontyClassProxy).classType.name, 'Holder');
+      expect(decoded, same(box));
+      final plain = ArenaReader(writer.arena)[index] as MontyClassProxy;
+      expect(plain.classType.name, 'Holder');
     });
 
     test('each future answer is its own encoding: the last policy wins', () {
@@ -984,7 +985,21 @@ void main() {
       expect(objects[_id(8)], isNull);
     });
 
-    test('a registered instance decodes to a proxy that recovers it', () {
+    test('a registered class sent as a value decodes to its wrapper', () {
+      final objects = HostObjects();
+      final writer = ArenaWriter(objects: objects);
+      final type = ClassType(_boxClass);
+      final index = writer.add(type);
+      final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
+      expect(decoded, same(type));
+      // Unregistered (a restored session), a class type proxy keeping the id.
+      final plain = ArenaReader(writer.arena)[index] as MontyClassTypeProxy;
+      expect(plain.id, type.id);
+      expect(plain.hostDefined, isTrue);
+      expect(plain.name, 'Box');
+    });
+
+    test('a registered instance decodes to its wrapper', () {
       final objects = HostObjects();
       final writer = ArenaWriter(objects: objects);
       final box = _box(1);
@@ -995,12 +1010,12 @@ void main() {
         hosts: objects.lookup,
       );
       final decoded = reader[index];
-      expect(decoded, isA<MontyClassProxy>());
-      expect(hostObjectOf(decoded), same(box));
-      // An unregistered reader gives a plain proxy.
+      expect(decoded, isA<ClassInstance<Object>>());
+      expect(decoded, same(box));
+      expect(decoded.dartValue, same(box.value));
+      // An unregistered reader gives a plain proxy with the wrapper's id.
       final plain = ArenaReader(pb.Arena.fromBuffer(bytes))[index];
-      expect(hostObjectOf(plain), isNull);
-      expect(hostObjectOf(const MontyInt(1)), isNull);
+      expect((plain as MontyClassProxy).instanceId, box.id);
     });
   });
 
@@ -1016,7 +1031,7 @@ void main() {
         objects: objects,
         externals: {
           'f': (args, kwargs) {
-            seen = hostObjectOf(onlyItem(args));
+            seen = onlyItem(args);
 
             return const MontyNone();
           },

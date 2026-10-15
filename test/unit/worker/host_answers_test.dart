@@ -24,68 +24,68 @@ Map<pb.OsCall, _Parts> _cases() {
   return {
     pb.OsCall(exists: '/a'): (
       'Path.exists',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(isFile: '/a'): (
       'Path.is_file',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(isDir: '/a'): (
       'Path.is_dir',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(isSymlink: '/a'): (
       'Path.is_symlink',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(readText: '/a'): (
       'Path.read_text',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(readBytes: '/a'): (
       'Path.read_bytes',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
-    pb.OsCall(stat: '/a'): ('Path.stat', [const MontyPath('/a')], {}),
+    pb.OsCall(stat: '/a'): ('Path.stat', [MontyPath('/a')], {}),
     pb.OsCall(iterdir: '/a'): (
       'Path.iterdir',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(resolve: '/a'): (
       'Path.resolve',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(absolute: '/a'): (
       'Path.absolute',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
     pb.OsCall(unlink: '/a'): (
       'Path.unlink',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {},
     ),
-    pb.OsCall(rmdir: '/a'): ('Path.rmdir', [const MontyPath('/a')], {}),
+    pb.OsCall(rmdir: '/a'): ('Path.rmdir', [MontyPath('/a')], {}),
     pb.OsCall(
       writeText: pb.OsCall_TextWrite(path: '/a', data: 'x'),
     ): (
       'Path.write_text',
-      [const MontyPath('/a'), const MontyString('x')],
+      [MontyPath('/a'), const MontyString('x')],
       {},
     ),
     pb.OsCall(
       appendText: pb.OsCall_TextWrite(path: '/a', data: 'x'),
     ): (
       'Path.append_text',
-      [const MontyPath('/a'), const MontyString('x')],
+      [MontyPath('/a'), const MontyString('x')],
       {},
     ),
     pb.OsCall(
@@ -93,7 +93,7 @@ Map<pb.OsCall, _Parts> _cases() {
     ): (
       'Path.write_bytes',
       [
-        const MontyPath('/a'),
+        MontyPath('/a'),
         const MontyBytes([1]),
       ],
       {},
@@ -103,7 +103,7 @@ Map<pb.OsCall, _Parts> _cases() {
     ): (
       'Path.append_bytes',
       [
-        const MontyPath('/a'),
+        MontyPath('/a'),
         const MontyBytes([1]),
       ],
       {},
@@ -112,12 +112,12 @@ Map<pb.OsCall, _Parts> _cases() {
       open: pb.OsCall_Open(path: '/a', mode: 'rb'),
     ): (
       'open',
-      [const MontyPath('/a'), const MontyString('rb')],
+      [MontyPath('/a'), const MontyString('rb')],
       {},
     ),
     pb.OsCall(mkdir: pb.OsCall_Mkdir(path: '/a', existOk: true)): (
       'Path.mkdir',
-      [const MontyPath('/a')],
+      [MontyPath('/a')],
       {
         'parents': const MontyBool(false),
         'exist_ok': const MontyBool(true),
@@ -127,7 +127,7 @@ Map<pb.OsCall, _Parts> _cases() {
       rename: pb.OsCall_Rename(src: '/a', dst: '/b'),
     ): (
       'Path.rename',
-      [const MontyPath('/a'), const MontyPath('/b')],
+      [MontyPath('/a'), MontyPath('/b')],
       {},
     ),
     pb.OsCall(

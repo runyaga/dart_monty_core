@@ -44,7 +44,7 @@ void main() {
       final h = open('/a.txt', 'r');
       expect(h.path, '/a.txt');
       expect(h.mode, 'r');
-      expect(h.position, 0);
+      expect(h.position, BigInt.zero);
       expect(truncated, isEmpty);
       expect(created, isEmpty);
     });

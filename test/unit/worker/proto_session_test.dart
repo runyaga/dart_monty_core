@@ -509,11 +509,6 @@ void main() {
         second: 0,
         timezoneName: 'X',
       ),
-      'a negative file position': const MontyFileHandle(
-        path: '/x',
-        mode: 'r',
-        position: -1,
-      ),
       'an unknown exception type': MontyExceptionValue('Nope'),
       'a short named tuple': const MontyNamedTuple(
         typeName: 'P',
@@ -604,7 +599,7 @@ void main() {
     });
 
     test(
-      'an argument with no value class yet fails the call, not the session',
+      'a complex argument reaches the host function',
       () async {
         final ch = _configured([
           answer([
@@ -613,21 +608,19 @@ void main() {
           answer([completeNone()]),
         ]);
         final s = await ProtoSession.open(ch);
-        var called = false;
+        List<MontyValue>? got;
         await s.feed(
           'f(1j)',
           externals: {
             'f': (args, kwargs) {
-              called = true;
+              got = args;
 
               return const MontyNone();
             },
           },
         );
-        expect(called, isFalse);
-        final error = itemAt(ch.requests, 2).resumeCall.result.error;
-        expect(error.excType, 'Exception');
-        expect(error.message, contains('complex'));
+        expect(got, [_complexValue]);
+        expect(itemAt(ch.requests, 2).resumeCall.result.hasError(), isFalse);
       },
     );
 
@@ -662,7 +655,7 @@ void main() {
       );
       expect([for (final (name, _) in seen) name], calls.keys);
       for (final (_, args) in seen) {
-        expect(args, [const MontyPath('/p')]);
+        expect(args, [MontyPath('/p')]);
       }
     });
 
@@ -690,7 +683,7 @@ void main() {
           },
         );
         expect(names, ['Path.read_text']);
-        expect(onlyItem(argLists), [const MontyPath('/x')]);
+        expect(onlyItem(argLists), [MontyPath('/x')]);
         final resume = itemAt(ch.requests, 2).resumeCall;
         expect(resume.callId, 3);
         expect(
@@ -1008,8 +1001,7 @@ void main() {
     });
 
     test(
-      'a value with no value class yet in Complete throws, worker still in '
-      'step',
+      'a complex in Complete decodes, worker still in step',
       () async {
         final ch = _configured([
           answer([
@@ -1020,7 +1012,7 @@ void main() {
           ]),
         ]);
         final s = await ProtoSession.open(ch);
-        await expectLater(s.feed('1j'), throwsUnsupportedError);
+        expect((await s.feed('1j')).value, _complexValue);
         expect((await s.feed('True')).value, const MontyBool(true));
       },
     );
@@ -1433,7 +1425,10 @@ void main() {
   });
 }
 
-/// A `complex` node: a kind the reader checks but has no value class for yet.
+/// A `complex` node, `1j`.
 final pb.MontyNode _complex = pb.MontyNode(
   complex: pb.Complex(real: doubleToBits(0), imag: doubleToBits(1)),
 );
+
+/// What [_complex] decodes to.
+const MontyValue _complexValue = MontyComplex(0, 1);

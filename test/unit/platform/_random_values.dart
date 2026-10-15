@@ -6,6 +6,8 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
     show montyClassProxy, montyClassTypeProxy, montyStdTypeProxy;
 
+import '_reference_value_ops.dart';
+
 /// Builds random values. With [share] true, containers may reuse a node
 /// built earlier, so the result is a DAG.
 final class RandomValues {
@@ -151,8 +153,11 @@ MontyValue cloneReversed(MontyValue v) => switch (v) {
   MontyFrozenSet(:final items) => MontyFrozenSet([
     for (final c in items.reversed) cloneReversed(c),
   ]),
+  // The entries Python keeps, reversed: reversing the raw pairs would change
+  // which value a repeated key keeps (the last).
   MontyDict(:final pairs) => MontyDict([
-    for (final (k, x) in pairs.reversed) (cloneReversed(k), cloneReversed(x)),
+    for (final (k, x) in referenceEntries(pairs).reversed)
+      (cloneReversed(k), cloneReversed(x)),
   ]),
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     MontyNamedTuple(

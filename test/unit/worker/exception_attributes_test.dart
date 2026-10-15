@@ -622,7 +622,7 @@ void main() {
       );
       // A run of surrogates is one error over the run.
       expect(
-        () => ArenaWriter().add(const MontyPath('x\uDC00\uD800')),
+        () => ArenaWriter().add(MontyPath('x\uDC00\uD800')),
         refusal(
           'UnicodeEncodeError',
           "'utf-8' codec can't encode characters in position 1-2: "

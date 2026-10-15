@@ -104,7 +104,7 @@ void main() {
       // iterdir yields MontyPath, not bare strings — Python must receive
       // `pathlib.Path` objects, which is what Phase 3 fixed.
       expect(await h('Path.iterdir', ['/'], null), [
-        const MontyPath('/file.txt'),
+        MontyPath('/file.txt'),
       ]);
     });
 
@@ -127,11 +127,22 @@ void main() {
     // We had the mirror-image bug: any unrecognised mode fell through to
     // `createIfMissing`, so a garbage mode silently CREATED a file instead of
     // raising. `resolveOpenCall` is exported, so a direct caller reaches it.
-    // NOT in this list: 'r+', 'w+', 'rt', 'ab+'. `b`/`t`/`+` are orthogonal to
-    // the open-time action, so those are VALID — see the group below. 'x' IS
-    // rejected: upstream asserts the action is one of r/w/a
-    // (os_access.py:896), so treating it as append would invent a semantic.
-    for (final mode in ['wxyz', 'axyz', 'w!', 'a?', 'x', 'rw', 'bt', '']) {
+    // The handle is built first (os_access.py:1020), and its constructor
+    // refuses what `FileMode::from_str` does: 'x', and the update modes
+    // ('r+', 'w+', 'ab+'), which upstream does not yet support.
+    for (final mode in [
+      'wxyz',
+      'axyz',
+      'w!',
+      'a?',
+      'x',
+      'rw',
+      'bt',
+      '',
+      'r+',
+      'w+',
+      'ab+',
+    ]) {
       test('mode ${mode.isEmpty ? "(empty)" : mode} raises ValueError', () {
         expect(
           () => resolveOpenCall(
@@ -152,11 +163,10 @@ void main() {
       });
     }
 
-    // `b`/`t`/`+` do not change the open-time effect, only the leading action
-    // does. Upstream splits it the same way (os_access.py:878-882), which is
-    // why 'r+' checks existence rather than truncating.
-    test('b, t and + are orthogonal to the action', () {
-      for (final mode in ['r+', 'rt', 'rb+']) {
+    // `b`/`t` do not change the open-time effect, only the leading action
+    // does. Upstream splits it the same way (os_access.py:1021-1026).
+    test('b and t are orthogonal to the action', () {
+      for (final mode in ['r', 'rt', 'rb']) {
         resolveOpenCall(
           '/data/file.txt',
           mode,
@@ -167,7 +177,7 @@ void main() {
       }
 
       var truncated = 0;
-      for (final mode in ['w+', 'wt', 'wb+']) {
+      for (final mode in ['w', 'wt', 'wb']) {
         resolveOpenCall(
           '/data/file.txt',
           mode,
@@ -183,10 +193,10 @@ void main() {
       expect(
         () => resolveOpenCall(
           '/data/gone.txt',
-          'r+',
+          'rt',
           exists: (_) => false,
           truncate: (_) => fail('no side effect on a failed read open'),
-          createIfMissing: (_) => fail('r+ must not create a missing file'),
+          createIfMissing: (_) => fail('rt must not create a missing file'),
         ),
         raises(
           'FileNotFoundError',

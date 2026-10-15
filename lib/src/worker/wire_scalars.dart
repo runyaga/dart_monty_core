@@ -99,6 +99,36 @@ pb.MontyNode montyFloatNode(MontyFloat value) => pb.MontyNode(
       : doubleToBits(value.value),
 );
 
+/// The wire bits of each NaN part [montyComplexOf] decoded, for
+/// [montyComplexNode], as [montyFloatOf] keeps a float's.
+final Expando<(Int64, Int64)> _complexNanBits = Expando('NaN wire bits');
+
+/// The [MontyComplex] a `complex` node carries, each part bit for bit.
+MontyComplex montyComplexOf(pb.MontyNode node) {
+  final c = node.complex;
+  final value = MontyComplex(bitsToDouble(c.real), bitsToDouble(c.imag));
+  if (value.real.isNaN || value.imag.isNaN) {
+    _complexNanBits[value] = (c.real, c.imag);
+  }
+
+  return value;
+}
+
+/// A node carrying [value]: each part as [montyFloatNode] sends a float, a
+/// NaN part with the bits it arrived with or as Python's `float('nan')`.
+pb.MontyNode montyComplexNode(MontyComplex value) {
+  final kept = _complexNanBits[value];
+  Int64 bits(double part, Int64? arrived) =>
+      part.isNaN ? arrived ?? _pythonNan : doubleToBits(part);
+
+  return pb.MontyNode(
+    complex: pb.Complex(
+      real: bits(value.real, kept?.$1),
+      imag: bits(value.imag, kept?.$2),
+    ),
+  );
+}
+
 /// A node carrying the double [value], bit for bit.
 pb.MontyNode floatNode(double value) =>
     pb.MontyNode(float: doubleToBits(value));

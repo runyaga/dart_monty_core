@@ -1,12 +1,12 @@
-// The per-class equality rules the identity-aware walk keeps, including the
-// ones that differ from Python.
+// The per-class equality rules the identity-aware walk keeps: Python's, with
+// the divergences that have a reason (AGY1 Q7, C5D q4).
 //
-// These are not defects written down as correct. Each Dart rule is the one
-// the class documents, and the design for this change (C2, "per-class
-// equality is unchanged") carries it on purpose, recording where Python
-// answers differently. The test pins each rule so that changing one is a
-// decision, and states Python's answer next to it. Python's answers are the
-// language's, checked against CPython's documented `==` for each type.
+// The C2a §2 rows that C2 carried unchanged are aligned at the cutover, row
+// by row (decisions/equality.md): each now answers as Python does. The rows
+// kept as divergences are exception values and file handles (a detached
+// copy has no Python identity) and NaN (reflexive, so values can be map
+// keys). Python's answers are the language's; upstream's recorded ones are
+// in _value_oracle.g.dart (monty_value_oracle_test.dart).
 //
 // Each rule is checked on the fast path and on the memoised fallback, by
 // wrapping both values in a list and forcing the fallback.
@@ -29,9 +29,9 @@ bool eqBothPaths(MontyValue a, MontyValue b) {
 
 void main() {
   // (description, a, b, Dart's answer, Python's answer)
-  final divergences = <(String, MontyValue, MontyValue, bool, bool)>[
+  final rows = <(String, MontyValue, MontyValue, bool, bool)>[
     (
-      'named tuples compare type and field names, not just values',
+      'named tuples compare as tuples, whatever the names',
       const MontyNamedTuple(
         typeName: 'P',
         fieldNames: ['x'],
@@ -42,32 +42,32 @@ void main() {
         fieldNames: ['y'],
         values: [MontyInt(1)],
       ),
-      false,
+      true,
       true, // namedtuples compare as tuples
     ),
     (
-      'time zones compare offset and name',
+      'time zones compare the offset only',
       const MontyTimeZone(offsetSeconds: 3600, name: 'A'),
       const MontyTimeZone(offsetSeconds: 3600, name: 'B'),
-      false,
+      true,
       true, // timezone.__eq__ compares the offset only
     ),
     (
-      'a user-built MontyPath compares its raw text',
-      const MontyPath('a//b'),
-      const MontyPath('a/b'),
-      false,
+      'a user-built MontyPath is normalised',
+      MontyPath('a//b'),
+      MontyPath('a/b'),
+      true,
       true, // PurePosixPath('a//b') == PurePosixPath('a/b')
     ),
     (
       'a set and a frozenset with the same contents',
       const MontySet([MontyInt(1)]),
       const MontyFrozenSet([MontyInt(1)]),
-      false,
+      true,
       true, // {1} == frozenset({1})
     ),
     (
-      'aware datetimes compare fields and offset, not the instant',
+      'aware datetimes compare the instant',
       const MontyDateTime(
         year: 2024,
         month: 1,
@@ -86,14 +86,14 @@ void main() {
         second: 0,
         offsetSeconds: 0,
       ),
-      false,
+      true,
       true, // aware datetimes compare by instant
     ),
     (
-      'times compare fold',
+      'times ignore fold',
       const MontyTime(hour: 1, minute: 0, second: 0, microsecond: 0),
       const MontyTime(hour: 1, minute: 0, second: 0, microsecond: 0, fold: 1),
-      false,
+      true,
       true, // fold is ignored by time.__eq__
     ),
     (
@@ -105,8 +105,8 @@ void main() {
     ),
     (
       'file handles compare fields',
-      const MontyFileHandle(path: '/f', mode: 'r'),
-      const MontyFileHandle(path: '/f', mode: 'r'),
+      MontyFileHandle('/f', 'r'),
+      MontyFileHandle('/f', 'r'),
       true,
       false, // file objects compare by identity
     ),
@@ -114,17 +114,19 @@ void main() {
       'an int and a float of equal value',
       const MontyInt(1),
       const MontyFloat(1),
-      false,
+      true,
       true, // 1 == 1.0
     ),
   ];
 
-  group('recorded divergences from Python (carried unchanged)', () {
-    for (final (what, a, b, dart, python) in divergences) {
-      test('$what: Dart $dart, Python $python', () {
-        expect(dart, isNot(python), reason: 'listed as a divergence');
+  group('the C2a §2 rows: aligned with Python, or a kept divergence', () {
+    for (final (what, a, b, dart, python) in rows) {
+      final kept = dart != python;
+      test('$what: Dart $dart, Python $python'
+          '${kept ? ' (kept divergence)' : ''}', () {
         expect(eqBothPaths(a, b), dart);
         expect(eqBothPaths(b, a), dart);
+        if (dart) expect(a.hashCode, b.hashCode, reason: 'equal, so hash');
       });
     }
   });
@@ -185,46 +187,55 @@ void main() {
     });
   });
 
-  group(
-    'dicts built with a duplicate key compare their pairs as a multiset',
-    () {
-      // Python cannot build these; a host can. The old rule (each pair consumes
-      // one equal pair on the other side) is kept, so they compare as before.
-      const a1 = (MontyString('a'), MontyInt(1));
-      const a2 = (MontyString('a'), MontyInt(2));
+  group('a dict built with a repeated key compares as Python builds it', () {
+    // Python cannot hold these; a host can build one. It compares as the
+    // dict Python's constructor makes from the same pairs: the first key's
+    // position, the last value (Q41).
+    const a1 = (MontyString('a'), MontyInt(1));
+    const a2 = (MontyString('a'), MontyInt(2));
 
-      test('the same pairs in any order are equal', () {
-        expect(
-          eqBothPaths(const MontyDict([a1, a2]), const MontyDict([a2, a1])),
-          isTrue,
-        );
-        expect(
-          eqBothPaths(const MontyDict([a1, a1]), const MontyDict([a1, a1])),
-          isTrue,
-        );
+    test('the value it keeps is the last', () {
+      expect(
+        eqBothPaths(const MontyDict([a1, a2]), const MontyDict([a2])),
+        isTrue,
+      );
+      expect(
+        eqBothPaths(const MontyDict([a1, a2]), const MontyDict([a2, a1])),
+        isFalse,
+      );
+      expect(
+        eqBothPaths(const MontyDict([a1, a1]), const MontyDict([a1])),
+        isTrue,
+      );
+      expect(
+        const MontyDict([a1, a2]).hashCode,
+        const MontyDict([a2]).hashCode,
+      );
+    });
+
+    test('a set compares by its distinct members', () {
+      expect(
+        eqBothPaths(
+          const MontySet([MontyInt(1), MontyInt(1)]),
+          const MontySet([MontyInt(1)]),
+        ),
+        isTrue,
+      );
+      expect(
+        const MontySet([MontyInt(1), MontyInt(1)]).hashCode,
+        const MontySet([MontyInt(1)]).hashCode,
+      );
+    });
+
+    test('toJson keeps the first position of a key with its last value', () {
+      expect(const MontyDict([a1, a2]).toJson(), {
+        '__type': 'dict',
+        'value': {'a': 2},
       });
+    });
+  });
 
-      test('a repeated pair is not equal to two different pairs', () {
-        expect(
-          eqBothPaths(const MontyDict([a1, a1]), const MontyDict([a1, a2])),
-          isFalse,
-        );
-        expect(
-          eqBothPaths(const MontyDict([a1, a2]), const MontyDict([a1, a1])),
-          isFalse,
-        );
-      });
-
-      test('toJson keeps the first position of a key with its last value', () {
-        expect(const MontyDict([a1, a2]).toJson(), {
-          '__type': 'dict',
-          'value': {'a': 2},
-        });
-      });
-    },
-  );
-
-  group('class instances', () {
+  group('class proxies', () {
     final point = montyClassTypeProxy(
       name: 'Point',
       id: 'p',
@@ -240,19 +251,26 @@ void main() {
           attrs: {'x': MontyInt(x)},
         );
 
-    test('compare class, instance id and attributes', () {
+    test('compare class name, dataclass flag and attributes', () {
+      // Upstream's MontyClassProxy.__eq__ (class_instance.rs:255-263): the
+      // instance id and the class id are not compared.
       final [a, b] = List.generate(2, (_) => inst('1', 1));
       expect(eqBothPaths(a, b), isTrue);
-      expect(eqBothPaths(a, inst('2', 1)), isFalse);
+      expect(eqBothPaths(a, inst('2', 1)), isTrue);
       expect(eqBothPaths(a, inst('1', 2)), isFalse);
-      final other = montyClassTypeProxy(
-        name: 'Point',
-        id: 'q',
-        hostDefined: false,
-        isDataclass: true,
-        attrs: const {},
-      );
-      expect(eqBothPaths(a, inst('1', 1, type: other)), isFalse);
+      MontyClassTypeProxy type({String name = 'Point', bool dc = true}) =>
+          montyClassTypeProxy(
+            name: name,
+            id: 'q',
+            hostDefined: true,
+            isDataclass: dc,
+            attrs: const {},
+          );
+      final hostType = type();
+      expect(eqBothPaths(a, inst('1', 1, type: hostType)), isTrue);
+      expect(a.hashCode, inst('2', 1, type: hostType).hashCode);
+      expect(eqBothPaths(a, inst('1', 1, type: type(name: 'P'))), isFalse);
+      expect(eqBothPaths(a, inst('1', 1, type: type(dc: false))), isFalse);
     });
   });
 }

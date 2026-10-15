@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show montyStdTypeProxy;
+    show HostClass, montyStdTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
@@ -31,19 +31,8 @@ ArenaReader _reader(List<pb.MontyNode> nodes, {HostObjectLookup? hosts}) =>
 MontyValue _decode(List<pb.MontyNode> nodes, [int? root]) =>
     _reader(nodes)[root ?? nodes.length - 1];
 
-/// dart2js, where an `int` is a double.
-bool get _isJs => identical(1, 1.0);
-
 Matcher _formatError(String message) => throwsA(
   isA<FormatException>().having((e) => e.message, 'message', message),
-);
-
-Matcher _unsupported(String fragment) => throwsA(
-  isA<UnsupportedError>().having(
-    (e) => e.message,
-    'message',
-    contains(fragment),
-  ),
 );
 
 /// One node per value, each its own node even when two values are equal.
@@ -250,11 +239,11 @@ void main() {
     test('a file handle with its canonical mode', () {
       expect(
         _decode([file('rt', path: '/x')]),
-        const MontyFileHandle(path: '/x', mode: 'r'),
+        MontyFileHandle('/x', 'r'),
       );
       expect(
         _decode([file('br')]),
-        const MontyFileHandle(path: '/f', mode: 'rb'),
+        MontyFileHandle('/f', 'rb'),
       );
     });
 
@@ -553,81 +542,65 @@ void main() {
     });
   });
 
-  group('kinds with no value class yet', () {
+  group('the kinds the cutover adds', () {
     test('a complex, alone or inside a container', () {
       final reader = _reader([
         complexNode(real: 1, imag: 2),
         list([0]),
-        n(3),
+        complexNode(real: -0, imag: double.nan),
       ]);
-      for (final root in [0, 1]) {
-        expect(() => reader[root], _unsupported('complex'));
-      }
-      expect(reader[2], const MontyInt(3));
+      expect(reader[0], const MontyComplex(1, 2));
+      expect(
+        identical(onlyItem((reader[1] as MontyList).items), reader[0]),
+        isTrue,
+      );
+      final c = reader[2] as MontyComplex;
+      expect(c.real.isNegative && c.real == 0, isTrue);
+      expect(c.imag.isNaN, isTrue);
     });
 
-    test('a class type as a value; as an instance class it decodes', () {
+    test('a class type as a value is a MontyClassTypeProxy', () {
       final reader = _reader([
-        classType('C', id: uuid(1)),
-        instance(0, id: uuid(2), attrs: pairs([])),
-        instance(0, id: uuid(3), attrs: pairs([])),
+        n('k'),
+        n(7),
+        classType('C', id: uuid(1), attrs: pairs([(0, 1)])),
+        instance(2, id: uuid(2), attrs: pairs([])),
+        instance(2, id: uuid(3), attrs: pairs([])),
       ]);
-      expect(() => reader[0], _unsupported('"C"'));
-      expect(reader[1], isA<MontyClassProxy>());
+      final type = reader[2] as MontyClassTypeProxy;
+      expect(type.name, 'C');
+      expect(type.attrs, {'k': const MontyInt(7)});
+      final third = (reader[3] as MontyClassProxy).classType;
+      expect(identical(third, type), isTrue);
       expect(
-        identical(
-          (reader[1] as MontyClassProxy).classType,
-          (reader[2] as MontyClassProxy).classType,
-        ),
+        identical(third, (reader[4] as MontyClassProxy).classType),
         isTrue,
       );
     });
 
-    test('a class whose attributes hold one stages its instances', () {
-      final reader = _reader([
-        n('k'),
-        complexNode(real: 0, imag: 1),
-        classType('C', id: uuid(1), attrs: pairs([(0, 1)])),
-        instance(2, id: uuid(2), attrs: pairs([])),
-      ]);
-      expect(() => reader[3], _unsupported('complex'));
-    });
-
-    test('a file position an int cannot hold exactly', () {
+    test('a file position up to 2^64-1, exactly, on every compiler', () {
       MontyValue at(BigInt position) => _decode([
         pb.MontyNode(
           fileHandle: pb.FileHandle(
             path: '/f',
             mode: 'r',
-            position: Int64.parseInt(position.toSigned(64).toString()),
+            position: Int64.parseHex(position.toRadixString(16)),
           ),
         ),
       ]);
-      final two53 = BigInt.one << 53;
-      expect(
-        at(two53),
-        const MontyFileHandle(
-          path: '/f',
-          mode: 'r',
-          position: 9007199254740992,
-        ),
-      );
-      final top = (BigInt.one << 63) - BigInt.one;
-      if (_isJs) {
-        final beyond53 = two53 + BigInt.one;
-        expect(() => at(beyond53), _unsupported('$beyond53'));
-        expect(() => at(top), _unsupported('$top'));
-      } else {
-        expect((at(top) as MontyFileHandle).position, top.toInt());
+      for (final p in [
+        BigInt.one << 53,
+        (BigInt.one << 53) + BigInt.one,
+        BigInt.one << 63,
+        (BigInt.one << 64) - BigInt.one,
+      ]) {
+        expect((at(p) as MontyFileHandle).position, p);
       }
-      final max = (BigInt.one << 64) - BigInt.one;
-      expect(() => at(BigInt.one << 63), _unsupported('${BigInt.one << 63}'));
-      expect(() => at(max), _unsupported('$max'));
     });
   });
 
   group('review regressions', () {
-    test('an overwritten attribute does not stage its instance', () {
+    test('an overwritten attribute is not decoded into its instance', () {
       final v =
           _decode([
                 n('x'),
@@ -733,8 +706,10 @@ void main() {
       // with Python's own hash and equality (decode.rs:106-120, 144-165):
       // equal objects collapse, the first key keeping the last value.
       // Built at run time, so the two equal keys are distinct objects.
+      const keyClass = HostClass<_Key>('C');
+      final type = ClassType(keyClass);
       final [first, same, other] = [
-        for (final n in [1, 1, 2]) _Key(n),
+        for (final n in [1, 1, 2]) ClassInstance(_Key(n), classType: type),
       ];
       final objects = {'02': first, '03': same, '04': other};
       final reader = _reader(
@@ -751,18 +726,19 @@ void main() {
         ),
       );
       final members = (reader[4] as MontySet).items;
-      expect([for (final m in members) hostObjectOf(m)], [first, other]);
+      expect([for (final m in members) m], [first, other]);
       final entries = (reader[8] as MontyDict).pairs;
       expect(
-        [for (final (k, v) in entries) (hostObjectOf(k), v)],
+        [for (final (k, v) in entries) (k, v)],
         [(first, const MontyInt(2)), (other, const MontyInt(3))],
       );
-      expect(identical(hostObjectOf(firstItem(entries).$1), first), isTrue);
+      expect(identical(firstItem(entries).$1, first), isTrue);
     });
 
     test('registered objects equal only to themselves stay apart', () {
-      final a = Object();
-      final b = Object();
+      final type = ClassType(const HostClass('C'));
+      final a = ClassInstance(Object(), classType: type);
+      final b = ClassInstance(Object(), classType: type);
       final reader = _reader(
         [
           classType('C', id: uuid(1)),
@@ -775,7 +751,7 @@ void main() {
         ),
       );
       final members = (reader[4] as MontySet).items;
-      expect([for (final m in members) hostObjectOf(m)], [a, b]);
+      expect([for (final m in members) m], [a, b]);
     });
   });
 

@@ -734,7 +734,7 @@ final class WorkerFixtureOs {
         _files.putIfAbsent(p, () => (Uint8List(0), 0x1a4));
     }
 
-    return MontyFileHandle(path: p, mode: mode);
+    return MontyFileHandle(p, mode);
   }
 
   void _append(String p, Uint8List more) {

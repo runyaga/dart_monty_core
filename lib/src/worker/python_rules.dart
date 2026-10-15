@@ -11,6 +11,8 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'package:dart_monty_core/src/worker/arena_nodes.dart' show rustDebug;
+
 /// Python's `str.isidentifier()`.
 ///
 /// The first character is `_` or has the XID_Start property, the rest
@@ -270,3 +272,74 @@ int ordinalDay(int year, int month, int day) {
 
   return era * 146097 + doe - 306;
 }
+
+/// [mode] as upstream's `FileMode::from_str` parses it (monty-types 1.1.0,
+/// `file_mode.rs:161-210`): one of `r`, `w` or `a`, at most one `b` or one
+/// `t`, in any order. Gives the canonical mode (`rt` is `r`, `br` is `rb`),
+/// or, for a mode upstream refuses, its message.
+({String? canonical, String? error}) parseFileMode(String mode) {
+  final seen = <String>[];
+  for (final c in mode.runes) {
+    final ch = String.fromCharCode(c);
+    if (_modeStep(ch, c, seen) case final error?) return _modeError(error);
+    seen.add(ch);
+  }
+  final binary = seen.contains('b');
+  final action = seen.where('rwa'.contains).firstOrNull;
+  if (binary && seen.contains('t')) {
+    return _modeError("can't have text and binary mode at once");
+  }
+  if (action == null) {
+    return _modeError(
+      'Must have exactly one of create/read/write/append mode and at most '
+      'one plus',
+    );
+  }
+
+  return (canonical: binary ? '${action}b' : action, error: null);
+}
+
+/// Upstream's message when the character [ch] (code point [c]) makes a mode
+/// invalid after the characters [seen], read in order; null when it does not.
+String? _modeStep(String ch, int c, List<String> seen) {
+  if ('rwa'.contains(ch)) {
+    return seen.any('rwa'.contains)
+        ? 'must have exactly one of create/read/write/append mode'
+        : null;
+  }
+  if (_modeFlags[ch] case final flag?) {
+    return seen.contains(ch)
+        ? 'invalid mode: $flag mode specified twice'
+        : null;
+  }
+
+  return _refusedModeChars[ch] ?? 'invalid mode: ${_rustCharDebug(c)}';
+}
+
+/// The mode characters that may appear once each, by name.
+const Map<String, String> _modeFlags = {'b': 'binary', 't': 'text'};
+
+/// The mode characters upstream names a reason for refusing.
+const Map<String, String> _refusedModeChars = {
+  'x': 'exclusive creation mode is not supported',
+  '+': "update modes ('+') are not yet supported",
+};
+
+({String? canonical, String? error}) _modeError(String message) =>
+    (canonical: null, error: message);
+
+/// The code point [c] as Rust's `{:?}` renders a `char`: in single quotes,
+/// with `'` escaped and `"` not, and otherwise escaped as [rustDebug]
+/// escapes a one-character string (controls, format and unassigned
+/// characters, spaces other than U+0020, grapheme extenders).
+String _rustCharDebug(int c) {
+  final body = switch (c) {
+    0x27 => r"\'",
+    0x22 => '"',
+    _ => _unquoted(rustDebug(String.fromCharCode(c))),
+  };
+
+  return "'$body'";
+}
+
+String _unquoted(String debug) => debug.substring(1, debug.length - 1);

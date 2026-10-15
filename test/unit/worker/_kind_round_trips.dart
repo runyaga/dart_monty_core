@@ -66,11 +66,26 @@ final List<(String, Matcher)> _decodeCases = [
     'KeyError("k")',
     equals(MontyExceptionValue('KeyError', 'k')),
   ),
+  // complex decodes (C2 staged it until the cutover), each part bit for bit.
+  (
+    '(1+2j, complex(-0.0, 0.5), 1+0j)',
+    isA<MontyTuple>().having(
+      (t) => [
+        for (final c in t.items.cast<MontyComplex>()) ...[
+          c.real,
+          c.real.isNegative,
+          c.imag,
+        ],
+      ],
+      'parts',
+      [1.0, false, 2.0, -0.0, true, 0.5, 1.0, false, 0.0],
+    ),
+  ),
   ('int', equals(montyStdTypeProxy('type', 'int'))),
   ('ValueError', equals(montyStdTypeProxy('type', 'ValueError'))),
   ('len', equals(montyStdTypeProxy('function', 'len'))),
   ('type', equals(montyStdTypeProxy('type', 'type'))),
-  ('from pathlib import Path\nPath("/a/b")', equals(const MontyPath('/a/b'))),
+  ('from pathlib import Path\nPath("/a/b")', equals(MontyPath('/a/b'))),
   ('x = []\nx.append(x)\nx', equals(const MontyList([MontyString('[...]')]))),
   // A `repr` key and an equal str collapse, as Python's dict construction
   // collapses them: the first key, the last value.
@@ -117,6 +132,11 @@ final List<(String, Map<String, MontyValue>, String)> _encodeCases = () {
 
   return [
     ('ellipsis', {'x': const MontyEllipsis()}, 'x is ...'),
+    (
+      'complex',
+      {'x': const MontyComplex(1.5, -0), 'y': const MontyComplex(0, 2)},
+      'x == complex(1.5, 0) and str(x.imag) == "-0.0" and y == 2j',
+    ),
     (
       'NotImplemented',
       {'x': const MontyNotImplemented()},
@@ -263,9 +283,6 @@ void kindRoundTripTests(String label, OpenWorker configured) {
     for (final (code, matcher) in _decodeCases) {
       expect(_value(await turn(_feed(code))), matcher, reason: code);
     }
-    // A staged kind: checked, but no class for it yet.
-    final complex = await turn(_feed('1j'));
-    expect(() => _value(complex), throwsUnsupportedError);
     await close();
   });
 

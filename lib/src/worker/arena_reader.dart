@@ -28,11 +28,10 @@
 /// payload-less `UnicodeDecodeError`, `UnicodeEncodeError` or
 /// `json.JSONDecodeError` value becomes a `ValueError`.
 ///
-/// Three things have no [MontyValue] class yet, and reaching one from the
-/// root asked for is an [UnsupportedError]: a `complex`, a class `type` node
-/// as a value (as an instance's class it decodes normally), and a file
-/// position an `int` cannot hold exactly on this platform. The rest of the
-/// arena is still checked, and other roots still decode.
+/// A class `type` node decodes to the [ClassType] the session registered
+/// under its id, else to a [MontyClassTypeProxy]; a class instance node to
+/// the registered [ClassInstance], else to a [MontyClassProxy] (upstream
+/// returns the registered object itself; the wrapper carries it).
 ///
 /// Internal to the package; nothing here is exported.
 library;
@@ -41,42 +40,28 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
-import 'package:dart_monty_core/src/worker/host_objects.dart' show wrappedValue;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 
-/// Where class and instance nodes may resolve to objects the host
+/// Where class and instance nodes may resolve to the wrappers the host
 /// registered, instead of to proxies.
 ///
 /// The reader calls `classType` with the id of every class `type` node and
 /// `instance` with the id of every class instance node, in arena order, as
-/// upstream's decoder consults its instance store. A [MontyValue] result is
-/// what the node decodes to; for a class, only where it is reached as a
-/// value. Any other non-null result is the host object registered for the
-/// node, which is not yet a [MontyValue]: the node decodes as a proxy, and
-/// [hostObjectOf] that proxy is the result. An instance whose class is
-/// registered but which is not itself registered still decodes to a plain
-/// proxy.
+/// upstream's decoder consults its instance store. A result is what the
+/// node decodes to; for a class, only where it is reached as a value. An
+/// instance whose class is registered but which is not itself registered
+/// still decodes to a plain proxy.
 ///
-/// A registered object is hashable as a dict key or set member, by its own
-/// `==` and `hashCode`.
+/// A registered object is hashable as a dict key or set member, by the
+/// wrapped object's own `==` and `hashCode`.
 typedef HostObjectLookup = ({
-  Object? Function(String classId) classType,
-  Object? Function(String instanceId) instance,
+  MontyValue? Function(String classId) classType,
+  MontyValue? Function(String instanceId) instance,
 });
-
-final Expando<Object> _hostObjects = Expando('host object');
-
-/// The host object a decoded [value] stands for: the registered object its
-/// instance node resolved to through a [HostObjectLookup], or null. Upstream
-/// decodes such a node to the original object; until the host-object
-/// wrappers join the [MontyValue] family, the node decodes to its proxy and
-/// this recovers the object.
-Object? hostObjectOf(MontyValue value) =>
-    value is MontyClassProxy ? _hostObjects[value] : null;
 
 /// Reads values out of one arena.
 ///
@@ -105,18 +90,14 @@ final class ArenaReader {
   /// The value rooted at node [index].
   ///
   /// Throws [FormatException] for an arena upstream rejects, or an [index]
-  /// outside it, and [UnsupportedError] for a value that holds one of the
-  /// kinds with no class yet.
+  /// outside it.
   MontyValue operator [](int index) {
     checkRoots([index]);
     final built = _built ??= _guarded<List<Object>>(
       () => _Builder(_nodes, _hosts, {}).build(),
     );
 
-    final value = _valueIn(built, index);
-    if (value is _Staged) throw UnsupportedError(value.message);
-
-    return value as MontyValue;
+    return _valueIn(built, index);
   }
 
   /// Runs stages 1 and 2 over the whole arena, then checks that each of
@@ -177,11 +158,11 @@ final class ArenaReader {
   }
 }
 
-/// Node [i] of [built] as a value: a class node as a value is its registered
-/// object, or staged.
-Object _valueIn(List<Object> built, int i) => switch (_builtAt(built, i)) {
+/// Node [i] of [built] as a value: a class node as a value is its
+/// registered wrapper or its proxy.
+MontyValue _valueIn(List<Object> built, int i) => switch (_builtAt(built, i)) {
   _ClassNode(:final asValue) => asValue,
-  final other => other,
+  final other => other as MontyValue,
 };
 
 /// Node [i] of [built], which stage 2 placed below the node reading it.
@@ -191,8 +172,6 @@ Object _builtAt(List<Object> built, int i) =>
 /// Node [i] of [nodes], whose index the arena has checked.
 pb.MontyNode _nodeAt(List<pb.MontyNode> nodes, int i) =>
     nodes.elementAtOrNull(i) ?? (throw StateError('node $i is not checked'));
-
-Never _unchecked(_Builder _, pb.MontyNode n) => throw StateError('$n');
 
 bool _isClassNode(pb.MontyNode node) =>
     node.whichKind() == pb.MontyNode_Kind.type &&
@@ -220,25 +199,16 @@ List<int> _flat(List<pb.NodePair> pairs) => [
   for (final p in pairs) ...[p.key, p.value],
 ];
 
-/// A value that holds a kind with no [MontyValue] class yet.
-final class _Staged {
-  const _Staged(this.message);
-
-  final String message;
-}
-
 /// A class `type` node: the class an instance names, and what the node is
 /// when reached as a value.
 final class _ClassNode {
   const _ClassNode(this.meta, this.asValue);
 
-  /// [MontyClassTypeProxy], or [_Staged] when its attributes hold a staged
-  /// kind.
-  final Object meta;
+  /// The class as an instance's proxy names it.
+  final MontyClassTypeProxy meta;
 
-  /// The registered object, or [_Staged] until there is a class for a class
-  /// type value.
-  final Object asValue;
+  /// The registered [ClassType], else [meta].
+  final MontyValue asValue;
 }
 
 /// Stage 3: every node to its value, in arena order.
@@ -254,40 +224,30 @@ final class _Builder {
   /// host object itself, so two nodes for one object are one key.
   final Map<int, Object> _registered;
 
-  /// The proxy each host object decoded to, so two nodes for one object
-  /// are one Dart object, as upstream's are the one original object.
-  final Map<Object, MontyClassProxy> _carriers = Map.identity();
   final PythonKeys _keys;
 
   List<Object> build() {
     for (final node in _nodes) {
-      _built.add((_kinds[node.whichKind()] ?? _unchecked)(this, node));
+      // Stage 1 accepted only the kinds the map holds.
+      final kind = _kinds[node.whichKind()] ?? (throw StateError('$node'));
+      _built.add(kind(this, node));
     }
 
     return _built;
   }
 
-  Object _value(int i) => _valueIn(_built, i);
+  MontyValue _value(int i) => _valueIn(_built, i);
 
   /// A builtin type is opaque; a class type is a class node.
   Object _type(pb.Type type) => type.origin == originBuiltin
       ? montyStdTypeProxy('type', type.name)
       : _classNode(type);
 
-  /// A list of the values of [ids], or the first staged one among them.
-  Object _items(List<int> ids, MontyValue Function(List<MontyValue>) make) {
-    final items = <MontyValue>[];
-    for (final id in ids) {
-      switch (_value(id)) {
-        case final MontyValue v:
-          items.add(v);
-        case final staged:
-          return staged;
-      }
-    }
-
-    return make(List.unmodifiable(items));
-  }
+  /// A container of the values of [ids].
+  MontyValue _items(
+    List<int> ids,
+    MontyValue Function(List<MontyValue>) make,
+  ) => make(List.unmodifiable([for (final id in ids) _value(id)]));
 
   /// [ids] without the members Python's set construction drops: each one
   /// equal to an earlier one.
@@ -302,7 +262,7 @@ final class _Builder {
 
   /// A dict as Python builds it: a key equal to an earlier one keeps the
   /// earlier key and its place, and takes the later value.
-  Object _dict(List<pb.NodePair> pairs) {
+  MontyValue _dict(List<pb.NodePair> pairs) {
     // Python key -> (the first key node, the last value node), in order.
     final entries = <int, (int, int)>{};
     for (final p in pairs) {
@@ -312,19 +272,15 @@ final class _Builder {
         ifAbsent: () => (p.key, p.value),
       );
     }
-    final out = <(MontyValue, MontyValue)>[];
-    for (final (key, value) in entries.values) {
-      final k = _value(key);
-      if (k is _Staged) return k;
-      final v = _value(value);
-      if (v is _Staged) return v;
-      out.add((k as MontyValue, v as MontyValue));
-    }
 
-    return MontyDict(List.unmodifiable(out));
+    return MontyDict(
+      List.unmodifiable([
+        for (final (key, value) in entries.values) (_value(key), _value(value)),
+      ]),
+    );
   }
 
-  Object _namedTuple(pb.NamedTupleNode node) {
+  MontyValue _namedTuple(pb.NamedTupleNode node) {
     final error = namedTupleError(
       node.typeName,
       node.fieldNames,
@@ -344,107 +300,54 @@ final class _Builder {
 
   _ClassNode _classNode(pb.Type type) {
     final id = uuidString(type.id.data);
-    final found = _hosts?.classType(id);
-    final host = _register(found is MontyValue ? found : null);
-    final attrs = _attrs(type.attrs.pairs);
-    final meta = attrs is _Staged
-        ? attrs
-        : montyClassTypeProxy(
-            name: type.name,
-            id: id,
-            hostDefined: type.origin == originHost,
-            isDataclass: type.isDataclass,
-            attrs: attrs as Map<String, MontyValue>,
-          );
-
-    return _ClassNode(
-      meta,
-      host ??
-          _Staged(
-            'the worker sent the class "${type.name}" as a value; this '
-            'version of the package has no class for a class type value',
-          ),
+    final host = _register(_hosts?.classType(id));
+    final meta = montyClassTypeProxy(
+      name: type.name,
+      id: id,
+      hostDefined: type.origin == originHost,
+      isDataclass: type.isDataclass,
+      attrs: _attrs(type.attrs.pairs),
     );
+
+    return _ClassNode(meta, host ?? meta);
   }
 
-  Object _instance(pb.ClassInstanceNode node) {
+  /// A registered instance is its wrapper, as upstream's is the registered
+  /// object; any other is a proxy.
+  MontyValue _instance(pb.ClassInstanceNode node) {
     final id = uuidString(node.instanceId.data);
-    final found = _hosts?.instance(id);
-    if (found is MontyValue) return _registered[_built.length] = found;
+    final found = _register(_hosts?.instance(id));
+    if (found != null) return found;
     // Stage 2 made the instance's class a class node, built before it.
     final meta = (_builtAt(_built, node.classType) as _ClassNode).meta;
-    final attrs = _attrs(node.attrs.pairs);
-    if (found != null) return _hostInstance(found, node, meta, attrs);
-    if (meta is! MontyClassTypeProxy) return meta;
-    if (attrs is _Staged) return attrs;
 
     return montyClassProxy(
       classType: meta,
       instanceId: id,
-      attrs: attrs as Map<String, MontyValue>,
+      attrs: _attrs(node.attrs.pairs),
     );
   }
 
-  /// The node of a registered host object [found]: one proxy per wrapped
-  /// object, keyed by that object, whatever the node's attributes. Upstream
-  /// decodes it to the original object without reading them, so a staged
-  /// attribute leaves the proxy without attributes instead of failing.
-  MontyClassProxy _hostInstance(
-    Object found,
-    pb.ClassInstanceNode node,
-    Object? meta,
-    Object attrs,
-  ) {
-    final key = wrappedValue(found);
-    _registered[_built.length] = key;
-    if (_carriers[key] case final carrier?) return carrier;
-    final type = _nodeAt(_nodes, node.classType).type;
-    final proxy = montyClassProxy(
-      classType: meta is MontyClassTypeProxy
-          ? meta
-          : montyClassTypeProxy(
-              name: type.name,
-              id: uuidString(type.id.data),
-              hostDefined: type.origin == originHost,
-              isDataclass: type.isDataclass,
-              attrs: const {},
-            ),
-      instanceId: uuidString(node.instanceId.data),
-      attrs: attrs is Map<String, MontyValue> ? attrs : const {},
-    );
-    _hostObjects[proxy] = found;
-
-    return _carriers[key] = proxy;
-  }
-
-  /// [host], recorded as what the node being built resolved to.
+  /// [host], recorded as what the node being built resolved to: the wrapped
+  /// object, so that two nodes for one object are one dict key.
   MontyValue? _register(MontyValue? host) {
-    if (host != null) _registered[_built.length] = host;
+    if (host != null) _registered[_built.length] = wrappedValue(host);
 
     return host;
   }
 
   /// Attribute pairs as upstream's `attrs_dict` reads them: only pairs whose
   /// key node is a `str` count, and a repeated name takes the later value.
-  Object _attrs(List<pb.NodePair> pairs) {
-    // Each name's last value node first: an overwritten value never reaches
-    // the result, so it cannot stage it.
+  Map<String, MontyValue> _attrs(List<pb.NodePair> pairs) {
     final last = <String, int>{};
     for (final p in pairs) {
       final key = _nodeAt(_nodes, p.key);
       if (key.whichKind() == pb.MontyNode_Kind.str) last[key.str] = p.value;
     }
-    final attrs = <String, MontyValue>{};
-    for (final MapEntry(:key, value: node) in last.entries) {
-      switch (_value(node)) {
-        case final MontyValue v:
-          attrs[key] = v;
-        case final staged:
-          return staged;
-      }
-    }
 
-    return Map<String, MontyValue>.unmodifiable(attrs);
+    return Map.unmodifiable(<String, MontyValue>{
+      for (final MapEntry(:key, value: node) in last.entries) key: _value(node),
+    });
   }
 }
 
@@ -469,16 +372,6 @@ MontyValue _time(pb.Time t) => MontyTime(
   timezoneName: t.hasTimezoneName() ? t.timezoneName : null,
   fold: t.fold,
 );
-
-/// The largest file position an `int` holds exactly on this platform:
-/// 2^63-1, or 2^53 on dart2js, where an `int` is a double and the integers
-/// above 2^53 it can hold are no longer contiguous.
-final BigInt _maxPosition = BigInt.parse(
-  _webInts ? '9007199254740992' : '9223372036854775807',
-);
-
-/// dart2js, where an `int` is a double.
-const bool _webInts = identical(1, 1.0);
 
 /// The largest magnitude every backend holds exactly in a Dart `int`.
 ///
@@ -505,10 +398,7 @@ final Map<pb.MontyNode_Kind, Object Function(_Builder, pb.MontyNode)> _kinds = {
   pb.MontyNode_Kind.int_5: (b, n) => _intValue(intOfNode(n)),
   pb.MontyNode_Kind.bigint: (b, n) => _intValue(bigIntOfNode(n.bigint)),
   pb.MontyNode_Kind.float: (_, n) => montyFloatOf(n),
-  pb.MontyNode_Kind.complex: (_, _) => const _Staged(
-    'the worker sent a "complex" value; this version of the package has '
-    'no class for it',
-  ),
+  pb.MontyNode_Kind.complex: (_, n) => montyComplexOf(n),
   pb.MontyNode_Kind.str: (b, n) => MontyString(n.str),
   pb.MontyNode_Kind.bytes: (b, n) =>
       MontyBytes(Uint8List.fromList(n.bytes).asUnmodifiableView()),
@@ -574,18 +464,9 @@ MontyValue _exception(pb.Exception e) => MontyExceptionValue(
   e.hasArg() ? e.arg : '',
 );
 
-Object _fileHandle(pb.FileHandle handle) {
-  final position = BigInt.parse(handle.position.toStringUnsigned());
-  if (position > _maxPosition) {
-    return _Staged(
-      'the worker sent a file position of $position, which an int cannot '
-      'hold exactly on this platform',
-    );
-  }
-
-  return MontyFileHandle(
-    path: handle.path,
-    mode: canonicalFileMode(handle.mode) ?? handle.mode,
-    position: position.toInt(),
-  );
-}
+/// A file handle; stage 1 checked its mode, and its position is a `u64`.
+MontyValue _fileHandle(pb.FileHandle handle) => MontyFileHandle(
+  handle.path,
+  handle.mode,
+  position: BigInt.parse(handle.position.toStringUnsigned()),
+);

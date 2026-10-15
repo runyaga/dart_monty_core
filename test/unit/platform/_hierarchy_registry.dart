@@ -62,7 +62,7 @@ final hierarchySamples = <String, MontyValue>{
   'MontyFrozenSet': const MontyFrozenSet([MontyInt(1)]),
   'MontyEllipsis': const MontyEllipsis(),
   'MontyNotImplemented': const MontyNotImplemented(),
-  'MontyPath': const MontyPath('/x'),
+  'MontyPath': MontyPath('/x'),
   'MontyDate': const MontyDate(year: 2026, month: 1, day: 2),
   'MontyDateTime': const MontyDateTime(
     year: 2026,
@@ -101,11 +101,16 @@ final hierarchySamples = <String, MontyValue>{
     fieldNames: ['x'],
     values: [MontyInt(1)],
   ),
-  'MontyFileHandle': const MontyFileHandle(
-    path: '/f',
-    mode: 'r',
-    position: 7,
+  'MontyFileHandle': MontyFileHandle('/f', 'r', position: BigInt.from(7)),
+  'MontyComplex': const MontyComplex(1.5, -2.5),
+  'MontyClassTypeProxy': montyClassTypeProxy(
+    name: 'K',
+    id: '00000000-0000-4000-8000-000000000001',
+    hostDefined: false,
+    isDataclass: false,
+    attrs: const {'k': MontyInt(1)},
   ),
+  'MontyHostFunction': _hostFunction,
   'MontyClassProxy': montyClassProxy(
     classType: montyClassTypeProxy(
       name: 'C',
@@ -124,3 +129,10 @@ final hierarchySamples = <String, MontyValue>{
     },
   ),
 };
+
+/// The registry's host function: one object, so a suite comparing a sample
+/// with itself sees identity equality hold.
+final MontyHostFunction _hostFunction = MontyHostFunction(
+  'f',
+  (args, kwargs) => const MontyNone(),
+);

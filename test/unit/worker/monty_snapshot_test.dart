@@ -11,7 +11,6 @@ import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/worker/arena_reader.dart' show hostObjectOf;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
@@ -230,7 +229,7 @@ void main() {
       final snap = await s.feedStart('mk') as FunctionSnapshot;
       expect(snap.isOsFunction, isTrue);
       expect(snap.functionName, 'Path.mkdir');
-      expect(snap.args, [const MontyPath('/d/f')]);
+      expect(snap.args, [MontyPath('/d/f')]);
       expect(snap.kwargs, {
         'parents': const MontyBool(true),
         'exist_ok': const MontyBool(false),
@@ -840,7 +839,7 @@ void main() {
       final sleep = await read.resumeAuto() as FunctionSnapshot;
       await expectLater(sleep.resumeAuto(), throwsA(_raised('RuntimeError')));
       expect(seen, [
-        "Path.read_text ${const MontyPath('/b')}",
+        "Path.read_text ${MontyPath('/b')}",
         'system.sleep ${const MontyFloat(9)}',
       ]);
       expect(_last(ch).resumeCall.result.hasNotHandled(), isTrue);
@@ -950,7 +949,7 @@ void main() {
       expect(value, const MontyInt(2));
       expect(calls.map((c) => c.$1), ['Path.write_text', 'asyncio.sleep']);
       expect(firstItem(calls).$2, [
-        const MontyPath('/a.txt'),
+        MontyPath('/a.txt'),
         const MontyString('hi'),
       ]);
       final write = itemAt(ch.requests, 2).resumeCall;
@@ -1374,7 +1373,7 @@ void main() {
       ]);
       final call = await s.feedStart('f()') as FunctionSnapshot;
       final done = await call.resume(ExternalReturnValue(box)) as MontyComplete;
-      Object? hostOf(MontyValue v) => switch (hostObjectOf(v)) {
+      Object? hostOf(MontyValue v) => switch (v) {
         ClassInstance(:final value) => value,
         _ => null,
       };

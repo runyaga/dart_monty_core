@@ -1,9 +1,11 @@
-// The identity-aware walk gives the old results.
+// The identity-aware walk gives the reference results.
 //
-// Reference: _legacy_value_ops.dart, the recursive operations the containers
-// had before, driven through package:collection as the old classes drove it.
-// It shares no code with monty_value_graph.dart. Every value is checked twice,
-// once on the recursive fast path and once with the budget at zero, which
+// Reference: _reference_value_ops.dart, a plain recursion over the aligned
+// rules (Python's equality for named tuples, set/frozenset, repeated set
+// members and dict keys, class proxies). It shares no code with
+// monty_value_graph.dart; equal values must hash equal on both paths.
+// Every value is checked twice, once on the recursive fast path and once with
+// the budget at zero, which
 // forces the memoised fallback; ValueGraphBudget.fallbacks proves the second
 // really ran.
 //
@@ -34,8 +36,8 @@ import 'package:dart_monty_core/src/platform/monty_value.dart'
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:test/test.dart';
 
-import '_legacy_value_ops.dart';
 import '_random_values.dart';
+import '_reference_value_ops.dart';
 
 const _cases = 3000;
 
@@ -47,17 +49,6 @@ bool _isNode(MontyValue v) =>
     v is MontyDict ||
     v is MontyNamedTuple ||
     v is MontyClassProxy;
-
-/// Whether a set or frozenset is reachable from [v]; their hashes changed.
-bool _hasSet(MontyValue v) => switch (v) {
-  MontySet() || MontyFrozenSet() => true,
-  MontyList(:final items) || MontyTuple(:final items) => items.any(_hasSet),
-  MontyDict(:final pairs) => pairs.any((p) => _hasSet(p.$1) || _hasSet(p.$2)),
-  MontyNamedTuple(:final values) => values.any(_hasSet),
-  MontyClassProxy(:final classType, :final attrs) =>
-    classType.attrs.values.any(_hasSet) || attrs.values.any(_hasSet),
-  _ => false,
-};
 
 /// Deep equality of projection output: same shape, the same nullability of
 /// map values and list elements, same key order, doubles
@@ -122,12 +113,11 @@ _Result _measure(MontyValue x, MontyValue y) => (
 /// Checks [x] against [y] on both paths; returns the disagreements.
 List<String> _check(int i, MontyValue x, MontyValue y) {
   final bad = <String>[];
-  final oldXY = legacyEquals(x, y);
-  final oldYX = legacyEquals(y, x);
-  final oldHashX = legacyHash(x);
-  final oldToJson = legacyToJson(x);
+  final oldXY = referenceEquals(x, y);
+  final oldYX = referenceEquals(y, x);
+  final oldToJson = referenceToJson(x);
   final oldJson = json.encode(oldToJson);
-  final oldDart = legacyDartValue(x);
+  final oldDart = referenceDartValue(x);
 
   final fast = _measure(x, y);
   // A budget of zero gives up at the first visit: every walk falls back.
@@ -140,9 +130,6 @@ List<String> _check(int i, MontyValue x, MontyValue y) {
     if (r.eqYX != oldYX) bad.add('#$i $path: y == x is ${r.eqYX}, was $oldYX');
     if (r.eqXY && r.hashX != r.hashY) {
       bad.add('#$i $path: equal values hash differently');
-    }
-    if (!_hasSet(x) && r.hashX != oldHashX) {
-      bad.add('#$i $path: hashCode ${r.hashX}, was $oldHashX');
     }
     if (r.jsonX != oldJson) {
       bad.add('#$i $path: toJson ${r.jsonX}, was $oldJson');
@@ -177,7 +164,7 @@ void main() {
         1 => mutate(cloneReversed(x), rnd),
         _ => gen.value(4),
       };
-      if (legacyEquals(x, y)) equalPairs++;
+      if (referenceEquals(x, y)) equalPairs++;
       bad.addAll(_check(i, x, y));
     }
     expect(bad, isEmpty, reason: bad.take(20).join('\n'));
@@ -302,10 +289,13 @@ void main() {
 
     test('comparing values of different kinds is charged', () {
       // An empty list and an empty tuple hash alike and are unequal, so
-      // matching these sets compares lists with tuples 4M times.
+      // collapsing each set's repeats compares every tuple with the kept
+      // list: 2,000 comparisons of two kinds per set. Charged, they take
+      // the walk past 18,000 visits (20,000 measured); uncharged, it stays
+      // under (16,000 measured).
       MontySet build({required bool listsFirst}) {
-        final lists = List.generate(2000, (_) => const MontyList([]));
-        final tuples = List.generate(2000, (_) => const MontyTuple([]));
+        final lists = [for (var i = 0; i < 2000; i++) const MontyList([])];
+        final tuples = [for (var i = 0; i < 2000; i++) const MontyTuple([])];
 
         return MontySet(
           listsFirst ? [...lists, ...tuples] : [...tuples, ...lists],
@@ -314,7 +304,7 @@ void main() {
 
       final a = build(listsFirst: true);
       final b = build(listsFirst: false);
-      final budget = ValueGraphBudget(maxVisits: 100000);
+      final budget = ValueGraphBudget(maxVisits: 18000);
       expect(budget.run(() => a == b), isTrue);
       expect(budget.fallbacks, 1);
     });
@@ -335,35 +325,9 @@ void main() {
       );
       expect(budget.fallbacks, 1);
     });
-
-    test('field names past the budget are not read', () {
-      // The count is charged before any name is read, so a list far longer
-      // than the budget gives up without walking it.
-      final names = _CountingList(List.filled(1000000, 'f'));
-      final t = MontyNamedTuple(
-        typeName: 'P',
-        fieldNames: names,
-        values: const [],
-      );
-      final budget = ValueGraphBudget(maxVisits: 10)
-        ..run(() => MontyList([t]).hashCode);
-      expect(budget.fallbacks, 1);
-      // The fallback hashes the names once, as the old code did.
-      expect(names.reads, 1000000);
-    });
-
-    test("a named tuple's field names are charged", () {
-      final t = MontyNamedTuple(
-        typeName: 'P',
-        fieldNames: [for (var i = 0; i < 100000; i++) 'f'],
-        values: const [],
-      );
-      final shared = MontyList(List.filled(100, t));
-      expect(fallbacksDuring(() => shared.hashCode), 1);
-    });
   });
 
-  group('attribute maps compare by entry, as MapEquality did', () {
+  group('attribute maps compare by the value each name keeps', () {
     final type = montyClassTypeProxy(
       name: 'C',
       id: 'c',
@@ -385,6 +349,7 @@ void main() {
       ..[k1] = MontyInt(first)
       ..[k2] = MontyInt(second);
 
+    final oneTwo = inst(twoKeys(1, 2));
     final cases = <String, (MontyValue, MontyValue)>{
       'a map with its own key comparison': (
         inst(caseless),
@@ -398,18 +363,20 @@ void main() {
         inst(twoKeys(3, 4)),
         inst(twoKeys(4, 3)),
       ),
-      'a repeated key, values differ': (
-        inst(twoKeys(1, 2)),
-        inst(twoKeys(1, 1)),
+      'a repeated key, values differ': (oneTwo, inst(twoKeys(1, 1))),
+      'a repeated key and the value it keeps': (
+        oneTwo,
+        inst(const {'k': MontyInt(2)}),
       ),
     };
     for (final MapEntry(key: what, value: (x, y)) in cases.entries) {
-      test('$what: both directions, both paths, as before', () {
+      test('$what: both directions, both paths', () {
         final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
         for (final (p, q) in [(x, y), (y, x)]) {
-          final want = legacyEquals(p, q);
+          final want = referenceEquals(p, q);
           expect(p == q, want);
           expect(forced.run(() => p == q), want);
+          if (want) expect(p.hashCode, q.hashCode, reason: 'equal, so hash');
         }
         expect(forced.fallbacks, 2);
       });
@@ -467,7 +434,7 @@ void main() {
         ..[String.fromCharCodes([107])] = cyclic
         ..[String.fromCharCodes([107])] = const MontyInt(1),
     );
-    final want = json.encode(legacyToJson(i));
+    final want = json.encode(referenceToJson(i));
     expect(want, contains('"attrs":{"__type":"dict","value":{"k":1}}'));
     expect(json.encode(i.toJson()), want);
     final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
@@ -484,7 +451,7 @@ void main() {
       ),
       (MontyString('k'), MontyInt(1)),
     ]);
-    expect(legacyDartValue(d), {'k': 1});
+    expect(referenceDartValue(d), {'k': 1});
     expect(d.dartValue, {'k': 1});
     final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
     expect(forced.run(() => const MontyList([d]).dartValue), [
@@ -506,28 +473,182 @@ void main() {
     expect(forced.run(() => c == d), isTrue);
     expect(forced.fallbacks, 2);
   });
+
+  group('repeats collapse without unbounded work', () {
+    test('a 5,000-deep chain of sets whose two members are equal', () {
+      // Each level holds two distinct, equal sets of the level below: the
+      // fallback collapses them by canonical id, iteratively, in linear
+      // time, where comparing each pair afresh doubled per level.
+      MontyFrozenSet chain() {
+        MontyValue a = const MontyInt(1);
+        MontyValue b = MontyBigInt(BigInt.one);
+        for (var i = 0; i < 5000; i++) {
+          final next = MontyFrozenSet([a, b]);
+          b = MontyFrozenSet([b, a]);
+          a = next;
+        }
+
+        return a as MontyFrozenSet;
+      }
+
+      final x = chain();
+      final y = chain();
+      final watch = Stopwatch()..start();
+      expect(x == y, isTrue);
+      expect(x.hashCode, y.hashCode);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
+    });
+
+    test('an overwritten dict value is never read, on either path', () {
+      final cyclic = MontyDict([
+        (const MontyString('k'), _selfList()),
+        (const MontyString('k'), const MontyInt(1)),
+      ]);
+      const clean = MontyDict([(MontyString('k'), MontyInt(1))]);
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      expect(cyclic == clean, isTrue);
+      expect(forced.run(() => cyclic == clean), isTrue);
+      expect(cyclic.hashCode, clean.hashCode);
+      expect(forced.run(() => cyclic.hashCode), clean.hashCode);
+      expect(forced.fallbacks, 2);
+    });
+
+    test('an overwritten attribute value is never read, on either path', () {
+      final k1 = String.fromCharCodes([107]);
+      final k2 = String.fromCharCodes([107]);
+      final type = montyClassTypeProxy(
+        name: 'C',
+        id: 'c',
+        hostDefined: false,
+        isDataclass: false,
+        attrs: const {},
+      );
+      MontyClassProxy inst(Map<String, MontyValue> attrs) =>
+          montyClassProxy(classType: type, instanceId: 'i', attrs: attrs);
+      final repeated = inst(
+        Map.identity()
+          ..[k1] = _selfList()
+          ..[k2] = const MontyInt(1),
+      );
+      final clean = inst(const {'k': MontyInt(1)});
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      expect(repeated == clean, isTrue);
+      expect(forced.run(() => repeated == clean), isTrue);
+      expect(repeated.hashCode, clean.hashCode);
+      expect(forced.run(() => repeated.hashCode), clean.hashCode);
+    });
+
+    test('a value that contains itself compares as before, on both paths', () {
+      // x = [x] and y = [x] are equal (their one items are identical), so
+      // dicts and sets holding them are too; canonical ids cannot see that,
+      // so tainted operands are compared through frames.
+      final x = _selfList();
+      final y = MontyList([x]);
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      for (final (a, b) in [
+        (
+          MontyDict([(const MontyString('k'), x)]),
+          MontyDict([(const MontyString('k'), y)]),
+        ),
+        (MontySet([x]), MontySet([y])),
+        (MontySet([x, x]), MontyFrozenSet([y])),
+        // A key holding itself has no Python counterpart; it still compares.
+        (
+          MontyDict([(x, const MontyInt(1))]),
+          MontyDict([(y, const MontyInt(1))]),
+        ),
+        (MontyDict([(x, x)]), MontyDict([(y, x)])),
+        // Equal keys holding themselves collapse, the last value kept.
+        (
+          MontyDict([(x, const MontyInt(1)), (y, const MontyInt(2))]),
+          MontyDict([(x, const MontyInt(2))]),
+        ),
+      ]) {
+        expect(a == b, isTrue);
+        expect(forced.run(() => a == b), isTrue);
+        expect(forced.run(() => b == a), isTrue);
+      }
+      expect(
+        forced.run(() => MontySet([x]) == const MontySet([MontyInt(1)])),
+        isFalse,
+      );
+      expect(
+        forced.run(
+          () =>
+              MontyDict([(x, const MontyInt(1)), (y, const MontyInt(2))]) ==
+              MontyDict([(x, const MontyInt(1))]),
+        ),
+        isFalse,
+      );
+      expect(
+        forced.run(
+          () =>
+              MontyDict([(const MontyString('k'), x)]) ==
+              MontyDict([(const MontyString('j'), x)]),
+        ),
+        isFalse,
+      );
+    });
+
+    test('two distinct dicts that hold themselves are a cycle error', () {
+      // As two lists that hold themselves are: no answer exists, and the
+      // fallback must stop, not loop.
+      MontyDict selfDict() {
+        final pairs = <(MontyValue, MontyValue)>[];
+        final d = MontyDict(pairs);
+        pairs.add((const MontyString('k'), d));
+
+        return d;
+      }
+
+      final a = selfDict();
+      final b = selfDict();
+      expect(() => a == b, throwsStateError);
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      expect(() => forced.run(() => a == b), throwsStateError);
+      expect(a == a, isTrue);
+      // A dict that is its own key, against another: its keys' collapse
+      // meets the same comparison again, a cycle, not unbounded recursion.
+      final cPairs = <(MontyValue, MontyValue)>[];
+      final dPairs = <(MontyValue, MontyValue)>[];
+      final c = MontyDict(cPairs);
+      final d = MontyDict(dPairs);
+      cPairs.addAll([(c, const MontyInt(1)), (d, const MontyInt(2))]);
+      dPairs.add((d, const MontyInt(1)));
+      expect(() => c == d, throwsStateError);
+      expect(() => forced.run(() => c == d), throwsStateError);
+    });
+
+    test("both attribute maps' names are charged before they are read", () {
+      final type = montyClassTypeProxy(
+        name: 'C',
+        id: 'c',
+        hostDefined: false,
+        isDataclass: false,
+        attrs: const {},
+      );
+      final empty = montyClassProxy(
+        classType: type,
+        instanceId: 'i',
+        attrs: const {},
+      );
+      final wide = montyClassProxy(
+        classType: type,
+        instanceId: 'i',
+        attrs: {for (var i = 0; i < 10000; i++) 'a$i': const MontyInt(1)},
+      );
+      final budget = ValueGraphBudget(maxVisits: 10);
+      expect(budget.run(() => empty == wide), isFalse);
+      expect(budget.fallbacks, 1);
+    });
+  });
 }
 
-/// A list that counts element reads through its iterator.
-final class _CountingList extends ListBase<String> {
-  _CountingList(this._inner);
+/// A list that holds itself.
+MontyList _selfList() {
+  final items = <MontyValue>[];
+  final x = MontyList(items);
+  items.add(x);
 
-  int reads = 0;
-  final List<String> _inner;
-
-  @override
-  int get length => _inner.length;
-
-  @override
-  set length(int n) => _inner.length = n;
-
-  @override
-  String operator [](int i) {
-    reads++;
-
-    return _inner.elementAtOrNull(i) ?? '';
-  }
-
-  @override
-  void operator []=(int i, String v) => _inner[i] = v;
+  return x;
 }

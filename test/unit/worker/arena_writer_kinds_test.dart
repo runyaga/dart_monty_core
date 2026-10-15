@@ -32,9 +32,6 @@ Matcher _refused(String fragment) => throwsA(
   ),
 );
 
-/// dart2js, where an `int` is a double.
-bool get _isJs => identical(1, 1.0);
-
 const _classId = '0123abcd-0000-4000-8000-00000000cafe';
 
 MontyClassTypeProxy _class({Map<String, MontyValue> attrs = const {}}) =>
@@ -107,7 +104,7 @@ void main() {
         'function',
         'object.__setattr__',
       ),
-      'file handle': const MontyFileHandle(path: '/x', mode: 'ab', position: 7),
+      'file handle': MontyFileHandle('/x', 'ab', position: BigInt.from(7)),
       'named tuple': const MontyNamedTuple(
         typeName: 'os.stat_result',
         fieldNames: ['st_mode', 'st_size'],
@@ -129,7 +126,7 @@ void main() {
 
     test('a file mode is sent in its canonical form', () {
       expect(
-        _only(const MontyFileHandle(path: '/x', mode: 'tr')).fileHandle.mode,
+        _only(MontyFileHandle('/x', 'tr')).fileHandle.mode,
         'r',
       );
     });
@@ -162,6 +159,56 @@ void main() {
     });
   });
 
+  group('a host function', () {
+    test('is a function node with its own name and docstring', () {
+      // C1 host-functions: outside a name lookup a function keeps its own
+      // name; upstream's callable_node carries __name__ and __doc__.
+      final f = MontyHostFunction(
+        'f',
+        (a, k) => const MontyNone(),
+        docstring: 'Doc.',
+      );
+      final node = _only(f).function;
+      expect(node.name, 'f');
+      expect(node.docstring, 'Doc.');
+      expect(
+        _only(
+          MontyHostFunction('g', (a, k) => const MontyNone()),
+        ).function.hasDocstring(),
+        isFalse,
+      );
+    });
+
+    test('is a leaf: a fresh node at each reference', () {
+      final f = MontyHostFunction('f', (a, k) => const MontyNone());
+      final writer = ArenaWriter();
+      final root = writer.add(MontyList([f, f]));
+      final [first, second] = itemAt(writer.arena.nodes, root).list.items;
+      expect(first, isNot(second));
+    });
+
+    test('is hashable as a key, as a Python function is', () {
+      final f = MontyHostFunction('f', (a, k) => const MontyNone());
+      expect(
+        () => ArenaWriter().add(MontyDict([(f, const MontyInt(1))])),
+        returnsNormally,
+      );
+    });
+  });
+
+  test("a class type proxy as a key is refused: upstream's is unhashable", () {
+    expect(
+      () => ArenaWriter().add(MontySet([_class()])),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => '${e.message}',
+          'message',
+          contains("unhashable type: 'MontyClassTypeProxy'"),
+        ),
+      ),
+    );
+  });
+
   group('sharing follows upstream encoder', () {
     test('containers are one node per object, across adds', () {
       const shared = MontyList([MontyInt(1)]);
@@ -175,7 +222,7 @@ void main() {
     test('leaves are a fresh node at each reference', () {
       final e = MontyExceptionValue('ValueError', 'm');
       const s = MontyString('s');
-      const h = MontyFileHandle(path: '/x', mode: 'r');
+      final h = MontyFileHandle('/x', 'r');
       final writer = ArenaWriter()..add(MontyList([e, e, s, s, h, h]));
       final items = writer.arena.nodes.lastOrNull?.list.items;
       expect(items?.toSet(), hasLength(6));
@@ -249,32 +296,76 @@ void main() {
       expect(() => ArenaWriter().add(i), _refused('contains itself'));
     });
 
-    test('a class met again through its own attributes has none', () {
-      // A class constant that is an instance of its class: upstream's
-      // encoder sends the class again without attributes
-      // (python/encode.rs, enter_class_type), here as two of them.
+    test('a class proxy sent as a value, met again inside itself, has no '
+        'attributes', () {
+      // A MontyClassTypeProxy passed directly carries an identity, so
+      // upstream's encoder (enter_class_type, encode.rs:351-355) sends it
+      // again as an attribute-less node rather than refusing a cycle.
+      // As a decoded class holding an instance of itself arrives: that
+      // instance's class is the attribute-less duplicate the encoder sent.
+      final classAttrs = <String, MontyValue>{};
+      final type = _class(attrs: classAttrs);
+      classAttrs['RED'] = _instance(_class(), '01');
+      classAttrs['SELF'] = type;
+      final writer = ArenaWriter();
+      final root = writer.add(type);
+      final nodes = writer.arena.nodes;
+      final outer = itemAt(nodes, root).type;
+      expect(outer.attrs.pairs, hasLength(2));
+      final again = [
+        for (final pair in outer.attrs.pairs) itemAt(nodes, pair.value),
+      ];
+      // RED's class and SELF: both the attribute-less form of the class.
+      final [redNode, selfNode] = again;
+      final red = redNode.classInstance;
+      for (final node in [itemAt(nodes, red.classType), selfNode]) {
+        expect(node.type.hasAttrs(), isFalse);
+        expect(node.type.id, outer.id);
+      }
+    });
+
+    test('class metadata reached through a proxy is not shared by object, '
+        'so its own instance met again is a cycle', () {
+      // Upstream's ClassTypeSource from a MontyClassProxy has no identity
+      // (Q43): the class is entered again, its constant met again while
+      // being sent is "Circular reference detected" (encode.rs:303-305).
       final classAttrs = <String, MontyValue>{};
       final type = _class(attrs: classAttrs);
       classAttrs['RED'] = _instance(type, '01');
-      classAttrs['BLUE'] = _instance(type, '02');
+      expect(
+        () => ArenaWriter().add(_instance(type, '03')),
+        _refused('contains itself'),
+      );
+    });
+
+    test('the same class proxy twice as a value is one node', () {
+      // X6: memoised by object, as upstream's encoder keys a proxy.
+      final type = _class(attrs: const {'k': MontyInt(1)});
       final writer = ArenaWriter();
-      final root = writer.add(_instance(type, '03'));
+      final root = writer.add(MontyList([type, type]));
       final nodes = writer.arena.nodes;
-      final outer = itemAt(
-        nodes,
-        itemAt(nodes, root).classInstance.classType,
-      ).type;
-      final pairs = outer.attrs.pairs;
-      expect(pairs, hasLength(2));
-      for (final pair in pairs) {
-        final constant = itemAt(nodes, pair.value).classInstance;
-        final again = itemAt(nodes, constant.classType).type;
-        expect(again.hasAttrs(), isFalse);
-        expect(again.name, 'P');
-        expect(again.id, outer.id);
-        expect(again.isDataclass, isTrue);
-      }
-      expect(nodes.where((n) => n.hasType()), hasLength(3));
+      final [first, second] = itemAt(nodes, root).list.items;
+      expect(first, second);
+      // Two equal proxies that are distinct objects are two nodes (they
+      // carry attributes, so they are not shared by id).
+      final other = _class(attrs: const {'k': MontyInt(1)});
+      final two = writer.add(MontyList([type, other]));
+      final [one, another] = itemAt(nodes, two).list.items;
+      expect(one, isNot(another));
+    });
+
+    test('attribute-less class proxies are shared by class id', () {
+      // Upstream keeps one node per id for a class with no attributes
+      // (enter_class_type's class_types map), whichever object carries it.
+      final writer = ArenaWriter();
+      final a = _class();
+      final root = writer.add(MontyList([a, _class(), a]));
+      final [first, second, third] = itemAt(
+        writer.arena.nodes,
+        root,
+      ).list.items;
+      expect(second, first);
+      expect(third, first);
     });
 
     test('an instance met again through its own class is refused', () {
@@ -415,55 +506,89 @@ void main() {
     });
 
     test('temporal ranges, as the worker states them', () {
-      final cases = <MontyValue, String>{
-        const MontyDate(year: 2026, month: 2, day: 29):
+      // Keyed by identity: two invalid times can be equal values.
+      final cases = Map<MontyValue, String>.identity()
+        ..addEntries([
+          const MapEntry(
+            MontyDate(year: 2026, month: 2, day: 29),
             'invalid value for Date.day: 29 is outside the range 1..=28',
-        const MontyTime(hour: 24, minute: 0, second: 0, microsecond: 0):
+          ),
+          const MapEntry(
+            MontyTime(hour: 24, minute: 0, second: 0, microsecond: 0),
             'invalid value for Time.hour: 24 is outside the range 0..=23',
-        const MontyTime(hour: 0, minute: 0, second: 0, microsecond: 0, fold: 2):
+          ),
+          const MapEntry(
+            MontyTime(
+              hour: 0,
+              minute: 0,
+              second: 0,
+              microsecond: 0,
+              fold: 2,
+            ),
             'Time.fold: 2',
-        const MontyTime(
-          hour: 0,
-          minute: 0,
-          second: 0,
-          microsecond: 0,
-          timezoneName: 'X',
-        ): 'timezone_name requires offset_seconds',
-        const MontyDateTime(
-          year: 10000,
-          month: 1,
-          day: 1,
-          hour: 0,
-          minute: 0,
-          second: 0,
-        ): 'DateTime.year: 10000',
-        const MontyDateTime(
-          year: 2026,
-          month: 1,
-          day: 1,
-          hour: 0,
-          minute: 0,
-          second: 0,
-          microsecond: 1000000,
-        ): 'DateTime.microsecond: 1000000 exceeds maximum 999999',
-        const MontyDateTime(
-          year: 2026,
-          month: 1,
-          day: 1,
-          hour: 0,
-          minute: 0,
-          second: 0,
-          offsetSeconds: 86400,
-        ): 'DateTime.offset_seconds: 86400',
-        const MontyTimeZone(offsetSeconds: -86400):
+          ),
+          const MapEntry(
+            MontyTime(
+              hour: 0,
+              minute: 0,
+              second: 0,
+              microsecond: 0,
+              timezoneName: 'X',
+            ),
+            'timezone_name requires offset_seconds',
+          ),
+          const MapEntry(
+            MontyDateTime(
+              year: 10000,
+              month: 1,
+              day: 1,
+              hour: 0,
+              minute: 0,
+              second: 0,
+            ),
+            'DateTime.year: 10000',
+          ),
+          const MapEntry(
+            MontyDateTime(
+              year: 2026,
+              month: 1,
+              day: 1,
+              hour: 0,
+              minute: 0,
+              second: 0,
+              microsecond: 1000000,
+            ),
+            'DateTime.microsecond: 1000000 exceeds maximum 999999',
+          ),
+          const MapEntry(
+            MontyDateTime(
+              year: 2026,
+              month: 1,
+              day: 1,
+              hour: 0,
+              minute: 0,
+              second: 0,
+              offsetSeconds: 86400,
+            ),
+            'DateTime.offset_seconds: 86400',
+          ),
+          const MapEntry(
+            MontyTimeZone(offsetSeconds: -86400),
             'TimeZone.offset_seconds: -86400',
-        const MontyTimeDelta(days: 0, seconds: 86400):
+          ),
+          const MapEntry(
+            MontyTimeDelta(days: 0, seconds: 86400),
             'TimeDelta.seconds: 86400 is outside the normalized range',
-        const MontyTimeDelta(days: 0, seconds: 0, microseconds: -1):
+          ),
+          const MapEntry(
+            MontyTimeDelta(days: 0, seconds: 0, microseconds: -1),
             'TimeDelta.microseconds: -1',
-        const MontyTimeDelta(days: 1000000000, seconds: 0):
+          ),
+          const MapEntry(
+            MontyTimeDelta(days: 1000000000, seconds: 0),
             'days=1000000000; must have magnitude <= 999999999',
-      };
+          ),
+        ]);
       for (final MapEntry(:key, :value) in cases.entries) {
         expect(() => ArenaWriter().add(key), _refused(value), reason: '$key');
       }
@@ -510,27 +635,12 @@ void main() {
     });
 
     test('file modes and positions', () {
-      final outOfRange = _refused('outside 0..2^64-1');
-      expect(
-        () => ArenaWriter().add(const MontyFileHandle(path: '/x', mode: 'r+')),
-        _refused('invalid file mode "r+"'),
-      );
-      expect(
-        () => ArenaWriter().add(
-          const MontyFileHandle(path: '/x', mode: 'r', position: -1),
-        ),
-        outOfRange,
-      );
-      if (_isJs) {
-        // Only dart2js holds 2^64 in an int.
-        final two64 = (BigInt.one << 64).toDouble().toInt();
-        expect(
-          () => ArenaWriter().add(
-            MontyFileHandle(path: '/x', mode: 'r', position: two64),
-          ),
-          outOfRange,
-        );
-      }
+      // The constructor holds upstream's rules; the writer sends what it
+      // stored: the canonical mode, and a position up to 2^64-1 bit for bit.
+      final max = BigInt.two.pow(64) - BigInt.one;
+      final node = _only(MontyFileHandle('/x', 'br', position: max)).fileHandle;
+      expect(node.mode, 'rb');
+      expect(node.position.toStringUnsigned(), '$max');
     });
 
     test('dict keys and set members Python could not hash', () {

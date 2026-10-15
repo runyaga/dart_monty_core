@@ -278,21 +278,21 @@ void main() {
         'unlink',
         'rmdir',
       ])
-        ('Path.$name', [const MontyPath('/a/b')], _noKwargs),
+        ('Path.$name', [MontyPath('/a/b')], _noKwargs),
       (
         'Path.write_text',
-        [const MontyPath('/a'), const MontyString('t')],
+        [MontyPath('/a'), const MontyString('t')],
         _noKwargs,
       ),
       (
         'Path.append_text',
-        [const MontyPath('/a'), const MontyString('t')],
+        [MontyPath('/a'), const MontyString('t')],
         _noKwargs,
       ),
       (
         'Path.write_bytes',
         [
-          const MontyPath('/a'),
+          MontyPath('/a'),
           MontyBytes(Uint8List.fromList([1])),
         ],
         _noKwargs,
@@ -300,20 +300,20 @@ void main() {
       (
         'Path.append_bytes',
         [
-          const MontyPath('/a'),
+          MontyPath('/a'),
           MontyBytes(Uint8List.fromList([2])),
         ],
         _noKwargs,
       ),
-      ('open', [const MontyPath('/a'), const MontyString('r')], _noKwargs),
+      ('open', [MontyPath('/a'), const MontyString('r')], _noKwargs),
       (
         'Path.mkdir',
-        [const MontyPath('/a')],
+        [MontyPath('/a')],
         {'parents': const MontyBool(true), 'exist_ok': const MontyBool(false)},
       ),
       (
         'Path.rename',
-        [const MontyPath('/a'), const MontyPath('/b')],
+        [MontyPath('/a'), MontyPath('/b')],
         _noKwargs,
       ),
       (
@@ -369,15 +369,15 @@ void main() {
       for (final (name, args, kwargs)
           in <(String, List<MontyValue>, Map<String, MontyValue>)>[
             ('Path.read_text', [], {}),
-            ('Path.write_text', [const MontyPath('/a'), const MontyInt(1)], {}),
+            ('Path.write_text', [MontyPath('/a'), const MontyInt(1)], {}),
             (
               'Path.write_bytes',
-              [const MontyPath('/a'), const MontyString('x')],
+              [MontyPath('/a'), const MontyString('x')],
               {},
             ),
             (
               'Path.mkdir',
-              [const MontyPath('/a')],
+              [MontyPath('/a')],
               {'parents': const MontyInt(1)},
             ),
             ('time.sleep', [const MontyString('x')], {}),

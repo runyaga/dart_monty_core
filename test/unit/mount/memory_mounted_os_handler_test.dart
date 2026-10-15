@@ -329,7 +329,7 @@ void main() {
       // example has to be a hypothetical one. The throw sits AFTER the mount
       // check, so the path is inside a mount by construction.
       expect(
-        () => handler('Path.chmod', [const MontyPath('/data/hello.txt')], {}),
+        () => handler('Path.chmod', [MontyPath('/data/hello.txt')], {}),
         throwsA(isA<OsCallNotHandledException>()),
       );
     });
@@ -382,7 +382,7 @@ void main() {
         List<MontyValue> args, [
         Map<String, MontyValue> kwargs = const {},
       ]) => handler(op, args, kwargs) as MontyValue;
-      const a = MontyPath('/data/a.txt');
+      final a = MontyPath('/data/a.txt');
 
       expect(call('Path.exists', [a]), const MontyBool(true));
       expect(call('Path.is_dir', [a]), const MontyBool(false));
@@ -393,30 +393,30 @@ void main() {
       );
       expect(
         call('Path.write_bytes', [
-          const MontyPath('/data/b.bin'),
+          MontyPath('/data/b.bin'),
           MontyBytes(Uint8List.fromList([1, 2, 3])),
         ]),
         const MontyInt(3),
       );
       expect(
-        call('Path.read_bytes', [const MontyPath('/data/b.bin')]),
+        call('Path.read_bytes', [MontyPath('/data/b.bin')]),
         MontyBytes(Uint8List.fromList([1, 2, 3])),
       );
       expect(
         call(
           'Path.mkdir',
-          [const MontyPath('/data/d/e')],
+          [MontyPath('/data/d/e')],
           {'parents': const MontyBool(true)},
         ),
         const MontyNone(),
       );
       expect(
-        call('Path.iterdir', [const MontyPath('/data/d')]),
-        const MontyList([MontyPath('/data/d/e')]),
+        call('Path.iterdir', [MontyPath('/data/d')]),
+        MontyList([MontyPath('/data/d/e')]),
       );
       expect(
         call('open', [a, const MontyString('r')]),
-        const MontyFileHandle(path: '/data/a.txt', mode: 'r'),
+        MontyFileHandle('/data/a.txt', 'r'),
       );
       expect(call('Path.unlink', [a]), const MontyNone());
       // A path the worker sends as a str is read as a path too.
@@ -431,7 +431,7 @@ void main() {
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
       );
-      const p = MontyPath('/data/x');
+      final p = MontyPath('/data/x');
       for (final (op, payload) in [
         ('Path.write_text', const MontyInt(1)),
         ('Path.append_text', const MontyInt(1)),
