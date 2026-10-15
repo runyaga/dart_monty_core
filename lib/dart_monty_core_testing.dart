@@ -18,5 +18,3 @@
 library;
 
 export 'dart_monty_core.dart';
-export 'src/platform/mock_monty_platform.dart'
-    show MockCallHistory, MockMontyPlatform;
