@@ -70,7 +70,7 @@ void main() {
         pb.MontyNode(
           bigint: pb.BigInt(magnitude: magnitudeBytes(BigInt.one)),
         ),
-        n(1.0),
+        floatNode(1),
         complexNode(real: 1, imag: 0),
         complexNode(real: 1, imag: -0),
       ];
@@ -82,7 +82,7 @@ void main() {
       final exact = BigInt.parse('1000000000000000019884624838656');
       expect(
         _setSize([
-          n(1e30),
+          floatNode(1e30),
           pb.MontyNode(bigint: pb.BigInt(magnitude: magnitudeBytes(exact))),
           complexNode(real: 1e30, imag: -0),
         ]),
@@ -198,7 +198,7 @@ void main() {
               as MontyFrozenSet;
       expect(merged.items, hasLength(2));
       // A NaN does not merge with a number.
-      expect(_frozenSize([n(double.nan), n(0.0), n(1.5)]), 3);
+      expect(_frozenSize([n(double.nan), floatNode(0), n(1.5)]), 3);
     });
   });
 
