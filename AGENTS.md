@@ -101,20 +101,18 @@ pinned one; `bash tool/check_pages.sh` needs a free local port, so rerun
 | `tool/export-golden.txt` | `dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --update` | same without `--update` |
 | `tool/coverage-baseline.json` | maintainer-run `tool/record_coverage_baseline.sh`, from main's successful CI artifact | never in a PR |
 
-`PY` is a Python with upstream's oracle installed from the hash-pinned lock;
-Observed on macOS arm64: Python 3.12 (the CI version) passed `--check` for all
-five oracle files:
+`PY` is a Python 3.12 with upstream's oracle installed from the hash-pinned
+lock. `bash tool/check_oracles.sh` builds a cached `.venv-oracle` (gitignored)
+and runs `--check` on every `tool/generate_*_oracle.py`; the gate runs it as
+`oracle_check` and CI runs it too (`dart pub get` first). To regenerate one
+file, use that venv's Python:
 
 ```bash
-uv venv -p 3.12 .venv-oracle     # any venv works; keep it outside the repo or ignored
-uv pip install -p .venv-oracle/bin/python --require-hashes --only-binary :all: --no-deps -r tool/upstream/requirements.lock
 .venv-oracle/bin/python -I tool/generate_host_oracle.py          # write
 .venv-oracle/bin/python -I tool/generate_host_oracle.py --check  # exit 1 if stale
 ```
 
 An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
-No CI step or gate step runs the oracle `--check` today; run it yourself after
-touching a generator or a runner.
 
 ## 6. Baselines, fragments, pins
 
