@@ -457,8 +457,8 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_error.dart": {
-      "found": 82,
-      "hit": 82,
+      "found": 86,
+      "hit": 86,
       "pct": 100.0
     },
     "lib/src/worker/monty_pool.dart": {
@@ -467,8 +467,8 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_snapshot.dart": {
-      "found": 63,
-      "hit": 63,
+      "found": 72,
+      "hit": 72,
       "pct": 100.0
     },
     "lib/src/worker/os_policy.dart": {
@@ -553,8 +553,8 @@
     }
   },
   "total": {
-    "found": 9085,
-    "hit": 7756,
-    "pct": 85.37
+    "found": 9098,
+    "hit": 7769,
+    "pct": 85.39
   }
 }
