@@ -10,9 +10,9 @@ import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart'
     show OsCallNotHandledException;
 import 'package:dart_monty_core/src/worker/host_answers.dart' show AsyncDecline;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
+import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart'
     show SessionConfig;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';

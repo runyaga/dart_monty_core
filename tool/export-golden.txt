@@ -471,6 +471,14 @@ final class HostClass<T extends Object>
   HostClass.name: final field String
   HostClass.new: const constructor(String name, {bool isDataclass = false, ({Map<String, Object Function(T)> fields, Map<String, FutureOr@dart:async<Object> Function(T, List<MontyValue>, Map<String, MontyValue>)> methods, Map<String, Object Function(T)> properties}) instance = (fields: <String, Never>{}, properties: <String, Never>{}, methods: <String, Never>{}), Map<String, Object Function()> attributes = const {}, Map<String, FutureOr@dart:async<Object> Function(List<MontyValue>, Map<String, MontyValue>)> methods = const {}, T Function(List<MontyValue>, Map<String, MontyValue>)? construct})
 
+[members: src/worker/monty.dart]
+final class Monty
+  Monty.checkout: method({String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<MontySession>
+  Monty.close: method() -> Future<void>
+  Monty.start: static method({int minProcesses = 1, int? maxProcesses, Duration? checkoutTimeout, Duration? requestTimeout, int? maxCheckoutsPerWorker, Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, String? workerLocation}) -> Future<Monty>
+  Monty.withPool: static method<T>(Future<T> Function(Monty) body, {int minProcesses = 1, int? maxProcesses, Duration? checkoutTimeout, Duration? requestTimeout, int? maxCheckoutsPerWorker, Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, String? workerLocation}) -> Future<T>
+  Monty.withSession: method<T>(Future<T> Function(MontySession) body, {String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<T>
+
 [members: src/worker/monty_error.dart]
 final class Frame
   Frame.column: final field int
@@ -500,13 +508,16 @@ final class MontySyntaxError extends MontyError
 final class MontyTypingError extends MontyError
   MontyTypingError.display: method() -> String
 
-[members: src/worker/monty_pool.dart]
-final class Monty
-  Monty.checkout: method({String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<MontySession>
-  Monty.close: method() -> Future<void>
-  Monty.start: static method({int minProcesses = 1, int? maxProcesses, Duration? checkoutTimeout, Duration? requestTimeout, int? maxCheckoutsPerWorker, Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, String? workerLocation}) -> Future<Monty>
-  Monty.withPool: static method<T>(Future<T> Function(Monty) body, {int minProcesses = 1, int? maxProcesses, Duration? checkoutTimeout, Duration? requestTimeout, int? maxCheckoutsPerWorker, Duration? feedDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, Duration? turnDurationLimitGrace = PoolOptions.defaultDurationLimitGrace, String? workerLocation}) -> Future<T>
-  Monty.withSession: method<T>(Future<T> Function(MontySession) body, {String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<T>
+[members: src/worker/monty_session.dart]
+abstract interface class MontySession
+  MontySession.close: abstract method() -> Future<void>
+  MontySession.dump: abstract method() -> Future<Uint8List@dart:typed_data>
+  MontySession.feedRun: abstract method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
+  MontySession.feedStart: abstract method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
+  MontySession.loadSession: abstract method(Uint8List@dart:typed_data state) -> Future<void>
+  MontySession.loadSnapshot: abstract method(Uint8List@dart:typed_data state, {Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
+  MontySession.new: constructor()
+  MontySession.workerPid: abstract getter -> int?
 
 [members: src/worker/monty_snapshot.dart]
 final class ExternalException extends ExternalSettledResult implements Exception
@@ -607,17 +618,6 @@ final class TimeZone
   TimeZone.name: final field String?
   TimeZone.new: const constructor(int offsetSeconds, {String? name})
   TimeZone.offsetSeconds: final field int
-
-[members: src/worker/pool_session.dart]
-abstract interface class MontySession
-  MontySession.close: abstract method() -> Future<void>
-  MontySession.dump: abstract method() -> Future<Uint8List@dart:typed_data>
-  MontySession.feedRun: abstract method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
-  MontySession.feedStart: abstract method(String code, {Map<String, Object>? inputs, Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
-  MontySession.loadSession: abstract method(Uint8List@dart:typed_data state) -> Future<void>
-  MontySession.loadSnapshot: abstract method(Uint8List@dart:typed_data state, {Map<String, ProtoExternalFunction>? externals, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
-  MontySession.new: constructor()
-  MontySession.workerPid: abstract getter -> int?
 
 [members: src/worker/proto_session.dart]
 typedef ProtoPrintCallback = FutureOr@dart:async<void> Function(String, String)

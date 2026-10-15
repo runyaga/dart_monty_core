@@ -18,7 +18,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:test/test.dart';
 
-const _source = 'lib/src/worker/monty_pool.dart';
+const _source = 'lib/src/worker/monty.dart';
 
 /// Each named parameter of each method in [source]: name -> (type, default).
 Map<String, Map<String, (String, String?)>> _namedParameters(String source) {

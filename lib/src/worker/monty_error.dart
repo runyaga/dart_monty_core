@@ -26,13 +26,13 @@ import 'package:dart_monty_core/src/worker/raised_record.dart';
 sealed class MontyError implements Exception {
   const MontyError._(this._message, this.exception);
 
-  /// Upstream's `str()` of the error, which [toString] returns; see each
-  /// subclass.
-  final String _message;
-
   /// The inner Python exception (upstream's `exception()`). Its message is
   /// `''` when the worker sent none.
   final MontyExceptionValue exception;
+
+  /// Upstream's `str()` of the error, which [toString] returns; see each
+  /// subclass.
+  final String _message;
 
   @override
   String toString() => _message;

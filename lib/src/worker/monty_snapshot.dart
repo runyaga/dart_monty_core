@@ -281,11 +281,6 @@ sealed class SuspendedSnapshot extends MontySnapshot {
 
   bool _isSpent = false;
 
-  void _spend() {
-    if (_isSpent) throw StateError('snapshot has already been resumed');
-    _isSpent = true;
-  }
-
   /// The session suspended here, as opaque bytes that the session's
   /// `loadSnapshot` restores, in this session's worker or another
   /// (upstream's `dump`). The snapshot stays unspent.
@@ -293,6 +288,11 @@ sealed class SuspendedSnapshot extends MontySnapshot {
   /// Throws [StateError] once the snapshot has been resumed, and once the
   /// session is finished.
   Future<Uint8List> dump() => _driver.dumpSnapshot(this);
+
+  void _spend() {
+    if (_isSpent) throw StateError('snapshot has already been resumed');
+    _isSpent = true;
+  }
 }
 
 /// Suspended on a host function call or, when [isOsFunction], an OS call

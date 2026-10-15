@@ -61,6 +61,7 @@ export 'src/platform/os_call_not_handled_exception.dart'
 export 'src/worker/collect_streams.dart' show CollectStreams, CollectString;
 export 'src/worker/host_answers.dart' show OsHandler;
 export 'src/worker/host_objects.dart' show ClassInstance, ClassType;
+export 'src/worker/monty.dart' show Monty;
 export 'src/worker/monty_error.dart'
     show
         Frame,
@@ -69,7 +70,7 @@ export 'src/worker/monty_error.dart'
         MontyRuntimeError,
         MontySyntaxError,
         MontyTypingError;
-export 'src/worker/monty_pool.dart' show Monty;
+export 'src/worker/monty_session.dart' show MontySession;
 export 'src/worker/monty_snapshot.dart'
     show
         ExternalException,
@@ -84,7 +85,6 @@ export 'src/worker/monty_snapshot.dart'
         NameLookupSnapshot,
         SourceRange;
 export 'src/worker/os_policy.dart' show OsPolicy, RandomSeed, TimeZone;
-export 'src/worker/pool_session.dart' show MontySession;
 export 'src/worker/resource_limits.dart' show ResourceLimits;
 export 'src/worker/self_relaunch_stub.dart'
     if (dart.library.ffi) 'src/worker/self_relaunch.dart'

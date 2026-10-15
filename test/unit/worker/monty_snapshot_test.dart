@@ -1,4 +1,4 @@
-// Step-by-step driving of a pool session (lib/src/worker/pool_session.dart,
+// Step-by-step driving of a pool session (lib/src/worker/monty_session.dart,
 // monty_snapshot.dart, host_answers.dart, sleep_budget.dart) over scripted
 // workers: feedStart and the four snapshot kinds, validate-then-consume,
 // incremental future settlement, resumeAuto, OS calls as values, coroutines
@@ -15,8 +15,8 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart' show hostObjectOf;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';

@@ -1,4 +1,4 @@
-// Monty and its sessions (lib/src/worker/monty_pool.dart,
+// Monty and its sessions (lib/src/worker/monty.dart,
 // pool_session.dart) over scripted workers: checkout and Configure, feedRun,
 // print delivery in order, idle close and Reset, close during host code,
 // requestTimeout and the duration backstops on turns only, the memory-limit
@@ -11,8 +11,8 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';

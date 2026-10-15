@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart' show MontyNone;
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';

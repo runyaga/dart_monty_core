@@ -7,7 +7,7 @@
 // ignore_for_file: prefer-correct-test-file-name
 
 import 'package:collection/collection.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 
 Future<void> main(List<String> args) async {

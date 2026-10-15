@@ -395,19 +395,25 @@ String _pyRepr(String text) {
   final quote = text.contains("'") && !text.contains('"') ? '"' : "'";
   final out = StringBuffer(quote);
   for (final rune in text.runes) {
-    final c = String.fromCharCode(rune);
-    out.write(switch (c) {
-      r'\' => r'\\',
-      '\n' => r'\n',
-      '\r' => r'\r',
-      '\t' => r'\t',
-      _ when c == quote => '\\$c',
-      _ when rune < 0x20 || rune == 0x7f =>
-        '\\x${rune.toRadixString(16).padLeft(2, '0')}',
-      _ => c,
-    });
+    out.write(_pyReprRune(rune, quote));
   }
   out.write(quote);
 
   return out.toString();
+}
+
+/// One code point of [_pyRepr]'s output, inside [quote]s.
+String _pyReprRune(int rune, String quote) {
+  final c = String.fromCharCode(rune);
+
+  return switch (c) {
+    r'\' => r'\\',
+    '\n' => r'\n',
+    '\r' => r'\r',
+    '\t' => r'\t',
+    _ when c == quote => '\\$c',
+    _ when rune < 0x20 || rune == 0x7f =>
+      '\\x${rune.toRadixString(16).padLeft(2, '0')}',
+    _ => c,
+  };
 }
