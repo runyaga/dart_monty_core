@@ -37,9 +37,10 @@ final class WorkerChannel implements MontyChannel {
   /// terminated and the spawn fails with [CrashCause.killed]: a Worker that
   /// loads but never answers would otherwise wait forever.
   ///
-  /// Throws [MontyCrashedError] if the Worker cannot start
-  /// ([CrashCause.vanished]) or speaks another protocol version
-  /// ([CrashCause.fatal]).
+  /// Throws [MontyCrashedError] if the module cannot be fetched or compiled
+  /// or the browser refuses the Worker ([CrashCause.spawn]), if the Worker
+  /// cannot start ([CrashCause.vanished]), or if it speaks another protocol
+  /// version ([CrashCause.fatal]).
   static Future<WorkerChannel> spawn(
     WasmModuleCache cache, {
     String workerUrl = defaultWorkerUrl,
@@ -48,7 +49,13 @@ final class WorkerChannel implements MontyChannel {
   }) async {
     // A cancel that lands after this is handled at the greeting below.
     final module = await _moduleUnlessCancelled(cache, cancelled);
-    final worker = _Worker(workerUrl.toJS);
+    final _Worker worker;
+    try {
+      worker = _Worker(workerUrl.toJS);
+    } on Object catch (error) {
+      // The browser refuses the script (another origin, say).
+      throw spawnError('Worker $workerUrl: $error');
+    }
     final hello = Completer<WorkerMessage>();
     void first(WorkerMessage m) {
       if (!hello.isCompleted) hello.complete(m);

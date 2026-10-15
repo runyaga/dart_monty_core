@@ -388,6 +388,23 @@ void main() {
     }
   });
 
+  // A Worker script the page may not start (another origin: the browser
+  // throws SecurityError) is a spawn failure too.
+  test('a Worker the browser refuses fails spawn as MontyCrashedError '
+      '($backend)', () async {
+    const url = 'http://127.0.0.1:1/w.js';
+    await expectLater(
+      WorkerChannel.spawn(cache, workerUrl: url),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.toString(),
+          'message',
+          startsWith('failed to spawn monty worker: Worker $url: '),
+        ),
+      ),
+    );
+  });
+
   // A module that cannot be fetched or compiled is a spawn failure too,
   // not the browser's own exception.
   for (final (name, url, prefix) in [
