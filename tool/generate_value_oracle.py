@@ -129,6 +129,12 @@ OTHER: dict[str, list[Any]] = {
     'time_12_+1h': ['time', 12, 0, 0, 0, UTC1, 0],
     'time_11_utc': ['time', 11, 0, 0, 0, 0, 0],
     'time_12_naive': ['time', 12, 0, 0, 0, None, 0],
+    # Sub-minute offsets: upstream subtracts the offset in whole seconds
+    # (crates/monty/src/types/time.rs:139-147), it does not floor to minutes.
+    'time_1_utc': ['time', 1, 0, 0, 0, 0, 0],
+    'time_1_0_30_utc': ['time', 1, 0, 30, 0, 0, 0],
+    'time_1_0_30_+30s': ['time', 1, 0, 30, 0, 30, 0],
+    'time_1_-30s': ['time', 1, 0, 0, 0, -30, 0],
     'path_a//b': ['path', 'a//b'],
     'path_a/b': ['path', 'a/b'],
     'path_./a/': ['path', './a/'],
@@ -170,6 +176,10 @@ OTHER_PAIRS = [
     ('time_12_+1h', 'time_11_utc'),
     ('time_12_naive', 'time_11_utc'),
     ('time_12_naive', 'time_12_+1h'),
+    ('time_1_0_30_+30s', 'time_1_utc'),
+    ('time_1_0_30_utc', 'time_1_-30s'),
+    ('time_1_0_30_+30s', 'time_1_0_30_utc'),
+    ('time_1_-30s', 'time_1_utc'),
     ('path_a//b', 'path_a/b'),
     ('path_./a/', 'path_a'),
     ('path_//a', 'path_/a'),

@@ -454,9 +454,11 @@ final class _Feed {
     final wrapped = call.os && acceptsFuture(call.name);
     _calls[id] = _Plain(value, wrapped: wrapped);
     if (wrapped) _shiftAfter(id);
-    // Python awaits an eager call at once; an OS call takes a plain value
-    // (os-awaits.md).
-    if (call.eager && !call.os) {
+    // Python awaits an eager call at once, so a plain value raises unless
+    // the call is an OS sleep, whose answer upstream wraps itself
+    // (`accepts_future`; the worker session answers no other OS call with a
+    // future, host_answers.dart `_handle`).
+    if (call.eager && !wrapped) {
       return _raise(_notAwaitable(value, gathered: false));
     }
 

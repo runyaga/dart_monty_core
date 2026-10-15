@@ -321,27 +321,27 @@ final class MontyTime extends MontyValue {
       'MontyTime($hour:$minute:$second.$microsecond'
       '${offsetSeconds == null ? '' : ' offset=$offsetSeconds'})';
 
-  /// As Python's `time.__eq__`: two naive times by their fields; two aware
-  /// ones by the minutes after subtracting each offset (floored to whole
-  /// minutes, as Python does), not wrapped at midnight, then seconds and
-  /// microseconds; a naive time never equals an aware one. [fold] and
-  /// [timezoneName] are not compared.
+  /// As upstream's `time.__eq__` (`Time::py_eq_impl`): two naive times by
+  /// their fields; two aware ones by the microseconds of the day less each
+  /// offset in whole seconds (`adjusted_micros`), not wrapped at midnight; a
+  /// naive time never equals an aware one. [fold] and [timezoneName] are not
+  /// compared.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is MontyTime &&
           (offsetSeconds == null) == (other.offsetSeconds == null) &&
-          other._minutes == _minutes &&
-          other.second == second &&
-          other.microsecond == microsecond);
+          other._adjustedMicros == _adjustedMicros);
 
-  /// The minutes of the day [==] compares: less the offset when aware.
-  int get _minutes => hour * 60 + minute - ((offsetSeconds ?? 0) / 60).floor();
+  /// The microseconds of the day [==] compares: less the offset when aware
+  /// (upstream `Time::adjusted_micros`, crates/monty/src/types/time.rs:139).
+  int get _adjustedMicros =>
+      ((hour * 60 + minute) * 60 + second - (offsetSeconds ?? 0)) * 1000000 +
+      microsecond;
 
   /// The hash of what [==] compares.
   @override
-  int get hashCode =>
-      Object.hash(offsetSeconds == null, _minutes, second, microsecond);
+  int get hashCode => Object.hash(offsetSeconds == null, _adjustedMicros);
 
   @override
   Map<String, Object?> _toJson() => {
