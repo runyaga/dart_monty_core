@@ -17,9 +17,9 @@
       "pct": 97.37
     },
     "lib/src/fake_monty_session.dart": {
-      "found": 198,
-      "hit": 194,
-      "pct": 97.98
+      "found": 203,
+      "hit": 199,
+      "pct": 98.03
     },
     "lib/src/fake_script.dart": {
       "found": 39,
@@ -27,9 +27,9 @@
       "pct": 100.0
     },
     "lib/src/fake_worker.dart": {
-      "found": 275,
-      "hit": 266,
-      "pct": 96.73
+      "found": 279,
+      "hit": 270,
+      "pct": 96.77
     },
     "lib/src/mount/memory_mounted_os_handler.dart": {
       "found": 282,
@@ -247,9 +247,9 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_session.dart": {
-      "found": 488,
-      "hit": 482,
-      "pct": 98.77
+      "found": 501,
+      "hit": 495,
+      "pct": 98.8
     },
     "lib/src/worker/monty_snapshot.dart": {
       "found": 87,
@@ -267,8 +267,8 @@
       "pct": 97.4
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 204,
-      "hit": 204,
+      "found": 228,
+      "hit": 228,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -358,8 +358,8 @@
     }
   },
   "total": {
-    "found": 6464,
-    "hit": 6375,
-    "pct": 98.62
+    "found": 6510,
+    "hit": 6421,
+    "pct": 98.63
   }
 }
