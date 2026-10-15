@@ -78,7 +78,7 @@ run_target integration --test integration
 # tree is bind-mounted and an rlib compiled on the host keeps the path it was
 # compiled with. An earlier version hardcoded the candidates, which failed the
 # moment it ran somewhere with a different $HOME: inside the container $HOME is
-# /home/klangk, so the macOS spelling /Users/runyaga/... never matched and the
+# /home/klangk, so the macOS spelling a macOS home path never matched and the
 # paths stayed split -- 51.27% against a 74% floor, a false red.
 #
 # A prefix is accepted as a root ONLY if EVERY ONE of this crate's source files

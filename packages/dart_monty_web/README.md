@@ -211,7 +211,7 @@ tests the configuration that actually ships.
 **Not yet verified on the live Pages origin.** The measurements above were taken
 against `127.0.0.1`. A service worker requires a secure context, which `localhost`
 and `https://` both satisfy, so this is expected to hold — but it has not been
-observed on `runyaga.github.io`, and a service worker that fails to install there
+observed on the published Pages host, and a service worker that fails to install there
 would take the dart2wasm demo down silently. Confirming it is a release-cycle
 step.
 

@@ -68,3 +68,6 @@ site/
 probe*.dart
 __pycache__/
 .venv-oracle/
+
+# Coverage artifacts
+native/lcov.info

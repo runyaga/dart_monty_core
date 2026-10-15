@@ -203,7 +203,7 @@ fi
 # resolve, and it does so SILENTLY -- no error, no warning, exit 0. Measured
 # on 2026-09-17 at 5102de3, one variable changed and nothing else:
 #
-#     .dart_tool resolved to /Users/runyaga/.pub-cache  ->  19 issues
+#     .dart_tool resolved to $HOME/.pub-cache      ->  19 issues
 #     .dart_tool resolved to /home/.pub-cache (absent)  ->  23 issues
 #
 # The four extra hits were all `prefer-moving-to-variable` in a single file,

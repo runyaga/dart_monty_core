@@ -1307,7 +1307,7 @@ fn snapshot_round_trip_via_ffi() {
 // ---------------------------------------------------------------------------
 // P0: Snapshot format incompatibility guard
 //
-// The migration from pydantic/monty@87f8f31 to runyaga/monty@runyaga/main
+// The migration from the previous upstream monty pin to the current one
 // changed the heap serialization format. Old snapshots CANNOT be restored
 // with the new runtime. This test pins the current format so any future
 // heap refactoring is caught immediately.

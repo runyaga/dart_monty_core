@@ -94,7 +94,7 @@ set -uo pipefail
 # host-specific path (it embeds a klangk workspace UUID), so it is overridable;
 # the default is the value the live container was built with, recorded here so
 # the recipe is reproducible rather than approximate.
-DMC_HOME_MOUNT="${DMC_HOME_MOUNT:-/Users/runyaga/dev/klangk/.devenv/state/klangk/data/workspaces/543a45d3-6bdb-4b83-bc94-c3f11aceddf6/home}"
+DMC_HOME_MOUNT="${DMC_HOME_MOUNT:-$HOME/dev/klangk/.devenv/state/klangk/data/workspaces/543a45d3-6bdb-4b83-bc94-c3f11aceddf6/home}"
 # The directory mounted at /work. dart_monty_core lives one level down, so this
 # is the repo's parent: the gate runs at /work/dart_monty_core.
 DMC_WORK_MOUNT="${DMC_WORK_MOUNT:-$(cd "$(dirname "$0")/../.." && pwd)}"

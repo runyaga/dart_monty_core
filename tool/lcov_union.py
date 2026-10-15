@@ -21,7 +21,7 @@ def normalize(sf, roots):
     The tree is bind-mounted, so one file legitimately appears under two paths
     in the same tracefile:
 
-        SF:/Users/runyaga/dev/solpi-bench/dart_monty_core/native/src/lib.rs
+        SF:<macOS home>/dev/<checkout>/dart_monty_core/native/src/lib.rs
         SF:/work/dart_monty_core/native/src/lib.rs
 
     depending on whether the rlib carrying the debug info was compiled on the

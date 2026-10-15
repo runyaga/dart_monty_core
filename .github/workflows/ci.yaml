@@ -339,7 +339,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # Upstream parity: the measured baseline moves only on purpose
   # ---------------------------------------------------------------------------
-  # Runs the parity suite (github.com/runyaga/dart_monty_parity, at the commit
+  # Runs the parity suite (the dart_monty_parity repo, at the commit
   # PARITY_PIN names) against this checkout on the VM (FFI), dart2js and
   # dart2wasm, and asserts its tool/parity/baseline-current.json: every case's
   # result within every re-measured row, every row's status, the PRESENT
@@ -903,7 +903,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # GitHub Pages render gate — the deployed site must load in a real browser
   # ---------------------------------------------------------------------------
-  # https://runyaga.github.io/dart_monty_core/ serves the web REPL against the
+  # The published Pages site serves the web REPL against the
   # SAME committed lib/assets/ bundle consumers get, so this is the only check
   # that the published artefacts resolve and wire up in a browser. A green WASM
   # fixture corpus does not cover it: that drives a test harness, not the

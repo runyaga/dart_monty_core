@@ -60,7 +60,7 @@ const _targets = ['mount_fs__ops.py', 'mount_fs__errors.py'];
 // below used to hardcode. Without the override it still defaults to that
 // path, so the existing setup keeps working.
 final _dir = Platform.environment['MONTY_TEST_CASES'] ??
-    '/Users/runyaga/dev/monty_0_0_19/crates/monty/test_cases';
+    '${Platform.environment['HOME']}/dev/monty_0_0_19/crates/monty/test_cases';
 
 Future<String?> _run(String name) async {
   // REFUSE WITH A SENTENCE, not a PathNotFoundException stack. The corpus
