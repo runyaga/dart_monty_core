@@ -87,8 +87,11 @@ final value = await session.feedRun(
   'f"{greeting}, {fetch(key)}!"',
   inputs: {'greeting': const MontyString('hello'), 'key': const MontyString('k')},
   externalLookup: {
-    'fetch': (List<MontyValue> args, Map<String, MontyValue> kwargs) async =>
-        MontyString('value-for-${(args[0] as MontyString).value}'),
+    'fetch': MontyHostFunction(
+      'fetch',
+      (args, kwargs) async =>
+          MontyString('value-for-${(args[0] as MontyString).value}'),
+    ),
   },
 );
 print(value); // MontyString(hello, value-for-k!)
@@ -99,12 +102,13 @@ print(value); // MontyString(hello, value-for-k!)
 (`ClassInstance`, `ClassType`), whose members the session serves.
 
 `externalLookup` resolves the names the code leaves undefined, when the code
-reads one (upstream's `external_lookup`). An entry is a host function or a
-value (a `MontyValue`, or a host object); a value is converted when the name
-is read and then bound as a global. A host function takes
-`(List<MontyValue> args, Map<String, MontyValue> kwargs)` and returns a
-`MontyValue`, directly or as a future, which is awaited before Python
-resumes; wrap it in `coroutine(...)` to make it an `async def` function, whose
+reads one (upstream's `external_lookup`). Every entry is a `MontyValue`: a
+host function (`MontyHostFunction`), or any other value, a host object
+included, converted when the name is read and then bound as a global. A host
+function's `fn` takes `(List<MontyValue> args, Map<String, MontyValue> kwargs)`
+and returns a `MontyValue`, directly or as a future, which is awaited before
+Python resumes; wrap `fn` in `coroutine(...)` to make it an `async def`
+function, whose
 calls Python awaits (`asyncio.gather` runs them at once). Throw
 `ExternalException('ValueError', 'bad key')` to raise a chosen Python
 exception; any other throw raises `Exception` with its text. `HostClass`

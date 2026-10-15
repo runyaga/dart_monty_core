@@ -61,8 +61,10 @@ Future<void> _stubs(MontySession session) async {
   // ── typeCheckStubs declares host-provided names ───────────────────────────
   print('\n── typeCheckStubs ──');
   final externals = {
-    'fetch_price': (List<MontyValue> args, Map<String, MontyValue> _) =>
-        const MontyFloat(9.5),
+    'fetch_price': MontyHostFunction(
+      'fetch_price',
+      (_, _) => const MontyFloat(9.5),
+    ),
   };
   final total = await session.feedRun(
     'total: float = fetch_price("A1") * 2\ntotal',

@@ -527,7 +527,9 @@ final List<Scenario> scenarios = [
         s.outcome(
           () => s.session.feedRun(
             s.code(0),
-            externalLookup: {'f': s.fn('f', (_, _) => _int(1))},
+            externalLookup: {
+              'f': s.fn('f', (_, _) => _int(1)),
+            },
           ),
         ),
         s.outcome(() => s.session.feedRun(s.code(1))),

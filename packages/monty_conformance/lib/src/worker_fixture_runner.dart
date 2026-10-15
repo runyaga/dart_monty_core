@@ -256,7 +256,10 @@ Future<MontyValue> _drive(
         ? null
         : {
             for (final name in workerFixtureFunctions)
-              name: (args, kwargs) => throw StateError('answered by $name'),
+              name: MontyHostFunction(
+                name,
+                (args, kwargs) => throw StateError('answered by $name'),
+              ),
           },
     os: os.call,
     printCallback: _discard,

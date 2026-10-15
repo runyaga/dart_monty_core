@@ -286,8 +286,8 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     String? cwd,
     OsHandler? os,
@@ -307,8 +307,8 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     String? cwd,
     OsHandler? os,
@@ -331,7 +331,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   }) async => throw _noDump;

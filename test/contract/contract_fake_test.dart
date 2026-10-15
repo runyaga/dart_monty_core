@@ -103,7 +103,10 @@ void main() {
           ..willCall('f')
           ..willReturn(const MontyInt(7));
         try {
-          await fake.feedRun('f()', externalLookup: {'f': (_, _) => result});
+          await fake.feedRun(
+            'f()',
+            externalLookup: {'f': MontyHostFunction('f', (_, _) => result)},
+          );
         } on MontyRuntimeError {
           // The refused value raised in the sandbox; the answers say why.
         }
@@ -130,7 +133,10 @@ void main() {
       // The session runs on: completing the segment makes it playable.
       fake.willReturn(const MontyInt(1));
       expect(
-        await fake.feedRun('f()', externalLookup: {'f': (_, _) => _none}),
+        await fake.feedRun(
+          'f()',
+          externalLookup: {'f': MontyHostFunction('f', (_, _) => _none)},
+        ),
         const MontyInt(1),
       );
       await fake.close();
@@ -207,7 +213,10 @@ void main() {
         ..willCatch()
         ..willReturn(_none);
       await expectLater(
-        fake.feedRun('f()', externalLookup: {'f': (_, _) => _none}),
+        fake.feedRun(
+          'f()',
+          externalLookup: {'f': MontyHostFunction('f', (_, _) => _none)},
+        ),
         throwsStateError,
       );
       await fake.close();
@@ -408,7 +417,10 @@ void main() {
     }
     fake.willReturn(_none);
     await expectLater(
-      fake.feedRun('x', externalLookup: {'f': (_, _) => _none}),
+      fake.feedRun(
+        'x',
+        externalLookup: {'f': MontyHostFunction('f', (_, _) => _none)},
+      ),
       throwsA(
         isA<MontyRuntimeError>().having(
           (e) => e.toString(),
@@ -440,10 +452,16 @@ void main() {
       await fake.feedRun(
         'script',
         externalLookup: {
-          'value': (_, _) => const MontyInt(1),
-          'raises': (_, _) => throw const ExternalException('KeyError', 'k'),
-          'future': coroutine((_, _) async => const MontyInt(3)),
-          'found': (_, _) => _none,
+          'value': MontyHostFunction('value', (_, _) => const MontyInt(1)),
+          'raises': MontyHostFunction(
+            'raises',
+            (_, _) => throw const ExternalException('KeyError', 'k'),
+          ),
+          'future': MontyHostFunction(
+            'future',
+            coroutine((_, _) async => const MontyInt(3)),
+          ),
+          'found': MontyHostFunction('found', (_, _) => _none),
         },
         os: (_, _, _) => throw const OsCallNotHandledException(),
       );

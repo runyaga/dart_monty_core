@@ -121,11 +121,11 @@ final Map<String, MontyValue> _kinds = {
   'tuple': const MontyTuple([MontyInt(1)]),
 };
 
-Object _entry(List<Object?> spec) => switch (spec) {
+MontyValue _entry(List<Object?> spec) => switch (spec) {
   ['v', final v] => _value(v),
   ['k', final String kind] => _kinds[kind]!,
-  ['f'] => _hostFunction,
-  ['c'] => coroutine(_doubling),
+  ['f'] => const MontyHostFunction('f', _hostFunction),
+  ['c'] => MontyHostFunction('c', coroutine(_doubling)),
   ['cyclic'] => _cyclic(),
   ['I'] => ClassInstance(
     const _Point(1, 2),
@@ -136,7 +136,7 @@ Object _entry(List<Object?> spec) => switch (spec) {
   _ => throw ArgumentError.value(spec, 'spec', 'unknown entry'),
 };
 
-Map<String, Object>? _built(Object? values) => switch (values) {
+Map<String, MontyValue>? _built(Object? values) => switch (values) {
   null => null,
   final Map<String, Object?> m => {
     for (final MapEntry(:key, :value) in m.entries)
@@ -154,7 +154,7 @@ bool _isReturned(Object? spec) => switch (spec) {
 
 /// [lookup] built, with each `['from', code]` entry the value [s] returns
 /// for `code`, fed first, as the generator does.
-Future<Map<String, Object>?> _withReturned(
+Future<Map<String, MontyValue>?> _withReturned(
   MontySession s,
   Object? lookup,
 ) async {
@@ -501,29 +501,39 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
       });
     });
 
-    test('divergence: a builtin type called by name from externalLookup '
-        'raises TypeError (upstream runs the type on the host); read '
-        'first, it runs in the sandbox', () async {
-      await withPool((pool) async {
-        final s = await pool.checkout();
-        final type = await s.feedRun('int');
-        await expectLater(
-          s.feedRun('p("42")', externalLookup: {'p': type}),
-          throwsA(
-            isA<MontyRuntimeError>().having(
-              (e) => e.exception.excType,
-              'excType',
-              'TypeError',
+    // The recorded divergence `builtin-type-call-by-name`. Upstream 1.1.0
+    // decodes the proxy to the Python type and calls it on the host:
+    // `p("42")` gives 42 there.
+    test(
+      'divergence builtin-type-call-by-name: a builtin type called by name '
+      'from externalLookup raises TypeError (upstream runs the type on the '
+      'host); read first, it runs in the sandbox',
+      () async {
+        await withPool((pool) async {
+          final s = await pool.checkout();
+          final type = await s.feedRun('int');
+          expect(type, isA<MontyStdTypeProxy>());
+          await expectLater(
+            s.feedRun('p("42")', externalLookup: {'p': type}),
+            throwsA(
+              isA<MontyRuntimeError>()
+                  .having((e) => e.exception.excType, 'excType', 'TypeError')
+                  .having(
+                    (e) => e.exception.message,
+                    'message',
+                    "builtin type 'int' cannot be called from externalLookup "
+                        'by name; read the name first',
+                  ),
             ),
-          ),
-        );
-        expect(
-          await s.feedRun('q = p\nq("42")', externalLookup: {'p': type}),
-          const MontyInt(42),
-        );
-        await s.close();
-      });
-    });
+          );
+          expect(
+            await s.feedRun('q = p\nq("42")', externalLookup: {'p': type}),
+            const MontyInt(42),
+          );
+          await s.close();
+        });
+      },
+    );
 
     test('a feed the type check rejects does not adopt its cwd '
         '(upstream: / then /a)', () async {

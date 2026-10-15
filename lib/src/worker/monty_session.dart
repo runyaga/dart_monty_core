@@ -49,11 +49,11 @@ import 'package:fixnum/fixnum.dart';
 ///
 /// A feed's `externalLookup` resolves the names the code leaves undefined,
 /// lazily, when the code reads one (upstream's `external_lookup`); a name in
-/// `inputs` too is served by the input. An entry is a host function, taking the
-/// call's positional and keyword arguments
-/// (`(List<MontyValue> args, Map<String, MontyValue> kwargs)`) and returning a
-/// `FutureOr<MontyValue>`, or a value: a [MontyValue] or a host object's
-/// wrapper. A read of a host function gives a function named by its key, and a
+/// `inputs` too is served by the input. An entry is a [MontyValue]: a host
+/// function ([MontyHostFunction]), whose `fn` takes the call's positional and
+/// keyword arguments and returns a `FutureOr<MontyValue>`, or any other value,
+/// a host object's wrapper included. A read of a host function gives a
+/// function named by its key (its docstring kept), and a
 /// call to that name runs the entry, outside the turn: it may take as long as
 /// it likes, and `requestTimeout` does not count it. A read of a value converts
 /// it then and binds it as a global, so later feeds see it without the lookup.
@@ -61,10 +61,9 @@ import 'package:fixnum/fixnum.dart';
 /// not callable"), and an absent name raises `NameError`. A value the converter
 /// refuses (a cyclic list, an unpaired surrogate) is not answered: the feed
 /// throws its [MontyRuntimeError], which a sandbox `try` does not catch, and
-/// the session is finished, as upstream discards the checkout. An entry that is
-/// none of these throws [ArgumentError] before anything is sent.
+/// the session is finished, as upstream discards the checkout.
 ///
-/// A host function marked with `coroutine` is a coroutine, as an
+/// A host function whose `fn` is marked with `coroutine` is a coroutine, as an
 /// `async def` host function is upstream: a call the sandbox awaits with
 /// nothing else to run is awaited in place, any other gets a pending future
 /// the sandbox awaits later, settled when its Dart future completes.
@@ -81,9 +80,9 @@ abstract interface class MontySession {
   /// Runs [code] to completion and returns its value: the last expression's,
   /// or [MontyNone].
   ///
-  /// [inputs] are bound as global names first: values, or host objects'
-  /// wrappers ([ClassInstance], [ClassType]), whose members the session
-  /// serves.
+  /// [inputs] are bound as global names first: values, host objects'
+  /// wrappers ([ClassInstance], [ClassType]) among them, whose members the
+  /// session serves.
   ///
   /// [externalLookup] resolves the names the code leaves undefined, and
   /// [cwd] switches the working directory first (see the class
@@ -119,8 +118,8 @@ abstract interface class MontySession {
   /// `TimeoutError`.
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     String? cwd,
     OsHandler? os,
@@ -140,8 +139,8 @@ abstract interface class MontySession {
   /// as to a feed's turns.
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     String? cwd,
     OsHandler? os,
@@ -179,7 +178,7 @@ abstract interface class MontySession {
   /// limit of 0 it aborts the load with an in-sandbox `RuntimeError`.
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   });
@@ -346,14 +345,14 @@ final class _LeasedSession implements MontySession {
   @override
   Future<MontyValue> feedRun(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   }) => Future.sync(() {
-    _checkFeedArguments(externalLookup, cwd);
+    checkCwdText(cwd);
     _hold.used = true;
 
     return _withTurn(
@@ -372,14 +371,14 @@ final class _LeasedSession implements MontySession {
   @override
   Future<MontySnapshot> feedStart(
     String code, {
-    Map<String, Object>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? inputs,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   }) => Future.sync(() {
-    _checkFeedArguments(externalLookup, cwd);
+    checkCwdText(cwd);
     _hold.used = true;
     final drive = _FeedDrive(
       this,
@@ -419,11 +418,10 @@ final class _LeasedSession implements MontySession {
   @override
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
   }) => Future.sync(() {
-    checkExternalLookup(externalLookup);
     _hold.claimFresh();
     final drive = _FeedDrive(
       this,
@@ -564,7 +562,7 @@ final class _LeasedSession implements MontySession {
 
   Future<MontyValue> _drive(
     String code, {
-    required Map<String, Object>? inputs,
+    required Map<String, MontyValue>? inputs,
     required String? cwd,
     required HostAnswers host,
     required ProtoPrintCallback? printCallback,
@@ -628,19 +626,12 @@ ProtoPrintCallback _printingIn(Object session, ProtoPrintCallback print) =>
       },
     );
 
-/// Throws [ArgumentError] for a feed's [externalLookup] entry or [cwd]
-/// that cannot be sent, before anything else.
-void _checkFeedArguments(Map<String, Object>? externalLookup, String? cwd) {
-  checkCwdText(cwd);
-  checkExternalLookup(externalLookup);
-}
-
 /// The host side of one feed of a session with [config]: [externalLookup]
 /// and [os], and system sleeps waited up to the session's maximum.
 HostAnswers _hostFor(
   ProtoSession session,
   SessionConfig config,
-  Map<String, Object>? externalLookup,
+  Map<String, MontyValue>? externalLookup,
   OsHandler? os,
 ) => HostAnswers(
   externalLookup: externalLookup ?? const {},

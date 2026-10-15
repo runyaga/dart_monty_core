@@ -5,10 +5,10 @@
 //
 // Python code calls back into Dart two ways:
 //
-//  1. externalLookup — named host functions given to a feed. Python calls them
-//     like any function; each receives the positional and keyword
-//     arguments as MontyValues and returns a MontyValue (or a Future of
-//     one, which is awaited).
+//  1. externalLookup — named host functions (MontyHostFunction) given to a
+//     feed. Python calls them like any function; each receives the
+//     positional and keyword arguments as MontyValues and returns a
+//     MontyValue (or a Future of one, which is awaited).
 //
 //  2. os — an OsHandler that answers the sandbox's OS calls: pathlib,
 //     os.getenv, os.environ and the like. Each call arrives with a dotted
@@ -42,11 +42,17 @@ greeting = greet(name="World")
 ''',
     externalLookup: {
       // Positional arguments arrive in the list.
-      'add': (args, _) =>
-          MontyInt((args[0] as MontyInt).value + (args[1] as MontyInt).value),
+      'add': MontyHostFunction(
+        'add',
+        (args, _) =>
+            MontyInt((args[0] as MontyInt).value + (args[1] as MontyInt).value),
+      ),
       // Keyword arguments arrive in the map.
-      'greet': (_, kwargs) =>
-          MontyString('Hello, ${(kwargs['name']! as MontyString).value}!'),
+      'greet': MontyHostFunction(
+        'greet',
+        (_, kwargs) =>
+            MontyString('Hello, ${(kwargs['name']! as MontyString).value}!'),
+      ),
     },
   );
   final result = await session.feedRun('result');
@@ -60,10 +66,13 @@ greeting = greet(name="World")
   await session.feedRun(
     'data = fetch_data()',
     externalLookup: {
-      'fetch_data': (_, _) async => MontyValue.fromDart({
-        'name': 'alice',
-        'scores': [98, 87, 92],
-      }),
+      'fetch_data': MontyHostFunction(
+        'fetch_data',
+        (_, _) async => MontyValue.fromDart({
+          'name': 'alice',
+          'scores': [98, 87, 92],
+        }),
+      ),
     },
   );
   final scores = await session.feedRun('max(data["scores"])');
@@ -81,8 +90,10 @@ except KeyError as e:
 out
 ''',
     externalLookup: {
-      'lookup': (args, _) =>
-          throw const ExternalException('KeyError', 'missing'),
+      'lookup': MontyHostFunction(
+        'lookup',
+        (args, _) => throw const ExternalException('KeyError', 'missing'),
+      ),
     },
   );
   print('lookup: $caught');

@@ -110,7 +110,10 @@ Future<void> _auto(MontySession session) async {
   var snapshot = await session.feedStart(
     '[double(i) for i in range(3)]',
     externalLookup: {
-      'double': (args, _) => MontyInt((args[0] as MontyInt).value * 2),
+      'double': MontyHostFunction(
+        'double',
+        (args, _) => MontyInt((args[0] as MontyInt).value * 2),
+      ),
     },
   );
   var steps = 0;

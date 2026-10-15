@@ -179,7 +179,7 @@ void attributeSessionTests(String label, WithSession withSession) {
         final caught = await s.feedRun(
           'try:\n  f()\nexcept ValueError as e:\n'
           '  r = (type(e).__name__, str(e))\nr',
-          externalLookup: {'f': f},
+          externalLookup: {'f': MontyHostFunction('f', f)},
           printCallback: _ignore,
         );
         expect(
@@ -190,7 +190,11 @@ void attributeSessionTests(String label, WithSession withSession) {
           ]),
         );
         final e = await _failure(
-          s.feedRun('f()', externalLookup: {'f': f}, printCallback: _ignore),
+          s.feedRun(
+            'f()',
+            externalLookup: {'f': MontyHostFunction('f', f)},
+            printCallback: _ignore,
+          ),
         );
         expect(_attrs(e), _jsonError.attributes);
       });
@@ -387,7 +391,7 @@ void attributeSessionTests(String label, WithSession withSession) {
         expect(
           await s.feedRun(
             "try:\n  f()\nexcept ValueError as e:\n  r = 'caught ' + str(e)\nr",
-            externalLookup: {'f': cyclic},
+            externalLookup: {'f': MontyHostFunction('f', cyclic)},
             printCallback: _ignore,
           ),
           const MontyString('caught Circular reference detected'),
@@ -396,7 +400,7 @@ void attributeSessionTests(String label, WithSession withSession) {
           await s.feedRun(
             'try:\n  f()\nexcept Exception as e:\n'
             "  r = type(e).__name__ + ' ' + str(e)\nr",
-            externalLookup: {'f': surrogate},
+            externalLookup: {'f': MontyHostFunction('f', surrogate)},
             printCallback: _ignore,
           ),
           const MontyString('UnicodeEncodeError $_surrogateText'),
@@ -404,7 +408,7 @@ void attributeSessionTests(String label, WithSession withSession) {
         await expectLater(
           s.feedRun(
             'f()',
-            externalLookup: {'f': cyclic},
+            externalLookup: {'f': MontyHostFunction('f', cyclic)},
             printCallback: _ignore,
           ),
           _throwsCircular,
@@ -413,7 +417,9 @@ void attributeSessionTests(String label, WithSession withSession) {
         expect(
           await s.feedRun(
             'try:\n  await g()\nexcept ValueError as e:\n  r = str(e)\nr',
-            externalLookup: {'g': coroutine((_, _) async => _cyclic())},
+            externalLookup: {
+              'g': MontyHostFunction('g', coroutine((_, _) async => _cyclic())),
+            },
             printCallback: _ignore,
           ),
           const MontyString('Circular reference detected'),
@@ -423,7 +429,7 @@ void attributeSessionTests(String label, WithSession withSession) {
           await s.feedRun(
             "try:\n  f()\nexcept Exception:\n  r = 'caught'\nr",
             externalLookup: {
-              'f': (_, _) => const MontyBytes([256]),
+              'f': MontyHostFunction('f', (_, _) => const MontyBytes([256])),
             },
             printCallback: _ignore,
           ),
@@ -441,7 +447,9 @@ void attributeSessionTests(String label, WithSession withSession) {
         final call =
             await s.feedStart(
                   'f()',
-                  externalLookup: {'f': (_, _) => _cyclic()},
+                  externalLookup: {
+                    'f': MontyHostFunction('f', (_, _) => _cyclic()),
+                  },
                   printCallback: _ignore,
                 )
                 as FunctionSnapshot;

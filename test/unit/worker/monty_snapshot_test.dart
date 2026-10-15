@@ -442,7 +442,9 @@ void main() {
         final snap =
             await s.feedStart(
                   'f()',
-                  externalLookup: {'f': (args, kwargs) => never.future},
+                  externalLookup: {
+                    'f': MontyHostFunction('f', (args, kwargs) => never.future),
+                  },
                 )
                 as FunctionSnapshot;
         final resumed = expectLater(snap.resumeAuto(), throwsA(_finished));
@@ -465,11 +467,11 @@ void main() {
           await s.feedStart(
                 'f()',
                 externalLookup: {
-                  'f': (args, kwargs) {
+                  'f': MontyHostFunction('f', (args, kwargs) {
                     unawaited(session.close());
 
                     return never.future;
-                  },
+                  }),
                 },
               )
               as FunctionSnapshot;
@@ -491,7 +493,10 @@ void main() {
           await s.feedStart(
                 'await af()',
                 externalLookup: {
-                  'af': coroutine((args, kwargs) => never.future),
+                  'af': MontyHostFunction(
+                    'af',
+                    coroutine((args, kwargs) => never.future),
+                  ),
                 },
               )
               as FunctionSnapshot;
@@ -718,10 +723,13 @@ void main() {
           answer([_int(3)]),
         ]);
         final coroutines = {
-          'af': coroutine(
-            (args, kwargs) => firstItem(args) == const MontyInt(1)
-                ? slow.future
-                : fast.future,
+          'af': MontyHostFunction(
+            'af',
+            coroutine(
+              (args, kwargs) => firstItem(args) == const MontyInt(1)
+                  ? slow.future
+                  : fast.future,
+            ),
           ),
         };
         final a =
@@ -751,8 +759,11 @@ void main() {
             await s.feedStart(
                   'await af()',
                   externalLookup: {
-                    'af': coroutine(
-                      (args, kwargs) => Future.value(const MontyInt(7)),
+                    'af': MontyHostFunction(
+                      'af',
+                      coroutine(
+                        (args, kwargs) => Future.value(const MontyInt(7)),
+                      ),
                     ),
                   },
                 )
@@ -789,11 +800,12 @@ void main() {
           await s.feedStart(
                 'f(4) + g()',
                 externalLookup: {
-                  'f':
-                      (List<MontyValue> args, Map<String, MontyValue> kwargs) =>
-                          Future.value(
-                            MontyInt((firstItem(args) as MontyInt).value * 10),
-                          ),
+                  'f': MontyHostFunction(
+                    'f',
+                    (args, kwargs) => Future.value(
+                      MontyInt((firstItem(args) as MontyInt).value * 10),
+                    ),
+                  ),
                 },
               )
               as FunctionSnapshot;
@@ -812,7 +824,9 @@ void main() {
       final snap =
           await s.feedStart(
                 'f',
-                externalLookup: {'f': (a, k) => const MontyNone()},
+                externalLookup: {
+                  'f': MontyHostFunction('f', (a, k) => const MontyNone()),
+                },
               )
               as NameLookupSnapshot;
       await snap.resumeAuto();
@@ -876,10 +890,13 @@ void main() {
         final run = s.feedRun(
           'await asyncio.gather(af(1), af(2))',
           externalLookup: {
-            'af': coroutine(
-              (args, kwargs) => firstItem(args) == const MontyInt(1)
-                  ? slow.future
-                  : Future.value(const MontyInt(20)),
+            'af': MontyHostFunction(
+              'af',
+              coroutine(
+                (args, kwargs) => firstItem(args) == const MontyInt(1)
+                    ? slow.future
+                    : Future.value(const MontyInt(20)),
+              ),
             ),
           },
         );
@@ -983,9 +1000,12 @@ void main() {
         await s.feedRun(
           'await asyncio.gather(af())',
           externalLookup: {
-            'af': coroutine(
-              (args, kwargs) => Future.error(
-                const ExternalException('ValueError', 'no'),
+            'af': MontyHostFunction(
+              'af',
+              coroutine(
+                (args, kwargs) => Future.error(
+                  const ExternalException('ValueError', 'no'),
+                ),
               ),
             ),
           },
@@ -1007,7 +1027,10 @@ void main() {
         await s.feedRun(
           'await asyncio.gather(af())',
           externalLookup: {
-            'af': coroutine((args, kwargs) => Future.value(_unhashableKey)),
+            'af': MontyHostFunction(
+              'af',
+              coroutine((args, kwargs) => Future.value(_unhashableKey)),
+            ),
           },
         );
         expect(_settled(itemAt(ch.requests, 3)), {1: 'Exception'});
@@ -1054,11 +1077,11 @@ void main() {
         s.feedRun(
           'f(1)',
           externalLookup: {
-            'f': (args, kwargs) {
+            'f': MontyHostFunction('f', (args, kwargs) {
               called = true;
 
               return const MontyNone();
-            },
+            }),
           },
         ),
         throwsA(
@@ -1285,15 +1308,14 @@ void main() {
             await s.feedStart(
                   'f(1, a=2, b=3)',
                   externalLookup: {
-                    'f':
-                        (
-                          List<MontyValue> args,
-                          Map<String, MontyValue> kwargs,
-                        ) {
-                          seen = Map.of(kwargs);
+                    'f': MontyHostFunction('f', (
+                      args,
+                      kwargs,
+                    ) {
+                      seen = Map.of(kwargs);
 
-                          return const MontyNone();
-                        },
+                      return const MontyNone();
+                    }),
                   },
                 )
                 as FunctionSnapshot;

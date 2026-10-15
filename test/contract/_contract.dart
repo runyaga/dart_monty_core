@@ -138,15 +138,16 @@ final class Side {
 
   /// The host function [name], recording each call before running [body]
   /// (a call returning `None` when no body is given).
-  ProtoExternalFunction fn(String name, [Body? body]) => (args, kwargs) {
-    trace.add('call $name${showArgs(args, kwargs)}');
+  MontyHostFunction fn(String name, [Body? body]) =>
+      MontyHostFunction(name, (args, kwargs) {
+        trace.add('call $name${showArgs(args, kwargs)}');
 
-    return body == null ? const MontyNone() : body(args, kwargs);
-  };
+        return body == null ? const MontyNone() : body(args, kwargs);
+      });
 
   /// The host coroutine [name], as [fn].
-  ProtoExternalFunction async(String name, [Body? body]) =>
-      coroutine(fn(name, body));
+  MontyHostFunction async(String name, [Body? body]) =>
+      MontyHostFunction(name, coroutine(fn(name, body).fn));
 
   /// An OS handler recording each call before running [body].
   OsHandler os(
@@ -177,7 +178,7 @@ final class Side {
   Future<void> run(
     int i, {
     Map<String, MontyValue>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? externalLookup,
     OsHandler? os,
   }) => end(
     () => session.feedRun(
@@ -208,7 +209,7 @@ final class Side {
   Future<MontySnapshot?> start(
     int i, {
     Map<String, MontyValue>? inputs,
-    Map<String, Object>? externalLookup,
+    Map<String, MontyValue>? externalLookup,
     OsHandler? os,
   }) => step(
     () => session.feedStart(

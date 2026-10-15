@@ -104,8 +104,8 @@ final class ProtoSession {
   /// type-checking session's check rejects throws [MontyTypingError].
   Future<FeedResult> feed(
     String code, {
-    Map<String, Object> inputs = const {},
-    Map<String, Object> externalLookup = const {},
+    Map<String, MontyValue> inputs = const {},
+    Map<String, MontyValue> externalLookup = const {},
     OsHandler? onOsCall,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
@@ -132,7 +132,7 @@ final class ProtoSession {
   Future<FeedResult> drive(
     String code,
     HostAnswers host, {
-    Map<String, Object> inputs = const {},
+    Map<String, MontyValue> inputs = const {},
     String? cwd,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
@@ -629,7 +629,7 @@ const String defaultCwd = '/';
 /// [ProtoSession]).
 pb.ParentRequest feedRequest(
   String code,
-  Map<String, Object> inputs, {
+  Map<String, MontyValue> inputs, {
   String? cwd,
   bool skipTypeCheck = false,
   HostObjects? objects,

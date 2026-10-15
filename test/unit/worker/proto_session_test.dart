@@ -393,7 +393,12 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'fetch',
-        externalLookup: {'fetch': (args, kwargs) => const MontyNone()},
+        externalLookup: {
+          'fetch': MontyHostFunction(
+            'fetch',
+            (args, kwargs) => const MontyNone(),
+          ),
+        },
       );
       final resume = itemAt(ch.requests, 2).resumeNameLookup;
       expect(resume.whichKind(), pb.ResumeNameLookup_Kind.value);
@@ -438,11 +443,14 @@ void main() {
       final r = await s.feed(
         "r = fetch(1, mode='x')\nr + '!'",
         externalLookup: {
-          'fetch': (List<MontyValue> args, Map<String, MontyValue> kwargs) {
+          'fetch': MontyHostFunction('fetch', (
+            args,
+            kwargs,
+          ) {
             calls.add((args, kwargs));
 
             return const MontyString('ok');
-          },
+          }),
         },
       );
       final (args, kwargs) = onlyItem(calls);
@@ -481,9 +489,14 @@ void main() {
         await s.feed(
           'f(); g()',
           externalLookup: {
-            'f': (args, kwargs) =>
-                throw const ExternalException('KeyError', 'no'),
-            'g': (args, kwargs) => throw StateError('broken'),
+            'f': MontyHostFunction(
+              'f',
+              (args, kwargs) => throw const ExternalException('KeyError', 'no'),
+            ),
+            'g': MontyHostFunction(
+              'g',
+              (args, kwargs) => throw StateError('broken'),
+            ),
           },
         );
         final f = itemAt(ch.requests, 2).resumeCall.result.error;
@@ -541,7 +554,12 @@ void main() {
           answer([completeNone()]),
         ]);
         final s = await ProtoSession.open(ch);
-        await s.feed('f()', externalLookup: {'f': (args, kwargs) => value});
+        await s.feed(
+          'f()',
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => value),
+          },
+        );
         final result = itemAt(ch.requests, 2).resumeCall.result;
         expect(result.whichKind(), pb.ExtFunctionResult_Kind.error);
         expect(result.error.message, contains('Invalid argument'));
@@ -577,7 +595,12 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'f()',
-        externalLookup: {'f': (args, kwargs) => const MontyString('\uD800')},
+        externalLookup: {
+          'f': MontyHostFunction(
+            'f',
+            (args, kwargs) => const MontyString('\uD800'),
+          ),
+        },
       );
       final result = itemAt(ch.requests, 2).resumeCall.result;
       expect(result.error.excType, 'UnicodeEncodeError');
@@ -599,7 +622,9 @@ void main() {
       final s = await ProtoSession.open(ch);
       await s.feed(
         'f()',
-        externalLookup: {'f': (args, kwargs) => const MontyNone()},
+        externalLookup: {
+          'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+        },
       );
       final error = itemAt(ch.requests, 2).resumeCall.result.error;
       expect(error.message, contains('a keyword argument name must be a str'));
@@ -619,11 +644,14 @@ void main() {
         await s.feed(
           'f(1j)',
           externalLookup: {
-            'f': (List<MontyValue> args, Map<String, MontyValue> kwargs) {
+            'f': MontyHostFunction('f', (
+              args,
+              kwargs,
+            ) {
               got = args;
 
               return const MontyNone();
-            },
+            }),
           },
         );
         expect(got, [_complexValue]);
@@ -1062,11 +1090,11 @@ void main() {
         s.feed(
           'f(1)',
           externalLookup: {
-            'f': (args, kwargs) {
+            'f': MontyHostFunction('f', (args, kwargs) {
               called = true;
 
               return const MontyNone();
-            },
+            }),
           },
         ),
         violation(notBelow),
@@ -1107,7 +1135,9 @@ void main() {
       await expectLater(
         s.feed(
           'f(k=1)',
-          externalLookup: {'f': (args, kwargs) => const MontyNone()},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+          },
         ),
         violation(
           'invalid payload from worker: invalid value for Arena: value root 9 '

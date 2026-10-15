@@ -66,7 +66,9 @@ Future<void> main() async {
         session,
         'for i in range(10):\n    ping()',
         'RuntimeError',
-        externalLookup: {'ping': (_, _) => const MontyNone()},
+        externalLookup: {
+          'ping': MontyHostFunction('ping', (_, _) => const MontyNone()),
+        },
       );
     }, limits: const ResourceLimits(maxSuspensions: 5));
 
@@ -103,8 +105,7 @@ Future<void> _expectLimit(
   MontySession session,
   String code,
   String excType, {
-  Map<String, MontyValue Function(List<MontyValue>, Map<String, MontyValue>)>?
-  externalLookup,
+  Map<String, MontyValue>? externalLookup,
 }) async {
   try {
     await session.feedRun(code, externalLookup: externalLookup);

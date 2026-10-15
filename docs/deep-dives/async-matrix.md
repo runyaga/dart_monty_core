@@ -8,9 +8,10 @@ and on the web.
 ## The two ways to answer
 
 1. **`feedRun(code, externalLookup: {...})`.** The session runs the host
-   function and awaits its `Future` Dart-side before Python resumes. To
-   Python the call is synchronous: it returns a plain value. A function
-   wrapped in `coroutine(...)` is an `async def` function instead: each
+   function (a `MontyHostFunction`) and awaits its `Future` Dart-side
+   before Python resumes. To Python the call is synchronous: it returns a
+   plain value. A function whose `fn` is wrapped in `coroutine(...)` is an
+   `async def` function instead: each
    call is an awaitable that Python awaits, and the session settles it when
    the Dart future completes.
 2. **`feedStart(code)` and the snapshots.** The caller answers each

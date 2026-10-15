@@ -189,12 +189,15 @@ void main() {
         'import asyncio\nawait asyncio.gather(af(1), af(2))',
         printCallback: _ignore,
         externalLookup: {
-          'af': coroutine((args, kwargs) async {
-            final n = (firstItem(args) as MontyInt).value;
-            await Future<void>.delayed(Duration(milliseconds: (3 - n) * 10));
+          'af': MontyHostFunction(
+            'af',
+            coroutine((args, kwargs) async {
+              final n = (firstItem(args) as MontyInt).value;
+              await Future<void>.delayed(Duration(milliseconds: (3 - n) * 10));
 
-            return MontyInt(n * 10);
-          }),
+              return MontyInt(n * 10);
+            }),
+          ),
         },
       );
       expect(value, const MontyList([MontyInt(10), MontyInt(20)]));
@@ -289,7 +292,12 @@ void main() {
       final value = await s.feedRun(
         'fetch',
         printCallback: _ignore,
-        externalLookup: {'fetch': (args, kwargs) => const MontyNone()},
+        externalLookup: {
+          'fetch': MontyHostFunction(
+            'fetch',
+            (args, kwargs) => const MontyNone(),
+          ),
+        },
       );
       expect(value, const MontyString('fetch'));
     });

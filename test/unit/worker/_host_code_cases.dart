@@ -257,7 +257,12 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
           await s.feedRun(
             _catchF,
             printCallback: _ignore,
-            externalLookup: {'f': (args, kwargs) => throw StateError('x')},
+            externalLookup: {
+              'f': MontyHostFunction(
+                'f',
+                (args, kwargs) => throw StateError('x'),
+              ),
+            },
           ),
           _caught('Exception', "Exception('Bad state: x')", ['Bad state: x']),
         );
@@ -272,8 +277,10 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
             _catchF,
             printCallback: _ignore,
             externalLookup: {
-              'f': (args, kwargs) =>
-                  throw const ExternalException('ValueError'),
+              'f': MontyHostFunction(
+                'f',
+                (args, kwargs) => throw const ExternalException('ValueError'),
+              ),
             },
           ),
           _caught('ValueError', "ValueError('')", ['']),
@@ -326,8 +333,11 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
             'r',
             printCallback: _ignore,
             externalLookup: {
-              'f': (args, kwargs) =>
-                  throw const ExternalException('NoSuchError', 'm'),
+              'f': MontyHostFunction(
+                'f',
+                (args, kwargs) =>
+                    throw const ExternalException('NoSuchError', 'm'),
+              ),
             },
           ),
           MontyTuple([

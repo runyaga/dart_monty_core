@@ -308,7 +308,9 @@ void main() {
       final value = await session.feedRun(
         'ext()',
         inputs: {'x': const MontyInt(1)},
-        externalLookup: {'ext': (args, kwargs) => const MontyInt(7)},
+        externalLookup: {
+          'ext': MontyHostFunction('ext', (args, kwargs) => const MontyInt(7)),
+        },
         os: (name, args, kwargs) {
           os.add(name);
 
@@ -499,11 +501,11 @@ void main() {
       final first = session.feedRun(
         'wait()',
         externalLookup: {
-          'wait': (args, kwargs) {
+          'wait': MontyHostFunction('wait', (args, kwargs) {
             entered.complete();
 
             return release.future;
-          },
+          }),
         },
         printCallback: _ignore,
       );
@@ -538,7 +540,9 @@ void main() {
       final gate = Completer<void>();
       final first = session.feedRun(
         'print("held")\nf()',
-        externalLookup: {'f': (args, kwargs) => const MontyNone()},
+        externalLookup: {
+          'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+        },
         printCallback: (_, _) => gate.future,
       );
       final queued = expectLater(
@@ -658,7 +662,9 @@ void main() {
       final (seen, record) = _recorder();
       await session.feedRun(
         'f()',
-        externalLookup: {'f': (args, kwargs) => const MontyNone()},
+        externalLookup: {
+          'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+        },
         printCallback: record,
       );
       expect(seen, [('stdout', 'before\n'), ('stdout', 'after\n')]);
@@ -782,7 +788,9 @@ void main() {
       await expectLater(
         session.feedRun(
           'print("a")\nf()',
-          externalLookup: {'f': (args, kwargs) => MontyInt(++calls)},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => MontyInt(++calls)),
+          },
           printCallback: (stream, text) async => throw StateError('sink'),
         ),
         throwsA(_printFailure('Exception', 'Bad state: sink')),
@@ -1268,12 +1276,12 @@ void main() {
       final run = session.feedRun(
         'never()',
         externalLookup: {
-          'never': (args, kwargs) {
+          'never': MontyHostFunction('never', (args, kwargs) {
             entered.complete();
 
             // Never completes: host code is not interrupted.
             return Completer<MontyValue>().future;
-          },
+          }),
         },
         printCallback: _ignore,
       );
@@ -1416,7 +1424,7 @@ void main() {
       await expectLater(
         session.feedRun(
           'g()\n3',
-          externalLookup: {'g': (args, kwargs) => big},
+          externalLookup: {'g': MontyHostFunction('g', (args, kwargs) => big)},
           printCallback: _ignore,
         ),
         throwsA(oversized),
@@ -1441,7 +1449,12 @@ void main() {
       await expectLater(
         session.feedRun(
           'g()\n3',
-          externalLookup: {'g': (args, kwargs) => const MontyString('ok')},
+          externalLookup: {
+            'g': MontyHostFunction(
+              'g',
+              (args, kwargs) => const MontyString('ok'),
+            ),
+          },
           printCallback: _ignore,
         ),
         refusedPending,
@@ -1555,11 +1568,11 @@ void main() {
       final run = session.feedRun(
         'slow()',
         externalLookup: {
-          'slow': (args, kwargs) {
+          'slow': MontyHostFunction('slow', (args, kwargs) {
             entered.complete();
 
             return release.future;
-          },
+          }),
         },
         printCallback: _ignore,
       );
@@ -1691,11 +1704,11 @@ void main() {
       final value = await session.feedRun(
         'slow()',
         externalLookup: {
-          'slow': (args, kwargs) async {
+          'slow': MontyHostFunction('slow', (args, kwargs) async {
             await Future<void>.delayed(const Duration(milliseconds: 120));
 
             return const MontyNone();
-          },
+          }),
         },
         printCallback: _ignore,
       );
@@ -1757,7 +1770,9 @@ void main() {
       await expectLater(
         session.feedRun(
           'f()',
-          externalLookup: {'f': (args, kwargs) => const MontyNone()},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+          },
           printCallback: _ignore,
         ),
         // 200 - 150 + 100.
@@ -1790,7 +1805,9 @@ void main() {
       await expectLater(
         session.feedRun(
           'f(); f()',
-          externalLookup: {'f': (args, kwargs) => const MontyNone()},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+          },
           printCallback: _ignore,
         ),
         // Still 200 - 150 + 100, not 200 - 1 + 100.
@@ -1848,7 +1865,9 @@ void main() {
       await expectLater(
         session.feedRun(
           'while True: f()',
-          externalLookup: {'f': (args, kwargs) => MontyInt(++calls)},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => MontyInt(++calls)),
+          },
           printCallback: _ignore,
         ),
         throwsA(
@@ -1893,7 +1912,9 @@ void main() {
       await expectLater(
         session.feedRun(
           'f(); f()',
-          externalLookup: {'f': (args, kwargs) => const MontyNone()},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+          },
           printCallback: _ignore,
         ),
         throwsA(
@@ -1931,7 +1952,9 @@ void main() {
           limits: ResourceLimits(maxSuspensions: 1),
         ),
       );
-      final externals = {'f': (_, _) => const MontyNone()};
+      final externals = {
+        'f': MontyHostFunction('f', (_, _) => const MontyNone()),
+      };
       for (var i = 0; i < 2; i++) {
         await expectLater(
           session.feedRun(
@@ -1969,7 +1992,9 @@ void main() {
       await expectLater(
         session.feedRun(
           'while True: f()',
-          externalLookup: {'f': (args, kwargs) => const MontyNone()},
+          externalLookup: {
+            'f': MontyHostFunction('f', (args, kwargs) => const MontyNone()),
+          },
           printCallback: _ignore,
         ),
         throwsA(isA<MontyRuntimeError>()),
@@ -2752,7 +2777,7 @@ void main() {
       final value = await session.feedRun(
         'f()',
         externalLookup: {
-          'f': (args, kwargs) async {
+          'f': MontyHostFunction('f', (args, kwargs) async {
             dump = session.dump();
             try {
               await session.feedRun('1', printCallback: _ignore);
@@ -2763,7 +2788,7 @@ void main() {
             }
 
             return const MontyNone();
-          },
+          }),
         },
         printCallback: _ignore,
       );
@@ -2886,12 +2911,12 @@ void main() {
       final feed = session.feedRun(
         'f()',
         externalLookup: {
-          'f': (args, kwargs) {
+          'f': MontyHostFunction('f', (args, kwargs) {
             dump = session.dump();
             dumping.complete();
 
             return never.future;
-          },
+          }),
         },
         printCallback: _ignore,
       );
@@ -3051,11 +3076,11 @@ void main() {
           await session.loadSnapshot(
                 state,
                 externalLookup: {
-                  'f': (args, kwargs) {
+                  'f': MontyHostFunction('f', (args, kwargs) {
                     calls.add('f');
 
                     return const MontyInt(4);
-                  },
+                  }),
                 },
                 printCallback: _ignore,
               )

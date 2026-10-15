@@ -1030,11 +1030,14 @@ void main() {
       final host = HostAnswers(
         objects: objects,
         externalLookup: {
-          'f': (List<MontyValue> args, Map<String, MontyValue> kwargs) {
+          'f': MontyHostFunction('f', (
+            args,
+            kwargs,
+          ) {
             seen = onlyItem(args);
 
             return const MontyNone();
-          },
+          }),
         },
       );
       await host.call(

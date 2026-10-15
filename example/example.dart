@@ -46,8 +46,11 @@ Future<void> main(List<String> args) async {
         'shout(msg)',
         inputs: {'msg': const MontyString('hello')},
         externalLookup: {
-          'shout': (args, _) =>
-              MontyString((args[0] as MontyString).value.toUpperCase()),
+          'shout': MontyHostFunction(
+            'shout',
+            (args, _) =>
+                MontyString((args[0] as MontyString).value.toUpperCase()),
+          ),
         },
       );
       print(shout.dartValue);
@@ -56,11 +59,11 @@ Future<void> main(List<String> args) async {
       final fetched = await session.feedRun(
         'fetch(1) + fetch(2)',
         externalLookup: {
-          'fetch': (args, _) async {
+          'fetch': MontyHostFunction('fetch', (args, _) async {
             await Future<void>.delayed(const Duration(milliseconds: 1));
 
             return MontyInt((args[0] as MontyInt).value * 10);
-          },
+          }),
         },
       );
       print('fetch(1) + fetch(2) = ${fetched.dartValue}');

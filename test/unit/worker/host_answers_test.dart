@@ -465,7 +465,9 @@ void main() {
   test('a lookup resolving to a host function writes its index, 0, '
       "explicitly, as upstream's oneof encoder does", () {
     final host = HostAnswers(
-      externalLookup: {'f': (a, k) => const MontyNone()},
+      externalLookup: {
+        'f': MontyHostFunction('f', (a, k) => const MontyNone()),
+      },
     );
     final lookup = host.lookup('f').resumeNameLookup;
     expect(lookup.hasValue(), isTrue);

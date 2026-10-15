@@ -61,12 +61,13 @@ typedef OsHandler =
 /// upstream: Dart cannot tell an `async` function from one that returns a
 /// [Future], so the mark says which it is.
 ///
-/// A call to the returned function, an `externalLookup` entry, is a
-/// coroutine in the sandbox: one the sandbox awaits with nothing else to
-/// run is awaited in place, and any other gets a pending future, settled
-/// when [function]'s future completes, so `asyncio.gather` runs several at
-/// once. Unmarked, a host function's returned future is awaited and its
-/// value is the call's answer.
+/// A call to the returned function, as the `fn` of an `externalLookup`
+/// entry's [MontyHostFunction], is a coroutine in the sandbox: one the
+/// sandbox awaits with nothing else to run is awaited in place, and any
+/// other gets a pending future, settled when [function]'s future
+/// completes, so `asyncio.gather` runs several at once. Unmarked, a host
+/// function's returned future is awaited and its value is the call's
+/// answer.
 ProtoExternalFunction coroutine(ProtoExternalFunction function) {
   FutureOr<MontyValue> marked(
     List<MontyValue> args,
@@ -332,9 +333,9 @@ final class HostAnswers {
   final HostObjects objects;
 
   /// What names the sandbox leaves undefined resolve to: a host function
-  /// ([ProtoExternalFunction]), or a value ([MontyValue], or a host
-  /// object's wrapper) converted when the name is read.
-  final Map<String, Object> externalLookup;
+  /// ([MontyHostFunction]), or any other value, converted when the name is
+  /// read.
+  final Map<String, MontyValue> externalLookup;
 
   /// The OS handler; without one every OS call is declined.
   final OsHandler? os;
@@ -391,14 +392,14 @@ final class HostAnswers {
     if (entry == null) {
       return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
     }
-    if (entry is! ProtoExternalFunction) {
+    if (entry is! MontyHostFunction) {
       // Upstream calls the entry, whatever it is.
       return _resume(
         call.callId,
         pb.ExtFunctionResult(error: _notCallable(entry)),
       );
     }
-    final function = entry;
+    final function = entry.fn;
     // Building the argument values is inside the guarded body too: a value
     // this driver cannot carry fails the call in Python, and the worker,
     // suspended on it, still gets its answer.
@@ -431,8 +432,13 @@ final class HostAnswers {
         resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
       );
     }
-    if (entry is ProtoExternalFunction) {
-      final arena = pb.Arena(nodeCount: 1, nodes: [functionNode(name)]);
+    if (entry is MontyHostFunction) {
+      // Renamed to its key, as upstream renames the function it converts,
+      // so the call comes back to this entry.
+      final arena = pb.Arena(
+        nodeCount: 1,
+        nodes: [functionNode(name, docstring: entry.docstring)],
+      );
 
       return pb.ParentRequest(
         resumeNameLookup: pb.ResumeNameLookup(values: arena, value: 0),
@@ -842,7 +848,7 @@ final class AsyncDecline implements Exception {
 /// calls the entry itself, so the name is the host type's, as upstream's
 /// Python host object would have it (a `datetime.date`, a
 /// `PurePosixPath`, the wrapper classes), not the sandbox's.
-String _typeName(Object entry) => switch (entry) {
+String _typeName(MontyValue entry) => switch (entry) {
   ClassInstance() => 'ClassInstance',
   ClassType() => 'ClassType',
   // CPython names an exception class without its module; re.PatternError
@@ -861,9 +867,10 @@ String _typeName(Object entry) => switch (entry) {
 /// A builtin type ([MontyStdTypeProxy] of kind `type`) is the one value
 /// upstream can call, since it decodes to the Python type itself: `int("42")`
 /// runs on the host. Dart has no Python builtins to run, so that call raises
-/// `TypeError` instead (a recorded divergence); a read of the name, such as
+/// `TypeError` instead (the recorded divergence
+/// `builtin-type-call-by-name`); a read of the name, such as
 /// `t = p`, gives the sandbox the type, which it calls as upstream does.
-pb.RaisedException _notCallable(Object entry) => raisedException(
+pb.RaisedException _notCallable(MontyValue entry) => raisedException(
   'TypeError',
   switch (entry) {
     MontyStdTypeProxy(kind: 'type', :final name) =>
@@ -901,25 +908,6 @@ const Map<Type, String> _hostTypeNames = {
   MontyClassProxy: 'pydantic_monty.MontyClassProxy',
   MontyStdTypeProxy: 'pydantic_monty.MontyStdTypeProxy',
 };
-
-/// Throws [ArgumentError] for an `externalLookup` entry that is neither a
-/// host function, a [MontyValue], nor a host object's wrapper: before
-/// anything is sent, as `inputs` refuses a Dart object it cannot carry.
-void checkExternalLookup(Map<String, Object>? externalLookup) {
-  for (final MapEntry(:key, :value) in (externalLookup ?? const {}).entries) {
-    if (value is ProtoExternalFunction ||
-        value is MontyValue ||
-        value is ClassInstance ||
-        value is ClassType) {
-      continue;
-    }
-    throw ArgumentError.value(
-      value,
-      'externalLookup[$key]',
-      'not a host function, a MontyValue, a ClassInstance or a ClassType',
-    );
-  }
-}
 
 /// `ResumeCall` declining [callId]'s OS call.
 pb.ParentRequest _notHandled(int callId) =>
