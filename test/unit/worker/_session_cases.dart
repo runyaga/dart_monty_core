@@ -135,10 +135,16 @@ Map<String, Object>? _built(Object? values) => switch (values) {
   null => null,
   final Map<String, Object?> m => {
     for (final MapEntry(:key, :value) in m.entries)
-      if (value is! List<Object?> || value.first != 'from')
+      if (!_isReturned(value))
         key: value is List<Object?> ? _entry(value) : _value(value),
   },
   _ => throw ArgumentError.value(values, 'values'),
+};
+
+/// Whether [spec] is a `['from', code]` entry, built by [_withReturned].
+bool _isReturned(Object? spec) => switch (spec) {
+  ['from', _] => true,
+  _ => false,
 };
 
 /// [lookup] built, with each `['from', code]` entry the value [s] returns
