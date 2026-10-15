@@ -13,7 +13,7 @@ import '_value_oracle.g.dart';
 void main() {
   group('the mode, as upstream parses it', () {
     for (final MapEntry(key: mode, value: outcome) in fileModeOracle.entries) {
-      test('${mode.isEmpty ? '(empty)' : mode.replaceAll('\n', r'\n')}: '
+      test('${_printable(mode)}: '
           '$outcome', () {
         if (outcome.startsWith('ValueError: ')) {
           expect(
@@ -108,3 +108,16 @@ void main() {
 
 /// A bool as Python prints it.
 String _py(bool b) => b ? 'True' : 'False';
+
+/// [text] with every character outside printable ASCII as `\u{hex}`, so a
+/// test name never puts a control byte in the log (a NUL makes the log
+/// binary to the tools that count its tests).
+String _printable(String text) => text.isEmpty
+    ? '(empty)'
+    : [
+        for (final c in text.runes)
+          if (c >= 0x20 && c < 0x7f)
+            String.fromCharCode(c)
+          else
+            '\\u{${c.toRadixString(16)}}',
+      ].join();
