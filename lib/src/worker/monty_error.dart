@@ -97,10 +97,12 @@ final class MontyCrashedError extends MontyError {
     required this.cause,
     required this.timedOut,
     this.detail,
-    this.exitCode,
+    int? exitCode,
     this.stderrTail,
-    this.context,
-  }) : super._(
+    String? context,
+  }) : _exitCode = exitCode,
+       _context = context,
+       super._(
          message,
          MontyExceptionValue(excType: 'RuntimeError', message: message),
        );
@@ -112,7 +114,7 @@ final class MontyCrashedError extends MontyError {
   /// The worker's exit code, when the OS reported one; null for a signal
   /// death, on the web, and for a worker killed at a deadline.
   int? get exitStatus {
-    final code = exitCode;
+    final code = _exitCode;
 
     return timedOut || code == null || code < 0 ? null : code;
   }
@@ -123,16 +125,24 @@ final class MontyCrashedError extends MontyError {
   /// What the channel saw, before [message] framed it. Internal.
   final String? detail;
 
-  /// The worker process's exit code on native, negative for a signal.
-  /// Internal: [exitStatus] is upstream's.
-  final int? exitCode;
+  final int? _exitCode;
 
   /// On native, the last 4 KiB or less of the worker's stderr. Internal.
   final String? stderrTail;
 
+  final String? _context;
+}
+
+/// [MontyCrashedError]'s internal members (pass-3 G2): upstream's error has
+/// only its message and [MontyCrashedError.exitStatus]. The public libraries'
+/// `show` lists leave this extension out.
+extension MontyCrashedErrorInternal on MontyCrashedError {
+  /// The worker process's exit code on native, negative for a signal.
+  int? get exitCode => _exitCode;
+
   /// What the parent was doing when it found the worker gone, for a
-  /// vanished worker; null is [waitingForReply]. Internal.
-  final String? context;
+  /// vanished worker; null is [waitingForReply].
+  String? get context => _context;
 }
 
 /// Why a worker stopped answering.

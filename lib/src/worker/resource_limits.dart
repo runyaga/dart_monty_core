@@ -4,7 +4,7 @@
 /// Upstream's is a TypedDict (`pydantic_monty/__init__.py`); here it is a
 /// small immutable class whose durations are [Duration]s. A value upstream's
 /// argument parsing refuses is an [ArgumentError] with upstream's message,
-/// raised by [ResourceLimits.validate] at checkout.
+/// raised by [ResourceLimitsInternal.validate] at checkout.
 ///
 /// Internal until the cutover exports it; nothing here is exported.
 library;
@@ -80,7 +80,12 @@ final class ResourceLimits {
     maxSuspensions,
     maxTotalSleep,
   );
+}
 
+/// [ResourceLimits]'s internal members (pass-3 G2): the package validates and
+/// encodes limits, and upstream's `ResourceLimits` has neither. The public
+/// libraries' `show` lists leave this extension out.
+extension ResourceLimitsInternal on ResourceLimits {
   /// Throws [ArgumentError] for a negative limit, with upstream's message.
   void validate() {
     validateUnsigned(maxMemory, 'maxMemory');

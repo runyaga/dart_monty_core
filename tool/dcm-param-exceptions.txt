@@ -1,0 +1,8 @@
+# Declarations allowed past dcm's number-of-parameters threshold (6): the
+# entry points that mirror upstream's keyword arguments (CUT1, SURF3 Q2), and
+# nothing else. One line each, tab-separated:
+#   <path>	<Class>.<member>	<parameter count>
+# tool/metrics_ratchet.sh removes a matching violation before the baseline
+# comparison, fails on a line that matches no violation, and allows at most
+# ten lines. A PR that adds a line cites CUT1. Empty until the cutover makes
+# those entry points public.

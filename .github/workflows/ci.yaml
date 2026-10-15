@@ -187,7 +187,9 @@ jobs:
     # code OR docs. This is the one job a docs-only change must still run.
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 10, not 8: the export-boundary self-test alone took about 7.5 minutes,
+    # and its post-cutover controls add about a minute.
+    timeout-minutes: 10
     steps:
       # Nothing in this job reads git history, so the checkout is shallow.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -237,6 +239,9 @@ jobs:
           # The ratchet's base ref per event: a push compares with its first
           # parent, so a merge that deletes lib files is DELETED, not VANISHED.
           run bash tool/ci_ratchet_base.sh --self-test
+          # The metrics ratchet's controls: per-declaration parameter
+          # exceptions and the base-ref rule, on recorded dcm reports (no dcm).
+          run bash tool/metrics_ratchet.sh --self-test
           run bash tool/check_fixture_links.sh
           run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
