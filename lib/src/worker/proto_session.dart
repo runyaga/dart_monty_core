@@ -14,12 +14,14 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
+import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 
 export 'package:dart_monty_core/src/worker/host_answers.dart'
@@ -366,7 +368,8 @@ extension ProtoSessionTransfer on ProtoSession {
 /// A throwing callback must not escape into the channel mid-turn. As in
 /// upstream's binding, the first failure is recorded and later prints are
 /// dropped; the turn runs to its end, and the driver then throws the
-/// failure.
+/// failure, converted by [printFailure] when it was thrown, as upstream's
+/// print target converts it at once.
 ///
 /// Nothing more is delivered once the feed is abandoned (its worker killed
 /// by a deadline or a close while a callback ran): a callback that finally
@@ -384,7 +387,11 @@ final class _PrintSink {
   final ProtoPrintCallback? _onPrint;
   final bool Function()? _abandoned;
   final bool _collect;
-  (Object, StackTrace)? _failure;
+  (MontyError, StackTrace)? _failure;
+
+  /// Names this feed's print delivery ([deliverPrint]). A token of its own,
+  /// so an overflow marked with it does not keep the sink alive.
+  final Object _delivery = Object();
 
   Future<void> add(pb.Print print) async {
     for (final segment in print.segments) {
@@ -396,11 +403,11 @@ final class _PrintSink {
       final onPrint = _onPrint;
       if (onPrint == null) continue;
       try {
-        await onPrint(stream, segment.text);
+        await deliverPrint(_delivery, () => onPrint(stream, segment.text));
       } on Object catch (error, stack) {
         // A failure from a callback that ended after the feed was abandoned
         // is ignored, like any late result: the abandonment is the outcome.
-        if (!_isAbandoned) _failure = (error, stack);
+        if (!_isAbandoned) _failure = (printFailure(error, _delivery), stack);
 
         return;
       }
@@ -413,13 +420,34 @@ final class _PrintSink {
   /// Whether the callback failed.
   bool get failed => _failure != null;
 
-  /// Throws the callback's failure, if there was one.
+  /// Throws the callback's failure, if there was one, with the callback's
+  /// stack.
   void rethrowFailure() {
     if (_failure case (final error, final stack)) {
       Error.throwWithStackTrace(error, stack);
     }
   }
 }
+
+/// The error a print callback's throw [error] is raised as, in place of the
+/// feed's outcome, as upstream's binding raises a print failure
+/// (`finalize_turn`): a [MontyError] built from the Python exception
+/// upstream's `exc_py_to_monty` would classify it as.
+///
+/// - An overflow a collector threw during [delivery], this feed's print
+///   delivery ([isCollectorOverflow]), is raised as it is: the
+///   `MemoryError` upstream's collectors raise.
+/// - Any other throw is classified as a host function's is ([raisedFrom]):
+///   an `ExternalException` raises its type and message, anything else
+///   `Exception` with its `toString()`. A `SyntaxError` is
+///   [MontySyntaxError], as upstream's `MontyError::new_err` raises it, and
+///   every other type [MontyRuntimeError]. Neither has a traceback. The
+///   record never crosses the wire, so its data is kept as the host gave it
+///   ([RaisedRecord.fromHost]).
+MontyError printFailure(Object error, Object delivery) =>
+    isCollectorOverflow(error, delivery)
+    ? error as MontyError
+    : recordError(RaisedRecord.fromHost(raisedFrom(error)));
 
 /// Whether [event] ends a turn in a suspension that waits for the host's
 /// answer (upstream's `left_suspended`).

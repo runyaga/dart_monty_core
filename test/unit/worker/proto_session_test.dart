@@ -277,7 +277,7 @@ void main() {
             'print(1); fetch',
             onPrint: (_, _) => throw StateError('boom'),
           ),
-          throwsStateError,
+          throwsA(isA<MontyRuntimeError>()),
         );
         // The worker is suspended on a NameLookup nobody will answer, so the
         // session must not let another request reach it.
@@ -309,7 +309,11 @@ void main() {
           },
         ),
         throwsA(
-          isA<StateError>().having((e) => e.message, 'message', 'boom'),
+          isA<MontyRuntimeError>().having(
+            (e) => e.display('type-msg'),
+            "display('type-msg')",
+            'Exception: Bad state: boom',
+          ),
         ),
       );
       expect(calls, 1, reason: 'no more prints are delivered after it');
@@ -339,7 +343,11 @@ void main() {
       final failed = expectLater(
         feed.whenComplete(() => done = true),
         throwsA(
-          isA<StateError>().having((e) => e.message, 'message', 'boom'),
+          isA<MontyRuntimeError>().having(
+            (e) => e.display('type-msg'),
+            "display('type-msg')",
+            'Exception: Bad state: boom',
+          ),
         ),
       );
       await pumpEventQueue(times: 300);

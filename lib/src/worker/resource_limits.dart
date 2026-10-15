@@ -83,10 +83,10 @@ final class ResourceLimits {
 
   /// Throws [ArgumentError] for a negative limit, with upstream's message.
   void validate() {
-    _unsigned(maxMemory, 'maxMemory');
-    _unsigned(gcInterval, 'gcInterval');
-    _unsigned(maxRecursionDepth, 'maxRecursionDepth');
-    _unsigned(maxSuspensions, 'maxSuspensions');
+    validateUnsigned(maxMemory, 'maxMemory');
+    validateUnsigned(gcInterval, 'gcInterval');
+    validateUnsigned(maxRecursionDepth, 'maxRecursionDepth');
+    validateUnsigned(maxSuspensions, 'maxSuspensions');
     _duration(maxFeedDuration, 'maxFeedDuration');
     _duration(maxTurnDuration, 'maxTurnDuration');
     _duration(maxTotalSleep, 'maxTotalSleep');
@@ -140,7 +140,10 @@ Int64 durationMicros(Duration d) {
 
 const double _twoTo63 = _twoTo64 / 2;
 
-void _unsigned(int? value, String name) {
+/// Throws [ArgumentError] when [value], the argument [name], is not an
+/// unsigned 64-bit integer, with upstream's `OverflowError` text: negative,
+/// or (only dart2js holds one) 2^64 or more. Null is accepted.
+void validateUnsigned(int? value, String name) {
   if (value == null) return;
   if (value < 0) {
     throw ArgumentError.value(

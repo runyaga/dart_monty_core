@@ -59,6 +59,19 @@ final class RaisedRecord {
     payload: raised.hasData() ? payloadOf(raised.data) : null,
   );
 
+  /// The exception a host raised, [raised] built on this side and never
+  /// sent: its message null when unset and its structured data kept as
+  /// given, as upstream keeps a live exception's (`exc_py_to_monty`), with
+  /// none of the checks [payloadOf] makes of data from the wire. It has no
+  /// traceback.
+  factory RaisedRecord.fromHost(pb.RaisedException raised) => RaisedRecord(
+    raised.excType,
+    raised.hasMessage() ? raised.message : null,
+    const [],
+    // Only a JSON error's data is built host side (`raisedException`).
+    payload: raised.data.hasJson() ? _jsonAttributes(raised.data.json) : null,
+  );
+
   /// The exception [raised] carries, after upstream's checks
   /// (`monty-proto`'s conversion of a `RaisedException`): its type must be
   /// one upstream knows, and each frame must have both positions and, for a
@@ -439,6 +452,12 @@ ExcPayload? _jsonPayload(pb.JsonErrorData data) {
   if (doc != null && utf8Length(doc) > maxPayloadLength) return null;
   if (data.lineno.isZero || data.colno.isZero) return null;
   if (doc != null && _bounded(data.pos, doc.runes.length) == null) return null;
+
+  return _jsonAttributes(data);
+}
+
+ExcPayload _jsonAttributes(pb.JsonErrorData data) {
+  final doc = data.hasDoc() ? data.doc : null;
 
   return ExcPayload(PayloadKind.json, {
     'msg': MontyString(data.msg),

@@ -339,6 +339,21 @@ void main() {
       expect(raisedFrom(const ExternalException('KeyError', 'k')).message, 'k');
     });
 
+    test('a SyntaxError without a message carries None, as upstream reads '
+        'str(SyntaxError())', () {
+      expect(
+        raisedFrom(const ExternalException('SyntaxError')).message,
+        'None',
+      );
+    });
+
+    test('a throw whose toString throws raises Exception with no message, as '
+        'upstream does when str() fails', () {
+      final raised = raisedFrom(const _BadText());
+      expect(raised.excType, 'Exception');
+      expect(raised.hasMessage(), isFalse);
+    });
+
     test('an unknown excType is an ArgumentError, which the sandbox '
         'receives as Exception', () {
       final raised = raisedFrom(const ExternalException('NoSuchError', 'm'));
@@ -491,4 +506,12 @@ final class _HeldTimer implements Timer {
 
   @override
   int get tick => _isActive ? 0 : 1;
+}
+
+/// A throw whose text cannot be rendered.
+final class _BadText implements Exception {
+  const _BadText();
+
+  @override
+  String toString() => throw StateError('no text');
 }

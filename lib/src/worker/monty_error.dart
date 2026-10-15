@@ -223,6 +223,18 @@ MontyError recordError(RaisedRecord record) => record.excType == 'SyntaxError'
     ? MontySyntaxError._(record)
     : MontyRuntimeError._(record);
 
+/// The error a print collector's overflow is (upstream's
+/// `check_print_collect_limit`): [MontyRuntimeError] with Python
+/// `MemoryError` and upstream's text for a memory limit, [used] the bytes
+/// the refused growth would have reached, and no traceback.
+MontyRuntimeError memoryLimitError(int used, int limit) => MontyRuntimeError._(
+  RaisedRecord(
+    'MemoryError',
+    'memory limit exceeded: $used bytes > $limit bytes',
+    const [],
+  ),
+);
+
 /// The error a host value the writer refused ([refusal]) is at the caller
 /// of an input or a manual resume, as upstream's binding raises a
 /// conversion failure there: [MontyRuntimeError] with the Python exception,
