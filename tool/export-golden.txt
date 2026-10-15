@@ -635,5 +635,5 @@ final class ResourceLimits
   ResourceLimits.maxTurnDuration: final field Duration?
   ResourceLimits.new: const constructor({Duration? maxFeedDuration, Duration? maxTurnDuration, int? maxMemory, int? gcInterval, int? maxRecursionDepth, int? maxSuspensions, Duration? maxTotalSleep})
 
-[members: src/worker/self_relaunch.dart]
+[members: src/worker/self_relaunch_stub.dart]
 runMontyWorkerIfChild: function(List<String> args) -> void

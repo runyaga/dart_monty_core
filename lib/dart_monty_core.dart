@@ -86,4 +86,6 @@ export 'src/worker/monty_snapshot.dart'
 export 'src/worker/os_policy.dart' show OsPolicy, RandomSeed, TimeZone;
 export 'src/worker/pool_session.dart' show MontySession;
 export 'src/worker/resource_limits.dart' show ResourceLimits;
-export 'src/worker/self_relaunch.dart' show runMontyWorkerIfChild;
+export 'src/worker/self_relaunch_stub.dart'
+    if (dart.library.ffi) 'src/worker/self_relaunch.dart'
+    show runMontyWorkerIfChild;
