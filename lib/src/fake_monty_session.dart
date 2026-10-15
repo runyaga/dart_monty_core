@@ -24,43 +24,15 @@ import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 
-/// A session that plays a script where a worker would run Python.
-///
-/// A test queues, in order, what each feed's Python does: the host calls,
-/// OS calls, name lookups and awaits it suspends on, its prints, and how it
-/// ends. The session answers each suspension exactly as a worker-backed
-/// session does, through the same driver: a call through `externals`, an
-/// OS call through `os`, a lookup from `externals`, an await from the host
-/// futures it started. Under `feedStart` each suspension is returned as a
-/// snapshot to resume by hand.
-///
-/// An answer that raises in the sandbox (a host function's exception, a
-/// name not in `externals`, a declined OS call, a refused value, a failed
-/// future Python awaits) ends the feed with that error, as uncaught Python
-/// would, unless the next scripted event is [willCatch]. The rest of that
-/// feed's events are dropped.
-///
-/// Each feed plays its own segment of the queue: the events up to and
-/// including the next [willReturn], [willRaise] or [willCrash]. A feed
-/// that finds no complete segment throws [StateError]. Call ids count from
-/// 0 within a segment, as a worker numbers them within a feed.
-///
-/// What it does not do: run Python, type-check, or enforce limits. [dump],
-/// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
-/// [UnsupportedError]. [workerPid] is null.
-final class FakeMontySession implements PoolSession {
-  /// A session with nothing scripted.
-  FakeMontySession() : this._(FakeScript());
-
-  FakeMontySession._(this._script) : _worker = FakeWorker(_script);
+/// The scripting half of [FakeMontySession]: the `will*` events and the
+/// record of what the session ran and answered.
+abstract class _FakeScripting {
+  const _FakeScripting(FakeScript script, FakeWorker worker)
+    : _script = script,
+      _worker = worker;
 
   final FakeScript _script;
   final FakeWorker _worker;
-  Future<PoolSession>? _opening;
-  PoolSession? _session;
-  MontyPool? _pool;
-  Future<void>? _closing;
-  bool _isClosed = false;
 
   /// Scripts a call to the host function [name] with [args] and [kwargs]
   /// (Python calling a name the sandbox does not define). [eager] when
@@ -191,7 +163,7 @@ final class FakeMontySession implements PoolSession {
     _script.add(const FakeCatch());
   }
 
-  /// Scripts a protocol turn kept in flight until [gate] completes: [close]
+  /// Scripts a protocol turn kept in flight until [gate] completes: `close`
   /// meanwhile kills the turn, and other calls queue.
   void willHold(Future<void> gate) => _script.add(FakeHold(gate));
 
@@ -208,9 +180,105 @@ final class FakeMontySession implements PoolSession {
   /// out in (only for a settled future) and the answer, null where the
   /// host answered `not_found`, `not_handled` or an undefined name.
   List<FakeAnswer> get answers => List.unmodifiable(_worker.log.answers);
+}
+
+/// The session's lifecycle over the scripted worker: opened on the first
+/// call, closed once.
+class _ScriptedLink {
+  _ScriptedLink(this._worker);
 
   /// Whether [close] has run.
-  bool get isClosed => _isClosed;
+  bool isClosed = false;
+
+  final FakeWorker _worker;
+  Future<PoolSession>? _opening;
+  PoolSession? _session;
+  MontyPool? _pool;
+  Future<void>? _closing;
+
+  Future<void> close() => _closing ??= _close();
+
+  /// Runs [body] on the session over the scripted worker: at once when it
+  /// is open, so calls keep their order and timing.
+  Future<T> call<T>(Future<T> Function(PoolSession session) body) {
+    // Refused at once, as a closed session refuses, while the close is
+    // still on its way to the session underneath.
+    if (isClosed) return Future.error(StateError('the session is finished'));
+    final session = _session;
+    if (session != null) return body(session);
+
+    return _opened(body);
+  }
+
+  Future<void> _close() async {
+    isClosed = true;
+    final opening = _opening;
+    try {
+      // The session's close takes its usual path: Reset when idle, a kill
+      // with a turn in flight.
+      final session = _session;
+      if (session != null) {
+        await session.close();
+      } else if (opening != null) {
+        await (await opening).close();
+      }
+    } finally {
+      await _pool?.close();
+      await _worker.close();
+    }
+  }
+
+  Future<T> _opened<T>(Future<T> Function(PoolSession session) body) async =>
+      body(await (_opening ??= _open()));
+
+  Future<PoolSession> _open() async {
+    final pool = _pool = await MontyPool.startWith(
+      const PoolOptions(minProcesses: 0, maxProcesses: 1),
+      open: () => PendingSpawn((_) async => _worker),
+    );
+
+    return _session = await pool.checkout();
+  }
+}
+
+/// A session that plays a script where a worker would run Python.
+///
+/// A test queues, in order, what each feed's Python does: the host calls,
+/// OS calls, name lookups and awaits it suspends on, its prints, and how it
+/// ends. The session answers each suspension exactly as a worker-backed
+/// session does, through the same driver: a call through `externals`, an
+/// OS call through `os`, a lookup from `externals`, an await from the host
+/// futures it started. Under `feedStart` each suspension is returned as a
+/// snapshot to resume by hand.
+///
+/// An answer that raises in the sandbox (a host function's exception, a
+/// name not in `externals`, a declined OS call, a refused value, a failed
+/// future Python awaits) ends the feed with that error, as uncaught Python
+/// would, unless the next scripted event is [willCatch]. The rest of that
+/// feed's events are dropped.
+///
+/// Each feed plays its own segment of the queue: the events up to and
+/// including the next [willReturn], [willRaise] or [willCrash]. A feed
+/// that finds no complete segment throws [StateError]. Call ids count from
+/// 0 within a segment, as a worker numbers them within a feed.
+///
+/// What it does not do: run Python, type-check, or enforce limits. [dump],
+/// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
+/// [UnsupportedError]. [workerPid] is null.
+final class FakeMontySession extends _FakeScripting implements PoolSession {
+  /// A session with nothing scripted.
+  FakeMontySession() : this._(FakeScript());
+
+  FakeMontySession._(FakeScript script)
+    : this._over(script, FakeWorker(script));
+
+  FakeMontySession._over(super.script, super.worker)
+    : _link = _ScriptedLink(worker);
+
+  final _ScriptedLink _link;
+
+  /// Whether [close] has run.
+  bool get isClosed => _link.isClosed;
 
   @override
   Future<MontyValue> feedRun(
@@ -220,7 +288,7 @@ final class FakeMontySession implements PoolSession {
     ProtoPrintCallback? printCallback,
     OsHandler? os,
     bool skipTypeCheck = false,
-  }) => _call(
+  }) => _link.call(
     (s) => s.feedRun(
       code,
       inputs: inputs,
@@ -239,7 +307,7 @@ final class FakeMontySession implements PoolSession {
     ProtoPrintCallback? printCallback,
     OsHandler? os,
     bool skipTypeCheck = false,
-  }) => _call(
+  }) => _link.call(
     (s) => s.feedStart(
       code,
       inputs: inputs,
@@ -268,49 +336,7 @@ final class FakeMontySession implements PoolSession {
   int? get workerPid => null;
 
   @override
-  Future<void> close() => _closing ??= _close();
-
-  Future<void> _close() async {
-    _isClosed = true;
-    final opening = _opening;
-    try {
-      // The session's close takes its usual path: Reset when idle, a kill
-      // with a turn in flight.
-      final session = _session;
-      if (session != null) {
-        await session.close();
-      } else if (opening != null) {
-        await (await opening).close();
-      }
-    } finally {
-      await _pool?.close();
-      await _worker.close();
-    }
-  }
-
-  /// Runs [body] on the session over the scripted worker: at once when it
-  /// is open, so calls keep their order and timing.
-  Future<T> _call<T>(Future<T> Function(PoolSession session) body) {
-    // Refused at once, as a closed session refuses, while the close is
-    // still on its way to the session underneath.
-    if (_isClosed) return Future.error(StateError('the session is finished'));
-    final session = _session;
-    if (session != null) return body(session);
-
-    return _opened(body);
-  }
-
-  Future<T> _opened<T>(Future<T> Function(PoolSession session) body) async =>
-      body(await (_opening ??= _open()));
-
-  Future<PoolSession> _open() async {
-    final pool = _pool = await MontyPool.startWith(
-      const PoolOptions(minProcesses: 0, maxProcesses: 1),
-      open: () => PendingSpawn((_) async => _worker),
-    );
-
-    return _session = await pool.checkout();
-  }
+  Future<void> close() => _link.close();
 }
 
 /// The exception the worker sends for a sandbox-raised [excType]: the
