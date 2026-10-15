@@ -169,9 +169,9 @@ jobs:
     # code OR docs. This is the one job a docs-only change must still run.
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
-    # 12, not 8: the job took 8m49s with the export-boundary self-test's
-    # post-cutover controls (measured on the PR that added them).
-    timeout-minutes: 12
+    # The export-boundary self-test (~10.5 of the former ~11.5 minutes, which
+    # kept hitting the old 12-minute limit) is its own sharded job below.
+    timeout-minutes: 8
     steps:
       # Nothing in this job reads git history, so the checkout is shallow.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -243,7 +243,8 @@ jobs:
           # tool/export-golden.txt; then the check's own controls. Not `dart run`, which would build the
           # native crate through the build hook.
           run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --post-cutover
-          run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test
+          # ...and its controls run in the `export-boundary-selftest` job: they
+          # were ~10.5 of this job's ~11.5 minutes.
           # Both of these catch things a Dart test PROVABLY cannot, and both ran
           # only on a laptop until now:
           #   hierarchy_registry — Dart has no runtime reflection on web or AOT,
@@ -261,9 +262,47 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 25 ] || { echo "FAIL: expected 25 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 24 ] || { echo "FAIL: expected 24 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
+
+  # ---------------------------------------------------------------------------
+  # The export-boundary check's own controls, sharded
+  # ---------------------------------------------------------------------------
+  # `tool/check_export_boundary.dart --self-test` resolves the package with the
+  # analyzer once or twice per control (45 controls, ~14 s each), ~10.5 minutes
+  # in series. It used to be a step of the `gate` job, which then hit its
+  # 12-minute limit on main. Shard i of n runs the controls at positions
+  # congruent to i mod n, so the shards together are every control exactly
+  # once. The matrix-size guard below turns a deleted shard into a RED rather
+  # than a silently smaller set.
+  export-boundary-selftest:
+    name: "gate · export-boundary self-test (shard ${{ matrix.shard }}/6)"
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      - name: Every shard is present
+        run: '[ "${{ strategy.job-total }}" = "6" ] || { echo "FAIL: expected 6 shards, matrix has ${{ strategy.job-total }}"; exit 1; }'
+      - name: Export-boundary self-test (shard ${{ matrix.shard }} of 6)
+        run: dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test --shard ${{ matrix.shard }}/6
 
   # ---------------------------------------------------------------------------
   # The upstream reference pin, verified against its sources

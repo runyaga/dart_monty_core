@@ -228,6 +228,10 @@ Future<void> main(List<String> args) async {
   try {
     exitCode = switch (args) {
       ['--self-test'] => await _selfTest(root),
+      ['--self-test', '--shard', final shard] => await _selfTest(
+        root,
+        shard: shard,
+      ),
       ['--self-test', final only] => await _selfTest(root, only: only),
       ['--update'] => await _run(root, update: true),
       [] => await _run(root, update: false),
@@ -249,7 +253,8 @@ Future<void> main(List<String> args) async {
 
 int _usage() {
   stderr.writeln(
-    'usage: $_command [--post-cutover] [--update] | --self-test [<name part>]',
+    'usage: $_command [--post-cutover] [--update] | '
+    '--self-test [<name part> | --shard <i>/<n>]',
   );
 
   return 2;
@@ -2152,11 +2157,39 @@ final class ResourceLimits
   ResourceLimits.new: const constructor({Duration? maxFeedDuration, Duration? maxTurnDuration, int? maxMemory, int? gcInterval, int? maxRecursionDepth, int? maxSuspensions, Duration? maxTotalSleep})
 ''';
 
-Future<int> _selfTest(String root, {String only = ''}) async {
+/// The self-test. [shard] `i/n` runs the controls whose position in
+/// [_controls] is congruent to `i` mod `n`, so CI can run the n shards in
+/// parallel jobs: together they are every control exactly once.
+Future<int> _selfTest(
+  String root, {
+  String only = '',
+  String shard = '',
+}) async {
   final golden = File('$root/$_goldenPath').readAsStringSync();
+  var index = 0;
+  var count = 1;
+  if (shard.isNotEmpty) {
+    final parts = shard.split('/');
+    final i = parts.length == 2 ? int.tryParse(parts[0]) : null;
+    final n = parts.length == 2 ? int.tryParse(parts[1]) : null;
+    if (i == null ||
+        n == null ||
+        n < 1 ||
+        n > _controls.length ||
+        i < 0 ||
+        i >= n) {
+      stderr.writeln(
+        'bad shard "$shard": want i/n with 0 <= i < n <= ${_controls.length}',
+      );
+
+      return 2;
+    }
+    index = i;
+    count = n;
+  }
   final controls = [
-    for (final control in _controls)
-      if (control.name.contains(only)) control,
+    for (final (position, control) in _controls.indexed)
+      if (control.name.contains(only) && position % count == index) control,
   ];
   if (controls.isEmpty) {
     stderr.writeln('no control name contains "$only"');
@@ -2174,7 +2207,8 @@ Future<int> _selfTest(String root, {String only = ''}) async {
   }
   stdout.writeln(
     failures == 0
-        ? 'EXPORT BOUNDARY SELF-TEST GREEN (${controls.length} controls)'
+        ? 'EXPORT BOUNDARY SELF-TEST GREEN (${controls.length} of '
+              '${_controls.length} controls, shard $index/$count)'
         : 'EXPORT BOUNDARY SELF-TEST RED ($failures failed)',
   );
 
