@@ -16,6 +16,8 @@ import 'package:dart_monty_core/src/worker/arena_nodes.dart'
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedError, protocolError;
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -41,8 +43,8 @@ typedef ProtoExternalFunction =
 /// own default, `PermissionError` naming the path for a filesystem call and
 /// `RuntimeError` for the rest. Only a synchronous throw declines, as only a
 /// synchronously returned `NOT_HANDLED` does upstream; a returned [Future]
-/// that fails with it raises `TypeError` ([AsyncDecline]), so an `async`
-/// handler cannot decline. Throw [ExternalException] to raise a chosen
+/// that fails with it raises `TypeError` ([AsyncDecline]) for every call,
+/// sleeps included, so an `async` handler cannot decline. Throw [ExternalException] to raise a chosen
 /// exception; any other throw raises `Exception` with its text
 /// ([raisedFrom]). For `asyncio.sleep` a returned [Future] is the call's
 /// coroutine, which the sandbox awaits. For every other call it is awaited
@@ -85,26 +87,64 @@ typedef OsCallParts = (String, List<MontyValue>, Map<String, MontyValue>);
 
 /// [call]'s OS function name, positional and keyword arguments, as upstream
 /// presents an OS call to a host (`OsFunctionCall::to_args`), host objects
-/// resolved through [hosts]. Throws [FormatException] for a call with no
-/// arm set.
+/// resolved through [hosts].
+///
+/// Throws [FormatException] for a payload [checkOsCall] rejects, and for a
+/// `getenv` default that cannot be built.
 OsCallParts osCallParts(pb.OsCall call, {HostObjectLookup? hosts}) {
-  if (call.whichCall() == pb.OsCall_Call.getenv) {
+  final reader = checkOsCall(call, hosts: hosts);
+  if (reader != null) {
     // The default is any value, a host object's included.
     return (
       'os.getenv',
-      [
-        MontyString(call.getenv.key),
-        ArenaReader(call.values, hosts: hosts)[call.getenv.default_2],
-      ],
+      [MontyString(call.getenv.key), reader[call.getenv.default_2]],
       _noKwargs,
     );
   }
-  final parts = _osCalls[call.whichCall()];
-  if (parts == null) {
-    throw const FormatException('invalid OS call payload: no call');
+
+  return _osCalls[call.whichCall()]!(call);
+}
+
+/// Checks [call] as upstream's `os_call_from_proto` does before any host
+/// code sees it: an arm is set, and a `getenv`'s arena is present, passes
+/// the reader's first two stages and holds its default's root. Returns the
+/// `getenv` default's reader, or null for any other arm.
+///
+/// Throws [FormatException] with upstream's message (monty-proto 1.1.0
+/// `convert/os_call.rs:43-52`) for the first failure.
+ArenaReader? checkOsCall(pb.OsCall call, {HostObjectLookup? hosts}) {
+  final kind = call.whichCall();
+  if (kind == pb.OsCall_Call.notSet) {
+    throw const FormatException('missing required field OsCall.call');
+  }
+  if (kind != pb.OsCall_Call.getenv) return null;
+  if (!call.hasValues()) {
+    throw const FormatException('missing required field OsCall.values');
   }
 
-  return parts(call);
+  return ArenaReader(call.values, hosts: hosts)
+    ..checkRoots([call.getenv.default_2]);
+}
+
+/// Checks [call]'s arena and every argument root in it, as upstream's
+/// `into_call_args` does when the frame arrives; returns the reader.
+///
+/// Throws [MontyCrashedError] ([protocolError], upstream's `invalid payload
+/// from worker`) for an arena or root it rejects: the caller discards the
+/// worker. A failure building the Python values is not checked here; it
+/// fails the call in Python, as upstream's `wire_call_arguments` does.
+ArenaReader _checkedArgs(pb.FunctionCall call, HostObjectLookup hosts) {
+  final reader = ArenaReader(call.values, hosts: hosts);
+  try {
+    reader.checkRoots([
+      ...call.args,
+      for (final pair in call.kwargs) ...[pair.key, pair.value],
+    ]);
+  } on FormatException catch (e) {
+    throw protocolError('invalid payload from worker: ${e.message}');
+  }
+
+  return reader;
 }
 
 const Map<String, MontyValue> _noKwargs = {};
@@ -330,18 +370,22 @@ final class HostAnswers {
 
   /// Answers the host function call [call]; one with an object id is a
   /// method call on that host object.
+  ///
+  /// Throws [MontyCrashedError] ([protocolError]) for an arguments arena
+  /// upstream rejects when the frame arrives, before anything else: the
+  /// caller discards the worker.
   Future<pb.ParentRequest> call(pb.FunctionCall call) async {
-    if (call.hasObjectId()) return _methodCall(this, call);
+    final reader = _checkedArgs(call, objects.lookup);
+    if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
     final function = externals[name];
     if (function == null) {
       return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
     }
-    // Decoding the arguments is inside the guarded body too: an argument
+    // Building the argument values is inside the guarded body too: a value
     // this driver cannot carry fails the call in Python, and the worker,
     // suspended on it, still gets its answer.
     FutureOr<MontyValue> invoke() {
-      final reader = ArenaReader(call.values, hosts: objects.lookup);
       final args = [for (final a in call.args) reader[a]];
 
       return function(args, _kwargs(reader, call.kwargs));
@@ -374,10 +418,19 @@ final class HostAnswers {
   /// Answers the OS call [call]. With [parentSleeps] a system sleep is
   /// waited here, as `feedRun` waits it; without, it goes to the handler
   /// like any other call, as a resumed snapshot's does upstream.
+  ///
+  /// Throws [MontyCrashedError] ([protocolError], upstream's `invalid OS
+  /// call payload`) for a payload [checkOsCall] rejects, before anything
+  /// else: the caller discards the worker.
   Future<pb.ParentRequest> osCall(
     pb.OsCall call, {
     required bool parentSleeps,
   }) async {
+    try {
+      checkOsCall(call);
+    } on FormatException catch (e) {
+      throw protocolError('invalid OS call payload: ${e.message}');
+    }
     final max = systemSleepMax;
     final slept = parentSleeps && max != null ? _systemSleep(call, max) : null;
     if (slept != null) return slept;
@@ -541,12 +594,12 @@ final class HostAnswers {
 Future<pb.ParentRequest> _methodCall(
   HostAnswers host,
   pb.FunctionCall call,
+  ArenaReader reader,
 ) async {
   final objects = host.objects;
   final FutureOr<Object> result;
   try {
     checkHostMethodName(call.functionName);
-    final reader = ArenaReader(call.values, hosts: objects.lookup);
     result = objects.callMethod(
       uuidString(call.objectId.data),
       call.functionName,
@@ -730,17 +783,21 @@ Future<MontyValue> _undeclined(Future<MontyValue> answer) async {
 ///
 /// Upstream declines only a synchronous `NOT_HANDLED`. One a coroutine
 /// returns is a value it cannot convert, raised in the sandbox as
-/// `TypeError` ("Cannot convert pydantic_monty._NotHandledSentinel to Monty
-/// value"), for `asyncio.sleep` too; [raisedFrom] raises this as that
+/// `TypeError`, for every call, `asyncio.sleep` and `time.sleep` included
+/// (monty-python 1.1.0 `pool.rs:2103-2108`: only the synchronous result is
+/// compared with `NOT_HANDLED`); [raisedFrom] raises this as that
 /// `TypeError`.
 final class AsyncDecline implements Exception {
   /// A decline from a future.
   const AsyncDecline();
 
-  /// The `TypeError`'s message: upstream's, naming the Dart class.
+  /// The `TypeError`'s message: upstream's conversion refusal ("Cannot
+  /// convert pydantic_monty._NotHandledSentinel to Monty value — wrap class
+  /// instances in pydantic_monty.ClassInstance(...)"), naming the Dart
+  /// classes as the writer's refusal does.
   static const String message =
-      'Cannot convert OsCallNotHandledException to Monty value: an OS '
-      'handler declines only by throwing it synchronously';
+      'Cannot convert OsCallNotHandledException to Monty value — wrap class '
+      'instances in ClassInstance(...)';
 
   @override
   String toString() => 'AsyncDecline: $message';

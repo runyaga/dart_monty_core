@@ -401,7 +401,8 @@ void main() {
           isA<MontyCrashedError>().having(
             (e) => e.message,
             'message',
-            contains('invalid OS call payload'),
+            'monty worker protocol error: invalid OS call payload: missing '
+                'required field OsCall.call',
           ),
         ),
       );
@@ -1031,14 +1032,63 @@ void main() {
       expect(itemAt(ch.requests, 3).resumeCall.result.hasNotHandled(), isTrue);
     });
 
-    test('an OS call the driver cannot read raises in the sandbox', () async {
+    test('a host call whose argument arena upstream rejects is a protocol '
+        'violation, the function never called', () async {
+      final (s, ch) = await _session([
+        answer([
+          pb.ChildEvent(
+            functionCall: pb.FunctionCall(
+              functionName: 'f',
+              callId: 1,
+              args: [5],
+              values: pb.Arena(nodeCount: 1, nodes: [intNode(1)]),
+            ),
+          ),
+        ]),
+      ]);
+      var called = false;
+      await expectLater(
+        s.feedRun(
+          'f(1)',
+          externals: {
+            'f': (args, kwargs) {
+              called = true;
+
+              return const MontyNone();
+            },
+          },
+        ),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.message,
+            'message',
+            'monty worker protocol error: invalid payload from worker: '
+                'invalid value for Arena: value root 5 is out of range for an '
+                'arena of 1 nodes',
+          ),
+        ),
+      );
+      expect(called, isFalse);
+      expect(ch.kills, 1);
+    });
+
+    test('an OS call no arm describes is a protocol violation, as '
+        "upstream's conversion on arrival makes it", () async {
       final (s, ch) = await _session([
         answer([_os(pb.OsCall(callId: 1))]),
-        answer([_int(0)]),
       ]);
-      await s.feedRun('bad', os: (name, args, kwargs) => const MontyNone());
-      final error = itemAt(ch.requests, 2).resumeCall.result.error;
-      expect(error.excType, 'Exception');
+      await expectLater(
+        s.feedRun('bad', os: (name, args, kwargs) => const MontyNone()),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.message,
+            'message',
+            'monty worker protocol error: invalid OS call payload: missing '
+                'required field OsCall.call',
+          ),
+        ),
+      );
+      expect(ch.kills, 1);
     });
   });
 

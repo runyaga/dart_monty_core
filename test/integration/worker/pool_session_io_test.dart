@@ -24,6 +24,7 @@ import 'package:test/test.dart';
 import '../../_accessors.dart';
 import '../../unit/worker/_config_cases.dart';
 import '../../unit/worker/_host_cases.dart';
+import '../../unit/worker/_os_handler_cases.dart';
 import '../../unit/worker/_print_cases.dart';
 import '../../unit/worker/_restore_cases.dart';
 import '_worker_harness.dart';
@@ -107,6 +108,7 @@ void main() {
   restoreOracleTests('vm', (options) => MontyPool.start(options: options));
   hostOracleTests('vm', (options) => MontyPool.start(options: options));
   printOracleTests('vm', (options) => MontyPool.start(options: options));
+  osHandlerOracleTests('vm', (options) => MontyPool.start(options: options));
 
   test('feedRun, prints in order, Reset on close, the worker reused', () async {
     await MontyPool.withPool(

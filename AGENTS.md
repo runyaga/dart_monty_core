@@ -95,7 +95,7 @@ pinned one; `bash tool/check_pages.sh` needs a free local port, so rerun
 
 | File | Regenerate | Verify |
 |---|---|---|
-| `test/unit/worker/_*_oracle.g.dart` (config, host, restore, worker_class, print) | `PY -I tool/generate_<name>_oracle.py` | same with `--check` |
+| `test/unit/worker/_*_oracle.g.dart` (config, host, restore, worker_class, print, os_handler) | `PY -I tool/generate_<name>_oracle.py` | same with `--check` |
 | `test/unit/worker/_display_fixtures.g.dart` | `python3 -I tool/generate_display_fixtures.py <parity checkout>` | same with `--check` |
 | `lib/src/bin/*/dart_monty_worker` | `bash tool/build_worker.sh` | `--check` |
 | `tool/export-golden.txt` | `dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --update` | same without `--update` |
