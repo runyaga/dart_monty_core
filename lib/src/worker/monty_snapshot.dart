@@ -434,25 +434,19 @@ abstract final class Snapshots {
   static FunctionSnapshot function(
     SnapshotDriver driver,
     SourceRange position,
-    String scriptName, {
-    required String functionName,
-    required int callId,
-    required bool isOsFunction,
-    required bool allowEagerAwait,
-    required List<MontyValue> Function() arguments,
-    required Map<String, MontyValue> Function() keywords,
-    String? objectId,
-  }) => FunctionSnapshot._(
+    String scriptName,
+    FunctionCallParts call,
+  ) => FunctionSnapshot._(
     driver,
     position,
     scriptName,
-    functionName: functionName,
-    callId: callId,
-    isOsFunction: isOsFunction,
-    allowEagerAwait: allowEagerAwait,
-    arguments: arguments,
-    keywords: keywords,
-    objectId: objectId,
+    functionName: call.functionName,
+    callId: call.callId,
+    isOsFunction: call.isOsFunction,
+    allowEagerAwait: call.allowEagerAwait,
+    arguments: call.arguments,
+    keywords: call.keywords,
+    objectId: call.objectId,
   );
 
   /// A suspension on a name lookup.
@@ -483,3 +477,14 @@ abstract final class Snapshots {
     pendingCallIds: pendingCallIds,
   );
 }
+
+/// What [Snapshots.function] needs to know about a call. Internal.
+typedef FunctionCallParts = ({
+  String functionName,
+  int callId,
+  bool isOsFunction,
+  bool allowEagerAwait,
+  List<MontyValue> Function() arguments,
+  Map<String, MontyValue> Function() keywords,
+  String? objectId,
+});

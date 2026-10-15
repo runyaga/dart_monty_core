@@ -942,13 +942,15 @@ FunctionSnapshot _callSnapshot(
   driver,
   _position(call.position),
   script,
-  functionName: call.functionName,
-  callId: call.callId,
-  isOsFunction: false,
-  allowEagerAwait: call.allowEagerAwait,
-  objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
-  arguments: () => callArgs(call, hosts: hosts),
-  keywords: () => callKwargs(call, hosts: hosts),
+  (
+    functionName: call.functionName,
+    callId: call.callId,
+    isOsFunction: false,
+    allowEagerAwait: call.allowEagerAwait,
+    objectId: call.hasObjectId() ? uuidString(call.objectId.data) : null,
+    arguments: () => callArgs(call, hosts: hosts),
+    keywords: () => callKwargs(call, hosts: hosts),
+  ),
 );
 
 /// The snapshot of an OS [call], for [driver] under [script]. A payload
@@ -974,14 +976,17 @@ FunctionSnapshot _osSnapshot(
     driver,
     _position(call.position),
     script,
-    functionName: name,
-    callId: call.callId,
-    isOsFunction: true,
-    // A worker's eager bit on a call no future may answer is dropped, as
-    // upstream drops it.
-    allowEagerAwait: call.allowEagerAwait && acceptsFuture(name),
-    arguments: () => args,
-    keywords: () => kwargs,
+    (
+      functionName: name,
+      callId: call.callId,
+      isOsFunction: true,
+      // A worker's eager bit on a call no future may answer is dropped, as
+      // upstream drops it.
+      allowEagerAwait: call.allowEagerAwait && acceptsFuture(name),
+      objectId: null,
+      arguments: () => args,
+      keywords: () => kwargs,
+    ),
   );
 }
 
