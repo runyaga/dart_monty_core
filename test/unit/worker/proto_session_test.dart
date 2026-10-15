@@ -1174,6 +1174,33 @@ void main() {
       expect(ch.kills, 1);
     });
 
+    test('a getenv default that passes the checks but cannot be built '
+        'fails the call in Python, not the session', () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            osCall: pb.OsCall(
+              callId: 1,
+              getenv: pb.OsCall_Getenv(key: 'K'),
+              values: pb.Arena(
+                nodeCount: 1,
+                nodes: [
+                  pb.MontyNode(timedelta: pb.TimeDelta(days: 1000000000)),
+                ],
+              ),
+            ),
+          ),
+        ]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await s.feed('x', onOsCall: (name, args, kwargs) => const MontyNone());
+      final result = itemAt(ch.requests, 2).resumeCall.result;
+      expect(result.hasError(), isTrue);
+      expect(result.error.message, contains('OverflowError'));
+      expect(ch.kills, 0);
+    });
+
     test('a getenv with no arena', () async {
       final ch = _configured([
         answer([

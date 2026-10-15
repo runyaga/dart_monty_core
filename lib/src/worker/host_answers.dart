@@ -44,8 +44,9 @@ typedef ProtoExternalFunction =
 /// `RuntimeError` for the rest. Only a synchronous throw declines, as only a
 /// synchronously returned `NOT_HANDLED` does upstream; a returned [Future]
 /// that fails with it raises `TypeError` ([AsyncDecline]) for every call,
-/// sleeps included, so an `async` handler cannot decline. Throw [ExternalException] to raise a chosen
-/// exception; any other throw raises `Exception` with its text
+/// sleeps included, so an `async` handler cannot decline. Throw
+/// [ExternalException] to raise a chosen exception; any other throw raises
+/// `Exception` with its text
 /// ([raisedFrom]). For `asyncio.sleep` a returned [Future] is the call's
 /// coroutine, which the sandbox awaits. For every other call it is awaited
 /// and its value is the answer.

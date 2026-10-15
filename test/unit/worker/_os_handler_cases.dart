@@ -36,11 +36,12 @@ const Map<String, String> _names = {
 /// The handler a case names.
 OsHandler _handler(String name) => switch (name) {
   'decline' => (n, a, k) => throw const OsCallNotHandledException(),
-  'async_decline' => (n, a, k) async => throw const OsCallNotHandledException(),
-  'async_value' => (n, a, k) async => const MontyString('v'),
-  'async_raise' => (n, a, k) async => throw const ExternalException(
-    'ValueError',
-    'x',
+  'async_decline' => (n, a, k) => Future.error(
+    const OsCallNotHandledException(),
+  ),
+  'async_value' => (n, a, k) => Future.value(const MontyString('v')),
+  'async_raise' => (n, a, k) => Future.error(
+    const ExternalException('ValueError', 'x'),
   ),
   _ => throw StateError('unknown handler $name'),
 };
@@ -48,7 +49,7 @@ OsHandler _handler(String name) => switch (name) {
 /// The oracle's text for [value]: the cases return str, None and lists.
 String _repr(MontyValue value) => switch (value) {
   MontyNone() => 'None',
-  MontyString(:final value) => pythonRepr(value),
+  MontyString(value: final text) => pythonRepr(text),
   MontyList(:final items) => '[${items.map(_repr).join(', ')}]',
   _ => throw StateError('unexpected value $value'),
 };
@@ -57,7 +58,10 @@ String _repr(MontyValue value) => switch (value) {
 String _dartNames(String outcome) =>
     _names.entries.fold(outcome, (s, e) => s.replaceAll(e.key, e.value));
 
-void _ignore(String stream, String text) {}
+void _ignore(String stream, String text) => _ignored++;
+
+/// How many prints [_ignore] dropped; never looked at.
+var _ignored = 0;
 
 /// Every OS-handler case, each its own test labelled with [label].
 void osHandlerOracleTests(String label, StartOsHandlerPool start) {
@@ -82,7 +86,7 @@ void osHandlerOracleTests(String label, StartOsHandlerPool start) {
             actual =
                 'value: ${_repr(
                   await session.feedRun(
-                    osHandlerCodes[code]!,
+                    osHandlerCodes[code] ?? (throw StateError('no code $code')),
                     os: _handler(handler),
                     printCallback: _ignore,
                   ),

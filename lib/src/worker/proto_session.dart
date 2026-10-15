@@ -150,9 +150,17 @@ final class ProtoSession {
         }
         // A ResolveFutures with no coroutine started is out of step with
         // this driver (upstream discards the checkout).
+        final pb.ParentRequest? answer;
+        try {
+          answer = await host.answer(event);
+        } on MontyCrashedError catch (e) {
+          // A payload [host] rejects as upstream does when the frame
+          // arrives is a protocol violation: the worker is discarded.
+          if (e.cause == CrashCause.protocol) _channel.kill();
+          rethrow;
+        }
         request =
-            await _answer(host, event) ??
-            _violation('unexpected event: ${event.whichKind().name}');
+            answer ?? _violation('unexpected event: ${event.whichKind().name}');
       }
     } finally {
       host.dispose();
@@ -262,20 +270,6 @@ final class ProtoSession {
     // a feed's answer at all.
     _ => _violation('unexpected event: ${event.whichKind().name}'),
   };
-
-  /// [host]'s answer to [event]. A payload [host] rejects as upstream does
-  /// when the frame arrives is a protocol violation: the worker is killed.
-  Future<pb.ParentRequest?> _answer(
-    HostAnswers host,
-    pb.ChildEvent event,
-  ) async {
-    try {
-      return await host.answer(event);
-    } on MontyCrashedError catch (e) {
-      if (e.cause == CrashCause.protocol) _channel.kill();
-      rethrow;
-    }
-  }
 
   /// Throws the error an `Error` event is. One whose exception fails
   /// upstream's checks is a protocol violation, and the worker is killed.
