@@ -14,7 +14,12 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 
 // The crash every channel reports, and the factories that make it.
 export 'package:dart_monty_core/src/worker/monty_error.dart'
-    show CrashCause, MontyCrashedError, crashedError, sendingRequest;
+    show
+        CrashCause,
+        MontyCrashedError,
+        crashedError,
+        sendingRequest,
+        spawnError;
 
 /// Receives one `Print` during a turn. The turn awaits it before it reads
 /// the next event, so prints are delivered one at a time, in order.

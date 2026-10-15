@@ -190,7 +190,7 @@ final class WasmModuleCache {
 Future<JSObject> _compileModule(String wasmUrl) async {
   final response = await _fetch(wasmUrl.toJS).toDart;
   if (!response.ok) {
-    throw StateError('fetch $wasmUrl: HTTP ${response.status}');
+    throw spawnError('fetch $wasmUrl: HTTP ${response.status}');
   }
   final type = response.headers.get('content-type'.toJS)?.toDart ?? '';
   // compileStreaming refuses any other MIME type; a server that labels the

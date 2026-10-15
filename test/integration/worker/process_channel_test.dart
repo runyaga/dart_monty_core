@@ -811,13 +811,28 @@ void main() {
       expect(ProcessChannel.live, isNot(contains(channel)));
     });
 
-    test('a missing executable throws ProcessException', () async {
-      await expectLater(
+    test('a missing executable is a spawn failure, as upstream reports it '
+        '(lib.rs:255, worker.rs:205)', () async {
+      final crash = await _crashOf(
         ProcessChannel.spawn(
           const WorkerExecutable('/nonexistent/dart_monty_worker'),
         ),
-        throwsA(isA<ProcessException>()),
       );
+      expect(crash.cause, CrashCause.spawn);
+      expect(
+        crash.toString(),
+        'failed to spawn monty worker: /nonexistent/dart_monty_worker: '
+        'No such file or directory (os error 2)',
+      );
+      expect((crash.timedOut, crash.exitStatus), (false, null));
+    });
+
+    test('an OS error reads as Rust shows it', () {
+      expect(
+        osErrorText('Permission denied', 13),
+        'Permission denied (os error 13)',
+      );
+      expect(osErrorText('no code', 0), 'no code');
     });
   });
 

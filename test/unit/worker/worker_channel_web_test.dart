@@ -375,7 +375,14 @@ void main() {
     for (var attempt = 1; attempt <= 2; attempt++) {
       await expectLater(
         WorkerChannel.spawn(missing, workerUrl: _workerUrl),
-        throwsA(isStateError),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
+            'message',
+            'failed to spawn monty worker: fetch '
+                '$_assets/no_such_module.wasm: HTTP 404',
+          ),
+        ),
       );
       expect(missing.compileCount, attempt);
     }

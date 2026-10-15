@@ -112,18 +112,25 @@ final class ProcessChannel implements MontyChannel {
   /// Starts a worker as [launch] describes.
   ///
   /// The worker gets an empty environment, plus `SystemRoot` on Windows (see
-  /// [workerEnvironment]). Throws [ProcessException] if it cannot start.
+  /// [workerEnvironment]). Throws [MontyCrashedError] ([spawnError]) if it
+  /// cannot start, naming the executable and the OS error as upstream's
+  /// `PoolError::Spawn` does (monty-pool 1.1.0 worker.rs:205).
   static Future<ProcessChannel> spawn(WorkerLaunch launch) async {
     final (path, args) = launchCommand(launch);
-    final process = await Process.start(
-      path,
-      args,
-      environment: workerEnvironment(
-        isWindows: Platform.isWindows,
-        parent: Platform.environment,
-      ),
-      includeParentEnvironment: false,
-    );
+    final Process process;
+    try {
+      process = await Process.start(
+        path,
+        args,
+        environment: workerEnvironment(
+          isWindows: Platform.isWindows,
+          parent: Platform.environment,
+        ),
+        includeParentEnvironment: false,
+      );
+    } on ProcessException catch (e) {
+      throw spawnError('$path: ${osErrorText(e.message, e.errorCode)}');
+    }
 
     return ProcessChannel._(process);
   }
@@ -318,6 +325,12 @@ Future<pb.ChildEvent?> _nextEvent(ProcessChannel channel) async {
     throw crash;
   }
 }
+
+/// An OS error as Rust's `io::Error` displays it: [message], then
+/// `(os error N)` when the OS gave a code.
+@visibleForTesting
+String osErrorText(String message, int code) =>
+    code == 0 ? message : '$message (os error $code)';
 
 /// The environment a worker starts with: empty, except `SystemRoot` on
 /// Windows, without which Windows' own DLLs fail to initialise.

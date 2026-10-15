@@ -7,6 +7,7 @@ import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:meta/meta.dart';
@@ -37,9 +38,9 @@ String workerPackagePath(Abi abi) {
 ///    package config of the machine that built it, when that file still
 ///    exists, and to null otherwise, depending on the working directory.
 ///
-/// Otherwise throws [StateError] naming what was tried. [isAot],
-/// [resolvePackageUri] and [canSelfRelaunch] replace the runtime's answers
-/// in tests.
+/// Otherwise throws a spawn failure ([spawnError]) naming what was tried.
+/// [isAot], [resolvePackageUri] and [canSelfRelaunch] replace the runtime's
+/// answers in tests.
 Future<WorkerLaunch> locateWorker({
   WorkerLaunch? explicit,
   Abi? abi,
@@ -58,7 +59,7 @@ Future<WorkerLaunch> locateWorker({
 WorkerLaunch _selfRelaunch(bool Function() ready) {
   if (ready()) return const SelfRelaunch();
 
-  throw StateError(
+  throw spawnError(
     'No dart_monty_core worker found. This AOT executable can only '
     'relaunch itself as one, which needs runMontyWorkerIfChild(args) as '
     'the first statement of main and the worker library bundled (root '
@@ -84,7 +85,7 @@ Future<WorkerLaunch> _packageExecutable(
       ? '$packageUri (package URIs do not resolve in this runtime)'
       : File.fromUri(resolved).path;
 
-  throw StateError(
+  throw spawnError(
     'No dart_monty_core worker executable found. Tried: $tried. '
     'Build one with tool/build_worker.sh, or pass a WorkerExecutable.',
   );

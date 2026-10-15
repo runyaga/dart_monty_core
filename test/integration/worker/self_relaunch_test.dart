@@ -8,6 +8,8 @@ library;
 
 import 'dart:io';
 
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedError;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
@@ -87,12 +89,12 @@ void main() {
       );
     });
 
-    test('not ready: StateError naming both requirements', () {
+    test('not ready: a spawn failure naming both requirements', () {
       expect(
         locateWorker(isAot: true, canSelfRelaunch: () => false),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
             'message',
             allOf(
               contains('AOT'),
@@ -122,7 +124,7 @@ void main() {
     });
 
     test('by default it asks this process, which is not ready', () {
-      expect(locateWorker(isAot: true), throwsA(isA<StateError>()));
+      expect(locateWorker(isAot: true), throwsA(isA<MontyCrashedError>()));
     });
 
     test('under the JIT it never offers SelfRelaunch', () {
@@ -132,8 +134,8 @@ void main() {
           canSelfRelaunch: () => true,
         ),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
             'message',
             contains('package URIs do not resolve'),
           ),

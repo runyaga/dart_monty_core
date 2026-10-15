@@ -8,9 +8,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
+import 'package:dart_monty_core/src/worker/monty.dart' show Monty;
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
+    show MontyCrashedError, MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -49,9 +50,37 @@ void main() {
     final channel = await openChannel(workerLocation: path).ready;
     addTearDown(channel.close);
     expect((await channel.turn(_configure)).whichKind(), pb.ChildEvent_Kind.ok);
+    // Upstream's `PoolError::Spawn` (lib.rs:255; worker.rs:205 puts the
+    // path before the OS error), as MontyCrashedError (D-042).
     await expectLater(
       openChannel(workerLocation: '/nonexistent/dart_monty_worker').ready,
-      throwsA(isA<ProcessException>()),
+      throwsA(
+        isA<MontyCrashedError>()
+            .having(
+              (e) => e.toString(),
+              'message',
+              'failed to spawn monty worker: /nonexistent/dart_monty_worker: '
+                  'No such file or directory (os error 2)',
+            )
+            .having((e) => (e.timedOut, e.exitStatus), 'status', (
+              false,
+              null,
+            )),
+      ),
+    );
+  });
+
+  test('Monty.start: a worker that cannot spawn is a MontyCrashedError', () {
+    expect(
+      Monty.start(workerLocation: '/nonexistent/dart_monty_worker'),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.toString(),
+          'message',
+          'failed to spawn monty worker: /nonexistent/dart_monty_worker: '
+              'No such file or directory (os error 2)',
+        ),
+      ),
     );
   });
 

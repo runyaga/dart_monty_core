@@ -5,6 +5,8 @@
 /// Internal to the package; nothing here is exported.
 library;
 
+import 'package:dart_monty_core/src/worker/monty_error.dart';
+
 /// The worker assets in a Flutter web build, which serves a package's
 /// declared assets under `assets/packages/<package>/<path>`.
 const String flutterAssetBase = 'assets/packages/dart_monty_core/lib/assets';
@@ -22,8 +24,8 @@ String workerScriptUrl(String base) => '$base/dart_monty_core_worker.js';
 /// The worker module under [base].
 String workerWasmUrl(String base) => '$base/dart_monty_core_worker.wasm';
 
-/// The first of [assetBases] whose worker script [exists]; throws
-/// [StateError] naming every URL tried when none does.
+/// The first of [assetBases] whose worker script [exists]; throws a spawn
+/// failure ([spawnError]) naming every URL tried when none does.
 Future<String> resolveAssetBase(
   Future<bool> Function(String url) exists,
 ) async {
@@ -31,7 +33,7 @@ Future<String> resolveAssetBase(
     if (await exists(workerScriptUrl(base))) return base;
   }
 
-  throw StateError(
+  throw spawnError(
     'No dart_monty_core worker assets found. Tried: '
     '${assetBases.map(workerScriptUrl).join(', ')}. Pass the asset base '
     'as workerLocation.',
