@@ -100,6 +100,11 @@ final Map<String, MontyValue> _kinds = {
   'dict': const MontyDict([(MontyInt(1), MontyInt(2))]),
   'ellipsis': const MontyEllipsis(),
   'exception': MontyExceptionValue('ValueError', 'x'),
+  'exception_io': MontyExceptionValue('io.UnsupportedOperation', 'x'),
+  'exception_json': MontyExceptionValue('json.JSONDecodeError', 'x'),
+  'exception_re': MontyExceptionValue('re.PatternError', 'x'),
+  'exception_binascii': MontyExceptionValue('binascii.Error', 'x'),
+  'exception_incomplete': MontyExceptionValue('binascii.Incomplete', 'x'),
   'float': const MontyFloat(1.5),
   'frozenset': const MontyFrozenSet([MontyInt(1)]),
   'namedtuple': const MontyNamedTuple(

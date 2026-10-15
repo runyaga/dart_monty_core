@@ -358,6 +358,79 @@ sessionOracle = {
           'MontyRuntimeError: TypeError: \'ValueError\' object is not callable',
     ),
   ],
+  'call_exception_io': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'exception_io'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'UnsupportedOperation\' object is not callable',
+    ),
+  ],
+  'call_exception_json': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'exception_json'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'JSONDecodeError\' object is not callable',
+    ),
+  ],
+  'call_exception_re': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'exception_re'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'error\' object is not callable',
+    ),
+  ],
+  'call_exception_binascii': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'exception_binascii'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'Error\' object is not callable',
+    ),
+  ],
+  'call_exception_incomplete': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'exception_incomplete'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'Incomplete\' object is not callable',
+    ),
+  ],
   'call_float': [
     (
       step: <Object?>[

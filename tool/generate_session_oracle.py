@@ -33,9 +33,13 @@ passed, `lookup:<name>` / `call:<name>`, then the end, joined by ` > `.
 from __future__ import annotations
 
 import asyncio
+import binascii
 import collections
 import datetime
+import io
+import json
 import pathlib
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -70,6 +74,11 @@ KINDS: dict[str, Any] = {
     'dict': {1: 2},
     'ellipsis': ...,
     'exception': ValueError('x'),
+    'exception_io': io.UnsupportedOperation('x'),
+    'exception_json': json.JSONDecodeError('x', 'd', 0),
+    'exception_re': re.error('x'),
+    'exception_binascii': binascii.Error('x'),
+    'exception_incomplete': binascii.Incomplete('x'),
     'float': 1.5,
     'frozenset': frozenset({1}),
     'namedtuple': Pt(1, 2),

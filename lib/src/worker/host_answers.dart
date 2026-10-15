@@ -845,7 +845,10 @@ final class AsyncDecline implements Exception {
 String _typeName(Object entry) => switch (entry) {
   ClassInstance() => 'ClassInstance',
   ClassType() => 'ClassType',
-  MontyExceptionValue(:final excType) => excType,
+  // CPython names an exception class without its module; re.PatternError
+  // is an alias of the class named `error`.
+  MontyExceptionValue(excType: 're.PatternError') => 'error',
+  MontyExceptionValue(:final excType) => excType.split('.').last,
   MontyNamedTuple(:final typeName) => typeName,
   _ => _hostTypeNames[entry.runtimeType] ?? 'object',
 };
