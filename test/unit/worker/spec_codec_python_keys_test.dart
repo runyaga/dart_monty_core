@@ -51,7 +51,7 @@ int _frozenSize(List<pb.MontyNode> members) =>
 int _dictSize(List<pb.MontyNode> keys) =>
     (_decode([
               ...keys,
-              n('v'),
+              _v,
               dict([for (var i = 0; i < keys.length; i++) (i, keys.length)]),
             ])
             as MontyDict)
@@ -60,13 +60,27 @@ int _dictSize(List<pb.MontyNode> keys) =>
 
 String _unhashable(String type) => "TypeError: unhashable type: '$type'";
 
+/// Nodes the tests use again and again; a message is shared, a node is not.
+final pb.MontyNode _nan = n(double.nan);
+final pb.MontyNode _one = n(1);
+final pb.MontyNode _two = n(2);
+final pb.MontyNode _v = n('v');
+final pb.MontyNode _exc = exception('ValueError', 'm');
+final pb.MontyNode _file = file('r');
+final pb.MontyNode _c12 = complexNode(real: 1, imag: 2);
+final pb.MontyNode _nanPlusI = complexNode(real: double.nan, imag: 1);
+final pb.MontyNode _onePlusNanI = complexNode(real: 1, imag: double.nan);
+final String _list = _unhashable('list');
+final String _dict = _unhashable('dict');
+final String _set = _unhashable('set');
+
 void main() {
   group('complex keys', () {
     test('REQ-MontyComplex-16: zero imag, incl. negative, is its real key', () {
       // true, 1, 1 (bigint arm), 1.0, 1+0j, 1-0j: one Python key.
       final same = [
         n(true),
-        n(1),
+        _one,
         pb.MontyNode(
           bigint: pb.BigInt(magnitude: magnitudeBytes(BigInt.one)),
         ),
@@ -95,46 +109,45 @@ void main() {
     test('REQ-MontyComplex-16: otherwise component by component', () {
       expect(
         _setSize([
-          complexNode(real: 1, imag: 2),
-          complexNode(real: 1, imag: 2),
+          _c12,
+          _c12,
         ]),
         1,
       );
       expect(
         _setSize([
-          complexNode(real: 1, imag: 2),
+          _c12,
           complexNode(real: 2, imag: 1),
         ]),
         2,
       );
       expect(
         _setSize([
-          complexNode(real: 1, imag: 2),
+          _c12,
           complexNode(real: 1, imag: 3),
         ]),
         2,
       );
       expect(
         _setSize([
-          complexNode(real: 1, imag: 2),
+          _c12,
           complexNode(real: 3, imag: 2),
         ]),
         2,
       );
-      expect(_setSize([n(1), complexNode(real: 1, imag: 2)]), 2);
+      expect(_setSize([_one, _c12]), 2);
       // A NaN component equals nothing, not even another node's NaN.
-      const nan = double.nan;
       expect(
         _setSize([
-          complexNode(real: nan, imag: 1),
-          complexNode(real: nan, imag: 1),
+          _nanPlusI,
+          _nanPlusI,
         ]),
         2,
       );
       expect(
         _setSize([
-          complexNode(real: 1, imag: nan),
-          complexNode(real: 1, imag: nan),
+          _onePlusNanI,
+          _onePlusNanI,
         ]),
         2,
       );
@@ -144,13 +157,13 @@ void main() {
   group('NaN floats', () {
     // Node 0 and 1 are distinct NaN nodes; the same node twice is one key.
     test('REQ-MontyFloat-12: dict, set and frozenset keys', () {
-      expect(_dictSize([n(double.nan), n(double.nan)]), 2);
-      expect(_setSize([n(double.nan), n(double.nan)]), 2);
-      expect(_frozenSize([n(double.nan), n(double.nan)]), 2);
+      expect(_dictSize([_nan, _nan]), 2);
+      expect(_setSize([_nan, _nan]), 2);
+      expect(_frozenSize([_nan, _nan]), 2);
 
       final dictRepeat =
           _decode([
-                n(double.nan),
+                _nan,
                 n('a'),
                 n('b'),
                 dict([(0, 1), (0, 2)]),
@@ -159,7 +172,7 @@ void main() {
       expect(dictRepeat.pairs, hasLength(1));
       expect(
         _decode([
-              n(double.nan),
+              _nan,
               set([0, 0]),
             ])
             as MontySet,
@@ -167,7 +180,7 @@ void main() {
       );
       expect(
         _decode([
-              n(double.nan),
+              _nan,
               frozen([0, 0, 0]),
             ])
             as MontyFrozenSet,
@@ -176,8 +189,8 @@ void main() {
       // Mixed: two repeats of one node and one other NaN node.
       expect(
         (_decode([
-                  n(double.nan),
-                  n(double.nan),
+                  _nan,
+                  _nan,
                   set([0, 1, 0, 1]),
                 ])
                 as MontySet)
@@ -187,27 +200,27 @@ void main() {
     });
 
     test('REQ-MontyFrozenSet-10: separate NaN nodes stay, repeats merge', () {
-      expect(_frozenSize([n(double.nan), n(double.nan)]), 2);
-      expect(_frozenSize([n(double.nan), n(double.nan), n(double.nan)]), 3);
+      expect(_frozenSize([_nan, _nan]), 2);
+      expect(_frozenSize([_nan, _nan, _nan]), 3);
       final merged =
           _decode([
-                n(double.nan),
-                n(double.nan),
+                _nan,
+                _nan,
                 frozen([0, 1, 0, 1, 1]),
               ])
               as MontyFrozenSet;
       expect(merged.items, hasLength(2));
       // A NaN does not merge with a number.
-      expect(_frozenSize([n(double.nan), floatNode(0), n(1.5)]), 3);
+      expect(_frozenSize([_nan, floatNode(0), n(1.5)]), 3);
     });
   });
 
   group('exceptions and file handles are keyed by node, not by fields', () {
     final exceptionNodes = [
-      exception('ValueError', 'm'),
-      exception('ValueError', 'm'),
+      _exc,
+      _exc,
     ];
-    final fileNodes = [file('r'), file('r')];
+    final fileNodes = [_file, _file];
 
     test('REQ-MontyExceptionValue-12: dictionary keys', () {
       // Two nodes equal in Dart: two Python keys.
@@ -218,19 +231,20 @@ void main() {
       final decoded =
           _decode([
                 ...exceptionNodes,
-                n(1),
-                n(2),
+                _one,
+                _two,
                 dict([(0, 2), (1, 3)]),
               ])
               as MontyDict;
       expect(decoded.pairs, hasLength(2));
-      expect(decoded.pairs[0].$1, decoded.pairs[1].$1);
+      final [(first, _), (second, _)] = decoded.pairs;
+      expect(first, second);
       // The same node twice: one key, the later value kept.
       final repeat =
           _decode([
-                exceptionNodes[0],
-                n(1),
-                n(2),
+                _exc,
+                _one,
+                _two,
                 dict([(0, 1), (0, 2)]),
               ])
               as MontyDict;
@@ -245,7 +259,7 @@ void main() {
       expect(_frozenSize(fileNodes), 2);
       expect(
         _decode([
-              file('r'),
+              _file,
               set([0, 0]),
             ])
             as MontySet,
@@ -253,7 +267,7 @@ void main() {
       );
       expect(
         _decode([
-              file('r'),
+              _file,
               frozen([0, 0]),
             ])
             as MontyFrozenSet,
@@ -261,8 +275,8 @@ void main() {
       );
       expect(
         (_decode([
-                  file('r'),
-                  n(1),
+                  _file,
+                  _one,
                   dict([(0, 1), (0, 1)]),
                 ])
                 as MontyDict)
@@ -277,8 +291,8 @@ void main() {
       expect(_frozenSize([...exceptionNodes, ...fileNodes]), 4);
       final repeat =
           _decode([
-                exception('ValueError', 'm'),
-                file('r'),
+                _exc,
+                _file,
                 frozen([0, 1, 0, 1]),
               ])
               as MontyFrozenSet;
@@ -311,30 +325,30 @@ void main() {
     test('REQ-MontyDict-26: first unhashable member, stored order', () {
       for (final MapEntry(key: name, value: shape) in shapes.entries) {
         expect(
-          _refusal(inSet(shape, [n(1), list0, dict0])),
-          _unhashable('list'),
+          _refusal(inSet(shape, [_one, list0, dict0])),
+          _list,
           reason: name,
         );
         expect(
           _refusal(inSet(shape, [dict0, list0])),
-          _unhashable('dict'),
+          _dict,
           reason: name,
         );
         expect(
-          _refusal(inSet(shape, [n(1), set([]), list0])),
-          _unhashable('set'),
+          _refusal(inSet(shape, [_one, set([]), list0])),
+          _set,
           reason: name,
         );
         // As a dictionary key.
-        final members = [n(1), list0, dict0];
+        final members = [_one, list0, dict0];
         expect(
           _refusal([
             ...members,
             shape([0, 1, 2]),
-            n('v'),
+            _v,
             dict([(3, 4)]),
           ]),
-          _unhashable('list'),
+          _list,
           reason: name,
         );
       }
@@ -345,19 +359,19 @@ void main() {
           tuple([0]),
           tuple([1]),
           frozen([2]),
-          n('v'),
+          _v,
           dict([(3, 4)]),
         ]),
-        _unhashable('list'),
+        _list,
       );
       // Hashable members are accepted, whatever the shape.
       for (final shape in shapes.values) {
         expect(
           (_decode([
-                    n(1),
+                    _one,
                     n('x'),
                     shape([0, 1]),
-                    n('v'),
+                    _v,
                     dict([(2, 3)]),
                   ])
                   as MontyDict)
@@ -377,7 +391,7 @@ void main() {
               shape([0]),
               set([1]),
             ]),
-            _unhashable('list'),
+            _list,
             reason: name,
           );
           expect(
@@ -387,23 +401,23 @@ void main() {
               shape([1]),
               set([2]),
             ]),
-            _unhashable('dict'),
+            _dict,
             reason: name,
           );
           expect(
             _refusal([
-              n(1),
+              _one,
               set([]),
               shape([0, 1]),
               set([2]),
             ]),
-            _unhashable('set'),
+            _set,
             reason: name,
           );
           // The same element with hashable members is accepted.
           expect(
             (_decode([
-                      n(1),
+                      _one,
                       n('x'),
                       shape([0, 1]),
                       set([2]),
@@ -424,7 +438,7 @@ void main() {
           list0,
           frozen([0, 1]),
         ]),
-        _unhashable('dict'),
+        _dict,
       );
       expect(
         _refusal([
@@ -432,16 +446,16 @@ void main() {
           dict0,
           frozen([0, 1]),
         ]),
-        _unhashable('list'),
+        _list,
       );
       expect(
         _refusal([
-          n(1),
+          _one,
           set([]),
           list0,
           frozen([0, 1, 2]),
         ]),
-        _unhashable('set'),
+        _set,
       );
       // Nested frozenset members are judged in order too.
       expect(
@@ -451,7 +465,7 @@ void main() {
           frozen([0, 1]),
           frozen([2]),
         ]),
-        _unhashable('dict'),
+        _dict,
       );
     });
 
@@ -459,12 +473,12 @@ void main() {
       // tuple (1, 2), P(1, 2) and Q(x, y = 1, 2): one key.
       final decoded =
           _decode([
-                n(1),
-                n(2),
+                _one,
+                _two,
                 tuple([0, 1]),
                 namedTuple('P', ['a', 'b'], [0, 1]),
                 namedTuple('m.Q', ['x', 'y'], [0, 1]),
-                n('v'),
+                _v,
                 dict([(2, 5), (3, 5), (4, 5)]),
               ])
               as MontyDict;
@@ -479,11 +493,11 @@ void main() {
       );
       final apart =
           _decode([
-                n(1),
-                n(2),
+                _one,
+                _two,
                 namedTuple('P', ['a', 'b'], [0, 1]),
                 namedTuple('P', ['a', 'b'], [1, 0]),
-                n('v'),
+                _v,
                 dict([(2, 4), (3, 4)]),
               ])
               as MontyDict;
@@ -493,20 +507,20 @@ void main() {
         _refusal([
           list([]),
           namedTuple('P', ['a'], [0]),
-          n('v'),
+          _v,
           dict([(1, 2)]),
         ]),
-        _unhashable('list'),
+        _list,
       );
       expect(
         _refusal([
-          n(1),
+          _one,
           dict([]),
           namedTuple('P', ['a', 'b'], [0, 1]),
-          n('v'),
+          _v,
           dict([(2, 3)]),
         ]),
-        _unhashable('dict'),
+        _dict,
       );
     });
   });

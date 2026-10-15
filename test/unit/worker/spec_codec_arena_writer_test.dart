@@ -10,6 +10,8 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
+
 /// The arena [values] are written into, one `add` each, with the roots.
 (List<pb.MontyNode>, List<int>) _write(List<MontyValue> values) {
   final writer = ArenaWriter();
@@ -28,15 +30,27 @@ MontyValue _roundTrip(MontyValue value) {
 
 /// The message of the [ArgumentError] writing [value] raises.
 String _refusal(MontyValue value) {
+  Object? caught;
   try {
     ArenaWriter().add(value);
-    // The writer's refusal is an ArgumentError; this reads its message.
-    // ignore: avoid_catching_errors
-  } on ArgumentError catch (e) {
-    return '${e.message}';
+  } on Object catch (e) {
+    caught = e;
   }
-  fail('writing $value was not refused');
+
+  return switch (caught) {
+    ArgumentError(:final message) => '$message',
+    _ => fail('writing $value was not refused'),
+  };
 }
+
+/// The last node of [nodes].
+pb.MontyNode _lastNode(List<pb.MontyNode> nodes) =>
+    itemAt(nodes, nodes.length - 1);
+
+/// Upstream's refusal of a list, a dict or a set as a key or member.
+final Matcher refusesList = contains("TypeError: unhashable type: 'list'");
+final Matcher refusesDict = contains("TypeError: unhashable type: 'dict'");
+final Matcher refusesSet = contains("TypeError: unhashable type: 'set'");
 
 /// The integer in an `int` node.
 int _int(pb.MontyNode node) => intOfNode(node).toInt();
@@ -81,7 +95,7 @@ void main() {
         kind,
         pb.MontyNode_Kind.list,
       ]);
-      expect(nodes.last.list.items, [0, 1]);
+      expect(_lastNode(nodes).list.items, [0, 1]);
 
       final writer = ArenaWriter();
       final first = writer.add(leaf);
@@ -129,13 +143,13 @@ void main() {
     ];
 
     List<int> values(pb.Arena arena, Iterable<int> refs) => [
-      for (final r in refs) _int(arena.nodes[r]),
+      for (final r in refs) _int(itemAt(arena.nodes, r)),
     ];
 
     test('REQ-MontyList-4: a list node holds its items in sequence', () {
       final writer = ArenaWriter();
       final root = writer.add(MontyList(ints));
-      final node = writer.arena.nodes[root];
+      final node = itemAt(writer.arena.nodes, root);
       expect(node.whichKind(), pb.MontyNode_Kind.list);
       expect(values(writer.arena, node.list.items), [10, 20, 30]);
     });
@@ -143,7 +157,7 @@ void main() {
     test('REQ-MontyTuple-4: a tuple node holds its items in order', () {
       final writer = ArenaWriter();
       final root = writer.add(MontyTuple(ints));
-      final node = writer.arena.nodes[root];
+      final node = itemAt(writer.arena.nodes, root);
       expect(node.whichKind(), pb.MontyNode_Kind.tuple);
       expect(values(writer.arena, node.tuple.items), [10, 20, 30]);
     });
@@ -157,15 +171,16 @@ void main() {
           (MontyString('c'), MontyInt(3)),
         ]),
       );
-      final node = writer.arena.nodes[root];
+      final node = itemAt(writer.arena.nodes, root);
       expect(node.whichKind(), pb.MontyNode_Kind.dict);
       final pairs = node.dict.pairs;
+      final nodes = writer.arena.nodes;
       expect(
-        [for (final p in pairs) writer.arena.nodes[p.key].str],
+        [for (final p in pairs) itemAt(nodes, p.key).str],
         ['a', 'b', 'c'],
       );
       expect(
-        [for (final p in pairs) _int(writer.arena.nodes[p.value])],
+        [for (final p in pairs) _int(itemAt(nodes, p.value))],
         [1, 2, 3],
       );
     });
@@ -179,8 +194,8 @@ void main() {
       ]);
       // The int, the named tuple once, the list.
       expect(nodes, hasLength(3));
-      expect(nodes[1].whichKind(), pb.MontyNode_Kind.namedTuple);
-      expect(nodes.last.list.items, [1, 1]);
+      expect(itemAt(nodes, 1).whichKind(), pb.MontyNode_Kind.namedTuple);
+      expect(_lastNode(nodes).list.items, [1, 1]);
 
       // An equal but distinct object is its own node.
       final (apart, _) = _write([
@@ -190,15 +205,13 @@ void main() {
         ]),
       ]);
       expect(apart, hasLength(5));
-      expect(apart.last.list.items, [1, 3]);
+      expect(_lastNode(apart).list.items, [1, 3]);
     });
   });
 
   group('a key or member Python cannot hash is refused, first one named', () {
     String keyIn(MontyValue member) =>
         _refusal(MontyDict([(member, const MontyInt(1))]));
-
-    const typeError = "TypeError: unhashable type: '";
 
     test('REQ-MontyDict-29: tuple, named tuple and frozenset keys', () {
       for (final (make, name)
@@ -209,12 +222,12 @@ void main() {
           ]) {
         expect(
           keyIn(make([const MontyInt(1), _unhashableList, _unhashableDict])),
-          contains("${typeError}list'"),
+          refusesList,
           reason: name,
         );
         expect(
           keyIn(make([_unhashableDict, _unhashableList])),
-          contains("${typeError}dict'"),
+          refusesDict,
           reason: name,
         );
       }
@@ -225,7 +238,7 @@ void main() {
             MontyTuple([_unhashableSet]),
           ]),
         ),
-        contains("${typeError}set'"),
+        refusesSet,
       );
       // A hashable key is written.
       expect(
@@ -245,7 +258,7 @@ void main() {
       const inner = MontyTuple([MontyInt(1), _unhashableList]);
       expect(
         keyIn(const MontyFrozenSet([inner])),
-        contains("${typeError}list'"),
+        refusesList,
       );
       expect(
         keyIn(
@@ -253,7 +266,7 @@ void main() {
             MontyFrozenSet([_unhashableDict]),
           ]),
         ),
-        contains("${typeError}dict'"),
+        refusesDict,
       );
       expect(
         () => ArenaWriter().add(
@@ -273,15 +286,15 @@ void main() {
     test('REQ-MontyFrozenSet-24: the message names the first offender', () {
       expect(
         _refusal(const MontyFrozenSet([_unhashableDict, _unhashableList])),
-        contains("${typeError}dict'"),
+        refusesDict,
       );
       expect(
         _refusal(const MontyFrozenSet([_unhashableList, _unhashableDict])),
-        contains("${typeError}list'"),
+        refusesList,
       );
       expect(
         _refusal(const MontyFrozenSet([MontyInt(1), _unhashableSet])),
-        contains("${typeError}set'"),
+        refusesSet,
       );
     });
 
@@ -298,7 +311,7 @@ void main() {
               make([_unhashableDict]),
             ]),
           ),
-          contains("${typeError}list'"),
+          refusesList,
         );
         expect(
           _refusal(
@@ -307,7 +320,7 @@ void main() {
               make([_unhashableList]),
             ]),
           ),
-          contains("${typeError}dict'"),
+          refusesDict,
         );
         // Two offenders inside one element: the first stored one.
         expect(
@@ -316,7 +329,7 @@ void main() {
               make([_unhashableList, _unhashableDict]),
             ]),
           ),
-          contains("${typeError}list'"),
+          refusesList,
         );
         expect(
           _refusal(
@@ -324,7 +337,7 @@ void main() {
               make([_unhashableDict, _unhashableList]),
             ]),
           ),
-          contains("${typeError}dict'"),
+          refusesDict,
         );
         // Inside a nested member of the element.
         expect(
@@ -335,7 +348,7 @@ void main() {
               ]),
             ]),
           ),
-          contains("${typeError}set'"),
+          refusesSet,
         );
         expect(
           () => ArenaWriter().add(
@@ -350,9 +363,9 @@ void main() {
 
     test('REQ-MontyNamedTuple-23: a named tuple as key or element', () {
       final bad = _named([const MontyInt(1), _unhashableList]);
-      expect(keyIn(bad), contains("${typeError}list'"));
-      expect(_refusal(MontySet([bad])), contains("${typeError}list'"));
-      expect(_refusal(MontyFrozenSet([bad])), contains("${typeError}list'"));
+      expect(keyIn(bad), refusesList);
+      expect(_refusal(MontySet([bad])), refusesList);
+      expect(_refusal(MontyFrozenSet([bad])), refusesList);
       // Recursively: the named tuple holds a tuple holding a dict.
       expect(
         keyIn(
@@ -360,7 +373,7 @@ void main() {
             const MontyTuple([_unhashableDict]),
           ]),
         ),
-        contains("${typeError}dict'"),
+        refusesDict,
       );
       final good = _named([const MontyInt(1), const MontyString('x')]);
       expect(
@@ -438,15 +451,16 @@ void main() {
     test('REQ-MontyTime-17: a surrogate zone name is dropped, offset kept', () {
       for (final offset in [-3600, 3600, 0]) {
         final (nodes, _) = _write([_time(offset: offset, name: 'Z\uD800')]);
-        final node = nodes.single.time;
+        final node = onlyItem(nodes).time;
         expect(node.hasTimezoneName(), isFalse);
         expect(node.hasOffsetSeconds(), isTrue);
         expect(node.offsetSeconds, offset);
       }
       // A well-formed name is kept next to the same offset.
       final (kept, _) = _write([_time(offset: -3600, name: 'CET')]);
-      expect(kept.single.time.timezoneName, 'CET');
-      expect(kept.single.time.offsetSeconds, -3600);
+      final keptTime = onlyItem(kept).time;
+      expect(keptTime.timezoneName, 'CET');
+      expect(keptTime.offsetSeconds, -3600);
     });
 
     test('REQ-MontyDateTime-13: fields map, empty name differs from none', () {
@@ -462,7 +476,7 @@ void main() {
         timezoneName: name,
       );
       final (nodes, _) = _write([make(offset: -7200, name: 'X')]);
-      final d = nodes.single.datetime;
+      final d = onlyItem(nodes).datetime;
       expect(
         [d.year, d.month, d.day, d.hour, d.minute, d.second, d.microsecond],
         [2026, 10, 15, 13, 14, 15, 16],
@@ -483,8 +497,8 @@ void main() {
       // On the wire the empty name is present, the absent one is not.
       final (empty, _) = _write([make(offset: 1, name: '')]);
       final (none, _) = _write([make(offset: 1)]);
-      expect(empty.single.datetime.hasTimezoneName(), isTrue);
-      expect(none.single.datetime.hasTimezoneName(), isFalse);
+      expect(onlyItem(empty).datetime.hasTimezoneName(), isTrue);
+      expect(onlyItem(none).datetime.hasTimezoneName(), isFalse);
     });
   });
 
@@ -499,8 +513,8 @@ void main() {
         expect(decoded, isA<MontyString>());
         expect(decoded.runtimeType, MontyString);
         final (nodes, _) = _write([decoded]);
-        expect(nodes.single.whichKind(), pb.MontyNode_Kind.str);
-        expect(nodes.single.str, (decoded as MontyString).value);
+        expect(onlyItem(nodes).whichKind(), pb.MontyNode_Kind.str);
+        expect(onlyItem(nodes).str, (decoded as MontyString).value);
       }
     });
 
@@ -511,7 +525,7 @@ void main() {
         expect(() => MontyFileHandle('\uDC00', 'rb'), throwsArgumentError);
         // A well-formed (paired) path is written.
         final (nodes, _) = _write([MontyFileHandle('/\u{1F600}', 'r')]);
-        expect(nodes.single.fileHandle.path, '/\u{1F600}');
+        expect(onlyItem(nodes).fileHandle.path, '/\u{1F600}');
       },
     );
   });

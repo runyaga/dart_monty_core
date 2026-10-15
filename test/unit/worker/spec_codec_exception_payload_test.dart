@@ -15,6 +15,9 @@ import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '../../_accessors.dart';
+import '_spec_codec_support.dart';
+
 const int _limit = 64 * 1024;
 
 /// A well-formed set of json.JSONDecodeError attributes.
@@ -204,8 +207,9 @@ void main() {
         );
       }
       final all = _host(_attrs());
-      expect(all.data.json.lineno, Int64.ONE);
-      expect(all.data.json.colno, Int64(7));
+      final json = all.data.json;
+      expect(json.lineno, Int64.ONE);
+      expect(json.colno, Int64(7));
     });
 
     test(
@@ -245,7 +249,7 @@ void main() {
         });
         final writer = ArenaWriter();
         final root = writer.add(value);
-        final node = writer.arena.nodes[root].exception;
+        final node = itemAt(writer.arena.nodes, root).exception;
         expect(node.excType, 'UnicodeEncodeError');
         expect(node.arg, 'boom');
         // Nothing beyond the type and the message goes on the wire.
@@ -292,8 +296,10 @@ void main() {
       // A str object is measured in UTF-8 bytes, not characters.
       final fits = euro * (_limit ~/ 3); // 65535 bytes
       final over = euro * (_limit ~/ 3 + 1); // 65538 bytes, 21846 characters
-      expect(fits.length, lessThan(_limit));
-      expect(over.length, lessThan(_limit));
+      // Both are under the limit in characters, one over it in bytes.
+      for (final text in [fits, over]) {
+        expect(text.length, lessThan(_limit));
+      }
       expect(
         _kept(_inbound('UnicodeEncodeError', _unicodeStr(object: fits))),
         isTrue,
@@ -331,20 +337,16 @@ void main() {
           isTrue,
           reason: field,
         );
-        expect(
-          _kept(_inbound('UnicodeEncodeError', with_(over))),
-          isFalse,
-          reason: field,
-        );
+        final oversized = _inbound('UnicodeEncodeError', with_(over));
+        expect(_kept(oversized), isFalse, reason: field);
         expect(
           _kept(_inbound('UnicodeEncodeError', with_('a' * (_limit + 1)))),
           isFalse,
           reason: field,
         );
         // Dropped whole: the other fields are gone too, the message stays.
-        final error = _inbound('UnicodeEncodeError', with_(over));
-        expect(error.exception.attributes, isEmpty);
-        expect(_rendered(error), 'UnicodeEncodeError: boom');
+        expect(oversized.exception.attributes, isEmpty);
+        expect(_rendered(oversized), 'UnicodeEncodeError: boom');
       }
       // An oversized object in a decode error: the same rule.
       expect(
@@ -433,9 +435,9 @@ void main() {
       expect(value.attributes['start'], const MontyInt(1));
       expect(value.attributes['end'], const MontyInt(2));
       expect(value.attributes['object'], const MontyString('héllo'));
-      expect(value.attributes['start'], isA<MontyInt>());
-      expect(value.attributes['end'], isA<MontyInt>());
-      expect(value.attributes['object'], isA<MontyString>());
+      expect(value.attributes['start'], isInt);
+      expect(value.attributes['end'], isInt);
+      expect(value.attributes['object'], isString);
     });
 
     test('REQ-errors-and-tracebacks-30: decode and encode errors', () {
@@ -448,7 +450,7 @@ void main() {
         decode.attributes['reason'],
         const MontyString('invalid start byte'),
       );
-      expect(decode.attributes['object'], isA<MontyBytes>());
+      expect(decode.attributes['object'], isBytes);
       expect((decode.attributes['object']! as MontyBytes).value, [
         0xff,
         0xfe,
@@ -456,21 +458,21 @@ void main() {
       ]);
       expect(decode.attributes['start'], const MontyInt(0));
       expect(decode.attributes['end'], const MontyInt(2));
-      expect(decode.attributes['start'], isA<MontyInt>());
-      expect(decode.attributes['end'], isA<MontyInt>());
+      expect(decode.attributes['start'], isInt);
+      expect(decode.attributes['end'], isInt);
 
       final encode = _inbound(
         'UnicodeEncodeError',
         _unicodeStr(object: 'xyz', start: 1, end: 3),
       ).exception;
-      expect(encode.attributes['object'], isA<MontyString>());
+      expect(encode.attributes['object'], isString);
       expect(encode.attributes['object'], const MontyString('xyz'));
       expect(encode.attributes['start'], const MontyInt(1));
       expect(encode.attributes['end'], const MontyInt(3));
-      expect(encode.attributes['start'], isA<MontyInt>());
-      expect(encode.attributes['end'], isA<MontyInt>());
-      expect(encode.attributes['encoding'], isA<MontyString>());
-      expect(encode.attributes['reason'], isA<MontyString>());
+      expect(encode.attributes['start'], isInt);
+      expect(encode.attributes['end'], isInt);
+      expect(encode.attributes['encoding'], isString);
+      expect(encode.attributes['reason'], isString);
     });
 
     test(
@@ -482,17 +484,15 @@ void main() {
           end: pb.CodeLoc(line: 1, column: 2),
           frameName: '<module>',
         );
+        final wrongKind = _unicodeStr();
         for (final (type, data) in <(String, pb.ExcData?)>[
           ('UnicodeDecodeError', null),
           ('UnicodeEncodeError', null),
           ('json.JSONDecodeError', null),
           // A payload of another kind.
-          ('UnicodeDecodeError', _unicodeStr()),
+          ('UnicodeDecodeError', wrongKind),
           ('UnicodeEncodeError', _unicodeBytes([1])),
-          (
-            'json.JSONDecodeError',
-            _unicodeStr(),
-          ),
+          ('json.JSONDecodeError', wrongKind),
           // Unusable: the span is empty.
           ('UnicodeEncodeError', _unicodeStr(start: 1)),
         ]) {

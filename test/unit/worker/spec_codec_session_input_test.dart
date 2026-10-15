@@ -257,12 +257,13 @@ void main() {
   });
 
   group('a cyclic attribute container', () {
+    final loop = _cyclic();
     final type = montyClassTypeProxy(
       name: 'P',
       id: _classId,
       hostDefined: true,
       isDataclass: true,
-      attrs: {'loop': _cyclic()},
+      attrs: {'loop': loop},
     );
     final instance = montyClassProxy(
       classType: montyClassTypeProxy(
@@ -273,10 +274,10 @@ void main() {
         attrs: const {},
       ),
       instanceId: '00000000-0000-4000-8000-000000000001',
-      attrs: {'loop': _cyclic()},
+      attrs: {'loop': loop},
     );
 
-    Matcher circular() => throwsA(
+    final circular = throwsA(
       isA<MontyRuntimeError>()
           .having(
             (e) => e.toString(),
@@ -290,8 +291,8 @@ void main() {
       final (s, ch) = await _session([
         answer([_int(1)]),
       ]);
-      await expectLater(s.feedRun('x', inputs: {'x': instance}), circular());
-      await expectLater(s.feedRun('x', inputs: {'x': type}), circular());
+      await expectLater(s.feedRun('x', inputs: {'x': instance}), circular);
+      await expectLater(s.feedRun('x', inputs: {'x': type}), circular);
       await expectLater(
         s.feedRun(
           'x',
@@ -299,7 +300,7 @@ void main() {
             'x': MontyList([instance]),
           },
         ),
-        circular(),
+        circular,
       );
       expect(ch.requests, hasLength(1));
       expect(await s.feedRun('1'), const MontyInt(1));
@@ -314,8 +315,8 @@ void main() {
         ]);
         final snap = await s.feedStart('f()') as FunctionSnapshot;
         final sent = ch.requests.length;
-        expect(() => snap.resume(ExternalReturnValue(instance)), circular());
-        expect(() => snap.resume(ExternalReturnValue(type)), circular());
+        expect(() => snap.resume(ExternalReturnValue(instance)), circular);
+        expect(() => snap.resume(ExternalReturnValue(type)), circular);
         expect(ch.requests, hasLength(sent));
         expect(snap.isSpent, isFalse);
         await snap.resume(const ExternalReturnValue(MontyInt(1)));

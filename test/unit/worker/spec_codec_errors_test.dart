@@ -4,9 +4,12 @@
 // a MontyCrashedError caught by `on MontyError`. Each test name starts with
 // the requirement id it asserts, so a mutation run can select it with
 // `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js and dart2wasm.
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
+
+import '../../_accessors.dart';
 
 pb.StackFrame _frame({
   String file = 'main.py',
@@ -35,25 +38,39 @@ List<Frame> _traceback(MontyError error) => switch (error) {
   _ => fail('not a raised error: $error'),
 };
 
+/// [values], which must be non-null for this to compile.
+List<int> _ints(List<int> values) => values;
+
+/// The one frame of [error]'s traceback.
+Frame _onlyFrame(MontyError error) => onlyItem(_traceback(error));
+
+/// Whether [a] and [b] hold the very same objects in the same order.
+bool _same(List<Object> a, List<Object> b) =>
+    a.length == b.length &&
+    !a.indexed.any((e) => !identical(e.$2, b.elementAtOrNull(e.$1)));
+
+/// A traceback frame without a start.
+pb.StackFrame _noStart() =>
+    pb.StackFrame(filename: 'm.py', end: pb.CodeLoc(line: 1, column: 1));
+
 void main() {
+  final crashed = isA<MontyCrashedError>();
+  final runtime = isA<MontyRuntimeError>();
+
   group('Frame', () {
     test('REQ-Frame-7: positions are non-nullable one-based ints', () {
-      final frame = _traceback(
-        _error('ValueError', [
-          _frame(endLine: 4),
-        ]),
-      ).single;
+      final frame = _onlyFrame(_error('ValueError', [_frame(endLine: 4)]));
       // A list of `int` does not compile if a field is nullable.
-      final positions = <int>[
+      final positions = _ints([
         frame.line,
         frame.column,
         frame.endLine,
         frame.endColumn,
-      ];
+      ]);
       expect(positions, [3, 5, 4, 9]);
-      final first = _traceback(
+      final first = _onlyFrame(
         _error('ValueError', [_frame(line: 1, column: 1, endColumn: 2)]),
-      ).single;
+      );
       expect(
         [first.line, first.column, first.endLine, first.endColumn],
         [1, 1, 1, 2],
@@ -61,58 +78,53 @@ void main() {
     });
 
     test('REQ-Frame-10: sourceLine is the optional preview', () {
-      final absent = _traceback(_error('ValueError', [_frame()])).single;
+      final absent = _onlyFrame(_error('ValueError', [_frame()]));
       expect(absent.sourceLine, isNull);
-      final present = _traceback(
+      final present = _onlyFrame(
         _error('ValueError', [_frame(preview: 'x = 1 / 0')]),
-      ).single;
+      );
       expect(present.sourceLine, 'x = 1 / 0');
-      final empty = _traceback(
+      final empty = _onlyFrame(
         _error('ValueError', [_frame(column: 1, endColumn: 1, preview: '')]),
-      ).single;
+      );
       expect(empty.sourceLine, '');
     });
 
     test('REQ-Frame-12: hashCode is the identity hash, not the fields', () {
+      final wire = _frame();
       final frames = [
-        ..._traceback(_error('ValueError', [_frame(), _frame()])),
-        ..._traceback(_error('ValueError', [_frame()])),
+        ..._traceback(_error('ValueError', [wire, wire])),
+        ..._traceback(_error('ValueError', [wire])),
       ];
       for (final frame in frames) {
         expect(frame.hashCode, identityHashCode(frame));
         expect(frame.hashCode, frame.hashCode);
       }
       // Equal fields, different objects: not equal.
-      expect(frames[0] == frames[1], isFalse);
-      expect(frames[0] == frames[2], isFalse);
-      expect(frames[0] == frames[0], isTrue);
+      final [a, b, c] = frames;
+      expect(a == b, isFalse);
+      expect(a == c, isFalse);
+      expect(a == a, isTrue);
       expect({...frames}, hasLength(3));
     });
 
     test('REQ-Frame-13: repeated reads give the same frame objects', () {
+      final wire = [_frame(), _frame(line: 4)];
       for (final error in [
-        _error('ValueError', [_frame(), _frame(line: 4)]),
-        _error('SyntaxError', [_frame(), _frame(line: 4)]),
+        _error('ValueError', wire),
+        _error('SyntaxError', wire),
       ]) {
         final first = _traceback(error);
-        final second = _traceback(error);
         expect(first, hasLength(2));
-        for (var i = 0; i < first.length; i++) {
-          expect(identical(first[i], second[i]), isTrue, reason: '$error $i');
-        }
+        expect(_same(first, _traceback(error)), isTrue, reason: '$error');
       }
     });
 
     test(
       'REQ-Frame-22: a rejected frame is a MontyCrashedError, a MontyError',
       () {
-        final rejected = <String, List<pb.StackFrame>>{
-          'no start': [
-            pb.StackFrame(
-              filename: 'm.py',
-              end: pb.CodeLoc(line: 1, column: 1),
-            ),
-          ],
+        final rejected = {
+          'no start': [_noStart()],
           'no end': [
             pb.StackFrame(
               filename: 'm.py',
@@ -128,7 +140,7 @@ void main() {
         };
         for (final MapEntry(:key, :value) in rejected.entries) {
           final error = _error('ValueError', value, 'm');
-          expect(error, isA<MontyCrashedError>(), reason: key);
+          expect(error, crashed, reason: key);
           expect((error as MontyCrashedError).cause, CrashCause.protocol);
           expect(
             error.toString(),
@@ -145,7 +157,7 @@ void main() {
           expect(identical(caught, error), isTrue, reason: key);
         }
         // A well-formed frame is a runtime error, not a rejection.
-        expect(_error('ValueError', [_frame()]), isA<MontyRuntimeError>());
+        expect(_error('ValueError', [_frame()]), runtime);
       },
     );
   });
@@ -156,16 +168,11 @@ void main() {
       () {
         final rejected = [
           _error('NotARealException', const [], 'm'),
-          _error('ValueError', [
-            pb.StackFrame(
-              filename: 'm.py',
-              end: pb.CodeLoc(line: 1, column: 1),
-            ),
-          ], 'm'),
+          _error('ValueError', [_noStart()], 'm'),
         ];
         for (final error in rejected) {
-          expect(error, isA<MontyCrashedError>());
-          expect(error, isNot(isA<MontyRuntimeError>()));
+          expect(error, crashed);
+          expect(error, isNot(runtime));
           expect(error, isNot(isA<MontySyntaxError>()));
           var handled = false;
           try {
@@ -178,7 +185,7 @@ void main() {
           expect(handled, isTrue);
         }
         expect(
-          rejected.first.toString(),
+          firstItem(rejected).toString(),
           'monty worker protocol error: invalid exception payload: '
           'unknown exception type "NotARealException"',
         );
@@ -196,36 +203,31 @@ void main() {
     test('REQ-MontyRuntimeError-7: repeated reads return the same list', () {
       final error = _error('ValueError', three()) as MontyRuntimeError;
       final first = error.traceback;
-      final second = error.traceback;
-      expect(identical(first, second), isTrue);
+      expect(identical(first, error.traceback), isTrue);
       expect(first, hasLength(3));
-      for (var i = 0; i < 3; i++) {
-        expect(identical(first[i], second[i]), isTrue);
-      }
-      expect(() => first.add(first.first), throwsUnsupportedError);
+      expect(_same(first, error.traceback), isTrue);
+      expect(() => first.add(firstItem(first)), throwsUnsupportedError);
     });
 
     test('REQ-MontySyntaxError-8: outermost frame first, in order', () {
-      final error = _error('SyntaxError', three(), 'bad') as MontySyntaxError;
+      final wire = three();
+      final error = _error('SyntaxError', wire, 'bad') as MontySyntaxError;
       expect(error.traceback.map((f) => f.line), [10, 20, 30]);
       expect(error.traceback.map((f) => f.functionName), [
         'outer',
         'middle',
         null,
       ]);
-      final runtime = _error('ValueError', three()) as MontyRuntimeError;
-      expect(runtime.traceback.map((f) => f.line), [10, 20, 30]);
+      final other = _error('ValueError', wire) as MontyRuntimeError;
+      expect(other.traceback.map((f) => f.line), [10, 20, 30]);
     });
 
     test('REQ-MontySyntaxError-9: repeated reads give the same frames', () {
       final error = _error('SyntaxError', three(), 'bad') as MontySyntaxError;
       final first = error.traceback;
-      final second = error.traceback;
       expect(first, hasLength(3));
-      for (var i = 0; i < 3; i++) {
-        expect(identical(first[i], second[i]), isTrue, reason: '$i');
-      }
-      expect(identical(first, second), isTrue);
+      expect(_same(first, error.traceback), isTrue);
+      expect(identical(first, error.traceback), isTrue);
     });
   });
 

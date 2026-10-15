@@ -11,6 +11,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '_arena_fixtures.dart';
+import '_spec_codec_support.dart';
 
 /// The arena after a wire round trip, so field presence survives as it
 /// would from the worker.
@@ -71,10 +72,10 @@ void main() {
           final decoded = _decode([node]);
           final reason = '$value on the $arm arm';
           if (big) {
-            expect(decoded, isA<MontyBigInt>(), reason: reason);
+            expect(decoded, isBigInt, reason: reason);
             expect((decoded as MontyBigInt).value, value, reason: reason);
           } else {
-            expect(decoded, isA<MontyInt>(), reason: reason);
+            expect(decoded, isInt, reason: reason);
             expect((decoded as MontyInt).value, value.toInt(), reason: reason);
           }
         }
@@ -86,7 +87,7 @@ void main() {
       () {
         final value = (BigInt.one << 60) + BigInt.from(12345);
         final decoded = _decode([_intArm(value)]);
-        expect(decoded, isA<MontyBigInt>());
+        expect(decoded, isBigInt);
         expect(decoded.dartValue, isA<BigInt>());
         expect(decoded.dartValue, value);
         expect(decoded.toString(), 'MontyBigInt(1152921504606859321)');
@@ -96,7 +97,7 @@ void main() {
         final back = ArenaReader(
           pb.Arena.fromBuffer(writer.arena.writeToBuffer()),
         )[root];
-        expect(back, isA<MontyBigInt>());
+        expect(back, isBigInt);
         expect(back.dartValue, value);
         expect(back.toString(), 'MontyBigInt(1152921504606859321)');
         final negative = _decode([_bigArm(-value)]);
@@ -116,8 +117,8 @@ void main() {
         final fromInt = _decode([_intArm(value)]);
         final fromBig = _decode([_bigArm(value)]);
         final small = value.abs() <= two53;
-        expect(fromInt, small ? isA<MontyInt>() : isA<MontyBigInt>());
-        expect(fromBig, small ? isA<MontyInt>() : isA<MontyBigInt>());
+        expect(fromInt, small ? isInt : isBigInt);
+        expect(fromBig, small ? isInt : isBigInt);
         expect(fromBig.runtimeType, fromInt.runtimeType, reason: '$value');
         expect(fromBig, fromInt, reason: '$value');
         expect(fromBig.dartValue, fromInt.dartValue, reason: '$value');
@@ -131,11 +132,13 @@ void main() {
         tuple([0, 0]),
       ];
       final reader = _reader(nodes);
-      final items = (reader[1] as MontyList).items;
-      expect(items[0], isA<MontyBigInt>());
-      expect(identical(items[0], items[1]), isTrue);
-      expect(identical(items[0], reader[0]), isTrue);
-      expect(identical((reader[2] as MontyTuple).items[1], items[0]), isTrue);
+      final [a, b] = (reader[1] as MontyList).items;
+      final [_, c] = (reader[2] as MontyTuple).items;
+      final root = reader[0];
+      expect(a, isBigInt);
+      expect(identical(a, b), isTrue);
+      expect(identical(a, root), isTrue);
+      expect(identical(c, a), isTrue);
     });
 
     test('REQ-MontyFloat-26: a repeated float node is one wrapper', () {
@@ -145,11 +148,12 @@ void main() {
         list([0, 0, 1, 1]),
       ];
       final reader = _reader(nodes);
-      final items = (reader[2] as MontyList).items;
-      expect(identical(items[0], items[1]), isTrue);
-      expect(identical(items[0], reader[0]), isTrue);
-      expect(identical(items[2], items[3]), isTrue);
-      expect(identical(items[0], items[2]), isFalse);
+      final [a, b, c, d] = (reader[2] as MontyList).items;
+      final root = reader[0];
+      expect(identical(a, b), isTrue);
+      expect(identical(a, root), isTrue);
+      expect(identical(c, d), isTrue);
+      expect(identical(a, c), isFalse);
     });
   });
 
@@ -162,7 +166,7 @@ void main() {
       final value = (bytes as MontyBytes).value;
       expect(value, [1, 2, 3]);
       expect(() => value[0] = 9, throwsUnsupportedError);
-      expect(() => (value as dynamic).add(9), throwsUnsupportedError);
+      expect(() => value.add(9), throwsUnsupportedError);
       expect(value, [1, 2, 3]);
     });
 
@@ -174,7 +178,7 @@ void main() {
                 dict([(0, 1)]),
               ])
               as MontyDict;
-      expect(decoded.pairs, hasLength(1));
+      expect(decoded.pairs, hasOne);
       expect(
         () => decoded.pairs.add((const MontyInt(1), const MontyInt(2))),
         throwsUnsupportedError,
@@ -184,7 +188,7 @@ void main() {
         () => decoded.pairs[0] = (const MontyInt(1), const MontyInt(2)),
         throwsUnsupportedError,
       );
-      expect(decoded.pairs, hasLength(1));
+      expect(decoded.pairs, hasOne);
     });
 
     test('REQ-MontySet-6: decoded items', () {
@@ -277,6 +281,7 @@ void main() {
             as MontyNamedTuple;
 
     test('REQ-MontyNamedTuple-19: only the last segment and fields', () {
+      final one = n(1);
       // Any module prefix: it is never checked as an identifier.
       for (final type in [
         'Point',
@@ -328,7 +333,7 @@ void main() {
         );
         expect(
           _formatMessage([
-            n(1),
+            one,
             namedTuple(type, ['x'], [0]),
           ]),
           message,
@@ -338,14 +343,14 @@ void main() {
       // Each field name is checked on its own.
       expect(
         _formatMessage([
-          n(1),
+          one,
           namedTuple('mod.P', ['x y'], [0]),
         ]),
         "$_notIdentifier'x y'",
       );
       expect(
         _formatMessage([
-          n(1),
+          one,
           n(2),
           namedTuple('mod.P', ['x', 'def'], [0, 1]),
         ]),
@@ -353,7 +358,7 @@ void main() {
       );
       expect(
         _formatMessage([
-          n(1),
+          one,
           namedTuple('mod.P', ['1x'], [0]),
         ]),
         "$_notIdentifier'1x'",
@@ -389,8 +394,9 @@ void main() {
       final decoded = _decode(nodes()) as MontyClassProxy;
       expect(decoded.attrs.keys, ['k']);
       expect(decoded.attrs['k'], const MontyString('v'));
-      expect(decoded.classType.attrs.keys, ['k']);
-      expect(decoded.classType.attrs['k'], const MontyString('v'));
+      final classAttrs = decoded.classType.attrs;
+      expect(classAttrs.keys, ['k']);
+      expect(classAttrs['k'], const MontyString('v'));
     });
 
     test('REQ-MontyClassTypeProxy-11: class attributes', () {
@@ -411,22 +417,13 @@ void main() {
 
   group('field presence and identity', () {
     test('REQ-MontyComplex-24: both parts missing report real', () {
-      expect(
-        _formatMessage([pb.MontyNode(complex: pb.Complex())]),
-        contains('Complex.real'),
-      );
-      expect(
-        _formatMessage([pb.MontyNode(complex: pb.Complex())]),
-        isNot(contains('Complex.imag')),
-      );
-      expect(
-        _formatMessage([complexNode(real: 1)]),
-        contains('Complex.imag'),
-      );
-      expect(
-        _formatMessage([complexNode(imag: 1)]),
-        contains('Complex.real'),
-      );
+      final real = contains('Complex.real');
+      final imag = contains('Complex.imag');
+      final both = _formatMessage([pb.MontyNode(complex: pb.Complex())]);
+      expect(both, real);
+      expect(both, isNot(imag));
+      expect(_formatMessage([complexNode(real: 1)]), imag);
+      expect(_formatMessage([complexNode(imag: 1)]), real);
     });
 
     test('REQ-MontyEllipsis-9: the canonical const instance', () {
