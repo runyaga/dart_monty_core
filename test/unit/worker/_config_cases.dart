@@ -295,6 +295,75 @@ Future<String> _fed(MontySession session, String code) async {
 
 /// The tests, each case on a pool from [start], closed at its end.
 void configOracleTests(String label, Future<Monty> Function() start) {
+  // WORKER-INTERNAL P7, Python binding outcomes recorded in web-memory.md.
+  for (final size in [700000, 1500000, 2000000, 6000000, 10000000]) {
+    test('R1 memory headroom $size ($label)', () async {
+      final pool = await start();
+      addTearDown(pool.close);
+      final session = await pool.checkoutWith(
+        const SessionConfig(
+          limits: ResourceLimits(maxMemory: 1000000),
+        ),
+      );
+      addTearDown(session.close);
+      final result = session.feedRun(
+        'len(x)',
+        inputs: {
+          'x': MontyBytes(Uint8List(size)),
+        },
+      );
+      if (size == 700000) {
+        expect(await result, MontyInt(size));
+      } else {
+        await expectLater(
+          result,
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.exception.excType,
+              'type',
+              'MemoryError',
+            ),
+          ),
+        );
+      }
+      if (size >= 6000000) {
+        await expectLater(session.feedRun('42'), throwsStateError);
+        final replacement = await pool.checkout();
+        expect(await replacement.feedRun('42'), const MontyInt(42));
+        await replacement.close();
+      } else if (size == 700000) {
+        expect(await session.feedRun('42'), const MontyInt(42));
+      } else {
+        // The injected input remains live: upstream's same_session_after
+        // also raises MemoryError, proving the session still serves feeds.
+        await expectLater(session.feedRun('42'), throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.exception.excType, 'type', 'MemoryError')));
+      }
+    });
+  }
+  test('R1 global_allocator no limit permits 50 MB ($label)', () async {
+    final pool = await start();
+    addTearDown(pool.close);
+    final session = await pool.checkout();
+    addTearDown(session.close);
+    expect(
+      await session.feedRun("len('x' * 50000000)"),
+      const MontyInt(50000000),
+    );
+  });
+  test('R1 memory_baseline_accounting twenty checkouts ($label)', () async {
+    final pool = await start();
+    addTearDown(pool.close);
+    for (var i = 0; i < 20; i++) {
+      final session = await pool.checkoutWith(const SessionConfig(
+        limits: ResourceLimits(maxMemory: 300000),
+      ));
+      try {
+        expect(await session.feedRun('sum(range(1000))'), const MontyInt(499500));
+      } finally { await session.close(); }
+    }
+  });
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.

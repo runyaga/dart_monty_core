@@ -323,6 +323,30 @@ void main() {
 
   for (final noJspi in [false, true]) {
     final mode = noJspi ? 'forced fallback' : 'JSPI';
+    for (final size in [2, 1024 * 1024, 8 * 1024 * 1024]) {
+      test('R1 prints $size bytes ($mode, $backend)', () async {
+        final ch = await _spawn(cache, forceNoJspi: noJspi);
+        addTearDown(ch.kill);
+        await _open(ch);
+        var count = 0;
+        final gate = Completer<void>();
+        // Let the worker cross the window before acknowledging any batch.
+        final timer = Timer(const Duration(seconds: 1), gate.complete);
+        addTearDown(timer.cancel);
+        final end = await ch.turn(
+          _feed(size == 2 ? "print('x', end='')\nprint('x', end='')\n42" : "for i in range($size // 1024):\n    print('x' * 1023)\n42"),
+          onPrint: (p) async {
+            await gate.future;
+            for (final segment in p.segments) {
+              count += segment.text.length;
+            }
+          },
+        );
+        expect(end.whichKind(), pb.ChildEvent_Kind.complete);
+        expect(count, size);
+        await ch.close();
+      }, timeout: const Timeout(Duration(seconds: 120)));
+    }
     test('a wasm trap is crashedError(vanished); a replacement '
         'Worker works ($mode, $backend)', () async {
       final ch = await _spawn(cache, forceNoJspi: noJspi);
@@ -352,6 +376,35 @@ void main() {
       await fresh.close();
     });
   }
+
+  test('R1 JSPI bounds unacknowledged prints at window plus one batch', () async {
+    const window = 4 * 1024 * 1024;
+    final ch = await _spawn(cache);
+    addTearDown(ch.kill);
+    expect(ch.jspi, isTrue);
+    final config = _configure();
+    config.configure.printFlushIntervalMs = 0;
+    await _open(ch, config);
+    final gate = Completer<void>();
+    addTearDown(() { if (!gate.isCompleted) gate.complete(); });
+    var count = 0;
+    final turn = ch.turn(_feed(
+      "for i in range(16384):\n    print('x' * 1023)\n42",
+    ), onPrint: (p) async {
+      await gate.future;
+      for (final segment in p.segments) { count += segment.text.length; }
+    });
+    while (ch.pendingPrintBytes <= window) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(ch.pendingPrintBytes, lessThanOrEqualTo(window + 1100));
+    gate.complete();
+    await turn;
+    expect(count, 16 * 1024 * 1024);
+    expect(ch.pendingPrintBytes, 0);
+    await ch.close();
+  });
 
   test('a protocol mismatch is refused before Configure ($backend)', () async {
     // A stand-in Worker that reports protocol 4 and nothing else.

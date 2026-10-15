@@ -20,6 +20,10 @@ import '../../_accessors.dart';
 final class _FakePort implements WorkerPort {
   final List<Uint8List> posted = [];
   int terminated = 0;
+  final acknowledged = <int>[];
+
+  @override
+  void acknowledge(int bytes) => acknowledged.add(bytes);
 
   @override
   void post(Uint8List frame) => posted.add(frame);
@@ -40,10 +44,18 @@ WorkerMessage _hello({
   events: null,
   outcome: null,
   trap: null,
+  print: null,
+  stderr: null,
 );
 
 /// A later Worker message: a turn reply, or a trap.
-WorkerMessage _message({Uint8List? events, int? outcome, String? trap}) => (
+WorkerMessage _message({
+  Uint8List? events,
+  int? outcome,
+  String? trap,
+  String? stderr,
+  Uint8List? print,
+}) => (
   ready: null,
   error: null,
   jspi: null,
@@ -51,6 +63,8 @@ WorkerMessage _message({Uint8List? events, int? outcome, String? trap}) => (
   events: events,
   outcome: outcome,
   trap: trap,
+  print: print,
+  stderr: stderr,
 );
 
 WorkerConnection _accept(_FakePort port, {Duration? grace}) =>
@@ -96,6 +110,109 @@ Future<pb.ChildEvent> _start(
 }) => c.turn(_feed, onPrint: onPrint);
 
 void main() {
+  test('R1 streamed batches settle in order before the reply', () async {
+    final port = _FakePort();
+    final c = _accept(port);
+    final gate = Completer<void>();
+    final seen = <String>[];
+    var completed = false;
+    final turn = c
+        .turn(
+          _feed,
+          onPrint: (p) async {
+            seen.add(p.segments.first.text);
+            if (seen.length == 1) await gate.future;
+          },
+        )
+        .then((value) {
+          completed = true;
+          return value;
+        });
+    final a = _frames([_print('a')]);
+    final b = _frames([_print('b')]);
+    c.onMessage(_message(print: a));
+    c.onMessage(_message(print: b));
+    c.onReply(_frames([_ok]), outcomeContinue);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, ['a']);
+    expect(completed, isFalse);
+    expect(port.acknowledged, isEmpty);
+    gate.complete();
+    await turn;
+    expect(seen, ['a', 'b']);
+    expect(port.acknowledged, [a.length, b.length]);
+    c.kill();
+  });
+
+  test(
+    'R1 kill cancels queued and late prints without awaiting callback',
+    () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final gate = Completer<void>();
+      final seen = <String>[];
+      final turn = c.turn(
+        _feed,
+        onPrint: (p) async {
+          seen.add(p.segments.first.text);
+          await gate.future;
+        },
+      );
+      final failed = expectLater(turn, _throwsKilled);
+      c.onMessage(_message(print: _frames([_print('a')])));
+      c.onMessage(_message(print: _frames([_print('b')])));
+      c.onReply(_frames([_ok]), outcomeContinue);
+      await Future<void>.delayed(Duration.zero);
+      c.kill();
+      await failed;
+      c.onMessage(_message(print: _frames([_print('late')])));
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, ['a']);
+      expect(port.acknowledged, isEmpty);
+    },
+  );
+
+  for (final (tail, expected) in [
+    (
+      'monty worker: allocation of 123 bytes exceeds the memory limit\n',
+      CrashCause.outOfMemory,
+    ),
+    (
+      'noise\nmonty worker: allocation of 123 bytes failed\n\n',
+      CrashCause.outOfMemory,
+    ),
+    (
+      'monty worker: allocation of 123 bytes failed\nother\n',
+      CrashCause.vanished,
+    ),
+    (
+      'prefix monty worker: allocation of 123 bytes failed',
+      CrashCause.vanished,
+    ),
+    ('', CrashCause.vanished),
+  ]) {
+    test('R1 trap classifies only last stderr line: $tail', () async {
+      final c = _accept(_FakePort());
+      final turn = c.turn(_feed);
+      final failed = expectLater(
+        turn,
+        throwsA(
+          isA<MontyCrashedError>()
+              .having((e) => e.cause, 'cause', expected)
+              .having((e) => e.stderrTail, 'stderr', tail),
+        ),
+      );
+      c.onMessage(
+        _message(
+          trap: 'trap\nmonty worker: allocation of 123 bytes failed',
+          stderr: tail,
+        ),
+      );
+      await failed;
+    });
+  }
+
   group('accept', () {
     test('a matching protocol is accepted and exposes the probe', () {
       final port = _FakePort();
@@ -136,6 +253,8 @@ void main() {
           events: null,
           outcome: null,
           trap: null,
+          print: null,
+          stderr: null,
         )),
         throwsA(_crashed(CrashCause.fatal, contains('protocol null'))),
       );
@@ -150,6 +269,8 @@ void main() {
         events: null,
         outcome: null,
         trap: null,
+        print: null,
+        stderr: null,
       ));
       expect(c.jspi, isFalse);
     });
