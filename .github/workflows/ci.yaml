@@ -49,7 +49,7 @@ concurrency:
 # The dart_monty_parity commit the `parity` and `parity-e0` jobs run (one
 # pin for both). A change meant to move parity bumps it in the same PR.
 env:
-  PARITY_PIN: 189193eee1f97160e25fed6e88b1ca49bb745883
+  PARITY_PIN: d6795cac12a9d45c482b66e092d4d44eb56514ba
 
 # Read-only. No job posts checks or comments; a job that needs more grants it
 # on itself (tool/check_workflow_tokens.py rejects writes here).
