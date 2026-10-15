@@ -17,6 +17,10 @@ MontyValue _roundTrip(MontyValue value) {
   return ArenaReader(pb.Arena.fromBuffer(writer.arena.writeToBuffer()))[root];
 }
 
+/// Whether [hashes] are not all one value: the input varied takes part in
+/// the hash. (The statements do not promise that two particular values differ.)
+bool _varies(Iterable<int> hashes) => hashes.toSet().length > 1;
+
 /// A fresh string: a `const` twin is the same object.
 MontyString _str(String v) => MontyString(v);
 
@@ -59,9 +63,21 @@ void main() {
         expect(d == _date(2024, 3, 6), isFalse);
         expect(d.hashCode, _date(2024, 3, 5).hashCode);
         // Each field takes part in the hash.
-        expect(d.hashCode, isNot(_date(2025, 3, 5).hashCode));
-        expect(d.hashCode, isNot(_date(2024, 4, 5).hashCode));
-        expect(d.hashCode, isNot(_date(2024, 3, 6).hashCode));
+        expect(
+          _varies([for (var y = 1; y < 40; y++) _date(y, 3, 5).hashCode]),
+          isTrue,
+          reason: 'year',
+        );
+        expect(
+          _varies([for (var m = 1; m < 13; m++) _date(2024, m, 5).hashCode]),
+          isTrue,
+          reason: 'month',
+        );
+        expect(
+          _varies([for (var v = 1; v < 29; v++) _date(2024, 3, v).hashCode]),
+          isTrue,
+          reason: 'day',
+        );
       },
     );
     test('REQ-MontyDate-7: unequal to datetimes and numeric wrappers', () {
@@ -248,9 +264,21 @@ void main() {
         expect(t == const MontyInt(1), isFalse);
         expect(t == (t.dartValue as Object), isFalse);
         expect(t.hashCode, _td(1, 2, 3).hashCode);
-        expect(t.hashCode, isNot(_td(9, 2, 3).hashCode));
-        expect(t.hashCode, isNot(_td(1, 9, 3).hashCode));
-        expect(t.hashCode, isNot(_td(1, 2, 9).hashCode));
+        expect(
+          _varies([for (var v = 0; v < 30; v++) _td(v, 2, 3).hashCode]),
+          isTrue,
+          reason: 'days',
+        );
+        expect(
+          _varies([for (var v = 0; v < 30; v++) _td(1, v, 3).hashCode]),
+          isTrue,
+          reason: 'seconds',
+        );
+        expect(
+          _varies([for (var v = 0; v < 30; v++) _td(1, 2, v).hashCode]),
+          isTrue,
+          reason: 'microseconds',
+        );
       },
     );
     test('REQ-MontyTimeDelta-12: fromDart preserves an existing timedelta', () {
@@ -377,9 +405,26 @@ void main() {
         expect(h('/a', 'r', 3) == h('/a', 'w', 3), isFalse);
         expect(h('/a', 'r', 3) == h('/a', 'r', 4), isFalse);
         expect(h('/a', 'r', 3).hashCode, h('/a', 'r', 3).hashCode);
-        expect(h('/a', 'r', 3).hashCode, isNot(h('/b', 'r', 3).hashCode));
-        expect(h('/a', 'r', 3).hashCode, isNot(h('/a', 'w', 3).hashCode));
-        expect(h('/a', 'r', 3).hashCode, isNot(h('/a', 'r', 4).hashCode));
+        expect(
+          _varies([
+            for (final c in 'abcdefghij'.split('')) h('/$c', 'r', 3).hashCode,
+          ]),
+          isTrue,
+          reason: 'path',
+        );
+        expect(
+          _varies([
+            for (final m in ['r', 'w', 'a', 'rb', 'wb', 'ab'])
+              h('/a', m, 3).hashCode,
+          ]),
+          isTrue,
+          reason: 'mode',
+        );
+        expect(
+          _varies([for (var v = 0; v < 30; v++) h('/a', 'r', v).hashCode]),
+          isTrue,
+          reason: 'position',
+        );
       },
     );
     test('REQ-values-and-equality-28: exception and file-handle fields', () {
@@ -411,14 +456,46 @@ void main() {
         e('E', 'm', {'k': _str('v')}).hashCode,
       );
       expect(e('E', 'm').hashCode, e('E', 'm').hashCode);
-      expect(e('E', 'm').hashCode, isNot(e('F', 'm').hashCode));
-      expect(e('E', 'm').hashCode, isNot(e('E', 'n').hashCode));
-      expect(e('E', 'm', a).hashCode, isNot(e('E', 'm').hashCode));
       expect(
-        e('E', 'm', a).hashCode,
-        isNot(e('E', 'm', {'k': _str('w')}).hashCode),
+        _varies([for (final c in 'ABCDEFGH'.split('')) e(c, 'm').hashCode]),
+        isTrue,
+        reason: 'type',
+      );
+      expect(
+        _varies([for (final c in 'abcdefgh'.split('')) e('E', c).hashCode]),
+        isTrue,
+        reason: 'message',
+      );
+      expect(
+        _varies([
+          for (final c in 'abcdefgh'.split(''))
+            e('E', 'm', {'k': _str(c)}).hashCode,
+        ]),
+        isTrue,
+        reason: 'attributes',
       );
 
+      MontyFileHandle fh(String p, String m, int pos) =>
+          MontyFileHandle(p, m, position: BigInt.from(pos));
+      expect(
+        _varies([
+          for (final c in 'abcdefghij'.split('')) fh('/$c', 'r', 1).hashCode,
+        ]),
+        isTrue,
+        reason: 'path',
+      );
+      expect(
+        _varies([
+          for (final m in ['r', 'w', 'a', 'rb']) fh('/a', m, 1).hashCode,
+        ]),
+        isTrue,
+        reason: 'mode',
+      );
+      expect(
+        _varies([for (var v = 0; v < 30; v++) fh('/a', 'r', v).hashCode]),
+        isTrue,
+        reason: 'position',
+      );
       final h = MontyFileHandle('/a', 'r', position: BigInt.one);
       expect(h == MontyFileHandle('/a', 'r', position: BigInt.one), isTrue);
       expect(h == MontyFileHandle('/b', 'r', position: BigInt.one), isFalse);
@@ -428,7 +505,6 @@ void main() {
         h.hashCode,
         MontyFileHandle('/a', 'r', position: BigInt.one).hashCode,
       );
-      expect(h.hashCode, isNot(MontyFileHandle('/a', 'r').hashCode));
     });
   });
 }

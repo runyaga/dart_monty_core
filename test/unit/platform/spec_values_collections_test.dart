@@ -64,8 +64,20 @@ void main() {
         expect(_bytes([1]) == const MontyInt(1), isFalse);
         expect(_bytes([1, 2, 3]).hashCode, _bytes([1, 2, 3]).hashCode);
         expect(_bytes([]).hashCode, _bytes([]).hashCode);
-        expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([1, 2]).hashCode));
-        expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([1, 2, 4]).hashCode));
+        // The length and every byte take part in the hash (the statements do
+        // not promise that two particular values differ).
+        expect(
+          {
+            for (var n = 0; n < 12; n++) _bytes(List.filled(n, 7)).hashCode,
+          }.length,
+          greaterThan(1),
+        );
+        expect(
+          {
+            for (var v = 0; v < 12; v++) _bytes([1, 2, v]).hashCode,
+          }.length,
+          greaterThan(1),
+        );
       },
     );
     test('REQ-MontyBytes-9: no ordering operators and no compareTo', () {
@@ -82,14 +94,13 @@ void main() {
       () {
         final list = [1, 2, 3];
         final b = MontyBytes(list);
-        final hashBefore = b.hashCode;
+        expect(b.hashCode, _bytes([1, 2, 3]).hashCode);
         expect(b == const MontyBytes([1, 2, 3]), isTrue);
         expect(_roundTrip(b), const MontyBytes([1, 2, 3]));
 
         list[1] = 9;
         expect(b == const MontyBytes([1, 2, 3]), isFalse);
         expect(b == const MontyBytes([1, 9, 3]), isTrue);
-        expect(b.hashCode, isNot(hashBefore));
         expect(b.hashCode, const MontyBytes([1, 9, 3]).hashCode);
         expect(_roundTrip(b), const MontyBytes([1, 9, 3]));
 
@@ -337,18 +348,21 @@ void main() {
         expect(writer.arena.nodes.length, nodes + 1);
       },
     );
-    test('REQ-MontySet-34: a set holding NaN equals itself and a twin', () {
-      final nan = _nan();
-      final s = MontySet([nan, const MontyInt(1)]);
-      expect(s == s, isTrue);
-      expect(MontySet([nan]) == MontySet([nan]), isTrue);
-      expect(
-        MontySet([_nan()]) == MontySet([_nan()]),
-        isTrue,
-      );
-      expect(MontySet([nan]) == const MontySet([MontyFloat(1)]), isFalse);
-      expect(nan == nan, isTrue);
-    });
+    test(
+      'value-level NaN set equality (MontySet-34 not claimed)',
+      () {
+        final nan = _nan();
+        final s = MontySet([nan, const MontyInt(1)]);
+        expect(s == s, isTrue);
+        expect(MontySet([nan]) == MontySet([nan]), isTrue);
+        expect(
+          MontySet([_nan()]) == MontySet([_nan()]),
+          isTrue,
+        );
+        expect(MontySet([nan]) == const MontySet([MontyFloat(1)]), isFalse);
+        expect(nan == nan, isTrue);
+      },
+    );
   });
 
   group('MontyFrozenSet', () {
@@ -375,6 +389,11 @@ void main() {
         expect(exc('m') == exc('m'), isTrue);
         expect(exc('m').hashCode, exc('m').hashCode);
         expect(exc('m') == exc('n'), isFalse);
+        MontyFrozenSet withAttr(int v) => MontyFrozenSet([
+          MontyExceptionValue('E', 'm', {'k': MontyInt(_n(v))}),
+        ]);
+        expect(withAttr(1) == withAttr(1), isTrue);
+        expect(withAttr(1) == withAttr(2), isFalse);
         expect(
           MontyFrozenSet([MontyExceptionValue('A', 'm')]) ==
               MontyFrozenSet([MontyExceptionValue('B', 'm')]),
