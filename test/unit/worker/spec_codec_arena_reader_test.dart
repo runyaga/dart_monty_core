@@ -4,6 +4,7 @@
 // select it with `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js and dart2wasm.
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
@@ -89,6 +90,15 @@ void main() {
         expect(decoded.dartValue, isA<BigInt>());
         expect(decoded.dartValue, value);
         expect(decoded.toString(), 'MontyBigInt(1152921504606859321)');
+        // The writer's output reads back as the same MontyBigInt.
+        final writer = ArenaWriter();
+        final root = writer.add(MontyBigInt(value));
+        final back = ArenaReader(
+          pb.Arena.fromBuffer(writer.arena.writeToBuffer()),
+        )[root];
+        expect(back, isA<MontyBigInt>());
+        expect(back.dartValue, value);
+        expect(back.toString(), 'MontyBigInt(1152921504606859321)');
         final negative = _decode([_bigArm(-value)]);
         expect(negative.dartValue, -value);
         expect(negative.toString(), 'MontyBigInt(-1152921504606859321)');
@@ -105,6 +115,9 @@ void main() {
       ]) {
         final fromInt = _decode([_intArm(value)]);
         final fromBig = _decode([_bigArm(value)]);
+        final small = value.abs() <= two53;
+        expect(fromInt, small ? isA<MontyInt>() : isA<MontyBigInt>());
+        expect(fromBig, small ? isA<MontyInt>() : isA<MontyBigInt>());
         expect(fromBig.runtimeType, fromInt.runtimeType, reason: '$value');
         expect(fromBig, fromInt, reason: '$value');
         expect(fromBig.dartValue, fromInt.dartValue, reason: '$value');
@@ -167,6 +180,10 @@ void main() {
         throwsUnsupportedError,
       );
       expect(decoded.pairs.clear, throwsUnsupportedError);
+      expect(
+        () => decoded.pairs[0] = (const MontyInt(1), const MontyInt(2)),
+        throwsUnsupportedError,
+      );
       expect(decoded.pairs, hasLength(1));
     });
 
@@ -181,6 +198,7 @@ void main() {
       expect(set_.items, hasLength(2));
       expect(() => set_.items.add(const MontyInt(3)), throwsUnsupportedError);
       expect(set_.items.clear, throwsUnsupportedError);
+      expect(() => set_.items[0] = const MontyInt(9), throwsUnsupportedError);
     });
 
     test('REQ-MontyFrozenSet-6: decoded items', () {
@@ -197,6 +215,10 @@ void main() {
         throwsUnsupportedError,
       );
       expect(frozen_.items.clear, throwsUnsupportedError);
+      expect(
+        () => frozen_.items[0] = const MontyInt(9),
+        throwsUnsupportedError,
+      );
     });
 
     test('REQ-MontyTuple-5: decoded items, in child order', () {
@@ -215,6 +237,10 @@ void main() {
       ]);
       expect(() => tuple_.items.add(const MontyInt(4)), throwsUnsupportedError);
       expect(tuple_.items.clear, throwsUnsupportedError);
+      expect(
+        () => tuple_.items[0] = const MontyInt(9),
+        throwsUnsupportedError,
+      );
       expect(tuple_.items, hasLength(3));
     });
 
@@ -232,6 +258,10 @@ void main() {
       expect(() => named.fieldNames[0] = 'q', throwsUnsupportedError);
       expect(() => named.values.add(const MontyInt(3)), throwsUnsupportedError);
       expect(named.values.clear, throwsUnsupportedError);
+      expect(
+        () => named.values[0] = const MontyInt(9),
+        throwsUnsupportedError,
+      );
       expect(named.fieldNames, ['x', 'y']);
     });
   });
@@ -332,19 +362,27 @@ void main() {
   });
 
   group('class attributes keep only string keys', () {
-    // Node 0 'k', 1 'v', 2 the int key 7, 3 'dropped'; pairs (0, 1) and
-    // (2, 3) in both the class and the instance.
+    // Node 0 'k', 1 'v', 2 the int key 7, 3 'dropped', 4 repr, 5 cycle, 6
+    // function; only the pair keyed by the `str` node 0 is kept, in the
+    // class and the instance.
     List<pb.MontyNode> nodes() => [
       n('k'),
       n('v'),
       n(7),
       n('dropped'),
+      pb.MontyNode(repr: 'r'),
+      pb.MontyNode(cycle: 'c'),
+      pb.MontyNode(function: pb.Function_(name: 'f')),
       classType(
         'C',
         id: uuid(1),
-        attrs: pairs([(0, 1), (2, 3)]),
+        attrs: pairs([(0, 1), (2, 3), (4, 3), (5, 3), (6, 3)]),
       ),
-      instance(4, id: uuid(2), attrs: pairs([(0, 1), (2, 3)])),
+      instance(
+        7,
+        id: uuid(2),
+        attrs: pairs([(0, 1), (2, 3), (4, 3), (5, 3), (6, 3)]),
+      ),
     ];
 
     test('REQ-MontyClassProxy-6: instance and class attributes', () {
@@ -356,7 +394,7 @@ void main() {
     });
 
     test('REQ-MontyClassTypeProxy-11: class attributes', () {
-      final decoded = _decode(nodes(), 4) as MontyClassTypeProxy;
+      final decoded = _decode(nodes(), 7) as MontyClassTypeProxy;
       expect(decoded.attrs.keys, ['k']);
       expect(decoded.attrs['k'], const MontyString('v'));
       // Only non-string keys: nothing is kept.

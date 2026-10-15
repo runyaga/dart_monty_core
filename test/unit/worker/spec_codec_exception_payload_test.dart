@@ -434,6 +434,7 @@ void main() {
       expect(value.attributes['end'], const MontyInt(2));
       expect(value.attributes['object'], const MontyString('héllo'));
       expect(value.attributes['start'], isA<MontyInt>());
+      expect(value.attributes['end'], isA<MontyInt>());
       expect(value.attributes['object'], isA<MontyString>());
     });
 
@@ -456,6 +457,7 @@ void main() {
       expect(decode.attributes['start'], const MontyInt(0));
       expect(decode.attributes['end'], const MontyInt(2));
       expect(decode.attributes['start'], isA<MontyInt>());
+      expect(decode.attributes['end'], isA<MontyInt>());
 
       final encode = _inbound(
         'UnicodeEncodeError',
@@ -465,6 +467,8 @@ void main() {
       expect(encode.attributes['object'], const MontyString('xyz'));
       expect(encode.attributes['start'], const MontyInt(1));
       expect(encode.attributes['end'], const MontyInt(3));
+      expect(encode.attributes['start'], isA<MontyInt>());
+      expect(encode.attributes['end'], isA<MontyInt>());
       expect(encode.attributes['encoding'], isA<MontyString>());
       expect(encode.attributes['reason'], isA<MontyString>());
     });
