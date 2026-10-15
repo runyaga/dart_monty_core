@@ -2,7 +2,7 @@
 # =============================================================================
 # GitHub Pages gate — build the published site and prove it renders in Chrome
 # =============================================================================
-# https://runyaga.github.io/dart_monty_core/ is assembled by
+# The published GitHub Pages site is assembled by
 # .github/workflows/deploy-pages.yml from docs/index.html plus the dart2js and
 # dart2wasm builds of the web REPL. That REPL loads the SAME committed
 # lib/assets/ bundle that ships to consumers, so this is the only end-to-end
