@@ -15,7 +15,8 @@ A step is [op, code, lookup, cwd, inputs]:
 - lookup: None (no external_lookup), or name -> entry, an entry being
   ['v', value] (a plain value), ['f'] (a host function returning
   `(args, kwargs)`), ['c'] (a coroutine host function doubling its one
-  argument), ['cyclic'] (a list holding itself), ['I'] (a ClassInstance of
+  argument), ['cyclic'] (a list holding itself), ['k', kind] (a value of
+  one of the KINDS below, mirrored in Dart), ['I'] (a ClassInstance of
   Point(1, 2), eager 'all') or ['T'] (a ClassType of Point, init);
 - cwd: None or the string passed;
 - inputs: None or name -> value.
@@ -31,6 +32,9 @@ passed, `lookup:<name>` / `call:<name>`, then the end, joined by ` > `.
 from __future__ import annotations
 
 import asyncio
+import collections
+import datetime
+import pathlib
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -52,6 +56,30 @@ class Point:
 
 
 GETCWD = 'import os\nrepr(os.getcwd())'
+
+Pt = collections.namedtuple('Pt', 'x y')
+
+# One value per host type, by kind; _session_cases.dart builds the same.
+KINDS: dict[str, Any] = {
+    'big': 2**100,
+    'bool': True,
+    'bytes': b'x',
+    'date': datetime.date(2020, 1, 2),
+    'datetime': datetime.datetime(2020, 1, 2, 3, 4, 5),
+    'dict': {1: 2},
+    'ellipsis': ...,
+    'exception': ValueError('x'),
+    'float': 1.5,
+    'frozenset': frozenset({1}),
+    'namedtuple': Pt(1, 2),
+    'notimplemented': NotImplemented,
+    'path': pathlib.PurePosixPath('/a'),
+    'set': {1},
+    'time': datetime.time(1, 2, 3),
+    'timedelta': datetime.timedelta(days=1),
+    'timezone': datetime.timezone.utc,
+    'tuple': (1,),
+}
 
 
 def run(code, lookup=None, cwd=None, inputs=None):
@@ -89,6 +117,8 @@ CASES: list[tuple[str, list[list[Any]]]] = [
     ('call_str', [run('p()', {'p': ['v', 's']})]),
     ('call_instance', [run('p()', {'p': ['I']})]),
     ('call_type', [run('p(1, 2)', {'p': ['T']})]),
+    # The name is the host object's type, as CPython's error gives it.
+    *[(f'call_{kind}', [run('p()', {'p': ['k', kind]})]) for kind in KINDS],
     ('read_instance', [run('repr(p)', {'p': ['I']})]),
     ('read_type', [run('repr(p)', {'p': ['T']})]),
     # Read first, the class is a proxy, which constructs.
@@ -149,6 +179,8 @@ def entry(spec: list[Any]) -> Any:
         return host_function
     if kind == 'c':
         return doubling
+    if kind == 'k':
+        return KINDS[spec[1]]
     if kind == 'cyclic':
         cyclic: list[Any] = []
         cyclic.append(cyclic)

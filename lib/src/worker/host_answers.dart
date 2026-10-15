@@ -21,8 +21,6 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
-import 'package:dart_monty_core/src/worker/python_rules.dart'
-    show pythonTypeName;
 
 /// A host function Python can call by name.
 ///
@@ -845,12 +843,35 @@ final class AsyncDecline implements Exception {
   String toString() => 'AsyncDecline: $message';
 }
 
-/// The Python type name of an [HostAnswers.externalLookup] entry that is
-/// no function, as upstream's `'<type>' object is not callable` names it.
+/// The name CPython's `'<type>' object is not callable` gives the host
+/// object an [HostAnswers.externalLookup] entry stands for: the binding
+/// calls the entry itself, so the name is the host type's, as upstream's
+/// Python host object would have it (a `datetime.date`, a
+/// `PurePosixPath`, the wrapper classes), not the sandbox's.
 String _typeName(Object entry) => switch (entry) {
   ClassInstance() => 'ClassInstance',
   ClassType() => 'ClassType',
-  final MontyValue v => pythonTypeName(v),
+  MontyNone() => 'NoneType',
+  MontyBool() => 'bool',
+  MontyInt() || MontyBigInt() => 'int',
+  MontyFloat() => 'float',
+  MontyString() => 'str',
+  MontyBytes() => 'bytes',
+  MontyList() => 'list',
+  MontyTuple() => 'tuple',
+  MontyDict() => 'dict',
+  MontySet() => 'set',
+  MontyFrozenSet() => 'frozenset',
+  MontyPath() => 'PurePosixPath',
+  MontyDate() => 'datetime.date',
+  MontyDateTime() => 'datetime.datetime',
+  MontyTime() => 'datetime.time',
+  MontyTimeDelta() => 'datetime.timedelta',
+  MontyTimeZone() => 'datetime.timezone',
+  MontyEllipsis() => 'ellipsis',
+  MontyNotImplemented() => 'NotImplementedType',
+  MontyExceptionValue(:final excType) => excType,
+  MontyNamedTuple(:final typeName) => typeName,
   _ => 'object',
 };
 

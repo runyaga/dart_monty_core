@@ -605,11 +605,11 @@ Future<pb.ParentRequest?> _answer(
 ) async {
   try {
     return await host.answer(event);
-  } on MontyCrashedError catch (e) {
-    if (e.cause == CrashCause.protocol) channel.kill();
-    rethrow;
-  } on Object {
-    if (event.whichKind() == pb.ChildEvent_Kind.nameLookup) channel.kill();
+  } on Object catch (e) {
+    final protocol = e is MontyCrashedError && e.cause == CrashCause.protocol;
+    if (protocol || event.whichKind() == pb.ChildEvent_Kind.nameLookup) {
+      channel.kill();
+    }
     rethrow;
   }
 }

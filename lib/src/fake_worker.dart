@@ -23,8 +23,7 @@ import 'package:dart_monty_core/src/worker/host_answers.dart'
     show acceptsFuture, osCallParts;
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
-import 'package:dart_monty_core/src/worker/python_rules.dart'
-    show pythonRepr, pythonTypeName;
+import 'package:dart_monty_core/src/worker/python_rules.dart' show pythonRepr;
 
 /// How far a call the feed made has got.
 sealed class _CallState {
@@ -691,3 +690,29 @@ pb.RaisedException _notAwaitable(
       ? 'An asyncio.Future, a coroutine or an awaitable is required'
       : "'${pythonTypeName(value)}' object can't be awaited",
 );
+
+/// The Python type name of [value], as a `TypeError` names it.
+String pythonTypeName(MontyValue value) =>
+    _typeNames[value.runtimeType] ?? 'object';
+
+const Map<Type, String> _typeNames = {
+  MontyNone: 'NoneType',
+  MontyBool: 'bool',
+  MontyInt: 'int',
+  MontyBigInt: 'int',
+  MontyFloat: 'float',
+  MontyString: 'str',
+  MontyBytes: 'bytes',
+  MontyList: 'list',
+  MontyTuple: 'tuple',
+  MontyDict: 'dict',
+  MontySet: 'set',
+  MontyFrozenSet: 'frozenset',
+  MontyPath: 'PosixPath',
+  MontyDate: 'date',
+  MontyDateTime: 'datetime',
+  MontyTime: 'time',
+  MontyTimeDelta: 'timedelta',
+  MontyTimeZone: 'timezone',
+  MontyEllipsis: 'ellipsis',
+};

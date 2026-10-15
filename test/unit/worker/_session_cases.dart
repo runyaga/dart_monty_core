@@ -10,6 +10,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show CrashCause, crashedError;
 import 'package:test/test.dart';
 
 import '_attribute_cases.dart' show WithSession;
@@ -81,8 +83,42 @@ MontyValue _cyclic() {
   return list;
 }
 
+/// The generator's `KINDS`: one value per host type.
+final Map<String, MontyValue> _kinds = {
+  'big': MontyBigInt(BigInt.two.pow(100)),
+  'bool': const MontyBool(true),
+  'bytes': const MontyBytes([0x78]),
+  'date': const MontyDate(year: 2020, month: 1, day: 2),
+  'datetime': const MontyDateTime(
+    year: 2020,
+    month: 1,
+    day: 2,
+    hour: 3,
+    minute: 4,
+    second: 5,
+  ),
+  'dict': const MontyDict([(MontyInt(1), MontyInt(2))]),
+  'ellipsis': const MontyEllipsis(),
+  'exception': MontyExceptionValue('ValueError', 'x'),
+  'float': const MontyFloat(1.5),
+  'frozenset': const MontyFrozenSet([MontyInt(1)]),
+  'namedtuple': const MontyNamedTuple(
+    typeName: 'Pt',
+    fieldNames: ['x', 'y'],
+    values: [MontyInt(1), MontyInt(2)],
+  ),
+  'notimplemented': const MontyNotImplemented(),
+  'path': MontyPath('/a'),
+  'set': const MontySet([MontyInt(1)]),
+  'time': const MontyTime(hour: 1, minute: 2, second: 3, microsecond: 0),
+  'timedelta': const MontyTimeDelta(days: 1, seconds: 0),
+  'timezone': const MontyTimeZone(offsetSeconds: 0),
+  'tuple': const MontyTuple([MontyInt(1)]),
+};
+
 Object _entry(List<Object?> spec) => switch (spec) {
   ['v', final v] => _value(v),
+  ['k', final String kind] => _kinds[kind]!,
   ['f'] => _hostFunction,
   ['c'] => coroutine(_doubling),
   ['cyclic'] => _cyclic(),
@@ -239,6 +275,47 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
         // The one worker's slot is free for the next checkout.
         final next = await pool.checkout(scriptName: 'next.py');
         expect(await next.feedRun('1 + 1'), const MontyInt(2));
+        await next.close();
+        await s.close();
+      });
+    });
+
+    test('any failure converting a lookup value frees the slot, a '
+        'crash-typed one from host code included', () async {
+      await withPool((pool) async {
+        final s = await pool.checkout();
+        // An eager getter rethrowing a crash it captured elsewhere.
+        final failing = HostClass<_Point>(
+          'Point',
+          instance: (
+            fields: {
+              'x': (_) => throw crashedError(CrashCause.killed, detail: 'x'),
+            },
+            properties: const {},
+            methods: const {},
+          ),
+        );
+        await expectLater(
+          s.feedRun(
+            'p',
+            externalLookup: {
+              'p': ClassInstance(
+                const _Point(1, 2),
+                classType: ClassType(failing),
+                policies: (
+                  eagerAttrs: 'all',
+                  lazyAttrs: null,
+                  allowedMethods: null,
+                ),
+              ),
+            },
+            printCallback: _ignore,
+          ),
+          throwsA(isA<MontyCrashedError>()),
+        );
+        await expectLater(s.feedRun('1'), throwsStateError);
+        final next = await pool.checkout(scriptName: 'next.py');
+        expect(await next.feedRun('2'), const MontyInt(2));
         await next.close();
         await s.close();
       });

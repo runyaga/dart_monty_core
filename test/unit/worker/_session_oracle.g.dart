@@ -242,6 +242,268 @@ sessionOracle = {
           'MontyRuntimeError: TypeError: \'ClassType\' object is not callable',
     ),
   ],
+  'call_big': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'big'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'int\' object is not callable',
+    ),
+  ],
+  'call_bool': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'bool'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'bool\' object is not callable',
+    ),
+  ],
+  'call_bytes': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'bytes'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'bytes\' object is not callable',
+    ),
+  ],
+  'call_date': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'date'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'datetime.date\' object is not callable',
+    ),
+  ],
+  'call_datetime': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'datetime'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'datetime.datetime\' object is not callable',
+    ),
+  ],
+  'call_dict': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'dict'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'dict\' object is not callable',
+    ),
+  ],
+  'call_ellipsis': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'ellipsis'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'ellipsis\' object is not callable',
+    ),
+  ],
+  'call_exception': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'exception'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'ValueError\' object is not callable',
+    ),
+  ],
+  'call_float': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'float'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'float\' object is not callable',
+    ),
+  ],
+  'call_frozenset': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'frozenset'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'frozenset\' object is not callable',
+    ),
+  ],
+  'call_namedtuple': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'namedtuple'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'Pt\' object is not callable',
+    ),
+  ],
+  'call_notimplemented': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'notimplemented'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'NotImplementedType\' object is not callable',
+    ),
+  ],
+  'call_path': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'path'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'PurePosixPath\' object is not callable',
+    ),
+  ],
+  'call_set': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'set'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'set\' object is not callable',
+    ),
+  ],
+  'call_time': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'time'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'datetime.time\' object is not callable',
+    ),
+  ],
+  'call_timedelta': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'timedelta'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'datetime.timedelta\' object is not callable',
+    ),
+  ],
+  'call_timezone': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'timezone'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'datetime.timezone\' object is not callable',
+    ),
+  ],
+  'call_tuple': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['k', 'tuple'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'MontyRuntimeError: TypeError: \'tuple\' object is not callable',
+    ),
+  ],
   'read_instance': [
     (
       step: <Object?>[
