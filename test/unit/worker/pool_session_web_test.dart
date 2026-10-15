@@ -125,6 +125,10 @@ void main() {
       const PoolOptions(maxProcesses: 1),
     ),
   );
+  sessionSurfacePoolTests(
+    _backend,
+    (body) => withMonty(body, const PoolOptions(maxProcesses: 1)),
+  );
 
   test('feedRun, prints in order, Reset on close, reuse ($_backend)', () async {
     final pool = await startMonty(

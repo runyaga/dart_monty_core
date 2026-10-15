@@ -104,10 +104,10 @@ Future<void> _expectLimit(
   String code,
   String excType, {
   Map<String, MontyValue Function(List<MontyValue>, Map<String, MontyValue>)>?
-  externals,
+  externalLookup,
 }) async {
   try {
-    await session.feedRun(code, externalLookup: externals);
+    await session.feedRun(code, externalLookup: externalLookup);
   } on MontyRuntimeError catch (e) {
     print('raised: $e');
     _check(e.exception.excType == excType, 'expected $excType, got $e');

@@ -46,6 +46,37 @@ import 'package:fixnum/fixnum.dart';
 /// memory limit throws [MontyRuntimeError] with a `MemoryError`. After any
 /// of the last four the session is finished: its slot is free, and every
 /// later call throws [StateError].
+///
+/// A feed's `externalLookup` resolves the names the code leaves undefined,
+/// lazily, when the code reads one (upstream's `external_lookup`); a name in
+/// `inputs` too is served by the input. An entry is a host function, taking the
+/// call's positional and keyword arguments
+/// (`(List<MontyValue> args, Map<String, MontyValue> kwargs)`) and returning a
+/// `FutureOr<MontyValue>`, or a value: a [MontyValue] or a host object's
+/// wrapper. A read of a host function gives a function named by its key, and a
+/// call to that name runs the entry, outside the turn: it may take as long as
+/// it likes, and `requestTimeout` does not count it. A read of a value converts
+/// it then and binds it as a global, so later feeds see it without the lookup.
+/// A call to a name whose entry is a value raises `TypeError` ("'int' object is
+/// not callable"), and an absent name raises `NameError`. A value the converter
+/// refuses (a cyclic list, an unpaired surrogate) is not answered: the feed
+/// throws its [MontyRuntimeError], which a sandbox `try` does not catch, and
+/// the session is finished, as upstream discards the checkout. An entry that is
+/// none of these throws [ArgumentError] before anything is sent.
+///
+/// A host function marked with `coroutine` is a coroutine, as an
+/// `async def` host function is upstream: a call the sandbox awaits with
+/// nothing else to run is awaited in place, any other gets a pending future
+/// the sandbox awaits later, settled when its Dart future completes.
+///
+/// A feed's `cwd` switches the sandbox's working directory before the code
+/// runs: an absolute POSIX path, its trailing slashes trimmed, that
+/// `os.getcwd()` reports and relative paths resolve against. It lasts across
+/// feeds, `os.chdir` included, until a feed switches it; without one a feed
+/// keeps the current directory, `/` for the session's first. A relative path or
+/// one with a NUL throws [MontyRuntimeError] (`ValueError`) before the code
+/// runs, and the session runs on; one with an unpaired surrogate throws
+/// [ArgumentError] (upstream's `UnicodeEncodeError`) before anything else.
 abstract interface class MontySession {
   /// Runs [code] to completion and returns its value: the last expression's,
   /// or [MontyNone].
@@ -54,33 +85,9 @@ abstract interface class MontySession {
   /// wrappers ([ClassInstance], [ClassType]), whose members the session
   /// serves.
   ///
-  /// [externalLookup] resolves the names the code leaves undefined, lazily,
-  /// when the code reads one (upstream's `external_lookup`); a name in
-  /// [inputs] too is served by the input. An entry is a host function,
-  /// taking the call's positional and keyword arguments
-  /// (`(List<MontyValue> args, Map<String, MontyValue> kwargs)`) and
-  /// returning a `FutureOr<MontyValue>`, or a value: a [MontyValue] or a
-  /// host object's wrapper. A read of a host function gives a function named by
-  /// its key, and a call to that name runs the entry, outside the turn: it
-  /// may take as long as it likes, and `requestTimeout` does not count it.
-  /// A read of a value converts it then and binds it as a global, so later
-  /// feeds see it without the lookup. A call to a name whose entry is a
-  /// value raises `TypeError` ("'int' object is not callable"), and an
-  /// absent name raises `NameError`. A value the converter refuses (a cyclic
-  /// list, an unpaired surrogate) is not answered: the feed throws its
-  /// [MontyRuntimeError], which a sandbox `try` does not catch, and the
-  /// session is finished, as upstream discards the checkout. An entry that
-  /// is none of these throws [ArgumentError] before anything is sent.
-  ///
-  /// [cwd] switches the sandbox's working directory before the code runs:
-  /// an absolute POSIX path, its trailing slashes trimmed, that
-  /// `os.getcwd()` reports and relative paths resolve against. It lasts
-  /// across feeds, `os.chdir` included, until a feed switches it; without
-  /// one a feed keeps the current directory, `/` for the session's first.
-  /// A relative path or one with a NUL throws [MontyRuntimeError]
-  /// (`ValueError`) before the code runs, and the session runs on; one with
-  /// an unpaired surrogate throws [ArgumentError] (upstream's
-  /// `UnicodeEncodeError`) before anything else.
+  /// [externalLookup] resolves the names the code leaves undefined, and
+  /// [cwd] switches the working directory first (see the class
+  /// documentation).
   ///
   /// [os] answers OS calls; without it they are declined.
   ///
@@ -97,12 +104,6 @@ abstract interface class MontySession {
   /// with [MontyRuntimeError] (`RuntimeError`). For [inputs] the session runs
   /// on. For a host function's answer the suspension stays pending: every
   /// later feed throws [StateError], and only [close] recovers the worker.
-  ///
-  /// A host function marked with `coroutine` is a coroutine, as an
-  /// `async def` host function is upstream: a call the sandbox awaits with
-  /// nothing else to run is awaited in place, any other gets a pending
-  /// future the sandbox awaits later, settled when its Dart future
-  /// completes.
   ///
   /// A `time.sleep` is waited by the session, cut to the OS policy's
   /// system-sleep maximum (10 s by default). An `asyncio.sleep` is waited

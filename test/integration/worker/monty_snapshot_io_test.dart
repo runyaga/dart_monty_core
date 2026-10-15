@@ -56,6 +56,13 @@ void main() {
   attributeSessionTests('vm', _withSession);
   cwdSessionTests('vm', _withSession);
   sessionSurfaceTests('vm', _withSession);
+  sessionSurfacePoolTests('vm', (body) async {
+    final location = await realWorker() as WorkerExecutable;
+    await withMonty(
+      body,
+      PoolOptions(maxProcesses: 1, workerLocation: location.path),
+    );
+  });
   hostCodeSessionTests(
     'vm',
     (config, body) => _withSession(body, options: config),

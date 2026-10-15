@@ -160,22 +160,7 @@ final class ProtoSession {
         }
         // A ResolveFutures with no coroutine started is out of step with
         // this driver (upstream discards the checkout).
-        final pb.ParentRequest? answer;
-        try {
-          answer = await host.answer(event);
-        } on MontyCrashedError catch (e) {
-          // A payload [host] rejects as upstream does when the frame
-          // arrives is a protocol violation: the worker is discarded.
-          if (e.cause == CrashCause.protocol) _channel.kill();
-          rethrow;
-        } on Object {
-          // A lookup value the writer refuses is never answered: upstream
-          // discards the checkout, and the worker, still suspended, goes.
-          if (event.whichKind() == pb.ChildEvent_Kind.nameLookup) {
-            _channel.kill();
-          }
-          rethrow;
-        }
+        final answer = await _answer(host, event, _channel);
         request =
             answer ?? _violation('unexpected event: ${event.whichKind().name}');
       }
@@ -606,6 +591,27 @@ final class FeedResult {
   /// Everything printed during the feed, in order, as (stream, text) where
   /// stream is `stdout` or `stderr`.
   final List<(String, String)> prints;
+}
+
+/// [host]'s answer to the suspension [event]. A failure the worker cannot be
+/// left waiting on kills [channel]'s worker before it is rethrown: a payload
+/// [host] rejects as upstream does when the frame arrives (a protocol
+/// violation), and a lookup value the writer refuses, which upstream never
+/// answers, discarding the checkout.
+Future<pb.ParentRequest?> _answer(
+  HostAnswers host,
+  pb.ChildEvent event,
+  MontyChannel channel,
+) async {
+  try {
+    return await host.answer(event);
+  } on MontyCrashedError catch (e) {
+    if (e.cause == CrashCause.protocol) channel.kill();
+    rethrow;
+  } on Object {
+    if (event.whichKind() == pb.ChildEvent_Kind.nameLookup) channel.kill();
+    rethrow;
+  }
 }
 
 /// The working directory a session's first feed switches to: upstream's

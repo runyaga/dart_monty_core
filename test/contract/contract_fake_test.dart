@@ -9,10 +9,13 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 
 import 'package:dart_monty_core/src/fake_monty_session.dart';
+import 'package:dart_monty_core/src/fake_script.dart';
+import 'package:dart_monty_core/src/fake_worker.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:test/test.dart';
 
@@ -45,6 +48,10 @@ Future<bool> _matches(Scenario scenario) async {
 }
 
 const MontyValue _none = MontyNone();
+
+/// An [ArgumentError] for the argument [name].
+Matcher _argumentNamed(String name) =>
+    isA<ArgumentError>().having((e) => e.name, 'name', name);
 
 const List<MontyValue> _noArgs = [];
 
@@ -492,19 +499,11 @@ void main() {
       final fake = FakeMontySession()..willReturn(const MontyInt(3));
       await expectLater(
         fake.feedRun('3', cwd: '/\ud800'),
-        throwsA(
-          isA<ArgumentError>().having((e) => e.name, 'name', 'cwd'),
-        ),
+        throwsA(_argumentNamed('cwd')),
       );
       await expectLater(
         fake.feedRun('3', externalLookup: {'x': 3}),
-        throwsA(
-          isA<ArgumentError>().having(
-            (e) => e.name,
-            'name',
-            'externalLookup[x]',
-          ),
-        ),
+        throwsA(_argumentNamed('externalLookup[x]')),
       );
       await expectLater(
         fake.feedStart('3', externalLookup: {'x': 'no'}),
@@ -514,6 +513,22 @@ void main() {
       expect(await fake.feedRun('3'), const MontyInt(3));
       await fake.close();
     });
+  });
+
+  test('the fake worker refuses a turn once killed, as a dead channel '
+      'does', () async {
+    final worker = FakeWorker(FakeScript())..kill();
+    expect(worker.isAlive, isFalse);
+    await expectLater(
+      worker.turn(pb.ParentRequest(reset: pb.Reset())),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
   });
 
   group('lifecycle', () {

@@ -113,9 +113,9 @@ String _errorText(Object error) => switch (error) {
   _ => '${error.runtimeType}: $error',
 };
 
-String _shown(MontyValue value) => switch (value) {
+String _shown(MontyValue shown) => switch (shown) {
   MontyString(:final value) => 'value: $value',
-  _ => 'nonstr: $value',
+  _ => 'nonstr: $shown',
 };
 
 Future<String> _step(MontySession s, List<Object?> step) async {
@@ -211,6 +211,72 @@ void sessionSurfaceTests(String label, WithSession withSession) {
           s.loadSession(Uint8List(0)),
           throwsA(isA<MontyRuntimeError>()),
         );
+      });
+    });
+  });
+}
+
+/// Runs a body with a one-worker pool.
+typedef WithPool = Future<void> Function(Future<void> Function(Monty pool));
+
+/// The session-surface cases that need the pool, labelled with [label],
+/// each on a one-worker pool from [withPool].
+void sessionSurfacePoolTests(String label, WithPool withPool) {
+  group('session surface: the pool ($label)', () {
+    test('a refused lookup value finishes the session and frees its slot '
+        '(upstream discards the checkout)', () async {
+      await withPool((pool) async {
+        final s = await pool.checkout();
+        await expectLater(
+          s.feedRun(
+            'x',
+            externalLookup: {'x': _cyclic()},
+            printCallback: _ignore,
+          ),
+          throwsA(isA<MontyRuntimeError>()),
+        );
+        await expectLater(s.feedRun('1'), throwsStateError);
+        // The one worker's slot is free for the next checkout.
+        final next = await pool.checkout();
+        expect(await next.feedRun('1 + 1'), const MontyInt(2));
+        await next.close();
+        await s.close();
+      });
+    });
+
+    test('a lookup value the writer refuses with ArgumentError finishes the '
+        'session too', () async {
+      await withPool((pool) async {
+        final s = await pool.checkout();
+        await expectLater(
+          s.feedRun(
+            'try:\n    x\nexcept Exception:\n    pass',
+            externalLookup: {'x': MontyExceptionValue('NoSuchError')},
+            printCallback: _ignore,
+          ),
+          throwsArgumentError,
+        );
+        await expectLater(s.feedRun('1'), throwsStateError);
+        await s.close();
+      });
+    });
+
+    test('a feed the type check rejects does not adopt its cwd '
+        '(upstream: the next feed reports /)', () async {
+      await withPool((pool) async {
+        final s = await pool.checkout(typeCheck: true);
+        await expectLater(
+          s.feedRun('x: int = "a"', cwd: '/q', printCallback: _ignore),
+          throwsA(isA<MontyTypingError>()),
+        );
+        expect(
+          await s.feedRun(
+            'import os\nos.getcwd()',
+            printCallback: _ignore,
+          ),
+          const MontyString('/'),
+        );
+        await s.close();
       });
     });
   });
