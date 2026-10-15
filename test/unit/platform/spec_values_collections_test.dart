@@ -14,6 +14,8 @@ import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
+import 'spec_values_support.dart';
+
 MontyValue _roundTrip(MontyValue value) {
   final writer = ArenaWriter();
   final root = writer.add(value);
@@ -54,35 +56,41 @@ void main() {
     test(
       'REQ-MontyBytes-7: equal only for the same length, bytes and order',
       () {
-        expect(_bytes([1, 2, 3]) == _bytes([1, 2, 3]), isTrue);
-        expect(_bytes([]) == _bytes([]), isTrue);
+        final (full, fullTwin) = twins(() => _bytes([1, 2, 3]));
+        final (empty, emptyTwin) = twins(() => _bytes([]));
+        expect(full == fullTwin, isTrue);
+        expect(empty == emptyTwin, isTrue);
         expect(_bytes([1, 2, 3]) == _bytes([3, 2, 1]), isFalse);
         expect(_bytes([1, 2, 3]) == _bytes([1, 2]), isFalse);
         expect(_bytes([1, 2]) == _bytes([1, 2, 3]), isFalse);
         expect(_bytes([1, 2, 3]) == _bytes([1, 2, 4]), isFalse);
         expect(_bytes([]) == _bytes([0]), isFalse);
         expect(_bytes([1]) == const MontyInt(1), isFalse);
-        expect(_bytes([1, 2, 3]).hashCode, _bytes([1, 2, 3]).hashCode);
-        expect(_bytes([]).hashCode, _bytes([]).hashCode);
+        expect(full.hashCode, fullTwin.hashCode);
+        expect(empty.hashCode, emptyTwin.hashCode);
         // The length and every byte take part in the hash (the statements do
         // not promise that two particular values differ).
+        final varied = greaterThan(1);
         expect(
           {
             for (var n = 0; n < 12; n++) _bytes(List.filled(n, 7)).hashCode,
           }.length,
-          greaterThan(1),
+          varied,
         );
         expect(
           {
             for (var v = 0; v < 12; v++) _bytes([1, 2, v]).hashCode,
           }.length,
-          greaterThan(1),
+          varied,
         );
       },
     );
     test('REQ-MontyBytes-9: no ordering operators and no compareTo', () {
+      // The operators do not exist on the static type, so a call that must
+      // raise NoSuchMethodError can only be written with a `dynamic` receiver.
+      // ignore: avoid-dynamic
       const dynamic b = MontyBytes([1]);
-      const dynamic c = MontyBytes([2]);
+      const c = MontyBytes([2]);
       expect(() => b < c, throwsNoSuchMethodError);
       expect(() => b <= c, throwsNoSuchMethodError);
       expect(() => b > c, throwsNoSuchMethodError);
@@ -96,17 +104,18 @@ void main() {
         final b = MontyBytes(list);
         expect(b.hashCode, _bytes([1, 2, 3]).hashCode);
         expect(b == const MontyBytes([1, 2, 3]), isTrue);
-        expect(_roundTrip(b), const MontyBytes([1, 2, 3]));
+        void expectTrip(MontyBytes expected) => expect(_roundTrip(b), expected);
+        expectTrip(const MontyBytes([1, 2, 3]));
 
         list[1] = 9;
         expect(b == const MontyBytes([1, 2, 3]), isFalse);
         expect(b == const MontyBytes([1, 9, 3]), isTrue);
         expect(b.hashCode, const MontyBytes([1, 9, 3]).hashCode);
-        expect(_roundTrip(b), const MontyBytes([1, 9, 3]));
+        expectTrip(const MontyBytes([1, 9, 3]));
 
         list.add(4);
         expect(b == const MontyBytes([1, 9, 3, 4]), isTrue);
-        expect(_roundTrip(b), const MontyBytes([1, 9, 3, 4]));
+        expectTrip(const MontyBytes([1, 9, 3, 4]));
       },
     );
     test('REQ-MontyBytes-15: fromDart returns an existing MontyBytes', () {
@@ -267,7 +276,8 @@ void main() {
     test('REQ-MontyTuple-21: a cyclic tuple equals itself by identity', () {
       final t = cyclicTuple();
       expect(t == t, isTrue);
-      expect(t.items.single == t, isTrue);
+      final [self] = t.items;
+      expect(self == t, isTrue);
     });
     test('REQ-MontyTuple-22: == and hashCode throw StateError on a cycle', () {
       final t = cyclicTuple();
@@ -314,10 +324,8 @@ void main() {
         expect(() => MontySet([c]).dartValue, throwsStateError);
         expect(MontySet([c]).toJson, throwsStateError);
         // Distinct cyclic elements: the comparison reaches the cycle.
-        expect(
-          () => MontySet([_cyclicList()]) == MontySet([_cyclicList()]),
-          throwsStateError,
-        );
+        final (left, right) = twins(() => MontySet([_cyclicList()]));
+        expect(() => left == right, throwsStateError);
         // The same cyclic object on both sides is identity-equal (upstream
         // `Value::py_eq` returns true for `is`, value.rs:1548), so the
         // comparison never descends into it.
@@ -332,18 +340,18 @@ void main() {
       () {
         const inner = MontySet([MontyInt(1), MontyInt(2)]);
         const list = MontyList([inner, inner]);
-        final direct = list.dartValue as List;
-        expect(identical(direct[0], direct[1]), isTrue);
-        expect(direct[0], [1, 2]);
-        final json = list.toJson()! as List;
-        expect(identical(json[0], json[1]), isTrue);
-        expect((json[0] as Map)['__type'], 'set');
+        final [direct0, direct1, ...] = list.dartValue as List;
+        expect(identical(direct0, direct1), isTrue);
+        expect(direct0, [1, 2]);
+        final [json0, json1, ...] = castTo<List<Object?>>(list.toJson());
+        expect(identical(json0, json1), isTrue);
+        expect(castTo<Map<Object?, Object?>>(json0)['__type'], 'set');
 
         const dict = MontyDict([
           (MontyString('a'), inner),
           (MontyString('b'), inner),
         ]);
-        final map = dict.dartValue! as Map;
+        final map = castTo<Map<Object?, Object?>>(dict.dartValue);
         expect(identical(map['a'], map['b']), isTrue);
 
         // Sharing is kept inside a set too: a container met under two of
@@ -353,22 +361,29 @@ void main() {
           shared,
           MontyTuple([shared]),
         ]);
-        final members = holder.dartValue as List;
-        expect(members[0], [1]);
-        expect(identical((members[1] as List)[0], members[0]), isTrue);
-        final tagged = (holder.toJson()! as Map)['value'] as List;
-        final taggedTuple = tagged[1] as Map;
-        expect(identical((taggedTuple['value'] as List)[0], tagged[0]), isTrue);
+        final [member0, member1, ...] = holder.dartValue as List;
+        expect(member0, [1]);
+        final [nested, ...] = member1 as List;
+        expect(identical(nested, member0), isTrue);
+        final [tagged0, tagged1, ...] = castTo<List<Object?>>(
+          castTo<Map<Object?, Object?>>(holder.toJson())['value'],
+        );
+        final [tupleFirst, ...] = castTo<List<Object?>>(
+          castTo<Map<Object?, Object?>>(tagged1)['value'],
+        );
+        expect(identical(tupleFirst, tagged0), isTrue);
 
         final writer = ArenaWriter();
         final first = writer.add(inner);
-        final nodes = writer.arena.nodes.length;
+        int nodeCount() => writer.arena.nodes.length;
+        void expectNodes(int n) => expect(nodeCount(), n);
+        final nodes = nodeCount();
         final second = writer.add(inner);
         expect(second, first);
-        expect(writer.arena.nodes.length, nodes);
+        expectNodes(nodes);
         final listRoot = writer.add(list);
         expect(listRoot, isNot(first));
-        expect(writer.arena.nodes.length, nodes + 1);
+        expectNodes(nodes + 1);
       },
     );
     test(
@@ -378,10 +393,8 @@ void main() {
         final s = MontySet([nan, const MontyInt(1)]);
         expect(s == s, isTrue);
         expect(MontySet([nan]) == MontySet([nan]), isTrue);
-        expect(
-          MontySet([_nan()]) == MontySet([_nan()]),
-          isTrue,
-        );
+        final (fresh, freshTwin) = twins(() => MontySet([_nan()]));
+        expect(fresh == freshTwin, isTrue);
         expect(MontySet([nan]) == const MontySet([MontyFloat(1)]), isFalse);
         expect(nan == nan, isTrue);
       },
@@ -395,11 +408,9 @@ void main() {
         final nan = _nan();
         final s = MontyFrozenSet([nan]);
         expect(s == s, isTrue);
-        expect(s == MontyFrozenSet([_nan()]), isTrue);
-        expect(
-          s.hashCode,
-          MontyFrozenSet([_nan()]).hashCode,
-        );
+        final fresh = MontyFrozenSet([_nan()]);
+        expect(s == fresh, isTrue);
+        expect(s.hashCode, fresh.hashCode);
         expect(s == const MontyFrozenSet([MontyFloat(0)]), isFalse);
       },
     );
@@ -409,9 +420,10 @@ void main() {
         MontyFrozenSet exc(String msg) => MontyFrozenSet([
           MontyExceptionValue('ValueError', msg, {'k': MontyInt(_n(1))}),
         ]);
-        expect(exc('m') == exc('m'), isTrue);
-        expect(exc('m').hashCode, exc('m').hashCode);
-        expect(exc('m') == exc('n'), isFalse);
+        final (m, mTwin) = twins(() => exc('m'));
+        expect(m == mTwin, isTrue);
+        expect(m.hashCode, mTwin.hashCode);
+        expect(m == exc('n'), isFalse);
         MontyFrozenSet withAttr(int v) => MontyFrozenSet([
           MontyExceptionValue('E', 'm', {'k': MontyInt(_n(v))}),
         ]);
@@ -426,11 +438,12 @@ void main() {
         MontyFrozenSet fh(String path, String mode, int pos) => MontyFrozenSet([
           MontyFileHandle(path, mode, position: BigInt.from(pos)),
         ]);
-        expect(fh('/a', 'r', 3) == fh('/a', 'r', 3), isTrue);
-        expect(fh('/a', 'r', 3).hashCode, fh('/a', 'r', 3).hashCode);
-        expect(fh('/a', 'r', 3) == fh('/b', 'r', 3), isFalse);
-        expect(fh('/a', 'r', 3) == fh('/a', 'w', 3), isFalse);
-        expect(fh('/a', 'r', 3) == fh('/a', 'r', 4), isFalse);
+        final (base, twin) = twins(() => fh('/a', 'r', 3));
+        expect(base == twin, isTrue);
+        expect(base.hashCode, twin.hashCode);
+        expect(base == fh('/b', 'r', 3), isFalse);
+        expect(base == fh('/a', 'w', 3), isFalse);
+        expect(base == fh('/a', 'r', 4), isFalse);
       },
     );
   });
@@ -446,10 +459,13 @@ void main() {
           (MontyString('b'), MontyInt(9)),
           (MontyString('a'), MontyInt(2)),
         ]);
-        final out = d.dartValue! as Map<String, Object?>;
+        final out = castTo<Map<String, Object?>>(d.dartValue);
         expect(out.keys.toList(), ['a', 'b']);
         expect(out, {'a': 2, 'b': 9});
-        expect((d.toJson()! as Map)['value'], {'a': 2, 'b': 9});
+        expect(castTo<Map<Object?, Object?>>(d.toJson())['value'], {
+          'a': 2,
+          'b': 9,
+        });
 
         // A cycle reachable only through an overwritten value is not met.
         final hidden = MontyDict([
@@ -482,7 +498,7 @@ void main() {
           ['a', 2],
           [1, 3],
         ]);
-        expect((d.toJson()! as Map)['entries'], [
+        expect(castTo<Map<Object?, Object?>>(d.toJson())['entries'], [
           ['a', 1],
           ['a', 2],
           [1, 3],
@@ -523,14 +539,15 @@ void main() {
     );
     test('REQ-MontyDict-43: distinct NaN keys compare equal', () {
       MontyDict d(int v) => MontyDict([(_nan(), MontyInt(v))]);
-      expect(d(1) == d(1), isTrue);
-      expect(d(1).hashCode, d(1).hashCode);
-      expect(d(1) == d(2), isFalse);
+      final (one, oneTwin) = twins(() => d(1));
+      final two = d(2);
+      expect(one == oneTwin, isTrue);
+      expect(one.hashCode, oneTwin.hashCode);
+      expect(one == two, isFalse);
       final twoNan = MontyDict([
-        (_nan(), const MontyInt(1)),
-        (_nan(), const MontyInt(2)),
+        for (final v in [1, 2]) (_nan(), MontyInt(v)),
       ]);
-      expect(twoNan == d(2), isTrue);
+      expect(twoNan == two, isTrue);
     });
     test('REQ-MontyDict-21: fromDart keeps Python-equal keys apart', () {
       final shared = <Object?>[1, 2];
@@ -538,19 +555,22 @@ void main() {
           MontyValue.fromDart({true: 'a', 1: 'b', 'x': shared, 'y': shared})
               as MontyDict;
       expect(v.pairs, hasLength(4));
-      expect(v.pairs[0].$1, isA<MontyBool>());
-      expect(v.pairs[0].$2, const MontyString('a'));
-      expect(v.pairs[1].$1, isA<MontyInt>());
-      expect(v.pairs[1].$2, const MontyString('b'));
+      final [(key0, val0), (key1, val1), (_, val2), (_, val3)] = v.pairs;
+      expect(key0, isA<MontyBool>());
+      expect(val0, const MontyString('a'));
+      expect(key1, isA<MontyInt>());
+      expect(val1, const MontyString('b'));
       // Equal as Python keys, yet two pairs were kept.
-      expect(v.pairs[0].$1 == v.pairs[1].$1, isTrue);
-      expect(identical(v.pairs[2].$2, v.pairs[3].$2), isTrue);
-      expect((v.pairs[2].$2 as MontyList).items, hasLength(2));
+      expect(key0 == key1, isTrue);
+      expect(identical(val2, val3), isTrue);
+      expect((val2 as MontyList).items, hasLength(2));
       final twice = MontyValue.fromDart([shared, shared]) as MontyList;
-      expect(identical(twice.items[0], twice.items[1]), isTrue);
+      final [twice0, twice1, ...] = twice.items;
+      expect(identical(twice0, twice1), isTrue);
       final mapShared = <Object?, Object?>{'k': 1};
       final m2 = MontyValue.fromDart([mapShared, mapShared]) as MontyList;
-      expect(identical(m2.items[0], m2.items[1]), isTrue);
+      final [shared0, shared1, ...] = m2.items;
+      expect(identical(shared0, shared1), isTrue);
     });
     test('REQ-MontyDict-36: fromDart refuses cycles and unsupported types', () {
       final list = <Object?>[];
@@ -559,10 +579,11 @@ void main() {
       final map = <Object?, Object?>{};
       map['self'] = map;
       expect(() => MontyValue.fromDart(map), throwsArgumentError);
+      final tail = <Object?>[];
       final nested = <Object?>[
-        <Object?, Object?>{'k': <Object?>[]},
+        <Object?, Object?>{'k': tail},
       ];
-      ((nested[0]! as Map)['k']! as List).add(nested);
+      tail.add(nested);
       expect(() => MontyValue.fromDart(nested), throwsArgumentError);
 
       expect(() => MontyValue.fromDart(Object()), throwsArgumentError);
@@ -592,13 +613,15 @@ void main() {
         fieldNames: ['a'],
         values: [date],
       );
-      final out = const MontyList([date, nt, date]).dartValue as List;
-      expect(out[0], isA<DateTime>());
-      expect(out[2], isA<DateTime>());
-      final inner = ((out[1] as Map)['values']! as List)[0];
+      final [out0, out1, out2, ...] =
+          const MontyList([date, nt, date]).dartValue as List;
+      final isDate = isA<DateTime>();
+      expect(out0, isDate);
+      expect(out2, isDate);
+      final [inner, ...] = (out1 as Map)['values']! as List;
       expect(inner, isA<Map<String, Object?>>());
       expect(inner, {'__type': 'date', 'year': 2024, 'month': 3, 'day': 5});
-      expect(inner, isNot(out[0]));
+      expect(inner, isNot(out0));
     });
   });
 }

@@ -9,6 +9,8 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:test/test.dart';
 
+import 'spec_values_support.dart';
+
 int _n(int v) => v;
 String _s(String v) => v;
 
@@ -99,8 +101,9 @@ void _depthLimit(String kind) {
     reason: 'eq 401',
   );
   // Past the limit the result is the one the fast path would give.
-  expect(_nest(wrap, 401).hashCode, _nest(wrap, 401).hashCode);
-  expect(_nest(wrap, 401) == _nest(wrap, 402), isFalse);
+  final (a, b) = twins(() => _nest(wrap, 401));
+  expect(a.hashCode, b.hashCode);
+  expect(a == _nest(wrap, 402), isFalse);
 }
 
 void _visitLimit(String kind) {
@@ -154,11 +157,12 @@ void _charge(
   final eqDiff = eqOf(1000) - eqOf(0);
   if (hashUnits != null) {
     expect(hashDiff, hashUnits, reason: 'hash');
-    expect(eqDiff, 2 * hashUnits, reason: 'eq');
+    expect(eqDiff, hashUnits * 2, reason: 'eq');
   } else {
     // The statement says the payload counts, not at what rate.
-    expect(hashDiff, greaterThan(0), reason: 'hash');
-    expect(eqDiff, greaterThan(0), reason: 'eq');
+    final positive = greaterThan(0);
+    expect(hashDiff, positive, reason: 'hash');
+    expect(eqDiff, positive, reason: 'eq');
   }
 }
 
@@ -214,10 +218,9 @@ void main() {
         () => MontyList([MontyInt(_n(1)), MontyString(_s('a'))]),
         () => MontyTuple([MontyFloat(_n(1) + 0.5), const MontyNone()]),
         () => MontySet([MontyInt(_n(3)), MontyInt(_n(1)), MontyInt(_n(2))]),
-        () => MontyFrozenSet([MontyInt(_n(2)), MontyInt(_n(2))]),
+        () => MontyFrozenSet(List.generate(2, (_) => MontyInt(_n(2)))),
         () => MontyDict([
-          (MontyString(_s('a')), MontyInt(_n(1))),
-          (MontyString(_s('a')), MontyInt(_n(2))),
+          for (final v in [1, 2]) (MontyString(_s('a')), MontyInt(_n(v))),
         ]),
         () => MontyNamedTuple(
           typeName: _s('P'),
