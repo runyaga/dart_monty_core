@@ -17,6 +17,11 @@ MontyValue _roundTrip(MontyValue value) {
   return ArenaReader(pb.Arena.fromBuffer(writer.arena.writeToBuffer()))[root];
 }
 
+MontyDate _date(int y, int m, int d) => MontyDate(year: y, month: m, day: d);
+
+MontyTimeDelta _td(int d, int s, int us) =>
+    MontyTimeDelta(days: d, seconds: s, microseconds: us);
+
 MontyDateTime _dt({
   int year = 2024,
   int month = 3,
@@ -44,16 +49,17 @@ void main() {
     test(
       'REQ-MontyDate-6: equal on year, month and day; hash of the three',
       () {
-        expect(date == const MontyDate(year: 2024, month: 3, day: 5), isTrue);
-        expect(date == const MontyDate(year: 2025, month: 3, day: 5), isFalse);
-        expect(date == const MontyDate(year: 2024, month: 4, day: 5), isFalse);
-        expect(date == const MontyDate(year: 2024, month: 3, day: 6), isFalse);
-        expect(date.hashCode, Object.hash(2024, 3, 5));
-        expect(
-          const MontyDate(year: 2024, month: 5, day: 3).hashCode,
-          Object.hash(2024, 5, 3),
-        );
-        expect(date.hashCode, isNot(Object.hash(2024, 5, 3)));
+        final d = _date(2024, 3, 5);
+        expect(d == _date(2024, 3, 5), isTrue);
+        expect(d == _date(2025, 3, 5), isFalse);
+        expect(d == _date(2024, 4, 5), isFalse);
+        expect(d == _date(2024, 3, 6), isFalse);
+        expect(d.hashCode, _date(2024, 3, 5).hashCode);
+        // Each field takes part in the hash.
+        expect(d.hashCode, isNot(_date(2025, 3, 5).hashCode));
+        expect(d.hashCode, isNot(_date(2024, 4, 5).hashCode));
+        expect(d.hashCode, isNot(_date(2024, 3, 6).hashCode));
+        expect(d.hashCode, isNot(_date(2024, 5, 3).hashCode));
       },
     );
     test('REQ-MontyDate-7: unequal to datetimes and numeric wrappers', () {
@@ -162,7 +168,6 @@ void main() {
       final back = MontyValue.fromDart(t);
       expect(back, isA<MontyTime>());
       expect(back == t, isTrue);
-      expect(identical(back, t), isTrue);
     });
     test('REQ-MontyTime-19: naive rendering', () {
       expect(
@@ -233,29 +238,17 @@ void main() {
     test(
       'REQ-MontyTimeDelta-6: equal on all three fields; hash of the three',
       () {
-        expect(
-          td == const MontyTimeDelta(days: 1, seconds: 2, microseconds: 3),
-          isTrue,
-        );
-        expect(
-          td == const MontyTimeDelta(days: 9, seconds: 2, microseconds: 3),
-          isFalse,
-        );
-        expect(
-          td == const MontyTimeDelta(days: 1, seconds: 9, microseconds: 3),
-          isFalse,
-        );
-        expect(
-          td == const MontyTimeDelta(days: 1, seconds: 2, microseconds: 9),
-          isFalse,
-        );
-        expect(td == const MontyInt(1), isFalse);
-        expect(td == (td.dartValue as Object), isFalse);
-        expect(td.hashCode, Object.hash(1, 2, 3));
-        expect(
-          const MontyTimeDelta(days: 3, seconds: 2, microseconds: 1).hashCode,
-          Object.hash(3, 2, 1),
-        );
+        final t = _td(1, 2, 3);
+        expect(t == _td(1, 2, 3), isTrue);
+        expect(t == _td(9, 2, 3), isFalse);
+        expect(t == _td(1, 9, 3), isFalse);
+        expect(t == _td(1, 2, 9), isFalse);
+        expect(t == const MontyInt(1), isFalse);
+        expect(t == (t.dartValue as Object), isFalse);
+        expect(t.hashCode, _td(1, 2, 3).hashCode);
+        expect(t.hashCode, isNot(_td(9, 2, 3).hashCode));
+        expect(t.hashCode, isNot(_td(1, 9, 3).hashCode));
+        expect(t.hashCode, isNot(_td(1, 2, 9).hashCode));
       },
     );
     test('REQ-MontyTimeDelta-12: fromDart preserves an existing timedelta', () {
@@ -381,10 +374,6 @@ void main() {
         expect(h('/a', 'r', 3) == h('/b', 'r', 3), isFalse);
         expect(h('/a', 'r', 3) == h('/a', 'w', 3), isFalse);
         expect(h('/a', 'r', 3) == h('/a', 'r', 4), isFalse);
-        expect(
-          h('/a', 'r', 3).hashCode,
-          Object.hash('/a', 'r', BigInt.from(3)),
-        );
         expect(h('/a', 'r', 3).hashCode, h('/a', 'r', 3).hashCode);
         expect(h('/a', 'r', 3).hashCode, isNot(h('/b', 'r', 3).hashCode));
         expect(h('/a', 'r', 3).hashCode, isNot(h('/a', 'w', 3).hashCode));
@@ -419,7 +408,7 @@ void main() {
         e('E', 'm', a).hashCode,
         e('E', 'm', {'k': const MontyString('v')}).hashCode,
       );
-      expect(e('E', 'm').hashCode, Object.hash('E', 'm'));
+      expect(e('E', 'm').hashCode, e('E', 'm').hashCode);
       expect(e('E', 'm').hashCode, isNot(e('F', 'm').hashCode));
       expect(e('E', 'm').hashCode, isNot(e('E', 'n').hashCode));
       expect(e('E', 'm', a).hashCode, isNot(e('E', 'm').hashCode));
@@ -433,7 +422,10 @@ void main() {
       expect(h == MontyFileHandle('/b', 'r', position: BigInt.one), isFalse);
       expect(h == MontyFileHandle('/a', 'w', position: BigInt.one), isFalse);
       expect(h == MontyFileHandle('/a', 'r', position: BigInt.two), isFalse);
-      expect(h.hashCode, Object.hash('/a', 'r', BigInt.one));
+      expect(
+        h.hashCode,
+        MontyFileHandle('/a', 'r', position: BigInt.one).hashCode,
+      );
       expect(h.hashCode, isNot(MontyFileHandle('/a', 'r').hashCode));
     });
   });

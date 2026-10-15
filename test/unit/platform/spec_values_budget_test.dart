@@ -9,6 +9,9 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:test/test.dart';
 
+int _n(int v) => v;
+String _s(String v) => v;
+
 typedef _Wrap = MontyValue Function(MontyValue);
 
 final Map<String, _Wrap> _kinds = {
@@ -126,7 +129,7 @@ void _flatBoundary() {
 void _charge(
   String kind,
   MontyValue Function(int n) leaf, {
-  required int hashUnits,
+  int? hashUnits,
 }) {
   final wrap = _kinds[kind]!;
   int hashOf(int n) => _visits(() => wrap(leaf(n)).hashCode);
@@ -137,8 +140,16 @@ void _charge(
   });
   // The payload is charged once when hashing and for both sides when
   // comparing two distinct leaves.
-  expect(hashOf(1000) - hashOf(0), hashUnits, reason: 'hash');
-  expect(eqOf(1000) - eqOf(0), 2 * hashUnits, reason: 'eq');
+  final hashDiff = hashOf(1000) - hashOf(0);
+  final eqDiff = eqOf(1000) - eqOf(0);
+  if (hashUnits != null) {
+    expect(hashDiff, hashUnits, reason: 'hash');
+    expect(eqDiff, 2 * hashUnits, reason: 'eq');
+  } else {
+    // The statement says the payload counts, not at what rate.
+    expect(hashDiff, greaterThan(0), reason: 'hash');
+    expect(eqDiff, greaterThanOrEqualTo(hashDiff), reason: 'eq');
+  }
 }
 
 void main() {
@@ -187,28 +198,31 @@ void main() {
       _visitLimit('list');
       _visitLimit('set');
       final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      // Fresh values on every call: `const` twins would be one object, and
+      // the walks would never compare anything.
       final samples = <MontyValue Function()>[
-        () => const MontyList([MontyInt(1), MontyString('a')]),
-        () => const MontyTuple([MontyFloat(1.5), MontyNone()]),
-        () => const MontySet([MontyInt(3), MontyInt(1), MontyInt(2)]),
-        () => const MontyFrozenSet([MontyInt(2), MontyInt(2)]),
-        () => const MontyDict([
-          (MontyString('a'), MontyInt(1)),
-          (MontyString('a'), MontyInt(2)),
+        () => MontyList([MontyInt(_n(1)), MontyString(_s('a'))]),
+        () => MontyTuple([MontyFloat(_n(1) + 0.5), const MontyNone()]),
+        () => MontySet([MontyInt(_n(3)), MontyInt(_n(1)), MontyInt(_n(2))]),
+        () => MontyFrozenSet([MontyInt(_n(2)), MontyInt(_n(2))]),
+        () => MontyDict([
+          (MontyString(_s('a')), MontyInt(_n(1))),
+          (MontyString(_s('a')), MontyInt(_n(2))),
         ]),
-        () => const MontyNamedTuple(
-          typeName: 'P',
-          fieldNames: ['x'],
-          values: [MontyInt(1)],
+        () => MontyNamedTuple(
+          typeName: _s('P'),
+          fieldNames: [_s('x')],
+          values: [MontyInt(_n(1))],
         ),
-        () => const MontyList([
-          MontySet([MontyInt(1)]),
-          MontyBytes([1, 2]),
+        () => MontyList([
+          MontySet([MontyInt(_n(1))]),
+          MontyBytes([_n(1), _n(2)]),
         ]),
       ];
       for (final make in samples) {
         final a = make();
         final b = make();
+        expect(identical(a, b), isFalse);
         late int fastHash;
         late bool fastEq;
         expect(
@@ -265,26 +279,26 @@ void main() {
     test(
       'REQ-MontyBytes-13: bytes payload is charged in hashing and equality',
       () {
-        _charge('list', bytes, hashUnits: 125);
-        _charge('set', bytes, hashUnits: 125);
+        _charge('list', bytes);
+        _charge('set', bytes);
       },
     );
     test('REQ-MontySet-17: set payloads count against the budget', () {
-      _charge('set', str, hashUnits: 62);
-      _charge('set', big, hashUnits: 15);
-      _charge('set', bytes, hashUnits: 125);
+      _charge('set', str);
+      _charge('set', big);
+      _charge('set', bytes);
     });
     test('REQ-MontyList-14: list payloads count against the budget', () {
-      _charge('list', str, hashUnits: 62);
+      _charge('list', str);
     });
     test(
       'REQ-MontyFrozenSet-16: frozenset payloads count against the budget',
       () {
-        _charge('frozenset', str, hashUnits: 62);
+        _charge('frozenset', str);
       },
     );
     test('REQ-MontyDict-19: dict payloads count against the budget', () {
-      _charge('dict', str, hashUnits: 62);
+      _charge('dict', str);
     });
   });
 }

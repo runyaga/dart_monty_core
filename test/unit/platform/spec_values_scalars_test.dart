@@ -13,6 +13,13 @@ import 'package:test/test.dart';
 /// True where an integral double is also an `int` (dart2js).
 const bool _isJs = identical(0, 0.0);
 
+/// Fresh, non-canonical instances: a `const` twin is the same object, and
+/// identity-only equality would pass on it.
+const MontyNone Function() _newNone = MontyNone.new;
+const MontyEllipsis Function() _newEllipsis = MontyEllipsis.new;
+MontyNone _none() => _newNone();
+MontyEllipsis _ellipsis() => _newEllipsis();
+
 /// One instance of every other family member, for exclusion checks.
 List<MontyValue> _others() => [
   const MontyNone(),
@@ -142,8 +149,9 @@ void main() {
 
   group('equality and hashing', () {
     test('REQ-MontyNone-6: equal exactly to another MontyNone', () {
-      const none = MontyNone();
-      expect(none == const MontyNone(), isTrue);
+      final none = _none();
+      expect(none == _none(), isTrue);
+      expect(_none() == _none(), isTrue);
       expect(none == (null as Object?), isFalse);
       expect(none == const MontyBool(false), isFalse);
       expect(none == const MontyInt(0), isFalse);
@@ -168,10 +176,9 @@ void main() {
       }
     });
     test('REQ-MontyEllipsis-5: equal to every ellipsis, unequal to others', () {
-      expect(const MontyEllipsis() == const MontyEllipsis(), isTrue);
-      // Distinct, non-canonical instances.
-      final a = (() => const MontyEllipsis())();
-      final b = MontyValue.fromDart(const MontyEllipsis());
+      final a = _ellipsis();
+      final b = MontyValue.fromDart(_ellipsis());
+      expect(identical(a, b), isFalse);
       expect(a == b, isTrue);
       for (final other in _others()) {
         if (other is MontyEllipsis) continue;

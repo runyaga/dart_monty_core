@@ -6,7 +6,6 @@
 @Tags(['unit'])
 library;
 
-import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
     show MontyValueInternal;
@@ -21,6 +20,9 @@ MontyValue _roundTrip(MontyValue value) {
 
   return ArenaReader(pb.Arena.fromBuffer(writer.arena.writeToBuffer()))[root];
 }
+
+/// A fresh instance: a `const` twin would be the same object.
+MontyBytes _bytes(List<int> v) => MontyBytes(v);
 
 /// A fresh NaN each call: never const, so no two are one instance.
 MontyFloat _nan() => MontyFloat(double.parse('NaN'));
@@ -50,44 +52,19 @@ void main() {
     test(
       'REQ-MontyBytes-7: equal only for the same length, bytes and order',
       () {
-        expect(
-          const MontyBytes([1, 2, 3]) == const MontyBytes([1, 2, 3]),
-          isTrue,
-        );
-        expect(const MontyBytes([]) == const MontyBytes([]), isTrue);
-        expect(
-          const MontyBytes([1, 2, 3]) == const MontyBytes([3, 2, 1]),
-          isFalse,
-        );
-        expect(
-          const MontyBytes([1, 2, 3]) == const MontyBytes([1, 2]),
-          isFalse,
-        );
-        expect(
-          const MontyBytes([1, 2]) == const MontyBytes([1, 2, 3]),
-          isFalse,
-        );
-        expect(
-          const MontyBytes([1, 2, 3]) == const MontyBytes([1, 2, 4]),
-          isFalse,
-        );
-        expect(const MontyBytes([]) == const MontyBytes([0]), isFalse);
-        expect(const MontyBytes([1]) == const MontyInt(1), isFalse);
-        const eq = DeepCollectionEquality();
-        expect(const MontyBytes([1, 2, 3]).hashCode, eq.hash([1, 2, 3]));
-        expect(const MontyBytes([]).hashCode, eq.hash(<int>[]));
-        expect(
-          const MontyBytes([1, 2, 3]).hashCode,
-          const MontyBytes([1, 2, 3]).hashCode,
-        );
-        expect(
-          const MontyBytes([1, 2, 3]).hashCode,
-          isNot(const MontyBytes([3, 2, 1]).hashCode),
-        );
-        expect(
-          const MontyBytes([1, 2, 3]).hashCode,
-          isNot(const MontyBytes([1, 2]).hashCode),
-        );
+        expect(_bytes([1, 2, 3]) == _bytes([1, 2, 3]), isTrue);
+        expect(_bytes([]) == _bytes([]), isTrue);
+        expect(_bytes([1, 2, 3]) == _bytes([3, 2, 1]), isFalse);
+        expect(_bytes([1, 2, 3]) == _bytes([1, 2]), isFalse);
+        expect(_bytes([1, 2]) == _bytes([1, 2, 3]), isFalse);
+        expect(_bytes([1, 2, 3]) == _bytes([1, 2, 4]), isFalse);
+        expect(_bytes([]) == _bytes([0]), isFalse);
+        expect(_bytes([1]) == const MontyInt(1), isFalse);
+        expect(_bytes([1, 2, 3]).hashCode, _bytes([1, 2, 3]).hashCode);
+        expect(_bytes([]).hashCode, _bytes([]).hashCode);
+        expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([3, 2, 1]).hashCode));
+        expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([1, 2]).hashCode));
+        expect(_bytes([1, 2, 3]).hashCode, isNot(_bytes([1, 2, 4]).hashCode));
       },
     );
     test('REQ-MontyBytes-9: no ordering operators and no compareTo', () {
