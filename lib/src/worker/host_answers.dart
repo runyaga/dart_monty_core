@@ -815,7 +815,7 @@ pb.RaisedException raisedFrom(Object error) => switch (error) {
   ),
   ExternalException(:final excType, :final message, :final attributes)
       when exceptionTypeNames.contains(excType) =>
-    raisedException(excType, message ?? '', attributes),
+    raisedException(excType, message ?? _noArgText(excType), attributes),
   ExternalException(:final excType) => _fallback(unknownExcType(excType)),
   AsyncDecline() => pb.RaisedException(
     excType: 'TypeError',
@@ -825,6 +825,20 @@ pb.RaisedException raisedFrom(Object error) => switch (error) {
 };
 
 /// `Exception` carrying [error]'s text, read as [raisedException] reads a
-/// message.
-pb.RaisedException _fallback(Object error) =>
-    raisedException('Exception', '$error', const {});
+/// message; with no message when the text cannot be had, as upstream's
+/// `exception_arg` gives none when `str()` fails.
+pb.RaisedException _fallback(Object error) {
+  String? text;
+  try {
+    text = '$error';
+  } on Object {
+    text = null;
+  }
+
+  return raisedException('Exception', text, const {});
+}
+
+/// The message upstream's `exception_arg` reads off an exception raised
+/// with no argument: its `str()`, which is `'None'` for a `SyntaxError`
+/// (whose `msg` is None) and `''` for every other type.
+String _noArgText(String excType) => excType == 'SyntaxError' ? 'None' : '';

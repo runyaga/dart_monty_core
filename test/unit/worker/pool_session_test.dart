@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
@@ -108,6 +109,14 @@ void _ignore(String stream, String text) => _ignored++;
 
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
+
+/// A throw whose text cannot be rendered.
+final class _BadText implements Exception {
+  const _BadText();
+
+  @override
+  String toString() => throw StateError('no text');
+}
 
 /// The error a print callback's throw is raised as: [MontyRuntimeError]
 /// with the Python exception [excType] and [message], as upstream's
@@ -908,6 +917,100 @@ void main() {
           'type-msg',
           'MemoryError: memory limit exceeded: 1 bytes > 0 bytes',
         ),
+      );
+    });
+
+    test('a collector overflow passes through also when the callback awaits '
+        'before calling the collector', () async {
+      final collector = CollectStreams(maxBytes: 0);
+      final thrown = await failWith((stream, text) async {
+        await Future<void>.delayed(Duration.zero);
+        collector(stream, text);
+      });
+      expect(
+        thrown,
+        isA<MontyRuntimeError>().having(
+          (e) => e.display('type-msg'),
+          'type-msg',
+          'MemoryError: memory limit exceeded: 65 bytes > 0 bytes',
+        ),
+      );
+    });
+
+    test('an overflow thrown outside this feed and rethrown by its callback '
+        'is a host exception like any other MontyError', () async {
+      final collector = CollectString(maxBytes: 0);
+      late MontyRuntimeError saved;
+      try {
+        collector('stdout', 'x');
+      } on MontyRuntimeError catch (e) {
+        saved = e;
+      }
+      expect(
+        await failWith((_, _) => throw saved),
+        _printFailure(
+          'Exception',
+          'MemoryError: memory limit exceeded: 1 bytes > 0 bytes',
+        ),
+      );
+    });
+
+    test('a SyntaxError without a message reads None, as upstream str()s '
+        'SyntaxError()', () async {
+      expect(
+        await failWith((_, _) => throw const ExternalException('SyntaxError')),
+        isA<MontySyntaxError>().having(
+          (e) => e.display('type-msg'),
+          'type-msg',
+          'SyntaxError: None',
+        ),
+      );
+    });
+
+    test('a throw whose toString throws raises Exception with no message, '
+        'not the toString error', () async {
+      expect(
+        await failWith((_, _) => throw const _BadText()),
+        allOf(
+          _printFailure('Exception', ''),
+          isA<MontyRuntimeError>().having(
+            (e) => e.display('type-msg'),
+            'type-msg',
+            'Exception',
+          ),
+        ),
+      );
+    });
+
+    test('a JSONDecodeError keeps its data host-side, a pos past its doc '
+        'too', () async {
+      const attributes = {
+        'msg': MontyString('bad'),
+        'doc': MontyString(''),
+        'pos': MontyInt(1),
+        'lineno': MontyInt(1),
+        'colno': MontyInt(2),
+      };
+      final thrown = await failWith(
+        (_, _) => throw const ExternalException(
+          'json.JSONDecodeError',
+          'bad: line 1 column 2 (char 1)',
+          attributes,
+        ),
+      );
+      expect(
+        thrown,
+        isA<MontyRuntimeError>()
+            .having(
+              (e) => e.exception.excType,
+              'excType',
+              'json.JSONDecodeError',
+            )
+            .having(
+              (e) => exceptionAttributes(e.exception),
+              'attributes',
+              attributes,
+            ),
       );
     });
 

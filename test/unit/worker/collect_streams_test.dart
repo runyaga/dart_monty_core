@@ -193,6 +193,23 @@ void main() {
       expect(c.output, 'xé\u{1F600}');
     });
 
+    test('a surrogate pair split across two fragments is charged as the one '
+        'character the whole text has', () {
+      final fiveOverFour = throwsA(_overflow(5, 4));
+      // Alone each half is 3 bytes; together they are one 4-byte character.
+      final c = CollectString(maxBytes: 4)
+        ..call('stdout', '\uD83D')
+        ..call('stdout', '\uDE00');
+      expect(c.output, '\u{1F600}');
+      expect(() => c.call('stdout', 'x'), fiveOverFour);
+      // A refused fragment pairs nothing: a later trail half is alone.
+      final d = CollectString(maxBytes: 4)..call('stdout', '\uD83D');
+      expect(() => d.call('stdout', '\uDE00x'), fiveOverFour);
+      d.call('stdout', 'a');
+      expect(d.output, '\uD83Da');
+      expect(() => d.call('stdout', '\uDE00'), throwsA(_overflow(7, 4)));
+    });
+
     test('an overflow refuses the whole fragment', () {
       final c = CollectString(maxBytes: 5)..call('stdout', 'abc');
       expect(() => c.call('stdout', 'def'), throwsA(_overflow(6, 5)));

@@ -11,6 +11,8 @@
 /// Internal until the cutover exports both; nothing here is exported.
 library;
 
+import 'dart:async';
+
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/python_rules.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -93,18 +95,30 @@ final class CollectString {
   /// The UTF-8 length of [_output].
   int _bytes = 0;
 
+  /// Whether [_output] ends with a lead surrogate, which a fragment that
+  /// starts with a trail surrogate pairs with.
+  bool _endsWithLead = false;
+
   /// Appends [text] as printed to [stream], `'stdout'` or `'stderr'`; the
   /// stream is not kept, and nothing separates fragments. Any other
   /// [stream] throws [ArgumentError].
   ///
-  /// A fragment that would take the text past the cap is refused whole: it
-  /// throws [MontyRuntimeError], as [CollectStreams.call] does.
+  /// The charge is the UTF-8 length of the whole text: a surrogate pair
+  /// split across two fragments is one 4-byte character, not two 3-byte
+  /// halves. A fragment that would take the text past the cap is refused
+  /// whole: it throws [MontyRuntimeError], as [CollectStreams.call] does.
   void call(String stream, String text) {
     _checkStream(stream);
-    final add = utf8Length(text);
+    final pairs =
+        _endsWithLead && text.isNotEmpty && _isTrail(text.codeUnitAt(0));
+    // The lead was charged 3 alone and the trail 3; paired they are 4.
+    final add = utf8Length(text) - (pairs ? 2 : 0);
     _checkLimit(_bytes, add, _maxBytes);
     _output.write(text);
     _bytes += add;
+    if (text.isNotEmpty) {
+      _endsWithLead = _isLead(text.codeUnitAt(text.length - 1));
+    }
   }
 
   /// The text so far; reading does not drain the collector.
@@ -115,15 +129,32 @@ final class CollectString {
   String toString() => 'CollectString(output=${pythonRepr(output)})';
 }
 
-/// The errors a collector's overflow threw: only these pass through a
-/// feed's print delivery as they are (see [isCollectorOverflow]).
-final Expando<bool> _overflows = Expando('print collector overflow');
+/// Per collector overflow thrown during a feed's print delivery, that
+/// delivery ([deliverPrint]): only such an error passes through that feed
+/// as it is (see [isCollectorOverflow]).
+final Expando<Object> _overflows = Expando('print collector overflow');
 
-/// Whether [error] is a collector's overflow, which a feed's print delivery
-/// raises as it is, as upstream raises its collectors' `MemoryError`;
-/// anything else a print callback throws is classified as a host exception.
-bool isCollectorOverflow(Object error) =>
-    error is MontyRuntimeError && (_overflows[error] ?? false);
+/// The zone value naming the print delivery a callback runs in.
+final Object _deliveryKey = Object();
+
+/// Runs [callback] as part of [delivery], a feed's print delivery, so an
+/// overflow a collector throws inside it, synchronously or after an await,
+/// is known to come from that delivery.
+FutureOr<void> deliverPrint(
+  Object delivery,
+  FutureOr<void> Function() callback,
+) => runZoned(callback, zoneValues: {_deliveryKey: delivery});
+
+/// Whether [error] is an overflow a collector threw during [delivery],
+/// which that feed raises as it is, as upstream raises its collectors'
+/// `MemoryError`. Anything else a print callback throws, an overflow
+/// thrown elsewhere and rethrown too, is classified as a host exception.
+bool isCollectorOverflow(Object error, Object delivery) =>
+    error is MontyRuntimeError && identical(_overflows[error], delivery);
+
+bool _isLead(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isTrail(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
 int? _checkedCap(int? maxBytes) {
   validateUnsigned(maxBytes, 'maxBytes');
@@ -148,7 +179,9 @@ void _checkLimit(int current, int add, int? limit) {
   final used = current + add;
   if (used > limit) {
     final error = memoryLimitError(used, limit);
-    _overflows[error] = true;
+    if (Zone.current[_deliveryKey] case final Object delivery) {
+      _overflows[error] = delivery;
+    }
     throw error;
   }
 }

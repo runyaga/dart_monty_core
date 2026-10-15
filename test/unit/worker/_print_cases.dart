@@ -7,11 +7,13 @@
 // dart2wasm run the same cases.
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/python_rules.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -49,6 +51,8 @@ Future<Object> _sink(List<Object?> spec, MontyPool pool) async {
         ['typed', final String type, final String? message] =>
           ExternalException(type, message),
         ['plain', final String text] => _HostTrouble(text),
+        ['json', final String msg, final String doc, final int pos] =>
+          _jsonDecodeError(msg, doc, pos),
         ['monty'] => await _earlierError(pool),
         _ => throw StateError('unknown throw $exc'),
       };
@@ -56,6 +60,44 @@ Future<Object> _sink(List<Object?> spec, MontyPool pool) async {
       return (String stream, String text) => throw thrown;
   }
   throw StateError('unknown sink $spec');
+}
+
+/// `json.JSONDecodeError(msg, doc, pos)` as a host throws it: CPython's
+/// message, line and column for [pos] in [doc], which is ASCII here.
+ExternalException _jsonDecodeError(String msg, String doc, int pos) {
+  final before = doc.substring(0, pos.clamp(0, doc.length));
+  final lineno = '\n'.allMatches(before).length + 1;
+  final colno = pos - before.lastIndexOf('\n');
+
+  return ExternalException(
+    'json.JSONDecodeError',
+    '$msg: line $lineno column $colno (char $pos)',
+    {
+      'msg': MontyString(msg),
+      'doc': MontyString(doc),
+      'pos': MontyInt(pos),
+      'lineno': MontyInt(lineno),
+      'colno': MontyInt(colno),
+    },
+  );
+}
+
+/// The oracle's view of [e]'s inner exception: a JSON decode error with its
+/// attributes, or the type's name.
+String _innerText(MontyError e) {
+  final inner = e.exception;
+  if (inner.excType != 'json.JSONDecodeError') return inner.excType;
+  final attributes = exceptionAttributes(inner);
+  final shown = [
+    for (final name in const ['msg', 'doc', 'pos', 'lineno', 'colno'])
+      '$name=${switch (attributes[name]) {
+        MontyString(:final value) => pythonRepr(value),
+        MontyInt(:final value) => '$value',
+        final other => '$other',
+      }}',
+  ].join(', ');
+
+  return 'json.JSONDecodeError($shown)';
 }
 
 Future<MontyError> _earlierError(MontyPool pool) async {
@@ -120,7 +162,7 @@ int _pyLength(String s) => s.runes.length;
 /// Every print-sink case, each its own test labelled with [label].
 void printOracleTests(String label, StartPrintPool start) {
   test('the print oracle is complete ($label)', () {
-    expect(printOracle.length, greaterThanOrEqualTo(35));
+    expect(printOracle.length, greaterThanOrEqualTo(38));
   });
 
   for (final MapEntry(key: id, value: (:sink, :steps)) in printOracle.entries) {
@@ -169,6 +211,9 @@ void printOracleTests(String label, StartPrintPool start) {
                 };
               } on MontyError catch (e) {
                 text = _errorText(e);
+                if (sink case ['raise', ['json', ...]]) {
+                  text += ' / ${_innerText(e)}';
+                }
               }
               final shown = _collectorText(made);
               actual.add(shown.isEmpty ? text : '$text | $shown');

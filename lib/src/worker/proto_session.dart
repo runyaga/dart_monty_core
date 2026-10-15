@@ -398,7 +398,7 @@ final class _PrintSink {
       final onPrint = _onPrint;
       if (onPrint == null) continue;
       try {
-        await onPrint(stream, segment.text);
+        await deliverPrint(this, () => onPrint(stream, segment.text));
       } on Object catch (error, stack) {
         // A failure from a callback that ended after the feed was abandoned
         // is ignored, like any late result: the abandonment is the outcome.
@@ -419,7 +419,7 @@ final class _PrintSink {
   /// raises it, with the callback's stack.
   void rethrowFailure() {
     if (_failure case (final error, final stack)) {
-      Error.throwWithStackTrace(printFailure(error), stack);
+      Error.throwWithStackTrace(printFailure(error, this), stack);
     }
   }
 }
@@ -429,16 +429,20 @@ final class _PrintSink {
 /// (`finalize_turn`): a [MontyError] built from the Python exception
 /// upstream's `exc_py_to_monty` would classify it as.
 ///
-/// - A collector's overflow ([isCollectorOverflow]) is raised as it is: the
+/// - An overflow a collector threw during [delivery], this feed's print
+///   delivery ([isCollectorOverflow]), is raised as it is: the
 ///   `MemoryError` upstream's collectors raise.
 /// - Any other throw is classified as a host function's is ([raisedFrom]):
 ///   an `ExternalException` raises its type and message, anything else
 ///   `Exception` with its `toString()`. A `SyntaxError` is
 ///   [MontySyntaxError], as upstream's `MontyError::new_err` raises it, and
-///   every other type [MontyRuntimeError]. Neither has a traceback.
-MontyError printFailure(Object error) => isCollectorOverflow(error)
+///   every other type [MontyRuntimeError]. Neither has a traceback. The
+///   record never crosses the wire, so its data is kept as the host gave it
+///   ([RaisedRecord.fromHost]).
+MontyError printFailure(Object error, Object delivery) =>
+    isCollectorOverflow(error, delivery)
     ? error as MontyError
-    : recordError(RaisedRecord.fromWire(raisedFrom(error)));
+    : recordError(RaisedRecord.fromHost(raisedFrom(error)));
 
 /// Whether [event] ends a turn in a suspension that waits for the host's
 /// answer (upstream's `left_suspended`).
