@@ -659,6 +659,41 @@ void main() {
       await expectLater(unused.feedRun('1'), throwsStateError);
     });
 
+    test('installDependencies: empty succeeds, the rest is the sandbox '
+        "worker's refusal (TGT1 B)", () async {
+      Matcher refused(String typeMsg) => throwsA(
+        isA<MontyRuntimeError>().having(
+          (e) => e.display('type-msg'),
+          'type-msg',
+          typeMsg,
+        ),
+      );
+      final fake = FakeMontySession()..willReturn(const MontyInt(2));
+      await fake.installDependencies([]);
+      await expectLater(
+        fake.installDependencies(['httpx>=0.27']),
+        refused(
+          'RuntimeError: dependency installation is only supported by the '
+          'CPython worker',
+        ),
+      );
+      await expectLater(
+        fake.installDependencies(['numpy', '--index-url=x']),
+        refused(
+          'ValueError: invalid requirement "--index-url=x": must not '
+          "start with '-' (it would be parsed as a uv option)",
+        ),
+      );
+      // The session runs on, and the install is no feed.
+      expect(await fake.feedRun('1 + 1'), const MontyInt(2));
+      expect(fake.feeds, ['1 + 1']);
+      await fake.close();
+      await expectLater(
+        fake.installDependencies([]),
+        throwsStateError,
+      );
+    });
+
     test('no dump or load; no worker pid', () async {
       final fake = FakeMontySession()
         ..willCall('f')

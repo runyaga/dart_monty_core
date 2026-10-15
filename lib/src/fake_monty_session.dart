@@ -264,7 +264,8 @@ class _ScriptedLink {
 ///
 /// What it does not do: run Python, type-check, enforce limits, or keep a
 /// working directory (`cwd` is checked as a session checks it, and no
-/// Python reads it). [dump],
+/// Python reads it). [installDependencies] answers as the pure-Monty worker
+/// does: an empty list succeeds, any other is refused. [dump],
 /// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
 /// [UnsupportedError]. [workerPid] is null.
 final class FakeMontySession extends _FakeScripting implements MontySession {
@@ -324,6 +325,17 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
       skipTypeCheck: skipTypeCheck,
     ),
   );
+
+  @override
+  Future<void> installDependencies(List<String> requirements) =>
+      Future.sync(() {
+        // Read and checked when called, as the session does, not when the
+        // fake's session opens.
+        final taken = [...requirements];
+        checkRequirementsText(taken);
+
+        return _link.call((s) => s.installDependencies(taken));
+      });
 
   @override
   Future<void> loadSession(Uint8List state) async => throw _noDump;

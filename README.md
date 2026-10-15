@@ -77,6 +77,7 @@ and the call fails with `MontyCrashedError` (`timedOut` is true).
 | `feedStart(code, {…})` | Run to the first suspension and return a `MontySnapshot` |
 | `dump()` | The session as bytes, idle or suspended |
 | `loadSession(bytes)` / `loadSnapshot(bytes, {externalLookup, printCallback, os})` | Restore a dump into a fresh session |
+| `installDependencies(requirements)` | Empty list succeeds; any other throws `MontyRuntimeError` (core's worker is the pure-Monty sandbox, as upstream's) |
 | `workerPid` | The worker's process id (null on the web) |
 | `close()` | End the session; never throws |
 

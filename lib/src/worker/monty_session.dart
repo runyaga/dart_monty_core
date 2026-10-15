@@ -193,6 +193,24 @@ abstract interface class MontySession {
   /// send) is thrown as [MontyRuntimeError], and the session is unchanged.
   Future<Uint8List> dump();
 
+  /// Installs [requirements], PEP 508 strings, for the session's later feeds
+  /// (upstream's `install_dependencies`).
+  ///
+  /// An empty list succeeds. Core's worker is the pure-Monty sandbox, which
+  /// has no host interpreter to install for, so any other list throws
+  /// [MontyRuntimeError] (`RuntimeError`: "dependency installation is only
+  /// supported by the CPython worker") and the session runs on. Each
+  /// requirement is checked first, in order, as upstream's pool checks it: a
+  /// blank one, or one starting with `-` after trimming (uv would read an
+  /// option), throws [MontyRuntimeError] (`ValueError`) with upstream's
+  /// text; one with an unpaired surrogate throws [ArgumentError]
+  /// (upstream's `UnicodeEncodeError`) before any is checked.
+  ///
+  /// While a suspension is unanswered it throws [StateError]
+  /// ("install_dependencies called while a suspension is awaiting an
+  /// answer"); a finished session throws [StateError] too.
+  Future<void> installDependencies(List<String> requirements);
+
   /// The worker's process id: diagnostics and tests. Null on the web, once
   /// the session is finished, and while a protocol turn is in flight.
   int? get workerPid;
@@ -443,6 +461,35 @@ final class _LeasedSession implements MontySession {
   }
 
   @override
+  Future<void> installDependencies(List<String> requirements) =>
+      Future.sync(() {
+        // Read when called, as the binding reads its argument: the list the
+        // caller holds may change before the turn is free.
+        final taken = [...requirements];
+        checkRequirementsText(taken);
+
+        // Refused as a feed is while a suspension waits, in its own words.
+        return _withTurn(
+          () async {
+            // A dump runs outside the turns, on the channel: wait for it, as
+            // upstream's checkout lock does, and look again.
+            if (_channel.inTurn) {
+              while (_channel.inTurn) {
+                await _channel.turnOver;
+              }
+              if (_hold.isFinished) throw _finishedError();
+            }
+            // Installing nothing trivially succeeds, the sandbox worker too.
+            if (taken.isEmpty) return;
+            checkRequirements(taken);
+            await _proto.installDependencies(taken);
+          },
+          feed: true,
+          pending: _pendingInstallError,
+        );
+      });
+
+  @override
   Future<void> close() => _closing ??= _close();
 
   Future<void> _close() async {
@@ -479,12 +526,13 @@ final class _LeasedSession implements MontySession {
   Future<T> _withTurn<T>(
     Future<T> Function() body, {
     required bool feed,
+    StateError Function() pending = _pendingError,
   }) async {
     _refuseInPrint(this);
     if (_hold.isFinished) throw _finishedError();
     // Null when the turn is free now: no await, so the body below starts
     // in this same synchronous step and no other call can slip in.
-    final wait = _turnWait(feed: feed);
+    final wait = _turnWait(feed: feed, pending: pending);
     if (wait != null) {
       await wait;
       // From here to the body's start is one synchronous step: the turn
@@ -492,7 +540,10 @@ final class _LeasedSession implements MontySession {
       // in between.
       _reserved = false;
       if (_hold.isFinished || _active != null || (feed && _suspended)) {
-        _refuse();
+        // Woken by a close, or by the running feed suspending: this call
+        // cannot run, and the next waiter learns the same.
+        _handOff();
+        _refused(finished: _hold.isFinished, pending: pending);
       }
     }
     // The call's own outcome: the body's, unless a close while a host
@@ -519,9 +570,12 @@ final class _LeasedSession implements MontySession {
   /// With nobody ahead and the worker suspended (on a host call, or on an
   /// answer that was too large to send), upstream's turn lock is free and
   /// a [feed] would take it, then refuse: so it throws at once.
-  Future<void>? _turnWait({required bool feed}) {
+  Future<void>? _turnWait({
+    required bool feed,
+    required StateError Function() pending,
+  }) {
     final queueFree = _waiters.isEmpty && !_reserved;
-    if (feed && queueFree && _suspended) throw _pendingError();
+    if (feed && queueFree && _suspended) throw pending();
 
     if (_active == null && queueFree) return null;
     // Queued, to be handed the turn.
@@ -529,14 +583,6 @@ final class _LeasedSession implements MontySession {
     _waiters.add(turn);
 
     return turn.future;
-  }
-
-  /// Woken by a close, or by the running feed suspending: this feed cannot
-  /// run, and the next waiter learns the same.
-  Never _refuse() {
-    _handOff();
-    if (_hold.isFinished) throw _finishedError();
-    throw _pendingError();
   }
 
   /// Whether the worker waits for an answer to a suspension: the running
@@ -638,6 +684,17 @@ HostAnswers _hostFor(
   os: os,
   systemSleepMax: config.systemSleepMax,
   objects: session.objects,
+);
+
+/// Throws what a call refused its turn learns: the session is finished,
+/// or a suspension waits ([pending] words it).
+Never _refused({
+  required bool finished,
+  required StateError Function() pending,
+}) => throw finished ? _finishedError() : pending();
+
+StateError _pendingInstallError() => StateError(
+  'install_dependencies called while a suspension is awaiting an answer',
 );
 
 StateError _pendingError() =>

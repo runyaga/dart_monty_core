@@ -97,6 +97,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession
   FakeMontySession.dump: method() -> Future<Uint8List@dart:typed_data>
   FakeMontySession.feedRun: method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
   FakeMontySession.feedStart: method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
+  FakeMontySession.installDependencies: method(List<String> requirements) -> Future<void>
   FakeMontySession.isClosed: getter -> bool
   FakeMontySession.loadSession: method(Uint8List@dart:typed_data state) -> Future<void>
   FakeMontySession.loadSnapshot: method(Uint8List@dart:typed_data state, {Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
@@ -545,6 +546,7 @@ abstract interface class MontySession
   MontySession.dump: abstract method() -> Future<Uint8List@dart:typed_data>
   MontySession.feedRun: abstract method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontyValue>
   MontySession.feedStart: abstract method(String code, {Map<String, MontyValue>? inputs, Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, String? cwd, OsHandler? os, bool skipTypeCheck = false}) -> Future<MontySnapshot>
+  MontySession.installDependencies: abstract method(List<String> requirements) -> Future<void>
   MontySession.loadSession: abstract method(Uint8List@dart:typed_data state) -> Future<void>
   MontySession.loadSnapshot: abstract method(Uint8List@dart:typed_data state, {Map<String, MontyValue>? externalLookup, ProtoPrintCallback? printCallback, OsHandler? os}) -> Future<MontySnapshot>
   MontySession.new: constructor()

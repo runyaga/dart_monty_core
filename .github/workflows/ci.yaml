@@ -928,7 +928,7 @@ jobs:
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 430 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 446 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob
