@@ -83,8 +83,8 @@ jobs:
               - 'lib/**'
               - 'test/**'
               # `example/**` IS CODE. Without it, editing only
-              # example/*.dart left `code` false and `test-examples` (now the
-              # example step of `test-ffi`) — the ONLY job that runs those
+              # example/*.dart left `code` false and the example smoke step
+              # (now in `test-worker-vm`) — the ONLY job that runs those
               # programs — did not run at all. A
               # broken example merged green, because the single check that
               # could catch it was the one the change switched off.
@@ -95,13 +95,6 @@ jobs:
               # this workflow applies.
               - 'example/**'
               - 'native/**'
-              # js/src/** is hashed by tool/check_asset_freshness.sh and is
-              # the source of the committed worker/bridge assets; without it a
-              # JS-only change skipped the freshness check and every WASM job.
-              - 'js/**'
-              # ffigen's own config: without it a change to ffigen.yaml alone
-              # skipped the bindings drift check.
-              - 'ffigen.yaml'
               - 'hook/**'
               - 'tool/**'
               - 'packages/**'
@@ -110,14 +103,10 @@ jobs:
               - 'dart_test.yaml'
               - '.github/**'
               - '!**.md'
-            # Documentation is NOT "no CI". Three source-only checks are
-            # doc-sensitive and a docs-only change can break any of them:
-            #   check_page_versions.sh   5 published pages carry the version badge
-            #   check_wire_contract.sh   docs/WIRE-CONTRACT.md vs the encoder
-            #   check_fixture_links.sh   demo fixture links resolve
-            # Without this output a docs-only PR skipped `gate` along with
-            # everything else, so the checks most likely to catch a docs mistake
-            # were exactly the ones a docs change switched off.
+            # Documentation is NOT "no CI": source-only checks can be
+            # doc-sensitive. Without this output a docs-only PR skipped `gate`
+            # along with everything else, so the checks most likely to catch a
+            # docs mistake were exactly the ones a docs change switched off.
             docs:
               - '**.md'
               - 'docs/**'
@@ -159,24 +148,17 @@ jobs:
   # ---------------------------------------------------------------------------
   # Stage 0 — the fast gate. Source-only invariants, no native build, no browser.
   # ---------------------------------------------------------------------------
-  # WHY THIS JOB EXISTS. Fifteen of these checks are enforced by tool/gate.sh and
-  # FIVE OF THEM RAN NOWHERE IN CI:
-  #
-  #   check_backend_parity.sh     no method may be a stub on one backend only
-  #   check_exports_declared.sh   all 63 exported C symbols declared in the header
-  #   check_forgery_coverage.sh   all 25 emittable wire tags have a forgery test
-  #   check_wire_contract.sh      WIRE-CONTRACT.md matches the encoder, both ways
-  #   check_workflows_valid.sh    actionlint over .github/workflows/
-  #
-  # A contributor who does not run tool/gate.sh locally could break any of them
-  # and CI stayed green. The last one is the sharpest: it was ADDED because a
+  # WHY THIS JOB EXISTS. These checks are enforced by tool/gate.sh, and some
+  # once ran nowhere in CI -- among them check_workflows_valid.sh (actionlint
+  # over .github/workflows/, and the -dev tag publish guard). A contributor who
+  # does not run tool/gate.sh locally could break any of them and CI stayed
+  # green. check_workflows_valid.sh is the sharpest: it was ADDED because a
   # duplicate `env:` key made GitHub reject ci.yaml, which stopped the workflow
   # matching its own triggers -- thirteen commits with no CI at all, showing a
   # red X indistinguishable from a job failure (4d624f8..c49477e). The check
   # written to prevent a repeat was itself not running in CI.
   #
-  # All sixteen are source-only. Measured in-container: the five above total
-  # 168ms. The job is dominated by SDK setup, not by the checks.
+  # All are source-only. The job is dominated by SDK setup, not by the checks.
   #
   # This job deliberately does NOT gate the others with `needs:`. Serialising the
   # happy path behind it would cost every green run ~35s to save a red run ~11
@@ -218,18 +200,12 @@ jobs:
           run bash tool/check_asset_freshness.sh
           # the worker wasm's gzip -9 budget (5.75 MB; O7 measured 5.66).
           run bash tool/check_worker_wasm_size.sh
-          run bash tool/check_wire_version.sh
-          run node tool/check_wasm_arity.mjs
-          run bash tool/check_exports_declared.sh
-          run bash tool/check_forgery_coverage.sh
-          run bash tool/check_wire_contract.sh
           run bash tool/check_workflows_valid.sh
           # Every third-party `uses:` pinned to a 40-hex commit SHA.
           run bash tool/check_action_pins.sh
           # A read-only top-level `permissions:` in every workflow, and
           # `persist-credentials: false` on every checkout.
           run python3 -I tool/check_workflow_tokens.py
-          run bash tool/check_fixture_corpus.sh
           # Changelog fragments: format of changes/*.md and the PR rule's
           # negative controls. The PR-level rule is changelog-fragments.yml.
           run bash tool/check_changelog_fragments.sh --self-test
@@ -242,8 +218,6 @@ jobs:
           # The metrics ratchet's controls: per-declaration parameter
           # exceptions and the base-ref rule, on recorded dcm reports (no dcm).
           run bash tool/metrics_ratchet.sh --self-test
-          run bash tool/check_fixture_links.sh
-          run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
           # The upstream reference pin (pydantic/monty 1.1.0): shape only here;
           # the `upstream-pin` job below fetches and installs it.
@@ -262,7 +236,6 @@ jobs:
           # native/worker/Cargo.lock pins (offline: version, checksum, hash).
           run python3 -I tool/generate_tz_names.py --check
           run bash tool/check_no_vague_errors.sh
-          run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
           run bash tool/check_api_absent.sh
           # Nothing under lib/src/worker/ exported or in a public signature,
@@ -288,7 +261,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 34 ] || { echo "FAIL: expected 34 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 25 ] || { echo "FAIL: expected 25 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 
@@ -346,8 +319,8 @@ jobs:
   # Upstream parity: the measured baseline moves only on purpose
   # ---------------------------------------------------------------------------
   # Runs the parity suite (the dart_monty_parity repo, at the commit
-  # PARITY_PIN names) against this checkout on the VM (FFI), dart2js and
-  # dart2wasm, and asserts its tool/parity/baseline-current.json: every case's
+  # PARITY_PIN names) against this checkout on the VM (the worker executable
+  # worker-rust built), dart2js and dart2wasm (the committed worker wasm), and asserts its tool/parity/baseline-current.json: every case's
   # result within every re-measured row, every row's status, the PRESENT
   # totals. On this x86_64 runner float_values is PARTIAL on vm and dart2wasm
   # (core's NaN sign bit), as recorded there; nothing else may differ.
@@ -356,7 +329,7 @@ jobs:
   # first, then bumps PARITY_PIN here in the same PR as the change.
   parity:
     name: Parity (pinned dart_monty_parity; vm, dart2js, dart2wasm)
-    needs: [changes]
+    needs: [changes, worker-rust]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -378,14 +351,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -401,7 +366,15 @@ jobs:
         run: |
           dart pub get
           python3 -I tool/generate_display_fixtures.py .parity --check
-      - name: Run on the VM (FFI)
+      - name: Download the worker executable
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dart_monty_worker-linux-x64
+          path: lib/src/bin/linux-x64
+      # Where tool/build_worker.sh puts it and worker_locator.dart looks.
+      # Artifacts do not keep the executable bit.
+      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - name: Run on the VM (worker process)
         run: python3 -I .parity/tool/parity/run.py vm --core . --out /tmp/parity
       - name: Run on dart2js
         run: python3 -I .parity/tool/parity/run.py dart2js --core . --out /tmp/parity
@@ -458,17 +431,6 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
-      # `dart run` / `dart test` run hook/build.dart, which builds the
-      # in-process native crate; restore the shared cache rather than build
-      # it cold.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -532,56 +494,9 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
-  # FFI binding generation
-  # ---------------------------------------------------------------------------
-  ffigen:
-    name: Generate FFI bindings
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-      - name: Install libclang
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev
-      - name: Generate bindings
-        run: bash tool/generate_bindings.sh
-      # A DRIFT CHECK, not a producer. The bindings are committed, and every
-      # other job builds against the committed copy; this job proves that copy
-      # is what ffigen emits from the current header. It used to upload the
-      # regenerated file for four jobs to download over the committed one,
-      # which serialised them behind this job and hid drift instead of failing.
-      - name: Committed bindings match ffigen output
-        run: |
-          set -euo pipefail
-          F=lib/src/ffi/generated/dart_monty_bindings.dart
-          # Present AND tracked: a diff of an untracked or deleted file is empty.
-          [ -s "$F" ] || { echo "FAIL: $F missing or empty after generation."; exit 1; }
-          git ls-files --error-unmatch "$F" >/dev/null \
-            || { echo "FAIL: $F is not tracked by git."; exit 1; }
-          # Nothing else may appear under generated/ either.
-          UNTRACKED="$(git ls-files --others --exclude-standard -- lib/src/ffi/generated/)"
-          [ -z "$UNTRACKED" ] || { echo "FAIL: untracked generated files: $UNTRACKED"; exit 1; }
-          git diff --exit-code -- lib/src/ffi/generated/ || {
-            echo "FAIL: lib/src/ffi/generated/ is stale -- run bash tool/generate_bindings.sh and commit."
-            exit 1
-          }
-          echo "OK: committed bindings match ffigen output"
-
-  # ---------------------------------------------------------------------------
   # monty-proto Dart bindings: drift check
   # ---------------------------------------------------------------------------
-  # Same shape as `ffigen` above. lib/src/worker/proto/ is committed protoc
+  # A drift check. lib/src/worker/proto/ is committed protoc
   # output for upstream's monty.proto at the commit tool/upstream/upstream-pin.json
   # records, built with the hash-pinned protoc in
   # tool/upstream/protoc-requirements.lock, protoc_plugin 25.1.0 compiled from
@@ -648,23 +563,6 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
-      # `dart test` runs hook/build.dart, which runs `cargo build --release
-      # --lib --target x86_64-unknown-linux-gnu`. Without a cache that was a
-      # cold ~300s build in this job; the shared key restores what the other
-      # native-amd64 jobs (test-ffi) already compiled.
-      #
-      # save-if: false -- RESTORE ONLY. The key is written once, by whichever
-      # job finishes first. This job builds only the release cdylib; test-ffi
-      # also builds the dev oracle, so it is the one that must write the key,
-      # or test-ffi restores a cache with no dev deps and builds them cold.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -731,8 +629,9 @@ jobs:
         # instruction, late.
         run: |
           set -o pipefail
-          dart test --exclude-tags=ffi,wasm,integration,ladder,worker \
+          dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
+          # FLIP-FLOOR: reset to the flip head's measured unit count.
           bash tool/assert_test_count.sh /tmp/unit-test.log 700 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
@@ -757,8 +656,9 @@ jobs:
         run: |
           set -o pipefail
           dart test \
-            --exclude-tags=ffi,wasm,integration,ladder,example,vm-only,worker \
+            --exclude-tags=integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
+          # FLIP-FLOOR: reset to the flip head's measured web count.
           bash tool/assert_test_count.sh /tmp/unit-web.log 1400 "unit (web)"
 
       - name: Generate LCOV
@@ -790,11 +690,10 @@ jobs:
         # file is unaccounted for. Expect the printed lib-wide number to be far
         # below the loaded-files one; that gap is the finding, not a break.
         run: bash tool/coverage_report.sh --out-dir coverage coverage/lcov.info
-      # The Codecov upload MOVED to the `coverage-merge` job below. It sat here,
-      # in a job that finishes before any FFI tracefile exists, so Codecov
+      # The Codecov upload is in the `coverage-merge` job below. It sat here,
+      # in a job that finishes before the other tracefiles exist, so Codecov
       # published the unit-only number while the gate used the merged one --
-      # two different figures for the same commit, which is the drift class
-      # check_wire_version.sh and check_fixture_links.sh already exist for.
+      # two different figures for the same commit.
       - name: Upload lcov artifact
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -818,7 +717,7 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Dart: build and run an AOT consumer with bundled native assets
+  # Dart: an AOT consumer that opts in to the worker library (self-relaunch)
   # ---------------------------------------------------------------------------
   test-aot:
     name: AOT consumer
@@ -836,14 +735,6 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
-      # `dart build cli` runs the same hook build as `dart test` (release,
-      # --lib, --locked, x86_64-unknown-linux-gnu), so it restores the same
-      # shared key. Restore-only: test-ffi is the one writer (see `test`).
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
@@ -853,29 +744,9 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
-      # Build CLI bundles the hook's native asset; the probe asserts its result.
-      - name: Build an AOT consumer
-        run: dart build cli --target tool/aot_probe.dart -o build/aot
-      - name: Run the AOT consumer
-        working-directory: build/aot/bundle
-        run: ./bin/aot_probe
-      # That consumer does not opt in to the worker library, so its build must
-      # be exactly what it was before the opt-in existed: one cargo build (the
-      # in-process crate) and one bundled library. native/worker/target is
-      # absent in a fresh checkout until something builds there; the worker
-      # cache is restored only after this check, below.
-      - name: Without the opt-in, no worker library and no worker build
-        run: |
-          set -euo pipefail
-          ls -1 build/aot/bundle/lib | tee /tmp/bundle-libs.txt
-          [ "$(cat /tmp/bundle-libs.txt)" = libdart_monty_core_native.so ] ||
-            { echo "FAIL: expected only libdart_monty_core_native.so"; exit 1; }
-          [ ! -e native/worker/target/x86_64-unknown-linux-gnu ] ||
-            { echo "FAIL: the hook built native/worker without the opt-in"; exit 1; }
       # The worker cdylib the opted-in consumer's hook builds (release, --lib,
       # --target x86_64-unknown-linux-gnu). No other job builds that
-      # configuration, so this job is its one writer. Restored HERE, after the
-      # check above, which a restored native/worker/target would defeat.
+      # configuration, so this job is its one writer.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: native/worker
@@ -895,11 +766,11 @@ jobs:
           if pgrep -f -- --dart-monty-core-worker; then
             echo "FAIL: a relaunched worker is still running"; exit 1
           fi
-      # The hook with native/Cargo.toml absent and the opt-in set still
-      # builds the worker library (the tree the old engine's removal leaves).
-      # Run after the opted-in consumer above, which built the same cdylib
-      # configuration into native/worker/target; the test links that crate.
-      - name: Hook builds the worker without the old crate
+      # The hook builds the worker library with the opt-in set and nothing
+      # without it. Run after the opted-in consumer above, which built the same
+      # cdylib configuration into native/worker/target; the test links that
+      # crate.
+      - name: Hook builds the worker only when opted in
         run: |
           set -o pipefail
           dart test test/hook -p vm --run-skipped --tags=integration \
@@ -907,111 +778,15 @@ jobs:
           bash tool/assert_test_count.sh /tmp/hook-test.log 2 hook
 
   # ---------------------------------------------------------------------------
-  # GitHub Pages render gate — the deployed site must load in a real browser
-  # ---------------------------------------------------------------------------
-  # The published Pages site serves the web REPL against the
-  # SAME committed lib/assets/ bundle consumers get, so this is the only check
-  # that the published artefacts resolve and wire up in a browser. A green WASM
-  # fixture corpus does not cover it: that drives a test harness, not the
-  # deployed page.
-  pages:
-    name: Pages site renders
-    needs: [changes]
-    # code OR docs, and the `docs` half is NOT optional. tool/check_pages.sh:66
-    # copies docs/index.html INTO the site it renders -- that file IS the
-    # published Pages content. Gating this job on `code` alone meant a PR that
-    # edited docs/index.html skipped the only check that the published page
-    # still loads in a browser. Caught in review, not by a failure.
-    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          # 22, not 20: tool/pages_drive.mjs drives Chrome over CDP using the
-          # GLOBAL WebSocket, stable from Node 22. On 20 this gate died with
-          # `ReferenceError: WebSocket is not defined`, and it only surfaced
-          # the first time CI ever ran the gate.
-          node-version: '24'
-      - run: dart pub get
-      - name: Pages render gate
-        run: bash tool/check_pages.sh
-
-  # ---------------------------------------------------------------------------
-  # Rust: fmt + clippy + tests + unioned llvm-cov coverage (≥77% line coverage)
-  # ---------------------------------------------------------------------------
-  rust:
-    name: Rust (fmt + clippy + test + coverage)
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy, llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-      - name: cargo fmt
-        working-directory: native
-        run: cargo fmt --check
-      - name: cargo clippy
-        working-directory: native
-        # --all-targets MATTERS, and CI was missing it while tool/gate.sh had it.
-        # Without it clippy lints the lib only: tests, benches, examples and
-        # src/bin are never looked at. Proven 2026-09-14 by planting a
-        # `needless_range_loop` in native/tests/integration.rs --
-        # `cargo clippy -- -D warnings` PASSED, `--all-targets` reported 3
-        # errors. Every lint this project added to tests was unenforced in CI.
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-deny
-      - name: cargo deny check
-        working-directory: native
-        run: cargo deny check
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-llvm-cov
-      - name: Run tests with coverage (≥77% line coverage)
-        # NOT `cargo llvm-cov` directly. It merges by SYMBOL NAME, and lib.rs
-        # holds 63 `#[unsafe(no_mangle)] pub extern "C"` functions whose symbols
-        # therefore carry no hash disambiguator -- so the cfg(test) copy and the
-        # integration copy of `monty_create` collide, llvm-cov keeps one mapping,
-        # and the other binary's real hits are dropped. That reported lib.rs at
-        # 2.23% while the integration suite alone proved 36.50%, and the project
-        # total at 71.02% instead of 79.00%.
-        #
-        # tool/rust_coverage.sh runs each target into its own profile and unions
-        # the LCOV by file:line, which cannot collide. It carries a guard that
-        # refuses to print a total below any single target's own figure, so the
-        # undercount cannot come back silently. Reverting this to a bare
-        # `cargo llvm-cov` call reinstates the bug AND reads 71.02% against the
-        # 74% floor below -- a false red, not a quiet pass.
-        run: bash tool/rust_coverage.sh --summary --fail-under 77
-
-  # ---------------------------------------------------------------------------
   # Worker crate: native/worker (upstream's `monty subprocess` loop)
   # ---------------------------------------------------------------------------
-  # Its own cargo workspace and Cargo.lock, so its own cache, keyed on that lock.
+  # Its own cargo workspace and Cargo.lock, so its own cache, keyed on that lock;
+  # this job is that key's one writer.
   # One cargo call builds the executable and the cdylib (two fat-LTO links);
   # the smoke test runs against that same release executable. The wasm module
   # is not shipped yet; it is built and driven through its dmw_* exports.
   worker-rust:
-    name: Worker crate (fmt + clippy + build + smoke)
+    name: Worker crate (fmt + clippy + build + smoke + deny)
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -1043,6 +818,14 @@ jobs:
         run: cargo build --locked --release --lib --bins
       - name: Smoke test (Configure, Feed 1 + 1, Shutdown)
         run: cargo test --locked --release
+      # Advisories, licences and sources over the worker's dependency graph
+      # (native/worker/deny.toml).
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check
       - name: Build wasm module (mixd)
         run: cargo build --locked --profile mixd --lib --target wasm32-wasip1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -1080,17 +863,6 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
-      # `dart test` runs hook/build.dart, which builds the in-process native
-      # crate; restore what test-ffi cached rather than build it cold. Restore
-      # only, for the reason given in the `test` job.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -1134,346 +906,16 @@ jobs:
           path: coverage-worker/lcov.info
           if-no-files-found: error
           retention-days: 1
-
-  # ---------------------------------------------------------------------------
-  # Build WASM binary (wasm32-wasip1)
-  # ---------------------------------------------------------------------------
-  build-wasm:
-    name: Build WASM
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [rust]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-      # Compile-only: the one CI build of the shipped wasm feature set (the same
-      # command as tool/prebuild.sh). Tests run the COMMITTED lib/assets/ wasm,
-      # so the binary is not uploaded -- no job ever downloaded it.
-      - name: Build WASM
-        working-directory: native
-        run: cargo build --release --target wasm32-wasip1
-
-  # ---------------------------------------------------------------------------
-  # FFI integration tests — 464 fixtures, oracle binary vs MontyFfi
-  # Runs on VM (JIT). The oracle subprocess itself is a Rust binary.
-  # ---------------------------------------------------------------------------
-  test-ffi:
-    name: FFI integration tests
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    # 20 + 5 for the example smoke suite folded in from test-examples, which
-    # on a cold cache was the job that needed the most headroom.
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          # SHARED with the other native-amd64 release job. Swatinem defaults to
-          # a per-job key (add-job-id-key: true) and cache-on-failure: false, so
-          # a job that is red never saves and never warms. test-examples had
-          # been red for 10 runs and its key had never existed, which is why it
-          # spent 698s of a 736s job compiling what test-ffi built in 56s on a
-          # hit. A shared key lets the job that passes populate the cache the
-          # job that fails restores from.
-          #
-          # Scope is deliberate: build-wasm targets wasm32-wasip1 (different
-          # triple) and test-hooks-corpus documents its own key for a different
-          # feature set. Neither shares this one. The `rust` job is dev-profile
-          # and is left alone so it cannot win the write-once race and leave the
-          # release jobs cold.
-          #
-          # -v2: the v1 entry on main was written by the old test-examples job,
-          # which built no dev oracle, so every hit here rebuilt the oracle's
-          # dev deps cold (~70s), and an exact hit never re-saves. test-ffi is
-          # now the only writer (the other jobs on this key are save-if: false).
-          shared-key: native-amd64-v2
-      - name: Build native library
-        working-directory: native
-        # --target MATCHES THE HOOK, and that is the whole point of the flag.
-        # hook/build.dart:36-37 computes `_rustTriple(os, arch)` and passes
-        # `--target <triple>`, so it builds into target/<triple>/release/. A bare
-        # `cargo build --release` builds into target/release/ instead -- a
-        # DIFFERENT directory that shares nothing. The result was the monty tree
-        # compiled twice per job: once here, once by the hook, neither reusing
-        # the other.
-        #
-        # `shared-key` (added in 5e25267) fixed the CACHE not warming between
-        # jobs; it did nothing about this, because both directories were being
-        # cached and both still had to be built. This is the other half.
-        #
-        # --lib and --locked MATCH THE HOOK TOO (hook/build.dart passes exactly
-        # `build --locked --release --lib --target <triple>`). Without --lib
-        # cargo also builds the release `oracle` bin, a second fat-LTO link
-        # nothing runs: the tests use the dev-profile oracle built next.
-        run: cargo build --locked --release --lib --target x86_64-unknown-linux-gnu
-      - name: Build oracle binary
-        working-directory: native
-        run: cargo build --bin oracle
-      - run: dart pub get
-      - name: Run FFI integration tests
-        # GLOB, not a hand-maintained list. The previous explicit list named 7
-        # of the 19 ffi_*_test.dart files on disk, so twelve suites ran in no CI
-        # job at all -- including ffi_open_test, mounts, snapshot/restore,
-        # typeCheck, and ffi_monty_019_semantics_test, which was written for the
-        # 0.19 upgrade itself (core#130). The local matrix always globbed, so
-        # those suites passed locally and were simply never run in CI.
-        #
-        # ffi_with_cm_test.dart USED TO BE excluded here, on the grounds that
-        # it needs `--features test-hooks`. That stopped being true upstream:
-        # `_test_cm()` does not exist in monty v0.0.23 (`grep -rn "_test_cm"
-        # crates/monty/src/` at rev 302e0f2 -> 0 hits) and the with__cm_*
-        # fixtures use an ordinary Python `class CM:` now. Measured
-        # 2026-09-13 on a NORMAL build, no test-hooks anything: 5/5 pass.
-        # So five tests were excluded from CI for a requirement that no longer
-        # exists, and tool/test_cm.sh -- the only thing that ran them -- is
-        # referenced nowhere but comments. Glob them in.
-        run: |
-          FFI_TESTS=$(ls test/integration/ffi_*_test.dart)
-          echo "Running $(echo "$FFI_TESTS" | wc -l | tr -d ' ') FFI suites:"
-          echo "$FFI_TESTS" | sed 's/^/  /'
-          set -o pipefail
-          dart test \
-            $FFI_TESTS \
-            test/integration/oracle_ffi_test.dart \
-            test/integration/oracle_ffi_ext_test.dart \
-            test/integration/repros \
-            -p vm --run-skipped --tags=ffi --exclude-tags=pending-futures \
-            --coverage=coverage-ffi \
-            --reporter=expanded 2>&1 | tee /tmp/ffi-test.log
-          # skip-but-green: a runner that registers zero tests prints
-          # "All tests passed!" and exits 0. This suite is the single largest
-          # coverage input in the repo now, so a silent zero here would look
-          # like a 22-point coverage regression with no failing test to explain
-          # it. Raise the floor when the suite grows; never lower it.
-          bash tool/assert_test_count.sh /tmp/ffi-test.log 1300 FFI
-      - name: Generate FFI LCOV
-        # 1,356 tests, ~12s, on a job that ALREADY built the native library and
-        # ALREADY ran this exact command. They drive ffi_core_bindings,
-        # native_bindings_ffi, monty_repl and ffi_repl_bindings -- which the
-        # unit-only measurement reported at 0.0%, 0.3%, 3.1% and 1.7%. The work
-        # was being done and the record thrown away.
-        run: |
-          shopt -s globstar nullglob
-          if ! compgen -G "coverage-ffi/**/*.json" > /dev/null 2>&1; then
-            echo "FAIL: --coverage=coverage-ffi produced no hitmap JSON."
-            exit 1
-          fi
-          dart run coverage:format_coverage \
-            --lcov --in=coverage-ffi --out=coverage-ffi/lcov.info \
-            --report-on=lib
-      - name: Upload FFI lcov artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: lcov-ffi
-          path: coverage-ffi/lcov.info
-          if-no-files-found: error
-          retention-days: 1
-      # -----------------------------------------------------------------------
-      # Example smoke tests — every example/*.dart must compile and exit 0.
-      # `dart analyze` only checks types; this is the only thing exercising the
-      # examples at runtime. Broken examples are tracked via markTestSkipped()
-      # with a TODO reason; remove the skip-list entry to enforce.
-      #
-      # The repl_demo dart2js compile that used to follow is gone: the `pages`
-      # job compiles repl_demo AND feature_matrix with dart2js and dart2wasm
-      # (tool/check_pages.sh) on every code or docs change.
-      # -----------------------------------------------------------------------
-      # NOT measured for coverage, and the reason is worth recording because
-      # the obvious assumption is wrong. This suite runs each example with
-      # `Process.run('dart', ['run', ex])` (example_smoke_test.dart:59) -- a
-      # separate PROCESS. `dart test --coverage` instruments the test isolate,
-      # so the tracefile it produces here is EMPTY: measured, 11 passing tests,
-      # one hitmap JSON, and `format_coverage --report-on=lib` writes 0 bytes.
-      # Adding --coverage would buy nothing and would break the merge, which
-      # treats an empty tracefile as a failure. Same structural cause as the
-      # spawned-isolate case in native_isolate_bindings_impl.dart, one level
-      # further out.
+      # Every example/*.dart must compile and exit 0: `dart analyze` only checks
+      # types, and this is the only thing exercising the examples at runtime.
+      # NOT measured for coverage: the suite runs each example with
+      # `Process.run('dart', ['run', ex])`, a separate PROCESS, and `dart test
+      # --coverage` instruments the test isolate, so its tracefile is EMPTY.
+      # Runs even if the worker suite failed, so one red result cannot hide the
+      # other. tool/example_floor.sh derives the floor from the tree.
       - name: Run example smoke tests
-        # Formerly its own job (`test-examples`), which rebuilt the same x86_64
-        # release library this job has already built. Runs even if the FFI
-        # suite failed, so one red result cannot hide the other.
         if: success() || failure()
-        # Same BODY as tool/gate.sh runs, not the same four lines copied. This
-        # step and gate.sh:274 had drifted: CI asserted a count, the local gate
-        # asserted nothing, and the two picked different reporters. The floor is
-        # no longer the hardcoded `14` either -- it was exactly met, 14 of 14, so
-        # adding a 16th example would have left it at 14 and allowed one of the
-        # existing fifteen to be deleted afterwards with CI still green.
-        # tool/example_floor.sh derives it from the tree.
         run: bash tool/run_example_smoke.sh /tmp/example-test.log
-
-  # ---------------------------------------------------------------------------
-  # WASM/JS integration tests — 464 fixtures through MontyWasm in headless Chrome
-  # Uses the dart_monty JS bridge (sparse-checkout) + freshly built WASM binary.
-  # ---------------------------------------------------------------------------
-  test-wasm:
-    name: WASM/JS integration tests
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: '24'
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-
-      # Assets are committed to git (Mode A). Stage them directly for
-      # the test runner rather than rebuilding from source — drift-check
-      # owns the rebuild-parity story. No npm install: the worker supplies
-      # its own WASI imports (js/src/wasm_glue.js), so nothing from
-      # js/node_modules is served.
-      - name: Stage bridge assets for test runner
-        run: |
-          set -euo pipefail
-          WEB_DIR="test/integration/web"
-
-          # Verify committed assets exist (they should — drift-check enforces).
-          for f in lib/assets/dart_monty_core_bridge.js lib/assets/dart_monty_core_worker.js lib/assets/dart_monty_core_native.wasm; do
-            [ -f "$f" ] || { echo "FATAL: committed asset missing: $f (run bash tool/prebuild.sh)"; exit 1; }
-          done
-
-          # Stage bridge assets for the test runner.
-          mkdir -p "$GITHUB_WORKSPACE/$WEB_DIR"
-          cp lib/assets/dart_monty_core_bridge.js "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp lib/assets/dart_monty_core_worker.js "$GITHUB_WORKSPACE/$WEB_DIR/"
-          cp lib/assets/dart_monty_core_native.wasm "$GITHUB_WORKSPACE/$WEB_DIR/"
-
-          # Final verification — every file the test runner needs must exist.
-          for f in \
-            "$WEB_DIR/dart_monty_core_bridge.js" \
-            "$WEB_DIR/dart_monty_core_worker.js" \
-            "$WEB_DIR/dart_monty_core_native.wasm"; do
-            [ -f "$GITHUB_WORKSPACE/$f" ] || { echo "FATAL: staged asset missing: $f"; exit 1; }
-          done
-
-          echo "=== bridge assets staged ==="
-          ls -lh "$GITHUB_WORKSPACE/$WEB_DIR/"
-
-      - run: dart pub get
-
-      # The two "Compile WASM runner to ..." steps that used to sit here are
-      # gone: tool/test_wasm.sh compiles the runner itself on every invocation,
-      # so they were redundant — and the dart2wasm one compiled with
-      #     -o test/integration/web/wasm_runner.wasm
-      # which is a TRACKED file. The script compiles into a mktemp dir
-      # precisely to avoid that (tool/test_wasm.sh: "would overwrite three
-      # tracked files"), so keeping the CI step defeated its own protection.
-      - name: Corpus in headless Chrome (dart2js)
-        run: bash tool/test_wasm.sh --skip-build
-
-      - name: Corpus in headless Chrome (dart2wasm)
-        # success() || failure(), NOT always(): the intent is only that a
-        # dart2js failure must not hide the dart2wasm result. always() would
-        # also fire after a CANCELLED workflow or a failed setup step, running
-        # the corpus in a half-built tree and reporting confusing errors.
-        if: success() || failure()
-        run: bash tool/test_wasm.sh --skip-build --dart2wasm
-
-
-  # ---------------------------------------------------------------------------
-  # WASM unit-style tests — package:test scenarios under test/integration/wasm_*_test.dart
-  # (datetime_oscall, multi_repl, setextfns, fixture). Distinct from the
-  # fixture-corpus runner above, which uses a standalone Dart program.
-  # ---------------------------------------------------------------------------
-  test-wasm-unit:
-    name: WASM unit-style tests
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: '24'
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-      # `dart test` runs hook/build.dart, which runs `cargo build --release
-      # --lib --target x86_64-unknown-linux-gnu`. Without a cache that was a
-      # cold ~300s build in this job; the shared key restores what the other
-      # native-amd64 jobs (test-ffi) already compiled.
-      #
-      # save-if: false -- RESTORE ONLY. The key is written once, by whichever
-      # job finishes first. This job builds only the release cdylib; test-ffi
-      # also builds the dev oracle, so it is the one that must write the key,
-      # or test-ffi restores a cache with no dev deps and builds them cold.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-
-      - run: dart pub get
-
-      - name: Run WASM unit-style tests (dart2js)
-        # The floor is the point. tool/test_wasm_unit.sh checks that every
-        # wasm_*_test.dart is LISTED, which catches a forgotten file -- it does
-        # not check that any test RAN. `dart test` prints success and exits 0
-        # on an empty run, so a staging failure that registered zero tests
-        # reported green here. Measured on run 34869641865: this step really
-        # runs `+751 ~85: All tests passed!`, and nothing asserted the 751.
-        # Raise the floor when the suite grows; never lower it to make a run pass.
-        run: |
-          set -o pipefail
-          bash tool/test_wasm_unit.sh 2>&1 | tee /tmp/wasm-unit-js.log
-          bash tool/assert_test_count.sh /tmp/wasm-unit-js.log 700 "WASM unit (dart2js)"
-
-      - name: Run WASM unit-style tests (dart2wasm)
-        # Same suite, same WASM ENGINE, different DART compile target. Two things
-        # are called "wasm" here: the Rust engine (driven by every test in this
-        # suite whichever compiler is used) and the Dart target. Only this step
-        # covers the second. CI already built dart2wasm for the fixture corpus
-        # (job `test-wasm`), so the corpus had dart2wasm coverage while the
-        # package:test suites did not.
-        run: |
-          set -o pipefail
-          bash tool/test_wasm_unit.sh --dart2wasm 2>&1 | tee /tmp/wasm-unit-w.log
-          bash tool/assert_test_count.sh /tmp/wasm-unit-w.log 700 "WASM unit (dart2wasm)"
 
   # ---------------------------------------------------------------------------
   # WorkerChannel in Chrome against the COMMITTED worker wasm
@@ -1497,16 +939,6 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
-      # `dart test` runs hook/build.dart (the in-process crate) whatever the
-      # platform; restore the shared native cache rather than build it cold.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -1541,8 +973,7 @@ jobs:
   # directives. Every file the worker fails is listed in the manifest
   # (packages/monty_conformance/lib/src/worker_corpus_manifest.dart) with a
   # divergence ID, and a run fails on any difference from the list in either
-  # direction. Not a required check until the cutover; the old corpus jobs
-  # (test-wasm, test-ffi, test-hooks-corpus) keep running meanwhile.
+  # direction.
   #
   # Native on Linux here, on every PR; macOS arm64 in worker-nightly.yaml.
   # The browsers are the matrix job below.
@@ -1561,17 +992,6 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
-      # `dart test` runs hook/build.dart, which builds the in-process native
-      # crate; restore what test-ffi cached rather than build it cold. Restore
-      # only, for the reason given in the `test` job.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -1622,16 +1042,6 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
         with:
           sdk: 3.13.5
-      # `dart test` runs hook/build.dart (the in-process crate) whatever the
-      # platform; restore the shared native cache rather than build it cold.
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          shared-key: native-amd64-v2
-          save-if: false
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.pub-cache
@@ -1652,130 +1062,11 @@ jobs:
         run: bash tool/test_corpus_worker.sh "$BROWSER" "$COMPILER"
 
   # ---------------------------------------------------------------------------
-  # test-hooks corpus — the eight fixtures that call sys.setrecursionlimit
-  #
-  # These need an engine built `--features test-hooks`, which is NEVER shipped
-  # (native/Cargo.toml:36-38). Without it the corpus skips them; with it they
-  # run. Measured 2026-09-13 on the 590-fixture v0.0.23 corpus, identical on
-  # amd64 and arm64 and on both compile targets:
-  #   shipped engine   575 passed / 3 failed / 12 skipped
-  #   test-hooks       585 passed / 1 failed /  4 skipped
-  # The ten extra passes are the eight setrecursionlimit fixtures plus
-  # functools__gc.py and itertools__gc.py, which need the gc module test-hooks
-  # enables. Until this job existed CI ran NEITHER variant, so
-  # those eight were verified only by whoever happened to run tool/gate.sh
-  # locally — and on dart2wasm they had never executed anywhere at all.
-  #
-  # Cost is a ~3 min cargo build for the test-hooks engine, shared by both
-  # steps. That is why this is its own job rather than steps bolted onto
-  # test-wasm: a feature-flag rebuild would evict test-wasm's cache and make
-  # every other WASM job pay for it.
-  # ---------------------------------------------------------------------------
-  test-hooks-corpus:
-    name: test-hooks corpus (dart2js + dart2wasm)
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: '24'
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
-        with:
-          sdk: 3.13.5
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          toolchain: stable
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          workspaces: native
-          # Its own cache key. The test-hooks build is a DIFFERENT feature set
-          # and lands in its own CARGO_TARGET_DIR; sharing a key with the
-          # release jobs would thrash both.
-          key: test-hooks
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: pub-${{ runner.os }}-
-
-      - run: dart pub get
-
-      # Both steps PIN THE RESULT rather than trusting the exit code.
-      # tool/test_cm_wasm.sh does `exit 0` when it cannot find Chrome —
-      # "WARN: Chrome not found" and a green job that ran nothing. ubuntu-latest
-      # ships Chrome today, but a runner image change would turn this job into a
-      # rubber stamp silently, which is the exact failure mode these eight
-      # fixtures already spent months in. So the pin stays; what it pins changed.
-      #
-      # It used to grep for `{"total":531,"passed":528,"failed":0`. That was the
-      # v0.0.19 corpus. The corpus is 590 now, so the string became unreachable
-      # and this job could not go green no matter what the code did — measured
-      # 2026-09-13, both backends and both architectures:
-      #   {"total":590,"passed":585,"failed":1,"skipped":4}
-      # the single failure being dataclass__basic.py, which has failed since
-      # a0dd284 and is declared in tool/cm-corpus-expected-failures.txt.
-      #
-      # Pinning a pass COUNT was the mistake: it has to be hand-edited every
-      # time upstream adds a fixture, and when it drifts it fails in the
-      # direction that looks like a code regression. Pin the corpus SIZE to the
-      # provenance file instead — that is the part a rubber-stamp run cannot
-      # fake — and let the script's declared expected-failure set judge which
-      # fixtures may fail.
-      - name: test-hooks corpus (dart2js)
-        run: |
-          set -euo pipefail
-          bash tool/test_cm_wasm.sh 2>&1 | tee /tmp/cm_js.log
-          want=$(python3 -c "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
-          grep -q "FIXTURE_DONE:{\"total\":$want," /tmp/cm_js.log \
-            || { echo "FAIL: dart2js test-hooks corpus did not report $want fixtures."; \
-                 grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_js.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
-                 exit 1; }
-
-      - name: test-hooks corpus (dart2wasm)
-        # The compile target, not the engine — both steps drive the same
-        # test-hooks WASM engine. This is the only place the dart2wasm twin of
-        # the corpus runner is exercised with test-hooks on.
-        run: |
-          set -euo pipefail
-          bash tool/test_cm_wasm.sh --dart2wasm 2>&1 | tee /tmp/cm_w.log
-          want=$(python3 -c "import json;print(json.load(open('tool/fixture-corpus.json'))['fixture_count'])")
-          grep -q "FIXTURE_DONE:{\"total\":$want," /tmp/cm_w.log \
-            || { echo "FAIL: dart2wasm test-hooks corpus did not report $want fixtures."; \
-                 grep -o 'FIXTURE_DONE:{[^}]*}' /tmp/cm_w.log || echo "  (no FIXTURE_DONE at all — did it run?)"; \
-                 exit 1; }
-
-      - name: The tree must be unchanged
-        # test_cm_wasm.sh stages into temp dirs and builds into its own
-        # CARGO_TARGET_DIR precisely so it cannot leave a test-hooks engine
-        # where lib/assets/ is staged from. Assert that, rather than trust it.
-        #
-        # No path is excluded. js/package-lock.json used to be, because this
-        # job ran `npm install --force` for the WASI shim and npm rewrote the
-        # lockfile; the job no longer runs npm at all.
-        run: |
-          set -euo pipefail
-          DIRTY="$(git status --porcelain -- .)"
-          if [ -n "$DIRTY" ]; then
-            echo "FAIL: the test-hooks corpus modified the working tree:"
-            echo "$DIRTY"
-            exit 1
-          fi
-          echo "OK: tree clean"
-
-  # ---------------------------------------------------------------------------
   # Coverage: merge every measured suite, report lib-wide, ratchet
   # ---------------------------------------------------------------------------
-  # Two suites produce a usable tracefile and both measure the SAME lib/. Until
-  # this job existed only the first was counted, so the published figure
-  # described 457 unit tests and silently discarded the 1,356-test FFI
-  # conformance suite that runs in this same workflow, in 12 seconds, over
-  # exactly the files the published figure reported at 0-3%.
+  # The unit, worker-VM and worker-Chrome suites each produce a tracefile over
+  # the SAME lib/. Counting only one would publish a figure that silently
+  # discards the others.
   #
   # The example suite is deliberately NOT here -- see the note on it above: it
   # runs each example in a separate process, so its tracefile is empty.
@@ -1785,7 +1076,7 @@ jobs:
   # back in with --baseline. This job is checkout + python3.
   coverage-merge:
     name: Coverage (merged, lib-wide) + ratchet
-    needs: [changes, test, test-ffi, test-worker-web, test-worker-vm]
+    needs: [changes, test, test-worker-web, test-worker-vm]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1808,11 +1099,6 @@ jobs:
         with:
           name: lcov-dart
           path: coverage
-      - name: Download FFI tracefile
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: lcov-ffi
-          path: coverage-ffi
       - name: Download Chrome tracefile (worker channel)
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -1835,12 +1121,11 @@ jobs:
             --out-dir coverage \
             --browser coverage-web/lcov.info \
             coverage/lcov.info \
-            coverage-ffi/lcov.info \
             coverage-worker/lcov.info
       - name: Coverage ratchet (no per-file decrease)
         # The floor under the merge. Without it the reclassification is a
-        # one-off: new native code lands, the FFI conformance corpus does not
-        # grow to match, and per-file coverage slides back invisibly because the
+        # one-off: new code lands, the tests do not grow to match, and
+        # per-file coverage slides back invisibly because the
         # project total is dominated by files nobody is changing. Same shape and
         # same discipline as tool/dcm_ratchet.sh.
         #
@@ -1901,7 +1186,6 @@ jobs:
           path: coverage
       - name: Check patch coverage
         run: |
-          sudo apt-get update && sudo apt-get install -y lcov
           # The "tracefile is empty -> exit 0" escape hatch is GONE. It was
           # core#130's other half: having found no coverage, it declared the
           # gate passed. coverage_report.sh now fails before this job starts if
@@ -1911,27 +1195,9 @@ jobs:
             echo "FAIL: merged.info is empty — the merge job produced nothing."
             exit 1
           fi
-          # merged.info already has the documented exclusions applied
-          # (ffi/generated, worker/proto, mock_monty_platform), so only ONE
-          # removal is left.
-          # `*/native_bindings_ffi.dart` is GONE from this list: it was excluded
-          # because it read 0.3%, and it now reads 76.8% because the FFI suite
-          # that always covered it is finally measured. Excluding a covered file
-          # only hides good news.
-          #
-          # native_isolate_bindings_impl.dart stays out, and not because it is
-          # red: it runs in a SPAWNED isolate and package:test collects with
-          # `isolateIds: {isolateId!}` (test_core .../vm/platform.dart), so no
-          # test that could ever be written for it would move this number.
-          # Charging a patch for lines the toolchain cannot observe is noise.
-          #
-          # --ignore-errors unused: the exclusion is DEFENSIVE and must not be
-          # fatal when the pattern matches nothing -- exactly how this gate died
-          # the first time it ever ran.
-          lcov --ignore-errors unused --remove coverage/merged.info \
-            '*/native_isolate_bindings_impl.dart' \
-            -o filtered-coverage.info
-          diff-cover filtered-coverage.info \
+          # merged.info already has the documented exclusion (worker/proto)
+          # applied, so nothing is left to remove here.
+          diff-cover coverage/merged.info \
             --compare-branch=origin/${{ github.base_ref }} \
             --fail-under=30 \
             --diff-range-notation='..'

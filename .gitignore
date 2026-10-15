@@ -26,7 +26,7 @@ lib/src/bin/
 .venv-docs/
 site_mkdocs/
 
-# Assembled GitHub Pages site (build artifact; see tool/check_pages.sh)
+# Assembled GitHub Pages site (build artifact; see deploy-pages.yml)
 site/
 
 # tool/gate.sh step logs

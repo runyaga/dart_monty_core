@@ -28,8 +28,8 @@
 // Flutter build needs.
 //
 // The server is ours so that it records what was actually requested; Chrome's
-// own logs do not report every failed subresource fetch (tool/check_pages.sh
-// measured this). Node 22+ for the global WebSocket.
+// own logs do not report every failed subresource fetch (measured by the
+// old Pages render check). Node 22+ for the global WebSocket.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';

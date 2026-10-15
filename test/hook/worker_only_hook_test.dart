@@ -1,6 +1,6 @@
 // hook/build.dart run against a package root that holds native/worker/ and
-// the shared toolchain file but no native/Cargo.toml: the tree the old
-// engine's removal leaves. The opted-in worker library must still build.
+// the shared toolchain file, as the package ships: the opted-in worker
+// library builds, and without the opt-in the hook builds nothing.
 //
 // Builds native/worker's cdylib (release, --lib) through the hook, so it is
 // tagged `integration` and run on its own:
@@ -21,7 +21,7 @@ import '../_accessors.dart';
 
 /// A package root with native/worker/ (a link to this checkout's, so cargo
 /// reuses its target directory), native/rust-toolchain.toml and
-/// a fixture native/.cargo/config.toml, and without native/Cargo.toml.
+/// a fixture native/.cargo/config.toml, and no other crate.
 Directory _workerOnlyRoot() {
   final tmp = Directory.systemTemp.createTempSync('worker_only_hook_');
   addTearDown(() => tmp.deleteSync(recursive: true));
@@ -90,7 +90,7 @@ Future<BuildOutput> _runHook(Directory packageRoot, {bool? buildWorker}) async {
 
 void main() {
   test(
-    'without native/Cargo.toml, the opted-in worker library still builds',
+    'with the opt-in, the worker library builds',
     () async {
       final root = _workerOnlyRoot();
       final output = await _runHook(root, buildWorker: true);
@@ -120,20 +120,11 @@ void main() {
     timeout: const Timeout(Duration(minutes: 30)),
   );
 
-  test(
-    'without native/Cargo.toml or the opt-in, the hook fails as before',
-    () async {
-      final root = _workerOnlyRoot();
-      await expectLater(
-        _runHook(root),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('native/Cargo.toml not found'),
-          ),
-        ),
-      );
-    },
-  );
+  test('without the opt-in, the hook builds nothing', () async {
+    final root = _workerOnlyRoot();
+    final output = await _runHook(root);
+
+    expect(output.assets.code, isEmpty);
+    expect(output.dependencies, isEmpty);
+  });
 }

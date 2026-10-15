@@ -248,8 +248,7 @@ def load_json(path):
     return d
 
 
-EXCLUDE = ('lib/src/ffi/generated/', 'lib/src/worker/proto/',
-           'lib/src/platform/mock_monty_platform.dart')
+EXCLUDE = ('lib/src/worker/proto/',)
 
 
 def excluded(p):

@@ -11,10 +11,9 @@
 # What it is NOT: the gate. Run `bash tool/gate.sh` before you push.
 #
 # Checks run:
-#   1. cargo fmt --check          (native/)
+#   1. cargo fmt --check          (native/worker/)
 #   2. dart analyze --fatal-infos
 #   3. dart format --set-exit-if-changed lib/ test/ hook/ tool/
-#   4. FFI bindings staleness check (dart_monty.h → dart_monty_bindings.dart)
 #
 # Install once:
 #   bash tool/install-hooks.sh
@@ -36,10 +35,10 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Rust: cargo fmt --check ---"
 if command -v cargo &>/dev/null; then
-  if cargo fmt --check --manifest-path "$PKG/native/Cargo.toml" 2>&1; then
+  if cargo fmt --check --manifest-path "$PKG/native/worker/Cargo.toml" 2>&1; then
     ok "cargo fmt"
   else
-    fail "cargo fmt: run 'cargo fmt' in native/ to fix"
+    fail "cargo fmt: run 'cargo fmt' in native/worker/ to fix"
   fi
 else
   echo "  SKIP: cargo not found"
@@ -66,9 +65,6 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "--- Dart: format check ---"
 if command -v dart &>/dev/null; then
-  # Note: --exclude is not supported in all Dart versions; the generated
-  # bindings file is always pre-formatted by generate_bindings.sh, so it
-  # is safe to include lib/ without any special exclusion.
   if dart format \
       --line-length=80 \
       --set-exit-if-changed \
@@ -80,30 +76,6 @@ if command -v dart &>/dev/null; then
   fi
 else
   echo "  SKIP: dart not found"
-fi
-echo ""
-
-# ---------------------------------------------------------------------------
-# 4. FFI bindings staleness check
-# ---------------------------------------------------------------------------
-echo "--- FFI bindings: staleness check ---"
-# Only relevant when the C header is part of this commit.
-if git diff --cached --name-only | grep -q "native/include/dart_monty.h"; then
-  if command -v dart &>/dev/null; then
-    # Regenerate in-place (ffigen writes to the path in ffigen.yaml).
-    bash "$PKG/tool/generate_bindings.sh" > /dev/null 2>&1
-    # If the bindings changed, they must also be staged.
-    if ! git diff --quiet "$PKG/lib/src/ffi/generated/dart_monty_bindings.dart"; then
-      git add "$PKG/lib/src/ffi/generated/dart_monty_bindings.dart"
-      ok "FFI bindings regenerated and staged automatically"
-    else
-      ok "FFI bindings up-to-date"
-    fi
-  else
-    echo "  SKIP: dart not found"
-  fi
-else
-  echo "  SKIP: dart_monty.h not staged"
 fi
 echo ""
 

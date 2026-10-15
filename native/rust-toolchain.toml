@@ -9,5 +9,5 @@ channel = "stable"
 # needs. Anything else is added where it is used:
 #   - hook/build.dart: `rustup target add <triple>` for the triple it builds
 #     (a no-op for the host; covers cross-arch desktop builds).
-#   - wasm32-wasip1: tool/prebuild.sh, tool/test_wasm.sh, tool/test_cm_wasm.sh,
-#     tool/serve_demo.sh, and the `targets:` input of the CI jobs that build it.
+#   - wasm32-wasip1: tool/prebuild.sh and the `targets:` input of the CI jobs
+#     that build it.

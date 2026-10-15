@@ -15,7 +15,7 @@
 # Only test/unit/worker/ is loaded. Loading the whole suite would compile every
 # browser library into the coverage record, and a library whose tests were
 # filtered out would be "measured" at whatever its imports happened to run --
-# lib/src/wasm/wasm_bindings_js.dart among them, swinging the lib-wide figure
+# the old engine's JS bindings among them, swinging the lib-wide figure
 # by 8 points for a reason that has nothing to do with this suite.
 #
 # Each compiler's run has its own test-count floor: `dart test` exits 0 on a

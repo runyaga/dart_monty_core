@@ -1,25 +1,11 @@
 # Test suite — fixture corpus, WASM runner binary, integration harness
 test/
 
-# JS source and tooling — consumers get pre-built assets/, not source
-js/
-
 # Rust build output and dev artifacts
-native/target/
 native/worker/target/
 # Worker executables from tool/build_worker.sh: not shipped in this release.
 lib/src/bin/
 native/.dart_tool/
-native/tests/
-native/lcov.info
-# native/Cargo.lock is deliberately NOT excluded. It is committed (see
-# .gitignore) because hook/build.dart compiles this crate as a TOP-LEVEL package
-# on every consumer's `pub get`, so the lockfile is honoured — but only if it is
-# actually in the published archive. Excluding it here meant consumers
-# re-resolved Rust dependencies from scratch, which is the exact scenario that
-# fails: free resolution picks a get-size2 whose GetSize impl targets a different
-# compact_str major than ruff_python_ast uses, and the build dies inside a
-# dependency neither we nor the consumer controls.
 
 # Sub-packages have their own pubspecs
 packages/
@@ -33,7 +19,6 @@ CLAUDE.md
 dcm_options.yaml
 analysis_options.yaml
 dart_test.yaml
-ffigen.yaml
 
 # Docs dir (non-standard name — pub convention is doc/)
 docs/

@@ -1,5 +1,3 @@
-custom_html_template_path: test/integration/wasm_test_template.html
-
 tags:
   unit: {}
   # Cannot compile for the web at all — not merely wrong there. See
@@ -8,12 +6,6 @@ tags:
   vm-only: {}
   integration:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=integration"
-  ffi:
-    skip: "FFI integration tests. Run: dart test -p vm --run-skipped --tags=ffi"
-  wasm:
-    skip: "WASM integration tests. Run: bash tool/test_wasm_unit.sh"
-  test-hooks:
-    skip: "Needs a test-hooks build of the native crate. Run: bash tool/test_cm.sh"
   example:
     skip: "Example smoke tests. Run: dart test -p vm --run-skipped --tags=example"
   ladder:

@@ -11,14 +11,12 @@ analyzer:
     - '**/*.freezed.dart'
     - 'build/**'
     - 'native/**'
-    - 'lib/src/ffi/generated/**'
     # The Flutter consumer probe needs the Flutter SDK, which the Dart-only
     # `gate` job does not install (package:flutter does not resolve here).
     # THE COMPENSATING CHECK is the `consumer-flutter-web` job in
     # .github/workflows/consumers.yaml, which runs `flutter analyze` on it.
     - 'tool/consumers/flutter_web/**'
-    # protoc_plugin output (tool/generate_proto.sh). Same footing as the ffigen
-    # output above: nobody edits it, so its lints are the generator's style,
+    # protoc_plugin output (tool/generate_proto.sh). Generated: nobody edits it, so its lints are the generator's style,
     # not ours (2,464 infos, all of them public_member_api_docs, trailing
     # commas and the like). THE COMPENSATING CHECK is CI's `proto-drift` job,
     # which regenerates it with the pinned protoc, plugin and SDK and fails on
@@ -28,7 +26,7 @@ analyzer:
     - 'packages/dart_monty_flutter/**'
     - 'packages/dart_monty_web/**'
     - 'example/**'
-    # Assembled GitHub Pages output (tool/check_pages.sh). It is a COPY of
+    # Assembled GitHub Pages output (deploy-pages.yml). It is a COPY of
     # packages/dart_monty_web/web, which is already excluded above, so
     # analysing it would double-report that package's issues. `.gitignore`
     # does not help here — the analyzer does not consult it.

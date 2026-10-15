@@ -1633,7 +1633,7 @@ final _controls = [
         'package:dart_monty_core/src/worker/frame.dart',
     {
       'lib/dart_monty_core.dart': (s) =>
-          "${s}export 'src/externals.dart'\n"
+          "${s}export 'src/mount/mount_mode.dart'\n"
           "    if (dart.library.boundary_probe) 'src/worker/frame.dart';\n",
     },
   ),
@@ -1713,7 +1713,7 @@ final _controls = [
     _Verdict.pass,
     '',
     {
-      'lib/src/externals.dart': (s) =>
+      _mountFile: (s) =>
           "import 'package:dart_monty_core/src/worker/frame.dart';\n$s"
           'int _boundaryProbe() => Frame.maxLength;\n'
           'Object _boundaryProbeUse() => _boundaryProbe;\n',
@@ -2057,8 +2057,7 @@ final _controls = [
     _Verdict.pass,
     '',
     {
-      'lib/src/platform/monty_result.dart': (s) =>
-          '${s}int boundaryShown() => 0;\n',
+      _mountFile: (s) => '${s}int boundaryShown() => 0;\n',
     },
   ),
   const _Control(
