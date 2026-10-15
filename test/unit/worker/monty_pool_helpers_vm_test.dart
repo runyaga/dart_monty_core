@@ -20,11 +20,6 @@ import 'package:test/test.dart';
 
 const _source = 'lib/src/worker/monty_pool.dart';
 
-/// The difference a retyped `options` on withPool reports.
-const _retypedDiff =
-    'options: withPool (Object, const PoolOptions()), '
-    'start (PoolOptions, const PoolOptions())';
-
 /// Each named parameter of each method in [source]: name -> (type, default).
 Map<String, Map<String, (String, String?)>> _namedParameters(String source) {
   final unit = parseString(
@@ -76,18 +71,39 @@ List<String> _differences(
 void main() {
   final source = File(_source).readAsStringSync();
 
-  test("withPool takes exactly start's named parameters", () {
+  test("withPool takes exactly start's named parameters (CUT1)", () {
     final methods = _namedParameters(source);
     expect(methods['start'], {
-      'options': ('PoolOptions', 'const PoolOptions()'),
+      'minProcesses': ('int', '1'),
+      'maxProcesses': ('int?', null),
+      'checkoutTimeout': ('Duration?', null),
+      'requestTimeout': ('Duration?', null),
+      'maxCheckoutsPerWorker': ('int?', null),
+      'feedDurationLimitGrace': (
+        'Duration?',
+        'PoolOptions.defaultDurationLimitGrace',
+      ),
+      'turnDurationLimitGrace': (
+        'Duration?',
+        'PoolOptions.defaultDurationLimitGrace',
+      ),
+      'workerLocation': ('String?', null),
     });
     expect(_differences(methods, 'withPool', 'start'), isEmpty);
   });
 
-  test("withSession takes exactly checkout's named parameters", () {
+  test("withSession takes exactly checkout's named parameters (CUT1)", () {
     final methods = _namedParameters(source);
     expect(methods['checkout'], {
-      'options': ('SessionConfig', 'const SessionConfig()'),
+      'scriptName': ('String', "'main.py'"),
+      'limits': ('ResourceLimits?', null),
+      'typeCheck': ('bool', 'false'),
+      'typeCheckStubs': ('String?', null),
+      'typeCheckFormat': ('String?', null),
+      'typeCheckColor': ('bool', 'false'),
+      'assertMessageAnnotations': ('int?', null),
+      'printFlushInterval': ('Duration?', null),
+      'osPolicy': ('OsPolicy?', null),
     });
     expect(_differences(methods, 'withSession', 'checkout'), isEmpty);
   });
@@ -103,34 +119,30 @@ void main() {
     }
 
     final defaultChanged = _namedParameters(
-      last(
-        'SessionConfig options = const SessionConfig()',
-        "SessionConfig options = const SessionConfig(scriptName: 'x.py')",
-      ),
+      last("String scriptName = 'main.py',", "String scriptName = 'x.py',"),
     );
     expect(
       _differences(defaultChanged, 'withSession', 'checkout'),
-      [contains("SessionConfig(scriptName: 'x.py')")],
+      [contains("'x.py'")],
     );
     final retyped = _namedParameters(
-      last(
-        'PoolOptions options = const PoolOptions()',
-        'Object options = const PoolOptions()',
-      ),
-    );
-    expect(_differences(retyped, 'withPool', 'start'), [_retypedDiff]);
-    // withPool's signature is the only one ending in `}) async {`.
-    const withPoolEnd =
-        '    PoolOptions options = const PoolOptions(),\n  }) async {';
-    expect(withPoolEnd.allMatches(source).length, 1);
-    final extra = source.replaceFirst(
-      withPoolEnd,
-      '    PoolOptions options = const PoolOptions(),\n'
-      '    int extra = 0,\n'
-      '  }) async {',
+      last('int? maxProcesses,', 'Object? maxProcesses,'),
     );
     expect(
-      _differences(_namedParameters(extra), 'withPool', 'start'),
+      _differences(retyped, 'withPool', 'start'),
+      ['maxProcesses: withPool (Object?, null), start (int?, null)'],
+    );
+    // withPool's signature is the only one ending in `}) => withMonty(`.
+    const withPoolEnd = '    String? workerLocation,\n  }) => withMonty(';
+    expect(withPoolEnd.allMatches(source).length, 1);
+    final extra = _namedParameters(
+      source.replaceFirst(
+        withPoolEnd,
+        '    String? workerLocation,\n    int extra = 0,\n  }) => withMonty(',
+      ),
+    );
+    expect(
+      _differences(extra, 'withPool', 'start'),
       ['extra: withPool (int, 0), start null'],
     );
   });
