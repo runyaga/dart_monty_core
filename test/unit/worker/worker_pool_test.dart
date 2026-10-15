@@ -6,7 +6,7 @@ import 'package:dart_monty_core/src/worker/asset_base.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
+    show MontyCrashedError, MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
@@ -289,7 +289,18 @@ void main() {
       );
       final [a] = await acquireEach(p, 1);
       final clock = Stopwatch()..start();
-      await expectLater(acquireEach(p, 1), throwsA(isA<TimeoutException>()));
+      // Upstream's fixed text (monty-pool 1.1.0 lib.rs:254), whatever the
+      // limit.
+      await expectLater(
+        acquireEach(p, 1),
+        throwsA(
+          isA<TimeoutException>().having(
+            (e) => e.message,
+            'message',
+            'no monty worker became available within the checkout timeout',
+          ),
+        ),
+      );
       expect(clock.elapsedMilliseconds, greaterThanOrEqualTo(40));
       expect(p.liveWorkers, 1);
       // The timed-out waiter left no stale entry to swallow the wake-up.
@@ -660,14 +671,15 @@ void main() {
       expect(workerWasmUrl('b'), 'b/dart_monty_core_worker.wasm');
     });
 
-    test('no assets anywhere: a StateError naming what was tried', () {
+    test('no assets anywhere: a spawn failure naming what was tried', () {
       expect(
         resolveAssetBase((_) async => false),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
             'message',
             allOf(
+              startsWith('failed to spawn monty worker: '),
               contains(workerScriptUrl(flutterAssetBase)),
               contains(workerScriptUrl(packageAssetBase)),
             ),
