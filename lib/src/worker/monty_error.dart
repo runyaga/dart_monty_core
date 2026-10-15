@@ -99,8 +99,9 @@ final class MontyCrashedError extends MontyError {
     this.detail,
     this.exitCode,
     this.stderrTail,
-    this.context,
-  }) : super._(
+    String? context,
+  }) : _context = context,
+       super._(
          message,
          MontyExceptionValue(excType: 'RuntimeError', message: message),
        );
@@ -130,9 +131,16 @@ final class MontyCrashedError extends MontyError {
   /// On native, the last 4 KiB or less of the worker's stderr. Internal.
   final String? stderrTail;
 
+  final String? _context;
+}
+
+/// [MontyCrashedError]'s internal members (pass-3 G2): upstream's error has
+/// only its message and [MontyCrashedError.exitStatus]. The public libraries'
+/// `show` lists leave this extension out.
+extension MontyCrashedErrorInternal on MontyCrashedError {
   /// What the parent was doing when it found the worker gone, for a
-  /// vanished worker; null is [waitingForReply]. Internal.
-  final String? context;
+  /// vanished worker; null is [waitingForReply].
+  String? get context => _context;
 }
 
 /// Why a worker stopped answering.

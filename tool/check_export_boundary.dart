@@ -51,6 +51,24 @@
 // do exactly that. A literal reachability rule would block it, so the walk
 // over imports is reported for information and never fails the check.
 //
+// THE POST-CUTOVER RULE (--post-cutover; off until the cutover turns it on).
+// The public session's classes live under lib/src/worker/, so rules 1 and 2
+// cannot hold once they are exported. Under the flag they become:
+// 1'. A name declared under lib/src/worker/ may be exported only when it is
+//    on the allowlist: the names sections of tool/export-golden.txt as
+//    committed (read before --update rewrites it), so no second list can
+//    drift from the golden. A run with --update still reports a name that
+//    is not on that list, and exits 1, but writes the golden with it: that
+//    is how a name enters the allowlist (the cutover regenerates the golden
+//    this way), and the golden's diff is where a reviewer sees it.
+// 2'. Nothing from the libraries that stay internal for good (the generated
+//    protobuf and package:protobuf, the arena, the channels, the frame
+//    scanner and the wire helpers: _neverPublic) is exported, reached by an
+//    export directive or named in a public signature, allowlisted or not.
+// The other worker declarations a public signature reaches are then walked
+// and printed in the member golden like any other declaration. Rule 3 is
+// unchanged.
+//
 // Exit codes: 0 pass, 1 a rule failed, 2 the check itself could not run.
 
 import 'dart:collection';
@@ -87,26 +105,79 @@ const _command =
 /// URI prefixes no public library may export or name in a signature.
 const _forbidden = ['${_package}src/worker/', 'package:protobuf/'];
 
-bool _isForbidden(Uri uri) {
-  final text = uri.toString();
+/// Under --post-cutover, the URI prefixes that stay internal for good: the
+/// generated protobuf, the arena, the channels, the frame scanner and the
+/// wire helpers.
+const _neverPublic = [
+  'package:protobuf/',
+  '${_package}src/worker/proto/',
+  '${_package}src/worker/arena_',
+  '${_package}src/worker/channel_factory',
+  '${_package}src/worker/monty_channel.dart',
+  '${_package}src/worker/process_channel.dart',
+  '${_package}src/worker/worker_channel.dart',
+  '${_package}src/worker/worker_connection.dart',
+  '${_package}src/worker/frame.dart',
+  '${_package}src/worker/frame_scan.dart',
+  '${_package}src/worker/wire_scalars.dart',
+  '${_package}src/worker/encoded_length.dart',
+];
 
-  return _forbidden.any(text.startsWith);
+/// Which rule set a run applies: today's (no worker code public), or the
+/// post-cutover rule with its [allowlist].
+final class _Boundary {
+  const _Boundary() : allowlist = null;
+
+  const _Boundary.postCutover(Set<String> this.allowlist);
+
+  /// The names a worker declaration may be exported under; null before the
+  /// cutover, when none may.
+  final Set<String>? allowlist;
+
+  bool get postCutover => allowlist != null;
+
+  /// Whether [uri] may not be exported or named in a public signature.
+  bool forbids(Uri uri) {
+    final text = uri.toString();
+
+    return (postCutover ? _neverPublic : _forbidden).any(text.startsWith);
+  }
+
+  /// The forbidden file [element] is declared in, if any: its library, or a
+  /// part file of it, since a part under lib/src/worker/ can declare members
+  /// of a library that lives elsewhere.
+  Uri? sourceOf(Element element) =>
+      _sources(element).where(forbids).firstOrNull;
+
+  /// Why exporting [element] as [name] breaks rule 1', or null.
+  String? unlisted(Element element, String name) {
+    final names = allowlist;
+    if (names == null || names.contains(name)) return null;
+    final worker = _sources(
+      element,
+    ).where((uri) => uri.toString().startsWith('${_package}src/worker/'));
+
+    return worker.isEmpty
+        ? null
+        : 'exports $name, declared in ${worker.first}, which is not on '
+              'the allowlist (the names sections of $_goldenPath)';
+  }
 }
+
+/// The allowlist the post-cutover rule reads from [golden]'s text: every
+/// name in a public library's section.
+Set<String> _allowlist(String golden) => {
+  for (final MapEntry(:key, :value) in _parseGolden(golden).entries)
+    if (!key.startsWith('members: ') && !key.startsWith('exports: ')) ...value,
+};
 
 final _setterSuffix = RegExp(r'=$');
 
-/// The forbidden file [element] is declared in, if any: its library, or a
-/// part file of it, since a part under lib/src/worker/ can declare members of
-/// a library that lives elsewhere.
-Uri? _forbiddenSource(Element element) {
-  final sources = [
-    ?element.library?.uri,
-    for (final fragment in element.fragments)
-      ?fragment.libraryFragment?.source.uri,
-  ];
-
-  return sources.where(_isForbidden).firstOrNull;
-}
+List<Uri> _sources(Element element) => [
+  ?element.library?.uri,
+  for (final fragment in element.fragments)
+    ?fragment.libraryFragment?.source.uri,
+];
 
 bool _isOwn(Uri uri) => uri.toString().startsWith(_package);
 
@@ -157,8 +228,15 @@ Future<void> main(List<String> args) async {
   try {
     exitCode = switch (args) {
       ['--self-test'] => await _selfTest(root),
+      ['--self-test', final only] => await _selfTest(root, only: only),
       ['--update'] => await _run(root, update: true),
       [] => await _run(root, update: false),
+      ['--post-cutover'] => await _run(root, update: false, post: true),
+      ['--post-cutover', '--update'] => await _run(
+        root,
+        update: true,
+        post: true,
+      ),
       _ => _usage(),
     };
   } on Object catch (error, stack) {
@@ -171,19 +249,26 @@ Future<void> main(List<String> args) async {
 
 int _usage() {
   stderr.writeln(
-    'usage: $_command [--update|--self-test]',
+    'usage: $_command [--post-cutover] [--update] | --self-test [<name part>]',
   );
 
   return 2;
 }
 
-Future<int> _run(String root, {required bool update}) async {
+Future<int> _run(
+  String root, {
+  required bool update,
+  bool post = false,
+}) async {
+  final golden = File('$root/$_goldenPath');
+  // The allowlist is the golden as committed, read before --update.
+  final committed = golden.existsSync() ? golden.readAsStringSync() : '';
   final report = await _analyzeBoundary(
     root,
     PhysicalResourceProvider.INSTANCE,
+    post ? _Boundary.postCutover(_allowlist(committed)) : const _Boundary(),
   );
   _checkToolSource(_toolSource(root), report);
-  final golden = File('$root/$_goldenPath');
   if (update) {
     golden.writeAsStringSync(_renderGolden(report.sections));
     stdout.writeln('wrote $_goldenPath');
@@ -192,6 +277,7 @@ Future<int> _run(String root, {required bool update}) async {
     golden.existsSync() ? golden.readAsStringSync() : '',
     report.sections,
   );
+  if (post) stdout.writeln('rule: post-cutover (--post-cutover)');
   _print(report, diff);
   final failed = report.violations.isNotEmpty || diff.isNotEmpty;
   stdout.writeln(failed ? 'EXPORT BOUNDARY RED' : 'EXPORT BOUNDARY GREEN');
@@ -246,13 +332,14 @@ void _print(_CheckExportBoundary report, List<String> diff) {
 Future<_CheckExportBoundary> _analyzeBoundary(
   String root,
   ResourceProvider provider,
+  _Boundary boundary,
 ) async {
   final report = _CheckExportBoundary();
-  await _analyzeUnder(root, provider, const {}, report);
+  await _analyzeUnder(root, provider, const {}, report, boundary);
   final defaults = report.platformSections;
   for (final declared in _platforms(_conditions(root, provider))) {
     final variant = _CheckExportBoundary();
-    await _analyzeUnder(root, provider, declared, variant);
+    await _analyzeUnder(root, provider, declared, variant, boundary);
     final label = declared.entries
         .map((entry) => '${entry.key}==${entry.value}')
         .join(' ');
@@ -301,6 +388,7 @@ Future<void> _analyzeUnder(
   ResourceProvider provider,
   Map<String, String> declared,
   _CheckExportBoundary report,
+  _Boundary boundary,
 ) async {
   // The public AnalysisContextCollection has no declared-variables
   // parameter; the implementation class it constructs does.
@@ -319,7 +407,7 @@ Future<void> _analyzeUnder(
         report.violations.add('$relative: did not resolve as a library');
         continue;
       }
-      _checkLibrary(relative, result.element, report);
+      _checkLibrary(relative, result.element, report, boundary);
     }
     // Printed while the collection is alive: the elements belong to it.
     report.members
@@ -377,8 +465,9 @@ void _checkLibrary(
   String name,
   LibraryElement library,
   _CheckExportBoundary report,
+  _Boundary boundary,
 ) {
-  _checkExportDirectives(name, library, report);
+  _checkExportDirectives(name, library, report, boundary);
   // A top-level variable exports a getter `x` and a setter `x=`: one name,
   // two elements, and both are walked.
   final exported = library.exportNamespace.definedNames2;
@@ -386,10 +475,16 @@ void _checkLibrary(
   report.names[name] = {
     for (final key in exported.keys) key.replaceFirst(_setterSuffix, ''),
   }.toList()..sort();
-  final walker = _SignatureWalker(name, report.violations);
+  final walker = _SignatureWalker(name, report.violations, boundary);
   for (final MapEntry(:key, :value) in exported.entries) {
-    if (_forbiddenSource(value) case final uri?) {
+    if (boundary.sourceOf(value) case final uri?) {
       report.violations.add('$name: exports $key, declared in $uri');
+    } else if (boundary.unlisted(
+          value,
+          key.replaceFirst(_setterSuffix, ''),
+        )
+        case final why?) {
+      report.violations.add('$name: $why');
     }
     walker.add(value, key);
   }
@@ -399,10 +494,10 @@ void _checkLibrary(
         .map(_declarationOf)
         .nonNulls
         .where(
-          (element) => _forbiddenSource(element) == null,
+          (element) => boundary.sourceOf(element) == null,
         ),
   );
-  report.importOnly.addAll(_forbiddenByImport(library));
+  report.importOnly.addAll(_forbiddenByImport(library, boundary));
 }
 
 /// Rule 1: export directives, followed transitively, ignoring combinators.
@@ -410,6 +505,7 @@ void _checkExportDirectives(
   String name,
   LibraryElement library,
   _CheckExportBoundary report,
+  _Boundary boundary,
 ) {
   final seen = {library};
   final pending = [(library, name)];
@@ -417,7 +513,7 @@ void _checkExportDirectives(
     final (current, path) = pending.removeLast();
     for (final target in _exportedBy(current)) {
       final via = '$path > export ${target.uri}';
-      if (_isForbidden(target.uri)) {
+      if (boundary.forbids(target.uri)) {
         report.violations.add('$name: $via');
       } else if (_isOwn(target.uri) && seen.add(target)) {
         pending.add((target, via));
@@ -432,7 +528,7 @@ Iterable<LibraryElement> _exportedBy(LibraryElement library) => [
 ];
 
 /// The forbidden libraries reachable through imports and exports.
-Set<String> _forbiddenByImport(LibraryElement library) {
+Set<String> _forbiddenByImport(LibraryElement library, _Boundary boundary) {
   final reached = <String>{};
   final seen = {library};
   final pending = [library];
@@ -443,7 +539,7 @@ Set<String> _forbiddenByImport(LibraryElement library) {
       for (final fragment in current.fragments) ...fragment.importedLibraries,
     ];
     for (final target in next) {
-      if (_isForbidden(target.uri)) {
+      if (boundary.forbids(target.uri)) {
         reached.add(target.uri.toString());
       } else if (_isOwn(target.uri) && seen.add(target)) {
         pending.add(target);
@@ -456,10 +552,11 @@ Set<String> _forbiddenByImport(LibraryElement library) {
 
 /// Rule 2: walks public signatures, iteratively, from the exported elements.
 final class _SignatureWalker {
-  _SignatureWalker(this._library, this._violations);
+  _SignatureWalker(this._library, this._violations, this._boundary);
 
   final String _library;
   final List<String> _violations;
+  final _Boundary _boundary;
   final Set<Element> _seen = {};
   final List<(Element, String)> _pending = [];
 
@@ -499,7 +596,7 @@ final class _SignatureWalker {
   void _reference(Element element, String path) {
     final uri = element.library?.uri;
     if (uri == null) return;
-    if (_forbiddenSource(element) case final source?) {
+    if (_boundary.sourceOf(element) case final source?) {
       _violations.add(
         '$_library: $path names ${element.displayName}, declared in $source',
       );
@@ -1242,6 +1339,7 @@ final class _Control {
     this.base,
     this.section,
     this.toolEdit,
+    this.postCutover = false,
   });
 
   final String name;
@@ -1268,6 +1366,10 @@ final class _Control {
 
   /// An edit to this tool's own source before its formatter scan.
   final String Function(String original)? toolEdit;
+
+  /// Whether the control runs under --post-cutover, its allowlist read from
+  /// the golden it is compared with.
+  final bool postCutover;
 }
 
 const _proto =
@@ -1568,6 +1670,9 @@ final _controls = [
         _partAnchor,
         "\npart '../worker/boundary_probe_part.dart';",
       ),
+      // The show lists name what is public: list the probe too.
+      'lib/dart_monty_core.dart': (s) =>
+          "${s}export 'src/platform/monty_value.dart' show BoundaryProbePart;\n",
     },
   ),
   _Control(
@@ -1947,12 +2052,117 @@ final _controls = [
     {},
     toolEdit: (s) => '$s\nString _probe(DartType t) => t.getDisplayString();\n',
   ),
+  _Control(
+    'name added to an exported file stays out behind its show list',
+    _Verdict.pass,
+    '',
+    {
+      'lib/src/platform/monty_result.dart': (s) =>
+          '${s}int boundaryShown() => 0;\n',
+    },
+  ),
+  const _Control(
+    'post-cutover: unchanged package passes',
+    _Verdict.pass,
+    '',
+    {},
+    postCutover: true,
+  ),
+  _Control(
+    'post-cutover: allowlisted worker name exported',
+    _Verdict.pass,
+    '',
+    _limitsExported,
+    base: _limitsExported,
+    section: ('members: src/worker/resource_limits.dart', _limitsPrinted),
+    postCutover: true,
+  ),
+  _Control(
+    'post-cutover: worker name not on the allowlist',
+    _Verdict.both,
+    'dart_monty_core.dart: exports ResourceLimits, declared in '
+        'package:dart_monty_core/src/worker/resource_limits.dart, which is '
+        'not on the allowlist',
+    _limitsExported,
+    postCutover: true,
+  ),
+  _Control(
+    'post-cutover: proto type in an allowlisted worker signature',
+    _Verdict.boundary,
+    'dart_monty_core.dart: ResourceLimits.boundaryLeak (type) names '
+        'ResourceLimits, declared in '
+        'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart',
+    _limitsLeaked,
+    base: _limitsLeaked,
+    postCutover: true,
+  ),
+  _Control(
+    'post-cutover: internal-for-good worker library exported',
+    _Verdict.boundary,
+    'dart_monty_core.dart: exports FrameDecoder, declared in '
+        'package:dart_monty_core/src/worker/frame.dart',
+    _frameExported,
+    base: _frameExported,
+    alsoMentions: [_frameDirective],
+    postCutover: true,
+  ),
 ];
 
-Future<int> _selfTest(String root) async {
+/// The export-directive violation for [_frameExported].
+const _frameDirective =
+    'dart_monty_core.dart > export '
+    'package:dart_monty_core/src/worker/frame.dart';
+
+/// The worker's `ResourceLimits` exported from the main library.
+final Map<String, String Function(String)> _limitsExported = {
+  'lib/dart_monty_core.dart': (String s) =>
+      "${s}export 'src/worker/resource_limits.dart' show ResourceLimits;\n",
+};
+
+/// As [_limitsExported], with a public field typed by the protobuf class.
+final Map<String, String Function(String)> _limitsLeaked = {
+  ..._limitsExported,
+  'lib/src/worker/resource_limits.dart': _insertAfter(
+    'final class ResourceLimits {\n',
+    '  final pb.ResourceLimits? boundaryLeak = null;\n',
+  ),
+};
+
+/// The frame scanner's decoder exported from the main library.
+final Map<String, String Function(String)> _frameExported = {
+  'lib/dart_monty_core.dart': (String s) =>
+      "${s}export 'src/worker/frame.dart' show FrameDecoder;\n",
+};
+
+/// ResourceLimits as the member golden prints it once exported: without the
+/// internal validate and toProto, which its extension holds.
+const _limitsPrinted = '''
+final class ResourceLimits
+  ResourceLimits.==: operator(Object other) -> bool
+  ResourceLimits.gcInterval: final field int?
+  ResourceLimits.hashCode: getter -> int
+  ResourceLimits.maxFeedDuration: final field Duration?
+  ResourceLimits.maxMemory: final field int?
+  ResourceLimits.maxRecursionDepth: final field int?
+  ResourceLimits.maxSuspensions: final field int?
+  ResourceLimits.maxTotalSleep: final field Duration?
+  ResourceLimits.maxTurnDuration: final field Duration?
+  ResourceLimits.new: const constructor({Duration? maxFeedDuration, Duration? maxTurnDuration, int? maxMemory, int? gcInterval, int? maxRecursionDepth, int? maxSuspensions, Duration? maxTotalSleep})
+''';
+
+Future<int> _selfTest(String root, {String only = ''}) async {
   final golden = File('$root/$_goldenPath').readAsStringSync();
+  final controls = [
+    for (final control in _controls)
+      if (control.name.contains(only)) control,
+  ];
+  if (controls.isEmpty) {
+    stderr.writeln('no control name contains "$only"');
+
+    return 2;
+  }
   var failures = 0;
-  for (final control in _controls) {
+  for (final control in controls) {
     final problem = await _runControl(root, golden, control);
     stdout.writeln('${problem == null ? 'PASS' : 'FAIL'}  ${control.name}');
     if (problem != null) {
@@ -1962,7 +2172,7 @@ Future<int> _selfTest(String root) async {
   }
   stdout.writeln(
     failures == 0
-        ? 'EXPORT BOUNDARY SELF-TEST GREEN (${_controls.length} controls)'
+        ? 'EXPORT BOUNDARY SELF-TEST GREEN (${controls.length} controls)'
         : 'EXPORT BOUNDARY SELF-TEST RED ($failures failed)',
   );
 
@@ -1978,10 +2188,22 @@ Future<String?> _runControl(
   final golden = switch (control.base) {
     null => committed,
     final base => _renderGolden(
-      (await _analyzeBoundary(root, _overlay(root, base))).sections,
+      (await _analyzeBoundary(
+        root,
+        _overlay(root, base),
+        control.postCutover
+            ? const _Boundary.postCutover({})
+            : const _Boundary(),
+      )).sections,
     ),
   };
-  final report = await _analyzeBoundary(root, _overlay(root, control.edits));
+  final report = await _analyzeBoundary(
+    root,
+    _overlay(root, control.edits),
+    control.postCutover
+        ? _Boundary.postCutover(_allowlist(golden))
+        : const _Boundary(),
+  );
   final source = _toolSource(root);
   _checkToolSource(control.toolEdit?.call(source) ?? source, report);
   final diff = _diffGolden(golden, report.sections);

@@ -187,7 +187,9 @@ jobs:
     # code OR docs. This is the one job a docs-only change must still run.
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8: the job took 8m49s with the export-boundary self-test's
+    # post-cutover controls (measured on the PR that added them).
+    timeout-minutes: 12
     steps:
       # Nothing in this job reads git history, so the checkout is shallow.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -237,6 +239,9 @@ jobs:
           # The ratchet's base ref per event: a push compares with its first
           # parent, so a merge that deletes lib files is DELETED, not VANISHED.
           run bash tool/ci_ratchet_base.sh --self-test
+          # The metrics ratchet's controls: per-declaration parameter
+          # exceptions and the base-ref rule, on recorded dcm reports (no dcm).
+          run bash tool/metrics_ratchet.sh --self-test
           run bash tool/check_fixture_links.sh
           run bash tool/check_page_versions.sh
           run bash tool/check_version_pin.sh
@@ -280,7 +285,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 32 ] || { echo "FAIL: expected 32 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 33 ] || { echo "FAIL: expected 33 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 

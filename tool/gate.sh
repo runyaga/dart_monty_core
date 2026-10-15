@@ -230,6 +230,9 @@ s  changelog_frag bash tool/check_changelog_fragments.sh --self-test
 s  cov_ratchet_selftest bash tool/coverage_ratchet.sh --self-test
 # The ratchet's base ref per CI event: a push compares with its first parent.
 s  ratchet_base_selftest bash tool/ci_ratchet_base.sh --self-test
+# The metrics ratchet's controls (per-declaration exceptions, base-ref rule)
+# read recorded dcm reports, so they run without dcm.
+s  metrics_selftest bash tool/metrics_ratchet.sh --self-test
 s  fixture_links bash tool/check_fixture_links.sh
 # Same shape as fixture_links, one level up: the published pages state which
 # build they are, and nothing compiles an HTML shell, so the string rots
@@ -565,7 +568,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=57
+EXPECT_STEPS=58
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {
