@@ -368,7 +368,8 @@ extension ProtoSessionTransfer on ProtoSession {
 /// A throwing callback must not escape into the channel mid-turn. As in
 /// upstream's binding, the first failure is recorded and later prints are
 /// dropped; the turn runs to its end, and the driver then throws the
-/// failure as [printFailure] raises it.
+/// failure, converted by [printFailure] when it was thrown, as upstream's
+/// print target converts it at once.
 ///
 /// Nothing more is delivered once the feed is abandoned (its worker killed
 /// by a deadline or a close while a callback ran): a callback that finally
@@ -386,7 +387,11 @@ final class _PrintSink {
   final ProtoPrintCallback? _onPrint;
   final bool Function()? _abandoned;
   final bool _collect;
-  (Object, StackTrace)? _failure;
+  (MontyError, StackTrace)? _failure;
+
+  /// Names this feed's print delivery ([deliverPrint]). A token of its own,
+  /// so an overflow marked with it does not keep the sink alive.
+  final Object _delivery = Object();
 
   Future<void> add(pb.Print print) async {
     for (final segment in print.segments) {
@@ -398,11 +403,11 @@ final class _PrintSink {
       final onPrint = _onPrint;
       if (onPrint == null) continue;
       try {
-        await deliverPrint(this, () => onPrint(stream, segment.text));
+        await deliverPrint(_delivery, () => onPrint(stream, segment.text));
       } on Object catch (error, stack) {
         // A failure from a callback that ended after the feed was abandoned
         // is ignored, like any late result: the abandonment is the outcome.
-        if (!_isAbandoned) _failure = (error, stack);
+        if (!_isAbandoned) _failure = (printFailure(error, _delivery), stack);
 
         return;
       }
@@ -415,11 +420,11 @@ final class _PrintSink {
   /// Whether the callback failed.
   bool get failed => _failure != null;
 
-  /// Throws the callback's failure, if there was one, as [printFailure]
-  /// raises it, with the callback's stack.
+  /// Throws the callback's failure, if there was one, with the callback's
+  /// stack.
   void rethrowFailure() {
     if (_failure case (final error, final stack)) {
-      Error.throwWithStackTrace(printFailure(error, this), stack);
+      Error.throwWithStackTrace(error, stack);
     }
   }
 }

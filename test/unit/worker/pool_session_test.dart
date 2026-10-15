@@ -110,6 +110,16 @@ void _ignore(String stream, String text) => _ignored++;
 /// How many prints [_ignore] dropped; never looked at.
 var _ignored = 0;
 
+/// A throw whose text changes.
+final class _Changing implements Exception {
+  _Changing(this.text);
+
+  String text;
+
+  @override
+  String toString() => text;
+}
+
 /// A throw whose text cannot be rendered.
 final class _BadText implements Exception {
   const _BadText();
@@ -1011,6 +1021,18 @@ void main() {
               'attributes',
               attributes,
             ),
+      );
+    });
+
+    test('a throw is classified when it is thrown, not after the turn: a '
+        'later change to it does not reach the error', () async {
+      final trouble = _Changing('at throw');
+      expect(
+        await failWith((_, _) {
+          scheduleMicrotask(() => trouble.text = 'after throw');
+          throw trouble;
+        }),
+        _printFailure('Exception', 'at throw'),
       );
     });
 
