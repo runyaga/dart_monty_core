@@ -230,7 +230,7 @@ void main() {
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.protocol);
       expect(
-        crash.message,
+        crash.toString(),
         startsWith(
           'monty worker protocol error: invalid payload from worker: ',
         ),
@@ -254,12 +254,12 @@ void main() {
         final crash = await _crashOf(channel.turn(_configure));
         expect(crash.cause, CrashCause.protocol);
         expect(
-          crash.message,
+          crash.toString(),
           startsWith(
             'monty worker protocol error: invalid payload from worker: ',
           ),
         );
-        expect(crash.message, isNot(contains('Exception')));
+        expect(crash.toString(), isNot(contains('Exception')));
         expect(channel.isAlive, isFalse);
       },
     );

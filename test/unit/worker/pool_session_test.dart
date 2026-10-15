@@ -2343,8 +2343,8 @@ void main() {
         final pool = await _pool(Workers([ch]));
         addTearDown(pool.close);
         await expectLater(
-          pool.checkout(
-            options: const SessionConfig(
+          pool.checkoutWith(
+            const SessionConfig(
               osPolicy: OsPolicy(timezone: 'Europe/London'),
             ),
           ),

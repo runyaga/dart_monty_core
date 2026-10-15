@@ -1331,7 +1331,7 @@ void main() {
       ]);
       final [done, again] = [
         for (var i = 0; i < 2; i++)
-          await s.feedStart('[1, 2]') as SessionComplete,
+          await s.feedStart('[1, 2]') as MontyComplete,
       ];
       expect(
         _py(_sameEachRead(() => done.output)),
@@ -1374,7 +1374,7 @@ void main() {
       ]);
       final call = await s.feedStart('f()') as FunctionSnapshot;
       final done =
-          await call.resume(ExternalReturnValue(box)) as SessionComplete;
+          await call.resume(ExternalReturnValue(box)) as MontyComplete;
       Object? hostOf(MontyValue v) => switch (hostObjectOf(v)) {
         ClassInstance(:final value) => value,
         _ => null,

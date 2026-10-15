@@ -425,8 +425,9 @@ final class FutureSnapshot extends SuspendedSnapshot {
 /// The snapshot factories. Internal: the public show list leaves them out,
 /// so only the session builds snapshots.
 abstract final class Snapshots {
-  /// A completed run with [output].
-  static MontyComplete complete(MontyValue output) => MontyComplete._(output);
+  /// A completed run whose output [output] gives on each read.
+  static MontyComplete complete(MontyValue Function() output) =>
+      MontyComplete._(output);
 
   /// A suspension on a host function or OS call.
   static FunctionSnapshot function(
