@@ -72,6 +72,12 @@ final class ProcessChannel implements MontyChannel {
   /// reads on demand, makes it. The frame being received when the limit is
   /// passed still completes, whatever its size up to [Frame.maxLength]:
   /// pausing inside it would deadlock a valid large result.
+  ///
+  /// Reading pauses only between deliveries of the stdout stream, and the
+  /// VM can hand over up to about 4 MiB of the pipe as one delivery when the
+  /// worker keeps writing while it reads. So the read-ahead can pass the
+  /// limit by the delivery that crossed it and the one that completed the
+  /// frame in flight, plus up to two frames: [readAhead]'s `bound`.
   static const int readAheadLimit = 4 * 1024 * 1024;
 
   /// How far past [readAheadLimit] the channel reads once the worker has
@@ -129,12 +135,14 @@ final class ProcessChannel implements MontyChannel {
   Future<int> get exitCode => _process.exitCode;
 
   /// Wire bytes of the frames received and not yet read by a turn: `now`,
-  /// and the most it has been, `peak`; and whether reading the worker's
-  /// stdout is `paused` at the limit.
+  /// the most it has been, `peak`, and the most it can be, `bound`
+  /// ([EventQueue.peakReadAhead]); and whether reading the worker's stdout is
+  /// `paused` at the limit.
   @visibleForTesting
-  ({int now, int peak, bool paused}) get readAhead => (
+  ({int now, int peak, int bound, bool paused}) get readAhead => (
     now: _events.readAhead,
-    peak: _events.peakReadAhead,
+    peak: _events.peakReadAhead.peak,
+    bound: _events.peakReadAhead.bound,
     paused: _events._subscription?.isPaused ?? false,
   );
 
@@ -424,9 +432,11 @@ final class SelfRelaunch extends WorkerLaunch {
 ///
 /// Visible for its own tests, which drive it with chosen chunk boundaries.
 ///
-/// Holds at most [limit] wire bytes of completed events, plus the frame in
-/// flight when the limit was passed: past it, the subscription pauses at the
-/// next frame end and resumes once a reader takes the queue back under it.
+/// Past [limit] wire bytes of completed events the subscription pauses at
+/// the next frame end, and it resumes once a reader takes the queue back
+/// under it. A pause takes effect between deliveries, so the queue can also
+/// hold the rest of the delivery that crossed the limit and of the one that
+/// ended the frame in flight (see [peakReadAhead]).
 @visibleForTesting
 final class EventQueue {
   /// Reads [bytes] as frames, pausing past [limit] (past [limit] plus
@@ -463,6 +473,8 @@ final class EventQueue {
   bool _cancelled = false;
   int _readAhead = 0;
   int _peakReadAhead = 0;
+  int _largestDelivery = 0;
+  int _largestFrame = 0;
 
   /// Over [limit] with a frame part-received: pause once a frame ends.
   bool _finishingFrame = false;
@@ -477,8 +489,19 @@ final class EventQueue {
   /// Wire bytes of the queued events.
   int get readAhead => _readAhead;
 
-  /// The most [readAhead] has been.
-  int get peakReadAhead => _peakReadAhead;
+  /// The most [readAhead] has been, `peak`, and the most it can be given
+  /// the deliveries and frames so far, `bound`: the read-ahead reading
+  /// pauses at, plus twice the largest delivery and twice the largest frame.
+  ///
+  /// Reading is checked between deliveries. One delivery takes the queue
+  /// from under the pause point to past it, completing any frame
+  /// part-received before it; if it ends inside a frame, reading goes on
+  /// until a delivery completes that frame, with whatever frames follow it
+  /// in that delivery.
+  ({int peak, int bound}) get peakReadAhead => (
+    peak: _peakReadAhead,
+    bound: _bound + (_largestDelivery + _largestFrame) * 2,
+  );
 
   /// Whether another event can still arrive.
   bool get isOpen => !_ended && !_cancelled && _error == null;
@@ -556,12 +579,14 @@ final class EventQueue {
 
   void _add(List<int> chunk) {
     if (_error != null) return;
+    _largestDelivery = math.max(_largestDelivery, chunk.length);
     try {
       final bodies = _decoder.add(chunk);
       for (final body in bodies) {
         final size = Frame.prefixLength + body.length;
         _queue.add((FrameScan.decodeChildEvent(body), size));
         _readAhead += size;
+        _largestFrame = math.max(_largestFrame, size);
       }
       _peakReadAhead = math.max(_peakReadAhead, _readAhead);
       _pauseIfFull(completedFrame: bodies.isNotEmpty);
