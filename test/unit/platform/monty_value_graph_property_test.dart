@@ -607,6 +607,16 @@ void main() {
       final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
       expect(() => forced.run(() => a == b), throwsStateError);
       expect(a == a, isTrue);
+      // A dict that is its own key, against another: its keys' collapse
+      // meets the same comparison again, a cycle, not unbounded recursion.
+      final cPairs = <(MontyValue, MontyValue)>[];
+      final dPairs = <(MontyValue, MontyValue)>[];
+      final c = MontyDict(cPairs);
+      final d = MontyDict(dPairs);
+      cPairs.addAll([(c, const MontyInt(1)), (d, const MontyInt(2))]);
+      dPairs.add((d, const MontyInt(1)));
+      expect(() => c == d, throwsStateError);
+      expect(() => forced.run(() => c == d), throwsStateError);
     });
 
     test("both attribute maps' names are charged before they are read", () {

@@ -695,6 +695,10 @@ final class _MemoHasher extends _Hasher {
   /// The operation's canonical ids, shared with its equality.
   final _Interner interner = _Interner();
 
+  /// The dicts whose self-containing keys are being collapsed, across the
+  /// operation's walks.
+  final Set<Object> collapsing = Set.identity();
+
   final Map<Object, int> _memo = Map.identity();
 
   /// The fallback has no budget: it is linear in distinct nodes.
@@ -1079,7 +1083,7 @@ final class _MemoEquals {
     final others = ids.entries(b);
     bool cyclicKey((MontyValue, MontyValue) p) => ids.tainted(p.$1);
     if (mine.any(cyclicKey) || others.any(cyclicKey)) {
-      return _MatchFrame(x, y, _cyclicEntries(a), _cyclicEntries(b));
+      return _MatchFrame(x, y, _cyclicEntries(x, a), _cyclicEntries(y, b));
     }
     final theirs = {for (final (k, v) in others) ids.id(k): v};
     if (mine.length != theirs.length) return null;
@@ -1097,15 +1101,27 @@ final class _MemoEquals {
   /// equality itself, each comparison on its own walk: canonical ids cannot
   /// tell two equal keys apart when one holds itself. Quadratic, and only
   /// for keys Python could not hash.
-  List<MontyValue> _cyclicEntries(List<(MontyValue, MontyValue)> pairs) {
+  ///
+  /// A [dict] met again while its own keys are being collapsed is a cycle:
+  /// the operation shares one in-progress set across its walks.
+  List<MontyValue> _cyclicEntries(
+    Object dict,
+    List<(MontyValue, MontyValue)> pairs,
+  ) {
+    final collapsing = _hasher.collapsing;
+    if (!collapsing.add(dict)) throw _cycle('==');
     final out = <(MontyValue, MontyValue)>[];
-    for (final (k, v) in pairs) {
-      final i = out.indexWhere((p) => _MemoEquals(_hasher).equals(p.$1, k));
-      if (i < 0) {
-        out.add((k, v));
-      } else {
-        out[i] = ((out.elementAtOrNull(i) ?? (k, v)).$1, v);
+    try {
+      for (final (k, v) in pairs) {
+        final i = out.indexWhere((p) => _MemoEquals(_hasher).equals(p.$1, k));
+        if (i < 0) {
+          out.add((k, v));
+        } else {
+          out[i] = ((out.elementAtOrNull(i) ?? (k, v)).$1, v);
+        }
       }
+    } finally {
+      collapsing.remove(dict);
     }
 
     return [
