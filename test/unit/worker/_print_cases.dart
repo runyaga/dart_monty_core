@@ -177,7 +177,9 @@ void printOracleTests(String label, StartPrintPool start) {
           times[text.trim()] = clock.elapsedMilliseconds,
     );
     expect(times.keys, containsAll(['early', 'late']));
-    expect(times['late']! - times['early']!, greaterThanOrEqualTo(1000));
+    final earlyMillis = times['early'] ?? fail('missing early print');
+    final lateMillis = times['late'] ?? fail('missing late print');
+    expect(lateMillis - earlyMillis, greaterThanOrEqualTo(1000));
   });
 
   test('R1 sp_print_kill_after_print ($label)', () async {

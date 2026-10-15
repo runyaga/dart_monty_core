@@ -82,6 +82,10 @@ final class WorkerChannel implements MontyChannel {
   /// tests and the browser gate.
   bool get jspi => _connection.jspi;
 
+  /// Unacknowledged received print bytes, used by the window regression test.
+  @visibleForTesting
+  int get pendingPrintBytes => _connection.pendingPrintBytes;
+
   /// `dmw_protocol_version()`, already checked against the driver's.
   int get protocol => _connection.protocol;
 
@@ -244,7 +248,14 @@ final class _WorkerPort implements WorkerPort {
   }
 
   @override
+  void acknowledge(int bytes) => _worker.postMessage(_Ack(ack: bytes));
+
+  @override
   void terminate() => _worker.terminate();
+}
+
+extension type const _Ack._(JSObject _) implements JSObject {
+  external factory _Ack({int ack});
 }
 
 @JS('fetch')
@@ -294,6 +305,8 @@ WorkerMessage _read(_MessageEvent e) {
     events: r?.events?.toDart,
     outcome: r?.outcome,
     trap: r?.trap,
+    stderr: r?.stderr,
+    print: r?.print?.toDart,
   );
 }
 
@@ -317,4 +330,6 @@ extension type const _Reply._(JSObject _) implements JSObject {
   external JSUint8Array? get events;
   external int? get outcome;
   external String? get trap;
+  external String? get stderr;
+  external JSUint8Array? get print;
 }

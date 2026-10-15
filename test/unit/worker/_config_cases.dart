@@ -336,9 +336,16 @@ void configOracleTests(String label, Future<Monty> Function() start) {
       } else {
         // The injected input remains live: upstream's same_session_after
         // also raises MemoryError, proving the session still serves feeds.
-        await expectLater(session.feedRun('42'), throwsA(
-          isA<MontyRuntimeError>().having(
-            (e) => e.exception.excType, 'type', 'MemoryError')));
+        await expectLater(
+          session.feedRun('42'),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.exception.excType,
+              'type',
+              'MemoryError',
+            ),
+          ),
+        );
       }
     });
   }
@@ -356,12 +363,19 @@ void configOracleTests(String label, Future<Monty> Function() start) {
     final pool = await start();
     addTearDown(pool.close);
     for (var i = 0; i < 20; i++) {
-      final session = await pool.checkoutWith(const SessionConfig(
-        limits: ResourceLimits(maxMemory: 300000),
-      ));
+      final session = await pool.checkoutWith(
+        const SessionConfig(
+          limits: ResourceLimits(maxMemory: 300000),
+        ),
+      );
       try {
-        expect(await session.feedRun('sum(range(1000))'), const MontyInt(499500));
-      } finally { await session.close(); }
+        expect(
+          await session.feedRun('sum(range(1000))'),
+          const MontyInt(499500),
+        );
+      } finally {
+        await session.close();
+      }
     }
   });
   test('every oracle case has a Dart form ($label)', () {

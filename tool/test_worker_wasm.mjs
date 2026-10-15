@@ -94,7 +94,13 @@ if (!path) {
   process.exit(2);
 }
 const wasi = new WASI({ version: 'preview1', args: [], env: {}, returnOnExit: true });
-const { instance } = await WebAssembly.instantiate(readFileSync(path), wasi.getImportObject());
+const { instance } = await WebAssembly.instantiate(readFileSync(path), {
+  ...wasi.getImportObject(),
+  dmw_host: {
+    emit() { return 0; },
+    wait() { throw new Error('unexpected wait'); },
+  },
+});
 wasi.initialize(instance);
 const x = instance.exports;
 
@@ -105,7 +111,6 @@ function turn(request) {
   const ptr = x.dmw_alloc(frame.length);
   new Uint8Array(x.memory.buffer, ptr, frame.length).set(frame);
   const out = x.dmw_dispatch(ptr, frame.length);
-  x.dmw_free(ptr, frame.length);
   // Copied out at once: the reply is valid only until the next call.
   const reply = new Uint8Array(x.memory.buffer, out, x.dmw_out_len()).slice();
   return { outcome: x.dmw_last_outcome(), events: events(reply), bytes: reply.length };

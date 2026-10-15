@@ -1,17 +1,20 @@
 //! The reference is the pinned upstream dispatcher, not our framing helper.
 use dart_monty_worker::turn::dispatch_owned;
-use monty_proto::{MAX_FRAME_LEN, worker::{Child, VecEventSink, dispatch_frame}};
+use monty_proto::{
+    MAX_FRAME_LEN,
+    worker::{Child, VecEventSink, dispatch_frame},
+};
 
 #[test]
 fn framing_matches_upstream_bytes_and_recovery() {
     let cases = [
-        vec![],                         // probe / clean EOF
-        vec![1, 0],                     // torn length
-        vec![2, 0, 0, 0, 8],           // torn payload
+        vec![],              // probe / clean EOF
+        vec![1, 0],          // torn length
+        vec![2, 0, 0, 0, 8], // torn payload
         (MAX_FRAME_LEN + 1).to_le_bytes().to_vec(),
-        vec![0, 0, 0, 0],              // structurally valid, no request kind
-        vec![1, 0, 0, 0, 255],         // malformed protobuf
-        vec![0, 0, 0, 0, 99],          // ignore trailing bytes, as upstream
+        vec![0, 0, 0, 0],      // structurally valid, no request kind
+        vec![1, 0, 0, 0, 255], // malformed protobuf
+        vec![0, 0, 0, 0, 99],  // ignore trailing bytes, as upstream
     ];
     for frame in cases {
         let mut reference = Child::default();

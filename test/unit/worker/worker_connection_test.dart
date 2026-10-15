@@ -120,19 +120,23 @@ void main() {
         .turn(
           _feed,
           onPrint: (p) async {
-            seen.add(p.segments.first.text);
+            seen.add(
+              p.segments.firstOrNull?.text ?? fail('missing print segment'),
+            );
             if (seen.length == 1) await gate.future;
           },
         )
         .then((value) {
           completed = true;
+
           return value;
         });
     final a = _frames([_print('a')]);
     final b = _frames([_print('b')]);
-    c.onMessage(_message(print: a));
-    c.onMessage(_message(print: b));
-    c.onReply(_frames([_ok]), outcomeContinue);
+    c
+      ..onMessage(_message(print: a))
+      ..onMessage(_message(print: b))
+      ..onReply(_frames([_ok]), outcomeContinue);
     await Future<void>.delayed(Duration.zero);
     expect(seen, ['a']);
     expect(completed, isFalse);
@@ -154,14 +158,17 @@ void main() {
       final turn = c.turn(
         _feed,
         onPrint: (p) async {
-          seen.add(p.segments.first.text);
+          seen.add(
+            p.segments.firstOrNull?.text ?? fail('missing print segment'),
+          );
           await gate.future;
         },
       );
       final failed = expectLater(turn, _throwsKilled);
-      c.onMessage(_message(print: _frames([_print('a')])));
-      c.onMessage(_message(print: _frames([_print('b')])));
-      c.onReply(_frames([_ok]), outcomeContinue);
+      c
+        ..onMessage(_message(print: _frames([_print('a')])))
+        ..onMessage(_message(print: _frames([_print('b')])))
+        ..onReply(_frames([_ok]), outcomeContinue);
       await Future<void>.delayed(Duration.zero);
       c.kill();
       await failed;

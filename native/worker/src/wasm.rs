@@ -1,20 +1,66 @@
 //! wasm32-wasip1 turn exports: one framed request in, that turn's framed events
-//! out, through `monty_proto::worker::dispatch_frame`. Mirrors the turn loop of
+//! out, through the owned streaming dispatcher. Mirrors the turn loop of
 //! `crates/monty-wasm-runtime/src/lib.rs`: warm the clock and RNG before the
 //! first session, re-arm the allocator after every turn, and answer a refused
 //! arm with one `FatalError` and Shutdown.
-use std::{cell::RefCell, collections::hash_map::RandomState, mem, slice, time::Instant};
+use std::{
+    cell::{Cell, RefCell},
+    collections::hash_map::RandomState,
+    mem,
+    time::Instant,
+};
 
 use monty_proto::{
-    worker::{Child, HandleOutcome, dispatch_frame, fatal_error_event},
+    FrameError, pb,
+    worker::{Child, EventSink, HandleOutcome, fatal_error_event},
     write_frame,
 };
 use monty_types::memory_limit_with_headroom;
 
 thread_local! {
+    static BACKPRESSURE: Cell<bool> = const { Cell::new(false) };
     static CHILD: RefCell<Child> = RefCell::new(new_child());
     static OUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static OUTCOME: RefCell<u32> = const { RefCell::new(0) };
+}
+
+const PRINT_WINDOW: u32 = 4 * 1024 * 1024;
+
+#[link(wasm_import_module = "dmw_host")]
+unsafe extern "C" {
+    // Plain import: returns outstanding bytes after posting this frame.
+    fn emit(ptr: *const u8, len: usize) -> u32;
+    fn wait();
+}
+
+/// Enable waits only after the host has successfully probed JSPI.
+#[unsafe(no_mangle)]
+pub extern "C" fn dmw_set_backpressure(enabled: u32) {
+    BACKPRESSURE.set(enabled != 0);
+}
+
+#[derive(Default)]
+struct StreamingSink {
+    end: Vec<u8>,
+}
+
+impl EventSink for StreamingSink {
+    fn send(&mut self, event: &pb::ChildEvent) -> Result<(), FrameError> {
+        if matches!(event.kind, Some(pb::child_event::Kind::Print(_))) {
+            let mut frame = Vec::new();
+            write_frame(&mut frame, event)?;
+            // SAFETY: emit copies this frame before returning, retaining no pointer.
+            let outstanding = unsafe { emit(frame.as_ptr(), frame.len()) };
+            drop(frame);
+            if BACKPRESSURE.get() && outstanding > PRINT_WINDOW {
+                // SAFETY: enabled only for a promising dispatch after the JSPI probe.
+                unsafe { wait() };
+            }
+            Ok(())
+        } else {
+            write_frame(&mut self.end, event)
+        }
+    }
 }
 
 fn new_child() -> Child {
@@ -67,21 +113,24 @@ pub extern "C" fn dmw_protocol_version() -> u32 {
 /// until the next call.
 ///
 /// # Safety
-/// `ptr` and `len` must describe a readable buffer.
+/// A nonempty buffer must come from dmw_alloc and is consumed exactly once.
+/// Null or zero length denotes a non-owning empty probe.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dmw_dispatch(ptr: *const u8, len: usize) -> *const u8 {
     // Free the previous reply before the turn runs: the allocator charges every
     // live allocation to the session's memory budget, and the host has already
     // copied it. `take`, not `clear`, so the capacity goes too.
     drop(OUT.with_borrow_mut(mem::take));
-    let request = if len == 0 {
-        &[][..]
+    let request = if ptr.is_null() || len == 0 {
+        Vec::new()
     } else {
-        // SAFETY: the caller guarantees `ptr` points at `len` readable bytes.
-        unsafe { slice::from_raw_parts(ptr, len) }
+        // SAFETY: the host transfers the allocation returned by dmw_alloc.
+        unsafe { Vec::from_raw_parts(ptr.cast_mut(), len, len) }
     };
     let (mut frames, outcome, armed) = CHILD.with_borrow_mut(|child| {
-        let (frames, outcome) = dispatch_frame(child, request);
+        let mut sink = StreamingSink::default();
+        let outcome = crate::turn::dispatch_owned(child, request, &mut sink);
+        let frames = sink.end;
         let budget = child.session_budget();
         let limit = memory_limit_with_headroom(budget.max_memory, budget.type_check);
         (frames, outcome, monty_alloc::set_hard_limit(limit))
