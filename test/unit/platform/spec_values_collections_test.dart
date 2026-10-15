@@ -110,7 +110,7 @@ void main() {
       },
     );
     test('REQ-MontyBytes-15: fromDart returns an existing MontyBytes', () {
-      const v = MontyBytes([1, 2]);
+      final v = _bytes([1, 2]);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test('REQ-MontyBytes-17: MontyBytes(N bytes)', () {
@@ -230,7 +230,7 @@ void main() {
 
   group('fromDart identity', () {
     test('REQ-MontyTuple-17: an existing MontyTuple is returned unchanged', () {
-      const v = MontyTuple([MontyInt(1)]);
+      final v = MontyTuple([MontyInt(_n(1))]);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
   });

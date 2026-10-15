@@ -17,7 +17,10 @@ const bool _isJs = identical(0, 0.0);
 /// identity-only equality would pass on it.
 const MontyNone Function() _newNone = MontyNone.new;
 const MontyEllipsis Function() _newEllipsis = MontyEllipsis.new;
+const MontyNotImplemented Function() _newNotImplemented =
+    MontyNotImplemented.new;
 MontyNone _none() => _newNone();
+MontyNotImplemented _notImplemented() => _newNotImplemented();
 MontyEllipsis _ellipsis() => _newEllipsis();
 
 /// One instance of every other family member, for exclusion checks.
@@ -62,7 +65,7 @@ void main() {
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test('REQ-MontyEllipsis-12: MontyEllipsis', () {
-      const v = MontyEllipsis();
+      final v = _ellipsis();
       expect(identical(MontyValue.fromDart(v), v), isTrue);
       expect(MontyValue.fromDart(v), isA<MontyEllipsis>());
     });
@@ -73,7 +76,7 @@ void main() {
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test('REQ-MontyNotImplemented-9: MontyNotImplemented', () {
-      const v = MontyNotImplemented();
+      final v = _notImplemented();
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test('REQ-MontyPath-13: MontyPath', () {

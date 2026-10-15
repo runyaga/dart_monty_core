@@ -158,7 +158,7 @@ void _charge(
   } else {
     // The statement says the payload counts, not at what rate.
     expect(hashDiff, greaterThan(0), reason: 'hash');
-    expect(eqDiff, greaterThanOrEqualTo(hashDiff), reason: 'eq');
+    expect(eqDiff, greaterThan(0), reason: 'eq');
   }
 }
 

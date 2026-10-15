@@ -24,6 +24,8 @@ bool _varies(Iterable<int> hashes) => hashes.toSet().length > 1;
 /// A fresh string: a `const` twin is the same object.
 MontyString _str(String v) => MontyString(v);
 
+int _id(int v) => v;
+
 MontyDate _date(int y, int m, int d) => MontyDate(year: y, month: m, day: d);
 
 MontyTimeDelta _td(int d, int s, int us) =>
@@ -106,7 +108,7 @@ void main() {
       }
     });
     test('REQ-MontyDate-10: fromDart returns an existing MontyDate', () {
-      const v = MontyDate(year: 2024, month: 3, day: 5);
+      final v = _date(2024, 3, 5);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test(
@@ -282,7 +284,7 @@ void main() {
       },
     );
     test('REQ-MontyTimeDelta-12: fromDart preserves an existing timedelta', () {
-      const v = MontyTimeDelta(days: 1, seconds: 2, microseconds: 3);
+      final v = _td(1, 2, 3);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test('REQ-MontyTimeDelta-13: a Dart Duration is not a native input', () {
@@ -328,7 +330,7 @@ void main() {
     test(
       'REQ-MontyTimeZone-13: fromDart keeps it, and does not unwrap maps',
       () {
-        const v = MontyTimeZone(offsetSeconds: 5, name: 'x');
+        final v = MontyTimeZone(offsetSeconds: _id(5), name: 'x');
         expect(identical(MontyValue.fromDart(v), v), isTrue);
         final back = MontyValue.fromDart(v.dartValue);
         expect(back, isNot(isA<MontyTimeZone>()));
