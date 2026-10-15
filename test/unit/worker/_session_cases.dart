@@ -135,10 +135,28 @@ Map<String, Object>? _built(Object? values) => switch (values) {
   null => null,
   final Map<String, Object?> m => {
     for (final MapEntry(:key, :value) in m.entries)
-      key: value is List<Object?> ? _entry(value) : _value(value),
+      if (value is! List<Object?> || value.first != 'from')
+        key: value is List<Object?> ? _entry(value) : _value(value),
   },
   _ => throw ArgumentError.value(values, 'values'),
 };
+
+/// [lookup] built, with each `['from', code]` entry the value [s] returns
+/// for `code`, fed first, as the generator does.
+Future<Map<String, Object>?> _withReturned(
+  MontySession s,
+  Object? lookup,
+) async {
+  final built = _built(lookup);
+  if (built == null || lookup is! Map<String, Object?>) return built;
+  for (final MapEntry(:key, :value) in lookup.entries) {
+    if (value case ['from', final String code]) {
+      built[key] = await s.feedRun(code, printCallback: _ignore);
+    }
+  }
+
+  return built;
+}
 
 /// [error] as the oracle shows upstream's: a refused `cwd` argument is
 /// upstream's `UnicodeEncodeError`, raised as the binding reads it.
@@ -156,12 +174,13 @@ String _shown(MontyValue shown) => switch (shown) {
 
 Future<String> _step(MontySession s, List<Object?> step) async {
   final [op as String, code as String, lookup, cwd as String?, inputs] = step;
+  final externalLookup = await _withReturned(s, lookup);
   if (op == 'run') {
     return _shown(
       await s.feedRun(
         code,
         inputs: _built(inputs),
-        externalLookup: _built(lookup),
+        externalLookup: externalLookup,
         printCallback: _ignore,
         cwd: cwd,
       ),
@@ -172,7 +191,7 @@ Future<String> _step(MontySession s, List<Object?> step) async {
     var snap = await s.feedStart(
       code,
       inputs: _built(inputs),
-      externalLookup: _built(lookup),
+      externalLookup: externalLookup,
       printCallback: _ignore,
       cwd: cwd,
     );
@@ -334,6 +353,90 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
           throwsArgumentError,
         );
         await expectLater(s.feedRun('1'), throwsStateError);
+        await s.close();
+      });
+    });
+
+    // Measured on pydantic-monty 1.1.0: a pending lookup dumped and loaded
+    // into a fresh checkout with external_lookup={'x': 41} resumes to 42;
+    // with a cyclic value resume_auto() raises ValueError: Circular
+    // reference detected, and the checkout is finished.
+    Future<Uint8List> pendingLookup(Monty pool) async {
+      final source = await pool.checkout(scriptName: 'source.py');
+      final snap = await source.feedStart(
+        'repr(x + 1)',
+        printCallback: _ignore,
+      );
+      final dumped = await (snap as NameLookupSnapshot).dump();
+      await source.close();
+
+      return dumped;
+    }
+
+    test('loadSnapshot answers a restored lookup from its '
+        'externalLookup', () async {
+      await withPool((pool) async {
+        final dumped = await pendingLookup(pool);
+        final s = await pool.checkout();
+        final snap = await s.loadSnapshot(
+          dumped,
+          externalLookup: {'x': const MontyInt(41)},
+          printCallback: _ignore,
+        );
+        final done = await (snap as NameLookupSnapshot).resumeAuto();
+        expect((done as MontyComplete).output, const MontyString('42'));
+        await s.close();
+      });
+    });
+
+    test('a refused value in a restored lookup finishes the session and '
+        'frees its slot', () async {
+      await withPool((pool) async {
+        final dumped = await pendingLookup(pool);
+        final s = await pool.checkout();
+        final snap = await s.loadSnapshot(
+          dumped,
+          externalLookup: {'x': _cyclic()},
+          printCallback: _ignore,
+        );
+        await expectLater(
+          (snap as NameLookupSnapshot).resumeAuto(),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.display('type-msg'),
+              'display',
+              'ValueError: Circular reference detected',
+            ),
+          ),
+        );
+        await expectLater(s.feedRun('1'), throwsStateError);
+        final next = await pool.checkout(scriptName: 'next.py');
+        expect(await next.feedRun('3'), const MontyInt(3));
+        await next.close();
+        await s.close();
+      });
+    });
+
+    test('divergence: a builtin type called by name from externalLookup '
+        'raises TypeError (upstream runs the type on the host); read '
+        'first, it runs in the sandbox', () async {
+      await withPool((pool) async {
+        final s = await pool.checkout();
+        final type = await s.feedRun('int');
+        await expectLater(
+          s.feedRun('p("42")', externalLookup: {'p': type}),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.exception.excType,
+              'excType',
+              'TypeError',
+            ),
+          ),
+        );
+        expect(
+          await s.feedRun('q = p\nq("42")', externalLookup: {'p': type}),
+          const MontyInt(42),
+        );
         await s.close();
       });
     });

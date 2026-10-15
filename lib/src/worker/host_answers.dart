@@ -395,13 +395,7 @@ final class HostAnswers {
       // Upstream calls the entry, whatever it is.
       return _resume(
         call.callId,
-        pb.ExtFunctionResult(
-          error: raisedException(
-            'TypeError',
-            "'${_typeName(entry)}' object is not callable",
-            const {},
-          ),
-        ),
+        pb.ExtFunctionResult(error: _notCallable(entry)),
       );
     }
     final function = entry;
@@ -856,6 +850,25 @@ String _typeName(Object entry) => switch (entry) {
   _ => _hostTypeNames[entry.runtimeType] ?? 'object',
 };
 
+/// The exception a call to the [HostAnswers.externalLookup] value [entry]
+/// raises: CPython's `TypeError` for a host object that is not callable.
+///
+/// A builtin type ([MontyStdTypeProxy] of kind `type`) is the one value
+/// upstream can call, since it decodes to the Python type itself: `int("42")`
+/// runs on the host. Dart has no Python builtins to run, so that call raises
+/// `TypeError` instead (a recorded divergence); a read of the name, such as
+/// `t = p`, gives the sandbox the type, which it calls as upstream does.
+pb.RaisedException _notCallable(Object entry) => raisedException(
+  'TypeError',
+  switch (entry) {
+    MontyStdTypeProxy(kind: 'type', :final name) =>
+      "builtin type '$name' cannot be called from externalLookup by name; "
+          'read the name first',
+    _ => "'${_typeName(entry)}' object is not callable",
+  },
+  const {},
+);
+
 /// The host type each plain [MontyValue] stands for, by CPython name.
 const Map<Type, String> _hostTypeNames = {
   MontyNone: 'NoneType',
@@ -878,6 +891,10 @@ const Map<Type, String> _hostTypeNames = {
   MontyTimeZone: 'datetime.timezone',
   MontyEllipsis: 'ellipsis',
   MontyNotImplemented: 'NotImplementedType',
+  // Values that decode upstream to the binding's own proxy classes.
+  MontyFileHandle: 'pydantic_monty.MontyFileHandle',
+  MontyClassProxy: 'pydantic_monty.MontyClassProxy',
+  MontyStdTypeProxy: 'pydantic_monty.MontyStdTypeProxy',
 };
 
 /// Throws [ArgumentError] for an `externalLookup` entry that is neither a

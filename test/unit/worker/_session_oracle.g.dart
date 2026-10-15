@@ -504,6 +504,64 @@ sessionOracle = {
       outcome: 'MontyRuntimeError: TypeError: \'tuple\' object is not callable',
     ),
   ],
+  'call_std_function': [
+    (
+      step: <Object?>[
+        'run',
+        'p("42")',
+        <String, Object?>{
+          'p': <Object?>['from', 'abs'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'pydantic_monty.MontyStdTypeProxy\' object is not callable',
+    ),
+  ],
+  'read_std_function': [
+    (
+      step: <Object?>[
+        'run',
+        'repr(p)',
+        <String, Object?>{
+          'p': <Object?>['from', 'abs'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'value: <built-in function abs>',
+    ),
+  ],
+  'call_class_proxy': [
+    (
+      step: <Object?>[
+        'run',
+        'p()',
+        <String, Object?>{
+          'p': <Object?>['from', 'class B:\n    pass\nB()'],
+        },
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: TypeError: \'pydantic_monty.MontyClassProxy\' object is not callable',
+    ),
+  ],
+  'read_std_type': [
+    (
+      step: <Object?>[
+        'run',
+        'q = p\nrepr(q("42"))',
+        <String, Object?>{
+          'p': <Object?>['from', 'int'],
+        },
+        null,
+        null,
+      ],
+      outcome: 'value: 42',
+    ),
+  ],
   'read_instance': [
     (
       step: <Object?>[

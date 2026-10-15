@@ -16,7 +16,8 @@ A step is [op, code, lookup, cwd, inputs]:
   ['v', value] (a plain value), ['f'] (a host function returning
   `(args, kwargs)`), ['c'] (a coroutine host function doubling its one
   argument), ['cyclic'] (a list holding itself), ['k', kind] (a value of
-  one of the KINDS below, mirrored in Dart), ['I'] (a ClassInstance of
+  one of the KINDS below, mirrored in Dart), ['from', code] (the value
+  feed_run(code) returns in the same session, fed just before the step), ['I'] (a ClassInstance of
   Point(1, 2), eager 'all') or ['T'] (a ClassType of Point, init);
 - cwd: None or the string passed;
 - inputs: None or name -> value.
@@ -119,6 +120,14 @@ CASES: list[tuple[str, list[list[Any]]]] = [
     ('call_type', [run('p(1, 2)', {'p': ['T']})]),
     # The name is the host object's type, as CPython's error gives it.
     *[(f'call_{kind}', [run('p()', {'p': ['k', kind]})]) for kind in KINDS],
+    # Values the sandbox returned: upstream decodes them to its own proxy
+    # classes, except a builtin type, which is the type itself (calling it
+    # by name runs on the host, which core cannot: _session_cases.dart
+    # tests that divergence apart).
+    ('call_std_function', [run('p("42")', {'p': ['from', 'abs']})]),
+    ('read_std_function', [run('repr(p)', {'p': ['from', 'abs']})]),
+    ('call_class_proxy', [run('p()', {'p': ['from', 'class B:\n    pass\nB()']})]),
+    ('read_std_type', [run('q = p\nrepr(q("42"))', {'p': ['from', 'int']})]),
     ('read_instance', [run('repr(p)', {'p': ['I']})]),
     ('read_type', [run('repr(p)', {'p': ['T']})]),
     # Read first, the class is a proxy, which constructs.
@@ -195,7 +204,11 @@ def entry(spec: list[Any]) -> Any:
 def built(values: dict[str, Any] | None) -> dict[str, Any] | None:
     if values is None:
         return None
-    return {k: entry(v) if isinstance(v, list) else v for k, v in values.items()}
+    return {
+        k: entry(v) if isinstance(v, list) else v
+        for k, v in values.items()
+        if not (isinstance(v, list) and v[0] == 'from')
+    }
 
 
 def error_text(e: BaseException) -> str:
@@ -212,7 +225,15 @@ def shown(value: Any) -> str:
 
 async def run_step(session: Any, step: list[Any]) -> str:
     op, code, lookup, cwd, inputs = step
-    kwargs: dict[str, Any] = {'external_lookup': built(lookup), 'inputs': built(inputs)}
+    returned = {
+        name: await session.feed_run(spec[1])
+        for name, spec in (lookup or {}).items()
+        if spec[0] == 'from'
+    }
+    kwargs: dict[str, Any] = {
+        'external_lookup': None if lookup is None else {**built(lookup), **returned},
+        'inputs': built(inputs),
+    }
     if cwd is not None:
         kwargs['cwd'] = cwd
     if op == 'run':
