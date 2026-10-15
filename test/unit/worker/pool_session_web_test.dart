@@ -26,6 +26,7 @@ import '_config_cases.dart';
 import '_cwd_cases.dart';
 import '_host_cases.dart';
 import '_host_code_cases.dart';
+import '_os_handler_cases.dart';
 import '_print_cases.dart';
 import '_restore_cases.dart';
 
@@ -76,6 +77,10 @@ void main() {
     (options) => MontyPool.start(options: options),
   );
   printOracleTests(
+    _backend,
+    (options) => MontyPool.start(options: options),
+  );
+  osHandlerOracleTests(
     _backend,
     (options) => MontyPool.start(options: options),
   );

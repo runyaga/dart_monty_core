@@ -1029,6 +1029,200 @@ void main() {
     );
   });
 
+  // Upstream converts a suspension's payload when the frame arrives, before
+  // any host code runs (monty-pool 1.1.0 checkout.rs:1743-1752 and
+  // :1761-1765); a payload that fails is a protocol violation, and the
+  // worker is discarded. Only the Python objects built from a valid arena
+  // (stage 3) fail the call in Python instead.
+  group('a host call payload upstream rejects', () {
+    Matcher violation(String detail) => throwsA(
+      isA<MontyCrashedError>()
+          .having((e) => e.cause, 'cause', CrashCause.protocol)
+          .having((e) => e.timedOut, 'timedOut', isFalse)
+          .having((e) => e.exitCode, 'exitCode', isNull)
+          .having(
+            (e) => e.message,
+            'message',
+            'monty worker protocol error: $detail',
+          ),
+    );
+    const notBelow =
+        'invalid payload from worker: invalid value for Arena: value node 1 '
+        'references node 7, which is not below it';
+    final badArena = [
+      intNode(1),
+      pb.MontyNode(list: pb.Indexes(items: [7])),
+    ];
+
+    test('an argument arena whose node references one above it', () async {
+      final ch = _configured([
+        answer([
+          _functionCall('f', badArena, args: [0]),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      var called = false;
+      await expectLater(
+        s.feed(
+          'f(1)',
+          externals: {
+            'f': (args, kwargs) {
+              called = true;
+
+              return const MontyNone();
+            },
+          },
+        ),
+        violation(notBelow),
+      );
+      expect(called, isFalse);
+      expect(ch.kills, 1);
+      expect(ch.requests, hasLength(2));
+    });
+
+    test('an argument root outside the arena, the function unknown', () async {
+      final ch = _configured([
+        answer([
+          _functionCall('g', [intNode(1)], args: [3]),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('g(1)'),
+        violation(
+          'invalid payload from worker: invalid value for Arena: value root 3 '
+          'is out of range for an arena of 1 nodes',
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
+    test('a keyword value root outside the arena', () async {
+      final ch = _configured([
+        answer([
+          _functionCall(
+            'f',
+            [pb.MontyNode(str: 'k'), intNode(1)],
+            kwargs: [pb.NodePair(key: 0, value: 9)],
+          ),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('f(k=1)', externals: {'f': (args, kwargs) => const MontyNone()}),
+        violation(
+          'invalid payload from worker: invalid value for Arena: value root 9 '
+          'is out of range for an arena of 2 nodes',
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
+    test('a method call, before its name is checked', () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            functionCall: pb.FunctionCall(
+              functionName: '_hidden',
+              callId: 7,
+              objectId: pb.Uuid(data: List.filled(16, 1)),
+              args: [0],
+              values: pb.Arena(nodeCount: 2, nodes: badArena),
+            ),
+          ),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(s.feed('o._hidden(1)'), violation(notBelow));
+      expect(ch.kills, 1);
+    });
+
+    test('an OS call no arm describes', () async {
+      final ch = _configured([
+        answer([pb.ChildEvent(osCall: pb.OsCall(callId: 1))]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('x', onOsCall: (name, args, kwargs) => const MontyNone()),
+        violation(
+          'invalid OS call payload: missing required field OsCall.call',
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
+    test("a getenv whose default's root is outside its arena", () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            osCall: pb.OsCall(
+              callId: 1,
+              getenv: pb.OsCall_Getenv(key: 'K', default_2: 3),
+              values: pb.Arena(nodeCount: 1, nodes: [intNode(1)]),
+            ),
+          ),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('x', onOsCall: (name, args, kwargs) => const MontyNone()),
+        violation(
+          'invalid OS call payload: invalid value for Arena: value root 3 is '
+          'out of range for an arena of 1 nodes',
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
+    test('a getenv default that passes the checks but cannot be built '
+        'fails the call in Python, not the session', () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            osCall: pb.OsCall(
+              callId: 1,
+              getenv: pb.OsCall_Getenv(key: 'K'),
+              values: pb.Arena(
+                nodeCount: 1,
+                nodes: [
+                  pb.MontyNode(timedelta: pb.TimeDelta(days: 1000000000)),
+                ],
+              ),
+            ),
+          ),
+        ]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await s.feed('x', onOsCall: (name, args, kwargs) => const MontyNone());
+      final result = itemAt(ch.requests, 2).resumeCall.result;
+      expect(result.hasError(), isTrue);
+      expect(result.error.message, contains('OverflowError'));
+      expect(ch.kills, 0);
+    });
+
+    test('a getenv with no arena', () async {
+      final ch = _configured([
+        answer([
+          pb.ChildEvent(
+            osCall: pb.OsCall(
+              callId: 1,
+              getenv: pb.OsCall_Getenv(key: 'K'),
+            ),
+          ),
+        ]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await expectLater(
+        s.feed('x'),
+        violation(
+          'invalid OS call payload: missing required field OsCall.values',
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+  });
+
   group('Feed on the wire, as upstream 1.1.0 sends it', () {
     // The bytes of each `ParentRequest`, as monty-pool 1.1.0's
     // `Checkout::feed_with_cwd` builds it (no mounts, no explicit cwd) and

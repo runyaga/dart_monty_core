@@ -150,9 +150,17 @@ final class ProtoSession {
         }
         // A ResolveFutures with no coroutine started is out of step with
         // this driver (upstream discards the checkout).
+        final pb.ParentRequest? answer;
+        try {
+          answer = await host.answer(event);
+        } on MontyCrashedError catch (e) {
+          // A payload [host] rejects as upstream does when the frame
+          // arrives is a protocol violation: the worker is discarded.
+          if (e.cause == CrashCause.protocol) _channel.kill();
+          rethrow;
+        }
         request =
-            await host.answer(event) ??
-            _violation('unexpected event: ${event.whichKind().name}');
+            answer ?? _violation('unexpected event: ${event.whichKind().name}');
       }
     } finally {
       host.dispose();

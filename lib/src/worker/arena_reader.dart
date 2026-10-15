@@ -108,6 +108,23 @@ final class ArenaReader {
   /// outside it, and [UnsupportedError] for a value that holds one of the
   /// kinds with no class yet.
   MontyValue operator [](int index) {
+    checkRoots([index]);
+    final built = _built ??= _guarded<List<Object>>(
+      () => _Builder(_nodes, _hosts, {}).build(),
+    );
+
+    final value = _valueIn(built, index);
+    if (value is _Staged) throw UnsupportedError(value.message);
+
+    return value as MontyValue;
+  }
+
+  /// Runs stages 1 and 2 over the whole arena, then checks that each of
+  /// [roots] names one of its nodes, as upstream's conversion of a message's
+  /// arena and roots does (`into_graph`, `check_roots`). Builds no value.
+  ///
+  /// Throws [FormatException] with upstream's message for the first failure.
+  void checkRoots(Iterable<int> roots) {
     if (_failure case (final error, final stack)) {
       Error.throwWithStackTrace(error, stack);
     }
@@ -120,20 +137,14 @@ final class ArenaReader {
         _checked = true;
       }
     });
-    if (index < 0 || index >= _nodes.length) {
-      throw FormatException(
-        'invalid value for Arena: value root $index is out of range for an '
-        'arena of ${_nodes.length} nodes',
-      );
+    for (final index in roots) {
+      if (index < 0 || index >= _nodes.length) {
+        throw FormatException(
+          'invalid value for Arena: value root $index is out of range for an '
+          'arena of ${_nodes.length} nodes',
+        );
+      }
     }
-    final built = _built ??= _guarded<List<Object>>(
-      () => _Builder(_nodes, _hosts, {}).build(),
-    );
-
-    final value = _valueIn(built, index);
-    if (value is _Staged) throw UnsupportedError(value.message);
-
-    return value as MontyValue;
   }
 
   T _guarded<T>(T Function() stage) {

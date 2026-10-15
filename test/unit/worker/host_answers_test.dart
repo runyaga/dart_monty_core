@@ -204,8 +204,18 @@ void main() {
       }
     });
 
-    test('an OS call with no call is a FormatException', () {
-      expect(() => osCallParts(pb.OsCall()), throwsFormatException);
+    test("an OS call with no call is a FormatException with upstream's "
+        'text', () {
+      expect(
+        () => osCallParts(pb.OsCall()),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            'missing required field OsCall.call',
+          ),
+        ),
+      );
     });
 
     test('only asyncio.sleep, in either mode, accepts a future', () {
