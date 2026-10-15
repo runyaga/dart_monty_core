@@ -250,35 +250,95 @@ void sessionSurfaceTests(String label, WithSession withSession) {
       });
     }
 
-    test('an entry of no supported kind throws ArgumentError before '
-        'anything is sent; the session stays fresh', () async {
-      await withSession((s) async {
-        final bad = <String, Object>{'x': 1};
-        await expectLater(
-          s.loadSnapshot(Uint8List(0), externalLookup: bad),
-          throwsA(
-            isA<ArgumentError>().having(
-              (e) => e.name,
-              'name',
-              'externalLookup[x]',
+    test(
+      'feedRun, feedStart and loadSnapshot take inputs and '
+      'externalLookup as Map<String, MontyValue> (REQ MontySession-2)',
+      () async {
+        await withSession((s) async {
+          expect(
+            s.feedRun,
+            isA<
+              Future<MontyValue> Function(
+                String code, {
+                Map<String, MontyValue>? inputs,
+                Map<String, MontyValue>? externalLookup,
+                String? cwd,
+                OsHandler? os,
+                bool skipTypeCheck,
+              })
+            >(),
+          );
+          expect(
+            s.feedStart,
+            isA<
+              Future<MontySnapshot> Function(
+                String code, {
+                Map<String, MontyValue>? inputs,
+                Map<String, MontyValue>? externalLookup,
+                String? cwd,
+                OsHandler? os,
+                bool skipTypeCheck,
+              })
+            >(),
+          );
+          expect(
+            s.loadSnapshot,
+            isA<
+              Future<MontySnapshot> Function(
+                Uint8List state, {
+                Map<String, MontyValue>? externalLookup,
+                OsHandler? os,
+              })
+            >(),
+          );
+          // Narrowed, not widened: an Object-valued map is a compile error.
+          expect(
+            s.feedRun,
+            isNot(
+              isA<
+                Future<MontyValue> Function(
+                  String code, {
+                  Map<String, Object>? externalLookup,
+                })
+              >(),
             ),
-          ),
-        );
-        await expectLater(
-          s.feedStart('1', externalLookup: bad),
-          throwsArgumentError,
-        );
-        await expectLater(
-          s.feedRun('1', externalLookup: bad),
-          throwsArgumentError,
-        );
-        // Still fresh: a load is refused for the bytes, not as used.
-        await expectLater(
-          s.loadSession(Uint8List(0)),
-          throwsA(isA<MontyRuntimeError>()),
-        );
-      });
-    });
+          );
+          expect(
+            s.feedRun,
+            isNot(
+              isA<
+                Future<MontyValue> Function(
+                  String code, {
+                  Map<String, Object>? inputs,
+                })
+              >(),
+            ),
+          );
+          expect(
+            s.feedStart,
+            isNot(
+              isA<
+                Future<MontySnapshot> Function(
+                  String code, {
+                  Map<String, Object>? externalLookup,
+                })
+              >(),
+            ),
+          );
+          expect(
+            s.loadSnapshot,
+            isNot(
+              isA<
+                Future<MontySnapshot> Function(
+                  Uint8List state, {
+                  Map<String, Object>? externalLookup,
+                })
+              >(),
+            ),
+          );
+        });
+      },
+    );
   });
 }
 

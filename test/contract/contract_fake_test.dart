@@ -494,23 +494,82 @@ void main() {
       await fake.close();
     });
 
-    test('an unencodable cwd or an entry of no supported kind throws '
-        'ArgumentError before anything is sent', () async {
+    test('an unencodable cwd throws ArgumentError before anything is '
+        'sent', () async {
       final fake = FakeMontySession()..willReturn(const MontyInt(3));
       await expectLater(
         fake.feedRun('3', cwd: '/\ud800'),
         throwsA(_argumentNamed('cwd')),
       );
-      await expectLater(
-        fake.feedRun('3', externalLookup: {'x': 3}),
-        throwsA(_argumentNamed('externalLookup[x]')),
-      );
-      await expectLater(
-        fake.feedStart('3', externalLookup: {'x': 'no'}),
-        throwsArgumentError,
-      );
       expect(fake.feeds, isEmpty);
       expect(await fake.feedRun('3'), const MontyInt(3));
+      await fake.close();
+    });
+
+    test('feedRun, feedStart and loadSnapshot take inputs and '
+        'externalLookup as Map<String, MontyValue> (REQ '
+        'FakeMontySession-6)', () async {
+      final fake = FakeMontySession();
+      expect(
+        fake.feedRun,
+        isA<
+          Future<MontyValue> Function(
+            String code, {
+            Map<String, MontyValue>? inputs,
+            Map<String, MontyValue>? externalLookup,
+            String? cwd,
+            OsHandler? os,
+            bool skipTypeCheck,
+          })
+        >(),
+      );
+      expect(
+        fake.feedStart,
+        isA<
+          Future<MontySnapshot> Function(
+            String code, {
+            Map<String, MontyValue>? inputs,
+            Map<String, MontyValue>? externalLookup,
+            String? cwd,
+            OsHandler? os,
+            bool skipTypeCheck,
+          })
+        >(),
+      );
+      // Narrowed, not widened: an Object-valued map is a compile error.
+      expect(
+        fake.feedRun,
+        isNot(
+          isA<
+            Future<MontyValue> Function(
+              String code, {
+              Map<String, Object>? externalLookup,
+            })
+          >(),
+        ),
+      );
+      expect(
+        fake.feedStart,
+        isNot(
+          isA<
+            Future<MontySnapshot> Function(
+              String code, {
+              Map<String, Object>? inputs,
+            })
+          >(),
+        ),
+      );
+      expect(
+        fake.loadSnapshot,
+        isNot(
+          isA<
+            Future<MontySnapshot> Function(
+              Uint8List state, {
+              Map<String, Object>? externalLookup,
+            })
+          >(),
+        ),
+      );
       await fake.close();
     });
   });
