@@ -230,6 +230,24 @@ void main() {
       expect(pending.channel.isAlive, isFalse);
     });
 
+    test('a start that is ready after another failed is closed', () async {
+      // A handle that ignores cancel, so it arrives after the failure.
+      final arriving = _LateHandle();
+      final failing = FakeStart();
+      var opened = 0;
+      final started = WorkerPool.start(
+        const PoolOptions(minProcesses: 2, maxProcesses: 2),
+        () => opened++ == 0 ? PendingSpawn(failing.run) : arriving,
+      );
+      failing.failWith(StateError('no worker here'));
+      await pump();
+      final channel = resettable();
+      arriving.arrival.complete(channel);
+      await expectLater(started, throwsA(isA<StateError>()));
+      expect(arriving.cancels, 1);
+      expect(channel.closes, 1);
+    });
+
     test('a worker that never becomes ready fails it', () async {
       starts = FakeStarts(auto: false);
       await expectLater(
@@ -690,4 +708,16 @@ void main() {
       );
     });
   });
+}
+
+/// A start that becomes ready only when told, whatever cancel says.
+final class _LateHandle implements SpawnHandle {
+  final Completer<MontyChannel> arrival = Completer();
+  int cancels = 0;
+
+  @override
+  Future<MontyChannel> get ready => arrival.future;
+
+  @override
+  void cancel() => cancels++;
 }

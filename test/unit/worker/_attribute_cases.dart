@@ -282,9 +282,13 @@ void attributeSessionTests(String label, WithSession withSession) {
           ],
           [BigInt.one, BigInt.one, BigInt.one],
         );
-        final widest = await answer({'lineno': MontyBigInt(u64Max)});
-        expect(widest.exception.excType, 'json.JSONDecodeError');
-        expect(number(_attrs(widest)['lineno']), u64Max);
+        // A big int in range is extracted too. 2^32 - 1, not 2^64 - 1: the
+        // browser worker is wasm32, whose usize drops a wider position as
+        // upstream's would on wasm32 (D-075).
+        final u32Max = (BigInt.one << 32) - BigInt.one;
+        final wide = await answer({'lineno': MontyBigInt(u32Max)});
+        expect(wide.exception.excType, 'json.JSONDecodeError');
+        expect(number(_attrs(wide)['lineno']), u32Max);
         for (final lineno in [
           MontyBigInt(u64Max + BigInt.one),
           const MontyInt(-1),
