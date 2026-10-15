@@ -99,8 +99,9 @@ print(value); // MontyString(hello, value-for-k!)
 ```
 
 `inputs` are bound as global names before the code runs, each a `MontyValue`
-(`MontyValue.fromDart` converts plain Dart data) or a host object
-(`ClassInstance`, `ClassType`), whose members the session serves.
+(`MontyValue.fromDart` converts plain Dart data). A host object's wrappers,
+`ClassInstance` and `ClassType`, are `MontyValue`s too, and the session serves
+their members.
 
 `externalLookup` resolves the names the code leaves undefined, when the code
 reads one (upstream's `external_lookup`). Every entry is a `MontyValue`: a

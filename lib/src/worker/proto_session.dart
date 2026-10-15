@@ -84,8 +84,9 @@ final class ProtoSession {
 
   /// Runs [code] and completes with its value.
   ///
-  /// [inputs] are bound as global names before the code runs: each a
-  /// [MontyValue] or a host object's wrapper, which registers in [objects].
+  /// [inputs] are bound as global names before the code runs; a host
+  /// object's wrapper among them (a [MontyValue] too) registers in
+  /// [objects].
   /// A name the code
   /// leaves undefined resolves through [externalLookup]: a call to a host
   /// function there runs it and answers with its value, or, for a function
