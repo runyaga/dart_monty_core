@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 import '_attribute_cases.dart';
 import '_config_cases.dart';
 import '_cwd_cases.dart';
+import '_session_cases.dart';
 import '_host_cases.dart';
 import '_host_code_cases.dart';
 import '_os_handler_cases.dart';
@@ -111,6 +112,13 @@ void main() {
     ),
   );
   cwdSessionTests(
+    _backend,
+    (body) => withMonty(
+      (pool) => pool.withSessionWith(body, _limits),
+      const PoolOptions(maxProcesses: 1),
+    ),
+  );
+  sessionSurfaceTests(
     _backend,
     (body) => withMonty(
       (pool) => pool.withSessionWith(body, _limits),

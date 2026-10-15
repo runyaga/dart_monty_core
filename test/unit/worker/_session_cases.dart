@@ -1,0 +1,185 @@
+// The session surface against upstream's outcomes: each case of
+// _session_oracle.g.dart (pydantic-monty 1.1.0: feed_run / feed_start with
+// external_lookup and cwd) run on a real pool, through the public library
+// only. The host class `Point` and the host functions mirror
+// tool/generate_session_oracle.py. Shared by the VM harness
+// (test/integration/worker/monty_snapshot_io_test.dart) and the Chrome one
+// (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
+// cases.
+import 'dart:async';
+
+import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:test/test.dart';
+
+import '_attribute_cases.dart' show WithSession;
+import '_session_oracle.g.dart';
+
+void _ignore(String stream, String text) => _ignored++;
+
+/// How many prints [_ignore] dropped; never looked at.
+var _ignored = 0;
+
+/// The oracle's `Point`.
+final class _Point {
+  const _Point(this.x, this.y);
+
+  final int x;
+  final int y;
+}
+
+/// `Point` as the oracle's dataclass shows it: two fields, built from two
+/// ints.
+final HostClass<_Point> _pointClass = HostClass(
+  'Point',
+  isDataclass: true,
+  instance: (
+    fields: {'x': (p) => MontyInt(p.x), 'y': (p) => MontyInt(p.y)},
+    properties: const {},
+    methods: const {},
+  ),
+  construct: (args, kwargs) => switch (args) {
+    [MontyInt(value: final x), MontyInt(value: final y)] => _Point(x, y),
+    _ => throw const ExternalException('TypeError', 'Point(x, y)'),
+  },
+);
+
+/// The oracle's `host_function`: its arguments, as `(args, kwargs)`.
+MontyValue _hostFunction(List<MontyValue> args, Map<String, MontyValue> kw) =>
+    MontyTuple([
+      MontyTuple(args),
+      MontyDict([for (final e in kw.entries) (MontyString(e.key), e.value)]),
+    ]);
+
+/// The oracle's `doubling`, a coroutine.
+Future<MontyValue> _doubling(
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+) async {
+  await Future<void>.delayed(const Duration(milliseconds: 10));
+
+  return switch (args) {
+    [MontyInt(:final value)] => MontyInt(value * 2),
+    _ => throw const ExternalException('TypeError', 'doubling(x)'),
+  };
+}
+
+MontyValue _value(Object? v) => switch (v) {
+  null => const MontyNone(),
+  final int i => MontyInt(i),
+  final String s => MontyString(s),
+  final List<Object?> l => MontyList([for (final x in l) _value(x)]),
+  _ => throw ArgumentError.value(v, 'v', 'no MontyValue form'),
+};
+
+/// A list holding itself.
+MontyValue _cyclic() {
+  final items = <MontyValue>[];
+  final list = MontyList(items);
+  items.add(list);
+
+  return list;
+}
+
+Object _entry(List<Object?> spec) => switch (spec) {
+  ['v', final v] => _value(v),
+  ['f'] => _hostFunction,
+  ['c'] => coroutine(_doubling),
+  ['cyclic'] => _cyclic(),
+  ['I'] => ClassInstance(
+    const _Point(1, 2),
+    classType: ClassType(_pointClass),
+    policies: (eagerAttrs: 'all', lazyAttrs: null, allowedMethods: null),
+  ),
+  ['T'] => ClassType(_pointClass, init: true),
+  _ => throw ArgumentError.value(spec, 'spec', 'unknown entry'),
+};
+
+Map<String, Object>? _built(Object? values) => switch (values) {
+  null => null,
+  final Map<String, Object?> m => {
+    for (final MapEntry(:key, :value) in m.entries)
+      key: value is List<Object?> ? _entry(value) : _value(value),
+  },
+  _ => throw ArgumentError.value(values, 'values'),
+};
+
+String _errorText(Object error) => switch (error) {
+  StateError(message: 'the session is finished') => 'finished',
+  MontyRuntimeError() => "MontyRuntimeError: ${error.display('type-msg')}",
+  _ => '${error.runtimeType}: $error',
+};
+
+String _shown(MontyValue value) => switch (value) {
+  MontyString(:final value) => 'value: $value',
+  _ => 'nonstr: $value',
+};
+
+Future<String> _step(MontySession s, List<Object?> step) async {
+  final [op as String, code as String, lookup, cwd as String?, inputs] = step;
+  if (op == 'run') {
+    return _shown(
+      await s.feedRun(
+        code,
+        inputs: _built(inputs),
+        externalLookup: _built(lookup),
+        printCallback: _ignore,
+        cwd: cwd,
+      ),
+    );
+  }
+  final passed = <String>[];
+  try {
+    var snap = await s.feedStart(
+      code,
+      inputs: _built(inputs),
+      externalLookup: _built(lookup),
+      printCallback: _ignore,
+      cwd: cwd,
+    );
+    for (;;) {
+      switch (snap) {
+        case MontyComplete(:final output):
+          passed.add(_shown(output));
+
+          return passed.join(' > ');
+        case NameLookupSnapshot(:final variableName):
+          passed.add('lookup:$variableName');
+          snap = await snap.resumeAuto();
+        case FunctionSnapshot(:final functionName):
+          passed.add('call:$functionName');
+          snap = await snap.resumeAuto();
+        default:
+          throw StateError('unexpected snapshot $snap');
+      }
+    }
+  } on StateError catch (e) {
+    if (e.message.startsWith('unexpected snapshot')) rethrow;
+    passed.add(_errorText(e));
+  } on MontyError catch (e) {
+    passed.add(_errorText(e));
+  }
+
+  return passed.join(' > ');
+}
+
+/// Every case of [sessionOracle], each in a fresh session from
+/// [withSession], labelled with [label].
+void sessionSurfaceTests(String label, WithSession withSession) {
+  group('session surface: externalLookup, cwd ($label)', () {
+    for (final MapEntry(key: id, value: steps) in sessionOracle.entries) {
+      test(id, () async {
+        await withSession((s) async {
+          for (final (:step, :outcome) in steps) {
+            String got;
+            try {
+              got = await _step(s, step);
+            } on Object catch (e) {
+              got = _errorText(e);
+            }
+            expect(got, outcome, reason: '$id: $step');
+          }
+        });
+      });
+    }
+  });
+}
