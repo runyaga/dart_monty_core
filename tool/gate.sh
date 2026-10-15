@@ -169,7 +169,7 @@ s  init_reaper   bash tool/dmc_container.sh check
 # here that needs no human discipline: WIRE_FORMAT_VERSION is hand-bumped, so it
 # is blind to "encoding changed, nobody bumped, nobody rebuilt".
 s  asset_fresh   bash tool/check_asset_freshness.sh
-# The proto worker wasm is what every browser page downloads; its gzip -9 size
+# The worker wasm is what every browser page downloads; its gzip -9 size
 # has a budget (5.75 MB; O7 measured 5.66) that only a deliberate edit raises.
 s  worker_size   bash tool/check_worker_wasm_size.sh
 # The complement to asset_fresh: that one catches "sources moved, nobody
@@ -371,7 +371,7 @@ sf unit_tests 700 unit_tests
 # nothing at all, because the arm it added was dead on the only backend with the
 # bug. `vm-only` is excluded because those files cannot COMPILE for the web.
 sf unit_web 1400 dart test --exclude-tags=ffi,wasm,integration,ladder,example,vm-only,worker -p chrome -c dart2js -c dart2wasm
-# WorkerChannel against the COMMITTED proto worker .{js,wasm}, in Chrome, on
+# WorkerChannel against the COMMITTED worker .{js,wasm}, in Chrome, on
 # both compilers: two Workers on one Module, trap -> MontyCrashedError plus a
 # working replacement (JSPI and forced fallback), kill, protocol skew. `worker`
 # is excluded from unit_web above so these run once, here, as in CI's

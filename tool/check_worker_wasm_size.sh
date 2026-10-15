@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# The proto worker wasm stays inside its download budget
+# The worker wasm stays inside its download budget
 # =============================================================================
-# lib/assets/dart_monty_core_proto_worker.wasm (the O7 build: worker crate,
+# lib/assets/dart_monty_core_worker.wasm (the O7 build: worker crate,
 # profile mixd, SDK wasm-opt -Os) is what every browser page downloads. Its
 # budget is 5.75 MB of gzip level 9 output. O7 measured 5.66 MB; the in-process
 # engine it is to replace ships at 5.39 MB.
@@ -19,11 +19,11 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-WASM=lib/assets/dart_monty_core_proto_worker.wasm
+WASM=lib/assets/dart_monty_core_worker.wasm
 BUDGET=5750000
 
 if [ ! -s "$WASM" ]; then
-  echo "FAIL: $WASM is missing or empty. Run: bash tool/prebuild.sh --worker-only"
+  echo "FAIL: $WASM is missing or empty. Run: bash tool/prebuild.sh"
   exit 1
 fi
 

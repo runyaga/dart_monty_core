@@ -1,4 +1,4 @@
-// WorkerChannel against the COMMITTED lib/assets/dart_monty_core_proto_worker
+// WorkerChannel against the COMMITTED lib/assets/dart_monty_core_worker
 // .{js,wasm} in Chrome, on dart2js and dart2wasm:
 //
 //   bash tool/test_worker_web.sh
@@ -37,7 +37,7 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
 
 /// The package's lib/ as the test server exposes it.
 const _assets = 'packages/dart_monty_core/assets';
-const _workerUrl = '$_assets/dart_monty_core_proto_worker.js';
+const _workerUrl = '$_assets/dart_monty_core_worker.js';
 
 /// Every channel a test opened. Each test must leave all of them dead.
 final _opened = <WorkerChannel>[];
@@ -160,7 +160,7 @@ const _deepCompare =
 
 void main() {
   const backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
-  final cache = WasmModuleCache('$_assets/dart_monty_core_proto_worker.wasm');
+  final cache = WasmModuleCache('$_assets/dart_monty_core_worker.wasm');
 
   tearDown(() {
     final alive = _opened.where((c) => c.isAlive).length;
@@ -409,7 +409,7 @@ void main() {
     // The same module from a blob typed application/octet-stream, which
     // compileStreaming refuses.
     final response = await _fetchUrl(
-      '$_assets/dart_monty_core_proto_worker.wasm',
+      '$_assets/dart_monty_core_worker.wasm',
     ).toDart;
     final bytes = await response.arrayBuffer().toDart;
     final blobUrl = _createObjectUrl(

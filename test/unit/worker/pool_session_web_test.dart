@@ -1,5 +1,5 @@
 // Monty and its sessions against the COMMITTED
-// lib/assets/dart_monty_core_proto_worker.{js,wasm} in Chrome, on dart2js and
+// lib/assets/dart_monty_core_worker.{js,wasm} in Chrome, on dart2js and
 // dart2wasm, with no workerLocation: the channel factory finds the assets
 // itself.
 //

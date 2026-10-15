@@ -1,8 +1,8 @@
 /// The browser [MontyChannel]: one Web Worker per channel, every Worker
 /// instantiating one `WebAssembly.Module` the page compiled once.
 ///
-/// The Worker is `lib/assets/dart_monty_core_proto_worker.js`, running
-/// `lib/assets/dart_monty_core_proto_worker.wasm`. Turn semantics live in
+/// The Worker is `lib/assets/dart_monty_core_worker.js`, running
+/// `lib/assets/dart_monty_core_worker.wasm`. Turn semantics live in
 /// [WorkerConnection]; this file only binds them to `dart:js_interop`.
 ///
 /// Internal to the package; nothing here is exported.
@@ -22,7 +22,7 @@ final class WorkerChannel implements MontyChannel {
   const WorkerChannel._(this._worker, this._connection);
 
   /// The default Worker script URL, resolved against the page.
-  static const String defaultWorkerUrl = 'dart_monty_core_proto_worker.js';
+  static const String defaultWorkerUrl = 'dart_monty_core_worker.js';
 
   final _Worker _worker;
   final WorkerConnection _connection;

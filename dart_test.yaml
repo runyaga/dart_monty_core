@@ -18,8 +18,8 @@ tags:
     skip: "Example smoke tests. Run: dart test -p vm --run-skipped --tags=example"
   ladder:
     skip: "Skipped by default (slow). Run: dart test --run-skipped --tags=ladder"
-  # The monty-proto worker channels against real workers. Not skipped: the
-  # browser half drives the COMMITTED lib/assets/dart_monty_core_proto_worker
+  # The worker channels against real workers. Not skipped: the
+  # browser half drives the COMMITTED lib/assets/dart_monty_core_worker
   # .{js,wasm}, served under packages/. Excluded from unit_web and run on its
   # own: bash tool/test_worker_web.sh
   # The native half (test/integration/worker/) spawns the executable from

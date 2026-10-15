@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# build_worker_wasm.sh — the recipe for lib/assets/dart_monty_core_proto_worker
+# build_worker_wasm.sh — the recipe for lib/assets/dart_monty_core_worker
 # .wasm (O7). Run through tool/prebuild.sh, which also re-records provenance.
 # =============================================================================
 # Its own file because it is an INPUT to the asset: tool/check_asset_freshness
@@ -35,9 +35,9 @@ sdk_wasm_opt() {
 # feature set. -Os grows the gzip size a little over the plain cargo output;
 # O7 accepts that for the recursion-depth margin it buys.
 build_worker_wasm() {
-  local wasm_opt raw out=lib/assets/dart_monty_core_proto_worker.wasm
+  local wasm_opt raw out=lib/assets/dart_monty_core_worker.wasm
   wasm_opt="$(sdk_wasm_opt)"
-  echo "[prebuild] Building the proto worker wasm (native/worker, profile mixd)..."
+  echo "[prebuild] Building the worker wasm (native/worker, profile mixd)..."
   # Build-machine paths are remapped by tool/rust_remap.sh (see there).
   #
   # --target-dir is explicit so `raw` below is the module THIS build wrote: an

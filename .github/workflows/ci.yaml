@@ -216,7 +216,7 @@ jobs:
           run dart analyze --fatal-infos
           run dart format --line-length=80 --output=none --set-exit-if-changed lib/ test/ hook/ tool/
           run bash tool/check_asset_freshness.sh
-          # The proto worker wasm's gzip -9 budget (5.75 MB; O7 measured 5.66).
+          # the worker wasm's gzip -9 budget (5.75 MB; O7 measured 5.66).
           run bash tool/check_worker_wasm_size.sh
           run bash tool/check_wire_version.sh
           run node tool/check_wasm_arity.mjs
@@ -426,8 +426,8 @@ jobs:
   # The M2 gate: E0 through the worker, on vm, dart2js and dart2wasm
   # ---------------------------------------------------------------------------
   # The same pinned suite's `e0` cases (tool/parity/e0.json), run through the
-  # monty-proto worker rather than the public API: the executable worker-rust
-  # built on the VM, the committed lib/assets/dart_monty_core_proto_worker
+  # worker rather than the public API: the executable worker-rust
+  # built on the VM, the committed lib/assets/dart_monty_core_worker
   # .{js,wasm} in Chrome on dart2js and dart2wasm. Every counted case must
   # MATCH upstream on each backend (s07, complex, is deferred and reported,
   # not counted). Each run also runs the suite's worker crash tests on that
@@ -1476,9 +1476,9 @@ jobs:
           bash tool/assert_test_count.sh /tmp/wasm-unit-w.log 700 "WASM unit (dart2wasm)"
 
   # ---------------------------------------------------------------------------
-  # WorkerChannel in Chrome against the COMMITTED proto worker wasm
+  # WorkerChannel in Chrome against the COMMITTED worker wasm
   # ---------------------------------------------------------------------------
-  # lib/assets/dart_monty_core_proto_worker.{js,wasm} through WorkerChannel on
+  # lib/assets/dart_monty_core_worker.{js,wasm} through WorkerChannel on
   # both Dart web compilers: two Workers sharing one compiled Module, a wasm
   # trap surfacing as MontyCrashedError with a working replacement, kill,
   # protocol skew, and `jspi == true` on Chrome plus the forced-fallback

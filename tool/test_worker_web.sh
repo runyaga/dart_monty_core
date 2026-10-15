@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # WorkerChannel in Chrome, on dart2js and dart2wasm, against the COMMITTED
-# lib/assets/dart_monty_core_proto_worker.{js,wasm}
+# lib/assets/dart_monty_core_worker.{js,wasm}
 # =============================================================================
 # One `dart test` per compiler, not one run with `-c dart2js -c dart2wasm`:
 # both compilers write their coverage to the SAME `<test>.chrome.json`, and
