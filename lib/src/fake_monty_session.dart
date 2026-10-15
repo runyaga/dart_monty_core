@@ -27,7 +27,7 @@ import 'package:fixnum/fixnum.dart';
 /// The scripting half of [FakeMontySession]: the `will*` events and the
 /// record of what the session ran and answered.
 abstract class _FakeScripting {
-  const _FakeScripting(FakeScript script, FakeWorker worker)
+  const _FakeScripting._(FakeScript script, FakeWorker worker)
     : _script = script,
       _worker = worker;
 
@@ -273,7 +273,8 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
     : this._over(script, FakeWorker(script));
 
   FakeMontySession._over(super.script, super.worker)
-    : _link = _ScriptedLink(worker);
+    : _link = _ScriptedLink(worker),
+      super._();
 
   final _ScriptedLink _link;
 
