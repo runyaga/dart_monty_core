@@ -35,8 +35,13 @@ command -v dart >/dev/null 2>&1 || unrunnable "dart not on PATH"
 WANT_PKG="$(sed -n 's/^pydantic-monty==\([0-9][0-9.]*\).*/\1/p' "$LOCK" | head -n1)"
 [ -n "$WANT_PKG" ] || { echo "check_oracles: no pydantic-monty pin in $LOCK" >&2; exit 1; }
 
+# A venv is reused only if it was installed from this exact lock (its digest is
+# stamped after a successful install), so a changed pin or hash rebuilds it.
+LOCK_SUM="$(shasum -a 256 "$LOCK" | cut -d' ' -f1)"
+STAMP="$VENV/.oracle-lock-sha256"
+
 venv_ok(){
-  [ -x "$PY" ] || return 1
+  [ -x "$PY" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$LOCK_SUM" ] || return 1
   "$PY" -I - "$WANT_PY" "$WANT_PKG" <<'PYEOF' 2>/dev/null
 import sys
 from importlib.metadata import version
@@ -59,6 +64,7 @@ if ! venv_ok; then
   else
     unrunnable "need uv or python$WANT_PY"
   fi
+  echo "$LOCK_SUM" > "$STAMP"
   venv_ok || { echo "check_oracles: venv is not Python $WANT_PY with pydantic-monty $WANT_PKG" >&2; exit 1; }
 fi
 
