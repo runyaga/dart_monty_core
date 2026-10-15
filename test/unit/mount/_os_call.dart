@@ -12,7 +12,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/host_answers.dart' show OsHandler;
 
 /// An OS handler called with, and answering, plain Dart values.
 typedef DartOsCall =

@@ -20,13 +20,13 @@ import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart' show MontyInt;
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 
 const _flood = "line = 'x' * 1000\nwhile True:\n    print(line)";
 

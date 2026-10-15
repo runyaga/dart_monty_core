@@ -9,6 +9,8 @@ import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -18,8 +20,6 @@ import 'package:test/test.dart';
 
 import '../../_accessors.dart';
 import '_worker_harness.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 
 /// Upstream monty-proto 1.1.0's `PROTOCOL_VERSION`.
 const _protocolVersion = 5;

@@ -9,7 +9,7 @@
 // protobuf are wire-compatible with the worker, not merely self-consistent.
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/dart_monty_core.dart' hide Frame;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;

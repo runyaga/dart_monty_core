@@ -21,6 +21,8 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_channel.dart';
@@ -32,8 +34,6 @@ import 'package:test/test.dart';
 
 import '_display_cases.dart';
 import '_kind_round_trips.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 
 /// The package's lib/ as the test server exposes it.
 const _assets = 'packages/dart_monty_core/assets';

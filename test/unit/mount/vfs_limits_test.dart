@@ -2,8 +2,7 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
-    show ExternalException;
+import 'package:dart_monty_core/src/mount/vfs_limits.dart';
 import 'package:test/test.dart';
 
 import '_os_call.dart';

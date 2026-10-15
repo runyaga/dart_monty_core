@@ -4,8 +4,6 @@ library;
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
-    show ExternalException;
 import 'package:test/test.dart';
 
 import '_os_call.dart';

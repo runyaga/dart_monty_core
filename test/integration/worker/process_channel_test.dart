@@ -9,6 +9,8 @@ import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
@@ -25,8 +27,6 @@ import 'fake_worker.dart'
         floodPrintLength,
         floodPrints,
         stderrLastLine;
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 
 pb.ParentRequest _feed(String code) =>
     pb.ParentRequest(feed: pb.Feed(code: code));

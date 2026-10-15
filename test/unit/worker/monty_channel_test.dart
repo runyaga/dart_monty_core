@@ -1,9 +1,9 @@
 // The channel's crash helpers (lib/src/worker/monty_channel.dart). Pure
 // Dart: vm, dart2js and dart2wasm.
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
-import 'package:test/test.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
+import 'package:test/test.dart';
 
 void main() {
   group('repeatCrash', () {

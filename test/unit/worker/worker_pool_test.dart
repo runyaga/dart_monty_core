@@ -5,6 +5,8 @@ import 'dart:async';
 import 'package:dart_monty_core/src/worker/asset_base.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
@@ -13,8 +15,6 @@ import 'package:test/test.dart';
 import '../../_accessors.dart';
 import '_pool_oracle.g.dart';
 import '_scripted_channel.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 
 /// A channel that answers every `Reset` with `Ok`, [resets] times.
 ScriptedChannel resettable({int resets = 20}) => ScriptedChannel([

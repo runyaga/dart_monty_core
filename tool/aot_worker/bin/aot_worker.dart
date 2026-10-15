@@ -16,7 +16,6 @@ import 'dart:io';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 
 Future<void> main(List<String> args) async {

@@ -4,5 +4,8 @@
 #   <path>	<Class>.<member>	<parameter count>
 # tool/metrics_ratchet.sh removes a matching violation before the baseline
 # comparison, fails on a line that matches no violation, and allows at most
-# ten lines. A PR that adds a line cites CUT1. Empty until the cutover makes
-# those entry points public.
+# ten lines. A PR that adds a line cites CUT1.
+lib/src/worker/monty_pool.dart	Monty.start	8
+lib/src/worker/monty_pool.dart	Monty.withPool	9
+lib/src/worker/monty_pool.dart	Monty.checkout	9
+lib/src/worker/monty_pool.dart	Monty.withSession	10

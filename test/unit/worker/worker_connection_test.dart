@@ -8,13 +8,13 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedErrorInternal;
 
 /// Records what the connection sends and whether it terminated the Worker.
 final class _FakePort implements WorkerPort {
