@@ -217,8 +217,8 @@ s  vague_errors bash tool/check_no_vague_errors.sh
 # generated binding all existed. The message was false and it reached a shipped
 # example.
 # A mock proves the wiring compiles; it cannot prove the engine can do the
-# thing. Monty.compile() had a full unit file written against
-# MockMontyPlatform and was dead on every real backend (core#152).
+# thing. A removed precompile API once had a full unit file written against
+# a mock platform and was dead on every real backend (core#152).
 s  api_exercised bash tool/check_api_exercised.sh
 # ...so it was removed, and this keeps it removed: the precompile names must
 # stay undefined on every type that carried them.

@@ -246,13 +246,6 @@ final class MontyTimeZone extends MontyValue {
 
 /// Python's `datetime.time`.
 ///
-/// ADDED 2026-09-14 after an encoder/decoder alignment audit. The Rust encoder
-/// has emitted `{"__type": "time", ...}` all along (native/src/convert.rs:174)
-/// and Dart had NO factory for it, so `datetime.time(12, 0)` crossing the
-/// boundary threw `FormatException: unknown __type "time"`. Same class of
-/// defect as the `class_instance` gap, found the same way: by enumerating what
-/// the encoder can emit rather than trusting the decoder's list.
-///
 /// Carries the same fields as the Rust arm, including the tz-aware ones — a
 /// `time` can hold a UTC offset and a fold flag exactly as a `datetime` can.
 @immutable

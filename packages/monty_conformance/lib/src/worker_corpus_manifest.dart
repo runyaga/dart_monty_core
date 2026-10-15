@@ -90,7 +90,7 @@ const workerCorpusDivergences = <String, CorpusDivergence>{
         'fixtures. The shipped worker is built without it, as every '
         'consumer receives it, so it has neither.',
     'upstream crates/monty-datatest/Cargo.toml (features = ["test-hooks"]); '
-        'native/Cargo.toml: "NEVER enabled in shipped builds"',
+        'the worker crate never enables it in shipped builds',
   ),
   'cycle-marker-is-str': CorpusDivergence(
     'cycle-marker-is-str',

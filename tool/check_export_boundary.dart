@@ -2001,9 +2001,6 @@ final _controls = [
         'defaultMemoryUsageLimit = 200000000;',
       ),
     },
-    alsoMentions: [
-      '+ defaultMemoryUsageLimit: const variable int = 200000000',
-    ],
   ),
   _Control(
     'conditional exports swap two same-named types between libraries',
@@ -2079,10 +2076,10 @@ final _controls = [
   _Control(
     'post-cutover: worker name not on the allowlist',
     _Verdict.both,
-    'dart_monty_core.dart: exports ResourceLimits, declared in '
-        'package:dart_monty_core/src/worker/resource_limits.dart, which is '
+    'dart_monty_core.dart: exports PoolOptions, declared in '
+        'package:dart_monty_core/src/worker/worker_pool.dart, which is '
         'not on the allowlist',
-    _limitsExported,
+    _poolOptionsExported,
     postCutover: true,
   ),
   _Control(
@@ -2116,6 +2113,12 @@ const _frameDirective =
 final Map<String, String Function(String)> _limitsExported = {
   'lib/dart_monty_core.dart': (String s) =>
       "${s}export 'src/worker/resource_limits.dart' show ResourceLimits;\n",
+};
+
+/// An internal worker record exported, which the golden does not list.
+final Map<String, String Function(String)> _poolOptionsExported = {
+  'lib/dart_monty_core.dart': (String s) =>
+      "${s}export 'src/worker/worker_pool.dart' show PoolOptions;\n",
 };
 
 /// As [_limitsExported], with a public field typed by the protobuf class.
@@ -2190,18 +2193,14 @@ Future<String?> _runControl(
       (await _analyzeBoundary(
         root,
         _overlay(root, base),
-        control.postCutover
-            ? const _Boundary.postCutover({})
-            : const _Boundary(),
+        const _Boundary.postCutover({}),
       )).sections,
     ),
   };
   final report = await _analyzeBoundary(
     root,
     _overlay(root, control.edits),
-    control.postCutover
-        ? _Boundary.postCutover(_allowlist(golden))
-        : const _Boundary(),
+    _Boundary.postCutover(_allowlist(golden)),
   );
   final source = _toolSource(root);
   _checkToolSource(control.toolEdit?.call(source) ?? source, report);

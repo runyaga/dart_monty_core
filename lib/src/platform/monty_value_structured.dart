@@ -174,12 +174,6 @@ final class MontyNamedTuple extends MontyValue {
 
 /// Python's `NotImplemented` singleton.
 ///
-/// ADDED 2026-09-14 by the same alignment audit that found [MontyTime]. The
-/// Rust encoder emits `{"__type": "not_implemented"}`
-/// (native/src/convert.rs:172) and Dart had no factory, so evaluating the bare
-/// name `NotImplemented` in the sandbox threw
-/// `FormatException: unknown __type "not_implemented"`.
-///
 /// A singleton with no payload, mirroring [MontyEllipsis].
 @immutable
 final class MontyNotImplemented extends MontyValue {

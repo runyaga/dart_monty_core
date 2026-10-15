@@ -56,7 +56,7 @@ T callbackArg<T>(List<Object?> args, int i) {
 
 /// The Dart value of positional argument [i] of a pending call, as [T].
 ///
-/// The `MontyValue` sibling of [callbackArg]. A `MontyPending.args` is a
+/// The `MontyValue` sibling of [callbackArg]. A `FunctionSnapshot.args` is a
 /// `List<MontyValue>`, and `MontyValue.dartValue` is `Object?`, so the shape
 /// this replaces carried TWO assertions for two independent nulls:
 ///

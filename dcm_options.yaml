@@ -169,8 +169,8 @@ dcm:
           # produces SIX analyzer errors, and the analyzer's own suggested
           # remedy is the rule this repo just finished eliminating:
           #
-          #   error - :26:37 - The argument type 'MontyRepl?' can't be assigned
-          #           to the parameter type 'MontyRepl'
+          #   error - :26:37 - The argument type 'T?' can't be assigned
+          #           to the parameter type 'T'
           #   error - :29:25 - The method 'dispose' can't be unconditionally
           #           invoked because the receiver can be 'null'. Try ... adding
           #           a null check to the target ('!')

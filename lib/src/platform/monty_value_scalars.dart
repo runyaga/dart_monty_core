@@ -258,9 +258,9 @@ final class MontyBigInt extends MontyValue {
 
 /// Represents a Python exception object travelling as a VALUE.
 ///
-/// Not to be confused with `MontyException`, which is the Dart exception this
-/// package THROWS when the interpreter fails. This is what you get when Python
-/// hands an exception back as data — `return ValueError("boom")`, or an
+/// Not to be confused with `MontyError`, which this package THROWS when fed
+/// code fails. This is what you get when Python hands an exception back as
+/// data — `return ValueError("boom")`, or an
 /// exception caught and returned.
 ///
 /// [attributes] carries upstream's structured data for a Unicode or JSON

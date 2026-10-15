@@ -3,13 +3,11 @@
 # tool/check_api_exercised.sh — is every public entry point actually PLUMBED?
 # =============================================================================
 # A mock proves the wiring compiles. It cannot prove the engine can do the
-# thing. Monty.compile() had a thorough test file --
-# test/unit/platform/monty_compile_test.dart -- written entirely against
-# MockMontyPlatform, whose compileCode returns `jsonEncode({'code': code})`.
-# Nothing ever called Monty.compile() against FFI or WASM, so the API was green
-# in CI and dead in every shipped configuration: native/src/handle.rs:558
-# returns Err unconditionally, on every target (core#152). That API has since
-# been removed, test file included; tool/check_api_absent.sh keeps it out.
+# thing. A precompile API once had a thorough test file written entirely
+# against a mock platform, and nothing ever called it against a real
+# backend, so it was green in CI and dead in every shipped configuration
+# (core#152). That API has since been removed; tool/check_api_absent.sh keeps
+# removed names out.
 #
 # This asks one question of each public entry point in the export closure:
 # does ANY file that runs against a real backend mention it?
@@ -51,7 +49,7 @@ if baseline_path.exists():
 # THE SOURCE LIST IS DISCOVERED, NOT ENUMERATED -- and it used to be two
 # hard-coded filenames, which is the very failure the header above warns
 # about, one level up. The METHOD list was derived; the FILE list was not, so
-# a public entry point added to any class other than Monty or MontyRepl was
+# a public entry point added to any class other than the two entry classes was
 # exempt from this check by default. Measured, 2026-09-17: the two-file list
 # saw 18 entry points; the export closure of the public library sees 37 across
 # 33 files, and ELEVEN of the extra ones are not exercised on any real
@@ -210,7 +208,7 @@ if new:
     for n in sorted(new):
         print(f'    {n}()  —  declared in {entry_points[n]}')
     print()
-    print('  A unit test against MockMontyPlatform does not count, and that is')
+    print('  A unit test against a fake or a mock does not count, and that is')
     print('  the point: the mock returns whatever it is told to. Add a test')
     print('  under test/integration/, an example/ program, or a conformance')
     print('  driver -- or, if it is genuinely untestable, add the name to')

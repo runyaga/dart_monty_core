@@ -13,7 +13,6 @@
 # claimed it stopped the matrix rotting.
 #
 # Reading lib/ is the only way to know what the hierarchy actually contains.
-# Same idiom as tool/check_forgery_coverage.sh, for the same reason.
 #
 # THREE FAILURES, not one:
 #   1. a hierarchy member with no registry entry   (coverage silently shrank)
