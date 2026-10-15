@@ -293,7 +293,7 @@ final class _Hold {
     current.completeError(
       crashedError(
         CrashCause.killed,
-        detail: 'the session was closed during a turn',
+        detail: 'monty worker killed: the session was closed during a turn',
       ),
       StackTrace.current,
     );
@@ -789,7 +789,7 @@ final class _FeedDrive implements SnapshotDriver {
   @override
   Future<MontySnapshot> resumeLookup(
     NameLookupSnapshot snapshot,
-    Object? value,
+    MontyValue? value,
   ) {
     final pb.ParentRequest request;
     if (value == null) {

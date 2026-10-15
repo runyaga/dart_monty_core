@@ -347,8 +347,7 @@ String showAnswer(FakeAnswer entry) {
   final batch = entry.batch == null ? '' : '/b${entry.batch}';
   final answer = switch (entry.answer) {
     null => 'none',
-    ExternalReturnValue(:final MontyValue value) => 'value ${showValue(value)}',
-    ExternalReturnValue(:final value) => 'value $value',
+    ExternalReturnValue(:final value) => 'value ${showValue(value)}',
     ExternalException(:final excType, :final message, :final attributes) =>
       'raise $excType: $message${attributes.isEmpty ? '' : ' $attributes'}',
     ExternalFuture() => 'future',
