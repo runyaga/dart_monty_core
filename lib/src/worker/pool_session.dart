@@ -15,10 +15,12 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart'
-    show HostObjectLookup;
+    show ArenaReader, HostObjectLookup;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/default_print.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/frame_scan.dart'
+    show cutSourceFilename;
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
@@ -851,9 +853,7 @@ final class _FeedDrive implements SnapshotDriver {
       abandoned: () => session._hold.isFinished,
     );
     if (event.whichKind() == pb.ChildEvent_Kind.complete) {
-      final complete = event.complete;
-
-      return SessionComplete(session._proto.valueOf(complete));
+      return _completion(session._proto, event.complete);
     }
     _suspended = event;
 
@@ -911,6 +911,34 @@ final class _FeedDrive implements SnapshotDriver {
   }
 }
 
+/// The completion [complete] of a feed on [proto]: decoded now, so a value
+/// that does not decode is a protocol violation of this turn, and again on
+/// each later read of its output, as upstream converts it per access.
+///
+/// The host objects it names are resolved now and kept, as upstream's
+/// `MontyComplete` keeps its instance store: a later reset of the session
+/// does not change what a read gives.
+SessionComplete _completion(ProtoSession proto, pb.Complete complete) {
+  final live = proto.objects.lookup;
+  final found = <String, Object?>{};
+  Object? classType(String id) =>
+      found.putIfAbsent('class $id', () => live.classType(id));
+  Object? instance(String id) =>
+      found.putIfAbsent('instance $id', () => live.instance(id));
+  final hosts = (classType: classType, instance: instance);
+  MontyValue? first = proto.valueOf(complete, hosts: hosts);
+
+  return SessionComplete(() {
+    final value = first;
+    if (value == null) {
+      return ArenaReader(complete.values, hosts: hosts)[complete.value];
+    }
+    first = null;
+
+    return value;
+  });
+}
+
 /// The snapshot of a host function [call], for [driver] under [script].
 FunctionSnapshot _callSnapshot(
   SnapshotDriver driver,
@@ -964,11 +992,17 @@ FunctionSnapshot _osSnapshot(
   );
 }
 
-/// [range] as a [SourceRange]; an unset one (a worker that predates the
-/// field) is [SourceRange.unknown], as upstream reads it.
+/// [range] as a [SourceRange], its file name cut to 256 UTF-8 bytes as
+/// upstream's `SourceRange::new` cuts every suspension's position; an unset
+/// one (a worker that predates the field) is [SourceRange.unknown], as
+/// upstream reads it.
 SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
     ? SourceRange.unknown
-    : SourceRange(range.filename, range.start, range.end);
+    : SourceRange(
+        filename: cutSourceFilename(range.filename),
+        start: range.start,
+        end: range.end,
+      );
 
 /// The suspension and sleep budgets of one checkout: the limits in force
 /// and what the session has used of them.

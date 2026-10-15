@@ -13,6 +13,7 @@ import 'dart:collection';
 import 'package:dart_monty_core/src/worker/channel_factory.dart' as chf;
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:meta/meta.dart';
 
@@ -27,8 +28,9 @@ typedef OpenChannel = SpawnHandle Function();
 /// worker to the idle list, or retires it after `maxCheckoutsPerWorker`
 /// checkouts (upstream `pool.rs`, `checkout.rs`).
 ///
-/// [close] refuses new checkouts and reaps idle workers; checked-out
-/// workers run on, and each is killed when its lease is released.
+/// [close] refuses new checkouts and reaps idle workers. Checked-out
+/// workers run on, and an [acquire] already started completes, as upstream's
+/// do; each worker held then is killed when its lease is released.
 ///
 /// A busy native worker outlives a parent that dies without closing it,
 /// until the worker's own duration limit ends the run; an idle one exits
@@ -60,7 +62,6 @@ final class WorkerPool {
   final OpenChannel _open;
   final List<_Worker> _idleWorkers = [];
   final Queue<Completer<void>> _waiters = Queue();
-  final Set<SpawnHandle> _starting = {};
   int _liveWorkers = 0;
   int _nextId = 1;
   bool _closed = false;
@@ -76,25 +77,22 @@ final class WorkerPool {
   /// start: the others still starting are cancelled and those already
   /// ready are closed before the error is rethrown.
   ///
+  /// Throws [ArgumentError] before any worker starts for a setting
+  /// upstream's constructor refuses, in its order and with its message
+  /// ([PoolOptions.validate]), then for an impossible size.
+  ///
   /// [open] replaces the platform's channel factory in tests.
   static Future<WorkerPool> start([
     PoolOptions options = const PoolOptions(),
     @visibleForTesting OpenChannel? open,
     @visibleForTesting Duration startupTimeout = defaultStartupTimeout,
   ]) async {
+    options.validate();
     final min = options.minProcesses;
     final max = options.maxProcesses ?? chf.defaultMaxProcesses();
     if (max < 1 || min < 0 || min > max) {
       throw ArgumentError(
         'invalid pool size: minProcesses=$min maxProcesses=$max',
-      );
-    }
-    final recycle = options.maxCheckoutsPerWorker;
-    if (recycle != null && recycle < 1) {
-      throw ArgumentError.value(
-        recycle,
-        'maxCheckoutsPerWorker',
-        'must be at least 1',
       );
     }
     final location = options.workerLocation;
@@ -116,13 +114,16 @@ final class WorkerPool {
   /// Dedicates a worker to the caller until its lease is released.
   ///
   /// Throws [TimeoutException] if no worker becomes free within
-  /// [PoolOptions.checkoutTimeout], [StateError] once the pool is closed,
-  /// and whatever the start of a new worker throws ([MontyCrashedError]
-  /// when it is not ready within [startupTimeout]).
+  /// [PoolOptions.checkoutTimeout], [StateError] if the pool is closed when
+  /// it is called, and whatever the start of a new worker throws
+  /// ([MontyCrashedError] when it is not ready within [startupTimeout]).
+  ///
+  /// A call made before [close] runs to its end, as upstream's acquisition
+  /// holds its pool: it waits, spawns and is served as before.
   Future<WorkerLease> acquire() async {
+    if (_closed) throw _closedError();
     final waited = Stopwatch()..start();
     for (;;) {
-      if (_closed) throw _closedError();
       while (_idleWorkers.isNotEmpty) {
         final worker = _idleWorkers.removeLast();
         if (worker.channel.isAlive) return WorkerLease._(this, worker);
@@ -142,21 +143,16 @@ final class WorkerPool {
     }
   }
 
-  /// Refuses new checkouts, fails every waiting [acquire], cancels workers
-  /// still starting, and asks idle workers to exit, waiting for them.
+  /// Refuses new checkouts and asks idle workers to exit, waiting for them
+  /// (upstream's `Pool::close`).
   ///
-  /// Returns without waiting for checked-out workers: each is killed when
-  /// its lease is released. Idempotent.
+  /// Returns without waiting for checked-out workers, or for an [acquire]
+  /// already started, which still completes: each worker held then is
+  /// killed when its lease is released. Idempotent.
   Future<void> close() => _closing ??= _close();
 
   Future<void> _close() async {
     _closed = true;
-    while (_waiters.isNotEmpty) {
-      _waiters.removeFirst().completeError(_closedError(), StackTrace.current);
-    }
-    for (final handle in [..._starting]) {
-      handle.cancel();
-    }
     final idle = [..._idleWorkers];
     _idleWorkers.clear();
     _liveWorkers -= idle.length;
@@ -203,28 +199,14 @@ final class WorkerPool {
   }
 
   /// Starts a worker into a slot already reserved, releasing the slot if
-  /// the start fails or the pool closes meanwhile.
+  /// the start fails.
   Future<MontyChannel> _spawnOne() async {
-    SpawnHandle? handle;
-    final MontyChannel channel;
     try {
-      handle = _open();
-      _starting.add(handle);
-      channel = await _ready(handle);
+      return await _ready(_open());
     } on Object {
       _releaseSlot();
-      if (_closed) throw _closedError();
       rethrow;
-    } finally {
-      _starting.remove(handle);
     }
-    if (_closed) {
-      channel.kill();
-      _releaseSlot();
-      throw _closedError();
-    }
-
-    return channel;
   }
 
   /// [handle]'s channel, or [MontyCrashedError] once [startupTimeout] passes,
@@ -319,6 +301,7 @@ final class PoolOptions {
   final Duration? requestTimeout;
 
   /// Checkouts a worker serves before it is retired; unbounded when null.
+  /// 0 retires each worker at its first release. Upstream's is a `u32`.
   final int? maxCheckoutsPerWorker;
 
   /// How far past what a session's `maxFeedDuration` has left the parent
@@ -335,6 +318,45 @@ final class PoolOptions {
   /// Where the worker is found: an executable on native, an asset base URL
   /// on the web; null to search the usual places.
   final String? workerLocation;
+
+  /// Throws [ArgumentError] for a setting upstream's constructor refuses,
+  /// in its order and with its message: [maxCheckoutsPerWorker] outside
+  /// 0..2^32-1 (its `u32` extraction's `OverflowError`), then a negative
+  /// duration (`duration_from_secs`'s `ValueError`).
+  void validate() {
+    final recycle = maxCheckoutsPerWorker;
+    if (recycle != null && (recycle < 0 || recycle > _maxU32)) {
+      throw ArgumentError.value(
+        recycle,
+        'maxCheckoutsPerWorker',
+        'number too ${recycle < 0 ? 'small' : 'large'} to fit in target type',
+      );
+    }
+    _duration(checkoutTimeout, 'checkoutTimeout', 'checkout_timeout');
+    _duration(requestTimeout, 'requestTimeout', 'request_timeout');
+    _duration(
+      feedDurationLimitGrace,
+      'feedDurationLimitGrace',
+      'feed_duration_limit_grace',
+    );
+    _duration(
+      turnDurationLimitGrace,
+      'turnDurationLimitGrace',
+      'turn_duration_limit_grace',
+    );
+  }
+}
+
+/// `u32::MAX`.
+const int _maxU32 = 0xFFFFFFFF;
+
+/// Throws upstream's `duration_from_secs` refusal of [value], the argument
+/// [name] (upstream's [upstreamName]).
+void _duration(Duration? value, String name, String upstreamName) {
+  final refusal = value == null ? null : durationRefusal(value);
+  if (refusal != null) {
+    throw ArgumentError.value(value, name, 'invalid $upstreamName: $refusal');
+  }
 }
 
 StateError _closedError() => StateError('the monty pool is closed');

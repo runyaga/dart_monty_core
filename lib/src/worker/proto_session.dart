@@ -63,15 +63,11 @@ final class ProtoSession {
   /// directory, `os.chdir` included (upstream's `Checkout.cwd_set`).
   bool _cwdSet = false;
 
-  /// Whether a load reached the worker: the session's type check may then
-  /// be the dump's, so any feed may meet a typing rejection.
-  bool _loaded = false;
-
   /// Configures a session on [channel].
   ///
   /// Throws [ArgumentError] for a setting upstream refuses, before anything
-  /// is sent, and for one the worker refuses (an IANA zone name it does not
-  /// know), killing the worker.
+  /// is sent. A refusal from the worker is raised as any error is (a
+  /// [MontyRuntimeError], say), and the worker is killed.
   static Future<ProtoSession> open(
     MontyChannel channel, [
     SessionConfig config = const SessionConfig(),
@@ -176,13 +172,14 @@ final class ProtoSession {
     return _turnEnd(await _feedTurn(request, sink));
   });
 
-  /// The value [complete] carries; one that does not decode is a protocol
+  /// The value [complete] carries, its host objects found through [hosts]
+  /// (default: this session's); one that does not decode is a protocol
   /// violation (upstream's "invalid payload from worker").
-  MontyValue valueOf(pb.Complete complete) {
+  MontyValue valueOf(pb.Complete complete, {HostObjectLookup? hosts}) {
     try {
       return ArenaReader(
         complete.values,
-        hosts: objects.lookup,
+        hosts: hosts ?? objects.lookup,
       )[complete.value];
     } on FormatException catch (e) {
       _violation('invalid payload from worker: ${e.message}');
@@ -196,7 +193,6 @@ final class ProtoSession {
     if (event.whichKind() != pb.ChildEvent_Kind.ok) _desync('Reset', event);
     // A new session, as upstream's next checkout of the worker is.
     _cwdSet = false;
-    _loaded = false;
     objects.clear();
     await _configure();
   });
@@ -244,10 +240,10 @@ final class ProtoSession {
     final kind = event.whichKind();
     if (kind == pb.ChildEvent_Kind.ok) return;
     if (kind != pb.ChildEvent_Kind.error) _desync('Configure', event);
-    // The worker refused a setting: one only it can check (an IANA zone
-    // name, against its zone database), so the caller's argument.
+    // Raised as any error is (upstream's PoolError::Runtime); the failed
+    // checkout discards the worker, as upstream's drop does.
     _channel.kill();
-    throw ArgumentError(event.error.exception.message);
+    _throwRaised(event.error);
   }
 
   /// [event] when it ends a feed's turn (`Complete` or a suspension);
@@ -259,12 +255,10 @@ final class ProtoSession {
     pb.ChildEvent_Kind.osCall ||
     pb.ChildEvent_Kind.resolveFutures => event,
     pb.ChildEvent_Kind.error => _throwRaised(event.error),
-    // Only a type-checking session's feed may end this way, or a loaded
-    // one's, whose type check is the dump's.
-    pb.ChildEvent_Kind.typingError when _config.typeCheck || _loaded =>
-      throw typingError(
-        event.typingError.diagnostics,
-      ),
+    // Whatever the session's type check, as upstream classifies it.
+    pb.ChildEvent_Kind.typingError => throw typingError(
+      event.typingError.diagnostics,
+    ),
     // Never sent without the request that asks for it (dumps), or not
     // a feed's answer at all.
     _ => _violation('unexpected event: ${event.whichKind().name}'),
@@ -342,10 +336,6 @@ extension ProtoSessionTransfer on ProtoSession {
     final event = await _channel.turn(
       pb.ParentRequest(load: pb.Load(state: state)),
     );
-    // The worker answered, so it may hold the dump's type check: one it
-    // adopted and the budget then aborted (an Error), as well as one it
-    // took. Any later feed may meet a typing rejection, as upstream's may.
-    _loaded = true;
     final kind = event.whichKind();
     if (kind == pb.ChildEvent_Kind.error) _throwRaised(event.error);
     if (kind != pb.ChildEvent_Kind.ok && !isSuspension(event)) {

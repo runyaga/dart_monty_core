@@ -84,6 +84,63 @@ const Map<String, ({String? code, String outcome})> configOracle = {
     outcome:
         'ValueError: timezone offset_seconds must be within -86399..=86399, got -86400',
   ),
+  'timezone_offset_i32_high': (
+    code: null,
+    outcome: 'OverflowError: number too large to fit in target type',
+  ),
+  'timezone_offset_i32_low': (
+    code: null,
+    outcome: 'OverflowError: number too small to fit in target type',
+  ),
+  'timezone_offset_i32_max': (
+    code: null,
+    outcome:
+        'ValueError: timezone offset_seconds must be within -86399..=86399, got 2147483647',
+  ),
+  'timezone_offset_name_surrogate': (
+    code: null,
+    outcome:
+        'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 1: surrogates not allowed',
+  ),
+  'timezone_offset_overflow_before_name': (
+    code: null,
+    outcome: 'OverflowError: number too large to fit in target type',
+  ),
+  'timezone_etc_unknown': (
+    code: null,
+    outcome: 'ValueError: unknown timezone \'Etc/Unknown\'',
+  ),
+  'timezone_too_long': (
+    code: null,
+    outcome:
+        'ValueError: unknown timezone \'Europe/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\'',
+  ),
+  'timezone_dot_part': (
+    code: null,
+    outcome: 'ValueError: unknown timezone \'Europe/../Europe/London\'',
+  ),
+  'timezone_empty_part': (
+    code: null,
+    outcome: 'ValueError: unknown timezone \'Europe//London\'',
+  ),
+  'timezone_space': (
+    code: null,
+    outcome: 'ValueError: unknown timezone \'Europe/London \'',
+  ),
+  'timezone_not_a_zone_file': (
+    code: null,
+    outcome: 'ValueError: unknown timezone \'zone.tab\'',
+  ),
+  'timezone_surrogate': (
+    code: null,
+    outcome:
+        'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 13: surrogates not allowed',
+  ),
+  'timezone_surrogates': (
+    code: null,
+    outcome:
+        'UnicodeEncodeError: \'utf-8\' codec can\'t encode characters in position 1-2: surrogates not allowed',
+  ),
   'sleep_unknown': (
     code: null,
     outcome:
@@ -125,6 +182,11 @@ const Map<String, ({String? code, String outcome})> configOracle = {
   'seed_negative_inf': (
     code: null,
     outcome: 'ValueError: random_start seed must be finite, not -inf',
+  ),
+  'seed_str_surrogate': (
+    code: null,
+    outcome:
+        'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\udc00\' in position 2: surrogates not allowed',
   ),
   'type_check_full': (
     code: 'x: int = "a"',
@@ -187,6 +249,24 @@ const Map<String, ({String? code, String outcome})> configOracle = {
         'import datetime, time\nrepr((str(datetime.datetime.now()), datetime.date.today().isoformat(), time.tzname, time.timezone, time.time(), datetime.datetime.now().astimezone().strftime("%z %Z")))',
     outcome:
         'value: (\'2020-07-02 03:04:05.678000\', \'2020-07-02\', (\'UTC\', \'UTC\'), 0, 1593659045.678, \'+0000 UTC\')',
+  ),
+  'frozen_named_zone_case': (
+    code:
+        'import datetime, time\nrepr((str(datetime.datetime.now()), datetime.date.today().isoformat(), time.tzname, time.timezone, time.time(), datetime.datetime.now().astimezone().strftime("%z %Z")))',
+    outcome:
+        'value: (\'2020-07-02 04:04:05.678000\', \'2020-07-02\', (\'GMT\', \'BST\'), 0, 1593659045.678, \'+0100 BST\')',
+  ),
+  'frozen_zone_factory': (
+    code:
+        'import datetime, time\nrepr((str(datetime.datetime.now()), datetime.date.today().isoformat(), time.tzname, time.timezone, time.time(), datetime.datetime.now().astimezone().strftime("%z %Z")))',
+    outcome:
+        'value: (\'2020-07-02 03:04:05.678000\', \'2020-07-02\', (\'-00\', \'-00\'), 0, 1593659045.678, \'+0000 -00\')',
+  ),
+  'frozen_zone_link': (
+    code:
+        'import datetime, time\nrepr((str(datetime.datetime.now()), datetime.date.today().isoformat(), time.tzname, time.timezone, time.time(), datetime.datetime.now().astimezone().strftime("%z %Z")))',
+    outcome:
+        'value: (\'2020-07-02 06:04:05.678000\', \'2020-07-02\', (\'EET\', \'EEST\'), -7200, 1593659045.678, \'+0300 EEST\')',
   ),
   'datetime_call_host': (
     code:

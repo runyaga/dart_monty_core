@@ -23,9 +23,9 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 const int workerProtocolVersion = 5;
 
 /// How long [WorkerConnection.close] waits for the `Shutdown` reply before it
-/// terminates the Worker. Upstream's pool uses the same 100 ms
-/// (`FATAL_EXIT_GRACE`).
-const Duration workerCloseGrace = Duration(milliseconds: 100);
+/// terminates the Worker: upstream's `SHUTDOWN_EXIT_GRACE`, which its pool
+/// gives an idle worker it closes.
+const Duration workerCloseGrace = Duration(milliseconds: 500);
 
 /// One message from the Worker, every field optional: the ready reply
 /// (`ready`, `error`, `jspi`, `protocol`), a turn reply (`events`, `outcome`)
@@ -231,7 +231,12 @@ final class WorkerConnection implements MontyChannel {
     for (final body in bodies) {
       final (event, unreadable) = _decode(body);
       if (event == null) {
-        throw _die(CrashCause.vanished, 'unreadable turn reply: $unreadable');
+        // The frame arrived whole: the Worker misbehaved, it did not die
+        // (upstream's `FrameError::Decode` arm).
+        throw _die(
+          CrashCause.protocol,
+          'invalid payload from worker: ${unreadable?.reason}',
+        );
       }
       switch (event.whichKind()) {
         case pb.ChildEvent_Kind.print:
@@ -319,10 +324,10 @@ final class OnceAsync<T> {
 }
 
 /// One event decoded as upstream decodes it, or why it cannot be.
-(pb.ChildEvent?, FrameException?) _decode(Uint8List body) {
+(pb.ChildEvent?, FrameDecodeException?) _decode(Uint8List body) {
   try {
     return (FrameScan.decodeChildEvent(body), null);
-  } on FrameException catch (e) {
+  } on FrameDecodeException catch (e) {
     return (null, e);
   }
 }

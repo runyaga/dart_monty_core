@@ -61,6 +61,24 @@ REFUSED = [
     ('timezone_unknown', {'os_policy': {'timezone': 'Not/AZone'}}),
     ('timezone_offset_high', {'os_policy': {'timezone': {'offset_seconds': 86400}}}),
     ('timezone_offset_low', {'os_policy': {'timezone': {'offset_seconds': -86400}}}),
+    # Outside i32 the extraction fails before the range check runs.
+    ('timezone_offset_i32_high', {'os_policy': {'timezone': {'offset_seconds': 2**31}}}),
+    ('timezone_offset_i32_low', {'os_policy': {'timezone': {'offset_seconds': -2**31 - 1}}}),
+    ('timezone_offset_i32_max', {'os_policy': {'timezone': {'offset_seconds': 2**31 - 1}}}),
+    ('timezone_offset_name_surrogate',
+     {'os_policy': {'timezone': {'offset_seconds': 0, 'name': 'a\ud800'}}}),
+    ('timezone_offset_overflow_before_name',
+     {'os_policy': {'timezone': {'offset_seconds': 2**31, 'name': 'a\ud800'}}}),
+    # An IANA name is checked against the tz database while the arguments
+    # are parsed, before any worker is taken.
+    ('timezone_etc_unknown', {'os_policy': {'timezone': 'Etc/Unknown'}}),
+    ('timezone_too_long', {'os_policy': {'timezone': 'Europe/' + 'a' * 94}}),
+    ('timezone_dot_part', {'os_policy': {'timezone': 'Europe/../Europe/London'}}),
+    ('timezone_empty_part', {'os_policy': {'timezone': 'Europe//London'}}),
+    ('timezone_space', {'os_policy': {'timezone': 'Europe/London '}}),
+    ('timezone_not_a_zone_file', {'os_policy': {'timezone': 'zone.tab'}}),
+    ('timezone_surrogate', {'os_policy': {'timezone': 'Europe/London\ud800'}}),
+    ('timezone_surrogates', {'os_policy': {'timezone': 'x\udc00\udc01y'}}),
     ('sleep_unknown', {'os_policy': {'sleep': 'bad'}}),
     ('sleep_max_negative', {'os_policy': {'sleep_system_max': -1.0}}),
     ('sleep_max_with_zero', {'os_policy': {'sleep': 'zero', 'sleep_system_max': 1.0}}),
@@ -70,6 +88,7 @@ REFUSED = [
     ('seed_nan', {'os_policy': {'random_start': {'seed': math.nan}}}),
     ('seed_inf', {'os_policy': {'random_start': {'seed': math.inf}}}),
     ('seed_negative_inf', {'os_policy': {'random_start': {'seed': -math.inf}}}),
+    ('seed_str_surrogate', {'os_policy': {'random_start': {'seed': 'ab\udc00'}}}),
 ]
 
 # Checkouts upstream accepts, and a snippet whose value or error shows the
@@ -92,6 +111,10 @@ RUNS = [
     ('frozen_named_zone', {'os_policy': {'datetime': FROZEN, 'timezone': 'Europe/London'}}, CLOCK),
     ('frozen_zone_utc_upper', {'os_policy': {'datetime': FROZEN, 'timezone': 'UTC'}}, CLOCK),
     ('frozen_zone_utc', {'os_policy': {'datetime': FROZEN, 'timezone': 'utc'}}, CLOCK),
+    # The database's lookup ignores ASCII case.
+    ('frozen_named_zone_case', {'os_policy': {'datetime': FROZEN, 'timezone': 'europe/LONDON'}}, CLOCK),
+    ('frozen_zone_factory', {'os_policy': {'datetime': FROZEN, 'timezone': 'Factory'}}, CLOCK),
+    ('frozen_zone_link', {'os_policy': {'datetime': FROZEN, 'timezone': 'Europe/Kiev'}}, CLOCK),
     ('datetime_call_host', {'os_policy': {'datetime': 'call_host'}}, CLOCK),
     ('seed_int', {'os_policy': {'random_start': {'seed': 42}}}, RANDOM),
     ('seed_negative_int', {'os_policy': {'random_start': {'seed': -5}}}, RANDOM),

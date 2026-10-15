@@ -112,6 +112,29 @@ void main() {
       );
     });
 
+    // Upstream's Configure turn converts an Error reply as any raised
+    // exception (PoolError::Runtime, checkout.rs:773-776, 1838-1852), and
+    // the failed checkout discards the worker (Drop, checkout.rs:2110-2121).
+    test('an Error answer raises as converted, and kills the worker', () async {
+      for (final (event, matcher) in [
+        (
+          raised('ValueError', "unknown timezone 'Nope'"),
+          isA<MontyRuntimeError>().having(
+            (e) => e.display('type-msg'),
+            'display',
+            "ValueError: unknown timezone 'Nope'",
+          ),
+        ),
+        (raised('SyntaxError', 'bad'), isA<MontySyntaxError>()),
+      ]) {
+        final ch = ScriptedChannel([
+          answer([event]),
+        ]);
+        await expectLater(ProtoSession.open(ch), throwsA(matcher));
+        expect(ch.kills, 1);
+      }
+    });
+
     test('any other answer kills the worker: a protocol violation', () async {
       final ch = ScriptedChannel([
         answer([completeNone()]),
@@ -941,11 +964,29 @@ void main() {
       expect(ch.kills, 1);
     });
 
+    // Upstream classifies every TypingError event as PoolError::Typing,
+    // whatever the session's type check (checkout.rs:1854-1858).
+    test(
+      'a TypingError on a session without a type check is still one',
+      () async {
+        final ch = _configured([
+          answer([
+            pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'x')),
+          ]),
+        ]);
+        final s = await ProtoSession.open(ch);
+        await expectLater(
+          s.feed('x'),
+          throwsA(isA<MontyTypingError>().having((e) => '$e', 'toString', 'x')),
+        );
+        expect(ch.kills, 0);
+      },
+    );
+
     test('an event that cannot end a feed kills the worker', () async {
       for (final event in [
         ok(),
         pb.ChildEvent(resolveFutures: pb.ResolveFutures()),
-        pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'x')),
         pb.ChildEvent(),
       ]) {
         final ch = _configured([

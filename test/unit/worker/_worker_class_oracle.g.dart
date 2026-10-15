@@ -29,6 +29,11 @@ const Map<String, String> workerClassOracle = {
   'kwargs_after_del': 'value: {\'b\': 3, \'c\': 4}',
   'args_same_object': 'value: True',
   'args_set': 'TypeError: \'tuple\' object does not support item assignment',
+  'complete_repr': 'value: MontyComplete(output=[1, 2])',
+  'complete_output_same_object': 'value: False',
+  'complete_output_equal': 'value: True',
+  'complete_equal_self': 'value: True',
+  'complete_equal_other': 'value: False',
 };
 
 /// The frames of upstream's traceback, innermost last, with `str()` of each.

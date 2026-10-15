@@ -34,7 +34,8 @@ final class MontyPool {
   final WorkerPool _pool;
 
   /// Starts a pool as [options] say, with `minProcesses` workers ready,
-  /// failing if any of them cannot start (upstream `AsyncMonty`).
+  /// failing if any of them cannot start (upstream `AsyncMonty`). A setting
+  /// upstream refuses is an [ArgumentError] before any worker starts.
   ///
   /// [PoolOptions] carries upstream's settings: the pool's size, the
   /// checkout and request timeouts, recycling, the two duration-backstop
@@ -74,10 +75,10 @@ final class MontyPool {
   /// cutover).
   ///
   /// Throws [ArgumentError] for a setting upstream refuses, with upstream's
-  /// message, before any worker is taken; and for an IANA zone name the
-  /// worker does not know, once it has tried it. Waits for a free worker up
-  /// to the pool's `checkoutTimeout`, then throws [TimeoutException].
-  /// Throws [StateError] once the pool is closed.
+  /// message, before any worker is taken, an unknown IANA zone name
+  /// included. Waits for a free worker up to the pool's `checkoutTimeout`,
+  /// then throws [TimeoutException]. Throws [StateError] once the pool is
+  /// closed; a checkout already waiting then still completes.
   Future<PoolSession> checkout({
     SessionConfig options = const SessionConfig(),
   }) async {
@@ -101,8 +102,9 @@ final class MontyPool {
     }
   }
 
-  /// Refuses new checkouts and ends the idle workers. Sessions still open
-  /// run on; each one's close then kills its worker. Idempotent.
+  /// Refuses new checkouts and ends the idle workers. Sessions still open,
+  /// and checkouts already waiting, run on; each one's close then kills its
+  /// worker. Idempotent.
   Future<void> close() => _pool.close();
 
   /// Idle workers now (upstream `idle_workers`). Diagnostics and tests:

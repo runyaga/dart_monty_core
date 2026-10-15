@@ -258,6 +258,9 @@ jobs:
           # ...and its negative controls: path, git, [patch], [replace] and
           # cargo-config overrides of upstream crates must each fail it.
           run python3 -I tool/test_check_worker_mirror.py
+          # The parent's IANA zone-name list against the jiff-tzdb version
+          # native/worker/Cargo.lock pins (offline: version, checksum, hash).
+          run python3 -I tool/generate_tz_names.py --check
           run bash tool/check_no_vague_errors.sh
           run bash tool/check_backend_parity.sh
           run bash tool/check_api_exercised.sh
@@ -318,6 +321,9 @@ jobs:
       # Every file native/worker/ copies or follows, and upstream's Cargo.lock,
       # must still hash to its recorded sha256 at the pinned commit.
       - run: python3 -I tool/check_worker_mirror.py --online
+      # The parent's IANA zone-name list must be exactly the names of the
+      # jiff-tzdb crate Cargo.lock pins, fetched and checksum-verified.
+      - run: python3 -I tool/generate_tz_names.py --online
       # Every tool/generate_*_oracle.py --check (glob): a stale committed
       # oracle .g.dart fails. One cached venv (Python 3.12, pydantic-monty from
       # the hash-pinned lock); ORACLE_REQUIRE makes a setup failure red.

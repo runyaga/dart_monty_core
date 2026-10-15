@@ -34,6 +34,9 @@ OUT = ROOT / 'test/unit/worker/_worker_class_oracle.g.dart'
 # sends the same call.
 CALL = 'f(1, a=2, b=3)'
 
+# The snippet every MontyComplete case completes with.
+COMPLETE = '[1, 2]'
+
 # The traceback every frame case reads.
 RAISES = 'def g():\n    1/0\ng()'
 
@@ -99,6 +102,15 @@ async def snapshot_cases() -> list[tuple[str, str]]:
 
             out.append(('args_set', outcome(set_arg)))
             await snap.resume(pm.ExternalReturnValue(return_value=None))
+            # MontyComplete: output converted on each access, identity
+            # equality (snapshot.rs:1360-1379).
+            done = await s.feed_start(COMPLETE)
+            again = await s.feed_start(COMPLETE)
+            out.append(('complete_repr', outcome(lambda: done)))
+            out.append(('complete_output_same_object', outcome(lambda: done.output is done.output)))
+            out.append(('complete_output_equal', outcome(lambda: done.output == done.output)))
+            out.append(('complete_equal_self', outcome(lambda: done == done)))
+            out.append(('complete_equal_other', outcome(lambda: done == again)))
     return out
 
 

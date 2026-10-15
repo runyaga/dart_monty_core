@@ -342,13 +342,39 @@ void main() {
       expect(seed, RandomSeed.bytes(Uint8List.fromList([1, 2])));
     });
 
+    // Upstream's RandomSeed is a TypedDict: dict equality, so an int and a
+    // float seed of equal value are equal (pydantic_monty __init__.py:188).
+    test('an integer and a float seed of equal value are equal', () {
+      for (final (n, f) in [
+        (BigInt.one, 1.0),
+        (BigInt.zero, -0.0),
+        (-BigInt.two.pow(70), -1180591620717411303424.0),
+      ]) {
+        final integer = RandomSeed.integer(n);
+        final float = RandomSeed.float(f);
+        expect(integer, float);
+        expect(float, integer);
+        expect(integer.hashCode, float.hashCode);
+        // The wire still carries the kind the caller chose.
+        expect(integer.toProto().hasInt_1(), isTrue);
+        expect(float.toProto().hasFloat(), isTrue);
+      }
+      for (final (n, f) in [
+        (BigInt.one, 1.5),
+        (BigInt.two.pow(53) + BigInt.one, 9007199254740992.0),
+        (BigInt.zero, double.nan),
+      ]) {
+        expect(RandomSeed.integer(n) == RandomSeed.float(f), isFalse);
+      }
+    });
+
     test('== and hashCode: by kind and value', () {
       RandomSeed bytesOf(List<int> b) =>
           RandomSeed.bytes(Uint8List.fromList(b));
       const float = RandomSeed.float(1);
       final one = RandomSeed.integer(BigInt.one);
       final otherOne = RandomSeed.integer(BigInt.one);
-      expect(one == float, isFalse);
+      expect(one == const RandomSeed.float(2), isFalse);
       expect(one, otherOne);
       expect(one.hashCode, otherOne.hashCode);
       final bytes = bytesOf([1]);
