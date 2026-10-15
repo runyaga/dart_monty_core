@@ -398,6 +398,25 @@ void main() {
       },
     );
     test(
+      'REQ-MontyFileHandle-13: toString is the upstream repr, path and mode '
+      'quoted, no position',
+      () {
+        expect(
+          MontyFileHandle('/a', 'r').toString(),
+          "MontyFileHandle(path='/a', mode='r')",
+        );
+        expect(
+          MontyFileHandle('/b', 'wb', position: BigInt.from(7)).toString(),
+          "MontyFileHandle(path='/b', mode='wb')",
+        );
+        // A quote in the path is escaped as Python's repr does.
+        expect(
+          MontyFileHandle("/it's", 'r').toString(),
+          'MontyFileHandle(path="/it\'s", mode=\'r\')',
+        );
+      },
+    );
+    test(
       'REQ-MontyFileHandle-12: compares and hashes path, mode, position',
       () {
         MontyFileHandle h(String p, String m, int pos) =>

@@ -305,6 +305,29 @@ void main() {
 
   group('MontySet', () {
     test(
+      'REQ-MontySet-28: a cycle refuses hashing, projection and a comparison '
+      'that reaches it; a shared cyclic element equals itself by identity',
+      () {
+        final c = _cyclicList();
+        // Hashing and projection walk into the cycle.
+        expect(() => MontySet([c]).hashCode, throwsStateError);
+        expect(() => MontySet([c]).dartValue, throwsStateError);
+        expect(MontySet([c]).toJson, throwsStateError);
+        // Distinct cyclic elements: the comparison reaches the cycle.
+        expect(
+          () => MontySet([_cyclicList()]) == MontySet([_cyclicList()]),
+          throwsStateError,
+        );
+        // The same cyclic object on both sides is identity-equal (upstream
+        // `Value::py_eq` returns true for `is`, value.rs:1548), so the
+        // comparison never descends into it.
+        expect(MontySet([c]) == MontySet([c]), isTrue);
+        final s = MontySet([c]);
+        expect(s == s, isTrue);
+        expect(MontySet([c]) == MontySet([c, const MontyInt(1)]), isFalse);
+      },
+    );
+    test(
       'REQ-MontySet-18: projections share objects; the writer shares roots',
       () {
         const inner = MontySet([MontyInt(1), MontyInt(2)]);
