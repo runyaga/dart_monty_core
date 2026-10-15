@@ -10,6 +10,8 @@ import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
+import 'spec_values_support.dart';
+
 MontyValue _roundTrip(MontyValue value) {
   final writer = ArenaWriter();
   final root = writer.add(value);
@@ -264,7 +266,8 @@ void main() {
         expect(t == _td(1, 9, 3), isFalse);
         expect(t == _td(1, 2, 9), isFalse);
         expect(t == const MontyInt(1), isFalse);
-        expect(t == (t.dartValue as Object), isFalse);
+        final Object asDuration = t.dartValue;
+        expect(t == asDuration, isFalse);
         expect(t.hashCode, _td(1, 2, 3).hashCode);
         expect(
           _varies([for (var v = 0; v < 30; v++) _td(v, 2, 3).hashCode]),
@@ -421,11 +424,12 @@ void main() {
       () {
         MontyFileHandle h(String p, String m, int pos) =>
             MontyFileHandle(p, m, position: BigInt.from(pos));
-        expect(h('/a', 'r', 3) == h('/a', 'r', 3), isTrue);
-        expect(h('/a', 'r', 3) == h('/b', 'r', 3), isFalse);
-        expect(h('/a', 'r', 3) == h('/a', 'w', 3), isFalse);
-        expect(h('/a', 'r', 3) == h('/a', 'r', 4), isFalse);
-        expect(h('/a', 'r', 3).hashCode, h('/a', 'r', 3).hashCode);
+        final (base, twin) = twins(() => h('/a', 'r', 3));
+        expect(base == twin, isTrue);
+        expect(base == h('/b', 'r', 3), isFalse);
+        expect(base == h('/a', 'w', 3), isFalse);
+        expect(base == h('/a', 'r', 4), isFalse);
+        expect(base.hashCode, twin.hashCode);
         expect(
           _varies([
             for (final c in 'abcdefghij'.split('')) h('/$c', 'r', 3).hashCode,
@@ -454,29 +458,25 @@ void main() {
         String? msg, [
         Map<String, MontyValue> attrs = const {},
       ]) => MontyExceptionValue(type, msg, attrs);
-      final a = {'k': _str('v')};
-      expect(e('E', 'm') == e('E', 'm'), isTrue);
-      expect(e('E', 'm') == e('F', 'm'), isFalse);
-      expect(e('E', 'm') == e('E', 'n'), isFalse);
-      expect(e('E', null) == e('E', 'm'), isFalse);
+      final (a, aTwin) = twins(() => {'k': _str('v')});
+      final (plain, plainTwin) = twins(() => e('E', 'm'));
+      final withAttrs = e('E', 'm', a);
+      expect(plain == plainTwin, isTrue);
+      expect(plain == e('F', 'm'), isFalse);
+      expect(plain == e('E', 'n'), isFalse);
+      expect(e('E', null) == plain, isFalse);
+      expect(withAttrs == e('E', 'm', aTwin), isTrue);
       expect(
-        e('E', 'm', a) == e('E', 'm', {'k': _str('v')}),
-        isTrue,
-      );
-      expect(
-        e('E', 'm', a) == e('E', 'm', {'k': _str('w')}),
+        withAttrs == e('E', 'm', {'k': _str('w')}),
         isFalse,
       );
       expect(
-        e('E', 'm', a) == e('E', 'm', {'j': _str('v')}),
+        withAttrs == e('E', 'm', {'j': _str('v')}),
         isFalse,
       );
-      expect(e('E', 'm', a) == e('E', 'm'), isFalse);
-      expect(
-        e('E', 'm', a).hashCode,
-        e('E', 'm', {'k': _str('v')}).hashCode,
-      );
-      expect(e('E', 'm').hashCode, e('E', 'm').hashCode);
+      expect(withAttrs == plain, isFalse);
+      expect(withAttrs.hashCode, e('E', 'm', aTwin).hashCode);
+      expect(plain.hashCode, plainTwin.hashCode);
       expect(
         _varies([for (final c in 'ABCDEFGH'.split('')) e(c, 'm').hashCode]),
         isTrue,

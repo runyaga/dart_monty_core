@@ -10,6 +10,8 @@ import 'package:dart_monty_core/src/platform/monty_value.dart'
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:test/test.dart';
 
+import 'spec_values_support.dart';
+
 /// True where an integral double is also an `int` (dart2js).
 const bool _isJs = identical(0, 0.0);
 
@@ -93,14 +95,12 @@ void main() {
       expect(MontyValue.fromDart(MontyBigInt(BigInt.one)), isA<MontyBigInt>());
     });
     test('REQ-MontyBigInt-22: a raw BigInt throws ArgumentError', () {
+      final rejects = throwsA(isA<ArgumentError>());
       expect(
         () => MontyValue.fromDart(BigInt.parse('123456789012345678901234567')),
-        throwsA(isA<ArgumentError>()),
+        rejects,
       );
-      expect(
-        () => MontyValue.fromDart({'k': BigInt.zero}),
-        throwsA(isA<ArgumentError>()),
-      );
+      expect(() => MontyValue.fromDart({'k': BigInt.zero}), rejects);
     });
   });
 
@@ -116,13 +116,12 @@ void main() {
     });
     test('REQ-MontyBigInt-16: MontyBigInt(<value>)', () {
       final big = BigInt.parse('123456789012345678901234567890');
-      expect(MontyBigInt(big).toString(), 'MontyBigInt($big)');
-      expect(
-        MontyBigInt(big).toString(),
-        'MontyBigInt(123456789012345678901234567890)',
-      );
-      expect(MontyBigInt(-big).toString(), startsWith('MontyBigInt(-1234'));
-      expect(MontyBigInt(-big).toString(), endsWith('890)'));
+      final text = MontyBigInt(big).toString();
+      expect(text, 'MontyBigInt($big)');
+      expect(text, 'MontyBigInt(123456789012345678901234567890)');
+      final negative = MontyBigInt(-big).toString();
+      expect(negative, startsWith('MontyBigInt(-1234'));
+      expect(negative, endsWith('890)'));
     });
     test('REQ-MontyFloat-22: MontyFloat( + interpolated double + )', () {
       expect(const MontyFloat(1.5).toString(), 'MontyFloat(1.5)');
@@ -153,16 +152,19 @@ void main() {
   group('equality and hashing', () {
     test('REQ-MontyNone-6: equal exactly to another MontyNone', () {
       final none = _none();
+      const Object? asNull = null;
+      const Object asZero = 0;
+      const Object asFalse = false;
       expect(none == _none(), isTrue);
       expect(_none() == _none(), isTrue);
-      expect(none == (null as Object?), isFalse);
+      expect(none == asNull, isFalse);
       expect(none == const MontyBool(false), isFalse);
       expect(none == const MontyInt(0), isFalse);
       expect(none == const MontyFloat(0), isFalse);
       expect(none == MontyBigInt(BigInt.zero), isFalse);
       expect(none == const MontyString(''), isFalse);
-      expect(none == (0 as Object), isFalse);
-      expect(none == (false as Object), isFalse);
+      expect(none == asZero, isFalse);
+      expect(none == asFalse, isFalse);
       for (final other in _others()) {
         if (other is MontyNone) continue;
         expect(none == other, isFalse, reason: '$other');
@@ -170,8 +172,9 @@ void main() {
       }
     });
     test('REQ-MontyNone-7: hashCode equals null.hashCode', () {
-      expect(const MontyNone().hashCode, null.hashCode);
-      expect(MontyValue.fromDart(null).hashCode, null.hashCode);
+      final nullHash = null.hashCode;
+      expect(const MontyNone().hashCode, nullHash);
+      expect(MontyValue.fromDart(null).hashCode, nullHash);
     });
     test('REQ-MontyString-6: hashCode is the stored string hashCode', () {
       for (final s in ['', 'a', 'hello world', 'é\u{1F600}']) {
@@ -188,15 +191,15 @@ void main() {
         expect(a == other, isFalse, reason: '$other');
         expect(other == a, isFalse, reason: '$other');
       }
-      expect(a == (null as Object?), isFalse);
-      expect(a == ('...' as Object), isFalse);
+      const Object? asNull = null;
+      const Object asText = '...';
+      expect(a == asNull, isFalse);
+      expect(a == asText, isFalse);
     });
     test('REQ-MontyEllipsis-6: hashCode is the type object hashCode', () {
-      expect(const MontyEllipsis().hashCode, (MontyEllipsis).hashCode);
-      expect(
-        MontyValue.fromDart(const MontyEllipsis()).hashCode,
-        (MontyEllipsis).hashCode,
-      );
+      final typeHash = (MontyEllipsis).hashCode;
+      expect(const MontyEllipsis().hashCode, typeHash);
+      expect(MontyValue.fromDart(const MontyEllipsis()).hashCode, typeHash);
     });
   });
 
@@ -217,7 +220,8 @@ void main() {
       expect(const MontyFloat(-0).value.isNegative, isTrue);
     });
     test('REQ-MontyFloat-25: tagged text appends .0 only when needed', () {
-      Object? text(double v) => (MontyFloat(v).toJson()! as Map)['value'];
+      Object? text(double v) =>
+          castTo<Map<Object?, Object?>>(MontyFloat(v).toJson())['value'];
       expect(text(4), '4.0');
       expect(text(-4), '-4.0');
       expect(text(123456789), '123456789.0');
@@ -234,9 +238,11 @@ void main() {
       'REQ-MontyFloat-27: shared tagged maps are one object per projection',
       () {
         const f = MontyFloat(4);
-        final list = const MontyList([f, f]).toJson()! as List;
-        expect(list[0], isA<Map<String, Object?>>());
-        expect(identical(list[0], list[1]), isTrue);
+        final [first, second, ...] = castTo<List<Object?>>(
+          const MontyList([f, f]).toJson(),
+        );
+        expect(first, isA<Map<String, Object?>>());
+        expect(identical(first, second), isTrue);
 
         // A named tuple's dartValue children use the toJson projection.
         const nt = MontyNamedTuple(
@@ -244,21 +250,21 @@ void main() {
           fieldNames: ['a', 'b'],
           values: [f, f],
         );
-        final values = nt.dartValue['values']! as List;
-        expect(values[0], {'__type': 'float', 'value': '4.0'});
-        expect(identical(values[0], values[1]), isTrue);
+        final [tagged, again, ...] = nt.dartValue['values']! as List;
+        expect(tagged, {'__type': 'float', 'value': '4.0'});
+        expect(identical(tagged, again), isTrue);
 
         // The direct projection of the same MontyFloat stays a double, and the
         // two projections do not share memoised objects.
         const mixed = MontyList([f, nt, f]);
-        final out = mixed.dartValue as List;
-        expect(out[0], 4.0);
-        expect(out[2], 4.0);
-        final inner = ((out[1] as Map)['values']! as List)[0];
+        final [out0, out1, out2, ...] = mixed.dartValue as List;
+        expect(out0, 4.0);
+        expect(out2, 4.0);
+        final [inner, ...] = (out1 as Map)['values']! as List;
         expect(inner, {'__type': 'float', 'value': '4.0'});
-        final json = mixed.toJson()! as List;
-        expect(json[0], {'__type': 'float', 'value': '4.0'});
-        expect(identical(json[0], json[2]), isTrue);
+        final [json0, _, json2, ...] = castTo<List<Object?>>(mixed.toJson());
+        expect(json0, {'__type': 'float', 'value': '4.0'});
+        expect(identical(json0, json2), isTrue);
       },
     );
   });
@@ -269,13 +275,13 @@ void main() {
       () {
         final big = MontyBigInt(BigInt.one << 70);
         final list = MontyList([big, big]);
-        final json = list.toJson()! as List;
-        expect(json[0], {'__type': 'bigint', 'value': '${BigInt.one << 70}'});
-        expect(identical(json[0], json[1]), isTrue);
+        final [json0, json1, ...] = castTo<List<Object?>>(list.toJson());
+        expect(json0, {'__type': 'bigint', 'value': '${BigInt.one << 70}'});
+        expect(identical(json0, json1), isTrue);
 
-        final direct = list.dartValue as List;
-        expect(direct[0], BigInt.one << 70);
-        expect(identical(direct[0], direct[1]), isTrue);
+        final [direct0, direct1, ...] = list.dartValue as List;
+        expect(direct0, BigInt.one << 70);
+        expect(identical(direct0, direct1), isTrue);
 
         // dartValue first, then a named tuple (toJson form) of the same leaf.
         final nt = MontyNamedTuple(
@@ -283,10 +289,11 @@ void main() {
           fieldNames: const ['a'],
           values: [big],
         );
-        final mixed = MontyList([big, nt, big]).dartValue as List;
-        expect(mixed[0], BigInt.one << 70);
-        expect(mixed[2], BigInt.one << 70);
-        final inner = ((mixed[1] as Map)['values']! as List)[0];
+        final [mixed0, mixed1, mixed2, ...] =
+            MontyList([big, nt, big]).dartValue as List;
+        expect(mixed0, BigInt.one << 70);
+        expect(mixed2, BigInt.one << 70);
+        final [inner, ...] = (mixed1 as Map)['values']! as List;
         expect(inner, {'__type': 'bigint', 'value': '${BigInt.one << 70}'});
       },
     );
@@ -323,7 +330,8 @@ void main() {
         expect(converted, isA<MontyString>());
         expect((converted as MontyString).value, lone);
         final inList = MontyValue.fromDart([lone]) as MontyList;
-        expect((inList.items.single as MontyString).value, lone);
+        final [only] = inList.items;
+        expect((only as MontyString).value, lone);
         // Validation happens when the value is encoded.
         expect(() => ArenaWriter().add(converted), throwsArgumentError);
         expect(() => ArenaWriter().add(inList), throwsArgumentError);
@@ -337,28 +345,28 @@ void main() {
 
   group('dispatch of integral doubles (dart2js)', () {
     void check() {
+      final isFloat = isA<MontyFloat>();
+      final isInt = isA<MontyInt>();
       // An explicit MontyFloat always survives.
       final explicit = MontyValue.fromDart(const MontyFloat(3));
-      expect(explicit, isA<MontyFloat>());
+      expect(explicit, isFloat);
       expect((explicit as MontyFloat).value, 3.0);
       // The exceptions hold on every backend.
-      expect(MontyValue.fromDart(-0.0), isA<MontyFloat>());
-      expect(
-        (MontyValue.fromDart(-0.0) as MontyFloat).value.isNegative,
-        isTrue,
-      );
-      expect(MontyValue.fromDart(double.infinity), isA<MontyFloat>());
-      expect(MontyValue.fromDart(double.negativeInfinity), isA<MontyFloat>());
-      expect(MontyValue.fromDart(double.nan), isA<MontyFloat>());
-      expect(MontyValue.fromDart(1.5), isA<MontyFloat>());
-      expect(MontyValue.fromDart(7), isA<MontyInt>());
+      final negZero = MontyValue.fromDart(-0.0);
+      expect(negZero, isFloat);
+      expect((negZero as MontyFloat).value.isNegative, isTrue);
+      expect(MontyValue.fromDart(double.infinity), isFloat);
+      expect(MontyValue.fromDart(double.negativeInfinity), isFloat);
+      expect(MontyValue.fromDart(double.nan), isFloat);
+      expect(MontyValue.fromDart(1.5), isFloat);
+      expect(MontyValue.fromDart(7), isInt);
       // The integral double depends on the backend.
       final integral = MontyValue.fromDart(3.0);
       if (_isJs) {
-        expect(integral, isA<MontyInt>());
+        expect(integral, isInt);
         expect((integral as MontyInt).value, 3);
       } else {
-        expect(integral, isA<MontyFloat>());
+        expect(integral, isFloat);
       }
     }
 
