@@ -1373,8 +1373,7 @@ void main() {
         _resetOk,
       ]);
       final call = await s.feedStart('f()') as FunctionSnapshot;
-      final done =
-          await call.resume(ExternalReturnValue(box)) as MontyComplete;
+      final done = await call.resume(ExternalReturnValue(box)) as MontyComplete;
       Object? hostOf(MontyValue v) => switch (hostObjectOf(v)) {
         ClassInstance(:final value) => value,
         _ => null,
