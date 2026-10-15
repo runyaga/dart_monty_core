@@ -230,7 +230,7 @@ s  api_absent    bash tool/check_api_absent.sh
 # every public API change shows up as a diff of that file. Not `dart run`:
 # that builds the native crate through hook/build.dart, and this reads source
 # only.
-s  export_boundary  dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart
+s  export_boundary  dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --post-cutover
 # ...and its controls: a worker export, a proto type in a public signature, an
 # unlisted export and each kind of member change must fail it; a worker import
 # and a private member must not.

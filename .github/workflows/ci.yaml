@@ -242,7 +242,7 @@ jobs:
           # and the exported names and their public members equal
           # tool/export-golden.txt; then the check's own controls. Not `dart run`, which would build the
           # native crate through the build hook.
-          run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart
+          run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --post-cutover
           run dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test
           # Both of these catch things a Dart test PROVABLY cannot, and both ran
           # only on a laptop until now:
