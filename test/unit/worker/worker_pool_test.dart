@@ -11,6 +11,7 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_pool_oracle.g.dart';
 import '_scripted_channel.dart';
 
 /// A channel that answers every `Reset` with `Ok`, [resets] times.
@@ -125,14 +126,84 @@ void main() {
           reason: 'min $min, max $max',
         );
       }
-      expect(
-        () => WorkerPool.start(
-          const PoolOptions(maxCheckoutsPerWorker: 0),
-          starts.open,
-        ),
-        throwsArgumentError,
-      );
       expect(starts.all, isEmpty);
+    });
+
+    // Upstream's u32 extraction and `duration_from_secs`, before any
+    // worker starts (pydantic_monty pool.rs:1099-1122, 2169-2171), as the
+    // oracle recorded them (_pool_oracle.g.dart).
+    test("rejects what upstream's constructor refuses, with its message", () {
+      const negative = Duration(microseconds: -1000000);
+      final cases = {
+        'min_negative': const PoolOptions(minProcesses: -1),
+        'max_negative': const PoolOptions(maxProcesses: -1),
+        'min_negative_before_duration': const PoolOptions(
+          minProcesses: -1,
+          checkoutTimeout: negative,
+        ),
+        'checkout_timeout_negative': const PoolOptions(
+          checkoutTimeout: negative,
+        ),
+        'request_timeout_negative': const PoolOptions(requestTimeout: negative),
+        'feed_grace_negative': const PoolOptions(
+          feedDurationLimitGrace: negative,
+        ),
+        'turn_grace_negative': const PoolOptions(
+          turnDurationLimitGrace: negative,
+        ),
+        'recycle_negative': const PoolOptions(maxCheckoutsPerWorker: -1),
+        'recycle_too_large': const PoolOptions(
+          maxCheckoutsPerWorker: 0x100000000,
+        ),
+        'recycle_before_duration': const PoolOptions(
+          maxCheckoutsPerWorker: -1,
+          checkoutTimeout: negative,
+        ),
+        'duration_before_size': const PoolOptions(
+          minProcesses: 3,
+          maxProcesses: 2,
+          checkoutTimeout: negative,
+        ),
+      };
+      for (final MapEntry(key: id, value: options) in cases.entries) {
+        final outcome = poolOracle[id]!;
+        final text = outcome.substring(outcome.indexOf(': ') + 2);
+        expect(
+          () => WorkerPool.start(options, starts.open),
+          throwsA(
+            isA<ArgumentError>().having((e) => e.message, 'message', text),
+          ),
+          reason: id,
+        );
+      }
+      expect(starts.all, isEmpty);
+    });
+
+    test('maxCheckoutsPerWorker takes 0..2^32-1, as upstream', () async {
+      for (final (id, max) in [
+        ('recycle_zero', 0),
+        ('recycle_two', 2),
+        ('recycle_u32_max', 0xFFFFFFFF),
+      ]) {
+        final p = await pool(
+          PoolOptions(
+            minProcesses: 0,
+            maxProcesses: 1,
+            maxCheckoutsPerWorker: max,
+          ),
+        );
+        final ids = <int>[];
+        for (var i = 0; i < 3; i++) {
+          final [lease] = await acquireEach(p, 1);
+          ids.add(lease.workerId);
+          await lease.release();
+        }
+        expect(
+          'workers: ${[for (final w in ids) ids.indexOf(w)].join(', ')}',
+          poolOracle[id],
+          reason: id,
+        );
+      }
     });
 
     test('fails fast: cancels the starting, closes the ready', () async {
@@ -342,6 +413,20 @@ void main() {
       await next.release();
     });
 
+    test(
+      'maxCheckoutsPerWorker 0 retires a worker at its first release',
+      () async {
+        final p = await pool(
+          const PoolOptions(maxProcesses: 1, maxCheckoutsPerWorker: 0),
+        );
+        final [lease] = await acquireEach(p, 1);
+        await lease.release();
+        expect(starts.at(0).channel.kills, 1);
+        expect(p.liveWorkers, 0);
+        expect(p.idleWorkers, 0);
+      },
+    );
+
     test('a Reset that fails kills the worker and rethrows', () async {
       starts = FakeStarts(auto: false);
       final p = await pool(const PoolOptions(minProcesses: 0, maxProcesses: 1));
@@ -465,37 +550,57 @@ void main() {
       expect(p.liveWorkers, 0);
     });
 
-    test('fails a waiting acquire', () async {
-      final p = await pool(const PoolOptions(maxProcesses: 1));
-      final [held] = await acquireEach(p, 1);
-      final waiting = expectLater(
-        acquireEach(p, 1),
-        throwsA(isA<StateError>()),
-      );
-      await pump();
-      await p.close();
-      await waiting;
-      held.kill();
-      expect(p.liveWorkers, 0);
-    });
+    // Upstream's close takes only the idle workers: an acquisition already
+    // started keeps its pool and completes (pool.rs:128-164, 224-293), with
+    // the worker released after close (checkout.rs:1211, pool.rs:328), and
+    // its session runs code (oracle 'close_waiting_checkout'); one started
+    // after close is refused. A worker no acquire waits for is killed.
+    test(
+      'lets a waiting acquire finish on the worker released after close',
+      () async {
+        final p = await pool(const PoolOptions(maxProcesses: 1));
+        final [held] = await acquireEach(p, 1);
+        final waiting = acquireEach(p, 1);
+        await pump();
+        await p.close();
+        await expectLater(acquireEach(p, 1), throwsA(isA<StateError>()));
+        expect(poolOracle['close_waiting_checkout'], startsWith('value: '));
+        await held.release();
+        final [late] = await waiting;
+        expect(late.isReleased, isFalse);
+        expect(late.channel.isAlive, isTrue);
+        expect(p.liveWorkers, 1);
+        final same = late.workerId == held.workerId;
+        expect(
+          'worker: ${same ? 'the released one' : 'a new one'}',
+          poolOracle['close_waiting_worker'],
+        );
+        final channel = starts.only.channel;
+        expect(channel.requests.map((r) => r.whichKind()), [
+          pb.ParentRequest_Kind.reset,
+        ]);
+        await late.release();
+        expect(p.liveWorkers, 0);
+        expect(channel.kills, 1, reason: 'no acquire waits for it');
+      },
+    );
 
-    test('cancels a worker still starting', () async {
+    test("lets a worker still starting become its acquire's", () async {
       starts = FakeStarts(auto: false);
       final p = await pool(const PoolOptions(minProcesses: 0, maxProcesses: 1));
-      final acquired = expectLater(
-        acquireEach(p, 1),
-        throwsA(isA<StateError>()),
-      );
+      final acquired = acquireEach(p, 1);
       await pump();
       await p.close();
-      await acquired;
-      await pump();
       final start = starts.only;
-      expect(start.cancelled, isTrue);
-      expect(p.liveWorkers, 0);
+      expect(start.cancelled, isFalse);
       start.succeed();
-      await pump();
-      expect(start.channel.kills, 1, reason: 'killed on arrival');
+      final [lease] = await acquired;
+      final channel = start.channel;
+      expect(lease.channel, same(channel));
+      expect(channel.kills, 0);
+      await lease.release();
+      expect(channel.kills, 1);
+      expect(p.liveWorkers, 0);
     });
 
     test('is idempotent', () async {

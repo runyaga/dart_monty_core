@@ -28,13 +28,18 @@ sealed class MontySnapshot {
 /// Where a suspension is in the source: upstream's `SourceRange`.
 @immutable
 final class SourceRange {
-  /// A range of [filename] from byte [start] to byte [end] (exclusive).
+  /// A range of [filename] from byte [start] to byte [end] (exclusive), as
+  /// upstream's keyword-only constructor builds one.
   ///
   /// Throws [ArgumentError] when [start] or [end] is outside 0..2^32-1, as
   /// upstream's constructor takes `u32`s. A reversed range, or one past the
   /// end of its source, is accepted, as upstream accepts it. [filename] is
-  /// kept as given.
-  SourceRange(this.filename, this.start, this.end) {
+  /// kept as given; only a position decoded from a worker is cut.
+  SourceRange({
+    required this.filename,
+    required this.start,
+    required this.end,
+  }) {
     _checkOffset(start, 'start');
     _checkOffset(end, 'end');
   }
@@ -66,8 +71,10 @@ final class SourceRange {
   @override
   int get hashCode => Object.hash(filename, start, end);
 
+  /// Upstream's repr: the file name as it is, between single quotes.
   @override
-  String toString() => 'SourceRange($filename, $start, $end)';
+  String toString() =>
+      "SourceRange(filename='$filename', start=$start, end=$end)";
 }
 
 /// The largest offset a [SourceRange] holds: `u32::MAX`.
@@ -202,12 +209,22 @@ ArgumentError unknownExcType(String excType) => ArgumentError.value(
 
 /// The run completed with [output] (the public `MontyComplete` at the
 /// cutover).
+///
+/// As upstream's, [output] is converted on each access: every read gives a
+/// value of its own (a fresh list, say), and a failure to convert is thrown
+/// by the read. Two completions are equal only when identical.
 final class SessionComplete extends MontySnapshot {
-  /// The run completed with [output].
-  const SessionComplete(this.output);
+  /// The run completed with the value its argument gives on each read.
+  const SessionComplete(this._decode);
+
+  final MontyValue Function() _decode;
 
   /// The value of the snippet's last expression; `None` for a statement.
-  final MontyValue output;
+  MontyValue get output => _decode();
+
+  /// Upstream's repr, with the value's own [toString] for its repr.
+  @override
+  String toString() => 'MontyComplete(output=$output)';
 }
 
 /// How a suspension is resumed: the session that owns it.

@@ -266,6 +266,11 @@ s  worker_mirror_t python3 -I tool/test_check_worker_mirror.py
 # python3.12 plus network once for the cached .venv-oracle; otherwise SKIP
 # (visible), never PASS. CI's `upstream-pin` job runs it with ORACLE_REQUIRE=1.
 s  oracle_check  bash tool/check_oracles.sh
+# The zone names the parent checks a checkout's IANA name against, before any
+# worker is taken, must be jiff-tzdb's at the version native/worker/Cargo.lock
+# pins: the copy every worker resolves names with. Offline (the crate from
+# Cargo's registry when present); CI's `upstream-pin` job runs `--online`.
+s  tz_names      python3 -I tool/generate_tz_names.py --check
 # --deep, not the fast path. The fast path only checks that each excluded PATH
 # still exists; --deep strips the exclusions, re-runs dcm, and catches an entry
 # that names a real file and hides NOTHING -- which is how a stale exclusion
@@ -568,7 +573,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=58
+EXPECT_STEPS=59
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

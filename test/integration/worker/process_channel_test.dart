@@ -220,26 +220,47 @@ void main() {
       expect(crash.detail, contains('FrameTooLargeException'));
     });
 
-    test('a frame that is not a ChildEvent desynchronises', () async {
+    // A whole frame whose body does not decode is a protocol violation, not
+    // a lost stream: upstream's `FrameError::Decode` arm (checkout.rs
+    // 1682-1691).
+    test('a frame that is not a ChildEvent is a protocol violation', () async {
       final channel = await _spawn('garbage');
       final crash = await _crashOf(channel.turn(_configure));
-      expect(crash.cause, CrashCause.vanished);
-      expect(crash.detail, contains('worker output unreadable'));
+      expect(crash.cause, CrashCause.protocol);
+      expect(
+        crash.message,
+        startsWith(
+          'monty worker protocol error: invalid payload from worker: ',
+        ),
+      );
+      expect((crash.timedOut, crash.exitCode), (false, null));
+      expect(channel.isAlive, isFalse);
+      await expectLater(channel.turn(_configure), throwsA(same(crash)));
     });
 
-    test('a frame upstream rejects desynchronises: worker killed', () async {
-      // The scenario's frame, which package:protobuf alone accepts.
-      expect(
-        pb.ChildEvent.fromBuffer([
-          0x32, 8, 0x12, 6, 0x12, 4, 0x42, 2, 0xc3, 0x28, //
-        ]).complete.values.nodes,
-        hasLength(1),
-      );
-      final channel = await _spawn('upstream-rejects');
-      final crash = await _crashOf(channel.turn(_configure));
-      expect(crash.cause, CrashCause.vanished);
-      expect(crash.detail, contains('FrameDecodeException'));
-    });
+    test(
+      'a frame upstream rejects is a protocol violation: worker killed',
+      () async {
+        // The scenario's frame, which package:protobuf alone accepts.
+        expect(
+          pb.ChildEvent.fromBuffer([
+            0x32, 8, 0x12, 6, 0x12, 4, 0x42, 2, 0xc3, 0x28, //
+          ]).complete.values.nodes,
+          hasLength(1),
+        );
+        final channel = await _spawn('upstream-rejects');
+        final crash = await _crashOf(channel.turn(_configure));
+        expect(crash.cause, CrashCause.protocol);
+        expect(
+          crash.message,
+          startsWith(
+            'monty worker protocol error: invalid payload from worker: ',
+          ),
+        );
+        expect(crash.message, isNot(contains('Exception')));
+        expect(channel.isAlive, isFalse);
+      },
+    );
 
     test('stderr tail: the last 4 KiB, ending with the last line', () async {
       final channel = await _spawn('stderr');
@@ -345,9 +366,15 @@ void main() {
       await expectLater(channel.turn(_configure), throwsStateError);
     });
 
+    // Upstream's SHUTDOWN_EXIT_GRACE, 500 ms (monty-pool pool.rs:184-186).
     test('a worker that ignores Shutdown is killed after the grace', () async {
       final channel = await _spawn('ignore-shutdown');
+      final clock = Stopwatch()..start();
       await channel.close();
+      expect(
+        clock.elapsedMilliseconds,
+        allOf(greaterThanOrEqualTo(450), lessThan(1500)),
+      );
       if (!Platform.isWindows) {
         expect(await channel.exitCode, -ProcessSignal.sigkill.signalNumber);
       }

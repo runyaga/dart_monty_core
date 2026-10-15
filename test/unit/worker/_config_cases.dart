@@ -70,6 +70,35 @@ final Map<String, SessionConfig> configCases = {
   'timezone_offset_low': _policy(
     const OsPolicy(fixedTimezone: TimeZone(-86400)),
   ),
+  'timezone_offset_i32_high': _policy(
+    const OsPolicy(fixedTimezone: TimeZone(0x80000000)),
+  ),
+  'timezone_offset_i32_low': _policy(
+    const OsPolicy(fixedTimezone: TimeZone(-0x80000001)),
+  ),
+  'timezone_offset_i32_max': _policy(
+    const OsPolicy(fixedTimezone: TimeZone(0x7fffffff)),
+  ),
+  'timezone_offset_name_surrogate': _policy(
+    const OsPolicy(fixedTimezone: TimeZone(0, name: 'a\u{d800}')),
+  ),
+  'timezone_offset_overflow_before_name': _policy(
+    const OsPolicy(fixedTimezone: TimeZone(0x80000000, name: 'a\u{d800}')),
+  ),
+  'timezone_etc_unknown': _policy(const OsPolicy(timezone: 'Etc/Unknown')),
+  'timezone_too_long': _policy(OsPolicy(timezone: 'Europe/${'a' * 94}')),
+  'timezone_dot_part': _policy(
+    const OsPolicy(timezone: 'Europe/../Europe/London'),
+  ),
+  'timezone_empty_part': _policy(const OsPolicy(timezone: 'Europe//London')),
+  'timezone_space': _policy(const OsPolicy(timezone: 'Europe/London ')),
+  'timezone_not_a_zone_file': _policy(const OsPolicy(timezone: 'zone.tab')),
+  'timezone_surrogate': _policy(
+    const OsPolicy(timezone: 'Europe/London\u{d800}'),
+  ),
+  'timezone_surrogates': _policy(
+    const OsPolicy(timezone: 'x\u{dc00}\u{dc01}y'),
+  ),
   'sleep_unknown': _policy(const OsPolicy(sleep: 'bad')),
   'sleep_max_negative': _policy(const OsPolicy(sleepSystemMax: _negative)),
   'sleep_max_with_zero': _policy(
@@ -83,6 +112,7 @@ final Map<String, SessionConfig> configCases = {
   'seed_nan': _seed(const RandomSeed.float(double.nan)),
   'seed_inf': _seed(const RandomSeed.float(double.infinity)),
   'seed_negative_inf': _seed(const RandomSeed.float(double.negativeInfinity)),
+  'seed_str_surrogate': _seed(const RandomSeed.string('ab\u{dc00}')),
   'type_check_full': const SessionConfig(typeCheck: true),
   'type_check_concise': const SessionConfig(
     typeCheck: true,
@@ -121,6 +151,18 @@ final Map<String, SessionConfig> configCases = {
     OsPolicy(fixedDatetime: _frozen, timezone: 'UTC'),
   ),
   'frozen_zone_utc': _policy(OsPolicy(fixedDatetime: _frozen, timezone: 'utc')),
+  'frozen_named_zone_case': _policy(
+    OsPolicy(fixedDatetime: _frozen, timezone: 'europe/LONDON'),
+  ),
+  'frozen_zone_utc_mixed_case': _policy(
+    OsPolicy(fixedDatetime: _frozen, timezone: 'uTc'),
+  ),
+  'frozen_zone_factory': _policy(
+    OsPolicy(fixedDatetime: _frozen, timezone: 'Factory'),
+  ),
+  'frozen_zone_link': _policy(
+    OsPolicy(fixedDatetime: _frozen, timezone: 'Europe/Kiev'),
+  ),
   'datetime_call_host': _policy(const OsPolicy(datetime: 'call_host')),
   'seed_int': _seed(RandomSeed.integer(BigInt.from(42))),
   'seed_negative_int': _seed(RandomSeed.integer(BigInt.from(-5))),
@@ -194,17 +236,14 @@ final Map<String, SessionConfig> sequenceCases = {
 
 /// Cases whose outcome is recorded apart from upstream's, with the reason:
 /// the kind still matches, and the message carries upstream's text.
-const Map<String, String> configDivergences = {
-  'timezone_unknown':
-      'an IANA name is resolved by the worker, which refuses Configure with '
-      "its own message around upstream's",
-};
+const Map<String, String> configDivergences = {};
 
 /// Upstream's error kinds for a refused setting, all an [ArgumentError].
 const List<String> _argumentKinds = [
   'ValueError: ',
   'OverflowError: ',
   'TypeError: ',
+  'UnicodeEncodeError: ',
 ];
 
 /// The outcome core reaches for [config] and [code], in the oracle's form.
@@ -261,7 +300,7 @@ void configOracleTests(String label, Future<MontyPool> Function() start) {
   test('every oracle case has a Dart form ($label)', () {
     expect(configCases.keys.toSet(), configOracle.keys.toSet());
     // The floor: a regeneration that lost cases must not pass as green.
-    expect(configOracle.length, greaterThanOrEqualTo(66));
+    expect(configOracle.length, greaterThanOrEqualTo(84));
   });
 
   for (final MapEntry(key: id, value: (:code, :outcome))

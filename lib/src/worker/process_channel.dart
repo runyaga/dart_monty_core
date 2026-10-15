@@ -59,8 +59,9 @@ final class ProcessChannel implements MontyChannel {
   /// forever, so the wait is bounded.
   static const Duration pipeDrainGrace = Duration(seconds: 1);
 
-  /// How long [close] waits for the worker to exit after `Shutdown`.
-  static const Duration shutdownGrace = Duration(seconds: 2);
+  /// How long [close] waits for the worker to exit after `Shutdown`:
+  /// upstream's `SHUTDOWN_EXIT_GRACE`.
+  static const Duration shutdownGrace = Duration(milliseconds: 500);
 
   /// How many wire bytes of completed, undelivered frames the channel holds
   /// before it stops reading the worker's stdout.
@@ -203,7 +204,7 @@ final class ProcessChannel implements MontyChannel {
   Future<pb.ChildEvent> _readTurn(PrintHandler? onPrint) async {
     (Object, StackTrace)? printFailure;
     for (;;) {
-      final event = await _events.next();
+      final event = await _nextEvent(this);
       if (event == null) throw await _crashed();
       final kind = event.whichKind();
       if (kind == pb.ChildEvent_Kind.fatalError) {
@@ -290,6 +291,23 @@ final class ProcessChannel implements MontyChannel {
     _exited = true;
     _live.remove(this);
     await _events.endWithin(pipeDrainGrace);
+  }
+}
+
+/// [channel]'s next event, or null once none can arrive. A whole frame
+/// that does not decode means the worker misbehaved, not that it died
+/// (upstream's `FrameError::Decode` arm): a protocol violation, and the
+/// worker is discarded.
+Future<pb.ChildEvent?> _nextEvent(ProcessChannel channel) async {
+  try {
+    return await channel._events.next();
+  } on FrameDecodeException catch (error) {
+    final crash = channel._crash ??= crashedError(
+      CrashCause.protocol,
+      detail: 'invalid payload from worker: ${error.reason}',
+    );
+    channel.kill();
+    throw crash;
   }
 }
 
@@ -438,6 +456,9 @@ final class EventQueue {
   final _closed = Completer<void>();
   Completer<void>? _wake;
   Object? _error;
+
+  /// The frame that arrived whole but did not decode, if one did.
+  FrameDecodeException? _invalid;
   bool _ended = false;
   bool _cancelled = false;
   int _readAhead = 0;
@@ -465,7 +486,9 @@ final class EventQueue {
   /// The next event, or null once none can arrive.
   ///
   /// Events decoded before the output ended are still returned; after
-  /// [cancel], none are.
+  /// [cancel], none are. A whole frame that did not decode is thrown as its
+  /// [FrameDecodeException] once the events before it are taken; nothing
+  /// after it is read.
   Future<pb.ChildEvent?> next() async {
     for (;;) {
       if (_cancelled) return null;
@@ -476,6 +499,8 @@ final class EventQueue {
 
         return event;
       }
+      final invalid = _invalid;
+      if (invalid != null) throw invalid;
       if (_ended || _error != null) return null;
       final wake = Completer<void>();
       _wake = wake;
@@ -540,6 +565,10 @@ final class EventQueue {
       }
       _peakReadAhead = math.max(_peakReadAhead, _readAhead);
       _pauseIfFull(completedFrame: bodies.isNotEmpty);
+    } on FrameDecodeException catch (error) {
+      // The stream itself is intact; the worker is not trusted further.
+      _invalid = error;
+      _desync(error);
     } on FrameException catch (error) {
       _desync(error);
     }

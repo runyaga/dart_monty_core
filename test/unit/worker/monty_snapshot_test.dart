@@ -11,8 +11,10 @@ import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/arena_reader.dart' show hostObjectOf;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
@@ -167,7 +169,10 @@ void main() {
       expect(call.isOsFunction, isFalse);
       expect(call.allowEagerAwait, isFalse);
       expect(call.objectId, isNull);
-      expect(call.position, SourceRange('<python-input-0>', 4, 13));
+      expect(
+        call.position,
+        SourceRange(filename: '<python-input-0>', start: 4, end: 13),
+      );
       expect(call.scriptName, 'job.py');
       final done = await call.resume(const ExternalReturnValue(MontyInt(5)));
       expect(done, isA<SessionComplete>());
@@ -199,7 +204,10 @@ void main() {
       ]);
       final first = await s.feedStart('t = 1 + missing') as NameLookupSnapshot;
       expect(first.variableName, 'missing');
-      expect(first.position, SourceRange('<python-input-0>', 8, 15));
+      expect(
+        first.position,
+        SourceRange(filename: '<python-input-0>', start: 8, end: 15),
+      );
       final second =
           await first.resume(value: const MontyInt(41)) as NameLookupSnapshot;
       final lookup = itemAt(ch.requests, 2).resumeNameLookup;
@@ -525,11 +533,15 @@ void main() {
     });
 
     test('SourceRange is a value', () {
-      final a = SourceRange('<string>', 1, 2);
-      expect(a, SourceRange('<string>', 1, 2));
-      expect(a.hashCode, SourceRange('<string>', 1, 2).hashCode);
-      expect(a, isNot(SourceRange('<string>', 1, 3)));
-      expect('$a', 'SourceRange(<string>, 1, 2)');
+      final a = SourceRange(filename: '<string>', start: 1, end: 2);
+      expect(a, SourceRange(filename: '<string>', start: 1, end: 2));
+      expect(
+        a.hashCode,
+        SourceRange(filename: '<string>', start: 1, end: 2).hashCode,
+      );
+      expect(a, isNot(SourceRange(filename: '<string>', start: 1, end: 3)));
+      // Upstream's repr (exceptions.rs:613-620): the name as it is, quoted.
+      expect('$a', "SourceRange(filename='<string>', start=1, end=2)");
     });
   });
 
@@ -670,7 +682,10 @@ void main() {
       expect(itemAt(ch.requests, 2).resumeCall.result.future, 1);
       final both = await b.resume(const ExternalFuture()) as FutureSnapshot;
       expect(both.pendingCallIds, [1, 2]);
-      expect(both.position, SourceRange('<python-input-0>', 10, 20));
+      expect(
+        both.position,
+        SourceRange(filename: '<python-input-0>', start: 10, end: 20),
+      );
       final rest =
           await both.resume({1: const ExternalReturnValue(MontyInt(10))})
               as FutureSnapshot;
@@ -1248,26 +1263,139 @@ void main() {
           reason: id,
         );
         expect(
-          () => SourceRange('f', _n(start), _n(end)),
+          () => SourceRange(filename: 'f', start: _n(start), end: _n(end)),
           throwsArgumentError,
           reason: id,
         );
       }
       // The bounds, and a reversed range, are accepted.
-      expect(
-        workerClassOracle['range_u32_max'],
-        startsWith('value: SourceRange('),
-      );
       final u32Max = _n(0xFFFFFFFF);
-      final max = SourceRange('f', u32Max, u32Max);
-      expect((max.start, max.end), (0xFFFFFFFF, 0xFFFFFFFF));
-      expect(workerClassOracle['range_reversed'], startsWith('value: '));
-      final reversed = SourceRange('f', _n(5), _n(1));
-      expect((reversed.start, reversed.end), (5, 1));
+      final max = SourceRange(filename: 'f', start: u32Max, end: u32Max);
+      expect('value: $max', workerClassOracle['range_u32_max']);
+      final reversed = SourceRange(filename: 'f', start: _n(5), end: _n(1));
+      expect('value: $reversed', workerClassOracle['range_reversed']);
+    });
+
+    // Upstream converts MontyComplete.output on each access, and compares
+    // completions by identity (snapshot.rs:1360-1379).
+    test('MontyComplete: output decoded on each access; identity ==', () async {
+      final (s, _) = await _session([
+        for (var i = 0; i < 2; i++) answer([_list12()]),
+      ]);
+      final [done, again] = [
+        for (var i = 0; i < 2; i++)
+          await s.feedStart('[1, 2]') as SessionComplete,
+      ];
+      expect(
+        _py(_sameEachRead(() => done.output)),
+        workerClassOracle['complete_output_same_object'],
+      );
+      final [first, second] = [for (var i = 0; i < 2; i++) done.output];
+      expect(
+        _py(first == second),
+        workerClassOracle['complete_output_equal'],
+      );
+      expect(_py(done == done), workerClassOracle['complete_equal_self']);
+      expect(_py(done == again), workerClassOracle['complete_equal_other']);
+      expect(
+        'value: MontyComplete(output=${_listRepr(first)})',
+        workerClassOracle['complete_repr'],
+      );
+      // The value's own text is Dart's toString, not a Python repr.
+      expect('$done', 'MontyComplete(output=$first)');
+    });
+
+    // A registered host object is the wrapped object on every read, as
+    // upstream's store resolves it (decode.rs:146-148), the session's close
+    // notwithstanding.
+    test('MontyComplete: a host object resolves on every read, after close '
+        'too', () async {
+      final box = ClassInstance(
+        Object(),
+        classType: ClassType(const HostClass('Box')),
+      );
+      final writer = ArenaWriter(objects: HostObjects());
+      final root = writer.add(box);
+      final (s, _) = await _session([
+        answer([_call('f', 1)]),
+        answer([
+          pb.ChildEvent(
+            complete: pb.Complete(values: writer.arena, value: root),
+          ),
+        ]),
+        _resetOk,
+      ]);
+      final call = await s.feedStart('f()') as FunctionSnapshot;
+      final done =
+          await call.resume(ExternalReturnValue(box)) as SessionComplete;
+      Object? hostOf(MontyValue v) => switch (hostObjectOf(v)) {
+        ClassInstance(:final value) => value,
+        _ => null,
+      };
+      final wrapped = box.value;
+      final before = hostOf(done.output);
+      await s.close();
+      final after = hostOf(done.output);
+      for (final read in [before, after]) {
+        expect(read, same(wrapped));
+      }
+    });
+
+    // Upstream's pool decodes every suspension's position through
+    // SourceRange::new, which cuts the file name to 256 UTF-8 bytes on a
+    // character boundary (checkout.rs:1736-1821, exceptions.rs:777-792).
+    test('a decoded position keeps at most 256 bytes of its file name, on '
+        'every suspension kind', () async {
+      // 1 + 2 * 200 bytes; 'x' and 127 'é' is 255, the next 'é' would pass.
+      final long = 'x${'é' * 200}';
+      final cut = 'x${'é' * 127}';
+      final [atCall, atOs, atLookup, atFutures] = [
+        for (var i = 0; i < 4; i++)
+          pb.SourceRange(filename: long, start: 1, end: 2),
+      ];
+      final (s, _) = await _session([
+        answer([_call('f', 1, position: atCall)]),
+        answer([
+          _os(pb.OsCall(callId: 2, readText: '/x', position: atOs)),
+        ]),
+        answer([
+          pb.ChildEvent(
+            nameLookup: pb.NameLookup(name: 'n', position: atLookup),
+          ),
+        ]),
+        answer([
+          pb.ChildEvent(
+            resolveFutures: pb.ResolveFutures(
+              pendingCallIds: [1],
+              position: atFutures,
+            ),
+          ),
+        ]),
+      ]);
+      final call = await s.feedStart('f(1)') as FunctionSnapshot;
+      final os = await call.resume(const ExternalFuture()) as FunctionSnapshot;
+      final lookup =
+          await os.resume(const ExternalReturnValue(MontyNone()))
+              as NameLookupSnapshot;
+      final futures =
+          await lookup.resume(value: const MontyInt(1)) as FutureSnapshot;
+      for (final (kind, position) in [
+        ('function call', call.position),
+        ('os call', os.position),
+        ('name lookup', lookup.position),
+        ('futures', futures.position),
+      ]) {
+        expect(
+          position,
+          SourceRange(filename: cut, start: 1, end: 2),
+          reason: kind,
+        );
+        expect(utf8.encode(position.filename), hasLength(255), reason: kind);
+      }
     });
 
     test('a hand-built SourceRange keeps its file name whole', () {
-      final range = SourceRange('é' * 200, 0, 0);
+      final range = SourceRange(filename: 'é' * 200, start: 0, end: 0);
       expect(
         'value: ${utf8.encode(range.filename).length}',
         workerClassOracle['range_long_filename_bytes'],
@@ -1293,6 +1421,16 @@ Map<String, MontyValue> _changed(
   change(first);
 
   return again;
+}
+
+/// A completion with the value `[1, 2]`.
+pb.ChildEvent _list12() {
+  final writer = ArenaWriter();
+  final root = writer.add(const MontyList([MontyInt(1), MontyInt(2)]));
+
+  return pb.ChildEvent(
+    complete: pb.Complete(values: writer.arena, value: root),
+  );
 }
 
 /// [b] as Python shows a bool, as an outcome.
@@ -1323,6 +1461,13 @@ pb.ChildEvent _callKw() {
   }
 
   return pb.ChildEvent(functionCall: call..values = writer.arena);
+}
+
+/// [value], a list of ints, as Python's `repr` of it.
+String _listRepr(MontyValue value) {
+  final items = (value as MontyList).items;
+
+  return '[${[for (final item in items) (item as MontyInt).value].join(', ')}]';
 }
 
 /// [kwargs] of ints as Python's `repr` of the dict.

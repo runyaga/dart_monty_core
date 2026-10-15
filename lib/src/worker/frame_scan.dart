@@ -76,7 +76,7 @@ abstract final class FrameScan {
     }
     if (event.hasFunctionCall() && event.functionCall.hasPosition()) {
       final position = event.functionCall.position;
-      position.filename = _cutFilename(position.filename);
+      position.filename = cutSourceFilename(position.filename);
     }
 
     return event;
@@ -92,8 +92,8 @@ Uint8List _withoutUnknowns(Uint8List body, _Scan scan) => scan.unknowns == 0
 const int _maxFilenameLength = 256;
 
 /// [name] cut to at most [_maxFilenameLength] bytes of UTF-8 on a character
-/// boundary, as `SourceRange::new` cuts the call position it decodes.
-String _cutFilename(String name) {
+/// boundary, as `SourceRange::new` cuts every position it decodes.
+String cutSourceFilename(String name) {
   var bytes = 0;
   var units = 0;
   while (units < name.length) {

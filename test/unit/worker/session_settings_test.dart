@@ -11,6 +11,7 @@ import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/tz_names.g.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -297,6 +298,30 @@ void main() {
     });
   });
 
+  // The worker's bundled tz database (jiff-tzdb, tool/generate_tz_names.py),
+  // which decides where the host has no zoneinfo directory: the web.
+  group('the bundled zone names', () {
+    test('every listed name, in any ASCII case; nothing else', () {
+      for (final name in tzNames) {
+        expect(isBundledZone(name), isTrue, reason: name);
+        expect(isBundledZone(name.toUpperCase()), isTrue, reason: name);
+      }
+      for (final name in ['posixrules', 'Etc/Unknown', 'zone.tab', 'Q/Z']) {
+        expect(isBundledZone(name), isFalse, reason: name);
+      }
+    });
+
+    // jiff's `special_time_zone`, before any database.
+    test('UTC in any ASCII case is known; Etc/Unknown is not', () {
+      for (final name in ['UTC', 'utc', 'uTc']) {
+        expect(isKnownZone(name), isTrue, reason: name);
+      }
+      for (final name in ['Etc/Unknown', 'etc/UNKNOWN']) {
+        expect(isKnownZone(name), isFalse, reason: name);
+      }
+    });
+  });
+
   group('RandomSeed', () {
     test('each kind keeps its arm, on every compiler', () {
       // On dart2js 1.0 and 1 are one value; the constructor says which.
@@ -342,13 +367,39 @@ void main() {
       expect(seed, RandomSeed.bytes(Uint8List.fromList([1, 2])));
     });
 
+    // Upstream's RandomSeed is a TypedDict: dict equality, so an int and a
+    // float seed of equal value are equal (pydantic_monty __init__.py:188).
+    test('an integer and a float seed of equal value are equal', () {
+      for (final (n, f) in [
+        (BigInt.one, 1.0),
+        (BigInt.zero, -0.0),
+        (-BigInt.two.pow(70), -1180591620717411303424.0),
+      ]) {
+        final integer = RandomSeed.integer(n);
+        final float = RandomSeed.float(f);
+        expect(integer, float);
+        expect(float, integer);
+        expect(integer.hashCode, float.hashCode);
+        // The wire still carries the kind the caller chose.
+        expect(integer.toProto().hasInt_1(), isTrue);
+        expect(float.toProto().hasFloat(), isTrue);
+      }
+      for (final (n, f) in [
+        (BigInt.one, 1.5),
+        (BigInt.two.pow(53) + BigInt.one, 9007199254740992.0),
+        (BigInt.zero, double.nan),
+      ]) {
+        expect(RandomSeed.integer(n) == RandomSeed.float(f), isFalse);
+      }
+    });
+
     test('== and hashCode: by kind and value', () {
       RandomSeed bytesOf(List<int> b) =>
           RandomSeed.bytes(Uint8List.fromList(b));
       const float = RandomSeed.float(1);
       final one = RandomSeed.integer(BigInt.one);
       final otherOne = RandomSeed.integer(BigInt.one);
-      expect(one == float, isFalse);
+      expect(one == const RandomSeed.float(2), isFalse);
       expect(one, otherOne);
       expect(one.hashCode, otherOne.hashCode);
       final bytes = bytesOf([1]);
@@ -357,6 +408,11 @@ void main() {
       expect(bytes.hashCode, otherBytes.hashCode);
       expect(bytes == bytesOf([2]), isFalse);
       expect(const RandomSeed.string('1') == float, isFalse);
+      final [text, sameText] = [
+        for (var i = 0; i < 2; i++) RandomSeed.string(String.fromCharCode(97)),
+      ];
+      expect(text, sameText);
+      expect(text.hashCode, sameText.hashCode);
     });
   });
 

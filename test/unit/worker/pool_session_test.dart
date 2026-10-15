@@ -1304,7 +1304,7 @@ void main() {
     test('twice during a turn: the second close is a no-op, the slot is '
         'released once', () async {
       final ch = ScriptedChannel([_configureOk, hangAfter([])]);
-      final fresh = ScriptedChannel([_configureOk, _resetOk]);
+      final fresh = ScriptedChannel([_configureOk, _resetOk, _configureOk]);
       final pool = await _pool(Workers([ch, fresh]));
       addTearDown(pool.close);
       // Each checkout takes the slot anew, on purpose.
@@ -1334,21 +1334,18 @@ void main() {
       await pumpEventQueue();
       expect(second, isFalse);
       expect(pool.liveWorkers, 1);
-      // The waiting checkout is refused once the pool closes.
-      final refused = expectLater(
-        waiting,
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            'the monty '
-                'pool is closed',
-          ),
-        ),
-      );
+      // The waiting checkout outlives the pool's close, as upstream's does,
+      // and gets the worker released after it, reset.
       await pool.close();
-      await refused;
+      await pumpEventQueue();
+      expect(second, isFalse);
       await next.close();
+      final late = await waiting;
+      expect(second, isTrue);
+      expect(pool.liveWorkers, 1);
+      await late.close();
+      expect(fresh.kills, 1, reason: 'a closed pool keeps no idle worker');
+      expect(pool.liveWorkers, 0);
     });
   });
 
@@ -2316,29 +2313,58 @@ void main() {
       });
     }
 
-    test('one the worker refuses: ArgumentError, the slot freed', () async {
-      const refusal =
-          "protocol violation: invalid os_policy: unknown timezone 'Q/Z'";
-      final ch = ScriptedChannel([
-        answer([raised('RuntimeError', refusal)]),
-      ]);
-      final pool = await _pool(Workers([ch]));
+    // Upstream refuses an unknown zone while parsing the checkout's
+    // arguments (os_policy.rs:144-150), before a worker is taken.
+    test('an unknown zone name: ArgumentError, no worker taken', () async {
+      final workers = Workers([]);
+      final pool = await _pool(workers);
       addTearDown(pool.close);
       await expectLater(
         pool.checkout(
           options: const SessionConfig(osPolicy: OsPolicy(timezone: 'Q/Z')),
         ),
         throwsA(
-          isA<ArgumentError>().having((e) => e.message, 'message', refusal),
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            "unknown timezone 'Q/Z'",
+          ),
         ),
       );
-      expect(ch.kills, greaterThan(0));
+      expect(workers.started, isEmpty);
       expect(pool.liveWorkers, 0);
-      expect(
-        onlyItem(ch.requests).configure.osPolicy.timezone.named,
-        'Q/Z',
-      );
     });
+
+    // An Error reply to Configure is raised as any error is (upstream's
+    // PoolError::Runtime, checkout.rs:773-776), and the worker discarded.
+    test(
+      'one the worker refuses: raised as converted, the slot freed',
+      () async {
+        const refusal =
+            "protocol violation: invalid os_policy: unknown timezone 'Q/Z'";
+        final ch = ScriptedChannel([
+          answer([raised('RuntimeError', refusal)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        await expectLater(
+          pool.checkout(
+            options: const SessionConfig(
+              osPolicy: OsPolicy(timezone: 'Europe/London'),
+            ),
+          ),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.display('type-msg'),
+              'display',
+              'RuntimeError: $refusal',
+            ),
+          ),
+        );
+        expect(ch.kills, greaterThan(0));
+        expect(pool.liveWorkers, 0);
+      },
+    );
   });
 
   group('type check', () {

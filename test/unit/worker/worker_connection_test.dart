@@ -382,7 +382,7 @@ void main() {
       );
     });
 
-    test('a reply frame upstream rejects is a vanished crash, after the '
+    test('a reply frame upstream rejects is a protocol violation, after the '
         'Prints before it', () async {
       final port = _FakePort();
       final c = _accept(port);
@@ -409,7 +409,10 @@ void main() {
       await expectLater(
         done,
         throwsA(
-          _crashed(CrashCause.vanished, contains('FrameDecodeException')),
+          _crashed(
+            CrashCause.protocol,
+            startsWith('invalid payload from worker: '),
+          ),
         ),
       );
       expect(prints, ['before']);
@@ -521,6 +524,20 @@ void main() {
       await c.close();
       expect(port.terminated, 1);
       expect(c.isAlive, isFalse);
+    });
+
+    // Upstream's pool waits SHUTDOWN_EXIT_GRACE, 500 ms, for a closed idle
+    // worker (monty-pool pool.rs:184-186).
+    test("the default grace is upstream's 500 ms", () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final clock = Stopwatch()..start();
+      await c.close();
+      expect(
+        clock.elapsedMilliseconds,
+        allOf(greaterThanOrEqualTo(450), lessThan(1500)),
+      );
+      expect(port.terminated, 1);
     });
 
     test('during a turn kills it', () async {

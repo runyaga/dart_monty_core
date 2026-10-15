@@ -14,7 +14,11 @@ import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show surrogateEncodeError;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/tz_names.g.dart';
+import 'package:dart_monty_core/src/worker/zone_database.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:meta/meta.dart';
 
@@ -44,15 +48,16 @@ final class OsPolicy {
   /// the third form.
   final String? datetime;
 
-  /// One frozen instant. Unless [timezone] or [fixedTimezone] says
-  /// otherwise, it also sets the sandbox's zone: UTC for a UTC [DateTime],
-  /// else the [DateTime]'s offset and zone name, which are the platform's.
-  /// On the web a [DateTime] holds whole milliseconds.
+  /// One frozen instant, to the microsecond. Unless [timezone] or
+  /// [fixedTimezone] says otherwise, it also sets the sandbox's zone: UTC
+  /// for a UTC [DateTime], else the [DateTime]'s offset and zone name, which
+  /// are the platform's.
   final DateTime? fixedDatetime;
 
   /// The sandbox's zone: `'utc'` or an IANA name such as `'Europe/London'`,
-  /// which the worker's zone database resolves. [fixedTimezone] is the third
-  /// form.
+  /// matched ignoring ASCII case against the worker's zone database (the
+  /// host's zoneinfo on native, else the copy every worker holds).
+  /// [fixedTimezone] is the third form.
   final String? timezone;
 
   /// A fixed offset as the sandbox's zone.
@@ -106,8 +111,9 @@ final class OsPolicy {
   );
 
   /// Throws [ArgumentError] for a value upstream refuses, with upstream's
-  /// message, or for both forms of one field. An IANA zone name is the
-  /// worker's to resolve.
+  /// message, or for both forms of one field. An IANA zone name is checked
+  /// here, before any worker is taken, as upstream checks it while parsing
+  /// the checkout's arguments.
   void validate() {
     _bothForms(datetime, fixedDatetime, 'datetime', 'fixedDatetime');
     _bothForms(timezone, fixedTimezone, 'timezone', 'fixedTimezone');
@@ -119,6 +125,7 @@ final class OsPolicy {
       "datetime must be 'system', 'call_host' or a datetime.datetime, "
           "got '$datetime'",
     );
+    _validateZoneName(timezone);
     fixedTimezone?.validate();
     randomSeed?.validate();
     _oneOf(
@@ -237,6 +244,58 @@ final class OsPolicy {
   }
 }
 
+/// Throws upstream's refusal of [name] as the `timezone` argument: a string
+/// with no UTF-8 form, then a name that is neither `'utc'` nor one the tz
+/// database resolves (monty-types `NamedZone::resolve`).
+void _validateZoneName(String? name) {
+  if (name == null) return;
+  final unencodable = surrogateEncodeError(name);
+  if (unencodable != null) {
+    throw ArgumentError.value(name, 'timezone', unencodable);
+  }
+  if (name == 'utc' || isKnownZone(name)) return;
+  throw ArgumentError.value(name, 'timezone', "unknown timezone '$name'");
+}
+
+/// Whether the worker's tz database resolves [name] to a named zone, as
+/// monty-types `NamedZone::resolve` asks it: at most 100 bytes, each
+/// `/`-part non-empty, not `.` or `..`, of ASCII letters, digits and
+/// `._+-`, then looked up ignoring ASCII case.
+///
+/// The database is jiff's: the host's zoneinfo directory where a native
+/// worker reads one, else the copy compiled into every worker ([tzNames]).
+bool isKnownZone(String name) {
+  if (name.length > 100) return false;
+  for (final part in name.split('/')) {
+    if (part.isEmpty || part == '.' || part == '..') return false;
+    if (!_zonePart.hasMatch(part)) return false;
+  }
+  // jiff's special names, whatever the database (tz/db/mod.rs
+  // `special_time_zone`): `Etc/Unknown` has no IANA name, so upstream
+  // refuses it.
+  switch (name.toLowerCase()) {
+    case 'utc':
+      return true;
+    case 'etc/unknown':
+      return false;
+  }
+
+  return hostZoneKnown(name) ?? isBundledZone(name);
+}
+
+/// Whether the copy of the tz database every worker holds ([tzNames]) has
+/// [name], ignoring ASCII case: the database where there is no host one.
+@visibleForTesting
+bool isBundledZone(String name) =>
+    _zonesByLowerName.contains(name.toLowerCase());
+
+final RegExp _zonePart = RegExp(r'^[A-Za-z0-9._+-]+$');
+
+/// [tzNames] as the database matches them, ignoring ASCII case.
+final Set<String> _zonesByLowerName = {
+  for (final name in tzNames) name.toLowerCase(),
+};
+
 /// Upstream's `SleepMode::DEFAULT_MAX`.
 const Duration _sleepMax = Duration(seconds: 10);
 
@@ -266,8 +325,25 @@ final class TimeZone {
   @override
   int get hashCode => Object.hash(offsetSeconds, name);
 
-  /// Throws [ArgumentError] for an offset outside upstream's range.
+  /// Throws [ArgumentError] for what upstream's parsing refuses, in its
+  /// order: an offset outside `i32` (its extraction's `OverflowError`), a
+  /// name with no UTF-8 form, then an offset outside upstream's range.
   void validate() {
+    if (offsetSeconds < _minI32 || offsetSeconds > _maxI32) {
+      throw ArgumentError.value(
+        offsetSeconds,
+        'offsetSeconds',
+        'number too ${offsetSeconds < 0 ? 'small' : 'large'} to fit in '
+            'target type',
+      );
+    }
+    final zoneName = name;
+    final unencodable = zoneName == null
+        ? null
+        : surrogateEncodeError(zoneName);
+    if (unencodable != null) {
+      throw ArgumentError.value(zoneName, 'name', unencodable);
+    }
     if (offsetSeconds < _minOffset || offsetSeconds > _maxOffset) {
       throw ArgumentError.value(
         offsetSeconds,
@@ -291,6 +367,10 @@ final class TimeZone {
 const int _minOffset = -86399;
 const int _maxOffset = 86399;
 
+/// The range of the `i32` upstream extracts an offset into.
+const int _minI32 = -0x80000000;
+const int _maxI32 = 0x7FFFFFFF;
+
 /// Upstream's `RandomSeed`: a `random.seed()` argument, one constructor per
 /// kind, so dart2js, where `1` and `1.0` are one value, still sends the
 /// kind the caller meant.
@@ -313,27 +393,38 @@ final class RandomSeed {
   /// The seed: a [BigInt], a `double`, a [String] or a [Uint8List].
   final Object _seed;
 
+  /// Equal as upstream's dicts are: an integer and a float seed of equal
+  /// value are equal, compared exactly, as Python compares them.
   @override
   bool operator ==(Object other) =>
       other is RandomSeed &&
       switch ((_seed, other._seed)) {
         (final Uint8List a, final Uint8List b) => _bytes.equals(a, b),
-        // A double and a BigInt differ by type, on every compiler.
+        (final BigInt a, final double b) ||
+        (final double b, final BigInt a) => _integral(b) == a,
         (final double a, final double b) => a == b,
-        (final double _, _) || (_, final double _) => false,
         (final a, final b) => a == b,
       };
 
+  /// An integer seed and the float equal to it hash alike.
   @override
   int get hashCode => switch (_seed) {
     final Uint8List bytes => _bytes.hash(bytes),
+    final double f => Object.hash(double, _integral(f) ?? f),
+    final BigInt n => Object.hash(double, n),
     final seed => Object.hash(seed.runtimeType, seed),
   };
 
-  /// Throws [ArgumentError] for a float seed that is not finite, with
-  /// upstream's message.
+  /// Throws [ArgumentError] for what upstream's parsing refuses, with its
+  /// message: a float seed that is not finite, a string seed with no UTF-8
+  /// form.
   void validate() {
     final seed = _seed;
+    if (seed is String) {
+      final unencodable = surrogateEncodeError(seed);
+      if (unencodable == null) return;
+      throw ArgumentError.value(seed, 'randomSeed', unencodable);
+    }
     if (seed is! double || seed.isFinite) return;
     // Rust's Display for a non-finite f64.
     var shown = seed.isNegative ? '-inf' : 'inf';
@@ -356,6 +447,10 @@ final class RandomSeed {
 }
 
 const ListEquality<int> _bytes = ListEquality();
+
+/// [f] as the integer it equals, or null when it is not integral.
+BigInt? _integral(double f) =>
+    f.isFinite && f == f.truncateToDouble() ? BigInt.from(f) : null;
 
 /// [n] in two's complement, little-endian, in the fewest bytes (num-bigint's
 /// `to_signed_bytes_le`, which the worker decodes).
@@ -390,8 +485,7 @@ void _oneOf(String? value, String name, Set<String> accepted, String text) {
 
 /// [instant] as the wire's seconds and microsecond, from its milliseconds
 /// and its sub-millisecond microseconds: exact on dart2js too, where the
-/// microseconds since the epoch can pass 2^53 (and a DateTime holds no
-/// sub-millisecond part).
+/// microseconds since the epoch can pass 2^53.
 pb.FixedDateTime _fixed(DateTime instant) {
   final ms = instant.millisecondsSinceEpoch;
   final rest = ms % 1000;
