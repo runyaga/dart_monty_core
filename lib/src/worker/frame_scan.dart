@@ -557,44 +557,6 @@ final class _Scan {
     }
   }
 
-  int _run() {
-    _stack.add(
-      _Frame(
-        _childEvent,
-        _State(),
-        0,
-        wire.length,
-        FrameScan.recursionLimit,
-        null,
-      ),
-    );
-    for (
-      var frame = _stack.lastOrNull;
-      frame != null;
-      frame = _stack.lastOrNull
-    ) {
-      _at = frame;
-      _field = 0;
-      if (wire.pos >= frame.end) {
-        _complete(frame);
-        continue;
-      }
-      wire.readKey();
-      final field = wire.field;
-      final spec = frame.schema.fields[field];
-      if (spec == null) {
-        wire.skip(frame.depth);
-        unknowns++;
-        continue;
-      }
-      if (spec.oneof != 0) frame.state.select(spec.oneof, field);
-      _field = field;
-      spec.read(this, frame, field);
-    }
-
-    return budget.charged;
-  }
-
   /// prost's `encoding::message::merge`: pushes [schema]'s frame.
   void pushMessage(
     _Frame parent,
@@ -715,6 +677,44 @@ final class _Scan {
         'got $length',
       );
     }
+  }
+
+  int _run() {
+    _stack.add(
+      _Frame(
+        _childEvent,
+        _State(),
+        0,
+        wire.length,
+        FrameScan.recursionLimit,
+        null,
+      ),
+    );
+    for (
+      var frame = _stack.lastOrNull;
+      frame != null;
+      frame = _stack.lastOrNull
+    ) {
+      _at = frame;
+      _field = 0;
+      if (wire.pos >= frame.end) {
+        _complete(frame);
+        continue;
+      }
+      wire.readKey();
+      final field = wire.field;
+      final spec = frame.schema.fields[field];
+      if (spec == null) {
+        wire.skip(frame.depth);
+        unknowns++;
+        continue;
+      }
+      if (spec.oneof != 0) frame.state.select(spec.oneof, field);
+      _field = field;
+      spec.read(this, frame, field);
+    }
+
+    return budget.charged;
   }
 
   /// [frame]'s message bytes, without unknown fields if it had any.

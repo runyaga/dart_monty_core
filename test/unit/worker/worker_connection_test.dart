@@ -466,10 +466,13 @@ void main() {
         final c = _accept(port);
         final done = _start(c);
         c.onReply(Frame.wrap(body), outcomeContinue);
-        final crash = await done.then<MontyCrashedError>(
-          (_) => fail('decoded'),
-          onError: (Object e) => e as MontyCrashedError,
-        );
+        final MontyCrashedError crash;
+        try {
+          await done;
+          fail('decoded');
+        } on MontyCrashedError catch (e) {
+          crash = e;
+        }
         expect(
           crash.toString(),
           'monty worker protocol error: invalid payload from worker: '

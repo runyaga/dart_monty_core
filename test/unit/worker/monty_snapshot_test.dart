@@ -1098,6 +1098,9 @@ void main() {
       expect(ch.kills, 1);
     });
 
+    // One int node, as an argument arena.
+    final oneInt = pb.Arena(nodeCount: 1, nodes: [intNode(1)]);
+
     // Upstream converts a FunctionCall's arguments when the frame arrives
     // (checkout.rs:1735-1752, `into_call_args`; a failure is
     // `convert_turn`'s protocol violation, :1926-1933): the suspension is
@@ -1109,7 +1112,7 @@ void main() {
           functionName: 'f',
           callId: 1,
           args: [5],
-          values: pb.Arena(nodeCount: 1, nodes: [intNode(1)]),
+          values: oneInt,
         ),
         'value root 5 is out of range for an arena of 1 nodes',
       ),
@@ -1119,7 +1122,7 @@ void main() {
           functionName: 'f',
           callId: 1,
           kwargs: [pb.NodePair(key: 0, value: 7)],
-          values: pb.Arena(nodeCount: 1, nodes: [intNode(1)]),
+          values: oneInt,
         ),
         'value root 7 is out of range for an arena of 1 nodes',
       ),

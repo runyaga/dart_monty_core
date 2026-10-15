@@ -301,19 +301,9 @@ MontyCrashedError crashedError(
     final code when code < 0 => ' (${_signal(-code)})',
     final code => ' (exit status: $code)',
   };
-  final message = switch (cause) {
-    CrashCause.killed => detail ?? 'monty worker killed',
-    CrashCause.protocol => 'monty worker protocol error: $detail',
-    CrashCause.spawn => 'failed to spawn monty worker: $detail',
-    // A worker that announced its end says why; one that vanished is
-    // reported by what the parent was doing, as upstream's PoolError.
-    CrashCause.fatal => 'monty worker crashed: ${detail ?? ''}$status',
-    CrashCause.vanished || CrashCause.outOfMemory =>
-      'monty worker crashed while ${context ?? waitingForReply}$status',
-  };
 
   return MontyCrashedError._(
-    message,
+    _crashMessage(cause, detail, status, context),
     cause: cause,
     timedOut: timedOut,
     detail: detail,
@@ -322,6 +312,24 @@ MontyCrashedError crashedError(
     context: context,
   );
 }
+
+/// Upstream's `PoolError` text for a crash of [cause]; [status] is the
+/// exit status, already formatted.
+String _crashMessage(
+  CrashCause cause,
+  String? detail,
+  String status,
+  String? context,
+) => switch (cause) {
+  CrashCause.killed => detail ?? 'monty worker killed',
+  CrashCause.protocol => 'monty worker protocol error: $detail',
+  CrashCause.spawn => 'failed to spawn monty worker: $detail',
+  // A worker that announced its end says why; one that vanished is
+  // reported by what the parent was doing, as upstream's PoolError.
+  CrashCause.fatal => 'monty worker crashed: ${detail ?? ''}$status',
+  CrashCause.vanished || CrashCause.outOfMemory =>
+    'monty worker crashed while ${context ?? waitingForReply}$status',
+};
 
 /// Upstream's contexts for a worker that vanished: what the parent was
 /// doing when it found the worker gone.
