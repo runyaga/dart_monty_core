@@ -11,7 +11,7 @@
 # returns Err unconditionally, on every target (core#152). That API has since
 # been removed, test file included; tool/check_api_absent.sh keeps it out.
 #
-# This asks one question of each public entry point on Monty and MontyRepl:
+# This asks one question of each public entry point in the export closure:
 # does ANY file that runs against a real backend mention it?
 #
 # THE REAL SURFACE IS THREE DIRECTORIES, NOT ONE. Getting this wrong is how the
@@ -107,13 +107,26 @@ DECL = re.compile(
 # So track type bodies by brace depth and only accept declarations inside one.
 TYPE_START = re.compile(
     r'^(?:final\s+|abstract\s+|base\s+|sealed\s+|interface\s+|mixin\s+)*'
-    r'(?:class|extension|mixin|enum)\b')
+    r'(?:class|mixin|enum)\s+(\w+)')
+
+# ONLY EXPORTED TYPES ARE PUBLIC. The worker's files hold internal classes
+# (drivers, answer tables, the snapshot factories) and internal extensions
+# beside the exported ones; every export line names what it exports, so the
+# public types are exactly the names in the show lists.
+SHOW = re.compile(r"^export\s+'[^']+'\s+show\s+([^;]+);", re.M)
+PUBLIC_TYPES = {
+    n.strip()
+    for lib in ('lib/dart_monty_core.dart', 'lib/dart_monty_core_testing.dart')
+    for m in SHOW.finditer(pathlib.Path(lib).read_text())
+    for n in m.group(1).split(',')
+}
 
 def _methods_in_types(text):
     """Yield method names declared directly inside a class/extension/mixin."""
     names, depth, in_type, type_depth = [], 0, False, 0
     for line in text.splitlines():
-        if not in_type and TYPE_START.match(line):
+        start = None if in_type else TYPE_START.match(line)
+        if start and start.group(1) in PUBLIC_TYPES:
             in_type, type_depth = True, depth
         if in_type and depth == type_depth + 1:
             m = DECL.match(line)
@@ -137,7 +150,20 @@ if not entry_points:
     sys.exit(1)
 
 real_files = []
-for pat in ('test/integration/**/*.dart', 'example/*.dart', 'packages/*/lib/**/*.dart'):
+for pat in (
+    'test/integration/**/*.dart',
+    'test/corpus/**/*.dart',
+    'test/hook/**/*.dart',
+    # the shared case bodies that test/integration/worker drives on the
+    # real worker (pool_session_io_test.dart)
+    'test/unit/worker/_*.dart',
+    # the contract scenarios, which contract_worker_test.dart runs on the
+    # real worker
+    'test/contract/_*.dart',
+    'test/contract/contract_worker_test.dart',
+    'example/*.dart',
+    'packages/*/lib/**/*.dart',
+):
     real_files.extend(pathlib.Path('.').glob(pat))
 # COMMENTS ARE NOT CALLS.
 #
@@ -162,9 +188,9 @@ corpus = {
     p: _strip_comments(p.read_text(errors='replace')) for p in real_files
 }
 
-if len(corpus) < 50:
+if len(corpus) < 45:  # 48 measured at the cutover head (F10)
     print(f'FAIL: the real-backend surface is only {len(corpus)} files.')
-    print('  Expected 100+. A glob that stopped matching would mark every')
+    print('  Expected 45+. A glob that stopped matching would mark every')
     print('  entry point unexercised, so refuse rather than report nonsense.')
     sys.exit(1)
 

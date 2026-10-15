@@ -403,7 +403,7 @@ final class ClassType<T extends Object> {
   /// `'all'` skips a constant that holds a function, as upstream's
   /// `_is_class_machinery` skips callables; a name listed explicitly is
   /// read whatever it holds.
-  Map<String, Object> eagerAttributes() {
+  Map<String, Object> _eagerAttributes() {
     final all = policies.eagerAttrs == 'all';
 
     return _convertAll(this, [
@@ -417,7 +417,7 @@ final class ClassType<T extends Object> {
   }
 
   /// A lazy class attribute; `AttributeError` when [name] is not exposed.
-  Object lookupLazyAttr(String name) {
+  Object _lookupLazyAttr(String name) {
     if (!_allows(policies.lazyAttrs, name)) throw _error(name);
 
     return convertValue(name, _attribute(name));
@@ -425,7 +425,7 @@ final class ClassType<T extends Object> {
 
   /// Calls the class: `__call__` constructs, any other name is a
   /// classmethod allowed by [policies].
-  FutureOr<Object> callMethod(
+  FutureOr<Object> _callMethod(
     String name,
     List<MontyValue> args,
     Map<String, MontyValue> kwargs,
@@ -441,7 +441,7 @@ final class ClassType<T extends Object> {
 
   /// Builds an instance for the sandbox, checking [init] on every call, and
   /// wraps it with [instancePolicies] and this class.
-  ClassInstance<T> construct(
+  ClassInstance<T> _construct(
     List<MontyValue> args,
     Map<String, MontyValue> kwargs,
   ) {
@@ -462,7 +462,7 @@ final class ClassType<T extends Object> {
 
   /// The hook: [item] as it crosses for member [name]; unchanged by
   /// default.
-  Object convertValue(String name, Object item) =>
+  Object _convertValue(String name, Object item) =>
       _convert?.call(name, item) ?? item;
 
   /// What `getattr` on the class finds: a constant, else a classmethod,
@@ -536,14 +536,14 @@ final class ClassInstance<T extends Object> {
 
   /// The attributes sent with the instance: `'all'` sends every public
   /// field, a list exactly those names, each through [convertValue].
-  Map<String, Object> eagerAttributes() => _convertAll(this, [
+  Map<String, Object> _eagerAttributes() => _convertAll(this, [
     for (final name in _eagerNames(policies.eagerAttrs, _members.fields.keys))
       (name, _attribute(name)),
   ]);
 
   /// A lazy attribute; `AttributeError` when [name] is not exposed. Any
   /// other throw is raised in the sandbox.
-  Object lookupLazyAttr(String name) {
+  Object _lookupLazyAttr(String name) {
     if (!_allows(policies.lazyAttrs, name)) throw _error(name);
 
     return convertValue(name, _attribute(name));
@@ -553,7 +553,7 @@ final class ClassInstance<T extends Object> {
   /// instance. Under `'all'` only the class's methods qualify; a name
   /// granted explicitly calls whatever the attribute holds, as upstream
   /// calls what `getattr` returns.
-  FutureOr<Object> callMethod(
+  FutureOr<Object> _callMethod(
     String name,
     List<MontyValue> args,
     Map<String, MontyValue> kwargs,
@@ -568,7 +568,7 @@ final class ClassInstance<T extends Object> {
   }
 
   /// The hook: this wrapper's, or else its class's.
-  Object convertValue(String name, Object item) =>
+  Object _convertValue(String name, Object item) =>
       _convert?.call(name, item) ?? classType.convertValue(name, item);
 
   /// A method defined on the class: an instance method bound to [value],
@@ -694,3 +694,49 @@ Object wrappedValue(Object wrapper) => switch (wrapper) {
   ClassType(:final value) => value,
   _ => wrapper,
 };
+
+/// [ClassType]'s dispatch members, which the session calls (HOST1: internal,
+/// item 68). The public show list leaves this extension out.
+extension ClassTypeInternal<T extends Object> on ClassType<T> {
+  /// The eager class attributes, converted.
+  Map<String, Object> eagerAttributes() => _eagerAttributes();
+
+  /// A lazy class attribute by [name].
+  Object lookupLazyAttr(String name) => _lookupLazyAttr(name);
+
+  /// A call on the class: `__call__` constructs, else a classmethod.
+  FutureOr<Object> callMethod(
+    String name,
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) => _callMethod(name, args, kwargs);
+
+  /// Constructs an instance from [args] and [kwargs].
+  ClassInstance<T> construct(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) => _construct(args, kwargs);
+
+  /// [item] as it crosses for member [name].
+  Object convertValue(String name, Object item) => _convertValue(name, item);
+}
+
+/// [ClassInstance]'s dispatch members, which the session calls (HOST1:
+/// internal, item 68). The public show list leaves this extension out.
+extension ClassInstanceInternal<T extends Object> on ClassInstance<T> {
+  /// The eager instance attributes, converted.
+  Map<String, Object> eagerAttributes() => _eagerAttributes();
+
+  /// A lazy instance attribute by [name].
+  Object lookupLazyAttr(String name) => _lookupLazyAttr(name);
+
+  /// A method call on the instance.
+  FutureOr<Object> callMethod(
+    String name,
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) => _callMethod(name, args, kwargs);
+
+  /// [item] as it crosses for member [name].
+  Object convertValue(String name, Object item) => _convertValue(name, item);
+}
