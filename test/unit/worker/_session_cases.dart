@@ -469,9 +469,10 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
         '(upstream: / then /a)', () async {
       await withPool((pool) async {
         final s = await pool.checkout(typeCheck: true);
+        final rejected = throwsA(isA<MontyTypingError>());
         await expectLater(
           s.feedRun('x: int = "a"', cwd: '/q', printCallback: _ignore),
-          throwsA(isA<MontyTypingError>()),
+          rejected,
         );
         expect(
           await s.feedRun('import os\nos.getcwd()', printCallback: _ignore),
@@ -481,10 +482,10 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
         await s.feedRun('1', cwd: '/a', printCallback: _ignore);
         await expectLater(
           s.feedRun('x: int = "b"', cwd: '/b', printCallback: _ignore),
-          throwsA(isA<MontyTypingError>()),
+          rejected,
         );
         expect(
-          await s.feedRun('import os\nos.getcwd()', printCallback: _ignore),
+          await s.feedRun('import os as o\no.getcwd()', printCallback: _ignore),
           const MontyString('/a'),
         );
         await s.close();
