@@ -848,7 +848,9 @@ String _typeName(Object entry) => switch (entry) {
   // CPython names an exception class without its module; re.PatternError
   // is an alias of the class named `error`.
   MontyExceptionValue(excType: 're.PatternError') => 'error',
-  MontyExceptionValue(:final excType) => excType.split('.').last,
+  MontyExceptionValue(:final excType) => excType.substring(
+    excType.lastIndexOf('.') + 1,
+  ),
   MontyNamedTuple(:final typeName) => typeName,
   _ => _hostTypeNames[entry.runtimeType] ?? 'object',
 };
