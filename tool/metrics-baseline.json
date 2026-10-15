@@ -2,12 +2,12 @@
   "_dcm_version": "1.39.0",
   "by_file": {
     "lib/src/mount/memory_mounted_os_handler.dart": 2,
-    "lib/src/mount/open_call.dart": 3
+    "lib/src/mount/open_call.dart": 2
   },
   "by_metric": {
-    "cyclomatic-complexity": 2,
+    "cyclomatic-complexity": 1,
     "lines-of-code": 2,
     "number-of-parameters": 1
   },
-  "total": 5
+  "total": 4
 }

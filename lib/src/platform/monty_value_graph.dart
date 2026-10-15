@@ -132,7 +132,8 @@ List<T> _collapse<T>(
     final hit = candidates.firstWhereOrNull(
       (i) => same(key(out.elementAtOrNull(i) ?? x), key(x)),
     );
-    if (out.elementAtOrNull(hit ?? -1) case final kept? when hit != null) {
+    final kept = hit == null ? null : out.elementAtOrNull(hit);
+    if (hit != null && kept != null) {
       out[hit] = merge(kept, x);
     } else {
       candidates.add(out.length);
