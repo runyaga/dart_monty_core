@@ -290,14 +290,16 @@ void main() {
       final [a] = await acquireEach(p, 1);
       final clock = Stopwatch()..start();
       // Upstream's fixed text (monty-pool 1.1.0 lib.rs:254), whatever the
-      // limit.
+      // limit; its class is TimeoutError.
+      final outcome = poolOracle['checkout_timeout']!;
+      expect(outcome, startsWith('TimeoutError: '));
       await expectLater(
         acquireEach(p, 1),
         throwsA(
           isA<TimeoutException>().having(
             (e) => e.message,
             'message',
-            'no monty worker became available within the checkout timeout',
+            outcome.substring('TimeoutError: '.length),
           ),
         ),
       );
