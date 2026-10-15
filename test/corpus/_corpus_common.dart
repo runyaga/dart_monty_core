@@ -2,18 +2,33 @@
 // the same code judges the native worker and the Web Worker.
 import 'dart:async';
 
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:dart_monty_core/dart_monty_core.dart';
+// PoolOptions is internal: the browser entry point starts its pools with its
+// own channel factory, which the public Monty.start cannot take.
+import 'package:dart_monty_core/src/worker/worker_pool.dart' show PoolOptions;
 import 'package:meta/meta.dart';
 import 'package:monty_conformance/worker_conformance.dart';
 import 'package:test/test.dart';
 
 /// One minute bounds a fixture's turn, so a hung one fails instead of
 /// stalling the run.
+const Duration corpusRequestTimeout = Duration(seconds: 60);
+
+/// The corpus pool's settings, for a start that supplies its own channel
+/// factory: one worker, [corpusRequestTimeout].
 const PoolOptions corpusPoolOptions = PoolOptions(
   maxProcesses: 1,
-  requestTimeout: Duration(seconds: 60),
+  requestTimeout: corpusRequestTimeout,
 );
+
+/// [body] on a pool as [corpusPoolOptions] say, started through the public
+/// API.
+Future<T> withCorpusPool<T>(Future<T> Function(Monty monty) body) =>
+    Monty.withPool(
+      body,
+      maxProcesses: 1,
+      requestTimeout: corpusRequestTimeout,
+    );
 
 /// How the entry point judges the corpus.
 final class CorpusTarget {
@@ -174,10 +189,9 @@ Future<void> runRecursionSetFallback(String label, Monty pool) async {
 void adjudicatorSelfTests() {
   group('the strict adjudicator judges worker outcomes', () {
     Future<Map<String, String>> judge(Map<String, String> corpus) async {
-      final run = await withMonty(
+      final run = await withCorpusPool(
         (pool) =>
             runWorkerFixtureCorpus(pool: pool, log: _discard, corpus: corpus),
-        corpusPoolOptions,
       );
       // Each control ran: a verdict on nothing is not a pass.
       expect(run.executed, corpus.keys.toList());

@@ -1,119 +1,122 @@
-// 14 — open() / file I/O + typed OS exceptions (monty v0.0.18)
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// monty v0.0.18 adds Python's `open()` builtin with buffered read/write and
-// `with open(...) as f:` context managers. The host services the open-time
-// effect through the same OsCallHandler used for `pathlib.Path` — here,
-// memoryMountedOsHandler. The interpreter then drives reads/writes through the
-// usual Path.read_text / write_text / append_text calls, so no extra wiring is
-// needed beyond a mount.
+// 14 — open() and file I/O
 //
-// This release also delivers OS errors to Python as their real exception
-// class, so scripts can `except FileNotFoundError:` / `except PermissionError:`
-// instead of catching a generic RuntimeError.
+// Python's open() builtin, with read, write and append modes, binary mode
+// and `with open(...) as f:`, goes through the same OsHandler as pathlib;
+// here memoryMountedOsHandler serves it. OS errors reach Python as their
+// real exception classes, so scripts catch FileNotFoundError or
+// PermissionError by name.
 //
-// Covers: open() read/write/append, `with open(...)`, binary mode,
-//         catchable typed OS exceptions, the MontyFileHandle value.
+// Covers: open() read/write/append, `with open(...)`, binary mode, typed
+//         OS exceptions, the MontyFileHandle value.
 //
 // Run: dart run example/14_file_io.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _readWriteAppend();
-  await _withBlock();
-  await _binary();
-  await _typedErrors();
-  await _fileHandleValue();
+  await Monty.withPool(
+    (monty) => monty.withSession((session) async {
+      await _readWriteAppend(session);
+      await _withBlock(session);
+      await _binary(session);
+      await _typedErrors(session);
+      await _fileHandleValue(session);
+    }),
+  );
 }
 
-// ── open() read, write, append ───────────────────────────────────────────────
-Future<void> _readWriteAppend() async {
+// ── open(): read, write, append ──────────────────────────────────────────────
+Future<void> _readWriteAppend(MontySession session) async {
   print('\n── open(): read / write / append ──');
 
   final poem = MontyMemoryFile('/data/poem.txt', 'roses are red\n');
-  final handler = memoryMountedOsHandler(
+  final os = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
     files: [poem],
   );
 
-  final read = await Monty('''
+  final read = await session.feedRun('''
 f = open("/data/poem.txt")
 text = f.read()
 f.close()
 text
-''').run(osHandler: handler);
-  print('read:     ${(read.value.dartValue! as String).trim()}');
+''', os: os);
+  print('read:     ${read.dartValue.toString().trim()}');
+  _check(read == const MontyString('roses are red\n'), 'read');
 
-  // 'w' truncates then writes; a second write appends within the same handle.
-  await Monty('''
+  // 'w' truncates, then each write appends within the same handle.
+  await session.feedRun(r'''
 f = open("/data/poem.txt", "w")
-f.write("violets are blue\\n")
-f.write("monty runs python\\n")
+f.write("violets are blue\n")
+f.write("monty runs python\n")
 f.close()
-''').run(osHandler: handler);
+''', os: os);
   print('rewrote:  ${poem.content.text.trim().split("\n")}');
+  _check(poem.content.text == 'violets are blue\nmonty runs python\n', 'w');
 
-  // 'a' preserves existing content.
-  await Monty('''
+  // 'a' keeps the existing content.
+  await session.feedRun(r'''
 f = open("/data/poem.txt", "a")
-f.write("and so do you\\n")
+f.write("and so do you\n")
 f.close()
-''').run(osHandler: handler);
+''', os: os);
   print('appended: ${poem.content.text.trim().split("\n").last}');
+  _check(poem.content.text.endsWith('and so do you\n'), 'a');
 }
 
-// ── with open(...) as f: — context manager closes automatically ──────────────
-Future<void> _withBlock() async {
+// ── with open(...) as f: closes the file ─────────────────────────────────────
+Future<void> _withBlock(MontySession session) async {
   print('\n── with open(...) as f: ──');
 
   final log = MontyMemoryFile('/data/log.txt', '');
-  final handler = memoryMountedOsHandler(
+  final os = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
     files: [log],
   );
 
-  final r = await Monty('''
+  final r = await session.feedRun(r'''
 with open("/data/log.txt", "w") as f:
-    n = f.write("first line\\n")
+    n = f.write("first line\n")
     inside = f.closed
-out = (n, inside, f.closed)
-out
-''').run(osHandler: handler);
-
-  final t = r.value.dartValue! as List<Object?>;
+(n, inside, f.closed)
+''', os: os);
+  final t = r.dartValue! as List<Object?>;
   print('wrote ${t[0]} chars; closed inside=${t[1]} after=${t[2]}');
   print('file:     ${log.content.text.trim()}');
+  _check(t[1] == false && t[2] == true, 'closed after the block');
 }
 
-// ── binary mode (rb / wb) ────────────────────────────────────────────────────
-// Bytes are stored verbatim as `VfsBytes`, so ARBITRARY bytes survive the round
-// trip — including 0xFF, which is not valid UTF-8 and would previously have
-// come back as U+FFFD.
-Future<void> _binary() async {
+// ── Binary mode (rb / wb) ────────────────────────────────────────────────────
+// Bytes are stored as they are, so bytes that are not UTF-8 (0xFF) survive.
+Future<void> _binary(MontySession session) async {
   print('\n── binary (rb / wb) ──');
 
   final blob = MontyMemoryFile('/data/blob.bin', '');
-  final handler = memoryMountedOsHandler(
+  final os = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
     files: [blob],
   );
 
-  final r = await Monty('''
+  final r = await session.feedRun(r'''
 with open("/data/blob.bin", "wb") as f:
-    f.write(b"\\x00\\x01\\xffPNG")
+    f.write(b"\x00\x01\xffPNG")
 with open("/data/blob.bin", "rb") as f:
     data = f.read()
-(list(data), len(data))
-''').run(osHandler: handler);
-  print('round-trip: ${r.value.dartValue}');
+data
+''', os: os);
+  print('round trip: $r');
   print('stored:     ${blob.content.bytes}');
+  _check(r == const MontyBytes([0, 1, 255, 80, 78, 71]), 'binary round trip');
 }
 
-// ── typed OS exceptions — Python catches the real class ──────────────────────
-Future<void> _typedErrors() async {
+// ── Typed OS exceptions ──────────────────────────────────────────────────────
+Future<void> _typedErrors(MontySession session) async {
   print('\n── typed exceptions ──');
 
-  final handler = memoryMountedOsHandler(
+  final os = memoryMountedOsHandler(
     mounts: const [
       MountDir(virtualPath: '/data'),
       MountDir(virtualPath: '/ro', mode: MountMode.readOnly),
@@ -121,50 +124,57 @@ Future<void> _typedErrors() async {
     files: [MontyMemoryFile('/ro/secret.txt', 'sk-123')],
   );
 
-  // FileNotFoundError is now catchable in Python (was RuntimeError before).
-  final missing = await Monty('''
+  final missing = await session.feedRun('''
 try:
     open("/data/missing.txt")
     out = "no error"
 except FileNotFoundError as e:
     out = f"caught FileNotFoundError: {e}"
 out
-''').run(osHandler: handler);
-  print('missing:  ${missing.value.dartValue}');
+''', os: os);
+  print('missing:  ${missing.dartValue}');
 
-  // PermissionError from a read-only mount, caught by class.
-  final ro = await Monty('''
+  final ro = await session.feedRun('''
 try:
     open("/ro/secret.txt", "w")
     out = "no error"
 except PermissionError:
     out = "caught PermissionError"
 out
-''').run(osHandler: handler);
-  print('readonly: ${ro.value.dartValue}');
+''', os: os);
+  print('readonly: ${ro.dartValue}');
+  _check(ro == const MontyString('caught PermissionError'), 'readonly');
 
-  // Uncaught, it propagates to Dart with the typed excType.
-  final uncaught = await Monty(
-    'open("/data/nope.txt")',
-  ).run(osHandler: handler);
-  print('uncaught: excType=${uncaught.error?.excType}');
+  // Uncaught, it reaches Dart with its Python type.
+  try {
+    await session.feedRun('open("/data/nope.txt")', os: os);
+    throw StateError('opening a missing file did not raise');
+  } on MontyRuntimeError catch (e) {
+    print('uncaught: ${e.exception.excType}');
+    _check(e.exception.excType == 'FileNotFoundError', 'uncaught');
+  }
 }
 
-// ── the MontyFileHandle value ────────────────────────────────────────────────
-// Returning an open file surfaces a MontyFileHandle (path, mode, position).
-Future<void> _fileHandleValue() async {
+// ── The MontyFileHandle value ────────────────────────────────────────────────
+// Returning an open file gives a MontyFileHandle (path, mode, position).
+Future<void> _fileHandleValue(MontySession session) async {
   print('\n── MontyFileHandle ──');
 
-  final handler = memoryMountedOsHandler(
+  final os = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
     files: [MontyMemoryFile('/data/poem.txt', 'hello')],
   );
 
-  final r = await Monty('open("/data/poem.txt")').run(osHandler: handler);
-  final v = r.value;
-  if (v is MontyFileHandle) {
-    print('handle:   path=${v.path} mode=${v.mode} position=${v.position}');
-  } else {
-    print('handle:   ${v.runtimeType} -> ${v.dartValue}');
+  final v = await session.feedRun('open("/data/poem.txt")', os: os);
+  switch (v) {
+    case MontyFileHandle(:final path, :final mode, :final position):
+      print('handle:   path=$path mode=$mode position=$position');
+      _check(path == '/data/poem.txt', 'handle path');
+    default:
+      throw StateError('expected a MontyFileHandle, got $v');
   }
+}
+
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

@@ -1,183 +1,120 @@
-// 08 — Complete error type coverage
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// dart_monty_core distinguishes Python-level errors (MontyScriptError) from
-// infrastructure failures (MontyPanicError, MontyCrashError, etc.).
-// Pattern-match exhaustively so supervisors can react correctly.
+// 08 — Errors
 //
-// The sealed hierarchy:
+// Every failure of the sandbox is a MontyError, a sealed class:
 //
 //  MontyError (sealed)
-//   ├── MontyScriptError   — Python exception (ValueError, TypeError, …)
-//   │    └── MontySyntaxError — parse/compile error
-//   ├── MontyPanicError    — Rust interpreter panicked
-//   ├── MontyCrashError    — isolate/Worker died
-//   ├── MontyDisposedError — interpreter used after dispose()
-//   └── MontyResourceError — OOM, timeout, WASM trap
+//   ├── MontySyntaxError  — the code did not parse; nothing ran
+//   ├── MontyRuntimeError — Python raised an exception the code did not
+//   │                       catch (resource limits arrive this way too)
+//   ├── MontyTypingError  — a type-checking session rejected the code
+//   └── MontyCrashedError — the worker is gone, and the session with it
 //
-// Covers: all 5 MontyError subtypes, MontyException, MontyStackFrame,
-//         result.error vs thrown error, excType, traceback traversal.
+// The first three leave the session usable. Each carries the inner Python
+// exception as `exception` (a MontyExceptionValue); the syntax and runtime
+// errors carry the traceback as Frames and render it with display().
+//
+// Covers: the four MontyError subtypes, exception, traceback, Frame,
+//         display formats, timedOut, an exhaustive switch.
 //
 // Run: dart run example/08_all_errors.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _errorInResult(); // Python errors land in result.error, not thrown
-  await _syntaxError();
-  await _scriptError();
-  await _resourceError();
-  await _disposedError();
-  _exhaustivePatternMatch();
+  await Monty.withPool((monty) async {
+    await monty.withSession(_syntaxError);
+    await monty.withSession(_runtimeError);
+    await monty.withSession(_typingError, typeCheck: true);
+  });
+  await _crashedError();
 }
 
-// ── Python errors in result.error ────────────────────────────────────────────
-// A Python exception does NOT throw in Dart.
-// It appears in MontyResult.error while result.value is MontyNone.
-Future<void> _errorInResult() async {
-  print('\n── error in result (no throw) ──');
-  final r = await Monty.exec('1 / 0');
-  print('isError: ${r.isError}');
-  final e = r.error;
-  if (e != null) {
-    print('excType:  ${e.excType}'); // ZeroDivisionError
-    print('message:  ${e.message}');
-    print('line:     ${e.lineNumber}');
-    print('value:    ${r.value}'); // MontyNone
-  }
-}
-
-// ── MontySyntaxError ──────────────────────────────────────────────────────────
-// Subtype of MontyScriptError; thrown when code fails to parse or compile.
-Future<void> _syntaxError() async {
+// ── MontySyntaxError ─────────────────────────────────────────────────────────
+Future<void> _syntaxError(MontySession session) async {
   print('\n── MontySyntaxError ──');
-  try {
-    await Monty.exec('def broken(:');
-  } on MontySyntaxError catch (e) {
-    print('syntax error!');
-    print('  message:  ${e.message}');
-    print('  excType:  ${e.excType}');
-    _printException(e.exception);
-  }
+  final error = await _expectError(session, 'def f(:\n    pass');
+  _check(error is MontySyntaxError, 'syntax error type');
+  print(_describe(error));
+  print((error as MontySyntaxError).display('type-msg'));
 }
 
-// ── MontyScriptError ──────────────────────────────────────────────────────────
-// MontyScriptError is the exception type for Python-level errors. Both
-// Monty.exec and MontyRepl.feedRun return errors as data via
-// MontyResult.error rather than throwing — the REPL stays alive and can
-// keep running. MontyScriptError appears in MontyResult.error.exception
-// for callers who want to inspect typed details (excType, traceback,
-// line number).
-Future<void> _scriptError() async {
-  print('\n── MontyScriptError (in result.error, REPL survives) ──');
+// ── MontyRuntimeError ────────────────────────────────────────────────────────
+Future<void> _runtimeError(MontySession session) async {
+  print('\n── MontyRuntimeError ──');
+  await session.feedRun('''
+def parse(text):
+    return int(text)
 
-  final repl = MontyRepl();
-  final r = await repl.feedRun('''
-def outer():
-    inner()
-
-def inner():
-    raise ValueError("deep error")
-
-outer()
+def load(rows):
+    return [parse(r) for r in rows]
 ''');
-
-  final e = r.error;
-  if (e != null) {
-    print('script error!');
-    print('  excType:  ${e.excType}');
-    print('  message:  ${e.message}');
-    _printException(e);
-  }
-
-  // The REPL is still alive — keep running.
-  final r2 = await repl.feedRun('1 + 1');
-  print('next call works: ${r2.value}');
-  repl.dispose();
-}
-
-// ── MontyResourceError ────────────────────────────────────────────────────────
-// Thrown on OOM, execution timeout, WASM trap, or stack overflow.
-Future<void> _resourceError() async {
-  print('\n── MontyResourceError (timeout) ──');
-  try {
-    await Monty.exec(
-      'while True: pass', // infinite loop
-      limits: const MontyLimits(timeoutMs: 200),
+  final error = await _expectError(session, 'load(["1", "two"])');
+  _check(error is MontyRuntimeError, 'runtime error type');
+  final runtime = error as MontyRuntimeError;
+  print(_describe(runtime));
+  print('frames, outermost first:');
+  for (final frame in runtime.traceback) {
+    print(
+      '  ${frame.filename}:${frame.line}:${frame.column} '
+      'in ${frame.functionName}: ${frame.sourceLine?.trim()}',
     );
-  } on MontyResourceError catch (e) {
-    print('resource error: ${e.message}');
   }
+  _check(runtime.exception.excType == 'ValueError', 'excType');
+  _check(runtime.traceback.length >= 3, 'traceback depth');
+  print('--- display() ---\n${runtime.display()}');
+
+  // The session survives: earlier definitions are still there.
+  _check(
+    await session.feedRun('load(["4", "5"])') == MontyValue.fromDart([4, 5]),
+    'session survives',
+  );
 }
 
-// ── MontyDisposedError ────────────────────────────────────────────────────────
-// Thrown when you use an interpreter after calling dispose().
-Future<void> _disposedError() async {
-  print('\n── MontyDisposedError ──');
-  final repl = MontyRepl()..dispose();
+// ── MontyTypingError ─────────────────────────────────────────────────────────
+Future<void> _typingError(MontySession session) async {
+  print('\n── MontyTypingError ──');
+  final error = await _expectError(session, 'x: int = "not an int"');
+  _check(error is MontyTypingError, 'typing error type');
+  print(_describe(error));
+}
+
+// ── MontyCrashedError ────────────────────────────────────────────────────────
+// A turn that outlives the pool's requestTimeout has its worker killed.
+Future<void> _crashedError() async {
+  print('\n── MontyCrashedError ──');
+  await Monty.withPool(
+    (monty) => monty.withSession((session) async {
+      final error = await _expectError(session, 'while True:\n    pass');
+      _check(error is MontyCrashedError, 'crashed error type');
+      final crashed = error as MontyCrashedError;
+      print(_describe(crashed));
+      print('timedOut=${crashed.timedOut} exitStatus=${crashed.exitStatus}');
+      _check(crashed.timedOut, 'timedOut');
+    }),
+    requestTimeout: const Duration(milliseconds: 500),
+  );
+}
+
+/// What a supervisor might do with each kind of failure.
+String _describe(MontyError error) => switch (error) {
+  MontySyntaxError() => 'fix the code: $error',
+  MontyRuntimeError() => 'the code raised: $error',
+  MontyTypingError() => 'the type check failed:\n$error',
+  MontyCrashedError() => 'restart the work: $error',
+};
+
+Future<MontyError> _expectError(MontySession session, String code) async {
   try {
-    await repl.feedRun('1 + 1');
-    print('should not reach here');
-  } on MontyDisposedError catch (e) {
-    print('disposed error: ${e.message}');
-  } on StateError catch (e) {
-    // MontyRepl reports use-after-dispose as a StateError today, not as
-    // MontyDisposedError; the earlier `.catchError` hid that by ignoring it.
-    print('disposed (StateError): ${e.message}');
+    await session.feedRun(code);
+  } on MontyError catch (e) {
+    return e;
   }
+  throw StateError('no error from: $code');
 }
 
-// ── Exhaustive supervisor pattern match ───────────────────────────────────────
-// In a supervisor/retry loop, match all error types so you can react correctly.
-void _exhaustivePatternMatch() {
-  print('\n── exhaustive error matching ──');
-
-  void handleError(MontyError e) {
-    switch (e) {
-      case MontySyntaxError():
-        print('syntax: fix the code — do NOT retry');
-
-      case MontyScriptError(:final excType):
-        print('script ($excType): application error — supervisor handles');
-
-      case MontyPanicError():
-        // The Rust interpreter panicked — likely a bug. Apply backoff.
-        print('panic: Rust bug — backoff and restart');
-
-      case MontyCrashError():
-        // The isolate or WASM Worker died. Restart immediately.
-        print('crash: process died — restart immediately');
-
-      case MontyDisposedError():
-        // Bug in calling code — do NOT restart.
-        print('disposed: caller bug — fix the code');
-
-      case MontyResourceError():
-        print('resource: OOM/timeout — reduce load, then restart');
-
-      case MontySuspensionBudgetExceeded(:final budget):
-        // The host's suspension bound was hit; the sandbox cannot catch it.
-        print('suspensions: more than $budget host calls — raise the bound');
-    }
-  }
-
-  handleError(const MontySyntaxError('bad syntax', excType: 'SyntaxError'));
-  handleError(const MontyScriptError('value error', excType: 'ValueError'));
-  handleError(const MontyPanicError('rust panic'));
-  handleError(const MontyCrashError('worker died'));
-  handleError(const MontyDisposedError('use after dispose'));
-  handleError(const MontyResourceError('OOM'));
-  handleError(const MontySuspensionBudgetExceeded(100));
-}
-
-void _printException(MontyException? e) {
-  if (e == null) return;
-  print('  exception:');
-  print('    filename: ${e.filename}');
-  print('    line:     ${e.lineNumber}');
-  print('    source:   ${e.sourceCode}');
-  print('    traceback (${e.traceback.length} frames):');
-  for (final frame in e.traceback) {
-    print('      ${frame.filename}:${frame.startLine}  ${frame.frameName}');
-    if (frame.previewLine != null) print('        ${frame.previewLine}');
-  }
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

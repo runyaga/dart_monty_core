@@ -14,9 +14,8 @@
 # `dart test` serve them. The Flutter builds get theirs from core's own
 # `flutter: assets:` declaration (the probe declares none).
 #
-# Before the cutover the apps import the internal pool, the entry point the
-# parity adapter uses. The cutover PR switches the two imports to
-# `package:dart_monty_core/dart_monty_core.dart` and the call to `Monty.start`.
+# Both apps import only `package:dart_monty_core/dart_monty_core.dart` and run
+# `Monty.withPool((m) => m.withSession((s) => s.feedRun('1 + 1')))`.
 #
 # Usage:
 #   bash tool/consumers/run.sh selftest

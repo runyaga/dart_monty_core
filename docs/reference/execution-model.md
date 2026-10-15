@@ -1,27 +1,26 @@
 # Execution model and its fault boundary
 
-`dart_monty_core` embeds the monty interpreter **in your process**. That is a
-supported topology upstream, but it differs from every first-party monty
-binding, and the difference is a safety property rather than an API detail.
-This page states it plainly so nobody discovers it from a crash report.
+`dart_monty_core` never runs the monty interpreter in your process. Every
+session runs in a worker: a child process on native platforms, a Web Worker
+in the browser. This page says what that boundary protects and what it costs.
 
 ## The short version
 
-| | crash isolation | hard preemption | notes |
+| | worker | crash isolation | hard preemption |
 |---|---|---|---|
-| **FFI** (desktop, server, mobile) | **none** | **none** | interpreter runs in your process |
-| **WASM** (web) | yes | yes | Web Worker; wasm traps are contained |
+| **Native** (VM, AOT) | child process | yes | yes: the parent kills the process |
+| **Web** (dart2js, dart2wasm) | Web Worker | yes | yes: `terminate()` |
 
-On FFI, a memory fault inside sandboxed Python — stack-overflow abort,
-allocator abort, or any segfault in the native crate — **terminates the host
-application**, not just the sandbox.
+A memory fault inside sandboxed Python (a stack-overflow abort, an allocator
+abort, a wasm trap) ends that worker, not your app. The call in flight fails
+with `MontyCrashedError` and the session with it; the pool starts a new worker
+for the next checkout.
 
-## Why upstream does it differently
+## Why a worker
 
 A Rust process cannot be made crash-proof against memory errors; those aborts
 cannot be caught. Upstream's answer is to run the interpreter only in worker
-subprocesses, so a crash kills a worker and the parent replaces it. That is the
-entire purpose of the `monty-pool` crate, which is new in monty v0.0.19:
+subprocesses:
 
 > Monty executes untrusted Python, and a Monty process can never be made fully
 > crash-proof against memory errors (stack overflow aborts, allocator aborts).
@@ -29,67 +28,52 @@ entire purpose of the `monty-pool` crate, which is new in monty v0.0.19:
 > subprocesses** […] a crashed worker kills only itself, the pool detects the
 > death and replaces the worker, and the parent process is never at risk.
 >
-> — `crates/monty-pool/README.md:6-10`
+> — upstream `crates/monty-pool/README.md`
 
-Both first-party bindings follow that rule and keep the interpreter out of the
-host binary entirely: neither `pydantic_monty` nor `@pydantic/monty` depends on
-the `monty` crate (`crates/monty-python/Cargo.toml:24-27`,
-`crates/monty-js/Cargo.toml:22-24`). `monty-pool` also runs a watchdog thread
-that kills a worker whose turn exceeds its deadline
-(`crates/monty-pool/src/watchdog.rs:1-2`) — hard preemption you cannot perform
-inside a process.
+`dart_monty_core` follows the same rule. `native/worker/` mirrors upstream's
+`monty subprocess` worker, and `Monty` is the pool upstream's `AsyncMonty` is.
 
-In-process embedding is nonetheless a documented, supported topology: it is what
-`monty-runtime` (the `monty` CLI), `monty-datatest`, `monty-bench` and `fuzz`
-all do, and what `crates/monty/README.md:11` advertises. We are not doing
-something unsupported; we are the only *binding* that does it.
+Dart isolates would not do: they have separate heaps but share one OS
+process, so a native abort takes down every isolate with the host, and an
+isolate blocked in a native call cannot be killed until it returns.
 
-## Why the web backend is not affected
+## Limits, deadlines and the kill
 
-Two independent reasons, either of which would be sufficient:
-
-- A **wasm trap** (stack exhaustion, out-of-bounds) is caught by the wasm
-  runtime and surfaces as an error. It is not a process abort.
-- The module runs in a **Web Worker**, whose `terminate()` is a real hard-kill.
-  This is the same arrangement upstream ships for browsers
-  (`crates/monty-wasm-runtime`).
-
-## What is already handled on FFI
-
-Resource limits are enforced *by the engine*, not by killing anything, so the
-ordinary runaway cases are covered without a process boundary:
+Resource limits (`ResourceLimits`, passed to `checkout`) are enforced by the
+interpreter at cooperative points, and the session survives them:
 
 ```dart
-await Monty(code).run(
-  limits: const MontyLimits(memoryBytes: 32 << 20, stackDepth: 200, timeoutMs: 5000),
+final session = await monty.checkout(
+  limits: const ResourceLimits(
+    maxMemory: 32 << 20,
+    maxRecursionDepth: 200,
+    maxFeedDuration: Duration(seconds: 5),
+  ),
 );
 ```
 
-`timeoutMs` stops a non-terminating loop, `stackDepth` turns runaway recursion
-into `RecursionError`, and `memoryBytes` into `MemoryError`. What limits cannot
-cover is a genuine memory fault in native code — by definition there is no
-cooperative point at which to raise.
+`maxFeedDuration` stops a non-terminating loop with `TimeoutError`,
+`maxRecursionDepth` turns runaway recursion into `RecursionError`, and
+`maxMemory` raises `MemoryError`; each arrives as `MontyRuntimeError`.
 
-## Why Dart isolates are not a fix
+What limits cannot cover, the worker boundary does:
 
-Isolates have separate heaps but share **one OS process**, so a native abort
-takes down every isolate along with the host. They are a concurrency boundary,
-not a fault boundary.
+- `requestTimeout` on `Monty.start` bounds each protocol turn. Past it the
+  parent kills the worker, and the call fails with `MontyCrashedError` whose
+  `timedOut` is true.
+- `feedDurationLimitGrace` and `turnDurationLimitGrace` are how far past a
+  session's own duration limits the parent lets a turn run before it kills
+  the worker, for a worker that stops answering.
+- `MontySession.close()` during a turn kills the worker.
+- A worker whose allocator refuses an allocation over its hard limit exits;
+  that too is `MontyCrashedError`.
 
-They also do not give preemption here: an isolate blocked in a synchronous FFI
-call cannot be killed, because `Isolate.kill` only takes effect at a Dart
-safepoint and a native call does not reach one until it returns.
+## Costs
 
-Running the sandbox in an isolate is still worthwhile to keep work off the
-Flutter UI thread. It is not a safety measure, and should not be described as
-one.
-
-## If you need isolation on FFI today
-
-Run `dart_monty_core` in a **separate OS process** you control and speak to it
-over your own IPC, so a crash takes down that process instead of your app. This
-is what upstream's pool does, one layer up.
-
-Tracked for a first-class answer in
-[core#144](https://github.com/runyaga/dart_monty_core/issues/144) — a pool /
-isolated-execution mode.
+- Each session holds one worker for its life. `maxProcesses` bounds the
+  workers alive at once, and a `checkout` beyond it waits, forever unless
+  `checkoutTimeout` is set.
+- Values cross the boundary encoded, so every input, host function call and
+  result is copied.
+- Native consumers need a worker executable, or the build-hook opt-in and
+  `runMontyWorkerIfChild` (see the README's Platforms section).

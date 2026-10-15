@@ -1,23 +1,17 @@
-/// monty's own conformance corpus, and the parser for its directives.
+/// The strict adjudicator for upstream's fixture directives, the directive
+/// parser, and the host tables `# call-external` fixtures expect.
 ///
-/// This is a **path-dependency package, not a published one.** It exists for a
-/// single reason: Dart only lets one package import another package's `lib/`,
-/// never its `test/`. The corpus and parser were under
-/// `dart_monty_core/test/integration/`, which made them unreachable from
-/// `packages/dart_monty_web` — and the alternative, generating a second copy
-/// into the demo, is exactly the duplication that let the two drive loops
-/// diverge earlier in this project.
+/// This is a **path-dependency package, not a published one.** It exists
+/// because Dart lets one package import another package's `lib/`, never its
+/// `test/`: core's corpus tests and the web demo's conformance panel share one
+/// copy of the parser and the adjudicator here.
 ///
-/// So there is ONE copy, here, and everything that needs it depends on it:
-/// core's oracle and WASM fixture harnesses, and the web demo's conformance
-/// panel.
-///
-/// It is deliberately dependency-free — no `test`, no `dart:io` — so it can be
-/// compiled for the browser.
+/// It is deliberately dependency-light (no `test`, no `dart:io`) so it can be
+/// compiled for the browser. The corpus itself and its runner are in
+/// `worker_conformance.dart`.
 library;
 
 export 'src/fixture_adjudicator.dart';
-export 'src/fixture_corpus.dart';
 export 'src/fixture_externals.dart';
 export 'src/fixture_failure.dart';
 export 'src/fixture_os_handler.dart';

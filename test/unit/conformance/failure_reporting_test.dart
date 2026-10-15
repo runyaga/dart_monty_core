@@ -6,9 +6,9 @@
 //       unexpected error in datetime__core.py
 //
 // while the actual failure was `AssertionError` at line 17 on
-// `assert now_utc.tzinfo is datetime.timezone.utc`. `MontyException` carries
-// message, excType, lineNumber, columnNumber, sourceCode and traceback, and
-// every one was discarded to print the word "unexpected".
+// `assert now_utc.tzinfo is datetime.timezone.utc`. The error carried the
+// type, the message and a traceback with the line and its source, and every
+// one was discarded to print the word "unexpected".
 //
 // This matters past developer time. The package exists so an LLM can generate
 // Monty Python and RETRY when it fails; "unexpected error" gives a model
@@ -18,16 +18,17 @@
 @Tags(['unit'])
 library;
 
-import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart' show raisedError;
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:monty_conformance/monty_conformance.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('a fixture failure reports what actually failed (core#145)', () {
     test('describeFixtureFailure names type, message and line', () {
-      const e = MontyException(
-        message: 'assertion failed',
+      const e = FixtureFailure(
         excType: 'AssertionError',
+        message: 'assertion failed',
         lineNumber: 17,
         sourceCode: 'assert now_utc.tzinfo is datetime.timezone.utc',
       );
@@ -44,6 +45,41 @@ void main() {
         isNot(contains('unexpected')),
         reason:
             'the description must say what happened, not that something did',
+      );
+    });
+
+    test("a worker error's innermost frame gives the line and source", () {
+      final error = raisedError(
+        pb.RaisedException(
+          excType: 'AssertionError',
+          message: 'assertion failed',
+          traceback: [
+            pb.StackFrame(
+              filename: 'datetime__core.py',
+              start: pb.CodeLoc(line: 3, column: 1),
+              end: pb.CodeLoc(line: 3, column: 4),
+              frameName: '<module>',
+              previewLine: 'f()',
+            ),
+            pb.StackFrame(
+              filename: 'datetime__core.py',
+              start: pb.CodeLoc(line: 17, column: 5),
+              end: pb.CodeLoc(line: 17, column: 52),
+              frameName: 'f',
+              previewLine: '    assert now_utc.tzinfo is datetime.timezone.utc',
+            ),
+          ],
+        ),
+      );
+
+      final failure = FixtureFailure.fromError(error);
+      expect(failure.excType, 'AssertionError');
+      expect(failure.message, 'assertion failed');
+      expect(failure.lineNumber, 17);
+      expect(
+        describeFixtureFailure('datetime__core.py', failure),
+        'datetime__core.py:17 — AssertionError: assertion failed\n'
+        '    assert now_utc.tzinfo is datetime.timezone.utc',
       );
     });
 

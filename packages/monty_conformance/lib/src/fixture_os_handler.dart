@@ -26,13 +26,6 @@ const conformanceEnv = <String, String>{
 ///
 /// `link.txt` exists to make that count five — it is otherwise unread, and
 /// deleting it as dead weight would break the listing assertion.
-///
-/// This seed previously held `'hello from virtual fs'` in `file.txt` and
-/// omitted `data.bin` and `link.txt`, a string that appears in NO fixture. It
-/// did not matter only because `pathlib__os.py` was skipped on FFI for an
-/// unrelated reason (FB-11 P5), so nothing checked it. The WASM runner's own
-/// copy of the store had the right values all along, which is how the two
-/// drifted apart.
 List<VfsFile> conformanceVfs() => [
   MontyMemoryFile('/virtual/file.txt', 'hello world\n'),
   MontyMemoryFile('/virtual/empty.txt', ''),
@@ -50,11 +43,7 @@ List<VfsFile> conformanceVfs() => [
 /// `mount_fs__ops.py` asserts both through `stat().st_size`.
 ///
 /// **`data.bin` is BYTES, not a string.** Upstream writes it as
-/// `b"\x00\x01\x02\x03"`. `tool/check_vfs_regression.sh` used to seed the Dart
-/// string `'\x00\x01\x02\x03'` instead, which happens to encode to the same
-/// four bytes only because U+0000..U+0003 are single-byte in UTF-8 — the two
-/// forms diverge the moment a byte above 0x7F appears, and the fixture asserts
-/// `read_bytes()`. Naming the bytes is both correct and self-documenting.
+/// `b"\x00\x01\x02\x03"`, and the fixture asserts `read_bytes()`.
 ///
 /// A function, not a constant, for the same reason as [conformanceVfs]: files
 /// are mutable, so every handler needs its own set.
@@ -67,13 +56,13 @@ List<VfsFile> conformanceMountFsVfs() => [
   MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
 ];
 
-/// An [OsCallHandler] for the `# mount-fs` fixtures, serving [
-/// conformanceMountFsVfs] under a `/mnt` mount.
+/// An [OsHandler] for the `# mount-fs` fixtures, serving
+/// [conformanceMountFsVfs] under a `/mnt` mount.
 ///
 /// Filesystem only — those fixtures ask nothing of the clock or the
 /// environment, and answering questions they do not pose would be inventing
 /// contract. The non-filesystem ops live in [conformanceOsHandler].
-OsCallHandler conformanceMountFsOsHandler() => memoryMountedOsHandler(
+OsHandler conformanceMountFsOsHandler() => memoryMountedOsHandler(
   mounts: const [MountDir(virtualPath: '/mnt')],
   files: conformanceMountFsVfs(),
 );
@@ -83,14 +72,11 @@ OsCallHandler conformanceMountFsOsHandler() => memoryMountedOsHandler(
 /// `datetime.now()` reads 2023-11-15 00:13:20 and `date.today()` is
 /// 2023-11-15.
 ///
-/// These are upstream's numbers, not ours (monty-datatest/src/main.rs:937-942
-/// and :1233-1272). The handler previously invented 2024-01-15 10:30, which
-/// was plausible and wrong, and it was the only reason the fixture failed —
-/// the values are a contract the fixture asserts, discoverable from upstream's
-/// runner rather than something to guess.
+/// These are upstream's numbers, not ours (monty-datatest/src/main.rs): a
+/// contract the fixture asserts.
 const _fixtureEpochSeconds = 1700000000;
 
-/// An [OsCallHandler] answering the OS calls the corpus makes.
+/// An [OsHandler] answering the OS calls the corpus makes.
 ///
 /// **The clock is frozen on purpose.** `datetime__core.py` asserts an exact
 /// date, so a real clock would make the fixture fail every day but one. A host
@@ -98,42 +84,39 @@ const _fixtureEpochSeconds = 1700000000;
 /// property being demonstrated: the host decides what "now" means.
 ///
 /// Filesystem calls fall through to [memoryMountedOsHandler] rather than being
-/// reimplemented — the point of running these in the demo is to exercise the
-/// SHIPPED handler, not a test double.
-OsCallHandler conformanceOsHandler() {
+/// reimplemented: the point is to exercise the SHIPPED handler, not a test
+/// double. The handler is synchronous, so the filesystem handler's decline
+/// ([OsCallNotHandledException]) still declines.
+OsHandler conformanceOsHandler() {
   final fs = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/virtual')],
     files: conformanceVfs(),
   );
 
-  return (operation, args, kwargs) async {
-    switch (operation) {
+  return (name, args, kwargs) {
+    switch (name) {
       case 'os.getenv':
-        final key = args.first! as String;
-        if (conformanceEnv.containsKey(key)) return conformanceEnv[key];
+        final key = (args.first as MontyString).value;
+        final value = conformanceEnv[key];
+        if (value != null) return MontyString(value);
 
-        return args.length > 1 ? args[1] : null;
+        return args.length > 1 ? args[1] : const MontyNone();
 
       case 'os.environ':
-        return Map<String, String>.of(conformanceEnv);
+        return MontyDict([
+          for (final e in conformanceEnv.entries)
+            (MontyString(e.key), MontyString(e.value)),
+        ]);
 
       case 'date.today':
         return const MontyDate(year: 2023, month: 11, day: 15);
 
       case 'datetime.now':
-        // An OsCallHandler receives `dartValue`s, so a timezone argument
-        // arrives as its MAP form — `{__type: timezone, offset_seconds: 0,
-        // name: null}` — never as a MontyTimeZone. This branch used to test
-        // `is MontyTimeZone` and was therefore dead: every aware
-        // `datetime.now(tz)` silently got the NAIVE datetime back, so
-        // `now_utc.tzinfo` was None and datetime__core.py:17 failed on
-        // `assert now_utc.tzinfo is datetime.timezone.utc`.
         final tz = args.isNotEmpty ? args.first : null;
-        if (tz is Map && tz['__type'] == 'timezone') {
-          final offsetSeconds = (tz['offset_seconds'] as num?)?.toInt() ?? 0;
-          // Aware: convert the fixture timestamp into the requested zone.
+        if (tz is MontyTimeZone) {
+          // Aware: the fixture timestamp in the requested zone.
           final local = DateTime.fromMillisecondsSinceEpoch(
-            (_fixtureEpochSeconds + offsetSeconds) * 1000,
+            (_fixtureEpochSeconds + tz.offsetSeconds) * 1000,
             isUtc: true,
           );
 
@@ -144,8 +127,8 @@ OsCallHandler conformanceOsHandler() {
             hour: local.hour,
             minute: local.minute,
             second: local.second,
-            offsetSeconds: offsetSeconds,
-            timezoneName: tz['name'] as String?,
+            offsetSeconds: tz.offsetSeconds,
+            timezoneName: tz.name,
           );
         }
 
@@ -161,7 +144,7 @@ OsCallHandler conformanceOsHandler() {
         );
 
       default:
-        return fs(operation, args, kwargs);
+        return fs(name, args, kwargs);
     }
   };
 }

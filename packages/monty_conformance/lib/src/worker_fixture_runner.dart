@@ -1,9 +1,7 @@
 // The upstream corpus on the worker: one session per fixture on a pool, each
 // judged by the strict adjudicator against its own directives.
 //
-// This is the worker engine, beside `fixture_runner.dart`, which drives the
-// old `createPlatformMonty()` and stays until the cutover deletes it. It
-// follows upstream's datatest runner (`crates/monty-datatest/src/main.rs`):
+// It follows upstream's datatest runner (`crates/monty-datatest/src/main.rs`):
 //
 //   * a plain fixture is one `feed`;
 //   * a `# call-external` or `# mount-fs` fixture is driven snapshot by
@@ -16,23 +14,10 @@
 // A fixture is never skipped. Each one reports a pass or a failure with its
 // reason; the caller compares the failing set with its manifest.
 //
-// Internal imports are deliberate: the pool session is not public until the
-// cutover, and this engine moves to the public `Monty` then.
-//
-// ignore_for_file: implementation_imports
-
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:dart_monty_core/dart_monty_core.dart'
-    hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/os_policy.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
-import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/src/fixture_adjudicator.dart';
 import 'package:monty_conformance/src/fixture_corpus_v1.dart';
 import 'package:monty_conformance/src/fixture_parser.dart';
@@ -124,16 +109,14 @@ Future<String?> _runOne(Monty pool, String name, String source) async {
 
   final MontySession session;
   try {
-    session = await pool.checkoutWith(
-      SessionConfig(
-        scriptName: name,
-        limits: ResourceLimits(
-          maxMemory: workerFixtureMaxMemory,
-          maxRecursionDepth: workerFixtureRecursionLimit,
-          gcInterval: fixtureGcInterval(source),
-        ),
-        osPolicy: timezone == null ? null : OsPolicy(timezone: timezone),
+    session = await pool.checkout(
+      scriptName: name,
+      limits: ResourceLimits(
+        maxMemory: workerFixtureMaxMemory,
+        maxRecursionDepth: workerFixtureRecursionLimit,
+        gcInterval: fixtureGcInterval(source),
       ),
+      osPolicy: timezone == null ? null : OsPolicy(timezone: timezone),
     );
   } on TimeoutException catch (e) {
     return 'no worker for the fixture: $e';

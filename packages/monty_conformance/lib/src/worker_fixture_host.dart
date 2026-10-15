@@ -8,12 +8,9 @@
 // the host upstream wrote it for; each function below names its Rust original.
 //
 // It speaks the worker's value types (`MontyValue`) and nothing else, so the
-// same code runs on the VM and in a browser. It does not use the old engine's
-// `fixture_externals.dart` / `fixture_os_handler.dart`, which model monty
-// 0.0.23's harness and go with that engine.
+// same code runs on the VM and in a browser.
 
-// The worker's ExternalException and the host-object wrappers are internal
-// to dart_monty_core until the cutover exports them.
+// HostClass, which a ClassType wraps, is internal to dart_monty_core.
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
@@ -21,9 +18,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
-import 'package:dart_monty_core/src/worker/host_objects.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
-    show ExternalException;
+import 'package:dart_monty_core/src/worker/host_objects.dart' show HostClass;
 
 /// The host functions a `# call-external` fixture may name (the arms of
 /// upstream's `dispatch_external_call` and the names its lookup resolves to
@@ -514,9 +509,10 @@ final class WorkerFixtureOs {
           Uint8List.fromList([for (var i = 0; i < size; i++) i % 256]),
         );
       case 'os.environ':
-        return MontyDict.ofStrings({
-          for (final e in _env.entries) e.key: MontyString(e.value),
-        });
+        return MontyDict([
+          for (final e in _env.entries)
+            (MontyString(e.key), MontyString(e.value)),
+        ]);
       case 'os.getenv':
         final key = (args[0] as MontyString).value;
         final value = _env[key];

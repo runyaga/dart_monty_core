@@ -1,17 +1,20 @@
-// The upstream 1.1.0 corpus on the native worker, through the pool session,
-// judged against the manifest in packages/monty_conformance; and crash
-// recovery through one pool. Run by CI job `corpus-worker`:
+// The upstream 1.1.0 corpus on the native worker, through the public Monty
+// pool, judged against the manifest in packages/monty_conformance; and crash
+// recovery through one pool, which needs the pool's internals (a channel
+// factory, the live-worker count, a crash's cause). Run by CI job
+// `corpus-worker`:
 //
 //   dart test test/corpus -p vm --tags=corpus-worker
 @Tags(['worker', 'corpus-worker'])
 @TestOn('vm')
 library;
 
+import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart' as chf;
-import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show CrashCause, MontyCrashedErrorInternal;
+import 'package:dart_monty_core/src/worker/proto_session.dart'
+    show SessionConfig;
 import 'package:monty_conformance/worker_conformance.dart';
 import 'package:test/test.dart';
 
@@ -33,7 +36,8 @@ void main() {
     CorpusTarget(
       label: 'native',
       profile: WorkerCorpusProfile.native,
-      startPool: () => startMonty(corpusPoolOptions),
+      startPool: () =>
+          Monty.start(maxProcesses: 1, requestTimeout: corpusRequestTimeout),
     ),
   );
 

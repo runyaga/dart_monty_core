@@ -13,12 +13,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-# BEFORE THE CUTOVER the public API is not flipped, so lib/main.dart imports the
-# internal pool (`package:dart_monty_core/src/worker/monty_pool.dart`), the same
-# entry point the parity adapter uses. The cutover PR changes that one import
-# to `package:dart_monty_core/dart_monty_core.dart` and the call to
-# `Monty.start`; nothing else in the probe changes. See tool/consumers/run.sh.
-#
 # No `flutter: assets:` stanza here, deliberately: the worker assets must come
 # from core's own declaration, which is what a real consumer relies on.
 flutter:

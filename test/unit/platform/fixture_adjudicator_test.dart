@@ -2,10 +2,10 @@
 // unknown directives fail.
 //
 // WHERE THE EXPECTED VALUES COME FROM: upstream's own fixture text, verbatim
-// (the embedded corpus is a copy of monty v0.0.23's `test_cases/`), and the
-// rules in upstream's `crates/monty-datatest/src/main.rs`. The frames fed in
-// are what the engine reports for that source — line and column read off the
-// fixture by hand — not anything produced by this package's encoder.
+// (the embedded corpus is a copy of the pinned upstream `test_cases/`), and
+// the rules in upstream's `crates/monty-datatest/src/main.rs`. The frames fed
+// in are what upstream reports for that source — line and column read off
+// the fixture by hand — not anything produced by this package's encoder.
 //
 // Pure Dart, so it runs on the VM, dart2js and dart2wasm (gate steps
 // unit_tests and unit_web).
@@ -14,12 +14,13 @@ library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/monty_conformance.dart';
+import 'package:monty_conformance/worker_conformance.dart';
 import 'package:test/test.dart';
 
 FixtureOutcome _raised(
   String excType,
   String message, [
-  List<MontyStackFrame> frames = const [],
+  List<FixtureFrame> frames = const [],
 ]) => FixtureOutcome(excType: excType, message: message, traceback: frames);
 
 FixtureExpectation _parse(String source) {
@@ -56,7 +57,6 @@ void main() {
     });
 
     test('a message carrying a "Type: " prefix fails', () {
-      // The shape a compile-time error arrives in through monty_create.
       expect(
         adjudicateFixture(
           expectation,
@@ -67,7 +67,7 @@ void main() {
     });
 
     test('quotes are chosen and escaped as CPython repr does', () {
-      // Both directives are verbatim from the v0.0.23 corpus.
+      // Both directives are verbatim from upstream's corpus.
       expect(
         adjudicateFixture(
           _parse("x\n# Raise=TypeError(\"hello 'there'\")"),
@@ -104,9 +104,9 @@ void main() {
 
   group('a TRACEBACK docstring is matched frame by frame', () {
     // builtin__next_stop_iteration.py, verbatim from the corpus.
-    final source = fixtureCorpus['builtin__next_stop_iteration.py']!;
+    final source = fixtureCorpusV1['builtin__next_stop_iteration.py']!;
     final expectation = _parse(source);
-    const frame = MontyStackFrame(
+    const frame = FixtureFrame(
       filename: 'builtin__next_stop_iteration.py',
       startLine: 2,
       startColumn: 1,
@@ -123,7 +123,7 @@ void main() {
     });
 
     test('the right exception from the WRONG line fails', () {
-      const moved = MontyStackFrame(
+      const moved = FixtureFrame(
         filename: 'builtin__next_stop_iteration.py',
         startLine: 3,
         startColumn: 1,
@@ -148,9 +148,9 @@ void main() {
       // traceback__recursion_error.py: 1 module frame + 50 recurse frames at
       // upstream's TEST_RECURSION_LIMIT, printed as 3 + "repeated 47".
       final recursion = _parse(
-        fixtureCorpus['traceback__recursion_error.py'] ?? '',
+        fixtureCorpusV1['traceback__recursion_error.py'] ?? '',
       );
-      const module = MontyStackFrame(
+      const module = FixtureFrame(
         filename: 'traceback__recursion_error.py',
         startLine: 5,
         startColumn: 1,
@@ -158,7 +158,7 @@ void main() {
         endColumn: 10,
         previewLine: 'recurse()',
       );
-      const recurse = MontyStackFrame(
+      const recurse = FixtureFrame(
         filename: 'traceback__recursion_error.py',
         startLine: 2,
         startColumn: 5,
@@ -179,7 +179,7 @@ void main() {
 
   group('xfail=monty is strict', () {
     // type_error__list_iadd_int.py: upstream declares monty expected to fail.
-    final source = fixtureCorpus['type_error__list_iadd_int.py']!;
+    final source = fixtureCorpusV1['type_error__list_iadd_int.py']!;
 
     test('the fixture is RUN, not skipped', () {
       expect(parseFixture(source), isA<ExpectXfail>());
@@ -237,10 +237,10 @@ void main() {
     });
   });
 
-  test('every fixture in the v0.0.23 corpus parses, and one is xfail', () {
+  test('every fixture in the pinned corpus parses, and one is xfail', () {
     final malformed = <String, String>{};
     var xfail = 0;
-    for (final MapEntry(:key, :value) in fixtureCorpus.entries) {
+    for (final MapEntry(:key, :value) in fixtureCorpusV1.entries) {
       switch (_parse(value)) {
         case MalformedFixture(:final reason):
           malformed[key] = reason;
@@ -254,7 +254,7 @@ void main() {
   });
 
   test('# Return.str= compares str() of the result', () {
-    final e = _parse(fixtureCorpus['refcount__cycle_deep.py']!);
+    final e = _parse(fixtureCorpusV1['refcount__cycle_deep.py']!);
     expect(e, isA<ExpectReturnStr>());
     expect(
       adjudicateFixture(e, const FixtureOutcome(value: MontyString('done'))),

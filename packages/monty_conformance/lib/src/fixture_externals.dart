@@ -1,23 +1,21 @@
+// HostClass is internal to dart_monty_core; ClassType wraps one.
+// ignore_for_file: implementation_imports
+
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart' show HostClass;
 
 /// The external functions and name constants that `# call-external` fixtures
-/// expect a host to provide.
+/// expect a host to provide, in the shape the web demo's conformance panel
+/// uses ([conformanceDispatch]). The corpus runner uses its own port of
+/// upstream's harness (`worker_fixture_host.dart`).
 ///
 /// **This table is the fixtures' half of a contract.** A `# call-external`
-/// fixture is not a test of the interpreter alone — it is a test of the
-/// host↔sandbox round trip, and it only runs if someone supplies `add_ints`
-/// and friends. That is why a demo without them shows `ext_call 0/36`.
+/// fixture is not a test of the interpreter alone: it tests the host/sandbox
+/// round trip, and it only runs if someone supplies `add_ints` and friends.
 ///
-/// **Every consumer must use this table — there are no local copies.** All
-/// four harnesses read it: `oracle_ffi_ext_test.dart`, both WASM corpus
-/// runners (`wasm_runner.dart`, `wasm_runner_wasm.dart`) and the browser demo.
-///
-/// Duplicating it has silently broken conformance twice. First the FFI oracle
-/// modelled 4 functions while `wasm_runner.dart` modelled 15, so FFI asserted
-/// fewer fixtures than the web. Then the WASM runners kept `typeId: 0` on
-/// every dataclass after this table gave each class its own, so
-/// `dataclass__basic.py` passed on FFI and failed on WASM (FB-10). A copy
-/// does not stay a copy.
+/// The dataclass methods (`sum`, `add`, `scale`, `describe`, `greeting`) are
+/// not here: they are methods of the classes the `make_*` functions return,
+/// and the session calls them with their receiver bound.
 ///
 /// Dependency-light on purpose so it compiles for the browser.
 const conformanceExtFns = {
@@ -25,190 +23,158 @@ const conformanceExtFns = {
   'concat_strings',
   'return_value',
   'get_list',
-  'raise_error', // raise_error(excType, msg) → resumeWithException
+  'raise_error', // raise_error(excType, msg) → raises excType(msg)
   'make_point',
   'make_mutable_point',
   'make_user',
   'make_empty',
-  // Dataclass method calls.
-  //
-  // STALE CONTRACT, corrected 2026-09-15: this said "self is arguments[0]".
-  // It is not, at monty v0.0.23. A method call on a HOST dataclass arrives
-  // with `arguments` EMPTY; the receiver travels as `FunctionCall.object_id`,
-  // a per-instance UUID. Measured against pydantic-monty 0.0.23 directly:
-  //     FunctionSnapshot fn='nonexistent_method'
-  //       object_id=UUID('dcae8e85-...') args=()
-  // and identically through our own FFI, for a PRESENT method (`sum`) as well
-  // as an absent one. `native/src/repl_handle.rs:848` reduces that UUID to
-  // `object_id.is_some()`, so it never reaches Dart and these five branches
-  // cannot find their receiver. They therefore THROW (see below) rather than
-  // crash with a bare "Bad state: No element".
-  //
-  // Only dataclass__basic.py reaches them, and it fails earlier (line 243).
-  // Verified the other four fixtures naming these method names --
-  // class__body_external, class__closures, class__name_error, class__scope --
-  // call them on SANDBOX-defined classes, not host dataclasses, and all four
-  // pass. See artifacts/DIAG-DATACLASS-BASIC-2026-09-15.md.
-  'sum', // Point/MutablePoint.sum() → x + y
-  'add', // Point.add(dx, dy) → new Point(x=x+dx, y=y+dy)
-  'scale', // Point.scale(factor) → new Point(x=x*factor, y=y*factor)
-  'describe', // Point.describe(label) → '{label}({x}, {y})'
-  'greeting', // User.greeting() → 'Hello, {name}!'
 };
 
-/// Class identity for host-supplied dataclasses. `typeId` is what the engine
-/// compares to decide whether two dataclasses are the same class, so each
-/// class needs its own — sharing one makes distinct classes indistinguishable.
-///
-/// All four of these were `0`. `dataclass__basic.py` asserts
-/// `point != mut_point` precisely because Point and MutablePoint hold
-/// identical field names and values, and with a shared id they compared equal.
-/// The values themselves are arbitrary; only their distinctness matters.
-const _pointTypeId = 1;
-const _mutablePointTypeId = 2;
-const _userTypeId = 3;
-const _emptyTypeId = 4;
+/// A host dataclass instance: its class name and its fields.
+typedef _Fields = ({String className, Map<String, MontyValue> attrs});
 
-/// Answers a call to one of [conformanceExtFns].
+int _int(_Fields self, String name) => (self.attrs[name]! as MontyInt).value;
+
+_Fields _withXY(_Fields self, int x, int y) => (
+  className: self.className,
+  attrs: {'x': MontyInt(x), 'y': MontyInt(y)},
+);
+
+/// A fixture dataclass named [name]. Every one has the same members; a field
+/// or method the instance lacks raises `AttributeError`.
+HostClass<_Fields> _hostClass(String name) => HostClass(
+  name,
+  isDataclass: true,
+  instance: (
+    fields: <String, Object Function(_Fields self)>{
+      for (final name in ['x', 'y', 'name', 'active'])
+        name: (self) => self.attrs[name] ?? (throw _absent(self, name)),
+    },
+    properties: <String, Object Function(_Fields self)>{},
+    methods:
+        <
+          String,
+          Object Function(
+            _Fields self,
+            List<MontyValue> args,
+            Map<String, MontyValue> kwargs,
+          )
+        >{
+          // sum(self) → self.x + self.y
+          'sum': (self, args, kwargs) =>
+              MontyInt(_int(self, 'x') + _int(self, 'y')),
+          // add(self, dx, dy) → a new instance with x + dx, y + dy
+          'add': (self, args, kwargs) => _instance(
+            _withXY(
+              self,
+              _int(self, 'x') + (args[0] as MontyInt).value,
+              _int(self, 'y') + (args[1] as MontyInt).value,
+            ),
+          ),
+          // scale(self, factor) → a new instance with x * factor, y * factor
+          'scale': (self, args, kwargs) {
+            final factor = (args.first as MontyInt).value;
+
+            return _instance(
+              _withXY(self, _int(self, 'x') * factor, _int(self, 'y') * factor),
+            );
+          },
+          // describe(self, label) → '{label}({x}, {y})'
+          'describe': (self, args, kwargs) {
+            final label =
+                (args.isNotEmpty ? args.first : kwargs['label'])!
+                    as MontyString;
+
+            return MontyString(
+              '${label.value}(${_int(self, 'x')}, ${_int(self, 'y')})',
+            );
+          },
+          // greeting(self: User) → 'Hello, {name}!'
+          'greeting': (self, args, kwargs) {
+            final name = (self.attrs['name']! as MontyString).value;
+
+            return MontyString('Hello, $name!');
+          },
+        },
+  ),
+);
+
+ExternalException _absent(_Fields self, String name) => ExternalException(
+  'AttributeError',
+  "'${self.className}' object has no attribute '$name'",
+);
+
+/// One class per name, so two instances of a class share its identity and
+/// Point and MutablePoint, whose fields are the same, stay distinct classes.
+final _classes = <String, ClassType<_Fields>>{};
+
+ClassInstance<_Fields> _instance(_Fields fields) => ClassInstance(
+  fields,
+  classType: _classes.putIfAbsent(
+    fields.className,
+    () => ClassType(_hostClass(fields.className)),
+  ),
+  policies: (
+    eagerAttrs: fields.attrs.keys.toList(),
+    lazyAttrs: 'all',
+    allowedMethods: 'all',
+  ),
+);
+
+/// Answers a call to one of [conformanceExtFns]: a [MontyValue], or a host
+/// object ([ClassInstance]) for the `make_*` functions.
 ///
 /// Throws [StateError] for anything else, so a caller can report "this
 /// fixture needs an external we do not model" instead of a false failure.
-Object? conformanceDispatch(
+Object conformanceDispatch(
   String functionName,
   List<MontyValue> args,
   Map<String, MontyValue>? kwargs,
 ) => switch (functionName) {
   // add_ints(a: int, b: int) → int
-  'add_ints' => (args.first.dartValue! as int) + (args[1].dartValue! as int),
+  'add_ints' => MontyInt(
+    (args.first as MontyInt).value + (args[1] as MontyInt).value,
+  ),
   // concat_strings(a: str, b: str) → str
-  'concat_strings' => '${args.first.dartValue}${args[1].dartValue}',
+  'concat_strings' => MontyString(
+    '${(args.first as MontyString).value}${(args[1] as MontyString).value}',
+  ),
   // return_value(x: any) → x  (identity)
-  'return_value' => args.first.dartValue,
+  'return_value' => args.first,
   // get_list() → [1, 2, 3]
-  'get_list' => [1, 2, 3],
-  // make_point() → frozen Point(x=1, y=2)
-  'make_point' => const MontyDataclass(
-    name: 'Point',
-    typeId: _pointTypeId,
-    fieldNames: ['x', 'y'],
-    attrs: {'x': MontyInt(1), 'y': MontyInt(2)},
-    frozen: true,
+  'get_list' => const MontyList([MontyInt(1), MontyInt(2), MontyInt(3)]),
+  // raise_error(exc_type: str, message: str) → raises exc_type(message)
+  'raise_error' => throw ExternalException(
+    (args.first as MontyString).value,
+    (args[1] as MontyString).value,
   ),
-  // make_mutable_point() → mutable MutablePoint(x=1, y=2)
-  'make_mutable_point' => const MontyDataclass(
-    name: 'MutablePoint',
-    typeId: _mutablePointTypeId,
-    fieldNames: ['x', 'y'],
-    attrs: {'x': MontyInt(1), 'y': MontyInt(2)},
-  ),
-  // make_user(name: str) → frozen User(name=name, active=True)
-  // Frozen so that hash(user) works (the fixture asserts hashability).
-  'make_user' => MontyDataclass(
-    name: 'User',
-    typeId: _userTypeId,
-    fieldNames: const ['name', 'active'],
-    attrs: {
-      'name': args.first as MontyString,
-      'active': const MontyBool(true),
-    },
-    frozen: true,
-  ),
-  // make_empty() → mutable Empty() with no fields
-  'make_empty' => const MontyDataclass(
-    name: 'Empty',
-    typeId: _emptyTypeId,
-    fieldNames: [],
-    attrs: {},
-  ),
-  // --- dataclass method calls ---
-  //
-  // Each of these needs `self`, which monty v0.0.23 does NOT put in
-  // `arguments` (see the note on the name table above). Rather than let
-  // `args.first` throw a bare "Bad state: No element" from inside a switch
-  // arm -- which is what happened, and which reads like a harness bug rather
-  // than a missing binding -- refuse explicitly. StateError is already this
-  // function's "unmodelled external" signal, so the caller reports a skip with
-  // a reason instead of dying.
-  'sum' ||
-  'add' ||
-  'scale' ||
-  'describe' ||
-  'greeting' when args.isEmpty => throw StateError(
-    'dataclass method "$functionName" needs its receiver, but monty v0.0.23 '
-    'sends an empty argument list and the receiver only as '
-    'FunctionCall.object_id, which native/src/repl_handle.rs:848 discards '
-    '(object_id.is_some()). Forward the receiver before re-enabling these.',
-  ),
-
-  // sum(self) → self.x + self.y
-  'sum' => () {
-    final self = args.first as MontyDataclass;
-    return (self.attrs['x']! as MontyInt).value +
-        (self.attrs['y']! as MontyInt).value;
-  }(),
-
-  // add(self, dx, dy) → new dataclass(x=self.x+dx, y=self.y+dy)
-  'add' => () {
-    final self = args.first as MontyDataclass;
-    final dx = (args[1] as MontyInt).value;
-    final dy = (args[2] as MontyInt).value;
-    return MontyDataclass(
-      name: self.name,
-      typeId: self.typeId,
-      fieldNames: const ['x', 'y'],
-      attrs: {
-        'x': MontyInt((self.attrs['x']! as MontyInt).value + dx),
-        'y': MontyInt((self.attrs['y']! as MontyInt).value + dy),
-      },
-      frozen: self.frozen,
-    );
-  }(),
-
-  // scale(self, factor) → new dataclass(x=self.x*factor, y=self.y*factor)
-  'scale' => () {
-    final self = args.first as MontyDataclass;
-    final factor = (args[1] as MontyInt).value;
-    return MontyDataclass(
-      name: self.name,
-      typeId: self.typeId,
-      fieldNames: const ['x', 'y'],
-      attrs: {
-        'x': MontyInt((self.attrs['x']! as MontyInt).value * factor),
-        'y': MontyInt((self.attrs['y']! as MontyInt).value * factor),
-      },
-      frozen: self.frozen,
-    );
-  }(),
-
-  // describe(self, label) or describe(self, label=label)
-  // → '{label}({self.x}, {self.y})'
-  'describe' => () {
-    final self = args.first as MontyDataclass;
-    final labelValue =
-        (args.length > 1 ? args[1] : kwargs?['label'])! as MontyString;
-    final label = labelValue.value;
-    final x = (self.attrs['x']! as MontyInt).value;
-    final y = (self.attrs['y']! as MontyInt).value;
-    return '$label($x, $y)';
-  }(),
-
-  // greeting(self: User) → 'Hello, {name}!'
-  'greeting' => () {
-    final self = args.first as MontyDataclass;
-    final name = (self.attrs['name']! as MontyString).value;
-    return 'Hello, $name!';
-  }(),
-
+  // make_point() → Point(x=1, y=2)
+  'make_point' => _instance((
+    className: 'Point',
+    attrs: const {'x': MontyInt(1), 'y': MontyInt(2)},
+  )),
+  // make_mutable_point() → MutablePoint(x=1, y=2)
+  'make_mutable_point' => _instance((
+    className: 'MutablePoint',
+    attrs: const {'x': MontyInt(1), 'y': MontyInt(2)},
+  )),
+  // make_user(name: str) → User(name=name, active=True)
+  'make_user' => _instance((
+    className: 'User',
+    attrs: {'name': args.first as MontyString, 'active': const MontyBool(true)},
+  )),
+  // make_empty() → Empty() with no fields
+  'make_empty' => _instance((className: 'Empty', attrs: const {})),
   _ => throw StateError('Unexpected external function: $functionName'),
 };
 
 /// Values the engine asks for by name. `# call-external` fixtures reference
 /// these as bare globals, resolved through the name-lookup path.
-const conformanceNameConstants = <String, Object?>{
-  'CONST_INT': 42,
-  'CONST_STR': 'hello',
-  'CONST_FLOAT': 3.14,
-  'CONST_BOOL': true,
-  'CONST_LIST': [1, 2, 3],
-  'CONST_NONE': null,
+const conformanceNameConstants = <String, MontyValue>{
+  'CONST_INT': MontyInt(42),
+  'CONST_STR': MontyString('hello'),
+  'CONST_FLOAT': MontyFloat(3.14),
+  'CONST_BOOL': MontyBool(true),
+  'CONST_LIST': MontyList([MontyInt(1), MontyInt(2), MontyInt(3)]),
+  'CONST_NONE': MontyNone(),
 };

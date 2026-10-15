@@ -1,68 +1,97 @@
-// 01 — One-shot execution
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// Monty.exec() creates a temporary interpreter, runs code, disposes.
-// No state survives between calls — each exec() starts fresh.
+// 01 — Running code
 //
-// Covers: Monty.exec, MontyResult, MontyResourceUsage, MontyValue basics.
+// Monty.withPool starts a pool of worker processes and closes it when the
+// body ends; withSession checks a worker out for one session and gives it
+// back. feedRun runs a snippet and returns the value of its last
+// expression as a MontyValue, or MontyNone.
+//
+// A Python exception that escapes the snippet throws MontyRuntimeError in
+// Dart; the session survives it.
+//
+// Covers: Monty.withPool, Monty.withSession, MontySession.feedRun, inputs,
+//         MontyRuntimeError, pattern matching on MontyValue.
 //
 // Run: dart run example/01_one_shot.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  // ── Arithmetic ──────────────────────────────────────────────────────────────
-  final r1 = await Monty.exec('2 ** 10');
-  print('2**10 = ${r1.value}'); // MontyInt(1024)
+  await Monty.withPool(
+    (monty) => monty.withSession((session) async {
+      // ── Arithmetic ────────────────────────────────────────────────────────
+      final r1 = await session.feedRun('2 ** 10');
+      print('2**10 = $r1');
+      _check(r1 == const MontyInt(1024), '2 ** 10');
 
-  // ── Print capture ───────────────────────────────────────────────────────────
-  // printOutput contains everything written to stdout during execution.
-  final r2 = await Monty.exec('print("hello"); print("world")');
-  print('captured: ${r2.printOutput}'); // hello\nworld\n
+      // ── Statements return None ────────────────────────────────────────────
+      final none = await session.feedRun('x = 1');
+      print('assignment => $none');
+      _check(none is MontyNone, 'assignment');
 
-  // ── String result ───────────────────────────────────────────────────────────
-  final r3 = await Monty.exec('"py" + "thon"');
-  switch (r3.value) {
-    case MontyString(:final value):
-      print('string: $value');
-    default:
-      print('unexpected: ${r3.value}');
-  }
+      // ── String result ─────────────────────────────────────────────────────
+      final r3 = await session.feedRun('"py" + "thon"');
+      switch (r3) {
+        case MontyString(:final value):
+          print('string: $value');
+          _check(value == 'python', 'concat');
+        default:
+          throw StateError('unexpected: $r3');
+      }
 
-  // ── Inputs: inject Dart values as Python variables ───────────────────────────
-  // Dart Map<String, Object?> → Python assignment statements prepended to code.
-  final r4 = await Monty.exec('x * x', inputs: {'x': 7});
-  print('7*7 = ${r4.value}'); // MontyInt(49)
+      // ── Inputs: bind Dart values as Python globals ────────────────────────
+      final r4 = await session.feedRun(
+        'x * x',
+        inputs: {'x': const MontyInt(7)},
+      );
+      print('7*7 = $r4');
+      _check(r4 == const MontyInt(49), 'x * x');
 
-  // ── Resource usage ──────────────────────────────────────────────────────────
-  final usage = r4.usage;
-  print('memory: ${usage.memoryBytesUsed} bytes');
-  print('time:   ${usage.timeElapsedMs} ms');
-  print('stack:  ${usage.stackDepthUsed}');
+      // MontyValue.fromDart converts plain Dart data.
+      final r5 = await session.feedRun(
+        'sorted(d["xs"])[-1]',
+        inputs: {
+          'd': MontyValue.fromDart({
+            'xs': [3, 9, 4],
+          }),
+        },
+      );
+      print('max = ${r5.dartValue}');
+      _check(r5 == const MontyInt(9), 'inputs from Dart');
 
-  // ── Python error in result ───────────────────────────────────────────────────
-  // A Python exception does NOT throw in Dart — it lands in result.error.
-  final r5 = await Monty.exec('1 / 0');
-  if (r5.error != null) {
-    print('error: ${r5.error!.excType} — ${r5.error!.message}');
-  }
+      // ── A Python error throws ─────────────────────────────────────────────
+      try {
+        await session.feedRun('1 / 0');
+        throw StateError('1 / 0 did not raise');
+      } on MontyRuntimeError catch (e) {
+        print('error: ${e.exception.excType}: ${e.exception.message}');
+        _check(e.exception.excType == 'ZeroDivisionError', 'excType');
+      }
+      // The session is still usable afterwards.
+      _check(
+        await session.feedRun('x') == const MontyInt(7),
+        'session survives an error',
+      );
 
-  // ── Pattern matching on MontyValue ──────────────────────────────────────────
-  // result.value when an error occurred is MontyNone.
-  for (final code in [
-    'None',
-    'True',
-    '42',
-    '3.14',
-    '"hello"',
-    'b"bytes"',
-    '[1,2,3]',
-    '(1,2)',
-    '{1,2}',
-    '{"a":1}',
-  ]) {
-    final r = await Monty.exec(code);
-    _printValue(code, r.value);
-  }
+      // ── Pattern matching on MontyValue ────────────────────────────────────
+      for (final code in [
+        'None',
+        'True',
+        '42',
+        '3.14',
+        '"hello"',
+        'b"bytes"',
+        '[1,2,3]',
+        '(1,2)',
+        '{1,2}',
+        '{"a":1}',
+      ]) {
+        _printValue(code, await session.feedRun(code));
+      }
+    }),
+  );
 }
 
 void _printValue(String code, MontyValue v) {
@@ -81,4 +110,8 @@ void _printValue(String code, MontyValue v) {
     _ => v.toString(),
   };
   print('$code => $label');
+}
+
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

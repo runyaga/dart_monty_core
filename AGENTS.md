@@ -3,16 +3,14 @@
 dart_monty_core runs Python (upstream `pydantic/monty`) from Dart. The worker
 stack (`native/worker/`, `lib/src/worker/`) runs it in a worker process
 (native) or a worker module (browser), on three Dart compilers (VM, dart2js,
-dart2wasm). Sections 1 to 8 target that stack. Section 9 covers the older
-FFI/WASM engine (`native/src/`, `js/`), which is still in the tree. Commands
-come first.
+dart2wasm). Commands come first.
 
 ## 1. Fresh clone: three commands
 
 ```bash
 dart pub get                     # root only (see the note on packages/monty_conformance)
 bash tool/build_worker.sh        # builds the worker binary; ~4 min cold. Needs rustup
-dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker   # ~6 s
+dart test --exclude-tags=integration,ladder,example,worker   # ~6 s
 ```
 
 - The worker binary lands in `lib/src/bin/<os>-<arch>/` (gitignored). Rebuild
@@ -21,9 +19,8 @@ dart test --exclude-tags=ffi,wasm,integration,ladder,example,worker   # ~6 s
 - Tools needed: Dart SDK (pinned, see section 8), Rust via rustup (the channel
   comes from `native/rust-toolchain.toml`) plus `cargo-deny` (`cargo install cargo-deny --locked`;
   `tool/gate.sh` runs `cargo deny check`), Chrome for web tests, Python 3.11+ (CI uses 3.12; the worker build and
-  mirror check call `python3`), and Node 22+
-  for the Pages driver in the gate (CI uses Node 24; Node 20 lacks the global
-  `WebSocket` it needs).
+  mirror check call `python3`), and Node (CI uses Node 24) for the wasm smoke
+  test `tool/test_worker_wasm.mjs`.
 - Observed on macOS arm64, Dart 3.13.5: after `dart pub get` inside
   `packages/monty_conformance`, `dart format` rewrote three files there. The root run is enough.
 - Optional, once: `bash tool/install-hooks.sh` (fast pre-commit subset; it is
@@ -88,8 +85,7 @@ means bumping `tool/test_worker_web.sh`.
 
 Other gate notes (these also run in CI): `dart format` is SDK-version
 sensitive, so `bash tool/check_sdk_pin.sh` fails when your `dart` is not the
-pinned one; `bash tool/check_pages.sh` needs a free local port, so rerun
-`pages_render` alone if it flakes on a busy machine.
+pinned one.
 
 ## 5. Generated files: regenerate, never hand-edit
 
@@ -149,6 +145,9 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
 | `unit_tests: ran N < floor` | a tag filter or import broke; section 3 |
 | `Changelog fragment` failing | add `changes/<slug>.md`, or label `no-changelog` |
 | A test hangs 30 s then fails "after test completion" | a settle-loop deadline; read the first failure, not the second |
+| `asset_fresh`: `lib/assets/...wasm is STALE` | `bash tool/prebuild.sh` rebuilds the asset and re-records provenance |
+| `worker_size` over budget | the gzip budget is 5.75 MB (`tool/check_worker_wasm_size.sh`); only a deliberate edit there raises it |
+| `cargo deny` advisory | fix it, or add a reasoned entry in `native/worker/deny.toml` |
 
 ## 8. Toolchain pins
 
@@ -161,41 +160,63 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
   fixes its own stack: 2 MiB on wasm32 (`native/worker/build.rs`).
 - GitHub Actions are pinned by SHA (`tool/check_action_pins.sh`).
 
-## 9. The older FFI/WASM engine
-
-Still in the tree and still built by CI: the `native/` crate (`native/src/`),
-the JS bridge in `js/`, `hook/build.dart`, `test/integration/ffi_*_test.dart`
-and `wasm_*_test.dart`, and the committed bundle in `lib/assets/`.
+## 9. Layout and build
 
 ```
-native/src/  (Rust crate)
-  cargo build --release           -> libdart_monty_core_native.{dylib,so} / dart_monty_core_native.dll  [FFI]
-  cargo build --bin oracle        -> native/target/debug/oracle
-  cargo build --target wasm32-wasip1 --release -> dart_monty_core_native.wasm  [WASM]
-js/src/  (esbuild via node build.js) -> bridge and worker JS
-lib/assets/   committed generated assets (ships on pub.dev; web consumers need no Rust)
+native/worker/   Rust worker crate (upstream's `monty subprocess`, mirrored)
+lib/             Dart library; lib/assets/ holds the committed browser worker
+hook/            native-assets hook: builds the worker only for a root package
+                 that opts in (hooks: user_defines: dart_monty_core: build_worker: true)
+test/            unit/, integration/worker/, contract/, corpus/, hook/
+packages/        monty_conformance (corpus runner), dart_monty_web (stale demo)
+tool/            scripts; tool/upstream/ holds pins and the oracle lock
+changes/         changelog fragments
 ```
 
 ```bash
-bash tool/prebuild.sh        # rebuilds the generated files under lib/assets/ (the proto worker JS is handwritten)
-rustup target add wasm32-wasip1   # once; the wasm scripts add it themselves
+bash tool/prebuild.sh            # rebuilds the wasm asset and re-records provenance
+bash tool/build_worker.sh        # native worker executable for tests
 ```
 
-- `lib/assets/` is where `prebuild.sh` puts committed generated assets (build
-  intermediates go to `native/target/` and `native/worker/target/`), and it also re-records `tool/wasm-provenance.json`. After editing
-  `native/` or `js/`, run
-  `bash tool/prebuild.sh && git add lib/assets/ tool/wasm-provenance.json`.
-- Changing `native/include/dart_monty.h` means `bash tool/generate_bindings.sh`.
-- The FFI dylib is not shipped: `hook/build.dart` builds it from source on the
-  consumer's machine (desktop triples only; iOS and Android emit no asset). It
-  needs a C linker (`xcode-select --install`, `apt install build-essential`, or
-  VS Build Tools with C++).
-- Publishing: `publish.yaml` fires on a tag push matching `v[0-9]+.[0-9]+.[0-9]+*`
-  and publishes via OIDC.
+- The browser assets are `lib/assets/dart_monty_core_worker.js` and
+  `dart_monty_core_worker.wasm`, committed so web consumers need no Rust. The
+  JS loader is handwritten; only the wasm is built. The wasm is not
+  byte-reproducible; `tool/check_asset_freshness.sh` checks input
+  provenance (`tool/wasm-provenance.json`: a hash of `native/worker/` without
+  `target/`, `native/rust-toolchain.toml`, `tool/build_worker_wasm.sh` and
+  `tool/rust_remap.sh`), not bytes. Editing `build_worker_wasm.sh` makes the
+  asset read stale until it is rebuilt or re-recorded. After a rebuild,
+  `git add lib/assets/ tool/wasm-provenance.json`.
+- Consumers without the hook opt-in get no native code and must supply a
+  worker executable at `workerLocation` (`Monty.start`, `Monty.withPool`).
+- Rust checks run in `native/worker/` (`cargo fmt`, `clippy`, `test`, `deny`).
 
-| Symptom | Fix |
-|---|---|
-| `no default linker (cc)` on `pub get` | install a C linker (above) |
-| FFI `ProcessException` on oracle | `cd native && cargo build --bin oracle` |
-| `lib/assets/` stale after editing `native/` or `js/` | `bash tool/prebuild.sh && git add lib/assets/ tool/wasm-provenance.json` |
-| Bindings stale check fails in CI | `bash tool/generate_bindings.sh` |
+## 10. CI
+
+`ci.yaml` jobs, by what they protect: `gate` (the read-only checks of
+`tool/gate.sh`, run by name with a counted total), `test` (unit, JIT + web),
+`test-worker-vm`, `test-worker-web`, `worker-rust` (fmt, clippy, test, deny,
+wasm smoke), `corpus-worker` and `corpus-worker-web` (upstream corpus, native
+and in the browser), `parity`, `parity-e0`, `proto-drift`, `test-aot`,
+`upstream-pin`, `coverage-merge` and `patch-coverage` (30% on changed lines,
+pull requests only). `consumers.yaml` builds the two web consumer probes under
+`tool/consumers/`.
+
+- A `release`-labelled PR, or a `workflow_dispatch` with `force_all: true`,
+  overrides the path filter; each job's other conditions still apply (for
+  example `patch-coverage` needs a pull request). A skipped job is not green.
+
+## 11. Versions and release
+
+- Version maps from upstream: upstream `1.1.0` is package `0.110.x`; the patch
+  is our own fixes on one upstream pin. `tool/check_version_pin.sh` enforces
+  the mapping, reads `tool/upstream/upstream-pin.json`, covers
+  `native/worker/Cargo.toml`, and refuses an upstream version with a
+  component above 9 (the mapping joins three single digits).
+- `0.110.0-dev.N` is a pre-release. `publish.yaml` matches `v[0-9]+.[0-9]+.[0-9]+*`
+  but excludes `v*-dev.*`; `check_workflows_valid.sh` fails if a dev tag would
+  publish.
+- Release PR: assemble fragments (`dart tool/changelog_assemble.dart --version X`),
+  run `dart pub publish --dry-run` there (it fails on a tree whose CHANGELOG
+  lacks the version), then tag. Tags matching the pattern publish via OIDC.
+- The first publish of a new package name must be manual.

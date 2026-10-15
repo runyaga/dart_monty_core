@@ -1,76 +1,94 @@
-// 02 — Stateful interpreter
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// MontyRepl() keeps a live Rust REPL heap across run() calls —
-// variables, functions, classes, and imports all persist without
-// serialisation. For stateless single-shot evaluation see Monty(code) and
-// Monty.exec.
+// 02 — Stateful sessions
 //
-// Covers: MontyRepl constructor, run, clearState, dispose, snapshot,
-//         restore.
+// A MontySession keeps its interpreter between feeds: variables, functions,
+// classes and imports persist. Sessions share nothing with each other, and
+// dump() captures one as bytes that loadSession() restores into a fresh
+// session, in the same pool or another.
+//
+// Covers: Monty.start, checkout, feedRun, inputs, dump, loadSession,
+//         session isolation, close.
 //
 // Run: dart run example/02_stateful.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  // ── State persistence across calls ──────────────────────────────────────────
-  final repl = MontyRepl();
+  final monty = await Monty.start(maxProcesses: 2);
+  try {
+    final session = await monty.checkout();
+    try {
+      // ── State persists across feeds ───────────────────────────────────────
+      await session.feedRun('x = 10');
+      await session.feedRun('y = 20');
+      final r = await session.feedRun('x + y');
+      print('x + y = $r');
+      _check(r == const MontyInt(30), 'x + y');
 
-  await repl.feedRun('x = 10');
-  await repl.feedRun('y = 20');
-  final r = await repl.feedRun('x + y');
-  print('x + y = ${r.value}'); // MontyInt(30)
+      await session.feedRun('def square(n): return n * n');
+      final sq = await session.feedRun('square(7)');
+      print('square(7) = $sq');
+      _check(sq == const MontyInt(49), 'square(7)');
 
-  // Functions survive too.
-  await repl.feedRun('def square(n): return n * n');
-  final sq = await repl.feedRun('square(7)');
-  print('square(7) = ${sq.value}'); // MontyInt(49)
+      // ── Inputs are bound as globals ───────────────────────────────────────
+      await session.feedRun(
+        'total = sum(numbers)',
+        inputs: {
+          'numbers': MontyValue.fromDart([1, 2, 3, 4, 5]),
+        },
+      );
+      final total = await session.feedRun('total');
+      print('sum = $total');
+      _check(total == const MontyInt(15), 'total');
 
-  // ── inputs: per-call variable injection ────────────────────────────────────
-  // Dart values are converted to Python literals and prepended as assignments.
-  // They shadow globals for that call only — the heap is not permanently changed.
-  final r2 = await repl.feedRun('square(n)', inputs: {'n': 5});
-  print('square(5) = ${r2.value}'); // MontyInt(25)
+      // ── dump / loadSession ────────────────────────────────────────────────
+      await session.feedRun('counter = 2');
+      final saved = await session.dump();
+      print('dump: ${saved.length} bytes');
 
-  // Supported input types: null, bool, int, double, String, List, Map.
-  await repl.feedRun(
-    'total = sum(numbers)',
-    inputs: {
-      'numbers': [1, 2, 3, 4, 5],
-    },
-  );
-  print('sum = ${(await repl.feedRun("total")).value}'); // MontyInt(15)
+      await session.feedRun('counter += 100'); // changes this session only
+      final mutated = await session.feedRun('counter');
+      print('mutated: $mutated');
+      _check(mutated == const MontyInt(102), 'mutated');
 
-  // ── clearState ─────────────────────────────────────────────────────────────
-  // Wipes globals. Next feedRun() starts with an empty heap. Looking
-  // up a previously-defined name raises Python NameError, which lands
-  // in MontyResult.error rather than throwing.
-  await repl.clearState();
-  final blank = await repl.feedRun('x');
-  print('after clear — x error: ${blank.error?.excType}'); // NameError
+      // Restore into a fresh session: it starts where the dump was taken.
+      final restored = await monty.checkout();
+      try {
+        await restored.loadSession(saved);
+        final counter = await restored.feedRun('counter');
+        print('restored: $counter');
+        _check(counter == const MontyInt(2), 'restored counter');
+        _check(
+          await restored.feedRun('square(3)') == const MontyInt(9),
+          'restored function',
+        );
+      } finally {
+        await restored.close();
+      }
+    } finally {
+      await session.close();
+    }
 
-  // ── snapshot / restore ─────────────────────────────────────────────────────
-  // Capture the full heap as bytes, then restore it later.
-  await repl.feedRun('counter = 0');
-  await repl.feedRun('counter += 1');
-  await repl.feedRun('counter += 1');
-  print('counter before snap: ${(await repl.feedRun("counter")).value}'); // 2
+    // ── Sessions are isolated ───────────────────────────────────────────────
+    final other = await monty.withSession(
+      (s) => s.feedRun('''
+try:
+    x
+    seen = True
+except NameError:
+    seen = False
+seen
+'''),
+    );
+    print('a new session sees x: $other');
+    _check(other == const MontyBool(false), 'isolation');
+  } finally {
+    await monty.close();
+  }
+}
 
-  final snap = await repl.snapshot();
-  print('snapshot: ${snap.length} bytes');
-
-  await repl.feedRun('counter += 100'); // mutate after snapshot
-  print('mutated: ${(await repl.feedRun("counter")).value}'); // 102
-
-  await repl.restore(snap); // rewind
-  print('restored: ${(await repl.feedRun("counter")).value}'); // 2
-
-  // ── dispose ────────────────────────────────────────────────────────────────
-  // Always dispose to free the native Rust handle.
-  repl.dispose();
-
-  // ── Static one-shot helpers ─────────────────────────────────────────────────
-  // Monty.exec — no state, no setup, dispose happens automatically.
-  final quick = await Monty.exec('[i*i for i in range(5)]');
-  print('list comp: ${quick.value}'); // MontyList
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

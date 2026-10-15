@@ -57,10 +57,11 @@ This is the rule the other two cannot reach. You can mutate every test, watch
 every one go red, and still build an oracle that proves only that the code
 agrees with itself.
 
-That happened here. The conformance suite compares the FFI shim against a binary
-that includes the same `convert.rs` via `#[path = "../convert.rs"]`. Both sides
-encode with the same code, so it cannot detect a bug in the encoder — and did
-not, through 1062 green fixtures, for two separate defects.
+That happened here. A conformance suite once compared an in-process binding
+against a binary that included the same `convert.rs` via
+`#[path = "../convert.rs"]`. Both sides encoded with the same code, so it could
+not detect a bug in the encoder, and did not, through 1062 green fixtures, for
+two separate defects.
 
 Before trusting a reference, say what it shares with the subject: the same
 struct, the same function, the same file, the same assumption. Shared anything

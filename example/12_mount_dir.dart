@@ -1,37 +1,42 @@
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
+//
 // 12 — MountDir + memoryMountedOsHandler
 //
-// Python `pathlib.Path` operations route through an OsCallHandler. For
-// the common case of "give Python access to a sandboxed filesystem,"
-// memoryMountedOsHandler builds a handler from a list of MountDir
-// declarations and an in-memory `Map<String, String>` backing store.
+// For the common case of "give Python a sandboxed filesystem",
+// memoryMountedOsHandler builds an OsHandler from MountDir declarations and
+// in-memory files (MontyMemoryFile). Writes update those file objects, so
+// Dart reads the results directly.
 //
 // The handler enforces:
 //  - Path normalisation (`.`, `..`, empty segments collapsed).
-//  - Sandbox boundary — `..` traversal that escapes raises
-//    PermissionError.
-//  - MountMode (readOnly rejects writes).
-//  - Cumulative writeBytesLimit (total bytes through the mount) and
-//    memoryUsageLimit (bytes currently retained; 100 MB by default).
+//  - The sandbox boundary: a path that resolves outside every mount is
+//    absent (FileNotFoundError), `..` tricks included.
+//  - MountMode: a readOnly mount rejects writes.
+//  - writeBytesLimit (total bytes written through the mount) and
+//    memoryUsageLimit (bytes currently held; 100 MB by default).
 //
-// Compared to a hand-rolled OsCallHandler (see example 03), MountDir
-// declares the policy once and lets the helper enforce it.
-//
-// Covers: MountDir, MountMode, memoryMountedOsHandler, fallthrough
-//         handler chaining for non-Path operations.
+// Covers: MountDir, MountMode, MontyMemoryFile, memoryMountedOsHandler,
+//         a fallthrough handler for calls outside the mounts.
 //
 // Run: dart run example/12_mount_dir.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _readWrite();
-  await _readOnly();
-  await _writeLimit();
-  await _fallthrough();
+  await Monty.withPool(
+    (monty) => monty.withSession((session) async {
+      await session.feedRun('import pathlib, os');
+      await _readWrite(session);
+      await _readOnly(session);
+      await _writeLimit(session);
+      await _fallthrough(session);
+    }),
+  );
 }
 
-// ── Basic read/write through a single mount ──────────────────────────────────
-Future<void> _readWrite() async {
+// ── Read and write through a mount ───────────────────────────────────────────
+Future<void> _readWrite(MontySession session) async {
   print('\n── read / write ──');
 
   final newFile = MontyMemoryFile('/data/new.txt', '');
@@ -40,21 +45,31 @@ Future<void> _readWrite() async {
     files: [MontyMemoryFile('/data/hello.txt', 'Hello from VFS!'), newFile],
   );
 
-  final read = await Monty(
-    'import pathlib\npathlib.Path("/data/hello.txt").read_text()',
-  ).run(osHandler: handler);
-  print('read:   ${read.value}');
+  final read = await session.feedRun(
+    'pathlib.Path("/data/hello.txt").read_text()',
+    os: handler,
+  );
+  print('read:   $read');
+  _check(read == const MontyString('Hello from VFS!'), 'read');
 
-  await Monty(
-    'import pathlib\n'
+  await session.feedRun(
     'pathlib.Path("/data/new.txt").write_text("written from Python")',
-  ).run(osHandler: handler);
+    os: handler,
+  );
   print('wrote:  ${newFile.content.text}');
+  _check(newFile.content.text == 'written from Python', 'write');
+
+  final escape = await _error(
+    session,
+    'pathlib.Path("/data/../etc/passwd").read_text()',
+    handler,
+  );
+  print('escape: $escape');
+  _check(escape.exception.excType == 'FileNotFoundError', 'boundary');
 }
 
-// ── readOnly mounts reject writes from Python ────────────────────────────────
-// PermissionError surfaces to the caller via MontyResult.error.
-Future<void> _readOnly() async {
+// ── A readOnly mount rejects writes ──────────────────────────────────────────
+Future<void> _readOnly(MontySession session) async {
   print('\n── readOnly ──');
 
   final handler = memoryMountedOsHandler(
@@ -62,24 +77,25 @@ Future<void> _readOnly() async {
     files: [MontyMemoryFile('/secrets/api_key.txt', 'sk-12345')],
   );
 
-  // Reads succeed.
-  final ok = await Monty(
-    'import pathlib\npathlib.Path("/secrets/api_key.txt").read_text()',
-  ).run(osHandler: handler);
-  print('read:   ${ok.value}');
+  final ok = await session.feedRun(
+    'pathlib.Path("/secrets/api_key.txt").read_text()',
+    os: handler,
+  );
+  print('read:   $ok');
 
-  // Writes fail.
-  final fail = await Monty(
-    'import pathlib\n'
+  final error = await _error(
+    session,
     'pathlib.Path("/secrets/api_key.txt").write_text("hijacked")',
-  ).run(osHandler: handler);
-  print('write:  error="${fail.error?.message}"');
+    handler,
+  );
+  print('write:  $error');
+  _check(error.exception.excType == 'PermissionError', 'readOnly');
 }
 
-// ── writeBytesLimit caps CUMULATIVE bytes through the mount ──────────────────
-// Monotonic: deleting does not buy budget back. memoryUsageLimit is the
-// companion that bounds the live tree instead, and IS refunded on delete.
-Future<void> _writeLimit() async {
+// ── writeBytesLimit caps the total written through the mount ─────────────────
+// Deleting a file does not give that budget back; memoryUsageLimit, which
+// bounds what is held, does.
+Future<void> _writeLimit(MontySession session) async {
   print('\n── writeBytesLimit ──');
 
   final handler = memoryMountedOsHandler(
@@ -87,54 +103,71 @@ Future<void> _writeLimit() async {
     files: const [],
   );
 
-  final small = await Monty(
-    'import pathlib\npathlib.Path("/tmp/ok.txt").write_text("short")',
-  ).run(osHandler: handler);
-  print(
-    'small:  error=${small.error == null ? "<none>" : small.error?.message}',
+  await session.feedRun(
+    'pathlib.Path("/tmp/ok.txt").write_text("short")',
+    os: handler,
   );
+  print('small:  ok');
 
-  final big = await Monty(
-    'import pathlib\n'
+  final error = await _error(
+    session,
     'pathlib.Path("/tmp/big.txt").write_text("x" * 100)',
-  ).run(osHandler: handler);
-  print('big:    error="${big.error?.message}"');
+    handler,
+  );
+  print('big:    $error');
+  _check(error.exception.excType == 'OSError', 'write limit');
 }
 
-// ── fallthrough — chain another handler for non-mount operations ────────────
-// memoryMountedOsHandler only intercepts Path.* operations under a known
-// mount. Anything else (os.getenv, datetime.now, paths outside any mount)
-// is forwarded to fallthrough — typically your existing OsCallHandler.
-Future<void> _fallthrough() async {
+// ── fallthrough: another handler for everything else ─────────────────────────
+// The mount handler answers filesystem calls under its mounts. Anything else
+// (os.getenv, datetime calls, paths outside every mount) goes to fallthrough.
+Future<void> _fallthrough(MontySession session) async {
   print('\n── fallthrough ──');
 
-  Future<Object?> envHandler(
-    String op,
-    List<Object?> args,
-    Map<String, Object?>? kwargs,
-  ) async {
-    if (op == 'os.getenv') {
-      const env = {'APP_ENV': 'production', 'DEBUG': 'false'};
-      return env[args.first! as String];
+  MontyValue env(
+    String name,
+    List<MontyValue> args,
+    Map<String, MontyValue> _,
+  ) {
+    if (name == 'os.getenv') {
+      const vars = {'APP_ENV': 'production', 'DEBUG': 'false'};
+      final value = vars[(args.first as MontyString).value];
+
+      return value == null ? const MontyNone() : MontyString(value);
     }
-    return null;
+    throw const OsCallNotHandledException();
   }
 
   final handler = memoryMountedOsHandler(
     mounts: const [MountDir(virtualPath: '/data')],
     files: [MontyMemoryFile('/data/hello.txt', 'Hello!')],
-    fallthrough: envHandler,
+    fallthrough: env,
   );
 
-  // Routes through memoryMountedOsHandler.
-  final read = await Monty(
-    'import pathlib\npathlib.Path("/data/hello.txt").read_text()',
-  ).run(osHandler: handler);
-  print('mount:  ${read.value}');
+  final read = await session.feedRun(
+    'pathlib.Path("/data/hello.txt").read_text()',
+    os: handler,
+  );
+  print('mount:  $read');
 
-  // Routes through fallthrough.
-  final env = await Monty(
-    'import os\nos.getenv("APP_ENV")',
-  ).run(osHandler: handler);
-  print('env:    ${env.value}');
+  final appEnv = await session.feedRun('os.getenv("APP_ENV")', os: handler);
+  print('env:    $appEnv');
+  _check(appEnv == const MontyString('production'), 'fallthrough');
+}
+
+Future<MontyRuntimeError> _error(
+  MontySession session,
+  String code,
+  OsHandler handler,
+) async {
+  try {
+    await session.feedRun(code, os: handler);
+  } on MontyRuntimeError catch (e) {
+    return e;
+  }
+  throw StateError('no error from: $code');
+}
+
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

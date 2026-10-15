@@ -1,175 +1,197 @@
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
+//
 // 03 — External functions and OS calls
 //
-// Python code can call back into Dart via two mechanisms:
+// Python code calls back into Dart two ways:
 //
-//  1. externalFunctions — named host functions declared before execution.
-//     Python calls them like regular functions; Dart handles each call.
+//  1. externals — named host functions given to a feed. Python calls them
+//     like any function; each receives the positional and keyword
+//     arguments as MontyValues and returns a MontyValue (or a Future of
+//     one, which is awaited).
 //
-//  2. osHandler — intercepts pathlib, os.getenv, os.environ, datetime
-//     operations. Lets you provide a virtual filesystem or sandbox.
+//  2. os — an OsHandler that answers the sandbox's OS calls: pathlib,
+//     os.getenv, os.environ and the like. Each call arrives with a dotted
+//     name such as "Path.read_text" or "os.getenv". Throwing
+//     OsCallNotHandledException declines the call, and throwing
+//     ExternalException raises a chosen Python exception.
 //
-// Covers: MontyCallback, OsCallHandler, OsCallException, externalFunctions param,
-//         Monty(osHandler:), MontyPath, MontyResult.printOutput.
+// Covers: externals, ExternalException, OsHandler, OsCallNotHandledException,
+//         MontyPath.
 //
 // Run: dart run example/03_externals_and_os.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _externalFunctions();
-  await _osCallsVirtualFs();
-  await _osCallError();
+  await Monty.withPool((monty) async {
+    await monty.withSession(_externalFunctions);
+    await monty.withSession(_osCallsVirtualFs);
+    await monty.withSession(_osCallErrors);
+  });
 }
 
-// ── External functions ────────────────────────────────────────────────────────
-// MontyCallback = Future<Object?> Function(List<Object?> args, Map<String, Object?>? kwargs)
-//
-// Positional args arrive in the args list.
-// Keyword args arrive in the kwargs map.
-Future<void> _externalFunctions() async {
-  print('\n── externalFunctions ──');
+// ── External functions ───────────────────────────────────────────────────────
+Future<void> _externalFunctions(MontySession session) async {
+  print('\n── externals ──');
 
-  final repl = MontyRepl();
-
-  await repl.feedRun(
+  await session.feedRun(
     '''
 result = add(3, 4)
 greeting = greet(name="World")
 ''',
-    externalFunctions: {
-      // Positional args arrive in the args list.
-      'add': (args, _) async => (args[0]! as int) + (args[1]! as int),
-
-      // Keyword args land in the kwargs map.
-      'greet': (_, kwargs) async => 'Hello, ${kwargs!['name']}!',
+    externals: {
+      // Positional arguments arrive in the list.
+      'add': (args, _) =>
+          MontyInt((args[0] as MontyInt).value + (args[1] as MontyInt).value),
+      // Keyword arguments arrive in the map.
+      'greet': (_, kwargs) =>
+          MontyString('Hello, ${(kwargs['name']! as MontyString).value}!'),
     },
   );
+  final result = await session.feedRun('result');
+  final greeting = await session.feedRun('greeting');
+  print('add(3,4) = $result');
+  print('greet = $greeting');
+  _check(result == const MontyInt(7), 'add');
+  _check(greeting == const MontyString('Hello, World!'), 'greet');
 
-  print('add(3,4) = ${(await repl.feedRun("result")).value}'); // 7
-  print('greet = ${(await repl.feedRun("greeting")).value}'); // Hello, World!
-
-  // Return complex types: Dart List/Map are converted to Python list/dict.
-  await repl.feedRun(
+  // Return structured data; MontyValue.fromDart builds it from Dart.
+  await session.feedRun(
     'data = fetch_data()',
-    externalFunctions: {
-      'fetch_data': (_, _) async => {
+    externals: {
+      'fetch_data': (_, _) async => MontyValue.fromDart({
         'name': 'alice',
         'scores': [98, 87, 92],
-      },
+      }),
     },
   );
-  final data = await repl.feedRun('data["scores"]');
-  print('scores: $data'); // MontyList
+  final scores = await session.feedRun('max(data["scores"])');
+  print('best score: $scores');
+  _check(scores == const MontyInt(98), 'scores');
 
-  repl.dispose();
+  // A host function raises a Python exception by throwing ExternalException.
+  final caught = await session.feedRun(
+    '''
+try:
+    lookup("missing")
+    out = "no error"
+except KeyError as e:
+    out = "caught KeyError"
+out
+''',
+    externals: {
+      'lookup': (args, _) =>
+          throw const ExternalException('KeyError', 'missing'),
+    },
+  );
+  print('lookup: $caught');
+  _check(caught == const MontyString('caught KeyError'), 'KeyError');
 }
 
-// ── OS calls: virtual filesystem ─────────────────────────────────────────────
-// OsCallHandler = Future<Object?> Function(String op, List<Object?> args, Map?)
-//
-// Python `pathlib.Path`, `os.getenv`, `os.environ`, `datetime.now()` etc.
-// all route through the osHandler. Each operation has a dotted name like
-// "Path.read_text" or "os.getenv".
-Future<void> _osCallsVirtualFs() async {
+// ── OS calls: a virtual filesystem ───────────────────────────────────────────
+Future<void> _osCallsVirtualFs(MontySession session) async {
   print('\n── virtual filesystem ──');
 
-  // In-memory VFS.
   final vfs = <String, String>{
     '/data/hello.txt': 'Hello from VFS!',
     '/data/config.ini': 'debug=true\nversion=2',
   };
+  const env = {'APP_ENV': 'production', 'DEBUG': 'false'};
 
-  Future<Object?> osHandler(
-    String op,
-    List<Object?> args,
-    Map<String, Object?>? kwargs,
-  ) async {
-    switch (op) {
+  MontyValue os(String name, List<MontyValue> args, Map<String, MontyValue> _) {
+    switch (name) {
       case 'Path.read_text':
-        final path = args.first as String;
-        return vfs[path] ?? '';
+        return MontyString(vfs[_text(args[0])] ?? '');
       case 'Path.write_text':
-        vfs[args[0] as String] = args[1] as String;
-        return null;
+        final text = _text(args[1]);
+        vfs[_text(args[0])] = text;
+
+        return MontyInt(text.length);
       case 'Path.exists':
-        return vfs.containsKey(args.first as String);
-      case 'Path.unlink':
-        vfs.remove(args.first as String);
-        return null;
+        return MontyBool(vfs.containsKey(_text(args[0])));
       case 'os.getenv':
-        final key = args.first as String;
-        return {'APP_ENV': 'production', 'DEBUG': 'false'}[key];
+        final value = env[_text(args[0])];
+
+        return value == null ? const MontyNone() : MontyString(value);
       default:
-        throw OsCallException('$op not supported');
+        // Decline: the sandbox raises the call's own default error.
+        throw const OsCallNotHandledException();
     }
   }
 
-  final repl = MontyRepl();
-
-  // pathlib works across calls because state persists on the Rust REPL heap.
-  // The osHandler is passed per feedRun call.
-  await repl.feedRun('import pathlib', osHandler: osHandler);
-  final content = await repl.feedRun(
-    'pathlib.Path("/data/hello.txt").read_text()',
-    osHandler: osHandler,
+  final content = await session.feedRun(
+    'import pathlib\npathlib.Path("/data/hello.txt").read_text()',
+    os: os,
   );
-  print('file content: ${content.value}');
+  print('file content: $content');
+  _check(content == const MontyString('Hello from VFS!'), 'read_text');
 
-  // Write then read back.
-  await repl.feedRun(
+  await session.feedRun(
     'pathlib.Path("/data/new.txt").write_text("written from Python")',
-    osHandler: osHandler,
+    os: os,
   );
   print('wrote to VFS: ${vfs["/data/new.txt"]}');
+  _check(vfs['/data/new.txt'] == 'written from Python', 'write_text');
 
-  // os.getenv
-  final env = await repl.feedRun(
-    'import os; os.getenv("APP_ENV")',
-    osHandler: osHandler,
+  final appEnv = await session.feedRun(
+    'import os\nos.getenv("APP_ENV")',
+    os: os,
   );
-  print('APP_ENV = ${env.value}');
+  print('APP_ENV = $appEnv');
+  _check(appEnv == const MontyString('production'), 'getenv');
 
-  // MontyPath: Python Path objects round-trip as MontyPath values.
-  final pathVal = await repl.feedRun(
-    'pathlib.Path("/data/hello.txt")',
-    osHandler: osHandler,
-  );
-  switch (pathVal.value) {
+  // Path objects come back to Dart as MontyPath.
+  final path = await session.feedRun('pathlib.Path("/data") / "hello.txt"');
+  switch (path) {
     case MontyPath(:final value):
       print('path object: $value');
+      _check(value == '/data/hello.txt', 'MontyPath');
     default:
-      print('path: ${pathVal.value}');
+      throw StateError('expected a MontyPath, got $path');
   }
-
-  repl.dispose();
 }
 
-// ── OS call errors ────────────────────────────────────────────────────────────
-// Throw OsCallException from the handler to raise a Python exception.
-// pythonExceptionType lets you choose the Python exception class (default RuntimeError).
-Future<void> _osCallError() async {
+// ── OS call errors ───────────────────────────────────────────────────────────
+Future<void> _osCallErrors(MontySession session) async {
   print('\n── os call errors ──');
 
-  final repl = MontyRepl();
-  OsCallHandler osHandler = (op, args, kwargs) async {
-    if (op == 'Path.read_text') {
-      throw OsCallException(
-        'Permission denied: ${args.first}',
-        pythonExceptionType:
-            'PermissionError', // becomes a Python PermissionError
+  MontyValue os(String name, List<MontyValue> args, Map<String, MontyValue> _) {
+    if (name == 'Path.read_text') {
+      throw ExternalException(
+        'PermissionError',
+        'Permission denied: ${_text(args[0])}',
       );
     }
-    throw OsCallException('$op not supported');
-  };
+    throw const OsCallNotHandledException();
+  }
 
-  await repl.feedRun('import pathlib', osHandler: osHandler);
-  final r = await repl.feedRun('''
+  final r = await session.feedRun('''
+import pathlib
 try:
     pathlib.Path("/secret").read_text()
 except PermissionError as e:
     result = f"caught: {e}"
-''', osHandler: osHandler);
-  print(r.printOutput ?? ''); // (empty — result is in variable)
-  print(await repl.feedRun('result')); // MontyResult with MontyString
-  repl.dispose();
+result
+''', os: os);
+  print(r.dartValue);
+  _check(r == const MontyString('caught: Permission denied: /secret'), 'r');
+
+  // Without an OsHandler, OS calls are declined.
+  try {
+    await session.feedRun('pathlib.Path("/etc/passwd").read_text()');
+    throw StateError('read without a handler did not raise');
+  } on MontyRuntimeError catch (e) {
+    print('no handler: $e');
+    _check(e.exception.excType == 'PermissionError', 'declined');
+  }
+}
+
+String _text(MontyValue value) => switch (value) {
+  MontyString(:final value) || MontyPath(:final value) => value,
+  _ => throw ArgumentError.value(value, 'value', 'not a string or path'),
+};
+
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }
