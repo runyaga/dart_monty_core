@@ -1,20 +1,16 @@
-// Unit tests for the 18 MontyValue subtypes — equality, hashCode,
-// JSON round-trip, and dartValue projection.
+// Unit tests for the MontyValue subtypes — equality, hashCode, the internal
+// tagged projection (toJson) and the dartValue projection.
 //
 // Pure value-level tests: no interpreter, no FFI, no WASM. Catches
-// regressions in deep-equality, JSON shape drift, and the
-// MontyValue.fromJson __type dispatcher without needing the
-// integration harness to fire.
+// regressions in deep-equality and projection shape drift without needing
+// the integration harness to fire.
 @Tags(['unit'])
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show MontyValueInternal;
 import 'package:test/test.dart';
-
-/// Shorthand: assert a value JSON-round-trips back to itself.
-void _expectRoundTrip(MontyValue v) {
-  expect(MontyValue.fromJson(v.toJson()), v);
-}
 
 void main() {
   // ------------------------------------------------------------------
@@ -29,10 +25,9 @@ void main() {
       expect(a.hashCode, b.hashCode);
     });
 
-    test('toJson is null and round-trips', () {
+    test('toJson is null', () {
       const a = MontyNone();
       expect(a.toJson(), isNull);
-      _expectRoundTrip(a);
     });
 
     test('dartValue is null', () {
@@ -57,11 +52,9 @@ void main() {
       expect(const MontyBool(true), isNot(const MontyInt(1)));
     });
 
-    test('toJson + dartValue + round-trip', () {
+    test('toJson + dartValue', () {
       expect(const MontyBool(true).toJson(), true);
       expect(const MontyBool(false).dartValue, false);
-      _expectRoundTrip(const MontyBool(true));
-      _expectRoundTrip(const MontyBool(false));
     });
   });
 
@@ -75,13 +68,10 @@ void main() {
       expect(const MontyInt(0), isNot(const MontyBool(false)));
     });
 
-    test('toJson + dartValue + round-trip within the exact range', () {
+    test('toJson + dartValue within the exact range', () {
       expect(const MontyInt(42).toJson(), 42);
       expect(const MontyInt(-7).dartValue, -7);
-      _expectRoundTrip(const MontyInt(0));
-      _expectRoundTrip(const MontyInt(-42));
       // 2^53 exactly is the last value every backend holds in a Dart `int`.
-      _expectRoundTrip(const MontyInt(9007199254740992));
     });
 
     // The past-2^53 cases live in monty_value_int64_vm_test.dart. They cannot
@@ -140,15 +130,6 @@ void main() {
       // A finite float is still a plain JSON number.
       expect(const MontyFloat(3.14).toJson(), 3.14);
     });
-
-    test('round-trip preserves regular values and specials', () {
-      _expectRoundTrip(const MontyFloat(3.14));
-      _expectRoundTrip(const MontyFloat(0));
-      _expectRoundTrip(const MontyFloat(-1.5));
-      _expectRoundTrip(const MontyFloat(double.nan));
-      _expectRoundTrip(const MontyFloat(double.infinity));
-      _expectRoundTrip(const MontyFloat(double.negativeInfinity));
-    });
   });
 
   group('MontyString', () {
@@ -160,15 +141,12 @@ void main() {
       expect(a, isNot(const MontyString('bye')));
     });
 
-    test('toJson + dartValue + round-trip', () {
+    test('toJson + dartValue', () {
       expect(const MontyString('hello').toJson(), 'hello');
       expect(const MontyString('').dartValue, '');
-      _expectRoundTrip(const MontyString('hello'));
-      _expectRoundTrip(const MontyString(''));
-      _expectRoundTrip(const MontyString('unicode: π α 🎉'));
     });
 
-    test('the string "NaN" round-trips as a STRING', () {
+    test('the string "NaN" projects as a bare STRING', () {
       // Was: 'special-float strings are NOT mistaken for strings on
       // round-trip', asserting isA<MontyFloat>() and calling the collision "the
       // intended escape encoding" while documenting it as a limit. It was a
@@ -177,21 +155,10 @@ void main() {
       // floats now carry a `float` envelope, and a bare string is a `str`.
       for (final text in ['NaN', 'Infinity', '-Infinity']) {
         expect(
-          MontyValue.fromJson(MontyString(text).toJson()),
-          MontyString(text),
-          reason: 'the STRING "$text" must survive as a string',
+          MontyString(text).toJson(),
+          text,
+          reason: 'the STRING "$text" must project as a string',
         );
-      }
-    });
-
-    test('non-finite floats round-trip as floats', () {
-      for (final d in [double.nan, double.infinity, double.negativeInfinity]) {
-        final got = MontyValue.fromJson(MontyFloat(d).toJson());
-        expect(got, isA<MontyFloat>());
-        final f = (got as MontyFloat).value;
-        expect(f.isNaN, d.isNaN);
-        expect(f.isInfinite, d.isInfinite);
-        expect(f.isNegative, d.isNegative);
       }
     });
   });
@@ -207,11 +174,6 @@ void main() {
       expect(a, b);
       expect(a.hashCode, b.hashCode);
       expect(a, isNot(const MontyBytes([1, 2, 4])));
-    });
-
-    test('round-trip preserves bytes', () {
-      _expectRoundTrip(const MontyBytes([0, 127, 255]));
-      _expectRoundTrip(const MontyBytes([]));
     });
 
     test('dartValue exposes the byte list', () {
@@ -238,16 +200,6 @@ void main() {
       expect(
         const MontyList([MontyInt(1), MontyString('x')]).toJson(),
         [1, 'x'],
-      );
-    });
-
-    test('round-trip preserves nested heterogeneous values', () {
-      _expectRoundTrip(
-        const MontyList([
-          MontyInt(1),
-          MontyString('x'),
-          MontyList([MontyBool(true), MontyNone()]),
-        ]),
       );
     });
 
@@ -280,12 +232,6 @@ void main() {
           '__type': 'tuple',
           'value': [1],
         },
-      );
-    });
-
-    test('round-trip', () {
-      _expectRoundTrip(
-        const MontyTuple([MontyInt(1), MontyString('a'), MontyBool(false)]),
       );
     });
   });
@@ -357,24 +303,6 @@ void main() {
       });
     });
 
-    test('round-trip via fromJson dispatcher — string keys', () {
-      _expectRoundTrip(
-        const MontyDict([
-          (MontyString('k'), MontyInt(1)),
-          (MontyString('nested'), MontyList([MontyInt(2), MontyInt(3)])),
-        ]),
-      );
-    });
-
-    test('round-trip via fromJson dispatcher — mixed keys', () {
-      _expectRoundTrip(
-        const MontyDict([
-          (MontyInt(1), MontyString('a')),
-          (MontyTuple([MontyInt(3), MontyInt(4)]), MontyString('t')),
-        ]),
-      );
-    });
-
     test('dartValue is a Map for string keys, pairs otherwise', () {
       // Conditional on key type by design -- see the dartValue doc comment.
       expect(
@@ -389,23 +317,6 @@ void main() {
         [
           [1, 'x'],
         ],
-      );
-    });
-
-    test('asStringMap: null unless every key is a string', () {
-      expect(
-        const MontyDict([(MontyString('a'), MontyInt(1))]).asStringMap,
-        {'a': const MontyInt(1)},
-      );
-      // Null rather than a throw: the string-key assumption becomes an
-      // explicit decision at the call site.
-      expect(const MontyDict([(MontyInt(1), MontyInt(2))]).asStringMap, isNull);
-    });
-
-    test('ofStrings matches the pairs constructor', () {
-      expect(
-        MontyDict.ofStrings(const {'a': MontyInt(1)}),
-        const MontyDict([(MontyString('a'), MontyInt(1))]),
       );
     });
   });
@@ -437,10 +348,6 @@ void main() {
       );
     });
 
-    test('round-trip', () {
-      _expectRoundTrip(const MontySet([MontyInt(1), MontyInt(2), MontyInt(3)]));
-    });
-
     test('not equal to a MontyFrozenSet with the same items', () {
       const s = MontySet([MontyInt(1)]);
       const fs = MontyFrozenSet([MontyInt(1)]);
@@ -455,12 +362,6 @@ void main() {
       expect(a, b);
       expect(a.hashCode, b.hashCode);
     });
-
-    test('round-trip', () {
-      _expectRoundTrip(
-        const MontyFrozenSet([MontyInt(1), MontyString('x')]),
-      );
-    });
   });
 
   // ------------------------------------------------------------------
@@ -468,12 +369,11 @@ void main() {
   // ------------------------------------------------------------------
 
   group('MontyDate', () {
-    test('equality + hashCode + round-trip', () {
+    test('equality + hashCode', () {
       const a = MontyDate(year: 2026, month: 4, day: 28);
       const b = MontyDate(year: 2026, month: 4, day: 28);
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-      _expectRoundTrip(a);
     });
 
     test('different field is not equal', () {
@@ -539,35 +439,6 @@ void main() {
       );
       expect(naive, isNot(aware));
     });
-
-    test('round-trip preserves microsecond + tz fields', () {
-      _expectRoundTrip(
-        const MontyDateTime(
-          year: 2026,
-          month: 4,
-          day: 28,
-          hour: 15,
-          minute: 30,
-          second: 45,
-          microsecond: 123456,
-          offsetSeconds: -28800,
-          timezoneName: 'PST',
-        ),
-      );
-    });
-
-    test('round-trip omits null tz fields cleanly', () {
-      _expectRoundTrip(
-        const MontyDateTime(
-          year: 2026,
-          month: 4,
-          day: 28,
-          hour: 0,
-          minute: 0,
-          second: 0,
-        ),
-      );
-    });
   });
 
   group('MontyTimeDelta', () {
@@ -576,13 +447,6 @@ void main() {
       const b = MontyTimeDelta(days: 1, seconds: 3600, microseconds: 500);
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-    });
-
-    test('round-trip', () {
-      _expectRoundTrip(const MontyTimeDelta(days: 5, seconds: 0));
-      _expectRoundTrip(
-        const MontyTimeDelta(days: -1, seconds: 86399, microseconds: 999999),
-      );
     });
 
     test('dartValue is a Duration', () {
@@ -594,16 +458,11 @@ void main() {
   });
 
   group('MontyTimeZone', () {
-    test('equality + hashCode + round-trip (named)', () {
+    test('equality + hashCode (named)', () {
       const a = MontyTimeZone(offsetSeconds: -28800, name: 'PST');
       const b = MontyTimeZone(offsetSeconds: -28800, name: 'PST');
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-      _expectRoundTrip(a);
-    });
-
-    test('round-trip preserves null name', () {
-      _expectRoundTrip(const MontyTimeZone(offsetSeconds: 0));
     });
 
     test('different offsets are not equal', () {
@@ -619,12 +478,11 @@ void main() {
   // ------------------------------------------------------------------
 
   group('MontyPath', () {
-    test('equality + hashCode + round-trip', () {
+    test('equality + hashCode', () {
       const a = MontyPath('/data/hello.txt');
       const b = MontyPath('/data/hello.txt');
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-      _expectRoundTrip(a);
     });
 
     test('dartValue is the path string', () {
@@ -680,22 +538,6 @@ void main() {
       expect(a, isNot(b));
     });
 
-    test('round-trip preserves typeName, fieldNames, values', () {
-      _expectRoundTrip(
-        const MontyNamedTuple(
-          typeName: 'sys.version_info',
-          fieldNames: ['major', 'minor', 'micro', 'releaselevel', 'serial'],
-          values: [
-            MontyInt(3),
-            MontyInt(14),
-            MontyInt(0),
-            MontyString('final'),
-            MontyInt(0),
-          ],
-        ),
-      );
-    });
-
     test('dartValue exposes the toJson map', () {
       const nt = MontyNamedTuple(
         typeName: 'Point',
@@ -704,273 +546,11 @@ void main() {
       );
       expect(nt.dartValue, nt.toJson());
     });
-
-    test('_fromMap tolerates missing fields (defaults to empty)', () {
-      // Round-trip via fromJson with an under-populated payload.
-      final got = MontyValue.fromJson(<String, dynamic>{
-        '__type': 'namedtuple',
-      });
-      expect(got, isA<MontyNamedTuple>());
-      final nt = got as MontyNamedTuple;
-      expect(nt.typeName, '');
-      expect(nt.fieldNames, isEmpty);
-      expect(nt.values, isEmpty);
-    });
-  });
-
-  group('MontyDataclass', () {
-    test('equality + hashCode + round-trip (incl. frozen flag)', () {
-      const a = MontyDataclass(
-        name: 'User',
-        typeId: 1,
-        fieldNames: ['name', 'age'],
-        attrs: {'name': MontyString('alice'), 'age': MontyInt(30)},
-        frozen: true,
-      );
-      const b = MontyDataclass(
-        name: 'User',
-        typeId: 1,
-        fieldNames: ['name', 'age'],
-        attrs: {'name': MontyString('alice'), 'age': MontyInt(30)},
-        frozen: true,
-      );
-      expect(a, b);
-      expect(a.hashCode, b.hashCode);
-      _expectRoundTrip(a);
-    });
-
-    test('different frozen flag is not equal', () {
-      const a = MontyDataclass(
-        name: 'User',
-        typeId: 1,
-        fieldNames: ['name'],
-        attrs: {'name': MontyString('alice')},
-      );
-      const b = MontyDataclass(
-        name: 'User',
-        typeId: 1,
-        fieldNames: ['name'],
-        attrs: {'name': MontyString('alice')},
-        frozen: true,
-      );
-      expect(a, isNot(b));
-    });
-
-    test('different typeId is not equal', () {
-      const a = MontyDataclass(
-        name: 'User',
-        typeId: 1,
-        fieldNames: [],
-        attrs: {},
-      );
-      const b = MontyDataclass(
-        name: 'User',
-        typeId: 2,
-        fieldNames: [],
-        attrs: {},
-      );
-      expect(a, isNot(b));
-    });
   });
 
   // ------------------------------------------------------------------
-  // MontyValue.fromJson dispatcher + MontyValue.fromDart
+  // MontyValue.fromDart
   // ------------------------------------------------------------------
-
-  group('MontyValue.fromJson', () {
-    test('null → MontyNone', () {
-      expect(MontyValue.fromJson(null), const MontyNone());
-    });
-
-    test('bool / int / double → matching scalar', () {
-      expect(MontyValue.fromJson(true), const MontyBool(true));
-      expect(MontyValue.fromJson(42), const MontyInt(42));
-      expect(MontyValue.fromJson(3.14), const MontyFloat(3.14));
-    });
-
-    test('string with no special-float marker → MontyString', () {
-      expect(MontyValue.fromJson('hi'), const MontyString('hi'));
-    });
-
-    test('a bare marker string is a STRING, not a float', () {
-      // Was 'special-float marker strings → MontyFloat'. Rule R2: a bare JSON
-      // string means `str`. The floats themselves arrive tagged.
-      expect(MontyValue.fromJson('NaN'), const MontyString('NaN'));
-      expect(MontyValue.fromJson('Infinity'), const MontyString('Infinity'));
-      expect(MontyValue.fromJson('-Infinity'), const MontyString('-Infinity'));
-
-      expect(
-        MontyValue.fromJson({'__type': 'float', 'value': 'Infinity'}),
-        const MontyFloat(double.infinity),
-      );
-    });
-
-    test('a tagged float may carry a finite value since Tier 3', () {
-      // Was asserted as REJECTED when only the non-finite forms travelled
-      // tagged. Tier 3 also tags integral floats and -0.0, because those are
-      // the shapes a JSON number cannot carry across the web transport.
-      expect(
-        MontyValue.fromJson({'__type': 'float', 'value': '4.0'}),
-        const MontyFloat(4),
-      );
-
-      final negZero =
-          MontyValue.fromJson({'__type': 'float', 'value': '-0.0'})
-              as MontyFloat;
-      expect(negZero.value.isNegative, isTrue, reason: 'the sign is the point');
-      expect(negZero.value, 0);
-
-      // Unparseable text is still refused.
-      expect(
-        () => MontyValue.fromJson({'__type': 'float', 'value': 'not-a-number'}),
-        throwsA(isA<FormatException>()),
-      );
-    });
-
-    test('the two ambiguous float shapes are tagged, others are not', () {
-      // `4.0` reparses as `4` and `-0.0` re-serialises as `0` on the web; every
-      // other finite float survives as a plain JSON number, which is why this
-      // costs nothing measurable in corpus size.
-      expect(const MontyFloat(4).toJson(), {'__type': 'float', 'value': '4.0'});
-      // NOT `-0`: an int literal converts to POSITIVE zero, which would make
-      // this test pass while asserting the opposite of what it says. The
-      // prefer_int_literals lint is wrong here; the sign IS the point.
-      // ignore: prefer_int_literals
-      expect(const MontyFloat(-0.0).toJson(), {
-        '__type': 'float',
-        'value': '-0.0',
-      });
-      expect(const MontyFloat(3.14).toJson(), 3.14);
-      expect(const MontyFloat(0.1).toJson(), 0.1);
-    });
-
-    test('4.0 and 4 stay distinguishable through a round-trip', () {
-      // The single sentence core#128a is about.
-      final floatJson = const MontyFloat(4).toJson();
-      final intJson = const MontyInt(4).toJson();
-
-      expect(floatJson, isNot(intJson));
-      expect(MontyValue.fromJson(floatJson), isA<MontyFloat>());
-      expect(MontyValue.fromJson(intJson), isA<MontyInt>());
-    });
-
-    test('plain List → MontyList', () {
-      final got = MontyValue.fromJson(<Object?>[1, 'x']);
-      expect(got, const MontyList([MontyInt(1), MontyString('x')]));
-    });
-
-    test('Map without __type is REJECTED', () {
-      // Was: 'Map without __type → MontyDict'. That fall-through is core#136:
-      // a Python dict and a type envelope were the same shape on the wire.
-      expect(
-        () => MontyValue.fromJson(<String, dynamic>{'k': 1}),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('untagged'),
-          ),
-        ),
-      );
-    });
-
-    test('Map with unknown __type is REJECTED', () {
-      // Was: 'falls back to MontyDict', justified as a defensive path for a
-      // future Rust type. It is the opposite of defensive: guessing a dict is
-      // how an unrecognised tag became a plausible value. `fromJson` is a
-      // deserializer, and rejecting what it cannot represent is the same
-      // contract `json.decode` has (rule R4).
-      expect(
-        () => MontyValue.fromJson(<String, dynamic>{
-          '__type': 'unknown_future_type',
-          'value': 1,
-        }),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('unknown __type'),
-          ),
-        ),
-      );
-    });
-
-    test('a dict whose KEYS spell a type envelope stays a dict', () {
-      // core#136 end to end, in the shape the encoder now produces. Before
-      // Tier 1 the inner object arrived untagged and decoded as MontyPath.
-      final got = MontyValue.fromJson(<String, dynamic>{
-        '__type': 'dict',
-        'value': {'__type': 'path', 'value': '/etc/passwd'},
-      });
-
-      expect(got, isA<MontyDict>());
-      expect(
-        got,
-        const MontyDict([
-          (MontyString('__type'), MontyString('path')),
-          (MontyString('value'), MontyString('/etc/passwd')),
-        ]),
-        reason: 'both user keys must survive as ordinary dict entries',
-      );
-    });
-
-    test('a dict with non-string keys decodes as MontyDict', () {
-      final got = MontyValue.fromJson(<String, dynamic>{
-        '__type': 'dict',
-        'entries': [
-          [1, 'a'],
-          ['k', 2],
-        ],
-      });
-
-      expect(
-        got,
-        const MontyDict([
-          (MontyInt(1), MontyString('a')),
-          (MontyString('k'), MontyInt(2)),
-        ]),
-      );
-    });
-
-    test('a malformed dict entry is REJECTED', () {
-      expect(
-        () => MontyValue.fromJson(<String, dynamic>{
-          '__type': 'dict',
-          'entries': [
-            [1],
-          ],
-        }),
-        throwsA(isA<FormatException>()),
-      );
-    });
-
-    test('a mixed-key dict round-trips through toJson', () {
-      const original = MontyDict([
-        (MontyInt(1), MontyString('a')),
-        (MontyTuple([MontyInt(1), MontyInt(2)]), MontyInt(3)),
-      ]);
-
-      expect(MontyValue.fromJson(original.toJson()), original);
-    });
-
-    test('encodeForWire gives a host Map the dict envelope', () {
-      // The five raw json.encode call sites used to send a bare object here,
-      // which the strict Rust decoder now rejects. This is the shared path
-      // that makes host values and interpreter values agree.
-      expect(
-        MontyValue.encodeForWire({'k': 1}),
-        '{"__type":"dict","value":{"k":1}}',
-      );
-      expect(MontyValue.encodeForWire(null), 'null');
-    });
-
-    test('throws for unsupported runtime types', () {
-      expect(
-        () => MontyValue.fromJson(Object()),
-        throwsA(isA<ArgumentError>()),
-      );
-    });
-  });
 
   group('MontyValue.fromDart', () {
     test('passes MontyValue instances through', () {

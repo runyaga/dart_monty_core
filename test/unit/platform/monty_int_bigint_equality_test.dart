@@ -81,12 +81,5 @@ void main() {
       expect(one, isNot(const MontyBool(true)));
       expect(big('1'), notOneAsFloat);
     });
-
-    test('equality survives a toJson round trip in both directions', () {
-      final a = MontyValue.fromJson(const MontyInt(5).toJson());
-      final b = MontyValue.fromJson(big('5').toJson());
-      expect(a, b);
-      expect(a.hashCode, b.hashCode);
-    });
   });
 }

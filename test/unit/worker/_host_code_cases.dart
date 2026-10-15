@@ -6,7 +6,7 @@
 // (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
 // cases.
 import 'package:dart_monty_core/src/platform/monty_value.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart'
+import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart'
     show OsCallNotHandledException;
 import 'package:dart_monty_core/src/worker/host_answers.dart' show AsyncDecline;
 import 'package:dart_monty_core/src/worker/monty_error.dart';

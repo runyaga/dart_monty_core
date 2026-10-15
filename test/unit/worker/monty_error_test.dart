@@ -141,22 +141,22 @@ void main() {
     test('a raised exception: its type and message, absent read as empty', () {
       expect(
         _raised('KeyError', 'k').exception,
-        const MontyExceptionValue(excType: 'KeyError', message: 'k'),
+        MontyExceptionValue('KeyError', 'k'),
       );
       expect(
         _raised('ValueError').exception,
-        const MontyExceptionValue(excType: 'ValueError', message: ''),
+        MontyExceptionValue('ValueError', ''),
       );
       expect(
         _raised('SyntaxError').exception,
-        const MontyExceptionValue(excType: 'SyntaxError', message: ''),
+        MontyExceptionValue('SyntaxError', ''),
       );
     });
 
     test("a typing error's is TypeError('')", () {
       expect(
         typingError('d').exception,
-        const MontyExceptionValue(excType: 'TypeError', message: ''),
+        MontyExceptionValue('TypeError', ''),
       );
     });
 
@@ -164,9 +164,9 @@ void main() {
       final crash = crashedError(CrashCause.fatal, detail: 'boom');
       expect(
         crash.exception,
-        const MontyExceptionValue(
-          excType: 'RuntimeError',
-          message: 'monty worker crashed: boom',
+        MontyExceptionValue(
+          'RuntimeError',
+          'monty worker crashed: boom',
         ),
       );
     });

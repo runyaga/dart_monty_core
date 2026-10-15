@@ -286,7 +286,7 @@ Future<String> _fed(MontySession session, String code) async {
     expect('$e', e.display());
     expect(
       e.exception,
-      const MontyExceptionValue(excType: 'TypeError', message: ''),
+      MontyExceptionValue('TypeError', ''),
     );
 
     return 'MontyTypingError: ${e.display()}';

@@ -4,14 +4,18 @@ library;
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:test/test.dart';
+
+import '_os_call.dart';
 
 void main() {
   // Limits are in BYTES, not characters — which is why the content ADT keeps
   // byte length separate from character length. mount_fs__errors.py asserts
   // the message verbatim, and it names the FULL path, not the component.
   group('name length limits', () {
-    OsCallHandler handler() => memoryMountedOsHandler(
+    DartOsCall handler() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
       files: [MontyMemoryFile('/mnt/hello.txt', 'hi')],
     );
@@ -22,8 +26,8 @@ void main() {
     final deepPath = '/mnt/${List.filled(21, 'x' * 200).join('/')}';
 
     Matcher tooLong(String path) => throwsA(
-      isA<OsCallException>()
-          .having((e) => e.pythonExceptionType, 'excType', 'OSError')
+      isA<ExternalException>()
+          .having((e) => e.excType, 'excType', 'OSError')
           .having(
             (e) => e.message,
             'message',

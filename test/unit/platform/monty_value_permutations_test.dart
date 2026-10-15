@@ -14,6 +14,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 import '_hierarchy_registry.dart';
+import '_random_values.dart';
 
 /// The three subtypes whose `dartValue` is `=> this`, by deliberate design:
 /// there is no Dart primitive for a Python `time`, `Ellipsis` or
@@ -39,7 +40,7 @@ void main() {
       // sample must fail here, not silently reduce coverage.
       expect(
         hierarchySamples.length,
-        26,
+        25,
         reason:
             'a MontyValue subtype was added or removed; update `samples` '
             'so the matrix stays exhaustive',
@@ -64,7 +65,7 @@ void main() {
         // MontySet/MontyFrozenSet while `{1, 2} != {2, 1}` -- see
         // monty_set_order_equality_test.dart.
         //
-        // A wire round trip is what makes the second instance genuinely
+        // A deep clone is what makes the second instance genuinely
         // distinct, so `==` and `hashCode` are actually exercised. Equal-but-
         // not-identical hashing is the real contract; `v.hashCode ==
         // v.hashCode` never tested it.
@@ -74,7 +75,7 @@ void main() {
         // answer for them. Asserting distinctness failed on those three.
         // The types that carry the equality logic worth testing -- every
         // collection -- do produce a distinct instance here.
-        final other = MontyValue.fromJson(v.toJson());
+        final other = cloneReversed(v);
         expect(other, v);
         expect(
           other.hashCode,
@@ -83,15 +84,15 @@ void main() {
         );
       });
 
-      test('$name: round-trips nested inside a MontyList', () {
-        final back = MontyValue.fromJson(MontyList([v]).toJson());
+      test('$name: a deep clone nested inside a MontyList compares equal', () {
+        final back = cloneReversed(MontyList([v]));
         expect(back, MontyList([v]));
       });
 
-      test('$name: round-trips as a DICT KEY', () {
+      test('$name: a deep clone compares equal as a DICT KEY', () {
         // Only 3 of 26 subtypes were ever exercised in key position before.
         final d = MontyDict([(v, const MontyInt(0))]);
-        expect(MontyValue.fromJson(d.toJson()), d);
+        expect(cloneReversed(d), d);
       });
 
       test('$name: dartValue exposes DART values, not MontyValue', () {

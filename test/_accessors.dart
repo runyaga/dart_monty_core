@@ -1,7 +1,7 @@
 // Shared accessor for host-callback positional arguments.
 //
 // ONE copy, imported by every `*_test_body.dart` that implements a
-// MontyCallback. The alternative — a private helper per file — is the shape
+// host callback. The alternative — a private helper per file — is the shape
 // that has broken conformance in this repo twice already (see the header of
 // packages/monty_conformance/lib/src/fixture_externals.dart): a copy does not
 // stay a copy.

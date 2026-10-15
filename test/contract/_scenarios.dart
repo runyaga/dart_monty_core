@@ -13,7 +13,7 @@ import 'dart:typed_data';
 import 'package:collection/collection.dart';
 
 import 'package:dart_monty_core/src/platform/monty_value.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart';
+import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';

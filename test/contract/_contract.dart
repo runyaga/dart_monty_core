@@ -58,7 +58,6 @@ import 'package:collection/collection.dart';
 
 import 'package:dart_monty_core/src/fake_answers.dart';
 import 'package:dart_monty_core/src/fake_monty_session.dart';
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
@@ -331,7 +330,7 @@ String showError(Object error) => switch (error) {
 };
 
 String _attributes(MontyExceptionValue exception) {
-  final attributes = exceptionAttributes(exception);
+  final attributes = exception.attributes;
 
   if (attributes.isEmpty) return '';
   final shown = [

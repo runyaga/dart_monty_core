@@ -1,11 +1,12 @@
-// `OsCallNotHandledException.toString` names the operation when it has one.
+// `OsCallNotHandledException.toString` renders empty parentheses: the
+// exception carries nothing, as the worker knows the declined operation.
 //
 // A handler that declines an OS call throws this, and the text is what a host
 // log shows. The mount-fs corpus adjudicator was the only thing that rendered
 // it, via the failure report it builds for a declining handler; this pins the
-// two shapes directly.
+// shape directly.
 //
-// Falsifier: swap the branches of the `fnName == null` test; both cases fail.
+// Falsifier: change the returned text; the case fails.
 @Tags(['unit'])
 library;
 
@@ -18,13 +19,6 @@ void main() {
       expect(
         const OsCallNotHandledException().toString(),
         'OsCallNotHandledException()',
-      );
-    });
-
-    test('with a function name renders it', () {
-      expect(
-        const OsCallNotHandledException('Path.read_text').toString(),
-        'OsCallNotHandledException(Path.read_text)',
       );
     });
   });

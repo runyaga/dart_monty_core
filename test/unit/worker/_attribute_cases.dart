@@ -6,7 +6,6 @@
 // cases.
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
@@ -74,8 +73,7 @@ Future<MontyError> _failure(Future<Object?> future) async {
   fail('no MontyError');
 }
 
-Map<String, MontyValue> _attrs(MontyError e) =>
-    exceptionAttributes(e.exception);
+Map<String, MontyValue> _attrs(MontyError e) => e.exception.attributes;
 
 /// The C3-4 cases, labelled with [label], each in a session [withSession]
 /// gives.

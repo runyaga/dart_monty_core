@@ -11,7 +11,6 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
@@ -1017,7 +1016,7 @@ void main() {
               'json.JSONDecodeError',
             )
             .having(
-              (e) => exceptionAttributes(e.exception),
+              (e) => e.exception.attributes,
               'attributes',
               attributes,
             ),

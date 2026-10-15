@@ -11,6 +11,8 @@
 // the type the old declared return type gave it.
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show MontyValueInternal;
 import 'package:meta/meta.dart';
 
 const _deepEq = DeepCollectionEquality();
@@ -34,7 +36,7 @@ final class _L {
 final class _LT {
   const _LT(this.t);
 
-  final MontyClassType t;
+  final MontyClassTypeProxy t;
 
   @override
   int get hashCode => _classTypeHash(t);
@@ -73,8 +75,7 @@ bool _isContainer(MontyValue v) =>
     v is MontyFrozenSet ||
     v is MontyDict ||
     v is MontyNamedTuple ||
-    v is MontyClassInstance ||
-    v is MontyDataclass;
+    v is MontyClassProxy;
 
 /// `a == b` as the old classes computed it, with [a] the receiver.
 bool legacyEquals(MontyValue a, MontyValue b) {
@@ -102,24 +103,11 @@ bool legacyEquals(MontyValue a, MontyValue b) {
           b.typeName == typeName &&
           _deepEq.equals(b.fieldNames, fieldNames) &&
           _deepEq.equals(_w(b.values), _w(values));
-    case MontyClassInstance(:final classType, :final instanceId, :final attrs):
-      return b is MontyClassInstance &&
+    case MontyClassProxy(:final classType, :final instanceId, :final attrs):
+      return b is MontyClassProxy &&
           _classTypeEquals(b.classType, classType) &&
           b.instanceId == instanceId &&
           _attrsEq.equals(b.attrs, attrs);
-    case MontyDataclass(
-      :final name,
-      :final typeId,
-      :final fieldNames,
-      :final attrs,
-      :final frozen,
-    ):
-      return b is MontyDataclass &&
-          b.name == name &&
-          b.typeId == typeId &&
-          _deepEq.equals(b.fieldNames, fieldNames) &&
-          _attrsEq.equals(b.attrs, attrs) &&
-          b.frozen == frozen;
     default:
       throw StateError('unreachable');
   }
@@ -135,7 +123,7 @@ bool _multiset(List<MontyValue> items, List<MontyValue> other) {
   return remaining.isEmpty;
 }
 
-bool _classTypeEquals(MontyClassType b, MontyClassType a) =>
+bool _classTypeEquals(MontyClassTypeProxy b, MontyClassTypeProxy a) =>
     identical(a, b) ||
     (b.name == a.name &&
         b.id == a.id &&
@@ -143,7 +131,7 @@ bool _classTypeEquals(MontyClassType b, MontyClassType a) =>
         b.isDataclass == a.isDataclass &&
         _attrsEq.equals(b.attrs, a.attrs));
 
-int _classTypeHash(MontyClassType t) => Object.hash(
+int _classTypeHash(MontyClassTypeProxy t) => Object.hash(
   t.name,
   t.id,
   t.hostDefined,
@@ -165,33 +153,32 @@ int legacyHash(MontyValue v) => switch (v) {
   ),
   MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
     Object.hash(typeName, _deepEq.hash(fieldNames), _deepEq.hash(_w(values))),
-  MontyClassInstance(:final classType, :final instanceId, :final attrs) =>
+  MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
     Object.hash(_LT(classType), instanceId, _attrsEq.hash(attrs)),
-  MontyDataclass(
-    :final name,
-    :final typeId,
-    :final fieldNames,
-    :final attrs,
-    :final frozen,
-  ) =>
-    Object.hash(
-      name,
-      typeId,
-      _deepEq.hash(fieldNames),
-      _attrsEq.hash(attrs),
-      frozen,
-    ),
   _ => v.hashCode,
 };
 
-// MontyDict.ofStrings(attrs).toJson(): the pairs collapse through
-// asStringMap first, so a value overwritten by a repeated key (an identity
-// map) is never projected.
+/// [d] as a string-keyed map (the old `MontyDict.asStringMap`): each key
+/// at its first position with its last value, or `null` when a key is not a
+/// [MontyString].
+Map<String, MontyValue>? _asStringMap(MontyDict d) {
+  final out = <String, MontyValue>{};
+  for (final (k, v) in d.pairs) {
+    if (k is! MontyString) return null;
+    out[k.value] = v;
+  }
+
+  return out;
+}
+
+// The old attribute projection: the pairs collapse through a string-keyed
+// map first, so a value overwritten by a repeated key (an identity map) is
+// never projected.
 Map<String, Object?> _attrsJson(Map<String, MontyValue> attrs) => {
   '__type': 'dict',
-  'value': (MontyDict.ofStrings(attrs).asStringMap ?? const {}).map(
-    (k, v) => MapEntry(k, legacyToJson(v)),
-  ),
+  'value': <String, MontyValue>{
+    for (final MapEntry(:key, :value) in attrs.entries) key: value,
+  }.map((k, v) => MapEntry(k, legacyToJson(v))),
 };
 
 /// `v.toJson()` as the old classes computed it.
@@ -209,7 +196,7 @@ Object? legacyToJson(MontyValue v) => switch (v) {
     '__type': 'frozenset',
     'value': items.map(legacyToJson).toList(),
   },
-  MontyDict(:final pairs) => switch (v.asStringMap) {
+  MontyDict(:final pairs) => switch (_asStringMap(v)) {
     final strings? => <String, Object?>{
       '__type': 'dict',
       'value': strings.map((k, x) => MapEntry(k, legacyToJson(x))),
@@ -228,7 +215,7 @@ Object? legacyToJson(MontyValue v) => switch (v) {
       'field_names': fieldNames,
       'values': values.map(legacyToJson).toList(),
     },
-  MontyClassInstance(:final classType, :final instanceId, :final attrs) =>
+  MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
     <String, Object?>{
       '__type': 'class_instance',
       // Untyped in the old code, so inferred from its values.
@@ -242,21 +229,6 @@ Object? legacyToJson(MontyValue v) => switch (v) {
       'instance_id': instanceId,
       'attrs': _attrsJson(attrs),
     },
-  MontyDataclass(
-    :final name,
-    :final typeId,
-    :final fieldNames,
-    :final attrs,
-    :final frozen,
-  ) =>
-    <String, Object?>{
-      '__type': 'dataclass',
-      'name': name,
-      'type_id': typeId,
-      'field_names': fieldNames,
-      'attrs': _attrsJson(attrs),
-      'frozen': frozen,
-    },
   _ => v.toJson(),
 };
 
@@ -266,15 +238,13 @@ Object? legacyDartValue(MontyValue v) => switch (v) {
   MontyTuple(:final items) ||
   MontySet(:final items) ||
   MontyFrozenSet(:final items) => items.map(legacyDartValue).toList(),
-  MontyDict(:final pairs) => switch (v.asStringMap) {
+  MontyDict(:final pairs) => switch (_asStringMap(v)) {
     final strings? => strings.map((k, x) => MapEntry(k, legacyDartValue(x))),
     null => [
       for (final (k, x) in pairs) [legacyDartValue(k), legacyDartValue(x)],
     ],
   },
-  MontyNamedTuple() ||
-  MontyClassInstance() ||
-  MontyDataclass() => legacyToJson(v),
+  MontyNamedTuple() || MontyClassProxy() => legacyToJson(v),
   _ => v.dartValue,
 };
 

@@ -3,6 +3,8 @@
 // Dart, so the unit and unit_web steps run it on the VM, dart2js and
 // dart2wasm.
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyClassProxy, montyClassTypeProxy, montyStdTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -35,8 +37,8 @@ bool get _isJs => identical(1, 1.0);
 
 const _classId = '0123abcd-0000-4000-8000-00000000cafe';
 
-MontyClassType _class({Map<String, MontyValue> attrs = const {}}) =>
-    MontyClassType(
+MontyClassTypeProxy _class({Map<String, MontyValue> attrs = const {}}) =>
+    montyClassTypeProxy(
       name: 'P',
       id: _classId,
       hostDefined: true,
@@ -44,11 +46,11 @@ MontyClassType _class({Map<String, MontyValue> attrs = const {}}) =>
       attrs: attrs,
     );
 
-MontyClassInstance _instance(
-  MontyClassType type,
+MontyClassProxy _instance(
+  MontyClassTypeProxy type,
   String suffix, [
   Map<String, MontyValue> attrs = const {},
-]) => MontyClassInstance(
+]) => montyClassProxy(
   classType: type,
   instanceId: '00000000-0000-4000-8000-0000000000$suffix',
   attrs: attrs,
@@ -95,14 +97,14 @@ void main() {
       ),
       'timezone': const MontyTimeZone(offsetSeconds: 3600, name: 'CET'),
       'utc': const MontyTimeZone(offsetSeconds: 0),
-      'exception': const MontyExceptionValue(excType: 'KeyError', message: 'k'),
-      'exception without a message': const MontyExceptionValue(
-        excType: 'ValueError',
-        message: '',
+      'exception': MontyExceptionValue('KeyError', 'k'),
+      'exception without a message': MontyExceptionValue(
+        'ValueError',
+        '',
       ),
-      'builtin type': const MontyOpaque(MontyOpaqueKind.type, 'datetime.date'),
-      'builtin function': const MontyOpaque(
-        MontyOpaqueKind.builtin,
+      'builtin type': montyStdTypeProxy('type', 'datetime.date'),
+      'builtin function': montyStdTypeProxy(
+        'function',
         'object.__setattr__',
       ),
       'file handle': const MontyFileHandle(path: '/x', mode: 'ab', position: 7),
@@ -139,7 +141,7 @@ void main() {
       expect(type.isDataclass, isTrue);
       expect(type.hasAttrs(), isFalse);
       expect(type.id.data, hasLength(16));
-      const sandbox = MontyClassType(
+      final sandbox = montyClassTypeProxy(
         name: 'S',
         id: _classId,
         hostDefined: false,
@@ -171,10 +173,10 @@ void main() {
     });
 
     test('leaves are a fresh node at each reference', () {
-      const e = MontyExceptionValue(excType: 'ValueError', message: 'm');
+      final e = MontyExceptionValue('ValueError', 'm');
       const s = MontyString('s');
       const h = MontyFileHandle(path: '/x', mode: 'r');
-      final writer = ArenaWriter()..add(const MontyList([e, e, s, s, h, h]));
+      final writer = ArenaWriter()..add(MontyList([e, e, s, s, h, h]));
       final items = writer.arena.nodes.lastOrNull?.list.items;
       expect(items?.toSet(), hasLength(6));
     });
@@ -204,7 +206,7 @@ void main() {
     });
 
     test('a class id is one uuid, whatever the case of its digits', () {
-      final upper = MontyClassType(
+      final upper = montyClassTypeProxy(
         name: 'P',
         id: _classId.toUpperCase(),
         hostDefined: true,
@@ -233,8 +235,8 @@ void main() {
               as MontyList;
       expect(
         identical(
-          (itemAt(back.items, 0) as MontyClassInstance).classType,
-          (itemAt(back.items, 1) as MontyClassInstance).classType,
+          (itemAt(back.items, 0) as MontyClassProxy).classType,
+          (itemAt(back.items, 1) as MontyClassProxy).classType,
         ),
         isTrue,
       );
@@ -331,20 +333,20 @@ void main() {
     test('exception messages: lossy, a KeyError as its repr', () {
       expect(
         _only(
-          const MontyExceptionValue(excType: 'ValueError', message: 'a\uD800b'),
+          MontyExceptionValue('ValueError', 'a\uD800b'),
         ).exception.arg,
         // PyO3: surrogatepass bytes ED A0 80, each decoded to U+FFFD.
         'a\uFFFD\uFFFD\uFFFDb',
       );
       expect(
         _only(
-          const MontyExceptionValue(excType: 'KeyError', message: 'a\uD800'),
+          MontyExceptionValue('KeyError', 'a\uD800'),
         ).exception.arg,
         r"'a\ud800'",
       );
       expect(
         _only(
-          const MontyExceptionValue(excType: 'KeyError', message: 'k'),
+          MontyExceptionValue('KeyError', 'k'),
         ).exception.arg,
         'k',
       );
@@ -354,20 +356,20 @@ void main() {
       // Upstream's encoder sends str(exc), which is '' for RuntimeError(),
       // so the sandbox sees RuntimeError(''), not RuntimeError().
       for (final type in ['RuntimeError', 'KeyError']) {
-        final e = _only(MontyExceptionValue(excType: type)).exception;
+        final e = _only(MontyExceptionValue(type)).exception;
         expect(e.hasArg(), isTrue, reason: type);
         expect(e.arg, '', reason: type);
       }
       // str(SyntaxError()) is 'None' (CPython 3.12), and upstream sends that.
       final syntax = _only(
-        const MontyExceptionValue(excType: 'SyntaxError'),
+        MontyExceptionValue('SyntaxError'),
       ).exception;
       expect(syntax.hasArg(), isTrue);
       expect(syntax.arg, 'None');
       // An explicit empty message stays empty.
       expect(
         _only(
-          const MontyExceptionValue(excType: 'SyntaxError', message: ''),
+          MontyExceptionValue('SyntaxError', ''),
         ).exception.arg,
         '',
       );
@@ -470,31 +472,39 @@ void main() {
     test('names the worker does not know', () {
       expect(
         () => ArenaWriter().add(
-          const MontyExceptionValue(excType: 'Oops', message: 'm'),
+          MontyExceptionValue('Oops', 'm'),
         ),
         _refused('unknown exception type "Oops"'),
       );
       expect(
-        () => ArenaWriter().add(const MontyOpaque(MontyOpaqueKind.type, 'Int')),
+        () => ArenaWriter().add(montyStdTypeProxy('type', 'Int')),
         _refused('unknown type name "Int"'),
       );
       expect(
         () => ArenaWriter().add(
-          const MontyOpaque(MontyOpaqueKind.builtin, 'Len'),
+          montyStdTypeProxy('function', 'Len'),
         ),
         _refused('unknown builtin function "Len"'),
       );
     });
 
-    test('renderings that name nothing the sandbox can rebuild', () {
-      for (final kind in [
-        MontyOpaqueKind.function,
-        MontyOpaqueKind.repr,
-        MontyOpaqueKind.cycle,
-      ]) {
+    test("a std type proxy's kind is 'function' or 'type'", () {
+      for (final kind in ['builtin', 'repr', 'cycle', '']) {
         expect(
-          () => ArenaWriter().add(MontyOpaque(kind, 'x')),
-          _refused('cannot be sent back'),
+          () => ArenaWriter().add(montyStdTypeProxy(kind, 'len')),
+          _refused("kind is 'function' or 'type'"),
+        );
+      }
+    });
+
+    test('`type` is accepted as a function and as a type', () {
+      for (final kind in ['function', 'type']) {
+        final writer = ArenaWriter()..add(montyStdTypeProxy(kind, 'type'));
+        final node = writer.arena.nodes.lastOrNull;
+        expect(
+          node?.hasType() == true || node?.builtinFunction == 'type',
+          isTrue,
+          reason: kind,
         );
       }
     });
@@ -599,7 +609,7 @@ void main() {
     test('class and instance ids must be uuids', () {
       expect(
         () => ArenaWriter().add(
-          MontyClassInstance(
+          montyClassProxy(
             classType: _class(),
             instanceId: 'nope',
             attrs: const {},
@@ -610,22 +620,13 @@ void main() {
       // The same 16 bytes, but not in the canonical 8-4-4-4-12 form.
       expect(
         () => ArenaWriter().add(
-          MontyClassInstance(
+          montyClassProxy(
             classType: _class(),
             instanceId: '0123abcd00004000800000000000cafe----',
             attrs: const {},
           ),
         ),
         _refused('is not a uuid'),
-      );
-    });
-
-    test('a MontyDataclass has no node', () {
-      expect(
-        () => ArenaWriter().add(
-          const MontyDataclass(name: 'D', typeId: 1, fieldNames: [], attrs: {}),
-        ),
-        throwsUnsupportedError,
       );
     });
   });

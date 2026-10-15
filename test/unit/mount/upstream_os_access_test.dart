@@ -2,7 +2,11 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:test/test.dart';
+
+import '_os_call.dart';
 
 /// Behaviours pinned by upstream's Python `OSAccess` suite that **no corpus
 /// fixture reaches** (`docs/contributor/vfs-phases.md`, §6c).
@@ -12,8 +16,8 @@ import 'package:test/test.dart';
 /// semantics the fixtures underspecify. These are ported from it, and one of
 /// them found a live defect — see the `open()` group.
 Matcher raises(String excType, String message) => throwsA(
-  isA<OsCallException>()
-      .having((e) => e.pythonExceptionType, 'excType', excType)
+  isA<ExternalException>()
+      .having((e) => e.excType, 'excType', excType)
       .having((e) => e.message, 'message', message),
 );
 
@@ -23,7 +27,7 @@ void main() {
     // store returned an empty list for both, which is the worst of the three
     // answers: indistinguishable from a successful listing.
     test('an empty directory lists as empty, and does NOT raise', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [MontyMemoryFile('/mnt/sub/file.txt', 'hello')],
       );
@@ -35,7 +39,7 @@ void main() {
     });
 
     test('a MISSING path raises rather than listing as empty', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [MontyMemoryFile('/mnt/sub/file.txt', 'hello')],
       );
@@ -55,7 +59,7 @@ void main() {
     // test_append_bytes_returns_byte_count. 'αβγ' is 3 characters and 6 UTF-8
     // bytes, so the two calls MUST disagree.
     test('append_text returns CHARACTERS, not encoded bytes', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [MontyMemoryFile('/mnt/file.txt', 'start ')],
       );
@@ -68,7 +72,7 @@ void main() {
     });
 
     test('append_bytes returns BYTES for the same content', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [MontyMemoryFile('/mnt/file.bin', 'start ')],
       );
@@ -92,7 +96,7 @@ void main() {
     // covers it, which is our model's one deliberate difference from upstream's
     // mountless OSAccess.
     test('root is a directory and lists its children', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/')],
         files: [MontyMemoryFile('/file.txt', 'root file')],
       );
@@ -107,7 +111,7 @@ void main() {
     });
 
     test('root is not a file', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/')],
         files: [MontyMemoryFile('/file.txt', 'root file')],
       );
@@ -140,8 +144,8 @@ void main() {
             createIfMissing: (_) => fail('createIfMissing ran for mode $mode'),
           ),
           throwsA(
-            isA<OsCallException>().having(
-              (e) => e.pythonExceptionType,
+            isA<ExternalException>().having(
+              (e) => e.excType,
               'excType',
               'ValueError',
             ),

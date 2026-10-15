@@ -185,7 +185,7 @@ String _show(MontyValue v, Map<String, Point> objects) {
   }
 
   return switch (v) {
-    MontyClassInstance(:final classType) => 'proxy:${classType.name}',
+    MontyClassProxy(:final classType) => 'proxy:${classType.name}',
     MontyList(:final items) =>
       '[${items.map((i) => _show(i, objects)).join(', ')}]',
     MontyTuple(items: [final only]) => '(${_show(only, objects)},)',

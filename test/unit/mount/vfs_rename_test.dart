@@ -2,11 +2,15 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 Matcher raises(String excType, String message) => throwsA(
-  isA<OsCallException>()
-      .having((e) => e.pythonExceptionType, 'excType', excType)
+  isA<ExternalException>()
+      .having((e) => e.excType, 'excType', excType)
       .having((e) => e.message, 'message', message),
 );
 
@@ -15,7 +19,7 @@ void main() {
   // depending on what is at each end. mount_fs__errors.py asserts the
   // messages verbatim.
   group('rename', () {
-    OsCallHandler handler() => memoryMountedOsHandler(
+    DartOsCall handler() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
       files: [
         MontyMemoryFile('/mnt/hello.txt', 'hi'),
@@ -25,7 +29,7 @@ void main() {
       ],
     );
 
-    Future<OsCallHandler> withEmptyDir() async {
+    Future<DartOsCall> withEmptyDir() async {
       final h = handler();
       await h('Path.mkdir', ['/mnt/empty'], null);
 
@@ -120,7 +124,7 @@ void main() {
 
       await expectLater(
         () => h('Path.rename', ['/mnt/src', '/mnt/full'], null),
-        throwsA(isA<OsCallException>()),
+        throwsA(isA<ExternalException>()),
       );
       expect(await h('Path.read_text', ['/mnt/src/moved.txt'], null), 'moved');
       expect(await h('Path.read_text', ['/mnt/full/a.txt'], null), 'a');
@@ -169,8 +173,8 @@ void main() {
             await h('Path.rename', ['/mnt/hello.txt', target], null);
 
             return 'no throw';
-          } on OsCallException catch (e) {
-            return '${e.pythonExceptionType}|${e.message}';
+          } on ExternalException catch (e) {
+            return '${e.excType}|${e.message}';
           }
         }
 
@@ -190,7 +194,7 @@ void main() {
 
         await expectLater(
           () => h('Path.rename', ['/mnt/hello.txt', '/etc/passwd'], null),
-          throwsA(isA<OsCallException>()),
+          throwsA(isA<ExternalException>()),
         );
         expect(await h('Path.read_text', ['/mnt/hello.txt'], null), 'hi');
       });
@@ -198,21 +202,21 @@ void main() {
       // Declining used to rewrite the call to `[target]`, so a fallthrough
       // handler received Path.rename with its SOURCE dropped.
       test('declining to a fallthrough keeps BOTH arguments', () async {
-        final seen = <List<Object?>>[];
-        final h = memoryMountedOsHandler(
+        final seen = <List<MontyValue>>[];
+        final h = mountedHandler(
           mounts: const [MountDir(virtualPath: '/mnt')],
           files: [MontyMemoryFile('/mnt/hello.txt', 'hi')],
           fallthrough: (op, args, kwargs) {
             seen.add(args);
 
-            return null;
+            return const MontyNone();
           },
         );
 
         await h('Path.rename', ['/mnt/hello.txt', '/etc/passwd'], null);
 
         expect(seen, [
-          ['/mnt/hello.txt', '/etc/passwd'],
+          [const MontyPath('/mnt/hello.txt'), const MontyPath('/etc/passwd')],
         ]);
       });
     });

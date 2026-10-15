@@ -11,25 +11,29 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:test/test.dart';
+
+import '_os_call.dart';
 
 void main() {
   group('mkdir parents=True through a file', () {
     test(
       'raises NotADirectoryError naming the file, creates nothing',
       () async {
-        final h = memoryMountedOsHandler(
+        final h = mountedHandler(
           mounts: const [MountDir(virtualPath: '/m')],
           files: [MontyMemoryFile('/m/a', 'x')],
         );
 
-        await expectLater(
-          h('Path.mkdir', ['/m/a/b/c'], {'parents': true}),
+        expect(
+          () => h('Path.mkdir', ['/m/a/b/c'], {'parents': true}),
           throwsA(
-            isA<OsCallException>()
+            isA<ExternalException>()
                 .having(
-                  (e) => e.pythonExceptionType,
-                  'pythonExceptionType',
+                  (e) => e.excType,
+                  'excType',
                   'NotADirectoryError',
                 )
                 .having(

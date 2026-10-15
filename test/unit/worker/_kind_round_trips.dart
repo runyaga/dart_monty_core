@@ -4,6 +4,8 @@
 // (test/integration/worker/real_worker_test.dart) and the Chrome one
 // (worker_channel_web_test.dart), so both run the same cases.
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyStdTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -58,16 +60,16 @@ final List<(String, Matcher)> _decodeCases = [
   ),
   (
     'ValueError("boom")',
-    equals(const MontyExceptionValue(excType: 'ValueError', message: 'boom')),
+    equals(MontyExceptionValue('ValueError', 'boom')),
   ),
   (
     'KeyError("k")',
-    equals(const MontyExceptionValue(excType: 'KeyError', message: 'k')),
+    equals(MontyExceptionValue('KeyError', 'k')),
   ),
-  ('int', equals(const MontyOpaque(MontyOpaqueKind.type, 'int'))),
-  ('ValueError', equals(const MontyOpaque(MontyOpaqueKind.type, 'ValueError'))),
-  ('len', equals(const MontyOpaque(MontyOpaqueKind.builtin, 'len'))),
-  ('type', equals(const MontyOpaque(MontyOpaqueKind.type, 'type'))),
+  ('int', equals(montyStdTypeProxy('type', 'int'))),
+  ('ValueError', equals(montyStdTypeProxy('type', 'ValueError'))),
+  ('len', equals(montyStdTypeProxy('function', 'len'))),
+  ('type', equals(montyStdTypeProxy('type', 'type'))),
   ('from pathlib import Path\nPath("/a/b")', equals(const MontyPath('/a/b'))),
   ('x = []\nx.append(x)\nx', equals(const MontyList([MontyString('[...]')]))),
   // A `repr` key and an equal str collapse, as Python's dict construction
@@ -92,7 +94,7 @@ final List<(String, Matcher)> _decodeCases = [
         '[P(1), P(2)]',
     isA<MontyList>().having(
       (l) {
-        final [a, b] = l.items.cast<MontyClassInstance>();
+        final [a, b] = l.items.cast<MontyClassProxy>();
 
         return [
           identical(a.classType, b.classType),
@@ -175,28 +177,28 @@ final List<(String, Map<String, MontyValue>, String)> _encodeCases = () {
     ),
     (
       'exception',
-      {'x': const MontyExceptionValue(excType: 'KeyError', message: 'k')},
+      {'x': MontyExceptionValue('KeyError', 'k')},
       'isinstance(x, KeyError) and x.args == ("k",)',
     ),
     (
       'exception messages with a lone surrogate',
       {
-        'v': const MontyExceptionValue(
-          excType: 'ValueError',
-          message: 'a\uD800',
+        'v': MontyExceptionValue(
+          'ValueError',
+          'a\uD800',
         ),
-        'k': const MontyExceptionValue(excType: 'KeyError', message: 'a\uD800'),
+        'k': MontyExceptionValue('KeyError', 'a\uD800'),
       },
       r'''v.args == ("a\ufffd\ufffd\ufffd",) and k.args == ("'a\\ud800'",)''',
     ),
     (
       'builtin function',
-      {'x': const MontyOpaque(MontyOpaqueKind.builtin, 'len')},
+      {'x': montyStdTypeProxy('function', 'len')},
       'x([1, 2]) == 2',
     ),
     (
       'builtin type',
-      {'x': const MontyOpaque(MontyOpaqueKind.type, 'int')},
+      {'x': montyStdTypeProxy('type', 'int')},
       'x is int',
     ),
     (
@@ -221,9 +223,9 @@ final List<(String, Map<String, MontyValue>, String)> _encodeCases = () {
     (
       'leaves are distinct objects',
       {
-        'x': const MontyList([
-          MontyExceptionValue(excType: 'ValueError', message: 'e'),
-          MontyExceptionValue(excType: 'ValueError', message: 'e'),
+        'x': MontyList([
+          MontyExceptionValue('ValueError', 'e'),
+          MontyExceptionValue('ValueError', 'e'),
         ]),
       },
       'x[0] is not x[1]',
@@ -282,7 +284,7 @@ void kindRoundTripTests(String label, OpenWorker configured) {
   test('a sandbox instance sent back is the same object ($label)', () async {
     final (turn, close) = await configured();
     final c = _value(await turn(_feed('class C:\n    pass\nc = C()\nc')));
-    expect(c, isA<MontyClassInstance>());
+    expect(c, isA<MontyClassProxy>());
     expect(
       _value(await turn(_feed('x is c', {'x': c}))),
       const MontyBool(true),

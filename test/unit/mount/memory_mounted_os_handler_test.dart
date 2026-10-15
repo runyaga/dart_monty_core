@@ -5,8 +5,14 @@
 @Tags(['unit'])
 library;
 
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 import 'package:test/test.dart';
+
+import '_os_call.dart';
 
 /// Reads a `StatResult` field by NAME. Indexing by position would also trip
 /// DCM's unsafe-collection rule, and a positional read says nothing about
@@ -20,7 +26,7 @@ MontyValue? _stat(MontyNamedTuple t, String field) {
 void main() {
   group('memoryMountedOsHandler', () {
     test('reads a file via Path.read_text', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: [MontyMemoryFile('/data/hello.txt', 'Hello!')],
       );
@@ -30,7 +36,7 @@ void main() {
     });
 
     test('raises FileNotFoundError when path is unknown inside mount', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
       );
@@ -38,9 +44,9 @@ void main() {
       expect(
         () => handler('Path.read_text', ['/data/missing.txt'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'FileNotFoundError',
           ),
         ),
@@ -49,7 +55,7 @@ void main() {
 
     test('write_text round-trips, and the caller sees it', () async {
       final out = MontyMemoryFile('/tmp/out.txt', '');
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/tmp')],
         files: [out],
       );
@@ -85,7 +91,7 @@ void main() {
       () async {
         final seed = MontyMemoryFile('/tmp/seeded.txt', 'ORIGINAL');
 
-        final first = memoryMountedOsHandler(
+        final first = mountedHandler(
           mounts: const [MountDir(virtualPath: '/tmp')],
           files: [seed],
         );
@@ -97,7 +103,7 @@ void main() {
 
         // A NEW handler over the SAME seed object — the natural thing to do,
         // since `files:` takes objects the caller constructed and still holds.
-        final second = memoryMountedOsHandler(
+        final second = mountedHandler(
           mounts: const [MountDir(virtualPath: '/tmp')],
           files: [seed],
         );
@@ -114,7 +120,7 @@ void main() {
     );
 
     test('readOnly mount rejects writes with PermissionError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/data', mode: MountMode.readOnly),
         ],
@@ -124,9 +130,9 @@ void main() {
       expect(
         () => handler('Path.write_text', ['/data/x.txt', 'new'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'PermissionError',
           ),
         ),
@@ -139,7 +145,7 @@ void main() {
     // nothing. It now pins the message too. The semantics themselves live in
     // vfs_limits_test.dart.
     test('writeBytesLimit rejects oversize writes with OSError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/data', writeBytesLimit: 10),
         ],
@@ -153,10 +159,10 @@ void main() {
           null,
         ),
         throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
-                'pythonExceptionType',
+                (e) => e.excType,
+                'excType',
                 'OSError',
               )
               .having(
@@ -178,7 +184,7 @@ void main() {
     // for. It also keeps one story — `exists()` on the same path answers
     // False, and a refusal that contradicts it would be its own leak.
     test('"../" traversal that escapes the mount leaks nothing', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [MontyMemoryFile('/etc/passwd', 'root:x:0:0')],
       );
@@ -186,10 +192,10 @@ void main() {
       await expectLater(
         () => handler('Path.read_text', ['/sandbox/../etc/passwd'], null),
         throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
-                'pythonExceptionType',
+                (e) => e.excType,
+                'excType',
                 'FileNotFoundError',
               )
               // The refusal must not quote the content, nor admit the file is
@@ -204,7 +210,7 @@ void main() {
     });
 
     test('exists / is_file / is_dir reflect the vfs structure', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: [MontyMemoryFile('/data/sub/x.txt', 'hi')],
       );
@@ -223,7 +229,7 @@ void main() {
     });
 
     test('iterdir lists immediate children', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: [
           MontyMemoryFile('/data/a.txt', '1'),
@@ -234,14 +240,14 @@ void main() {
 
       final iterdir = await handler('Path.iterdir', ['/data'], null);
       if (iterdir == null) fail('handler did not handle Path.iterdir');
-      final children = iterdir as List<MontyPath>;
+      final children = (iterdir as List<MontyValue>).cast<MontyPath>();
       final paths = children.map((p) => p.value).toSet();
       expect(paths, {'/data/a.txt', '/data/b.txt', '/data/sub'});
     });
 
     test('unlink requires writable mount and existing file', () async {
       final files = [MontyMemoryFile('/data/x.txt', 'gone')];
-      final readOnly = memoryMountedOsHandler(
+      final readOnly = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/data', mode: MountMode.readOnly),
         ],
@@ -249,11 +255,11 @@ void main() {
       );
       await expectLater(
         () => readOnly('Path.unlink', ['/data/x.txt'], null),
-        throwsA(isA<OsCallException>()),
+        throwsA(isA<ExternalException>()),
       );
       expect(await readOnly('Path.exists', ['/data/x.txt'], null), true);
 
-      final writable = memoryMountedOsHandler(
+      final writable = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: files,
       );
@@ -263,13 +269,13 @@ void main() {
 
     test('paths outside every mount fall through to fallthrough', () async {
       var fallthroughCalled = 0;
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
         fallthrough: (op, args, kwargs) {
           fallthroughCalled++;
 
-          return null;
+          return const MontyNone();
         },
       );
 
@@ -281,7 +287,7 @@ void main() {
     // sandbox is concerned, not there — and pathlib__os_read_error.py asserts
     // CPython's FileNotFoundError for exactly this.
     test('paths outside mounts report not-there without fallthrough', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
       );
@@ -289,10 +295,10 @@ void main() {
       expect(
         () => handler('Path.read_text', ['/etc/passwd'], null),
         throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
-                'pythonExceptionType',
+                (e) => e.excType,
+                'excType',
                 'FileNotFoundError',
               )
               .having(
@@ -310,70 +316,143 @@ void main() {
     // `null` for calls that carry no path at all, and it claimed a file that
     // exists inside the mount was outside it.
     //
-    // It now raises the call's own no-handler default, computed by
-    // [osCallNoHandlerDefault] to match upstream's `on_no_handler`
-    // (monty-types/src/os.rs:260-268) — a permission failure naming the path
-    // for a filesystem op, `Permission denied: '<path>'` with no errno prefix.
-    test('unserved filesystem op reports Permission denied with the path', () {
+    // It now DECLINES: it throws OsCallNotHandledException synchronously,
+    // and the worker raises upstream's `on_no_handler` default for the call
+    // (monty-types/src/os.rs:371-389) — `PermissionError` naming the path for
+    // a filesystem op, `RuntimeError` for anything else. The handler no longer
+    // computes that text itself.
+    test('an unserved filesystem op declines synchronously', () {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: [MontyMemoryFile('/data/hello.txt', 'hi')],
       );
 
-      // This handler now implements all 19 upstream filesystem ops, so the
-      // example has to be a hypothetical one. The property under test is
-      // structural and survives any future op: the throw sits AFTER the
-      // mount check, so the path is inside a mount by construction and
-      // "outside any mount" could never be true here.
+      // This handler implements all 19 upstream filesystem ops, so the
+      // example has to be a hypothetical one. The throw sits AFTER the mount
+      // check, so the path is inside a mount by construction.
       expect(
-        () => handler('Path.chmod', ['/data/hello.txt'], null),
-        throwsA(
-          isA<OsCallException>()
-              .having(
-                (e) => e.pythonExceptionType,
-                'excType',
-                'PermissionError',
-              )
-              .having(
-                (e) => e.message,
-                'message',
-                "Permission denied: '/data/hello.txt'",
-              ),
-        ),
+        () => handler('Path.chmod', [const MontyPath('/data/hello.txt')], {}),
+        throwsA(isA<OsCallNotHandledException>()),
       );
     });
 
-    // A non-filesystem op is not a path question at all. The old message
-    // called os.getenv's variable name a path and rendered "... : null" for
-    // calls carrying no argument.
-    test('unserved non-filesystem op reports RuntimeError, not a path', () {
+    // A non-filesystem op is not a path question at all; it declines too.
+    test('an unserved non-filesystem op declines synchronously', () {
       final handler = memoryMountedOsHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
       );
 
-      Matcher unsupported(String name) => throwsA(
-        isA<OsCallException>()
-            .having((e) => e.pythonExceptionType, 'excType', 'RuntimeError')
-            .having(
-              (e) => e.message,
-              'message',
-              "'$name' is not supported in this environment",
-            ),
+      for (final (op, args) in [
+        ('os.getenv', [const MontyString('HOME'), const MontyNone()]),
+        ('os.environ', const <MontyValue>[]),
+        ('datetime.now', [const MontyNone()]),
+      ]) {
+        expect(
+          () => handler(op, args, {}),
+          throwsA(isA<OsCallNotHandledException>()),
+          reason: op,
+        );
+      }
+    });
+
+    // A first argument that is not a path is not the handler's to answer.
+    test('a non-path first argument declines', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/')],
+        files: const [],
       );
 
+      for (final op in ['open', 'Path.read_text']) {
+        expect(
+          () => handler(op, [const MontyInt(1)], {}),
+          throwsA(isA<OsCallNotHandledException>()),
+          reason: op,
+        );
+      }
+    });
+
+    // The answers themselves, without the test adapter: MontyValues, as the
+    // worker reads them.
+    test('answers are MontyValues', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        files: [MontyMemoryFile('/data/a.txt', 'hi')],
+      );
+      MontyValue call(
+        String op,
+        List<MontyValue> args, [
+        Map<String, MontyValue> kwargs = const {},
+      ]) => handler(op, args, kwargs) as MontyValue;
+      const a = MontyPath('/data/a.txt');
+
+      expect(call('Path.exists', [a]), const MontyBool(true));
+      expect(call('Path.is_dir', [a]), const MontyBool(false));
+      expect(call('Path.read_text', [a]), const MontyString('hi'));
       expect(
-        () => handler('os.getenv', ['HOME'], null),
-        unsupported('os.getenv'),
+        call('Path.write_text', [a, const MontyString('héllo')]),
+        const MontyInt(5),
       );
       expect(
-        () => handler('os.environ', const [], null),
-        unsupported('os.environ'),
+        call('Path.write_bytes', [
+          const MontyPath('/data/b.bin'),
+          MontyBytes(Uint8List.fromList([1, 2, 3])),
+        ]),
+        const MontyInt(3),
       );
       expect(
-        () => handler('datetime.now', const [], null),
-        unsupported('datetime.now'),
+        call('Path.read_bytes', [const MontyPath('/data/b.bin')]),
+        MontyBytes(Uint8List.fromList([1, 2, 3])),
       );
+      expect(
+        call(
+          'Path.mkdir',
+          [const MontyPath('/data/d/e')],
+          {'parents': const MontyBool(true)},
+        ),
+        const MontyNone(),
+      );
+      expect(
+        call('Path.iterdir', [const MontyPath('/data/d')]),
+        const MontyList([MontyPath('/data/d/e')]),
+      );
+      expect(
+        call('open', [a, const MontyString('r')]),
+        const MontyFileHandle(path: '/data/a.txt', mode: 'r'),
+      );
+      expect(call('Path.unlink', [a]), const MontyNone());
+      // A path the worker sends as a str is read as a path too.
+      expect(
+        call('Path.exists', [const MontyString('/data/a.txt')]),
+        const MontyBool(false),
+      );
+    });
+
+    test('a wrong-typed payload is a TypeError', () {
+      final handler = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/data')],
+        files: const [],
+      );
+      const p = MontyPath('/data/x');
+      for (final (op, payload) in [
+        ('Path.write_text', const MontyInt(1)),
+        ('Path.append_text', const MontyInt(1)),
+        ('Path.write_bytes', const MontyString('x')),
+        ('Path.append_bytes', const MontyString('x')),
+        ('Path.rename', const MontyInt(1)),
+      ]) {
+        expect(
+          () => handler(op, [p, payload], {}),
+          throwsA(
+            isA<ExternalException>().having(
+              (e) => e.excType,
+              'excType',
+              'TypeError',
+            ),
+          ),
+          reason: op,
+        );
+      }
     });
 
     // Path.stat was unimplemented, so it fell through and reported
@@ -382,7 +461,7 @@ void main() {
     // ten fields, first seven int, last three float; synthetic 0o644 / 0o755
     // modes with type bits OR'd in; directories report size 4096 and nlink 2.
     test('stat of a file returns a 10-field StatResult', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: [MontyMemoryFile('/data/hello.txt', 'readonly content')],
       );
@@ -414,7 +493,7 @@ void main() {
     });
 
     test('stat of a directory reports 4096 and nlink 2', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: [MontyMemoryFile('/data/sub/x.txt', 'hi')],
       );
@@ -435,7 +514,7 @@ void main() {
     });
 
     test('stat of a missing path inside a mount is FileNotFoundError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
       );
@@ -443,9 +522,9 @@ void main() {
       expect(
         () => handler('Path.stat', ['/data/nope.txt'], null),
         throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
+                (e) => e.excType,
                 'excType',
                 'FileNotFoundError',
               )
@@ -460,13 +539,13 @@ void main() {
 
     test('non-Path operations fall through cleanly', () async {
       var fallthroughOp = '';
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/data')],
         files: const [],
         fallthrough: (op, args, kwargs) {
           fallthroughOp = op;
 
-          return 'env-value';
+          return const MontyString('env-value');
         },
       );
 
@@ -476,7 +555,7 @@ void main() {
     });
 
     test('longest matching mount wins', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/data', mode: MountMode.readOnly),
           MountDir(virtualPath: '/data/scratch'),
@@ -498,7 +577,7 @@ void main() {
     // -------------------------------------------------------------------
 
     test('mkdir succeeds as a no-op when parent (mount root) exists', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: const [],
       );
@@ -508,16 +587,16 @@ void main() {
     });
 
     test('mkdir parents=False raises FileNotFoundError on missing parent', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: const [],
       );
       expect(
         () => handler('Path.mkdir', ['/sandbox/a/b/c'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'FileNotFoundError',
           ),
         ),
@@ -527,7 +606,7 @@ void main() {
     test(
       'mkdir parents=True succeeds when intermediates are missing',
       () async {
-        final handler = memoryMountedOsHandler(
+        final handler = mountedHandler(
           mounts: const [MountDir(virtualPath: '/sandbox')],
           files: const [],
         );
@@ -541,7 +620,7 @@ void main() {
     );
 
     test('mkdir raises FileExistsError when a file occupies the path', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [
           MontyMemoryFile(
@@ -553,9 +632,9 @@ void main() {
       expect(
         () => handler('Path.mkdir', ['/sandbox/data'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'FileExistsError',
           ),
         ),
@@ -565,16 +644,16 @@ void main() {
     test(
       'mkdir raises FileExistsError on existing implicit dir w/o exist_ok',
       () {
-        final handler = memoryMountedOsHandler(
+        final handler = mountedHandler(
           mounts: const [MountDir(virtualPath: '/sandbox')],
           files: [MontyMemoryFile('/sandbox/data/file.txt', 'x')],
         );
         expect(
           () => handler('Path.mkdir', ['/sandbox/data'], null),
           throwsA(
-            isA<OsCallException>().having(
-              (e) => e.pythonExceptionType,
-              'pythonExceptionType',
+            isA<ExternalException>().having(
+              (e) => e.excType,
+              'excType',
               'FileExistsError',
             ),
           ),
@@ -585,7 +664,7 @@ void main() {
     test(
       'mkdir exist_ok=True silently succeeds on existing implicit dir',
       () async {
-        final handler = memoryMountedOsHandler(
+        final handler = mountedHandler(
           mounts: const [MountDir(virtualPath: '/sandbox')],
           files: [MontyMemoryFile('/sandbox/data/file.txt', 'x')],
         );
@@ -599,7 +678,7 @@ void main() {
     );
 
     test('mkdir on readOnly mount raises PermissionError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/sandbox', mode: MountMode.readOnly),
         ],
@@ -608,9 +687,9 @@ void main() {
       expect(
         () => handler('Path.mkdir', ['/sandbox/data'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'PermissionError',
           ),
         ),
@@ -622,16 +701,16 @@ void main() {
     // -------------------------------------------------------------------
 
     test('rmdir on a file raises NotADirectoryError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [MontyMemoryFile('/sandbox/file.txt', 'x')],
       );
       expect(
         () => handler('Path.rmdir', ['/sandbox/file.txt'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'NotADirectoryError',
           ),
         ),
@@ -639,16 +718,16 @@ void main() {
     });
 
     test('rmdir on non-empty directory raises OSError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [MontyMemoryFile('/sandbox/data/file.txt', 'x')],
       );
       expect(
         () => handler('Path.rmdir', ['/sandbox/data'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'OSError',
           ),
         ),
@@ -669,15 +748,15 @@ void main() {
     test(
       'write_text/write_bytes with a missing parent raise',
       () {
-        final handler = memoryMountedOsHandler(
+        final handler = mountedHandler(
           mounts: const [MountDir(virtualPath: '/mnt')],
           files: const [],
         );
 
         Matcher missing(String p) => throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
+                (e) => e.excType,
                 'excType',
                 'FileNotFoundError',
               )
@@ -703,7 +782,7 @@ void main() {
     );
 
     test('writing directly into a mount root still works', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: const [],
       );
@@ -716,7 +795,7 @@ void main() {
     // the TARGET, not the missing parent. We said `No such directory: <parent>`
     // — wrong format and wrong path.
     test('mkdir with a missing parent names the target, CPython-style', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: const [],
       );
@@ -724,9 +803,9 @@ void main() {
       expect(
         () => handler('Path.mkdir', ['/mnt/missing_parent/child'], null),
         throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
+                (e) => e.excType,
                 'excType',
                 'FileNotFoundError',
               )
@@ -753,7 +832,7 @@ void main() {
     // The check comes back in Phase 1, once directories are first-class and
     // `mkdir` actually creates one.
     test('mkdir then write into it — the sequence must work', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: const [],
       );
@@ -765,7 +844,7 @@ void main() {
     });
 
     test('rmdir of a nonexistent path raises FileNotFoundError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: const [],
       );
@@ -773,9 +852,9 @@ void main() {
       expect(
         () => handler('Path.rmdir', ['/sandbox/empty'], null),
         throwsA(
-          isA<OsCallException>()
+          isA<ExternalException>()
               .having(
-                (e) => e.pythonExceptionType,
+                (e) => e.excType,
                 'excType',
                 'FileNotFoundError',
               )
@@ -789,7 +868,7 @@ void main() {
     });
 
     test('rmdir of a mount root does not claim it is missing', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: const [],
       );
@@ -801,7 +880,7 @@ void main() {
     });
 
     test('rmdir on readOnly mount raises PermissionError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/sandbox', mode: MountMode.readOnly),
         ],
@@ -810,9 +889,9 @@ void main() {
       expect(
         () => handler('Path.rmdir', ['/sandbox/data'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'PermissionError',
           ),
         ),
@@ -824,7 +903,7 @@ void main() {
     // -------------------------------------------------------------------
 
     test('rename moves a file by re-keying the map', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [MontyMemoryFile('/sandbox/a.txt', 'alpha')],
       );
@@ -837,7 +916,7 @@ void main() {
     });
 
     test('rename across two writable mounts succeeds', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/data'),
           MountDir(virtualPath: '/scratch'),
@@ -850,7 +929,7 @@ void main() {
     });
 
     test('rename with readOnly source mount raises PermissionError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/data', mode: MountMode.readOnly),
         ],
@@ -859,9 +938,9 @@ void main() {
       expect(
         () => handler('Path.rename', ['/data/x.txt', '/data/y.txt'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'PermissionError',
           ),
         ),
@@ -869,7 +948,7 @@ void main() {
     });
 
     test('rename with readOnly destination mount raises PermissionError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/src'),
           MountDir(virtualPath: '/dst', mode: MountMode.readOnly),
@@ -879,9 +958,9 @@ void main() {
       expect(
         () => handler('Path.rename', ['/src/x.txt', '/dst/x.txt'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'PermissionError',
           ),
         ),
@@ -889,16 +968,16 @@ void main() {
     });
 
     test('rename of a missing path raises FileNotFoundError', () {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: const [],
       );
       expect(
         () => handler('Path.rename', ['/sandbox/a', '/sandbox/b'], null),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'FileNotFoundError',
           ),
         ),
@@ -906,7 +985,7 @@ void main() {
     });
 
     test('rename of an implicit directory re-prefixes every child', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/sandbox')],
         files: [
           MontyMemoryFile('/sandbox/old/a.txt', 'a'),
@@ -937,7 +1016,7 @@ void main() {
     test(
       'rename onto an existing non-empty directory raises OSError',
       () {
-        final handler = memoryMountedOsHandler(
+        final handler = mountedHandler(
           mounts: const [MountDir(virtualPath: '/sandbox')],
           files: [
             MontyMemoryFile('/sandbox/old/a.txt', 'a'),
@@ -947,9 +1026,9 @@ void main() {
         expect(
           () => handler('Path.rename', ['/sandbox/old', '/sandbox/new'], null),
           throwsA(
-            isA<OsCallException>().having(
-              (e) => e.pythonExceptionType,
-              'pythonExceptionType',
+            isA<ExternalException>().having(
+              (e) => e.excType,
+              'excType',
               'OSError',
             ),
           ),

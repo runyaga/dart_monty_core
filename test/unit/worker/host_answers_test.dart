@@ -319,10 +319,7 @@ void main() {
         (const FormatException('bad'), 'FormatException: bad'),
         (ArgumentError('a'), 'Invalid argument(s): a'),
         ('plain', 'plain'),
-        (
-          const OsCallException('no', pythonExceptionType: 'KeyError'),
-          'OsCallException(no)',
-        ),
+        (const OsCallNotHandledException(), 'OsCallNotHandledException()'),
       ]) {
         final raised = raisedFrom(error);
         expect(raised.excType, 'Exception', reason: '$error');

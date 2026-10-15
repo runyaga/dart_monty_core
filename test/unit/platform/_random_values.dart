@@ -3,6 +3,8 @@
 import 'dart:math';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyClassProxy, montyClassTypeProxy, montyStdTypeProxy;
 
 /// Builds random values. With [share] true, containers may reuse a node
 /// built earlier, so the result is a DAG.
@@ -13,12 +15,12 @@ final class RandomValues {
   final bool share;
   final List<MontyValue> _pool = [];
 
-  static const _classA = MontyClassType(
+  static final MontyClassTypeProxy _classA = montyClassTypeProxy(
     name: 'A',
     id: '00000000-0000-0000-0000-00000000000a',
     hostDefined: false,
     isDataclass: true,
-    attrs: {'k': MontyInt(1)},
+    attrs: const {'k': MontyInt(1)},
   );
 
   /// One of [options], chosen by [r] (one `nextInt` draw).
@@ -43,14 +45,14 @@ final class RandomValues {
     6 => MontyBigInt(BigInt.parse('1${'0' * 30}') + BigInt.from(r.nextInt(2))),
     7 => MontyBytes([for (var i = 0; i < r.nextInt(3); i++) r.nextInt(3)]),
     8 => MontyExceptionValue(
-      excType: pick(['ValueError', 'KeyError']),
-      message: r.nextBool() ? null : 'm',
+      pick(['ValueError', 'KeyError']),
+      r.nextBool() ? null : 'm',
     ),
     9 => MontyPath(pick(['a/b', 'c'])),
     10 => MontyDate(year: 2024, month: 1, day: r.nextInt(2) + 1),
     11 => const MontyEllipsis(),
     12 => MontyTimeZone(offsetSeconds: r.nextInt(2) * 3600, name: 'z'),
-    _ => MontyOpaque(MontyOpaqueKind.repr, pick(['<x>', '<y>'])),
+    _ => montyStdTypeProxy(pick(['function', 'type']), pick(['abs', 'int'])),
   };
 
   MontyValue value(int depth) {
@@ -87,10 +89,10 @@ final class RandomValues {
       fieldNames: const ['x', 'y'],
       values: [value(depth - 1), value(depth - 1)],
     ),
-    9 => MontyClassInstance(
+    9 => montyClassProxy(
       classType: r.nextBool()
           ? _classA
-          : MontyClassType(
+          : montyClassTypeProxy(
               name: 'B',
               id: '00000000-0000-0000-0000-00000000000b',
               hostDefined: r.nextBool(),
@@ -100,12 +102,16 @@ final class RandomValues {
       instanceId: pick(['i1', 'i2']),
       attrs: _attrs(depth),
     ),
-    10 => MontyDataclass(
-      name: 'D',
-      typeId: r.nextInt(2),
-      fieldNames: const ['a0', 'a1'],
+    10 => montyClassProxy(
+      classType: montyClassTypeProxy(
+        name: 'D',
+        id: '00000000-0000-0000-0000-00000000000${r.nextInt(2) + 1}',
+        hostDefined: false,
+        isDataclass: r.nextBool(),
+        attrs: const {},
+      ),
+      instanceId: 'd',
       attrs: _attrs(depth),
-      frozen: r.nextBool(),
     ),
     _ => MontyList([value(depth - 1), value(depth - 1)]),
   };
@@ -154,9 +160,9 @@ MontyValue cloneReversed(MontyValue v) => switch (v) {
       fieldNames: [...fieldNames],
       values: [for (final c in values) cloneReversed(c)],
     ),
-  MontyClassInstance(:final classType, :final instanceId, :final attrs) =>
-    MontyClassInstance(
-      classType: MontyClassType(
+  MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
+    montyClassProxy(
+      classType: montyClassTypeProxy(
         name: classType.name,
         id: classType.id,
         hostDefined: classType.hostDefined,
@@ -165,20 +171,6 @@ MontyValue cloneReversed(MontyValue v) => switch (v) {
       ),
       instanceId: instanceId,
       attrs: _cloneAttrs(attrs),
-    ),
-  MontyDataclass(
-    :final name,
-    :final typeId,
-    :final fieldNames,
-    :final attrs,
-    :final frozen,
-  ) =>
-    MontyDataclass(
-      name: name,
-      typeId: typeId,
-      fieldNames: [...fieldNames],
-      attrs: _cloneAttrs(attrs),
-      frozen: frozen,
     ),
   MontyInt(:final value) => MontyInt(value),
   MontyString(:final value) => MontyString(value),

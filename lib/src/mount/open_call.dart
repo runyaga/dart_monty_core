@@ -1,12 +1,12 @@
-import 'package:dart_monty_core/src/externals.dart' show OsCallHandler;
 import 'package:dart_monty_core/src/platform/monty_value.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 
 /// Applies the open-time effect for a Python `open(path, mode)` call and
 /// returns the [MontyFileHandle] the interpreter resumes with.
 ///
 /// This is the low-level `open()` implementation, owned by `dart_monty_core`
-/// so every [OsCallHandler] can support `open()` without re-deriving the
+/// so every `OsHandler` can support `open()` without re-deriving the
 /// mode → effect mapping. It is **store-agnostic**: the caller supplies the
 /// filesystem primitives as callbacks, so the same logic backs the in-memory
 /// `memoryMountedOsHandler` and any `package:file`/host-backed handler.
@@ -26,7 +26,7 @@ import 'package:dart_monty_core/src/platform/os_call_exception.dart';
 /// - `a` / `ab` — [ensureWritable] then [createIfMissing] (preserve content).
 ///
 /// [ensureWritable] is where a handler enforces mount policy: throw an
-/// `OsCallException(pythonExceptionType: 'PermissionError')` to reject writes
+/// `ExternalException('PermissionError', ...)` to reject writes
 /// to a read-only location. It defaults to a no-op for handlers without policy.
 MontyFileHandle resolveOpenCall(
   String path,
@@ -55,15 +55,15 @@ MontyFileHandle resolveOpenCall(
     // accident. With a tree, a directory answers `true` to [exists] and
     // opening one for read returned a handle.
     if (isDirectory(path)) {
-      throw OsCallException(
+      throw ExternalException(
+        'IsADirectoryError',
         "[Errno 21] Is a directory: '$path'",
-        pythonExceptionType: 'IsADirectoryError',
       );
     }
     if (!exists(path)) {
-      throw OsCallException(
+      throw ExternalException(
+        'FileNotFoundError',
         "[Errno 2] No such file or directory: '$path'",
-        pythonExceptionType: 'FileNotFoundError',
       );
     }
   } else {
@@ -122,7 +122,7 @@ String _openAction(String mode) {
   return action;
 }
 
-OsCallException _invalidMode(String mode) =>
-    OsCallException("invalid mode: '$mode'", pythonExceptionType: 'ValueError');
+ExternalException _invalidMode(String mode) =>
+    ExternalException('ValueError', "invalid mode: '$mode'");
 
 bool _alwaysFalse(String path) => false;

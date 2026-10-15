@@ -16,7 +16,6 @@
 /// public errors; nothing here is exported.
 library;
 
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart'
     show PythonRefusal;
@@ -80,10 +79,10 @@ final class MontyRuntimeError extends MontyError {
 /// session survives. [toString] is the diagnostics as the worker rendered
 /// them, in the session's `typeCheckFormat`.
 final class MontyTypingError extends MontyError {
-  const MontyTypingError._(String diagnostics)
+  MontyTypingError._(String diagnostics)
     : super._(
         diagnostics,
-        const MontyExceptionValue(excType: 'TypeError', message: ''),
+        MontyExceptionValue('TypeError', ''),
       );
 
   /// The diagnostics, as upstream's `display()` (which takes no format).
@@ -108,7 +107,7 @@ final class MontyCrashedError extends MontyError {
        _context = context,
        super._(
          message,
-         MontyExceptionValue(excType: 'RuntimeError', message: message),
+         MontyExceptionValue('RuntimeError', message),
        );
 
   /// Whether the worker was killed at a deadline: `requestTimeout`, or a
@@ -385,17 +384,13 @@ MontyExceptionValue _exceptionOf(RaisedRecord record) {
   final message = record.message ?? '';
   final type = record.excType;
   final kind = _payloadKinds[type];
-  if (kind == null) return MontyExceptionValue(excType: type, message: message);
+  if (kind == null) return MontyExceptionValue(type, message);
   final payload = record.payload;
   if (payload == null || payload.kind != kind) {
-    return MontyExceptionValue(excType: 'ValueError', message: message);
+    return MontyExceptionValue('ValueError', message);
   }
 
-  return exceptionWithAttributes(
-    excType: type,
-    message: message,
-    attributes: payload.attributes,
-  );
+  return MontyExceptionValue(type, message, payload.attributes);
 }
 
 /// The payload each type is rebuilt from: CPython's `UnicodeDecodeError`

@@ -230,10 +230,9 @@ void main() {
                   .having(
                     (e) => e.exception,
                     'exception',
-                    const MontyExceptionValue(
-                      excType: 'RuntimeError',
-                      message:
-                          'monty worker killed after exceeding request '
+                    MontyExceptionValue(
+                      'RuntimeError',
+                      'monty worker killed after exceeding request '
                           'timeout of 500ms',
                     ),
                   ),

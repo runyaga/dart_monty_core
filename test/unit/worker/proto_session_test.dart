@@ -517,7 +517,7 @@ void main() {
         mode: 'r',
         position: -1,
       ),
-      'an unknown exception type': const MontyExceptionValue(excType: 'Nope'),
+      'an unknown exception type': MontyExceptionValue('Nope'),
       'a short named tuple': const MontyNamedTuple(
         typeName: 'P',
         fieldNames: ['x'],

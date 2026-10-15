@@ -37,10 +37,8 @@
 /// exception message with an unpaired surrogate is converted lossily
 /// instead, and a time zone name with one is dropped.
 ///
-/// [MontyDataclass] has no node (upstream folded it into the class
-/// instance), and a [MontyOpaque] rendering of a function, `repr` or cycle
-/// cannot be sent back; both throw [UnsupportedError] and [ArgumentError]
-/// respectively.
+/// A [MontyStdTypeProxy] whose kind is neither `'function'` nor `'type'`
+/// throws [ArgumentError].
 ///
 /// Internal to the package; nothing here is exported.
 library;
@@ -86,9 +84,9 @@ final class ArenaWriter {
   /// Adds [value] and returns its node index.
   ///
   /// Throws [ArgumentError] for a value upstream would refuse (see the
-  /// library comment), including one that contains itself, and
-  /// [UnsupportedError] for a [MontyDataclass]. A refused value may leave
-  /// nodes for its children in [arena]; discard the writer, or use [tryAdd].
+  /// library comment), including one that contains itself. A refused value
+  /// may leave nodes for its children in [arena]; discard the writer, or use
+  /// [tryAdd].
   ///
   /// [value] is a [MontyValue] or a host-object wrapper; a wrapper's own
   /// throws (its eager attributes, its hook) propagate.
@@ -169,7 +167,7 @@ final class ArenaWriter {
   /// object's wrapper or a method read from one; anything else is refused.
   int? _hostStep(Object child, Set<Object> open, List<_Frame> stack) =>
       switch (child) {
-        final MontyClassType type => _enterClass(type, open, stack),
+        final MontyClassTypeProxy type => _enterClass(type, open, stack),
         BoundMethod(:final name) => _emit(functionNode(name)),
         final _HostClass type => _enterHostClass(type, open, stack),
         final ClassType<Object> w => _enterHostClass(
@@ -187,7 +185,11 @@ final class ArenaWriter {
   /// metadata reached through an instance carries no identity of its own.
   /// A class met again while its own attributes are being emitted is a
   /// fresh node without them, as upstream's encoder sends it.
-  int? _enterClass(MontyClassType type, Set<Object> open, List<_Frame> stack) {
+  int? _enterClass(
+    MontyClassTypeProxy type,
+    Set<Object> open,
+    List<_Frame> stack,
+  ) {
     if (open.contains(type)) return _emit(_classNode(type, const []));
     final shared = type.attrs.isEmpty ? _classes[_classKey(type)] : null;
     if (shared != null) return shared;
@@ -259,7 +261,7 @@ final class ArenaWriter {
       objects.registerIfAbsent(w);
     }
     if (_containers[w] case final id?) return id;
-    final node = MontyClassType(
+    final node = montyClassTypeProxy(
       name: w.value.name,
       id: w.id,
       hostDefined: true,
@@ -334,7 +336,7 @@ final class ArenaWriter {
   int _complete(_Frame frame, Set<Object> open) {
     final id = _emit(frame.build(frame.ids));
     switch (frame.source) {
-      case final MontyClassType type when type.attrs.isEmpty:
+      case final MontyClassTypeProxy type when type.attrs.isEmpty:
         _classes.putIfAbsent(_classKey(type), () => id);
       case final ClassType<Object> w:
         if (frame.children.isEmpty) _classes.putIfAbsent(w.id, () => id);
@@ -349,7 +351,7 @@ final class ArenaWriter {
     return id;
   }
 
-  pb.MontyNode _classNode(MontyClassType type, List<int> ids) {
+  pb.MontyNode _classNode(MontyClassTypeProxy type, List<int> ids) {
     _checkText(type, type.name, 'class name');
     final node = pb.Type(
       name: _nzs(type.name),
@@ -371,7 +373,7 @@ final class ArenaWriter {
 }
 
 /// A class's id as the uuid it names, whatever the hex digits' case.
-String _classKey(MontyClassType type) => type.id.toLowerCase();
+String _classKey(MontyClassTypeProxy type) => type.id.toLowerCase();
 
 /// A host class as one crossing meets it: its wrapper, registered, and its
 /// eager attributes, read anew at each meeting as upstream reads them.
@@ -429,10 +431,10 @@ PythonRefusal _unconvertible(Object value) => PythonRefusal(
 final class _Frame {
   _Frame(this.source, this.children, this.build);
 
-  /// The container value, or a [MontyClassType].
+  /// The container value, or a [MontyClassTypeProxy].
   final Object source;
 
-  /// [MontyValue]s and [MontyClassType]s, in emission order.
+  /// [MontyValue]s and [MontyClassTypeProxy]s, in emission order.
   final List<Object> children;
   final List<int> ids = [];
 
@@ -479,7 +481,7 @@ final class _Frame {
         ],
         (ids) => pb.MontyNode(dict: _pairs(ids)),
       ),
-      MontyClassInstance(:final classType, :final instanceId, :final attrs) => (
+      MontyClassProxy(:final classType, :final instanceId, :final attrs) => (
         [classType, ..._attrChildren(attrs)],
         (ids) => pb.MontyNode(
           classInstance: pb.ClassInstanceNode(
@@ -504,7 +506,7 @@ String? _unhashableType(MontyValue v) => switch (v) {
   MontyList() => 'list',
   MontyDict() => 'dict',
   MontySet() => 'set',
-  MontyClassInstance() => 'MontyClassProxy',
+  MontyClassProxy() => 'MontyClassProxy',
   _ => null,
 };
 
@@ -594,12 +596,10 @@ pb.MontyNode? _temporalLeaf(MontyValue v) => switch (v) {
 
 pb.MontyNode _otherLeaf(MontyValue v) => switch (v) {
   final MontyExceptionValue e => pb.MontyNode(exception: _exception(e)),
-  final MontyOpaque o => _opaque(o),
+  final MontyStdTypeProxy o => _opaque(o),
   final MontyFileHandle h => pb.MontyNode(fileHandle: _fileHandle(h)),
-  // MontyDataclass is the only other leaf.
   _ => throw UnsupportedError(
-    'a ${v.runtimeType} cannot be sent to the worker: it has no node; send a '
-    'MontyClassInstance',
+    'a ${v.runtimeType} cannot be sent to the worker: it has no node',
   ),
 };
 
@@ -706,27 +706,25 @@ String exceptionArg(String excType, String message) {
   return excType == 'KeyError' ? pythonRepr(message) : lossyString(message);
 }
 
-/// A builtin type or function crosses back as the builtin it names; the
-/// other renderings name nothing the sandbox can rebuild.
-pb.MontyNode _opaque(MontyOpaque o) => switch (o.kind) {
-  MontyOpaqueKind.type when builtinTypeNames.contains(o.text) => pb.MontyNode(
-    type: pb.Type(name: o.text, origin: originBuiltin),
+/// A builtin type or function crosses back as the builtin it names.
+pb.MontyNode _opaque(MontyStdTypeProxy o) => switch (o.kind) {
+  'type' when builtinTypeNames.contains(o.name) => pb.MontyNode(
+    type: pb.Type(name: o.name, origin: originBuiltin),
   ),
-  MontyOpaqueKind.builtin when builtinFunctionNames.contains(o.text) =>
-    pb.MontyNode(builtinFunction: o.text),
-  MontyOpaqueKind.type || MontyOpaqueKind.builtin => throw ArgumentError.value(
+  'function' when builtinFunctionNames.contains(o.name) => pb.MontyNode(
+    builtinFunction: o.name,
+  ),
+  'type' || 'function' => throw ArgumentError.value(
     o,
     'value',
-    'unknown ${o.kind == MontyOpaqueKind.type ? 'type name' : 'builtin '
-              'function'} ${rustDebug(o.text)}',
+    'unknown ${o.kind == 'type' ? 'type name' : 'builtin function'} '
+        '${rustDebug(o.name)}',
   ),
-  MontyOpaqueKind.function ||
-  MontyOpaqueKind.repr ||
-  MontyOpaqueKind.cycle => throw ArgumentError.value(
+  _ => throw ArgumentError.value(
     o,
     'value',
-    'a ${o.kind.wireTag} rendering cannot be sent back to the worker: it '
-        'names nothing the sandbox can rebuild',
+    "a std type proxy's kind is 'function' or 'type', not "
+        '${rustDebug(o.kind)}',
   ),
 };
 

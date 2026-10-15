@@ -8,7 +8,6 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
@@ -74,7 +73,7 @@ MontyExceptionValue _read(String type, pb.ExcData? data, [String? message]) =>
       pb.RaisedException(excType: type, message: message ?? 'm', data: data),
     ).exception;
 
-Map<String, MontyValue> _attrs(MontyExceptionValue e) => exceptionAttributes(e);
+Map<String, MontyValue> _attrs(MontyExceptionValue e) => e.attributes;
 
 MontyBytes _bytes(List<int> b) => MontyBytes(Uint8List.fromList(b));
 
@@ -152,9 +151,9 @@ void main() {
         );
         expect(
           error.exception,
-          const MontyExceptionValue(
-            excType: 'ValueError',
-            message: 'x',
+          MontyExceptionValue(
+            'ValueError',
+            'x',
           ),
         );
         expect(_attrs(error.exception), isEmpty);
@@ -183,7 +182,7 @@ void main() {
       final e = raisedError(
         pb.RaisedException(excType: 'UnicodeDecodeError'),
       ).exception;
-      expect(e, const MontyExceptionValue(excType: 'ValueError', message: ''));
+      expect(e, MontyExceptionValue('ValueError', ''));
     });
   });
 
@@ -334,18 +333,18 @@ void main() {
   });
 
   group('attributes in ==, hashCode and the walk budget', () {
-    MontyExceptionValue withPos(MontyValue pos) => exceptionWithAttributes(
-      excType: 'json.JSONDecodeError',
-      message: 'm',
-      attributes: {'pos': pos, 'doc': const MontyString('d')},
+    MontyExceptionValue withPos(MontyValue pos) => MontyExceptionValue(
+      'json.JSONDecodeError',
+      'm',
+      {'pos': pos, 'doc': const MontyString('d')},
     );
 
     test('equal attributes are equal, with equal hashes', () {
       final a = withPos(const MontyInt(1));
-      final b = exceptionWithAttributes(
-        excType: 'json.JSONDecodeError',
-        message: 'm',
-        attributes: {'doc': const MontyString('d'), 'pos': const MontyInt(1)},
+      final b = MontyExceptionValue(
+        'json.JSONDecodeError',
+        'm',
+        const {'doc': MontyString('d'), 'pos': MontyInt(1)},
       );
       expect(a, b);
       expect(a.hashCode, b.hashCode);
@@ -356,17 +355,17 @@ void main() {
     });
 
     test('different attributes, or none, are not equal', () {
-      const plain = MontyExceptionValue(
-        excType: 'json.JSONDecodeError',
-        message: 'm',
+      final plain = MontyExceptionValue(
+        'json.JSONDecodeError',
+        'm',
       );
       final one = withPos(const MontyInt(1));
       expect(one, isNot(withPos(const MontyInt(2))));
       expect(one, isNot(plain));
       expect(plain, isNot(one));
       expect(
-        exceptionWithAttributes(excType: 'ValueError', message: 'm'),
-        const MontyExceptionValue(excType: 'ValueError', message: 'm'),
+        MontyExceptionValue('ValueError', 'm'),
+        MontyExceptionValue('ValueError', 'm'),
       );
     });
 
@@ -378,10 +377,10 @@ void main() {
     });
 
     test("an attribute's payload counts toward the walk's visits", () {
-      MontyExceptionValue big() => exceptionWithAttributes(
-        excType: 'UnicodeDecodeError',
-        message: 'm',
-        attributes: {'object': MontyBytes(Uint8List(64 * 1024))},
+      MontyExceptionValue big() => MontyExceptionValue(
+        'UnicodeDecodeError',
+        'm',
+        {'object': MontyBytes(Uint8List(64 * 1024))},
       );
       final budget = ValueGraphBudget(maxVisits: 1000);
       MontyList listOfBig() => MontyList([big()]);
@@ -392,9 +391,10 @@ void main() {
 
     test('an attribute is a leaf: a container is refused', () {
       expect(
-        () => exceptionWithAttributes(
-          excType: 'ValueError',
-          attributes: {'x': const MontyList([])},
+        () => MontyExceptionValue(
+          'ValueError',
+          null,
+          const {'x': MontyList([])},
         ),
         throwsArgumentError,
       );

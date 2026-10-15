@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
-import 'package:dart_monty_core/src/externals.dart';
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/mount_mode.dart';
 import 'package:dart_monty_core/src/mount/open_call.dart';
@@ -12,8 +12,12 @@ import 'package:dart_monty_core/src/mount/vfs_node.dart';
 import 'package:dart_monty_core/src/mount/vfs_path.dart';
 import 'package:dart_monty_core/src/mount/vfs_tree.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
+import 'package:dart_monty_core/src/worker/host_answers.dart' show OsHandler;
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 
-/// Builds an [OsCallHandler] that serves Python `pathlib.Path` operations
+/// Builds an [OsHandler] that serves Python `pathlib.Path` operations
 /// from an in-memory virtual filesystem.
 ///
 /// `mounts` declare which path prefixes Python can reach. `files` seeds the
@@ -28,9 +32,11 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 ///   mounts: const [MountDir(virtualPath: '/data')],
 ///   files: [MontyMemoryFile('/data/hello.txt', 'Hello!')],
 /// );
-/// final r = await Monty('pathlib.Path("/data/hello.txt").read_text()')
-///     .run(osHandler: handler);
-/// print(r.value); // MontyString('Hello!')
+/// final r = await session.feedRun(
+///   'pathlib.Path("/data/hello.txt").read_text()',
+///   os: handler,
+/// );
+/// print(r.output); // MontyString('Hello!')
 /// ```
 ///
 /// The handler enforces:
@@ -57,8 +63,13 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// `Path.rmdir`, `Path.rename`.
 ///
 /// Anything else — a non-filesystem call such as `os.getenv`, or a path
-/// outside every mount — goes to [fallthrough], or raises the call's own
-/// no-handler default when no fallthrough is configured.
+/// outside every mount — goes to [fallthrough], or, with no fallthrough, is
+/// declined by throwing [OsCallNotHandledException], so the worker raises
+/// the call's own default. The handler answers synchronously, so a decline
+/// is a synchronous throw, the only kind that declines.
+///
+/// A failure the handler chooses is an [ExternalException] naming the
+/// Python exception, such as `FileNotFoundError`.
 ///
 /// Directories are real nodes ([VfsDir]), so an empty one exists: `mkdir`
 /// inserts it and `Path.exists` says `true` before anything is written into
@@ -69,10 +80,10 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 /// `/a.txt/b.txt` — throws [ArgumentError] at construction, as it does
 /// upstream (`os_access.py:837-838`); it is not representable and there is no
 /// useful runtime behaviour to fall back on.
-OsCallHandler memoryMountedOsHandler({
+OsHandler memoryMountedOsHandler({
   required List<MountDir> mounts,
   required List<VfsFile> files,
-  OsCallHandler? fallthrough,
+  OsHandler? fallthrough,
 }) {
   final normalizedMounts = mounts
       .map(
@@ -108,9 +119,9 @@ OsCallHandler memoryMountedOsHandler({
   /// `mkdir`-then-write failed. Directories are real now, so it returns.
   void requireParentDir(String path) {
     if (vfs.parentDirOf(path) == null) {
-      throw OsCallException(
+      throw ExternalException(
+        'FileNotFoundError',
         "[Errno 2] No such file or directory: '$path'",
-        pythonExceptionType: 'FileNotFoundError',
       );
     }
   }
@@ -124,9 +135,9 @@ OsCallHandler memoryMountedOsHandler({
   /// loss rather than a wrong message.
   void refuseDirectory(String path) {
     if (vfs.lookup(path) is VfsDir) {
-      throw OsCallException(
+      throw ExternalException(
+        'IsADirectoryError',
         "[Errno 21] Is a directory: '$path'",
-        pythonExceptionType: 'IsADirectoryError',
       );
     }
   }
@@ -139,9 +150,9 @@ OsCallHandler memoryMountedOsHandler({
     refuseDirectory(path);
     final file = vfs.fileAt(path);
     if (file == null) {
-      throw OsCallException(
+      throw ExternalException(
+        'FileNotFoundError',
         "[Errno 2] No such file or directory: '$path'",
-        pythonExceptionType: 'FileNotFoundError',
       );
     }
 
@@ -156,34 +167,16 @@ OsCallHandler memoryMountedOsHandler({
     vfs.putContent(path, content);
   }
 
-  Future<Object?> notMine(
+  /// [fallthrough]'s answer, or a decline when there is none: the worker
+  /// then raises upstream's `on_no_handler` default for the call.
+  FutureOr<MontyValue> notMine(
     String op,
-    List<Object?> args,
-    Map<String, Object?>? kwargs,
-  ) async {
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  ) {
     if (fallthrough != null) return fallthrough(op, args, kwargs);
 
-    // Mirror upstream's `OsFunctionCall::on_no_handler`
-    // (monty-types/src/os.rs:260-274) rather than inventing wording. It splits
-    // on whether the call is a filesystem operation, and this one message did
-    // not: it raised `PermissionError: Path is outside any mount: <arg>` for
-    // everything, which called `os.getenv`'s variable name a path, rendered
-    // `null` for calls that carry no path, and claimed a file that provably
-    // exists inside a mount was outside it (this is also reached from :355,
-    // which sits AFTER the mount check, so "outside any mount" cannot be true
-    // there).
-    //
-    // Emulated here rather than delegated because there is no way to decline:
-    // upstream's JS calls a dedicated `resumeNotHandled`, we have no such
-    // binding, and `OsCallNotHandledException` routes to `resumeNotFound`,
-    // which reports a bare NAME and yields `NameError: name 'Path.read_text'
-    // is not defined` — measured. Declining that way would turn a sandbox
-    // refusal into a missing-function message.
-    final noHandler = osCallNoHandlerDefault(op, args);
-    throw OsCallException(
-      noHandler.message,
-      pythonExceptionType: noHandler.excType,
-    );
+    throw const OsCallNotHandledException();
   }
 
   // A parent-directory check for write_text/write_bytes lived here and was
@@ -194,7 +187,7 @@ OsCallHandler memoryMountedOsHandler({
   // "mkdir then write into it" test, and reinstate this in Phase 1 once
   // directories are first-class (docs/contributor/vfs-phases.md, Phase 1b).
 
-  return (op, args, kwargs) async {
+  return (op, args, kwargs) {
     // Carries [path, mode]; reads and writes then arrive separately as
     // `Path.read_text`/`write_text`/`append_text`, handled below.
     //
@@ -203,17 +196,17 @@ OsCallHandler memoryMountedOsHandler({
     // that crosses the boundary is lowercase — reading the Rust source
     // suggests the opposite. It is also the only undotted op name.
     if (op == 'open') {
-      final rawPath = args.firstOrNull;
-      if (rawPath is! String) return notMine(op, args, kwargs);
+      final rawPath = _pathText(args.firstOrNull);
+      if (rawPath == null) return notMine(op, args, kwargs);
       final path = normalizeVfsPath(rawPath);
       final mount = _findMount(path, normalizedMounts);
       if (mount == null) {
         // Same premise as the Path.* ops below: outside every mount, the file
         // is not there.
         if (fallthrough == null) {
-          throw OsCallException(
+          throw ExternalException(
+            'FileNotFoundError',
             "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
           );
         }
 
@@ -223,7 +216,7 @@ OsCallHandler memoryMountedOsHandler({
       if (_pathTooLong(path)) throw _nameTooLong(path);
 
       final modeArg = args.elementAtOrNull(1);
-      final mode = modeArg is String ? modeArg : 'r';
+      final mode = modeArg is MontyString ? modeArg.value : 'r';
 
       // Core owns the open() mode→effect mapping; this handler just supplies
       // its in-memory store primitives.
@@ -253,8 +246,8 @@ OsCallHandler memoryMountedOsHandler({
 
     if (!op.startsWith('Path.')) return notMine(op, args, kwargs);
 
-    final rawPath = args.firstOrNull;
-    if (rawPath is! String) return notMine(op, args, kwargs);
+    final rawPath = _pathText(args.firstOrNull);
+    if (rawPath == null) return notMine(op, args, kwargs);
     final path = normalizeVfsPath(rawPath);
     final mount = _findMount(path, normalizedMounts);
     if (mount == null) {
@@ -267,7 +260,7 @@ OsCallHandler memoryMountedOsHandler({
       // A configured fallthrough still gets first refusal — a host that DOES
       // serve those paths must not be shadowed by our answer.
       if (fallthrough == null) {
-        if (_isQuery(op)) return false;
+        if (_isQuery(op)) return const MontyBool(false);
 
         // And the same premise, carried through: if the sandbox's answer to
         // "is it there" is no, its answer to "read it" must be "it is not
@@ -281,9 +274,9 @@ OsCallHandler memoryMountedOsHandler({
         // OsCallNotHandledException still gets upstream's
         // `on_no_handler` wording (monty-types/src/os.rs:260), because
         // declining and answering are different acts.
-        throw OsCallException(
+        throw ExternalException(
+          'FileNotFoundError',
           "[Errno 2] No such file or directory: '$path'",
-          pythonExceptionType: 'FileNotFoundError',
         );
       }
 
@@ -297,13 +290,13 @@ OsCallHandler memoryMountedOsHandler({
     // OSError and answer False, on the reasoning that an unopenable name is
     // not there and that is all the caller asked. Everything else raises.
     if (_pathTooLong(path)) {
-      if (_isQuery(op)) return false;
+      if (_isQuery(op)) return const MontyBool(false);
       throw _nameTooLong(path);
     }
 
     switch (op) {
       case 'Path.read_text':
-        return _decodeUtf8(requireFile(path).content.bytes);
+        return MontyString(_decodeUtf8(requireFile(path).content.bytes));
 
       case 'Path.read_bytes':
 
@@ -314,13 +307,14 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.write_text':
         _requireWritable(mount, path);
-        final value = args.elementAtOrNull(1);
-        if (value is! String) {
-          throw OsCallException(
-            'write_text expects a string, got ${value.runtimeType}',
-            pythonExceptionType: 'TypeError',
+        final arg = args.elementAtOrNull(1);
+        if (arg is! MontyString) {
+          throw ExternalException(
+            'TypeError',
+            'write_text expects a str, got ${arg.runtimeType}',
           );
         }
+        final value = arg.value;
         final wroteText = utf8.encode(value).length;
         accountant.recordWrite(
           mount,
@@ -330,20 +324,11 @@ OsCallHandler memoryMountedOsHandler({
         );
         putContent(path, VfsText(value));
 
-        return _codepointCount(value);
+        return MontyInt(_codepointCount(value));
 
       case 'Path.write_bytes':
         _requireWritable(mount, path);
-        final value = args.elementAtOrNull(1);
-        final List<int> bytes;
-        if (value is List) {
-          bytes = value.cast<int>();
-        } else {
-          throw OsCallException(
-            'write_bytes expects a List<int>, got ${value.runtimeType}',
-            pythonExceptionType: 'TypeError',
-          );
-        }
+        final bytes = _bytesArg(args.elementAtOrNull(1), 'write_bytes');
         accountant.recordWrite(
           mount,
           path,
@@ -352,17 +337,18 @@ OsCallHandler memoryMountedOsHandler({
         );
         putContent(path, VfsBytes(Uint8List.fromList(bytes)));
 
-        return bytes.length;
+        return MontyInt(bytes.length);
 
       case 'Path.append_text':
         _requireWritable(mount, path);
-        final value = args.elementAtOrNull(1);
-        if (value is! String) {
-          throw OsCallException(
-            'append_text expects a string, got ${value.runtimeType}',
-            pythonExceptionType: 'TypeError',
+        final arg = args.elementAtOrNull(1);
+        if (arg is! MontyString) {
+          throw ExternalException(
+            'TypeError',
+            'append_text expects a str, got ${arg.runtimeType}',
           );
         }
+        final value = arg.value;
         refuseDirectory(path);
         final existing = vfs.fileAt(path);
         final head = existing == null
@@ -378,20 +364,11 @@ OsCallHandler memoryMountedOsHandler({
         );
         putContent(path, VfsText(combined));
 
-        return _codepointCount(value);
+        return MontyInt(_codepointCount(value));
 
       case 'Path.append_bytes':
         _requireWritable(mount, path);
-        final value = args.elementAtOrNull(1);
-        final List<int> bytes;
-        if (value is List) {
-          bytes = value.cast<int>();
-        } else {
-          throw OsCallException(
-            'append_bytes expects a List<int>, got ${value.runtimeType}',
-            pythonExceptionType: 'TypeError',
-          );
-        }
+        final bytes = _bytesArg(args.elementAtOrNull(1), 'append_bytes');
         refuseDirectory(path);
         final prior = vfs.fileAt(path);
         final joined = Uint8List.fromList([...?prior?.content.bytes, ...bytes]);
@@ -403,27 +380,27 @@ OsCallHandler memoryMountedOsHandler({
         );
         putContent(path, VfsBytes(joined));
 
-        return bytes.length;
+        return MontyInt(bytes.length);
 
       case 'Path.exists':
-        return vfs.exists(path);
+        return MontyBool(vfs.exists(path));
 
       case 'Path.is_file':
-        return vfs.lookup(path) is VfsFile;
+        return MontyBool(vfs.lookup(path) is VfsFile);
 
       case 'Path.is_dir':
-        return vfs.lookup(path) is VfsDir;
+        return MontyBool(vfs.lookup(path) is VfsDir);
 
       case 'Path.is_symlink':
-        return false;
+        return const MontyBool(false);
 
       case 'Path.stat':
         return switch (vfs.lookup(path)) {
           VfsDir() => _dirStat(),
           final VfsFile f => _fileStat(f.content.byteLength),
-          null => throw OsCallException(
+          null => throw ExternalException(
+            'FileNotFoundError',
             "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
           ),
         };
 
@@ -436,24 +413,24 @@ OsCallHandler memoryMountedOsHandler({
         vfs.remove(path);
         accountant.recordRemove(mount, path);
 
-        return null;
+        return const MontyNone();
 
       case 'Path.iterdir':
         // Three distinct answers. Returning an empty list for a path that is
         // not there was the worst of them: indistinguishable from a
         // successful listing of an empty directory.
         return switch (vfs.lookup(path)) {
-          final VfsDir d => [
+          final VfsDir d => MontyList([
             for (final name in d.children.keys)
               MontyPath(path == '/' ? '/$name' : '$path/$name'),
-          ],
-          VfsFile() => throw OsCallException(
+          ]),
+          VfsFile() => throw ExternalException(
+            'NotADirectoryError',
             "[Errno 20] Not a directory: '$path'",
-            pythonExceptionType: 'NotADirectoryError',
           ),
-          null => throw OsCallException(
+          null => throw ExternalException(
+            'FileNotFoundError',
             "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
           ),
         };
 
@@ -471,28 +448,28 @@ OsCallHandler memoryMountedOsHandler({
 
       case 'Path.mkdir':
         _requireWritable(mount, path);
-        final parents = (kwargs?['parents'] as bool?) ?? false;
-        final existOk = (kwargs?['exist_ok'] as bool?) ?? false;
+        final parents = _flag(kwargs['parents']);
+        final existOk = _flag(kwargs['exist_ok']);
         switch (vfs.lookup(path)) {
           case VfsFile():
             // A file occupies the path. exist_ok only applies to existing
             // directories — Python raises FileExistsError here regardless.
-            throw OsCallException(
+            throw ExternalException(
+              'FileExistsError',
               "[Errno 17] File exists: '$path'",
-              pythonExceptionType: 'FileExistsError',
             );
           case VfsDir():
             if (!existOk) {
               // Same message as the file case: CPython does not distinguish,
               // and mount_fs__errors.py asserts the exact string for BOTH
               // plain mkdir() and mkdir(parents=True, exist_ok=False).
-              throw OsCallException(
+              throw ExternalException(
+                'FileExistsError',
                 "[Errno 17] File exists: '$path'",
-                pythonExceptionType: 'FileExistsError',
               );
             }
 
-            return null;
+            return const MontyNone();
           case null:
             break;
         }
@@ -501,9 +478,9 @@ OsCallHandler memoryMountedOsHandler({
             // CPython names the TARGET, not the missing parent, and prefixes
             // the errno — mount_fs__errors.py:129-137 asserts the exact
             // string. This said `No such directory: <parent>`, wrong twice.
-            throw OsCallException(
+            throw ExternalException(
+              'FileNotFoundError',
               "[Errno 2] No such file or directory: '$path'",
-              pythonExceptionType: 'FileNotFoundError',
             );
           }
           _mkdirParents(vfs, path, accountant, mount);
@@ -511,21 +488,21 @@ OsCallHandler memoryMountedOsHandler({
         accountant.recordMkdir(mount, path);
         vfs.mkdir(path);
 
-        return null;
+        return const MontyNone();
 
       case 'Path.rmdir':
         _requireWritable(mount, path);
         switch (vfs.lookup(path)) {
           case VfsFile():
-            throw OsCallException(
+            throw ExternalException(
+              'NotADirectoryError',
               "[Errno 20] Not a directory: '$path'",
-              pythonExceptionType: 'NotADirectoryError',
             );
           case final VfsDir d:
             if (d.children.isNotEmpty) {
-              throw OsCallException(
+              throw ExternalException(
+                'OSError',
                 "[Errno 39] Directory not empty: '$path'",
-                pythonExceptionType: 'OSError',
               );
             }
             // An empty directory is now a real, removable node — including a
@@ -536,23 +513,23 @@ OsCallHandler memoryMountedOsHandler({
               accountant.recordRemove(mount, path);
             }
 
-            return null;
+            return const MontyNone();
           case null:
             // CPython raises; mount_fs__errors.py:110-115 asserts the message.
-            throw OsCallException(
+            throw ExternalException(
+              'FileNotFoundError',
               "[Errno 2] No such file or directory: '$path'",
-              pythonExceptionType: 'FileNotFoundError',
             );
         }
 
       case 'Path.rename':
         _requireWritable(mount, path);
-        final rawTarget = args.elementAtOrNull(1);
-        if (rawTarget is! String) {
-          throw OsCallException(
-            'rename expects a destination path string, got '
-            '${rawTarget.runtimeType}',
-            pythonExceptionType: 'TypeError',
+        final targetArg = args.elementAtOrNull(1);
+        final rawTarget = _pathText(targetArg);
+        if (rawTarget == null) {
+          throw ExternalException(
+            'TypeError',
+            'rename expects a destination path, got ${targetArg.runtimeType}',
           );
         }
         final target = normalizeVfsPath(rawTarget);
@@ -576,9 +553,9 @@ OsCallHandler memoryMountedOsHandler({
           // target indistinguishable from one whose parent is simply missing,
           // which `requireParentDir` already reports with this same message.
           if (fallthrough == null) {
-            throw OsCallException(
+            throw ExternalException(
+              'FileNotFoundError',
               "[Errno 2] No such file or directory: '$target'",
-              pythonExceptionType: 'FileNotFoundError',
             );
           }
 
@@ -605,29 +582,29 @@ OsCallHandler memoryMountedOsHandler({
         //   dir      empty dir        move, replacing the empty directory
         final source = vfs.lookup(path);
         if (source == null) {
-          throw OsCallException(
+          throw ExternalException(
+            'FileNotFoundError',
             "[Errno 2] No such file or directory: '$path'",
-            pythonExceptionType: 'FileNotFoundError',
           );
         }
         switch ((source, vfs.lookup(target))) {
           case (VfsFile(), VfsDir()):
-            throw OsCallException(
+            throw ExternalException(
+              'IsADirectoryError',
               "[Errno 21] Is a directory: '$target'",
-              pythonExceptionType: 'IsADirectoryError',
             );
           case (VfsDir(), VfsFile()):
-            throw OsCallException(
+            throw ExternalException(
+              'NotADirectoryError',
               "[Errno 20] Not a directory: '$target'",
-              pythonExceptionType: 'NotADirectoryError',
             );
           case (VfsDir(), final VfsDir dst) when dst.children.isNotEmpty:
             // Upstream snapshotted errno 66 here, which is macOS's ENOTEMPTY
             // number; the fixture accepts 66 or 39 off-monty but pins 39 for
             // us, and 39 is what Linux CPython reports.
-            throw OsCallException(
+            throw ExternalException(
+              'OSError',
               "[Errno 39] Directory not empty: '$target'",
-              pythonExceptionType: 'OSError',
             );
           case _:
             // Everything left over is a move: onto nothing, onto a file it
@@ -639,13 +616,32 @@ OsCallHandler memoryMountedOsHandler({
             vfs.move(path, target);
             accountant.recordMove(mount, path, targetMount, target);
 
-            return null;
+            return const MontyNone();
         }
     }
 
     return notMine(op, args, kwargs);
   };
 }
+
+/// [arg]'s path text: a [MontyPath], as the worker sends a path, or a
+/// [MontyString]; `null` for anything else.
+String? _pathText(MontyValue? arg) => switch (arg) {
+  MontyPath(:final value) || MontyString(:final value) => value,
+  _ => null,
+};
+
+/// [arg]'s bytes for [op]; a `TypeError` for anything but [MontyBytes].
+List<int> _bytesArg(MontyValue? arg, String op) => switch (arg) {
+  MontyBytes(:final value) => value,
+  _ => throw ExternalException(
+    'TypeError',
+    '$op expects bytes, got ${arg.runtimeType}',
+  ),
+};
+
+/// A keyword flag: [MontyBool]'s value, `false` when absent.
+bool _flag(MontyValue? arg) => arg is MontyBool && arg.value;
 
 MountDir? _findMount(String normalized, List<MountDir> mounts) {
   MountDir? match;
@@ -675,10 +671,7 @@ MountDir? _findMount(String normalized, List<MountDir> mounts) {
 
 void _requireWritable(MountDir mount, String path) {
   if (mount.mode == MountMode.readOnly) {
-    throw OsCallException(
-      'Mount is read-only: $path',
-      pythonExceptionType: 'PermissionError',
-    );
+    throw ExternalException('PermissionError', 'Mount is read-only: $path');
   }
 }
 
@@ -702,9 +695,9 @@ void _mkdirParents(
     final soFar = walked.toString();
     switch (vfs.lookup(soFar)) {
       case VfsFile():
-        throw OsCallException(
+        throw ExternalException(
+          'NotADirectoryError',
           "[Errno 20] Not a directory: '$soFar'",
-          pythonExceptionType: 'NotADirectoryError',
         );
       case VfsDir():
         continue;
@@ -764,10 +757,8 @@ bool _pathTooLong(String path) {
 }
 
 /// CPython names the FULL path here, not the offending component.
-OsCallException _nameTooLong(String path) => OsCallException(
-  "[Errno 36] File name too long: '$path'",
-  pythonExceptionType: 'OSError',
-);
+ExternalException _nameTooLong(String path) =>
+    ExternalException('OSError', "[Errno 36] File name too long: '$path'");
 
 bool _isMountRoot(String normalized, List<MountDir> mounts) {
   for (final m in mounts) {
@@ -857,9 +848,16 @@ String _decodeUtf8(Uint8List bytes) {
         ? 'invalid continuation byte'
         : 'invalid start byte';
 
-    throw OsCallException(
+    throw ExternalException(
+      'UnicodeDecodeError',
       "'utf-8' codec can't decode byte $hex in position $pos: $reason",
-      pythonExceptionType: 'UnicodeDecodeError',
+      {
+        'encoding': const MontyString('utf-8'),
+        'object': MontyBytes(bytes),
+        'start': MontyInt(pos),
+        'end': MontyInt(pos + 1),
+        'reason': MontyString(reason),
+      },
     );
   }
 }

@@ -4,10 +4,12 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 void main() {
   group('the flat store cannot represent a directory', () {
     test('an empty directory exists after mkdir', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: const [],
       );
@@ -20,7 +22,7 @@ void main() {
     });
 
     test('a seeded nested file creates its parent directories', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: [MontyMemoryFile('/m/a/b/c.txt', 'deep')],
       );
@@ -30,7 +32,7 @@ void main() {
     });
 
     test('a component that is a file is not a directory', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: [MontyMemoryFile('/m/f.txt', 'x')],
       );
@@ -47,7 +49,7 @@ void main() {
     // where the caller can see which file they got wrong.
     test('a file under a file is rejected when the handler is built', () {
       expect(
-        () => memoryMountedOsHandler(
+        () => mountedHandler(
           mounts: const [MountDir(virtualPath: '/m')],
           files: [
             MontyMemoryFile('/m/a.txt', 'x'),
@@ -65,7 +67,7 @@ void main() {
     });
 
     test('a mount with no files is still a directory', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/empty')],
         files: const [],
       );
@@ -75,7 +77,7 @@ void main() {
     });
 
     test('mkdir then iterdir lists the new directory', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: const [],
       );
@@ -88,7 +90,7 @@ void main() {
     });
 
     test('rmdir removes an empty directory that mkdir created', () async {
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: const [],
       );
@@ -104,7 +106,7 @@ void main() {
     // A caller holding the file sees the new path.
     test("renaming a directory rewrites its files' paths", () async {
       final nested = MontyMemoryFile('/m/old/deep/f.txt', 'v');
-      final handler = memoryMountedOsHandler(
+      final handler = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: [nested],
       );

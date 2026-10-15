@@ -16,11 +16,13 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show MontyValueInternal;
 import 'package:test/test.dart';
 
 void main() {
   group('MontyInt past 2^53 (VM only)', () {
-    test('encodes as a bigint and decodes as MontyBigInt', () {
+    test('projects as a bigint', () {
       // Tier 3 / core#128b. On dart2js `int` IS a double, so beyond 2^53 an
       // integer cannot be a MontyInt there at all — `JSON.parse` measurably
       // returns 9007199254740992 for 9007199254740993. Rather than let the TYPE
@@ -34,18 +36,13 @@ void main() {
         '__type': 'bigint',
         'value': '9007199254740993',
       });
-      expect(
-        MontyValue.fromJson(past.toJson()),
-        MontyBigInt(BigInt.parse('9007199254740993')),
-        reason: 'the value survives; the Dart type deliberately changes',
-      );
     });
 
     test('i64 max, comfortably past the boundary', () {
-      expect(
-        MontyValue.fromJson(const MontyInt(0x7FFFFFFFFFFFFFFF).toJson()),
-        MontyBigInt(BigInt.parse('9223372036854775807')),
-      );
+      expect(const MontyInt(0x7FFFFFFFFFFFFFFF).toJson(), {
+        '__type': 'bigint',
+        'value': '9223372036854775807',
+      });
     });
   });
 }

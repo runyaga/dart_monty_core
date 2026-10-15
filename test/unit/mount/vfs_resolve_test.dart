@@ -4,9 +4,11 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 void main() {
   group('resolve and absolute', () {
-    OsCallHandler handler() => memoryMountedOsHandler(
+    DartOsCall handler() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
       files: [MontyMemoryFile('/mnt/subdir/nested.txt', 'n')],
     );

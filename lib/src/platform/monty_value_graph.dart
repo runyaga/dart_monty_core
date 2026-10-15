@@ -71,9 +71,8 @@ const int _kFrozenSet = 4;
 const int _kDict = 5;
 const int _kNamedTuple = 6;
 const int _kInstance = 7;
-const int _kDataclass = 8;
-const int _kClassType = 9;
-const int _kPayload = 10; // a leaf whose work grows with its payload
+const int _kClassType = 8;
+const int _kPayload = 9; // a leaf whose work grows with its payload
 
 const int _hashMask = 0x7fffffff;
 
@@ -98,8 +97,9 @@ int _payloadCharge(Object v) => switch (v) {
 int _textCharge(Object v) => switch (v) {
   MontyExceptionValue(:final excType, :final message) =>
     ((excType.length + (message?.length ?? 0)) >> 4) +
-        _attributesCharge(exceptionAttributes(v)),
-  MontyOpaque(:final text) => text.length >> 4,
+        _attributesCharge(v.attributes),
+  MontyStdTypeProxy(:final kind, :final name) =>
+    (kind.length + name.length) >> 4,
   MontyFileHandle(:final path, :final mode) => (path.length + mode.length) >> 4,
   _ => _zoneNameCharge(v),
 };
@@ -203,9 +203,9 @@ void _forEachChild(Object v, void Function(Object) f) {
         f(k);
         f(x);
       }
-    case MontyClassType(:final attrs) || MontyDataclass(:final attrs):
+    case MontyClassTypeProxy(:final attrs):
       attrs.values.forEach(f);
-    case MontyClassInstance(:final classType, :final attrs):
+    case MontyClassProxy(:final classType, :final attrs):
       f(classType);
       attrs.values.forEach(f);
   }
@@ -232,7 +232,7 @@ abstract class _Hasher {
   int _combineStructured(Object v) => switch (v) {
     MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
       Object.hash(_text(typeName), _names(fieldNames), _seq(values)),
-    MontyClassType(
+    MontyClassTypeProxy(
       :final name,
       :final id,
       :final hostDefined,
@@ -246,22 +246,8 @@ abstract class _Hasher {
         isDataclass,
         _attrs(attrs),
       ),
-    MontyClassInstance(:final classType, :final instanceId, :final attrs) =>
+    MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
       Object.hash(_Hashed(child(classType)), _text(instanceId), _attrs(attrs)),
-    MontyDataclass(
-      :final name,
-      :final typeId,
-      :final fieldNames,
-      :final attrs,
-      :final frozen,
-    ) =>
-      Object.hash(
-        _text(name),
-        typeId,
-        _names(fieldNames),
-        _attrs(attrs),
-        frozen,
-      ),
     _ => throw _notANode(v),
   };
 
@@ -518,13 +504,9 @@ bool _equalStructured(_FastWalk w, Object x, Object y) => switch ((x, y)) {
     a,
     b,
   ),
-  (final MontyClassType a, final MontyClassType b) => _equalClassTypes(w, a, b),
-  (final MontyClassInstance a, final MontyClassInstance b) => _equalInstances(
-    w,
-    a,
-    b,
-  ),
-  (final MontyDataclass a, final MontyDataclass b) => _equalDataclasses(
+  (final MontyClassTypeProxy a, final MontyClassTypeProxy b) =>
+    _equalClassTypes(w, a, b),
+  (final MontyClassProxy a, final MontyClassProxy b) => _equalInstances(
     w,
     a,
     b,
@@ -537,7 +519,11 @@ bool _equalNamedTuples(_FastWalk w, MontyNamedTuple a, MontyNamedTuple b) =>
     w._equalStrings(a.fieldNames, b.fieldNames) &&
     w._equalSeq(a.values, b.values);
 
-bool _equalClassTypes(_FastWalk w, MontyClassType a, MontyClassType b) =>
+bool _equalClassTypes(
+  _FastWalk w,
+  MontyClassTypeProxy a,
+  MontyClassTypeProxy b,
+) =>
     _equalText(w, a.name, b.name) &&
     _equalText(w, a.id, b.id) &&
     _classTypeFieldsEqual(a, b) &&
@@ -545,17 +531,11 @@ bool _equalClassTypes(_FastWalk w, MontyClassType a, MontyClassType b) =>
 
 bool _equalInstances(
   _FastWalk w,
-  MontyClassInstance a,
-  MontyClassInstance b,
+  MontyClassProxy a,
+  MontyClassProxy b,
 ) =>
     _equalText(w, a.instanceId, b.instanceId) &&
     w.equals(a.classType, b.classType) &&
-    w._equalAttrs(a.attrs, b.attrs);
-
-bool _equalDataclasses(_FastWalk w, MontyDataclass a, MontyDataclass b) =>
-    _equalText(w, a.name, b.name) &&
-    w._equalStrings(a.fieldNames, b.fieldNames) &&
-    _dataclassFieldsEqual(a, b) &&
     w._equalAttrs(a.attrs, b.attrs);
 
 /// [a] == [b], after charging the comparison.
@@ -616,19 +596,36 @@ bool _hasRepeatedKey(Map<String, MontyValue> m, [_Hasher? w]) {
 
 /// Calls [f] on each child a projection of [v] builds. A string-keyed dict,
 /// and an attribute map, project only the value that survives for each key,
-/// as the old asStringMap-based code did.
+/// as the string-keyed projection does.
 void _forEachProjectedChild(Object v, void Function(Object) f) {
   switch (v) {
-    case MontyClassType(:final attrs) || MontyDataclass(:final attrs):
+    case MontyClassTypeProxy(:final attrs):
       _survivors(attrs).values.forEach(f);
-    case MontyClassInstance(:final classType, :final attrs):
+    case MontyClassProxy(:final classType, :final attrs):
       f(classType);
       _survivors(attrs).values.forEach(f);
-    case final MontyDict d when d.asStringMap != null:
-      d.asStringMap?.values.forEach(f);
+    case final MontyDict d:
+      final strings = _stringKeyed(d);
+      if (strings == null) {
+        _forEachChild(v, f);
+      } else {
+        strings.values.forEach(f);
+      }
     default:
       _forEachChild(v, f);
   }
+}
+
+/// [d] as a string-keyed map, each key at its first position with its last
+/// value, or `null` when any key is not a [MontyString].
+Map<String, MontyValue>? _stringKeyed(MontyDict d) {
+  final out = <String, MontyValue>{};
+  for (final (k, v) in d.pairs) {
+    if (k is! MontyString) return null;
+    out[k.value] = v;
+  }
+
+  return out;
 }
 
 /// [attrs] with each key once, keeping its last value: a map with its own
@@ -664,17 +661,11 @@ bool _stringsEqual(List<String> a, List<String> b) {
   return true;
 }
 
-bool _classTypeFieldsEqual(MontyClassType a, MontyClassType b) =>
+bool _classTypeFieldsEqual(MontyClassTypeProxy a, MontyClassTypeProxy b) =>
     a.name == b.name &&
     a.id == b.id &&
     a.hostDefined == b.hostDefined &&
     a.isDataclass == b.isDataclass;
-
-bool _dataclassFieldsEqual(MontyDataclass a, MontyDataclass b) =>
-    a.name == b.name &&
-    a.typeId == b.typeId &&
-    a.frozen == b.frozen &&
-    _stringsEqual(a.fieldNames, b.fieldNames);
 
 // ---------------------------------------------------------------------------
 // The fallback: memoised, on an explicit stack
@@ -1032,14 +1023,12 @@ final class _MemoEquals {
       a,
       b,
     ),
-    (final MontyClassType a, final MontyClassType b) =>
+    (final MontyClassTypeProxy a, final MontyClassTypeProxy b) =>
       _classTypeFieldsEqual(a, b) ? _attrsFrame(a, b, a.attrs, b.attrs) : null,
-    (final MontyClassInstance a, final MontyClassInstance b) =>
+    (final MontyClassProxy a, final MontyClassProxy b) =>
       a.instanceId == b.instanceId
           ? _attrsFrame(a, b, a.attrs, b.attrs, (a.classType, b.classType))
           : null,
-    (final MontyDataclass a, final MontyDataclass b) =>
-      _dataclassFieldsEqual(a, b) ? _attrsFrame(a, b, a.attrs, b.attrs) : null,
     _ => throw _notANode(x),
   };
 
@@ -1079,8 +1068,8 @@ final class _MemoEquals {
 /// Builds `toJson` or `dartValue` output.
 ///
 /// Each node is built once per projection, so a node shared in the value is
-/// one shared object in the output. A named tuple, a class instance and a
-/// dataclass project to their `toJson` map in both projections, as before.
+/// one shared object in the output. A named tuple and a
+/// class instance project to their `toJson` map in both projections.
 final class _Projection {
   final Map<Object, Object?> _json = Map.identity();
   final Map<Object, Object?> _dart = Map.identity();
@@ -1109,7 +1098,7 @@ final class _Projection {
 
   /// Whether [kind] in the dartValue projection is built as its toJson map.
   static bool _jsonInBoth(int kind) =>
-      kind == _kNamedTuple || kind == _kInstance || kind == _kDataclass;
+      kind == _kNamedTuple || kind == _kInstance;
 
   Map<Object, Object?> _memoFor({required bool json}) => json ? _json : _dart;
 
@@ -1117,7 +1106,7 @@ final class _Projection {
     final memo = _memoFor(json: toJson);
     if (kind == _kFixed || v is MontyString) {
       final m = v as MontyValue;
-      final out = toJson ? m.toJson() : m.dartValue;
+      final out = toJson ? m._toJson() : m.dartValue;
       // A shared leaf that projects to an object (a tagged float, a date)
       // is one object in the output too; a primitive has no identity.
       if (out == null || out is num || out is bool || out is String) {
@@ -1129,7 +1118,7 @@ final class _Projection {
     if (memo.containsKey(v)) return memo[v];
     final m = v as MontyValue;
 
-    return memo[v] = toJson ? m.toJson() : m.dartValue;
+    return memo[v] = toJson ? m._toJson() : m.dartValue;
   }
 
   Object? _recurse(Object v, {required bool toJson}) {
@@ -1224,11 +1213,11 @@ final class _Projection {
   }
 
   /// The string-keyed form when every key is a string, as the old code built
-  /// it through asStringMap: the first position of each key, with its last
+  /// it: the first position of each key, with its last
   /// value. Otherwise the entries form.
   Object _dict(MontyDict d, {required bool toJson}) {
     Object? get(Object c) => _child(c, toJson: toJson);
-    final strings = d.asStringMap;
+    final strings = _stringKeyed(d);
     if (strings != null) {
       final out = <String, Object?>{
         for (final MapEntry(:key, :value) in strings.entries) key: get(value),
@@ -1245,7 +1234,7 @@ final class _Projection {
         : entries;
   }
 
-  /// Named tuples, class instances and dataclasses: always toJson maps.
+  /// Named tuples, class types and class instances: always toJson maps.
   Object _buildStructured(Object v) => switch (v) {
     MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
       <String, Object?>{
@@ -1255,7 +1244,7 @@ final class _Projection {
         'values': [for (final c in values) _child(c, toJson: true)],
       },
     // Map<String, Object>, as the untyped literal it replaces inferred.
-    MontyClassType(
+    MontyClassTypeProxy(
       :final name,
       :final id,
       :final hostDefined,
@@ -1269,32 +1258,17 @@ final class _Projection {
         'is_dataclass': isDataclass,
         'attrs': _attrsJson(attrs),
       },
-    MontyClassInstance(:final classType, :final instanceId, :final attrs) =>
+    MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
       <String, Object?>{
         '__type': 'class_instance',
         'class_type': _child(classType, toJson: true),
         'instance_id': instanceId,
         'attrs': _attrsJson(attrs),
       },
-    MontyDataclass(
-      :final name,
-      :final typeId,
-      :final fieldNames,
-      :final attrs,
-      :final frozen,
-    ) =>
-      <String, Object?>{
-        '__type': 'dataclass',
-        'name': name,
-        'type_id': typeId,
-        'field_names': fieldNames,
-        'attrs': _attrsJson(attrs),
-        'frozen': frozen,
-      },
     _ => throw _notANode(v),
   };
 
-  /// An attribute map in the dict envelope, as `MontyDict.ofStrings` wrote it.
+  /// An attribute map in the dict envelope, string-keyed.
   Map<String, Object?> _attrsJson(Map<String, MontyValue> attrs) => {
     '__type': 'dict',
     'value': <String, Object?>{

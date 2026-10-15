@@ -10,12 +10,6 @@ final class MontyDate extends MontyValue {
   /// Creates a [MontyDate] with the given [year], [month], and [day].
   const MontyDate({required this.year, required this.month, required this.day});
 
-  factory MontyDate._fromMap(Map<String, dynamic> map) => MontyDate(
-    year: (map['year'] as num).toInt(),
-    month: (map['month'] as num).toInt(),
-    day: (map['day'] as num).toInt(),
-  );
-
   /// The year component.
   final int year;
 
@@ -27,14 +21,6 @@ final class MontyDate extends MontyValue {
 
   @override
   int get _graphKind => _kFixed;
-
-  @override
-  Map<String, Object?> toJson() => {
-    '__type': 'date',
-    'year': year,
-    'month': month,
-    'day': day,
-  };
 
   @override
   DateTime get dartValue => DateTime(year, month, day);
@@ -54,6 +40,14 @@ final class MontyDate extends MontyValue {
   String toString() =>
       'MontyDate($year-${month.toString().padLeft(2, '0')}'
       '-${day.toString().padLeft(2, '0')})';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'date',
+    'year': year,
+    'month': month,
+    'day': day,
+  };
 }
 
 /// Represents a Python `datetime.datetime` value.
@@ -71,18 +65,6 @@ final class MontyDateTime extends MontyValue {
     this.offsetSeconds,
     this.timezoneName,
   });
-
-  factory MontyDateTime._fromMap(Map<String, dynamic> map) => MontyDateTime(
-    year: (map['year'] as num).toInt(),
-    month: (map['month'] as num).toInt(),
-    day: (map['day'] as num).toInt(),
-    hour: (map['hour'] as num).toInt(),
-    minute: (map['minute'] as num).toInt(),
-    second: (map['second'] as num).toInt(),
-    microsecond: (map['microsecond'] as num?)?.toInt() ?? 0,
-    offsetSeconds: (map['offset_seconds'] as num?)?.toInt(),
-    timezoneName: map['timezone_name'] as String?,
-  );
 
   /// The year component.
   final int year;
@@ -110,20 +92,6 @@ final class MontyDateTime extends MontyValue {
 
   /// The timezone name, or `null` for naive datetimes.
   final String? timezoneName;
-
-  @override
-  Map<String, Object?> toJson() => {
-    '__type': 'datetime',
-    'year': year,
-    'month': month,
-    'day': day,
-    'hour': hour,
-    'minute': minute,
-    'second': second,
-    'microsecond': microsecond,
-    'offset_seconds': offsetSeconds,
-    'timezone_name': timezoneName,
-  };
 
   @override
   DateTime get dartValue => DateTime(
@@ -172,6 +140,20 @@ final class MontyDateTime extends MontyValue {
       '${hour.toString().padLeft(2, '0')}:'
       '${minute.toString().padLeft(2, '0')}:'
       '${second.toString().padLeft(2, '0')})';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'datetime',
+    'year': year,
+    'month': month,
+    'day': day,
+    'hour': hour,
+    'minute': minute,
+    'second': second,
+    'microsecond': microsecond,
+    'offset_seconds': offsetSeconds,
+    'timezone_name': timezoneName,
+  };
 }
 
 /// Represents a Python `datetime.timedelta` value.
@@ -184,12 +166,6 @@ final class MontyTimeDelta extends MontyValue {
     this.microseconds = 0,
   });
 
-  factory MontyTimeDelta._fromMap(Map<String, dynamic> map) => MontyTimeDelta(
-    days: (map['days'] as num).toInt(),
-    seconds: (map['seconds'] as num).toInt(),
-    microseconds: (map['microseconds'] as num?)?.toInt() ?? 0,
-  );
-
   /// The number of days.
   final int days;
 
@@ -201,14 +177,6 @@ final class MontyTimeDelta extends MontyValue {
 
   @override
   int get _graphKind => _kFixed;
-
-  @override
-  Map<String, Object?> toJson() => {
-    '__type': 'timedelta',
-    'days': days,
-    'seconds': seconds,
-    'microseconds': microseconds,
-  };
 
   @override
   Duration get dartValue => Duration(
@@ -230,6 +198,14 @@ final class MontyTimeDelta extends MontyValue {
 
   @override
   String toString() => 'MontyTimeDelta(days=$days, seconds=$seconds)';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'timedelta',
+    'days': days,
+    'seconds': seconds,
+    'microseconds': microseconds,
+  };
 }
 
 /// Represents a Python `datetime.timezone` value.
@@ -238,11 +214,6 @@ final class MontyTimeZone extends MontyValue {
   /// Creates a [MontyTimeZone] with the given [offsetSeconds] and [name].
   const MontyTimeZone({required this.offsetSeconds, this.name});
 
-  factory MontyTimeZone._fromMap(Map<String, dynamic> map) => MontyTimeZone(
-    offsetSeconds: (map['offset_seconds'] as num).toInt(),
-    name: map['name'] as String?,
-  );
-
   /// The UTC offset in seconds.
   final int offsetSeconds;
 
@@ -250,14 +221,7 @@ final class MontyTimeZone extends MontyValue {
   final String? name;
 
   @override
-  Map<String, Object?> toJson() => {
-    '__type': 'timezone',
-    'offset_seconds': offsetSeconds,
-    'name': name,
-  };
-
-  @override
-  Map<String, Object?> get dartValue => toJson();
+  Map<String, Object?> get dartValue => _toJson();
 
   @override
   bool operator ==(Object other) =>
@@ -271,6 +235,13 @@ final class MontyTimeZone extends MontyValue {
 
   @override
   String toString() => 'MontyTimeZone(offset=$offsetSeconds, name=$name)';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'timezone',
+    'offset_seconds': offsetSeconds,
+    'name': name,
+  };
 }
 
 /// Python's `datetime.time`.
@@ -297,56 +268,6 @@ final class MontyTime extends MontyValue {
     this.fold = 0,
   });
 
-  factory MontyTime._fromMap(Map<String, dynamic> map) {
-    // REQUIRED fields are required. This was `?? 0` on every one of them, and
-    // review caught it: a malformed `time` envelope silently parsed as
-    // MIDNIGHT. That is the exact silent-default hazard removed from the Rust
-    // decoder and then from MontyClassInstance earlier the same day — written
-    // straight back into new code. Absent, wrong-typed and zero are three
-    // different things and must not collapse into one.
-    //
-    // The Rust encoder emits all five unconditionally (convert.rs:174-182), so
-    // an envelope missing any of them did not come from this encoder.
-    int req(String key) {
-      final v = map[key];
-      if (v is num) return v.toInt();
-
-      throw FormatException(
-        'time: $key must be a number, got ${v.runtimeType}',
-        json.encode(map),
-      );
-    }
-
-    // These two ARE legitimately nullable — a naive time carries neither —
-    // but present-and-wrong-typed is still an error.
-    final rawOffset = map['offset_seconds'];
-    if (rawOffset != null && rawOffset is! num) {
-      throw FormatException(
-        'time: offset_seconds must be a number or null, '
-        'got ${rawOffset.runtimeType}',
-        json.encode(map),
-      );
-    }
-    final rawTzName = map['timezone_name'];
-    if (rawTzName != null && rawTzName is! String) {
-      throw FormatException(
-        'time: timezone_name must be a string or null, '
-        'got ${rawTzName.runtimeType}',
-        json.encode(map),
-      );
-    }
-
-    return MontyTime(
-      hour: req('hour'),
-      minute: req('minute'),
-      second: req('second'),
-      microsecond: req('microsecond'),
-      offsetSeconds: (rawOffset as num?)?.toInt(),
-      timezoneName: rawTzName as String?,
-      fold: req('fold'),
-    );
-  }
-
   /// Hour, 0-23.
   final int hour;
 
@@ -367,18 +288,6 @@ final class MontyTime extends MontyValue {
 
   /// Python's `fold`, disambiguating a repeated wall-clock time.
   final int fold;
-
-  @override
-  Map<String, Object?> toJson() => {
-    '__type': 'time',
-    'hour': hour,
-    'minute': minute,
-    'second': second,
-    'microsecond': microsecond,
-    'offset_seconds': offsetSeconds,
-    'timezone_name': timezoneName,
-    'fold': fold,
-  };
 
   /// Dart has no time-of-day type in `dart:core`, so this represents itself
   /// rather than lying about being a [DateTime] on an arbitrary date.
@@ -412,4 +321,16 @@ final class MontyTime extends MontyValue {
     timezoneName,
     fold,
   );
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'time',
+    'hour': hour,
+    'minute': minute,
+    'second': second,
+    'microsecond': microsecond,
+    'offset_seconds': offsetSeconds,
+    'timezone_name': timezoneName,
+    'fold': fold,
+  };
 }

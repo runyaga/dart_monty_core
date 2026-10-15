@@ -7,7 +7,6 @@
 // dart2wasm run the same cases.
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/worker/collect_streams.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
@@ -87,7 +86,7 @@ ExternalException _jsonDecodeError(String msg, String doc, int pos) {
 String _innerText(MontyError e) {
   final inner = e.exception;
   if (inner.excType != 'json.JSONDecodeError') return inner.excType;
-  final attributes = exceptionAttributes(inner);
+  final attributes = inner.attributes;
   final shown = [
     for (final name in const ['msg', 'doc', 'pos', 'lineno', 'colno'])
       '$name=${switch (attributes[name]) {
