@@ -22,9 +22,9 @@
       "pct": 97.37
     },
     "lib/src/fake_monty_session.dart": {
-      "found": 191,
-      "hit": 187,
-      "pct": 97.91
+      "found": 197,
+      "hit": 193,
+      "pct": 97.97
     },
     "lib/src/fake_script.dart": {
       "found": 39,
@@ -558,8 +558,8 @@
     }
   },
   "total": {
-    "found": 9160,
-    "hit": 7831,
-    "pct": 85.49
+    "found": 9166,
+    "hit": 7837,
+    "pct": 85.5
   }
 }
