@@ -237,6 +237,8 @@ void main() {
       );
       expect((crash.timedOut, crash.exitCode), (false, null));
       expect(channel.isAlive, isFalse);
+      // The worker would wait an hour: the parent kills it.
+      expect(await channel.exitCode, -ProcessSignal.sigkill.signalNumber);
       await expectLater(channel.turn(_configure), throwsA(same(crash)));
     });
 
@@ -262,6 +264,7 @@ void main() {
         );
         expect((crash.timedOut, crash.exitStatus), (false, null));
         expect(channel.isAlive, isFalse);
+        expect(await channel.exitCode, -ProcessSignal.sigkill.signalNumber);
       },
     );
 
