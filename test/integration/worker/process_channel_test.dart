@@ -253,14 +253,14 @@ void main() {
         final channel = await _spawn('upstream-rejects');
         final crash = await _crashOf(channel.turn(_configure));
         expect(crash.cause, CrashCause.protocol);
-        final text = crash.toString();
         expect(
-          text,
-          startsWith(
-            'monty worker protocol error: invalid payload from worker: ',
-          ),
+          crash.toString(),
+          'monty worker protocol error: invalid payload from worker: '
+          'failed to decode Protobuf message: MontyNode.kind: '
+          'Complete.values: ChildEvent.kind: invalid string value: data is '
+          'not UTF-8 encoded',
         );
-        expect(text, isNot(contains('Exception')));
+        expect((crash.timedOut, crash.exitStatus), (false, null));
         expect(channel.isAlive, isFalse);
       },
     );

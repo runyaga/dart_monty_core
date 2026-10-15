@@ -207,7 +207,10 @@ void main() {
             isA<FrameDecodeException>().having(
               (e) => e.reason,
               'reason',
-              'frame exceeds decode memory budget',
+              allOf(
+                startsWith('failed to decode Protobuf message: '),
+                endsWith('frame exceeds decode memory budget'),
+              ),
             ),
           ),
         );
@@ -215,13 +218,21 @@ void main() {
     }
   });
 
-  group('upstream rejects', () {
+  // The reason is prost's `DecodeError` display, which upstream's pool puts
+  // after `invalid payload from worker: ` (checkout.rs:1688-1689): the
+  // fixed prefix, the fields being merged innermost first, the description.
+  group('upstream rejects, with its text', () {
     for (final fixture in frameFixtures.where((f) => f.error != null)) {
       test(fixture.name, () {
         expect(
           () => FrameScan.decodeChildEvent(_bytes(fixture.hex)),
-          throwsA(isA<FrameDecodeException>()),
-          reason: fixture.error,
+          throwsA(
+            isA<FrameDecodeException>().having(
+              (e) => e.reason,
+              'reason',
+              fixture.error,
+            ),
+          ),
         );
       });
     }
