@@ -298,7 +298,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -313,6 +313,23 @@ jobs:
       # Every file native/worker/ copies or follows, and upstream's Cargo.lock,
       # must still hash to its recorded sha256 at the pinned commit.
       - run: python3 -I tool/check_worker_mirror.py --online
+      # Every tool/generate_*_oracle.py --check (glob): a stale committed
+      # oracle .g.dart fails. One cached venv (Python 3.12, pydantic-monty from
+      # the hash-pinned lock); ORACLE_REQUIRE makes a setup failure red.
+      # The generators format their output with `dart format`, which needs the
+      # resolved root package.
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - run: dart pub get
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .venv-oracle
+          key: oracle-venv-${{ runner.os }}-py312-${{ hashFiles('tool/upstream/requirements.lock') }}
+      - name: Oracle files match upstream (--check, every generator)
+        env:
+          ORACLE_REQUIRE: '1'
+        run: bash tool/check_oracles.sh
 
   # ---------------------------------------------------------------------------
   # Upstream parity: the measured baseline moves only on purpose
