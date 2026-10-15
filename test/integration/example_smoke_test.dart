@@ -7,7 +7,8 @@
 // regression is debuggable from the test report.
 //
 // Tagged 'example' (skipped in default `dart test` runs because each example
-// boots an FFI dylib + interpreter — slow for fast-loop unit testing).
+// starts worker processes — slow for fast-loop unit testing). The examples
+// find the native worker at lib/src/bin/<os>-<arch>/ (tool/build_worker.sh).
 //
 // Run: dart test -p vm --run-skipped --tags=example
 
@@ -21,23 +22,7 @@ import 'package:test/test.dart';
 /// Examples that currently fail or hang on `main`. Each entry is a
 /// regression to fix; once fixed, remove the entry so the test enforces
 /// the example.
-const _skipReasons = <String, String>{
-  // 06 was skipped here, blocked on core#152 (Monty.compile() always failed:
-  // the one-shot handle cannot snapshot). The precompile API was removed
-  // instead of fixed, the example lost its compile section and was renamed
-  // example/06_platform_apis.dart, and it is enforced again.
-  //
-  // 08 and 09 were skipped for "hangs". Measured 2026-09-14: NEITHER HANGS.
-  // Both run to completion and exit 0. That was the last of four stale skip
-  // reasons in this map -- all four named a cause that was no longer true, and
-  // two of them hid live defects (core#152, and the one below).
-  //
-  // They are unskipped because they meet this harness's bar: compile and exit
-  // 0. Be clear about what that bar does NOT cover -- both examples print a
-  // section banner and then nothing, because `Monty.exec()` does not throw and
-  // their `on MontyResourceError catch` blocks are dead code. Tracked
-  // separately; a smoke test that only checks the exit code cannot see it.
-};
+const _skipReasons = <String, String>{};
 
 void main() {
   final examples =

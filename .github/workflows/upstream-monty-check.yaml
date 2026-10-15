@@ -27,19 +27,11 @@ jobs:
           LATEST_TAG=$(gh api repos/pydantic/monty/releases/latest --jq '.tag_name' 2>/dev/null || echo "unknown")
           LATEST_VERSION="${LATEST_TAG#v}"
 
-          # Current version pinned in Cargo.toml as tag = "vX.Y.Z"
-          #
-          # `| head -1` IS LOad-BEARING. native/Cargo.toml declares the tag on
-          # THREE dependencies (monty, monty-type-checking, and one more), so the
-          # bare grep returns three lines and CURRENT_TAG became a multi-line
-          # value. Writing that to $GITHUB_OUTPUT emitted
-          #     current_tag=v0.0.18
-          #     v0.0.18            <- a bare line, not key=value
-          # and Actions refused the whole file:
-          #     ##[error]Unable to process file command 'output' successfully.
-          #     ##[error]Invalid format 'v0.0.18'
-          # That is why this scheduled job has failed every run.
-          CURRENT_TAG=$(grep -oP 'tag = "\K[^"]*' native/Cargo.toml | head -1 || echo "unknown")
+          # Current pin: tool/upstream/upstream-pin.json's `tag`. It must be a
+          # single line: a multi-line value in $GITHUB_OUTPUT (the old grep of
+          # the 0.0.x crate's manifest returned three) makes Actions refuse the
+          # whole file, which is why the loop below checks each value.
+          CURRENT_TAG=$(python3 -c "import json;print(json.load(open('tool/upstream/upstream-pin.json'))['tag'])" || echo "unknown")
           CURRENT_VERSION="${CURRENT_TAG#v}"
 
           # Refuse to write a multi-line value rather than corrupt the whole
@@ -80,7 +72,7 @@ jobs:
           fi
 
           gh issue create \
-            --title "chore(native): new upstream monty release ${{ steps.check.outputs.latest_tag }}" \
+            --title "chore(worker): new upstream monty release ${{ steps.check.outputs.latest_tag }}" \
             --label "chore" \
             --body "$(cat <<BODY
           A new upstream monty release has been detected.
@@ -93,13 +85,11 @@ jobs:
           **Release notes:** https://github.com/pydantic/monty/releases/tag/${{ steps.check.outputs.latest_tag }}
 
           ### Upgrade steps
-          1. Update \`native/Cargo.toml\`: change \`tag = "${{ steps.check.outputs.current_tag }}"\` → \`tag = "${{ steps.check.outputs.latest_tag }}"\`
-          2. \`cd native && cargo update\`
-          3. Rebuild native library and oracle binary
-          4. Run FFI integration tests: \`dart test test/integration/oracle_ffi_test.dart -p vm --run-skipped --tags=ffi\`
-          5. Check for new \`MontyObject\` variants in \`convert.rs\`
-          6. Un-xfail any fixtures that now pass
-          7. Regenerate fixture corpus if test_cases changed: \`dart tool/generate_fixture_corpus.dart\`
+          1. Update \`tool/upstream/upstream-pin.json\` (\`version\`, \`tag\`, \`commit\`, tree hashes) from ${{ steps.check.outputs.current_tag }} to ${{ steps.check.outputs.latest_tag }}
+          2. Re-mirror the worker crate (\`native/worker/\`, \`tool/upstream/worker-mirror.json\`) and run \`cd native/worker && cargo update\`
+          3. Map the package version per G9 (\`bash tool/check_version_pin.sh\`) in \`pubspec.yaml\` and \`native/worker/Cargo.toml\`
+          4. Rebuild the worker and its wasm: \`bash tool/build_worker.sh\`, \`bash tool/prebuild.sh\`
+          5. Regenerate the proto bindings (\`bash tool/generate_proto.sh\`) and the pinned corpus if test_cases changed
           BODY
           )"
         env:

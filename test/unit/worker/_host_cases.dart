@@ -11,10 +11,6 @@ import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -22,7 +18,7 @@ import '../../_accessors.dart';
 import '_host_oracle.g.dart';
 
 /// Starts a pool with [options].
-typedef StartHostPool = Future<MontyPool> Function(PoolOptions options);
+typedef StartHostPool = Future<Monty> Function(PoolOptions options);
 
 void _ignore(String stream, String text) => _ignored++;
 
@@ -185,7 +181,7 @@ String _show(MontyValue v, Map<String, Point> objects) {
   }
 
   return switch (v) {
-    MontyClassInstance(:final classType) => 'proxy:${classType.name}',
+    MontyClassProxy(:final classType) => 'proxy:${classType.name}',
     MontyList(:final items) =>
       '[${items.map((i) => _show(i, objects)).join(', ')}]',
     MontyTuple(items: [final only]) => '(${_show(only, objects)},)',
@@ -208,10 +204,10 @@ String _errorText(Object error) => switch (error) {
 final class _Run {
   _Run(this._pool, this._objects, this._wrappers);
 
-  final MontyPool _pool;
+  final Monty _pool;
   final Map<String, Point> _objects;
   final Map<String, Object> _wrappers;
-  final Map<String, PoolSession> _sessions = {};
+  final Map<String, MontySession> _sessions = {};
   final Map<String, Uint8List> _dumps = {};
 
   Future<void> closeAll() async {

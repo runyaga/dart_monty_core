@@ -14,9 +14,6 @@ final class MontyNone extends MontyValue {
   int get _graphKind => _kFixed;
 
   @override
-  Null toJson() => null;
-
-  @override
   Null get dartValue => null;
 
   @override
@@ -27,6 +24,9 @@ final class MontyNone extends MontyValue {
 
   @override
   String toString() => 'MontyNone()';
+
+  @override
+  Null _toJson() => null;
 }
 
 /// Represents a Python `bool` value.
@@ -44,9 +44,6 @@ final class MontyBool extends MontyValue {
   int get _graphKind => _kFixed;
 
   @override
-  bool toJson() => value;
-
-  @override
   bool get dartValue => value;
 
   @override
@@ -58,6 +55,9 @@ final class MontyBool extends MontyValue {
 
   @override
   String toString() => 'MontyBool($value)';
+
+  @override
+  bool _toJson() => value;
 }
 
 /// Represents a Python `int` value.
@@ -80,16 +80,6 @@ final class MontyInt extends MontyValue {
   int get _graphKind => _kFixed;
 
   @override
-  Object toJson() {
-    final big = BigInt.from(value);
-    if (big.abs() > _exactIntLimit) {
-      return {'__type': 'bigint', 'value': big.toString()};
-    }
-
-    return value;
-  }
-
-  @override
   int get dartValue => value;
 
   @override
@@ -110,6 +100,16 @@ final class MontyInt extends MontyValue {
 
   @override
   String toString() => 'MontyInt($value)';
+
+  @override
+  Object _toJson() {
+    final big = BigInt.from(value);
+    if (big.abs() > _exactIntLimit) {
+      return {'__type': 'bigint', 'value': big.toString()};
+    }
+
+    return value;
+  }
 }
 
 /// Represents a Python `float` value (including NaN and infinities).
@@ -123,31 +123,6 @@ final class MontyFloat extends MontyValue {
 
   @override
   int get _graphKind => _kFixed;
-
-  @override
-  Object toJson() {
-    // The non-finite forms have no JSON number representation, so they travel
-    // as TAGGED text. They used to be bare strings, which made them
-    // indistinguishable from the Python strings "NaN"/"Infinity"/"-Infinity" —
-    // and the decoder resolved that ambiguity by guessing float, so a genuine
-    // string was silently converted (wire v3 / rule R2).
-    if (value.isNaN) return _tagged('NaN');
-    if (value == double.infinity) return _tagged('Infinity');
-    if (value == double.negativeInfinity) return _tagged('-Infinity');
-
-    // Tier 3 / core#128: an integral float and a negative zero are the two
-    // shapes a JSON number cannot carry across the web transport — `4.0`
-    // reparses as `4`, and `-0.0` re-serialises as `0`. Carried as text they
-    // survive, and only these two shapes pay for it.
-    if (value == value.roundToDouble() || (value == 0 && value.isNegative)) {
-      return _tagged(_exactText(value));
-    }
-
-    // A finite float stays a plain JSON number. Tier 3 will envelope these too,
-    // for the int/float and signed-zero distinctions the web transport
-    // destroys (core#128).
-    return value;
-  }
 
   @override
   double get dartValue => value;
@@ -179,6 +154,31 @@ final class MontyFloat extends MontyValue {
   // encoder writes for the identical value, and the two sides must agree byte
   // for byte or the differential is comparing different things.
   static String _exactText(double v) => exactDoubleText(v);
+
+  @override
+  Object _toJson() {
+    // The non-finite forms have no JSON number representation, so they travel
+    // as TAGGED text. They used to be bare strings, which made them
+    // indistinguishable from the Python strings "NaN"/"Infinity"/"-Infinity" —
+    // and the decoder resolved that ambiguity by guessing float, so a genuine
+    // string was silently converted (wire v3 / rule R2).
+    if (value.isNaN) return _tagged('NaN');
+    if (value == double.infinity) return _tagged('Infinity');
+    if (value == double.negativeInfinity) return _tagged('-Infinity');
+
+    // Tier 3 / core#128: an integral float and a negative zero are the two
+    // shapes a JSON number cannot carry across the web transport — `4.0`
+    // reparses as `4`, and `-0.0` re-serialises as `0`. Carried as text they
+    // survive, and only these two shapes pay for it.
+    if (value == value.roundToDouble() || (value == 0 && value.isNegative)) {
+      return _tagged(_exactText(value));
+    }
+
+    // A finite float stays a plain JSON number. Tier 3 will envelope these too,
+    // for the int/float and signed-zero distinctions the web transport
+    // destroys (core#128).
+    return value;
+  }
 }
 
 /// Represents a Python `str` value.
@@ -189,9 +189,6 @@ final class MontyString extends MontyValue {
 
   /// The underlying string value.
   final String value;
-
-  @override
-  String toJson() => value;
 
   @override
   String get dartValue => value;
@@ -205,6 +202,9 @@ final class MontyString extends MontyValue {
 
   @override
   String toString() => 'MontyString($value)';
+
+  @override
+  String _toJson() => value;
 }
 
 /// Represents a Python `int` too large for a Dart `int` (i.e. beyond i64).
@@ -226,28 +226,8 @@ final class MontyBigInt extends MontyValue {
   /// Creates a [MontyBigInt] with the given [value].
   const MontyBigInt(this.value);
 
-  factory MontyBigInt._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'];
-    final parsed = raw is String ? BigInt.tryParse(raw) : null;
-    if (parsed == null) {
-      throw FormatException(
-        'a bigint envelope needs base-10 digits as a string under "value"; '
-        'got ${raw.runtimeType}',
-        json.encode(map),
-      );
-    }
-
-    return MontyBigInt(parsed);
-  }
-
   /// The exact integer value.
   final BigInt value;
-
-  @override
-  Map<String, Object?> toJson() => {
-    '__type': 'bigint',
-    'value': value.toString(),
-  };
 
   @override
   BigInt get dartValue => value;
@@ -268,31 +248,36 @@ final class MontyBigInt extends MontyValue {
 
   @override
   String toString() => 'MontyBigInt($value)';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'bigint',
+    'value': value.toString(),
+  };
 }
 
 /// Represents a Python exception object travelling as a VALUE.
 ///
-/// Not to be confused with `MontyException`, which is the Dart exception this
-/// package THROWS when the interpreter fails. This is what you get when Python
-/// hands an exception back as data — `return ValueError("boom")`, or an
+/// Not to be confused with `MontyError`, which this package THROWS when fed
+/// code fails. This is what you get when Python hands an exception back as
+/// data — `return ValueError("boom")`, or an
 /// exception caught and returned.
 ///
-/// It travels as `{"__type": "exception", "exc_type": "ValueError",
-/// "message": "boom"}`. Before wire format v2 it was the bare string
-/// `"ValueError: boom"` — **byte-identical to the Python string of the same
-/// text**, so nothing downstream could tell an exception from prose describing
-/// one. Joining the two halves with `": "` was also unrecoverable whenever the
-/// message itself contained `": "`.
+/// [attributes] carries upstream's structured data for a Unicode or JSON
+/// decode error (`encoding`, `object`, `start`, `end`, `reason`; `msg`,
+/// `doc`, `pos`, `lineno`, `colno`); it is empty for every other exception.
 @immutable
 final class MontyExceptionValue extends MontyValue {
-  /// Creates a [MontyExceptionValue].
-  const MontyExceptionValue({required this.excType, this.message});
-
-  factory MontyExceptionValue._fromMap(Map<String, dynamic> map) =>
-      MontyExceptionValue(
-        excType: map['exc_type'] as String? ?? '',
-        message: map['message'] as String?,
-      );
+  /// An exception of type [excType] with [message] and [attributes].
+  ///
+  /// Each attribute value is a leaf, a `str`, `bytes` or `int`, as upstream's
+  /// attributes are; a container throws [ArgumentError]. [attributes] is
+  /// copied, and the copy cannot be modified.
+  MontyExceptionValue(
+    this.excType, [
+    this.message,
+    Map<String, MontyValue> attributes = const {},
+  ]) : attributes = _leafAttributes(attributes);
 
   /// The Python exception class name, e.g. `'ValueError'`.
   final String excType;
@@ -300,15 +285,11 @@ final class MontyExceptionValue extends MontyValue {
   /// The exception's argument, when it has one.
   final String? message;
 
-  @override
-  Map<String, Object?> toJson() => {
-    '__type': 'exception',
-    'exc_type': excType,
-    'message': message,
-  };
+  /// The exception's structured attributes by name, unmodifiable.
+  final Map<String, MontyValue> attributes;
 
   @override
-  Map<String, Object?> get dartValue => toJson();
+  Map<String, Object?> get dartValue => _toJson();
 
   @override
   bool operator ==(Object other) =>
@@ -316,27 +297,49 @@ final class MontyExceptionValue extends MontyValue {
       (other is MontyExceptionValue &&
           other.excType == excType &&
           other.message == message &&
-          _sameAttributes(
-            exceptionAttributes(this),
-            exceptionAttributes(other),
-          ));
+          _sameAttributes(attributes, other.attributes));
 
   @override
-  int get hashCode {
-    final attributes = exceptionAttributes(this);
-
-    return attributes.isEmpty
-        ? Object.hash(excType, message)
-        : Object.hash(excType, message, _attributesHash(attributes));
-  }
+  int get hashCode => attributes.isEmpty
+      ? Object.hash(excType, message)
+      : Object.hash(excType, message, _attributesHash(attributes));
 
   @override
   String toString() =>
       'MontyExceptionValue($excType${message == null ? '' : ': $message'})';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'exception',
+    'exc_type': excType,
+    'message': message,
+  };
+}
+
+/// [attributes] as an unmodifiable copy; throws [ArgumentError] for a value
+/// that is not a leaf.
+Map<String, MontyValue> _leafAttributes(Map<String, MontyValue> attributes) {
+  if (attributes.isEmpty) return const {};
+  for (final MapEntry(:key, :value) in attributes.entries) {
+    final leaf =
+        value is MontyString ||
+        value is MontyBytes ||
+        value is MontyInt ||
+        value is MontyBigInt;
+    if (!leaf) {
+      throw ArgumentError.value(
+        value,
+        key,
+        'an exception attribute is a str, bytes or int',
+      );
+    }
+  }
+
+  return Map.unmodifiable(attributes);
 }
 
 /// Whether two exceptions' attributes hold the same keys with equal values.
-/// The values are leaves (exceptionWithAttributes), compared by their own
+/// The values are leaves (_leafAttributes), compared by their own
 /// rules, so `MontyInt(1)` equals `MontyBigInt(1)` here too.
 bool _sameAttributes(Map<String, MontyValue> a, Map<String, MontyValue> b) {
   if (a.length != b.length) return false;

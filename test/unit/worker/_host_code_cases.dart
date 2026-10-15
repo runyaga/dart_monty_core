@@ -6,13 +6,13 @@
 // (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
 // cases.
 import 'package:dart_monty_core/src/platform/monty_value.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart'
+import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart'
     show OsCallNotHandledException;
 import 'package:dart_monty_core/src/worker/host_answers.dart' show AsyncDecline;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
+import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart'
     show SessionConfig;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -25,7 +25,7 @@ import '../../_accessors.dart';
 typedef WithConfiguredSession =
     Future<void> Function(
       SessionConfig config,
-      Future<void> Function(PoolSession s) body,
+      Future<void> Function(MontySession s) body,
     );
 
 void _ignore(String stream, String text) => _ignored++;
@@ -73,7 +73,7 @@ Never _decline(String name, List<MontyValue> a, Map<String, MontyValue> k) =>
 Matcher _runtime(String excType, String message) => isA<MontyRuntimeError>()
     .having((e) => e.exception.excType, 'excType', excType)
     .having((e) => e.exception.message, 'message', message)
-    .having((e) => e.message, 'message', '$excType: $message');
+    .having((e) => e.toString(), 'message', '$excType: $message');
 
 /// The C3-5 cases, labelled with [label], each in a session [withSession]
 /// gives.
@@ -289,7 +289,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
                 as FunctionSnapshot;
         final done =
             await snap.resume(const ExternalException('ValueError'))
-                as SessionComplete;
+                as MontyComplete;
         expect(done.output, _caught('ValueError', 'ValueError()', []));
       });
     });
@@ -313,7 +313,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
         );
         final done =
             await snap.resume(const ExternalException('KeyError', 'k'))
-                as SessionComplete;
+                as MontyComplete;
         expect(done.output, _caught('KeyError', "KeyError('k')", ['k']));
 
         final text = unknownExcType('NoSuchError').toString();

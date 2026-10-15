@@ -33,11 +33,7 @@ EXPECTED_PROGRAMS=15
 # from the skip list alone would let a new skip lower its own bar, so this is a
 # deliberate constant too.
 #
-# There are none. The last one was example/06_compile_and_platform.dart,
-# blocked on core#152 (Monty.compile() always failed on the one-shot handle).
-# The precompile API was removed, the example was renamed
-# example/06_platform_apis.dart without its compile section, and the floor rose
-# to 15.
+# There are none.
 MAX_SKIPS=0
 
 FILES=$(find example -maxdepth 1 -name '*.dart' -type f | wc -l | tr -d ' ')

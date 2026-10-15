@@ -15,9 +15,9 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
     show exceptionTypeNames;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
+import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -27,7 +27,7 @@ import 'package:fixnum/fixnum.dart';
 /// The scripting half of [FakeMontySession]: the `will*` events and the
 /// record of what the session ran and answered.
 abstract class _FakeScripting {
-  const _FakeScripting(FakeScript script, FakeWorker worker)
+  const _FakeScripting._(FakeScript script, FakeWorker worker)
     : _script = script,
       _worker = worker;
 
@@ -191,16 +191,16 @@ class _ScriptedLink {
   bool isClosed = false;
 
   final FakeWorker _worker;
-  Future<PoolSession>? _opening;
-  PoolSession? _session;
-  MontyPool? _pool;
+  Future<MontySession>? _opening;
+  MontySession? _session;
+  Monty? _pool;
   Future<void>? _closing;
 
   Future<void> close() => _closing ??= _close();
 
   /// Runs [body] on the session over the scripted worker: at once when it
   /// is open, so calls keep their order and timing.
-  Future<T> call<T>(Future<T> Function(PoolSession session) body) {
+  Future<T> call<T>(Future<T> Function(MontySession session) body) {
     // Refused at once, as a closed session refuses, while the close is
     // still on its way to the session underneath.
     if (isClosed) return Future.error(StateError('the session is finished'));
@@ -228,11 +228,11 @@ class _ScriptedLink {
     }
   }
 
-  Future<T> _opened<T>(Future<T> Function(PoolSession session) body) async =>
+  Future<T> _opened<T>(Future<T> Function(MontySession session) body) async =>
       body(await (_opening ??= _open()));
 
-  Future<PoolSession> _open() async {
-    final pool = _pool = await MontyPool.startWith(
+  Future<MontySession> _open() async {
+    final pool = _pool = await startMonty(
       const PoolOptions(minProcesses: 0, maxProcesses: 1),
       open: () => PendingSpawn((_) async => _worker),
     );
@@ -265,7 +265,7 @@ class _ScriptedLink {
 /// What it does not do: run Python, type-check, or enforce limits. [dump],
 /// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
 /// [UnsupportedError]. [workerPid] is null.
-final class FakeMontySession extends _FakeScripting implements PoolSession {
+final class FakeMontySession extends _FakeScripting implements MontySession {
   /// A session with nothing scripted.
   FakeMontySession() : this._(FakeScript());
 
@@ -273,7 +273,8 @@ final class FakeMontySession extends _FakeScripting implements PoolSession {
     : this._over(script, FakeWorker(script));
 
   FakeMontySession._over(super.script, super.worker)
-    : _link = _ScriptedLink(worker);
+    : _link = _ScriptedLink(worker),
+      super._();
 
   final _ScriptedLink _link;
 

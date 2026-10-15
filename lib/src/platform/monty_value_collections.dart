@@ -10,17 +10,8 @@ final class MontyBytes extends MontyValue {
   /// Creates a [MontyBytes] with the given byte [value].
   const MontyBytes(this.value);
 
-  factory MontyBytes._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<Object?>? ?? const [];
-
-    return MontyBytes(raw.cast<num>().map((n) => n.toInt()).toList());
-  }
-
   /// The underlying list of byte values.
   final List<int> value;
-
-  @override
-  Map<String, Object?> toJson() => {'__type': 'bytes', 'value': value};
 
   @override
   List<int> get dartValue => value;
@@ -35,6 +26,9 @@ final class MontyBytes extends MontyValue {
 
   @override
   String toString() => 'MontyBytes(${value.length} bytes)';
+
+  @override
+  Map<String, Object?> _toJson() => {'__type': 'bytes', 'value': value};
 }
 
 /// Represents a Python `list` value.
@@ -53,8 +47,6 @@ final class MontyList extends MontyValue {
   // shared by several parents is visited once, deep nesting cannot overflow
   // the stack, and a value that contains itself is a StateError (except that
   // it equals itself). See monty_value_graph.dart.
-  @override
-  List<Object?> toJson() => _MontyValueGraph.nodeToJson(this) as List<Object?>;
 
   @override
   List<Object?> get dartValue =>
@@ -70,6 +62,9 @@ final class MontyList extends MontyValue {
 
   @override
   String toString() => 'MontyList(${items.length} items)';
+
+  @override
+  List<Object?> _toJson() => _MontyValueGraph.nodeToJson(this) as List<Object?>;
 }
 
 /// Represents a Python `tuple` value.
@@ -78,21 +73,11 @@ final class MontyTuple extends MontyValue {
   /// Creates a [MontyTuple] with the given [items].
   const MontyTuple(this.items);
 
-  factory MontyTuple._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<Object?>? ?? const [];
-
-    return MontyTuple(raw.map(MontyValue.fromJson).toList());
-  }
-
   /// The list of [MontyValue] items in the tuple.
   final List<MontyValue> items;
 
   @override
   int get _graphKind => _kTuple;
-
-  @override
-  Map<String, Object?> toJson() =>
-      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   @override
   List<Object?> get dartValue =>
@@ -108,6 +93,10 @@ final class MontyTuple extends MontyValue {
 
   @override
   String toString() => 'MontyTuple(${items.length} items)';
+
+  @override
+  Map<String, Object?> _toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 }
 
 /// Represents a Python `dict` value.
@@ -140,87 +129,8 @@ final class MontyDict extends MontyValue {
   /// Creates a [MontyDict] from insertion-ordered [pairs].
   const MontyDict(this.pairs);
 
-  /// Creates a [MontyDict] from a string-keyed map.
-  ///
-  /// For the common case and for encoding attribute maps, which Python
-  /// guarantees are string-keyed.
-  factory MontyDict.ofStrings(Map<String, MontyValue> entries) => MontyDict([
-    for (final MapEntry(:key, :value) in entries.entries)
-      (MontyString(key), value),
-  ]);
-
-  factory MontyDict._fromMap(Map<String, dynamic> map) {
-    final entries = map['entries'];
-    if (entries is List<Object?>) return MontyDict._fromEntries(entries);
-
-    final payload = map['value'];
-    if (payload is! Map<String, dynamic>) {
-      throw FormatException(
-        'a dict envelope needs an object under "value" or a list under '
-        '"entries"; got ${payload.runtimeType}.',
-        json.encode(map),
-      );
-    }
-
-    // The payload's keys are DATA. They are read as dict keys and never
-    // dispatched on, which is the whole of the core#136 fix: a Python dict
-    // containing the key `__type` is a dict with an odd key, not a mint.
-    return MontyDict([
-      for (final MapEntry(:key, :value) in payload.entries)
-        (MontyString(key), MontyValue.fromJson(value)),
-    ]);
-  }
-
-  factory MontyDict._fromEntries(List<Object?> raw) => MontyDict([
-    for (final entry in raw)
-      if (entry case [final k, final v])
-        (MontyValue.fromJson(k), MontyValue.fromJson(v))
-      else
-        throw FormatException(
-          'each dict entry must be a [key, value] pair; got $entry',
-          json.encode(raw),
-        ),
-  ]);
-
   /// The (key, value) pairs, in Python insertion order.
   final List<(MontyValue, MontyValue)> pairs;
-
-  /// The number of entries.
-  int get length => pairs.length;
-
-  /// Whether this dict has no entries.
-  bool get isEmpty => pairs.isEmpty;
-
-  /// Whether this dict has at least one entry.
-  bool get isNotEmpty => pairs.isNotEmpty;
-
-  /// The keys, in insertion order.
-  Iterable<MontyValue> get keys => pairs.map((p) => p.$1);
-
-  /// The values, in insertion order.
-  Iterable<MontyValue> get values => pairs.map((p) => p.$2);
-
-  /// This dict as a string-keyed map, or `null` when any key is not a
-  /// [MontyString].
-  ///
-  /// Nullable on purpose. Python dicts routinely carry non-string keys, so a
-  /// caller wanting `Map<String, …>` is making an assumption — this makes it an
-  /// explicit decision at the call site rather than a cast that throws.
-  Map<String, MontyValue>? get asStringMap {
-    final out = <String, MontyValue>{};
-    for (final (k, v) in pairs) {
-      if (k is! MontyString) return null;
-      out[k.value] = v;
-    }
-
-    return out;
-  }
-
-  /// Mirrors the encoder on the Rust side: string-keyed dicts take the compact
-  /// object form, everything else the entries form.
-  @override
-  Map<String, Object?> toJson() =>
-      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   /// A `Map<String, Object?>` when every key is a string, else a list of
   /// two-element `[key, value]` lists.
@@ -247,6 +157,12 @@ final class MontyDict extends MontyValue {
 
   @override
   String toString() => 'MontyDict(${pairs.length} entries)';
+
+  /// Mirrors the encoder on the Rust side: string-keyed dicts take the compact
+  /// object form, everything else the entries form.
+  @override
+  Map<String, Object?> _toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 }
 
 /// Represents a Python `set` value.
@@ -255,21 +171,11 @@ final class MontySet extends MontyValue {
   /// Creates a [MontySet] with the given [items].
   const MontySet(this.items);
 
-  factory MontySet._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<Object?>? ?? const [];
-
-    return MontySet(raw.map(MontyValue.fromJson).toList());
-  }
-
   /// The list of [MontyValue] items in the set.
   final List<MontyValue> items;
 
   @override
   int get _graphKind => _kSet;
-
-  @override
-  Map<String, Object?> toJson() =>
-      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   @override
   List<Object?> get dartValue =>
@@ -302,6 +208,10 @@ final class MontySet extends MontyValue {
 
   @override
   String toString() => 'MontySet(${items.length} items)';
+
+  @override
+  Map<String, Object?> _toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 }
 
 /// Represents a Python `frozenset` value.
@@ -310,21 +220,11 @@ final class MontyFrozenSet extends MontyValue {
   /// Creates a [MontyFrozenSet] with the given [items].
   const MontyFrozenSet(this.items);
 
-  factory MontyFrozenSet._fromMap(Map<String, dynamic> map) {
-    final raw = map['value'] as List<Object?>? ?? const [];
-
-    return MontyFrozenSet(raw.map(MontyValue.fromJson).toList());
-  }
-
   /// The list of [MontyValue] items in the frozen set.
   final List<MontyValue> items;
 
   @override
   int get _graphKind => _kFrozenSet;
-
-  @override
-  Map<String, Object?> toJson() =>
-      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 
   @override
   List<Object?> get dartValue =>
@@ -357,4 +257,8 @@ final class MontyFrozenSet extends MontyValue {
 
   @override
   String toString() => 'MontyFrozenSet(${items.length} items)';
+
+  @override
+  Map<String, Object?> _toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 }

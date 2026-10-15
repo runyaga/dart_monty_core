@@ -1,4 +1,4 @@
-// MontyPool and its sessions against the real worker executable
+// Monty and its sessions against the real worker executable
 // (tool/build_worker.sh, or the CI artefact), and against the fake worker
 // for the memory-limit exit: the session path end to end on the VM.
 @Tags(['worker'])
@@ -12,11 +12,10 @@ import 'dart:io';
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/frame.dart' as wire;
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
@@ -103,18 +102,18 @@ void main() {
 
   configOracleTests(
     'vm',
-    () => MontyPool.start(options: const PoolOptions(maxProcesses: 1)),
+    () => startMonty(const PoolOptions(maxProcesses: 1)),
   );
-  restoreOracleTests('vm', (options) => MontyPool.start(options: options));
-  hostOracleTests('vm', (options) => MontyPool.start(options: options));
-  printOracleTests('vm', (options) => MontyPool.start(options: options));
-  osHandlerOracleTests('vm', (options) => MontyPool.start(options: options));
+  restoreOracleTests('vm', startMonty);
+  hostOracleTests('vm', startMonty);
+  printOracleTests('vm', startMonty);
+  osHandlerOracleTests('vm', startMonty);
 
   test('feedRun, prints in order, Reset on close, the worker reused', () async {
-    await MontyPool.withPool(
+    await withMonty(
       (pool) async {
         final prints = <(String, String)>[];
-        final value = await pool.withSession(
+        final value = await pool.withSessionWith(
           (s) => s.feedRun(
             "import sys\nprint('one')\nprint('two', file=sys.stderr)\n"
             'x = 41\nx + 1',
@@ -124,7 +123,7 @@ void main() {
               prints.add((stream, text));
             },
           ),
-          options: _limits,
+          _limits,
         );
         expect(value, const MontyInt(42));
         expect(prints.map((p) => p.$1).toSet(), {'stdout', 'stderr'});
@@ -133,7 +132,7 @@ void main() {
         final worker = onlyItem(ProcessChannel.live);
 
         // The same process, reset: the global is gone.
-        await pool.withSession(
+        await pool.withSessionWith(
           (s) async {
             await expectLater(
               s.feedRun('x', printCallback: _ignore),
@@ -151,11 +150,11 @@ void main() {
               const MontyInt(6),
             );
           },
-          options: _limits,
+          _limits,
         );
         expect(ProcessChannel.live, [worker]);
       },
-      options: PoolOptions(
+      PoolOptions(
         maxProcesses: 1,
         workerLocation: await _workerPath(),
       ),
@@ -163,10 +162,10 @@ void main() {
   });
 
   test('close during host code: Reset now, the call fails at once', () async {
-    await MontyPool.withPool(
+    await withMonty(
       (pool) async {
-        final session = await pool.checkout(
-          options: _limits,
+        final session = await pool.checkoutWith(
+          _limits,
         );
         final entered = Completer<void>();
         final release = Completer<MontyValue>();
@@ -190,14 +189,14 @@ void main() {
         release.complete(const MontyInt(1));
         // The worker took its Reset and serves the next session.
         expect(
-          await pool.withSession(
+          await pool.withSessionWith(
             (s) => s.feedRun('7', printCallback: _ignore),
-            options: _limits,
+            _limits,
           ),
           const MontyInt(7),
         );
       },
-      options: PoolOptions(
+      PoolOptions(
         maxProcesses: 1,
         workerLocation: await _workerPath(),
       ),
@@ -207,10 +206,10 @@ void main() {
   test(
     'requestTimeout kills a turn that runs on; the slot is reused',
     () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(
-            options: _limits,
+          final session = await pool.checkoutWith(
+            _limits,
           );
           final first = onlyItem(ProcessChannel.live);
           await expectLater(
@@ -222,7 +221,7 @@ void main() {
                   .having((e) => e.timedOut, 'timedOut', isTrue)
                   .having((e) => e.exitStatus, 'exitStatus', isNull)
                   .having(
-                    (e) => e.message,
+                    (e) => e.toString(),
                     'message',
                     'monty worker killed after exceeding request '
                         'timeout of 500ms',
@@ -230,10 +229,9 @@ void main() {
                   .having(
                     (e) => e.exception,
                     'exception',
-                    const MontyExceptionValue(
-                      excType: 'RuntimeError',
-                      message:
-                          'monty worker killed after exceeding request '
+                    MontyExceptionValue(
+                      'RuntimeError',
+                      'monty worker killed after exceeding request '
                           'timeout of 500ms',
                     ),
                   ),
@@ -243,14 +241,14 @@ void main() {
           await session.close();
           expect(pool.liveWorkers, 0);
           expect(
-            await pool.withSession(
+            await pool.withSessionWith(
               (s) => s.feedRun('1 + 1', printCallback: _ignore),
-              options: _limits,
+              _limits,
             ),
             const MontyInt(2),
           );
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           requestTimeout: const Duration(milliseconds: 500),
           workerLocation: await _workerPath(),
@@ -262,10 +260,10 @@ void main() {
   test(
     'within the feed backstop the sandbox raises TimeoutError itself',
     () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(
-            options: const SessionConfig(
+          final session = await pool.checkoutWith(
+            const SessionConfig(
               limits: ResourceLimits(
                 maxMemory: 64 * 1024 * 1024,
                 maxFeedDuration: Duration(milliseconds: 200),
@@ -285,7 +283,7 @@ void main() {
           );
           await session.close();
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -294,15 +292,15 @@ void main() {
   );
 
   test('time.sleep is waited by the session', () async {
-    await MontyPool.withPool(
+    await withMonty(
       (pool) async {
         final clock = Stopwatch()..start();
-        final value = await pool.withSession(
+        final value = await pool.withSessionWith(
           (s) => s.feedRun(
             'import time\ntime.sleep(0.05)\n7',
             printCallback: _ignore,
           ),
-          options: _limits,
+          _limits,
         );
         expect(value, const MontyInt(7));
         expect(
@@ -310,7 +308,7 @@ void main() {
           greaterThanOrEqualTo(const Duration(milliseconds: 45)),
         );
       },
-      options: PoolOptions(
+      PoolOptions(
         maxProcesses: 1,
         workerLocation: await _workerPath(),
       ),
@@ -318,10 +316,10 @@ void main() {
   });
 
   test('past 1000 host calls the feed fails in the sandbox', () async {
-    await MontyPool.withPool(
+    await withMonty(
       (pool) async {
-        final session = await pool.checkout(
-          options: _limits,
+        final session = await pool.checkoutWith(
+          _limits,
         );
         var calls = 0;
         await expectLater(
@@ -333,7 +331,7 @@ void main() {
           throwsA(
             isA<MontyRuntimeError>()
                 .having((e) => e.exception.excType, 'excType', 'RuntimeError')
-                .having((e) => e.message, 'message', contains('1000')),
+                .having((e) => e.toString(), 'message', contains('1000')),
           ),
         );
         expect(calls, lessThanOrEqualTo(1000));
@@ -343,7 +341,7 @@ void main() {
         );
         await session.close();
       },
-      options: PoolOptions(
+      PoolOptions(
         maxProcesses: 1,
         workerLocation: await _workerPath(),
       ),
@@ -351,8 +349,8 @@ void main() {
   });
 
   test('a type-checking session rejects a mistyped snippet', () async {
-    await MontyPool.withPool(
-      (pool) => pool.withSession(
+    await withMonty(
+      (pool) => pool.withSessionWith(
         (s) async {
           await expectLater(
             s.feedRun('x: int = "a"', printCallback: _ignore),
@@ -363,12 +361,12 @@ void main() {
             const MontyInt(2),
           );
         },
-        options: const SessionConfig(
+        const SessionConfig(
           limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
           typeCheck: true,
         ),
       ),
-      options: PoolOptions(
+      PoolOptions(
         maxProcesses: 1,
         workerLocation: await _workerPath(),
       ),
@@ -376,7 +374,7 @@ void main() {
   });
 
   test('exit 65 is a MemoryError that finishes the session', () async {
-    final pool = await MontyPool.startWith(
+    final pool = await startMonty(
       const PoolOptions(maxProcesses: 1),
       open: () =>
           PendingSpawn((_) => ProcessChannel.spawn(fakeWorker('oom-on-feed'))),
@@ -390,7 +388,7 @@ void main() {
       throwsA(
         isA<MontyRuntimeError>()
             .having((e) => e.exception.excType, 'excType', 'MemoryError')
-            .having((e) => e.message, 'message', contains('memory limit')),
+            .having((e) => e.toString(), 'message', contains('memory limit')),
       ),
     );
     expect(pool.liveWorkers, 0);
@@ -405,8 +403,8 @@ void main() {
 
   group('print failure (upstream binding)', () {
     test('then completion: the failure wins, the session runs on', () async {
-      await MontyPool.withPool(
-        (pool) => pool.withSession(
+      await withMonty(
+        (pool) => pool.withSessionWith(
           (s) async {
             final seen = <String>[];
             await expectLater(
@@ -432,9 +430,9 @@ void main() {
               const MontyInt(41),
             );
           },
-          options: _limits,
+          _limits,
         ),
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -442,9 +440,9 @@ void main() {
     });
 
     test('then a suspension: the session is discarded', () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(options: _limits);
+          final session = await pool.checkoutWith(_limits);
           final worker = onlyItem(ProcessChannel.live);
           var calls = 0;
           await expectLater(
@@ -469,14 +467,14 @@ void main() {
           );
           await session.close();
           expect(
-            await pool.withSession(
+            await pool.withSessionWith(
               (s) => s.feedRun('2', printCallback: _ignore),
-              options: _limits,
+              _limits,
             ),
             const MontyInt(2),
           );
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -489,9 +487,9 @@ void main() {
       final how = byClose ? 'close' : 'requestTimeout';
       test('a callback that never completes, ended by $how: the call '
           'fails, the slot serves a new checkout', () async {
-        await MontyPool.withPool(
+        await withMonty(
           (pool) async {
-            final session = await pool.checkout(options: _limits);
+            final session = await pool.checkoutWith(_limits);
             final first = onlyItem(ProcessChannel.live);
             final entered = Completer<void>();
             final never = Completer<void>();
@@ -519,16 +517,16 @@ void main() {
             await first.exitCode.timeout(const Duration(seconds: 5));
             expect(pool.liveWorkers, 0);
             expect(
-              await pool.withSession(
+              await pool.withSessionWith(
                 (s) => s.feedRun('1 + 1', printCallback: _ignore),
-                options: _limits,
+                _limits,
               ),
               const MontyInt(2),
             );
             never.complete();
             await session.close();
           },
-          options: PoolOptions(
+          PoolOptions(
             maxProcesses: 1,
             requestTimeout: byClose ? null : const Duration(milliseconds: 500),
             workerLocation: await _workerPath(),
@@ -539,9 +537,9 @@ void main() {
 
     test('a stalled callback while the worker keeps printing: reading '
         'stops at the read-ahead limit, requestTimeout cleans up', () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(options: _limits);
+          final session = await pool.checkoutWith(_limits);
           final worker = onlyItem(ProcessChannel.live);
           final never = Completer<void>();
           final failed = expectLater(
@@ -576,16 +574,16 @@ void main() {
           await worker.exitCode.timeout(const Duration(seconds: 5));
           expect(pool.liveWorkers, 0);
           expect(
-            await pool.withSession(
+            await pool.withSessionWith(
               (s) => s.feedRun('3', printCallback: _ignore),
-              options: _limits,
+              _limits,
             ),
             const MontyInt(3),
           );
           never.complete();
           await session.close();
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           requestTimeout: const Duration(seconds: 8),
           workerLocation: await _workerPath(),
@@ -596,9 +594,9 @@ void main() {
 
   group('close while busy (q8 gates)', () {
     test('during a turn, after feedRun(...).timeout: close ends it', () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(options: _limits);
+          final session = await pool.checkoutWith(_limits);
           final worker = onlyItem(ProcessChannel.live);
           await expectLater(
             session
@@ -609,14 +607,14 @@ void main() {
           await session.close().timeout(const Duration(seconds: 5));
           await worker.exitCode.timeout(const Duration(seconds: 5));
           expect(
-            await pool.withSession(
+            await pool.withSessionWith(
               (s) => s.feedRun('4', printCallback: _ignore),
-              options: _limits,
+              _limits,
             ),
             const MontyInt(4),
           );
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -625,9 +623,9 @@ void main() {
 
     test('during an unresolved host call: the call fails at once, close '
         'returns, the worker is reset and reused', () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(options: _limits);
+          final session = await pool.checkoutWith(_limits);
           final worker = onlyItem(ProcessChannel.live);
           final entered = Completer<void>();
           final run = session.feedRun(
@@ -647,18 +645,18 @@ void main() {
           // The pending call fails at once; the callback never returns.
           await failed.timeout(const Duration(seconds: 5));
           expect(pool.idleWorkers, 1);
-          await pool.withSession(
+          await pool.withSessionWith(
             (s) async {
               await expectLater(
                 s.feedRun('x', printCallback: _ignore),
                 throwsA(isA<MontyRuntimeError>()),
               );
             },
-            options: _limits,
+            _limits,
           );
           expect(ProcessChannel.live, [worker]);
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -666,9 +664,9 @@ void main() {
     });
 
     test('twice: the second close is a no-op', () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(options: _limits);
+          final session = await pool.checkoutWith(_limits);
           final run = session.feedRun(
             'while True:\n    pass',
             printCallback: _ignore,
@@ -680,14 +678,14 @@ void main() {
           await failed;
           expect(pool.liveWorkers, 0);
           expect(
-            await pool.withSession(
+            await pool.withSessionWith(
               (s) => s.feedRun('5', printCallback: _ignore),
-              options: _limits,
+              _limits,
             ),
             const MontyInt(5),
           );
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -702,7 +700,7 @@ void main() {
     final oversized = isA<MontyRuntimeError>()
         .having((e) => e.exception.excType, 'excType', 'RuntimeError')
         .having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           matches(
             RegExp(
@@ -713,8 +711,8 @@ void main() {
         );
 
     test('an oversized input fails the call; the session runs on', () async {
-      await MontyPool.withPool(
-        (pool) => pool.withSession(
+      await withMonty(
+        (pool) => pool.withSessionWith(
           (s) async {
             await expectLater(
               s.feedRun('len(v)', inputs: {'v': big()}, printCallback: _ignore),
@@ -729,9 +727,9 @@ void main() {
               const MontyInt(3),
             );
           },
-          options: _limits,
+          _limits,
         ),
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -740,9 +738,9 @@ void main() {
 
     test('an oversized automatic answer: the suspension stays pending, '
         'later feeds are refused, close resets the worker', () async {
-      await MontyPool.withPool(
+      await withMonty(
         (pool) async {
-          final session = await pool.checkout(options: _limits);
+          final session = await pool.checkoutWith(_limits);
           final worker = onlyItem(ProcessChannel.live);
           await expectLater(
             session.feedRun(
@@ -770,15 +768,15 @@ void main() {
           }
           await session.close();
           expect(
-            await pool.withSession(
+            await pool.withSessionWith(
               (s) => s.feedRun('4', printCallback: _ignore),
-              options: _limits,
+              _limits,
             ),
             const MontyInt(4),
           );
           expect(ProcessChannel.live, [worker]);
         },
-        options: PoolOptions(
+        PoolOptions(
           maxProcesses: 1,
           workerLocation: await _workerPath(),
         ),
@@ -820,11 +818,11 @@ void main() {
   group('workerPid and the finalizer (q2)', () {
     test("workerPid is the worker process's id; null in a turn and once "
         'closed', () async {
-      final pool = await MontyPool.start(
-        options: const PoolOptions(maxProcesses: 1),
+      final pool = await startMonty(
+        const PoolOptions(maxProcesses: 1),
       );
       try {
-        final session = await pool.checkout(options: _limits);
+        final session = await pool.checkoutWith(_limits);
         final pid = session.workerPid;
         expect(pid, onlyItem(ProcessChannel.live).pid);
         int? inTurn = -1;

@@ -4,9 +4,11 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 Matcher raises(String excType, String message) => throwsA(
-  isA<OsCallException>()
-      .having((e) => e.pythonExceptionType, 'excType', excType)
+  isA<ExternalException>()
+      .having((e) => e.excType, 'excType', excType)
       .having((e) => e.message, 'message', message),
 );
 
@@ -14,7 +16,7 @@ void main() {
   // Every message below is asserted verbatim by mount_fs__errors.py; the
   // fixture names the path, and the errno prefix is part of the string.
   group('directory-aware policy', () {
-    OsCallHandler handler() => memoryMountedOsHandler(
+    DartOsCall handler() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
       files: [
         MontyMemoryFile('/mnt/hello.txt', 'hi'),
@@ -72,7 +74,7 @@ void main() {
 
       await expectLater(
         () => h('Path.unlink', ['/mnt/subdir'], null),
-        throwsA(isA<OsCallException>()),
+        throwsA(isA<ExternalException>()),
       );
       expect(await h('Path.read_text', ['/mnt/subdir/nested.txt'], null), 'n');
     });

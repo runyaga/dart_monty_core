@@ -1,11 +1,13 @@
 // Fixture directive parser for upstream monty's `test_cases/*.py`.
 //
 // THE FORMAT IS UPSTREAM'S, AND SO ARE ITS RULES. The reference is
-// `parse_fixture` in monty's `crates/monty-datatest/src/main.rs` (v0.0.23):
+// `parse_fixture` in monty's `crates/monty-datatest/src/main.rs` at the
+// pinned tag (tool/upstream/upstream-pin.json):
 //
 //   * Config directives are unindented comment lines anywhere in the file,
 //     matched by prefix: `xfail=`, `call-external`, `run-async`, `mount-fs`,
-//     `gc-interval=`, `skip-cpython-windows`, `cpython-main-module`.
+//     `timezone=`, `gc-interval=`, `skip-cpython-windows`,
+//     `cpython-main-module`.
 //   * An expectation is read from the LAST line only: `# Raise=`,
 //     `# Return=`, `# Return.str=`, `# Return.type=`, `# ref-counts=`.
 //   * A `"""\nTRACEBACK:\n ... \n"""` docstring takes precedence over the last
@@ -120,7 +122,8 @@ final class MalformedFixture extends FixtureExpectation {
   final String reason;
 }
 
-/// Every directive key upstream's datatest runner understands at v0.0.23.
+/// Every directive key upstream's datatest runner understands at the pinned
+/// tag.
 ///
 /// A directive-shaped comment whose key is not here makes the fixture
 /// [MalformedFixture]. `Return.type` is listed so its rejection says "not
@@ -447,16 +450,16 @@ class _ReprParser {
     _i++; // consume the already-matched opening bracket
     _skipSpace();
     if (_peek() == '.') {
-      // `...` is the cycle marker. Since wire format v3 the engine sends it as
-      // `{"__type":"cycle","text":"[...]"}` rather than the bare string
-      // `[...]`, so the expectation must be the typed value, or comparison
-      // fails with two values that PRINT identically — how this was found:
-      //   "expected MontyList(1 items), got MontyList(1 items)"
+      // `...` is the cycle marker. The worker hands a cycle back as its
+      // marker string, as upstream's Python host does (`arena_reader.dart`),
+      // so the expectation holds the same string. The repr comparison, which
+      // the worker runner makes whenever it renders one, tells the marker
+      // from a real `'[...]'` string.
       if (!_consume('...')) return null;
       _skipSpace();
       if (!_consume(close)) return null;
 
-      return MontyOpaque(MontyOpaqueKind.cycle, marker);
+      return MontyString(marker);
     }
     final list = <Object?>[];
     final map = <String, Object?>{};

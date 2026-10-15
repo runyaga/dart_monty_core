@@ -55,16 +55,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
-
 import 'package:dart_monty_core/src/fake_answers.dart';
 import 'package:dart_monty_core/src/fake_monty_session.dart';
-import 'package:dart_monty_core/src/platform/exception_attributes.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -120,7 +118,7 @@ final class Side {
   Side(this.session, this.feeds, {required this.isFake});
 
   /// The session under test.
-  final PoolSession session;
+  final MontySession session;
 
   /// The scenario's feeds.
   final List<String> feeds;
@@ -301,7 +299,7 @@ String _showPair((MontyValue, MontyValue) pair) =>
 /// [snapshot] as the trace writes it. Positions are left out: the fake has
 /// none (a listed exception).
 String showSnapshot(MontySnapshot snapshot) => switch (snapshot) {
-  SessionComplete(:final output) => 'complete ${showValue(output)}',
+  MontyComplete(:final output) => 'complete ${showValue(output)}',
   FunctionSnapshot(
     :final functionName,
     :final callId,
@@ -331,7 +329,7 @@ String showError(Object error) => switch (error) {
 };
 
 String _attributes(MontyExceptionValue exception) {
-  final attributes = exceptionAttributes(exception);
+  final attributes = exception.attributes;
 
   if (attributes.isEmpty) return '';
   final shown = [
@@ -406,7 +404,7 @@ typedef Outcome = ({List<String> trace, List<String> answers, Side side});
 /// Runs [scenario] on a real session from a pool over [open].
 Future<Outcome> runReal(Scenario scenario, OpenChannel open) async {
   final log = FakeAnswers();
-  final pool = await MontyPool.startWith(
+  final pool = await startMonty(
     const PoolOptions(minProcesses: 0, maxProcesses: 1),
     open: () {
       final inner = open();
@@ -417,7 +415,7 @@ Future<Outcome> runReal(Scenario scenario, OpenChannel open) async {
     },
   );
   try {
-    final session = await pool.checkout(options: scenario.config);
+    final session = await pool.checkoutWith(scenario.config);
     final side = Side(session, scenario.feeds, isFake: false);
     try {
       await scenario.run(side);

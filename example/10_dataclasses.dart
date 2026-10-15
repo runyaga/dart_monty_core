@@ -1,175 +1,99 @@
-// 10 — Class instances: MontyClassInstance + dartAttrs + hydrate
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// A host sends a dataclass IN as `MontyDataclass`, and it comes BACK as a
-// `MontyClassInstance`. That asymmetry is upstream's, not this binding's:
-// monty v0.0.23 deleted the wire `Dataclass` variant and represents every
-// instance as a `ClassInstance` (upstream cf8246d7). `frozen` and
-// `fieldNames` are therefore WRITE-ONLY — set them and they are consumed at
-// the boundary; nothing coming back carries them, because upstream has
-// nowhere to put them ("there is no frozen policy on the wire",
-// monty docs/limitations/classes.md:263-265). Dart
-// can read their fields directly, convert all attrs to plain Dart values
-// via `dartAttrs`, or hydrate into a user class with `hydrate(factory)`.
+// 10 — Class instances from the sandbox
 //
-// Covers: MontyClassInstance.name / attrs / classType,
-//         MontyClassInstance.dartAttrs, MontyClassInstance.hydrate,
-//         caller-side registry pattern for multiple types.
+// An instance of a class defined in the sandbox, such as a @dataclass,
+// reaches Dart as a MontyClassProxy: its class (name, id, whether it is a
+// dataclass) and its attributes as MontyValues. Dart reads the attributes
+// directly, or builds its own objects from them; a registry keyed by class
+// name handles several classes.
+//
+// Covers: MontyClassProxy (classType, instanceId, attrs),
+//         MontyClassTypeProxy (name, isDataclass), hydrating Dart objects.
 //
 // Run: dart run example/10_dataclasses.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
-// ── User-defined Dart classes the example hydrates into. ──────────────────────
-
-class User {
-  const User({required this.name, required this.age});
-
-  factory User.fromAttrs(Map<String, Object?> a) =>
-      User(name: a['name']! as String, age: a['age']! as int);
-
+// ── Dart classes the example builds from sandbox instances ───────────────────
+final class User {
+  const User(this.name, this.age);
   final String name;
   final int age;
-
   @override
-  String toString() => 'User(name=$name, age=$age)';
+  String toString() => 'User($name, $age)';
 }
 
-class Order {
-  const Order({required this.id, required this.total});
-
-  factory Order.fromAttrs(Map<String, Object?> a) =>
-      Order(id: a['id']! as int, total: a['total']! as double);
-
+final class Order {
+  const Order(this.id, this.total);
   final int id;
   final double total;
-
   @override
-  String toString() => 'Order(id=$id, total=$total)';
+  String toString() => 'Order(#$id, $total)';
 }
 
-// ── Helper: build the dataclass a Dart callback returns to Python.
-// ─────────────────────────────────────────────────────────────────────────────
-// Return the TYPE, not a hand-spelled `{'__type': 'dataclass', …}` map. Until
-// 0.19.0 such a map was honoured as the type it named, which is the same defect
-// as core#136 pointing from the host into the sandbox: any Map whose keys
-// happened to spell an envelope became that type. A Map is now a dict, so a
-// hand-built envelope reaches Python as a dict and your code stops working with
-// no error at the boundary. This example used to teach the old way.
+/// Builds a Dart object from a sandbox instance, by class name.
+final Map<String, Object Function(Map<String, MontyValue> attrs)> _registry = {
+  'User': (a) =>
+      User((a['name']! as MontyString).value, (a['age']! as MontyInt).value),
+  'Order': (a) =>
+      Order((a['id']! as MontyInt).value, (a['total']! as MontyFloat).value),
+};
 
-MontyDataclass _dataclass({
-  required String name,
-  required int typeId,
-  required Map<String, MontyValue> attrs,
-  bool frozen = false,
-}) => MontyDataclass(
-  name: name,
-  typeId: typeId,
-  fieldNames: attrs.keys.toList(),
-  attrs: attrs,
-  frozen: frozen,
-);
+Object _hydrate(MontyValue value) => switch (value) {
+  MontyClassProxy(:final classType, :final attrs) =>
+    (_registry[classType.name] ??
+        (throw StateError('no Dart class for ${classType.name}')))(attrs),
+  _ => throw ArgumentError.value(value, 'value', 'not a class instance'),
+};
 
 Future<void> main() async {
-  await _readingFields();
-  await _hydrateOne();
-  await _hydrateRegistry();
-}
+  await Monty.withPool(
+    (monty) => monty.withSession((session) async {
+      await session.feedRun('''
+from dataclasses import dataclass
 
-// ── Read fields directly off MontyClassInstance ──────────────────────────────
-// MontyClassInstance exposes name, classType and the typed attrs map. It does
-// NOT expose fieldNames or frozen — see the header.
-// Use dartAttrs when you want a plain `Map<String, Object?>` instead of
-// `Map<String, MontyValue>`.
-Future<void> _readingFields() async {
-  print('\n── reading fields ──');
+@dataclass
+class User:
+    name: str
+    age: int
+    active: bool = True
 
-  final r = await Monty('make_user("alice", 30)').run(
-    externalFunctions: {
-      'make_user': (args, _) async => _dataclass(
-        name: 'User',
-        typeId: 1,
-        attrs: {
-          'name': MontyString(args[0]! as String),
-          'age': MontyInt(args[1]! as int),
-        },
-      ),
-    },
+@dataclass
+class Order:
+    id: int
+    total: float
+''');
+
+      // ── Reading attributes directly ───────────────────────────────────────
+      print('\n── reading attributes ──');
+      final u = await session.feedRun('User("Alice", 30)') as MontyClassProxy;
+      print(
+        'class: ${u.classType.name} (dataclass: ${u.classType.isDataclass})',
+      );
+      print('instance id: ${u.instanceId}');
+      for (final MapEntry(:key, :value) in u.attrs.entries) {
+        print('  $key = $value');
+      }
+      _check(u.classType.isDataclass, 'isDataclass');
+      _check(u.attrs['active'] == const MontyBool(true), 'default field');
+
+      // ── Building Dart objects ─────────────────────────────────────────────
+      print('\n── hydrating ──');
+      final mixed =
+          await session.feedRun(
+                '[User("Bob", 41), Order(7, 19.5), User("Cy", 25)]',
+              )
+              as MontyList;
+      final objects = mixed.items.map(_hydrate).toList();
+      print(objects.join('\n'));
+      _check(objects.whereType<User>().length == 2, 'two users');
+      _check(objects.whereType<Order>().single.total == 19.5, 'order total');
+    }),
   );
-
-  // A MontyClassInstance, not the MontyDataclass that was sent in.
-  final dc = r.value! as MontyClassInstance;
-  print('name:         ${dc.name}'); // User
-  print('class id:     ${dc.classType.id}'); // a stable uuid
-  print('isDataclass:  ${dc.isDataclass}'); // true — read from the CLASS
-  print('hostDefined:  ${dc.classType.hostDefined}'); // true
-  print('attrs[name]:  ${dc.attrs["name"]}'); // MontyString(alice)
-  print('dartAttrs:    ${dc.dartAttrs}'); // {name: alice, age: 30}
-  // fieldNames and frozen are NOT here, and cannot be: see the header.
 }
 
-// ── Hydrate into a user-supplied Dart class via a factory ────────────────────
-// hydrate<T>(factory) calls factory(dartAttrs) and returns the typed object.
-// The factory signature is `T Function(Map<String, Object?> attrs)`.
-Future<void> _hydrateOne() async {
-  print('\n── hydrate (one type) ──');
-
-  final r = await Monty('make_user("bob", 42)').run(
-    externalFunctions: {
-      'make_user': (args, _) async => _dataclass(
-        name: 'User',
-        typeId: 1,
-        attrs: {
-          'name': MontyString(args[0]! as String),
-          'age': MontyInt(args[1]! as int),
-        },
-      ),
-    },
-  );
-
-  final dc = r.value! as MontyClassInstance;
-  final user = dc.hydrate(User.fromAttrs);
-  print(user); // User(name=bob, age=42)
-}
-
-// ── Caller-side registry for multiple dataclass types ────────────────────────
-// A `Map<String, Object Function(Map<String, Object?>)>` keyed by dataclass
-// name is the natural way to dispatch. The framework doesn't ship a built-in
-// registry on Monty/MontyRepl — composing one at the call site keeps the
-// public surface small and the type story clear.
-Future<void> _hydrateRegistry() async {
-  print('\n── hydrate (registry) ──');
-
-  final factories = <String, Object Function(Map<String, Object?>)>{
-    'User': User.fromAttrs,
-    'Order': Order.fromAttrs,
-  };
-
-  Object? hydrate(MontyValue value) {
-    if (value is! MontyClassInstance) return value;
-    final factory = factories[value.name];
-    return factory == null ? value : factory(value.dartAttrs);
-  }
-
-  final externalFunctions = <String, MontyCallback>{
-    'make_user': (_, _) async => _dataclass(
-      name: 'User',
-      typeId: 1,
-      attrs: {'name': const MontyString('carol'), 'age': const MontyInt(7)},
-    ),
-    'make_order': (_, _) async => _dataclass(
-      name: 'Order',
-      typeId: 2,
-      attrs: {'id': const MontyInt(99), 'total': const MontyFloat(12.5)},
-    ),
-  };
-
-  final ru = await Monty(
-    'make_user()',
-  ).run(externalFunctions: externalFunctions);
-  final ro = await Monty(
-    'make_order()',
-  ).run(externalFunctions: externalFunctions);
-
-  print(hydrate(ru.value)); // User(name=carol, age=7)
-  print(hydrate(ro.value)); // Order(id=99, total=12.5)
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

@@ -1,88 +1,88 @@
-// 11 — printCallback
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// Python's `print()` output is normally surfaced via `MontyResult.printOutput`
-// after execution finishes. The `printCallback` parameter delivers the same
-// output to a Dart callback before run/feedRun returns — useful for piping
-// to a logger, UI buffer, or stream.
+// 11 — Printed output: printCallback and the collectors
 //
-// printCallback is a *batch* callback: it fires once per call with the
-// entire captured stdout text. Per-flush streaming requires Rust + WASM
-// Worker postMessage extensions and is a separate item.
+// What the sandbox prints goes to the process's stdout and stderr by
+// default. A feed's printCallback receives it instead, as (stream, text)
+// fragments in order, while the feed runs: pipe it to a logger, a UI
+// buffer or a stream.
 //
-// Covers: printCallback on Monty.exec, Monty(code).run, MontyRepl.feedRun;
-//         the stream argument is always 'stdout'.
+// CollectString and CollectStreams are ready-made callbacks that keep the
+// output under a byte cap: one string, or the (stream, text) records.
+//
+// Covers: printCallback, CollectString, CollectStreams, maxBytes.
 //
 // Run: dart run example/11_print_callback.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _oneShot();
-  await _replPerFeed();
-  await _piping();
-}
+  await Monty.withPool(
+    (monty) => monty.withSession((session) async {
+      // ── Default: straight to this process's stdout ────────────────────────
+      print('\n── default ──');
+      await session.feedRun('print("printed by Python")');
 
-// ── Monty.exec / Monty(code).run ─────────────────────────────────────────────
-// The callback fires once with the entire stdout buffer. `stream` is always
-// 'stdout' for now (matches Python's Literal['stdout']).
-Future<void> _oneShot() async {
-  print('\n── one-shot exec ──');
+      // ── A callback ────────────────────────────────────────────────────────
+      print('\n── printCallback ──');
+      // A fragment may hold several lines: the worker batches printed text.
+      final fragments = <(String, String)>[];
+      await session.feedRun('''
+import sys
+for i in range(3):
+    print("line", i)
+print("oops", file=sys.stderr)
+''', printCallback: (stream, text) => fragments.add((stream, text)));
+      for (final (stream, text) in fragments) {
+        print('  $stream: ${text.trimRight().replaceAll('\n', r'\n')}');
+      }
+      _check(
+        fragments.map((f) => f.$2).join().contains('line 2'),
+        'stdout fragments',
+      );
+      _check(fragments.any((f) => f.$1 == 'stderr'), 'stderr fragment');
 
-  await Monty.exec(
-    'print("hello")\nprint("from python")',
-    printCallback: (stream, text) {
-      print('[$stream] ${text.trimRight()}');
-    },
+      // ── CollectString ─────────────────────────────────────────────────────
+      print('\n── CollectString ──');
+      final text = CollectString();
+      await session.feedRun(
+        'print("hello"); print("world")',
+        printCallback: text.call,
+      );
+      print(text);
+      _check(text.output == 'hello\nworld\n', 'CollectString');
+
+      // ── CollectStreams ────────────────────────────────────────────────────
+      print('\n── CollectStreams ──');
+      final streams = CollectStreams();
+      await session.feedRun(
+        'print("out"); print("err", file=sys.stderr)',
+        printCallback: streams.call,
+      );
+      for (final (stream, text) in streams.output) {
+        print('  $stream: ${text.trimRight()}');
+      }
+      _check(streams.output.length >= 2, 'CollectStreams');
+
+      // ── A cap ends the feed with MemoryError ──────────────────────────────
+      print('\n── maxBytes ──');
+      final capped = CollectString(maxBytes: 64);
+      try {
+        await session.feedRun(
+          'for i in range(100):\n    print("x" * 10)',
+          printCallback: capped.call,
+        );
+        throw StateError('the cap was not enforced');
+      } on MontyRuntimeError catch (e) {
+        print('raised: $e');
+        print('kept ${capped.output.length} characters');
+        _check(e.exception.excType == 'MemoryError', 'cap');
+      }
+    }),
   );
 }
 
-// ── MontyRepl.feedRun ────────────────────────────────────────────────────────
-// On a stateful REPL the callback fires per feedRun call, not per print.
-// The captured text is the full stdout buffer for that feed.
-Future<void> _replPerFeed() async {
-  print('\n── stateful repl ──');
-
-  final repl = MontyRepl();
-  try {
-    await repl.feedRun(
-      'print("first feed line 1")\nprint("first feed line 2")',
-      printCallback: (stream, text) => print('[feed 1] ${text.trimRight()}'),
-    );
-
-    await repl.feedRun(
-      'print("second feed")',
-      printCallback: (stream, text) => print('[feed 2] ${text.trimRight()}'),
-    );
-
-    // Calls without printCallback still populate MontyResult.printOutput.
-    final r = await repl.feedRun('print("third feed (read from result)")');
-    print('[result.printOutput] ${r.printOutput?.trimRight()}');
-  } finally {
-    await repl.dispose();
-  }
-}
-
-// ── Common idiom: pipe Python prints to a Dart logger or buffer ──────────────
-// The callback closes over Dart-side state, so accumulating into a list,
-// forwarding to a Logger, or pushing to a StreamController is direct.
-Future<void> _piping() async {
-  print('\n── piping ──');
-
-  final lines = <String>[];
-
-  void capture(String stream, String text) {
-    for (final line in text.split('\n')) {
-      if (line.isNotEmpty) lines.add(line);
-    }
-  }
-
-  await Monty(
-    'for i in range(3):\n'
-    '    print(f"line {i}")',
-  ).run(printCallback: capture);
-
-  print('captured ${lines.length} lines:');
-  for (final line in lines) {
-    print('  - $line');
-  }
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

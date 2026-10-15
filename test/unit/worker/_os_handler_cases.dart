@@ -9,10 +9,9 @@
 // (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
 // cases.
 import 'package:dart_monty_core/src/platform/monty_value.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart'
-    show OsCallNotHandledException;
+import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException;
 import 'package:dart_monty_core/src/worker/os_policy.dart';
@@ -24,7 +23,7 @@ import 'package:test/test.dart';
 import '_os_handler_oracle.g.dart';
 
 /// Starts a pool with [options].
-typedef StartOsHandlerPool = Future<MontyPool> Function(PoolOptions options);
+typedef StartOsHandlerPool = Future<Monty> Function(PoolOptions options);
 
 /// Upstream's Python class names in a conversion failure, and the Dart
 /// names core gives in their place.
@@ -76,8 +75,8 @@ void osHandlerOracleTests(String label, StartOsHandlerPool start) {
       () async {
         final pool = await start(const PoolOptions(maxProcesses: 1));
         try {
-          final session = await pool.checkout(
-            options: const SessionConfig(
+          final session = await pool.checkoutWith(
+            const SessionConfig(
               osPolicy: OsPolicy(datetime: 'call_host', sleep: 'call_host'),
             ),
           );

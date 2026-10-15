@@ -24,7 +24,7 @@
 /// Every kind upstream emits decodes to the [MontyValue] class of the same
 /// meaning, mapped as upstream's Python host maps it: `repr`, `cycle` and an
 /// output `function` become [MontyString]; a builtin type or function
-/// becomes [MontyOpaque]; a path is normalized as `PurePosixPath`; a
+/// becomes [MontyStdTypeProxy]; a path is normalized as `PurePosixPath`; a
 /// payload-less `UnicodeDecodeError`, `UnicodeEncodeError` or
 /// `json.JSONDecodeError` value becomes a `ValueError`.
 ///
@@ -76,7 +76,7 @@ final Expando<Object> _hostObjects = Expando('host object');
 /// wrappers join the [MontyValue] family, the node decodes to its proxy and
 /// this recovers the object.
 Object? hostObjectOf(MontyValue value) =>
-    value is MontyClassInstance ? _hostObjects[value] : null;
+    value is MontyClassProxy ? _hostObjects[value] : null;
 
 /// Reads values out of one arena.
 ///
@@ -179,11 +179,14 @@ final class ArenaReader {
 
 /// Node [i] of [built] as a value: a class node as a value is its registered
 /// object, or staged.
-Object _valueIn(List<Object> built, int i) =>
-    switch (built.elementAtOrNull(i)) {
-      _ClassNode(:final asValue) => asValue,
-      final other => other ?? (throw StateError('node $i is not built')),
-    };
+Object _valueIn(List<Object> built, int i) => switch (_builtAt(built, i)) {
+  _ClassNode(:final asValue) => asValue,
+  final other => other,
+};
+
+/// Node [i] of [built], which stage 2 placed below the node reading it.
+Object _builtAt(List<Object> built, int i) =>
+    built.elementAtOrNull(i) ?? (throw StateError('node $i is not built'));
 
 /// Node [i] of [nodes], whose index the arena has checked.
 pb.MontyNode _nodeAt(List<pb.MontyNode> nodes, int i) =>
@@ -229,7 +232,8 @@ final class _Staged {
 final class _ClassNode {
   const _ClassNode(this.meta, this.asValue);
 
-  /// [MontyClassType], or [_Staged] when its attributes hold a staged kind.
+  /// [MontyClassTypeProxy], or [_Staged] when its attributes hold a staged
+  /// kind.
   final Object meta;
 
   /// The registered object, or [_Staged] until there is a class for a class
@@ -252,7 +256,7 @@ final class _Builder {
 
   /// The proxy each host object decoded to, so two nodes for one object
   /// are one Dart object, as upstream's are the one original object.
-  final Map<Object, MontyClassInstance> _carriers = Map.identity();
+  final Map<Object, MontyClassProxy> _carriers = Map.identity();
   final PythonKeys _keys;
 
   List<Object> build() {
@@ -267,7 +271,7 @@ final class _Builder {
 
   /// A builtin type is opaque; a class type is a class node.
   Object _type(pb.Type type) => type.origin == originBuiltin
-      ? MontyOpaque(MontyOpaqueKind.type, type.name)
+      ? montyStdTypeProxy('type', type.name)
       : _classNode(type);
 
   /// A list of the values of [ids], or the first staged one among them.
@@ -345,7 +349,7 @@ final class _Builder {
     final attrs = _attrs(type.attrs.pairs);
     final meta = attrs is _Staged
         ? attrs
-        : MontyClassType(
+        : montyClassTypeProxy(
             name: type.name,
             id: id,
             hostDefined: type.origin == originHost,
@@ -368,14 +372,13 @@ final class _Builder {
     final found = _hosts?.instance(id);
     if (found is MontyValue) return _registered[_built.length] = found;
     // Stage 2 made the instance's class a class node, built before it.
-    final classNode = _built.elementAtOrNull(node.classType);
-    final meta = classNode is _ClassNode ? classNode.meta : null;
+    final meta = (_builtAt(_built, node.classType) as _ClassNode).meta;
     final attrs = _attrs(node.attrs.pairs);
     if (found != null) return _hostInstance(found, node, meta, attrs);
-    if (meta is! MontyClassType) return meta ?? (throw StateError('$node'));
+    if (meta is! MontyClassTypeProxy) return meta;
     if (attrs is _Staged) return attrs;
 
-    return MontyClassInstance(
+    return montyClassProxy(
       classType: meta,
       instanceId: id,
       attrs: attrs as Map<String, MontyValue>,
@@ -386,7 +389,7 @@ final class _Builder {
   /// object, keyed by that object, whatever the node's attributes. Upstream
   /// decodes it to the original object without reading them, so a staged
   /// attribute leaves the proxy without attributes instead of failing.
-  MontyClassInstance _hostInstance(
+  MontyClassProxy _hostInstance(
     Object found,
     pb.ClassInstanceNode node,
     Object? meta,
@@ -396,10 +399,10 @@ final class _Builder {
     _registered[_built.length] = key;
     if (_carriers[key] case final carrier?) return carrier;
     final type = _nodeAt(_nodes, node.classType).type;
-    final proxy = MontyClassInstance(
-      classType: meta is MontyClassType
+    final proxy = montyClassProxy(
+      classType: meta is MontyClassTypeProxy
           ? meta
-          : MontyClassType(
+          : montyClassTypeProxy(
               name: type.name,
               id: uuidString(type.id.data),
               hostDefined: type.origin == originHost,
@@ -540,8 +543,8 @@ final Map<pb.MontyNode_Kind, Object Function(_Builder, pb.MontyNode)> _kinds = {
 
 /// `type` is the type `type`; every other builtin function is a proxy.
 MontyValue _builtinFunction(String name) => name == 'type'
-    ? const MontyOpaque(MontyOpaqueKind.type, 'type')
-    : MontyOpaque(MontyOpaqueKind.builtin, name);
+    ? montyStdTypeProxy('type', 'type')
+    : montyStdTypeProxy('function', name);
 
 MontyValue _timedelta(pb.TimeDelta td) {
   if (td.days.abs() > maxTimedeltaDays) {
@@ -562,13 +565,13 @@ MontyValue _timedelta(pb.TimeDelta td) {
 /// argument is an empty message, and the three types whose real classes
 /// need a payload a value node does not carry become `ValueError`.
 MontyValue _exception(pb.Exception e) => MontyExceptionValue(
-  excType: switch (e.excType) {
+  switch (e.excType) {
     'UnicodeDecodeError' ||
     'UnicodeEncodeError' ||
     'json.JSONDecodeError' => 'ValueError',
     final name => name,
   },
-  message: e.hasArg() ? e.arg : '',
+  e.hasArg() ? e.arg : '',
 );
 
 Object _fileHandle(pb.FileHandle handle) {

@@ -6,10 +6,9 @@
 // `MontyInt(2)` — and a fixture whose ACTUAL result is correct is reported as
 // failing.
 //
-// The engine is not at fault and this test does not touch it. Measured in
-// Chrome against the shipped wasm: `run('7 % 2.5')` returns
-// `{"__type":"float","value":"2.0"}` and `run('repr(7 % 2.5)')` returns
-// `"2.0"`. The value crosses correctly; the yardstick is what bends.
+// The engine is not at fault and this test does not touch it: `7 % 2.5`
+// comes back as a float on every backend. The value crosses correctly; the
+// yardstick is what bends.
 //
 // This is why it is a UNIT test rather than a fixture run: the defect is in
 // how an expectation is built, so it can be shown with no interpreter at all.
@@ -63,8 +62,8 @@ void main() {
         (want as MontyFloat).value.isNegative,
         isTrue,
         reason:
-            '-0.0 collapsing to 0 loses the sign the wire format was '
-            'changed to preserve (core#128c)',
+            '-0.0 collapsing to 0 loses the sign the value keeps '
+            '(core#128c)',
       );
     });
 

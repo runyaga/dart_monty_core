@@ -7,9 +7,10 @@
 #     oracle_ffi_ext datetime__core.py [E]
 #       unexpected error in datetime__core.py
 #
-# while the real failure was `AssertionError` at line 17. `MontyException`
-# carries message, excType, lineNumber, columnNumber, sourceCode and traceback,
-# and every one was discarded to print the word "unexpected" (core#145).
+# while the real failure was `AssertionError` at line 17. The error the old
+# engine raised (since removed) carried message, exception type, line, column,
+# source and traceback, and every one was discarded to print the word
+# "unexpected" (core#145).
 #
 # It matters past developer time. This package exists so an LLM can generate
 # Monty Python and RETRY when it fails. "unexpected error" gives a model nothing
@@ -45,8 +46,8 @@ cd "$PKG"
 #   "sort() got an unexpected keyword argument 'bogus'"
 # which is CPython's exact wording and therefore a contract this engine must
 # reproduce byte for byte. Scanning it would make this check demand a change to
-# upstream's test suite, which is exactly backwards. The corpus is DATA;
-# tool/check_fixture_corpus.sh already guards it against drift.
+# upstream's test suite, which is exactly backwards. The corpus is DATA,
+# pinned to upstream's tree hashes in tool/upstream/upstream-pin.json.
 EXCLUDE_RE='(fixture_corpus(_v1)?\.dart|check_no_vague_errors\.sh)'
 
 # Comment lines are exempt: explaining the defect is not committing it. That

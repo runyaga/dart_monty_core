@@ -537,7 +537,7 @@ final class SessionConfig {
       osPolicy?.systemSleepMax ?? const OsPolicy().systemSleepMax;
 
   /// The longest one system sleep is charged, in nanoseconds (see
-  /// [OsPolicy.systemSleepCapNanos]).
+  /// `OsPolicyInternal.systemSleepCapNanos`).
   BigInt get systemSleepCapNanos =>
       (osPolicy ?? const OsPolicy()).systemSleepCapNanos;
 

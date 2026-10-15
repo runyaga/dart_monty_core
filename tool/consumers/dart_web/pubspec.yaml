@@ -11,8 +11,3 @@ dependencies:
   dart_monty_core:
     path: ../../..
 
-# BEFORE THE CUTOVER the public API is not flipped, so web/main.dart imports the
-# internal pool (`package:dart_monty_core/src/worker/monty_pool.dart`), the same
-# entry point the parity adapter uses. The cutover PR changes that one import
-# to `package:dart_monty_core/dart_monty_core.dart` and the call to
-# `Monty.start`; nothing else in the probe changes. See tool/consumers/run.sh.

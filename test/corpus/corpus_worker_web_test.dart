@@ -15,8 +15,8 @@ library;
 import 'dart:js_interop';
 
 import 'package:dart_monty_core/src/worker/asset_base.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
@@ -91,7 +91,7 @@ void main() {
         label: _backend,
         profile: WorkerCorpusProfile.browser,
         jspi: jspi,
-        startPool: () async => MontyPool.startWith(
+        startPool: () async => startMonty(
           corpusPoolOptions,
           open: open(forceNoJspi: false),
         ),
@@ -103,7 +103,7 @@ void main() {
       'the recursion set under the forced fallback ends in a pass or a '
       'crash ($_backend)',
       () async {
-        final pool = await MontyPool.startWith(
+        final pool = await startMonty(
           corpusPoolOptions,
           open: open(forceNoJspi: true),
         );

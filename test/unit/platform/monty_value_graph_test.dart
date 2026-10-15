@@ -17,6 +17,12 @@ library;
 import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show
+        MontyClassProxyInternal,
+        MontyValueInternal,
+        montyClassProxy,
+        montyClassTypeProxy;
 import 'package:test/test.dart';
 
 /// x0 = leaf; x(k+1) = [xk, xk]: d+1 distinct nodes, 2^(d+1)-1 tree nodes.
@@ -166,7 +172,7 @@ void main() {
               fieldNames: const ['x'],
               values: [v],
             ),
-            _ => MontyClassInstance(
+            _ => montyClassProxy(
               classType: listType2,
               instanceId: 'i',
               attrs: {'x': v},
@@ -246,7 +252,7 @@ void main() {
       const text = size << 2;
       for (final make in [
         () => MontyPath('p' * text),
-        () => MontyExceptionValue(excType: 'ValueError', message: 'm' * text),
+        () => MontyExceptionValue('ValueError', 'm' * text),
       ]) {
         final (a, b) = two(() => MontyList(refs(make())));
         expect(within(_fast, () => a == b), isTrue);
@@ -290,8 +296,8 @@ void main() {
       expect(d.toJson, throwsStateError);
 
       final attrs = <String, MontyValue>{};
-      final i = MontyClassInstance(
-        classType: const MontyClassType(
+      final i = montyClassProxy(
+        classType: montyClassTypeProxy(
           name: 'C',
           id: 'c',
           hostDefined: false,
@@ -304,7 +310,7 @@ void main() {
       attrs['me'] = i;
       expect(() => i.hashCode, throwsStateError);
       expect(() => i.dartAttrs, throwsStateError);
-      expect(i.toString(), 'MontyClassInstance(C, 1 attrs)');
+      expect(i.toString(), 'MontyClassProxy(C, 1 attrs)');
     });
   });
 
@@ -368,12 +374,12 @@ void main() {
   });
 
   group('projections share what the value shares', () {
-    const listType = MontyClassType(
+    final listType = montyClassTypeProxy(
       name: 'C',
       id: 'c',
       hostDefined: false,
       isDataclass: false,
-      attrs: {},
+      attrs: const {},
     );
 
     test('a shared list is one object in toJson and in dartValue', () {
@@ -382,7 +388,7 @@ void main() {
         x,
         MontyTuple([x]),
       ]);
-      final [j0, j1] = v.toJson();
+      final [j0, j1] = _jsonList(v);
       expect(j1, {
         '__type': 'tuple',
         'value': [same(j0)],
@@ -415,10 +421,10 @@ void main() {
 
     test('dartAttrs keeps one object for a shared attribute value', () {
       const x = MontyList([MontyInt(1)]);
-      const i = MontyClassInstance(
+      final i = montyClassProxy(
         classType: listType,
         instanceId: 'i',
-        attrs: {'a': x, 'b': x},
+        attrs: const {'a': x, 'b': x},
       );
       final attrs = i.dartAttrs;
       expect(attrs['a'], same(attrs['b']));
@@ -429,12 +435,12 @@ void main() {
     });
 
     test('two instances of one class share its class_type map', () {
-      MontyClassInstance inst(String id) => MontyClassInstance(
+      MontyClassProxy inst(String id) => montyClassProxy(
         classType: listType,
         instanceId: id,
         attrs: const {},
       );
-      final [i0, i1] = MontyList([inst('1'), inst('2')]).toJson();
+      final [i0, i1] = _jsonList(MontyList([inst('1'), inst('2')]));
       final classType = switch (i0) {
         {'class_type': final ct} => ct,
         _ => fail('expected an instance map, got $i0'),
@@ -449,14 +455,14 @@ void main() {
   });
 
   test(
-    'MontyClassInstance.toString shows the name and the attribute count',
+    'MontyClassProxy.toString shows the name and the attribute count',
     () {
-      final i = MontyClassInstance(
+      final i = montyClassProxy(
         classType: listType2,
         instanceId: 'i',
         attrs: {'big': chain(10000), 'deep': nested(100000)},
       );
-      expect(within(_fast, i.toString), 'MontyClassInstance(Point, 2 attrs)');
+      expect(within(_fast, i.toString), 'MontyClassProxy(Point, 2 attrs)');
     },
   );
 
@@ -474,7 +480,7 @@ void main() {
     const date = MontyDate(year: 2024, month: 1, day: 2);
     const float = MontyFloat(1);
     for (final leaf in [date, float, const MontyEllipsis()]) {
-      final [j0, j1] = MontyList([leaf, leaf]).toJson();
+      final [j0, j1] = _jsonList(MontyList([leaf, leaf]));
       expect(j0, same(j1), reason: '$leaf toJson');
     }
     final [d0, d1] = const MontyList([date, date]).dartValue;
@@ -546,13 +552,13 @@ void main() {
       expect(MontyValue.fromDart(double.infinity), isFloat);
       expect(MontyValue.fromDart(double.negativeInfinity), isFloat);
       expect(MontyValue.fromDart([-0.0]), const MontyList([MontyFloat(-0)]));
-      // The callback-return path encodes through fromDart.
+      // The callback-return path converts through fromDart.
       expect(
-        MontyValue.encodeForWire(-0.0),
+        json.encode(MontyValue.fromDart(-0.0).toJson()),
         '{"__type":"float","value":"-0.0"}',
       );
       expect(
-        MontyValue.encodeForWire(double.negativeInfinity),
+        json.encode(MontyValue.fromDart(double.negativeInfinity).toJson()),
         '{"__type":"float","value":"-Infinity"}',
       );
     });
@@ -597,10 +603,16 @@ void main() {
   });
 }
 
-const listType2 = MontyClassType(
+final MontyClassTypeProxy listType2 = montyClassTypeProxy(
   name: 'Point',
   id: 'p',
   hostDefined: false,
   isDataclass: false,
-  attrs: {},
+  attrs: const {},
 );
+
+/// [v]'s toJson projection, which these cases build as a list.
+List<Object?> _jsonList(MontyValue v) => switch (v.toJson()) {
+  final List<Object?> list => list,
+  final other => throw StateError('toJson is not a list: $other'),
+};

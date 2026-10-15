@@ -10,13 +10,10 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -39,13 +36,13 @@ var _ignored = 0;
 
 /// Runs [body] with a session on a one-worker pool of the real worker.
 Future<void> _withSession(
-  Future<void> Function(PoolSession s) body, {
+  Future<void> Function(MontySession s) body, {
   SessionConfig options = _limits,
 }) async {
   final location = await realWorker() as WorkerExecutable;
-  await MontyPool.withPool(
-    (pool) => pool.withSession(body, options: options),
-    options: PoolOptions(maxProcesses: 1, workerLocation: location.path),
+  await withMonty(
+    (pool) => pool.withSessionWith(body, options),
+    PoolOptions(maxProcesses: 1, workerLocation: location.path),
   );
 }
 
@@ -77,7 +74,7 @@ void main() {
       );
       expect(snap.scriptName, 'main.py');
       final done = await snap.resume(const ExternalReturnValue(MontyInt(5)));
-      expect((done as SessionComplete).output, const MontyInt(5));
+      expect((done as MontyComplete).output, const MontyInt(5));
     });
   });
 
@@ -104,7 +101,7 @@ void main() {
         firstItem(ids): const ExternalReturnValue(MontyInt(10)),
       });
       expect(
-        (done as SessionComplete).output,
+        (done as MontyComplete).output,
         const MontyList([MontyInt(10), MontyInt(20)]),
       );
     });
@@ -125,7 +122,7 @@ void main() {
         call.callId: const ExternalException('ValueError', 'boom'),
       });
       expect(
-        (done as SessionComplete).output,
+        (done as MontyComplete).output,
         const MontyString('caught ValueError: boom'),
       );
     });

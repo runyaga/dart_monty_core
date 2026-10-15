@@ -68,7 +68,7 @@ jobs:
           workspaces: |
             native
             native/worker
-          key: corpus-${{ hashFiles('native/worker/Cargo.lock', 'native/Cargo.lock') }}
+          key: corpus-${{ hashFiles('native/worker/Cargo.lock') }}
       - run: dart pub get
       - name: Build the worker executable
         run: bash tool/build_worker.sh

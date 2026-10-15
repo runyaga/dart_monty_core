@@ -1,14 +1,14 @@
 // Unit tests for the three wire-v5 value types that had NO unit test at all:
-// MontyNotImplemented, MontyClassType and MontyClassInstance.
+// MontyNotImplemented, MontyClassTypeProxy and MontyClassProxy.
 //
 // Found by listing every class in monty_value_structured.dart and grepping
 // test/unit/ for each name: these three returned zero files. They are the
 // NEWEST public types in the package — the ones wire v5 introduced — and they
 // were the only ones nothing checked. The integration suites construct
-// MontyClassInstance, which is not the same as checking its equality, its
-// hashing, or what it does with a malformed envelope.
+// MontyClassProxy, which is not the same as checking its equality or its
+// hashing.
 //
-// MontyClassType is the sharper case: it is NOT a MontyValue (no extends
+// MontyClassTypeProxy is the sharper case: it is NOT a MontyValue (no extends
 // clause), so it is invisible to every test that walks the MontyValue
 // hierarchy. It can only be reached deliberately.
 //
@@ -17,46 +17,40 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show
+        MontyClassProxyInternal,
+        MontyValueInternal,
+        montyClassProxy,
+        montyClassTypeProxy;
 import 'package:test/test.dart';
 
-/// The envelope a real engine emits, taken from an observed v0.0.23 run rather
-/// than invented: `class C: pass` then `C()` on the FFI backend.
-Map<String, dynamic> _instanceEnvelope({
-  String name = 'User',
-  String classId = 'eeee1f5d-3dad-4e69-a00c-2ad1e3258621',
-  String instanceId = '14abf845-dc0c-49cd-bfd3-9acd25082227',
-  bool isDataclass = true,
-  Map<String, dynamic>? attrs,
-}) => {
-  '__type': 'class_instance',
-  'class_type': {
-    'name': name,
-    'id': classId,
-    'host_defined': false,
-    'is_dataclass': isDataclass,
-    'attrs': {'__type': 'dict', 'value': <String, dynamic>{}},
-  },
-  'instance_id': instanceId,
-  'attrs': {
-    '__type': 'dict',
-    'value': attrs ?? {'name': 'Alice', 'age': 30},
-  },
-};
+/// An instance as a real engine decodes `class C: pass` then `C()`.
+MontyClassProxy _instance({String instanceId = 'i-1'}) => montyClassProxy(
+  classType: montyClassTypeProxy(
+    name: 'User',
+    id: 'eeee1f5d-3dad-4e69-a00c-2ad1e3258621',
+    hostDefined: false,
+    isDataclass: true,
+    attrs: const {},
+  ),
+  instanceId: instanceId,
+  attrs: const {'name': MontyString('Alice'), 'age': MontyInt(30)},
+);
 
 void main() {
   group('MontyNotImplemented', () {
-    test('round-trips through fromJson(toJson())', () {
+    test('projects to its tagged map', () {
       const v = MontyNotImplemented();
       expect(v.toJson(), {'__type': 'not_implemented'});
-      expect(MontyValue.fromJson(v.toJson()), v);
     });
 
-    test('a decoded instance equals a constructed one', () {
+    test('a separately built instance equals a const one', () {
       // Deliberately NOT `const X() == const X()`. Dart canonicalises equal
       // const literals to a single instance, so that compares an object with
-      // ITSELF and would pass even with a broken ==. Build one through the
-      // decoder and one through the constructor — genuinely separate paths.
-      final decoded = MontyValue.fromJson({'__type': 'not_implemented'});
+      // ITSELF and would pass even with a broken ==.
+      // ignore: prefer_const_constructors
+      final decoded = MontyNotImplemented();
       const constructed = MontyNotImplemented();
       expect(decoded, constructed);
       expect(decoded.hashCode, constructed.hashCode);
@@ -80,24 +74,24 @@ void main() {
     });
   });
 
-  group('MontyClassType', () {
-    const base = MontyClassType(
+  group('MontyClassTypeProxy', () {
+    final base = montyClassTypeProxy(
       name: 'User',
       id: 'id-1',
       hostDefined: false,
       isDataclass: true,
-      attrs: {},
+      attrs: const {},
     );
 
     test('equality is structural across every field', () {
       expect(
         base,
-        const MontyClassType(
+        montyClassTypeProxy(
           name: 'User',
           id: 'id-1',
           hostDefined: false,
           isDataclass: true,
-          attrs: {},
+          attrs: const {},
         ),
       );
     });
@@ -108,60 +102,60 @@ void main() {
       expect(
         base,
         isNot(
-          const MontyClassType(
+          montyClassTypeProxy(
             name: 'Other',
             id: 'id-1',
             hostDefined: false,
             isDataclass: true,
-            attrs: {},
+            attrs: const {},
           ),
         ),
       );
       expect(
         base,
         isNot(
-          const MontyClassType(
+          montyClassTypeProxy(
             name: 'User',
             id: 'id-2',
             hostDefined: false,
             isDataclass: true,
-            attrs: {},
+            attrs: const {},
           ),
         ),
       );
       expect(
         base,
         isNot(
-          const MontyClassType(
+          montyClassTypeProxy(
             name: 'User',
             id: 'id-1',
             hostDefined: true,
             isDataclass: true,
-            attrs: {},
+            attrs: const {},
           ),
         ),
       );
       expect(
         base,
         isNot(
-          const MontyClassType(
+          montyClassTypeProxy(
             name: 'User',
             id: 'id-1',
             hostDefined: false,
             isDataclass: false,
-            attrs: {},
+            attrs: const {},
           ),
         ),
       );
       expect(
         base,
         isNot(
-          const MontyClassType(
+          montyClassTypeProxy(
             name: 'User',
             id: 'id-1',
             hostDefined: false,
             isDataclass: true,
-            attrs: {'x': MontyInt(1)},
+            attrs: const {'x': MontyInt(1)},
           ),
         ),
       );
@@ -175,14 +169,14 @@ void main() {
       // also keeps the analyzer's const lints off a place where const is wrong.
       final attrsA = <String, MontyValue>{'x': const MontyInt(1)};
       final attrsB = <String, MontyValue>{'x': const MontyInt(1)};
-      final a = MontyClassType(
+      final a = montyClassTypeProxy(
         name: 'C',
         id: 'i',
         hostDefined: false,
         isDataclass: false,
         attrs: attrsA,
       );
-      final b = MontyClassType(
+      final b = montyClassTypeProxy(
         name: 'C',
         id: 'i',
         hostDefined: false,
@@ -197,95 +191,33 @@ void main() {
     test('toString names the class, its id and the dataclass flag', () {
       expect(
         base.toString(),
-        'MontyClassType(User, id: id-1, isDataclass: true)',
+        'MontyClassTypeProxy(User, id: id-1, isDataclass: true)',
       );
     });
   });
 
-  group('MontyClassInstance', () {
-    test('decodes the envelope a real engine emits', () {
-      final v = MontyValue.fromJson(_instanceEnvelope()) as MontyClassInstance;
-      expect(v.classType.name, 'User');
-      expect(v.classType.isDataclass, isTrue);
-      expect(v.classType.hostDefined, isFalse);
-      expect(v.instanceId, '14abf845-dc0c-49cd-bfd3-9acd25082227');
-      expect((v.attrs['name']! as MontyString).value, 'Alice');
-      expect((v.attrs['age']! as MontyInt).value, 30);
-    });
-
+  group('MontyClassProxy', () {
     test('equality is structural, and instanceId participates', () {
-      final envelope = _instanceEnvelope();
-      final a = MontyValue.fromJson(envelope);
-      final b = MontyValue.fromJson(envelope);
+      final a = _instance();
+      final b = _instance();
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-
-      final other = MontyValue.fromJson(
-        _instanceEnvelope(instanceId: 'a-different-instance'),
-      );
       expect(
         a,
-        isNot(other),
+        isNot(_instance(instanceId: 'a-different-instance')),
         reason: 'two instances of one class are distinct',
       );
     });
 
-    test('a non-object class_type is a FormatException, not a crash', () {
-      final bad = _instanceEnvelope()..['class_type'] = 'not-an-object';
-      expect(
-        () => MontyValue.fromJson(bad),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('class_type must be an object'),
-          ),
-        ),
-      );
+    test('class metadata is read through classType', () {
+      final v = _instance();
+      expect(v.classType.name, 'User');
+      expect(v.classType.isDataclass, isTrue);
+      expect(v.toString(), 'MontyClassProxy(User, 2 attrs)');
     });
 
-    test('a non-string class_type.name is a FormatException naming it', () {
-      final bad = _instanceEnvelope();
-      final ct = bad['class_type']! as Map<String, dynamic>;
-      ct['name'] = 42;
-      expect(
-        () => MontyValue.fromJson(bad),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('class_type.name'),
-          ),
-        ),
-      );
-    });
-
-    test('a non-string class_type.id is a FormatException naming it', () {
-      final bad = _instanceEnvelope();
-      final ct = bad['class_type']! as Map<String, dynamic>;
-      ct['id'] = <String, dynamic>{};
-      expect(
-        () => MontyValue.fromJson(bad),
-        throwsA(
-          isA<FormatException>().having(
-            (e) => e.message,
-            'message',
-            contains('class_type.id'),
-          ),
-        ),
-      );
-    });
-
-    test('a non-bool is_dataclass throws; an absent one defaults false', () {
-      final bad = _instanceEnvelope();
-      final badCt = bad['class_type']! as Map<String, dynamic>;
-      badCt['is_dataclass'] = 'yes';
-      expect(() => MontyValue.fromJson(bad), throwsA(isA<FormatException>()));
-
-      final absent = _instanceEnvelope();
-      (absent['class_type']! as Map<String, dynamic>).remove('is_dataclass');
-      final v = MontyValue.fromJson(absent) as MontyClassInstance;
-      expect(v.classType.isDataclass, isFalse, reason: 'absent means false');
+    test('dartAttrs projects the attributes to Dart values', () {
+      expect(_instance().dartAttrs, {'name': 'Alice', 'age': 30});
     });
   });
 }

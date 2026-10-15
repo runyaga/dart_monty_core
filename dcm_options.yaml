@@ -31,18 +31,7 @@ dcm:
   rules:
     # --- Bug Prevention ---
     - avoid-throw-in-finally-block
-    - avoid-unsafe-collection-methods:
-        exclude:
-          # Two index reads, both provably in bounds:
-          #   lines[startIdx] in captureLastExpression -- startIdx comes
-          #     from _findExpressionStart and lies in [0, lastIdx], and
-          #     lastIdx >= 0 has already been checked.
-          #   lines[i] in _findExpressionStart -- i walks lastIdx..0 and
-          #     the loop accumulates bracket depth across iterations, which
-          #     no single Iterable expression states as plainly.
-          # elementAtOrNull(i)! would trade a RangeError for a TypeError
-          # without removing the risk, so the loop form is kept.
-          - "lib/src/platform/code_capture.dart"
+    - avoid-unsafe-collection-methods
     - avoid-missing-completer-stack-trace
     - avoid-uncaught-future-errors
     - avoid-recursive-calls
@@ -148,15 +137,7 @@ dcm:
     # --- Style Consistency ---
     - prefer-switch-expression
     - avoid-unnecessary-parentheses
-    - prefer-async-await:
-        exclude:
-          # VERIFIED 2026-09-15, both sites still earn it:
-          #   :538 `await f.timeout(5s).then((_) => true).onError((_,_) => false)`
-          #        -- a timeout-or-false chain; async/await needs an explicit
-          #        try/catch on TimeoutException to say the same thing.
-          #   :581 isolate message dispatch, returning completer.future.then(...)
-          #        from a non-async function.
-          - "lib/src/ffi/native_isolate_bindings_impl.dart"
+    - prefer-async-await
     - avoid-adjacent-strings
     - prefer-declaring-const-constructor
     - format-comment
@@ -188,8 +169,8 @@ dcm:
           # produces SIX analyzer errors, and the analyzer's own suggested
           # remedy is the rule this repo just finished eliminating:
           #
-          #   error - :26:37 - The argument type 'MontyRepl?' can't be assigned
-          #           to the parameter type 'MontyRepl'
+          #   error - :26:37 - The argument type 'T?' can't be assigned
+          #           to the parameter type 'T'
           #   error - :29:25 - The method 'dispose' can't be unconditionally
           #           invoked because the receiver can be 'null'. Try ... adding
           #           a null check to the target ('!')
@@ -228,9 +209,6 @@ dcm:
           - "lib/src/platform/monty_value_scalars.dart"
           - "lib/src/platform/monty_value_collections.dart"
           - "lib/src/platform/monty_value_structured.dart"
-          # base_monty_platform.dart:128 `MontyCoreBindings get coreBindings =>
-          # _bindings;` -- protected accessor for subclasses. Verified.
-          - "lib/src/platform/base_monty_platform.dart"
     - avoid-declaring-call-method
 
     # --- Import Safety ---
@@ -255,29 +233,12 @@ dcm:
           - private-methods
           - overridden-methods
         exclude:
-          # MISATTRIBUTED UNTIL 2026-09-15. This said "_fieldsEqual helper
-          # placed adjacent to operator== that uses it". That fact is TRUE --
-          # monty_stack_frame.dart:95 `bool _fieldsEqual(MontyStackFrame o) =>`
-          # sits right under `operator ==` at :91 -- but it is NOT why the rule
-          # fires. The actual flagged sites are ordinary method-order
-          # violations against the `order:` above, which ends
-          # public-methods, private-methods, overridden-methods:
-          #
-          #   monty_value_datetime.dart:165   @override String toString()
-          #   monty_stack_frame.dart:119      @override String toString()
-          #   monty_stack_frame.dart:122      static List<..> listFromJson(..)
-          #
-          # i.e. an overridden toString() followed by a public static method.
+          # monty_value_datetime.dart:165 is an overridden toString()
+          # followed by a public static method, against the `order:` above,
+          # which ends public-methods, private-methods, overridden-methods.
           # Reordering would split toString() from the == / hashCode / helper
           # cluster it belongs with. Confirmed independently by agy.
           - "lib/src/platform/monty_value_datetime.dart"
-          - "lib/src/platform/monty_stack_frame.dart"
-          # VERIFIED and accurate: wasm_repl_bindings.dart:26
-          # `static String _nextReplId() => 'repl-${++_counter}';` precedes the
-          # private fields at :28, :30, :33, which is what those three are
-          # flagged for. Grouping the helper with the counter it mutates is
-          # clearer than moving it to the end.
-          - "lib/src/repl/wasm_repl_bindings.dart"
 
     # --- Testing ---
     - prefer-test-matcher

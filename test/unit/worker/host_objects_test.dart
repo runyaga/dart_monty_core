@@ -7,8 +7,6 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
-    show ExternalException;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
@@ -940,7 +938,7 @@ void main() {
       final index = writer.add(box);
       final decoded = ArenaReader(writer.arena, hosts: objects.lookup)[index];
       expect(hostObjectOf(decoded), same(box));
-      expect((decoded as MontyClassInstance).classType.name, 'Holder');
+      expect((decoded as MontyClassProxy).classType.name, 'Holder');
     });
 
     test('each future answer is its own encoding: the last policy wins', () {
@@ -997,7 +995,7 @@ void main() {
         hosts: objects.lookup,
       );
       final decoded = reader[index];
-      expect(decoded, isA<MontyClassInstance>());
+      expect(decoded, isA<MontyClassProxy>());
       expect(hostObjectOf(decoded), same(box));
       // An unregistered reader gives a plain proxy.
       final plain = ArenaReader(pb.Arena.fromBuffer(bytes))[index];

@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyStdTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_keys.dart';
@@ -176,12 +178,12 @@ void main() {
     test('exceptions as upstream builds them', () {
       expect(
         _decode([exception('KeyError', 'k')]),
-        const MontyExceptionValue(excType: 'KeyError', message: 'k'),
+        MontyExceptionValue('KeyError', 'k'),
       );
       // No argument is an empty message: exc_monty_to_py's unwrap_or_default.
       expect(
         _decode([exception('ValueError')]),
-        const MontyExceptionValue(excType: 'ValueError', message: ''),
+        MontyExceptionValue('ValueError', ''),
       );
       // A value node carries no payload, and these three need one.
       for (final type in [
@@ -191,7 +193,7 @@ void main() {
       ]) {
         expect(
           _decode([exception(type, 'm')]),
-          const MontyExceptionValue(excType: 'ValueError', message: 'm'),
+          MontyExceptionValue('ValueError', 'm'),
           reason: type,
         );
       }
@@ -200,15 +202,15 @@ void main() {
     test('builtin types and functions are opaque; `type` is the type', () {
       expect(
         _decode([builtinType('ValueError')]),
-        const MontyOpaque(MontyOpaqueKind.type, 'ValueError'),
+        montyStdTypeProxy('type', 'ValueError'),
       );
       expect(
         _decode([pb.MontyNode(builtinFunction: 'len')]),
-        const MontyOpaque(MontyOpaqueKind.builtin, 'len'),
+        montyStdTypeProxy('function', 'len'),
       );
       expect(
         _decode([pb.MontyNode(builtinFunction: 'type')]),
-        const MontyOpaque(MontyOpaqueKind.type, 'type'),
+        montyStdTypeProxy('type', 'type'),
       );
     });
 
@@ -289,8 +291,8 @@ void main() {
                 list([5, 6]),
               ])
               as MontyList;
-      final a = itemAt(v.items, 0) as MontyClassInstance;
-      final b = itemAt(v.items, 1) as MontyClassInstance;
+      final a = itemAt(v.items, 0) as MontyClassProxy;
+      final b = itemAt(v.items, 1) as MontyClassProxy;
       expect(identical(a.classType, b.classType), isTrue);
       expect(a.classType.name, 'P');
       expect(a.classType.id, 'abababab-abab-abab-abab-abababababab');
@@ -318,7 +320,7 @@ void main() {
                   attrs: pairs([(1, 2), (2, 2), (4, 3), (5, 3), (1, 6)]),
                 ),
               ])
-              as MontyClassInstance;
+              as MontyClassProxy;
       // The int key, the function and the repr are skipped, though the
       // last two decode to the text 'a'.
       expect(v.attrs, {'a': const MontyInt(3)});
@@ -571,11 +573,11 @@ void main() {
         instance(0, id: uuid(3), attrs: pairs([])),
       ]);
       expect(() => reader[0], _unsupported('"C"'));
-      expect(reader[1], isA<MontyClassInstance>());
+      expect(reader[1], isA<MontyClassProxy>());
       expect(
         identical(
-          (reader[1] as MontyClassInstance).classType,
-          (reader[2] as MontyClassInstance).classType,
+          (reader[1] as MontyClassProxy).classType,
+          (reader[2] as MontyClassProxy).classType,
         ),
         isTrue,
       );
@@ -634,7 +636,7 @@ void main() {
                 classType('C', id: uuid(1), attrs: pairs([(0, 1), (0, 2)])),
                 instance(3, id: uuid(2), attrs: pairs([(0, 1), (0, 2)])),
               ])
-              as MontyClassInstance;
+              as MontyClassProxy;
       expect(v.attrs, {'x': const MontyInt(1)});
       expect(v.classType.attrs, {'x': const MontyInt(1)});
     });
@@ -693,7 +695,7 @@ void main() {
       expect(identical(itemAt(items, 0), registered), isTrue);
       expect(identical(itemAt(items, 1), registered), isTrue);
       // Not registered, though its class is: a proxy.
-      expect(itemAt(items, 2), isA<MontyClassInstance>());
+      expect(itemAt(items, 2), isA<MontyClassProxy>());
       expect(asked, [
         'class 01010101-0101-0101-0101-010101010101',
         'instance 02020202-0202-0202-0202-020202020202',

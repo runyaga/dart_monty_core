@@ -5,7 +5,7 @@
 /// small immutable class. Literals are `String`s, and a field that is a mode
 /// or a value is two parameters (the mode, and a typed value form). A value
 /// upstream's argument parsing refuses is an [ArgumentError] with upstream's
-/// message, raised by [OsPolicy.validate] at checkout.
+/// message, raised by `OsPolicyInternal.validate` at checkout.
 ///
 /// Internal until the cutover exports them; nothing here is exported.
 library;
@@ -114,7 +114,7 @@ final class OsPolicy {
   /// message, or for both forms of one field. An IANA zone name is checked
   /// here, before any worker is taken, as upstream checks it while parsing
   /// the checkout's arguments.
-  void validate() {
+  void _validate() {
     _bothForms(datetime, fixedDatetime, 'datetime', 'fixedDatetime');
     _bothForms(timezone, fixedTimezone, 'timezone', 'fixedTimezone');
     _bothForms(randomStart, randomSeed, 'randomStart', 'randomSeed');
@@ -150,29 +150,29 @@ final class OsPolicy {
     _validateSleepMax();
   }
 
-  /// The longest one system sleep is charged, in nanoseconds: [systemSleepMax],
-  /// or Rust's `Duration::MAX` for [uncappedSleep], as upstream's
-  /// `float('inf')`.
-  BigInt get systemSleepCapNanos {
-    final max = systemSleepMax;
+  /// The longest one system sleep is charged, in nanoseconds: the
+  /// system-sleep maximum, or Rust's `Duration::MAX` for [uncappedSleep],
+  /// as upstream's `float('inf')`.
+  BigInt get _systemSleepCapNanos {
+    final max = _systemSleepMax;
 
     return max == uncappedSleep ? durationMaxNanos : nanosOf(max);
   }
 
   /// The longest one system sleep waits: [sleepSystemMax] under the system
   /// mode, else upstream's 10 s (the parent's ceiling whatever the mode).
-  Duration get systemSleepMax =>
+  Duration get _systemSleepMax =>
       (sleep ?? 'system') == 'system' ? sleepSystemMax ?? _sleepMax : _sleepMax;
 
   /// The wire form, every arm set, as upstream's encoder sends it.
-  pb.OsPolicy toProto() {
+  pb.OsPolicy _toProto() {
     final policy = pb.OsPolicy(
       timezone: _zone(),
       sleep: switch (sleep ?? 'system') {
         'call_host' => pb.SleepMode(callHost: pb.Unit()),
         'zero' => pb.SleepMode(zero: pb.Unit()),
         _ => pb.SleepMode(
-          system: pb.SystemSleep(maxMicros: _sleepMicros(systemSleepMax)),
+          system: pb.SystemSleep(maxMicros: _sleepMicros(_systemSleepMax)),
         ),
       },
     );
@@ -328,7 +328,7 @@ final class TimeZone {
   /// Throws [ArgumentError] for what upstream's parsing refuses, in its
   /// order: an offset outside `i32` (its extraction's `OverflowError`), a
   /// name with no UTF-8 form, then an offset outside upstream's range.
-  void validate() {
+  void _validate() {
     if (offsetSeconds < _minI32 || offsetSeconds > _maxI32) {
       throw ArgumentError.value(
         offsetSeconds,
@@ -418,7 +418,7 @@ final class RandomSeed {
   /// Throws [ArgumentError] for what upstream's parsing refuses, with its
   /// message: a float seed that is not finite, a string seed with no UTF-8
   /// form.
-  void validate() {
+  void _validate() {
     final seed = _seed;
     if (seed is String) {
       final unencodable = surrogateEncodeError(seed);
@@ -437,7 +437,7 @@ final class RandomSeed {
   }
 
   /// The wire form; an integer as its two's-complement bytes.
-  pb.RandomSeed toProto() => switch (_seed) {
+  pb.RandomSeed _toProto() => switch (_seed) {
     final BigInt n => pb.RandomSeed(int_1: signedBytesLe(n)),
     final double f => pb.RandomSeed(float: f),
     final String s => pb.RandomSeed(str: s),
@@ -500,3 +500,36 @@ pb.FixedDateTime _fixed(DateTime instant) {
 /// uint64 field holds as the 64-bit pattern of -1.
 Int64 _sleepMicros(Duration max) =>
     max == uncappedSleep ? Int64(-1) : durationMicros(max);
+
+/// [OsPolicy]'s internal members (pass-3 G2, #220): the public show list
+/// leaves this extension out.
+extension OsPolicyInternal on OsPolicy {
+  /// See the private member.
+  void validate() => _validate();
+
+  /// See the private member.
+  BigInt get systemSleepCapNanos => _systemSleepCapNanos;
+
+  /// See the private member.
+  Duration get systemSleepMax => _systemSleepMax;
+
+  /// See the private member.
+  pb.OsPolicy toProto() => _toProto();
+}
+
+/// [TimeZone]'s internal members (pass-3 G2, #220): the public show list
+/// leaves this extension out.
+extension TimeZoneInternal on TimeZone {
+  /// See the private member.
+  void validate() => _validate();
+}
+
+/// [RandomSeed]'s internal members (pass-3 G2, #220): the public show list
+/// leaves this extension out.
+extension RandomSeedInternal on RandomSeed {
+  /// See the private member.
+  void validate() => _validate();
+
+  /// See the private member.
+  pb.RandomSeed toProto() => _toProto();
+}

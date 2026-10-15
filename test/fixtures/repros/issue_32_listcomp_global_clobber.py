@@ -1,12 +1,12 @@
 # Repro: dart_monty_core#32
-#   MontyRepl: host function global binding clobbered to int after
+#   Stateful session: host function global binding clobbered to int after
 #   repeat list-comprehension calls.
 #
 # https://github.com/runyaga/dart_monty_core/issues/32
 #
 # Symptom
 # -------
-# When a function registered as an `externalFunction` on `MontyRepl` is
+# When a function registered as a host function on a stateful session is
 # invoked from a list comprehension across two or more consecutive
 # `feedRun` calls, the function's global binding is replaced by an int
 # (apparently the comprehension's length / final iteration value).

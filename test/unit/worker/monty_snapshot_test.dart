@@ -1,4 +1,4 @@
-// Step-by-step driving of a pool session (lib/src/worker/pool_session.dart,
+// Step-by-step driving of a pool session (lib/src/worker/monty_session.dart,
 // monty_snapshot.dart, host_answers.dart, sleep_budget.dart) over scripted
 // workers: feedStart and the four snapshot kinds, validate-then-consume,
 // incremental future settlement, resumeAuto, OS calls as values, coroutines
@@ -15,14 +15,11 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart' show hostObjectOf;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/os_policy.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
@@ -34,17 +31,17 @@ import '_scripted_channel.dart';
 import '_worker_class_oracle.g.dart';
 
 /// A pool over the scripted [channel], none started up front.
-Future<MontyPool> _pool(ScriptedChannel channel) {
+Future<Monty> _pool(ScriptedChannel channel) {
   final next = Queue.of([channel]);
 
-  return MontyPool.startWith(
+  return startMonty(
     const PoolOptions(minProcesses: 0, maxProcesses: 1),
     open: () => PendingSpawn((_) async => next.removeFirst()),
   );
 }
 
 /// A session over a worker that accepts `Configure`, then answers [script].
-Future<(PoolSession, ScriptedChannel)> _session(
+Future<(MontySession, ScriptedChannel)> _session(
   List<Reply> script, {
   SessionConfig config = const SessionConfig(scriptName: 'job.py'),
 }) async {
@@ -54,7 +51,7 @@ Future<(PoolSession, ScriptedChannel)> _session(
   ]);
   final pool = await _pool(ch);
   addTearDown(pool.close);
-  final session = await pool.checkout(options: config);
+  final session = await pool.checkoutWith(config);
   addTearDown(session.close);
 
   return (session, ch);
@@ -175,8 +172,8 @@ void main() {
       );
       expect(call.scriptName, 'job.py');
       final done = await call.resume(const ExternalReturnValue(MontyInt(5)));
-      expect(done, isA<SessionComplete>());
-      expect((done as SessionComplete).output, const MontyInt(5));
+      expect(done, isA<MontyComplete>());
+      expect((done as MontyComplete).output, const MontyInt(5));
       final resume = _last(ch).resumeCall;
       expect(resume.callId, 7);
       expect(intOfNode(itemAt(resume.values.nodes, 0)).toInt(), 5);
@@ -279,12 +276,12 @@ void main() {
       },
     );
 
-    test('completion is SessionComplete', () async {
+    test('completion is MontyComplete', () async {
       final (s, _) = await _session([
         answer([_int(2)]),
       ]);
       final done = await s.feedStart('1 + 1');
-      expect((done as SessionComplete).output, const MontyInt(2));
+      expect((done as MontyComplete).output, const MontyInt(2));
     });
 
     test('a feed while a snapshot awaits an answer is refused; after it, '
@@ -399,7 +396,7 @@ void main() {
         s.feedStart('bad'),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: invalid OS call payload: missing '
                 'required field OsCall.call',
@@ -464,7 +461,7 @@ void main() {
         _resetOk,
       ]);
       final never = Completer<MontyValue>();
-      late final PoolSession session;
+      late final MontySession session;
       final snap =
           await s.feedStart(
                 'f()',
@@ -696,7 +693,7 @@ void main() {
         2: const ExternalException('ValueError', 'no'),
       });
       expect(_settled(itemAt(ch.requests, 5)), {2: 'ValueError'});
-      expect((done as SessionComplete).output, const MontyInt(30));
+      expect((done as MontyComplete).output, const MontyInt(30));
     });
 
     test(
@@ -1060,7 +1057,7 @@ void main() {
         ),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: invalid payload from worker: '
                 'invalid value for Arena: value root 5 is out of range for an '
@@ -1081,7 +1078,7 @@ void main() {
         s.feedRun('bad', os: (name, args, kwargs) => const MontyNone()),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: invalid OS call payload: missing '
                 'required field OsCall.call',
@@ -1334,7 +1331,7 @@ void main() {
       ]);
       final [done, again] = [
         for (var i = 0; i < 2; i++)
-          await s.feedStart('[1, 2]') as SessionComplete,
+          await s.feedStart('[1, 2]') as MontyComplete,
       ];
       expect(
         _py(_sameEachRead(() => done.output)),
@@ -1376,8 +1373,7 @@ void main() {
         _resetOk,
       ]);
       final call = await s.feedStart('f()') as FunctionSnapshot;
-      final done =
-          await call.resume(ExternalReturnValue(box)) as SessionComplete;
+      final done = await call.resume(ExternalReturnValue(box)) as MontyComplete;
       Object? hostOf(MontyValue v) => switch (hostObjectOf(v)) {
         ClassInstance(:final value) => value,
         _ => null,

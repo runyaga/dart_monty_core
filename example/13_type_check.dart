@@ -1,88 +1,90 @@
-// 13 — Static type checking via Monty.typeCheck
+// Examples print what they show; the number in the name is the reading order.
+// ignore_for_file: avoid_print, file_names
 //
-// Monty ships a static analyser (a subset of Python's type system) that
-// reports type errors without executing the code. Useful for IDE-shaped
-// integrations: surface errors before the user clicks Run.
+// 13 — Type checking
 //
-// The analyser uses a separate, pooled in-memory database scrubbed on
-// drop, so it never touches an in-flight Monty.run / MontyRepl.feedRun
-// execution heap.
+// A session checked out with typeCheck: true type-checks each snippet
+// before running it. A snippet the check rejects throws MontyTypingError
+// and does not run; the session survives. The check sees what earlier
+// snippets defined, and typeCheckStubs declares names the host provides
+// (inputs, external functions) so the checker knows their types.
 //
-// Covers: Monty.typeCheck, MontyTypingError (code, message, path,
-//         line, column, url), prefixCode for input declarations.
+// Covers: withSession(typeCheck:, typeCheckStubs:, typeCheckFormat:),
+//         MontyTypingError, skipTypeCheck.
 //
 // Run: dart run example/13_type_check.dart
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 Future<void> main() async {
-  await _cleanCode();
-  await _annotatedMistake();
-  await _inferenceWithoutAnnotations();
-  await _prefixCodeForInputs();
-  await _multipleDiagnostics();
+  await Monty.withPool((monty) async {
+    await monty.withSession(_checked, typeCheck: true);
+    await monty.withSession(
+      _stubs,
+      typeCheck: true,
+      typeCheckStubs: 'def fetch_price(sku: str) -> float: ...',
+      typeCheckFormat: 'concise',
+    );
+  });
 }
 
-// ── Clean code returns an empty list ─────────────────────────────────────────
-// No diagnostics → `Monty.typeCheck` resolves to an empty `List<MontyTypingError>`.
-Future<void> _cleanCode() async {
+Future<void> _checked(MontySession session) async {
+  // ── Clean code runs ─────────────────────────────────────────────────────
   print('\n── clean code ──');
-  final errors = await Monty.typeCheck('x: int = 1\ny: int = x + 1');
-  print('errors: ${errors.length}'); // 0
-}
+  final ok = await session.feedRun('x: int = 1\ny: int = x + 1\ny');
+  print('y = $ok');
+  _check(ok == const MontyInt(2), 'clean code');
 
-// ── Annotated mismatch flagged precisely ─────────────────────────────────────
-// Each diagnostic carries a code (`invalid-assignment`), a message, the
-// file path, and 1-indexed line/column — enough for an editor to render
-// the error inline.
-Future<void> _annotatedMistake() async {
+  // ── A mismatch is rejected before anything runs ───────────────────────────
   print('\n── annotated mistake ──');
-  const code = 'x: int = "not an int"';
-  final errors = await Monty.typeCheck(code, scriptName: 'incompat.py');
-  for (final e in errors) {
-    print('${e.path}:${e.line}:${e.column}  ${e.code}: ${e.message}');
-    if (e.url != null) print('  doc: ${e.url}');
+  final error = await _typingError(session, 'x = 99\nz: str = x');
+  print(error);
+  // The rejected snippet did not run: x is still 1.
+  _check(await session.feedRun('x') == const MontyInt(1), 'did not run');
+
+  // ── Inference without annotations ─────────────────────────────────────────
+  print('\n── inference ──');
+  print(await _typingError(session, 'w = "anything"\nv = w + 1'));
+
+  // ── skipTypeCheck runs one snippet unchecked ──────────────────────────────
+  print('\n── skipTypeCheck ──');
+  try {
+    await session.feedRun('w = "anything"\nv = w + 1', skipTypeCheck: true);
+    throw StateError('the unchecked snippet did not raise');
+  } on MontyRuntimeError catch (e) {
+    print('ran, and raised at run time: $e');
+    _check(e.exception.excType == 'TypeError', 'runtime TypeError');
   }
 }
 
-// ── Inference catches obvious clashes even without annotations ───────────────
-// `"a" + 1` is flagged as `unsupported-operator` because the analyser
-// infers literal types eagerly. This means many real-world bugs are
-// caught even when the user hasn't added annotations.
-Future<void> _inferenceWithoutAnnotations() async {
-  print('\n── inference (no annotations) ──');
-  final errors = await Monty.typeCheck('x = "anything"\ny = x + 1');
-  for (final e in errors) {
-    print('  ${e.code}: ${e.message}');
-  }
+Future<void> _stubs(MontySession session) async {
+  // ── typeCheckStubs declares host-provided names ───────────────────────────
+  print('\n── typeCheckStubs ──');
+  final externals = {
+    'fetch_price': (List<MontyValue> args, Map<String, MontyValue> _) =>
+        const MontyFloat(9.5),
+  };
+  final total = await session.feedRun(
+    'total: float = fetch_price("A1") * 2\ntotal',
+    externals: externals,
+  );
+  print('total = $total');
+  _check(total == const MontyFloat(19), 'stubbed call');
+
+  // The stub's types catch a wrong argument, here in the concise format.
+  final error = await _typingError(session, 'fetch_price(42)');
+  print(error);
 }
 
-// ── prefixCode declares names visible to the analyser ────────────────────────
-// Use prefixCode to inject `inputs` declarations or external function
-// signatures so the analyser knows their types. Without it, references
-// to those names look unresolved.
-Future<void> _prefixCodeForInputs() async {
-  print('\n── prefixCode ──');
-
-  const main = 'doubled: int = x * 2';
-
-  final without = await Monty.typeCheck(main);
-  print('without prefixCode: ${without.length} errors');
-
-  final with_ = await Monty.typeCheck(main, prefixCode: 'x: int = 0');
-  print('with prefixCode:    ${with_.length} errors');
+Future<MontyTypingError> _typingError(MontySession session, String code) async {
+  try {
+    await session.feedRun(code);
+  } on MontyTypingError catch (e) {
+    return e;
+  }
+  throw StateError('the type check accepted: $code');
 }
 
-// ── Multiple diagnostics arrive sorted by line ───────────────────────────────
-Future<void> _multipleDiagnostics() async {
-  print('\n── multiple diagnostics ──');
-  const code = '''
-a: int = "first"
-b: int = "second"
-c: int = "third"
-''';
-  final errors = await Monty.typeCheck(code);
-  for (final e in errors) {
-    print('  line ${e.line}: ${e.message}');
-  }
+void _check(bool ok, String what) {
+  if (!ok) throw StateError('unexpected result: $what');
 }

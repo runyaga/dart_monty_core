@@ -1,93 +1,88 @@
 #!/usr/bin/env bash
 # =============================================================================
-# This package's MINOR version must equal the monty patch it pins.
+# This package's version must track the upstream monty it pins (G9).
 # =============================================================================
-# The convention, unbroken across every release until it broke silently:
+# The package minor joins all three upstream digits:
 #
-#     monty v0.0.17  ->  dart_monty_core 0.17.x
-#     monty v0.0.18  ->  dart_monty_core 0.18.1
-#     monty v0.0.19  ->  dart_monty_core 0.19.0
-#     monty v0.0.23  ->  dart_monty_core 0.23.x
+#     pydantic/monty 1.1.0  ->  dart_monty_core 0.110.x
+#     pydantic/monty 1.0.2  ->  dart_monty_core 0.102.x
 #
-# It is not decorative. Snapshots are NOT portable across monty upgrades (see
-# CHANGELOG: 0.18.x snapshots cannot be restored on 0.19.0), so the version a
-# consumer reads is how they know which snapshot format and which engine
-# semantics they are getting. A package that pins v0.0.23 while calling itself
-# 0.19.0 tells every consumer the wrong thing about compatibility.
+# The patch counts core's own fixes on one pin, and a -dev.N suffix is allowed
+# before release. Upstream's version is read from
+# tool/upstream/upstream-pin.json; pubspec.yaml and native/worker/Cargo.toml
+# must both carry the mapped 0.<minor>.x.
 #
-# How it broke: e1e4eda ("SoL-Pi run 2 (clean): monty v0.0.19 -> v0.0.23")
-# moved the pin and did not touch pubspec.yaml or the CHANGELOG. Nothing
-# compared the two, so the package described itself as 0.19.0 for as long as it
-# took a human to notice the version on the deployed demo page.
+# It is not decorative. Snapshots are NOT portable across monty upgrades, so
+# the version a consumer reads is how they know which snapshot format and which
+# engine semantics they are getting. The 0.0.x line once moved its monty pin
+# without touching pubspec.yaml and described itself as the wrong release for
+# as long as it took a human to notice: a check, not a comment.
 #
-# This is the same shape as tool/check_fixture_links.sh, which exists because a
-# crate bump would otherwise leave every fixture link pointing at the wrong
-# upstream source. Same failure, same remedy: a check, not a comment.
+# A two-digit upstream component (1.10.0, 10.0.0) has no mapping: it would
+# collide with or overflow the joined minor. The check refuses it, and the
+# message says the mapping needs an owner decision.
+#
+# Usage:
+#   bash tool/check_version_pin.sh              # check the tree
+#   bash tool/check_version_pin.sh --self-test  # the mapping's controls only
 # =============================================================================
 set -euo pipefail
+
 PKG="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PKG"
 
-PUB_VER="$(grep -m1 -E '^version:' pubspec.yaml | awk '{print $2}')"
-CARGO_TAG="$(grep -m1 -oE 'tag = "v[0-9.]+"' native/Cargo.toml | grep -oE '[0-9.]+')"
+python3 -I - "${1:-}" <<'PY'
+import json, re, sys
 
-[ -n "$PUB_VER" ]   || { echo "FATAL: no version: in pubspec.yaml"; exit 2; }
-[ -n "$CARGO_TAG" ] || { echo "FATAL: no monty tag in native/Cargo.toml"; exit 2; }
 
-# pubspec "0.23.0" -> minor "23";  monty tag "0.0.23" -> patch "23"
-PUB_MINOR="$(printf '%s\n' "$PUB_VER"   | cut -d. -f2)"
-MONTY_PATCH="$(printf '%s\n' "$CARGO_TAG" | cut -d. -f3)"
+def want_minor(upstream):
+    """The package minor for an upstream version, or None if it has none."""
+    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", upstream)
+    if not m or any(len(g) != 1 for g in m.groups()):
+        return None
+    return "".join(m.groups())
 
-if [ "$PUB_MINOR" != "$MONTY_PATCH" ]; then
-  echo "FAIL: version/pin drift."
-  echo "      pubspec.yaml version : $PUB_VER      (minor = $PUB_MINOR)"
-  echo "      native/Cargo.toml pin: v$CARGO_TAG   (patch = $MONTY_PATCH)"
-  echo ""
-  echo "  This package's minor version tracks the monty patch it pins, because"
-  echo "  snapshots are not portable across monty upgrades and the version is"
-  echo "  how a consumer knows which format they have."
-  echo ""
-  echo "  Bump pubspec.yaml to 0.${MONTY_PATCH}.0, retitle the unreleased"
-  echo "  CHANGELOG section to match, and update the version badge on the five"
-  echo "  published pages (tool/check_page_versions.sh will tell you which)."
-  exit 1
-fi
 
-echo "PASS — pubspec $PUB_VER tracks the monty pin v$CARGO_TAG."
+def refuse(upstream):
+    sys.exit(
+        f"FAIL: upstream version {upstream!r} is not three single digits.\n"
+        "  G9 joins the three upstream digits into the package minor "
+        "(1.1.0 -> 0.110.x), so a two-digit component has no mapping.\n"
+        "  A two-digit upstream release needs an owner decision on the "
+        "version mapping before this check can pass.")
 
-# ---------------------------------------------------------------------------
-# The same number, in the provenance record for the committed binary assets.
-# ---------------------------------------------------------------------------
-# tool/wasm-provenance.json records which monty produced lib/assets/*.wasm.
-# tool/check_asset_freshness.sh opens that file but reads only source_sha256,
-# so its `monty_tag` was decorative -- and it sat at v0.0.19 while Cargo.toml
-# pinned v0.0.23, wrong for four upstream releases with nothing to notice.
-#
-# Snapshots are not portable across monty upgrades, so "which monty built this
-# asset" is the one fact the file exists to state. A provenance record that is
-# silently wrong is worse than no record: it is believed.
-# Parsed as JSON, not by regex. The first attempt at this used
-#   grep -oE '"monty_tag"..."v[0-9.]+"' | grep -oE '[0-9.]+$'
-# which never matched, because the captured text ends in a QUOTE, not a digit.
-# Under `set -euo pipefail` that emptied the variable and killed the script on a
-# clean tree -- a gate that fails to run, which is the one failure mode this
-# file exists to prevent. json.load cannot be fooled by punctuation.
-PROV_TAG="$(python3 -c "import json;print(json.load(open('tool/wasm-provenance.json')).get('monty_tag','').lstrip('v'))")"
 
-[ -n "$PROV_TAG" ] || { echo "FATAL: no monty_tag in tool/wasm-provenance.json"; exit 2; }
+# The controls: the two documented mappings pass, two-digit components fail.
+CONTROLS = {"1.1.0": "110", "1.0.2": "102", "1.10.0": None, "10.0.0": None}
+for up, want in CONTROLS.items():
+    got = want_minor(up)
+    if got != want:
+        sys.exit(f"FAIL: control {up}: want {want!r}, got {got!r}")
+if sys.argv[1] == "--self-test":
+    for up, want in CONTROLS.items():
+        verdict = f"0.{want}.x" if want else "refused"
+        print(f"PASS: control {up} -> {verdict}")
+    sys.exit(0)
+if sys.argv[1]:
+    sys.exit(f"usage: bash tool/check_version_pin.sh [--self-test] "
+             f"(got {sys.argv[1]!r})")
 
-if [ "$PROV_TAG" != "$CARGO_TAG" ]; then
-  echo "FAIL: provenance/pin drift."
-  echo "      tool/wasm-provenance.json monty_tag: v$PROV_TAG"
-  echo "      native/Cargo.toml pin              : v$CARGO_TAG"
-  echo ""
-  echo "  The provenance record names the monty that built the committed"
-  echo "  lib/assets/*.wasm. Snapshots are not portable across monty upgrades,"
-  echo "  so a wrong tag here misinforms anyone auditing the binary."
-  echo ""
-  echo "  Set monty_tag to v${CARGO_TAG}, and re-run tool/prebuild.sh if the"
-  echo "  assets themselves were not rebuilt against this pin."
-  exit 1
-fi
-
-echo "PASS — wasm-provenance monty_tag v$PROV_TAG tracks the pin."
+upstream = json.load(open("tool/upstream/upstream-pin.json"))["version"]
+minor = want_minor(upstream)
+if minor is None:
+    refuse(upstream)
+ver_re = re.compile(r"0\.(\d+)\.(\d+)(-dev\.\d+)?")
+pub = re.search(r"^version:\s*(\S+)", open("pubspec.yaml").read(), re.M).group(1)
+cargo = re.search(r'^version\s*=\s*"([^"]+)"',
+                  open("native/worker/Cargo.toml").read(), re.M).group(1)
+rc = 0
+for name, v in (("pubspec.yaml", pub), ("native/worker/Cargo.toml", cargo)):
+    m = ver_re.fullmatch(v)
+    if not m or m.group(1) != minor:
+        print(f"FAIL: {name} version {v} does not track upstream {upstream} "
+              f"(want 0.{minor}.<patch>[-dev.N])")
+        rc = 1
+    else:
+        print(f"PASS: {name} {v} tracks upstream {upstream}")
+sys.exit(rc)
+PY

@@ -4,13 +4,15 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 void main() {
   // FB-11 P5. A QUERY about a path is not an ACCESS of it. CPython answers
   // False for a path that is not there; raising PermissionError instead is
   // both wrong and unhelpful, and it is why pathlib__os.py sat in
   // knownBrokenExtFixtures.
   group('paths outside every mount', () {
-    OsCallHandler handler() => memoryMountedOsHandler(
+    DartOsCall handler() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/virtual')],
       files: [MontyMemoryFile('/virtual/file.txt', 'hi')],
     );
@@ -32,8 +34,8 @@ void main() {
     // about the same path, and it leaks more — it confirms the path is
     // meaningful enough to be worth denying.
     Matcher notThere(String p) => throwsA(
-      isA<OsCallException>()
-          .having((e) => e.pythonExceptionType, 'excType', 'FileNotFoundError')
+      isA<ExternalException>()
+          .having((e) => e.excType, 'excType', 'FileNotFoundError')
           .having(
             (e) => e.message,
             'message',
@@ -66,13 +68,13 @@ void main() {
     // ourselves would shadow a host that DOES serve those paths.
     test('a fallthrough still sees the query', () async {
       var seen = 0;
-      final handler0 = memoryMountedOsHandler(
+      final handler0 = mountedHandler(
         mounts: const [MountDir(virtualPath: '/virtual')],
         files: const [],
         fallthrough: (op, args, kwargs) {
           seen++;
 
-          return true;
+          return const MontyBool(true);
         },
       );
 

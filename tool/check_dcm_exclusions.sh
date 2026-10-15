@@ -12,8 +12,8 @@
 #   avoid-unsafe-collection-methods  lib/src/monty_session.dart    (24a31da)
 #   avoid-unused-parameters          lib/src/monty_session.dart    (this gate)
 #   prefer-match-file-name           lib/src/callbacks.dart        (this gate)
-#   prefer-match-file-name           lib/src/repl/monty_repl.dart  (this gate)
-#   no-empty-block                   lib/src/platform/monty_platform.dart (c9abbca)
+#   prefer-match-file-name           the old REPL's file (this gate)
+#   no-empty-block                   the old platform interface (c9abbca)
 #
 # The first three name files that DO NOT EXIST. `lib/src/monty_session.dart`
 # was deleted in 22cbe08 (PR #57) and was still excluded by two separate rules
@@ -31,9 +31,8 @@
 #
 # WHAT IT DOES NOT CHECK, and how to check it
 #   An entry can point at a real file and STILL hide nothing, because the
-#   violation it was written for has been fixed — `lib/src/repl/monty_repl.dart`
-#   was exactly this (its first class is `MontyRepl`, which already matches the
-#   file name). Catching those needs DCM run with the exclusions stripped:
+#   violation it was written for has been fixed — the old REPL's file was
+#   exactly this (its first class already matched the file name). Catching those needs DCM run with the exclusions stripped:
 #
 #       bash tool/check_dcm_exclusions.sh --deep
 #
@@ -123,7 +122,7 @@ echo "PASS — $CHECKED concrete exclusion path(s) exist ($TOTAL entries, $((TOT
 
 # ---------------------------------------------------------------------------
 # --deep: an entry can name a real file and STILL hide nothing, because the
-# violation it was written for has been fixed. `lib/src/repl/monty_repl.dart`
+# violation it was written for has been fixed. The old REPL's `monty_repl.dart`
 # was exactly that. Catching it needs DCM run with the exclusions stripped,
 # so this is opt-in: a full `dcm analyze` plus the CI credentials.
 #

@@ -1,27 +1,11 @@
 {
   "_comment": "Provenance for the committed WASM/JS assets in lib/assets/. Lives in tool/ (.pubignore'd) rather than lib/assets/ because it is DEVELOPMENT knowledge: consumers used to download it with the package and it told them nothing actionable. See docs/contributor/testing-runbook.md for why a git diff on the blob is uninformative.",
-  "_source_sha256_comment": "sha256 over native/src/**.rs, native/Cargo.{toml,lock}, native/build.rs, js/src/**.js, js/build.js, tool/build_native_wasm.sh and tool/rust_remap.sh -- the INPUTS to the committed assets. The assets themselves are not byte-reproducible, so hashing them proves nothing; hashing what they are built from proves everything that matters. Updated by tool/prebuild.sh.",
-  "_worker_source_sha256_comment": "sha256 over every file under native/worker/ (target/ excluded), native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to lib/assets/dart_monty_core_proto_worker.wasm. Updated by tool/prebuild.sh, either scope.",
+  "_worker_source_sha256_comment": "sha256 over every file under native/worker/ (target/ excluded), native/rust-toolchain.toml, tool/build_worker_wasm.sh and tool/rust_remap.sh -- the INPUTS to lib/assets/dart_monty_core_worker.wasm. Updated by tool/prebuild.sh.",
   "assets": {
-    "dart_monty_core_bridge.js": {
-      "bytes": 20921,
-      "sha256": "bf163bf573a0e62be828728f0561637ac9f57d668ef9b1441936c67cb31b42d2"
-    },
-    "dart_monty_core_native.wasm": {
-      "bytes": 15181915,
-      "sha256": "2baa50d543bf30102f6149b40679ca27850a3bf07f778546f59b0294122c6328"
-    },
-    "dart_monty_core_proto_worker.wasm": {
+    "dart_monty_core_worker.wasm": {
       "bytes": 16399286,
       "sha256": "5bcc0d7d4f44aed08f9277c8a6272d89c062629a42ae648a2169dddaa3f3cffd"
-    },
-    "dart_monty_core_worker.js": {
-      "bytes": 52955,
-      "sha256": "4c0f28306d542f6e1a0c7b70e0713c56151331978f3ca15197eec95acd5ef909"
     }
   },
-  "monty_tag": "v0.0.23",
-  "native_commit": "3ff62af878b9743368bf1a2b5944695c040ca931",
-  "source_sha256": "0c086ba5defd340b6a4b6b3b5a699944500696a0b90593cb70b40207e1ac8299",
-  "worker_source_sha256": "f703225183c6a12a4faee43518bbb825d6d742c1f51de393c8c380eab6ef1645"
+  "worker_source_sha256": "d39000e79014fce05a35456a9dd2da9ed173747fe387403f5c6258c8a474bfff"
 }

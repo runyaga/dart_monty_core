@@ -1,7 +1,7 @@
 // Shared accessor for host-callback positional arguments.
 //
 // ONE copy, imported by every `*_test_body.dart` that implements a
-// MontyCallback. The alternative — a private helper per file — is the shape
+// host callback. The alternative — a private helper per file — is the shape
 // that has broken conformance in this repo twice already (see the header of
 // packages/monty_conformance/lib/src/fixture_externals.dart): a copy does not
 // stay a copy.
@@ -56,7 +56,7 @@ T callbackArg<T>(List<Object?> args, int i) {
 
 /// The Dart value of positional argument [i] of a pending call, as [T].
 ///
-/// The `MontyValue` sibling of [callbackArg]. A `MontyPending.args` is a
+/// The `MontyValue` sibling of [callbackArg]. A `FunctionSnapshot.args` is a
 /// `List<MontyValue>`, and `MontyValue.dartValue` is `Object?`, so the shape
 /// this replaces carried TWO assertions for two independent nulls:
 ///

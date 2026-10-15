@@ -31,10 +31,7 @@ void main() {
       isDirectory: dirs.contains,
       ensureWritable: (p) {
         if (readOnlyMount) {
-          throw const OsCallException(
-            'read-only',
-            pythonExceptionType: 'PermissionError',
-          );
+          throw const ExternalException('PermissionError', 'read-only');
         }
       },
       truncate: truncated.add,
@@ -56,9 +53,9 @@ void main() {
       expect(
         () => open('/missing.txt', 'r'),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'FileNotFoundError',
           ),
         ),
@@ -69,9 +66,9 @@ void main() {
       expect(
         () => open('/d', 'rb'),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'IsADirectoryError',
           ),
         ),
@@ -101,9 +98,9 @@ void main() {
       expect(
         () => open('/a.txt', 'w', readOnlyMount: true),
         throwsA(
-          isA<OsCallException>().having(
-            (e) => e.pythonExceptionType,
-            'pythonExceptionType',
+          isA<ExternalException>().having(
+            (e) => e.excType,
+            'excType',
             'PermissionError',
           ),
         ),

@@ -3,15 +3,13 @@
 # tool/check_api_exercised.sh — is every public entry point actually PLUMBED?
 # =============================================================================
 # A mock proves the wiring compiles. It cannot prove the engine can do the
-# thing. Monty.compile() had a thorough test file --
-# test/unit/platform/monty_compile_test.dart -- written entirely against
-# MockMontyPlatform, whose compileCode returns `jsonEncode({'code': code})`.
-# Nothing ever called Monty.compile() against FFI or WASM, so the API was green
-# in CI and dead in every shipped configuration: native/src/handle.rs:558
-# returns Err unconditionally, on every target (core#152). That API has since
-# been removed, test file included; tool/check_api_absent.sh keeps it out.
+# thing. A precompile API once had a thorough test file written entirely
+# against a mock platform, and nothing ever called it against a real
+# backend, so it was green in CI and dead in every shipped configuration
+# (core#152). That API has since been removed; tool/check_api_absent.sh keeps
+# removed names out.
 #
-# This asks one question of each public entry point on Monty and MontyRepl:
+# This asks one question of each public entry point in the export closure:
 # does ANY file that runs against a real backend mention it?
 #
 # THE REAL SURFACE IS THREE DIRECTORIES, NOT ONE. Getting this wrong is how the
@@ -51,7 +49,7 @@ if baseline_path.exists():
 # THE SOURCE LIST IS DISCOVERED, NOT ENUMERATED -- and it used to be two
 # hard-coded filenames, which is the very failure the header above warns
 # about, one level up. The METHOD list was derived; the FILE list was not, so
-# a public entry point added to any class other than Monty or MontyRepl was
+# a public entry point added to any class other than the two entry classes was
 # exempt from this check by default. Measured, 2026-09-17: the two-file list
 # saw 18 entry points; the export closure of the public library sees 37 across
 # 33 files, and ELEVEN of the extra ones are not exercised on any real
@@ -90,7 +88,7 @@ if len(SOURCES) < 20:
 # operators are excluded; getters have no parens and are not entry points.
 DECL = re.compile(
     r'^  (?:static\s+)?(?:Future<[^>]*>|Stream<[^>]*>|void|[A-Z][\w<>?,\[\] ]*)\s+'
-    r'([a-z]\w*)\s*\(', re.M)
+    r'([a-z]\w*)\s*(?:<[^>(]*>)?\s*\(', re.M)
 
 # A METHOD IS ONLY A METHOD INSIDE A TYPE BODY.
 #
@@ -107,13 +105,26 @@ DECL = re.compile(
 # So track type bodies by brace depth and only accept declarations inside one.
 TYPE_START = re.compile(
     r'^(?:final\s+|abstract\s+|base\s+|sealed\s+|interface\s+|mixin\s+)*'
-    r'(?:class|extension|mixin|enum)\b')
+    r'(?:class|mixin|enum)\s+(\w+)')
+
+# ONLY EXPORTED TYPES ARE PUBLIC. The worker's files hold internal classes
+# (drivers, answer tables, the snapshot factories) and internal extensions
+# beside the exported ones; every export line names what it exports, so the
+# public types are exactly the names in the show lists.
+SHOW = re.compile(r"^export\s+'[^']+'\s+show\s+([^;]+);", re.M)
+PUBLIC_TYPES = {
+    n.strip()
+    for lib in ('lib/dart_monty_core.dart', 'lib/dart_monty_core_testing.dart')
+    for m in SHOW.finditer(pathlib.Path(lib).read_text())
+    for n in m.group(1).split(',')
+}
 
 def _methods_in_types(text):
     """Yield method names declared directly inside a class/extension/mixin."""
     names, depth, in_type, type_depth = [], 0, False, 0
     for line in text.splitlines():
-        if not in_type and TYPE_START.match(line):
+        start = None if in_type else TYPE_START.match(line)
+        if start and start.group(1) in PUBLIC_TYPES:
             in_type, type_depth = True, depth
         if in_type and depth == type_depth + 1:
             m = DECL.match(line)
@@ -137,7 +148,20 @@ if not entry_points:
     sys.exit(1)
 
 real_files = []
-for pat in ('test/integration/**/*.dart', 'example/*.dart', 'packages/*/lib/**/*.dart'):
+for pat in (
+    'test/integration/**/*.dart',
+    'test/corpus/**/*.dart',
+    'test/hook/**/*.dart',
+    # the shared case bodies that test/integration/worker drives on the
+    # real worker (pool_session_io_test.dart)
+    'test/unit/worker/_*.dart',
+    # the contract scenarios, which contract_worker_test.dart runs on the
+    # real worker
+    'test/contract/_*.dart',
+    'test/contract/contract_worker_test.dart',
+    'example/*.dart',
+    'packages/*/lib/**/*.dart',
+):
     real_files.extend(pathlib.Path('.').glob(pat))
 # COMMENTS ARE NOT CALLS.
 #
@@ -162,15 +186,15 @@ corpus = {
     p: _strip_comments(p.read_text(errors='replace')) for p in real_files
 }
 
-if len(corpus) < 50:
+if len(corpus) < 45:  # 48 measured at the cutover head (F10)
     print(f'FAIL: the real-backend surface is only {len(corpus)} files.')
-    print('  Expected 100+. A glob that stopped matching would mark every')
+    print('  Expected 45+. A glob that stopped matching would mark every')
     print('  entry point unexercised, so refuse rather than report nonsense.')
     sys.exit(1)
 
 unexercised = []
 for name in sorted(entry_points):
-    hits = sum(1 for s in corpus.values() if re.search(r'\.' + name + r'\s*\(', s))
+    hits = sum(1 for s in corpus.values() if re.search(r'\.' + name + r'\s*(?:<[^>(]*>)?\s*\(', s))
     if hits == 0:
         unexercised.append(name)
 
@@ -184,7 +208,7 @@ if new:
     for n in sorted(new):
         print(f'    {n}()  —  declared in {entry_points[n]}')
     print()
-    print('  A unit test against MockMontyPlatform does not count, and that is')
+    print('  A unit test against a fake or a mock does not count, and that is')
     print('  the point: the mock returns whatever it is told to. Add a test')
     print('  under test/integration/, an example/ program, or a conformance')
     print('  driver -- or, if it is genuinely untestable, add the name to')

@@ -10,10 +10,9 @@ import 'dart:async';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
@@ -142,7 +141,7 @@ Future<void> crashThenReuse(
     }
   }
 
-  final pool = await MontyPool.startWith(
+  final pool = await startMonty(
     PoolOptions(
       maxProcesses: 1,
       requestTimeout: crash.requestTimeout,
@@ -152,7 +151,7 @@ Future<void> crashThenReuse(
     startupTimeout: const Duration(seconds: 3),
   );
   try {
-    final session = await pool.checkout(options: crash.config);
+    final session = await pool.checkoutWith(crash.config);
     expect(pool.liveWorkers, 1);
     Object? failure;
     try {
@@ -174,9 +173,9 @@ Future<void> crashThenReuse(
     // The same pool, a new checkout, within the acquisition timeout.
     final MontyValue value;
     try {
-      value = await pool.withSession(
+      value = await pool.withSessionWith(
         (s) => s.feedRun('1 + 1', printCallback: _ignore),
-        options: const SessionConfig(
+        const SessionConfig(
           limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
         ),
       );

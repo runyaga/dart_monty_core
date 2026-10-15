@@ -6,6 +6,8 @@
 // backends; these cover the value type itself, which the integration suites
 // exercise only indirectly.
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show MontyValueInternal;
 import 'package:test/test.dart';
 
 void main() {
@@ -16,16 +18,6 @@ void main() {
       const value = MontyEllipsis();
 
       expect(value.toJson(), {'__type': 'ellipsis'});
-    });
-
-    test('decodes from its own envelope', () {
-      final v = MontyValue.fromJson({'__type': 'ellipsis'});
-      expect(v, isA<MontyEllipsis>());
-    });
-
-    test('round-trips through toJson/fromJson', () {
-      const original = MontyEllipsis();
-      expect(MontyValue.fromJson(original.toJson()), original);
     });
 
     test('is not equal to the string "..."', () {

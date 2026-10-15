@@ -7,7 +7,7 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart' show MontyInt;
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -20,18 +20,18 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
 
   test('a pool starts a real worker and runs Python on it', () async {
-    final value = await MontyPool.withPool(
+    final value = await withMonty(
       (pool) async {
         expect(ProcessChannel.live, hasLength(1));
 
-        return pool.withSession(
+        return pool.withSessionWith(
           (s) => s.feedRun('6 * 7'),
-          options: const SessionConfig(
+          const SessionConfig(
             limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
           ),
         );
       },
-      options: const PoolOptions(maxProcesses: 1),
+      const PoolOptions(maxProcesses: 1),
     );
     expect(value, const MontyInt(42));
   });

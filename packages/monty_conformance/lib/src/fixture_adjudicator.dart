@@ -1,26 +1,27 @@
 // The ONE strict adjudicator for upstream's fixture directives.
 //
 // Every harness that judges a fixture against its own directives calls
-// [adjudicateFixture]: the WASM corpus runner (dart2js and dart2wasm), the FFI
-// call-external and REPL corpus suites, the chrome package:test suite and the
-// web demo. Before this file each had its own `switch`, and every one of them
-// accepted an expected exception by TYPE ONLY — `# Raise=ValueError('x')` was
-// satisfied by any ValueError, and a TRACEBACK docstring's frames were never
-// read.
+// [adjudicateFixture]: the worker corpus runner (native, dart2js and
+// dart2wasm). An expected exception is matched by its full `repr()`, not by
+// type alone: `# Raise=ValueError('x')` is not satisfied by any ValueError,
+// and a TRACEBACK docstring is compared frame by frame.
 //
 // What is compared is exactly what upstream's datatest runner compares
-// (`crates/monty-datatest/src/main.rs`, v0.0.23):
+// (`crates/monty-datatest/src/main.rs`):
 //
 //   `# Raise=`     the raised exception's `py_repr()`, e.g. `ValueError('x')`
 //   TRACEBACK      the exception's `Display`: every frame, then `Type: msg`
 //   `# Return.str=` the result's `str()`
 //
-// so the renderers below mirror `monty-types/src/exceptions.rs` and
-// `monty-types/src/format.rs` at that tag. They are written from upstream's
-// source, not from this package's encoder, so a decoding defect in core shows
-// up as a mismatch rather than being agreed with.
+// The worker renders a traceback itself (`MontyRuntimeError.display()`), and
+// that text is compared as it is. For an outcome that carries frames instead,
+// the renderers below mirror upstream's `monty-types/src/exceptions.rs` and
+// `monty-types/src/format.rs`. They are written from upstream's source, not
+// from this package's encoder, so a decoding defect in core shows up as a
+// mismatch rather than being agreed with.
 //
-// `# Return=` keeps its existing value comparison (`MontyValue` equality).
+// `# Return=` compares the value's `repr()` when the runner renders one, and
+// `MontyValue` equality otherwise.
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 
@@ -40,22 +41,6 @@ final class FixtureOutcome {
     this.valueRepr,
   });
 
-  /// An outcome from a raised or returned [exception], or a clean [value].
-  ///
-  /// [excType] and [message] fill in when the backend supplied no
-  /// [MontyException] — a resource error, for instance.
-  factory FixtureOutcome.from({
-    MontyException? exception,
-    String? excType,
-    String? message,
-    MontyValue? value,
-  }) => FixtureOutcome(
-    excType: exception?.excType ?? excType,
-    message: exception?.message ?? message,
-    traceback: exception?.traceback ?? const [],
-    value: value,
-  );
-
   /// The Python exception class raised, or null when nothing was raised.
   final String? excType;
 
@@ -63,21 +48,80 @@ final class FixtureOutcome {
   final String? message;
 
   /// The frames the backend reported, outermost first.
-  final List<MontyStackFrame> traceback;
+  final List<FixtureFrame> traceback;
 
   /// The traceback exactly as the backend rendered it, when it renders one
-  /// itself (the worker engine does). Compared in place of rendering
-  /// [traceback] here.
+  /// itself (the worker does). Compared in place of rendering [traceback]
+  /// here.
   final String? renderedTraceback;
 
   /// The value the fixture evaluated to, when it completed.
   final MontyValue? value;
 
   /// The value's Python `repr()`, when the backend renders one itself (the
-  /// worker engine does, for the kinds it can). Compared with the
+  /// worker runner does, for the kinds it can). Compared with the
   /// directive's text, as upstream compares `py_repr()`, in place of value
   /// equality.
   final String? valueRepr;
+}
+
+/// One traceback frame as [renderMontyTraceback] needs it: the fields of
+/// upstream's `StackFrame`.
+final class FixtureFrame {
+  /// Creates a [FixtureFrame]. Lines and columns are 1-based.
+  const FixtureFrame({
+    required this.filename,
+    required this.startLine,
+    required this.startColumn,
+    this.endLine,
+    this.endColumn,
+    this.frameName,
+    this.previewLine,
+    this.hideCaret = false,
+    this.hideFrameName = false,
+  });
+
+  /// The frame [frame] is, as the worker reported it.
+  ///
+  /// The worker's [Frame] does not say whether upstream hides the caret or
+  /// the function name, so both are shown.
+  FixtureFrame.fromFrame(Frame frame)
+    : this(
+        filename: frame.filename,
+        startLine: frame.line,
+        startColumn: frame.column,
+        endLine: frame.endLine,
+        endColumn: frame.endColumn,
+        frameName: frame.functionName,
+        previewLine: frame.sourceLine,
+      );
+
+  /// The source the frame is in.
+  final String filename;
+
+  /// The line the span starts on.
+  final int startLine;
+
+  /// The column the span starts at.
+  final int startColumn;
+
+  /// The line the span ends on; null is [startLine].
+  final int? endLine;
+
+  /// The column the span ends at; null is [startColumn].
+  final int? endColumn;
+
+  /// The function's name; null is module level.
+  final String? frameName;
+
+  /// The source line, or for a span over several lines the dedented block.
+  final String? previewLine;
+
+  /// Whether upstream prints no caret line under the source.
+  final bool hideCaret;
+
+  /// Whether upstream prints the frame without its function name.
+  final bool hideFrameName;
 }
 
 /// Judges [outcome] against [expectation].
@@ -185,8 +229,8 @@ String? _pyStr(MontyValue? v) => switch (v) {
 /// Upstream `MontyException::py_repr`: `Type('msg')`, or `Type()` when there
 /// is no message.
 ///
-/// The wire sends a missing message as `""` (`native/src/error.rs`), so an
-/// empty message is read as none. Upstream distinguishes `Type('')` from
+/// A missing message and an empty one look the same here, so an empty
+/// message is read as none. Upstream distinguishes `Type('')` from
 /// `Type()`; this cannot, and a fixture stating `Type('')` fails here.
 String pyExceptionRepr(String excType, String? message) =>
     message == null || message.isEmpty
@@ -198,7 +242,7 @@ String pyExceptionRepr(String excType, String? message) =>
 String renderMontyTraceback(
   String excType,
   String? message,
-  List<MontyStackFrame> frames,
+  List<FixtureFrame> frames,
 ) {
   final out = StringBuffer();
   if (frames.isNotEmpty) out.writeln('Traceback (most recent call last):');
@@ -229,13 +273,13 @@ String renderMontyTraceback(
   return out.toString();
 }
 
-bool _sameFrame(MontyStackFrame a, MontyStackFrame b) =>
+bool _sameFrame(FixtureFrame a, FixtureFrame b) =>
     a.filename == b.filename &&
     a.startLine == b.startLine &&
     a.frameName == b.frameName;
 
 /// Upstream `StackFrame`'s `Display`.
-void _writeFrame(StringBuffer out, MontyStackFrame f) {
+void _writeFrame(StringBuffer out, FixtureFrame f) {
   if (f.hideFrameName) {
     out.write('  File "${f.filename}", line ${f.startLine}');
   } else {

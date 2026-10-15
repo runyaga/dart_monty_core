@@ -19,8 +19,10 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart' show MontyInt;
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
@@ -57,9 +59,9 @@ Future<void> main(List<String> args) async {
 /// One flood on a pool of one worker, ended by requestTimeout or by close.
 Future<void> _stall(String? worker, {required bool byClose}) async {
   final how = byClose ? 'close' : 'requestTimeout';
-  await MontyPool.withPool(
+  await withMonty(
     (pool) async {
-      final session = await pool.checkout(options: _limits);
+      final session = await pool.checkoutWith(_limits);
       final channel = ProcessChannel.live.singleOrNull;
       if (channel == null) throw StateError('$how: no single worker');
       final ticks = _ticks;
@@ -85,13 +87,13 @@ Future<void> _stall(String? worker, {required bool byClose}) async {
         '$how: read-ahead peak $peak',
       );
       await session.close();
-      final value = await pool.withSession(
+      final value = await pool.withSessionWith(
         (s) => s.feedRun('1 + 1'),
-        options: _limits,
+        _limits,
       );
       _check(value == const MontyInt(2), '$how: the next checkout ran $value');
     },
-    options: PoolOptions(
+    PoolOptions(
       maxProcesses: 1,
       requestTimeout: byClose ? null : const Duration(seconds: 8),
       workerLocation: worker,

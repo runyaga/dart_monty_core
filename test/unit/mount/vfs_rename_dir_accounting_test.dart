@@ -18,13 +18,15 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 void main() {
   group('directory rename moves descendant charges', () {
     test(
       'overwriting a file under a RENAMED directory is not billed twice',
       () async {
         final payload = 'x' * 4000;
-        final h = memoryMountedOsHandler(
+        final h = mountedHandler(
           mounts: const [MountDir(virtualPath: '/m', memoryUsageLimit: 5500)],
           files: const [],
         );
@@ -33,9 +35,9 @@ void main() {
         await h('Path.write_text', ['/m/d/f.txt', payload], null);
         await h('Path.rename', ['/m/d', '/m/renamed'], null);
 
-        await expectLater(
-          h('Path.write_text', ['/m/renamed/f.txt', payload], null),
-          completes,
+        expect(
+          () => h('Path.write_text', ['/m/renamed/f.txt', payload], null),
+          returnsNormally,
           reason: 'the child charge did not follow its directory',
         );
         expect(await h('Path.read_text', ['/m/renamed/f.txt'], null), payload);

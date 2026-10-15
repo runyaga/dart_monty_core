@@ -1,5 +1,5 @@
 // Unit tests for the value variants Tiers 1 and 2 added: mixed-key dicts,
-// MontyBigInt, MontyExceptionValue and MontyOpaque.
+// MontyBigInt, MontyExceptionValue and MontyStdTypeProxy.
 //
 // Written because the patch-coverage gate reported them at 9.5%-67.7%. They
 // are new PUBLIC API — four sealed variants consumers must now match on — and
@@ -12,22 +12,13 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show MontyValueInternal, montyStdTypeProxy;
 import 'package:test/test.dart';
-
-/// Every variant must survive `fromJson(toJson())` unchanged.
-void _expectRoundTrip(MontyValue v) {
-  expect(MontyValue.fromJson(v.toJson()), v, reason: '$v did not round-trip');
-}
 
 void main() {
   group('MontyBigInt', () {
     final big = BigInt.parse('9223372036854775808'); // 2^63, one past i64
-
-    test('round-trips with exact digits', () {
-      _expectRoundTrip(MontyBigInt(big));
-      _expectRoundTrip(MontyBigInt(-big));
-      _expectRoundTrip(MontyBigInt(BigInt.parse('9' * 60)));
-    });
 
     test('carries the digits as text on the wire', () {
       expect(MontyBigInt(big).toJson(), {
@@ -46,49 +37,29 @@ void main() {
       expect(a.dartValue, big);
       expect(a.toString(), contains('9223372036854775808'));
     });
-
-    test('rejects a payload that is not base-10 digits', () {
-      for (final bad in <Object?>['', 'nope', '1.5', 12, null]) {
-        expect(
-          () => MontyValue.fromJson({'__type': 'bigint', 'value': bad}),
-          throwsA(isA<FormatException>()),
-          reason: 'accepted $bad',
-        );
-      }
-    });
   });
 
   group('MontyExceptionValue', () {
-    test('round-trips with and without a message', () {
-      _expectRoundTrip(
-        const MontyExceptionValue(excType: 'ValueError', message: 'boom'),
-      );
-      _expectRoundTrip(const MontyExceptionValue(excType: 'RuntimeError'));
-    });
-
-    test('a message containing ": " survives', () {
-      // The old joined form ("ValueError: boom") could not be taken apart again
-      // when the message itself contained the separator.
-      const e = MontyExceptionValue(
-        excType: 'ValueError',
-        message: 'expected: got 3',
-      );
-      final back = MontyValue.fromJson(e.toJson()) as MontyExceptionValue;
-      expect(back.excType, 'ValueError');
-      expect(back.message, 'expected: got 3');
+    test('projects with and without a message', () {
+      expect(MontyExceptionValue('ValueError', 'expected: got 3').toJson(), {
+        '__type': 'exception',
+        'exc_type': 'ValueError',
+        'message': 'expected: got 3',
+      });
+      expect(MontyExceptionValue('RuntimeError').message, isNull);
     });
 
     test('is distinguishable from the string that used to represent it', () {
-      const exc = MontyExceptionValue(excType: 'ValueError', message: 'boom');
+      final exc = MontyExceptionValue('ValueError', 'boom');
       const str = MontyString('ValueError: boom');
       expect(exc.toJson(), isNot(str.toJson()));
       expect(exc, isNot(str));
     });
 
     test('equality, hashCode, dartValue and toString', () {
-      const a = MontyExceptionValue(excType: 'KeyError', message: 'k');
-      const b = MontyExceptionValue(excType: 'KeyError', message: 'k');
-      const c = MontyExceptionValue(excType: 'KeyError');
+      final a = MontyExceptionValue('KeyError', 'k');
+      final b = MontyExceptionValue('KeyError', 'k');
+      final c = MontyExceptionValue('KeyError');
       expect(a, b);
       expect(a.hashCode, b.hashCode);
       expect(a, isNot(c));
@@ -96,48 +67,108 @@ void main() {
       expect(a.toString(), 'MontyExceptionValue(KeyError: k)');
       expect(c.toString(), 'MontyExceptionValue(KeyError)');
     });
-  });
 
-  group('MontyOpaque', () {
-    test('every kind round-trips under its own wire tag', () {
-      for (final kind in MontyOpaqueKind.values) {
-        _expectRoundTrip(MontyOpaque(kind, 'text-for-${kind.name}'));
+    test('attributes default to empty', () {
+      expect(MontyExceptionValue('ValueError', 'm').attributes, isEmpty);
+    });
+
+    test('attributes are an unmodifiable copy', () {
+      final source = <String, MontyValue>{'pos': const MontyInt(3)};
+      final e = MontyExceptionValue('json.JSONDecodeError', 'm', source);
+      source['pos'] = const MontyInt(4);
+      source['extra'] = const MontyString('x');
+      expect(e.attributes, {'pos': const MontyInt(3)});
+      expect(
+        () => e.attributes['pos'] = const MontyInt(5),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('a container attribute is an ArgumentError', () {
+      for (final bad in <MontyValue>[
+        const MontyList([MontyInt(1)]),
+        const MontyDict([]),
+        const MontyNone(),
+        const MontyFloat(1.5),
+      ]) {
         expect(
-          MontyOpaque(kind, 'x').toJson(),
-          {'__type': kind.wireTag, 'text': 'x'},
-          reason: '${kind.name} must travel as "${kind.wireTag}"',
+          () => MontyExceptionValue('ValueError', 'm', {'a': bad}),
+          throwsArgumentError,
+          reason: 'accepted $bad',
+        );
+      }
+      for (final leaf in <MontyValue>[
+        const MontyString('s'),
+        const MontyBytes([1]),
+        const MontyInt(1),
+        MontyBigInt(BigInt.two.pow(70)),
+      ]) {
+        expect(
+          MontyExceptionValue('ValueError', 'm', {'a': leaf}).attributes,
+          {'a': leaf},
         );
       }
     });
 
-    test('the five wire tags are distinct', () {
-      final tags = MontyOpaqueKind.values.map((k) => k.wireTag).toSet();
-      expect(tags, hasLength(MontyOpaqueKind.values.length));
+    test('attributes take part in == and hashCode', () {
+      MontyExceptionValue at(int pos) => MontyExceptionValue(
+        'json.JSONDecodeError',
+        'm',
+        {'pos': MontyInt(pos), 'msg': const MontyString('m')},
+      );
+      final one = at(1);
+      final again = at(1);
+      expect(one, again);
+      expect(one.hashCode, again.hashCode);
+      expect(one, isNot(at(2)));
+      expect(one, isNot(MontyExceptionValue('json.JSONDecodeError', 'm')));
+      // Order of the attributes does not matter.
+      final reordered = MontyExceptionValue('json.JSONDecodeError', 'm', const {
+        'msg': MontyString('m'),
+        'pos': MontyInt(1),
+      });
+      expect(reordered, one);
+      expect(reordered.hashCode, one.hashCode);
     });
+  });
 
-    test('fromWireTag maps back, and refuses anything else', () {
-      for (final kind in MontyOpaqueKind.values) {
-        expect(MontyOpaqueKind.fromWireTag(kind.wireTag), kind);
-      }
-      expect(MontyOpaqueKind.fromWireTag('dict'), isNull);
-      expect(MontyOpaqueKind.fromWireTag(''), isNull);
-    });
-
+  group('MontyStdTypeProxy', () {
     test('a builtin carries the PYTHON name, not a Rust identifier', () {
       // `abs` used to arrive as "Abs" — Rust's Debug rendering of an internal
-      // enum. This is the shape that replaced it.
-      const b = MontyOpaque(MontyOpaqueKind.builtin, 'abs');
-      expect(b.toJson(), {'__type': 'builtin', 'text': 'abs'});
+      // enum.
+      final b = montyStdTypeProxy('function', 'abs');
+      expect(b.kind, 'function');
+      expect(b.name, 'abs');
       expect(b.dartValue, 'abs');
+      expect(b.toJson(), {
+        '__type': 'std_type_proxy',
+        'kind': 'function',
+        'name': 'abs',
+      });
     });
 
-    test('kind participates in equality', () {
-      const asType = MontyOpaque(MontyOpaqueKind.type, 'same');
-      const asRepr = MontyOpaque(MontyOpaqueKind.repr, 'same');
-      expect(asType, isNot(asRepr));
-      expect(asType, const MontyOpaque(MontyOpaqueKind.type, 'same'));
-      expect(asType.hashCode, isNot(asRepr.hashCode));
-      expect(asType.toString(), 'MontyOpaque(type, same)');
+    test("renders as upstream's repr", () {
+      expect(
+        montyStdTypeProxy('function', 'open').toString(),
+        "MontyStdTypeProxy(kind='function', name='open')",
+      );
+      expect(
+        montyStdTypeProxy('type', 'functools.partial').toString(),
+        "MontyStdTypeProxy(kind='type', name='functools.partial')",
+      );
+    });
+
+    test('kind participates in equality; the hash is the name only', () {
+      final asType = montyStdTypeProxy('type', 'type');
+      final asFunction = montyStdTypeProxy('function', 'type');
+      expect(asType, isNot(asFunction));
+      expect(asType, montyStdTypeProxy('type', 'type'));
+      expect(asType.hashCode, asFunction.hashCode);
+      expect(asType.hashCode, 'type'.hashCode);
+      expect(
+        montyStdTypeProxy('type', 'int').hashCode,
+        isNot(montyStdTypeProxy('type', 'str').hashCode),
+      );
     });
   });
 
@@ -146,15 +177,6 @@ void main() {
       (MontyInt(1), MontyString('a')),
       (MontyString('k'), MontyInt(2)),
     ]);
-
-    test('round-trips with key TYPES intact', () {
-      _expectRoundTrip(pairs);
-      final back = MontyValue.fromJson(pairs.toJson()) as MontyDict;
-      expect(back.pairs.map((p) => p.$1), [
-        const MontyInt(1),
-        const MontyString('k'),
-      ]);
-    });
 
     test('travels under the dict tag with an entries payload', () {
       expect(pairs.toJson(), {
@@ -218,42 +240,6 @@ void main() {
       const shorter = MontyDict([(MontyInt(1), MontyString('a'))]);
       expect(pairs, isNot(shorter));
       expect(shorter, isNot(pairs));
-    });
-
-    test('nested values decode recursively', () {
-      const nested = MontyDict([
-        (MontyInt(1), MontyList([MontyInt(2), MontyString('x')])),
-      ]);
-      _expectRoundTrip(nested);
-    });
-
-    test('a malformed entry is rejected', () {
-      for (final bad in <Object?>[
-        [1],
-        [1, 2, 3],
-        'not-a-pair',
-      ]) {
-        expect(
-          () => MontyValue.fromJson({
-            '__type': 'dict',
-            'entries': [bad],
-          }),
-          throwsA(isA<FormatException>()),
-          reason: 'accepted $bad',
-        );
-      }
-    });
-  });
-
-  group('MontyDict envelope', () {
-    test('rejects a missing or non-object payload', () {
-      for (final bad in <Object?>[null, 'x', 3]) {
-        expect(
-          () => MontyValue.fromJson({'__type': 'dict', 'value': bad}),
-          throwsA(isA<FormatException>()),
-          reason: 'accepted $bad',
-        );
-      }
     });
   });
 }

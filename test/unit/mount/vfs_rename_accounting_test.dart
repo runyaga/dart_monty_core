@@ -38,11 +38,13 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 void main() {
   group('rename moves the memory charge with the file', () {
     test('overwriting a RENAMED file is not billed twice', () async {
       final payload = 'x' * 4000;
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m', memoryUsageLimit: 5000)],
         files: const [],
       );
@@ -53,9 +55,9 @@ void main() {
       // Same bytes, same size, different name: the delta is zero, so this
       // fits. If the charge did not follow the rename, the mount is billed for
       // a second copy and this throws MemoryError.
-      await expectLater(
-        h('Path.write_text', ['/m/b.txt', payload], null),
-        completes,
+      expect(
+        () => h('Path.write_text', ['/m/b.txt', payload], null),
+        returnsNormally,
         reason:
             'the charge did not move with the rename, so an overwrite of '
             'identical size was billed as a second copy',

@@ -1,13 +1,11 @@
 // The probe: start the pool with no setup, run `1 + 1`, write the result into
 // #result. tool/consumers/drive.mjs passes only if the DOM reads `2`.
 //
-// Before the cutover this imports the internal pool, the entry point the
-// parity adapter uses. The cutover PR switches it to the public
-// `Monty.start` (import `package:dart_monty_core/dart_monty_core.dart`).
+// It uses only the public library, as a consumer does.
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/dart_monty_core.dart';
 
 @JS('document.getElementById')
 external JSObject? _byId(String id);
@@ -15,8 +13,8 @@ external JSObject? _byId(String id);
 Future<void> main() async {
   String text;
   try {
-    final value = await MontyPool.withPool(
-      (pool) => pool.withSession((session) => session.feedRun('1 + 1')),
+    final value = await Monty.withPool(
+      (monty) => monty.withSession((session) => session.feedRun('1 + 1')),
     );
     text = '${value.dartValue}';
   } on Object catch (error, stack) {

@@ -41,16 +41,6 @@ void main() {
       expect(a.hashCode, b.hashCode, reason: 'equal sets must hash equally');
     });
 
-    test('order-insensitivity survives a wire round trip', () {
-      const a = MontySet([MontyInt(1), MontyString('x'), MontyBool(true)]);
-      const shuffled = MontySet([
-        MontyBool(true),
-        MontyInt(1),
-        MontyString('x'),
-      ]);
-      expect(MontyValue.fromJson(a.toJson()), shuffled);
-    });
-
     test('nested: a set inside a list still compares order-insensitively', () {
       const a = MontyList([
         MontySet([MontyInt(1), MontyInt(2)]),
@@ -119,16 +109,10 @@ void main() {
   test('a FORGED duplicate does not hash like the empty set', () {
     // Upstream XORs element hashes, which cancels duplicates. Monty collapses
     // equal elements before the wire, so upstream never sees a duplicate -- but
-    // this decoder parses whatever arrives, and `{"__type": "set",
-    // "value": [1, 1]}` is a payload a sandbox can emit. Under XOR that hashes
+    // a host can build `MontySet([1, 1])`. Under XOR that hashes
     // to 0, identical to the empty set. Folding with `+` is what makes this
     // assertion pass.
-    final one = const MontyInt(1).toJson();
-    final forged = MontyValue.fromJson({
-      '__type': 'set',
-      'value': [one, one],
-    });
-    expect(forged, isA<MontySet>());
+    const forged = MontySet([MontyInt(1), MontyInt(1)]);
     expect(
       forged.hashCode,
       isNot(const MontySet([]).hashCode),

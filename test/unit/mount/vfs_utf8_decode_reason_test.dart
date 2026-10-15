@@ -28,10 +28,12 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 void main() {
   group('UTF-8 decode failure names the right kind of byte', () {
     Future<String> reasonFor(List<int> bytes) async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/m')],
         files: [MontyMemoryFile('/m/f.bin', bytes)],
       );
@@ -39,8 +41,8 @@ void main() {
         await h('Path.read_text', ['/m/f.bin'], null);
 
         return 'decoded';
-      } on OsCallException catch (e) {
-        return e.message;
+      } on ExternalException catch (e) {
+        return e.message ?? '';
       }
     }
 
@@ -50,6 +52,29 @@ void main() {
         await reasonFor([0xC3, 0xC3]),
         "'utf-8' codec can't decode byte 0xc3 in position 1: "
         'invalid continuation byte',
+      );
+    });
+
+    test("the failure carries upstream's UnicodeDecodeError attributes", () {
+      final h = memoryMountedOsHandler(
+        mounts: const [MountDir(virtualPath: '/m')],
+        files: [
+          MontyMemoryFile('/m/f.bin', const [0x61, 0xC3, 0xC3]),
+        ],
+      );
+      expect(
+        () => h('Path.read_text', [const MontyPath('/m/f.bin')], const {}),
+        throwsA(
+          isA<ExternalException>()
+              .having((e) => e.excType, 'excType', 'UnicodeDecodeError')
+              .having((e) => e.attributes, 'attributes', {
+                'encoding': const MontyString('utf-8'),
+                'object': const MontyBytes([0x61, 0xC3, 0xC3]),
+                'start': const MontyInt(2),
+                'end': const MontyInt(3),
+                'reason': const MontyString('invalid continuation byte'),
+              }),
+        ),
       );
     });
 

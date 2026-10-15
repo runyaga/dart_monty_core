@@ -14,8 +14,8 @@ import 'dart:async';
 import 'package:dart_monty_core/src/fake_monty_session.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart' as chf;
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
+import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -60,7 +60,7 @@ void main() {
   // hold.md: close while a turn is in flight, a real one blocked in the
   // worker and a held one on the fake, then a later call.
   test('close during a turn in flight', () async {
-    Future<List<String>> closeMidTurn(PoolSession session) async {
+    Future<List<String>> closeMidTurn(MontySession session) async {
       final seen = <String>[];
       Future<void> loop() async {
         try {
@@ -83,7 +83,7 @@ void main() {
       return seen;
     }
 
-    final pool = await MontyPool.startWith(
+    final pool = await startMonty(
       const PoolOptions(minProcesses: 0, maxProcesses: 1),
       open: chf.openChannel,
     );

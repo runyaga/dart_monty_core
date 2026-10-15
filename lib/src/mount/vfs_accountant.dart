@@ -1,6 +1,7 @@
 import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/mount/vfs_limits.dart';
-import 'package:dart_monty_core/src/platform/os_call_exception.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
 
 /// Per-mount byte accounting for a mounted virtual filesystem.
 ///
@@ -69,9 +70,9 @@ final class VfsAccountant {
     final writeLimit = mount.writeBytesLimit;
     final written = writtenFor(mount) + wrote;
     if (writeLimit != null && written > writeLimit) {
-      throw OsCallException(
+      throw ExternalException(
+        'OSError',
         'disk write limit of ${formatBytesPretty(writeLimit)} exceeded',
-        pythonExceptionType: 'OSError',
       );
     }
 
@@ -134,9 +135,9 @@ final class VfsAccountant {
     final retained = retainedFor(mount) + delta;
 
     if (limit != null && retained > limit) {
-      throw OsCallException(
+      throw ExternalException(
+        'MemoryError',
         'mount memory usage limit of ${formatBytesPretty(limit)} exceeded',
-        pythonExceptionType: 'MemoryError',
       );
     }
 

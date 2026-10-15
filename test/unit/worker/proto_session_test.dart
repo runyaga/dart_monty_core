@@ -9,11 +9,8 @@ import 'package:dart_monty_core/src/worker/frame.dart'
     show FrameTooLargeException;
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
-    show ExternalException;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
@@ -107,7 +104,7 @@ void main() {
         throwsA(
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.fatal)
-              .having((e) => e.message, 'message', contains('outside')),
+              .having((e) => e.toString(), 'message', contains('outside')),
         ),
       );
     });
@@ -145,7 +142,7 @@ void main() {
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.protocol)
               .having(
-                (e) => e.message,
+                (e) => e.toString(),
                 'message',
                 'monty worker protocol error: unexpected reply to Configure: '
                     'complete',
@@ -517,7 +514,7 @@ void main() {
         mode: 'r',
         position: -1,
       ),
-      'an unknown exception type': const MontyExceptionValue(excType: 'Nope'),
+      'an unknown exception type': MontyExceptionValue('Nope'),
       'a short named tuple': const MontyNamedTuple(
         typeName: 'P',
         fieldNames: ['x'],
@@ -559,7 +556,7 @@ void main() {
         s.feed('x', inputs: {'x': const MontyString('\uD800')}),
         throwsA(
           isA<MontyRuntimeError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             "UnicodeEncodeError: 'utf-8' codec can't encode character "
                 r"'\ud800' in position 0: surrogates not allowed",
@@ -811,7 +808,7 @@ void main() {
           error = e;
         }
         expect(seen, ['before\n']);
-        expect(error?.message, 'ValueError: bad 7');
+        expect(error?.toString(), 'ValueError: bad 7');
         expect(error?.exception.excType, 'ValueError');
         expect(error?.exception.message, 'bad 7');
         final traceback = error?.traceback ?? const <Frame>[];
@@ -843,7 +840,7 @@ void main() {
         s.feed('def ('),
         throwsA(
           isA<MontySyntaxError>()
-              .having((e) => e.message, 'message', 'invalid syntax')
+              .having((e) => e.toString(), 'message', 'invalid syntax')
               .having((e) => onlyItem(e.traceback).line, 'line', 1),
         ),
       );
@@ -880,7 +877,7 @@ void main() {
         s.feed('raise KeyboardInterrupt'),
         throwsA(
           isA<MontyRuntimeError>()
-              .having((e) => e.message, 'message', 'KeyboardInterrupt')
+              .having((e) => e.toString(), 'message', 'KeyboardInterrupt')
               .having((e) => e.exception.message, 'exception', '')
               .having((e) => e.traceback, 'traceback', isEmpty)
               .having(
@@ -953,7 +950,7 @@ void main() {
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.protocol)
               .having(
-                (e) => e.message,
+                (e) => e.toString(),
                 'message',
                 startsWith(
                   'monty worker protocol error: invalid payload from worker: ',
@@ -999,7 +996,7 @@ void main() {
             isA<MontyCrashedError>()
                 .having((e) => e.cause, 'cause', CrashCause.protocol)
                 .having(
-                  (e) => e.message,
+                  (e) => e.toString(),
                   'message',
                   startsWith('monty worker protocol error: unexpected event'),
                 ),
@@ -1041,7 +1038,7 @@ void main() {
           .having((e) => e.timedOut, 'timedOut', isFalse)
           .having((e) => e.exitCode, 'exitCode', isNull)
           .having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: $detail',
           ),
@@ -1405,7 +1402,7 @@ void main() {
         s.reset(),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: unexpected reply to Reset: complete',
           ),

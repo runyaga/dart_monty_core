@@ -9,12 +9,10 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
-import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
@@ -22,7 +20,7 @@ import '../../_accessors.dart';
 import '_restore_oracle.g.dart';
 
 /// Starts a pool with [options].
-typedef StartPool = Future<MontyPool> Function(PoolOptions options);
+typedef StartPool = Future<Monty> Function(PoolOptions options);
 
 void _ignore(String stream, String text) => _ignored++;
 
@@ -92,7 +90,7 @@ String _describe(MontySnapshot snapshot) {
   ].join(', ');
 
   return switch (snapshot) {
-    SessionComplete(:final output) =>
+    MontyComplete(:final output) =>
       'complete: ${(output as MontyString).value}',
     FunctionSnapshot(:final kwargs) =>
       '${snapshot.isOsFunction ? 'os' : 'call'} ${snapshot.functionName} '
@@ -124,8 +122,8 @@ String _errorText(Object error) => switch (error) {
 final class _Run {
   _Run(this._pool);
 
-  final MontyPool _pool;
-  final Map<String, PoolSession> _sessions = {};
+  final Monty _pool;
+  final Map<String, MontySession> _sessions = {};
   final Map<String, MontySnapshot> _snapshots = {};
   final Map<String, MontySnapshot> _spent = {};
   final Map<String, Uint8List> _dumps = {};
@@ -151,8 +149,8 @@ final class _Run {
     // A step's one argument; `close` and the dumps have none.
     final arg = rest.isEmpty ? '' : onlyItem(rest);
     if (op == 'open') {
-      _sessions[name] = await _pool.checkout(
-        options: _sessionConfig(arg as Map<String, Object>),
+      _sessions[name] = await _pool.checkoutWith(
+        _sessionConfig(arg as Map<String, Object>),
       );
 
       return 'ok';

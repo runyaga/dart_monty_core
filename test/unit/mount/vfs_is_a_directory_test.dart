@@ -4,11 +4,13 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 /// `[Errno 21] Is a directory: '<path>'` — CPython's wording, which upstream
 /// reproduces verbatim (`os_access.py:950-951`, `:960`).
 Matcher isADirectory(String path) => throwsA(
-  isA<OsCallException>()
-      .having((e) => e.pythonExceptionType, 'excType', 'IsADirectoryError')
+  isA<ExternalException>()
+      .having((e) => e.excType, 'excType', 'IsADirectoryError')
       .having(
         (e) => e.message,
         'message',
@@ -19,7 +21,7 @@ Matcher isADirectory(String path) => throwsA(
 void main() {
   group('a directory is not a file', () {
     // Handler with /m/d as a real directory holding one file.
-    OsCallHandler handlerWithDir() => memoryMountedOsHandler(
+    DartOsCall handlerWithDir() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/m')],
       files: [MontyMemoryFile('/m/d/keep.txt', 'precious')],
     );

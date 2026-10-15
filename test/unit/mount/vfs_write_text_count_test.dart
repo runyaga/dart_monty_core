@@ -6,6 +6,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_os_call.dart';
 
 void main() {
   // Three different lengths live in this handler and they must not be
@@ -18,7 +19,7 @@ void main() {
   // They agree for ASCII, which is why the bug hides. mount_fs__ops.py picks
   // exactly the cases where they diverge.
   group('write_text returns codepoints', () {
-    OsCallHandler handler() => memoryMountedOsHandler(
+    DartOsCall handler() => mountedHandler(
       mounts: const [MountDir(virtualPath: '/mnt')],
       files: const [],
     );

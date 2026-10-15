@@ -2,18 +2,33 @@
 // the same code judges the native worker and the Web Worker.
 import 'dart:async';
 
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
-import 'package:dart_monty_core/src/worker/worker_pool.dart';
+import 'package:dart_monty_core/dart_monty_core.dart';
+// PoolOptions is internal: the browser entry point starts its pools with its
+// own channel factory, which the public Monty.start cannot take.
+import 'package:dart_monty_core/src/worker/worker_pool.dart' show PoolOptions;
 import 'package:meta/meta.dart';
 import 'package:monty_conformance/worker_conformance.dart';
 import 'package:test/test.dart';
 
 /// One minute bounds a fixture's turn, so a hung one fails instead of
 /// stalling the run.
+const Duration corpusRequestTimeout = Duration(seconds: 60);
+
+/// The corpus pool's settings, for a start that supplies its own channel
+/// factory: one worker, [corpusRequestTimeout].
 const PoolOptions corpusPoolOptions = PoolOptions(
   maxProcesses: 1,
-  requestTimeout: Duration(seconds: 60),
+  requestTimeout: corpusRequestTimeout,
 );
+
+/// [body] on a pool as [corpusPoolOptions] say, started through the public
+/// API.
+Future<T> withCorpusPool<T>(Future<T> Function(Monty monty) body) =>
+    Monty.withPool(
+      body,
+      maxProcesses: 1,
+      requestTimeout: corpusRequestTimeout,
+    );
 
 /// How the entry point judges the corpus.
 final class CorpusTarget {
@@ -33,13 +48,13 @@ final class CorpusTarget {
   final WorkerCorpusProfile profile;
 
   /// Starts the pool the corpus runs on.
-  final Future<MontyPool> Function() startPool;
+  final Future<Monty> Function() startPool;
 
   /// The Worker's JSPI probe, for a browser; null on native.
   final bool? jspi;
 
   /// A pool whose Workers skip JSPI (the forced fallback), for a browser.
-  final Future<MontyPool> Function()? startNoJspiPool;
+  final Future<Monty> Function()? startNoJspiPool;
 }
 
 /// The corpus tests for [target], for a backend whose JSPI state is known
@@ -136,7 +151,7 @@ Future<void> runCorpusChecks(CorpusTarget target) async {
 /// JSPI-capable browser forced onto the fallback dispatch is a different
 /// environment from it. What this asserts is that no file ends any way but a
 /// pass or a crashed worker (the two outcomes upstream's browser build has).
-Future<void> runRecursionSetFallback(String label, MontyPool pool) async {
+Future<void> runRecursionSetFallback(String label, Monty pool) async {
   final WorkerCorpusRun run;
   try {
     run = await runWorkerFixtureCorpus(
@@ -174,10 +189,9 @@ Future<void> runRecursionSetFallback(String label, MontyPool pool) async {
 void adjudicatorSelfTests() {
   group('the strict adjudicator judges worker outcomes', () {
     Future<Map<String, String>> judge(Map<String, String> corpus) async {
-      final run = await MontyPool.withPool(
+      final run = await withCorpusPool(
         (pool) =>
             runWorkerFixtureCorpus(pool: pool, log: _discard, corpus: corpus),
-        options: corpusPoolOptions,
       );
       // Each control ran: a verdict on nothing is not a pass.
       expect(run.executed, corpus.keys.toList());
@@ -257,7 +271,7 @@ void adjudicatorSelfTests() {
 }
 
 Future<WorkerCorpusRun> _runAll(
-  Future<MontyPool> Function() start, {
+  Future<Monty> Function() start, {
   Set<String>? only,
 }) async {
   final pool = await start();

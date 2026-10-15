@@ -1,6 +1,8 @@
 // The channel's crash helpers (lib/src/worker/monty_channel.dart). Pure
 // Dart: vm, dart2js and dart2wasm.
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:test/test.dart';
 
 void main() {
@@ -15,8 +17,8 @@ void main() {
       final again = repeatCrash(crash);
       expect(again, isNot(same(crash)));
       expect(
-        (again.message, again.cause, again.detail, again.exitStatus),
-        (crash.message, crash.cause, crash.detail, crash.exitStatus),
+        (again.toString(), again.cause, again.detail, again.exitStatus),
+        (crash.toString(), crash.cause, crash.detail, crash.exitStatus),
       );
       expect(again.stderrTail, 's');
       expect(again.timedOut, crash.timedOut);
@@ -32,13 +34,13 @@ void main() {
       );
       expect(killed.timedOut, isTrue);
       expect(
-        killed.message,
+        killed.toString(),
         'monty worker killed after exceeding request timeout of 1s',
       );
       final lost = repeatCrash(
         crashedError(CrashCause.vanished, context: sendingRequest),
       );
-      expect(lost.message, 'monty worker crashed while sending a request');
+      expect(lost.toString(), 'monty worker crashed while sending a request');
     });
   });
 }

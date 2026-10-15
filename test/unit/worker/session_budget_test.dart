@@ -1,5 +1,5 @@
 // The suspension and sleep budgets of one checkout
-// (`SessionBudget` in lib/src/worker/pool_session.dart): counting and charging per checkout,
+// (`SessionBudget` in lib/src/worker/monty_session.dart): counting and charging per checkout,
 // limits a reply can only tighten, and upstream's rules for loading a dump
 // (monty-pool 1.1.0 checkout.rs: `forget` keeps both limits as ceilings and
 // restarts the counts, `update_from` takes the minimum, and a re-announced
@@ -8,8 +8,8 @@
 // Pure Dart: vm, dart2js and dart2wasm.
 import 'dart:math' as math;
 
+import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
-import 'package:dart_monty_core/src/worker/pool_session.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';

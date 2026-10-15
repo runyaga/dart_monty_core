@@ -9,6 +9,8 @@ import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
@@ -228,7 +230,7 @@ void main() {
       final crash = await _crashOf(channel.turn(_configure));
       expect(crash.cause, CrashCause.protocol);
       expect(
-        crash.message,
+        crash.toString(),
         startsWith(
           'monty worker protocol error: invalid payload from worker: ',
         ),
@@ -251,13 +253,14 @@ void main() {
         final channel = await _spawn('upstream-rejects');
         final crash = await _crashOf(channel.turn(_configure));
         expect(crash.cause, CrashCause.protocol);
+        final text = crash.toString();
         expect(
-          crash.message,
+          text,
           startsWith(
             'monty worker protocol error: invalid payload from worker: ',
           ),
         );
-        expect(crash.message, isNot(contains('Exception')));
+        expect(text, isNot(contains('Exception')));
         expect(channel.isAlive, isFalse);
       },
     );
@@ -277,7 +280,7 @@ void main() {
       // the channel saw.
       expect(crash.exitStatus, 134);
       expect(
-        crash.message,
+        crash.toString(),
         'monty worker crashed while waiting for a reply (exit status: 134)',
       );
     });
@@ -457,7 +460,7 @@ void main() {
       channel.turn(_configure).timeout(const Duration(seconds: 15)),
       throwsA(
         isA<MontyCrashedError>().having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           // Upstream's context for a worker lost while writing to it.
           startsWith('monty worker crashed while sending a request'),
@@ -482,7 +485,7 @@ void main() {
       channel.turn(large).timeout(const Duration(seconds: 15)),
       throwsA(
         isA<MontyCrashedError>().having(
-          (e) => e.message,
+          (e) => e.toString(),
           'message',
           startsWith('monty worker crashed while sending a request'),
         ),

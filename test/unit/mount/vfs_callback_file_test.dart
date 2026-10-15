@@ -7,6 +7,8 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/unsafe_callback_file.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 /// Every write this test does not care about lands here, so the tests that DO
 /// care can assert on their own list and the rest still have a real callback
 /// rather than an empty block.
@@ -25,8 +27,8 @@ MontyValue? _stat(MontyNamedTuple t, String field) {
 }
 
 Matcher raises(String excType, String message) => throwsA(
-  isA<OsCallException>()
-      .having((e) => e.pythonExceptionType, 'excType', excType)
+  isA<ExternalException>()
+      .having((e) => e.excType, 'excType', excType)
       .having((e) => e.message, 'message', message),
 );
 
@@ -34,7 +36,7 @@ void main() {
   group('VfsCallbackFile', () {
     test('read_text invokes the read callback', () async {
       final seen = <String>[];
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [
           VfsCallbackFile(
@@ -58,7 +60,7 @@ void main() {
 
     test('write_text invokes the write callback with VfsText', () async {
       final written = <(String, VfsContent)>[];
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [
           VfsCallbackFile(
@@ -76,7 +78,7 @@ void main() {
 
     test('write_bytes hands the callback VfsBytes, not VfsText', () async {
       final written = <VfsContent>[];
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [
           VfsCallbackFile(
@@ -99,7 +101,7 @@ void main() {
 
     test('stat sizes the file by INVOKING the read callback', () async {
       var reads = 0;
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [
           VfsCallbackFile(
@@ -148,7 +150,7 @@ void main() {
         },
         write: _discard,
       );
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [f],
       );
@@ -173,7 +175,7 @@ void main() {
         },
         write: _discard,
       );
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [f],
       );
@@ -187,7 +189,7 @@ void main() {
 
     test('a read-only mount still refuses the write callback', () async {
       var writes = 0;
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [
           MountDir(virtualPath: '/mnt', mode: MountMode.readOnly),
         ],
@@ -208,7 +210,7 @@ void main() {
     });
 
     test('sandboxed code cannot MINT a callback file', () async {
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: [
           VfsCallbackFile(

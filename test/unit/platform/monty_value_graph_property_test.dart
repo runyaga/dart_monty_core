@@ -25,6 +25,12 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show
+        MontyClassProxyInternal,
+        MontyValueInternal,
+        montyClassProxy,
+        montyClassTypeProxy;
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:test/test.dart';
 
@@ -40,8 +46,7 @@ bool _isNode(MontyValue v) =>
     v is MontyFrozenSet ||
     v is MontyDict ||
     v is MontyNamedTuple ||
-    v is MontyClassInstance ||
-    v is MontyDataclass;
+    v is MontyClassProxy;
 
 /// Whether a set or frozenset is reachable from [v]; their hashes changed.
 bool _hasSet(MontyValue v) => switch (v) {
@@ -49,9 +54,8 @@ bool _hasSet(MontyValue v) => switch (v) {
   MontyList(:final items) || MontyTuple(:final items) => items.any(_hasSet),
   MontyDict(:final pairs) => pairs.any((p) => _hasSet(p.$1) || _hasSet(p.$2)),
   MontyNamedTuple(:final values) => values.any(_hasSet),
-  MontyClassInstance(:final classType, :final attrs) =>
+  MontyClassProxy(:final classType, :final attrs) =>
     classType.attrs.values.any(_hasSet) || attrs.values.any(_hasSet),
-  MontyDataclass(:final attrs) => attrs.values.any(_hasSet),
   _ => false,
 };
 
@@ -237,13 +241,13 @@ void main() {
     test('dartAttrs: a deep attribute falls back alone', () {
       // One projection serves every attribute; the second must start again
       // on the fast path rather than inherit the first one's depth.
-      final i = MontyClassInstance(
-        classType: const MontyClassType(
+      final i = montyClassProxy(
+        classType: montyClassTypeProxy(
           name: 'C',
           id: 'c',
           hostDefined: false,
           isDataclass: false,
-          attrs: {},
+          attrs: const {},
         ),
         instanceId: 'i',
         attrs: {
@@ -348,25 +352,6 @@ void main() {
       expect(names.reads, 1000000);
     });
 
-    test("a dataclass's field names are charged when compared", () {
-      MontyDataclass build() => MontyDataclass(
-        name: 'D',
-        typeId: 1,
-        fieldNames: [for (var i = 0; i < 100000; i++) 'f'],
-        attrs: const {},
-      );
-      final [a, b] = List.generate(2, (_) => build());
-      expect(
-        fallbacksDuring(
-          () => expect(
-            MontyList(List.filled(100, a)) == MontyList(List.filled(100, b)),
-            isTrue,
-          ),
-        ),
-        1,
-      );
-    });
-
     test("a named tuple's field names are charged", () {
       final t = MontyNamedTuple(
         typeName: 'P',
@@ -379,15 +364,15 @@ void main() {
   });
 
   group('attribute maps compare by entry, as MapEquality did', () {
-    const type = MontyClassType(
+    final type = montyClassTypeProxy(
       name: 'C',
       id: 'c',
       hostDefined: false,
       isDataclass: false,
-      attrs: {},
+      attrs: const {},
     );
-    MontyClassInstance inst(Map<String, MontyValue> attrs) =>
-        MontyClassInstance(classType: type, instanceId: 'i', attrs: attrs);
+    MontyClassProxy inst(Map<String, MontyValue> attrs) =>
+        montyClassProxy(classType: type, instanceId: 'i', attrs: attrs);
 
     final caseless = SplayTreeMap<String, MontyValue>(
       (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
@@ -443,13 +428,13 @@ void main() {
     final [c1, c2] = List.generate(2, (_) => selfList());
     // Three equal keys, distinct objects, so only an identity map keeps them.
     final keys = List.generate(3, (_) => String.fromCharCodes([107]));
-    MontyClassInstance build() => MontyClassInstance(
-      classType: const MontyClassType(
+    MontyClassProxy build() => montyClassProxy(
+      classType: montyClassTypeProxy(
         name: 'C',
         id: 'c',
         hostDefined: false,
         isDataclass: false,
-        attrs: {},
+        attrs: const {},
       ),
       instanceId: 'i',
       attrs: Map.identity()
@@ -469,13 +454,13 @@ void main() {
     final items = <MontyValue>[];
     final cyclic = MontyList(items);
     items.add(cyclic);
-    final i = MontyClassInstance(
-      classType: const MontyClassType(
+    final i = montyClassProxy(
+      classType: montyClassTypeProxy(
         name: 'C',
         id: 'c',
         hostDefined: false,
         isDataclass: false,
-        attrs: {},
+        attrs: const {},
       ),
       instanceId: 'i',
       attrs: Map.identity()

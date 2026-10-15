@@ -1,4 +1,4 @@
-// WorkerChannel against the COMMITTED lib/assets/dart_monty_core_proto_worker
+// WorkerChannel against the COMMITTED lib/assets/dart_monty_core_worker
 // .{js,wasm} in Chrome, on dart2js and dart2wasm:
 //
 //   bash tool/test_worker_web.sh
@@ -21,6 +21,8 @@ import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_channel.dart';
@@ -35,7 +37,7 @@ import '_kind_round_trips.dart';
 
 /// The package's lib/ as the test server exposes it.
 const _assets = 'packages/dart_monty_core/assets';
-const _workerUrl = '$_assets/dart_monty_core_proto_worker.js';
+const _workerUrl = '$_assets/dart_monty_core_worker.js';
 
 /// Every channel a test opened. Each test must leave all of them dead.
 final _opened = <WorkerChannel>[];
@@ -158,7 +160,7 @@ const _deepCompare =
 
 void main() {
   const backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
-  final cache = WasmModuleCache('$_assets/dart_monty_core_proto_worker.wasm');
+  final cache = WasmModuleCache('$_assets/dart_monty_core_worker.wasm');
 
   tearDown(() {
     final alive = _opened.where((c) => c.isAlive).length;
@@ -362,7 +364,7 @@ void main() {
       throwsA(
         isA<MontyCrashedError>()
             .having((e) => e.cause, 'cause', CrashCause.fatal)
-            .having((e) => e.message, 'message', contains('protocol 4')),
+            .having((e) => e.toString(), 'message', contains('protocol 4')),
       ),
     );
   });
@@ -407,7 +409,7 @@ void main() {
     // The same module from a blob typed application/octet-stream, which
     // compileStreaming refuses.
     final response = await _fetchUrl(
-      '$_assets/dart_monty_core_proto_worker.wasm',
+      '$_assets/dart_monty_core_worker.wasm',
     ).toDart;
     final bytes = await response.arrayBuffer().toDart;
     final blobUrl = _createObjectUrl(

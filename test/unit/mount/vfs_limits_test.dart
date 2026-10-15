@@ -2,15 +2,18 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/mount/vfs_limits.dart';
 import 'package:test/test.dart';
 
+import '_os_call.dart';
+
 Matcher raises(String excType, String message) => throwsA(
-  isA<OsCallException>()
-      .having((e) => e.pythonExceptionType, 'excType', excType)
+  isA<ExternalException>()
+      .having((e) => e.excType, 'excType', excType)
       .having((e) => e.message, 'message', message),
 );
 
-OsCallHandler withLimits({int? write, int? memory}) => memoryMountedOsHandler(
+DartOsCall withLimits({int? write, int? memory}) => mountedHandler(
   mounts: [
     MountDir(
       virtualPath: '/mnt',
@@ -48,7 +51,7 @@ void main() {
         try {
           await h('Path.write_text', ['/mnt/f$i.txt', 'x' * 30], null);
           wrote++;
-        } on OsCallException catch (e) {
+        } on ExternalException catch (e) {
           failure = e.message;
           break;
         }
@@ -135,7 +138,7 @@ void main() {
       // Full. A second file of the same size cannot fit...
       await expectLater(
         () => h('Path.write_text', ['/mnt/b.txt', 'x' * 100], null),
-        throwsA(isA<OsCallException>()),
+        throwsA(isA<ExternalException>()),
       );
       // ...until the first is removed.
       await h('Path.unlink', ['/mnt/a.txt'], null);
@@ -177,7 +180,7 @@ void main() {
 
       await expectLater(
         () => h('Path.write_text', ['/mnt/big.txt', 'x' * 500], null),
-        throwsA(isA<OsCallException>()),
+        throwsA(isA<ExternalException>()),
       );
       // The node must not exist — we refused to charge it.
       expect(await h('Path.exists', ['/mnt/big.txt'], null), false);
@@ -187,7 +190,7 @@ void main() {
       expect(defaultMemoryUsageLimit, 100000000);
 
       // A plain mount takes the default; ordinary writes are unaffected.
-      final h = memoryMountedOsHandler(
+      final h = mountedHandler(
         mounts: const [MountDir(virtualPath: '/mnt')],
         files: const [],
       );

@@ -11,6 +11,8 @@
 // Each rule is checked on the fast path and on the memoised fallback, by
 // wrapping both values in a list and forcing the fallback.
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show MontyValueInternal, montyClassProxy, montyClassTypeProxy;
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:test/test.dart';
 
@@ -96,8 +98,8 @@ void main() {
     ),
     (
       'exception values compare fields',
-      const MontyExceptionValue(excType: 'ValueError', message: 'x'),
-      const MontyExceptionValue(excType: 'ValueError', message: 'x'),
+      MontyExceptionValue('ValueError', 'x'),
+      MontyExceptionValue('ValueError', 'x'),
       true,
       false, // exceptions compare by identity
     ),
@@ -183,19 +185,6 @@ void main() {
     });
   });
 
-  test("a dict's views follow its pairs, duplicates included", () {
-    const d = MontyDict([
-      (MontyString('a'), MontyInt(1)),
-      (MontyString('a'), MontyInt(2)),
-    ]);
-    expect(d.length, 2);
-    expect(d.isEmpty, isFalse);
-    expect(d.isNotEmpty, isTrue);
-    expect(d.keys, const [MontyString('a'), MontyString('a')]);
-    expect(d.values, const [MontyInt(1), MontyInt(2)]);
-    expect(const MontyDict([]).isEmpty, isTrue);
-  });
-
   group(
     'dicts built with a duplicate key compare their pairs as a multiset',
     () {
@@ -236,17 +225,17 @@ void main() {
   );
 
   group('class instances', () {
-    const point = MontyClassType(
+    final point = montyClassTypeProxy(
       name: 'Point',
       id: 'p',
       hostDefined: false,
       isDataclass: true,
-      attrs: {},
+      attrs: const {},
     );
 
-    MontyClassInstance inst(String id, int x, {MontyClassType type = point}) =>
-        MontyClassInstance(
-          classType: type,
+    MontyClassProxy inst(String id, int x, {MontyClassTypeProxy? type}) =>
+        montyClassProxy(
+          classType: type ?? point,
           instanceId: id,
           attrs: {'x': MontyInt(x)},
         );
@@ -256,12 +245,12 @@ void main() {
       expect(eqBothPaths(a, b), isTrue);
       expect(eqBothPaths(a, inst('2', 1)), isFalse);
       expect(eqBothPaths(a, inst('1', 2)), isFalse);
-      const other = MontyClassType(
+      final other = montyClassTypeProxy(
         name: 'Point',
         id: 'q',
         hostDefined: false,
         isDataclass: true,
-        attrs: {},
+        attrs: const {},
       );
       expect(eqBothPaths(a, inst('1', 1, type: other)), isFalse);
     });

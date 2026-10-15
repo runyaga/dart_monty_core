@@ -15,15 +15,15 @@ import 'dart:isolate';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/dart_monty_core.dart' show MontyInt;
-import 'package:dart_monty_core/src/worker/monty_pool.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:vm_service/vm_service_io.dart';
 
 Future<void> main(List<String> args) async {
-  final pool = await MontyPool.start(
-    options: PoolOptions(maxProcesses: 1, workerLocation: args.firstOrNull),
+  final pool = await startMonty(
+    PoolOptions(maxProcesses: 1, workerLocation: args.firstOrNull),
   );
   await _useAndDrop(pool);
   final uri = (await Service.getInfo()).serverWebSocketUri;
@@ -47,9 +47,9 @@ Future<void> main(List<String> args) async {
 
 /// Checks a session out, feeds it, and returns without closing it: nothing
 /// refers to it afterwards.
-Future<void> _useAndDrop(MontyPool pool) async {
-  final session = await pool.checkout(
-    options: const SessionConfig(
+Future<void> _useAndDrop(Monty pool) async {
+  final session = await pool.checkoutWith(
+    const SessionConfig(
       limits: ResourceLimits(maxMemory: 64 * 1024 * 1024),
     ),
   );
