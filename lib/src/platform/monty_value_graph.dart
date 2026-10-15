@@ -121,11 +121,10 @@ int _zoneNameCharge(Object v) => switch (v) {
   _ => 0,
 };
 
+/// The value graph walk exceeded its budget; always caught by the walk's
+/// caller, which then takes the iterative path.
 final class _Abort implements Exception {
   const _Abort();
-
-  @override
-  String toString() => 'the value graph walk exceeded its budget';
 }
 
 const _abort = _Abort();

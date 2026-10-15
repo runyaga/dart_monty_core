@@ -369,13 +369,10 @@ final class _Builder {
     final found = _hosts?.instance(id);
     if (found is MontyValue) return _registered[_built.length] = found;
     // Stage 2 made the instance's class a class node, built before it.
-    final classNode = _built.elementAtOrNull(node.classType);
-    final meta = classNode is _ClassNode ? classNode.meta : null;
+    final meta = (_built[node.classType] as _ClassNode).meta;
     final attrs = _attrs(node.attrs.pairs);
     if (found != null) return _hostInstance(found, node, meta, attrs);
-    if (meta is! MontyClassTypeProxy) {
-      return meta ?? (throw StateError('$node'));
-    }
+    if (meta is! MontyClassTypeProxy) return meta;
     if (attrs is _Staged) return attrs;
 
     return montyClassProxy(

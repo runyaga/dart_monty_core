@@ -597,10 +597,8 @@ pb.MontyNode? _temporalLeaf(MontyValue v) => switch (v) {
 pb.MontyNode _otherLeaf(MontyValue v) => switch (v) {
   final MontyExceptionValue e => pb.MontyNode(exception: _exception(e)),
   final MontyStdTypeProxy o => _opaque(o),
-  final MontyFileHandle h => pb.MontyNode(fileHandle: _fileHandle(h)),
-  _ => throw UnsupportedError(
-    'a ${v.runtimeType} cannot be sent to the worker: it has no node',
-  ),
+  // The last leaf: [_container] took every container first.
+  _ => pb.MontyNode(fileHandle: _fileHandle(v as MontyFileHandle)),
 };
 
 pb.DateTime _datetime(MontyDateTime d) => _check(
