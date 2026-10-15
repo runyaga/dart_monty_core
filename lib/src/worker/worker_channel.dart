@@ -49,13 +49,7 @@ final class WorkerChannel implements MontyChannel {
   }) async {
     // A cancel that lands after this is handled at the greeting below.
     final module = await _moduleUnlessCancelled(cache, cancelled);
-    final _Worker worker;
-    try {
-      worker = _Worker(workerUrl.toJS);
-    } on Object catch (error) {
-      // The browser refuses the script (another origin, say).
-      throw spawnError('Worker $workerUrl: $error');
-    }
+    final worker = _newWorker(workerUrl);
     final hello = Completer<WorkerMessage>();
     void first(WorkerMessage m) {
       if (!hello.isCompleted) hello.complete(m);
@@ -191,6 +185,16 @@ final class WasmModuleCache {
   /// How many times the module was compiled: 1 once [module] has completed.
   @visibleForTesting
   int get compileCount => _module.runs;
+}
+
+/// A Worker running the script at [url]; a spawn failure ([spawnError]) when
+/// the browser refuses it (a script from another origin, say).
+_Worker _newWorker(String url) {
+  try {
+    return _Worker(url.toJS);
+  } on Object catch (error) {
+    throw spawnError('Worker $url: $error');
+  }
 }
 
 /// Fetches and compiles the module at [wasmUrl].
