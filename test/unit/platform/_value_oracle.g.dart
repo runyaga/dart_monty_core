@@ -869,6 +869,8 @@ const Map<String, String> fileModeOracle = {
   'r\u{200b}': 'ValueError: invalid mode: \'\\u{200b}\'',
   'r\u{301}': 'ValueError: invalid mode: \'\\u{301}\'',
   'r\u{e0000}': 'ValueError: invalid mode: \'\\u{e0000}\'',
+  'r\u{ff9e}': 'ValueError: invalid mode: \'\u{ff9e}\'',
+  'r\u{ff9f}': 'ValueError: invalid mode: \'\u{ff9f}\'',
 };
 
 /// `repr(MontyFileHandle(path, 'rb', position=2**64-1))` by path.

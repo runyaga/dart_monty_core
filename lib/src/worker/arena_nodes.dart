@@ -308,8 +308,12 @@ String _rustEscape(int c) => switch (c) {
   _ => String.fromCharCode(c),
 };
 
+// U+FF9E and U+FF9F are Grapheme_Extend in the platform's Unicode tables
+// (Unicode 16 added them), not in Rust's at upstream's pin: measured
+// against the oracle, so they are excluded.
 final RegExp _rustEscaped = RegExp(
-  r'^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\p{Co}\p{Cn}\p{Cs}\p{Grapheme_Extend}'
+  r'^(?![\uFF9E\uFF9F])'
+  r'[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\p{Co}\p{Cn}\p{Cs}\p{Grapheme_Extend}'
   r'\u115F\u1160\u3164\uFFA0]$',
   unicode: true,
 );

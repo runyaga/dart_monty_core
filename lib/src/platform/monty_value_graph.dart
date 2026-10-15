@@ -231,8 +231,7 @@ final class _Hashed {
 StateError _cycle(String op) =>
     StateError('the value contains itself; $op is undefined on a cycle');
 
-StateError _notANode(Object v) =>
-    StateError('not a MontyValue container: ${v.runtimeType}');
+StateError _notANode(Object v) => StateError('not a node: ${v.runtimeType}');
 
 // ---------------------------------------------------------------------------
 // Hash formulas, shared by both paths so they cannot disagree
@@ -279,8 +278,6 @@ void _forEachChild(Object v, void Function(Object) f) {
         f(k);
         f(x);
       }
-    case MontyClassTypeProxy(:final attrs):
-      attrs.values.forEach(f);
     case MontyClassProxy(:final attrs):
       // Its class compares by name and dataclass flag only (a class type
       // is an equality leaf), so only the attributes each name keeps are
@@ -784,15 +781,20 @@ final class _MemoHasher extends _Hasher {
 /// identity for one operation, so a set's repeated members and a dict's
 /// repeated keys collapse without recursion and without comparing a pair
 /// twice, however deep or shared the value. A value met again inside itself
-/// gets an id of its own, so a value that contains itself equals only
-/// itself, as the walk's other operations treat it.
+/// gets an id of its own and taints every value holding it: a tainted id
+/// is exact only for identity, so equality compares tainted values through
+/// frames instead ([tainted]).
 final class _Interner {
   final Map<Object, int> _ids = Map.identity();
 
   /// Leaves by their own `==` and `hashCode`, which agree.
   final Map<MontyValue, int> _leaves = {};
   final Map<String, int> _nodes = {};
+  final Set<Object> _tainted = Set.identity();
   int _next = 0;
+
+  /// Whether [v]'s id (computed) rests on a value met inside itself.
+  bool tainted(Object v) => _tainted.contains(v);
 
   int id(Object root) {
     final open = Set<Object>.identity();
@@ -814,6 +816,7 @@ final class _Interner {
         if (open.contains(c)) {
           // Identity only: it is still open, so its structure has no id.
           _ids[c] = _next++;
+          _tainted.add(c);
           continue;
         }
         stack.add(c);
@@ -821,6 +824,7 @@ final class _Interner {
       if (stack.length > before) continue;
       stack.removeLast();
       open.remove(v);
+      if (_children(v).any(_tainted.contains)) _tainted.add(v);
       _ids[v] = _nodes.putIfAbsent(_signature(v), () => _next++);
     }
 
@@ -947,6 +951,45 @@ final class _SeqFrame extends _EqFrame {
   }
 }
 
+/// Two member lists matched both ways: each of one has an equal in the
+/// other, so repeats need no collapsing.
+final class _MatchFrame extends _EqFrame {
+  _MatchFrame(super.x, super.y, this._a, this._b);
+
+  final List<Object> _a;
+  final List<Object> _b;
+  int _i = 0;
+  int _j = 0;
+  bool _back = false;
+
+  @override
+  bool? step(bool? last) {
+    if (last ?? false) {
+      _i++;
+      _j = 0;
+    } else if (last != null) {
+      _j++;
+    }
+    if (!_back && _i >= _a.length) {
+      _back = true;
+      _i = 0;
+      _j = 0;
+    }
+
+    return _next();
+  }
+
+  bool? _next() {
+    final (xs, ys) = _back ? (_b, _a) : (_a, _b);
+    final p = xs.elementAtOrNull(_i);
+    if (p == null) return true;
+    final q = ys.elementAtOrNull(_j);
+    if (q == null) return false;
+
+    return _back ? ask(q, p) : ask(p, q);
+  }
+}
+
 /// Equality on an explicit stack, memoising every pair it settles.
 final class _MemoEquals {
   _MemoEquals(this._hasher);
@@ -994,9 +1037,46 @@ final class _MemoEquals {
     if (kind != _eqKind(ky)) return false;
     // Sets and dicts collapse repeats first, so they compare by canonical id:
     // linear, on an explicit stack, shared by the whole operation.
-    if (kind == _kSet || kind == _kDict) return _hasher.equals(x, y);
+    if (kind == _kSet || kind == _kDict) return _byId(x, y);
 
     return _pairOrFrame(x, y);
+  }
+
+  /// Two sets or two dicts by canonical id; when either holds a value met
+  /// inside itself, whose id is identity only, through a frame instead: a
+  /// set's members matched both ways, a dict's surviving values in key
+  /// order.
+  Object _byId(Object x, Object y) {
+    final ids = _hasher.interner;
+    final same = ids.id(x) == ids.id(y);
+    if (!ids.tainted(x) && !ids.tainted(y)) return same;
+    if ((_setItems(x), _setItems(y)) case (final a?, final b?)) {
+      return _MatchFrame(x, y, a, b);
+    }
+
+    return _dictValues(x, y, (x as MontyDict).pairs, (y as MontyDict).pairs);
+  }
+
+  /// Two dicts' surviving values paired by key id, or false when their keys
+  /// differ.
+  Object _dictValues(
+    Object x,
+    Object y,
+    List<(MontyValue, MontyValue)> a,
+    List<(MontyValue, MontyValue)> b,
+  ) {
+    final ids = _hasher.interner;
+    final theirs = {for (final (k, v) in ids.entries(b)) ids.id(k): v};
+    final mine = ids.entries(a);
+    if (mine.length != theirs.length) return false;
+    final ys = <Object>[];
+    for (final (k, _) in mine) {
+      final match = theirs[ids.id(k)];
+      if (match == null) return false;
+      ys.add(match);
+    }
+
+    return _SeqFrame(x, y, [for (final (_, v) in mine) v], ys);
   }
 
   /// The settled result for the pair (x, y), else a new frame, marked open.

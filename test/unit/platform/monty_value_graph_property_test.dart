@@ -538,6 +538,39 @@ void main() {
       expect(forced.run(() => repeated.hashCode), clean.hashCode);
     });
 
+    test('a value that contains itself compares as before, on both paths', () {
+      // x = [x] and y = [x] are equal (their one items are identical), so
+      // dicts and sets holding them are too; canonical ids cannot see that,
+      // so tainted operands are compared through frames.
+      final x = _selfList();
+      final y = MontyList([x]);
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      for (final (a, b) in [
+        (
+          MontyDict([(const MontyString('k'), x)]),
+          MontyDict([(const MontyString('k'), y)]),
+        ),
+        (MontySet([x]), MontySet([y])),
+        (MontySet([x, x]), MontyFrozenSet([y])),
+      ]) {
+        expect(a == b, isTrue);
+        expect(forced.run(() => a == b), isTrue);
+        expect(forced.run(() => b == a), isTrue);
+      }
+      expect(
+        forced.run(() => MontySet([x]) == const MontySet([MontyInt(1)])),
+        isFalse,
+      );
+      expect(
+        forced.run(
+          () =>
+              MontyDict([(const MontyString('k'), x)]) ==
+              MontyDict([(const MontyString('j'), x)]),
+        ),
+        isFalse,
+      );
+    });
+
     test("both attribute maps' names are charged before they are read", () {
       final type = montyClassTypeProxy(
         name: 'C',

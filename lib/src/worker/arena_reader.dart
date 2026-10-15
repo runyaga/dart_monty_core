@@ -173,8 +173,6 @@ Object _builtAt(List<Object> built, int i) =>
 pb.MontyNode _nodeAt(List<pb.MontyNode> nodes, int i) =>
     nodes.elementAtOrNull(i) ?? (throw StateError('node $i is not checked'));
 
-Never _unchecked(_Builder _, pb.MontyNode n) => throw StateError('$n');
-
 bool _isClassNode(pb.MontyNode node) =>
     node.whichKind() == pb.MontyNode_Kind.type &&
     node.type.origin != originBuiltin;
@@ -230,7 +228,9 @@ final class _Builder {
 
   List<Object> build() {
     for (final node in _nodes) {
-      _built.add((_kinds[node.whichKind()] ?? _unchecked)(this, node));
+      // Stage 1 accepted only the kinds the map holds.
+      final kind = _kinds[node.whichKind()] ?? (throw StateError('$node'));
+      _built.add(kind(this, node));
     }
 
     return _built;
