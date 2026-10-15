@@ -46,12 +46,15 @@ final class MontyBool extends MontyValue {
   @override
   bool get dartValue => value;
 
+  /// Python's `bool` is an `int`: `True == 1 == 1.0 == 1+0j`.
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || (other is MontyBool && other.value == value);
+      identical(this, other) ||
+      (other is MontyBool ? other.value == value : _numEquals(this, other));
 
+  /// The hash of the integer 0 or 1, as every equal number has.
   @override
-  int get hashCode => value.hashCode;
+  int get hashCode => (value ? 1 : 0).hashCode;
 
   @override
   String toString() => 'MontyBool($value)';
@@ -82,21 +85,16 @@ final class MontyInt extends MontyValue {
   @override
   int get dartValue => value;
 
+  /// Python's numeric `==`: equal to the [MontyBigInt], [MontyBool],
+  /// [MontyFloat] or [MontyComplex] of the same number, compared exactly
+  /// (`2**64 + 1 != float(2**64)`).
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyInt && other.value == value) ||
-      // Python has ONE int type; the MontyInt/MontyBigInt split is a Dart
-      // artifact for JS-safe integers. Two representations of the same integer
-      // must compare equal, or `1` from one path is unequal to `1` from
-      // another. Normalised toward the CHEAP side: this hashCode is unchanged,
-      // and MontyBigInt is the one that folds in-range values to int.hashCode.
-      (other is MontyBigInt &&
-          other.value.isValidInt &&
-          other.value.toInt() == value);
+      (other is MontyInt ? other.value == value : _numEquals(this, other));
 
   @override
-  int get hashCode => value.hashCode;
+  int get hashCode => _intHash(value);
 
   @override
   String toString() => 'MontyInt($value)';
@@ -127,17 +125,19 @@ final class MontyFloat extends MontyValue {
   @override
   double get dartValue => value;
 
+  /// Python's numeric `==` (an integral float equals the int of its value,
+  /// exactly), except that NaN equals NaN: a recorded divergence, so a value
+  /// holding NaN can be a map key.
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! MontyFloat) return false;
-    if (value.isNaN && other.value.isNaN) return true;
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyFloat
+          ? _floatEquals(value, other.value)
+          : _numEquals(this, other));
 
-    return value == other.value;
-  }
-
+  /// An integral float hashes as its integer, as every equal number does.
   @override
-  int get hashCode => value.isNaN ? 0x7FF80000 : value.hashCode;
+  int get hashCode => _doubleHash(value);
 
   @override
   String toString() => 'MontyFloat($value)';
@@ -179,6 +179,57 @@ final class MontyFloat extends MontyValue {
     // destroys (core#128).
     return value;
   }
+}
+
+/// Represents a Python `complex` value.
+///
+/// It is a number: `MontyComplex(1, 0) == MontyInt(1)` and they hash
+/// alike, as `1 + 0j == 1` in Python. A complex equals a real number only
+/// when its imaginary part is zero (`-0.0` included). Each part compares as
+/// a [MontyFloat] does, so NaN equals NaN (the recorded divergence).
+@immutable
+final class MontyComplex extends MontyValue {
+  /// The complex number [real] + [imag]j. Any doubles, NaN and the
+  /// infinities included, as Python's `complex(real, imag)` accepts.
+  const MontyComplex(this.real, this.imag);
+
+  /// The real part.
+  final double real;
+
+  /// The imaginary part.
+  final double imag;
+
+  @override
+  int get _graphKind => _kFixed;
+
+  @override
+  Map<String, Object?> get dartValue => _toJson();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MontyComplex
+          ? _floatEquals(real, other.real) && _floatEquals(imag, other.imag)
+          : _numEquals(this, other));
+
+  /// With a zero imaginary part, the hash of the real part, as every equal
+  /// number has.
+  @override
+  int get hashCode => imag == 0
+      ? _doubleHash(real)
+      : Object.hash(_doubleHash(real), _doubleHash(imag));
+
+  @override
+  String toString() => 'MontyComplex($real, $imag)';
+
+  /// Each part in [MontyFloat]'s form, so NaN, the infinities and `-0.0`
+  /// survive.
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'complex',
+    'real': MontyFloat(real)._toJson(),
+    'imag': MontyFloat(imag)._toJson(),
+  };
 }
 
 /// Represents a Python `str` value.
@@ -232,19 +283,15 @@ final class MontyBigInt extends MontyValue {
   @override
   BigInt get dartValue => value;
 
+  /// Python's numeric `==`; see [MontyInt.==]. Python has one int type, so
+  /// a [MontyBigInt] equals the [MontyInt] of the same integer.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyBigInt && other.value == value) ||
-      // Symmetric with MontyInt.==; see the note there.
-      (other is MontyInt && value.isValidInt && value.toInt() == other.value);
+      (other is MontyBigInt ? other.value == value : _numEquals(this, other));
 
   @override
-  // Folds an in-range value to the SAME hash MontyInt would produce, which is
-  // what keeps `a == b => a.hashCode == b.hashCode` true across the pair. Out
-  // of range, no MontyInt can be equal, so BigInt's own hash is correct.
-  int get hashCode =>
-      value.isValidInt ? value.toInt().hashCode : value.hashCode;
+  int get hashCode => _bigHash(value);
 
   @override
   String toString() => 'MontyBigInt($value)';
@@ -360,4 +407,67 @@ int _attributesHash(Map<String, MontyValue> attributes) {
   }
 
   return h;
+}
+
+// ---------------------------------------------------------------------------
+// The numeric tower
+// ---------------------------------------------------------------------------
+
+/// Two doubles as [MontyFloat] compares them: by value, NaN equal to NaN.
+bool _floatEquals(double a, double b) => a == b || (a.isNaN && b.isNaN);
+
+/// [v] as a Python number: its real part (a [BigInt] for an integer type, a
+/// double for a float or complex) and its imaginary part; null for a value
+/// that is not a number.
+(Object, double)? _number(Object v) => switch (v) {
+  MontyBool(:final value) => (value ? BigInt.one : BigInt.zero, 0.0),
+  MontyInt(:final value) => (BigInt.from(value), 0.0),
+  MontyBigInt(:final value) => (value, 0.0),
+  MontyFloat(:final value) => (value, 0.0),
+  MontyComplex(:final real, :final imag) => (real, imag),
+  _ => null,
+};
+
+/// Python's `==` between two numbers of different classes: the imaginary
+/// parts as floats, then the real parts exactly, an integer against a float
+/// never by converting the integer to a double.
+bool _numEquals(Object a, Object b) {
+  final x = _number(a);
+  final y = _number(b);
+  if (x == null || y == null || !_floatEquals(x.$2, y.$2)) return false;
+
+  return switch ((x.$1, y.$1)) {
+    (final BigInt i, final BigInt j) => i == j,
+    (final double d, final double e) => _floatEquals(d, e),
+    (final BigInt i, final double d) ||
+    (final double d, final BigInt i) => _intEqualsDouble(i, d),
+    _ => false,
+  };
+}
+
+/// Whether [d] is exactly the integer [i].
+bool _intEqualsDouble(BigInt i, double d) =>
+    d.isFinite && d == d.truncateToDouble() && BigInt.from(d) == i;
+
+/// The largest magnitude whose hash is an `int`'s on every compiler.
+const int _maxSafeInt = 9007199254740992; // 2^53
+
+/// The hash of the integer [v]: an `int`'s within ±2^53, a [BigInt]'s
+/// beyond, on every compiler (on dart2js an `int` beyond 2^53 is a double).
+int _intHash(int v) =>
+    v > _maxSafeInt || v < -_maxSafeInt ? BigInt.from(v).hashCode : v.hashCode;
+
+/// The hash of the integer [v], as [_intHash] gives it.
+int _bigHash(BigInt v) =>
+    v.bitLength <= 53 || v.abs() == BigInt.from(_maxSafeInt)
+    ? v.toInt().hashCode
+    : v.hashCode;
+
+/// The hash of [d]: an integral value's as its integer's, NaN one constant.
+int _doubleHash(double d) {
+  if (d.isNaN) return 0x7FF80000;
+  if (d.isInfinite || d != d.truncateToDouble()) return d.hashCode;
+  if (d.abs() <= _maxSafeInt) return _intHash(d.toInt());
+
+  return BigInt.from(d).hashCode;
 }

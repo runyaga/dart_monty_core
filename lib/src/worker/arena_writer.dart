@@ -8,17 +8,23 @@
 ///   instance is one node per Dart object, across every [ArenaWriter.add],
 ///   so an object passed in two places reaches Python as one object;
 /// - a leaf (a scalar, a string, a date, an exception value, a file
-///   handle) is a fresh node at each reference;
-/// - the class of an instance is a node of its own, shared by class id while
-///   the class has no attributes, and fresh otherwise;
-/// - a class met again through its own attributes (a class constant that is
-///   an instance of the class) is a fresh node without attributes.
+///   handle, a host function) is a fresh node at each reference;
+/// - a [MontyClassTypeProxy] sent as a value is one node per Dart object, as
+///   a container is; the class of an instance is a node of its own, shared
+///   by class id while the class has no attributes, and fresh otherwise:
+///   class metadata reached through a [MontyClassProxy] has no identity;
+/// - a class with an identity (a [ClassType], the class a [ClassInstance]
+///   carries, a [MontyClassTypeProxy] sent as a value) met again through its
+///   own attributes is a fresh node without attributes; any other value met
+///   again inside itself is a cycle (upstream's `Circular reference
+///   detected`).
 ///
 /// It walks an explicit stack, so nesting depth is bounded by memory, not by
 /// the Dart call stack.
 ///
-/// It sends every kind the worker accepts as input except a host function,
-/// whose node [functionNode] builds for the registry that owns callables.
+/// It sends every kind the worker accepts as input. A [MontyHostFunction]
+/// is a function node with its own name ([functionNode]); a call from the
+/// sandbox dispatches by that name.
 ///
 /// It also sends host objects, given as their [ClassInstance] and
 /// [ClassType] wrappers, as upstream's encoder sends them: each wrapper is
@@ -88,8 +94,9 @@ final class ArenaWriter {
   /// may leave nodes for its children in [arena]; discard the writer, or use
   /// [tryAdd].
   ///
-  /// [value] is a [MontyValue] or a host-object wrapper; a wrapper's own
-  /// throws (its eager attributes, its hook) propagate.
+  /// [value] is a [MontyValue]; anything else is refused with Python's
+  /// `TypeError`. A host-object wrapper's own throws (its eager attributes,
+  /// its hook) propagate.
   int add(Object value) {
     // The containers and classes on the stack.
     final open = Set<Object>.identity();
@@ -141,8 +148,21 @@ final class ArenaWriter {
   /// container and returns null.
   int? _step(Object child, Set<Object> open, List<_Frame> stack) {
     if (child is! MontyValue) return _hostStep(child, open, stack);
+    // A class wrapper registers at each meeting, before its node is reused.
+    if (child is ClassType<Object>) {
+      return _enterHostClass(_HostClass.of(child), open, stack);
+    }
     if (_containers[child] case final id?) return id;
     final v = child;
+    switch (v) {
+      case final MontyClassTypeProxy type:
+        return _enterClass(type, open, stack, identity: true);
+      case final ClassInstance<Object> w:
+        return _enterInstance(w, open, stack);
+      case MontyHostFunction(:final name, :final docstring):
+        return _emit(functionNode(name, docstring: docstring));
+      default:
+    }
     final container = _container(v);
     if (container == null) return _emit(_leaf(v));
     final (children, build) = container;
@@ -163,39 +183,50 @@ final class ArenaWriter {
     return null;
   }
 
-  /// [_step] for what is not a [MontyValue]: a class's metadata, a host
-  /// object's wrapper or a method read from one; anything else is refused.
+  /// [_step] for what is not a [MontyValue]: a class proxy's metadata, a
+  /// host class an instance carries, or a method read from a wrapper;
+  /// anything else is refused.
   int? _hostStep(Object child, Set<Object> open, List<_Frame> stack) =>
       switch (child) {
-        final MontyClassTypeProxy type => _enterClass(type, open, stack),
-        BoundMethod(:final name) => _emit(functionNode(name)),
-        final _HostClass type => _enterHostClass(type, open, stack),
-        final ClassType<Object> w => _enterHostClass(
-          _HostClass.of(w),
+        _ProxyClass(:final type) => _enterClass(
+          type,
           open,
           stack,
+          identity: false,
         ),
-        final ClassInstance<Object> w =>
-          _containers[w] ?? _enterInstance(w, open, stack),
+        BoundMethod(:final name) => _emit(functionNode(name)),
+        final _HostClass type => _enterHostClass(type, open, stack),
         _ => throw _unconvertible(child),
       };
 
-  /// An instance's class: one node per id while it has no attributes, as
-  /// upstream's encoder keeps them; one per reference otherwise, since class
-  /// metadata reached through an instance carries no identity of its own.
-  /// A class met again while its own attributes are being emitted is a
-  /// fresh node without them, as upstream's encoder sends it.
+  /// A class proxy (upstream's `enter_class_type`): one node per id while
+  /// it has no attributes, and, with an [identity] (sent as a value), one
+  /// node per Dart object. With an identity, a class met again while its
+  /// own attributes are being emitted is a fresh node without them; without
+  /// one (an instance proxy's class), it is entered again, so its own
+  /// instance met again is a cycle, as upstream's encoder finds it.
   int? _enterClass(
     MontyClassTypeProxy type,
     Set<Object> open,
-    List<_Frame> stack,
-  ) {
-    if (open.contains(type)) return _emit(_classNode(type, const []));
+    List<_Frame> stack, {
+    required bool identity,
+  }) {
+    if (identity && open.contains(type)) {
+      return _emit(_classNode(type, const []));
+    }
     final shared = type.attrs.isEmpty ? _classes[_classKey(type)] : null;
-    if (shared != null) return shared;
-    open.add(type);
+    if (shared != null) {
+      if (identity) _containers[type] = shared;
+
+      return shared;
+    }
+    if (identity) open.add(type);
     stack.add(
-      _Frame(type, _attrChildren(type.attrs), (ids) => _classNode(type, ids)),
+      _Frame(
+        identity ? type : _ProxyClass(type),
+        _attrChildren(type.attrs),
+        (ids) => _classNode(type, ids),
+      ),
     );
 
     return null;
@@ -336,15 +367,16 @@ final class ArenaWriter {
   int _complete(_Frame frame, Set<Object> open) {
     final id = _emit(frame.build(frame.ids));
     switch (frame.source) {
-      case final MontyClassTypeProxy type when type.attrs.isEmpty:
-        _classes.putIfAbsent(_classKey(type), () => id);
+      case _ProxyClass(:final type):
+        if (type.attrs.isEmpty) _classes.putIfAbsent(_classKey(type), () => id);
+      case final MontyClassTypeProxy type:
+        if (type.attrs.isEmpty) _classes.putIfAbsent(_classKey(type), () => id);
+        _containers[type] = id;
       case final ClassType<Object> w:
         if (frame.children.isEmpty) _classes.putIfAbsent(w.id, () => id);
         _containers[w] = id;
       case final MontyValue v:
         _containers[v] = id;
-      case final ClassInstance<Object> w:
-        _containers[w] = id;
     }
     open.remove(frame.source);
 
@@ -374,6 +406,14 @@ final class ArenaWriter {
 
 /// A class's id as the uuid it names, whatever the hex digits' case.
 String _classKey(MontyClassTypeProxy type) => type.id.toLowerCase();
+
+/// The class of a [MontyClassProxy]: its metadata, which has no identity of
+/// its own (upstream's `ClassTypeSource` without one).
+final class _ProxyClass {
+  const _ProxyClass(this.type);
+
+  final MontyClassTypeProxy type;
+}
 
 /// A host class as one crossing meets it: its wrapper, registered, and its
 /// eager attributes, read anew at each meeting as upstream reads them.
@@ -431,10 +471,11 @@ PythonRefusal _unconvertible(Object value) => PythonRefusal(
 final class _Frame {
   _Frame(this.source, this.children, this.build);
 
-  /// The container value, or a [MontyClassTypeProxy].
+  /// The container or class value, or a [_ProxyClass].
   final Object source;
 
-  /// [MontyValue]s and [MontyClassTypeProxy]s, in emission order.
+  /// [MontyValue]s, [_ProxyClass]es, [_HostClass]es and host attribute
+  /// values, in emission order.
   final List<Object> children;
   final List<int> ids = [];
 
@@ -482,7 +523,7 @@ final class _Frame {
         (ids) => pb.MontyNode(dict: _pairs(ids)),
       ),
       MontyClassProxy(:final classType, :final instanceId, :final attrs) => (
-        [classType, ..._attrChildren(attrs)],
+        [_ProxyClass(classType), ..._attrChildren(attrs)],
         (ids) => pb.MontyNode(
           classInstance: pb.ClassInstanceNode(
             classType: _nz(ids.firstOrNull ?? 0),
@@ -507,6 +548,7 @@ String? _unhashableType(MontyValue v) => switch (v) {
   MontyDict() => 'dict',
   MontySet() => 'set',
   MontyClassProxy() => 'MontyClassProxy',
+  MontyClassTypeProxy() => 'MontyClassTypeProxy',
   _ => null,
 };
 
@@ -564,6 +606,7 @@ pb.MontyNode? _numberLeaf(MontyValue v) => switch (v) {
   MontyInt(:final value) => intNode(value),
   MontyBigInt(:final value) => bigIntNode(value),
   final MontyFloat f => montyFloatNode(f),
+  final MontyComplex c => montyComplexNode(c),
   _ => null,
 };
 
@@ -726,35 +769,15 @@ pb.MontyNode _opaque(MontyStdTypeProxy o) => switch (o.kind) {
   ),
 };
 
-/// The largest file position the wire's `uint64` carries.
-final BigInt _maxPosition = (BigInt.one << 64) - BigInt.one;
-
-pb.FileHandle _fileHandle(MontyFileHandle h) {
-  final mode = canonicalFileMode(h.mode);
-  if (mode == null) {
-    throw ArgumentError.value(
-      h,
-      'value',
-      'invalid file mode ${rustDebug(h.mode)}',
-    );
-  }
-  final position = BigInt.from(h.position);
-  if (position.isNegative || position > _maxPosition) {
-    throw ArgumentError.value(
-      h,
-      'value',
-      'file position ${h.position} is outside 0..2^64-1',
-    );
-  }
-
-  return pb.FileHandle(
-    path: _nzs(_checkText(h, h.path, 'file path')),
-    mode: mode,
-    position: position == BigInt.zero
-        ? null
-        : Int64.parseInt(position.toUnsigned(64).toString()),
-  );
-}
+/// A file handle: its constructor already holds upstream's rules (a
+/// canonical mode, a path with a UTF-8 form, a `u64` position).
+pb.FileHandle _fileHandle(MontyFileHandle h) => pb.FileHandle(
+  path: _nzs(h.path),
+  mode: h.mode,
+  position: h.position == BigInt.zero
+      ? null
+      : Int64.parseHex(h.position.toRadixString(16)),
+);
 
 /// [name], or null when it is absent or has no UTF-8 form: upstream's
 /// `timezone.__getinitargs__()` reading drops such a name and keeps the

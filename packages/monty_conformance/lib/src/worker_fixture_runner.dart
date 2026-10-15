@@ -314,7 +314,7 @@ Future<MontyValue> _drive(
       case NameLookupSnapshot(:final variableName) && final lookup:
         if (mount) {
           snapshot = await lookup.resume(
-            value: variableName == 'root' ? const MontyPath('/mnt') : null,
+            value: variableName == 'root' ? MontyPath('/mnt') : null,
           );
         } else if (workerFixtureFunctions.contains(variableName)) {
           snapshot = await lookup.resumeAuto();

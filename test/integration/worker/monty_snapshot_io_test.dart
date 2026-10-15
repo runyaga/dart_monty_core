@@ -206,7 +206,7 @@ void main() {
 
           return switch (name) {
             'Path.write_text' => const MontyInt(2),
-            'Path.rename' => const MontyPath('/b.txt'),
+            'Path.rename' => MontyPath('/b.txt'),
             'os.getenv' => const MontyString('/home/u'),
             _ => const MontyNone(),
           };

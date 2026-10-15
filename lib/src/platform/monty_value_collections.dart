@@ -86,7 +86,8 @@ final class MontyTuple extends MontyValue {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyTuple && _MontyValueGraph.equals(this, other));
+      ((other is MontyTuple || other is MontyNamedTuple) &&
+          _MontyValueGraph.equals(this, other));
 
   @override
   int get hashCode => _MontyValueGraph.hash(this);
@@ -120,10 +121,9 @@ final class MontyTuple extends MontyValue {
 /// (`crates/monty/src/types/dict.rs`: a length check plus a per-key lookup), so
 /// the split contradicted the language being bound.
 ///
-/// Key comparison is by exact [MontyValue] subtype, so `{1: 'a'}` and
-/// `{True: 'a'}` — the same dict in Python — are unequal here. That is a
-/// property of every `MontyValue` and not of this type; the wire preserves the
-/// int/float/bool distinction on purpose.
+/// Keys compare as Python's do: `{1: 'a'}` and `{True: 'a'}` are the same
+/// dict. A dict built here with two equal keys compares as the dict Python
+/// builds from the same pairs: the first key, with the last value.
 @immutable
 final class MontyDict extends MontyValue {
   /// Creates a [MontyDict] from insertion-ordered [pairs].
@@ -143,10 +143,10 @@ final class MontyDict extends MontyValue {
   @override
   Object? get dartValue => _MontyValueGraph.nodeDartValue(this);
 
-  // Order-insensitive, matching the sandbox: the (key, value) pairs compare as
-  // a multiset, so a dict built with a duplicate key compares as it always
-  // did. Commutative hash: equal dicts hash equally whatever order their pairs
-  // arrived in.
+  // Order-insensitive, matching the sandbox: each key with the value it keeps
+  // (Python's construction: equal keys collapse to the first, holding the
+  // last value). Commutative hash over those entries, so equal dicts hash
+  // equally whatever order their pairs arrived in.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -190,18 +190,18 @@ final class MontySet extends MontyValue {
   // the same set in Python -- were unequal, and hashed differently.
   //
   // This is the same defect the two dict classes had (see [MontyDict]); the
-  // sets were simply left behind when that one was fixed. Monty collapses
-  // equal elements before the value reaches the wire, so multiset equality is
-  // exactly set equality here.
+  // sets were simply left behind when that one was fixed. A set built here
+  // with two equal members compares as the set Python builds from them: by
+  // its distinct members, and a set equals a frozenset of the same members.
   //
-  // `+` rather than upstream's XOR on purpose: XOR cancels duplicates, so a
-  // forged `{"__type": "set", "value": [1, 1]}` would hash like the EMPTY set.
-  // Both are commutative; only one of them survives a hostile payload. Each
-  // element hash is mixed before the sum, so small consecutive element hashes
+  // `+` over the distinct members' hashes: equal sets sum the same hashes,
+  // whatever duplicates either was built with. Each element hash is mixed
+  // before the sum, so small consecutive element hashes
   // rarely collide.
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontySet && _MontyValueGraph.equals(this, other));
+      ((other is MontySet || other is MontyFrozenSet) &&
+          _MontyValueGraph.equals(this, other));
 
   @override
   int get hashCode => _MontyValueGraph.hash(this);
@@ -239,18 +239,18 @@ final class MontyFrozenSet extends MontyValue {
   // the same set in Python -- were unequal, and hashed differently.
   //
   // This is the same defect the two dict classes had (see [MontyDict]); the
-  // sets were simply left behind when that one was fixed. Monty collapses
-  // equal elements before the value reaches the wire, so multiset equality is
-  // exactly set equality here.
+  // sets were simply left behind when that one was fixed. A set built here
+  // with two equal members compares as the set Python builds from them: by
+  // its distinct members, and a set equals a frozenset of the same members.
   //
-  // `+` rather than upstream's XOR on purpose: XOR cancels duplicates, so a
-  // forged `{"__type": "set", "value": [1, 1]}` would hash like the EMPTY set.
-  // Both are commutative; only one of them survives a hostile payload. Each
-  // element hash is mixed before the sum, so small consecutive element hashes
+  // `+` over the distinct members' hashes: equal sets sum the same hashes,
+  // whatever duplicates either was built with. Each element hash is mixed
+  // before the sum, so small consecutive element hashes
   // rarely collide.
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyFrozenSet && _MontyValueGraph.equals(this, other));
+      ((other is MontyFrozenSet || other is MontySet) &&
+          _MontyValueGraph.equals(this, other));
 
   @override
   int get hashCode => _MontyValueGraph.hash(this);

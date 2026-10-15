@@ -270,3 +270,71 @@ int ordinalDay(int year, int month, int day) {
 
   return era * 146097 + doe - 306;
 }
+
+/// [mode] as upstream's `FileMode::from_str` parses it (monty-types 1.1.0,
+/// `file_mode.rs:161-210`): one of `r`, `w` or `a`, at most one `b` or one
+/// `t`, in any order. Gives the canonical mode (`rt` is `r`, `br` is `rb`),
+/// or, for a mode upstream refuses, its message.
+({String? canonical, String? error}) parseFileMode(String mode) {
+  String? action;
+  var binary = false;
+  var text = false;
+  for (final c in mode.runes) {
+    final ch = String.fromCharCode(c);
+    switch (ch) {
+      case 'r' || 'w' || 'a':
+        if (action != null) {
+          return _modeError(
+            'must have exactly one of create/read/write/append mode',
+          );
+        }
+        action = ch;
+      case 'x':
+        return _modeError('exclusive creation mode is not supported');
+      case 'b':
+        if (binary) {
+          return _modeError('invalid mode: binary mode specified twice');
+        }
+        binary = true;
+      case 't':
+        if (text) return _modeError('invalid mode: text mode specified twice');
+        text = true;
+      case '+':
+        return _modeError("update modes ('+') are not yet supported");
+      default:
+        return _modeError('invalid mode: ${_rustCharDebug(c)}');
+    }
+  }
+  if (binary && text) {
+    return _modeError("can't have text and binary mode at once");
+  }
+  if (action == null) {
+    return _modeError(
+      'Must have exactly one of create/read/write/append mode and at most '
+      'one plus',
+    );
+  }
+
+  return (canonical: binary ? '${action}b' : action, error: null);
+}
+
+({String? canonical, String? error}) _modeError(String message) =>
+    (canonical: null, error: message);
+
+/// The code point [c] as Rust's `{:?}` renders a `char`: in single quotes,
+/// `'` and `\` escaped, `\t`, `\n`, `\r` and `\0` named, and a control
+/// character as `\u{hex}`.
+String _rustCharDebug(int c) {
+  final body = switch (c) {
+    0x09 => r'\t',
+    0x0a => r'\n',
+    0x0d => r'\r',
+    0x00 => r'\0',
+    0x27 => r"\'",
+    0x5c => r'\\',
+    _ when c < 0x20 || (c >= 0x7f && c < 0xa0) => '\\u{${c.toRadixString(16)}}',
+    _ => String.fromCharCode(c),
+  };
+
+  return "'$body'";
+}

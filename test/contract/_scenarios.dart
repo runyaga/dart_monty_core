@@ -193,7 +193,7 @@ final List<Scenario> scenarios = [
     'a filesystem OS call declined',
     feeds: ["from pathlib import Path\nPath('/a/b.txt').read_text()"],
     script: (f) => f
-      ..willCallOs('Path.read_text', args: [const MontyPath('/a/b.txt')])
+      ..willCallOs('Path.read_text', args: [MontyPath('/a/b.txt')])
       ..willReturn(_none),
     run: (s) => s.run(0, os: s.os(_decline)),
     trace: [
@@ -208,7 +208,7 @@ final List<Scenario> scenarios = [
     'a declined path is written as Python writes a str',
     feeds: ["from pathlib import Path\nPath(\"/a'b\").exists()"],
     script: (f) => f
-      ..willCallOs('Path.exists', args: [const MontyPath("/a'b")])
+      ..willCallOs('Path.exists', args: [MontyPath("/a'b")])
       ..willReturn(_none),
     run: (s) => s.run(0, os: s.os(_decline)),
     trace: [
@@ -773,7 +773,7 @@ final List<Scenario> scenarios = [
     'an async OS handler answering Path.read_text',
     feeds: ["from pathlib import Path\nPath('/f.txt').read_text()"],
     script: (f) => f
-      ..willCallOs('Path.read_text', args: [const MontyPath('/f.txt')])
+      ..willCallOs('Path.read_text', args: [MontyPath('/f.txt')])
       ..willReturn(_str('hi')),
     run: (s) => s.run(0, os: s.os((_, _, _) async => _str('hi'))),
     trace: [
@@ -1543,7 +1543,7 @@ final List<Scenario> scenarios = [
     'a path argument arrives normalised',
     feeds: ["from pathlib import Path\nf(Path('/a/./b//c'))"],
     script: (f) => f
-      ..willCall('f', args: [const MontyPath('/a/./b//c')])
+      ..willCall('f', args: [MontyPath('/a/./b//c')])
       ..willReturn(_none),
     run: (s) => s.run(0, externals: {'f': s.fn('f')}),
     trace: [

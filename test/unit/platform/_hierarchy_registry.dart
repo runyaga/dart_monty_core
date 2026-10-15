@@ -62,7 +62,7 @@ final hierarchySamples = <String, MontyValue>{
   'MontyFrozenSet': const MontyFrozenSet([MontyInt(1)]),
   'MontyEllipsis': const MontyEllipsis(),
   'MontyNotImplemented': const MontyNotImplemented(),
-  'MontyPath': const MontyPath('/x'),
+  'MontyPath': MontyPath('/x'),
   'MontyDate': const MontyDate(year: 2026, month: 1, day: 2),
   'MontyDateTime': const MontyDateTime(
     year: 2026,
@@ -101,11 +101,7 @@ final hierarchySamples = <String, MontyValue>{
     fieldNames: ['x'],
     values: [MontyInt(1)],
   ),
-  'MontyFileHandle': const MontyFileHandle(
-    path: '/f',
-    mode: 'r',
-    position: 7,
-  ),
+  'MontyFileHandle': MontyFileHandle('/f', 'r', position: BigInt.from(7)),
   'MontyClassProxy': montyClassProxy(
     classType: montyClassTypeProxy(
       name: 'C',

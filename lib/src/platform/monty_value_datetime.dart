@@ -93,45 +93,60 @@ final class MontyDateTime extends MontyValue {
   /// The timezone name, or `null` for naive datetimes.
   final String? timezoneName;
 
+  /// An aware datetime as a UTC [DateTime] at its instant; a naive one as a
+  /// local [DateTime] from its fields. A [DateTime] has no zone name, so
+  /// [timezoneName] stays on this value only.
   @override
-  DateTime get dartValue => DateTime(
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    second,
-    0,
-    microsecond,
-  );
+  DateTime get dartValue => switch (offsetSeconds) {
+    final offset? => DateTime.utc(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second - offset,
+      0,
+      microsecond,
+    ),
+    null => DateTime(year, month, day, hour, minute, second, 0, microsecond),
+  };
 
+  /// As Python's: two aware datetimes are equal at the same instant,
+  /// whatever their offsets and zone names; two naive ones when their fields
+  /// are; a naive one never equals an aware one.
   @override
   bool operator ==(Object other) =>
-      identical(this, other) || (other is MontyDateTime && _fieldsEqual(other));
+      identical(this, other) ||
+      (other is MontyDateTime &&
+          (offsetSeconds == null) == (other.offsetSeconds == null) &&
+          (offsetSeconds == null
+              ? _naiveEquals(other)
+              : _instantSeconds == other._instantSeconds &&
+                    microsecond == other.microsecond));
 
-  bool _fieldsEqual(MontyDateTime o) =>
+  bool _naiveEquals(MontyDateTime o) =>
       o.year == year &&
       o.month == month &&
       o.day == day &&
       o.hour == hour &&
       o.minute == minute &&
       o.second == second &&
-      o.microsecond == microsecond &&
-      o.offsetSeconds == offsetSeconds &&
-      o.timezoneName == timezoneName;
+      o.microsecond == microsecond;
 
+  /// The whole seconds from 1970-01-01T00:00Z to an aware datetime's
+  /// instant; exact on every compiler (under 2^53 for any Python date).
+  int get _instantSeconds =>
+      _daysFromCivil(year, month, day) * 86400 +
+      hour * 3600 +
+      minute * 60 +
+      second -
+      (offsetSeconds ?? 0);
+
+  /// The hash of what [==] compares: the instant, or the naive fields.
   @override
-  int get hashCode => Object.hash(
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    second,
-    microsecond,
-    offsetSeconds,
-    timezoneName,
-  );
+  int get hashCode => offsetSeconds == null
+      ? Object.hash(year, month, day, hour, minute, second, microsecond)
+      : Object.hash(_instantSeconds, microsecond);
 
   @override
   String toString() =>
@@ -178,12 +193,26 @@ final class MontyTimeDelta extends MontyValue {
   @override
   int get _graphKind => _kFixed;
 
+  /// The [Duration] of exactly this timedelta.
+  ///
+  /// Throws [StateError] when a [Duration] cannot hold it exactly on this
+  /// platform (beyond 2^63 microseconds, or 2^53 on dart2js), rather than
+  /// truncating; the value itself stays usable.
   @override
-  Duration get dartValue => Duration(
-    days: days,
-    seconds: seconds,
-    microseconds: microseconds,
-  );
+  Duration get dartValue {
+    final total =
+        (BigInt.from(days) * BigInt.from(86400) + BigInt.from(seconds)) *
+            BigInt.from(1000000) +
+        BigInt.from(microseconds);
+    if (!total.isValidInt || total.bitLength > _durationBits) {
+      throw StateError(
+        'timedelta(days=$days, seconds=$seconds, microseconds=$microseconds) '
+        'is $total microseconds, which a Duration cannot hold exactly here',
+      );
+    }
+
+    return Duration(microseconds: total.toInt());
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -223,15 +252,14 @@ final class MontyTimeZone extends MontyValue {
   @override
   Map<String, Object?> get dartValue => _toJson();
 
+  /// As Python's `timezone.__eq__`: by offset; the name is not compared.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyTimeZone &&
-          other.offsetSeconds == offsetSeconds &&
-          other.name == name);
+      (other is MontyTimeZone && other.offsetSeconds == offsetSeconds);
 
   @override
-  int get hashCode => Object.hash(offsetSeconds, name);
+  int get hashCode => offsetSeconds.hashCode;
 
   @override
   String toString() => 'MontyTimeZone(offset=$offsetSeconds, name=$name)';
@@ -292,28 +320,27 @@ final class MontyTime extends MontyValue {
       'MontyTime($hour:$minute:$second.$microsecond'
       '${offsetSeconds == null ? '' : ' offset=$offsetSeconds'})';
 
+  /// As Python's `time.__eq__`: two naive times by their fields; two aware
+  /// ones by the minutes after subtracting each offset (floored to whole
+  /// minutes, as Python does), not wrapped at midnight, then seconds and
+  /// microseconds; a naive time never equals an aware one. [fold] and
+  /// [timezoneName] are not compared.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is MontyTime &&
-          other.hour == hour &&
-          other.minute == minute &&
+          (offsetSeconds == null) == (other.offsetSeconds == null) &&
+          other._minutes == _minutes &&
           other.second == second &&
-          other.microsecond == microsecond &&
-          other.offsetSeconds == offsetSeconds &&
-          other.timezoneName == timezoneName &&
-          other.fold == fold);
+          other.microsecond == microsecond);
 
+  /// The minutes of the day [==] compares: less the offset when aware.
+  int get _minutes => hour * 60 + minute - ((offsetSeconds ?? 0) / 60).floor();
+
+  /// The hash of what [==] compares.
   @override
-  int get hashCode => Object.hash(
-    hour,
-    minute,
-    second,
-    microsecond,
-    offsetSeconds,
-    timezoneName,
-    fold,
-  );
+  int get hashCode =>
+      Object.hash(offsetSeconds == null, _minutes, second, microsecond);
 
   @override
   Map<String, Object?> _toJson() => {
@@ -327,3 +354,19 @@ final class MontyTime extends MontyValue {
     'fold': fold,
   };
 }
+
+/// The days from 1970-01-01 to the proleptic Gregorian date [y]-[m]-[d]
+/// (Howard Hinnant's `days_from_civil`), exact for any Python date.
+int _daysFromCivil(int y, int m, int d) {
+  final yy = m <= 2 ? y - 1 : y;
+  final era = (yy >= 0 ? yy : yy - 399) ~/ 400;
+  final yoe = yy - era * 400;
+  final doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) ~/ 5 + d - 1;
+  final doe = yoe * 365 + yoe ~/ 4 - yoe ~/ 100 + doy;
+
+  return era * 146097 + doe - 719468;
+}
+
+/// The widest microsecond count a [Duration] holds exactly: 63 bits, or 53
+/// on dart2js, where an `int` is a double.
+const int _durationBits = identical(1, 1.0) ? 53 : 63;

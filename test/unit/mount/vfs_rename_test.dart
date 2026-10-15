@@ -214,7 +214,7 @@ void main() {
         await h('Path.rename', ['/mnt/hello.txt', '/etc/passwd'], null);
 
         expect(seen, [
-          [const MontyPath('/mnt/hello.txt'), const MontyPath('/etc/passwd')],
+          [MontyPath('/mnt/hello.txt'), MontyPath('/etc/passwd')],
         ]);
       });
     });

@@ -63,7 +63,7 @@ void main() {
         ],
       );
       expect(
-        () => h('Path.read_text', [const MontyPath('/m/f.bin')], const {}),
+        () => h('Path.read_text', [MontyPath('/m/f.bin')], const {}),
         throwsA(
           isA<ExternalException>()
               .having((e) => e.excType, 'excType', 'UnicodeDecodeError')

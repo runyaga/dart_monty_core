@@ -43,7 +43,7 @@ void cwdSessionTests(String label, WithSession withSession) {
           },
         );
         expect(stats, [
-          [const MontyPath('/data')],
+          [MontyPath('/data')],
         ]);
         expect(
           await s.feedRun('os.getcwd()', printCallback: _ignore),

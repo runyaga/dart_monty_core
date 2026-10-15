@@ -69,17 +69,29 @@ void main() {
       expect(const MontyList(ints).hashCode, MontyList(bigs).hashCode);
     });
 
-    test('SCOPE: float and bool are deliberately NOT folded in', () {
-      // Python says 1 == 1.0 == True. This fix covers int/bigint ONLY, because
-      // the wire preserves the int/float distinction on purpose and monty
-      // returns MontyBool for True. Pinned so the scope is explicit rather
-      // than discovered later.
+    test('float, bool and complex are folded in too (C5D q4)', () {
+      // Python says 1 == 1.0 == True == 1+0j, with one hash. The wire still
+      // keeps the classes apart; equality is the numeric tower's.
       const one = MontyInt(1);
-      const oneAsFloat = MontyFloat(1);
-      final notOneAsFloat = isNot(oneAsFloat);
-      expect(one, notOneAsFloat);
-      expect(one, isNot(const MontyBool(true)));
-      expect(big('1'), notOneAsFloat);
+      for (final same in [
+        const MontyFloat(1),
+        const MontyBool(true),
+        const MontyComplex(1, 0),
+        big('1'),
+      ]) {
+        expect(one, same);
+        expect(same, one);
+        expect(one.hashCode, same.hashCode);
+      }
+      // Exact, never through a double: 2**64 + 1 != float(2**64).
+      expect(
+        big('18446744073709551617'),
+        isNot(const MontyFloat(18446744073709551616)),
+      );
+      expect(
+        big('18446744073709551616'),
+        const MontyFloat(18446744073709551616),
+      );
     });
   });
 }

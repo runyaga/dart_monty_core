@@ -19,8 +19,9 @@ void main() {
     // still be useless in a failure message.
     final cases = <String, (MontyValue, List<String>)>{
       'MontyFileHandle': (
-        const MontyFileHandle(path: '/tmp/f', mode: 'r', position: 7),
-        ['MontyFileHandle', '/tmp/f', 'r', '7'],
+        // Upstream's repr, which leaves out the position.
+        MontyFileHandle('/tmp/f', 'r', position: BigInt.from(7)),
+        ['MontyFileHandle', "path='/tmp/f'", "mode='r'"],
       ),
       'MontyTimeDelta': (
         const MontyTimeDelta(days: 2, seconds: 30, microseconds: 5),

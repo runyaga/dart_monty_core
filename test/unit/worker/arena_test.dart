@@ -63,7 +63,7 @@ void main() {
         ]),
         const MontyBytes([0, 255]),
       );
-      expect(_decode([pb.MontyNode(path: '/x')]), const MontyPath('/x'));
+      expect(_decode([pb.MontyNode(path: '/x')]), MontyPath('/x'));
     });
 
     test('an integral float stays a float on every compiler', () {
@@ -261,7 +261,7 @@ void main() {
         const MontyFloat(4),
         const MontyString('héllo ✓'),
         const MontyBytes([0, 255]),
-        const MontyPath('/x'),
+        MontyPath('/x'),
         const MontyList([MontyInt(1)]),
         const MontyTuple([MontyString('t')]),
         const MontySet([MontyInt(3), MontyInt(1)]),

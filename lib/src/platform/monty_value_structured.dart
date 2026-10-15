@@ -42,12 +42,16 @@ final class MontyEllipsis extends MontyValue {
 // ---------------------------------------------------------------------------
 
 /// Represents a Python `pathlib.Path` value.
+///
+/// The path is normalised as `PurePosixPath` normalises it (`a//b` is
+/// `a/b`, `./a/` is `a`, the empty path is `.`), so `==`, the hash and what
+/// is sent to Python all see one form.
 @immutable
 final class MontyPath extends MontyValue {
-  /// Creates a [MontyPath] with the given string [value].
-  const MontyPath(this.value);
+  /// The path [value], normalised as `str(PurePosixPath(value))`.
+  MontyPath(String value) : value = purePosixPath(value);
 
-  /// The underlying path string.
+  /// The normalised path string.
   final String value;
 
   @override
@@ -72,21 +76,36 @@ final class MontyPath extends MontyValue {
 // ---------------------------------------------------------------------------
 
 /// Represents an open file object (`_io.TextIOWrapper` / `BufferedReader` /
-/// …) produced by Python's `open()`.
+/// …) produced by Python's `open()`: upstream's `MontyFileHandle`.
 ///
 /// The interpreter never holds a live OS handle: an `open` OS-call returns
 /// one of these (carrying the virtual [path], canonical open() [mode], and
 /// byte/char [position]), and the engine drives subsequent reads/writes
 /// through `Path.read_text`/`write_text`/… OS-calls. An `OsHandler`
 /// servicing `open` returns a [MontyFileHandle] to satisfy the call.
+///
+/// Two handles are equal when their fields are (Python compares file
+/// objects by identity, which a detached copy cannot carry: a recorded
+/// divergence).
 @immutable
 final class MontyFileHandle extends MontyValue {
-  /// Creates a [MontyFileHandle] for [path] opened in [mode] at [position].
-  const MontyFileHandle({
-    required this.path,
-    required this.mode,
-    this.position = 0,
-  });
+  /// A handle for [path] opened in [mode] at [position] (zero when null).
+  ///
+  /// As upstream's constructor: [mode] is parsed and stored in its canonical
+  /// form (`rt` is `r`); a mode upstream refuses, a [path] with an unpaired
+  /// UTF-16 surrogate (no Python `str` holds one), and a [position] outside
+  /// 0..2^64-1 throw [ArgumentError].
+  MontyFileHandle(this.path, String mode, {BigInt? position})
+    : mode = _canonicalMode(mode),
+      position = _checkedPosition(position ?? BigInt.zero) {
+    if (hasUnpairedSurrogate(path)) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'a file path has no unpaired UTF-16 surrogate',
+      );
+    }
+  }
 
   /// The virtual (sandbox) path of the file. Never a host path.
   final String path;
@@ -95,8 +114,18 @@ final class MontyFileHandle extends MontyValue {
   final String mode;
 
   /// Position for sized/line/seek operations: char index in text mode,
-  /// byte index in binary mode. `0` for a freshly opened file.
-  final int position;
+  /// byte index in binary mode. Zero for a freshly opened file; at most
+  /// 2^64-1, as upstream's `u64`.
+  final BigInt position;
+
+  /// Whether [mode] opens the file in binary form (`rb`, `wb`, `ab`).
+  bool get binary => mode.endsWith('b');
+
+  /// Whether [mode] permits `read()`.
+  bool get readable => mode.startsWith('r');
+
+  /// Whether [mode] permits `write()`.
+  bool get writable => !readable;
 
   @override
   Map<String, Object?> get dartValue => _toJson();
@@ -112,16 +141,44 @@ final class MontyFileHandle extends MontyValue {
   @override
   int get hashCode => Object.hash(path, mode, position);
 
+  /// Upstream's repr: `MontyFileHandle(path='/x', mode='r')`.
   @override
-  String toString() => 'MontyFileHandle($path, mode: $mode, pos: $position)';
+  String toString() =>
+      'MontyFileHandle(path=${pythonRepr(path)}, mode=${pythonRepr(mode)})';
 
+  /// The position as a JSON number up to 2^53, as decimal text beyond.
   @override
   Map<String, Object?> _toJson() => {
     '__type': 'filehandle',
     'path': path,
     'mode': mode,
-    'position': position,
+    'position': position <= _maxJsonInt ? position.toInt() : '$position',
   };
+}
+
+/// The largest integer every compiler holds exactly as a JSON number.
+final BigInt _maxJsonInt = BigInt.two.pow(53);
+
+/// The largest file position, upstream's `u64::MAX`.
+final BigInt _maxPosition = BigInt.two.pow(64) - BigInt.one;
+
+String _canonicalMode(String mode) {
+  final parsed = parseFileMode(mode);
+
+  return parsed.canonical ??
+      (throw ArgumentError.value(mode, 'mode', parsed.error));
+}
+
+BigInt _checkedPosition(BigInt position) {
+  if (position.isNegative || position > _maxPosition) {
+    throw ArgumentError.value(
+      position,
+      'position',
+      'a file position is in 0..2^64-1',
+    );
+  }
+
+  return position;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,12 +210,14 @@ final class MontyNamedTuple extends MontyValue {
   @override
   Map<String, Object?> get dartValue => _toJson();
 
-  // Compares the type and field names too, where Python compares a named
-  // tuple as a plain tuple: a recorded divergence.
+  /// As Python's: a named tuple is a tuple, equal to any [MontyTuple] or
+  /// [MontyNamedTuple] with equal items, whatever the type and field names,
+  /// and hashed as that tuple.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyNamedTuple && _MontyValueGraph.equals(this, other));
+      ((other is MontyNamedTuple || other is MontyTuple) &&
+          _MontyValueGraph.equals(this, other));
 
   @override
   int get hashCode => _MontyValueGraph.hash(this);
@@ -201,14 +260,21 @@ final class MontyNotImplemented extends MontyValue {
   Map<String, Object?> _toJson() => {'__type': 'not_implemented'};
 }
 
-/// The class an instance belongs to, as it crosses the host boundary:
-/// upstream's `MontyClassTypeProxy` (monty-proto
-/// `src/python/class_instance.rs`), which carries exactly these five fields.
+/// A Python class as it crosses the host boundary: upstream's
+/// `MontyClassTypeProxy` (monty-proto `src/python/class_instance.rs`), which
+/// carries exactly these five fields.
 ///
-/// Built only by the package ([montyClassTypeProxy]); a caller receives one
-/// from a decoded [MontyClassProxy].
+/// A class sent back as a value decodes to one unless the session has a
+/// [ClassType] registered under its id, and the class of every decoded
+/// [MontyClassProxy] is one. Passing one back re-enters the sandbox as the
+/// same class.
+///
+/// Two are equal when their class ids are, as upstream's (`__eq__`, one
+/// type object per id in the sandbox); the hash is the id's.
+///
+/// Built only by the package ([montyClassTypeProxy]).
 @immutable
-final class MontyClassTypeProxy {
+final class MontyClassTypeProxy extends MontyValue {
   const MontyClassTypeProxy._({
     required this.name,
     required this.id,
@@ -237,17 +303,31 @@ final class MontyClassTypeProxy {
   final Map<String, MontyValue> attrs;
 
   @override
-  String toString() =>
-      'MontyClassTypeProxy($name, id: $id, isDataclass: $isDataclass)';
+  int get _graphKind => _kClassType;
+
+  @override
+  Map<String, Object?> get dartValue => _toJson();
+
+  /// The class name and the attribute count. The attributes themselves are
+  /// not rendered: a shared or deeply nested value would make that unbounded.
+  @override
+  String toString() => 'MontyClassTypeProxy($name, ${attrs.length} attrs)';
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is MontyClassTypeProxy && _MontyValueGraph.equals(this, other));
+      (other is MontyClassTypeProxy && _idKey(other.id) == _idKey(id));
 
   @override
-  int get hashCode => _MontyValueGraph.hash(this);
+  int get hashCode => _idKey(id).hashCode;
+
+  @override
+  Map<String, Object?> _toJson() =>
+      _MontyValueGraph.nodeToJson(this) as Map<String, Object?>;
 }
+
+/// A class id as the uuid it names, whatever the hex digits' case.
+String _idKey(String id) => id.toLowerCase();
 
 /// A [MontyClassTypeProxy]; internal (the constructor is not public), left
 /// out of the public `show` lists.
@@ -267,6 +347,10 @@ MontyClassTypeProxy montyClassTypeProxy({
 
 /// A Python class instance crossing the host boundary: upstream's
 /// `MontyClassProxy`, a class, an instance id and the instance's attributes.
+///
+/// Two are equal, as upstream's (`__eq__`), when their class names,
+/// dataclass flags and attributes are; the instance id and the class id are
+/// not compared.
 ///
 /// Built only by the package ([montyClassProxy]); a caller receives one from
 /// a run and may pass it back.

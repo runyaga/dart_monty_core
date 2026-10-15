@@ -48,8 +48,12 @@ void main() {
       expect(a, isNot(const MontyBool(false)));
     });
 
-    test('not equal to other MontyValue subtypes', () {
-      expect(const MontyBool(true), isNot(const MontyInt(1)));
+    test("is a number, as Python's bool is an int", () {
+      expect(const MontyBool(true), const MontyInt(1));
+      expect(const MontyBool(true).hashCode, const MontyInt(1).hashCode);
+      expect(const MontyBool(false), const MontyFloat(0));
+      expect(const MontyBool(true), isNot(const MontyInt(2)));
+      expect(const MontyBool(true), isNot(const MontyString('True')));
     });
 
     test('toJson + dartValue', () {
@@ -65,7 +69,8 @@ void main() {
       expect(a, b);
       expect(a.hashCode, b.hashCode);
       expect(a, isNot(const MontyInt(43)));
-      expect(const MontyInt(0), isNot(const MontyBool(false)));
+      expect(const MontyInt(0), const MontyBool(false));
+      expect(const MontyInt(0), isNot(const MontyString('0')));
     });
 
     test('toJson + dartValue within the exact range', () {
@@ -348,10 +353,13 @@ void main() {
       );
     });
 
-    test('not equal to a MontyFrozenSet with the same items', () {
+    test('equal to a MontyFrozenSet with the same items', () {
       const s = MontySet([MontyInt(1)]);
       const fs = MontyFrozenSet([MontyInt(1)]);
-      expect(s, isNot(fs));
+      expect(s, fs);
+      expect(fs, s);
+      expect(s.hashCode, fs.hashCode);
+      expect(s, isNot(const MontyFrozenSet([MontyInt(2)])));
     });
   });
 
@@ -479,18 +487,18 @@ void main() {
 
   group('MontyPath', () {
     test('equality + hashCode', () {
-      const a = MontyPath('/data/hello.txt');
-      const b = MontyPath('/data/hello.txt');
+      final a = MontyPath('/data/hello.txt');
+      final b = MontyPath('/data/hello.txt');
       expect(a, b);
       expect(a.hashCode, b.hashCode);
     });
 
     test('dartValue is the path string', () {
-      expect(const MontyPath('/etc').dartValue, '/etc');
+      expect(MontyPath('/etc').dartValue, '/etc');
     });
 
     test('different paths are not equal', () {
-      expect(const MontyPath('/a'), isNot(const MontyPath('/b')));
+      expect(MontyPath('/a'), isNot(MontyPath('/b')));
     });
   });
 
@@ -510,7 +518,7 @@ void main() {
       expect(a.hashCode, b.hashCode);
     });
 
-    test('different typeName is not equal (even with identical fields)', () {
+    test('different names are equal, as Python compares a tuple', () {
       const a = MontyNamedTuple(
         typeName: 'Point',
         fieldNames: ['x', 'y'],
@@ -518,10 +526,13 @@ void main() {
       );
       const b = MontyNamedTuple(
         typeName: 'Vec',
-        fieldNames: ['x', 'y'],
+        fieldNames: ['u', 'v'],
         values: [MontyInt(1), MontyInt(2)],
       );
-      expect(a, isNot(b));
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, const MontyTuple([MontyInt(1), MontyInt(2)]));
+      expect(a.hashCode, const MontyTuple([MontyInt(1), MontyInt(2)]).hashCode);
     });
 
     test('different field values are not equal', () {
@@ -628,24 +639,24 @@ void main() {
   // ------------------------------------------------------------------
 
   group('cross-type', () {
-    test('MontyValue subtypes never compare equal across distinct types', () {
-      // Smoke check on a representative sample. The sealed hierarchy
-      // means any pair of distinct concrete subtypes must not be ==.
-      const samples = <MontyValue>[
-        MontyNone(),
-        MontyBool(true),
-        MontyInt(0),
-        MontyFloat(0),
-        MontyString(''),
-        MontyBytes([]),
-        MontyList([]),
-        MontyTuple([]),
-        MontyDict([]),
-        MontySet([]),
-        MontyFrozenSet([]),
-        MontyDate(year: 1, month: 1, day: 1),
-        MontyTimeDelta(days: 0, seconds: 0),
-        MontyTimeZone(offsetSeconds: 0),
+    test('distinct subtypes compare equal only where Python says so', () {
+      // Smoke check on a representative sample. Python's equal pairs across
+      // classes are the numeric tower (`0 == 0.0`), set == frozenset and
+      // tuple == named tuple; the others, here, never compare equal.
+      final samples = <MontyValue>[
+        const MontyNone(),
+        const MontyBool(true),
+        const MontyInt(0),
+        const MontyFloat(0.5),
+        const MontyString(''),
+        const MontyBytes([]),
+        const MontyList([]),
+        const MontyTuple([]),
+        const MontyDict([]),
+        const MontySet([]),
+        const MontyDate(year: 1, month: 1, day: 1),
+        const MontyTimeDelta(days: 0, seconds: 0),
+        const MontyTimeZone(offsetSeconds: 0),
         MontyPath(''),
       ];
       for (var i = 0; i < samples.length; i++) {

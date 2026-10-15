@@ -1,6 +1,13 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/double_text.dart';
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
+import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
+    show ExternalException;
+import 'package:dart_monty_core/src/worker/python_rules.dart'
+    show hasUnpairedSurrogate, parseFileMode, purePosixPath, pythonRepr;
 import 'package:meta/meta.dart';
 
 part 'monty_value_scalars.dart';
@@ -8,6 +15,7 @@ part 'monty_value_collections.dart';
 part 'monty_value_datetime.dart';
 part 'monty_value_structured.dart';
 part 'monty_value_graph.dart';
+part 'monty_value_host.dart';
 
 const _deepEq = DeepCollectionEquality();
 
@@ -23,6 +31,10 @@ const _deepEq = DeepCollectionEquality();
 ///   case null: print('no value');
 /// }
 /// ```
+///
+/// Equality is Python's: the numeric classes ([MontyBool], [MontyInt],
+/// [MontyBigInt], [MontyFloat], [MontyComplex]) compare and hash as Python's
+/// numbers do, so `MontyBool(true) == MontyInt(1)`.
 sealed class MontyValue {
   const MontyValue();
 
@@ -31,7 +43,8 @@ sealed class MontyValue {
   /// Handles:
   /// - `MontyValue` instances (passed through)
   /// - `null`, `bool`, `int`, `double`, `String`
-  /// - `DateTime` (→ [MontyDateTime] in UTC, to the microsecond)
+  /// - `DateTime` (→ an aware [MontyDateTime] at its instant, to the
+  ///   microsecond, with its UTC offset: zero for a UTC `DateTime`)
   /// - `List` (elements recursively converted)
   /// - `Map` (keys and values recursively converted)
   ///

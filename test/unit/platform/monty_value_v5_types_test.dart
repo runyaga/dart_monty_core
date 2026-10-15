@@ -83,130 +83,64 @@ void main() {
       attrs: const {},
     );
 
-    test('equality is structural across every field', () {
-      expect(
-        base,
-        montyClassTypeProxy(
-          name: 'User',
-          id: 'id-1',
-          hostDefined: false,
-          isDataclass: true,
-          attrs: const {},
-        ),
-      );
+    MontyClassTypeProxy variant({
+      String name = 'User',
+      String id = 'id-1',
+      bool hostDefined = false,
+      bool isDataclass = true,
+      Map<String, MontyValue> attrs = const {},
+    }) => montyClassTypeProxy(
+      name: name,
+      id: id,
+      hostDefined: hostDefined,
+      isDataclass: isDataclass,
+      attrs: attrs,
+    );
+
+    test('equality is by class id alone, as upstream (one type per id)', () {
+      // class_instance.rs:314-319: __eq__ compares class_type.id only.
+      for (final other in [
+        variant(name: 'Other'),
+        variant(hostDefined: true),
+        variant(isDataclass: false),
+        variant(attrs: const {'x': MontyInt(1)}),
+        variant(id: 'ID-1'),
+      ]) {
+        expect(base, other);
+        expect(other, base);
+        expect(base.hashCode, other.hashCode);
+      }
+      expect(base, isNot(variant(id: 'id-2')));
     });
 
-    test('differing in ANY single field breaks equality', () {
-      // One case per field. A == that forgot a field would pass the happy-path
-      // test above and fail exactly here.
-      expect(
-        base,
-        isNot(
-          montyClassTypeProxy(
-            name: 'Other',
-            id: 'id-1',
-            hostDefined: false,
-            isDataclass: true,
-            attrs: const {},
-          ),
-        ),
-      );
-      expect(
-        base,
-        isNot(
-          montyClassTypeProxy(
-            name: 'User',
-            id: 'id-2',
-            hostDefined: false,
-            isDataclass: true,
-            attrs: const {},
-          ),
-        ),
-      );
-      expect(
-        base,
-        isNot(
-          montyClassTypeProxy(
-            name: 'User',
-            id: 'id-1',
-            hostDefined: true,
-            isDataclass: true,
-            attrs: const {},
-          ),
-        ),
-      );
-      expect(
-        base,
-        isNot(
-          montyClassTypeProxy(
-            name: 'User',
-            id: 'id-1',
-            hostDefined: false,
-            isDataclass: false,
-            attrs: const {},
-          ),
-        ),
-      );
-      expect(
-        base,
-        isNot(
-          montyClassTypeProxy(
-            name: 'User',
-            id: 'id-1',
-            hostDefined: false,
-            isDataclass: true,
-            attrs: const {'x': MontyInt(1)},
-          ),
-        ),
-      );
+    test('is a value: a class type proxy is a MontyValue', () {
+      const id = _identity;
+      expect(id(base), same(base));
+      expect(base.dartValue, {
+        '__type': 'class_type',
+        'name': 'User',
+        'id': 'id-1',
+        'host_defined': false,
+        'is_dataclass': true,
+        'attrs': {'__type': 'dict', 'value': <String, Object?>{}},
+      });
     });
 
-    test('attrs equality is DEEP, not identity', () {
-      // The two maps are built SEPARATELY and deliberately not const. Dart
-      // canonicalises equal const literals to one instance, so a const map
-      // here would make `identical` below TRUE and the test would pass for the
-      // opposite of the reason it exists. Hoisting them out of the constructor
-      // also keeps the analyzer's const lints off a place where const is wrong.
-      final attrsA = <String, MontyValue>{'x': const MontyInt(1)};
-      final attrsB = <String, MontyValue>{'x': const MontyInt(1)};
-      final a = montyClassTypeProxy(
-        name: 'C',
-        id: 'i',
-        hostDefined: false,
-        isDataclass: false,
-        attrs: attrsA,
-      );
-      final b = montyClassTypeProxy(
-        name: 'C',
-        id: 'i',
-        hostDefined: false,
-        isDataclass: false,
-        attrs: attrsB,
-      );
-      expect(identical(a.attrs, b.attrs), isFalse, reason: 'distinct maps');
-      expect(a, b);
-      expect(a.hashCode, b.hashCode);
-    });
-
-    test('toString names the class, its id and the dataclass flag', () {
-      expect(
-        base.toString(),
-        'MontyClassTypeProxy(User, id: id-1, isDataclass: true)',
-      );
+    test('toString names the class and counts its attributes', () {
+      expect(base.toString(), 'MontyClassTypeProxy(User, 0 attrs)');
     });
   });
 
   group('MontyClassProxy', () {
-    test('equality is structural, and instanceId participates', () {
+    test('equality is by class name, dataclass flag and attributes', () {
+      // class_instance.rs:255-263: the instance id is not compared.
       final a = _instance();
       final b = _instance();
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-      expect(
-        a,
-        isNot(_instance(instanceId: 'a-different-instance')),
-        reason: 'two instances of one class are distinct',
-      );
+      final other = _instance(instanceId: 'a-different-instance');
+      expect(a, other);
+      expect(a.hashCode, other.hashCode);
     });
 
     test('class metadata is read through classType', () {
@@ -221,3 +155,5 @@ void main() {
     });
   });
 }
+
+MontyValue _identity(MontyValue v) => v;

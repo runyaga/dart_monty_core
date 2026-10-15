@@ -17,8 +17,8 @@ library;
 
 import 'dart:convert';
 
-import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/python_rules.dart';
 
 /// `TypeOrigin`'s numbers; the generator declares `Type.origin` as `int32`,
 /// so the raw number arrives even when it names no origin.
@@ -273,24 +273,7 @@ Never invalidNode(String message) => throw FormatException(
 /// Exactly one of `r`, `w`, `a`; at most one `b` and one `t`, not both; no
 /// `x` or `+`; any order. `rt` becomes `r` and `br` becomes `rb`, as CPython
 /// normalizes them.
-String? canonicalFileMode(String mode) {
-  final chars = mode.split('');
-  int count(String c) => chars.where((x) => x == c).length;
-  final action = [
-    for (final a in const ['r', 'w', 'a'])
-      if (chars.contains(a)) a,
-  ].singleOrNull;
-  final binary = count('b');
-  final valid =
-      action != null &&
-      chars.every('rwabt'.contains) &&
-      count(action) == 1 &&
-      binary + count('t') <= 1;
-
-  final suffix = binary == 1 ? 'b' : '';
-
-  return valid ? '$action$suffix' : null;
-}
+String? canonicalFileMode(String mode) => parseFileMode(mode).canonical;
 
 /// [s] as Rust's `{:?}` renders a string: in double quotes, with `\\` and
 /// `"` escaped, `\t`, `\n`, `\r` and `\0` named, and every character Rust
