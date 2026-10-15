@@ -567,10 +567,7 @@ void main() {
           expect(worker.readAhead.paused, isTrue);
           expect(worker.readAhead.now, early);
           await failed;
-          expect(
-            worker.readAhead.peak,
-            lessThan(ProcessChannel.readAheadLimit * 2),
-          );
+          expect(worker.readAhead.peak, lessThan(worker.readAhead.bound));
           await worker.exitCode.timeout(const Duration(seconds: 5));
           expect(pool.liveWorkers, 0);
           expect(

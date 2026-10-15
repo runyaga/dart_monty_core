@@ -772,6 +772,35 @@ void main() {
         await expectTexts(['d']);
       },
     );
+
+    test('a delivery that ends the frame in flight is queued whole, even '
+        'far past twice the limit', () async {
+      // As the VM reads a pipe the worker keeps refilling: a small delivery
+      // crosses the limit inside a frame, then one large delivery ends that
+      // frame and carries many more.
+      List<int> numbered(int i) => frame('$i:'.padRight(90));
+      final split = numbered(11);
+      final crossing = [
+        for (var i = 0; i < 11; i++) ...numbered(i),
+        ...split.take(50),
+      ];
+      final completing = [
+        ...split.skip(50),
+        for (var i = 12; i < 60; i++) ...numbered(i),
+      ];
+      bytes.add(crossing);
+      await pump();
+      expect(bytes.isPaused, isFalse, reason: 'a frame is in flight');
+      bytes.add(completing);
+      await pump();
+      expect(bytes.isPaused, isTrue);
+      expect(queue.readAhead, crossing.length + completing.length);
+      // Past the limit by more than the one large delivery, and within the
+      // bound: two deliveries and two frames.
+      final (:peak, :bound) = queue.peakReadAhead;
+      expect(peak, greaterThan(limit + completing.length));
+      expect(peak, lessThan(bound));
+    });
   });
 
   group('registry', () {

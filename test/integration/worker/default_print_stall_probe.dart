@@ -71,6 +71,8 @@ Future<void> _stall(String? worker, {required bool byClose}) async {
       // slowly (measured on Linux CI), so the queue can shrink and refill;
       // the bound is the peak below. A second under flood follows, still
       // within the turn. The requestTimeout leaves room for both waits.
+      // The bound counts the deliveries the pause lands between, which the
+      // VM makes up to about 4 MiB each on a loaded machine.
       await _filled(channel, how);
       await Future<void>.delayed(const Duration(seconds: 1));
       _check(channel.isAlive, '$how: the worker died within the turn');
@@ -81,11 +83,8 @@ Future<void> _stall(String? worker, {required bool byClose}) async {
         '$how: the call failed with $error',
       );
       _check(_ticks - ticks >= 10, '$how: ${_ticks - ticks} timer ticks');
-      final peak = channel.readAhead.peak;
-      _check(
-        peak < ProcessChannel.readAheadLimit * 2,
-        '$how: read-ahead peak $peak',
-      );
+      final (:peak, :bound, now: _, paused: _) = channel.readAhead;
+      _check(peak < bound, '$how: read-ahead peak $peak, bound $bound');
       await session.close();
       final value = await pool.withSessionWith(
         (s) => s.feedRun('1 + 1'),
