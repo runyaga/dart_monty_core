@@ -77,9 +77,10 @@ void main() {
     test('projects as a number up to 2^53 and as text beyond', () {
       final two53 = BigInt.two.pow(53);
       MontyFileHandle at(BigInt p) => MontyFileHandle('/x', 'r', position: p);
-      expect(at(two53).dartValue['position'], 9007199254740992);
+      final exact = at(two53);
+      expect(exact.dartValue['position'], 9007199254740992);
       expect(at(two53 + BigInt.one).dartValue['position'], '9007199254740993');
-      expect(at(two53).toJson(), {
+      expect(exact.toJson(), {
         '__type': 'filehandle',
         'path': '/x',
         'mode': 'r',

@@ -41,7 +41,7 @@ double _float(Object? text) => switch (text) {
   'nan' => double.nan,
   'inf' => double.infinity,
   '-inf' => double.negativeInfinity,
-  _ => double.parse(text! as String),
+  _ => double.parse('$text'),
 };
 
 /// An integer as the reader builds it: MontyInt within 2^53, else
@@ -54,7 +54,7 @@ MontyValue _int(String digits) {
       : MontyBigInt(big);
 }
 
-MontyValue build(List<Object?> spec) => switch (spec) {
+MontyValue build(Object? spec) => switch (spec) {
   ['bool', final bool b] => MontyBool(b),
   ['int', final String d] => _int(d),
   ['float', final t] => MontyFloat(_float(t)),
@@ -70,14 +70,13 @@ MontyValue build(List<Object?> spec) => switch (spec) {
   ] =>
     MontyNamedTuple(
       typeName: name,
-      fieldNames: fields.cast<String>(),
+      fieldNames: [for (final f in fields) '$f'],
       values: _all(xs),
     ),
   ['set', final List<Object?> xs] => MontySet(_all(xs)),
   ['frozenset', final List<Object?> xs] => MontyFrozenSet(_all(xs)),
   ['dict', final List<Object?> pairs] => MontyDict([
-    for (final [k, v] in pairs.cast<List<Object?>>())
-      (build(k! as List<Object?>), build(v! as List<Object?>)),
+    for (final [k, v] in pairs.cast<List<Object?>>()) (build(k), build(v)),
   ]),
   ['tz', final int offset, final String? name] => MontyTimeZone(
     offsetSeconds: offset,
@@ -128,7 +127,7 @@ MontyValue build(List<Object?> spec) => switch (spec) {
 };
 
 List<MontyValue> _all(List<Object?> specs) => [
-  for (final s in specs) build(s! as List<Object?>),
+  for (final s in specs) build(s),
 ];
 
 /// The pairs Python calls unequal (NaN is not equal to itself) where Dart's
@@ -148,8 +147,8 @@ void main() {
       final dart = python || nanDivergence.contains((a, b));
       test('$a vs $b: ${dart ? 'equal' : 'unequal'}'
           '${dart != python ? ' (NaN divergence)' : ''}', () {
-        final x = build(valueSpecs[a]!);
-        final y = build(valueSpecs[b]!);
+        final x = build(valueSpecs[a]);
+        final y = build(valueSpecs[b]);
         expect(eqBothPaths(x, y), dart, reason: '$a == $b');
         expect(eqBothPaths(y, x), dart, reason: '$b == $a (symmetry)');
         if (dart) {

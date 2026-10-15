@@ -196,7 +196,8 @@ final class MontyTimeDelta extends MontyValue {
   /// The [Duration] of exactly this timedelta.
   ///
   /// Throws [StateError] when a [Duration] cannot hold it exactly on this
-  /// platform (beyond 2^63 microseconds, or 2^53 on dart2js), rather than
+  /// platform (an `int` cannot hold the microsecond count exactly: beyond
+  /// 2^63, or, on dart2js, a count a double cannot represent), rather than
   /// truncating; the value itself stays usable.
   @override
   Duration get dartValue {
@@ -204,7 +205,7 @@ final class MontyTimeDelta extends MontyValue {
         (BigInt.from(days) * BigInt.from(86400) + BigInt.from(seconds)) *
             BigInt.from(1000000) +
         BigInt.from(microseconds);
-    if (!total.isValidInt || total.bitLength > _durationBits) {
+    if (!total.isValidInt) {
       throw StateError(
         'timedelta(days=$days, seconds=$seconds, microseconds=$microseconds) '
         'is $total microseconds, which a Duration cannot hold exactly here',
@@ -359,14 +360,11 @@ final class MontyTime extends MontyValue {
 /// (Howard Hinnant's `days_from_civil`), exact for any Python date.
 int _daysFromCivil(int y, int m, int d) {
   final yy = m <= 2 ? y - 1 : y;
-  final era = (yy >= 0 ? yy : yy - 399) ~/ 400;
+  final era = (yy < 0 ? yy - 399 : yy) ~/ 400;
   final yoe = yy - era * 400;
-  final doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) ~/ 5 + d - 1;
+  final shifted = m + (m < 3 ? 9 : -3); // March is month 0
+  final doy = (shifted * 153 + 2) ~/ 5 + d - 1;
   final doe = yoe * 365 + yoe ~/ 4 - yoe ~/ 100 + doy;
 
   return era * 146097 + doe - 719468;
 }
-
-/// The widest microsecond count a [Duration] holds exactly: 63 bits, or 53
-/// on dart2js, where an `int` is a double.
-const int _durationBits = identical(1, 1.0) ? 53 : 63;

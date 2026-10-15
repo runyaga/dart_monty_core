@@ -349,6 +349,7 @@ void main() {
       ..[k1] = MontyInt(first)
       ..[k2] = MontyInt(second);
 
+    final oneTwo = inst(twoKeys(1, 2));
     final cases = <String, (MontyValue, MontyValue)>{
       'a map with its own key comparison': (
         inst(caseless),
@@ -362,12 +363,9 @@ void main() {
         inst(twoKeys(3, 4)),
         inst(twoKeys(4, 3)),
       ),
-      'a repeated key, values differ': (
-        inst(twoKeys(1, 2)),
-        inst(twoKeys(1, 1)),
-      ),
+      'a repeated key, values differ': (oneTwo, inst(twoKeys(1, 1))),
       'a repeated key and the value it keeps': (
-        inst(twoKeys(1, 2)),
+        oneTwo,
         inst(const {'k': MontyInt(2)}),
       ),
     };
@@ -475,4 +473,101 @@ void main() {
     expect(forced.run(() => c == d), isTrue);
     expect(forced.fallbacks, 2);
   });
+
+  group('repeats collapse without unbounded work', () {
+    test('a 5,000-deep chain of sets whose two members are equal', () {
+      // Each level holds two distinct, equal sets of the level below: the
+      // fallback collapses them by canonical id, iteratively, in linear
+      // time, where comparing each pair afresh doubled per level.
+      MontyFrozenSet chain() {
+        MontyValue a = const MontyInt(1);
+        MontyValue b = MontyBigInt(BigInt.one);
+        for (var i = 0; i < 5000; i++) {
+          final next = MontyFrozenSet([a, b]);
+          b = MontyFrozenSet([b, a]);
+          a = next;
+        }
+
+        return a as MontyFrozenSet;
+      }
+
+      final x = chain();
+      final y = chain();
+      final watch = Stopwatch()..start();
+      expect(x == y, isTrue);
+      expect(x.hashCode, y.hashCode);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
+    });
+
+    test('an overwritten dict value is never read, on either path', () {
+      final cyclic = MontyDict([
+        (const MontyString('k'), _selfList()),
+        (const MontyString('k'), const MontyInt(1)),
+      ]);
+      const clean = MontyDict([(MontyString('k'), MontyInt(1))]);
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      expect(cyclic == clean, isTrue);
+      expect(forced.run(() => cyclic == clean), isTrue);
+      expect(cyclic.hashCode, clean.hashCode);
+      expect(forced.run(() => cyclic.hashCode), clean.hashCode);
+      expect(forced.fallbacks, 2);
+    });
+
+    test('an overwritten attribute value is never read, on either path', () {
+      final k1 = String.fromCharCodes([107]);
+      final k2 = String.fromCharCodes([107]);
+      final type = montyClassTypeProxy(
+        name: 'C',
+        id: 'c',
+        hostDefined: false,
+        isDataclass: false,
+        attrs: const {},
+      );
+      MontyClassProxy inst(Map<String, MontyValue> attrs) =>
+          montyClassProxy(classType: type, instanceId: 'i', attrs: attrs);
+      final repeated = inst(
+        Map.identity()
+          ..[k1] = _selfList()
+          ..[k2] = const MontyInt(1),
+      );
+      final clean = inst(const {'k': MontyInt(1)});
+      final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
+      expect(repeated == clean, isTrue);
+      expect(forced.run(() => repeated == clean), isTrue);
+      expect(repeated.hashCode, clean.hashCode);
+      expect(forced.run(() => repeated.hashCode), clean.hashCode);
+    });
+
+    test("both attribute maps' names are charged before they are read", () {
+      final type = montyClassTypeProxy(
+        name: 'C',
+        id: 'c',
+        hostDefined: false,
+        isDataclass: false,
+        attrs: const {},
+      );
+      final empty = montyClassProxy(
+        classType: type,
+        instanceId: 'i',
+        attrs: const {},
+      );
+      final wide = montyClassProxy(
+        classType: type,
+        instanceId: 'i',
+        attrs: {for (var i = 0; i < 10000; i++) 'a$i': const MontyInt(1)},
+      );
+      final budget = ValueGraphBudget(maxVisits: 10);
+      expect(budget.run(() => empty == wide), isFalse);
+      expect(budget.fallbacks, 1);
+    });
+  });
+}
+
+/// A list that holds itself.
+MontyList _selfList() {
+  final items = <MontyValue>[];
+  final x = MontyList(items);
+  items.add(x);
+
+  return x;
 }

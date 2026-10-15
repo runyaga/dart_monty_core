@@ -4,7 +4,7 @@
 ///
 /// The wrappers themselves, [ClassType] and [ClassInstance], and the
 /// [HostClass] that describes a class, are values and live in the value
-/// library (`platform/monty_value_host.dart`); this library re-exports them
+/// library (`platform/host_class.dart`); this library re-exports them
 /// for the session, the writer and the reader.
 ///
 /// A wrapper is a policy: which attributes cross eagerly, which the sandbox

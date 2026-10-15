@@ -15,7 +15,7 @@ part 'monty_value_collections.dart';
 part 'monty_value_datetime.dart';
 part 'monty_value_structured.dart';
 part 'monty_value_graph.dart';
-part 'monty_value_host.dart';
+part 'host_class.dart';
 
 const _deepEq = DeepCollectionEquality();
 

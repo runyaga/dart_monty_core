@@ -129,9 +129,11 @@ List<T> _collapse<T>(
     final candidates = scan
         ? [for (var i = 0; i < out.length; i++) i]
         : (buckets[hash(key(x))] ??= []);
-    final hit = candidates.where((i) => same(key(out[i]), key(x))).firstOrNull;
-    if (hit != null) {
-      out[hit] = merge(out[hit], x);
+    final hit = candidates.firstWhereOrNull(
+      (i) => same(key(out.elementAtOrNull(i) ?? x), key(x)),
+    );
+    if (out.elementAtOrNull(hit ?? -1) case final kept? when hit != null) {
+      out[hit] = merge(kept, x);
     } else {
       candidates.add(out.length);
       out.add(x);
@@ -280,8 +282,9 @@ void _forEachChild(Object v, void Function(Object) f) {
       attrs.values.forEach(f);
     case MontyClassProxy(:final attrs):
       // Its class compares by name and dataclass flag only (a class type
-      // is an equality leaf), so only the attributes are children here.
-      attrs.values.forEach(f);
+      // is an equality leaf), so only the attributes each name keeps are
+      // children here.
+      _survivors(attrs).values.forEach(f);
   }
 }
 
@@ -289,9 +292,19 @@ void _forEachChild(Object v, void Function(Object) f) {
 abstract class _Hasher {
   int child(Object v);
 
-  /// Whether two children are equal, for collapsing repeated set members
-  /// and dict keys.
-  bool same(Object a, Object b);
+  /// A set's members without repeats, as Python's set construction keeps
+  /// them.
+  List<MontyValue> distinct(List<MontyValue> items) =>
+      _distinct(items, equals, child);
+
+  /// A dict's entries as Python's construction keeps them: each key once,
+  /// at its first position, with its last value.
+  List<(MontyValue, MontyValue)> entries(
+    List<(MontyValue, MontyValue)> pairs,
+  ) => _entries(pairs, equals, child);
+
+  /// Whether two children are equal.
+  bool equals(Object x, Object y);
 
   /// Counts [units] of work against the fast path's budget.
   void charge(int units);
@@ -336,7 +349,7 @@ abstract class _Hasher {
 
   int _set(List<MontyValue> xs) {
     var h = 0;
-    for (final x in _distinct(xs, same, child)) {
+    for (final x in distinct(xs)) {
       h = (h + _mixElementHash(child(x))) & _hashMask;
     }
 
@@ -347,7 +360,7 @@ abstract class _Hasher {
   /// keeps.
   int _dict(List<(MontyValue, MontyValue)> pairs) {
     var acc = 0;
-    for (final (k, x) in _entries(pairs, same, child)) {
+    for (final (k, x) in entries(pairs)) {
       acc += Object.hash(_Hashed(child(k)), _Hashed(child(x)));
     }
 
@@ -403,9 +416,6 @@ final class _FastWalk extends _Hasher {
   int child(Object v) => hash(v);
 
   @override
-  bool same(Object a, Object b) => equals(a, b);
-
-  @override
   void charge(int units) => _visit(units);
 
   @override
@@ -414,6 +424,7 @@ final class _FastWalk extends _Hasher {
     _visit(_textLength(texts) >> 4);
   }
 
+  @override
   bool equals(Object x, Object y) {
     if (identical(x, y)) {
       // Still a visit: a shared element compared with itself many times over
@@ -479,21 +490,20 @@ final class _FastWalk extends _Hasher {
     return true;
   }
 
-  /// The attribute maps compared by the value each name keeps: in step when
-  /// the keys come in the same order, else as dict pairs (a map with its own
-  /// key equality, an identity map, can repeat a name; the last value is
-  /// kept, as a dict keeps it).
+  /// The attribute maps compared by the value each name keeps (a map with
+  /// its own key equality, an identity map, can repeat a name; the last
+  /// value is kept, as a dict keeps it): in step when the names come in the
+  /// same order, else as dict pairs. Both maps' names are charged before
+  /// either is read.
   bool _equalAttrs(Map<String, MontyValue> a, Map<String, MontyValue> b) {
     chargeTexts(a.keys);
-    final repeats = _hasRepeatedKey(a, this) || _hasRepeatedKey(b, this);
-    if (!repeats && a.length != b.length) return false;
-    final inStep = a.length == b.length && _sameKeyOrder(a, b);
-    if (inStep && _equalInStep(this, a.values, b.values)) return true;
-    // Entries that do not line up can still be equal: keys in another
-    // order, or a repeated key.
-    if (inStep && !repeats) return false;
+    chargeTexts(b.keys);
+    final x = _survivors(a);
+    final y = _survivors(b);
+    if (x.length != y.length) return false;
+    if (_sameKeyOrder(x, y)) return _equalInStep(this, x.values, y.values);
 
-    return _equalDict(_attrPairs(a), _attrPairs(b));
+    return _equalDict(_attrPairs(x), _attrPairs(y));
   }
 
   /// Set equality over the distinct members (Python's set construction
@@ -616,25 +626,6 @@ extension<T> on List<T> {
 int _textLength(Iterable<String> texts) =>
     texts.fold(0, (n, s) => n + s.length);
 
-/// Whether [m] holds two equal keys, which only a map with its own key
-/// equality (an identity map) can.
-///
-/// Keys are bucketed by hash and compared within a bucket, each comparison
-/// charged to [w] (the fast path) so that colliding keys cannot hide work.
-bool _hasRepeatedKey(Map<String, MontyValue> m, [_Hasher? w]) {
-  final seen = <int, List<String>>{};
-  for (final key in m.keys) {
-    final bucket = seen[key.hashCode] ??= [];
-    for (final other in bucket) {
-      w?.charge((key.length >> 4) + 1);
-      if (other == key) return true;
-    }
-    bucket.add(key);
-  }
-
-  return false;
-}
-
 /// Calls [f] on each child a projection of [v] builds. A string-keyed dict,
 /// and an attribute map, project only the value that survives for each key,
 /// as the string-keyed projection does.
@@ -703,6 +694,9 @@ bool _sameClassHeader(MontyClassProxy a, MontyClassProxy b) =>
 /// Hashes with a memo keyed by identity. Every node and payload leaf is
 /// hashed once per operation.
 final class _MemoHasher extends _Hasher {
+  /// The operation's canonical ids, shared with its equality.
+  final _Interner interner = _Interner();
+
   final Map<Object, int> _memo = Map.identity();
 
   /// The fallback has no budget: it is linear in distinct nodes.
@@ -722,7 +716,15 @@ final class _MemoHasher extends _Hasher {
   }
 
   @override
-  bool same(Object a, Object b) => _MemoEquals(this).equals(a, b);
+  List<MontyValue> distinct(List<MontyValue> items) => interner.distinct(items);
+
+  @override
+  bool equals(Object x, Object y) => interner.id(x) == interner.id(y);
+
+  @override
+  List<(MontyValue, MontyValue)> entries(
+    List<(MontyValue, MontyValue)> pairs,
+  ) => interner.entries(pairs);
 
   int hash(Object root) {
     final kind = _kindOf(root);
@@ -743,17 +745,24 @@ final class _MemoHasher extends _Hasher {
         stack.removeLast();
         continue;
       }
-      if (open.add(v) && _pushChildren(v, open, stack)) continue;
+      open.add(v);
+      if (_pushChildren(v, open, stack)) continue;
       stack.removeLast();
       open.remove(v);
       _memo[v] = combine(v);
     }
   }
 
-  /// Pushes the children not yet hashed; false when there are none.
+  /// Pushes the children not yet hashed; false when there are none. A dict's
+  /// children are the entries it keeps: an overwritten value is not hashed.
   bool _pushChildren(Object v, Set<Object> open, List<Object> stack) {
     final before = stack.length;
-    _forEachChild(v, (c) {
+    void each(void Function(Object) f) => v is MontyDict
+        ? [
+            for (final (k, x) in interner.entries(v.pairs)) ...[k, x],
+          ].forEach(f)
+        : _forEachChild(v, f);
+    each((c) {
       final k = _kindOf(c);
       if (_isFixedForHash(k) || _memo.containsKey(c)) return;
       if (k == _kPayload) {
@@ -767,6 +776,123 @@ final class _MemoHasher extends _Hasher {
 
     return stack.length > before;
   }
+}
+
+/// Canonical ids under the aligned equality: two values get one id exactly
+/// when they are equal. Built bottom-up on an explicit stack and memoised by
+/// identity for one operation, so a set's repeated members and a dict's
+/// repeated keys collapse without recursion and without comparing a pair
+/// twice, however deep or shared the value. A value met again inside itself
+/// gets an id of its own, so a value that contains itself equals only
+/// itself, as the walk's other operations treat it.
+final class _Interner {
+  final Map<Object, int> _ids = Map.identity();
+
+  /// Leaves by their own `==` and `hashCode`, which agree.
+  final Map<MontyValue, int> _leaves = {};
+  final Map<String, int> _nodes = {};
+  int _next = 0;
+
+  int id(Object root) {
+    final open = Set<Object>.identity();
+    final stack = [root];
+    for (var v = stack.lastOrNull; v != null; v = stack.lastOrNull) {
+      if (_ids.containsKey(v)) {
+        stack.removeLast();
+        continue;
+      }
+      if (_isEqLeafKind(_kindOf(v))) {
+        stack.removeLast();
+        _ids[v] = _leaves.putIfAbsent(v as MontyValue, () => _next++);
+        continue;
+      }
+      open.add(v);
+      final before = stack.length;
+      for (final c in _children(v)) {
+        if (_ids.containsKey(c)) continue;
+        if (open.contains(c)) {
+          // Identity only: it is still open, so its structure has no id.
+          _ids[c] = _next++;
+          continue;
+        }
+        stack.add(c);
+      }
+      if (stack.length > before) continue;
+      stack.removeLast();
+      open.remove(v);
+      _ids[v] = _nodes.putIfAbsent(_signature(v), () => _next++);
+    }
+
+    return _ids[root] ?? (throw StateError('the value has no id'));
+  }
+
+  /// [items] without each one equal to an earlier one.
+  List<MontyValue> distinct(List<MontyValue> items) {
+    final seen = <int>{};
+
+    return [
+      for (final x in items)
+        if (seen.add(id(x))) x,
+    ];
+  }
+
+  /// [pairs] as a dict keeps them: each key once, at its first position,
+  /// with its last value.
+  List<(MontyValue, MontyValue)> entries(List<(MontyValue, MontyValue)> pairs) {
+    final at = <int, int>{};
+    final out = <(MontyValue, MontyValue)>[];
+    for (final (k, x) in pairs) {
+      final key = id(k);
+      if (at[key] case final i?) {
+        out[i] = ((out.elementAtOrNull(i) ?? (k, x)).$1, x);
+      } else {
+        at[key] = out.length;
+        out.add((k, x));
+      }
+    }
+
+    return out;
+  }
+
+  /// The nodes [v]'s id depends on: a dict's keys first, then the values
+  /// its keys keep; a class proxy's surviving attribute values.
+  List<Object> _children(Object v) => switch (v) {
+    MontyDict(:final pairs) when pairs.every((p) => _ids.containsKey(p.$1)) => [
+      for (final (_, x) in entries(pairs)) x,
+    ],
+    MontyDict(:final pairs) => [for (final (k, _) in pairs) k],
+    MontyClassProxy(:final attrs) => [..._survivors(attrs).values],
+    _ => [..._tupleItems(v) ?? _setItems(v) ?? (v as MontyList).items],
+  };
+
+  /// [v]'s structure over its children's ids.
+  String _signature(Object v) {
+    if (v is MontyList) return 'L${_idList(v.items)}';
+    if (_tupleItems(v) case final items?) return 'T${_idList(items)}';
+    if (_setItems(v) case final items?) {
+      return 'S${_sorted({for (final x in items) '${_ids[x]}'})}';
+    }
+    if (v is MontyDict) {
+      return 'D${_sorted([
+        for (final (k, x) in entries(v.pairs)) '${_ids[k]}:${_ids[x]}',
+      ])}';
+    }
+    final proxy = v as MontyClassProxy;
+    final type = proxy.classType;
+    final attrs = _sorted([
+      for (final MapEntry(:key, :value) in _survivors(proxy.attrs).entries)
+        '${key.length}:$key=${_ids[value]}',
+    ]);
+
+    return 'C${type.name.length}:${type.name}:${type.isDataclass}$attrs';
+  }
+
+  static String _sorted(Iterable<String> parts) =>
+      (parts.toList()..sort()).join(',');
+
+  String _idList(List<MontyValue> items) => [
+    for (final x in items) _ids[x],
+  ].join(',');
 }
 
 /// Whether the memoised hash takes kind [k]'s hash without a memo entry: a
@@ -820,148 +946,6 @@ final class _SeqFrame extends _EqFrame {
   }
 }
 
-/// Matches set elements through hash buckets; a failed candidate moves on to
-/// the next one in the same bucket.
-final class _SetFrame extends _EqFrame {
-  _SetFrame(
-    super.x,
-    super.y,
-    List<MontyValue> xs,
-    this._hasher,
-    List<MontyValue> ys,
-  ) : _xs = xs.iterator,
-      _all = xs.length <= _scanLimit ? [...ys] : null {
-    if (_all != null) return;
-    for (final e in ys) {
-      (_buckets[_hasher.hash(e)] ??= []).add(e);
-    }
-  }
-
-  final Iterator<MontyValue> _xs;
-  final _MemoHasher _hasher;
-
-  /// Every candidate, when the sets are small enough to scan as the fast
-  /// path does: nothing is hashed then.
-  final List<MontyValue>? _all;
-  final Map<int, List<MontyValue>> _buckets = {};
-  List<MontyValue> _bucket = const [];
-  int _j = 0;
-
-  @override
-  bool? step(bool? last) {
-    if (last == false) {
-      _j++;
-
-      return _offer();
-    }
-    if (last ?? false) _bucket.swapRemove(_j);
-    if (!_xs.moveNext()) return true;
-    _bucket = _all ?? _buckets[_hasher.hash(_xs.current)] ?? const [];
-    _j = 0;
-
-    return _offer();
-  }
-
-  bool? _offer() {
-    final candidate = _bucket.elementAtOrNull(_j);
-
-    return candidate == null ? false : ask(_xs.current, candidate);
-  }
-}
-
-/// Matches dict pairs through buckets of their key's hash: a candidate
-/// matches when its key and then its value compare equal.
-final class _DictFrame extends _EqFrame {
-  _DictFrame(
-    super.x,
-    super.y,
-    List<(MontyValue, MontyValue)> xs,
-    this._hasher,
-    List<(MontyValue, MontyValue)> ys,
-  ) : _xs = xs.iterator,
-      _all = xs.length <= _scanLimit ? [...ys] : null {
-    if (_all != null) return;
-    for (final p in ys) {
-      (_buckets[_hasher.hash(p.$1)] ??= []).add(p);
-    }
-  }
-
-  final Iterator<(MontyValue, MontyValue)> _xs;
-  final _MemoHasher _hasher;
-
-  /// Every candidate, when the dicts are small enough to scan.
-  final List<(MontyValue, MontyValue)>? _all;
-  final Map<int, List<(MontyValue, MontyValue)>> _buckets = {};
-  List<(MontyValue, MontyValue)> _bucket = const [];
-  int _j = 0;
-  bool _onValue = false;
-
-  @override
-  bool? step(bool? last) {
-    final matched = last ?? false;
-    if (matched && !_onValue) {
-      // The key matched; now the value.
-      _onValue = true;
-      final candidate = _bucket.elementAtOrNull(_j);
-
-      return candidate == null ? false : ask(_xs.current.$2, candidate.$2);
-    }
-    _onValue = false;
-    if (last == false) {
-      _j++;
-
-      return _offer();
-    }
-    if (matched) _bucket.swapRemove(_j);
-
-    return _nextPair();
-  }
-
-  bool? _nextPair() {
-    if (!_xs.moveNext()) return true;
-    _bucket = _all ?? _buckets[_hasher.hash(_xs.current.$1)] ?? const [];
-    _j = 0;
-
-    return _offer();
-  }
-
-  bool? _offer() {
-    final candidate = _bucket.elementAtOrNull(_j);
-
-    return candidate == null ? false : ask(_xs.current.$1, candidate.$1);
-  }
-}
-
-/// Attribute maps whose keys line up, compared as the fast path compares
-/// them: the values in step; when a value differs and the map holds a
-/// repeated key, the entries as dict pairs.
-final class _AttrsFrame extends _EqFrame {
-  _AttrsFrame(super.x, super.y, this._a, this._b)
-    : _xs = _a.values.iterator,
-      _ys = _b.values.iterator;
-
-  final Map<String, MontyValue> _a;
-  final Map<String, MontyValue> _b;
-  final Iterator<MontyValue> _xs;
-  final Iterator<MontyValue> _ys;
-  bool _asPairs = false;
-
-  @override
-  bool? step(bool? last) {
-    if (_asPairs) return last;
-    if (last == false) {
-      if (!_hasRepeatedKey(_a) && !_hasRepeatedKey(_b)) return false;
-      _asPairs = true;
-
-      return ask(MontyDict(_attrPairs(_a)), MontyDict(_attrPairs(_b)));
-    }
-    if (!_xs.moveNext()) return true;
-    _ys.moveNext();
-
-    return ask(_xs.current, _ys.current);
-  }
-}
-
 /// Equality on an explicit stack, memoising every pair it settles.
 final class _MemoEquals {
   _MemoEquals(this._hasher);
@@ -1005,7 +989,17 @@ final class _MemoEquals {
     if (_isEqLeafKind(kx) || _isEqLeafKind(ky)) {
       return _leafEquals(x, y, kx, ky);
     }
-    if (_eqKind(kx) != _eqKind(ky)) return false;
+    final kind = _eqKind(kx);
+    if (kind != _eqKind(ky)) return false;
+    // Sets and dicts collapse repeats first, so they compare by canonical id:
+    // linear, on an explicit stack, shared by the whole operation.
+    if (kind == _kSet || kind == _kDict) return _hasher.equals(x, y);
+
+    return _pairOrFrame(x, y);
+  }
+
+  /// The settled result for the pair (x, y), else a new frame, marked open.
+  Object _pairOrFrame(Object x, Object y) {
     final row = _pairs[x] ??= Map.identity();
     final known = row[y];
     if (known is bool) return known;
@@ -1028,73 +1022,40 @@ final class _MemoEquals {
     return r;
   }
 
-  /// A frame comparing two nodes of one kind, or null when something that
-  /// needs no descent already differs.
+  /// A frame comparing two nodes of one kind (lists, tuples, class
+  /// proxies), or null when something that needs no descent already
+  /// differs.
   _EqFrame? _frameFor(Object x, Object y) => switch ((x, y)) {
     (MontyList(items: final a), MontyList(items: final b)) =>
       a.length == b.length ? _SeqFrame(x, y, a, b) : null,
-    (MontyDict(pairs: final a), MontyDict(pairs: final b)) => _dictFrame(
-      x,
-      y,
-      a,
-      b,
-    ),
     (final MontyClassProxy a, final MontyClassProxy b) =>
       _sameClassHeader(a, b) ? _attrsFrame(a, b, a.attrs, b.attrs) : null,
-    _ => switch ((_tupleItems(x), _setItems(x), _tupleItems(y), _setItems(y))) {
-      (final a?, _, final b?, _) =>
+    _ => switch ((_tupleItems(x), _tupleItems(y))) {
+      (final a?, final b?) =>
         a.length == b.length ? _SeqFrame(x, y, a, b) : null,
-      (_, final a?, _, final b?) => _setFrame(x, y, a, b),
       _ => throw _notANode(x),
     },
   };
 
-  /// Repeats are collapsed first, each comparison on its own walk, so that
-  /// the frame compares what Python's constructor would have kept.
-  bool _same(Object a, Object b) => _MemoEquals(_hasher).equals(a, b);
-
-  _EqFrame? _setFrame(
-    Object x,
-    Object y,
-    List<MontyValue> all,
-    List<MontyValue> others,
-  ) {
-    final a = _distinct(all, _same, _hasher.hash);
-    final b = _distinct(others, _same, _hasher.hash);
-
-    return a.length == b.length ? _SetFrame(x, y, a, _hasher, b) : null;
-  }
-
-  _EqFrame? _dictFrame(
-    Object x,
-    Object y,
-    List<(MontyValue, MontyValue)> all,
-    List<(MontyValue, MontyValue)> others,
-  ) {
-    final a = _entries(all, _same, _hasher.hash);
-    final b = _entries(others, _same, _hasher.hash);
-
-    return a.length == b.length ? _DictFrame(x, y, a, _hasher, b) : null;
-  }
-
-  /// Compares the attribute values by name, as the fast path does.
+  /// Compares the value each name keeps, as the fast path does.
   _EqFrame? _attrsFrame(
     Object x,
     Object y,
     Map<String, MontyValue> a,
     Map<String, MontyValue> b,
   ) {
-    final repeats = _hasRepeatedKey(a) || _hasRepeatedKey(b);
-    if (!repeats && a.length != b.length) return null;
-    if (a.length == b.length && _sameKeyOrder(a, b)) {
-      return _AttrsFrame(x, y, a, b);
+    final p = _survivors(a);
+    final q = _survivors(b);
+    if (p.length != q.length) return null;
+    if (_sameKeyOrder(p, q)) {
+      return _SeqFrame(x, y, [...p.values], [...q.values]);
     }
 
     return _SeqFrame(
       x,
       y,
-      [MontyDict(_attrPairs(a))],
-      [MontyDict(_attrPairs(b))],
+      [MontyDict(_attrPairs(p))],
+      [MontyDict(_attrPairs(q))],
     );
   }
 }

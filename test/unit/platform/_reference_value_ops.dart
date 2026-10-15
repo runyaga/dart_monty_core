@@ -35,8 +35,9 @@ List<MontyValue>? _set(MontyValue v) => switch (v) {
 
 bool _seq(List<MontyValue> a, List<MontyValue> b) {
   if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (!referenceEquals(a[i], b[i])) return false;
+  for (final (i, x) in a.indexed) {
+    final y = b.elementAtOrNull(i);
+    if (y == null || !referenceEquals(x, y)) return false;
   }
 
   return true;
@@ -64,7 +65,7 @@ List<(MontyValue, MontyValue)> _entries(List<(MontyValue, MontyValue)> ps) {
     if (i < 0) {
       out.add((k, v));
     } else {
-      out[i] = (out[i].$1, v);
+      out[i] = ((out.elementAtOrNull(i) ?? (k, v)).$1, v);
     }
   }
 

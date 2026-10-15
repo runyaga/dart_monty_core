@@ -551,7 +551,7 @@ void main() {
       ]);
       expect(reader[0], const MontyComplex(1, 2));
       expect(
-        identical((reader[1] as MontyList).items.single, reader[0]),
+        identical(onlyItem((reader[1] as MontyList).items), reader[0]),
         isTrue,
       );
       final c = reader[2] as MontyComplex;
@@ -570,15 +570,10 @@ void main() {
       final type = reader[2] as MontyClassTypeProxy;
       expect(type.name, 'C');
       expect(type.attrs, {'k': const MontyInt(7)});
+      final third = (reader[3] as MontyClassProxy).classType;
+      expect(identical(third, type), isTrue);
       expect(
-        identical((reader[3] as MontyClassProxy).classType, type),
-        isTrue,
-      );
-      expect(
-        identical(
-          (reader[3] as MontyClassProxy).classType,
-          (reader[4] as MontyClassProxy).classType,
-        ),
+        identical(third, (reader[4] as MontyClassProxy).classType),
         isTrue,
       );
     });
@@ -711,7 +706,8 @@ void main() {
       // with Python's own hash and equality (decode.rs:106-120, 144-165):
       // equal objects collapse, the first key keeping the last value.
       // Built at run time, so the two equal keys are distinct objects.
-      final type = ClassType(const HostClass<_Key>('C'));
+      const keyClass = HostClass<_Key>('C');
+      final type = ClassType(keyClass);
       final [first, same, other] = [
         for (final n in [1, 1, 2]) ClassInstance(_Key(n), classType: type),
       ];

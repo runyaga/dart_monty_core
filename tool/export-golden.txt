@@ -341,7 +341,7 @@ final class MontyHostFunction extends MontyValue
   MontyHostFunction.docstring: final field String?
   MontyHostFunction.fn: final field FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>)
   MontyHostFunction.name: final field String
-  MontyHostFunction.new: constructor(String name, FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>) fn, {String? docstring})
+  MontyHostFunction.new: const constructor(String name, FutureOr@dart:async<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>) fn, {String? docstring})
   MontyHostFunction.toString: method() -> String
 final class MontyInt extends MontyValue
   MontyInt.==: operator(Object other) -> bool

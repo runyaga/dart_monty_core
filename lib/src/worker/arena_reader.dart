@@ -272,6 +272,7 @@ final class _Builder {
         ifAbsent: () => (p.key, p.value),
       );
     }
+
     return MontyDict(
       List.unmodifiable([
         for (final (key, value) in entries.values) (_value(key), _value(value)),
@@ -344,7 +345,7 @@ final class _Builder {
       if (key.whichKind() == pb.MontyNode_Kind.str) last[key.str] = p.value;
     }
 
-    return Map<String, MontyValue>.unmodifiable({
+    return Map.unmodifiable(<String, MontyValue>{
       for (final MapEntry(:key, value: node) in last.entries) key: _value(node),
     });
   }

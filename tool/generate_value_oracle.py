@@ -182,6 +182,9 @@ MODES = [
     'r', 'rb', 'rt', 'tr', 'br', 'w', 'wb', 'wt', 'a', 'ab', 'at', 'bw',
     '', 'b', 't', 'z', 'rr', 'rw', 'rwb', 'x', 'xb', 'r+', 'rb+', 'w+', 'a+',
     'bb', 'tt', 'bt', 'rbt', 'é', "'", '"', '\\', '\n', '\x00', ' r', 'R',
+    # Rust's char Debug escapes these too: a non-breaking space, a format
+    # character, a combining mark, an unassigned code point.
+    'r\u00a0', 'r\u200b', 'r\u0301', 'r\U000e0000',
 ]
 
 # Paths for the repr, as upstream's StringRepr quotes them.

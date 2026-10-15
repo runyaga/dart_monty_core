@@ -84,8 +84,9 @@ void main() {
     });
 
     test('2**53 + 1 != float(2**53)', () {
-      final f = MontyFloat(BigInt.two.pow(53).toDouble());
-      expect(MontyBigInt(BigInt.two.pow(53) + BigInt.one), isNot(f));
+      final two53 = BigInt.two.pow(53);
+      final f = MontyFloat(two53.toDouble());
+      expect(MontyBigInt(two53 + BigInt.one), isNot(f));
     });
 
     test('an int beyond 2^53 on the VM compares exactly', () {
@@ -94,8 +95,10 @@ void main() {
       final p62 = BigInt.two.pow(62).toInt();
       final big = p62 + 1;
       expect(MontyInt(big), isNot(MontyFloat(big.toDouble())));
-      expect(MontyInt(p62), MontyFloat(p62.toDouble()));
-      expect(MontyInt(p62).hashCode, MontyFloat(p62.toDouble()).hashCode);
+      final asFloat = MontyFloat(p62.toDouble());
+      final asInt = MontyInt(p62);
+      expect(asInt, asFloat);
+      expect(asInt.hashCode, asFloat.hashCode);
     });
   });
 
@@ -142,7 +145,7 @@ MontyValue _randomNumber(Random r) {
     0 => double.nan,
     1 => double.infinity,
     2 => -0.0,
-    3 => 0.5 + r.nextInt(3),
+    3 => r.nextInt(3) + 0.5,
     _ => n.toDouble(),
   };
 
@@ -151,6 +154,13 @@ MontyValue _randomNumber(Random r) {
     1 => n.abs() <= BigInt.two.pow(53) ? MontyInt(n.toInt()) : MontyBigInt(n),
     2 => MontyBigInt(n),
     3 => MontyFloat(d),
-    _ => MontyComplex(d, r.nextInt(3) == 0 ? 1 : (r.nextBool() ? 0 : -0.0)),
+    _ => MontyComplex(d, _imaginary(r)),
   };
+}
+
+/// A non-zero imaginary part one time in three, else 0 or -0.0.
+double _imaginary(Random r) {
+  if (r.nextInt(3) == 0) return 1;
+
+  return r.nextBool() ? 0 : -0.0;
 }

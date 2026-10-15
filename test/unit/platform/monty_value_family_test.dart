@@ -46,7 +46,7 @@ String kindOf(MontyValue v) => switch (v) {
 };
 
 class _Point {
-  _Point(this.x);
+  const _Point(this.x);
 
   final int x;
 }
@@ -55,7 +55,7 @@ void main() {
   group('the five subtypes the cutover adds', () {
     const pointClass = HostClass<_Point>('Point');
     final type = ClassType(pointClass);
-    final instance = ClassInstance(_Point(1), classType: type);
+    final instance = ClassInstance(const _Point(1), classType: type);
     final proxy = montyClassTypeProxy(
       name: 'K',
       id: '00000000-0000-4000-8000-000000000001',
@@ -98,7 +98,7 @@ void main() {
 
     test('a host function is its name, its function and its docstring', () {
       MontyValue fn(List<MontyValue> args, Map<String, MontyValue> kwargs) =>
-          args.first;
+          args.firstOrNull ?? kwargs['x'] ?? const MontyNone();
       final f = MontyHostFunction('double_it', fn, docstring: 'Doubles.');
       expect(f.name, 'double_it');
       expect(f.docstring, 'Doubles.');
@@ -187,12 +187,26 @@ void main() {
       );
       expect(() => max.dartValue, throwsStateError);
       expect(max.days, 999999999);
-      // 2^53 microseconds is about 104,249 days: the web's limit.
-      const web = MontyTimeDelta(days: 200000, seconds: 0);
+      // 2^53 microseconds, exactly representable everywhere; 2^53 + 1 is
+      // not a double, so dart2js refuses it.
+      const two53 = MontyTimeDelta(
+        days: 104249,
+        seconds: 85654,
+        microseconds: 740992,
+      );
+      expect(two53.dartValue.inMicroseconds, 9007199254740992);
+      const past = MontyTimeDelta(
+        days: 104249,
+        seconds: 85654,
+        microseconds: 740993,
+      );
       if (identical(1, 1.0)) {
-        expect(() => web.dartValue, throwsStateError);
+        expect(() => past.dartValue, throwsStateError);
       } else {
-        expect(web.dartValue, const Duration(days: 200000));
+        expect(
+          BigInt.from(past.dartValue.inMicroseconds),
+          BigInt.parse('9007199254740993'),
+        );
       }
     });
   });

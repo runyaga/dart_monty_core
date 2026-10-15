@@ -183,8 +183,8 @@ void main() {
       final f = MontyHostFunction('f', (a, k) => const MontyNone());
       final writer = ArenaWriter();
       final root = writer.add(MontyList([f, f]));
-      final items = itemAt(writer.arena.nodes, root).list.items;
-      expect(items[0], isNot(items[1]));
+      final [first, second] = itemAt(writer.arena.nodes, root).list.items;
+      expect(first, isNot(second));
     });
 
     test('is hashable as a key, as a Python function is', () {
@@ -316,8 +316,9 @@ void main() {
         for (final pair in outer.attrs.pairs) itemAt(nodes, pair.value),
       ];
       // RED's class and SELF: both the attribute-less form of the class.
-      final red = again.first.classInstance;
-      for (final node in [itemAt(nodes, red.classType), again.last]) {
+      final [redNode, selfNode] = again;
+      final red = redNode.classInstance;
+      for (final node in [itemAt(nodes, red.classType), selfNode]) {
         expect(node.type.hasAttrs(), isFalse);
         expect(node.type.id, outer.id);
       }
@@ -342,14 +343,29 @@ void main() {
       final type = _class(attrs: const {'k': MontyInt(1)});
       final writer = ArenaWriter();
       final root = writer.add(MontyList([type, type]));
-      final items = itemAt(writer.arena.nodes, root).list.items;
-      expect(items[0], items[1]);
+      final nodes = writer.arena.nodes;
+      final [first, second] = itemAt(nodes, root).list.items;
+      expect(first, second);
       // Two equal proxies that are distinct objects are two nodes (they
       // carry attributes, so they are not shared by id).
       final other = _class(attrs: const {'k': MontyInt(1)});
       final two = writer.add(MontyList([type, other]));
-      final twoItems = itemAt(writer.arena.nodes, two).list.items;
-      expect(twoItems[0], isNot(twoItems[1]));
+      final [one, another] = itemAt(nodes, two).list.items;
+      expect(one, isNot(another));
+    });
+
+    test('attribute-less class proxies are shared by class id', () {
+      // Upstream keeps one node per id for a class with no attributes
+      // (enter_class_type's class_types map), whichever object carries it.
+      final writer = ArenaWriter();
+      final a = _class();
+      final root = writer.add(MontyList([a, _class(), a]));
+      final [first, second, third] = itemAt(
+        writer.arena.nodes,
+        root,
+      ).list.items;
+      expect(second, first);
+      expect(third, first);
     });
 
     test('an instance met again through its own class is refused', () {

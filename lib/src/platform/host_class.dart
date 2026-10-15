@@ -12,81 +12,6 @@ part of 'monty_value.dart';
 // Each session's registry of the wrappers it has sent is HostObjects
 // (worker/host_objects.dart).
 
-/// A host function as a value: a Python callable named [name].
-///
-/// It is sent as a function node carrying [name] and [docstring], as
-/// upstream's encoder sends any callable, in `inputs`, a manual resume, an
-/// external result or a container. A call from the sandbox dispatches by
-/// that name through the session's external functions; [fn] itself is
-/// never registered by being sent, as upstream keeps no callable either.
-///
-/// Input only: a function the sandbox returns decodes to a [MontyString]
-/// with its name, so no decoded result holds one. An exhaustive `switch`
-/// over a result names it in an arm that throws, for example
-/// `StateError('unreachable: MontyHostFunction is input-only')`.
-///
-/// `==` and `hashCode` are identity, as a Python function's.
-final class MontyHostFunction extends MontyValue {
-  /// The function [fn], called [name] in the sandbox, with [docstring].
-  MontyHostFunction(this.name, this.fn, {this.docstring});
-
-  /// The name the sandbox calls it by.
-  final String name;
-
-  /// The function: positional and keyword arguments in, a value out.
-  final FutureOr<MontyValue> Function(
-    List<MontyValue> args,
-    Map<String, MontyValue> kwargs,
-  )
-  fn;
-
-  /// Its `__doc__`, if any.
-  final String? docstring;
-
-  /// The function itself.
-  @override
-  FutureOr<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>)
-  get dartValue => fn;
-
-  @override
-  Map<String, Object?> _toJson() => {
-    '__type': 'function',
-    'name': name,
-    'docstring': docstring,
-  };
-
-  @override
-  String toString() => 'MontyHostFunction($name)';
-}
-
-/// A method read as an attribute, as `getattr` returns a bound method or a
-/// classmethod: callable from Dart, and sent into the sandbox as a function
-/// named [name], as upstream's encoder sends any callable. Made only by the
-/// wrappers; a host's `convertValue` hook receives one for a method
-/// attribute, as upstream's `convert_value` receives the bound method (a
-/// Dart closure has no `__name__`, so the name travels with it).
-final class BoundMethod {
-  /// [function], read under [name].
-  const BoundMethod(this.name, this.function);
-
-  /// The attribute name it was read under.
-  final String name;
-
-  /// The method, its receiver bound.
-  final FutureOr<Object> Function(
-    List<MontyValue> args,
-    Map<String, MontyValue> kwargs,
-  )
-  function;
-}
-
-/// A class-level method: a classmethod or staticmethod upstream.
-typedef _HostMethod =
-    FutureOr<Object> Function(
-      List<MontyValue> args,
-      Map<String, MontyValue> kwargs,
-    );
-
 /// A Dart class as a Python class: its name and its members. Upstream reads
 /// both from the class object; Dart has no reflection, so they are given.
 final class HostClass<T extends Object> {
@@ -153,6 +78,83 @@ final class HostClass<T extends Object> {
   final T Function(List<MontyValue> args, Map<String, MontyValue> kwargs)?
   construct;
 }
+
+/// A host function as a value: a Python callable named [name].
+///
+/// It is sent as a function node carrying [name] and [docstring], as
+/// upstream's encoder sends any callable, in `inputs`, a manual resume, an
+/// external result or a container. A call from the sandbox dispatches by
+/// that name through the session's external functions; [fn] itself is
+/// never registered by being sent, as upstream keeps no callable either.
+///
+/// Input only: a function the sandbox returns decodes to a [MontyString]
+/// with its name, so no decoded result holds one. An exhaustive `switch`
+/// over a result names it in an arm that throws, for example
+/// `StateError('unreachable: MontyHostFunction is input-only')`.
+///
+/// `==` and `hashCode` are identity, as a Python function's.
+final class MontyHostFunction extends MontyValue {
+  /// The function [fn], called [name] in the sandbox, with [docstring].
+  const MontyHostFunction(this.name, this.fn, {this.docstring});
+
+  /// The name the sandbox calls it by.
+  final String name;
+
+  /// The function: positional and keyword arguments in, a value out.
+  final FutureOr<MontyValue> Function(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  )
+  fn;
+
+  /// Its `__doc__`, if any.
+  final String? docstring;
+
+  /// The function itself.
+  @override
+  FutureOr<MontyValue> Function(List<MontyValue>, Map<String, MontyValue>)
+  // `dartValue` is the sealed family's projection; its name is fixed.
+  // ignore: match-getter-setter-field-names
+  get dartValue => fn;
+
+  @override
+  String toString() => 'MontyHostFunction($name)';
+
+  @override
+  Map<String, Object?> _toJson() => {
+    '__type': 'function',
+    'name': name,
+    'docstring': docstring,
+  };
+}
+
+/// A method read as an attribute, as `getattr` returns a bound method or a
+/// classmethod: callable from Dart, and sent into the sandbox as a function
+/// named [name], as upstream's encoder sends any callable. Made only by the
+/// wrappers; a host's `convertValue` hook receives one for a method
+/// attribute, as upstream's `convert_value` receives the bound method (a
+/// Dart closure has no `__name__`, so the name travels with it).
+final class BoundMethod {
+  /// [function], read under [name].
+  const BoundMethod(this.name, this.function);
+
+  /// The attribute name it was read under.
+  final String name;
+
+  /// The method, its receiver bound.
+  final FutureOr<Object> Function(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  )
+  function;
+}
+
+/// A class-level method: a classmethod or staticmethod upstream.
+typedef _HostMethod =
+    FutureOr<Object> Function(
+      List<MontyValue> args,
+      Map<String, MontyValue> kwargs,
+    );
 
 /// The instance members of a [HostClass] ([HostClass.instance]).
 typedef _Members<T> = ({
@@ -333,7 +335,12 @@ final class ClassType<T extends Object> extends MontyValue {
   final Object Function(String name, Object value)? _convert;
 
   @override
+  // `dartValue` is the sealed family's projection; its name is fixed.
+  // ignore: match-getter-setter-field-names
   HostClass<T> get dartValue => value;
+
+  @override
+  String toString() => 'ClassType(${value.name}, id: $id)';
 
   @override
   Map<String, Object?> _toJson() => {
@@ -341,9 +348,6 @@ final class ClassType<T extends Object> extends MontyValue {
     'name': value.name,
     'id': id,
   };
-
-  @override
-  String toString() => 'ClassType(${value.name}, id: $id)';
 
   /// The class constants sent with the class: `'all'` sends every public
   /// one, a list exactly those, each through [convertValue].
@@ -484,7 +488,12 @@ final class ClassInstance<T extends Object> extends MontyValue {
   final Object Function(String name, Object value)? _convert;
 
   @override
+  // `dartValue` is the sealed family's projection; its name is fixed.
+  // ignore: match-getter-setter-field-names
   T get dartValue => value;
+
+  @override
+  String toString() => 'ClassInstance(${classType.value.name}, id: $id)';
 
   @override
   Map<String, Object?> _toJson() => {
@@ -492,9 +501,6 @@ final class ClassInstance<T extends Object> extends MontyValue {
     'class': classType.value.name,
     'id': id,
   };
-
-  @override
-  String toString() => 'ClassInstance(${classType.value.name}, id: $id)';
 
   _Members<T> get _members => classType.value.instance;
 

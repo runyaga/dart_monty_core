@@ -266,8 +266,9 @@ void main() {
             isDataclass: dc,
             attrs: const {},
           );
-      expect(eqBothPaths(a, inst('1', 1, type: type())), isTrue);
-      expect(a.hashCode, inst('2', 1, type: type()).hashCode);
+      final hostType = type();
+      expect(eqBothPaths(a, inst('1', 1, type: hostType)), isTrue);
+      expect(a.hashCode, inst('2', 1, type: hostType).hashCode);
       expect(eqBothPaths(a, inst('1', 1, type: type(name: 'P'))), isFalse);
       expect(eqBothPaths(a, inst('1', 1, type: type(dc: false))), isFalse);
     });

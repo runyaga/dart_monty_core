@@ -422,8 +422,8 @@ bool _floatEquals(double a, double b) => a == b || (a.isNaN && b.isNaN);
 (Object, double)? _number(Object v) => switch (v) {
   MontyBool(:final value) => (value ? BigInt.one : BigInt.zero, 0.0),
   MontyInt(:final value) => (BigInt.from(value), 0.0),
-  MontyBigInt(:final value) => (value, 0.0),
-  MontyFloat(:final value) => (value, 0.0),
+  MontyBigInt(value: final Object real) ||
+  MontyFloat(value: final Object real) => (real, 0.0),
   MontyComplex(:final real, :final imag) => (real, imag),
   _ => null,
 };
