@@ -383,6 +383,11 @@ void main() {
       expect(bytes.hashCode, otherBytes.hashCode);
       expect(bytes == bytesOf([2]), isFalse);
       expect(const RandomSeed.string('1') == float, isFalse);
+      final [text, sameText] = [
+        for (var i = 0; i < 2; i++) RandomSeed.string(String.fromCharCode(97)),
+      ];
+      expect(text, sameText);
+      expect(text.hashCode, sameText.hashCode);
     });
   });
 

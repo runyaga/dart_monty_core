@@ -135,6 +135,12 @@ void main() {
     test("rejects what upstream's constructor refuses, with its message", () {
       const negative = Duration(microseconds: -1000000);
       final cases = {
+        'min_negative': const PoolOptions(minProcesses: -1),
+        'max_negative': const PoolOptions(maxProcesses: -1),
+        'min_negative_before_duration': const PoolOptions(
+          minProcesses: -1,
+          checkoutTimeout: negative,
+        ),
         'checkout_timeout_negative': const PoolOptions(
           checkoutTimeout: negative,
         ),
@@ -545,11 +551,12 @@ void main() {
     });
 
     // Upstream's close takes only the idle workers: an acquisition already
-    // started keeps its pool and completes (pool.rs:128-164, 224-293), and
+    // started keeps its pool and completes (pool.rs:128-164, 224-293), with
+    // the worker released after close (checkout.rs:1211, pool.rs:328), and
     // its session runs code (oracle 'close_waiting_checkout'); one started
-    // after close is refused.
+    // after close is refused. A worker no acquire waits for is killed.
     test(
-      'lets a waiting acquire finish, with a worker killed at release',
+      'lets a waiting acquire finish on the worker released after close',
       () async {
         final p = await pool(const PoolOptions(maxProcesses: 1));
         final [held] = await acquireEach(p, 1);
@@ -563,9 +570,18 @@ void main() {
         expect(late.isReleased, isFalse);
         expect(late.channel.isAlive, isTrue);
         expect(p.liveWorkers, 1);
+        final same = late.workerId == held.workerId;
+        expect(
+          'worker: ${same ? 'the released one' : 'a new one'}',
+          poolOracle['close_waiting_worker'],
+        );
+        final channel = starts.only.channel;
+        expect(channel.requests.map((r) => r.whichKind()), [
+          pb.ParentRequest_Kind.reset,
+        ]);
         await late.release();
-        expect((late.workerId, p.liveWorkers), (2, 0));
-        expect(starts.at(1).channel.kills, 1);
+        expect(p.liveWorkers, 0);
+        expect(channel.kills, 1, reason: 'no acquire waits for it');
       },
     );
 
@@ -579,10 +595,11 @@ void main() {
       expect(start.cancelled, isFalse);
       start.succeed();
       final [lease] = await acquired;
-      expect(lease.channel, same(start.channel));
-      expect(start.channel.kills, 0);
+      final channel = start.channel;
+      expect(lease.channel, same(channel));
+      expect(channel.kills, 0);
       await lease.release();
-      expect(start.channel.kills, 1);
+      expect(channel.kills, 1);
       expect(p.liveWorkers, 0);
     });
 

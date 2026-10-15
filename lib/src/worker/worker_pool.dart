@@ -30,7 +30,9 @@ typedef OpenChannel = SpawnHandle Function();
 ///
 /// [close] refuses new checkouts and reaps idle workers. Checked-out
 /// workers run on, and an [acquire] already started completes, as upstream's
-/// do; each worker held then is killed when its lease is released.
+/// do. A worker released after close goes, reset, to an [acquire] still
+/// waiting, as upstream's does; with none waiting it is killed, as a closed
+/// pool has no later reaping to hand it to (D-045).
 ///
 /// A busy native worker outlives a parent that dies without closing it,
 /// until the worker's own duration limit ends the run; an idle one exits
@@ -147,8 +149,9 @@ final class WorkerPool {
   /// (upstream's `Pool::close`).
   ///
   /// Returns without waiting for checked-out workers, or for an [acquire]
-  /// already started, which still completes: each worker held then is
-  /// killed when its lease is released. Idempotent.
+  /// already started, which still completes, served by a worker released
+  /// meanwhile or a new one. A worker released with no [acquire] waiting is
+  /// killed. Idempotent.
   Future<void> close() => _closing ??= _close();
 
   Future<void> _close() async {
@@ -256,10 +259,12 @@ final class WorkerPool {
   }
 
   /// Takes back a worker whose `Reset` succeeded: idle again, or retired
-  /// when it reached `maxCheckoutsPerWorker` or the pool is closed.
+  /// when it reached `maxCheckoutsPerWorker`, or when the pool is closed and
+  /// no [acquire] waits for it.
   void _takeBack(_Worker worker) {
     final max = options.maxCheckoutsPerWorker;
-    if (_closed || (max != null && worker.served >= max)) {
+    final unwanted = _closed && _waiters.isEmpty;
+    if (unwanted || (max != null && worker.served >= max)) {
       worker.channel.kill();
       _releaseSlot();
     } else {
@@ -320,10 +325,23 @@ final class PoolOptions {
   final String? workerLocation;
 
   /// Throws [ArgumentError] for a setting upstream's constructor refuses,
-  /// in its order and with its message: [maxCheckoutsPerWorker] outside
-  /// 0..2^32-1 (its `u32` extraction's `OverflowError`), then a negative
+  /// in its order and with its message: a negative [minProcesses] or
+  /// [maxProcesses] (its `usize` extraction's `OverflowError`),
+  /// [maxCheckoutsPerWorker] outside 0..2^32-1 (`u32`), then a negative
   /// duration (`duration_from_secs`'s `ValueError`).
   void validate() {
+    for (final (value, name) in [
+      (minProcesses, 'minProcesses'),
+      (maxProcesses, 'maxProcesses'),
+    ]) {
+      if (value != null && value < 0) {
+        throw ArgumentError.value(
+          value,
+          name,
+          "can't convert negative int to unsigned",
+        );
+      }
+    }
     final recycle = maxCheckoutsPerWorker;
     if (recycle != null && (recycle < 0 || recycle > _maxU32)) {
       throw ArgumentError.value(
@@ -423,7 +441,7 @@ final class WorkerLease {
   /// otherwise kills it and rethrows the failure (a reply other than `Ok`
   /// is a [StateError]). The `Reset` turn is bounded by the pool's
   /// `requestTimeout`. Once the pool is closed it kills the worker at once,
-  /// without a `Reset`.
+  /// without a `Reset`, unless an [WorkerPool.acquire] is waiting for it.
   ///
   /// Completes normally if [kill] ends the lease first. Idempotent.
   Future<void> release() => _releasing ??= _release();
@@ -439,8 +457,9 @@ final class WorkerLease {
 
   Future<void> _release() async {
     if (_isReleased) return;
-    // A closed pool keeps no worker: there is nothing to Reset for.
-    if (_pool._closed) return kill();
+    // A closed pool keeps no idle worker: unless an acquire waits for this
+    // one, there is nothing to Reset for.
+    if (_pool._closed && _pool._waiters.isEmpty) return kill();
     final worker = _worker;
     final limit = _pool.options.requestTimeout;
     final timer = limit == null ? null : Timer(limit, worker.channel.kill);

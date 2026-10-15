@@ -18,6 +18,7 @@ import 'package:dart_monty_core/src/worker/python_rules.dart'
     show surrogateEncodeError;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/tz_names.g.dart';
+import 'package:dart_monty_core/src/worker/zone_database.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:meta/meta.dart';
 
@@ -54,8 +55,9 @@ final class OsPolicy {
   final DateTime? fixedDatetime;
 
   /// The sandbox's zone: `'utc'` or an IANA name such as `'Europe/London'`,
-  /// matched ignoring ASCII case against the zone database every worker
-  /// holds. [fixedTimezone] is the third form.
+  /// matched ignoring ASCII case against the worker's zone database (the
+  /// host's zoneinfo on native, else the copy every worker holds).
+  /// [fixedTimezone] is the third form.
   final String? timezone;
 
   /// A fixed offset as the sandbox's zone.
@@ -255,10 +257,13 @@ void _validateZoneName(String? name) {
   throw ArgumentError.value(name, 'timezone', "unknown timezone '$name'");
 }
 
-/// Whether the tz database every worker holds resolves [name] to a named
-/// zone, as monty-types `NamedZone::resolve` asks it: at most 100 bytes,
-/// each `/`-part non-empty, not `.` or `..`, of ASCII letters, digits and
+/// Whether the worker's tz database resolves [name] to a named zone, as
+/// monty-types `NamedZone::resolve` asks it: at most 100 bytes, each
+/// `/`-part non-empty, not `.` or `..`, of ASCII letters, digits and
 /// `._+-`, then looked up ignoring ASCII case.
+///
+/// The database is jiff's: the host's zoneinfo directory where a native
+/// worker reads one, else the copy compiled into every worker ([tzNames]).
 bool isKnownZone(String name) {
   if (name.length > 100) return false;
   for (final part in name.split('/')) {
@@ -266,7 +271,7 @@ bool isKnownZone(String name) {
     if (!_zonePart.hasMatch(part)) return false;
   }
 
-  return _zonesByLowerName.contains(name.toLowerCase());
+  return hostZoneKnown(name) ?? _zonesByLowerName.contains(name.toLowerCase());
 }
 
 final RegExp _zonePart = RegExp(r'^[A-Za-z0-9._+-]+$');

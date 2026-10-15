@@ -204,19 +204,7 @@ final class ProcessChannel implements MontyChannel {
   Future<pb.ChildEvent> _readTurn(PrintHandler? onPrint) async {
     (Object, StackTrace)? printFailure;
     for (;;) {
-      final pb.ChildEvent? event;
-      try {
-        event = await _events.next();
-      } on FrameDecodeException catch (error) {
-        // A whole frame that does not decode: the worker misbehaved, it did
-        // not die (upstream's `FrameError::Decode` arm). It is discarded.
-        final crash = _crash ??= crashedError(
-          CrashCause.protocol,
-          detail: 'invalid payload from worker: ${error.reason}',
-        );
-        kill();
-        throw crash;
-      }
+      final event = await _nextEvent(this);
       if (event == null) throw await _crashed();
       final kind = event.whichKind();
       if (kind == pb.ChildEvent_Kind.fatalError) {
@@ -303,6 +291,23 @@ final class ProcessChannel implements MontyChannel {
     _exited = true;
     _live.remove(this);
     await _events.endWithin(pipeDrainGrace);
+  }
+}
+
+/// [channel]'s next event, or null once none can arrive. A whole frame
+/// that does not decode means the worker misbehaved, not that it died
+/// (upstream's `FrameError::Decode` arm): a protocol violation, and the
+/// worker is discarded.
+Future<pb.ChildEvent?> _nextEvent(ProcessChannel channel) async {
+  try {
+    return await channel._events.next();
+  } on FrameDecodeException catch (error) {
+    final crash = channel._crash ??= crashedError(
+      CrashCause.protocol,
+      detail: 'invalid payload from worker: ${error.reason}',
+    );
+    channel.kill();
+    throw crash;
   }
 }
 

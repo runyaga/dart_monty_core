@@ -377,6 +377,14 @@ void main() {
         'FrameTooLargeException: frame of 9 bytes exceeds maximum of 8 bytes',
       );
     });
+
+    // Upstream's `FrameError::Decode` display (monty-proto frame.rs:57).
+    test('a decode failure names its reason', () {
+      expect(
+        const FrameDecodeException('bad').toString(),
+        'FrameDecodeException: frame decode error: bad',
+      );
+    });
   });
 }
 

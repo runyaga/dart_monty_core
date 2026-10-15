@@ -1304,9 +1304,8 @@ void main() {
     test('twice during a turn: the second close is a no-op, the slot is '
         'released once', () async {
       final ch = ScriptedChannel([_configureOk, hangAfter([])]);
-      final fresh = ScriptedChannel([_configureOk, _resetOk]);
-      final third = ScriptedChannel([_configureOk]);
-      final pool = await _pool(Workers([ch, fresh, third]));
+      final fresh = ScriptedChannel([_configureOk, _resetOk, _configureOk]);
+      final pool = await _pool(Workers([ch, fresh]));
       addTearDown(pool.close);
       // Each checkout takes the slot anew, on purpose.
       // ignore: prefer-moving-to-variable
@@ -1336,7 +1335,7 @@ void main() {
       expect(second, isFalse);
       expect(pool.liveWorkers, 1);
       // The waiting checkout outlives the pool's close, as upstream's does,
-      // and gets the slot once it is free.
+      // and gets the worker released after it, reset.
       await pool.close();
       await pumpEventQueue();
       expect(second, isFalse);
@@ -1345,7 +1344,7 @@ void main() {
       expect(second, isTrue);
       expect(pool.liveWorkers, 1);
       await late.close();
-      expect(third.kills, 1, reason: 'a closed pool keeps no worker');
+      expect(fresh.kills, 1, reason: 'a closed pool keeps no idle worker');
       expect(pool.liveWorkers, 0);
     });
   });

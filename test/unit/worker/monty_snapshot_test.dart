@@ -11,8 +11,10 @@ import 'dart:convert';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/worker/arena_reader.dart' show hostObjectOf;
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_pool.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
@@ -1278,27 +1280,65 @@ void main() {
     // completions by identity (snapshot.rs:1360-1379).
     test('MontyComplete: output decoded on each access; identity ==', () async {
       final (s, _) = await _session([
-        answer([_list12()]),
-        answer([_list12()]),
+        for (var i = 0; i < 2; i++) answer([_list12()]),
       ]);
-      final done = await s.feedStart('[1, 2]') as SessionComplete;
-      final again = await s.feedStart('[1, 2]') as SessionComplete;
+      final [done, again] = [
+        for (var i = 0; i < 2; i++)
+          await s.feedStart('[1, 2]') as SessionComplete,
+      ];
       expect(
         _py(_sameEachRead(() => done.output)),
         workerClassOracle['complete_output_same_object'],
       );
+      final [first, second] = [for (var i = 0; i < 2; i++) done.output];
       expect(
-        _py(done.output == done.output),
+        _py(first == second),
         workerClassOracle['complete_output_equal'],
       );
       expect(_py(done == done), workerClassOracle['complete_equal_self']);
       expect(_py(done == again), workerClassOracle['complete_equal_other']);
       expect(
-        'value: MontyComplete(output=${_listRepr(done.output)})',
+        'value: MontyComplete(output=${_listRepr(first)})',
         workerClassOracle['complete_repr'],
       );
       // The value's own text is Dart's toString, not a Python repr.
-      expect('$done', 'MontyComplete(output=${done.output})');
+      expect('$done', 'MontyComplete(output=$first)');
+    });
+
+    // A registered host object is the wrapped object on every read, as
+    // upstream's store resolves it (decode.rs:146-148), the session's close
+    // notwithstanding.
+    test('MontyComplete: a host object resolves on every read, after close '
+        'too', () async {
+      final box = ClassInstance(
+        Object(),
+        classType: ClassType(const HostClass('Box')),
+      );
+      final writer = ArenaWriter(objects: HostObjects());
+      final root = writer.add(box);
+      final (s, _) = await _session([
+        answer([_call('f', 1)]),
+        answer([
+          pb.ChildEvent(
+            complete: pb.Complete(values: writer.arena, value: root),
+          ),
+        ]),
+        _resetOk,
+      ]);
+      final call = await s.feedStart('f()') as FunctionSnapshot;
+      final done =
+          await call.resume(ExternalReturnValue(box)) as SessionComplete;
+      Object? hostOf(MontyValue v) => switch (hostObjectOf(v)) {
+        ClassInstance(:final value) => value,
+        _ => null,
+      };
+      final wrapped = box.value;
+      final before = hostOf(done.output);
+      await s.close();
+      final after = hostOf(done.output);
+      for (final read in [before, after]) {
+        expect(read, same(wrapped));
+      }
     });
 
     // Upstream's pool decodes every suspension's position through
@@ -1309,22 +1349,25 @@ void main() {
       // 1 + 2 * 200 bytes; 'x' and 127 'é' is 255, the next 'é' would pass.
       final long = 'x${'é' * 200}';
       final cut = 'x${'é' * 127}';
-      pb.SourceRange at() => pb.SourceRange(filename: long, start: 1, end: 2);
+      final [atCall, atOs, atLookup, atFutures] = [
+        for (var i = 0; i < 4; i++)
+          pb.SourceRange(filename: long, start: 1, end: 2),
+      ];
       final (s, _) = await _session([
-        answer([_call('f', 1, position: at())]),
+        answer([_call('f', 1, position: atCall)]),
         answer([
-          _os(pb.OsCall(callId: 2, readText: '/x', position: at())),
+          _os(pb.OsCall(callId: 2, readText: '/x', position: atOs)),
         ]),
         answer([
           pb.ChildEvent(
-            nameLookup: pb.NameLookup(name: 'n', position: at()),
+            nameLookup: pb.NameLookup(name: 'n', position: atLookup),
           ),
         ]),
         answer([
           pb.ChildEvent(
             resolveFutures: pb.ResolveFutures(
               pendingCallIds: [1],
-              position: at(),
+              position: atFutures,
             ),
           ),
         ]),

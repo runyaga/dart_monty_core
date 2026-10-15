@@ -914,24 +914,16 @@ final class _FeedDrive implements SnapshotDriver {
 /// The completion [complete] of a feed on [proto]: decoded now, so a value
 /// that does not decode is a protocol violation of this turn, and again on
 /// each later read of its output, as upstream converts it per access.
-///
-/// The host objects it names are resolved now and kept, as upstream's
-/// `MontyComplete` keeps its instance store: a later reset of the session
-/// does not change what a read gives.
 SessionComplete _completion(ProtoSession proto, pb.Complete complete) {
-  final live = proto.objects.lookup;
-  final found = <String, Object?>{};
-  Object? classType(String id) =>
-      found.putIfAbsent('class $id', () => live.classType(id));
-  Object? instance(String id) =>
-      found.putIfAbsent('instance $id', () => live.instance(id));
-  final hosts = (classType: classType, instance: instance);
-  MontyValue? first = proto.valueOf(complete, hosts: hosts);
+  MontyValue? first = proto.valueOf(complete);
 
   return SessionComplete(() {
     final value = first;
     if (value == null) {
-      return ArenaReader(complete.values, hosts: hosts)[complete.value];
+      return ArenaReader(
+        complete.values,
+        hosts: proto.objects.lookup,
+      )[complete.value];
     }
     first = null;
 

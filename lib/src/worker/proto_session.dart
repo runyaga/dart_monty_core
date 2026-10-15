@@ -172,14 +172,13 @@ final class ProtoSession {
     return _turnEnd(await _feedTurn(request, sink));
   });
 
-  /// The value [complete] carries, its host objects found through [hosts]
-  /// (default: this session's); one that does not decode is a protocol
+  /// The value [complete] carries; one that does not decode is a protocol
   /// violation (upstream's "invalid payload from worker").
-  MontyValue valueOf(pb.Complete complete, {HostObjectLookup? hosts}) {
+  MontyValue valueOf(pb.Complete complete) {
     try {
       return ArenaReader(
         complete.values,
-        hosts: hosts ?? objects.lookup,
+        hosts: objects.lookup,
       )[complete.value];
     } on FormatException catch (e) {
       _violation('invalid payload from worker: ${e.message}');
