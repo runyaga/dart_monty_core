@@ -268,7 +268,7 @@ abstract interface class SnapshotDriver {
 
 /// A suspension: the state shared by the three kinds.
 sealed class SuspendedSnapshot extends MontySnapshot {
-  SuspendedSnapshot(SnapshotDriver driver, this.position, this.scriptName)
+  SuspendedSnapshot._(SnapshotDriver driver, this.position, this.scriptName)
     : _driver = driver;
 
   /// Where the suspending expression is in the source.
@@ -281,11 +281,7 @@ sealed class SuspendedSnapshot extends MontySnapshot {
 
   bool _isSpent = false;
 
-  /// Whether a resume has taken this snapshot.
-  bool get isSpent => _isSpent;
-
-  /// Marks the snapshot used, or throws [StateError] if it already was.
-  void spend() {
+  void _spend() {
     if (_isSpent) throw StateError('snapshot has already been resumed');
     _isSpent = true;
   }
@@ -315,7 +311,8 @@ final class FunctionSnapshot extends SuspendedSnapshot {
     required Map<String, MontyValue> Function() keywords,
     this.objectId,
   }) : _arguments = arguments,
-       _keywords = keywords;
+       _keywords = keywords,
+       super._();
 
   /// The called name: the host function's, or upstream's OS function name
   /// (`Path.read_text`, `os.getenv`, `system.sleep`, ...).
@@ -376,7 +373,7 @@ final class NameLookupSnapshot extends SuspendedSnapshot {
     super.scriptName, {
     required this.variableName,
     this.objectId,
-  });
+  }) : super._();
 
   /// The name looked up.
   final String variableName;
@@ -408,7 +405,8 @@ final class FutureSnapshot extends SuspendedSnapshot {
     super.position,
     super.scriptName, {
     required List<int> pendingCallIds,
-  }) : pendingCallIds = List.unmodifiable(pendingCallIds);
+  }) : pendingCallIds = List.unmodifiable(pendingCallIds),
+       super._();
 
   /// The call ids whose futures are pending.
   final List<int> pendingCallIds;
@@ -488,3 +486,13 @@ typedef FunctionCallParts = ({
   Map<String, MontyValue> Function() keywords,
   String? objectId,
 });
+
+/// [SuspendedSnapshot]'s internal members: the public show list leaves this
+/// extension out.
+extension SuspendedSnapshotInternal on SuspendedSnapshot {
+  /// Whether a resume has taken this snapshot.
+  bool get isSpent => _isSpent;
+
+  /// Marks the snapshot used, or throws [StateError] if it already was.
+  void spend() => _spend();
+}

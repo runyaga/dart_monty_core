@@ -563,16 +563,6 @@ final class NameLookupSnapshot extends SuspendedSnapshot
   NameLookupSnapshot.resume: method({Object? value}) -> Future<MontySnapshot>
   NameLookupSnapshot.resumeAuto: method() -> Future<MontySnapshot>
   NameLookupSnapshot.variableName: final field String
-abstract interface class SnapshotDriver
-  SnapshotDriver.dumpSnapshot: abstract method(SuspendedSnapshot snapshot) -> Future<Uint8List@dart:typed_data>
-  SnapshotDriver.new: constructor()
-  SnapshotDriver.resumeCall: abstract method(FunctionSnapshot snapshot, ExternalResult result) -> Future<MontySnapshot>
-  SnapshotDriver.resumeCallAuto: abstract method(FunctionSnapshot snapshot) -> Future<MontySnapshot>
-  SnapshotDriver.resumeFutures: abstract method(FutureSnapshot snapshot, Map<int, ExternalSettledResult> results) -> Future<MontySnapshot>
-  SnapshotDriver.resumeFuturesAuto: abstract method(FutureSnapshot snapshot) -> Future<MontySnapshot>
-  SnapshotDriver.resumeLookup: abstract method(NameLookupSnapshot snapshot, Object? value) -> Future<MontySnapshot>
-  SnapshotDriver.resumeLookupAuto: abstract method(NameLookupSnapshot snapshot) -> Future<MontySnapshot>
-  SnapshotDriver.resumeNotHandled: abstract method(FunctionSnapshot snapshot) -> Future<MontySnapshot>
 final class SourceRange
   SourceRange.==: operator(Object other) -> bool
   SourceRange.end: final field int
@@ -584,11 +574,8 @@ final class SourceRange
   SourceRange.unknown: static const field SourceRange
 sealed class SuspendedSnapshot extends MontySnapshot
   SuspendedSnapshot.dump: method() -> Future<Uint8List@dart:typed_data>
-  SuspendedSnapshot.isSpent: getter -> bool
-  SuspendedSnapshot.new: constructor(SnapshotDriver driver, SourceRange position, String scriptName)
   SuspendedSnapshot.position: final field SourceRange
   SuspendedSnapshot.scriptName: final field String
-  SuspendedSnapshot.spend: method() -> void
   SuspendedSnapshot: permits final class FunctionSnapshot extends SuspendedSnapshot
   SuspendedSnapshot: permits final class FutureSnapshot extends SuspendedSnapshot
   SuspendedSnapshot: permits final class NameLookupSnapshot extends SuspendedSnapshot
