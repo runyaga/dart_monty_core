@@ -1,3 +1,0 @@
-### Internal
-
-- Host objects for the worker sessions: `ClassInstance` and `ClassType` wrappers (pydantic-monty 1.1.0's policies: eager and lazy attributes, allowed methods, construction, the `convert_value` hook) over a `HostClass` that names a Dart class's members, and a per-session registry that routes the sandbox's method calls and lazy attribute reads to them, with upstream's member guard, alias and restore rules. A lazy attribute that raises now raises in the sandbox, closing the worker corpus's `lookup-cannot-raise` divergence. The wrappers compare and hash by identity (divergence `host-wrapper-identity-eq`: upstream's compare fields and are unhashable). Internal until the cutover.

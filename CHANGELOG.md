@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## 0.110.0-dev.1 - 2026-10-15
+
+### Breaking
+
+- Engine: Python now runs on upstream monty 1.1.0 in a worker process (native) or a Web Worker (web). The in-process 0.0.23 engine is gone. Native `dart run` and `dart test` need a worker executable, found through `workerLocation` or the usual places, until native delivery lands; an AOT program can relaunch itself as the worker with `runMontyWorkerIfChild(args)` and the hook's `build_worker` opt-in.
+- `Monty` is upstream's pool: `Monty.start(...)`, `Monty.withPool(body, ...)`, `checkout(...)`, `withSession(body, ...)` and `close()`, with upstream's keyword arguments as named parameters. `MontySession` is a checked-out session: `feedRun`, `feedStart`, `dump`, `loadSession`, `loadSnapshot`, `workerPid`, `close`.
+- Removed: `assignmentPattern`, `captureLastExpression`, `extractAssignmentTargets`, `isExpression`, `statementPrefixes`, `ReplContinuationMode`, `MockCallHistory`, `MockMontyPlatform`, `MontyCallback`, `MontyDataclass`, `MontyDisposedError`, `MontyException`, `MontyFutureCapable`, `MontyOpaqueKind`, `MontyPanicError`, `MontyPlatform`, `MontyResourceError`, `MontyResourceUsage`, `MontyResult`, `MontySuspensionBudgetExceeded`, `OsCallException`, `osCallNoHandlerDefault`, `ReplPlatform`, and the old `Monty` members `run`, `exec`, `typeCheck`, `scriptName` and its constructor.
+- Renamed: `MontyRepl` to `MontySession`; `MontyProgress` to `MontySnapshot`; `MontyOsCall` and `MontyPending` to `FunctionSnapshot`; `MontyNameLookup` to `NameLookupSnapshot`; `MontyResolveFutures` to `FutureSnapshot`; `MontyScriptError` to `MontyRuntimeError`; `MontyCrashError` to `MontyCrashedError`; `MontyStackFrame` to `Frame`; `MontyLimits` to `ResourceLimits`; `OsCallHandler` to `OsHandler`; `MontyClassInstance` to `MontyClassProxy`; `MontyClassType` to `MontyClassTypeProxy`; `MontyOpaque` to `MontyStdTypeProxy`.
+- No longer public: `createPlatformMonty`, `inputsToCode`, `toPythonLiteral`, `defaultMemoryUsageLimit`, `entryMemoryUsage`, `formatBytesPretty`, `MontyInternalError`, `VfsDir`, `VfsNode`.
+- Added: `ExternalResult`, `ExternalSettledResult`, `ExternalReturnValue`, `ExternalException`, `ExternalFuture`, `CollectStreams`, `CollectString`, `SourceRange`, `ClassInstance`, `ClassType`, `runMontyWorkerIfChild`, `OsPolicy`, `TimeZone`, `RandomSeed`; `FakeMontySession` in `dart_monty_core_testing.dart`, which no longer re-exports the main library.
+- Errors: `MontyError` is sealed with `MontySyntaxError`, `MontyRuntimeError`, `MontyTypingError` and `MontyCrashedError`, none publicly constructible. `message` is gone: use `toString()` (upstream's `str()`) or `exception.message`. `MontySyntaxError` and `MontyRuntimeError` carry `traceback` and `display([format])`; `MontyTypingError.display()` replaces its fields; `MontyCrashedError` has `timedOut` and `exitStatus`. Protocol violations and spawn failures are `MontyCrashedError`, so `on MontyError` catches more than upstream's `except MontyError`.
+- `ResourceLimits` takes upstream's seven limits as `Duration`s and `int`s; the old fields, `toJson` and `fromJson` are gone.
+- `MontyComplete` exposes only `output`; snapshots and `MontyComplete` have no public constructors.
+- `OsHandler` takes and returns `MontyValue`s; a handler declines a call by throwing `OsCallNotHandledException()` synchronously, which no longer carries `fnName`. `memoryMountedOsHandler` takes and returns an `OsHandler`.
+- Values: `toJson` and `MontyClassProxy.dartAttrs` are internal; `MontyValue.fromJson`, `encodeForWire`, `MontyDict.ofStrings`, `asStringMap`, `keys`, `values`, `length`, `isEmpty`, `isNotEmpty`, and `MontyClassProxy.name`, `isDataclass`, `hydrate` are gone (use `pairs` and `classType`). `MontyClassProxy` and `MontyClassTypeProxy` have no public constructors. `MontyStdTypeProxy.kind` is a `String` (`'function'` or `'type'`), `text` is `name`, and its `toString` and hash follow upstream. `MontyExceptionValue(excType, [message, attributes])` carries the exception's attributes, compared in `==`.
+- Assets: the web worker is `lib/assets/dart_monty_core_worker.{js,wasm}`; `dart_monty_core_native.wasm` and `dart_monty_core_bridge.js` are gone.
+- Package version `0.110.0-dev.1`, following upstream 1.1.0.
+
+- `ExternalReturnValue` takes and holds a `MontyValue` (`const ExternalReturnValue(MontyValue value)`, `final MontyValue value`), and `NameLookupSnapshot.resume` takes `{MontyValue? value}`; both were typed `Object`. Convert a plain Dart value with `MontyValue.fromDart` first. A host object's `ClassInstance` or `ClassType` wrapper is a `MontyValue` and is still accepted.
+
+- `MontySession.feedRun`, `feedStart` and `loadSnapshot` take `externalLookup` (upstream's `external_lookup`) in place of `externals`. It is a `Map<String, MontyValue>`, as `inputs` now is: an entry is a host function (`MontyHostFunction`, whose `fn` is called), or any other value (a `ClassInstance` or a `ClassType` among them) converted when the code reads the name and then bound as a global. A host function read by name is named by its key, its docstring kept. A call to a name whose entry is a value raises `TypeError` ("'int' object is not callable"), as upstream's does. A value the converter refuses (a cyclic list, an unpaired surrogate) fails the feed with `MontyRuntimeError` and finishes the session, as upstream discards the checkout. A builtin type in `externalLookup` (a `MontyStdTypeProxy` of kind `type`, such as `int`) called directly by name raises `TypeError`, where upstream runs the type on the host; read the name first (`t = p; t("42")`) and it runs in the sandbox, as upstream's does.
+
+- `MontyValue` gains five subtypes, all in the value library: `MontyComplex`, `MontyClassTypeProxy`, `ClassInstance`, `ClassType` and `MontyHostFunction`. An exhaustive `switch` over `MontyValue` needs an arm for each. `MontyHostFunction` is input-only: a decoded result never holds one, so its arm may throw.
+- Equality is Python's. The numeric classes (`MontyBool`, `MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyComplex`) compare and hash as one tower: `MontyBool(true) == MontyInt(1) == MontyFloat(1) == MontyComplex(1, 0)`, exactly (an integer never goes through a double). A named tuple equals a tuple of the same items, a set equals a frozenset with the same members, aware datetimes and times compare by instant (a naive one never equals an aware one; `fold` is ignored), and time zones compare by offset. A set or dict built with repeated members or keys compares as Python builds it: each member once; each key once, at its first position, with its last value. NaN still equals NaN, and exception values and file handles still compare their fields.
+- `MontyFileHandle(path, mode, {BigInt? position})`: positional path and mode, as upstream's constructor. The mode is parsed and stored in canonical form (`rt` is `r`); a mode upstream refuses, a path with an unpaired surrogate, or a position outside 0..2^64-1 throws `ArgumentError` with upstream's message. `position` is a `BigInt`. `toString` is upstream's repr, `MontyFileHandle(path='/x', mode='r')`.
+- `MontyPath(value)` is no longer `const`: the path is normalised as `PurePosixPath` at construction, so `MontyPath('a//b') == MontyPath('a/b')`.
+- `MontyClassTypeProxy` compares by class id only, as upstream's; `MontyClassProxy` compares class name, dataclass flag and attributes, not the instance id.
+- `MontyDateTime.dartValue` of an aware datetime is a UTC `DateTime` at its instant (a naive one stays local from its fields). `MontyValue.fromDart(DateTime)` keeps the offset: a local `DateTime` arrives in Python with its UTC offset, a UTC one with offset zero.
+- `MontyTimeDelta.dartValue` throws `StateError` when a `Duration` cannot hold the timedelta exactly, instead of truncating.
+- A registered host object or class returned by the sandbox decodes to its `ClassInstance` or `ClassType` wrapper; an unregistered class sent as a value decodes to a `MontyClassTypeProxy`, and `complex` values decode, where they used to throw `UnsupportedError`.
+- `resolveOpenCall` builds the handle before any side effect, as upstream: an update mode (`r+`) now raises `ValueError`, as upstream's `FileMode` does.
+
 ### Added
 
 - Internal groundwork for running Python in a separate worker process
@@ -325,6 +357,14 @@
     session on vm, dart2js and dart2wasm, now with the snapshot, futures,
     OS-call and budget rows. `PARITY_PIN` moves to that suite.
 
+- `MontySession.installDependencies(requirements)`, upstream's `install_dependencies`. Core's worker is the pure-Monty sandbox, which has no host interpreter to install for, so an empty list succeeds and any other list throws `MontyRuntimeError` (`RuntimeError`: "dependency installation is only supported by the CPython worker") and the session runs on. As upstream's pool checks first, a blank requirement, or one that starts with `-` after trimming, throws `MontyRuntimeError` (`ValueError`) with upstream's text, and one with an unpaired surrogate throws `ArgumentError` (upstream's `UnicodeEncodeError`). While a suspension is unanswered it throws `StateError`. `FakeMontySession` answers the same way. Outcomes are recorded from upstream by `tool/generate_session_oracle.py`.
+
+- `feedRun` and `feedStart` take `cwd` (upstream's `cwd`): the sandbox's working directory, switched before the code runs and kept across feeds. A relative path or one with a NUL throws `MontyRuntimeError` (`ValueError`, upstream's text) and the session runs on; one with an unpaired surrogate throws `ArgumentError`.
+- `coroutine` is exported: it marks a host function as an `async def` function, whose calls the sandbox awaits (`asyncio.gather` runs them at once).
+- `HostClass` is exported, so a `ClassInstance` or `ClassType` can be built from the public library.
+
+- `MontyComplex(real, imag)`, `MontyHostFunction(name, fn, {docstring})`, and `MontyFileHandle.binary`, `.readable` and `.writable`.
+
 ### Changed
 
 - New runtime dependencies: `protobuf` (^6.1.0) and `fixnum` (^1.1.0). The
@@ -342,6 +382,21 @@
   until the golden is updated. The tool prints signatures itself from the
   analyzer's element model, so an analyzer upgrade does not change the
   golden through formatting.
+
+- A worker that cannot start throws `MontyCrashedError` with upstream's text,
+  `failed to spawn monty worker: <detail>` (`timedOut` false, `exitStatus`
+  null). This replaces the `ProcessException` from a native launch and the
+  `StateError` raised when no worker executable or web asset was found.
+- A checkout that waits past `checkoutTimeout` throws `TimeoutException` with
+  upstream's fixed message, `no monty worker became available within the
+  checkout timeout`. The limit is still on `TimeoutException.duration`.
+- When a worker frame does not decode, the `MontyCrashedError` text now matches
+  upstream's: `monty worker protocol error: invalid payload from worker:
+  failed to decode Protobuf message: <fields>: <reason>`.
+- A host call whose argument arena upstream rejects is a protocol violation
+  when the call suspends. `feedStart` and `resume` throw `MontyCrashedError`
+  and do not return a `FunctionSnapshot`. Before, the snapshot's `arguments`
+  threw `FormatException` when read.
 
 ### Fixed
 
@@ -416,6 +471,166 @@
   that recipe. `tool/check_asset_freshness.sh` fails if any
   `lib/assets/*.wasm` contains a home-directory path or a Rust source path
   outside the remapped prefixes. Behaviour is unchanged.
+
+- `dart compile wasm` no longer aborts with "Conversion between non-reference
+  types (from f64 to i64)" in an app that reaches the worker pool's value
+  conversion. The pool's check for an unpaired surrogate is written as a loop
+  in place of a tear-off passed to `Iterable.any`, which the Dart 3.13.5 wasm
+  compiler could not compile. Behaviour is unchanged.
+
+- A host function or method call whose argument arena upstream rejects (a node referencing one not below it, a class instance whose class is no class type, an argument or keyword root outside the arena) now ends the feed with `MontyCrashedError` (`monty worker protocol error: invalid payload from worker: <detail>`) and discards the worker, as upstream's conversion on arrival does. It used to raise `Exception` in the sandbox and keep the worker. A failure building the Python values from a valid arena still fails the call in Python.
+- An OS call with no arm, or a `getenv` with no arena or a default root outside it, is a protocol violation in `feedRun` too (`monty worker protocol error: invalid OS call payload: <detail>`), with upstream's detail text (`missing required field OsCall.call`, `missing required field OsCall.values`). `feedStart`'s message no longer repeats the `invalid OS call payload` prefix.
+- An OS handler's `Future` that fails with `OsCallNotHandledException` raises `TypeError` with upstream's conversion-refusal text, naming the Dart classes: `Cannot convert OsCallNotHandledException to Monty value — wrap class instances in ClassInstance(...)`.
+
+- Closing a busy `MontySession` fails the call in flight with `MontyCrashedError` reading `monty worker killed: the session was closed during a turn`; the message used to omit that the worker was killed.
+- `FakeMontySession.willRaise` checks each attribute value as the wire writer does, and throws `ArgumentError` at the call for a value a worker could not send (a string with an unpaired surrogate, say), as `willReturn` and `willCall` already did.
+
+- A host function, OS handler or print callback that throws `ExternalException('SyntaxError')` with no message now raises `SyntaxError: None`, as upstream reads `str(SyntaxError())`; a thrown object whose `toString()` throws now raises `Exception` with no message. A print callback's `json.JSONDecodeError` keeps its `msg`, `doc`, `pos`, `lineno` and `colno` as given, a `pos` past `doc` too, as upstream keeps a live exception's.
+
+### Internal
+
+- `AGENTS.md` is rewritten for the worker stack: fresh-clone commands, which test command for which change, test-count floors, the gates CI does not run, generated files and the oracle recipe, baselines and pins, and the toolchain pins. `CLAUDE.md` now imports it with `@AGENTS.md`.
+
+- The old engine's CI jobs, scripts, crate and bindings are deleted; the parity, AOT, gate and coverage jobs run on the worker; the export boundary runs its post-cutover rule; the worker crate's dependencies pass `cargo deny`, with BlueOak-1.0.0 allowed for `minicbor`.
+
+- Consumer startup probes (`tool/consumers/`): a plain Dart web app and a
+  Flutter web app depend on the package by path, start the worker pool with no
+  `workerLocation` and no init call, run `1 + 1` in headless Chrome and assert
+  `2`, on dart2js, dart2wasm, `flutter build web` and `flutter build web
+  --wasm`. A driver fails a build whose worker assets are missing or served
+  from the wrong base. They run in the `Consumer startup` workflow on the
+  paths they cover and nightly; the Flutter SDK is pinned to a release that
+  bundles the repo's Dart, and `tool/check_sdk_pin.sh` checks it.
+
+- The upstream pydantic-monty 1.1.0 test corpus (643 files, pinned by the git tree hash in `tool/upstream/upstream-pin.json`) runs on the worker: one session per file through the pool, judged by the strict adjudicator, on Linux and macOS natively and in Chrome and Firefox under dart2js and dart2wasm. Every file the worker fails is listed in a manifest with a divergence ID, and a run fails on any difference from it. A crash test kills a worker and checks the same one-worker pool serves the next checkout. The old corpus runner is untouched.
+
+- The `spec_values_*` tests pass DCM again (the local `tool/dcm_ratchet.sh` gate): locals replace repeated constructions, list destructuring replaces indexed access and `.single`, and a small `spec_values_support.dart` holds two helpers. The tests assert exactly what they did before.
+
+- Worker sessions dump and load, as upstream's async session does: `dump` on a session (idle or suspended) and on a suspended snapshot, `loadSession` for a dump taken between feeds, and `loadSnapshot` for one taken mid-feed, which returns the re-announced suspension under the dump's script name. A load is only for a fresh session; the wrong kind of dump finishes the session; bytes the worker cannot load are refused and the session runs on. The dump brings its own globals, limits, type check and working directory: the next feed keeps the dump's directory, and a typing rejection after a load is a `MontyTypingError` whatever the session's own type check. As upstream, the session's suspension and sleep limits stay as ceilings on the dump's and both counts restart, while its feed and turn duration budgets are forgotten and the dump's adopted (O9). A dump runs between a feed's protocol turns, so a host function may dump its own session while its call waits; it keeps a pending suspension pending. `workerPid` is the worker's process id (null on the web). A session collected without `close` has its worker killed and its slot freed by a best-effort finalizer. The cases are checked against real workers on the VM, dart2js and dart2wasm, with outcomes recorded from upstream by `tool/generate_restore_oracle.py`. Internal until the cutover.
+
+- Worker sessions read a raised Unicode or JSON decode error's structured data into its exception's attributes, sanitised as upstream drops a bad payload (the Unicode range rule, 64 KiB caps, zero line or column, a position past the document). Without its data such an error reads as `ValueError`, as upstream's host object does. Attributes take part in `==`, `hashCode` and the value walk's budget. Internal until the cutover.
+- `ExternalException(excType, [message, attributes])` (internal): a `json.JSONDecodeError`'s `msg`, `doc`, `pos`, `lineno` and `colno` are sent as upstream sends a live exception's (a `doc` over 64 KiB left out); other types' attributes stay on the host. It has value equality and can be thrown from a host function.
+- The writer's refusals that Python makes too surface by path as upstream's binding does: a cycle (`ValueError: Circular reference detected`) or an unpaired surrogate (`UnicodeEncodeError`) throws `MontyRuntimeError` at an input or a manual resume, which leaves the snapshot retryable, and is raised in the sandbox for an automatic answer. Values Python cannot build stay `ArgumentError`s.
+
+- `FakeMontySession`, a scriptable session for testing host code without a
+  worker, is built internally (`lib/src/fake_monty_session.dart`); the
+  testing library exports it at the cutover. A test queues what each feed's
+  Python does (host calls, OS calls, name lookups, awaits, prints, and the
+  end), and the session's own driver answers each suspension as it would
+  against a worker; the fake records the feeds and the host's answers.
+- A contract suite (`test/contract/`) runs each scenario as Python on a
+  worker-backed session and as a script on the fake, and requires the same
+  host calls, prints, snapshots, answers and end on both, on vm, dart2js and
+  dart2wasm.
+
+- Worker sessions send `Feed` as upstream's pool does: the first feed of a session (and the first after a reset, or after a feed the type check refused) switches the sandbox to `/`, later feeds keep the working directory (`os.chdir` included), the input arena is always sent, and an input at index zero no longer carries an explicit zero. A request's encoded size, and so an oversized request's message, now matches upstream's.
+
+- The default-sink stall probe and the flood test under a full stdout no longer assert a read-ahead peak under twice the limit. Reading pauses between deliveries of the worker's stdout, and the VM can hand over about 4 MiB as one delivery, so a valid peak reached 8.5 MB on a loaded runner. They now assert the bound the pause logic gives: the limit plus twice the largest delivery and twice the largest frame, recorded by the channel. The channel's documentation states that bound.
+
+- The worker-channel test "a descendant writing after the worker exits stays
+  bounded" no longer times out on a loaded machine. Its fake worker exited
+  after a fixed 2 s, so a descendant slower to start than that plus the drain
+  grace had written nothing when the drain ended, and the test waited for a
+  read-ahead that could not arrive. The fake worker now exits only once the
+  descendant has written 3 MiB, and the descendant starts late on
+  purpose so the test covers the slow case every run. The channel itself is
+  unchanged.
+
+- CI: the export-boundary self-test (about 10.5 of the `gate · source-only · no-browser` job's 11.5 minutes, which kept hitting its 12-minute limit) runs as six parallel `gate · export-boundary self-test (shard N/6)` jobs. `tool/check_export_boundary.dart --self-test --shard <i>/<n>` runs the controls at positions congruent to `i` mod `n`; the shards are every control exactly once, and the job fails if the matrix is not six shards. The source-only job now asserts 24 checks and has an 8-minute limit; `tool/gate.sh` still runs the full self-test (step count unchanged).
+
+- `hook/build.dart` builds the opted-in worker library (`build_worker: true`)
+  whether or not the in-process crate's `native/Cargo.toml` is present, and
+  declares `native/rust-toolchain.toml` as one of the worker's own inputs.
+  Consumers that do not opt in see no change.
+- The coverage ratchet reports a baseline file that the change deletes
+  (`git diff --diff-filter=D` against `RATCHET_BASE_REF`) as `DELETED`, not
+  `VANISHED`, and compares the lib-wide total with the baseline's total over
+  the files the change keeps. `--self-test` runs its controls, in the gate and
+  in CI.
+- CI's `Dart test (JIT)` job and the gate's `unit_tests` step provide the
+  worker executable first, so an untagged unit test may start a real pool.
+
+- `tool/generate_os_handler_oracle.py` records upstream's outcome for 24 OS-handler cases (sync and async declines, async values and raises, across file, env, clock and sleep calls) into `test/unit/worker/_os_handler_oracle.g.dart`; the pool suites run them on the VM, dart2js and dart2wasm.
+
+- Worker sessions answer host code as upstream's async binding does. The OS handler (`OsHandler`, internal) takes and returns `MontyValue`s: a returned `MontyNone` is `None`, and it declines only by throwing `OsCallNotHandledException`, which sends upstream's `not_handled` arm so the worker raises the call's own default (`PermissionError` naming the path for a filesystem call, `RuntimeError` for the rest). Only a synchronous throw declines, as only a synchronously returned `NOT_HANDLED` does upstream: a returned future that fails with it raises `TypeError` in the sandbox, as upstream's coroutine returning `NOT_HANDLED` does (`asyncio.sleep` included, which used to read the decline as `None`). A thrown `ExternalException` raises its type, with an empty message when it has none, as a raised Python exception always carries one; a manual resume without a message still sends none, as upstream's `{'exc_type': ...}` form does. An unknown `excType` is an `ArgumentError` at a manual resume, and thrown from host code it is raised as any other throw. Any other throw now raises `Exception` with its text (was `RuntimeError`), the class upstream gives a host exception with no built-in counterpart. Internal until the cutover; the public `OsCallHandler`, `OsCallException` and the FFI/WASM paths are unchanged.
+
+- Host objects for the worker sessions: `ClassInstance` and `ClassType` wrappers (pydantic-monty 1.1.0's policies: eager and lazy attributes, allowed methods, construction, the `convert_value` hook) over a `HostClass` that names a Dart class's members, and a per-session registry that routes the sandbox's method calls and lazy attribute reads to them, with upstream's member guard, alias and restore rules. A lazy attribute that raises now raises in the sandbox, closing the worker corpus's `lookup-cannot-raise` divergence. The wrappers compare and hash by identity (divergence `host-wrapper-identity-eq`: upstream's compare fields and are unhashable). Internal until the cutover.
+
+- The local gate is green again on `main`. `FakeMontySession` keeps its public
+  API with its scripting methods and its lifecycle in two private classes, so
+  it is back under the class method-count limit; the worker fixture reads its
+  `writer` arguments with a pattern in place of an unchecked index. No
+  behaviour changes.
+
+- Unit tests in `test/unit/mount/` now cover the lines only the mount-fs corpus adjudicator reached: `mkdir(parents=True)` through a file raises `NotADirectoryError`, renaming a directory moves its descendants' memory charges, and `OsCallNotHandledException.toString` in both of its shapes. Test-only; no library change.
+
+- `tool/check_oracles.sh` runs `--check` for every `tool/generate_*_oracle.py`, found by glob, in a cached Python 3.12 venv with the pydantic-monty version from `tool/upstream/requirements.lock`. `tool/gate.sh` runs it as step `oracle_check` and CI runs it in the `upstream-pin` job, so a stale oracle `.g.dart` fails both instead of being caught by hand.
+
+- CI's `PARITY_PIN` moves to parity `399676d`, which records an exception's structured data through the worker and session engines and lands the C3-4 gate stage.
+
+- The parity suite pin moves to the commit that adds the C3-4, C3-5 and C3-6
+  cases: writer refusals, `ExternalException` and `OsPolicy`, and the
+  suspension and sleep budgets, each checked against upstream 1.1.0.
+
+- The worker pool and session settings (unexported until the cutover) match
+  pydantic-monty 1.1.0. Closing a pool lets a checkout already waiting or
+  starting finish, on a worker released after close if there is one; a
+  worker released with no checkout waiting is killed. A negative
+  `minProcesses` or `maxProcesses`, a negative
+  `checkoutTimeout`, `requestTimeout` or duration-limit grace is an
+  `ArgumentError` at pool start, and `maxCheckoutsPerWorker` takes
+  0..2^32-1 (0 retires a worker at its first release). An unknown IANA zone
+  name is refused before any worker is taken, checked against the host's
+  zoneinfo directory where a native worker reads one, else a generated list
+  of the zones every worker's tz database holds
+  (`tool/generate_tz_names.py`, checked by the gate and CI); an `Error`
+  reply to `Configure` is raised as any error is. A `TypingError` event is
+  `MontyTypingError` whatever the session's type check. A whole frame that
+  does not decode is a protocol violation (`monty worker protocol error:
+  invalid payload from worker: ...`), not a lost worker. A closed idle
+  worker gets upstream's 500 ms to exit. `TimeZone` reports an offset
+  outside `i32` and an unencodable name as upstream does; an integer and a
+  float `RandomSeed` of equal value are equal; a string seed with no UTF-8
+  form is refused. `SessionComplete.output` is decoded on each read and its
+  `toString` is `MontyComplete(output=...)`. `SourceRange` takes
+  `filename`, `start` and `end` by name and prints as upstream's repr, and a
+  decoded position's file name is cut to 256 UTF-8 bytes on every
+  suspension kind. Outcomes are recorded from pydantic-monty 1.1.0 by
+  `tool/generate_config_oracle.py`, `tool/generate_pool_oracle.py` and
+  `tool/generate_worker_class_oracle.py`.
+
+- CI: the merged-coverage ratchet on a push to main (and on a manual run) now compares with the commit's first parent, so a merge that deletes library files counts them as deleted instead of vanished; before, such a merge failed the run before the merged tracefile was uploaded, and the after-merge baseline could not be recorded. Pull requests are compared with their base branch as before. A `release` label on a pull request, or `force_all: true` on a manual run, makes the `changes` job report `code=true`, so every job runs on a Markdown-only change.
+
+- Test and tool cleanups ahead of the cutover, with no change to the package: the corpus test helpers pass the dcm rules ratchet again; the export-boundary self-test's fixtures edit `src/externals.dart`, which survives the old engine's removal; and the worker-only hook test writes its Cargo configuration fixture instead of copying the checkout's.
+
+- Print collectors for the worker sessions: `CollectStreams` (each fragment as a `(stream, text)` record) and `CollectString` (both streams as one string), callable as a feed's print callback, as pydantic-monty 1.1.0's are passed as `print_callback`. Each has a byte cap (10 MiB by default, `maxBytes: null` for none; `CollectStreams` charges 64 bytes per record beyond its text) and refuses an overflowing fragment whole with `MontyRuntimeError` carrying Python `MemoryError` (`memory limit exceeded: <used> bytes > <limit> bytes`), which the feed then fails with. `call` accepts only `'stdout'` and `'stderr'`; `toString` is upstream's `repr`. A negative `maxBytes` throws `ArgumentError`. Internal until the cutover.
+- A print callback that throws now fails its feed with a `MontyError` instead of rethrowing the thrown object, as upstream raises a print-callback failure: the Python exception is classified as a host function's throw is (an `ExternalException` raises its type and message, anything else `Exception` with its `toString()`), as `MontySyntaxError` for a `SyntaxError` and `MontyRuntimeError` otherwise. A collector's overflow is raised as the collector threw it.
+
+- Removed the tracked `native/lcov.info` coverage artifact (now ignored) and reworded comments and defaults in `tool/` scripts and `native/tests/integration.rs` that embedded a personal home path or account name. `check_vfs_regression.sh` and `dmc_container.sh` now default to `$HOME`-relative paths; both still honour their existing environment overrides.
+
+- The breaking-change ledger (`tool/breaking-ledger.tsv`) and its check
+  (`tool/check_breaking_recorded.sh`, the `Breaking changes announced` CI job
+  and the `breaking_rec` gate step) are retired. Breaking changes are recorded
+  in the release notes only; the existing `CHANGELOG.md` entries are the
+  history.
+
+- Worker sessions keep upstream's suspension and sleep budgets in one place (`SessionBudget`, internal), counted per checkout as upstream's pool counts them. It also holds upstream's rules for loading a dump, for the dump/load work to apply: the checkout's `maxSuspensions` and `maxTotalSleep` stay as ceilings on the dump's limits, both counts restart, and a re-announced suspension is counted and charged again; a load the worker refuses, or one never answered, leaves the budget as it was. A worker reply reporting a suspension limit past 2^63 (a u64 such as `u64::MAX`) no longer reads as negative and aborts the next suspension; as upstream, it leaves the limit unchanged. The budget cases (exhaustion, an uncatchable sandbox `try`, a budget of 0, name lookups counted, the default 1000, the count across feeds) are checked against real workers on the VM, dart2js and dart2wasm, with outcomes recorded from upstream. Internal until the cutover; `MontySuspensionBudgetExceeded` and the FFI/WASM paths are unchanged.
+
+- Every export line of `dart_monty_core.dart` now has a `show` list naming exactly what it exports today; the public API is unchanged (`tool/export-golden.txt` is byte-identical). A name added to a file under `lib/src/` stays internal until it is listed.
+- `ResourceLimits.validate`/`toProto` and `MontyCrashedError.context` (both classes still internal) move into the extensions `ResourceLimitsInternal` and `MontyCrashedErrorInternal`, which the public `show` lists will leave out.
+- `tool/check_export_boundary.dart --post-cutover` applies the boundary rule for after the cutover: a name declared under `lib/src/worker/` may be exported only when it is in the golden's names sections, and nothing from the protobuf, arena, channel, frame-scanner or wire-helper libraries may be exported or named in a public signature. Five new self-test controls cover it, plus one for the `show` lists. The `gate` CI job's timeout goes from 8 to 12 minutes.
+- `tool/metrics_ratchet.sh` reads dcm's per-declaration results. A `number-of-parameters` violation listed in `tool/dcm-param-exceptions.txt` (empty for now; at most ten lines) is exempt; a stale or changed line fails. Under `RATCHET_BASE_REF`, regressions are compared with the base branch's baseline and the PR's own baseline must equal a fresh `--update`. `--self-test` (nine controls, no dcm needed) runs in the gate and CI.
+
+- 102 requirement tests for the value family (`test/unit/platform/spec_values_*_test.dart`): toString formats, equality and hash fields, `fromDart` identity and refusals, cycle refusals, the 400-level and 2^22-visit budget, and dart2js integral-double dispatch. The unit floors in CI are raised to 2690 (VM) and 5350 (web).
+
+- Worker classes (unexported until the cutover) match pydantic-monty 1.1.0's
+  members: `ExternalReturnValue` compares by value; `Frame.toString()` is
+  upstream's `str(frame)`; `FunctionSnapshot.kwargs` is one mutable map,
+  cached on first read; `SourceRange` rejects an offset outside 0..2^32-1
+  with `ArgumentError`; a registered host object is a dict key or set member
+  by its own `==` and `hashCode`, not by identity. Outcomes are recorded from
+  pydantic-monty 1.1.0 by `tool/generate_worker_class_oracle.py`.
+
 
 ## 0.23.1
 
