@@ -1057,7 +1057,7 @@ void main() {
         ),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: invalid payload from worker: '
                 'invalid value for Arena: value root 5 is out of range for an '
@@ -1078,7 +1078,7 @@ void main() {
         s.feedRun('bad', os: (name, args, kwargs) => const MontyNone()),
         throwsA(
           isA<MontyCrashedError>().having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: invalid OS call payload: missing '
                 'required field OsCall.call',

@@ -1038,7 +1038,7 @@ void main() {
           .having((e) => e.timedOut, 'timedOut', isFalse)
           .having((e) => e.exitCode, 'exitCode', isNull)
           .having(
-            (e) => e.message,
+            (e) => e.toString(),
             'message',
             'monty worker protocol error: $detail',
           ),

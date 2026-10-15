@@ -79,10 +79,7 @@ void main() {
     _backend,
     startMonty,
   );
-  osHandlerOracleTests(
-    _backend,
-    (options) => MontyPool.start(options: options),
-  );
+  osHandlerOracleTests(_backend, startMonty);
 
   test(
     'workerPid is null: a Web Worker has no process id ($_backend)',
