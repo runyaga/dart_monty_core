@@ -361,6 +361,33 @@ extension ProtoSessionTransfer on ProtoSession {
   });
 }
 
+/// Installing packages: [installDependencies], upstream's
+/// `InstallDependencies`.
+extension ProtoSessionInstall on ProtoSession {
+  /// Asks the worker to install [requirements] (upstream's
+  /// `InstallDependencies`), already checked with [checkRequirements].
+  ///
+  /// Returns when the worker answers `Ok`. The error it reports instead
+  /// (the pure-Monty worker's refusal, or a failed install) is thrown, and
+  /// the session runs on.
+  Future<void> installDependencies(List<String> requirements) =>
+      _guard(() async {
+        final event = await _channel.turn(
+          pb.ParentRequest(
+            installDependencies: pb.InstallDependencies(
+              requirements: requirements,
+            ),
+          ),
+        );
+
+        return switch (event.whichKind()) {
+          pb.ChildEvent_Kind.ok => null,
+          pb.ChildEvent_Kind.error => _throwRaised(event.error),
+          _ => _desync('InstallDependencies', event),
+        };
+      });
+}
+
 /// Collects a feed's prints and passes each to the caller's callback,
 /// awaiting it before the next.
 ///
@@ -671,6 +698,66 @@ String checkedCwd(String cwd) {
   }
 
   throw recordError(RaisedRecord('ValueError', message, const []));
+}
+
+/// Checks [requirements] as upstream's pool does before it sends them:
+/// each one, in order, must hold something and must not start with `-`
+/// (uv would read it as an option), after trimming.
+///
+/// Throws [MontyRuntimeError] (`ValueError`) with upstream's text for the
+/// first that fails (`validate_requirement`); the session runs on.
+void checkRequirements(List<String> requirements) {
+  for (final requirement in requirements) {
+    final start = _firstNonSpace(requirement);
+    final String problem;
+    if (start == requirement.length) {
+      problem = 'must not be empty';
+    } else if (requirement.codeUnitAt(start) == 0x2d) {
+      problem = "must not start with '-' (it would be parsed as a uv option)";
+    } else {
+      continue;
+    }
+
+    throw recordError(
+      RaisedRecord(
+        'ValueError',
+        'invalid requirement ${rustDebug(requirement)}: $problem',
+        const [],
+      ),
+    );
+  }
+}
+
+/// The index of the first code unit of [s] that Rust's `str::trim` keeps
+/// (not `White_Space`), or its length when there is none. Not Dart's
+/// `trim`, which also strips U+FEFF.
+int _firstNonSpace(String s) {
+  var i = 0;
+  while (i < s.length && _rustSpace.contains(s.codeUnitAt(i))) {
+    i++;
+  }
+
+  return i;
+}
+
+/// Unicode `White_Space`, as Rust's `char::is_whitespace`.
+const Set<int> _rustSpace = {
+  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0x85, 0xa0, 0x1680, //
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+  0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+};
+
+/// Throws [ArgumentError] for a requirement Python cannot pass as a `str`
+/// to the binding: one with an unpaired surrogate, upstream's
+/// `UnicodeEncodeError`, raised for the first such element before any
+/// requirement is checked.
+void checkRequirementsText(List<String> requirements) {
+  for (final requirement in requirements) {
+    final unencodable = surrogateEncodeError(requirement);
+    if (unencodable != null) {
+      throw ArgumentError.value(requirement, 'requirements', unencodable);
+    }
+  }
 }
 
 /// Throws [ArgumentError] for a [cwd] Python cannot pass as a `str` to the

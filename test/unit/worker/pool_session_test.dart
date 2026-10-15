@@ -180,6 +180,15 @@ final Matcher _pending = isA<StateError>().having(
   'feed called while a suspension is awaiting an answer',
 );
 
+/// An install refused while a suspension waits for its answer.
+final Matcher _pendingInstall = throwsA(
+  isA<StateError>().having(
+    (e) => e.message,
+    'message',
+    'install_dependencies called while a suspension is awaiting an answer',
+  ),
+);
+
 void main() {
   group('checkout', () {
     test('sends Configure with the name, limits and knobs', () async {
@@ -1444,6 +1453,11 @@ void main() {
       await expectLater(
         session.feedRun('1', printCallback: _ignore),
         refusedPending,
+      );
+      // So is an install, with its own name; the worker is not asked.
+      await expectLater(
+        session.installDependencies(['numpy']),
+        _pendingInstall,
       );
       // The retry is refused too: upstream recovers no more than this.
       await expectLater(
@@ -2728,6 +2742,81 @@ void main() {
       release.complete();
       await Future.wait([feed, dump]);
       expect(order, ['feed', 'dump [9]']);
+    });
+
+    for (final requirements in [
+      <String>[],
+      <String>[''],
+    ]) {
+      test(
+        'an install of $requirements waits for a dump in flight: when the '
+        'dump kills the worker it finds the session finished (TGT1 B)',
+        () async {
+          final ch = ScriptedChannel([
+            _configureOk,
+            hangAfter([]),
+          ]);
+          final pool = await _pool(Workers([ch]));
+          addTearDown(pool.close);
+          final session = await pool.checkout();
+          final dump = session.dump();
+          var done = false;
+          Future<void> installing() async {
+            try {
+              await session.installDependencies(requirements);
+            } finally {
+              done = true;
+            }
+          }
+
+          final install = installing();
+          await pumpEventQueue();
+          expect(done, isFalse, reason: 'it waits for the dump');
+          ch.kill();
+          await expectLater(dump, throwsA(isA<MontyCrashedError>()));
+          await expectLater(
+            install,
+            throwsA(
+              isA<StateError>().having(
+                (e) => e.message,
+                'message',
+                'the session is finished',
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    test('an install reads its list when called, not when its turn comes '
+        '(TGT1 B)', () async {
+      final release = Completer<void>();
+      final printing = Completer<void>();
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([
+          printed([(_stdout, 'x')]),
+          _int(1),
+        ]),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final feed = session.feedRun(
+        'print("x")',
+        printCallback: (stream, text) async {
+          printing.complete();
+          await release.future;
+        },
+      );
+      await printing.future;
+      final late = <String>[];
+      final install = session.installDependencies(late);
+      late.add('numpy');
+      release.complete();
+      await feed;
+      await install;
+      expect(ch.remaining, 0);
     });
 
     test('a feed made while a dump runs is refused once the dump ends: the '

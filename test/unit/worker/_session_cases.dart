@@ -169,11 +169,13 @@ Future<Map<String, MontyValue>?> _withReturned(
   return built;
 }
 
-/// [error] as the oracle shows upstream's: a refused `cwd` argument is
-/// upstream's `UnicodeEncodeError`, raised as the binding reads it.
+/// [error] as the oracle shows upstream's: a refused `cwd` argument or
+/// requirement is upstream's `UnicodeEncodeError`, raised as the binding
+/// reads it.
 String _errorText(Object error) => switch (error) {
   StateError(message: 'the session is finished') => 'finished',
-  ArgumentError(name: 'cwd', :final message) => 'UnicodeEncodeError: $message',
+  ArgumentError(name: 'cwd' || 'requirements', :final message) =>
+    'UnicodeEncodeError: $message',
   MontyRuntimeError() => "MontyRuntimeError: ${error.display('type-msg')}",
   _ => '${error.runtimeType}: $error',
 };
@@ -184,12 +186,18 @@ String _shown(MontyValue shown) => switch (shown) {
 };
 
 Future<String> _step(MontySession s, List<Object?> step) async {
-  final [op as String, code as String, lookup, cwd as String?, inputs] = step;
+  final [op as String, code, lookup, cwd as String?, inputs] = step;
+  if (code is List<Object?>) {
+    await s.installDependencies([...code.cast<String>()]);
+
+    return 'ok';
+  }
+  final source = code is String ? code : throw ArgumentError.value(code);
   final externalLookup = await _withReturned(s, lookup);
   if (op == 'run') {
     return _shown(
       await s.feedRun(
-        code,
+        source,
         inputs: _built(inputs),
         externalLookup: externalLookup,
         printCallback: _ignore,
@@ -200,7 +208,7 @@ Future<String> _step(MontySession s, List<Object?> step) async {
   final passed = <String>[];
   try {
     var snap = await s.feedStart(
-      code,
+      source,
       inputs: _built(inputs),
       externalLookup: externalLookup,
       printCallback: _ignore,
@@ -252,7 +260,9 @@ void sessionSurfaceTests(String label, WithSession withSession) {
 
     test(
       'feedRun, feedStart and loadSnapshot take inputs and '
-      'externalLookup as Map<String, MontyValue> (REQ MontySession-2)',
+      'externalLookup as Map<String, MontyValue> (REQ MontySession-2); '
+      'installDependencies takes the requirements as one positional list '
+      '(upstream install_dependencies(requirements), TGT1 B)',
       () async {
         await withSession((s) async {
           expect(
@@ -290,6 +300,10 @@ void sessionSurfaceTests(String label, WithSession withSession) {
                 OsHandler? os,
               })
             >(),
+          );
+          expect(
+            s.installDependencies,
+            isA<Future<void> Function(List<String> requirements)>(),
           );
           // Narrowed, not widened: an Object-valued map is a compile error.
           expect(

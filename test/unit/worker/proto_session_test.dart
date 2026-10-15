@@ -1443,6 +1443,32 @@ void main() {
       expect(ch.kills, 1);
     });
 
+    test('an InstallDependencies answered with Ok succeeds, with anything '
+        'else is a desync (TGT1 B)', () async {
+      final ch = _configured([
+        expecting(pb.ParentRequest_Kind.installDependencies, [ok()]),
+        answer([completeNone()]),
+      ]);
+      final s = await ProtoSession.open(ch);
+      await s.installDependencies(['numpy']);
+      expect(
+        itemAt(ch.requests, 1).installDependencies.requirements,
+        ['numpy'],
+      );
+      await expectLater(
+        s.installDependencies(['numpy']),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
+            'message',
+            'monty worker protocol error: unexpected reply to '
+                'InstallDependencies: complete',
+          ),
+        ),
+      );
+      expect(ch.kills, 1);
+    });
+
     test('one request at a time', () async {
       final ch = _configured([
         answer([completeNone()]),

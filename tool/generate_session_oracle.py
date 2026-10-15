@@ -10,8 +10,10 @@ Each case runs steps on one checkout of upstream's AsyncMonty, exercising
 pool and must reach the same outcomes on the VM, dart2js and dart2wasm.
 
 A step is [op, code, lookup, cwd, inputs]:
-- op: 'run' (feed_run), or 'start' (feed_start, then resume_auto() on each
-  snapshot until it completes or fails);
+- op: 'run' (feed_run), 'start' (feed_start, then resume_auto() on each
+  snapshot until it completes or fails), or 'install' (install_dependencies;
+  the code slot holds the list of requirement strings, the outcome is
+  `ok` or the error);
 - lookup: None (no external_lookup), or name -> entry, an entry being
   ['v', value] (a plain value), ['f'] (a host function returning
   `(args, kwargs)`), ['c'] (a coroutine host function doubling its one
@@ -100,6 +102,10 @@ def start(code, lookup=None, cwd=None, inputs=None):
     return ['start', code, lookup, cwd, inputs]
 
 
+def install(requirements):
+    return ['install', requirements, None, None, None]
+
+
 CASES: list[tuple[str, list[list[Any]]]] = [
     # external_lookup: a plain value is converted when the name is read,
     # and the read binds it as a global for later feeds.
@@ -177,6 +183,33 @@ CASES: list[tuple[str, list[list[Any]]]] = [
     # before anything else.
     ('cwd_surrogate', [run(GETCWD, cwd='/a\ud800'), run(GETCWD)]),
     ('cwd_surrogate_first', [run(GETCWD, cwd='r\ud800', inputs={'a': ['cyclic']})]),
+    # install_dependencies: an empty list succeeds, a non-empty one is
+    # rejected by the pure-Monty worker, and the session runs on.
+    ('install_empty', [install([]), run('repr(1 + 1)')]),
+    ('install_rejected', [install(['httpx>=0.27']), run('repr(1 + 1)')]),
+    ('install_rejected_many', [install(['numpy', 'httpx']), run('repr(1)')]),
+    # Each requirement is checked before anything is sent, in order.
+    ('install_flag', [install(['--index-url=http://evil']), run('repr(1)')]),
+    ('install_flag_short', [install(['-r /etc/hosts']), run('repr(1)')]),
+    ('install_blank', [install(['   ']), run('repr(1)')]),
+    ('install_empty_string', [install(['']), run('repr(1)')]),
+    ('install_first_invalid_wins', [install(['numpy', '-e .', '']), run('repr(1)')]),
+    ('install_invalid_after_valid', [install(['numpy', ' ']), run('repr(1)')]),
+    ('install_padded_flag', [install([' \n-x']), run('repr(1)')]),
+    ('install_escaped', [install(['-a"b\'c\\d\te\x7f\u0085\u200b\u00e9\U0001f600'])]),
+    # A str Python cannot encode is refused while the argument is read,
+    # before any requirement is checked.
+    ('install_surrogate', [install(['numpy', 'a\ud800']), run('repr(1)')]),
+    ('install_surrogate_first', [install(['-x', '\ud83d\ud800b']), run('repr(1)')]),
+    # Rust's trim, not Python's or Dart's: U+FEFF is kept, U+0085 and
+    # U+00A0 and U+2003 are stripped, U+200B is kept.
+    ('install_bom', [install(['\ufeff']), run('repr(1)')]),
+    ('install_bom_flag', [install(['\ufeff-x']), run('repr(1)')]),
+    ('install_nbsp_flag', [install(['\u00a0-x']), run('repr(1)')]),
+    ('install_em_space_only', [install(['\u2003']), run('repr(1)')]),
+    ('install_nel_only', [install(['\x85']), run('repr(1)')]),
+    ('install_zwsp_flag', [install(['\u200b-x']), run('repr(1)')]),
+    ('install_repeated', [install(['numpy']), install([]), install(['numpy'])]),
 ]
 
 
@@ -234,6 +267,9 @@ def shown(value: Any) -> str:
 
 async def run_step(session: Any, step: list[Any]) -> str:
     op, code, lookup, cwd, inputs = step
+    if op == 'install':
+        await session.install_dependencies(code)
+        return 'ok'
     returned = {
         name: await session.feed_run(spec[1])
         for name, spec in (lookup or {}).items()

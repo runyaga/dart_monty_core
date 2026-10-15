@@ -40,7 +40,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FLOOR=358
+FLOOR=374
 COV=()
 if [ "${1:-}" = "--coverage" ]; then
   [ -n "${2:-}" ] || { echo "FAIL: --coverage needs a directory"; exit 2; }

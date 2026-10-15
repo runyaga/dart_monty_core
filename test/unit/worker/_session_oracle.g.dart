@@ -989,4 +989,290 @@ sessionOracle = {
           'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 1: surrogates not allowed',
     ),
   ],
+  'install_empty': [
+    (step: <Object?>['install', <Object?>[], null, null, null], outcome: 'ok'),
+    (
+      step: <Object?>['run', 'repr(1 + 1)', null, null, null],
+      outcome: 'value: 2',
+    ),
+  ],
+  'install_rejected': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['httpx>=0.27'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+    (
+      step: <Object?>['run', 'repr(1 + 1)', null, null, null],
+      outcome: 'value: 2',
+    ),
+  ],
+  'install_rejected_many': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['numpy', 'httpx'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_flag': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['--index-url=http://evil'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "--index-url=http://evil": must not start with \'-\' (it would be parsed as a uv option)',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_flag_short': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['-r /etc/hosts'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "-r /etc/hosts": must not start with \'-\' (it would be parsed as a uv option)',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_blank': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['   '],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "   ": must not be empty',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_empty_string': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>[''],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "": must not be empty',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_first_invalid_wins': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['numpy', '-e .', ''],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "-e .": must not start with \'-\' (it would be parsed as a uv option)',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_invalid_after_valid': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['numpy', ' '],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement " ": must not be empty',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_padded_flag': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>[' \n-x'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement " \\n-x": must not start with \'-\' (it would be parsed as a uv option)',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_escaped': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['-a"b\'c\\d\u{9}e\u{7f}\u{85}\u{200b}\u{e9}\u{1f600}'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "-a\\"b\'c\\\\d\\te\\u{7f}\\u{85}\\u{200b}\u{e9}\u{1f600}": must not start with \'-\' (it would be parsed as a uv option)',
+    ),
+  ],
+  'install_surrogate': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['numpy', 'a\u{d800}'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'UnicodeEncodeError: \'utf-8\' codec can\'t encode character \'\\ud800\' in position 1: surrogates not allowed',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_surrogate_first': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['-x', '\u{d83d}\u{d800}b'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'UnicodeEncodeError: \'utf-8\' codec can\'t encode characters in position 0-1: surrogates not allowed',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_bom': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['\u{feff}'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_bom_flag': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['\u{feff}-x'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_nbsp_flag': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['\u{a0}-x'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "\\u{a0}-x": must not start with \'-\' (it would be parsed as a uv option)',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_em_space_only': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['\u{2003}'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "\\u{2003}": must not be empty',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_nel_only': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['\u{85}'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: ValueError: invalid requirement "\\u{85}": must not be empty',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_zwsp_flag': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['\u{200b}-x'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+    (step: <Object?>['run', 'repr(1)', null, null, null], outcome: 'value: 1'),
+  ],
+  'install_repeated': [
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['numpy'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+    (step: <Object?>['install', <Object?>[], null, null, null], outcome: 'ok'),
+    (
+      step: <Object?>[
+        'install',
+        <Object?>['numpy'],
+        null,
+        null,
+        null,
+      ],
+      outcome:
+          'MontyRuntimeError: RuntimeError: dependency installation is only supported by the CPython worker',
+    ),
+  ],
 };

@@ -132,6 +132,7 @@ final class FakeWorker implements MontyChannel {
 
     return switch (kind) {
       pb.ParentRequest_Kind.reset => _reset(),
+      pb.ParentRequest_Kind.installDependencies => _noInstall,
       pb.ParentRequest_Kind.abortFeed => _abort(request.abortFeed),
       _ => throw _refused(kind),
     };
@@ -652,6 +653,18 @@ pb.RaisedException _callError(FakeCall call, pb.ExtFunctionResult result) =>
     };
 
 final pb.ChildEvent _ok = pb.ChildEvent(ok: pb.Ok());
+
+/// The pure-Monty worker's answer to `InstallDependencies`: it has no host
+/// interpreter to install for (upstream's `monty-proto` worker).
+final pb.ChildEvent _noInstall = pb.ChildEvent(
+  error: pb.Error(
+    exception: pb.RaisedException(
+      excType: 'RuntimeError',
+      message:
+          'dependency installation is only supported by the CPython worker',
+    ),
+  ),
+);
 
 /// Upstream's `NameError` for the undefined [name].
 pb.RaisedException _nameError(String name) => pb.RaisedException(
