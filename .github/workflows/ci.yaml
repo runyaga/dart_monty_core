@@ -187,9 +187,9 @@ jobs:
     # code OR docs. This is the one job a docs-only change must still run.
     if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
-    # 10, not 8: the export-boundary self-test alone took about 7.5 minutes,
-    # and its post-cutover controls add about a minute.
-    timeout-minutes: 10
+    # 12, not 8: the job took 8m49s with the export-boundary self-test's
+    # post-cutover controls (measured on the PR that added them).
+    timeout-minutes: 12
     steps:
       # Nothing in this job reads git history, so the checkout is shallow.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
