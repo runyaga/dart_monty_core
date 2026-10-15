@@ -217,9 +217,9 @@
       "pct": 100.0
     },
     "lib/src/worker/frame_scan.dart": {
-      "found": 377,
-      "hit": 372,
-      "pct": 98.67
+      "found": 395,
+      "hit": 390,
+      "pct": 98.73
     },
     "lib/src/worker/host_answers.dart": {
       "found": 335,
@@ -233,8 +233,8 @@
     },
     "lib/src/worker/monty.dart": {
       "found": 29,
-      "hit": 23,
-      "pct": 79.31
+      "hit": 26,
+      "pct": 89.66
     },
     "lib/src/worker/monty_channel.dart": {
       "found": 7,
@@ -242,14 +242,14 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_error.dart": {
-      "found": 94,
-      "hit": 94,
+      "found": 99,
+      "hit": 99,
       "pct": 100.0
     },
     "lib/src/worker/monty_session.dart": {
-      "found": 484,
-      "hit": 478,
-      "pct": 98.76
+      "found": 488,
+      "hit": 482,
+      "pct": 98.77
     },
     "lib/src/worker/monty_snapshot.dart": {
       "found": 87,
@@ -262,9 +262,9 @@
       "pct": 99.51
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 227,
-      "hit": 221,
-      "pct": 97.36
+      "found": 231,
+      "hit": 225,
+      "pct": 97.4
     },
     "lib/src/worker/proto_session.dart": {
       "found": 204,
@@ -317,8 +317,8 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_channel.dart": {
-      "found": 74,
-      "hit": 74,
+      "found": 89,
+      "hit": 89,
       "pct": 100.0
     },
     "lib/src/worker/worker_connection.dart": {
@@ -332,9 +332,9 @@
       "pct": 95.45
     },
     "lib/src/worker/worker_pool.dart": {
-      "found": 149,
+      "found": 148,
       "hit": 148,
-      "pct": 99.33
+      "pct": 100.0
     },
     "lib/src/worker/zone_database.dart": {
       "found": 0,
@@ -358,8 +358,8 @@
     }
   },
   "total": {
-    "found": 6419,
-    "hit": 6326,
-    "pct": 98.55
+    "found": 6464,
+    "hit": 6375,
+    "pct": 98.62
   }
 }
