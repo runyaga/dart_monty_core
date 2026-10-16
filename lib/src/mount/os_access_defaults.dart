@@ -66,8 +66,8 @@ final class _OsAccessDefaults {
         'Invalid value NaN (not a number)',
       );
     }
-    // As CPython's time.sleep: a non-finite value fails conversion (OverflowError)
-    // before the sign check, so -inf is OverflowError, not ValueError.
+    // As CPython's time.sleep: a non-finite value fails conversion
+    // (OverflowError) before the sign check, so -inf is OverflowError.
     if (!capped.isFinite) {
       throw const ExternalException(
         'OverflowError',
