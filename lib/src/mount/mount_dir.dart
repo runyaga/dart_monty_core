@@ -18,30 +18,27 @@ final class MountDir {
   MountDir({
     required String hostPath,
     required String virtualPath,
-    String mode = 'overlay',
-    int? writeBytesLimit,
-    int memoryUsageLimit = 100000000,
-  }) : this._(
-         NativeMountRoot(
+    this.mode = 'overlay',
+    this.writeBytesLimit,
+    this.memoryUsageLimit = 100000000,
+  }) : _root = (() {
+         final root = NativeMountRoot(
            hostPath: hostPath,
            virtualPath: virtualPath,
            mode: mode,
            writeBytesLimit: writeBytesLimit,
            memoryUsageLimit: memoryUsageLimit,
-         ),
-         mode,
-         writeBytesLimit,
-         memoryUsageLimit,
-       );
+         );
+         // A generative constructor must initialise these final fields here.
+         // Rebind only its local path parameters to the single opened root's
+         // canonical paths; neither a second open nor a redirect is needed.
+         hostPath = root.hostPath;
+         virtualPath = root.virtualPath;
 
-  MountDir._(
-    NativeMountRoot root,
-    this.mode,
-    this.writeBytesLimit,
-    this.memoryUsageLimit,
-  ) : _root = root,
-      hostPath = root.hostPath,
-      virtualPath = root.virtualPath;
+         return root;
+       })(),
+       hostPath = hostPath,
+       virtualPath = virtualPath;
 
   /// Canonical path of the opened directory, retained after close.
   final String hostPath;

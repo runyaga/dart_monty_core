@@ -159,7 +159,7 @@ final class MountDir
   MountDir.hostPath: final field String
   MountDir.memoryUsageLimit: final field int
   MountDir.mode: final field String
-  MountDir.new: constructor({required String hostPath, required String virtualPath, String mode = 'overlay', int? writeBytesLimit, int memoryUsageLimit = 100000000}) redirecting
+  MountDir.new: constructor({required String hostPath, required String virtualPath, String mode = 'overlay', int? writeBytesLimit, int memoryUsageLimit = 100000000})
   MountDir.toString: method() -> String
   MountDir.virtualPath: final field String
   MountDir.writeBytesLimit: final field int?
