@@ -53,19 +53,6 @@ SelfRelaunchStatus diagnoseSelfRelaunch({
 }) {
   if (!_armed) return const SelfRelaunchNotArmed();
 
-  final host = operatingSystem ?? Platform.operatingSystem;
-  final paths = _pathContext(host);
-  final library = paths.normalize(
-    paths.join(
-      paths.dirname(executablePath ?? Platform.resolvedExecutable),
-      '..',
-      'lib',
-      _workerLibraryName(host),
-    ),
-  );
-  final exists = fileExists ?? (candidate) => File(candidate).existsSync();
-  if (!exists(library)) return SelfRelaunchLibraryMissing(library);
-
   try {
     (resolveWorker ?? _resolveWorker)();
 
@@ -74,6 +61,19 @@ SelfRelaunchStatus diagnoseSelfRelaunch({
     // library diagnosis, not an application failure.
     // ignore: avoid_catching_errors
   } on ArgumentError catch (error) {
+    final host = operatingSystem ?? Platform.operatingSystem;
+    final paths = _pathContext(host);
+    final library = paths.normalize(
+      paths.join(
+        paths.dirname(executablePath ?? Platform.resolvedExecutable),
+        '..',
+        'lib',
+        _workerLibraryName(host),
+      ),
+    );
+    final exists = fileExists ?? (candidate) => File(candidate).existsSync();
+    if (!exists(library)) return SelfRelaunchLibraryMissing(library);
+
     return SelfRelaunchLibraryUnloadable(library, '$error');
   }
 }

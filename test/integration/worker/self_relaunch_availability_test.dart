@@ -17,7 +17,6 @@ void main() {
 
   _testUnarmedApp();
   _testMissingLibrary();
-  _testResolutionOrder();
   _testUnloadableLibrary();
   _testReadyLibrary();
   _testUnrelatedFailure();
@@ -54,6 +53,7 @@ void _testMissingLibrary() {
         executablePath: executable,
         fileExists: (_) => false,
         operatingSystem: operatingSystem,
+        resolveWorker: _unresolvable,
       );
       expect(
         status,
@@ -65,26 +65,6 @@ void _testMissingLibrary() {
       );
     }
   });
-}
-
-void _testResolutionOrder() {
-  test(
-    'diagnosis checks for the bundled library before resolving its symbol',
-    () {
-      var resolutions = 0;
-      final status = diagnoseSelfRelaunch(
-        executablePath: '/bundle/bin/application',
-        fileExists: (_) => false,
-        operatingSystem: 'linux',
-        resolveWorker: () {
-          resolutions++;
-          throw ArgumentError('worker symbol is absent');
-        },
-      );
-      expect(status, isA<SelfRelaunchLibraryMissing>());
-      expect(resolutions, 0);
-    },
-  );
 }
 
 void _testUnloadableLibrary() {
@@ -113,11 +93,11 @@ void _testUnloadableLibrary() {
 }
 
 void _testReadyLibrary() {
-  test('diagnosis reports a bundled and resolvable worker as ready', () {
+  test('diagnosis reports a resolvable worker as ready without its bundle', () {
     expect(
       diagnoseSelfRelaunch(
         executablePath: '/bundle/bin/application',
-        fileExists: (_) => true,
+        fileExists: (_) => false,
         operatingSystem: 'linux',
         resolveWorker: _resolvable,
       ),
@@ -153,3 +133,5 @@ void _testUnrelatedFailure() {
 }
 
 void _resolvable() => Object();
+
+void _unresolvable() => throw ArgumentError('worker symbol is absent');
