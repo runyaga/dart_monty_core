@@ -83,9 +83,9 @@ def select_commits(pending: list[str], accept: str | None) -> tuple[str | None, 
     """Return an accepted commit and the commits that still need a gate."""
     if accept is None:
         return None, pending
-    if accept not in pending:
-        raise ValueError(f'accepted SHA {accept} is not pending')
-    return accept, pending[pending.index(accept) + 1:]
+    if not pending or accept != pending[0]:
+        raise ValueError(f'accepted SHA {accept} is not the oldest pending commit')
+    return accept, pending[1:]
 
 
 def workspace_version(upstream: Path) -> str:
@@ -303,7 +303,7 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
         Path(step_summary).open('a').write(summary(result))
 
 
-def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
+def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
                time_budget_min: float, accept: str | None, state_file: Path | None,
                out: Path) -> int:
     pin = load_pin(core)
@@ -354,7 +354,7 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
         began = time.monotonic()
         command(['git', '-C', str(repo), 'checkout', '--detach', '--quiet', sha])
         flags = candidate_flags(core, repo, current)
-        target = workdir / 'targets' / sha
+        target = workdir / 'targets'
         gate_cmd = [sys.executable, '-I', str(Path(__file__).resolve()), 'gate', '--core', str(core),
                     '--upstream', str(repo), '--target-dir', str(target)]
         if parity is not None:
@@ -367,11 +367,11 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
         records.append({'sha': sha, 'subject': subject, 'flags': flags,
                         'gate': 'green' if gate_ok else 'red', 'stage': stage,
                         'seconds': round(time.monotonic() - began, 3)})
-        if flags:
-            stopped = 'flagged'
-            break
         if not gate_ok:
             stopped = 'red'
+            break
+        if flags:
+            stopped = 'flagged'
             break
         current = sha
         advanced = True
@@ -385,6 +385,23 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
               'behind': len(remaining), 'commits': records, 'status': status}
     write_result(out, result)
     return 0 if status in ('caught-up', 'advanced', 'budget') else 1
+
+
+def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
+               time_budget_min: float, accept: str | None, state_file: Path | None,
+               out: Path) -> int:
+    """Runs the loop; any unexpected failure still writes result.json, so the
+    workflow keeps the greens already recorded and reports the error."""
+    pin = load_pin(core)
+    start = read_state_or_seed(state_file, pin)['sha']
+    try:
+        return _run_follow(core, workdir, parity, max_commits, time_budget_min, accept, state_file, out)
+    except Exception as exc:  # noqa: BLE001 - the report must be written whatever failed
+        result = {'pin': pin['commit'], 'start': start,
+                  'last_good': read_state_or_seed(state_file, pin)['sha'], 'head': '', 'behind': 0,
+                  'commits': [], 'status': 'error', 'error': f'{type(exc).__name__}: {exc}'}
+        write_result(out, result)
+        return 1
 
 
 def main() -> int:
@@ -403,7 +420,7 @@ def main() -> int:
     run_parser = sub.add_parser('run')
     run_parser.add_argument('--core', type=Path, required=True)
     run_parser.add_argument('--workdir', type=Path, required=True)
-    run_parser.add_argument('--parity', type=Path)
+    run_parser.add_argument('--parity', type=Path, required=True)
     run_parser.add_argument('--max-commits', type=int, default=10)
     run_parser.add_argument('--time-budget-min', type=float, default=330)
     run_parser.add_argument('--accept')

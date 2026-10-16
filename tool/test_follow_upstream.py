@@ -31,11 +31,33 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('old', FOLLOW.last_good_after(
             'old', [{'sha': 'flagged', 'flags': ['PROTO'], 'gate': 'green'}]))
 
-    def test_accept_moves_past_a_flagged_commit(self) -> None:
-        pending = ['first', 'flagged', 'next']
+    def test_accept_takes_only_the_oldest_pending_commit(self) -> None:
+        pending = ['flagged', 'next']
         self.assertEqual(('flagged', ['next']), FOLLOW.select_commits(pending, 'flagged'))
-        with self.assertRaisesRegex(ValueError, 'not pending'):
+        with self.assertRaisesRegex(ValueError, 'oldest pending'):
+            FOLLOW.select_commits(pending, 'next')
+        with self.assertRaisesRegex(ValueError, 'oldest pending'):
             FOLLOW.select_commits(pending, 'not-a-commit')
+
+    def test_unexpected_failure_still_writes_a_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            core = Path(temp) / 'core'
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(json.dumps(
+                {'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
+            out = Path(temp) / 'result.json'
+            original = FOLLOW._run_follow
+            FOLLOW._run_follow = lambda *args: (_ for _ in ()).throw(OSError('boom'))
+            try:
+                status = FOLLOW.run_follow(core, Path(temp) / 'work', Path(temp) / 'parity', 1, 1,
+                                           None, Path(temp) / 'last_good.json', out)
+            finally:
+                FOLLOW._run_follow = original
+            result = json.loads(out.read_text())
+        self.assertEqual(1, status)
+        self.assertEqual('error', result['status'])
+        self.assertEqual('a' * 40, result['last_good'])
+        self.assertIn('boom', result['error'])
 
     def test_version_rewrite_changes_exact_requirements_only(self) -> None:
         source = 'monty = "=1.1.0"\nother = "=1.1.0"\n'

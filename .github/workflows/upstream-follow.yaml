@@ -45,10 +45,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! git clone --branch upstream-follow-state --depth 1 \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" .upstream-state; then
-            rm -rf .upstream-state
-            mkdir .upstream-state
+          state_dir="$RUNNER_TEMP/upstream-state"
+          echo "STATE_DIR=$state_dir" >> "$GITHUB_ENV"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          rc=0
+          git ls-remote --exit-code --heads "$url" upstream-follow-state >/dev/null || rc=$?
+          if [ "$rc" = 0 ]; then
+            git clone --branch upstream-follow-state --depth 1 "$url" "$state_dir"
+          elif [ "$rc" = 2 ]; then
+            mkdir "$state_dir"
+          else
+            echo "::error::cannot list the remote branches"
+            exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -67,10 +75,11 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          workspaces: native/worker
-          key: upstream-follow-${{ hashFiles('native/worker/Cargo.lock') }}
+          path: ${{ runner.temp }}/upstream-follow/targets
+          key: upstream-follow-targets-${{ github.run_id }}
+          restore-keys: upstream-follow-targets-
       - run: dart pub get
       - name: Follow monty main
         id: follow
@@ -80,7 +89,7 @@ jobs:
         run: |
           args=(run --core "$GITHUB_WORKSPACE" --workdir "$RUNNER_TEMP/upstream-follow" \
             --parity "$GITHUB_WORKSPACE/.parity" --max-commits "$MAX_COMMITS" \
-            --state-file "$GITHUB_WORKSPACE/.upstream-state/last_good.json" --out result.json)
+            --state-file "$STATE_DIR/last_good.json" --out result.json)
           if [ -n "$ACCEPT" ]; then
             args+=(--accept "$ACCEPT")
           fi
@@ -94,19 +103,19 @@ jobs:
           if [ "${state[0]}" = "${state[1]}" ]; then
             exit 0
           fi
-          if ! git -C .upstream-state rev-parse --git-dir >/dev/null 2>&1; then
-            git -C .upstream-state init -q
-            git -C .upstream-state checkout -q --orphan upstream-follow-state
-            git -C .upstream-state remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          if ! git -C "$STATE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+            git -C "$STATE_DIR" init -q
+            git -C "$STATE_DIR" checkout -q --orphan upstream-follow-state
+            git -C "$STATE_DIR" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
           else
-            git -C .upstream-state remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+            git -C "$STATE_DIR" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
           fi
-          git -C .upstream-state config user.name "$GITHUB_ACTOR"
-          git -C .upstream-state config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          git -C .upstream-state add last_good.json
-          if ! git -C .upstream-state diff --cached --quiet; then
-            git -C .upstream-state commit -m 'chore: advance upstream follow state'
-            git -C .upstream-state push origin HEAD:upstream-follow-state
+          git -C "$STATE_DIR" config user.name "$GITHUB_ACTOR"
+          git -C "$STATE_DIR" config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git -C "$STATE_DIR" add last_good.json
+          if ! git -C "$STATE_DIR" diff --cached --quiet; then
+            git -C "$STATE_DIR" commit -m 'chore: advance upstream follow state'
+            git -C "$STATE_DIR" push origin HEAD:upstream-follow-state
           fi
       - name: Report upstream drift
         if: always() && hashFiles('result.json') != ''
