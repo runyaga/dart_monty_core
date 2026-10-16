@@ -7,155 +7,20 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
+import 'package:dart_monty_core/src/worker/worker_cache.dart';
+import 'package:dart_monty_core/src/worker/worker_install_error.dart';
+import 'package:dart_monty_core/src/worker/worker_install_request.dart';
+import 'package:dart_monty_core/src/worker/worker_install_result.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:path/path.dart' as path;
 
-// The hook compiles this library without package resolution.
-// ignore: always_use_package_imports, reason: The hook uses direct sibling imports.
-import 'worker_cache.dart';
-// The hook compiles this library without package resolution.
-// ignore: always_use_package_imports, reason: The hook uses direct sibling imports.
-import 'worker_manifest.dart';
+export 'package:dart_monty_core/src/worker/worker_install_error.dart';
+export 'package:dart_monty_core/src/worker/worker_install_fetcher.dart';
+export 'package:dart_monty_core/src/worker/worker_install_request.dart';
+export 'package:dart_monty_core/src/worker/worker_install_result.dart';
 
-/// Opens an archive as a stream of bytes.
-typedef WorkerFetcher = Stream<List<int>> Function(Uri url);
-
-/// Describes one worker-cache installation.
-// ignore: prefer-match-file-name, reason: This file groups worker installation request and result types.
-final class WorkerInstallRequest {
-  /// Creates an installation request.
-  const WorkerInstallRequest({
-    required this.artifact,
-    required this.cacheRoot,
-    required this.archiveUrl,
-    this.fetcher = defaultWorkerFetcher,
-    this.staleAfter = const Duration(hours: 1),
-    this.lockWait = const Duration(minutes: 2),
-    this.lockStaleAfter = const Duration(minutes: 10),
-    this.log,
-    this.onStage,
-  });
-
-  /// Artifact to install.
-  final WorkerArtifact artifact;
-
-  /// Per-user worker-cache root.
-  final String cacheRoot;
-
-  /// Archive download location.
-  final Uri archiveUrl;
-
-  /// Opens the archive download.
-  final WorkerFetcher fetcher;
-
-  /// Age at which abandoned staging directories are swept.
-  final Duration staleAfter;
-
-  /// Maximum time spent waiting for the installation lock.
-  final Duration lockWait;
-
-  /// Age at which an installation lock is considered stale.
-  final Duration lockStaleAfter;
-
-  /// Receives concise installation progress messages.
-  final void Function(String message)? log;
-
-  /// Runs named test-only synchronization stages.
-  final Future<void> Function(String stage)? onStage;
-}
-
-/// Reports the completed installation.
-final class WorkerInstall {
-  /// Creates an installation report.
-  const WorkerInstall({
-    required this.path,
-    required this.alreadyInstalled,
-    required this.downloaded,
-  });
-
-  /// Installed cache-file path.
-  final String path;
-
-  /// Whether a valid existing cache file satisfied the request.
-  final bool alreadyInstalled;
-
-  /// Whether this request downloaded an archive.
-  final bool downloaded;
-}
-
-/// Explains a recoverable worker installation failure.
-final class WorkerInstallError implements Exception {
-  /// Creates an installation failure.
-  const WorkerInstallError(this.message);
-
-  /// Explains the failing URL or path and a remedy.
-  final String message;
-
-  @override
-  String toString() => 'Worker installation failed: $message';
-}
-
-/// Opens a file or permitted HTTP(S) archive.
-Stream<List<int>> defaultWorkerFetcher(Uri url) async* {
-  if (url.scheme == 'file') {
-    yield* File.fromUri(url).openRead();
-
-    return;
-  }
-  if (!_isAllowedRemoteUrl(url)) {
-    throw WorkerInstallError(
-      'URL $url uses an unsupported scheme or insecure host; use file:, '
-      'https:, or loopback http:.',
-    );
-  }
-
-  yield* _fetchRemoteArchive(url);
-}
-
-Stream<List<int>> _fetchRemoteArchive(Uri url) async* {
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
-  try {
-    var current = url;
-    for (var redirects = 0; ; redirects++) {
-      if (!_isAllowedRemoteUrl(current)) {
-        throw WorkerInstallError(
-          'redirect URL $current is not permitted; use https: or loopback '
-          'http:.',
-        );
-      }
-      final request = await client.getUrl(current);
-      request.followRedirects = false;
-      final response = await request.close();
-      if (response.statusCode == HttpStatus.ok) {
-        yield* response;
-
-        return;
-      }
-      if (!_redirectStatus(response.statusCode) || redirects == 5) {
-        throw WorkerInstallError(
-          'URL $current returned HTTP ${response.statusCode}; publish the '
-          'archive or configure worker_mirror.',
-        );
-      }
-      final location = response.headers.value(HttpHeaders.locationHeader);
-      if (location == null) {
-        throw WorkerInstallError(
-          'URL $current redirected without Location; fix the mirror response.',
-        );
-      }
-      current = current.resolve(location);
-      await response.drain<void>();
-    }
-  } on WorkerInstallError {
-    rethrow;
-  } on Object catch (error) {
-    throw WorkerInstallError(
-      'URL $url could not be downloaded ($error); check the mirror and '
-      'network connection.',
-    );
-  } finally {
-    client.close(force: true);
-  }
-}
+/// Backwards-compatible name for an installation result.
+typedef WorkerInstall = WorkerInstallResult;
 
 /// Installs [request]'s worker archive into its cache.
 Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
@@ -165,12 +30,12 @@ Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
   final existing = await _existingInstall(installedPath, request.artifact);
   if (existing != null) return existing;
   await _sweepStaging(request.cacheRoot, request.staleAfter);
-  _HeldLock lock;
-  try {
-    lock = await _acquireLock(request, request.artifact.sha256, installedPath);
-  } on _InstalledWhileWaiting {
-    return _alreadyInstalled(installedPath);
-  }
+  final lock = await _acquireLock(
+    request,
+    request.artifact.sha256,
+    installedPath,
+  );
+  if (lock == null) return _alreadyInstalled(installedPath);
 
   return _installWithLock(request, archive, installedPath, lock);
 }
@@ -381,7 +246,7 @@ Future<void> _verifyInstalledFile(File file, WorkerArtifact artifact) async {
 
 bool _isExecutable(File file) => file.statSync().mode & 0x49 != 0;
 
-Future<_HeldLock> _acquireLock(
+Future<_HeldLock?> _acquireLock(
   WorkerInstallRequest request,
   String digest,
   String installedPath,
@@ -392,7 +257,7 @@ Future<_HeldLock> _acquireLock(
     final held = await _tryAcquireLock(request, lock);
     if (held != null) return held;
     if (await _validFile(installedPath, request.artifact)) {
-      throw _InstalledWhileWaiting(installedPath);
+      return null;
     }
     await _breakStaleLock(lock, digest, request.lockStaleAfter);
     _checkLockDeadline(lock, deadline);
@@ -418,7 +283,9 @@ Future<_HeldLock?> _tryAcquireLock(
     () async => request.onStage?.call('beforeLockOwner'),
   );
   if (!ownsLock) return null;
-  if (_lockOwner(lock)?.token == token) return _HeldLock(lock, token);
+  if (_lockOwner(lock)?.token == token) {
+    return (directory: lock, token: token);
+  }
   throw WorkerInstallError(
     'cache ${request.cacheRoot} could not retain its installation lock; '
     'retry the installation.',
@@ -455,7 +322,7 @@ Future<_HeldLock?> _tryAcquireBreakLock(Directory root, String digest) async {
   final token = _lockToken();
   if (!await _writeOwner(breaker, token, root.path, null)) return null;
 
-  return _HeldLock(breaker, token);
+  return (directory: breaker, token: token);
 }
 
 Future<void> _reclaimBreakLock(Directory breaker) async {
@@ -500,7 +367,7 @@ _Owner? _ownerFile(File owner) {
     final processId = int.tryParse(fields.firstOrNull ?? '');
     if (processId == null) return null;
 
-    return _Owner(processId, fields.elementAtOrNull(1));
+    return (processId: processId, token: fields.elementAtOrNull(1));
   } on FileSystemException {
     return null;
   }
@@ -784,19 +651,6 @@ Future<void> _deleteFileBestEffort(File file) async {
   }
 }
 
-bool _isAllowedRemoteUrl(Uri url) =>
-    url.scheme == 'https' || (url.scheme == 'http' && _isLoopback(url.host));
-
-bool _isLoopback(String host) =>
-    host == '127.0.0.1' || host == '::1' || host == 'localhost';
-
-bool _redirectStatus(int status) =>
-    status == HttpStatus.movedPermanently ||
-    status == HttpStatus.found ||
-    status == HttpStatus.seeOther ||
-    status == HttpStatus.temporaryRedirect ||
-    status == HttpStatus.permanentRedirect;
-
 bool _containsTemplate(String value) =>
     RegExp(r'\{(?:tag|target|archive)\}').hasMatch(value);
 
@@ -822,28 +676,9 @@ String _lockToken() => List.generate(
   (_) => Random.secure().nextInt(1 << 32).toRadixString(16),
 ).join();
 
-final class _HeldLock {
-  const _HeldLock(this.directory, this.token);
+typedef _HeldLock = ({Directory directory, String token});
 
-  final Directory directory;
-  final String token;
-}
-
-final class _Owner {
-  const _Owner(this.processId, this.token);
-
-  final int processId;
-  final String? token;
-}
-
-final class _InstalledWhileWaiting implements Exception {
-  const _InstalledWhileWaiting(this.path);
-
-  final String path;
-
-  @override
-  String toString() => 'Worker installed while waiting: $path';
-}
+typedef _Owner = ({int processId, String? token});
 
 const _defaultWorkerMirror =
     'https://github.com/runyaga/dart_monty_core/releases/download/{tag}/{archive}';

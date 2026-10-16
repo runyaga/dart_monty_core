@@ -1,4 +1,3 @@
-// ignore_for_file: prefer-correct-test-file-name
 // This subprocess entry point is invoked by worker_install_test.dart.
 
 import 'package:collection/collection.dart';
