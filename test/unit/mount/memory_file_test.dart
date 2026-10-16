@@ -42,11 +42,11 @@ void main() {
   });
   test('delete and repr follow upstream', () {
     final file = MemoryFile('/a', 'secret');
+    final describe = file.toString;
     expect(file.deleted, false);
     expect(
       // Re-read the representation to check the changed content type.
-      // ignore: prefer-moving-to-variable
-      file.toString(),
+      describe(),
       "MemoryFile(path=/a, content='...', permissions=420)",
     );
     file.delete();
@@ -54,8 +54,7 @@ void main() {
     file.content = Uint8List(0);
     expect(
       // Re-read the representation to check the changed content type.
-      // ignore: prefer-moving-to-variable
-      file.toString(),
+      describe(),
       "MemoryFile(path=/a, content=b'...', permissions=420)",
     );
   });

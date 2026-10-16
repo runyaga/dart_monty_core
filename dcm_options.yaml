@@ -232,13 +232,6 @@ dcm:
           - public-methods
           - private-methods
           - overridden-methods
-        exclude:
-          # monty_value_datetime.dart:165 is an overridden toString()
-          # followed by a public static method, against the `order:` above,
-          # which ends public-methods, private-methods, overridden-methods.
-          # Reordering would split toString() from the == / hashCode / helper
-          # cluster it belongs with. Confirmed independently by agy.
-          - "lib/src/platform/monty_value_datetime.dart"
 
     # --- Testing ---
     - prefer-test-matcher

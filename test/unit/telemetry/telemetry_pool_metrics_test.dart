@@ -116,14 +116,13 @@ void lifecycleCases(RecordingAdapter adapter) {
     'single_use has no core transport: reusable channel remains pooled',
     () async {
       final subject = await pool();
+      final acquire = subject.acquire;
       // Each checkout must run to verify that release allows worker reuse.
-      // ignore: prefer-moving-to-variable
-      final first = await subject.acquire();
+      final first = await acquire();
       final id = first.workerId;
       await first.release();
       // A fresh checkout is the behavior under test.
-      // ignore: prefer-moving-to-variable
-      final second = await subject.acquire();
+      final second = await acquire();
       expect(second.workerId, id);
       await second.release();
       expect(measurements(adapter, 'pool.worker.terminated'), isEmpty);

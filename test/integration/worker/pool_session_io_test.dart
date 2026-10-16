@@ -387,10 +387,10 @@ void main() {
     );
     addTearDown(pool.close);
     final session = await pool.checkout();
+    final feedRun = session.feedRun;
     await expectLater(
       // The same call twice on purpose: once alive, once finished.
-      // ignore: prefer-moving-to-variable
-      session.feedRun('1', printCallback: _ignore),
+      feedRun('1', printCallback: _ignore),
       throwsA(
         isA<MontyRuntimeError>()
             .having((e) => e.exception.excType, 'excType', 'MemoryError')
@@ -400,8 +400,7 @@ void main() {
     expect(pool.liveWorkers, 0);
     await expectLater(
       // The same call again on purpose: now the session is finished.
-      // ignore: prefer-moving-to-variable
-      session.feedRun('1', printCallback: _ignore),
+      feedRun('1', printCallback: _ignore),
       throwsA(isA<StateError>()),
     );
     await session.close();

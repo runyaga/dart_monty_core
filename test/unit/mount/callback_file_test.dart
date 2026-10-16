@@ -51,13 +51,12 @@ void _attributes() {
       (_) => ++reads,
       (_, value) => writes.add(value),
     );
+    final readContent = file.readContent;
     // Reading again must invoke the callback rather than use cached content.
-    // ignore: prefer-moving-to-variable
-    expect(file.readContent(), 1);
+    expect(readContent(), 1);
     file.writeContent('not cached');
     // The write must not replace the next callback result with cached content.
-    // ignore: prefer-moving-to-variable
-    expect(file.readContent(), 2);
+    expect(readContent(), 2);
     expect(writes, ['not cached']);
   });
   test('writes raw content synchronously', () async {
