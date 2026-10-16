@@ -1,4 +1,5 @@
 @TestOn('browser')
+@Tags(['worker'])
 library;
 
 import 'package:dart_monty_core/src/mount/native_mount_service.dart';
