@@ -15,6 +15,8 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
+import 'package:dart_monty_core/src/worker/telemetry.dart';
+import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
 import 'package:meta/meta.dart';
 
 /// Starts one worker.
@@ -38,14 +40,9 @@ typedef OpenChannel = SpawnHandle Function();
 /// until the worker's own duration limit ends the run; an idle one exits
 /// when its stdin reaches end-of-file. There is no watchdog, as upstream
 /// has none.
+// R-3 requires fields before constructors, overriding the repository order.
+// ignore: member-ordering
 final class WorkerPool {
-  WorkerPool._(
-    this.options,
-    this.maxProcesses,
-    this.startupTimeout,
-    this._open,
-  );
-
   /// How long a starting worker may take to become ready before it is
   /// cancelled and fails as [MontyCrashedError].
   ///
@@ -68,6 +65,15 @@ final class WorkerPool {
   int _nextId = 1;
   bool _closed = false;
   Future<void>? _closing;
+
+  // Fields precede constructors per the R-3 member-order requirement.
+  // ignore: sort_constructors_first
+  WorkerPool._(
+    this.options,
+    this.maxProcesses,
+    this.startupTimeout,
+    this._open,
+  );
 
   /// Idle workers now. Diagnostics and tests: stale once returned.
   int get idleWorkers => _idleWorkers.length;
@@ -109,6 +115,7 @@ final class WorkerPool {
       pool._idleWorkers.add(_Worker(pool._nextId++, channel));
     }
     pool._liveWorkers = channels.length;
+    workerDelta(channels.length, channels.length);
 
     return pool;
   }
@@ -123,25 +130,19 @@ final class WorkerPool {
   /// A call made before [close] runs to its end, as upstream's acquisition
   /// holds its pool: it waits, spawns and is served as before.
   Future<WorkerLease> acquire() async {
-    if (_closed) throw _closedError();
     final waited = Stopwatch()..start();
-    for (;;) {
-      while (_idleWorkers.isNotEmpty) {
-        final worker = _idleWorkers.removeLast();
-        if (worker.channel.isAlive) return WorkerLease._(this, worker);
-        // Unusable while idle; this acquire or a later one replaces it. Its
-        // process may still run (stdout closed, say), so it is stopped, as
-        // upstream's kill-on-drop does.
-        worker.channel.kill();
-        _liveWorkers--;
-      }
-      if (_liveWorkers < maxProcesses) {
-        // Reserve the slot before the start, as upstream does.
-        _liveWorkers++;
+    try {
+      if (_closed) throw _closedError();
+      final (worker, outcome) = await _acquireWorker(waited);
+      TelemetryMetrics.checkout.duration(waited, outcome);
 
-        return WorkerLease._(this, _Worker(_nextId++, await _spawnOne()));
-      }
-      await _waitForSlot(waited);
+      return WorkerLease._(this, worker);
+    } on Object catch (error) {
+      TelemetryMetrics.checkout.duration(
+        waited,
+        error is _CheckoutTimeout ? 'exhausted' : 'error',
+      );
+      rethrow;
     }
   }
 
@@ -159,7 +160,11 @@ final class WorkerPool {
     final idle = [..._idleWorkers];
     _idleWorkers.clear();
     _liveWorkers -= idle.length;
-    await Future.wait([for (final worker in idle) worker.channel.close()]);
+    workerDelta(0, -idle.length);
+    for (final _ in idle) {
+      TelemetryMetrics.terminated.attribute(1, 'reason', 'closed');
+    }
+    await Future.wait([for (final worker in idle) _closeWorker(worker)]);
   }
 
   /// Starts [count] workers; if one fails, cancels the rest, closes the
@@ -237,10 +242,7 @@ final class WorkerPool {
       if (waiter.isCompleted) return;
       _waiters.remove(waiter);
       waiter.completeError(
-        TimeoutException(
-          'no monty worker became available within the checkout timeout',
-          limit,
-        ),
+        _CheckoutTimeout(limit),
         StackTrace.current,
       );
     });
@@ -255,6 +257,7 @@ final class WorkerPool {
   /// retries.
   void _releaseSlot() {
     _liveWorkers--;
+    workerDelta(-1, 0);
     if (_waiters.isNotEmpty) _waiters.removeFirst().complete();
   }
 
@@ -266,9 +269,15 @@ final class WorkerPool {
     final unwanted = _closed && _waiters.isEmpty;
     if (unwanted || (max != null && worker.served >= max)) {
       worker.channel.kill();
+      TelemetryMetrics.terminated.attribute(
+        1,
+        'reason',
+        unwanted ? 'closed' : 'recycled',
+      );
       _releaseSlot();
     } else {
       _idleWorkers.add(worker);
+      workerDelta(0, 1);
       if (_waiters.isNotEmpty) _waiters.removeFirst().complete();
     }
   }
@@ -411,13 +420,19 @@ final class _Worker {
 ///
 /// Single use: [release] or [kill] gives the slot back exactly once,
 /// whichever comes first and however often either is called.
+// R-3 requires fields before constructors, overriding the repository order.
+// ignore: member-ordering
 final class WorkerLease {
-  WorkerLease._(this._pool, this._worker);
-
+  final SessionMetrics? _metrics;
   final WorkerPool _pool;
   final _Worker _worker;
   bool _isReleased = false;
   Future<void>? _releasing;
+
+  // Fields precede constructors per the R-3 member-order requirement.
+  // ignore: sort_constructors_first
+  WorkerLease._(this._pool, this._worker)
+    : _metrics = telemetryBridge == null ? null : SessionMetrics();
 
   /// The worker's channel. Throws [StateError] once the lease has ended:
   /// the worker may then serve another lease.
@@ -448,10 +463,12 @@ final class WorkerLease {
 
   /// Kills the worker now and gives its slot back, unless the lease already
   /// ended. A turn in flight, `Reset` included, fails as killed.
-  void kill() {
+  void kill({String reason = 'abandoned', String outcome = 'abandoned'}) {
     if (_isReleased) return;
     _isReleased = true;
     _worker.channel.kill();
+    TelemetryMetrics.terminated.attribute(1, 'reason', reason);
+    _metrics?.finish(outcome);
     _pool._releaseSlot();
   }
 
@@ -459,7 +476,11 @@ final class WorkerLease {
     if (_isReleased) return;
     // A closed pool keeps no idle worker: unless an acquire waits for this
     // one, there is nothing to Reset for.
-    if (_pool._closed && _pool._waiters.isEmpty) return kill();
+    if (_pool._closed && _pool._waiters.isEmpty) {
+      kill(reason: 'closed', outcome: 'ok');
+
+      return;
+    }
     final worker = _worker;
     final limit = _pool.options.requestTimeout;
     final timer = limit == null ? null : Timer(limit, worker.channel.kill);
@@ -473,7 +494,7 @@ final class WorkerLease {
       }
     } on Object {
       if (_isReleased) return;
-      kill();
+      kill(reason: 'discarded', outcome: 'error');
       rethrow;
     } finally {
       timer?.cancel();
@@ -482,5 +503,59 @@ final class WorkerLease {
     _isReleased = true;
     worker.served++;
     _pool._takeBack(worker);
+    _metrics?.finish('ok');
   }
+}
+
+extension on WorkerPool {
+  Future<void> _closeWorker(_Worker worker) async {
+    try {
+      await worker.channel.close();
+    } finally {
+      workerDelta(-1, 0);
+    }
+  }
+
+  Future<(_Worker, String)> _acquireWorker(Stopwatch clock) async {
+    var waited = false;
+    for (;;) {
+      final (reused, died, removed) = _takeIdle();
+      final spawn = reused == null && _liveWorkers < maxProcesses;
+      if (spawn) _liveWorkers++;
+      workerDelta((spawn ? 1 : 0) - died, -removed);
+      if (reused != null) return (reused, waited ? 'waited' : 'idle');
+      if (spawn) {
+        final worker = _Worker(_nextId++, await _spawnOne());
+
+        return (worker, waited ? 'waited' : 'spawned');
+      }
+      waited = true;
+      await _waitForSlot(clock);
+    }
+  }
+
+  (_Worker?, int, int) _takeIdle() {
+    var died = 0;
+    var removed = 0;
+    while (_idleWorkers.isNotEmpty) {
+      final worker = _idleWorkers.removeLast();
+      removed++;
+      if (worker.channel.isAlive) return (worker, died, removed);
+      worker.channel.kill();
+      _liveWorkers--;
+      died++;
+      TelemetryMetrics.terminated.attribute(1, 'reason', 'died_idle');
+    }
+
+    return (null, died, removed);
+  }
+}
+
+/// Distinguishes capacity exhaustion from a timeout raised by the spawner.
+final class _CheckoutTimeout extends TimeoutException {
+  _CheckoutTimeout(Duration limit)
+    : super(
+        'no monty worker became available within the checkout timeout',
+        limit,
+      );
 }

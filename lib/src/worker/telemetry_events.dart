@@ -4,6 +4,7 @@ part of 'telemetry_recorder.dart';
 extension TelemetryEvents on TelemetryRecorder {
   /// Records one decoded event, including prints and fatal errors.
   void event(pb.ChildEvent event) {
+    metrics.event(event);
     if (event.hasRestoredScriptName()) {
       _turn?.attributes.text('script_name', event.restoredScriptName);
     }

@@ -6,17 +6,16 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry.dart';
 import 'package:dart_monty_core/src/worker/telemetry_attributes.dart';
 import 'package:dart_monty_core/src/worker/telemetry_scalars.dart';
+import 'package:dart_monty_core/src/worker/telemetry_turn_metrics.dart';
 import 'package:dart_monty_core/src/worker/telemetry_values.dart';
 
 part 'telemetry_requests.dart';
 part 'telemetry_events.dart';
 
 /// One checkout, with explicit span nesting independent of the current zone.
+// R-3 requires fields before constructors, overriding the repository order.
+// ignore: member-ordering
 final class TelemetryRecorder {
-  /// Captures the parent at checkout, but opens no span until Configure.
-  TelemetryRecorder(this.bridge, this.workerPid)
-    : captured = bridge.currentContext();
-
   /// Installation shared by all sessions, including disabled signals.
   final TelemetryBridge bridge;
 
@@ -26,11 +25,20 @@ final class TelemetryRecorder {
   /// Checkout's captured host context.
   final Object? captured;
 
+  /// Metrics remain independent of the span signal and its failure state.
+  final metrics = TelemetryTurnMetrics();
+
   _Span? _session;
   _Span? _feed;
   _Span? _pending;
   _Span? _turn;
   bool _dumpTurn = false;
+
+  /// Captures the parent at checkout, but opens no span until Configure.
+  // Fields precede constructors per the R-3 member-order requirement.
+  // ignore: sort_constructors_first
+  TelemetryRecorder(this.bridge, this.workerPid)
+    : captured = bridge.currentContext();
 
   Object? get _span => (_turn ?? _pending ?? _feed ?? _session)?.handle;
 
@@ -42,6 +50,7 @@ final class TelemetryRecorder {
 
   /// Reset, Shutdown and death close every open span, innermost first.
   void close() {
+    metrics.close();
     _endFeed();
     _end(_session);
     _session = null;

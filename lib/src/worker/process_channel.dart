@@ -19,6 +19,7 @@ import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
 import 'package:meta/meta.dart';
 
 /// The worker's exit code when its allocator's hard limit is breached:
@@ -257,8 +258,10 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
     if (wasAlive) {
       final stdin = _process.stdin;
       try {
-        stdin.add(Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown())));
+        final frame = Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown()));
+        stdin.add(frame);
         await stdin.close();
+        TelemetryMetrics.frame.attribute(frame.length, 'direction', 'sent');
       } on Object catch (_) {
         // The worker is already gone; the exit below is all that is left.
       }
@@ -299,6 +302,9 @@ final class _ProcessTurn {
     // still unsent. Only a flush observed before exit confirms the send.
     final sent = flushed && !_channel._exited;
     _channel._unsent = !sent;
+    if (sent) {
+      TelemetryMetrics.frame.attribute(frame.length, 'direction', 'sent');
+    }
     _recording?.sent(success: sent);
 
     return sent;
@@ -571,6 +577,7 @@ final class EventQueue {
       if (_queue.isNotEmpty) {
         final (event, size) = _queue.removeFirst();
         _readAhead -= size;
+        TelemetryMetrics.frame.attribute(size, 'direction', 'received');
         if (_readAhead < _bound) _resume();
 
         return event;
