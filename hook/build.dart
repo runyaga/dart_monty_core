@@ -66,30 +66,7 @@ Future<void> _buildWorker(
     _ => 'libdart_monty_worker.so',
   };
   final workerDir = nativeDir.resolve('worker/');
-  if (!File.fromUri(workerDir.resolve('Cargo.toml')).existsSync()) {
-    throw StateError(
-      'native/worker/Cargo.toml not found — the worker library '
-      '(build_worker: true) builds from source in the full repository.',
-    );
-  }
-  // `--lib` builds the cdylib (and the rlib the executable links), with the
-  // release profile the executable ships with. `--locked`:
-  // native/worker/Cargo.lock is seeded from upstream's and a fresh resolve is
-  // known to fail.
-  final result = await Process.run('cargo', [
-    'build',
-    '--locked',
-    '--release',
-    '--lib',
-    ...targetArgs,
-  ], workingDirectory: Directory.fromUri(workerDir).path);
-  if (result.exitCode != 0) {
-    throw StateError(
-      'cargo build of the worker library failed.\n'
-      'stdout:\n${result.stdout}\n'
-      'stderr:\n${result.stderr}',
-    );
-  }
+  await _cargoBuildLib(workerDir, targetArgs);
   final built = _firstBuilt(workerDir, _cargoPaths(os, arch, libName));
   if (built == null) {
     throw StateError(
@@ -116,6 +93,33 @@ Future<void> _buildWorker(
   );
 }
 
+/// Runs `cargo build --lib` in [workerDir]. `--lib` builds the cdylib (and the
+/// rlib the executable links), with the release profile the executable ships
+/// with. `--locked`: native/worker/Cargo.lock is seeded from upstream's and a
+/// fresh resolve is known to fail.
+Future<void> _cargoBuildLib(Uri workerDir, List<String> targetArgs) async {
+  if (!File.fromUri(workerDir.resolve('Cargo.toml')).existsSync()) {
+    throw StateError(
+      'native/worker/Cargo.toml not found — the worker library '
+      '(build_worker: true) builds from source in the full repository.',
+    );
+  }
+  final result = await Process.run('cargo', [
+    'build',
+    '--locked',
+    '--release',
+    '--lib',
+    ...targetArgs,
+  ], workingDirectory: Directory.fromUri(workerDir).path);
+  if (result.exitCode != 0) {
+    throw StateError(
+      'cargo build of the worker library failed.\n'
+      'stdout:\n${result.stdout}\n'
+      'stderr:\n${result.stderr}',
+    );
+  }
+}
+
 /// What the worker library is built from: native/worker's manifest, lock and
 /// build script, the Cargo configuration it inherits, every Rust source under
 /// `src/` and `upstream/`, and [toolchain], native/rust-toolchain.toml.
@@ -124,7 +128,7 @@ void _declareWorkerInputs(
   Uri workerDir, {
   required Uri toolchain,
 }) {
-  final deps = <Uri>[
+  final deps = [
     workerDir.resolve('Cargo.toml'),
     workerDir.resolve('Cargo.lock'),
     workerDir.resolve('build.rs'),

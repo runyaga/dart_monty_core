@@ -358,7 +358,7 @@ else
   ERR=$(mktemp)
   # stderr is CAPTURED, not discarded: a gate that hides why it failed is barely
   # better than one that cannot fail.
-  "${DCM_CI_ENV[@]}" dcm calculate-metrics lib --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
+  "${DCM_CI_ENV[@]}" dcm calculate-metrics lib hook --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
   DCM_RC=$?
 
   if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$TMP" 2>/dev/null; then
