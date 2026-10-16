@@ -3,6 +3,7 @@
 //
 //   bash tool/build_worker.sh
 //   dart run tool/record_core_dump_fixture.dart
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/monty.dart';
@@ -17,11 +18,18 @@ Future<void> main() async {
     await session.feedRun(dumpStateCode);
     final dump = await session.dump();
     await session.close();
+    final sources =
+        (jsonDecode(File('tool/wasm-provenance.json').readAsStringSync())
+            as Map<String, Object?>)['worker_source_sha256'];
     final hex = [for (final b in dump) b.toRadixString(16).padLeft(2, '0')];
     File('test/unit/worker/_core_dump_fixture.g.dart').writeAsStringSync(
       "// An idle dump made by core's worker, loaded in upstream by\n"
       '// tool/generate_dump_oracle.py --check and in core by\n'
       '// _boundary_cases.dart. Rewritten by tool/record_core_dump_fixture.dart.\n'
+      '\n'
+      '/// The worker sources (tool/wasm-provenance.json) the dump was made from;\n'
+      '/// --check fails when they change, so the dump is re-recorded.\n'
+      "const coreIdleDumpWorkerSources =\n    '$sources';\n"
       '\n'
       '/// The dump, as hex.\n'
       "const coreIdleDumpHex =\n    '${hex.join()}';\n",

@@ -9,8 +9,9 @@ The two directions of dump portability, each a same-version idle dump:
 - upstream to core: the dump recorded here (`upstreamIdleDumpHex`) is loaded by
   core in test/unit/worker/_boundary_cases.dart and must continue as `expected`;
 - core to upstream: `test/unit/worker/_core_dump_fixture.g.dart` holds a dump made
-  by core's worker (tool/record_core_dump_fixture.dart rewrites it); --check
-  loads it in upstream and requires the same continuation.
+  by core's worker (tool/record_core_dump_fixture.dart rewrites it, noting the worker sources it
+  was made from); --check loads it in upstream, requires the same continuation,
+  and fails when the worker sources have changed since it was recorded.
 
 Dumps are not byte-reproducible (two dumps of one state differ), so --check
 does not compare bytes: it loads both dumps in upstream and checks the
@@ -23,6 +24,7 @@ as expected in the pinned upstream, or the generated file's other lines differ.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import subprocess
 import sys
@@ -84,8 +86,8 @@ async def continues(pool, dump: bytes) -> str:
         return str(await session.feed_run(CONTINUATION))
 
 
-def committed_hex(path: Path, name: str) -> str:
-    match = re.search(rf"{name}\s*=\s*'([0-9a-f]+)'", path.read_text())
+def committed_hex(path: Path, name: str, digits: str = '[0-9a-f]+') -> str:
+    match = re.search(rf"{name}\s*=\s*'({digits})'", path.read_text())
     if not match:
         raise SystemExit(f'{path.relative_to(ROOT)}: no {name}')
     return match.group(1)
@@ -96,6 +98,15 @@ async def check() -> int:
     upstream_hex = committed_hex(OUT, 'upstreamIdleDumpHex')
     if OUT.read_text() != render(upstream_hex):
         print(f'{OUT.relative_to(ROOT)} differs from its template', file=sys.stderr)
+        bad = 1
+    recorded = committed_hex(CORE, 'coreIdleDumpWorkerSources', digits='[0-9a-f]+')
+    current = json.loads((ROOT / 'tool/wasm-provenance.json').read_text())['worker_source_sha256']
+    if recorded != current:
+        print(
+            'the worker sources changed since the core dump fixture was recorded: '
+            'run `dart run tool/record_core_dump_fixture.dart` and commit it',
+            file=sys.stderr,
+        )
         bad = 1
     async with pm.AsyncMonty(max_processes=1) as pool:
         for label, dump in (
