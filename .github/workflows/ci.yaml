@@ -681,34 +681,6 @@ jobs:
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
           # Measured on main 81d96ec: 2592; with the T-values tests 2694.
           bash tool/assert_test_count.sh /tmp/unit-test.log 3173 unit
-      - name: Test (web, unit only — dart2js + dart2wasm)
-        # The SAME pure-Dart suite, on both web compilers. Not redundant with the
-        # JIT step above: dart2js has a single number type, so `4.0 is int` is
-        # true and integral doubles collapse to ints, while dart2wasm has real
-        # doubles. A numeric defect can pass on the VM and be wrong — or the fix
-        # for it unreachable — on the web. That is not hypothetical: a fix to
-        # inputs_encoder compiled, analysed clean and passed on the VM while
-        # doing nothing at all, because the arm it added was dead on dart2js,
-        # the only backend with the bug. Until this step existed, test/unit/ ran
-        # on NO web target in CI.
-        #
-        # `vm-only` is excluded because those files cannot COMPILE for the web
-        # (0x7FFFFFFFFFFFFFFF is a dart2js compile error), and that failure
-        # happens before any test runs, so a `skip:` cannot contain it.
-        # A FLOOR, because this step had none. It runs the same pure-Dart
-        # suite as the JIT step on two web compilers, and nothing asserted it
-        # registered anything — a compile that produced an empty suite, or a
-        # tag filter that stopped matching, would have exited 0. 1483 observed
-        # locally across both compilers (gate-20260917T123744Z); floor set
-        # under it so ordinary churn does not trip it.
-        run: |
-          set -o pipefail
-          dart test \
-            --exclude-tags=integration,ladder,example,vm-only,worker \
-            -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
-          # Measured on main 81d96ec: 5154 over both compilers; with the T-values tests 5358.
-          bash tool/assert_test_count.sh /tmp/unit-web.log 6212 "unit (web)"
-
       - name: Generate LCOV
         run: |
           # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
@@ -763,6 +735,64 @@ jobs:
           # to merge fewer tracefiles than it believes it has.
           if-no-files-found: error
           retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Dart: the unit suite on each web compiler
+  # ---------------------------------------------------------------------------
+  # The SAME pure-Dart suite as the JIT step above, on both web compilers. Not
+  # redundant with it: dart2js has a single number type, so `4.0 is int` is true
+  # and integral doubles collapse to ints, while dart2wasm has real doubles. A
+  # numeric defect can pass on the VM and be wrong, or its fix unreachable, on
+  # the web (a fix to inputs_encoder compiled, analysed clean and passed on the
+  # VM while doing nothing, because the arm it added was dead on dart2js).
+  #
+  # `vm-only` is excluded because those files cannot COMPILE for the web
+  # (0x7FFFFFFFFFFFFFFF is a dart2js compile error), and that failure happens
+  # before any test runs, so a `skip:` cannot contain it.
+  #
+  # It is its own job, one per compiler, and needs no worker executable. In the
+  # `test` job it ran after the JIT step and held `coverage-merge` back behind
+  # `worker-rust`: it was 552 s of that job's 718 s median.
+  #
+  # The floors were one number for both compilers (6212 over the two runs).
+  # They are split in half so their sum is unchanged; observed 3210 and 3206.
+  test-web-unit:
+    name: Dart test (web unit, ${{ matrix.compiler }})
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: dart2js
+            floor: 3106
+          - compiler: dart2wasm
+            floor: 3106
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      - name: Test (web, unit only)
+        env:
+          COMPILER: ${{ matrix.compiler }}
+          FLOOR: ${{ matrix.floor }}
+        run: |
+          set -o pipefail
+          dart test \
+            --exclude-tags=integration,ladder,example,vm-only,worker \
+            -p chrome -c "$COMPILER" 2>&1 | tee /tmp/unit-web.log
+          bash tool/assert_test_count.sh /tmp/unit-web.log "$FLOOR" "unit (web, $COMPILER)"
 
   # ---------------------------------------------------------------------------
   # Dart: an AOT consumer that opts in to the worker library (self-relaunch)
