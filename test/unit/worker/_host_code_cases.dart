@@ -72,9 +72,16 @@ MontyTuple _caught(String type, String repr, List<String> args) => MontyTuple([
 
 /// Attributes that throw when read: host code that breaks the map's
 /// contract, so preparing the answer to an [ExternalException] fails.
-Map<String, MontyValue> _unreadableAttributes() => HashMap<String, MontyValue>(
-  hashCode: (key) => throw StateError('unreadable'),
-);
+final class _UnreadableAttributes
+    extends UnmodifiableMapBase<String, MontyValue> {
+  const _UnreadableAttributes();
+
+  @override
+  MontyValue? operator [](Object? key) => throw StateError('unreadable');
+
+  @override
+  Iterable<String> get keys => const [];
+}
 
 /// A feed on a session that was ended, not one left awaiting an answer.
 final Matcher _finished = throwsA(
@@ -88,10 +95,10 @@ final Matcher _finished = throwsA(
 /// A host function raising an exception whose answer cannot be prepared.
 MontyHostFunction _unanswerable(String name, {bool async = false}) {
   MontyValue fail(List<MontyValue> _, Map<String, MontyValue> _) =>
-      throw ExternalException(
+      throw const ExternalException(
         'json.JSONDecodeError',
         'm',
-        _unreadableAttributes(),
+        _UnreadableAttributes(),
       );
 
   return MontyHostFunction(name, async ? coroutine(fail) : fail);
