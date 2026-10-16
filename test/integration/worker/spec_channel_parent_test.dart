@@ -39,17 +39,27 @@ Future<void> main([List<String> args = const []]) async {
     ),
   ]) {
     test('$req: $result', () async {
-      final probe = await Process.run('python3', [
-        '-c',
-        _supervisor,
-        Platform.resolvedExecutable,
-        _path,
-        mode,
-      ]);
+      final probe = await _probe(mode);
       expect(probe.exitCode, 0, reason: '${probe.stdout}\n${probe.stderr}');
       expect(probe.stdout, '$result\n');
     });
   }
+}
+
+Future<ProcessResult> _probe(String mode) async {
+  for (var attempt = 0; attempt < 3; attempt++) {
+    final result = await Process.run('python3', [
+      '-c',
+      _supervisor,
+      Platform.resolvedExecutable,
+      _path,
+      mode,
+    ]);
+    // A delayed running notification leaves no useful observation window.
+    // Retry with a fresh worker rather than assert it outlives its budget.
+    if (result.exitCode != 75 || attempt == 2) return result;
+  }
+  throw StateError('unreachable');
 }
 
 Future<void> _parent(String mode) async {
@@ -70,6 +80,8 @@ Future<void> _parent(String mode) async {
   if (configured.whichKind() != pb.ChildEvent_Kind.ok) exit(2);
   stdout.writeln(channel.pid);
   if (mode != 'busy') return;
+  await stdout.flush();
+  if (stdin.readByteSync() != 1) exit(2);
   await channel.turn(
     pb.ParentRequest(
       feed: pb.Feed(
@@ -89,7 +101,7 @@ Future<void> _parent(String mode) async {
 const _supervisor = r'''
 import os, select, signal, subprocess, sys, time
 parent = subprocess.Popen(sys.argv[1:3] + [sys.argv[3]],
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 worker = None
 watch = None
 try:
@@ -122,18 +134,24 @@ try:
         print('parent retained until worker exit')
     else:
         if mode == 'busy':
+            # Register the exit watch before releasing the feed. This time is
+            # a lower bound on execution startup, not print delivery time.
+            started = time.monotonic()
+            parent.stdin.write('\x01')
+            parent.stdin.flush()
             assert parent.stdout.readline() == 'running\n'
-        started = time.monotonic()
+            remaining = started + 4 - time.monotonic()
+            if remaining < 1:
+                print('startup consumed the observation window', file=sys.stderr)
+                sys.exit(75)
         parent.kill()
-        parent.wait(timeout=5)
-        if mode == 'busy':
-            assert not exited(0), 'busy worker died with parent'
         assert exited(10), 'orphan worker did not exit'
         if mode == 'busy':
             assert time.monotonic() - started >= 4, 'execution ended before its budget'
             print('busy worker survived until duration limit')
         else:
             print('idle worker exited after parent death')
+        parent.wait(timeout=5)
 finally:
     if parent.poll() is None:
         parent.kill()

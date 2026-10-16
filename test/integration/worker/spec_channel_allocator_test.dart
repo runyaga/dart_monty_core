@@ -4,6 +4,9 @@
 @TestOn('vm')
 library;
 
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -13,10 +16,13 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 Future<ProcessChannel> _channel({
+  Process? process,
   bool typeCheck = false,
   int maxMemory = 1000000,
 }) async {
-  final channel = await ProcessChannel.spawn(await locateWorker());
+  final channel = process == null
+      ? await ProcessChannel.spawn(await locateWorker())
+      : processChannelForTesting(process);
   addTearDown(channel.close);
   final event = await channel.turn(
     pb.ParentRequest(
@@ -58,11 +64,23 @@ void main() {
   test(
     'REQ-budgets-and-limits-22: request framing crosses the hard ceiling',
     () async {
-      final channel = await _channel();
-      await _terminated(
-        channel,
-        pb.ParentRequest(feed: pb.Feed(code: '#' * 5000000)),
+      final (path, args) = launchCommand(await locateWorker());
+      final process = await Process.start(path, args);
+      addTearDown(() async {
+        process.kill(ProcessSignal.sigkill);
+        await process.exitCode;
+      });
+      final channel = await _channel(process: process);
+      // 1,000,000 + 4 MiB of allocator headroom is below this length.
+      // Keep stdin open and send no body: decoding cannot have begun.
+      final prefix = ByteData(4)..setUint32(0, 6000010, Endian.little);
+      process.stdin.add(prefix.buffer.asUint8List());
+      await process.stdin.flush();
+      expect(
+        await channel.exitCode.timeout(const Duration(seconds: 5)),
+        65,
       );
+      expect(channel.isAlive, isFalse);
     },
   );
 

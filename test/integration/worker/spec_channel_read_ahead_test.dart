@@ -21,6 +21,34 @@ import '../../unit/worker/_scripted_channel.dart';
 const int _fourMiB = 4 * 1024 * 1024;
 
 void main() {
+  for (final req in [
+    'REQ-platforms-17',
+    'REQ-platforms-18',
+    'REQ-wire-limits-24',
+  ]) {
+    test('$req: completed frames at 4 MiB and one byte above', () async {
+      for (final extra in [0, 1]) {
+        final (session, process) = await _session();
+        final text = 'a' * (_fourMiB - 21 + extra);
+        final frame = _printFrame(text);
+        expect(frame.length, _fourMiB + extra);
+        process.output.add(frame);
+        // Observed equality differs from the spec's "exceeds" wording.
+        // Retained as requested; see .disp/channel-fix1.notes.txt.
+        _expectPaused(process, true, '4 MiB + $extra byte(s)');
+        final received = <String>[];
+        expect(
+          await session.feedRun(
+            'None',
+            printCallback: (_, value) => received.add(value),
+          ),
+          const MontyNone(),
+        );
+        expect(received, [text]);
+        _expectPaused(process, false, 'drained below 4 MiB');
+      }
+    });
+  }
   test(
     'REQ-platforms-17: pause above 4 MiB after the in-flight frame ends',
     () async {

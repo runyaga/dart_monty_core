@@ -11,6 +11,8 @@ import 'package:dart_monty_core/src/worker/channel_factory_web.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_spec_channel_browser.dart';
+
 @JS('navigator')
 external JSObject get _navigator;
 
@@ -19,12 +21,6 @@ external JSObject _define(JSObject object, String name, JSObject descriptor);
 
 @JS('Object.getOwnPropertyDescriptor')
 external JSObject? _descriptor(JSObject object, String name);
-
-@JS('fetch')
-external JSFunction get _fetch;
-
-@JS('fetch')
-external set _fetch(JSFunction value);
 
 void _hardware(int? count) {
   const key = 'hardwareConcurrency';
@@ -75,29 +71,30 @@ void main() {
     'REQ-Monty-26',
     'REQ-Monty-41',
     'REQ-pool-and-lifetimes-81',
+    'REQ-release-and-consumers-26',
   ]) {
     test('$req: explicit asset base reaches the browser factory', () async {
-      final original = _fetch;
-      addTearDown(() => _fetch = original);
-      final urls = <String>[];
-      _fetch = ((JSString url) {
-        urls.add(url.toDart);
-
-        return Future<JSAny?>.error(StateError('fixture fetch refused')).toJS;
-      }).toJS;
-      const base = '/chosen-worker-assets';
+      final browser = SpecChannelBrowser();
+      addTearDown(browser.restore);
+      // Each requirement gets a distinct cache key, so it must fetch its
+      // own module as well as construct its worker from the selected base.
+      final base = '/chosen-worker-assets/$req';
       await expectLater(
         Monty.start(maxProcesses: 1, workerLocation: base),
         throwsA(
           isA<MontyCrashedError>().having(
             (error) => error.toString(),
             'message',
-            contains('fetch $base/dart_monty_core_worker.wasm:'),
+            allOf(
+              contains('Worker $base/dart_monty_core_worker.js:'),
+              contains('fixture Worker construction observed'),
+            ),
           ),
         ),
       );
-      expect(urls, ['$base/dart_monty_core_worker.wasm']);
-      _fetch = original;
+      expect(browser.fetched, ['$base/dart_monty_core_worker.wasm']);
+      expect(browser.workers, ['$base/dart_monty_core_worker.js']);
+      browser.restore();
       final pool = await Monty.start(
         maxProcesses: 1,
         workerLocation: 'packages/dart_monty_core/assets',
