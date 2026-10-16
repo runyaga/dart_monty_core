@@ -41,6 +41,12 @@ bool _armed = false;
 /// The child exit status for a missing or unloadable bundled worker library.
 const int workerLibraryExitCode = 78;
 
+/// A test seam for the self-relaunch library diagnosis.
+typedef SelfRelaunchDiagnosis =
+    SelfRelaunchStatus Function({
+      void Function()? resolveWorker,
+    });
+
 /// Diagnoses whether this executable can serve a self-relaunched worker.
 ///
 /// The worker library lives beside an AOT executable in `../lib`. The optional
@@ -118,15 +124,53 @@ String? workerChildFailureLine(SelfRelaunchStatus status) => switch (status) {
 /// child's stdout carries the protocol, so nothing may be written to it
 /// before the worker starts.
 void runMontyWorkerIfChild(List<String> args) {
+  _runMontyWorkerIfChild(
+    args,
+    exitProcess: exit,
+    writeStderr: stderr.writeln,
+    resolveWorker: _resolveWorker,
+    diagnose: diagnoseSelfRelaunch,
+    workerMain: _workerMain,
+  );
+}
+
+/// Runs the child handoff with host operations supplied by a test.
+@visibleForTesting
+void runMontyWorkerIfChildWithSeams(
+  List<String> args, {
+  @visibleForTesting required void Function(int) exitProcess,
+  @visibleForTesting required void Function(String) writeStderr,
+  @visibleForTesting required void Function() resolveWorker,
+  @visibleForTesting required SelfRelaunchDiagnosis diagnose,
+  @visibleForTesting required int Function() workerMain,
+}) => _runMontyWorkerIfChild(
+  args,
+  exitProcess: exitProcess,
+  writeStderr: writeStderr,
+  resolveWorker: resolveWorker,
+  diagnose: diagnose,
+  workerMain: workerMain,
+);
+
+void _runMontyWorkerIfChild(
+  List<String> args, {
+  required void Function(int) exitProcess,
+  required void Function(String) writeStderr,
+  required void Function() resolveWorker,
+  required SelfRelaunchDiagnosis diagnose,
+  required int Function() workerMain,
+}) {
   _armed = true;
-  if (args.length == 1 && args.first == SelfRelaunch.flag) {
-    final status = diagnoseSelfRelaunch();
+  if (args case [SelfRelaunch.flag]) {
+    final status = diagnose(resolveWorker: resolveWorker);
     final failureLine = workerChildFailureLine(status);
     if (failureLine != null) {
-      stderr.writeln(failureLine);
-      exit(workerLibraryExitCode);
+      writeStderr(failureLine);
+      exitProcess(workerLibraryExitCode);
+
+      return;
     }
-    exit(_workerMain());
+    exitProcess(workerMain());
   }
 }
 
