@@ -375,6 +375,9 @@ extension ProtoSessionTransfer on ProtoSession {
         event.dumpResult.state,
       ),
       pb.ChildEvent_Kind.error => _throwRaised(event.error),
+      pb.ChildEvent_Kind.typingError => throw typingError(
+        event.typingError.diagnostics,
+      ),
       _ => _desync('Dump', event),
     };
   }
