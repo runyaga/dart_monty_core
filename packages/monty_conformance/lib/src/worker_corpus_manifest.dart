@@ -314,6 +314,20 @@ const workerRecursionSetNoJspi = <String, RecursionOutcome>{
   'recursion__deep_isinstance.py': RecursionOutcome.passes,
 };
 
+/// The recursion set's outcomes on Safari 26.6 (JavaScriptCore, no JSPI),
+/// measured with this corpus run on dart2js: every file runs to its end,
+/// including the three that crash Chrome's and Firefox's worker.
+/// Upstream's browser build has no Safari baseline to compare with.
+const workerRecursionSetNoJspiSafari = <String, RecursionOutcome>{
+  'collections__deque.py': RecursionOutcome.passes,
+  'dataclass__repr_eq.py': RecursionOutcome.passes,
+  'dict__eq_self_referential.py': RecursionOutcome.passes,
+  'generic_alias.py': RecursionOutcome.passes,
+  'list__eq_self_referential.py': RecursionOutcome.passes,
+  'recursion__deep_hash.py': RecursionOutcome.passes,
+  'recursion__deep_isinstance.py': RecursionOutcome.passes,
+};
+
 /// How a run's failures differ from the manifest for [profile]; empty when
 /// they match exactly.
 ///
@@ -370,6 +384,11 @@ List<String> manifestProblems(Iterable<String> corpus) {
     if (!workerCorpusExpected.any((e) => e.divergence == id)) {
       problems.add('divergence $id names no file');
     }
+  }
+  final safariFiles = workerRecursionSetNoJspiSafari.keys.toSet();
+  if (safariFiles.length != workerRecursionSetNoJspi.length ||
+      !safariFiles.containsAll(workerRecursionSetNoJspi.keys)) {
+    problems.add('the Safari recursion set names different files');
   }
   for (final file in workerRecursionSetNoJspi.keys) {
     if (!files.contains(file)) problems.add('$file: not in the corpus');
