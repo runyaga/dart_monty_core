@@ -5,24 +5,34 @@
 @TestOn('vm')
 library;
 
+import 'dart:isolate';
+
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('diagnosis reports an app that did not arm self-relaunch', () {
-    var resolutions = 0;
-    void missingWorker() {
-      resolutions++;
-      throw ArgumentError('worker symbol is absent');
-    }
+  setUp(() {
+    runMontyWorkerIfChild(const ['--other']);
+  });
 
-    final unarmed = diagnoseSelfRelaunch(resolveWorker: missingWorker);
+  _testUnarmedApp();
+  _testMissingLibrary();
+  _testResolutionOrder();
+  _testUnloadableLibrary();
+  _testReadyLibrary();
+  _testUnrelatedFailure();
+}
+
+void _testUnarmedApp() {
+  test('diagnosis reports an app that did not arm self-relaunch', () async {
+    final (unarmed, resolutions) = await Isolate.run(_diagnoseUnarmed);
     expect(unarmed, isA<SelfRelaunchNotArmed>());
     expect(resolutions, 0, reason: 'unarmed apps must not load the library');
   });
+}
 
+void _testMissingLibrary() {
   test('diagnosis names an absent bundled worker library for each host', () {
-    runMontyWorkerIfChild(const ['--other']);
     for (final (operatingSystem, executable, expected) in [
       (
         'macos',
@@ -55,7 +65,9 @@ void main() {
       );
     }
   });
+}
 
+void _testResolutionOrder() {
   test(
     'diagnosis checks for the bundled library before resolving its symbol',
     () {
@@ -73,7 +85,9 @@ void main() {
       expect(resolutions, 0);
     },
   );
+}
 
+void _testUnloadableLibrary() {
   test('diagnosis names an unloadable bundled worker library', () {
     final status = diagnoseSelfRelaunch(
       executablePath: '/bundle/bin/application',
@@ -96,7 +110,9 @@ void main() {
           ),
     );
   });
+}
 
+void _testReadyLibrary() {
   test('diagnosis reports a bundled and resolvable worker as ready', () {
     expect(
       diagnoseSelfRelaunch(
@@ -108,7 +124,9 @@ void main() {
       isA<SelfRelaunchReady>(),
     );
   });
+}
 
+void _testUnrelatedFailure() {
   test('self-relaunch does not hide unrelated resolver failures', () {
     final failure = StateError('resolver failed');
     expect(
@@ -120,6 +138,18 @@ void main() {
       throwsA(same(failure)),
     );
   });
+}
+
+(SelfRelaunchStatus, int) _diagnoseUnarmed() {
+  var resolutions = 0;
+  final status = diagnoseSelfRelaunch(
+    resolveWorker: () {
+      resolutions++;
+      throw ArgumentError('worker symbol is absent');
+    },
+  );
+
+  return (status, resolutions);
 }
 
 void _resolvable() => Object();

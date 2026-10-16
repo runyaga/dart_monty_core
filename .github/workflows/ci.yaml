@@ -818,26 +818,48 @@ jobs:
         working-directory: tool/aot_worker
         run: |
           set -euo pipefail
+          ./build/aot/bundle/bin/aot_worker --diagnose
           temporary_bundle=$(mktemp -d)
           trap 'rm -rf "$temporary_bundle"' EXIT
           cp -R build/aot/bundle "$temporary_bundle/bundle"
           rm "$temporary_bundle/bundle/lib/libdart_monty_worker.so"
-          set +e
-          output=$(cd "$temporary_bundle/bundle" && \
-            bin/aot_worker s10_external_call.json 2>&1)
-          result=$?
-          set -e
-          if [ "$result" -eq 0 ]; then
-            echo "FAIL: bundle without worker library succeeded"; exit 1
+          diagnose_code=0
+          (cd "$temporary_bundle/bundle" && bin/aot_worker --diagnose \
+            >"$temporary_bundle/diagnose.stdout" \
+            2>"$temporary_bundle/diagnose.stderr") || diagnose_code=$?
+          if [ "$diagnose_code" -eq 0 ]; then
+            echo "FAIL: diagnostic mode accepted a missing worker library"
+            exit 1
           fi
-          case "$output" in
-            *"lib/libdart_monty_worker.so"*) ;;
-            *) echo "FAIL: missing library path was not reported"; exit 1 ;;
-          esac
-          case "$output" in
-            *"exit status: 255"*)
-              echo "FAIL: opaque worker exit status was reported"; exit 1 ;;
-          esac
+          grep -Fq 'lib/libdart_monty_worker.so' \
+            "$temporary_bundle/diagnose.stderr" || {
+              echo "FAIL: missing library path was not reported"; exit 1;
+            }
+          if grep -Fq 'exit status: 255' "$temporary_bundle/diagnose.stderr"; then
+            echo "FAIL: opaque worker exit status was reported"
+            exit 1
+          fi
+          child_code=0
+          (cd "$temporary_bundle/bundle" && \
+            bin/aot_worker --dart-monty-core-worker \
+              >"$temporary_bundle/child.stdout" \
+              2>"$temporary_bundle/child.stderr") || child_code=$?
+          if [ "$child_code" -ne 78 ]; then
+            echo "FAIL: worker child exited $child_code, expected 78"
+            exit 1
+          fi
+          grep -Fq 'lib/libdart_monty_worker.so' \
+            "$temporary_bundle/child.stderr" || {
+              echo "FAIL: child did not name the missing library"; exit 1;
+            }
+          grep -Fq 'dart_monty_worker_main' \
+            "$temporary_bundle/child.stderr" || {
+              echo "FAIL: child did not name its worker entry point"; exit 1;
+            }
+          if [ -s "$temporary_bundle/child.stdout" ]; then
+            echo "FAIL: worker child wrote to stdout"
+            exit 1
+          fi
       # The hook builds the worker library with the opt-in set and nothing
       # without it. Run after the opted-in consumer above, which built the same
       # cdylib configuration into native/worker/target; the test links that

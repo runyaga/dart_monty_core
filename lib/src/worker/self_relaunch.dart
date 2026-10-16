@@ -97,6 +97,13 @@ String selfRelaunchRemedy(SelfRelaunchStatus status) => switch (status) {
         'a WorkerExecutable.',
 };
 
+/// Formats the one-line diagnostic written by a failed worker child.
+String selfRelaunchWorkerDiagnostic(SelfRelaunchStatus status) =>
+    'dart_monty_core worker: dart_monty_worker_main: '
+            '${selfRelaunchRemedy(status)}'
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
 /// Serves as the worker and exits when this process was relaunched as one;
 /// otherwise returns at once and enables [SelfRelaunch] for this process.
 ///
@@ -109,10 +116,7 @@ void runMontyWorkerIfChild(List<String> args) {
     final status = diagnoseSelfRelaunch();
     if (status
         case SelfRelaunchLibraryMissing() || SelfRelaunchLibraryUnloadable()) {
-      stderr.writeln(
-        'dart_monty_core worker: dart_monty_worker_main: '
-        '${selfRelaunchRemedy(status)}',
-      );
+      stderr.writeln(selfRelaunchWorkerDiagnostic(status));
       exit(workerLibraryExitCode);
     }
     exit(_workerMain());

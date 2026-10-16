@@ -22,6 +22,16 @@ final String _probe = File(
 ).absolute.path;
 
 void main() {
+  _testLaunchCommand();
+  _testDiagnosticFormatting();
+  _testUnflaggedWorker();
+  _testFlaggedWorker();
+  _testWorkerLibraryExitCode();
+  _testAotEligibility();
+  _testAotRoute();
+}
+
+void _testLaunchCommand() {
   group('launchCommand', () {
     test('SelfRelaunch runs this executable with the worker flag', () {
       final (path, args) = launchCommand(const SelfRelaunch());
@@ -42,7 +52,31 @@ void main() {
       expect(const SelfRelaunch().toString(), 'SelfRelaunch()');
     });
   });
+}
 
+void _testDiagnosticFormatting() {
+  group('runMontyWorkerIfChild', () {
+    test('worker diagnostic collapses whitespace in an unloadable error', () {
+      final diagnostic = selfRelaunchWorkerDiagnostic(
+        const SelfRelaunchLibraryUnloadable(
+          '/bundle/lib/libdart_monty_worker.so',
+          'ArgumentError: bad library\n  trailing detail\n',
+        ),
+      );
+
+      expect(
+        diagnostic,
+        'dart_monty_core worker: dart_monty_worker_main: the worker library '
+        '/bundle/lib/libdart_monty_worker.so exists but cannot be loaded: '
+        'ArgumentError: bad library trailing detail : rebuild it for this '
+        'platform (dart build cli) or replace the file. Or pass a '
+        'WorkerExecutable.',
+      );
+    });
+  });
+}
+
+void _testUnflaggedWorker() {
   group('runMontyWorkerIfChild', () {
     test(
       'without the flag it returns, and arms nothing it cannot serve',
@@ -57,7 +91,11 @@ void main() {
       expect(r.exitCode, 0, reason: '${r.stderr}');
       expect(r.stdout, 'available=false\nparent\n');
     });
+  });
+}
 
+void _testFlaggedWorker() {
+  group('runMontyWorkerIfChild', () {
     test(
       'the flag reports a missing bundled worker library and exits 78',
       () async {
@@ -66,7 +104,7 @@ void main() {
           SelfRelaunch.flag,
         ]);
         expect(r.stdout, isEmpty);
-        expect(r.exitCode, workerLibraryExitCode);
+        expect(r.exitCode, 78);
         final lines = (r.stderr as String)
             .split('\n')
             .where((line) => line.isNotEmpty)
@@ -93,7 +131,15 @@ void main() {
       expect(r.stdout, 'available=false\nparent\n');
     });
   });
+}
 
+void _testWorkerLibraryExitCode() {
+  test('worker-library exit status is 78', () {
+    expect(workerLibraryExitCode, 78);
+  });
+}
+
+void _testAotEligibility() {
   group('locateWorker step 3 (AOT)', () {
     test('self-relaunch ready: SelfRelaunch', () {
       expect(
@@ -124,7 +170,11 @@ void main() {
         ),
       );
     });
+  });
+}
 
+void _testAotRoute() {
+  group('locateWorker step 3 (AOT)', () {
     test('package URIs are not consulted, even where they resolve', () {
       var asked = false;
       expect(
