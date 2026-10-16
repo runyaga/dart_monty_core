@@ -14,10 +14,10 @@ void main() {
     test('uses the macOS HOME cache directory', () {
       expect(
         workerCacheRoot(
-          environment: {'HOME': '/Users/ada'},
+          environment: {'HOME': '/srv/ada'},
           operatingSystem: 'macos',
         ),
-        '/Users/ada/Library/Caches/dart_monty',
+        '/srv/ada/Library/Caches/dart_monty',
       );
     });
 
