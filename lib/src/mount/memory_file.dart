@@ -28,6 +28,9 @@ final class MemoryFile implements AbstractFile {
   @override
   Object readContent() => content;
   @override
+  // Upstream names this parameter `content` (MemoryFile.write_content); the
+  // approved surface keeps that name, so it shadows the getter on purpose.
+  // ignore: avoid-shadowing
   void writeContent(Object content) => this.content = content;
   @override
   void delete() => _deleted = true;
