@@ -6,20 +6,30 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:dart_monty_core/dart_monty_core.dart' show MontyInt;
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/spawn_handle.dart';
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_scripted_channel.dart' as scripted;
 
 /// Records what the connection sends and whether it terminated the Worker.
 final class _FakePort implements WorkerPort {
   final List<Uint8List> posted = [];
   int terminated = 0;
+  final acknowledged = <int>[];
+
+  @override
+  void acknowledge(int bytes) => acknowledged.add(bytes);
 
   @override
   void post(Uint8List frame) => posted.add(frame);
@@ -40,10 +50,18 @@ WorkerMessage _hello({
   events: null,
   outcome: null,
   trap: null,
+  print: null,
+  stderr: null,
 );
 
 /// A later Worker message: a turn reply, or a trap.
-WorkerMessage _message({Uint8List? events, int? outcome, String? trap}) => (
+WorkerMessage _message({
+  Uint8List? events,
+  int? outcome,
+  String? trap,
+  String? stderr,
+  Uint8List? print,
+}) => (
   ready: null,
   error: null,
   jspi: null,
@@ -51,6 +69,8 @@ WorkerMessage _message({Uint8List? events, int? outcome, String? trap}) => (
   events: events,
   outcome: outcome,
   trap: trap,
+  print: print,
+  stderr: stderr,
 );
 
 WorkerConnection _accept(_FakePort port, {Duration? grace}) =>
@@ -96,6 +116,205 @@ Future<pb.ChildEvent> _start(
 }) => c.turn(_feed, onPrint: onPrint);
 
 void main() {
+  // Framing failures match terminal replies: torn/oversized frames mean a
+  // vanished worker; a whole but invalid payload is a protocol violation.
+  for (final (name, batch, cause) in [
+    ('truncated', Uint8List.fromList([2, 0, 0, 0, 0x22]), CrashCause.vanished),
+    ('oversized', Uint8List.fromList([1, 0, 0, 16]), CrashCause.vanished),
+    ('invalid payload', Frame.wrap([0xff]), CrashCause.protocol),
+    ('non-Print payload', Frame.encode(_ok), CrashCause.protocol),
+  ]) {
+    test('R1 malformed streamed $name releases the pool slot', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final ok = scripted.ok();
+      final replacement = scripted.ScriptedChannel([
+        scripted.expecting(pb.ParentRequest_Kind.configure, [ok]),
+        scripted.answer([
+          scripted.complete([intNode(42)]),
+        ]),
+        scripted.expecting(pb.ParentRequest_Kind.reset, [ok]),
+      ]);
+      var starts = 0;
+      final pool = await startMonty(
+        const PoolOptions(
+          minProcesses: 0,
+          maxProcesses: 1,
+          checkoutTimeout: Duration(seconds: 1),
+        ),
+        open: () => PendingSpawn((_) async => ++starts == 1 ? c : replacement),
+      );
+      addTearDown(pool.close);
+      final checkout = pool.checkout();
+      await pumpEventQueue();
+      expect(_onlyRequest(port).whichKind(), pb.ParentRequest_Kind.configure);
+      c.onReply(_frames([_ok]), outcomeContinue);
+      final session = await checkout;
+      addTearDown(session.close);
+      var callbacks = 0;
+      final crashed = throwsA(_crashed(cause));
+      final failed = expectLater(
+        session.feedRun('print("x")', printCallback: (_, _) => callbacks++),
+        crashed,
+      );
+      await pumpEventQueue();
+      c.onMessage(_message(print: batch));
+      await failed;
+      expect(callbacks, 0);
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+      expect(port.acknowledged, isEmpty);
+      await expectLater(c.turn(_feed), crashed);
+      expect(pool.liveWorkers, 0);
+      // Do not close the failed session before checkout: crash cleanup must
+      // release its sole slot without help from the caller.
+      final next = await pool.checkout();
+      expect(starts, 2);
+      expect(
+        await next.feedRun('6 * 7', printCallback: (_, _) => callbacks++),
+        const MontyInt(42),
+      );
+      await next.close();
+    });
+  }
+
+  for (final error in <Exception>[
+    const FormatException('sink'),
+    const FrameTruncatedException(3),
+    const FrameTooLargeException(9, 8),
+  ]) {
+    test(
+      'R1 streamed callback preserves $error and kills the worker',
+      () async {
+        final port = _FakePort();
+        final c = _accept(port);
+        final failed = expectLater(
+          _start(c, onPrint: (_) => throw error),
+          throwsA(same(error)),
+        );
+        c.onMessage(_message(print: _frames([_print('a')])));
+        await failed;
+        expect(port.terminated, 1);
+        expect(port.acknowledged, isEmpty);
+        await expectLater(c.turn(_feed), _throwsKilled);
+      },
+    );
+  }
+
+  test('R1 streamed batches settle in order before the reply', () async {
+    final port = _FakePort();
+    final c = _accept(port);
+    final gate = Completer<void>();
+    final seen = <String>[];
+    var completed = false;
+    Future<pb.ChildEvent> runTurn() async {
+      final value = await c.turn(
+        _feed,
+        onPrint: (p) async {
+          seen.add(
+            p.segments.firstOrNull?.text ?? fail('missing print segment'),
+          );
+          if (seen.length == 1) await gate.future;
+        },
+      );
+      completed = true;
+
+      return value;
+    }
+
+    final turn = runTurn();
+    final a = _frames([_print('a')]);
+    final b = _frames([_print('b')]);
+    c
+      ..onMessage(_message(print: a))
+      ..onMessage(_message(print: b))
+      ..onReply(_frames([_ok]), outcomeContinue);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, ['a']);
+    expect(completed, isFalse);
+    expect(port.acknowledged, isEmpty);
+    expect(c.pendingPrintBytes, a.length + b.length);
+    gate.complete();
+    await turn;
+    expect(seen, ['a', 'b']);
+    expect(port.acknowledged, [a.length, b.length]);
+    expect(c.pendingPrintBytes, 0);
+    c.kill();
+  });
+
+  test(
+    'R1 kill cancels queued and late prints without awaiting callback',
+    () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final gate = Completer<void>();
+      final seen = <String>[];
+      final turn = c.turn(
+        _feed,
+        onPrint: (p) async {
+          seen.add(
+            p.segments.firstOrNull?.text ?? fail('missing print segment'),
+          );
+          await gate.future;
+        },
+      );
+      final failed = expectLater(turn, _throwsKilled);
+      c
+        ..onMessage(_message(print: _frames([_print('a')])))
+        ..onMessage(_message(print: _frames([_print('b')])))
+        ..onReply(_frames([_ok]), outcomeContinue);
+      await Future<void>.delayed(Duration.zero);
+      c.kill();
+      await failed;
+      c.onMessage(_message(print: _frames([_print('late')])));
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, ['a']);
+      expect(port.acknowledged, isEmpty);
+      expect(c.pendingPrintBytes, 0);
+    },
+  );
+
+  for (final (tail, expected) in [
+    (
+      'monty worker: allocation of 123 bytes exceeds the memory limit\n',
+      CrashCause.outOfMemory,
+    ),
+    (
+      'noise\nmonty worker: allocation of 123 bytes failed\n\n',
+      CrashCause.outOfMemory,
+    ),
+    (
+      'monty worker: allocation of 123 bytes failed\nother\n',
+      CrashCause.vanished,
+    ),
+    (
+      'prefix monty worker: allocation of 123 bytes failed',
+      CrashCause.vanished,
+    ),
+    ('', CrashCause.vanished),
+  ]) {
+    test('R1 trap classifies only last stderr line: $tail', () async {
+      final c = _accept(_FakePort());
+      final turn = c.turn(_feed);
+      final failed = expectLater(
+        turn,
+        throwsA(
+          isA<MontyCrashedError>()
+              .having((e) => e.cause, 'cause', expected)
+              .having((e) => e.stderrTail, 'stderr', tail),
+        ),
+      );
+      c.onMessage(
+        _message(
+          trap: 'trap\nmonty worker: allocation of 123 bytes failed',
+          stderr: tail,
+        ),
+      );
+      await failed;
+    });
+  }
+
   group('accept', () {
     test('a matching protocol is accepted and exposes the probe', () {
       final port = _FakePort();
@@ -136,6 +355,8 @@ void main() {
           events: null,
           outcome: null,
           trap: null,
+          print: null,
+          stderr: null,
         )),
         throwsA(_crashed(CrashCause.fatal, contains('protocol null'))),
       );
@@ -150,6 +371,8 @@ void main() {
         events: null,
         outcome: null,
         trap: null,
+        print: null,
+        stderr: null,
       ));
       expect(c.jspi, isFalse);
     });

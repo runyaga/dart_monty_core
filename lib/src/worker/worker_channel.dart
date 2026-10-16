@@ -82,6 +82,10 @@ final class WorkerChannel implements MontyChannel {
   /// tests and the browser gate.
   bool get jspi => _connection.jspi;
 
+  /// Unacknowledged received print bytes, used by the window regression test.
+  @visibleForTesting
+  int get pendingPrintBytes => _connection.pendingPrintBytes;
+
   /// `dmw_protocol_version()`, already checked against the driver's.
   int get protocol => _connection.protocol;
 
@@ -244,7 +248,14 @@ final class _WorkerPort implements WorkerPort {
   }
 
   @override
+  void acknowledge(int bytes) => _worker.postMessage(_Ack(ack: bytes));
+
+  @override
   void terminate() => _worker.terminate();
+}
+
+extension type const _Ack._(JSObject _) implements JSObject {
+  external factory _Ack({int ack});
 }
 
 @JS('fetch')
@@ -285,6 +296,7 @@ extension type const _MessageEvent._(JSObject _) implements JSObject {
 /// A Worker message as Dart values.
 WorkerMessage _read(_MessageEvent e) {
   final r = e.data;
+  final streamed = _StreamedMessage(r);
 
   return (
     ready: r?.ready,
@@ -294,7 +306,20 @@ WorkerMessage _read(_MessageEvent e) {
     events: r?.events?.toDart,
     outcome: r?.outcome,
     trap: r?.trap,
+    stderr: streamed.stderr,
+    print: streamed.print,
   );
+}
+
+/// The fields added for streamed prints and allocator trap diagnostics.
+final class _StreamedMessage {
+  const _StreamedMessage(this._reply);
+
+  final _Reply? _reply;
+
+  String? get stderr => _reply?.stderr;
+
+  Uint8List? get print => _reply?.print?.toDart;
 }
 
 /// An `ErrorEvent`, or the plain `Event` a Worker that failed to load fires,
@@ -317,4 +342,6 @@ extension type const _Reply._(JSObject _) implements JSObject {
   external JSUint8Array? get events;
   external int? get outcome;
   external String? get trap;
+  external String? get stderr;
+  external JSUint8Array? get print;
 }

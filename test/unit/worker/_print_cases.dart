@@ -158,6 +158,79 @@ int _pyLength(String s) => s.runes.length;
 
 /// Every print-sink case, each its own test labelled with [label].
 void printOracleTests(String label, StartPrintPool start) {
+  // R-1 expectations: Python binding probes P1/P2/P5 in the approved design.
+  test('R1 early print precedes late print by one second ($label)', () async {
+    final pool = await start(const PoolOptions(maxProcesses: 1));
+    addTearDown(pool.close);
+    final session = await pool.checkoutWith(
+      const SessionConfig(printFlushInterval: Duration.zero),
+    );
+    addTearDown(session.close);
+    final clock = Stopwatch()..start();
+    final times = <String, int>{};
+    await session.feedRun(
+      "import time\nprint('early')\n"
+      'deadline = time.monotonic() + 1.5\n'
+      'while time.monotonic() < deadline:\n    pass\n'
+      "print('late')",
+      printCallback: (_, text) =>
+          times[text.trim()] = clock.elapsedMilliseconds,
+    );
+    expect(times.keys, containsAll(['early', 'late']));
+    final earlyMillis = times['early'] ?? fail('missing early print');
+    final lateMillis = times['late'] ?? fail('missing late print');
+    expect(lateMillis - earlyMillis, greaterThanOrEqualTo(1000));
+  });
+
+  test('R1 sp_print_kill_after_print ($label)', () async {
+    final pool = await start(
+      const PoolOptions(
+        maxProcesses: 1,
+        requestTimeout: Duration(milliseconds: 1500),
+      ),
+    );
+    addTearDown(pool.close);
+    final session = await pool.checkoutWith(
+      const SessionConfig(printFlushInterval: Duration.zero),
+    );
+    addTearDown(session.close);
+    final printed = StringBuffer();
+    await expectLater(
+      session.feedRun(
+        "print('early')\nwhile True:\n    pass",
+        printCallback: (_, text) => printed.write(text),
+      ),
+      throwsA(
+        isA<MontyCrashedError>().having(
+          (e) => e.cause,
+          'cause',
+          CrashCause.killed,
+        ),
+      ),
+    );
+    expect(printed.toString(), 'early\n');
+  });
+
+  test('R1 sp_print_volume_under_limit ($label)', () async {
+    final pool = await start(const PoolOptions(maxProcesses: 1));
+    addTearDown(pool.close);
+    final session = await pool.checkoutWith(
+      const SessionConfig(
+        limits: ResourceLimits(maxMemory: 2000000),
+      ),
+    );
+    addTearDown(session.close);
+    var count = 0;
+    expect(
+      await session.feedRun(
+        "for i in range(20000):\n    print('x' * 200)\n42",
+        printCallback: (_, text) => count += text.length,
+      ),
+      const MontyInt(42),
+    );
+    expect(count, 4020000);
+  });
+
   test('the print oracle is complete ($label)', () {
     expect(printOracle.length, greaterThanOrEqualTo(38));
   });
