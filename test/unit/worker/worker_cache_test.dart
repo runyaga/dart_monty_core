@@ -11,6 +11,16 @@ import 'package:test/test.dart';
 
 void main() {
   group('workerCacheRoot', () {
+    test('uses the real host operating system and environment by default', () {
+      expect(
+        workerCacheRoot(),
+        workerCacheRoot(
+          environment: Platform.environment,
+          operatingSystem: Platform.operatingSystem,
+        ),
+      );
+    });
+
     test('uses the macOS HOME cache directory', () {
       expect(
         workerCacheRoot(
@@ -119,6 +129,31 @@ void main() {
     }
   });
 
+  group('worker cache paths', () {
+    const artifact = WorkerArtifact(
+      file: 'dart_monty_worker',
+      bytes: 1,
+      sha256:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+
+    test('builds paths from a POSIX root', () {
+      const root = '/srv/dart-monty';
+      const directory =
+          '/srv/dart-monty/worker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      expect(workerCacheDir(root, artifact), directory);
+      expect(workerCacheFile(root, artifact), '$directory/dart_monty_worker');
+    });
+
+    test('builds paths from a Windows root', () {
+      const root = r'C:\Users\Ada\AppData\Local\dart_monty\Cache';
+      const directory =
+          r'C:\Users\Ada\AppData\Local\dart_monty\Cache\worker-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      expect(workerCacheDir(root, artifact), directory);
+      expect(workerCacheFile(root, artifact), '$directory\\dart_monty_worker');
+    });
+  });
+
   group('verifyWorkerFile', () {
     late Directory temporary;
     late File file;
@@ -176,6 +211,24 @@ void main() {
       await _expectReason(
         verifyWorkerFile(file, artifact),
         WorkerVerifyReason.digest,
+      );
+    });
+
+    test('formats verification details for diagnostics', () {
+      const error = WorkerVerifyError(
+        path: '/cache/worker',
+        reason: WorkerVerifyReason.digest,
+        expected: 'expected-digest',
+        actual: 'actual-digest',
+      );
+      expect(
+        error.toString(),
+        allOf(
+          contains('/cache/worker'),
+          contains('digest'),
+          contains('expected-digest'),
+          contains('actual-digest'),
+        ),
       );
     });
   });
