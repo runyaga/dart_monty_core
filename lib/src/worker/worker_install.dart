@@ -121,6 +121,7 @@ Stream<List<int>> _fetchRemoteArchive(Uri url) async* {
         );
       }
       final request = await client.getUrl(current);
+      request.followRedirects = false;
       final response = await request.close();
       if (response.statusCode == HttpStatus.ok) {
         yield* response;
@@ -247,20 +248,25 @@ Future<void> _stageWorker(
   WorkerArchive archive,
   Directory staging,
 ) async {
+  final artifact = request.artifact;
   final archiveBytes = await _downloadArchive(request, archive);
   await request.onStage?.call('afterDownload');
-  final workerBytes = _unpackArchive(request.archiveUrl, archiveBytes);
+  final workerBytes = await _unpackArchive(
+    request.archiveUrl,
+    archiveBytes,
+    artifact.bytes,
+  );
   _verifyBytes(
     workerBytes,
-    request.artifact.bytes,
-    request.artifact.sha256,
+    artifact.bytes,
+    artifact.sha256,
     request.archiveUrl,
     'unpacked worker',
   );
-  final stagedFile = File(path.join(staging.path, request.artifact.file));
+  final stagedFile = File(path.join(staging.path, artifact.file));
   await stagedFile.writeAsBytes(workerBytes, flush: true);
   await _makeExecutable(stagedFile);
-  await _verifyInstalledFile(stagedFile, request.artifact);
+  await _verifyInstalledFile(stagedFile, artifact);
 }
 
 /// Resolves an artifact archive URL from manifest and mirror settings.
@@ -482,9 +488,26 @@ Future<List<int>> _downloadArchive(
   return bytes;
 }
 
-List<int> _unpackArchive(Uri url, List<int> archive) {
+Future<List<int>> _unpackArchive(
+  Uri url,
+  List<int> archive,
+  int maximumSize,
+) async {
+  final unpacked = <int>[];
   try {
-    return gzip.decode(archive);
+    await for (final chunk in gzip.decoder.bind(Stream.value(archive))) {
+      if (unpacked.length + chunk.length > maximumSize) {
+        throw WorkerInstallError(
+          'unpacked worker from $url exceeds $maximumSize bytes; publish the '
+          'declared worker or correct its manifest.',
+        );
+      }
+      unpacked.addAll(chunk);
+    }
+
+    return unpacked;
+  } on WorkerInstallError {
+    rethrow;
   } on Object catch (error) {
     throw WorkerInstallError(
       'archive URL $url is not valid gzip ($error); publish a gzip archive.',
@@ -533,6 +556,11 @@ Future<bool> _publishStaging(
   final finalDirectory = Directory(workerCacheDir(root, artifact));
   Directory? stale;
   if (finalDirectory.existsSync()) {
+    if (await _validFile(workerCacheFile(root, artifact), artifact)) {
+      await _deleteBestEffort(staging);
+
+      return false;
+    }
     stale = Directory(
       path.join(root, '.stale-$pid-${DateTime.now().microsecondsSinceEpoch}'),
     );
@@ -555,15 +583,19 @@ Future<bool> _publishStaging(
 }
 
 Future<void> _sweepStaging(String root, Duration staleAfter) async {
-  final directory = Directory(root);
-  await for (final child in directory.list(followLinks: false)) {
-    if (child is! Directory || !_isSweepable(child)) continue;
-    if (_isStale(child, staleAfter)) await _deleteBestEffort(child);
+  try {
+    final directory = Directory(root);
+    await for (final child in directory.list(followLinks: false)) {
+      if (child is! Directory || !_isSweepable(child)) continue;
+      if (_isStale(child, staleAfter)) await _deleteBestEffort(child);
+    }
+  } on Object {
+    // Sweeping abandoned entries is opportunistic and must not block installs.
   }
 }
 
 bool _isSweepable(Directory directory) => RegExp(
-  r'^\.(?:staging|stale)-\d+-',
+  r'^\.(?:staging|stale|stale-lock)-\d+-',
 ).hasMatch(path.basename(directory.path));
 
 bool _isStale(Directory directory, Duration staleAfter) {
@@ -575,13 +607,16 @@ bool _isStale(Directory directory, Duration staleAfter) {
 
 int? _directoryPid(Directory directory) {
   final match = RegExp(
-    r'^\.(?:staging|stale)-([0-9]+)-',
+    r'^\.(?:staging|stale|stale-lock)-([0-9]+)-',
   ).firstMatch(path.basename(directory.path));
 
   return match == null ? null : int.tryParse(match.group(1) ?? '');
 }
 
 /// Reports whether a process can still own an installation directory.
+///
+/// Windows cannot probe another process this way, so it always returns true
+/// there and stale-owner cleanup is age-based.
 bool pidAlive(int processId) {
   if (Platform.isWindows) return true;
   try {
