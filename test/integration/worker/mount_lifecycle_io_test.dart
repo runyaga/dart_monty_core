@@ -12,6 +12,14 @@ import 'package:test/test.dart';
 // An open root and its tables share a directory capability. Closing the root
 // after a feed must leave no descriptor retained by that feed's table.
 void main() {
+  test('abandoned suspended feeds release tables on isolate exit', () async {
+    final result = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      'test/unit/mount/mount_table_finalizer_probe.dart',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('finalized 8 abandoned feed tables'));
+  }, skip: Platform.isWindows ? 'POSIX descriptor accounting' : false);
   for (final ending in [
     'complete',
     'error',
@@ -19,6 +27,8 @@ void main() {
     'crash',
     'snapshot complete',
     'snapshot close',
+    'lookup failure',
+    'unresolved futures',
   ]) {
     test(
       'feed table releases capability on $ending',
@@ -35,6 +45,8 @@ void main() {
         final fake = FakeMontySession();
         addTearDown(fake.close);
         switch (ending) {
+          case 'lookup failure' || 'unresolved futures':
+            await _terminalResume(ending, mount);
           case 'error':
             fake.willRaise('ValueError', message: 'failure');
             await expectLater(
@@ -95,6 +107,44 @@ void main() {
       skip: Platform.isWindows ? 'POSIX descriptor accounting' : false,
     );
   }
+}
+
+Future<void> _terminalResume(String ending, MountDir mount) async {
+  final pool = await Monty.start(maxProcesses: 1);
+  addTearDown(pool.close);
+  final session = await pool.checkout();
+  // Keep the dead session reachable until after descriptor accounting: GC or
+  // explicit session.close must not substitute for feed-end cleanup.
+  addTearDown(session.close);
+  if (ending == 'lookup failure') {
+    final snapshot =
+        await session.feedStart(
+              'bad',
+              mount: [mount],
+              externalLookup: const {'bad': MontyString('\ud800')},
+            )
+            as NameLookupSnapshot;
+    mount.close();
+    await expectLater(
+      snapshot.resumeAuto(),
+      throwsA(
+        isA<MontyRuntimeError>().having(
+          (error) => error.toString(),
+          'encoding refusal',
+          startsWith('UnicodeEncodeError:'),
+        ),
+      ),
+    );
+  } else {
+    final call =
+        await session.feedStart('await f()', mount: [mount])
+            as FunctionSnapshot;
+    final snapshot =
+        await call.resume(const ExternalFuture()) as FutureSnapshot;
+    mount.close();
+    await expectLater(snapshot.resumeAuto(), throwsStateError);
+  }
+  await expectLater(session.feedRun('1'), throwsStateError);
 }
 
 final int Function(int, int) _fcntl = DynamicLibrary.process()
