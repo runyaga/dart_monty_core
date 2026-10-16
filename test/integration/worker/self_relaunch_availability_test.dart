@@ -37,6 +37,10 @@ void main() {
       throwsA(isA<MontyCrashedError>()),
     );
 
+    // The real resolver must answer, never throw: true when the code asset
+    // is bundled, false under plain `dart test`.
+    expect(selfRelaunchAvailable, returnsNormally);
+
     var resolved = 0;
     void resolvable() => resolved++;
     expect(selfRelaunchAvailable(resolveWorker: resolvable), isTrue);
