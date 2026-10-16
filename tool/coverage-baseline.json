@@ -178,8 +178,8 @@
     },
     "lib/src/worker/channel_factory_web.dart": {
       "found": 15,
-      "hit": 14,
-      "pct": 93.33
+      "hit": 15,
+      "pct": 100.0
     },
     "lib/src/worker/collect_streams.dart": {
       "found": 47,
@@ -317,13 +317,13 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_channel.dart": {
-      "found": 89,
-      "hit": 89,
+      "found": 90,
+      "hit": 90,
       "pct": 100.0
     },
     "lib/src/worker/worker_connection.dart": {
-      "found": 96,
-      "hit": 96,
+      "found": 161,
+      "hit": 161,
       "pct": 100.0
     },
     "lib/src/worker/worker_locator.dart": {
@@ -358,8 +358,8 @@
     }
   },
   "total": {
-    "found": 6511,
-    "hit": 6422,
-    "pct": 98.63
+    "found": 6577,
+    "hit": 6489,
+    "pct": 98.66
   }
 }
