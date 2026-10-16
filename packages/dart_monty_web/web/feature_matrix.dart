@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 // Feature matrix — every major guarantee of dart_monty_core, executed live in
 // the browser and checked against an expected value.
 //
@@ -418,10 +419,9 @@ type(f).__name__
           await Monty(
             "import pathlib\npathlib.Path('/data/hello.txt').read_text()",
           ).run(
-            osHandler: memoryMountedOsHandler(
-              mounts: const [MountDir(virtualPath: '/data')],
+            osHandler: OSAccess(
               files: [
-                MontyMemoryFile(
+                MemoryFile(
                   '/data/hello.txt',
                   'Hello from a virtual filesystem!',
                 ),
@@ -448,10 +448,9 @@ type(f).__name__
           await Monty(
             "import pathlib\npathlib.Path('/etc/passwd').read_text()",
           ).run(
-            osHandler: memoryMountedOsHandler(
-              mounts: const [MountDir(virtualPath: '/data')],
+            osHandler: OSAccess(
               files: [
-                MontyMemoryFile(
+                MemoryFile(
                   '/data/hello.txt',
                   'Hello from a virtual filesystem!',
                 ),
@@ -826,7 +825,7 @@ SkipKind? _skipReason(_Fixture f) {
   }
 
   // `# mount-fs` fixtures want a pre-populated filesystem bound to `root`.
-  // The panel supplies one with the PUBLIC memoryMountedOsHandler — notably
+  // The panel supplies one with the PUBLIC OSAccess — notably
   // without the ~400-line private VFS the WASM corpus runner carries.
   if (fixtureMountsFs(f.source)) {
     return parseFixture(f.source, skipMountFs: false) == null
@@ -848,13 +847,13 @@ SkipKind? _skipReason(_Fixture f) {
 /// a convenience.
 /// A function, not a constant: files are mutable now, so each fixture run
 /// must get its own set or one fixture's write would be visible to the next.
-List<VfsFile> _mountFsSeed() => [
-  MontyMemoryFile('/mnt/hello.txt', 'hello world\n'),
-  MontyMemoryFile('/mnt/empty.txt', ''),
-  MontyMemoryFile('/mnt/data.bin', const [0, 1, 2, 3]),
-  MontyMemoryFile('/mnt/readonly.txt', 'readonly content'),
-  MontyMemoryFile('/mnt/subdir/nested.txt', 'nested content'),
-  MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
+List<AbstractFile> _mountFsSeed() => [
+  MemoryFile('/mnt/hello.txt', 'hello world\n'),
+  MemoryFile('/mnt/empty.txt', ''),
+  MemoryFile('/mnt/data.bin', Uint8List.fromList([0, 1, 2, 3])),
+  MemoryFile('/mnt/readonly.txt', 'readonly content'),
+  MemoryFile('/mnt/subdir/nested.txt', 'nested content'),
+  MemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
 ];
 
 /// Runs one fixture exactly as `wasm_fixture_test.dart` does, and reports
@@ -912,8 +911,7 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
           await Monty(
             "from pathlib import Path as _P\nroot = _P('/mnt')\n${f.source}",
           ).run(
-            osHandler: memoryMountedOsHandler(
-              mounts: const [MountDir(virtualPath: '/mnt')],
+            osHandler: OSAccess(
               files: _mountFsSeed(),
             ),
           );

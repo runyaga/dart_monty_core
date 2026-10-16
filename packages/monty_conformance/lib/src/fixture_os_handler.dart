@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:dart_monty_core/dart_monty_core.dart';
 
 /// The environment `# call-external` fixtures expect `os.getenv` / `os.environ`
@@ -26,13 +27,13 @@ const conformanceEnv = <String, String>{
 ///
 /// `link.txt` exists to make that count five — it is otherwise unread, and
 /// deleting it as dead weight would break the listing assertion.
-List<VfsFile> conformanceVfs() => [
-  MontyMemoryFile('/virtual/file.txt', 'hello world\n'),
-  MontyMemoryFile('/virtual/empty.txt', ''),
-  MontyMemoryFile('/virtual/data.bin', const [0, 1, 2, 3]),
-  MontyMemoryFile('/virtual/link.txt', 'link'),
-  MontyMemoryFile('/virtual/subdir/nested.txt', 'nested content'),
-  MontyMemoryFile('/virtual/subdir/deep/file.txt', 'deep'),
+List<AbstractFile> conformanceVfs() => [
+  MemoryFile('/virtual/file.txt', 'hello world\n'),
+  MemoryFile('/virtual/empty.txt', ''),
+  MemoryFile('/virtual/data.bin', Uint8List.fromList([0, 1, 2, 3])),
+  MemoryFile('/virtual/link.txt', 'link'),
+  MemoryFile('/virtual/subdir/nested.txt', 'nested content'),
+  MemoryFile('/virtual/subdir/deep/file.txt', 'deep'),
 ];
 
 /// The filesystem the `# mount-fs` fixtures expect under `/mnt`.
@@ -47,25 +48,24 @@ List<VfsFile> conformanceVfs() => [
 ///
 /// A function, not a constant, for the same reason as [conformanceVfs]: files
 /// are mutable, so every handler needs its own set.
-List<VfsFile> conformanceMountFsVfs() => [
-  MontyMemoryFile('/mnt/hello.txt', 'hello world\n'),
-  MontyMemoryFile('/mnt/empty.txt', ''),
-  MontyMemoryFile('/mnt/data.bin', const [0, 1, 2, 3]),
-  MontyMemoryFile('/mnt/readonly.txt', 'readonly content'),
-  MontyMemoryFile('/mnt/subdir/nested.txt', 'nested content'),
-  MontyMemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
+List<AbstractFile> conformanceMountFsVfs() => [
+  MemoryFile('/mnt/hello.txt', 'hello world\n'),
+  MemoryFile('/mnt/empty.txt', ''),
+  MemoryFile('/mnt/data.bin', Uint8List.fromList([0, 1, 2, 3])),
+  MemoryFile('/mnt/readonly.txt', 'readonly content'),
+  MemoryFile('/mnt/subdir/nested.txt', 'nested content'),
+  MemoryFile('/mnt/subdir/deep/file.txt', 'deep file'),
 ];
 
 /// An [OsHandler] for the `# mount-fs` fixtures, serving
-/// [conformanceMountFsVfs] under a `/mnt` mount.
+/// [conformanceMountFsVfs] under `/mnt` until F-2 supplies host mounts.
 ///
 /// Filesystem only — those fixtures ask nothing of the clock or the
 /// environment, and answering questions they do not pose would be inventing
 /// contract. The non-filesystem ops live in [conformanceOsHandler].
-OsHandler conformanceMountFsOsHandler() => memoryMountedOsHandler(
-  mounts: const [MountDir(virtualPath: '/mnt')],
+OsHandler conformanceMountFsOsHandler() => OSAccess(
   files: conformanceMountFsVfs(),
-);
+).call;
 
 /// The instant `datetime__core.py` is written against: 1700000000 UTC, i.e.
 /// 2023-11-14 22:13:20 UTC. The virtual local zone is UTC+02:00, so a NAIVE
@@ -83,13 +83,12 @@ const _fixtureEpochSeconds = 1700000000;
 /// answering `datetime.now` is the sandbox's only source of time, which is the
 /// property being demonstrated: the host decides what "now" means.
 ///
-/// Filesystem calls fall through to [memoryMountedOsHandler] rather than being
+/// Filesystem calls fall through to [OSAccess] rather than being
 /// reimplemented: the point is to exercise the SHIPPED handler, not a test
 /// double. The handler is synchronous, so the filesystem handler's decline
 /// ([OsCallNotHandledException]) still declines.
 OsHandler conformanceOsHandler() {
-  final fs = memoryMountedOsHandler(
-    mounts: const [MountDir(virtualPath: '/virtual')],
+  final fs = OSAccess(
     files: conformanceVfs(),
   );
 
