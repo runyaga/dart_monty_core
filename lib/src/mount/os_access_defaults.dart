@@ -66,16 +66,18 @@ final class _OsAccessDefaults {
         'Invalid value NaN (not a number)',
       );
     }
-    if (capped < 0) {
-      throw const ExternalException(
-        'ValueError',
-        'sleep length must be non-negative',
-      );
-    }
+    // As CPython's time.sleep: a non-finite value fails conversion (OverflowError)
+    // before the sign check, so -inf is OverflowError, not ValueError.
     if (!capped.isFinite) {
       throw const ExternalException(
         'OverflowError',
         'timestamp out of range for platform time_t',
+      );
+    }
+    if (capped < 0) {
+      throw const ExternalException(
+        'ValueError',
+        'sleep length must be non-negative',
       );
     }
     await Future<void>.delayed(

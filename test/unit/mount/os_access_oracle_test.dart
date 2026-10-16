@@ -12,6 +12,18 @@ void main() {
     final row = jsonDecode(encoded) as Map<String, Object?>;
     test('upstream memory fs ${row['name']}', () async {
       final fs = _seed(row);
+      if (row['mutatedPath'] case final String path) {
+        fs.files.firstOrNull?.path = path;
+      }
+      if (row['relativeParent'] == true) {
+        await fs(
+          'Path.mkdir',
+          [MontyPath('a/b')],
+          {
+            'parents': const MontyBool(true),
+          },
+        );
+      }
       await fs('Path.unlink', [MontyPath('/empty/f')], {});
       final op = row['op'] as String? ?? (throw StateError('missing op'));
       final args =
@@ -39,6 +51,16 @@ void main() {
         for (final f in fs.files)
           [f.path, _content(f.readContent()), f.deleted],
       ], row['state']);
+      final probes = row['exists'] as Map<String, Object?>? ?? const {};
+      for (final probe in probes.entries) {
+        expect(
+          await fs('Path.exists', [MontyPath(probe.key)], {}),
+          MontyBool(
+            probe.value as bool? ?? (throw StateError('missing probe')),
+          ),
+          reason: probe.key,
+        );
+      }
     });
   }
 }
@@ -67,8 +89,18 @@ OSAccess _seed(Map<String, Object?> row) => OSAccess(
 
 List<MontyValue> _args(String op, List<Object?> args) => [
   for (final (i, arg) in args.indexed)
-    if (op == 'time.sleep' && arg == 'nan')
-      const MontyFloat(double.nan)
+    if (op == 'time.sleep')
+      MontyFloat(switch (arg) {
+        'nan' => double.nan,
+        'inf' => double.infinity,
+        '-inf' => double.negativeInfinity,
+        final String seconds => double.parse(seconds),
+        _ => throw StateError('missing sleep duration'),
+      })
+    else if (op == 'os.urandom')
+      MontyInt(arg as int? ?? (throw StateError('missing size')))
+    else if (op == 'datetime.now')
+      _zone(arg)
     else if (i == 0 || op == 'Path.rename')
       MontyPath(arg as String? ?? (throw StateError('missing argument')))
     else if (arg is List<Object?>)
@@ -77,7 +109,22 @@ List<MontyValue> _args(String op, List<Object?> args) => [
       MontyString(arg as String? ?? (throw StateError('missing argument'))),
 ];
 
+MontyTimeZone _zone(Object? arg) {
+  final zone =
+      arg as Map<String, Object?>? ?? (throw StateError('missing timezone'));
+
+  return MontyTimeZone(
+    offsetSeconds:
+        zone['offset'] as int? ?? (throw StateError('missing timezone offset')),
+    name:
+        zone['name'] as String? ?? (throw StateError('missing timezone name')),
+  );
+}
+
 Object? _encode(MontyValue arg) => switch (arg) {
+  MontyDateTime(:final offsetSeconds, :final timezoneName) => {
+    'timezone': [offsetSeconds, timezoneName],
+  },
   MontyBytes(:final value) => {'bytes': value},
   MontyPath(:final value) => {'path': value},
   MontyFileHandle(:final path, :final mode) => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Record OSAccess directly from the pinned Python wheel (no Dart code shared)."""
 import argparse
+import datetime
 import json
 from pathlib import Path, PurePosixPath
 import subprocess
@@ -43,6 +44,15 @@ def cases():
     for cap in [0, 0.001, None]:
         yield f'review:sleep:nan:{cap}', 'time.sleep', ['nan'], {'maxSleep': cap}
 
+    for seconds in ['-1', 'inf', '-inf', '0']:
+        yield f'sleep:uncapped:{seconds}', 'time.sleep', [seconds], {'maxSleep': None}
+    yield 'urandom:negative', 'os.urandom', [-1], {}
+    yield 'mkdir:relative:parents', 'Path.mkdir', ['a/b'], {'parents': True}
+    yield 'mkdir:relative:existing-parent', 'Path.mkdir', ['a/b/c'], {'relativeParent': True}
+    yield 'rename:mutated-file-path', 'Path.rename', ['/d', '/new'], {'mutatedPath': '/outside/f'}
+    for offset, name in [(19800, 'India'), (-12600, 'Newfoundland')]:
+        yield f'datetime:zone:{name}', 'datetime.now', [{'offset': offset, 'name': name}], {}
+
     for op in ['Path.exists', 'Path.iterdir', 'Path.mkdir']:
         yield f'empty-path:{op}', op, ['.'], {}
     for data in [[194], [226, 130], [240, 159, 152], [194, 65],
@@ -53,6 +63,8 @@ def cases():
 
 
 def encode(value):
+    if isinstance(value, datetime.datetime):
+        return {'timezone': [int(value.utcoffset().total_seconds()), value.tzname()]}
     if isinstance(value, bytes):
         return {'bytes': list(value)}
     if isinstance(value, PurePosixPath):
@@ -75,9 +87,22 @@ def record(case):
         files[3].content = bytes(seed_bytes)
         kwargs = {}
     config = {'max_sleep': kwargs.pop('maxSleep')} if 'maxSleep' in kwargs else {}
+    mutated_path = kwargs.pop('mutatedPath', None)
+    relative_parent = kwargs.pop('relativeParent', False)
     fs = monty.OSAccess(files, **config)
     fs.path_unlink(PurePosixPath('/empty/f'))
-    converted = [float(args[0]) if op == 'time.sleep' else PurePosixPath(args[0])]
+    if mutated_path is not None:
+        files[0].path = PurePosixPath(mutated_path)
+    if relative_parent:
+        fs.path_mkdir(PurePosixPath('a/b'), parents=True, exist_ok=False)
+    if op == 'time.sleep':
+        converted = [float(args[0])]
+    elif op == 'os.urandom':
+        converted = args
+    elif op == 'datetime.now':
+        converted = [datetime.timezone(datetime.timedelta(seconds=args[0]['offset']), args[0]['name'])]
+    else:
+        converted = [PurePosixPath(args[0])]
     if len(args) > 1:
         data = args[1]
         converted.append(PurePosixPath(data) if op == 'Path.rename' else bytes(data) if isinstance(data, list) else data)
@@ -91,6 +116,13 @@ def record(case):
     row = dict(name=name, op=op, args=args, kwargs=kwargs, result=result, state=state, seedBytes=seed_bytes)
     if config:
         row['maxSleep'] = config['max_sleep']
+    if mutated_path is not None:
+        row['mutatedPath'] = mutated_path
+    if relative_parent:
+        row['relativeParent'] = True
+    probe_paths = ['/d', '/new', '/new/f', '/outside/f'] if mutated_path else ['a/b', 'a/b/c', '/a/b', '/b'] if op == 'Path.mkdir' and args[0].startswith('a/') else []
+    if probe_paths:
+        row['exists'] = {path: fs.path_exists(PurePosixPath(path)) for path in probe_paths}
     return row
 
 
