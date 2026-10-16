@@ -1,0 +1,31 @@
+T-channel review fixes (fix3)
+
+1. Linux bundled-child symbol lookup: accepted.
+   test/integration/worker/spec_channel_relaunch_test.dart resolves the
+   bundled cdylib path in the parent. On Linux and other non-macOS,
+   non-Windows hosts it supplies that absolute path as LD_PRELOAD when it
+   starts a bundled child, making dart_monty_worker_main visible to the
+   child's process-scope @Native lookup. The child unsets LD_PRELOAD before
+   entering the native worker, so it cannot affect a process the worker might
+   spawn. macOS continues to load the dylib explicitly. The seven bundled
+   cases are skipped on Windows, with an LD_PRELOAD-specific reason; the
+   unresolved-entry-point test continues to run there.
+
+   There is no specification discrepancy and no library edit: the test
+   harness now starts the child in the way Linux requires.
+
+   Mutation check used an isolated temporary copy, not this worktree:
+   lib/src/worker/self_relaunch.dart replaced
+   "if (args.length == 1 && args.first == SelfRelaunch.flag) {" with
+   "if (false) {". The seven bundled cases all failed, with the six normal
+   cases receiving exit 99 instead of 0 and REQ-runMontyWorkerIfChild-19
+   receiving exit 99 instead of 4. REQ-runMontyWorkerIfChild-20 also failed,
+   as expected for this broad relaunch-disabling mutant.
+
+Validation
+- macOS VM: 8 passed: dart test
+  test/integration/worker/spec_channel_relaunch_test.dart -p vm --tags=worker.
+- dart format, dart analyze, and dcm analyze on the touched Dart test passed.
+- The requested Linux Docker command could not be run from this sandbox:
+  `docker` was denied with "operation not permitted". It needs orchestration
+  outside the sandbox.

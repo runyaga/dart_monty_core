@@ -1,5 +1,5 @@
-// This suite also acts as a child entry point. Loading the already-built
-// cdylib makes its real @Native entry point available without a Cargo build.
+// This suite also acts as a child entry point. macOS loads the already-built
+// cdylib; other Unix-like hosts preload it in the child process namespace.
 @Tags(['worker'])
 @TestOn('vm')
 library;
@@ -15,9 +15,13 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
+import 'package:ffi/ffi.dart';
 import 'package:test/test.dart';
 
 const _path = 'test/integration/worker/spec_channel_relaunch_test.dart';
+final Object _skipBundledTests = Platform.isWindows
+    ? 'Windows has no LD_PRELOAD equivalent for this process lookup.'
+    : false;
 
 void main([List<String> args = const []]) {
   if (args.isNotEmpty) {
@@ -61,7 +65,7 @@ void main([List<String> args = const []]) {
           pb.ChildEvent_Kind.ok,
           if (shutdown) pb.ChildEvent_Kind.ok,
         ]);
-      });
+      }, skip: _skipBundledTests);
     }
   }
   test(
@@ -92,6 +96,7 @@ void main([List<String> args = const []]) {
       ]);
       expect(events.singleOrNull?.fatalError.message, contains('999'));
     },
+    skip: _skipBundledTests,
   );
   test(
     'REQ-runMontyWorkerIfChild-20: unresolved entry point propagates '
@@ -115,10 +120,13 @@ pb.ParentRequest _configure() => pb.ParentRequest(
 );
 
 Future<Process> _start(String mode) async {
+  final environment = mode == 'bundled' && _requiresPreloadedBundledLibrary
+      ? {'LD_PRELOAD': _bundledLibraryPath()}
+      : null;
   final process = await Process.start(Platform.resolvedExecutable, [
     _path,
     mode,
-  ]);
+  ], environment: environment);
   addTearDown(() async {
     process.kill(ProcessSignal.sigkill);
     await process.exitCode;
@@ -144,12 +152,20 @@ void _child(String mode) {
 }
 
 void _serveBundled() {
-  runMontyWorkerIfChild(_loadBundled());
+  if (Platform.isMacOS) {
+    DynamicLibrary.open(_bundledLibraryPath());
+  } else if (_requiresPreloadedBundledLibrary) {
+    _clearLdPreload();
+  }
+  runMontyWorkerIfChild(const [SelfRelaunch.flag]);
   stdout.writeln('application resumed');
   exit(99);
 }
 
-List<String> _loadBundled() {
+bool get _requiresPreloadedBundledLibrary =>
+    !Platform.isMacOS && !Platform.isWindows;
+
+String _bundledLibraryPath() {
   final uri = Uri.parse(
     'package:dart_monty_core/${workerPackagePath(Abi.current())}',
   );
@@ -160,7 +176,20 @@ List<String> _loadBundled() {
     'macos' => 'libdart_monty_worker.dylib',
     _ => 'libdart_monty_worker.so',
   };
-  DynamicLibrary.open(executable.resolve(name).toFilePath());
 
-  return const [SelfRelaunch.flag];
+  return executable.resolve(name).toFilePath();
+}
+
+void _clearLdPreload() {
+  final unsetenv = DynamicLibrary.process()
+      .lookupFunction<
+        Int32 Function(Pointer<Utf8>),
+        int Function(Pointer<Utf8>)
+      >('unsetenv');
+  using((arena) {
+    final name = 'LD_PRELOAD'.toNativeUtf8(allocator: arena);
+    if (unsetenv(name) != 0) {
+      throw StateError('could not clear LD_PRELOAD');
+    }
+  });
 }
