@@ -42,6 +42,32 @@ void resetVerifiedWorkersForTesting() {
   _workerVerificationFutures.clear();
 }
 
+/// Test-only inputs for the per-user worker cache.
+@immutable
+@visibleForTesting
+// ignore: prefer-match-file-name, reason: This file groups locator support types.
+class WorkerCacheSource {
+  /// Creates test-only inputs for the per-user worker cache.
+  const WorkerCacheSource({
+    this.environment,
+    this.operatingSystem,
+    this.manifest,
+    this.verify,
+  });
+
+  /// Environment used to determine the cache root.
+  final Map<String, String>? environment;
+
+  /// Operating system used to determine the cache root and permissions.
+  final String? operatingSystem;
+
+  /// Manifest from which to select a cached worker artifact.
+  final WorkerManifest? manifest;
+
+  /// Verifies a cached worker artifact before it is launched.
+  final Future<void> Function(File, WorkerArtifact)? verify;
+}
+
 /// The [WorkerLaunch] to use on this host.
 ///
 /// In order:
@@ -64,44 +90,61 @@ Future<WorkerLaunch> locateWorker({
   @visibleForTesting bool isAot = const bool.fromEnvironment('dart.vm.product'),
   @visibleForTesting Future<Uri?> Function(Uri)? resolvePackageUri,
   @visibleForTesting bool Function()? canSelfRelaunch,
-  @visibleForTesting Map<String, String>? environment,
-  @visibleForTesting String? operatingSystem,
-  @visibleForTesting WorkerManifest? manifest,
-  @visibleForTesting Future<void> Function(File, WorkerArtifact)? verify,
+  @visibleForTesting WorkerCacheSource? cache,
 }) async {
   if (explicit != null) return explicit;
 
   if (isAot) return _selfRelaunch(canSelfRelaunch ?? selfRelaunchAvailable);
 
   final hostAbi = abi ?? Abi.current();
-  final artifact = (manifest ?? bundledWorkerManifest)
-      .targetFor(workerHostKey(hostAbi))
-      ?.worker;
-  String? cachePath;
-  if (artifact != null) {
-    final root = workerCacheRoot(
-      environment: environment,
-      operatingSystem: operatingSystem,
-    );
-    cachePath = workerCacheFile(root, artifact);
-    if (FileSystemEntity.typeSync(cachePath) != FileSystemEntityType.notFound) {
-      final cacheFile = File(cachePath);
-      await _verifiedCacheExecutable(
-        cacheFile,
-        artifact,
-        operatingSystem: operatingSystem,
-        verify: verify ?? verifyWorkerFile,
-      );
-
-      return WorkerExecutable(cachePath);
-    }
-  }
+  final (cachedExecutable, cachePath) = await _cacheExecutable(hostAbi, cache);
+  if (cachedExecutable != null) return cachedExecutable;
 
   return _packageExecutable(
     hostAbi,
     resolvePackageUri ?? _resolve,
     cachePath: cachePath,
   );
+}
+
+/// Returns a verified cache executable, if present, and the cache path tried.
+Future<(WorkerExecutable?, String?)> _cacheExecutable(
+  Abi abi,
+  WorkerCacheSource? source,
+) async {
+  final location = _cacheLocation(abi, source);
+  if (location == null) return (null, null);
+
+  if (FileSystemEntity.typeSync(location.cachePath) ==
+      FileSystemEntityType.notFound) {
+    return (null, location.cachePath);
+  }
+
+  await _verifiedCacheExecutable(
+    File(location.cachePath),
+    location.artifact,
+    operatingSystem: source?.operatingSystem,
+    verify: source?.verify ?? verifyWorkerFile,
+  );
+
+  return (WorkerExecutable(location.cachePath), location.cachePath);
+}
+
+({WorkerArtifact artifact, String cachePath})? _cacheLocation(
+  Abi abi,
+  WorkerCacheSource? source,
+) {
+  final artifact = (source?.manifest ?? bundledWorkerManifest)
+      .targetFor(workerHostKey(abi))
+      ?.worker;
+  if (artifact == null) return null;
+
+  final root = workerCacheRoot(
+    environment: source?.environment,
+    operatingSystem: source?.operatingSystem,
+  );
+
+  return (artifact: artifact, cachePath: workerCacheFile(root, artifact));
 }
 
 /// Step 3: [SelfRelaunch] if [ready] says this process can serve it.

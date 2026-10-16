@@ -66,8 +66,10 @@ void main() {
         final package = await _packageFile('package-worker');
         final launch = await locateWorker(
           abi: Abi.current(),
-          environment: environment,
-          manifest: manifest,
+          cache: WorkerCacheSource(
+            environment: environment,
+            manifest: manifest,
+          ),
           resolvePackageUri: (_) async => package.uri,
         );
         expect((launch as WorkerExecutable).path, cached.path);
@@ -80,8 +82,10 @@ void main() {
         expect(
           await locateWorker(
             explicit: explicit,
-            environment: environment,
-            manifest: manifest,
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+            ),
           ),
           same(explicit),
         );
@@ -97,9 +101,11 @@ void main() {
         for (var index = 0; index != 2; index++) {
           await locateWorker(
             abi: Abi.current(),
-            environment: environment,
-            manifest: manifest,
-            verify: verify,
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+              verify: verify,
+            ),
           );
         }
         expect(count, 1);
@@ -113,8 +119,10 @@ void main() {
         await expectLater(
           locateWorker(
             abi: Abi.current(),
-            environment: environment,
-            manifest: manifest,
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+            ),
             resolvePackageUri: (_) async => package.uri,
           ),
           throwsA(
@@ -139,8 +147,10 @@ void main() {
           final package = await _packageFile('package-worker');
           final launch = await locateWorker(
             abi: Abi.current(),
-            environment: environment,
-            manifest: _manifestForHost(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: _manifestForHost(),
+            ),
             resolvePackageUri: (_) async => package.uri,
           );
           expect((launch as WorkerExecutable).path, package.path);
@@ -158,8 +168,10 @@ void main() {
         await expectLater(
           locateWorker(
             abi: Abi.current(),
-            environment: environment,
-            manifest: _manifestForHost(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: _manifestForHost(),
+            ),
             resolvePackageUri: (_) async => null,
           ),
           throwsA(
@@ -180,8 +192,10 @@ void main() {
             abi: Abi.current(),
             isAot: true,
             canSelfRelaunch: () => true,
-            environment: environment,
-            manifest: manifest,
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+            ),
           ),
           isA<SelfRelaunch>(),
         );
@@ -193,8 +207,10 @@ void main() {
         final package = await _packageFile('package-worker');
         final launch = await locateWorker(
           abi: Abi.current(),
-          environment: environment,
-          manifest: WorkerManifest(targets: const {}),
+          cache: WorkerCacheSource(
+            environment: environment,
+            manifest: WorkerManifest(targets: const {}),
+          ),
           resolvePackageUri: (_) async => package.uri,
         );
         expect((launch as WorkerExecutable).path, package.path);
