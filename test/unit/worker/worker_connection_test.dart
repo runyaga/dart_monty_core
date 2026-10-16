@@ -116,21 +116,22 @@ void main() {
     final gate = Completer<void>();
     final seen = <String>[];
     var completed = false;
-    final turn = c
-        .turn(
-          _feed,
-          onPrint: (p) async {
-            seen.add(
-              p.segments.firstOrNull?.text ?? fail('missing print segment'),
-            );
-            if (seen.length == 1) await gate.future;
-          },
-        )
-        .then((value) {
-          completed = true;
+    Future<pb.ChildEvent> runTurn() async {
+      final value = await c.turn(
+        _feed,
+        onPrint: (p) async {
+          seen.add(
+            p.segments.firstOrNull?.text ?? fail('missing print segment'),
+          );
+          if (seen.length == 1) await gate.future;
+        },
+      );
+      completed = true;
 
-          return value;
-        });
+      return value;
+    }
+
+    final turn = runTurn();
     final a = _frames([_print('a')]);
     final b = _frames([_print('b')]);
     c

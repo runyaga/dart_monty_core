@@ -296,6 +296,7 @@ extension type const _MessageEvent._(JSObject _) implements JSObject {
 /// A Worker message as Dart values.
 WorkerMessage _read(_MessageEvent e) {
   final r = e.data;
+  final streamed = _StreamedMessage(r);
 
   return (
     ready: r?.ready,
@@ -305,9 +306,20 @@ WorkerMessage _read(_MessageEvent e) {
     events: r?.events?.toDart,
     outcome: r?.outcome,
     trap: r?.trap,
-    stderr: r?.stderr,
-    print: r?.print?.toDart,
+    stderr: streamed.stderr,
+    print: streamed.print,
   );
+}
+
+/// The fields added for streamed prints and allocator trap diagnostics.
+final class _StreamedMessage {
+  const _StreamedMessage(this._reply);
+
+  final _Reply? _reply;
+
+  String? get stderr => _reply?.stderr;
+
+  Uint8List? get print => _reply?.print?.toDart;
 }
 
 /// An `ErrorEvent`, or the plain `Event` a Worker that failed to load fires,

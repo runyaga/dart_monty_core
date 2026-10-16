@@ -128,12 +128,13 @@ final class WorkerConnection implements MontyChannel {
   final _PrintQueue _prints;
   PrintHandler? _onPrint;
 
-  /// Bytes received but not yet acknowledged, for the transport window tests.
-  int get pendingPrintBytes => _prints.pendingBytes;
   MontyCrashedError? _crash;
   bool _closed = false;
   bool _inTurn = false;
   Future<void>? _closing;
+
+  /// Bytes received but not yet acknowledged, for the transport window tests.
+  int get pendingPrintBytes => _prints.pendingBytes;
 
   @override
   bool get isAlive => _crash == null && !_closed && _closing == null;
@@ -165,22 +166,19 @@ final class WorkerConnection implements MontyChannel {
   /// Routes any Worker message after the first: a trap, or a turn reply.
   void onMessage(WorkerMessage message) {
     final trap = message.trap;
-    final events = message.events;
     if (trap != null) {
       onTrap(trap, stderr: message.stderr);
     } else if (message.print case final batch?) {
       final pending = _pending;
       if (pending == null) return;
-      _prints.add(batch, pending, (print) => _deliver(print, _onPrint), (
-        error,
-      ) {
-        _die(
-          error is MontyCrashedError ? error.cause : CrashCause.killed,
-          'print delivery failed',
-          failure: error,
-        );
-      });
-    } else if (events != null) {
+      final delivery = _PrintDelivery(() => _crash, _die);
+      _prints.add(
+        batch,
+        pending,
+        (print) => delivery.deliver(print, _onPrint),
+        delivery.failed,
+      );
+    } else if (message.events case final events?) {
       onReply(events, message.outcome ?? -1);
     } else {
       onWorkerError('unrecognised Worker message');
@@ -292,7 +290,10 @@ final class WorkerConnection implements MontyChannel {
       }
       switch (event.whichKind()) {
         case pb.ChildEvent_Kind.print:
-          await _deliver(event.print, onPrint);
+          await _PrintDelivery(
+            () => _crash,
+            _die,
+          ).deliver(event.print, onPrint);
         case pb.ChildEvent_Kind.fatalError:
           throw _die(CrashCause.fatal, event.fatalError.message);
         case _:
@@ -309,23 +310,6 @@ final class WorkerConnection implements MontyChannel {
     throw _die(CrashCause.vanished, 'turn reply without a turn-ending event');
   }
 
-  /// Hands [print] to [onPrint] and awaits it. A callback that throws, or
-  /// that kills the channel, abandons the turn: the events after the Print
-  /// are never delivered, so a Worker waiting on one of them must not be
-  /// reused.
-  Future<void> _deliver(pb.Print print, PrintHandler? onPrint) async {
-    try {
-      await onPrint?.call(print);
-    } on Object catch (error) {
-      _die(CrashCause.killed, 'onPrint threw; turn abandoned', failure: error);
-      rethrow;
-    }
-    final crash = _crash;
-    if (crash != null) {
-      throw repeatCrash(crash);
-    }
-  }
-
   /// Marks the connection dead, terminates the Worker and fails any turn in
   /// flight. Returns the error for the caller to throw.
   MontyCrashedError _die(
@@ -339,7 +323,7 @@ final class WorkerConnection implements MontyChannel {
       detail: message,
       stderrTail: stderr,
     );
-    _prints.cancel();
+    _prints.clear();
     _port.terminate();
     final pending = _pending;
     _pending = null;
@@ -351,19 +335,49 @@ final class WorkerConnection implements MontyChannel {
   }
 }
 
+/// Delivers both streamed and terminal-frame prints with the same failure
+/// handling. A callback that throws or kills the channel abandons the turn.
+final class _PrintDelivery {
+  const _PrintDelivery(this._readCrash, this._fail);
+
+  final MontyCrashedError? Function() _readCrash;
+  final void Function(CrashCause, String?, {Object? failure}) _fail;
+
+  Future<void> deliver(pb.Print print, PrintHandler? onPrint) async {
+    try {
+      await onPrint?.call(print);
+    } on Object catch (error) {
+      _fail(CrashCause.killed, 'onPrint threw; turn abandoned', failure: error);
+      rethrow;
+    }
+    final crash = _readCrash();
+    if (crash != null) {
+      throw repeatCrash(crash);
+    }
+  }
+
+  void failed(Object error) => _fail(
+    error is MontyCrashedError ? error.cause : CrashCause.killed,
+    'print delivery failed',
+    failure: error,
+  );
+}
+
 /// Serializes batches without blocking the connection's crash/kill path.
 /// Queued buffers can be released even if the current callback never settles.
 final class _PrintQueue {
   _PrintQueue(this._port);
 
+  int pendingBytes = 0;
+
   final WorkerPort _port;
   final _batches = Queue<Uint8List>();
   Completer<void>? _drained;
-  int pendingBytes = 0;
 
   Future<void> get settled => _drained?.future ?? Future.value();
 
-  void cancel() {
+  /// Releases queued buffers; an active callback still settles on its own.
+  void clear() {
     _batches.clear();
     pendingBytes = 0;
   }
@@ -380,6 +394,21 @@ final class _PrintQueue {
     if (_drained != null) return;
     final drained = _drained = Completer<void>();
     unawaited(_drain(pending, deliver, failed, drained));
+  }
+
+  Future<void> reply(
+    Completer<pb.ChildEvent> pending,
+    Future<pb.ChildEvent> Function() finish,
+  ) async {
+    try {
+      await settled;
+      if (pending.isCompleted) return;
+      final event = await finish();
+      if (pending.isCompleted) return;
+      pending.complete(event);
+    } on Object catch (error, stack) {
+      if (!pending.isCompleted) pending.completeError(error, stack);
+    }
   }
 
   Future<void> _drain(
@@ -409,23 +438,9 @@ final class _PrintQueue {
     } on Object catch (error) {
       if (!pending.isCompleted) failed(error);
     } finally {
-      cancel();
+      clear();
       _drained = null;
       drained.complete();
-    }
-  }
-
-  Future<void> reply(
-    Completer<pb.ChildEvent> pending,
-    Future<pb.ChildEvent> Function() finish,
-  ) async {
-    try {
-      await settled;
-      if (pending.isCompleted) return;
-      final event = await finish();
-      if (!pending.isCompleted) pending.complete(event);
-    } on Object catch (error, stack) {
-      if (!pending.isCompleted) pending.completeError(error, stack);
     }
   }
 }
