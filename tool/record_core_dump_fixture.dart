@@ -24,7 +24,7 @@ Future<void> main() async {
       '// _boundary_cases.dart. Rewritten by tool/record_core_dump_fixture.dart.\n'
       '\n'
       '/// The dump, as hex.\n'
-      "const coreIdleDumpHex = '${hex.join()}';\n",
+      "const coreIdleDumpHex =\n    '${hex.join()}';\n",
     );
   } finally {
     await pool.close();
