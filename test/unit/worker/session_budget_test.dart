@@ -370,7 +370,7 @@ void main() {
         ..admit(rejected)
         ..endLoad();
 
-      final used = (budget as dynamic).reportedFeedExecution as Duration;
+      final used = budget.reportedFeedExecution;
       expect(used, const Duration(seconds: 8));
       expect(
         const Duration(seconds: 10) - used + const Duration(seconds: 1),

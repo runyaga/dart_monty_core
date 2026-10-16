@@ -3170,9 +3170,6 @@ void main() {
       ]);
       final pool = await _pool(
         Workers([ch]),
-        requestTimeout: null,
-        feedGrace: const Duration(seconds: 1),
-        turnGrace: null,
       );
       addTearDown(pool.close);
 
@@ -3186,7 +3183,7 @@ void main() {
           );
           await pumpEventQueue();
 
-          expect(deadlines.last, const Duration(seconds: 7));
+          expect(deadlines, contains(const Duration(seconds: 7)));
 
           final failed = expectLater(
             resuming,

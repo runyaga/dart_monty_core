@@ -1170,6 +1170,10 @@ SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
 /// A reply sets either only where there is none: ordinary replies echo the
 /// session's, a `Load` reply reports the dump's.
 ///
+/// The reported feed execution belongs to this budget too: it is monotonic
+/// within one feed, resets when the next feed starts, and a load saves or
+/// replaces it along with the rest of the budget.
+///
 /// Loading a dump follows upstream (`checkout.rs` `begin_load`, `forget`,
 /// `end_load`): [beginLoad] keeps the two limits as ceilings and restarts
 /// both counts, and forgets both duration budgets, so a dump keeps its own
@@ -1200,6 +1204,11 @@ final class SessionBudget {
   Duration? get turnBudget => _turnBudget;
   Duration? _turnBudget;
 
+  /// The feed execution the worker most recently reported, without allowing
+  /// a later reply in the same feed to lower the parent's backstop.
+  Duration get reportedFeedExecution => _reportedFeedExecution;
+  Duration _reportedFeedExecution = Duration.zero;
+
   /// How many suspensions the session may make before the next one aborts
   /// its feed: `maxSuspensions`, or a smaller limit a reply reported.
   int get suspensionLimit => _suspensionLimit;
@@ -1227,14 +1236,20 @@ final class SessionBudget {
   /// it (upstream's `pending_load_budget`).
   _Saved? _beforeLoad;
 
+  /// Starts a feed: only a feed request may reset the worker-reported clock.
+  void beginFeed() {
+    _reportedFeedExecution = Duration.zero;
+  }
+
   /// Starts loading a dump: the budget is saved, then both counts restart
   /// while both limits stay, as ceilings on the dump's, and both duration
-  /// budgets are forgotten, to be the dump's (upstream's `begin_load` and
-  /// `forget`).
+  /// budgets and the feed clock are forgotten, to be the dump's (upstream's
+  /// `begin_load` and `forget`).
   void beginLoad() {
     _beforeLoad = (
       feed: _feedBudget,
       turn: _turnBudget,
+      reportedFeedExecution: _reportedFeedExecution,
       suspensionLimit: _suspensionLimit,
       sleepLimit: _sleepLimit,
       suspensions: _suspensions,
@@ -1242,6 +1257,7 @@ final class SessionBudget {
     );
     _feedBudget = null;
     _turnBudget = null;
+    _reportedFeedExecution = Duration.zero;
     _suspensions = 0;
     _slept = BigInt.zero;
   }
@@ -1255,8 +1271,8 @@ final class SessionBudget {
   }
 
   /// Records the turn-ending [event] (upstream's `update_from`, then its
-  /// checks): adopts any smaller limit it reports, counts it if it is a
-  /// suspension and charges it if it is a system sleep.
+  /// checks): records feed execution, adopts any smaller limit it reports,
+  /// counts it if it is a suspension and charges it if it is a system sleep.
   ///
   /// Returns the exception to abort the feed with in its place, or null: a
   /// suspension past [suspensionLimit] is a `RuntimeError`; a system sleep
@@ -1272,6 +1288,12 @@ final class SessionBudget {
         _restore(saved);
       }
     }
+    final reported = Duration(
+      microseconds: event.feedExecutionMicros.toInt(),
+    );
+    if (reported > _reportedFeedExecution) {
+      _reportedFeedExecution = reported;
+    }
     _adoptLimits(event);
     if (!isSuspension(event)) return null;
     final limit = _suspensionLimit;
@@ -1285,6 +1307,7 @@ final class SessionBudget {
   void _restore(_Saved saved) {
     _feedBudget = saved.feed;
     _turnBudget = saved.turn;
+    _reportedFeedExecution = saved.reportedFeedExecution;
     _suspensionLimit = saved.suspensionLimit;
     _sleepLimit = saved.sleepLimit;
     _suspensions = saved.suspensions;
@@ -1350,6 +1373,7 @@ final class SessionBudget {
 typedef _Saved = ({
   Duration? feed,
   Duration? turn,
+  Duration reportedFeedExecution,
   int suspensionLimit,
   BigInt? sleepLimit,
   int suspensions,
@@ -1431,11 +1455,6 @@ final class _SessionChannel implements MontyChannel, TelemetryChannel {
 
   final _Hold _hold;
   final PoolOptions _options;
-
-  /// Execution time the running feed has used, as the worker reported it:
-  /// never lowered within a feed, so a worker cannot loosen its own
-  /// backstop.
-  Duration _feedUsed = Duration.zero;
 
   /// The checkout's suspension and sleep budgets, which a turn-ending event
   /// is admitted against.
@@ -1571,8 +1590,6 @@ final class _SessionChannel implements MontyChannel, TelemetryChannel {
   ) async {
     final channel = _hold.lease.channel;
     final event = await channel.turn(request, onPrint: onPrint);
-    final used = Duration(microseconds: event.feedExecutionMicros.toInt());
-    if (used > _feedUsed) _feedUsed = used;
     final exceeded = _budget.admit(event);
     if (exceeded == null) return event;
     final pb.ChildEvent reply;
@@ -1620,11 +1637,11 @@ final class _SessionChannel implements MontyChannel, TelemetryChannel {
     final timeout = _options.requestTimeout;
     if (!_isExecution(request)) return timeout;
     if (request.whichKind() == pb.ParentRequest_Kind.feed) {
-      _feedUsed = Duration.zero;
+      _budget.beginFeed();
     }
     final feed = _backstop(
       _budget.feedBudget,
-      _feedUsed,
+      _budget.reportedFeedExecution,
       _options.feedDurationLimitGrace,
     );
     final turn = _backstop(
