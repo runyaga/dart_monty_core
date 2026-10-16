@@ -257,19 +257,13 @@ Future<void> _buildWorker(
     _ => 'libdart_monty_worker.so',
   };
   final workerDir = nativeDir.resolve('worker/');
-  if (!File.fromUri(workerDir.resolve('Cargo.toml')).existsSync()) {
+  await _cargoBuildLib(workerDir, targetArgs);
+  final built = _firstBuilt(workerDir, _cargoPaths(os, arch, libName));
+  if (built == null) {
     throw StateError(
-      'native/worker/Cargo.toml not found — the worker library '
-      '(build_worker: true) builds from source in the full repository.',
+      'cargo build succeeded but $libName not found in target directories.',
     );
   }
-  final built = await _buildWorkerLibrary(
-    workerDir,
-    os,
-    arch,
-    libName,
-    targetArgs,
-  );
   final outFile = File.fromUri(
     input.outputDirectoryShared.resolve('$arch/$libName'),
   );
@@ -281,41 +275,6 @@ Future<void> _buildWorker(
     workerDir,
     toolchain: nativeDir.resolve('rust-toolchain.toml'),
   );
-}
-
-Future<File> _buildWorkerLibrary(
-  Uri workerDir,
-  OS os,
-  Architecture arch,
-  String libName,
-  List<String> targetArgs,
-) async {
-  // `--lib` builds the cdylib (and the rlib the executable links), with the
-  // release profile the executable ships with. `--locked`:
-  // native/worker/Cargo.lock is seeded from upstream's and a fresh resolve is
-  // known to fail.
-  final result = await Process.run('cargo', [
-    'build',
-    '--locked',
-    '--release',
-    '--lib',
-    ...targetArgs,
-  ], workingDirectory: Directory.fromUri(workerDir).path);
-  if (result.exitCode != 0) {
-    throw StateError(
-      'cargo build of the worker library failed.\n'
-      'stdout:\n${result.stdout}\n'
-      'stderr:\n${result.stderr}',
-    );
-  }
-  final built = _firstBuilt(workerDir, _cargoPaths(os, arch, libName));
-  if (built == null) {
-    throw StateError(
-      'cargo build succeeded but $libName not found in target directories.',
-    );
-  }
-
-  return built;
 }
 
 void _addWorkerAsset(
@@ -331,6 +290,33 @@ void _addWorkerAsset(
       file: outFile.uri,
     ),
   );
+}
+
+/// Runs `cargo build --lib` in [workerDir]. `--lib` builds the cdylib (and the
+/// rlib the executable links), with the release profile the executable ships
+/// with. `--locked`: native/worker/Cargo.lock is seeded from upstream's and a
+/// fresh resolve is known to fail.
+Future<void> _cargoBuildLib(Uri workerDir, List<String> targetArgs) async {
+  if (!File.fromUri(workerDir.resolve('Cargo.toml')).existsSync()) {
+    throw StateError(
+      'native/worker/Cargo.toml not found — the worker library '
+      '(build_worker: true) builds from source in the full repository.',
+    );
+  }
+  final result = await Process.run('cargo', [
+    'build',
+    '--locked',
+    '--release',
+    '--lib',
+    ...targetArgs,
+  ], workingDirectory: Directory.fromUri(workerDir).path);
+  if (result.exitCode != 0) {
+    throw StateError(
+      'cargo build of the worker library failed.\n'
+      'stdout:\n${result.stdout}\n'
+      'stderr:\n${result.stderr}',
+    );
+  }
 }
 
 /// What the worker library is built from: native/worker's manifest, lock and
