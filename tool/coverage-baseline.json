@@ -31,25 +31,25 @@
       "hit": 287,
       "pct": 100.0
     },
-    "lib/src/mount/memory_mounted_os_handler.dart": {
-      "found": 282,
-      "hit": 277,
-      "pct": 98.23
-    },
-    "lib/src/mount/monty_memory_file.dart": {
-      "found": 7,
-      "hit": 6,
-      "pct": 85.71
-    },
-    "lib/src/mount/mount_dir.dart": {
-      "found": 1,
-      "hit": 1,
-      "pct": 100.0
-    },
-    "lib/src/mount/mount_mode.dart": {
+    "lib/src/mount/abstract_file.dart": {
       "found": 0,
       "hit": 0,
       "pct": 0.0
+    },
+    "lib/src/mount/callback_file.dart": {
+      "found": 16,
+      "hit": 16,
+      "pct": 100.0
+    },
+    "lib/src/mount/file_content.dart": {
+      "found": 7,
+      "hit": 7,
+      "pct": 100.0
+    },
+    "lib/src/mount/memory_file.dart": {
+      "found": 17,
+      "hit": 17,
+      "pct": 100.0
     },
     "lib/src/mount/native_mount_bindings.dart": {
       "found": 28,
@@ -71,45 +71,35 @@
       "hit": 13,
       "pct": 100.0
     },
-    "lib/src/mount/open_call.dart": {
-      "found": 17,
-      "hit": 17,
+    "lib/src/mount/os_access.dart": {
+      "found": 79,
+      "hit": 79,
       "pct": 100.0
     },
-    "lib/src/mount/vfs_accountant.dart": {
-      "found": 38,
-      "hit": 36,
-      "pct": 94.74
-    },
-    "lib/src/mount/vfs_callback_file.dart": {
-      "found": 7,
-      "hit": 7,
+    "lib/src/mount/os_access_defaults.dart": {
+      "found": 53,
+      "hit": 53,
       "pct": 100.0
     },
-    "lib/src/mount/vfs_content.dart": {
-      "found": 22,
-      "hit": 22,
-      "pct": 100.0
-    },
-    "lib/src/mount/vfs_limits.dart": {
-      "found": 11,
-      "hit": 11,
-      "pct": 100.0
-    },
-    "lib/src/mount/vfs_node.dart": {
-      "found": 1,
-      "hit": 1,
-      "pct": 100.0
-    },
-    "lib/src/mount/vfs_path.dart": {
-      "found": 11,
-      "hit": 11,
-      "pct": 100.0
-    },
-    "lib/src/mount/vfs_tree.dart": {
-      "found": 75,
+    "lib/src/mount/os_access_directories.dart": {
+      "found": 66,
       "hit": 66,
-      "pct": 88.0
+      "pct": 100.0
+    },
+    "lib/src/mount/os_access_files.dart": {
+      "found": 87,
+      "hit": 82,
+      "pct": 94.25
+    },
+    "lib/src/mount/os_access_tree.dart": {
+      "found": 63,
+      "hit": 63,
+      "pct": 100.0
+    },
+    "lib/src/mount/stat_result.dart": {
+      "found": 12,
+      "hit": 12,
+      "pct": 100.0
     },
     "lib/src/platform/double_text.dart": {
       "found": 5,
@@ -118,8 +108,8 @@
     },
     "lib/src/platform/host_class.dart": {
       "found": 185,
-      "hit": 173,
-      "pct": 93.51
+      "hit": 184,
+      "pct": 99.46
     },
     "lib/src/platform/monty_value.dart": {
       "found": 5,
@@ -468,8 +458,8 @@
     }
   },
   "total": {
-    "found": 7734,
-    "hit": 7654,
-    "pct": 98.97
+    "found": 7662,
+    "hit": 7605,
+    "pct": 99.26
   }
 }
