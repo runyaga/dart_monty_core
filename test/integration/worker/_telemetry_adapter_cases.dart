@@ -120,7 +120,12 @@ void telemetryAdapterTests(Future<Monty> Function() start) {
         ),
         [20, 21],
       );
-      expect(records.metrics, [1]);
+      expect(
+        records.measurements
+            .where((m) => m.name == 'host.calls')
+            .map((m) => m.value),
+        [1],
+      );
       final log = requireRecord(records.logs.singleOrNull);
       expect(log.body, 'host addition');
       expect(log.span, same(callbacks.lastOrNull));

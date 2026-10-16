@@ -5,10 +5,9 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 /// In-memory adapter with independently injectable signal failures.
+// R-3 requires fields before constructors, overriding the repository order.
+// ignore: member-ordering
 class RecordingAdapter implements MontyTelemetry {
-  /// Records all calls, optionally failing [failure].
-  RecordingAdapter({this.failure});
-
   /// Signal or context operation to fail.
   String? failure;
 
@@ -34,17 +33,26 @@ class RecordingAdapter implements MontyTelemetry {
   /// Measurements received at the adapter boundary.
   final metrics = <num>[];
 
+  /// Full raw measurements, before any SDK aggregation.
+  final measurements = <MetricRecord>[];
+
   /// Callback contexts, observed independently of the span tree.
   final contexts = <Object?>[];
 
   /// Separate counts expose attempts after a signal was disabled.
   final attempts = <String, int>{};
 
+  /// Records all calls, optionally failing [failure].
+  // Fields precede constructors per the R-3 member-order requirement.
+  // ignore: sort_constructors_first
+  RecordingAdapter({this.failure});
+
   /// Clears records, preserving installation and failure state.
   void clear() {
     spans.clear();
     logs.clear();
     metrics.clear();
+    measurements.clear();
     contexts.clear();
     attempts.clear();
   }
@@ -128,6 +136,15 @@ class RecordingAdapter implements MontyTelemetry {
   }) {
     _check('metrics');
     metrics.add(value);
+    measurements.add((
+      name: name,
+      kind: kind,
+      unit: unit,
+      description: description,
+      value: value,
+      attributes: Map.of(attributes),
+      context: context,
+    ));
   }
 
   @override
@@ -180,3 +197,18 @@ T requireRecord<T>(T? value) {
 
   return value;
 }
+
+/// Raw SDK boundary, including the deliberately empty metric context.
+typedef MetricRecord = ({
+  String name,
+  String kind,
+  String unit,
+  String description,
+  num value,
+  Map<String, Object> attributes,
+  Object? context,
+});
+
+/// Selects one instrument without discarding its raw increments.
+List<MetricRecord> measurements(RecordingAdapter adapter, String suffix) =>
+    adapter.measurements.where((m) => m.name == 'monty.$suffix').toList();

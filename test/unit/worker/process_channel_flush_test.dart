@@ -12,7 +12,10 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry.dart';
 import 'package:test/test.dart';
+
+import '../telemetry/recording_adapter.dart';
 
 final _request = pb.ParentRequest(feed: pb.Feed(code: '42'));
 final _complete = pb.ChildEvent(complete: pb.Complete());
@@ -22,6 +25,9 @@ Matcher get _vanishedWhileSending => isA<MontyCrashedError>()
     .having((error) => error.context, 'context', sendingRequest);
 
 void main() {
+  final adapter = RecordingAdapter();
+  setUpAll(() => instrumentTelemetry(adapter));
+  setUp(adapter.clear);
   late _TestProcess process;
   late ProcessChannel channel;
 
@@ -66,8 +72,40 @@ void main() {
       }
       await checked;
       expect(ended, isTrue);
+      final records = measurements(adapter, 'wire.frame.bytes');
+      expect(
+        records
+            .where((m) => m.attributes['direction'] == 'sent')
+            .map((m) => m.value),
+        succeeds ? process.stdin.frames.map((frame) => frame.length) : isEmpty,
+      );
+      expect(
+        records
+            .where((m) => m.attributes['direction'] == 'received')
+            .map((m) => m.value),
+        [Frame.encode(_complete).length],
+      );
     });
   }
+
+  test(
+    'native frame bytes preserve noncanonical payload and its header',
+    () async {
+      final body = _complete.writeToBuffer();
+      final reply = Frame.wrap([0xa0, 1, 1, 0xa0, 1, 2, ...body]);
+      final turn = channel.turn(_request);
+      await process.stdin.flushing.future;
+      process.stdin.flushed.complete();
+      process.output.add(reply);
+      await turn;
+      expect(
+        measurements(adapter, 'wire.frame.bytes')
+            .where((m) => m.attributes['direction'] == 'received')
+            .map((m) => m.value),
+        [reply.length],
+      );
+    },
+  );
 
   test('exit cannot turn a pending flush into a successful send', () async {
     var ended = false;

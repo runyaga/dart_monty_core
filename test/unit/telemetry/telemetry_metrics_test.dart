@@ -1,0 +1,367 @@
+// Expectations: upstream 1.1.0 telemetry/metrics.rs, not Dart implementation.
+import 'dart:async';
+
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
+import 'package:fixnum/fixnum.dart';
+import 'package:test/test.dart';
+
+import 'recording_adapter.dart';
+
+void main() {
+  final adapter = RecordingAdapter();
+  setUpAll(() => instrumentTelemetry(adapter));
+  setUp(adapter.clear);
+  printCases(adapter);
+  runCases(adapter);
+  suspensionCases(adapter);
+  housekeepingCases(adapter);
+  answerCases(adapter);
+  unsignedClockCase(adapter);
+}
+
+TelemetryRecorder recorder() =>
+    TelemetryRecorder(requireRecord(telemetryBridge), null);
+
+void printCases(RecordingAdapter adapter) {
+  test('print bytes are exact UTF-8 totals per stream per event', () {
+    runZoned(() {
+      recorder()
+        ..event(
+          pb.ChildEvent(
+            print: pb.Print(
+              segments: [
+                pb.PrintSegment(
+                  stream: pb.PrintStream.PRINT_STREAM_STDOUT,
+                  text: 'é',
+                ),
+                pb.PrintSegment(
+                  stream: pb.PrintStream.PRINT_STREAM_STDERR,
+                  text: '🙂',
+                ),
+                pb.PrintSegment(
+                  stream: pb.PrintStream.PRINT_STREAM_STDOUT,
+                  text: '\n',
+                ),
+                pb.PrintSegment(text: '?'),
+              ],
+            ),
+          ),
+        )
+        ..close();
+    }, zoneValues: {#telemetryContext: 'ambient host span'});
+    final records = measurements(adapter, 'print.bytes');
+    expect(records.map((m) => [m.attributes, m.value]), [
+      [
+        {'stream': 'stdout'},
+        3,
+      ],
+      [
+        {'stream': 'stderr'},
+        4,
+      ],
+      [
+        {'stream': 'unspecified'},
+        1,
+      ],
+    ]);
+    expect(records.every((m) => m.context == null), isTrue);
+    expect(records.map((m) => (m.kind, m.unit, m.description)).toSet(), {
+      ('counter', 'By', 'Bytes the sandbox printed, by stream.'),
+    });
+  });
+}
+
+void runCases(RecordingAdapter adapter) {
+  test(
+    'execution time uses monotonic cumulative deltas and configure resets',
+    () {
+      final subject = recorder();
+      for (final total in [100, 250, 200, 300]) {
+        subject
+          ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+          ..event(
+            pb.ChildEvent(
+              complete: pb.Complete(),
+              totalExecutionMicros: Int64(total),
+            ),
+          );
+      }
+      subject
+        ..beginTurn(pb.ParentRequest(configure: pb.Configure()))
+        ..event(pb.ChildEvent(ok: pb.Ok()))
+        ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+        ..event(
+          pb.ChildEvent(
+            complete: pb.Complete(),
+            totalExecutionMicros: Int64(10),
+          ),
+        )
+        ..close();
+      expect(measurements(adapter, 'run.execution_time').map((m) => m.value), [
+        0.0001,
+        0.00015,
+        0.0,
+        0.00005,
+        0.00001,
+      ]);
+      expect(
+        measurements(adapter, 'run.duration').map((m) => m.attributes),
+        List.filled(5, {'outcome': 'complete'}),
+      );
+    },
+  );
+  for (final (event, outcome) in [
+    (pb.ChildEvent(error: pb.Error()), 'error'),
+    (pb.ChildEvent(typingError: pb.TypingError()), 'typing_error'),
+    (pb.ChildEvent(fatalError: pb.FatalError()), 'fatal_error'),
+    (pb.ChildEvent(shutdown: pb.ShutdownDump()), 'shutdown'),
+  ]) {
+    test('run ends with $outcome', () {
+      recorder()
+        ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+        ..event(event)
+        ..close();
+      expect(measurements(adapter, 'run.duration').map((m) => m.attributes), [
+        {'outcome': outcome},
+      ]);
+      expect(measurements(adapter, 'run.execution_time'), hasLength(1));
+    });
+  }
+}
+
+void suspensionCases(RecordingAdapter adapter) {
+  for (final (event, kind) in [
+    (
+      pb.ChildEvent(functionCall: pb.FunctionCall(functionName: 'unbounded')),
+      'function',
+    ),
+    (pb.ChildEvent(osCall: pb.OsCall(readText: '/unbounded')), 'os'),
+    (
+      pb.ChildEvent(nameLookup: pb.NameLookup(name: 'unbounded')),
+      'name_lookup',
+    ),
+    (pb.ChildEvent(resolveFutures: pb.ResolveFutures()), 'futures'),
+  ]) {
+    test('$kind suspension balances and records host answer', () {
+      recorder()
+        ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+        ..event(event)
+        ..beginTurn(pb.ParentRequest(abortFeed: pb.AbortFeed()))
+        ..close();
+      expect(
+        measurements(
+          adapter,
+          'run.suspensions',
+        ).map((m) => [m.value, m.attributes]),
+        [
+          [
+            1,
+            {'kind': kind},
+          ],
+        ],
+      );
+      expect(
+        measurements(adapter, 'pool.workers.suspended').map((m) => m.value),
+        [1, -1],
+      );
+      expect(
+        measurements(adapter, 'ext.call.duration').map((m) => m.attributes),
+        [
+          {
+            'kind': kind,
+            'outcome': 'aborted',
+            if (kind == 'os') 'function': 'read_text',
+          },
+        ],
+      );
+    });
+  }
+  test('abandoning a suspension balances without charging a host answer', () {
+    recorder()
+      ..event(pb.ChildEvent(nameLookup: pb.NameLookup()))
+      ..close()
+      ..close();
+    expect(
+      measurements(adapter, 'pool.workers.suspended').map((m) => m.value),
+      [1, -1],
+    );
+    expect(measurements(adapter, 'ext.call.duration'), isEmpty);
+  });
+}
+
+void housekeepingCases(RecordingAdapter adapter) {
+  test('restored suspension rebases execution and ends load before resume', () {
+    recorder()
+      ..beginTurn(pb.ParentRequest(load: pb.Load(state: [1, 2, 3])))
+      ..event(
+        pb.ChildEvent(
+          nameLookup: pb.NameLookup(),
+          totalExecutionMicros: Int64(10000000),
+        ),
+      )
+      ..beginTurn(
+        pb.ParentRequest(
+          resumeNameLookup: pb.ResumeNameLookup(undefined: pb.Unit()),
+        ),
+      )
+      ..event(
+        pb.ChildEvent(
+          complete: pb.Complete(),
+          totalExecutionMicros: Int64(10000050),
+        ),
+      )
+      ..close();
+    expect(measurements(adapter, 'turn.duration').map((m) => m.attributes), [
+      {'turn': 'load', 'outcome': 'ok'},
+    ]);
+    expect(measurements(adapter, 'run.execution_time').map((m) => m.value), [
+      0.00005,
+    ]);
+    expect(measurements(adapter, 'run.duration'), isEmpty);
+    expect(measurements(adapter, 'snapshot.bytes'), isEmpty);
+  });
+  test('dump size is actual bytes and leaves the suspended run open', () {
+    final subject = recorder()
+      ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+      ..event(pb.ChildEvent(nameLookup: pb.NameLookup()));
+    for (final size in [7, 137]) {
+      subject
+        ..beginTurn(pb.ParentRequest(dump: pb.Dump()))
+        ..event(
+          pb.ChildEvent(dumpResult: pb.DumpResult(state: List.filled(size, 0))),
+        );
+    }
+    expect(
+      measurements(
+        adapter,
+        'snapshot.bytes',
+      ).map((m) => [m.value, m.attributes]),
+      [
+        [
+          7,
+          {'op': 'dump'},
+        ],
+        [
+          137,
+          {'op': 'dump'},
+        ],
+      ],
+    );
+    expect(measurements(adapter, 'run.duration'), isEmpty);
+    expect(
+      measurements(adapter, 'pool.workers.suspended').map((m) => m.value),
+      [1],
+    );
+    subject.close();
+  });
+  test('housekeeping error never synthesizes an execution sample', () {
+    recorder()
+      ..beginTurn(
+        pb.ParentRequest(
+          installDependencies: pb.InstallDependencies(requirements: ['x']),
+        ),
+      )
+      ..event(pb.ChildEvent(error: pb.Error()))
+      ..close();
+    expect(measurements(adapter, 'turn.duration').map((m) => m.attributes), [
+      {'turn': 'install_dependencies', 'outcome': 'error'},
+    ]);
+    expect(measurements(adapter, 'run.execution_time'), isEmpty);
+  });
+}
+
+void answerCases(RecordingAdapter adapter) {
+  for (final (answer, outcome) in [
+    (pb.ExtFunctionResult(returnValue: 0), 'value'),
+    (pb.ExtFunctionResult(error: pb.RaisedException()), 'error'),
+    (pb.ExtFunctionResult(future: 7), 'future'),
+    (pb.ExtFunctionResult(notFound: 'sandbox chosen'), 'not_found'),
+    (pb.ExtFunctionResult(notHandled: pb.Unit()), 'not_handled'),
+    (pb.ExtFunctionResult(), 'missing'),
+  ]) {
+    for (final eager in [false, true]) {
+      test('call answer $outcome eager=$eager', () {
+        final call = pb.ChildEvent(
+          functionCall: pb.FunctionCall(
+            functionName: 'unbounded',
+            callId: 7,
+            allowEagerAwait: eager,
+          ),
+        );
+        final request = eager
+            ? pb.ParentRequest(
+                resumeFutures: pb.ResumeFutures(
+                  results: [pb.FutureResult(callId: 7, result: answer)],
+                ),
+              )
+            : pb.ParentRequest(resumeCall: pb.ResumeCall(result: answer));
+        recorder()
+          ..event(call)
+          ..beginTurn(request)
+          ..close();
+        expect(
+          measurements(adapter, 'ext.call.duration').map((m) => m.attributes),
+          [
+            {'kind': 'function', 'outcome': outcome},
+          ],
+        );
+      });
+    }
+  }
+  test('unmatched eager future result uses resolved outcome', () {
+    recorder()
+      ..event(
+        pb.ChildEvent(
+          functionCall: pb.FunctionCall(callId: 7, allowEagerAwait: true),
+        ),
+      )
+      ..beginTurn(
+        pb.ParentRequest(
+          resumeFutures: pb.ResumeFutures(
+            results: [
+              pb.FutureResult(
+                callId: 8,
+                result: pb.ExtFunctionResult(returnValue: 0),
+              ),
+            ],
+          ),
+        ),
+      )
+      ..close();
+    expect(
+      measurements(adapter, 'ext.call.duration').map((m) => m.attributes),
+      [
+        {'kind': 'function', 'outcome': 'resolved'},
+      ],
+    );
+  });
+}
+
+void unsignedClockCase(RecordingAdapter adapter) {
+  test(
+    'execution delta preserves unsigned clocks across the signed boundary',
+    () {
+      recorder()
+        ..beginTurn(pb.ParentRequest(load: pb.Load()))
+        ..event(
+          pb.ChildEvent(
+            ok: pb.Ok(),
+            totalExecutionMicros: Int64.parseHex('7fffffffffffffff'),
+          ),
+        )
+        ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+        ..event(
+          pb.ChildEvent(
+            complete: pb.Complete(),
+            totalExecutionMicros: Int64.parseHex('8000000000000000'),
+          ),
+        )
+        ..close();
+      expect(measurements(adapter, 'run.execution_time').map((m) => m.value), [
+        0.000001,
+      ]);
+    },
+  );
+}
