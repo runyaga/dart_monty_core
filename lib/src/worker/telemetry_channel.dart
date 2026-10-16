@@ -1,14 +1,15 @@
 /// Internal channel observation, installed by the shared session driver.
 library;
 
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// Channels expose the two frame boundaries without changing their protocol.
-abstract interface class TelemetryChannel {
+abstract interface class TelemetryChannel implements MontyChannel {
   /// The checkout recorder, absent until instrumentation and checkout.
-  Recorder? get recorder;
-  set recorder(Recorder? value);
+  TelemetryRecorder? get recorder;
+  set recorder(TelemetryRecorder? value);
 
   /// Process id when the channel is native.
   int? get telemetryPid;
@@ -17,7 +18,7 @@ abstract interface class TelemetryChannel {
 /// Storage for a concrete transport. No allocation without installation.
 mixin RecordedChannel implements TelemetryChannel {
   @override
-  Recorder? recorder;
+  TelemetryRecorder? recorder;
 
   @override
   int? get telemetryPid => null;
@@ -30,7 +31,7 @@ final class SentRecording {
   /// One potentially in-flight native write, only with instrumentation.
   SentRecording(this._recorder, this._request);
 
-  final Recorder _recorder;
+  final TelemetryRecorder _recorder;
   final pb.ParentRequest _request;
   List<pb.ChildEvent>? _early = [];
   bool? _sent;

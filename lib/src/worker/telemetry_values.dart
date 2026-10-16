@@ -28,19 +28,19 @@ Rendered _text(String text, int limit) {
   var bytes = 0;
   var units = 0;
   for (final rune in text.runes) {
-    final width = rune <= 0x7f
-        ? 1
-        : rune <= 0x7ff
-        ? 2
-        : rune <= 0xffff
-        ? 3
-        : 4;
+    final width = switch (rune) {
+      <= 0x7f => 1,
+      <= 0x7ff => 2,
+      <= 0xffff => 3,
+      _ => 4,
+    };
     if (bytes + width > limit) {
       return (value: text.substring(0, units), cut: true);
     }
     bytes += width;
     units += rune > 0xffff ? 2 : 1;
   }
+
   return (value: text, cut: false);
 }
 
@@ -48,6 +48,7 @@ Rendered _text(String text, int limit) {
 Rendered telemetryValue(pb.Arena arena, int id) {
   final node = arena.nodes.elementAtOrNull(id);
   if (node == null) return (value: '<missing>', cut: false);
+
   return switch (node.whichKind()) {
     pb.MontyNode_Kind.boolean => (value: node.boolean, cut: false),
     pb.MontyNode_Kind.int_5 => (value: intOfNode(node).toInt(), cut: false),
@@ -62,19 +63,19 @@ Rendered telemetryValue(pb.Arena arena, int id) {
 Rendered telemetryBytes(List<int> bytes) {
   final head = bytes.take(telemetryAttributeLimit).toList();
   final rendered = telemetryText(_bytesContent(head));
+
   return (
     value: rendered.value,
     cut: rendered.cut || head.length < bytes.length,
   );
 }
 
-Object _finite(double value) => value.isFinite
-    ? value
-    : value.isNaN
-    ? 'nan'
-    : value > 0
-    ? 'inf'
-    : '-inf';
+Object _finite(double value) {
+  if (value.isFinite) return value;
+  if (value.isNaN) return 'nan';
+
+  return value > 0 ? 'inf' : '-inf';
+}
 
 /// Root references as a JSON sequence.
 Rendered telemetrySequence(pb.Arena arena, Iterable<int> ids) =>
@@ -142,32 +143,6 @@ Rendered telemetryJoined(Iterable<String> parts) {
     if (rendered.cut) return (value: output.toString(), cut: true);
     remaining -= utf8.encode(text).length;
   }
+
   return (value: output.toString(), cut: false);
-}
-
-/// An attribute builder that propagates truncation exactly once.
-final class TelemetryAttributes {
-  /// Starts with the scalar attributes whose encodings need no rendering.
-  TelemetryAttributes([Map<String, Object> initial = const {}])
-    : values = Map.of(initial);
-
-  /// Completed attributes (only scalar OTel types).
-  final Map<String, Object> values;
-
-  /// Adds a rendered value and its cap flag.
-  void add(String key, Rendered value) {
-    values[key] = value.value;
-    if (value.cut) values['length_limit_exceeded'] = true;
-  }
-
-  /// Adds capped raw text.
-  void text(String key, String value) => add(key, telemetryText(value));
-
-  /// Adds source offsets as signed integers, not unsigned debug strings.
-  void position(pb.SourceRange? range) {
-    if (range == null) return;
-    text('sandbox.code.file.path', range.filename);
-    values['sandbox.code.offset.start'] = range.start;
-    values['sandbox.code.offset.end'] = range.end;
-  }
 }

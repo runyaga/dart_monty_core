@@ -9,11 +9,11 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
+import 'package:dart_monty_core/src/worker/byte_tail.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
@@ -39,7 +39,7 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
         drainAllowance: drainAllowance,
         onDesync: () => _process.kill(ProcessSignal.sigkill),
       ),
-      _stderr = _ByteTail(_process.stderr, 4096) {
+      _stderr = ByteTail(_process.stderr, 4096) {
     _live.add(this);
     unawaited(_reapOnExit());
     unawaited(_absorbFailure(_process.stdin.done));
@@ -97,7 +97,7 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
 
   final Process _process;
   final EventQueue _events;
-  final _ByteTail _stderr;
+  final ByteTail _stderr;
   MontyCrashedError? _crash;
   bool _killed = false;
 
@@ -140,7 +140,7 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
   int get pid => _process.pid;
 
   @override
-  late final int? telemetryPid = pid;
+  int get telemetryPid => pid;
 
   /// Completes with the worker's exit code.
   Future<int> get exitCode => _process.exitCode;
@@ -166,12 +166,7 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
     pb.ParentRequest request, {
     PrintHandler? onPrint,
   }) async {
-    if (_busy) {
-      throw StateError('ProcessChannel.turn: a turn is already in flight');
-    }
-    final crash = _crash;
-    if (crash != null) throw crash;
-    if (_closed) throw StateError('ProcessChannel.turn: channel is closed');
+    _checkTurn(busy: _busy, closed: _closed, crash: _crash);
     final frame = Frame.encode(request);
     final observer = recorder;
     final recording = observer == null
@@ -684,54 +679,14 @@ final class EventQueue {
   }
 }
 
-/// The last [capacity] bytes of a byte stream, which it always drains: a
-/// worker blocks once its stderr pipe fills.
-final class _ByteTail {
-  _ByteTail(Stream<List<int>> bytes, this.capacity) {
-    _subscription = bytes.listen(
-      _add,
-      onDone: _end,
-      onError: (Object _) => _end(),
-    );
+void _checkTurn({
+  required bool busy,
+  required bool closed,
+  required MontyCrashedError? crash,
+}) {
+  if (busy) {
+    throw StateError('ProcessChannel.turn: a turn is already in flight');
   }
-
-  final int capacity;
-  final _chunks = ListQueue<List<int>>();
-  final _ended = Completer<void>();
-  StreamSubscription<List<int>>? _subscription;
-  int _length = 0;
-
-  /// Waits up to [grace] for the stream to end, then stops listening.
-  ///
-  /// The exit code can arrive before the last of the output, so a reader
-  /// waits; a process that inherited the pipe can hold it open forever, so
-  /// the wait is bounded, and the subscription is cancelled so it cannot
-  /// keep this process alive.
-  Future<void> drain(Duration grace) async {
-    await _ended.future.timeout(grace, onTimeout: () => null);
-    await _subscription?.cancel();
-    _subscription = null;
-  }
-
-  /// The tail as text, trimmed; a cut multi-byte character becomes U+FFFD.
-  String get text {
-    final bytes = [for (final chunk in _chunks) ...chunk];
-    final start = math.max(0, bytes.length - capacity);
-
-    return utf8.decode(bytes.sublist(start), allowMalformed: true).trim();
-  }
-
-  void _add(List<int> chunk) {
-    _chunks.add(chunk);
-    _length += chunk.length;
-    for (;;) {
-      final head = _chunks.firstOrNull;
-      if (head == null || _length - head.length < capacity) break;
-      _length -= _chunks.removeFirst().length;
-    }
-  }
-
-  void _end() {
-    if (!_ended.isCompleted) _ended.complete();
-  }
+  if (crash != null) throw crash;
+  if (closed) throw StateError('ProcessChannel.turn: channel is closed');
 }

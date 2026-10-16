@@ -31,20 +31,21 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
           ..willReturn(const MontyInt(42));
         final result = await fake.feedRun(
           'ext()',
-          printCallback: (_, _) {},
+          printCallback: (stream, text) => expect(text, isNotEmpty),
           externalLookup: {
             'ext': MontyHostFunction('ext', (args, kwargs) {
               calls++;
+
               return const MontyInt(42);
             }),
           },
         );
         expect(result, const MontyInt(42));
         expect(
-          fake.answers.single.answer,
+          fake.answers.singleOrNull?.answer,
           const ExternalReturnValue(MontyInt(42)),
         );
-        telemetryBridge!.recordMetric(
+        requireRecord(telemetryBridge).recordMetric(
           'test',
           'counter',
           '1',
@@ -59,17 +60,18 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
       final signal = failure == 'logs' || failure == 'metrics'
           ? failure
           : 'spans';
-      expect(diagnostics.single, contains(signal));
-      expect(diagnostics.single, contains('RecordingAdapter'));
-      expect(diagnostics.single, contains('adapter-$failure'));
-      expect(diagnostics.single, contains('RecordingAdapter._check'));
+      final diagnostic = diagnostics.singleOrNull;
+      expect(diagnostic, contains('Monty telemetry $signal disabled'));
+      expect(diagnostic, contains('(${adapter.runtimeType})'));
+      expect(diagnostic, contains('Bad state: adapter-$failure'));
       expect(adapter.attempts[failure], 1);
-      if (signal != 'logs') expect(adapter.logs, hasLength(2));
+      final logs = adapter.logs;
+      if (signal != 'logs') expect(logs, hasLength(2));
       if (signal != 'metrics') expect(adapter.metrics, [1, 1]);
       if (signal != 'spans') {
         expect(adapter.spans.where((s) => s.name == 'run code'), hasLength(2));
       } else {
-        expect(adapter.logs.every((log) => log.span == null), isTrue);
+        expect(logs.every((log) => log.span == null), isTrue);
       }
     },
   );

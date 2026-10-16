@@ -34,7 +34,10 @@ void main() {
           .timeout(const Duration(seconds: 3));
       expect(result.value, const MontyNone());
       expect(adapter.logs, hasLength(floodPrints));
-      expect(adapter.spans.last.attributes['length_limit_exceeded'], true);
+      expect(
+        adapter.spans.lastOrNull?.attributes['length_limit_exceeded'],
+        true,
+      );
       await session.close();
       expect(adapter.spans.every((span) => span.end != null), isTrue);
     },

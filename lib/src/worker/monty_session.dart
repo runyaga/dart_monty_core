@@ -1017,6 +1017,7 @@ final class _FeedDrive implements SnapshotDriver {
       _ => throw StateError('not a suspension: ${event.whichKind().name}'),
       // coverage:ignore-end
     };
+
     return snapshot
       ..capturedTraceContext = _session._proto.recorder?.context(_traceEntry);
   }
@@ -1411,11 +1412,15 @@ final class _SessionChannel implements MontyChannel, TelemetryChannel {
   /// is admitted against.
   final SessionBudget _budget;
 
-  @override
-  Recorder? get recorder => (_hold.lease.channel as TelemetryChannel).recorder;
+  /// Completes when the turn in flight ends.
+  Completer<void>? _turnOver;
 
   @override
-  set recorder(Recorder? value) =>
+  TelemetryRecorder? get recorder =>
+      (_hold.lease.channel as TelemetryChannel).recorder;
+
+  @override
+  set recorder(TelemetryRecorder? value) =>
       (_hold.lease.channel as TelemetryChannel).recorder = value;
 
   @override
@@ -1424,9 +1429,6 @@ final class _SessionChannel implements MontyChannel, TelemetryChannel {
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;
-
-  /// Completes when the turn in flight ends.
-  Completer<void>? _turnOver;
 
   /// Completes when the turn in flight ends. A caller that must find the
   /// channel free rechecks [inTurn] after it, in the same synchronous step

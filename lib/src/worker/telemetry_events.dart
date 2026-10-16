@@ -1,7 +1,7 @@
 part of 'telemetry_recorder.dart';
 
 /// Event-side records, before protocol classification or host callbacks.
-extension RecorderEvents on Recorder {
+extension TelemetryEvents on TelemetryRecorder {
   /// Records one decoded event, including prints and fatal errors.
   void event(pb.ChildEvent event) {
     if (event.hasRestoredScriptName()) {
@@ -9,32 +9,11 @@ extension RecorderEvents on Recorder {
     }
     switch (event.whichKind()) {
       case pb.ChildEvent_Kind.print:
-        for (final segment in event.print.segments) {
-          final attributes = TelemetryAttributes({
-            'stream': switch (segment.stream) {
-              pb.PrintStream.PRINT_STREAM_STDOUT => 'stdout',
-              pb.PrintStream.PRINT_STREAM_STDERR => 'stderr',
-              _ => 'unspecified',
-            },
-          })..text('text', segment.text);
-          _log('print ${attributes.values['stream']}', attributes);
-        }
-      case pb.ChildEvent_Kind.functionCall ||
-          pb.ChildEvent_Kind.osCall ||
-          pb.ChildEvent_Kind.nameLookup ||
-          pb.ChildEvent_Kind.resolveFutures:
-        _suspend(event);
+        _prints(event.print);
       case pb.ChildEvent_Kind.complete:
         _complete(event);
       case pb.ChildEvent_Kind.error:
-        final attributes = errorAttributes(event);
-        _log('error ${attributes.values['exc_type']}', attributes, error: true);
-        if (_dumpTurn) {
-          _end(_turn);
-          _turn = null;
-        } else {
-          _endFeed();
-        }
+        _error(event);
       case pb.ChildEvent_Kind.typingError:
         _log(
           'typing error',
@@ -44,7 +23,43 @@ extension RecorderEvents on Recorder {
         );
         _endFeed();
       case _:
+        _otherEvent(event);
+    }
+  }
+
+  void _otherEvent(pb.ChildEvent event) {
+    switch (event.whichKind()) {
+      case pb.ChildEvent_Kind.functionCall ||
+          pb.ChildEvent_Kind.osCall ||
+          pb.ChildEvent_Kind.nameLookup ||
+          pb.ChildEvent_Kind.resolveFutures:
+        _suspend(event);
+      case _:
         _housekeeping(event);
+    }
+  }
+
+  void _prints(pb.Print print) {
+    for (final segment in print.segments) {
+      final attributes = TelemetryAttributes({
+        'stream': switch (segment.stream) {
+          pb.PrintStream.PRINT_STREAM_STDOUT => 'stdout',
+          pb.PrintStream.PRINT_STREAM_STDERR => 'stderr',
+          _ => 'unspecified',
+        },
+      })..text('text', segment.text);
+      _log('print ${attributes.values['stream']}', attributes);
+    }
+  }
+
+  void _error(pb.ChildEvent event) {
+    final attributes = errorAttributes(event);
+    _log('error ${attributes.values['exc_type']}', attributes, error: true);
+    if (_dumpTurn) {
+      _end(_turn);
+      _turn = null;
+    } else {
+      _endFeed();
     }
   }
 
@@ -53,20 +68,8 @@ extension RecorderEvents on Recorder {
     final String name;
     switch (event.whichKind()) {
       case pb.ChildEvent_Kind.functionCall:
-        final call = event.functionCall;
         name = 'call {function_name}';
-        attributes.text('function_name', call.functionName);
-        attributes.values['call_id'] = '${call.callId}';
-        if (call.hasObjectId()) {
-          attributes.values['object_id'] = uuidString(call.objectId.data);
-        }
-        attributes.position(call.hasPosition() ? call.position : null);
-        if (call.args.isNotEmpty) {
-          attributes.add('args', telemetrySequence(call.values, call.args));
-        }
-        if (call.kwargs.isNotEmpty) {
-          attributes.add('kwargs', telemetryPairs(call.values, call.kwargs));
-        }
+        _functionAttributes(event.functionCall, attributes);
       case pb.ChildEvent_Kind.osCall:
         name = 'os call {function}';
         osAttributes(event.osCall, attributes);
@@ -95,6 +98,24 @@ extension RecorderEvents on Recorder {
     _pending = pending;
   }
 
+  void _functionAttributes(
+    pb.FunctionCall call,
+    TelemetryAttributes attributes,
+  ) {
+    attributes.text('function_name', call.functionName);
+    attributes.values['call_id'] = '${call.callId}';
+    if (call.hasObjectId()) {
+      attributes.values['object_id'] = uuidString(call.objectId.data);
+    }
+    attributes.position(call.hasPosition() ? call.position : null);
+    if (call.args.isNotEmpty) {
+      attributes.add('args', telemetrySequence(call.values, call.args));
+    }
+    if (call.kwargs.isNotEmpty) {
+      attributes.add('kwargs', telemetryPairs(call.values, call.kwargs));
+    }
+  }
+
   void _complete(pb.ChildEvent event) {
     final complete = event.complete;
     final output = telemetryValue(complete.values, complete.value);
@@ -115,10 +136,9 @@ extension RecorderEvents on Recorder {
       case pb.ChildEvent_Kind.dumpResult:
         final turn = _turn;
         if (turn != null) {
-          turn.attributes.values.addAll(
-            eventTiming(event, signed: true).values,
-          );
-          turn.attributes.values['state_bytes'] = event.dumpResult.state.length;
+          turn.attributes.values
+            ..addAll(eventTiming(event, signed: true).values)
+            ..['state_bytes'] = event.dumpResult.state.length;
         }
         _end(turn);
         _turn = null;

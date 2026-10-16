@@ -69,6 +69,12 @@ Future<String> _handle(String scenario, pb.ParentRequest request) async {
     case 'serve':
     case 'ignore-shutdown':
       await _serve(request, ignoreShutdown: scenario == 'ignore-shutdown');
+    case 'complete-before-send':
+      // A queued end cannot turn an unfinished, failed write into success.
+      await _send(pb.ChildEvent(ok: pb.Ok()));
+      await _send(pb.ChildEvent(complete: pb.Complete()));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      exit(0);
     case 'oom':
       exit(65);
     case 'oom-on-feed':

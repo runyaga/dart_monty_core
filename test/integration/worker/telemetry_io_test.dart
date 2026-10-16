@@ -15,6 +15,7 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
   telemetryWorkerTests(() async {
     final location = await realWorker() as WorkerExecutable;
+
     return startMonty(
       PoolOptions(maxProcesses: 1, workerLocation: location.path),
     );

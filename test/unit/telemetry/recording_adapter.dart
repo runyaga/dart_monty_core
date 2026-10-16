@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:test/test.dart';
 
 /// In-memory adapter with independently injectable signal failures.
 class RecordingAdapter implements MontyTelemetry {
@@ -48,20 +49,17 @@ class RecordingAdapter implements MontyTelemetry {
     attempts.clear();
   }
 
-  void _check(String signal) {
-    attempts.update(signal, (n) => n + 1, ifAbsent: () => 1);
-    if (failure == signal) throw StateError('adapter-$signal');
-  }
-
   @override
   Object? currentContext() {
     _check('currentContext');
+
     return Zone.current[#telemetryContext];
   }
 
   @override
   Object? contextWithSpan(Object? context, Object span) {
     _check('contextWithSpan');
+
     return ignoreSpans ? context : (context, span);
   }
 
@@ -81,6 +79,7 @@ class RecordingAdapter implements MontyTelemetry {
       startTimeUnixNanos,
     );
     spans.add(span);
+
     return span;
   }
 
@@ -137,7 +136,13 @@ class RecordingAdapter implements MontyTelemetry {
     contexts.add(context);
     final result = runZoned(body, zoneValues: {#telemetryContext: context});
     _check('afterCallback');
+
     return result;
+  }
+
+  void _check(String signal) {
+    attempts.update(signal, (n) => n + 1, ifAbsent: () => 1);
+    if (failure == signal) throw StateError('adapter-$signal');
   }
 }
 
@@ -160,4 +165,18 @@ final class RecordedSpan {
 
   /// Explicit end, absent until closed.
   BigInt? end;
+}
+
+/// Requires a record before assertions inspect its fields.
+T requireRecord<T>(T? value) {
+  if (value == null) fail('Expected a recorded value');
+
+  return value;
+}
+
+/// Requires the context shape supplied by RecordingAdapter.
+(Object?, Object) recordedContext(Object? value) {
+  if (value is! (Object?, Object)) fail('Expected a recorded span context');
+
+  return value;
 }

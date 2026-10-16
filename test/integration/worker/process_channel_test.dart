@@ -636,6 +636,17 @@ void main() {
     });
   });
 
+  test(
+    'queued completion cannot succeed when the request flush fails',
+    () async {
+      final channel = await _spawn('complete-before-send');
+      await channel.turn(_configure);
+      final crash = await _crashOf(channel.turn(_feed('#' * (8 << 20))));
+      expect(crash.cause, CrashCause.vanished);
+      expect(crash.context, sendingRequest);
+    },
+  );
+
   group('EventQueue, with chosen chunk boundaries', () {
     const limit = 1000;
 
@@ -732,6 +743,19 @@ void main() {
         expect(onlyItem(event.print.segments).text, text);
       }
     });
+
+    test(
+      'stream errors wake pending readers without inventing a frame',
+      () async {
+        final next = queue.next();
+        bytes.addError(StateError('pipe failed'));
+        expect(await next, isNull);
+        expect(queue.isOpen, isFalse);
+        await queue.endWithin(const Duration(seconds: 1));
+        await bytes.close();
+        expect(await queue.next(), isNull);
+      },
+    );
 
     test('pauses at the limit when no frame is part-received', () async {
       bytes.add(frame('a' * 600));

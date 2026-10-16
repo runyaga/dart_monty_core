@@ -34,7 +34,7 @@ void _lifecycle(
           expect(
             await session.feedRun(
               'print("hello")\n42',
-              printCallback: (_, _) {},
+              printCallback: (stream, text) => expect(text, isNotEmpty),
             ),
             const MontyInt(42),
           );
@@ -43,24 +43,31 @@ void _lifecycle(
             throwsA(isA<MontyRuntimeError>()),
           );
           final state = await session.dump();
-          expect(adapter.spans.last.attributes['state_bytes'], state.length);
+          expect(
+            adapter.spans.lastOrNull?.attributes['state_bytes'],
+            state.length,
+          );
         }),
         zoneValues: {#telemetryContext: 'host'},
       );
-      final root = adapter.spans.first;
+      final root = requireRecord(adapter.spans.firstOrNull);
       expect(root.parent, 'host');
       expect(root.attributes['monty_version'], '1.1.0');
       expect(root.attributes.containsKey('worker_pid'), native);
       expect(adapter.spans.every((s) => s.end != null), isTrue);
-      final run = adapter.spans[1];
+      final run = requireRecord(adapter.spans.elementAtOrNull(1));
       expect(run.attributes['output'], 42);
       expect(run.attributes['total_execution_micros'], isA<int>());
       expect(adapter.logs.map((l) => l.body), [
         'print stdout',
         'error ZeroDivisionError',
       ]);
-      expect(adapter.logs.last.attributes['exc_type'], 'ZeroDivisionError');
-      expect(adapter.logs.last.number, 17);
+      final error = requireRecord(adapter.logs.lastOrNull);
+      expect(
+        error.attributes['exc_type'],
+        'ZeroDivisionError',
+      );
+      expect(error.number, 17);
     },
   );
 
@@ -86,14 +93,19 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
     () async {
       final pool = await start();
       addTearDown(pool.close);
-      final session = await pool.checkout();
-      final call = await session.feedStart('ext(21)') as FunctionSnapshot;
-      final state = await call.dump();
-      final dump = adapter.spans.last;
-      expect(dump.name, 'dump');
-      expect((dump.parent! as (Object?, Object)).$2, same(adapter.spans[2]));
-      expect(dump.attributes['state_bytes'], state.length);
-      await session.close();
+      final state = await pool.withSession((session) async {
+        final call = await session.feedStart('ext(21)') as FunctionSnapshot;
+        final state = await call.dump();
+        final dump = requireRecord(adapter.spans.lastOrNull);
+        expect(dump.name, 'dump');
+        expect(
+          recordedContext(dump.parent).$2,
+          same(adapter.spans.elementAtOrNull(2)),
+        );
+        expect(dump.attributes['state_bytes'], state.length);
+
+        return state;
+      });
       final restored = await pool.checkout();
       addTearDown(restored.close);
       final snapshot =
@@ -102,13 +114,14 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
                 zoneValues: {#telemetryContext: 'load'},
               )
               as FunctionSnapshot;
-      final pending = adapter.spans.last;
-      final load = adapter.spans[adapter.spans.length - 2];
+      final pending = requireRecord(adapter.spans.lastOrNull);
+      final spans = adapter.spans;
+      final load = requireRecord(spans.elementAtOrNull(spans.length - 2));
       expect(load.name, 'load');
       // tracing.rs context_span checks the retained Load turn before pending.
       expect(snapshot.traceContext(), ('load', load));
       expect(load.attributes['state_bytes'], '${state.length}');
-      expect((pending.parent! as (Object?, Object)).$2, same(load));
+      expect(recordedContext(pending.parent).$2, same(load));
       expect(
         (await snapshot.resume(const ExternalReturnValue(MontyInt(42)))
                 as MontyComplete)
@@ -116,8 +129,9 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
         const MontyInt(42),
       );
       expect(snapshot.traceContext, throwsStateError);
-      expect(adapter.logs.last.body, 'complete');
-      expect(adapter.logs.last.attributes['output'], 42);
+      final log = requireRecord(adapter.logs.lastOrNull);
+      expect(log.body, 'complete');
+      expect(log.attributes['output'], 42);
       expect(load.end, isNotNull);
     },
   );
@@ -130,8 +144,8 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
       await pool.withSession((session) async {
         final lookup = await session.feedStart('missing') as NameLookupSnapshot;
         expect(
-          (lookup.traceContext()! as (Object?, Object)).$2,
-          same(adapter.spans.last),
+          recordedContext(lookup.traceContext()).$2,
+          same(adapter.spans.lastOrNull),
         );
         await lookup.resume(value: const MontyInt(1));
         expect(lookup.traceContext, throwsStateError);
@@ -139,15 +153,19 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
         final futures =
             await call.resume(const ExternalFuture()) as FutureSnapshot;
         expect(
-          (futures.traceContext()! as (Object?, Object)).$2,
-          same(adapter.spans.last),
+          recordedContext(futures.traceContext()).$2,
+          same(adapter.spans.lastOrNull),
         );
         await futures.resume({
           call.callId: const ExternalReturnValue(MontyInt(42)),
         });
         expect(futures.traceContext, throwsStateError);
-        expect(adapter.logs.last.body, 'future results');
-        expect(adapter.logs.last.attributes['results'], '${call.callId}: 42');
+        final log = requireRecord(adapter.logs.lastOrNull);
+        expect(log.body, 'future results');
+        expect(
+          log.attributes['results'],
+          '${call.callId}: 42',
+        );
       });
     },
   );
@@ -166,6 +184,7 @@ void _callbacks(Future<Monty> Function() start, RecordingAdapter adapter) {
             'ext': MontyHostFunction('ext', (args, kwargs) async {
               await Future<void>.delayed(Duration.zero);
               seen = Zone.current[#telemetryContext];
+
               return const MontyInt(42);
             }),
           },
@@ -173,7 +192,7 @@ void _callbacks(Future<Monty> Function() start, RecordingAdapter adapter) {
         const MontyInt(42),
       );
     });
-    final span = (seen! as (Object?, Object)).$2 as RecordedSpan;
+    final span = recordedContext(seen).$2 as RecordedSpan;
     expect(span.name, 'call {function_name}');
     expect(span.attributes['return_value'], 42);
     expect(span.attributes['call_id'], isA<String>());
@@ -190,16 +209,16 @@ void _callbacks(Future<Monty> Function() start, RecordingAdapter adapter) {
           await session.feedRun(
             'import os\nos.getenv("A", "fallback")',
             os: (name, args, kwargs) {
-              final context =
-                  Zone.current[#telemetryContext]! as (Object?, Object);
+              final context = recordedContext(Zone.current[#telemetryContext]);
               expect((context.$2 as RecordedSpan).name, 'os call {function}');
+
               return const MontyString('answer');
             },
           ),
           const MontyString('answer'),
         );
       });
-      final os = adapter.spans.last;
+      final os = requireRecord(adapter.spans.lastOrNull);
       expect(os.attributes['function'], 'getenv');
       expect(os.attributes['args.key'], 'A');
       expect(os.attributes['args.default'], 'fallback');

@@ -1,16 +1,11 @@
 part of 'telemetry_recorder.dart';
 
 /// Request-side records, after the complete frame has been sent.
-extension RecorderRequests on Recorder {
+extension TelemetryRequests on TelemetryRecorder {
   /// Opens a turn or closes the suspension answered by this request.
   void beginTurn(pb.ParentRequest request) {
     final kind = request.whichKind();
-    final resume =
-        kind == pb.ParentRequest_Kind.resumeCall ||
-        kind == pb.ParentRequest_Kind.resumeNameLookup ||
-        kind == pb.ParentRequest_Kind.resumeFutures ||
-        kind == pb.ParentRequest_Kind.abortFeed;
-    if (!resume) {
+    if (!_isResume(kind)) {
       _end(_turn);
       _turn = null;
     }
@@ -24,10 +19,7 @@ extension RecorderRequests on Recorder {
           parent: captured,
         );
       case pb.ParentRequest_Kind.feed:
-        _end(_pending);
-        _pending = null;
-        _end(_feed);
-        _feed = null;
+        _endFeed();
         _feed = _open('run code', feedAttributes(request.feed));
       case pb.ParentRequest_Kind.load:
         _turn = _open(
@@ -38,17 +30,21 @@ extension RecorderRequests on Recorder {
         _dumpTurn = true;
         _turn = _open('dump', TelemetryAttributes());
       case pb.ParentRequest_Kind.installDependencies:
-        final attributes = TelemetryAttributes();
-        final requirements = request.installDependencies.requirements;
-        if (requirements.isNotEmpty) {
-          attributes.add('requirements', telemetryList(requirements));
-        }
-        _turn = _open('install dependencies', attributes);
+        _install(request.installDependencies);
       case pb.ParentRequest_Kind.reset || pb.ParentRequest_Kind.shutdown:
         close();
       case _:
         _resumeRequest(request);
     }
+  }
+
+  void _install(pb.InstallDependencies install) {
+    final attributes = TelemetryAttributes();
+    final requirements = install.requirements;
+    if (requirements.isNotEmpty) {
+      attributes.add('requirements', telemetryList(requirements));
+    }
+    _turn = _open('install dependencies', attributes);
   }
 
   void _resumeRequest(pb.ParentRequest request) {
@@ -88,11 +84,13 @@ extension RecorderRequests on Recorder {
 
   void _resumeFutures(pb.ResumeFutures resume) {
     final results = resume.results;
-    if (results.length == 1 && _pending?.eagerCallId == results.single.callId) {
+    final single = results.singleOrNull;
+    if (single != null && _pending?.eagerCallId == single.callId) {
       _answer(
         'return_value',
-        telemetryResult(results.single.result, resume.values),
+        telemetryResult(single.result, resume.values),
       );
+
       return;
     }
     final attributes = TelemetryAttributes();
@@ -118,3 +116,11 @@ extension RecorderRequests on Recorder {
     _pending = null;
   }
 }
+
+bool _isResume(pb.ParentRequest_Kind kind) => switch (kind) {
+  pb.ParentRequest_Kind.resumeCall ||
+  pb.ParentRequest_Kind.resumeNameLookup ||
+  pb.ParentRequest_Kind.resumeFutures ||
+  pb.ParentRequest_Kind.abortFeed => true,
+  _ => false,
+};

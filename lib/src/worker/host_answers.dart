@@ -332,7 +332,7 @@ final class HostAnswers {
   }) : objects = objects ?? HostObjects();
 
   /// Callback context for this checkout, absent without instrumentation.
-  final Recorder? recorder;
+  final TelemetryRecorder? recorder;
 
   /// The session's host objects.
   final HostObjects objects;
@@ -436,6 +436,7 @@ final class HostAnswers {
   pb.ParentRequest lookup(String name, {String? objectId}) {
     if (objectId != null) {
       final recording = recorder;
+
       return recording == null
           ? _attribute(objects, objectId, name)
           : _invoke3(recording, _attribute, objects, objectId, name);
@@ -1026,12 +1027,13 @@ pb.RaisedException _fallback(Object error) {
 String _noArgText(String excType) => excType == 'SyntaxError' ? 'None' : '';
 
 /// All host callback entry points share the same exactly-once invoker.
-R _invoke<R>(Recorder recorder, R Function() body) => recorder.invoke(body);
+R _invoke<R>(TelemetryRecorder recorder, R Function() body) =>
+    recorder.invoke(body);
 
 // Called only with instrumentation: the uninstalled path allocates no
 // context wrapper closures or method tear-offs.
 R _invoke3<R, A, B, C>(
-  Recorder recorder,
+  TelemetryRecorder recorder,
   R Function(A, B, C) body,
   A a,
   B b,
@@ -1039,7 +1041,7 @@ R _invoke3<R, A, B, C>(
 ) => _invoke(recorder, () => body(a, b, c));
 
 R _invoke4<R, A, B, C, D>(
-  Recorder recorder,
+  TelemetryRecorder recorder,
   R Function(A, B, C, D) body,
   A a,
   B b,

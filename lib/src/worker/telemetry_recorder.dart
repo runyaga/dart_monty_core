@@ -11,9 +11,10 @@ part 'telemetry_requests.dart';
 part 'telemetry_events.dart';
 
 /// One checkout, with explicit span nesting independent of the current zone.
-final class Recorder {
+final class TelemetryRecorder {
   /// Captures the parent at checkout, but opens no span until Configure.
-  Recorder(this.bridge, this.workerPid) : captured = bridge.currentContext();
+  TelemetryRecorder(this.bridge, this.workerPid)
+    : captured = bridge.currentContext();
 
   /// Installation shared by all sessions, including disabled signals.
   final TelemetryBridge bridge;
@@ -38,6 +39,13 @@ final class Recorder {
   /// The one callback invoker used for functions, lookups and OS handlers.
   R invoke<R>(R Function() body) => bridge.invoke(context(captured), body);
 
+  /// Reset, Shutdown and death close every open span, innermost first.
+  void close() {
+    _endFeed();
+    _end(_session);
+    _session = null;
+  }
+
   _Span _open(String name, TelemetryAttributes attributes, {Object? parent}) =>
       _Span(bridge.start(name, parent ?? context(captured), attributes.values));
 
@@ -52,13 +60,6 @@ final class Recorder {
     _pending = null;
     _end(_feed);
     _feed = null;
-  }
-
-  /// Reset, Shutdown and death close every open span, innermost first.
-  void close() {
-    _endFeed();
-    _end(_session);
-    _session = null;
   }
 
   void _answer(String key, Rendered value) {

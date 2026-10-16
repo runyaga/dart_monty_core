@@ -28,7 +28,7 @@ void main() {
       );
       expect(calls, 1);
       expect(
-        adapter.spans.last.attributes['return_value'],
+        adapter.spans.lastOrNull?.attributes['return_value'],
         'raise ValueError: callback',
       );
       fake.willReturn(const MontyInt(7));

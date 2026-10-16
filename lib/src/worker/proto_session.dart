@@ -57,14 +57,13 @@ final class ProtoSession {
     final bridge = telemetryBridge;
     final channel = _channel;
     if (bridge != null && channel is TelemetryChannel) {
-      final observed = channel as TelemetryChannel;
-      recorder = Recorder(bridge, observed.telemetryPid);
-      observed.recorder = recorder;
+      recorder = TelemetryRecorder(bridge, channel.telemetryPid);
+      channel.recorder = recorder;
     }
   }
 
   /// Parent-side recorder, absent without instrumentation.
-  Recorder? recorder;
+  TelemetryRecorder? recorder;
 
   /// The host objects sent into this session, by id: the registry its
   /// inputs, answers and results resolve through. A load empties it.
@@ -223,7 +222,10 @@ final class ProtoSession {
   });
 
   /// Ends the worker. Idempotent.
-  Future<void> close() => _channel.close();
+  Future<void> close() async {
+    await _channel.close();
+    recorder?.close();
+  }
 
   /// One turn of a feed, its prints to [sink]. A print failure is thrown in
   /// place of the turn's outcome, a crash included; a suspension the failed

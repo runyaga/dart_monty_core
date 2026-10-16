@@ -14,6 +14,7 @@ String _bytesContent(List<int> bytes) {
       _ => '\\x${byte.toRadixString(16).padLeft(2, '0')}',
     });
   }
+
   return text.toString();
 }
 
@@ -24,20 +25,23 @@ String _complex(pb.Complex value) {
   if (real == 0 && !real.isNegative) return '${imaginary}j';
   final realText = _floatRepr(real).replaceFirst(RegExp(r'\.0$'), '');
   final sign = imaginary.startsWith('-') ? '' : '+';
+
   return '($realText$sign${imaginary}j)';
 }
 
 String _floatRepr(double value) {
   if (!value.isFinite) return _finite(value) as String;
-  final negative = value.isNegative ? '-' : '';
   final scientific = value.abs().toStringAsExponential();
   final parts = scientific.split('e');
-  final exponent = int.parse(parts.last);
-  final mantissa = parts.first;
+  final exponent = int.parse(parts.lastOrNull ?? '0');
   if (exponent < -4 || exponent >= 16) {
+    final negative = value.isNegative ? '-' : '';
+    final mantissa = parts.firstOrNull ?? '';
+
     return '$negative${mantissa.replaceFirst(RegExp(r'\.0$'), '')}'
         'e${exponent < 0 ? '-' : '+'}${_pad(exponent.abs())}';
   }
+
   return exactDoubleText(value);
 }
 
@@ -51,19 +55,15 @@ String _timezone(pb.TimeZone value) {
     if (seconds != 0) 'seconds=$seconds',
   ];
   final delta = parts.isEmpty ? '0' : parts.join(', ');
+
   return 'datetime.timezone(datetime.timedelta($delta)'
       '${value.hasName() ? ', ${pythonRepr(value.name)}' : ''})';
 }
 
 String _file(pb.FileHandle file) {
   final mode = parseFileMode(file.mode).canonical ?? file.mode;
-  final type = !mode.contains('b')
-      ? 'TextIOWrapper'
-      : mode.contains('+')
-      ? 'BufferedRandom'
-      : mode.startsWith('r')
-      ? 'BufferedReader'
-      : 'BufferedWriter';
+  final type = _fileType(mode);
+
   return '<_io.$type name=${pythonRepr(file.path)} mode=${pythonRepr(mode)}>';
 }
 
@@ -72,8 +72,16 @@ String _file(pb.FileHandle file) {
 String _serdeFloat(double value) {
   final scientific = value.toStringAsExponential();
   final parts = scientific.split('e');
-  final exponent = int.parse(parts.last);
+  final exponent = int.parse(parts.lastOrNull ?? '0');
   if (exponent >= -5 && exponent <= 15) return exactDoubleText(value);
-  final mantissa = parts.first.replaceFirst(RegExp(r'\.0$'), '');
+  final mantissa = (parts.firstOrNull ?? '').replaceFirst(RegExp(r'\.0$'), '');
+
   return '${mantissa}e${exponent < 0 ? '' : '+'}$exponent';
+}
+
+String _fileType(String mode) {
+  if (!mode.contains('b')) return 'TextIOWrapper';
+  if (mode.contains('+')) return 'BufferedRandom';
+
+  return mode.startsWith('r') ? 'BufferedReader' : 'BufferedWriter';
 }

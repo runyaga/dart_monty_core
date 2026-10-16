@@ -47,15 +47,15 @@ void main() {
       await session.close();
       final spans = adapter.spans;
       expect(spans.map((s) => s.name), ['session {script_name}', 'run code']);
-      final root = spans.first;
-      final run = spans.last;
+      final root = requireRecord(spans.firstOrNull);
+      final run = requireRecord(spans.lastOrNull);
       expect(root.parent, 'checkout');
       expect(root.attributes['monty_version'], '1.1.0');
-      expect(channel.requests.first.configure.montyVersion, '1.1.0');
+      expect(channel.requests.firstOrNull?.configure.montyVersion, '1.1.0');
       expect(run.parent, ('checkout', root));
       expect(run.attributes['code.language'], 'python');
       expect(run.attributes['output'], 'null');
-      final log = adapter.logs.single;
+      final log = requireRecord(adapter.logs.singleOrNull);
       expect(
         (log.body, log.severity, log.number),
         ('print stdout', 'INFO', 9),
@@ -66,7 +66,7 @@ void main() {
       expect(root.start, greaterThan(epoch));
       expect(log.time, greaterThanOrEqualTo(run.start));
       expect(run.end, greaterThanOrEqualTo(log.time));
-      expect(root.end, greaterThanOrEqualTo(run.end!));
+      expect(root.end, greaterThanOrEqualTo(requireRecord(run.end)));
     },
   );
 
@@ -77,13 +77,17 @@ void main() {
     ]);
     final session = await ProtoSession.open(channel);
     await expectLater(session.feed('1'), throwsA(isA<MontyCrashedError>()));
-    final log = adapter.logs.single;
+    final log = requireRecord(adapter.logs.singleOrNull);
     expect(
       (log.body, log.severity, log.number),
       ('event with no kind', 'ERROR', 17),
     );
-    expect(log.span, same(adapter.spans.last));
-    expect(log.time, lessThanOrEqualTo(adapter.spans.last.end!));
+    final span = requireRecord(adapter.spans.lastOrNull);
+    expect(log.span, same(span));
+    expect(
+      log.time,
+      lessThanOrEqualTo(requireRecord(span.end)),
+    );
   });
 
   test('checkout rejected before Configure creates no session span', () async {
@@ -104,9 +108,10 @@ void main() {
       ProtoSession.open(channel),
       throwsA(isA<MontyRuntimeError>()),
     );
-    expect(adapter.spans.single.name, 'session {script_name}');
-    expect(adapter.spans.single.end, isNotNull);
-    expect(adapter.logs.single.body, 'error ValueError');
+    final span = requireRecord(adapter.spans.singleOrNull);
+    expect(span.name, 'session {script_name}');
+    expect(span.end, isNotNull);
+    expect(adapter.logs.singleOrNull?.body, 'error ValueError');
   });
 
   test(
@@ -124,8 +129,12 @@ void main() {
         fake.installDependencies(['example']),
         throwsA(isA<MontyRuntimeError>()),
       );
-      expect(adapter.spans.single.name, 'install dependencies');
-      expect(adapter.spans.single.attributes['requirements'], '["example"]');
+      final span = requireRecord(adapter.spans.singleOrNull);
+      expect(span.name, 'install dependencies');
+      expect(
+        span.attributes['requirements'],
+        '["example"]',
+      );
     },
   );
 
@@ -147,8 +156,9 @@ void main() {
         snapshot.traceContext,
         zoneValues: {#telemetryContext: 'reader'},
       );
-      expect(captured, ('feed', adapter.spans.last));
-      expect(adapter.spans.last.name, 'call {function_name}');
+      final span = requireRecord(adapter.spans.lastOrNull);
+      expect(captured, ('feed', span));
+      expect(span.name, 'call {function_name}');
       await snapshot.resume(const ExternalReturnValue(MontyInt(42)));
       expect(snapshot.traceContext, throwsStateError);
     },
@@ -167,17 +177,19 @@ void main() {
       externalLookup: {
         'ext': MontyHostFunction('ext', (args, kwargs) {
           seen.add(Zone.current[#telemetryContext]);
+
           return const MontyInt(42);
         }),
       },
       os: (name, args, kwargs) {
         seen.add(Zone.current[#telemetryContext]);
+
         return const MontyNone();
       },
     );
     expect(seen, hasLength(2));
     expect(
-      seen.map((c) => ((c! as (Object?, Object)).$2 as RecordedSpan).name),
+      seen.map((c) => (recordedContext(c).$2 as RecordedSpan).name),
       ['call {function_name}', 'os call {function}'],
     );
   });

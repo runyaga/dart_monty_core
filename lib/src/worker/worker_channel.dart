@@ -29,6 +29,18 @@ final class WorkerChannel implements MontyChannel, TelemetryChannel {
   final _Worker _worker;
   final WorkerConnection _connection;
 
+  @override
+  TelemetryRecorder? get recorder => _connection.recorder;
+
+  @override
+  set recorder(TelemetryRecorder? value) => _connection.recorder = value;
+
+  @override
+  int? get telemetryPid => _connection.telemetryPid;
+
+  @override
+  bool get isAlive => _connection.isAlive;
+
   /// Starts a Worker from [workerUrl], posts it [cache]'s module and waits
   /// for it to instantiate and run the JSPI probe.
   ///
@@ -90,19 +102,6 @@ final class WorkerChannel implements MontyChannel, TelemetryChannel {
 
   /// `dmw_protocol_version()`, already checked against the driver's.
   int get protocol => _connection.protocol;
-
-  @override
-  Recorder? get recorder => (_connection as TelemetryChannel).recorder;
-
-  @override
-  set recorder(Recorder? value) =>
-      (_connection as TelemetryChannel).recorder = value;
-
-  @override
-  int? get telemetryPid => (_connection as TelemetryChannel).telemetryPid;
-
-  @override
-  bool get isAlive => _connection.isAlive;
 
   @override
   Future<pb.ChildEvent> turn(

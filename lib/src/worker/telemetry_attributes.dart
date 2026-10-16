@@ -20,7 +20,7 @@ TelemetryAttributes configureAttributes(pb.Configure configure, int? pid) {
     attributes.text('type_check_stubs', configure.typeCheckStubs);
   }
   final limits = configure.limits;
-  final fields = <String, Int64?>{
+  final fields = {
     'max_feed_duration_micros': limits.hasMaxFeedDurationMicros()
         ? limits.maxFeedDurationMicros
         : null,
@@ -41,6 +41,7 @@ TelemetryAttributes configureAttributes(pb.Configure configure, int? pid) {
   for (final MapEntry(:key, :value) in fields.entries) {
     if (value != null) attributes.values[key] = value.toStringUnsigned();
   }
+
   return attributes;
 }
 
@@ -53,6 +54,7 @@ TelemetryAttributes feedAttributes(pb.Feed feed) {
     'skip_type_check': feed.skipTypeCheck,
   })..text('code', feed.code);
   if (feed.inputs.isNotEmpty) attributes.add('inputs', telemetryInputs(feed));
+
   return attributes;
 }
 
@@ -60,6 +62,7 @@ TelemetryAttributes feedAttributes(pb.Feed feed) {
 TelemetryAttributes eventTiming(pb.ChildEvent event, {bool signed = false}) {
   Object value(Int64 micros) =>
       signed ? _signedCount(micros) : micros.toStringUnsigned();
+
   return TelemetryAttributes({
     'total_execution_micros': value(event.totalExecutionMicros),
     if (event.hasMaxFeedDurationMicros())
@@ -120,8 +123,10 @@ void _osFields(GeneratedMessage message, TelemetryAttributes attributes) {
   }
 }
 
-String _snake(String name) =>
-    name.replaceAllMapped(RegExp('[A-Z]'), (m) => '_${m[0]!.toLowerCase()}');
+String _snake(String name) => name.replaceAllMapped(
+  RegExp('[A-Z]'),
+  (m) => '_${m.group(0)?.toLowerCase() ?? ''}',
+);
 
 /// Error records keep traceback and structured exception payloads.
 TelemetryAttributes errorAttributes(pb.ChildEvent event) {
@@ -137,6 +142,7 @@ TelemetryAttributes errorAttributes(pb.ChildEvent event) {
     );
   }
   _exceptionData(exception.data, attributes);
+
   return attributes;
 }
 
@@ -184,5 +190,32 @@ void _exceptionData(pb.ExcData data, TelemetryAttributes attributes) {
       }
     case pb.ExcData_Kind.notSet:
       break;
+  }
+}
+
+/// An attribute builder that propagates truncation exactly once.
+final class TelemetryAttributes {
+  /// Starts with the scalar attributes whose encodings need no rendering.
+  TelemetryAttributes([Map<String, Object> initial = const {}])
+    : values = Map.of(initial);
+
+  /// Completed attributes (only scalar OTel types).
+  final Map<String, Object> values;
+
+  /// Adds a rendered value and its cap flag.
+  void add(String key, Rendered value) {
+    values[key] = value.value;
+    if (value.cut) values['length_limit_exceeded'] = true;
+  }
+
+  /// Adds capped raw text.
+  void text(String key, String value) => add(key, telemetryText(value));
+
+  /// Adds source offsets as signed integers, not unsigned debug strings.
+  void position(pb.SourceRange? range) {
+    if (range == null) return;
+    text('sandbox.code.file.path', range.filename);
+    values['sandbox.code.offset.start'] = range.start;
+    values['sandbox.code.offset.end'] = range.end;
   }
 }

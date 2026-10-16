@@ -277,14 +277,15 @@ sealed class SuspendedSnapshot extends MontySnapshot {
   final SnapshotDriver _driver;
 
   bool _isSpent = false;
-  Object? _traceContext;
+  Object? _capturedTraceContext;
 
   /// Context captured at feed/load entry, with the suspension's span current.
   /// Returns null without an installed telemetry adapter (D-087).
   /// Throws [StateError] after this snapshot has been resumed.
   Object? traceContext() {
     if (_isSpent) throw StateError('snapshot has already been resumed');
-    return _traceContext;
+
+    return _capturedTraceContext;
   }
 
   /// The session suspended here, as opaque bytes that the session's
@@ -498,7 +499,7 @@ typedef FunctionCallParts = ({
 /// extension out.
 extension SuspendedSnapshotInternal on SuspendedSnapshot {
   /// Sets the context once, as the driver creates this suspension.
-  set capturedTraceContext(Object? value) => _traceContext = value;
+  set capturedTraceContext(Object? value) => _capturedTraceContext = value;
 
   /// Whether a resume has taken this snapshot.
   bool get isSpent => _isSpent;

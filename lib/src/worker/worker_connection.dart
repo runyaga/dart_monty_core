@@ -180,6 +180,7 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
         pending,
         (print) {
           recorder?.event(pb.ChildEvent(print: print));
+
           return delivery.deliver(print, _onPrint);
         },
         delivery.failed,

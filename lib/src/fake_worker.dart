@@ -108,6 +108,7 @@ final class FakeWorker with RecordedChannel implements MontyChannel {
           ? onPrint
           : (print) {
               recording.event(pb.ChildEvent(print: print));
+
               return onPrint?.call(print);
             },
     );
