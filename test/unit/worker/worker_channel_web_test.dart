@@ -374,8 +374,12 @@ void main() {
         throwsA(
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.vanished)
-              // Chrome's text for a wasm stack overflow; CI runs Chrome.
-              .having((e) => e.detail, 'detail', contains('RangeError')),
+              // Chrome says RangeError, Firefox says "too much recursion".
+              .having(
+                (e) => e.detail,
+                'detail',
+                anyOf(contains('RangeError'), contains('too much recursion')),
+              ),
         ),
       );
       expect(ch.isAlive, isFalse);
