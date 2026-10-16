@@ -14,7 +14,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/mount/native_mount_service.dart';
+import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 
@@ -25,6 +28,7 @@ Future<void> main(List<String> args) async {
     stderr.writeln('usage: aot_worker <s10_external_call.json>');
     exit(2);
   }
+  _mountAssetSmoke();
   final testCase = _map(jsonDecode(File(args.single).readAsStringSync()));
   final expected = _map(testCase['expected']);
   final replies = [
@@ -45,10 +49,7 @@ Future<void> main(List<String> args) async {
     final result = await session.feed(
       testCase['code']! as String,
       externalLookup: {
-        'fetch': MontyHostFunction('fetch', (
-          positional,
-          named,
-        ) {
+        'fetch': MontyHostFunction('fetch', (positional, named) {
           calls.add({
             'name': 'fetch',
             'args': [for (final v in positional) _canon(v)],
@@ -114,3 +115,40 @@ MontyValue _fromCanon(Object? json) => switch (_map(json)) {
 Map<String, Object?> _map(Object? json) => json! as Map<String, Object?>;
 
 List<Object?> _list(Object? json) => json! as List<Object?>;
+
+// F-0 is internal: exercise the capability that F-2's MountDir will own.
+// Checking the selected route prevents an in-checkout package library from
+// masking a missing code asset in this built consumer.
+void _mountAssetSmoke() {
+  final dir = Directory.systemTemp.createTempSync('aot-mount-');
+  try {
+    File('${dir.path}/hello').writeAsStringSync('asset');
+    final root = NativeMountRoot(hostPath: dir.path, virtualPath: '/m');
+    try {
+      if (nativeMountLookupRoute != 'asset') {
+        throw StateError('mount lookup did not use the bundled code asset');
+      }
+      final table = NativeMountTable([root]);
+      try {
+        final result = pb.ResumeCall.fromBuffer(
+          table.call(
+            pb.OsCall(callId: 19, readText: '/m/hello').writeToBuffer(),
+          )!,
+        );
+        if (result.callId != 19 ||
+            !result.result.hasReturnValue() ||
+            ArenaReader(result.values)[result.result.returnValue] !=
+                const MontyString('asset')) {
+          throw StateError('bundled mount service failed its read');
+        }
+      } finally {
+        table.close();
+      }
+    } finally {
+      root.close();
+    }
+  } finally {
+    dir.deleteSync(recursive: true);
+  }
+  stdout.writeln('mount route 1: asset OPEN / READ / CLOSE');
+}

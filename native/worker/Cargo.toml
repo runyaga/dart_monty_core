@@ -46,6 +46,8 @@ monty-alloc = "=1.1.0"
 # Native, as crates/monty-runtime/Cargo.toml: monty-alloc reports allocation
 # failure as an exit code (65), monty-types reads the host tz database.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+monty-fs = "=1.1.0"
+prost = "0.14.3"
 monty-alloc = { version = "=1.1.0", features = ["exit-code"] }
 monty-types = { version = "=1.1.0", features = ["tzdb", "tzdb-bundled"] }
 
