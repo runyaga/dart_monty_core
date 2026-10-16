@@ -24,6 +24,7 @@ void main() {
   _unavailableMirrorTest();
   _badArchiveTest();
   _httpFailureTest();
+  _downloadLimitTests();
   _forbiddenRedirectTest();
   _loopbackRedirectTest();
   _tooManyRedirectsTest();
@@ -81,6 +82,18 @@ void _archiveUrlTests() {
           mirrorOverride: 'https://mirror.invalid/{tag}/{archive}',
         ),
         throwsA(isA<WorkerInstallError>()),
+      );
+    });
+
+    test('resolves a versionless template that does not use tag', () {
+      expect(
+        workerArchiveUrl(
+          manifest: WorkerManifest(targets: const {}),
+          target: 'linux-x64',
+          artifact: _artifact(),
+          mirrorOverride: 'https://mirror.invalid/{archive}',
+        ).toString(),
+        'https://mirror.invalid/worker.gz',
       );
     });
   });
@@ -287,6 +300,77 @@ void _httpFailureTest() {
     );
     await expectLater(disallowedInstall, installError);
   });
+}
+
+void _downloadLimitTests() {
+  test('rejects an overrun archive stream promptly and cancels it', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    final cancelled = Completer<void>();
+    final controller = StreamController<List<int>>(
+      onCancel: cancelled.complete,
+    );
+    final archive = await mirror.archive.readAsBytes();
+    final install = installWorker(
+      WorkerInstallRequest(
+        artifact: mirror.artifact,
+        cacheRoot: cache.path,
+        archiveUrl: Uri.parse('https://mirror.invalid/worker.gz'),
+        fetcher: (_) => controller.stream,
+      ),
+    );
+    addTearDown(() async {
+      await controller.close();
+      await install.then<void>((_) {}, onError: (Object _) {});
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+    controller
+      ..add(archive)
+      ..add([0]);
+
+    await expectLater(
+      install.timeout(const Duration(seconds: 3)),
+      throwsA(isA<WorkerInstallError>()),
+    );
+    await cancelled.future.timeout(const Duration(seconds: 3));
+    expect(
+      Directory(workerCacheDir(cache.path, mirror.artifact)).existsSync(),
+      isFalse,
+    );
+    expect(_temporaryEntries(cache), isEmpty);
+  });
+
+  test(
+    'rejects a truncated archive stream without temporary entries',
+    () async {
+      final mirror = await WorkerMirror.create();
+      final cache = await Directory.systemTemp.createTemp('worker_cache_');
+      addTearDown(() async {
+        await mirror.directory.delete(recursive: true);
+        await cache.delete(recursive: true);
+      });
+      final archive = await mirror.archive.readAsBytes();
+
+      await expectLater(
+        installWorker(
+          WorkerInstallRequest(
+            artifact: mirror.artifact,
+            cacheRoot: cache.path,
+            archiveUrl: Uri.parse('https://mirror.invalid/worker.gz'),
+            fetcher: (_) =>
+                Stream.value(archive.sublist(0, archive.length - 1)),
+          ),
+        ),
+        throwsA(isA<WorkerInstallError>()),
+      );
+      expect(
+        Directory(workerCacheDir(cache.path, mirror.artifact)).existsSync(),
+        isFalse,
+      );
+      expect(_temporaryEntries(cache), isEmpty);
+    },
+  );
 }
 
 void _forbiddenRedirectTest() {

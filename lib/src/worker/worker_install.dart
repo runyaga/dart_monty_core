@@ -655,12 +655,10 @@ bool _containsTemplate(String value) =>
     RegExp(r'\{(?:tag|target|archive)\}').hasMatch(value);
 
 String _replaceTemplate(String template, Map<String, String> values) {
-  var result = template;
-  for (final entry in values.entries) {
-    result = result.replaceAll('{${entry.key}}', _segment(entry.value));
-  }
-
-  return result;
+  return template.replaceAllMapped(
+    RegExp(r'\{(tag|target|archive)\}'),
+    (match) => _segment(values[match.group(1)]!),
+  );
 }
 
 String _segment(String value) {
