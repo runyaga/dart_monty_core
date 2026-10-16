@@ -140,6 +140,70 @@ void main() {
       });
     });
 
+    test('treats an unreadable cache entry as a hard error', () async {
+      if (Platform.isWindows) return;
+
+      await _withCachedWorker((environment, manifest, cached) async {
+        await Process.run('chmod', ['000', cached.path]);
+        addTearDown(() => Process.run('chmod', ['600', cached.path]));
+        await expectLater(
+          locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+            ),
+          ),
+          throwsA(
+            isA<MontyCrashedError>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains(cached.path),
+                contains('OS Error'),
+                contains('delete'),
+                contains('dart run'),
+              ),
+            ),
+          ),
+        );
+      });
+    });
+
+    test('translates a file-system error from cache verification', () async {
+      await _withCachedWorker((environment, manifest, cached) async {
+        Future<void> verify(File file, WorkerArtifact _) => Future.error(
+          FileSystemException(
+            'Unable to read worker',
+            file.path,
+            const OSError('Permission denied', 13),
+          ),
+        );
+        await expectLater(
+          locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+              verify: verify,
+            ),
+          ),
+          throwsA(
+            isA<MontyCrashedError>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains(cached.path),
+                contains('Permission denied'),
+                contains('delete'),
+                contains('dart run'),
+              ),
+            ),
+          ),
+        );
+      });
+    });
+
     test(
       'falls through to the package-relative worker for a missing cache',
       () async {
@@ -157,6 +221,24 @@ void main() {
         });
       },
     );
+
+    for (final operatingSystem in ['linux', 'macos']) {
+      test('uses a valid $operatingSystem fixture on every host', () async {
+        await _withTemporaryHome((environment) async {
+          final package = await _packageFile('package-worker');
+          final launch = await locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              operatingSystem: operatingSystem,
+              manifest: _manifestForHost(),
+            ),
+            resolvePackageUri: (_) async => package.uri,
+          );
+          expect((launch as WorkerExecutable).path, package.path);
+        }, operatingSystem: operatingSystem);
+      });
+    }
 
     test('names cache and package paths when neither worker exists', () async {
       await _withTemporaryHome((environment) async {
@@ -184,6 +266,37 @@ void main() {
         );
       });
     });
+
+    test(
+      'does not fall through when the cache entry cannot be inspected',
+      () async {
+        if (Platform.isWindows) return;
+
+        await _withCachedWorker((environment, manifest, cached) async {
+          final cacheDirectory = cached.parent;
+          await Process.run('chmod', ['000', cacheDirectory.path]);
+          addTearDown(() => Process.run('chmod', ['700', cacheDirectory.path]));
+          final package = await _packageFile('package-worker');
+          await expectLater(
+            locateWorker(
+              abi: Abi.current(),
+              cache: WorkerCacheSource(
+                environment: environment,
+                manifest: manifest,
+              ),
+              resolvePackageUri: (_) async => package.uri,
+            ),
+            throwsA(
+              isA<MontyCrashedError>().having(
+                (error) => error.toString(),
+                'message',
+                allOf(contains(cached.path), contains('OS Error')),
+              ),
+            ),
+          );
+        });
+      },
+    );
 
     test('uses self-relaunch in AOT mode before the cache', () async {
       await _withCachedWorker((environment, manifest, _) async {
@@ -217,29 +330,32 @@ void main() {
       });
     });
 
-    test('reports an invalid cache environment as a hard error', () async {
-      await expectLater(
-        locateWorker(
-          abi: Abi.current(),
-          cache: WorkerCacheSource(
-            environment: const {'HOME': 'relative'},
-            manifest: _manifestForHost(),
-          ),
-          resolvePackageUri: (_) async => (await _packageFile('worker')).uri,
-        ),
-        throwsA(
-          isA<MontyCrashedError>().having(
-            (error) => error.toString(),
-            'message',
-            allOf(
-              contains('HOME'),
-              contains('set HOME to an absolute directory'),
-              contains('WorkerExecutable'),
+    for (final operatingSystem in ['linux', 'macos', 'windows']) {
+      test('reports an invalid $operatingSystem cache environment', () async {
+        final variable = operatingSystem == 'windows' ? 'LOCALAPPDATA' : 'HOME';
+        await expectLater(
+          locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: {variable: 'relative'},
+              operatingSystem: operatingSystem,
+              manifest: _manifestForHost(),
             ),
           ),
-        ),
-      );
-    });
+          throwsA(
+            isA<MontyCrashedError>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains(variable),
+                contains('set $variable to an absolute directory'),
+                contains('WorkerExecutable'),
+              ),
+            ),
+          ),
+        );
+      });
+    }
 
     test('treats a dangling cache symlink as a hard error', () async {
       if (Platform.isWindows) return;
@@ -300,13 +416,22 @@ Future<void> _withCachedWorker(
 });
 
 Future<void> _withTemporaryHome(
-  Future<void> Function(Map<String, String>) body,
-) async {
+  Future<void> Function(Map<String, String>) body, {
+  String? operatingSystem,
+}) async {
   final directory = await Directory.systemTemp.createTemp(
     'worker_locator_test_',
   );
   addTearDown(() => directory.delete(recursive: true));
-  await body({'HOME': directory.path});
+  final os = operatingSystem ?? Platform.operatingSystem;
+  await body({
+    if (os == 'windows')
+      'LOCALAPPDATA': Platform.isWindows
+          ? directory.path
+          : r'C:\\worker_locator_test'
+    else
+      'HOME': directory.path,
+  });
 }
 
 Future<File> _packageFile(String name) async {

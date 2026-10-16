@@ -115,8 +115,7 @@ Future<(WorkerExecutable?, String?)> _cacheExecutable(
   final location = _cacheLocation(abi, source);
   if (location == null) return (null, null);
 
-  if (FileSystemEntity.typeSync(location.cachePath, followLinks: false) ==
-      FileSystemEntityType.notFound) {
+  if (_cacheEntryIsAbsent(location.cachePath)) {
     return (null, location.cachePath);
   }
 
@@ -128,6 +127,30 @@ Future<(WorkerExecutable?, String?)> _cacheExecutable(
   );
 
   return (WorkerExecutable(location.cachePath), location.cachePath);
+}
+
+/// Whether [cachePath] is genuinely absent, rather than hidden by an error.
+bool _cacheEntryIsAbsent(String cachePath) {
+  if (FileSystemEntity.typeSync(cachePath, followLinks: false) !=
+      FileSystemEntityType.notFound) {
+    return false;
+  }
+
+  final cacheDirectory = File(cachePath).parent;
+  var directory = cacheDirectory;
+  while (FileSystemEntity.typeSync(directory.path, followLinks: false) ==
+      FileSystemEntityType.notFound) {
+    final parent = directory.parent;
+    if (parent.path == directory.path) return true;
+    directory = parent;
+  }
+  try {
+    directory.listSync(followLinks: false);
+  } on FileSystemException catch (error) {
+    throw _cacheAccessError(cachePath, error);
+  }
+
+  return true;
 }
 
 ({WorkerArtifact artifact, String cachePath})? _cacheLocation(
@@ -222,14 +245,29 @@ Future<void> _verifyCacheExecutable(
       );
     }
   } on WorkerVerifyError catch (error) {
-    final cacheDirectory = file.parent.path;
-    throw spawnError(
-      'Cached dart_monty_core worker at ${file.path} is invalid: '
-      'expected ${error.expected}, actual ${error.actual}. To recover, '
-      'delete $cacheDirectory and run `dart run` again so the build hook '
-      'reinstalls it.',
-    );
+    throw _invalidCacheError(file.path, error);
+  } on FileSystemException catch (error) {
+    throw _cacheAccessError(file.path, error);
   }
+}
+
+Never _invalidCacheError(String path, WorkerVerifyError error) {
+  final cacheDirectory = File(path).parent.path;
+  throw spawnError(
+    'Cached dart_monty_core worker at $path is invalid: '
+    'expected ${error.expected}, actual ${error.actual}. To recover, '
+    'delete $cacheDirectory and run `dart run` again so the build hook '
+    'reinstalls it.',
+  );
+}
+
+Never _cacheAccessError(String path, FileSystemException error) {
+  final cacheDirectory = File(path).parent.path;
+  throw spawnError(
+    'Cached dart_monty_core worker at $path cannot be inspected: $error. '
+    'To recover, delete $cacheDirectory and run `dart run` again so the '
+    'build hook reinstalls it.',
+  );
 }
 
 bool _isExecutable(File file) => (file.statSync().mode & 0x49) != 0;
