@@ -1,6 +1,7 @@
 @Tags(['unit'])
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
@@ -12,7 +13,7 @@ Future<MontyValue> call(
   String op,
   String path, [
   MontyValue? value,
-]) async => fs(op, [MontyPath(path), ?value], {});
+]) => Future.sync(() => fs(op, [MontyPath(path), ?value], {}));
 Matcher raises(String type, String message) => throwsA(
   isA<ExternalException>()
       .having((e) => e.excType, 'type', type)
@@ -81,10 +82,11 @@ void _constructionCase2() {
 
 void _constructionCase3() {
   test('P09 construction diagnostics', () {
+    final argumentError = isA<ArgumentError>();
     expect(
       () => OSAccess(rootDir: 'rel'),
       throwsA(
-        isA<ArgumentError>().having(
+        argumentError.having(
           (e) => e.message,
           'message',
           'Root directory must be absolute, got rel',
@@ -94,7 +96,7 @@ void _constructionCase3() {
     expect(
       () => OSAccess(files: [MemoryFile('/a', ''), MemoryFile('/a/b', '')]),
       throwsA(
-        isA<ArgumentError>().having(
+        argumentError.having(
           (e) => e.message,
           'message',
           "Cannot put file MemoryFile(path=/a/b, content='...', permissions=420) within sub-directory of file MemoryFile(path=/a, content='...', permissions=420)",
@@ -162,9 +164,12 @@ void _readsCase1() {
     );
     expect(await call(fs, 'Path.read_text', '/f'), const MontyString('é'));
     final stat = await call(fs, 'Path.stat', '/f') as MontyNamedTuple;
-    expect(stat.values[0], const MontyInt(33152));
-    expect(stat.values[6], const MontyInt(2));
-    expect((stat.values[8] as MontyFloat).value, greaterThan(0));
+    expect(stat.values.firstOrNull, const MontyInt(33152));
+    expect(stat.values.elementAtOrNull(6), const MontyInt(2));
+    expect(
+      (stat.values.elementAtOrNull(8) as MontyFloat?)?.value,
+      greaterThan(0),
+    );
   });
 }
 
@@ -178,13 +183,14 @@ void _readsCase2() {
     const message =
         "'utf-8' codec can't decode byte 0xff in position 0: "
         'invalid start byte';
+    final invalidUtf8 = raises('ValueError', message);
     await expectLater(
       call(fs, 'Path.read_text', '/f'),
-      raises('ValueError', message),
+      invalidUtf8,
     );
     await expectLater(
       call(fs, 'Path.append_text', '/f', const MontyString('x')),
-      raises('ValueError', message),
+      invalidUtf8,
     );
   });
 }
@@ -220,10 +226,9 @@ void _writes() {
                 'Path.${append ? 'append' : 'write'}_'
                 '${binary ? 'bytes' : 'text'}';
             expect(await call(fs, op, '/f', data), const MontyInt(2));
-            expect(
-              file.content,
-              binary ? [if (append) 65, 255, 0] : '${append ? 'A' : ''}😀é',
-            );
+            final prefix = append ? 'A' : '';
+            final expected = binary ? [if (append) 65, 255, 0] : '$prefix😀é';
+            expect(file.content, expected);
             expect(file.content, binary ? isA<Uint8List>() : isA<String>());
           },
         );
@@ -274,19 +279,18 @@ void _openCase0() {
     test('open $mode canonical mode and content kind', () async {
       final file = MemoryFile('/f', 'old');
       final fs = OSAccess(files: [file]);
-      final handle =
-          await call(fs, 'open', '/f', MontyString(mode)) as MontyFileHandle;
+      final modeValue = MontyString(mode);
+      final binary = mode.contains('b');
+      final handle = await call(fs, 'open', '/f', modeValue) as MontyFileHandle;
       final action = mode.replaceAll('b', '').replaceAll('t', '');
-      expect(handle.mode, '$action${mode.contains('b') ? 'b' : ''}');
-      expect(
-        file.content,
-        action == 'w' ? (mode.contains('b') ? isEmpty : '') : 'old',
-      );
+      expect(handle.mode, '$action${binary ? 'b' : ''}');
+      final emptyContent = binary ? isEmpty : '';
+      expect(file.content, action == 'w' ? emptyContent : 'old');
       if (action != 'r') {
-        await call(fs, 'open', '/new', MontyString(mode));
+        await call(fs, 'open', '/new', modeValue);
         expect(
           fs.files.lastOrNull?.readContent(),
-          mode.contains('b') ? isA<Uint8List>() : isA<String>(),
+          binary ? isA<Uint8List>() : isA<String>(),
         );
       }
     });
@@ -302,14 +306,16 @@ void _openCase1() {
     test('P09 invalid open ${entry.key} has no side effects', () async {
       final file = MemoryFile('/f', 'old');
       final fs = OSAccess(files: [file]);
+      final mode = MontyString(entry.key);
+      final invalidMode = raises('ValueError', entry.value);
       await expectLater(
-        call(fs, 'open', '/f', MontyString(entry.key)),
-        raises('ValueError', entry.value),
+        call(fs, 'open', '/f', mode),
+        invalidMode,
       );
       expect(file.content, 'old');
       await expectLater(
-        call(fs, 'open', '/new', MontyString(entry.key)),
-        raises('ValueError', entry.value),
+        call(fs, 'open', '/new', mode),
+        invalidMode,
       );
       expect(fs.files.length, 1);
     });
@@ -528,7 +534,9 @@ void _customFiles() {
         const MontyString('custom'),
       );
       expect(
-        (await call(fs, 'Path.stat', '/f') as MontyNamedTuple).values[0],
+        (await call(fs, 'Path.stat', '/f') as MontyNamedTuple)
+            .values
+            .firstOrNull,
         const MontyInt(33152),
       );
       await call(fs, 'Path.write_text', '/f', const MontyString('written'));

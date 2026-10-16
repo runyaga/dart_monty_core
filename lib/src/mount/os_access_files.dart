@@ -1,8 +1,8 @@
 part of 'os_access.dart';
 
-final class _FileOperations {
-  _FileOperations(this.tree, this.files);
-  final _MemoryTree tree;
+final class _OsAccessFiles {
+  const _OsAccessFiles(this.tree, this.files);
+  final _OsAccessTree tree;
   final List<AbstractFile> files;
   MontyInt write(String path, Object data) {
     final entry = tree.lookup(path);
@@ -17,6 +17,7 @@ final class _FileOperations {
       parent.children[file.name] = file;
       files.add(file);
     }
+
     return MontyInt(
       data is String ? data.runes.length : (data as Uint8List).length,
     );
@@ -31,6 +32,7 @@ final class _FileOperations {
         ? '${_text(content)}$data'
         : Uint8List.fromList([..._bytes(content), ...data as Uint8List]);
     entry.writeContent(combined);
+
     return MontyInt(
       data is String ? data.runes.length : (data as Uint8List).length,
     );
@@ -38,6 +40,7 @@ final class _FileOperations {
 
   MontyNamedTuple stat(String path) {
     final entry = tree.require(path);
+
     return entry is AbstractFile
         ? StatResult.fileStat(
             _bytes(entry.readContent()).length,
@@ -51,6 +54,7 @@ final class _FileOperations {
     final parent = tree.parent(path);
     if (parent is! _Directory) throw StateError('Expected parent directory');
     _remove(parent, file.name);
+
     return const MontyNone();
   }
 }
@@ -73,7 +77,9 @@ String _text(Object content) {
 String _utf8Failure(Uint8List bytes) {
   var start = 0;
   while (start < bytes.length) {
-    final byte = bytes[start];
+    final byte =
+        bytes.elementAtOrNull(start) ??
+        (throw StateError('Missing UTF-8 start byte'));
     final width = _utf8Width(byte);
     if (width == 0) {
       return _utf8Message(bytes, start, start + 1, 'invalid start byte');
@@ -83,7 +89,10 @@ String _utf8Failure(Uint8List bytes) {
       if (end >= bytes.length) {
         return _utf8Message(bytes, start, end, 'unexpected end of data');
       }
-      if (!_continuation(byte, bytes[end], offset)) {
+      final next =
+          bytes.elementAtOrNull(end) ??
+          (throw StateError('Missing UTF-8 continuation byte'));
+      if (!_continuation(byte, next, offset)) {
         return _utf8Message(bytes, start, end, 'invalid continuation byte');
       }
     }
@@ -95,6 +104,7 @@ String _utf8Failure(Uint8List bytes) {
 bool _continuation(int start, int byte, int offset) {
   if (byte < 0x80 || byte > 0xBF) return false;
   if (offset != 1) return true;
+
   return switch (start) {
     0xE0 => byte >= 0xA0,
     0xED => byte <= 0x9F,
@@ -107,9 +117,14 @@ bool _continuation(int start, int byte, int offset) {
 String _utf8Message(Uint8List bytes, int start, int end, String reason) {
   const prefix = "'utf-8' codec can't decode";
   if (end == start + 1) {
-    final hex = bytes[start].toRadixString(16).padLeft(2, '0');
+    final byte =
+        bytes.elementAtOrNull(start) ??
+        (throw StateError('Missing UTF-8 error byte'));
+    final hex = byte.toRadixString(16).padLeft(2, '0');
+
     return '$prefix byte 0x$hex in position $start: $reason';
   }
+
   return '$prefix bytes in position $start-${end - 1}: $reason';
 }
 

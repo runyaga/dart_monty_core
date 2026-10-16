@@ -15,5 +15,6 @@ Object checkedContent(Object content) {
 String fileName(String path) {
   final normalized = purePosixPath(path);
   if (normalized == '/' || normalized == '//' || normalized == '.') return '';
+
   return normalized.split('/').lastOrNull ?? '';
 }

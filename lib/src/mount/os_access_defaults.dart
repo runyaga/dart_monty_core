@@ -1,7 +1,7 @@
 part of 'os_access.dart';
 
-final class _OsDefaults {
-  _OsDefaults(this.maxUrandomBytes, this.maxSleep) {
+final class _OsAccessDefaults {
+  _OsAccessDefaults(this.maxUrandomBytes, this.maxSleep) {
     if (maxUrandomBytes < 0) {
       throw ArgumentError('max_urandom_bytes must be non-negative');
     }
@@ -14,15 +14,15 @@ final class _OsDefaults {
   FutureOr<MontyValue> call(String name, List<MontyValue> args) =>
       switch (name) {
         'date.today' => _today(),
-        'datetime.now' => _now(args.elementAtOrNull(0)),
+        'datetime.now' => _now(args.firstOrNull),
         'time.time' => MontyFloat(
           DateTime.now().microsecondsSinceEpoch / 1000000,
         ),
-        'os.urandom' => _random(args.elementAtOrNull(0)),
+        'os.urandom' => _random(args.firstOrNull),
         'time.sleep' ||
         'asyncio.sleep' ||
         'system.sleep' ||
-        'system.async_sleep' => _sleep(args.elementAtOrNull(0)),
+        'system.async_sleep' => _sleep(args.firstOrNull),
         _ => throw const OsCallNotHandledException(),
       };
   MontyBytes _random(MontyValue? arg) {
@@ -43,6 +43,7 @@ final class _OsDefaults {
       );
     }
     final random = Random.secure();
+
     return MontyBytes(
       Uint8List.fromList(List.generate(size, (_) => random.nextInt(256))),
     );
@@ -79,12 +80,14 @@ final class _OsDefaults {
     await Future<void>.delayed(
       Duration(microseconds: (capped * 1000000).round()),
     );
+
     return const MontyNone();
   }
 }
 
 MontyDate _today() {
   final now = DateTime.now();
+
   return MontyDate(year: now.year, month: now.month, day: now.day);
 }
 
@@ -93,6 +96,7 @@ MontyDateTime _now(MontyValue? zone) {
   final now = tz == null
       ? DateTime.now()
       : DateTime.now().toUtc().add(Duration(seconds: tz.offsetSeconds));
+
   return MontyDateTime(
     year: now.year,
     month: now.month,

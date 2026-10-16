@@ -32,8 +32,8 @@ final class OSAccess {
     Duration? maxSleep = const Duration(seconds: 10),
   }) : files = List.of(files ?? const []),
        environ = environ == null || environ.isEmpty ? {} : environ,
-       _defaults = _OsDefaults(maxUrandomBytes, maxSleep),
-       _tree = _MemoryTree() {
+       _defaults = _OsAccessDefaults(maxUrandomBytes, maxSleep),
+       _tree = _OsAccessTree() {
     _tree.seed(this.files, _rootDir(rootDir));
   }
 
@@ -42,8 +42,8 @@ final class OSAccess {
 
   /// A nonempty supplied map is retained by reference; an empty map is copied.
   final Map<String, String> environ;
-  final _MemoryTree _tree;
-  final _OsDefaults _defaults;
+  final _OsAccessTree _tree;
+  final _OsAccessDefaults _defaults;
 
   /// Dispatches an OS call; unknown names throw OsCallNotHandledException.
   FutureOr<MontyValue> call(
@@ -58,8 +58,9 @@ final class OSAccess {
       ]);
     }
     if (name == 'os.getenv') {
-      final key = _string(args.elementAtOrNull(0));
+      final key = _string(args.firstOrNull);
       final value = environ[key];
+
       return value == null
           ? args.elementAtOrNull(1) ?? const MontyNone()
           : MontyString(value);
@@ -67,6 +68,7 @@ final class OSAccess {
     if (_fileCalls.contains(name)) {
       return _dispatchFile(_tree, files, name, args, kwargs);
     }
+
     return _defaults.call(name, args);
   }
 
@@ -75,6 +77,7 @@ final class OSAccess {
     final entries = environ.entries.map(
       (e) => '${pythonRepr(e.key)}: ${pythonRepr(e.value)}',
     );
+
     return 'OSAccess(files=$files, environ={${entries.join(', ')}})';
   }
 }
@@ -106,6 +109,7 @@ String _rootDir(String path) {
   if (!root.startsWith('/')) {
     throw ArgumentError('Root directory must be absolute, got $root');
   }
+
   return root;
 }
 
@@ -119,13 +123,13 @@ const _queryCalls = {
 };
 
 MontyValue _dispatchFile(
-  _MemoryTree tree,
+  _OsAccessTree tree,
   List<AbstractFile> createdFiles,
   String op,
   List<MontyValue> args,
   Map<String, MontyValue> kwargs,
 ) {
-  final path = _path(args.elementAtOrNull(0));
+  final path = _path(args.firstOrNull);
   final data = args.elementAtOrNull(1);
   if (_queryCalls.contains(op)) return _pathQuery(tree, op, path);
   if (op == 'open') {
@@ -136,26 +140,29 @@ MontyValue _dispatchFile(
       data == null ? 'r' : _string(data),
     );
   }
+
   return _readWrite(tree, createdFiles, op, path, data, kwargs);
 }
 
-MontyValue _pathQuery(_MemoryTree tree, String op, String path) => switch (op) {
-  'Path.exists' => MontyBool(tree.lookup(path) != null),
-  'Path.is_file' => MontyBool(tree.lookup(path) is AbstractFile),
-  'Path.is_dir' => MontyBool(tree.lookup(path) is _Directory),
-  'Path.is_symlink' => const MontyBool(false),
-  _ => MontyString(path.startsWith('/') ? path : purePosixPath('/$path')),
-};
+MontyValue _pathQuery(_OsAccessTree tree, String op, String path) =>
+    switch (op) {
+      'Path.exists' => MontyBool(tree.lookup(path) != null),
+      'Path.is_file' => MontyBool(tree.lookup(path) is AbstractFile),
+      'Path.is_dir' => MontyBool(tree.lookup(path) is _Directory),
+      'Path.is_symlink' => const MontyBool(false),
+      _ => MontyString(path.startsWith('/') ? path : purePosixPath('/$path')),
+    };
 
 MontyValue _readWrite(
-  _MemoryTree tree,
+  _OsAccessTree tree,
   List<AbstractFile> createdFiles,
   String op,
   String path,
   MontyValue? data,
   Map<String, MontyValue> kwargs,
 ) {
-  final files = _FileOperations(tree, createdFiles);
+  final files = _OsAccessFiles(tree, createdFiles);
+
   return switch (op) {
     'Path.read_text' => MontyString(_text(tree.file(path).readContent())),
     'Path.read_bytes' => MontyBytes(_bytes(tree.file(path).readContent())),
@@ -170,13 +177,14 @@ MontyValue _readWrite(
 }
 
 MontyValue _directoryCall(
-  _MemoryTree tree,
+  _OsAccessTree tree,
   String op,
   String path,
   MontyValue? data,
   Map<String, MontyValue> kwargs,
 ) {
-  final dirs = _DirectoryOperations(tree);
+  final dirs = _OsAccessDirectories(tree);
+
   return switch (op) {
     'Path.mkdir' => dirs.mkdir(
       path,
@@ -192,7 +200,7 @@ MontyValue _directoryCall(
 
 // The old public open helper is now private and owns its filesystem effects.
 MontyFileHandle _resolveOpenCall(
-  _MemoryTree tree,
+  _OsAccessTree tree,
   List<AbstractFile> createdFiles,
   String path,
   String mode,
@@ -203,27 +211,28 @@ MontyFileHandle _resolveOpenCall(
       (throw ExternalException('ValueError', parsed.error ?? mode));
   final handle = MontyFileHandle(path, canonical);
   final entry = tree.lookup(path);
-  final empty = canonical.contains('b') ? Uint8List(0) : '';
   if (canonical.startsWith('r')) {
     tree.file(path);
   } else if (canonical.startsWith('w') || entry == null) {
-    _FileOperations(tree, createdFiles).write(path, empty);
+    final empty = canonical.contains('b') ? Uint8List(0) : '';
+    _OsAccessFiles(tree, createdFiles).write(path, empty);
   } else if (entry is _Directory) {
     throw _fsError('IsADirectoryError', path);
   }
+
   return handle;
 }
 
-String _path(MontyValue? value) => purePosixPath(switch (value) {
+String _path(MontyValue? arg) => purePosixPath(switch (arg) {
   MontyPath(:final value) || MontyString(:final value) => value,
   MontyFileHandle(:final path) => path,
   _ => throw const ExternalException('TypeError', 'expected a path'),
 });
-String _string(MontyValue? value) => switch (value) {
+String _string(MontyValue? arg) => switch (arg) {
   MontyString(:final value) => value,
   _ => throw const ExternalException('TypeError', 'expected a str'),
 };
-Uint8List _payloadBytes(MontyValue? value) => switch (value) {
+Uint8List _payloadBytes(MontyValue? arg) => switch (arg) {
   MontyBytes(:final value) => Uint8List.fromList(value),
   _ => throw const ExternalException('TypeError', 'expected bytes'),
 };

@@ -46,14 +46,14 @@ import 'package:monty_conformance/monty_conformance.dart';
 import 'package:web/web.dart' as web;
 
 /// How a probe turned out.
-enum Verdict {
+enum FeatureMatrix {
   pass('PASS', 'v-pass'),
   fail('FAIL', 'v-fail'),
   gap('KNOWN GAP', 'v-gap'),
   crash('CRASH', 'v-fail'),
   running('…', 'v-run');
 
-  const Verdict(this.label, this.css);
+  const FeatureMatrix(this.label, this.css);
 
   final String label;
   final String css;
@@ -61,18 +61,19 @@ enum Verdict {
 
 /// What a probe produced, and whether that was acceptable.
 class Outcome {
-  Outcome(this.verdict, this.actual, {this.note});
+  const Outcome(this.verdict, this.actual, {this.note});
 
   /// Everything went as promised.
-  Outcome.ok(this.actual, {this.note}) : verdict = Verdict.pass;
+  const Outcome.ok(this.actual, {this.note}) : verdict = FeatureMatrix.pass;
 
   /// A real, unexpected divergence — the interesting case.
-  Outcome.bad(this.actual, {this.note}) : verdict = Verdict.fail;
+  const Outcome.bad(this.actual, {this.note}) : verdict = FeatureMatrix.fail;
 
   /// Wrong, but known and tracked. [note] must name the issue.
-  Outcome.knownGap(this.actual, {required this.note}) : verdict = Verdict.gap;
+  const Outcome.knownGap(this.actual, {required this.note})
+    : verdict = FeatureMatrix.gap;
 
-  final Verdict verdict;
+  final FeatureMatrix verdict;
   final String actual;
   final String? note;
 }
@@ -148,8 +149,8 @@ List<Probe> _probes() => [
         "[b'ab', (1,2), {1,2}, frozenset([1]), ..., ValueError('boom')]",
       ).run();
       final v = r.value;
-      if (v is! MontyList) return Outcome.bad('not a list: ${_render(v)}');
-      final got = v.items.map((e) => e.runtimeType.toString()).join(', ');
+      final got = _valueTypeNames(v);
+      if (got == null) return Outcome.bad('not a list: ${_render(v)}');
       const want =
           'MontyBytes, MontyTuple, MontySet, MontyFrozenSet, '
           'MontyEllipsis, MontyExceptionValue';
@@ -354,7 +355,7 @@ type(f).__name__
       } on UnsupportedError catch (e) {
         return Outcome.ok(_firstLine(e.toString()), note: 'core#140');
       } finally {
-        await repl.dispose().catchError((_) {});
+        await repl.dispose().catchError((_) => null);
       }
     },
   ),
@@ -510,8 +511,14 @@ type(f).__name__
 // Rendering
 // ---------------------------------------------------------------------------
 
+String? _valueTypeNames(Object? value) => switch (value) {
+  MontyList(:final items) =>
+    items.map((item) => item.runtimeType.toString()).join(', '),
+  _ => null,
+};
+
 String _firstLine(String s) {
-  final line = s.split('\n').first.trim();
+  final line = (s.split('\n').firstOrNull ?? '').trim();
 
   return line.length > 110 ? '${line.substring(0, 110)}…' : line;
 }
@@ -522,8 +529,7 @@ String _render(Object? v) => switch (v) {
   null => 'null',
   MontyNone() => 'None',
   MontyBool(:final value) => value ? 'True' : 'False',
-  MontyInt(:final value) => '$value',
-  MontyBigInt(:final value) => '$value',
+  MontyInt(:final value) || MontyBigInt(:final value) => '$value',
   MontyFloat(:final value) => _float(value),
   MontyString(:final value) => "'$value'",
   MontyList(:final items) => '[${items.map(_render).join(', ')}]',
@@ -606,7 +612,9 @@ enum SkipKind {
 
 class _Fixture {
   _Fixture(this.name, this.source)
-    : group = name.contains('__') ? name.split('__').first : 'misc';
+    : group = name.contains('__')
+          ? (name.split('__').firstOrNull ?? '')
+          : 'misc';
 
   final String name;
   final String source;
@@ -923,7 +931,9 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
       // mount-fs rows, blamed on FB-11 — and FB-11 was fixed while the comment
       // stayed, so the page's own source claimed a failure the page was not
       // showing. The reason travels with the failure instead.
-      if (r.error != null) _skipNotes[f.name] = _describeError(r.error!);
+      if (r.error case final error?) {
+        _skipNotes[f.name] = _describeError(error);
+      }
 
       final failure = adjudicateFixture(
         expectation,
@@ -940,8 +950,9 @@ Future<String> _runFixture(_Fixture f, FixtureExpectation expectation) async {
     // The plain path recorded nothing, so a FAIL here arrived with no reason
     // at all — which is how `range__ops.py` could be "confirmed failing" with
     // no way to see which of its 278 assertions did it.
-    if (result.error != null)
-      _skipNotes[f.name] = _describeError(result.error!);
+    if (result.error case final error?) {
+      _skipNotes[f.name] = _describeError(error);
+    }
   } on MontyScriptError catch (e) {
     thrownExcType = e.excType;
     thrown = e.exception;
@@ -1215,32 +1226,34 @@ Future<void> _runCorpus() async {
       skipped++;
       _fixtureStatus[f.name] = skip.label;
     } else {
-      final expectation = parseFixture(
-        f.source,
-        skipCallExternal: false,
-        skipRunAsync: false,
-        skipMountFs: false,
-      )!;
       // A per-fixture guard. Without it ONE fixture that throws instead of
       // returning kills the whole run: the corpus stopped at ~374 of 531 and
       // reported 350 passing, which reads as a catastrophic regression rather
       // than one bad row. A harness that cannot survive its own subject is not
       // a harness.
-      String status;
+      String fixtureStatus;
       final broken = knownBrokenExtFixtures[f.name];
       if (broken != null) {
-        status = 'known broken';
+        fixtureStatus = 'known broken';
         _skipNotes[f.name] = broken;
       } else {
         try {
-          status = await _runFixture(f, expectation);
+          final expectation =
+              parseFixture(
+                f.source,
+                skipCallExternal: false,
+                skipRunAsync: false,
+                skipMountFs: false,
+              ) ??
+              (throw StateError('Missing fixture expectation: ${f.name}'));
+          fixtureStatus = await _runFixture(f, expectation);
         } on Object catch (e) {
-          status = 'FAIL';
-          _skipNotes[f.name] = e.toString().split('\n').first;
+          fixtureStatus = 'FAIL';
+          _skipNotes[f.name] = e.toString().split('\n').firstOrNull ?? '';
         }
       }
-      _fixtureStatus[f.name] = status;
-      switch (status) {
+      _fixtureStatus[f.name] = fixtureStatus;
+      switch (fixtureStatus) {
         case 'PASS':
           passed++;
         case 'FAIL':
@@ -1348,8 +1361,8 @@ void _renderRow(web.Element tbody, Probe p, int i) {
       _el('td', cls: 'c-verdict')..append(
         _el(
           'span',
-          cls: 'pill ${Verdict.running.css}',
-          text: Verdict.running.label,
+          cls: 'pill ${FeatureMatrix.running.css}',
+          text: FeatureMatrix.running.label,
         ),
       ),
     )
@@ -1370,23 +1383,30 @@ void _renderRow(web.Element tbody, Probe p, int i) {
 void _paint(int i, Outcome o) {
   final tr = _doc.getElementById('probe-$i');
   if (tr == null) return;
-  final pill = tr.querySelector('.pill')!
-    ..className = 'pill ${o.verdict.css}'
-    ..textContent = o.verdict.label;
+  final pill =
+      (tr.querySelector('.pill') ?? (throw StateError('Missing probe verdict')))
+        ..className = 'pill ${o.verdict.css}'
+        ..textContent = o.verdict.label;
   pill.setAttribute('data-verdict', o.verdict.label);
-  final got = tr.querySelector('.got')!
-    ..textContent = o.actual
-    ..className = 'got ${o.verdict == Verdict.pass ? '' : 'got-bad'}';
-  if (o.note != null) {
-    got.append(_el('div', cls: 'note', text: o.note!));
+  final got =
+      (tr.querySelector('.got') ?? (throw StateError('Missing probe result')))
+        ..textContent = o.actual
+        ..className = 'got ${o.verdict == FeatureMatrix.pass ? '' : 'got-bad'}';
+  if (o.note case final note?) {
+    got.append(_el('div', cls: 'note', text: note));
   }
 }
 
-void _summarise(Map<Verdict, int> counts, Duration took) {
+void _summarise(Map<FeatureMatrix, int> counts, Duration took) {
   final el = _doc.getElementById('summary');
   if (el == null) return;
   el.textContent = '';
-  for (final v in [Verdict.pass, Verdict.gap, Verdict.fail, Verdict.crash]) {
+  for (final v in [
+    FeatureMatrix.pass,
+    FeatureMatrix.gap,
+    FeatureMatrix.fail,
+    FeatureMatrix.crash,
+  ]) {
     final n = counts[v] ?? 0;
     if (n == 0) continue;
     el.append(_el('span', cls: 'pill ${v.css}', text: '$n ${v.label}'));
@@ -1426,7 +1446,7 @@ void _renderGapNote(List<String> gapNotes) {
   // Notes are written `'<issue> · <why>'`, so the issue IDs come from the gap
   // outcomes rather than from a comment someone has to remember to update.
   final issues = gapNotes
-      .map((n) => n.split(' · ').first.trim())
+      .map((n) => (n.split(' · ').firstOrNull ?? '').trim())
       .toSet()
       .toList();
   final n = gapNotes.length;
@@ -1491,12 +1511,14 @@ Future<void> _runAll() async {
   _renderTestHooksMismatch();
 
   final probes = _probes();
-  final tbody = _doc.getElementById('rows')!..textContent = '';
+  final tbody =
+      (_doc.getElementById('rows') ?? (throw StateError('Missing probe rows')))
+        ..textContent = '';
   for (var i = 0; i < probes.length; i++) {
     _renderRow(tbody, probes[i], i);
   }
 
-  final counts = <Verdict, int>{};
+  final counts = <FeatureMatrix, int>{};
   final gapNotes = <String>[];
   final started = DateTime.now();
 
@@ -1510,11 +1532,11 @@ Future<void> _runAll() async {
     } on TimeoutException {
       outcome = Outcome.bad('timed out after 20s');
     } on Object catch (e) {
-      outcome = Outcome(Verdict.crash, _firstLine(e.toString()));
+      outcome = Outcome(FeatureMatrix.crash, _firstLine(e.toString()));
     }
     counts[outcome.verdict] = (counts[outcome.verdict] ?? 0) + 1;
-    if (outcome.verdict == Verdict.gap && outcome.note != null) {
-      gapNotes.add(outcome.note!);
+    if (outcome case Outcome(verdict: FeatureMatrix.gap, note: final note?)) {
+      gapNotes.add(note);
     }
     _paint(i, outcome);
   }

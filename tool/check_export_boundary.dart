@@ -123,64 +123,6 @@ const _neverPublic = [
   '${_package}src/worker/encoded_length.dart',
 ];
 
-/// Which rule set a run applies: today's (no worker code public), or the
-/// post-cutover rule with its [allowlist].
-final class _Boundary {
-  const _Boundary() : allowlist = null;
-
-  const _Boundary.postCutover(Set<String> this.allowlist);
-
-  /// The names a worker declaration may be exported under; null before the
-  /// cutover, when none may.
-  final Set<String>? allowlist;
-
-  bool get postCutover => allowlist != null;
-
-  /// Whether [uri] may not be exported or named in a public signature.
-  bool forbids(Uri uri) {
-    final text = uri.toString();
-
-    return (postCutover ? _neverPublic : _forbidden).any(text.startsWith);
-  }
-
-  /// The forbidden file [element] is declared in, if any: its library, or a
-  /// part file of it, since a part under lib/src/worker/ can declare members
-  /// of a library that lives elsewhere.
-  Uri? sourceOf(Element element) =>
-      _sources(element).where(forbids).firstOrNull;
-
-  /// Why exporting [element] as [name] breaks rule 1', or null.
-  String? unlisted(Element element, String name) {
-    final names = allowlist;
-    if (names == null || names.contains(name)) return null;
-    final worker = _sources(
-      element,
-    ).where((uri) => uri.toString().startsWith('${_package}src/worker/'));
-
-    return worker.isEmpty
-        ? null
-        : 'exports $name, declared in ${worker.first}, which is not on '
-              'the allowlist (the names sections of $_goldenPath)';
-  }
-}
-
-/// The allowlist the post-cutover rule reads from [golden]'s text: every
-/// name in a public library's section.
-Set<String> _allowlist(String golden) => {
-  for (final MapEntry(:key, :value) in _parseGolden(golden).entries)
-    if (!key.startsWith('members: ') && !key.startsWith('exports: ')) ...value,
-};
-
-final _setterSuffix = RegExp(r'=$');
-
-List<Uri> _sources(Element element) => [
-  ?element.library?.uri,
-  for (final fragment in element.fragments)
-    ?fragment.libraryFragment?.source.uri,
-];
-
-bool _isOwn(Uri uri) => uri.toString().startsWith(_package);
-
 /// What one run of the check found: the report.
 final class _CheckExportBoundary {
   /// Exported names per public library, keyed by its path under lib/.
@@ -222,6 +164,64 @@ final class _CheckExportBoundary {
   /// The conditional-directive branches analysed besides the default.
   final List<String> conditions = [];
 }
+
+/// Which rule set a run applies: today's (no worker code public), or the
+/// post-cutover rule with its [allowlist].
+final class _Boundary {
+  const _Boundary() : allowlist = null;
+
+  const _Boundary.postCutover(Set<String> this.allowlist);
+
+  /// The names a worker declaration may be exported under; null before the
+  /// cutover, when none may.
+  final Set<String>? allowlist;
+
+  bool get postCutover => allowlist != null;
+
+  /// Whether [uri] may not be exported or named in a public signature.
+  bool forbids(Uri uri) {
+    final text = uri.toString();
+
+    return (postCutover ? _neverPublic : _forbidden).any(text.startsWith);
+  }
+
+  /// The forbidden file [element] is declared in, if any: its library, or a
+  /// part file of it, since a part under lib/src/worker/ can declare members
+  /// of a library that lives elsewhere.
+  Uri? sourceOf(Element element) =>
+      _sources(element).where(forbids).firstOrNull;
+
+  /// Why exporting [element] as [name] breaks rule 1', or null.
+  String? unlisted(Element element, String name) {
+    final names = allowlist;
+    if (names == null || names.contains(name)) return null;
+    final worker = _sources(
+      element,
+    ).where((uri) => uri.toString().startsWith('${_package}src/worker/'));
+
+    return worker.isEmpty
+        ? null
+        : 'exports $name, declared in ${worker.firstOrNull}, which is not on '
+              'the allowlist (the names sections of $_goldenPath)';
+  }
+}
+
+/// The allowlist the post-cutover rule reads from [golden]'s text: every
+/// name in a public library's section.
+Set<String> _allowlist(String golden) => {
+  for (final MapEntry(:key, :value) in _parseGolden(golden).entries)
+    if (!key.startsWith('members: ') && !key.startsWith('exports: ')) ...value,
+};
+
+final _setterSuffix = RegExp(r'=$');
+
+List<Uri> _sources(Element element) => [
+  ?element.library?.uri,
+  for (final fragment in element.fragments)
+    ?fragment.libraryFragment?.source.uri,
+];
+
+bool _isOwn(Uri uri) => uri.toString().startsWith(_package);
 
 Future<void> main(List<String> args) async {
   final root = File.fromUri(Platform.script).parent.parent.path;
@@ -274,14 +274,14 @@ Future<int> _run(
     post ? _Boundary.postCutover(_allowlist(committed)) : const _Boundary(),
   );
   _checkToolSource(_toolSource(root), report);
+  final sections = report.sections;
+  final rendered = _renderGolden(sections);
   if (update) {
-    golden.writeAsStringSync(_renderGolden(report.sections));
+    golden.writeAsStringSync(rendered);
     stdout.writeln('wrote $_goldenPath');
   }
-  final diff = _diffGolden(
-    golden.existsSync() ? golden.readAsStringSync() : '',
-    report.sections,
-  );
+  final expected = update ? rendered : committed;
+  final diff = _diffGolden(expected, sections);
   if (post) stdout.writeln('rule: post-cutover (--post-cutover)');
   _print(report, diff);
   final failed = report.violations.isNotEmpty || diff.isNotEmpty;
@@ -694,7 +694,11 @@ Map<String, List<String>> _printDeclarations(Set<Element> declarations) {
   _typeNames = _TypeNames(declarations);
   final byLibrary = SplayTreeMap<String, Map<String, Element>>();
   for (final element in declarations) {
-    final path = element.library!.uri.toString().substring(_package.length);
+    final path =
+        (element.library ?? (throw StateError('Declaration has no library')))
+            .uri
+            .toString()
+            .substring(_package.length);
     byLibrary.putIfAbsent('members: $path', () => {})[_sortKey(element)] =
         element;
   }
@@ -733,20 +737,6 @@ final class _TypeNames {
   /// the same name is qualified, so `T` is never both.
   final Set<String> _typeParameters = {};
 
-  void _collectTypeParameters(Element element) {
-    if (element is TypeParameterizedElement) {
-      _typeParameters.addAll(element.typeParameters.map(_nameOf));
-    }
-    final types = [for (final (type, _) in _typesOf(element)) type];
-    while (types.isNotEmpty) {
-      final type = types.removeLast();
-      if (type is FunctionType) {
-        _typeParameters.addAll(type.typeParameters.map(_nameOf));
-      }
-      types.addAll([...?type.alias?.typeArguments, ..._componentsOf(type)]);
-    }
-  }
-
   /// Whether more than one printed declaration is named [name].
   bool isAmbiguous(String name) => (_own[name] ?? 0) > 1;
 
@@ -770,6 +760,20 @@ final class _TypeNames {
 
     return fromCore == element && !shadowed ? name : '$name@${library.uri}';
   }
+
+  void _collectTypeParameters(Element element) {
+    if (element is TypeParameterizedElement) {
+      _typeParameters.addAll(element.typeParameters.map(_nameOf));
+    }
+    final types = [for (final (type, _) in _typesOf(element)) type];
+    while (types.isNotEmpty) {
+      final type = types.removeLast();
+      if (type is FunctionType) {
+        _typeParameters.addAll(type.typeParameters.map(_nameOf));
+      }
+      types.addAll([...?type.alias?.typeArguments, ..._componentsOf(type)]);
+    }
+  }
 }
 
 /// For each public library, the declaring library of every exported name
@@ -785,9 +789,14 @@ Map<String, List<String>> _printAmbiguousExports(
       final declaration = _declarationOf(value);
       if (declaration == null) continue;
       if (!_typeNames.isAmbiguous(_nameOf(declaration))) continue;
-      final path = declaration.library!.uri.toString().substring(
-        _package.length,
-      );
+      final path =
+          (declaration.library ??
+                  (throw StateError('Declaration has no library')))
+              .uri
+              .toString()
+              .substring(
+                _package.length,
+              );
       lines.add('${key.replaceFirst(_setterSuffix, '')}: $path');
     }
     if (lines.isNotEmpty) {
@@ -819,7 +828,7 @@ List<String> _printDeclaration(Element element) {
 /// than [sealed], transitively: a subtype can reach a public type through a
 /// private ancestor.
 Iterable<String> _ancestors(InterfaceElement element, ClassElement sealed) {
-  final seen = <InterfaceElement>{element, sealed};
+  final seen = {element, sealed};
   final pending = [element];
   final heads = <String>[];
   while (pending.isNotEmpty) {
@@ -972,7 +981,9 @@ String? _printMember(Element member) {
   final name = _nameOf(member);
 
   return switch (member) {
-    ConstructorElement(enclosingElement: EnumElement()) => null,
+    ConstructorElement(enclosingElement: EnumElement()) ||
+    FieldElement(isOriginGetterSetter: true) ||
+    PropertyAccessorElement(isOriginVariable: true) => null,
     ConstructorElement() => _words([
       if (member.isExternal) 'external',
       if (member.isConst) 'const',
@@ -980,7 +991,6 @@ String? _printMember(Element member) {
       'constructor${_parameters(member.formalParameters)}',
       if (member.redirectedConstructor != null) 'redirecting',
     ], prefix: '$name: '),
-    FieldElement(isOriginGetterSetter: true) => null,
     FieldElement() => _words([
       if (member.isStatic) 'static',
       if (member.isAbstract) 'abstract',
@@ -994,7 +1004,6 @@ String? _printMember(Element member) {
       _type(member.type),
       ?_constantValue(member),
     ], prefix: '$name: '),
-    PropertyAccessorElement(isOriginVariable: true) => null,
     ExecutableElement() => _printExecutable(member, name),
     _ => throw StateError(
       'no canonical form for member ${member.kind.displayName} $name',
@@ -1218,7 +1227,7 @@ List<String> _formatterReferences(String source) {
 final _formatter = RegExp('displaystring', caseSensitive: false);
 
 final class _IdentifierVisitor extends RecursiveAstVisitor<void> {
-  _IdentifierVisitor(this._onIdentifier);
+  const _IdentifierVisitor(this._onIdentifier);
 
   final void Function(SimpleIdentifier node) _onIdentifier;
 
@@ -2166,8 +2175,10 @@ Future<int> _selfTest(
   var count = 1;
   if (shard.isNotEmpty) {
     final parts = shard.split('/');
-    final i = parts.length == 2 ? int.tryParse(parts[0]) : null;
-    final n = parts.length == 2 ? int.tryParse(parts[1]) : null;
+    final i = parts.length == 2 ? int.tryParse(parts.firstOrNull ?? '') : null;
+    final n = parts.length == 2
+        ? int.tryParse(parts.elementAtOrNull(1) ?? '')
+        : null;
     if (i == null ||
         n == null ||
         n < 1 ||

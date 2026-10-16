@@ -22,6 +22,7 @@ Future<MontySession> _session(_Start start) async {
   addTearDown(pool.close);
   final session = await pool.checkout();
   addTearDown(session.close);
+
   return session;
 }
 
@@ -65,7 +66,11 @@ p = Path('/f')
 void _callbackFailure(String label, _Start start) {
   test('CallbackFile host failure reaches Python ($label)', () async {
     final session = await _session(start);
-    final fs = OSAccess(files: [CallbackFile('/bad', (_) => 42, (_, _) {})]);
+    final fs = OSAccess(
+      files: [
+        CallbackFile('/bad', (_) => 42, (_, _) => fail('unexpected write')),
+      ],
+    );
     await expectLater(
       session.feedRun("open('/bad').read()", os: fs),
       throwsA(
@@ -91,6 +96,7 @@ d = Path('/directory').stat()
 ''',
       os: (name, args, kwargs) {
         if (name != 'Path.stat') throw const OsCallNotHandledException();
+
         return args.firstOrNull == MontyPath('/file')
             ? StatResult.fileStat(3, 420, 7)
             : StatResult.dirStat(493, 2);

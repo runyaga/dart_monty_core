@@ -26,11 +26,12 @@ void main() {
   test('REQ-MontyMemoryFile-10 text and bytes stay distinct', () {
     final bytes = Uint8List.fromList([255]);
     final file = MemoryFile('/a', bytes);
-    expect(file.readContent(), same(bytes));
+    final sameBytes = same(bytes);
+    expect(file.readContent(), sameBytes);
     file.writeContent('text');
     expect(file.content, 'text');
     file.content = bytes;
-    expect(file.content, same(bytes));
+    expect(file.content, sameBytes);
   });
   test('D-092 validates every content boundary', () {
     expect(() => MemoryFile('/a', [1]), throwsArgumentError);
@@ -43,6 +44,8 @@ void main() {
     final file = MemoryFile('/a', 'secret');
     expect(file.deleted, false);
     expect(
+      // Re-read the representation to check the changed content type.
+      // ignore: prefer-moving-to-variable
       file.toString(),
       "MemoryFile(path=/a, content='...', permissions=420)",
     );
@@ -50,6 +53,8 @@ void main() {
     expect(file.deleted, true);
     file.content = Uint8List(0);
     expect(
+      // Re-read the representation to check the changed content type.
+      // ignore: prefer-moving-to-variable
       file.toString(),
       "MemoryFile(path=/a, content=b'...', permissions=420)",
     );

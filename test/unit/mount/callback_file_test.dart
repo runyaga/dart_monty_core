@@ -15,11 +15,18 @@ void main() {
 
 void _attributes() {
   test('REQ-VfsCallbackFile-5,6,7 normalised construction and setters', () {
-    final file = CallbackFile('a//./../b', (_) => 'old', (_, _) {});
+    final file = CallbackFile(
+      'a//./../b',
+      (_) => 'old',
+      (_, _) => fail('unexpected write'),
+    );
     expect(file.path, 'a/../b');
     expect(file.name, 'b');
     expect(file.permissions, 420);
-    expect(CallbackFile('', (_) => '', (_, _) {}).path, '.');
+    expect(
+      CallbackFile('', (_) => '', (_, _) => fail('unexpected write')).path,
+      '.',
+    );
     file
       ..permissions = 384
       ..read = (_) => 'new';
@@ -38,14 +45,26 @@ void _attributes() {
   });
   test('REQ-VfsCallbackFile-10 REQ-VfsReadCallback-7 no caching', () {
     var reads = 0;
-    final file = CallbackFile('/f', (_) => ++reads, (_, _) {});
+    final writes = <Object>[];
+    final file = CallbackFile(
+      '/f',
+      (_) => ++reads,
+      (_, value) => writes.add(value),
+    );
+    // Reading again must invoke the callback rather than use cached content.
+    // ignore: prefer-moving-to-variable
     expect(file.readContent(), 1);
     file.writeContent('not cached');
+    // The write must not replace the next callback result with cached content.
+    // ignore: prefer-moving-to-variable
     expect(file.readContent(), 2);
+    expect(writes, ['not cached']);
   });
   test('REQ-VfsWriteCallback-4,7,8 writes raw content synchronously', () async {
     final pending = Completer<void>();
     final seen = <Object>[];
+    // This verifies that a synchronous write does not await an async callback.
+    // ignore: avoid-passing-async-when-sync-expected
     final file = CallbackFile('/f', (_) => 'independent', (_, value) async {
       seen.add(value);
       await pending.future;
@@ -68,6 +87,7 @@ void _renames() {
         final writes = <(String, Object)>[];
         final file = CallbackFile('/d/f', (path) {
           reads.add(path);
+
           return 'value';
         }, (path, value) => writes.add((path, value)));
         final fs = OSAccess(files: [file]);
@@ -107,14 +127,19 @@ void _failures() {
   test('REQ-VfsCallbackFile-13 REQ-VfsReadCallback-10 errors unchanged', () {
     final error = StateError('host');
     final file = CallbackFile('/f', (_) => throw error, (_, _) => throw error);
-    expect(file.readContent, throwsA(same(error)));
-    expect(() => file.writeContent('x'), throwsA(same(error)));
+    final sameError = throwsA(same(error));
+    expect(file.readContent, sameError);
+    expect(() => file.writeContent('x'), sameError);
   });
   test('D-099 callback stat sees changed permissions', () async {
-    final file = CallbackFile('/f', (_) => 'x', (_, _) {});
+    final file = CallbackFile(
+      '/f',
+      (_) => 'x',
+      (_, _) => fail('unexpected write'),
+    );
     final fs = OSAccess(files: [file]);
     file.permissions = 384;
     final stat = await fs('Path.stat', [MontyPath('/f')], {});
-    expect((stat as MontyNamedTuple).values[0], const MontyInt(33152));
+    expect((stat as MontyNamedTuple).values.firstOrNull, const MontyInt(33152));
   });
 }

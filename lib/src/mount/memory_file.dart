@@ -34,6 +34,7 @@ final class MemoryFile implements AbstractFile {
   @override
   String toString() {
     final preview = _content is String ? "'...'" : "b'...'";
+
     return 'MemoryFile(path=$path, content=$preview, permissions=$permissions)';
   }
 }

@@ -48,8 +48,12 @@ Future<void> main(List<String> args) async {
         externalLookup: {
           'shout': MontyHostFunction(
             'shout',
-            (args, _) =>
-                MontyString((args[0] as MontyString).value.toUpperCase()),
+            (values, _) => MontyString(
+              ((values.firstOrNull as MontyString?) ??
+                      (throw StateError('Missing shout argument')))
+                  .value
+                  .toUpperCase(),
+            ),
           ),
         },
       );
@@ -59,10 +63,15 @@ Future<void> main(List<String> args) async {
       final fetched = await session.feedRun(
         'fetch(1) + fetch(2)',
         externalLookup: {
-          'fetch': MontyHostFunction('fetch', (args, _) async {
+          'fetch': MontyHostFunction('fetch', (values, _) async {
             await Future<void>.delayed(const Duration(milliseconds: 1));
 
-            return MontyInt((args[0] as MontyInt).value * 10);
+            return MontyInt(
+              ((values.firstOrNull as MontyInt?) ??
+                          (throw StateError('Missing fetch argument')))
+                      .value *
+                  10,
+            );
           }),
         },
       );

@@ -6,7 +6,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 ///
 /// Values are upstream's, not ours — `os__environ.py` asserts them by name, so
 /// this is a contract.
-const conformanceEnv = <String, String>{
+const conformanceEnv = {
   'VIRTUAL_HOME': '/virtual/home',
   'VIRTUAL_USER': 'testuser',
   'VIRTUAL_EMPTY': '',
@@ -95,11 +95,13 @@ OsHandler conformanceOsHandler() {
   return (name, args, kwargs) {
     switch (name) {
       case 'os.getenv':
-        final key = (args.first as MontyString).value;
+        final key =
+            (args.firstOrNull as MontyString?)?.value ??
+            (throw StateError('Missing environment key'));
         final value = conformanceEnv[key];
         if (value != null) return MontyString(value);
 
-        return args.length > 1 ? args[1] : const MontyNone();
+        return args.elementAtOrNull(1) ?? const MontyNone();
 
       case 'os.environ':
         return MontyDict([
@@ -111,7 +113,7 @@ OsHandler conformanceOsHandler() {
         return const MontyDate(year: 2023, month: 11, day: 15);
 
       case 'datetime.now':
-        final tz = args.isNotEmpty ? args.first : null;
+        final tz = args.firstOrNull;
         if (tz is MontyTimeZone) {
           // Aware: the fixture timestamp in the requested zone.
           final local = DateTime.fromMillisecondsSinceEpoch(

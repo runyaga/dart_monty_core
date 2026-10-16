@@ -1,8 +1,8 @@
 part of 'os_access.dart';
 
-final class _DirectoryOperations {
-  _DirectoryOperations(this.tree);
-  final _MemoryTree tree;
+final class _OsAccessDirectories {
+  const _OsAccessDirectories(this.tree);
+  final _OsAccessTree tree;
   MontyNone mkdir(String path, {required bool parents, required bool existOk}) {
     final entry = tree.lookup(path);
     if (entry is AbstractFile || entry is _Directory && !existOk) {
@@ -24,6 +24,7 @@ final class _DirectoryOperations {
     } else {
       throw _fsError('FileNotFoundError', path);
     }
+
     return const MontyNone();
   }
 
@@ -33,6 +34,7 @@ final class _DirectoryOperations {
     final parent = tree.parent(path);
     if (parent is! _Directory) throw StateError('Expected parent directory');
     _remove(parent, fileName(path));
+
     return const MontyNone();
   }
 
@@ -57,13 +59,14 @@ final class _DirectoryOperations {
     );
     targetParent.children[fileName(target)] = source;
     if (source is _Directory) _rewritePaths(source, path, target);
+
     return const MontyNone();
   }
 }
 
 void _rewritePaths(_Directory tree, String from, String to) {
   final pending = Queue<Iterator<Object>>()..add(tree.children.values.iterator);
-  final visited = <_Directory>{tree};
+  final visited = {tree};
   final prefix = from.endsWith('/') ? from : '$from/';
   while (pending.isNotEmpty) {
     final current = pending.removeLast();

@@ -2,7 +2,7 @@ import 'package:dart_monty_core/src/platform/monty_value.dart';
 
 /// Builders for the named stat tuple accepted by the worker.
 abstract final class StatResult {
-  StatResult._();
+  const StatResult._();
 
   /// A regular file, preserving full mode bits and using epoch seconds.
   static MontyNamedTuple fileStat(
@@ -20,6 +20,7 @@ MontyNamedTuple _stat(int mode, int links, int size, double? mtime) {
   final time = MontyFloat(
     mtime ?? DateTime.now().microsecondsSinceEpoch / 1000000,
   );
+
   return MontyNamedTuple(
     typeName: 'StatResult',
     fieldNames: const [

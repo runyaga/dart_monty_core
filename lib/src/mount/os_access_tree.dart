@@ -1,13 +1,11 @@
 part of 'os_access.dart';
 
-final class _Directory {
-  final Map<String, Object> children = {};
-}
-
-final class _MemoryTree {
-  _MemoryTree() {
+final class _OsAccessTree {
+  _OsAccessTree() {
     entries.children['/'] = _Directory();
   }
+
+  final _Directory entries = _Directory();
 
   void seed(List<AbstractFile> files, String root) {
     for (final file in files) {
@@ -29,8 +27,6 @@ final class _MemoryTree {
     }
   }
 
-  final _Directory entries = _Directory();
-
   Object? lookup(String path) {
     Object? entry = entries;
     final parts = _parts(path);
@@ -44,6 +40,7 @@ final class _MemoryTree {
       if (entry is! _Directory) return null;
       entry = entry.children[part];
     }
+
     return entry;
   }
 
@@ -64,8 +61,13 @@ final class _MemoryTree {
   Object? parent(String path) => lookup(_parentPath(path));
 }
 
+final class _Directory {
+  final Map<String, Object> children = {};
+}
+
 List<String> _parts(String path) {
   final normalized = purePosixPath(path);
+
   return [
     if (normalized.startsWith('//'))
       '//'
@@ -80,6 +82,7 @@ String _parentPath(String path) {
   if (parts.length <= 1) return path.startsWith('/') ? path : '.';
   final parent = parts.take(parts.length - 1).toList();
   final root = parent.firstOrNull ?? '';
+
   return root.startsWith('/')
       ? root + parent.skip(1).join('/')
       : parent.join('/');
@@ -96,6 +99,7 @@ ExternalException _fsError(String type, String path, [String? target]) {
           ? '[Errno 39] Directory not empty'
           : '[Errno 66] Directory not empty',
   };
+
   return ExternalException(
     type,
     '$prefix: ${pythonRepr(path)}'

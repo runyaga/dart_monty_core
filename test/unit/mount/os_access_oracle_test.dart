@@ -15,7 +15,7 @@ void main() {
       if (row['seedBytes'] case final List<Object?> bytes) {
         for (final file in fs.files) {
           if (file.path == '/bytes') {
-            file.writeContent(Uint8List.fromList(bytes.cast<int>()));
+            file.writeContent(Uint8List.fromList(bytes.cast()));
           }
         }
       }
@@ -65,12 +65,12 @@ List<MontyValue> _args(String op, List<Object?> args) => [
     if (i == 0 || op == 'Path.rename')
       MontyPath(arg as String? ?? (throw StateError('missing argument')))
     else if (arg is List<Object?>)
-      MontyBytes(arg.cast<int>())
+      MontyBytes(arg.cast())
     else
       MontyString(arg as String? ?? (throw StateError('missing argument'))),
 ];
 
-Object? _encode(MontyValue value) => switch (value) {
+Object? _encode(MontyValue arg) => switch (arg) {
   MontyBytes(:final value) => {'bytes': value},
   MontyPath(:final value) => {'path': value},
   MontyFileHandle(:final path, :final mode) => {
@@ -80,6 +80,6 @@ Object? _encode(MontyValue value) => switch (value) {
     'stat': values.take(7).map(_encode).toList(),
   },
   MontyList(:final items) => items.map(_encode).toList(),
-  _ => value.dartValue,
+  _ => arg.dartValue,
 };
 Object _content(Object value) => value is Uint8List ? {'bytes': value} : value;

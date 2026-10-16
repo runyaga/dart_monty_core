@@ -41,7 +41,7 @@ text = f.read()
 f.close()
 text
 ''', os: os);
-  print('read:     ${read.dartValue.toString().trim()}');
+  print('read:     ${(read.dartValue?.toString() ?? 'null').trim()}');
   _check(read == const MontyString('roses are red\n'), 'read');
 
   // 'w' truncates, then each write appends within the same handle.
@@ -51,11 +51,9 @@ f.write("violets are blue\n")
 f.write("monty runs python\n")
 f.close()
 ''', os: os);
-  print('rewrote:  ${(poem.content as String).trim().split("\n")}');
-  _check(
-    (poem.content as String) == 'violets are blue\nmonty runs python\n',
-    'w',
-  );
+  final rewritten = poem.content as String;
+  print('rewrote:  ${rewritten.trim().split("\n")}');
+  _check(rewritten == 'violets are blue\nmonty runs python\n', 'w');
 
   // 'a' keeps the existing content.
   await session.feedRun(r'''
@@ -63,8 +61,9 @@ f = open("/data/poem.txt", "a")
 f.write("and so do you\n")
 f.close()
 ''', os: os);
-  print('appended: ${(poem.content as String).trim().split("\n").lastOrNull}');
-  _check((poem.content as String).endsWith('and so do you\n'), 'a');
+  final appended = poem.content as String;
+  print('appended: ${appended.trim().split("\n").lastOrNull}');
+  _check(appended.endsWith('and so do you\n'), 'a');
 }
 
 // ── with open(...) as f: closes the file ─────────────────────────────────────
@@ -80,10 +79,10 @@ with open("/data/log.txt", "w") as f:
     inside = f.closed
 (n, inside, f.closed)
 ''', os: os);
-  final t = r.dartValue as List<Object?>;
-  print('wrote ${t[0]} chars; closed inside=${t[1]} after=${t[2]}');
+  final [count, inside, closed] = r.dartValue as List<Object?>;
+  print('wrote $count chars; closed inside=$inside after=$closed');
   print('file:     ${(log.content as String).trim()}');
-  _check(t[1] == false && t[2] == true, 'closed after the block');
+  _check(inside == false && closed == true, 'closed after the block');
 }
 
 // ── Binary mode (rb / wb) ────────────────────────────────────────────────────
@@ -127,8 +126,9 @@ out
     await session.feedRun('open("/data/nope.txt")', os: os);
     throw StateError('opening a missing file did not raise');
   } on MontyRuntimeError catch (e) {
-    print('uncaught: ${e.exception.excType}');
-    _check(e.exception.excType == 'FileNotFoundError', 'uncaught');
+    final type = e.exception.excType;
+    print('uncaught: $type');
+    _check(type == 'FileNotFoundError', 'uncaught');
   }
 }
 
