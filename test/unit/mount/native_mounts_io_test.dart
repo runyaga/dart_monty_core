@@ -14,6 +14,12 @@ import 'package:test/test.dart';
 // Expectations: design/F/evidence/probes/oracle_probes.out, P01-P08.
 // Protobuf is transport only; no expected result is computed by monty-fs.
 void main() {
+  test(
+    'the lookup route names the discovery path that supplied the symbols',
+    () {
+      expect(nativeMountLookupRoute, isIn(<String>['asset', 'package']));
+    },
+  );
   late Directory dir;
   setUp(() {
     dir = Directory.systemTemp.createTempSync('dmfs-');
