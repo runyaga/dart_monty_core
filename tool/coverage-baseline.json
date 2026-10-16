@@ -51,10 +51,20 @@
       "hit": 17,
       "pct": 100.0
     },
+    "lib/src/mount/mount_dir.dart": {
+      "found": 14,
+      "hit": 14,
+      "pct": 100.0
+    },
     "lib/src/mount/native_mount_bindings.dart": {
       "found": 28,
       "hit": 28,
       "pct": 100.0
+    },
+    "lib/src/mount/native_mount_lookup.dart": {
+      "found": 13,
+      "hit": 12,
+      "pct": 92.31
     },
     "lib/src/mount/native_mount_service.dart": {
       "found": 0,
@@ -62,8 +72,8 @@
       "pct": 0.0
     },
     "lib/src/mount/native_mounts.dart": {
-      "found": 83,
-      "hit": 83,
+      "found": 88,
+      "hit": 88,
       "pct": 100.0
     },
     "lib/src/mount/native_mounts_web.dart": {
@@ -237,8 +247,8 @@
       "pct": 98.73
     },
     "lib/src/worker/host_answers.dart": {
-      "found": 349,
-      "hit": 349,
+      "found": 353,
+      "hit": 353,
       "pct": 100.0
     },
     "lib/src/worker/host_objects.dart": {
@@ -253,8 +263,8 @@
     },
     "lib/src/worker/monty.dart": {
       "found": 29,
-      "hit": 26,
-      "pct": 89.66
+      "hit": 29,
+      "pct": 100.0
     },
     "lib/src/worker/monty_channel.dart": {
       "found": 7,
@@ -267,9 +277,9 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_session.dart": {
-      "found": 510,
-      "hit": 504,
-      "pct": 98.82
+      "found": 518,
+      "hit": 512,
+      "pct": 98.84
     },
     "lib/src/worker/monty_snapshot.dart": {
       "found": 91,
@@ -292,8 +302,8 @@
       "pct": 100.0
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 243,
-      "hit": 243,
+      "found": 247,
+      "hit": 247,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -317,9 +327,9 @@
       "pct": 97.92
     },
     "lib/src/worker/self_relaunch.dart": {
-      "found": 5,
-      "hit": 4,
-      "pct": 80.0
+      "found": 7,
+      "hit": 6,
+      "pct": 85.71
     },
     "lib/src/worker/self_relaunch_stub.dart": {
       "found": 2,
@@ -458,8 +468,8 @@
     }
   },
   "total": {
-    "found": 7662,
-    "hit": 7605,
-    "pct": 99.26
+    "found": 7712,
+    "hit": 7657,
+    "pct": 99.29
   }
 }
