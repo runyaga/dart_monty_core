@@ -674,7 +674,9 @@ final class FeedResult {
 /// [host]'s answer to the suspension [event]. A failure that escapes
 /// preparing it kills [channel]'s worker before it is rethrown: the worker
 /// is left waiting on an answer that never comes, and upstream discards the
-/// checkout on any error from the answer (`pool.rs` drive loop).
+/// checkout on any error from a function call, a name lookup or the pending
+/// futures. An OS call is the exception: upstream propagates its failure
+/// and keeps the checkout, so only a protocol violation kills there.
 Future<pb.ParentRequest?> _answer(
   HostAnswers host,
   pb.ChildEvent event,
@@ -682,8 +684,11 @@ Future<pb.ParentRequest?> _answer(
 ) async {
   try {
     return await host.answer(event);
-  } on Object {
-    channel.kill();
+  } on Object catch (e) {
+    final protocol = e is MontyCrashedError && e.cause == CrashCause.protocol;
+    if (protocol || event.whichKind() != pb.ChildEvent_Kind.osCall) {
+      channel.kill();
+    }
     rethrow;
   }
 }
