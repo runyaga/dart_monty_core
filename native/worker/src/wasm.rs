@@ -17,6 +17,8 @@ use monty_proto::{
 };
 use monty_types::memory_limit_with_headroom;
 
+use crate::turn::dispatch_owned;
+
 thread_local! {
     static BACKPRESSURE: Cell<bool> = const { Cell::new(false) };
     static CHILD: RefCell<Child> = RefCell::new(new_child());
@@ -124,12 +126,13 @@ pub unsafe extern "C" fn dmw_dispatch(ptr: *const u8, len: usize) -> *const u8 {
     let request = if ptr.is_null() || len == 0 {
         Vec::new()
     } else {
-        // SAFETY: the host transfers the allocation returned by dmw_alloc.
-        unsafe { Vec::from_raw_parts(ptr.cast_mut(), len, len) }
+        // SAFETY: the host transfers the allocation returned by dmw_alloc,
+        // whose capacity is `len.max(1)`; `len` bytes are initialised.
+        unsafe { Vec::from_raw_parts(ptr.cast_mut(), len, len.max(1)) }
     };
     let (mut frames, outcome, armed) = CHILD.with_borrow_mut(|child| {
         let mut sink = StreamingSink::default();
-        let outcome = crate::turn::dispatch_owned(child, request, &mut sink);
+        let outcome = dispatch_owned(child, request, &mut sink);
         let frames = sink.end;
         let budget = child.session_budget();
         let limit = memory_limit_with_headroom(budget.max_memory, budget.type_check);
