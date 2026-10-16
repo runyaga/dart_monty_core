@@ -59,7 +59,7 @@ TelemetryAttributes feedAttributes(pb.Feed feed) {
   return attributes;
 }
 
-/// Event creation uses unsigned debug strings; later span.record uses i64.
+/// Span creation uses unsigned debug strings; logs and span.record use i64.
 TelemetryAttributes eventTiming(pb.ChildEvent event, {bool signed = false}) {
   Object value(Int64 micros) =>
       signed ? _signedCount(micros) : micros.toStringUnsigned();
@@ -134,7 +134,7 @@ String _snake(String name) => name.replaceAllMapped(
 TelemetryAttributes errorAttributes(pb.ChildEvent event) {
   final error = event.error;
   final exception = error.exception;
-  final attributes = eventTiming(event)
+  final attributes = eventTiming(event, signed: true)
     ..text('exc_type', error.hasException() ? exception.excType : '<missing>');
   if (exception.hasMessage()) attributes.text('exc_message', exception.message);
   if (exception.traceback.isNotEmpty) {

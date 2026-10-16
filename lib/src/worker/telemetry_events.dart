@@ -18,7 +18,7 @@ extension TelemetryEvents on TelemetryRecorder {
       case pb.ChildEvent_Kind.typingError:
         _log(
           'typing error',
-          eventTiming(event)
+          eventTiming(event, signed: true)
             ..text('diagnostics', event.typingError.diagnostics),
           error: true,
         );
@@ -123,7 +123,7 @@ extension TelemetryEvents on TelemetryRecorder {
     final feed = _feed;
     _feed = null;
     if (feed == null) {
-      _log('complete', eventTiming(event)..add('output', output));
+      _log('complete', eventTiming(event, signed: true)..add('output', output));
     } else {
       feed.attributes.add('output', output);
       feed.attributes.values.addAll(eventTiming(event, signed: true).values);

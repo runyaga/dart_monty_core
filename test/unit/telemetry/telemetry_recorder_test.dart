@@ -30,6 +30,7 @@ void main() {
         ..event(
           pb.ChildEvent(
             totalExecutionMicros: Int64(7),
+            maxFeedDurationMicros: Int64(1000),
             functionCall: pb.FunctionCall(
               functionName: 'ext',
               callId: 3,
@@ -71,6 +72,8 @@ void main() {
         pending,
         containsPair('total_execution_micros', '7'),
       );
+      expect(pending['max_feed_duration_micros'], '1000');
+      expect(pending['call_id'], '3');
       expect(
         pending['sandbox.code.offset.start'],
         6,
@@ -83,6 +86,83 @@ void main() {
       expect(adapter.logs, isEmpty); // Eager single result is a span attribute.
     },
   );
+
+  test('1/0 error log delivers integer timing to the adapter', () {
+    // Upstream 59152739 tracing.rs:851-879 emits typed log values;
+    // monty-python telemetry.rs:611-617 preserves AnyValue::Int as an integer.
+    final integer = isA<int>();
+    for (final budget in [null, Int64(1000)]) {
+      adapter.clear();
+      TelemetryRecorder(requireRecord(telemetryBridge), null)
+        ..beginTurn(pb.ParentRequest(configure: pb.Configure()))
+        ..beginTurn(pb.ParentRequest(feed: pb.Feed(code: '1/0')))
+        ..event(
+          pb.ChildEvent(
+            totalExecutionMicros: Int64(7),
+            maxFeedDurationMicros: budget,
+            error: pb.Error(
+              exception: pb.RaisedException(
+                excType: 'ZeroDivisionError',
+                message: 'division by zero',
+              ),
+            ),
+          ),
+        )
+        ..close();
+      final log = requireRecord(adapter.logs.singleOrNull);
+      expect(log.body, 'error ZeroDivisionError');
+      expect(log.number, 17);
+      expect(log.attributes['exc_message'], 'division by zero');
+      expect(log.attributes['total_execution_micros'], integer);
+      expect(log.attributes['total_execution_micros'], 7);
+      if (budget == null) {
+        expect(log.attributes, isNot(contains('max_feed_duration_micros')));
+      } else {
+        expect(log.attributes['max_feed_duration_micros'], integer);
+        expect(log.attributes['max_feed_duration_micros'], 1000);
+      }
+    }
+  });
+
+  test('typing and standalone completion logs deliver integer timing', () {
+    // Upstream 59152739 tracing.rs:396-405 and 467-474 use the same
+    // logfire timing fields as record_error, outside the unsigned span path.
+    final integer = isA<int>();
+    TelemetryRecorder(requireRecord(telemetryBridge), null)
+      ..beginTurn(pb.ParentRequest(configure: pb.Configure()))
+      ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+      ..event(
+        pb.ChildEvent(
+          totalExecutionMicros: Int64(7),
+          maxFeedDurationMicros: Int64(1000),
+          typingError: pb.TypingError(diagnostics: 'bad type'),
+        ),
+      )
+      ..event(
+        pb.ChildEvent(
+          totalExecutionMicros: Int64(9),
+          maxFeedDurationMicros: Int64(1000),
+          complete: pb.Complete(
+            value: 0,
+            values: pb.Arena(nodes: [intNode(42)]),
+          ),
+        ),
+      )
+      ..close();
+    expect(adapter.logs.map((log) => log.body), ['typing error', 'complete']);
+    expect(
+      adapter.logs.map((log) => log.attributes['total_execution_micros']),
+      [
+        7,
+        9,
+      ],
+    );
+    for (final log in adapter.logs) {
+      expect(log.attributes['total_execution_micros'], integer);
+      expect(log.attributes['max_feed_duration_micros'], integer);
+      expect(log.attributes['max_feed_duration_micros'], 1000);
+    }
+  });
 
   test('dump error closes only dump; abort answers the pending call', () {
     final recorder = TelemetryRecorder(requireRecord(telemetryBridge), null)
