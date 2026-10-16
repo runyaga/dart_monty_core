@@ -58,8 +58,9 @@ void main() {
           'worker_manifest_',
         );
         addTearDown(() => temporary.delete(recursive: true));
-        final workerFile = File('${temporary.path}/${worker!.file}');
+        if (worker == null) fail('worker artifact missing');
         await workerFile.writeAsString(workerContents);
+        final workerFile = File('${temporary.path}/${worker.file}');
         await verifyWorkerFile(workerFile, worker);
       },
     );
