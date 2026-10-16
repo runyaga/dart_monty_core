@@ -115,7 +115,7 @@ Future<(WorkerExecutable?, String?)> _cacheExecutable(
   final location = _cacheLocation(abi, source);
   if (location == null) return (null, null);
 
-  if (FileSystemEntity.typeSync(location.cachePath) ==
+  if (FileSystemEntity.typeSync(location.cachePath, followLinks: false) ==
       FileSystemEntityType.notFound) {
     return (null, location.cachePath);
   }
@@ -139,12 +139,26 @@ Future<(WorkerExecutable?, String?)> _cacheExecutable(
       ?.worker;
   if (artifact == null) return null;
 
-  final root = workerCacheRoot(
-    environment: source?.environment,
-    operatingSystem: source?.operatingSystem,
-  );
+  final root = _cacheRoot(source);
 
   return (artifact: artifact, cachePath: workerCacheFile(root, artifact));
+}
+
+String _cacheRoot(WorkerCacheSource? source) {
+  try {
+    return workerCacheRoot(
+      environment: source?.environment,
+      operatingSystem: source?.operatingSystem,
+    );
+  } on WorkerCacheError catch (error) {
+    final variable = source?.operatingSystem == 'windows'
+        ? 'LOCALAPPDATA'
+        : 'HOME';
+    throw spawnError(
+      'Published dart_monty_core worker cache is unusable: ${error.message}; '
+      'set $variable to an absolute directory, or pass a WorkerExecutable.',
+    );
+  }
 }
 
 /// Step 3: [SelfRelaunch] if [ready] says this process can serve it.

@@ -89,12 +89,18 @@ String workerCacheRoot({
 }
 
 /// Returns the cache directory for [artifact].
-String workerCacheDir(String root, WorkerArtifact artifact) =>
-    _contextFor(root).join(root, 'worker-${artifact.sha256}');
+String workerCacheDir(String root, WorkerArtifact artifact) {
+  final context = _contextForRoot(root);
+
+  return _workerCacheDir(root, artifact, context);
+}
 
 /// Returns the cache file for [artifact].
-String workerCacheFile(String root, WorkerArtifact artifact) =>
-    _contextFor(root).join(workerCacheDir(root, artifact), artifact.file);
+String workerCacheFile(String root, WorkerArtifact artifact) {
+  final context = _contextForRoot(root);
+
+  return context.join(_workerCacheDir(root, artifact, context), artifact.file);
+}
 
 /// Verifies [file] against [artifact] without loading its contents at once.
 Future<void> verifyWorkerFile(File file, WorkerArtifact artifact) async {
@@ -136,7 +142,7 @@ Future<void> verifyWorkerFile(File file, WorkerArtifact artifact) async {
 }
 
 String _cacheFromHome(Map<String, String> variables, {required bool macos}) {
-  final home = _absoluteVariable(variables, 'HOME', path.posix);
+  final home = _absoluteVariable(variables, 'HOME', windows: false);
 
   return macos
       ? path.posix.join(home, 'Library', 'Caches', 'dart_monty')
@@ -145,18 +151,18 @@ String _cacheFromHome(Map<String, String> variables, {required bool macos}) {
 
 String _cacheFromLocalAppData(Map<String, String> variables) =>
     path.windows.join(
-      _absoluteVariable(variables, 'LOCALAPPDATA', path.windows),
+      _absoluteVariable(variables, 'LOCALAPPDATA', windows: true),
       'dart_monty',
       'Cache',
     );
 
 String _absoluteVariable(
   Map<String, String> variables,
-  String name,
-  path.Context context,
-) {
+  String name, {
+  required bool windows,
+}) {
   final value = variables[name];
-  if (value == null || value.isEmpty || !context.isAbsolute(value)) {
+  if (value == null || value.isEmpty || !_isAbsoluteForHost(value, windows)) {
     throw WorkerCacheError(
       '$name must be an absolute path; set $name before running Dart.',
     );
@@ -165,7 +171,17 @@ String _absoluteVariable(
   return value;
 }
 
-path.Context _contextFor(String root) =>
-    RegExp(r'^(?:[A-Za-z]:[\\/]|\\\\)').hasMatch(root)
-    ? path.windows
-    : path.posix;
+String _workerCacheDir(
+  String root,
+  WorkerArtifact artifact,
+  path.Context context,
+) => context.join(root, 'worker-${artifact.sha256}');
+
+bool _isAbsoluteForHost(String value, bool windows) =>
+    windows ? _isWindowsAbsolute(value) : value.startsWith('/');
+
+bool _isWindowsAbsolute(String value) =>
+    RegExp(r'^[A-Za-z]:[\\/]|^\\\\[^\\/]+[\\/][^\\/]+').hasMatch(value);
+
+path.Context _contextForRoot(String root) =>
+    _isWindowsAbsolute(root) ? path.windows : path.posix;

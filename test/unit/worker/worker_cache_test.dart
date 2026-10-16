@@ -41,6 +41,18 @@ void main() {
       );
     });
 
+    for (final localAppData in [r'\srv\cache', '/srv/cache']) {
+      test('rejects root-relative Windows LOCALAPPDATA $localAppData', () {
+        expect(
+          () => workerCacheRoot(
+            environment: {'LOCALAPPDATA': localAppData},
+            operatingSystem: 'windows',
+          ),
+          throwsA(isA<WorkerCacheError>()),
+        );
+      });
+    }
+
     for (final home in [null, '', 'relative']) {
       test('rejects invalid HOME $home', () {
         final environment = <String, String>{'HOME': ?home};

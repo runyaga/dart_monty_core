@@ -216,6 +216,60 @@ void main() {
         expect((launch as WorkerExecutable).path, package.path);
       });
     });
+
+    test('reports an invalid cache environment as a hard error', () async {
+      await expectLater(
+        locateWorker(
+          abi: Abi.current(),
+          cache: WorkerCacheSource(
+            environment: const {'HOME': 'relative'},
+            manifest: _manifestForHost(),
+          ),
+          resolvePackageUri: (_) async => (await _packageFile('worker')).uri,
+        ),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (error) => error.toString(),
+            'message',
+            allOf(
+              contains('HOME'),
+              contains('set HOME to an absolute directory'),
+              contains('WorkerExecutable'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('treats a dangling cache symlink as a hard error', () async {
+      if (Platform.isWindows) return;
+
+      await _withTemporaryHome((environment) async {
+        final cache = File(
+          workerCacheFile(workerCacheRoot(environment: environment), _artifact),
+        );
+        await cache.parent.create(recursive: true);
+        await Link(cache.path).create('${cache.parent.path}/missing');
+        final package = await _packageFile('package-worker');
+        await expectLater(
+          locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: _manifestForHost(),
+            ),
+            resolvePackageUri: (_) async => package.uri,
+          ),
+          throwsA(
+            isA<MontyCrashedError>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(contains(cache.path), contains('invalid')),
+            ),
+          ),
+        );
+      });
+    });
   });
 }
 
