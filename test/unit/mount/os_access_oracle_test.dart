@@ -11,14 +11,7 @@ void main() {
   for (final encoded in memoryFsOracle) {
     final row = jsonDecode(encoded) as Map<String, Object?>;
     test('upstream memory fs ${row['name']}', () async {
-      final fs = _seed();
-      if (row['seedBytes'] case final List<Object?> bytes) {
-        for (final file in fs.files) {
-          if (file.path == '/bytes') {
-            file.writeContent(Uint8List.fromList(bytes.cast()));
-          }
-        }
-      }
+      final fs = _seed(row);
       await fs('Path.unlink', [MontyPath('/empty/f')], {});
       final op = row['op'] as String? ?? (throw StateError('missing op'));
       final args =
@@ -50,19 +43,33 @@ void main() {
   }
 }
 
-OSAccess _seed() => OSAccess(
+OSAccess _seed(Map<String, Object?> row) => OSAccess(
+  maxSleep: row.containsKey('maxSleep')
+      ? switch (row['maxSleep']) {
+          final num cap => Duration(microseconds: (cap * 1000000).round()),
+          _ => null,
+        }
+      : const Duration(seconds: 10),
   files: [
     MemoryFile('/d/f', 'é'),
     MemoryFile('/d/sub/f', 'nested'),
     MemoryFile('/empty/f', ''),
-    MemoryFile('/bytes', Uint8List.fromList([0, 255])),
+    MemoryFile(
+      '/bytes',
+      Uint8List.fromList(switch (row['seedBytes']) {
+        final List<Object?> bytes => bytes.cast(),
+        _ => [0, 255],
+      }),
+    ),
     MemoryFile('//double/f', 'double'),
   ],
 );
 
 List<MontyValue> _args(String op, List<Object?> args) => [
   for (final (i, arg) in args.indexed)
-    if (i == 0 || op == 'Path.rename')
+    if (op == 'time.sleep' && arg == 'nan')
+      const MontyFloat(double.nan)
+    else if (i == 0 || op == 'Path.rename')
       MontyPath(arg as String? ?? (throw StateError('missing argument')))
     else if (arg is List<Object?>)
       MontyBytes(arg.cast())

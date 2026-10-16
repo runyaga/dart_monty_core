@@ -55,10 +55,11 @@ final class _OsAccessDefaults {
       MontyFloat(:final value) => value,
       _ => throw const ExternalException('TypeError', 'sleep expects a number'),
     };
-    final cap = maxSleep;
-    final capped = cap == null
+    final cap = maxSleep?.inMicroseconds;
+    final capSeconds = cap == null ? null : cap / 1000000;
+    final capped = capSeconds == null || seconds <= capSeconds
         ? seconds
-        : min(seconds, cap.inMicroseconds / 1000000);
+        : capSeconds;
     if (capped.isNaN) {
       throw const ExternalException(
         'ValueError',

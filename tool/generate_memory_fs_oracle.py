@@ -34,6 +34,14 @@ def cases():
     for src in ['/d/f', '/d', '/missing', '/bytes', '/empty']:
         for dst in ['/new', '/missing/f', '/bytes', '/d', '/d/f', '/empty']:
             yield f'rename:{src}:{dst}', 'Path.rename', [src, dst], {}
+    for src, dst in [('f', '/new'), ('/missing', 'new'), ('f', 'new')]:
+        yield f'review:rename:{src}:{dst}', 'Path.rename', [src, dst], {}
+
+    for op in ['Path.read_text', 'Path.append_text']:
+        args = ['/bytes', 'B'] if op.endswith('append_text') else ['/bytes']
+        yield f'review:bom:{op}', op, args, {'seedBytes': [239, 187, 191, 65]}
+    for cap in [0, 0.001, None]:
+        yield f'review:sleep:nan:{cap}', 'time.sleep', ['nan'], {'maxSleep': cap}
 
     for op in ['Path.exists', 'Path.iterdir', 'Path.mkdir']:
         yield f'empty-path:{op}', op, ['.'], {}
@@ -60,14 +68,16 @@ def encode(value):
 
 def record(case):
     name, op, args, kwargs = case
+    kwargs = dict(kwargs)
     files = [monty.MemoryFile(path, bytes(data) if isinstance(data, list) else data) for path, data in SEEDS]
     seed_bytes = kwargs.get('seedBytes')
     if seed_bytes is not None:
         files[3].content = bytes(seed_bytes)
         kwargs = {}
-    fs = monty.OSAccess(files)
+    config = {'max_sleep': kwargs.pop('maxSleep')} if 'maxSleep' in kwargs else {}
+    fs = monty.OSAccess(files, **config)
     fs.path_unlink(PurePosixPath('/empty/f'))
-    converted = [PurePosixPath(args[0])]
+    converted = [float(args[0]) if op == 'time.sleep' else PurePosixPath(args[0])]
     if len(args) > 1:
         data = args[1]
         converted.append(PurePosixPath(data) if op == 'Path.rename' else bytes(data) if isinstance(data, list) else data)
@@ -78,7 +88,10 @@ def record(case):
         kind = 'ValueError' if isinstance(error, UnicodeDecodeError) else type(error).__name__
         result = {'error': [kind, str(error)]}
     state = [[str(f.path), encode(f.read_content()), f.deleted] for f in fs.files]
-    return dict(name=name, op=op, args=args, kwargs=kwargs, result=result, state=state, seedBytes=seed_bytes)
+    row = dict(name=name, op=op, args=args, kwargs=kwargs, result=result, state=state, seedBytes=seed_bytes)
+    if config:
+        row['maxSleep'] = config['max_sleep']
+    return row
 
 
 def main():

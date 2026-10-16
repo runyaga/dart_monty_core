@@ -68,7 +68,14 @@ String _text(Object content) {
   if (content is String) return content;
   final bytes = _bytes(content);
   try {
-    return utf8.decode(bytes);
+    final decoded = utf8.decode(bytes);
+    // Dart strips the leading UTF-8 BOM; Python's bytes.decode() preserves it.
+    final hasBom =
+        bytes.firstOrNull == 0xEF &&
+        bytes.elementAtOrNull(1) == 0xBB &&
+        bytes.elementAtOrNull(2) == 0xBF;
+
+    return hasBom ? '\uFEFF$decoded' : decoded;
   } on FormatException {
     throw ExternalException('ValueError', _utf8Failure(bytes));
   }

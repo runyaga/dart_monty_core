@@ -44,12 +44,13 @@ final class _OsAccessDirectories {
   ]);
   MontyNone rename(String path, String target) {
     final source = tree.lookup(path);
+    if (source == null) throw _fsError('FileNotFoundError', path, target);
     final parent = tree.parent(path);
+    if (parent is! _Directory) throw StateError('Expected parent directory');
     final targetParent = tree.parent(target);
-    if (source == null || targetParent is! _Directory) {
+    if (targetParent is! _Directory) {
       throw _fsError('FileNotFoundError', path, target);
     }
-    if (parent is! _Directory) throw StateError('Expected parent directory');
     final dest = tree.lookup(target);
     _checkRenameTarget(source, dest, path, target);
     if (source is AbstractFile && dest is AbstractFile) dest.delete();
