@@ -6,12 +6,13 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/mount/native_mount_bindings.dart';
+import 'package:dart_monty_core/src/mount/native_mount_lookup.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:ffi/ffi.dart';
 
-final _bindings = NativeMountBindings.load();
-final _mounts = NativeMounts(_bindings);
+NativeMountBindings get _bindings => nativeMountLookup.bindings;
+NativeMounts get _mounts => NativeMounts(_bindings);
 
 /// Which discovery route supplied the symbols (for packaging smoke tests).
 String get nativeMountLookupRoute => _bindings.route;
