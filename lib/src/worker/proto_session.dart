@@ -671,11 +671,10 @@ final class FeedResult {
   final List<(String, String)> prints;
 }
 
-/// [host]'s answer to the suspension [event]. A failure the worker cannot be
-/// left waiting on kills [channel]'s worker before it is rethrown: a payload
-/// [host] rejects as upstream does when the frame arrives (a protocol
-/// violation), and a lookup value the writer refuses, which upstream never
-/// answers, discarding the checkout.
+/// [host]'s answer to the suspension [event]. A failure that escapes
+/// preparing it kills [channel]'s worker before it is rethrown: the worker
+/// is left waiting on an answer that never comes, and upstream discards the
+/// checkout on any error from the answer (`pool.rs` drive loop).
 Future<pb.ParentRequest?> _answer(
   HostAnswers host,
   pb.ChildEvent event,
@@ -683,11 +682,8 @@ Future<pb.ParentRequest?> _answer(
 ) async {
   try {
     return await host.answer(event);
-  } on Object catch (e) {
-    final protocol = e is MontyCrashedError && e.cause == CrashCause.protocol;
-    if (protocol || event.whichKind() == pb.ChildEvent_Kind.nameLookup) {
-      channel.kill();
-    }
+  } on Object {
+    channel.kill();
     rethrow;
   }
 }

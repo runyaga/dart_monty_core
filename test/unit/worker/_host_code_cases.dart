@@ -5,10 +5,13 @@
 // (test/integration/worker/monty_snapshot_io_test.dart) and the Chrome one
 // (pool_session_web_test.dart), so vm, dart2js and dart2wasm run the same
 // cases.
+import 'dart:collection';
+
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart'
     show OsCallNotHandledException;
-import 'package:dart_monty_core/src/worker/host_answers.dart' show AsyncDecline;
+import 'package:dart_monty_core/src/worker/host_answers.dart'
+    show AsyncDecline, coroutine;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/monty_session.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
@@ -66,6 +69,33 @@ MontyTuple _caught(String type, String repr, List<String> args) => MontyTuple([
   MontyString(repr),
   MontyTuple([for (final a in args) MontyString(a)]),
 ]);
+
+/// Attributes that throw when read: host code that breaks the map's
+/// contract, so preparing the answer to an [ExternalException] fails.
+Map<String, MontyValue> _unreadableAttributes() => HashMap<String, MontyValue>(
+  hashCode: (key) => throw StateError('unreadable'),
+);
+
+/// A feed on a session that was ended, not one left awaiting an answer.
+final Matcher _finished = throwsA(
+  isA<StateError>().having(
+    (e) => e.message,
+    'message',
+    'the session is finished',
+  ),
+);
+
+/// A host function raising an exception whose answer cannot be prepared.
+MontyHostFunction _unanswerable(String name, {bool async = false}) {
+  MontyValue fail(List<MontyValue> _, Map<String, MontyValue> _) =>
+      throw ExternalException(
+        'json.JSONDecodeError',
+        'm',
+        _unreadableAttributes(),
+      );
+
+  return MontyHostFunction(name, async ? coroutine(fail) : fail);
+}
 
 Never _decline(String name, List<MontyValue> a, Map<String, MontyValue> k) =>
     throw const OsCallNotHandledException();
@@ -345,6 +375,53 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
             MontyTuple([MontyString(text)]),
           ]),
         );
+      });
+    });
+
+    group('a failure preparing a host answer', () {
+      test('feedRun discards the worker and finishes the session', () async {
+        await withSession(_plain, (s) async {
+          await expectLater(
+            s.feedRun(
+              'f()',
+              printCallback: _ignore,
+              externalLookup: {'f': _unanswerable('f')},
+            ),
+            throwsStateError,
+          );
+          await expectLater(s.feedRun('1 + 1'), _finished);
+        });
+      });
+
+      test('resumeAuto of a call discards the worker and finishes the '
+          'session', () async {
+        await withSession(_plain, (s) async {
+          final call =
+              await s.feedStart(
+                    'f()',
+                    printCallback: _ignore,
+                    externalLookup: {'f': _unanswerable('f')},
+                  )
+                  as FunctionSnapshot;
+          await expectLater(call.resumeAuto(), throwsStateError);
+          await expectLater(s.feedRun('1 + 1'), _finished);
+        });
+      });
+
+      test('resumeAuto of futures discards the worker and finishes the '
+          'session', () async {
+        await withSession(_plain, (s) async {
+          final call =
+              await s.feedStart(
+                    'import asyncio\nawait asyncio.gather(f())',
+                    printCallback: _ignore,
+                    externalLookup: {'f': _unanswerable('f', async: true)},
+                  )
+                  as FunctionSnapshot;
+          final waiting = await call.resumeAuto() as FutureSnapshot;
+          await expectLater(waiting.resumeAuto(), throwsStateError);
+          await expectLater(s.feedRun('1 + 1'), _finished);
+        });
       });
     });
   });
