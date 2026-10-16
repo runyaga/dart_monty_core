@@ -10,6 +10,7 @@ import 'package:dart_monty_core/src/worker/arena_nodes.dart' show uuidString;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_rules.dart'
     show parseFileMode, pythonRepr;
+import 'package:dart_monty_core/src/worker/telemetry_scalars.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 
 part 'telemetry_json.dart';
@@ -51,7 +52,10 @@ Rendered telemetryValue(pb.Arena arena, int id) {
 
   return switch (node.whichKind()) {
     pb.MontyNode_Kind.boolean => (value: node.boolean, cut: false),
-    pb.MontyNode_Kind.int_5 => (value: intOfNode(node).toInt(), cut: false),
+    pb.MontyNode_Kind.int_5 => (
+      value: telemetryInteger(intOfNode(node)),
+      cut: false,
+    ),
     pb.MontyNode_Kind.float => (value: _finite(floatOfNode(node)), cut: false),
     pb.MontyNode_Kind.str => telemetryText(node.str),
     pb.MontyNode_Kind.bytes => telemetryBytes(node.bytes),

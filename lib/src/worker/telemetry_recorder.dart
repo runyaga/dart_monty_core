@@ -5,6 +5,7 @@ import 'package:dart_monty_core/src/worker/arena_nodes.dart' show uuidString;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry.dart';
 import 'package:dart_monty_core/src/worker/telemetry_attributes.dart';
+import 'package:dart_monty_core/src/worker/telemetry_scalars.dart';
 import 'package:dart_monty_core/src/worker/telemetry_values.dart';
 
 part 'telemetry_requests.dart';

@@ -680,7 +680,7 @@ jobs:
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
           # Measured on main 81d96ec: 2592; with the T-values tests 2694.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 2780 unit
+          bash tool/assert_test_count.sh /tmp/unit-test.log 2815 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -707,7 +707,7 @@ jobs:
             --exclude-tags=integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
           # Measured on main 81d96ec: 5154 over both compilers; with the T-values tests 5358.
-          bash tool/assert_test_count.sh /tmp/unit-web.log 5494 "unit (web)"
+          bash tool/assert_test_count.sh /tmp/unit-web.log 5564 "unit (web)"
 
       - name: Generate LCOV
         run: |

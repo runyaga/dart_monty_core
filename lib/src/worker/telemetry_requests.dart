@@ -100,7 +100,7 @@ extension TelemetryRequests on TelemetryRecorder {
       for (final result in results) {
         final rendered = telemetryResult(result.result, resume.values);
         if (text.isNotEmpty) text.write(', ');
-        text.write('${result.callId}: ${rendered.value}');
+        text.write('${result.callId}: ${telemetryScalarText(rendered.value)}');
         cut |= rendered.cut;
         if (text.length > telemetryAttributeLimit) break;
       }

@@ -2,6 +2,7 @@
 library;
 
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_scalars.dart';
 import 'package:dart_monty_core/src/worker/telemetry_values.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:protobuf/protobuf.dart' show GeneratedMessage;
@@ -70,8 +71,9 @@ TelemetryAttributes eventTiming(pb.ChildEvent event, {bool signed = false}) {
   });
 }
 
-int _signedCount(Int64 value) =>
-    value.isNegative ? Int64.MAX_VALUE.toInt() : value.toInt();
+Object _signedCount(Int64 value) => telemetryInteger(
+  BigInt.parse('${value.isNegative ? Int64.MAX_VALUE : value}'),
+);
 
 /// OS function names are the wire's snake-case names, not Python aliases.
 void osAttributes(pb.OsCall call, TelemetryAttributes attributes) {
@@ -91,7 +93,7 @@ void osAttributes(pb.OsCall call, TelemetryAttributes attributes) {
     attributes.text('args.key', getenv.key);
     final rendered = telemetryValue(call.values, getenv.default_2);
     attributes.add('args.default', (
-      value: '${rendered.value}',
+      value: telemetryScalarText(rendered.value),
       cut: rendered.cut,
     ));
   } else if (kind == pb.OsCall_Call.dateTimeNow) {

@@ -41,7 +41,9 @@ void main() {
       'max_feed_duration_micros': '7',
     });
     expect(eventTiming(event, signed: true).values, {
-      'total_execution_micros': Int64.MAX_VALUE.toInt(),
+      'total_execution_micros': identical(0, 0.0)
+          ? '9223372036854775807'
+          : int.parse('9223372036854775807'),
       'max_feed_duration_micros': 7,
     });
   });
