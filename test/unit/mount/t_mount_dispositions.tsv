@@ -1,0 +1,100 @@
+req_id	disposition	evidence
+REQ-MontyMemoryFile-4	REMOVED	Removed API; no core obligation
+REQ-MontyMemoryFile-5	REMOVED	Removed API; no core obligation
+REQ-MontyMemoryFile-6	REMOVED	Removed API; no core obligation
+REQ-MontyMemoryFile-7	REWRITE	memory_file_test.dart::REQ-MontyMemoryFile-7
+REQ-MontyMemoryFile-8	SURVIVES	memory_file_test.dart::REQ-MontyMemoryFile-8
+REQ-MontyMemoryFile-10	SURVIVES	memory_file_test.dart::REQ-MontyMemoryFile-10
+REQ-MontyMemoryFile-11	REMOVED	Removed API; no core obligation
+REQ-MontyMemoryFile-12	REMOVED	Removed API; no core obligation
+REQ-MontyMemoryFile-15	REMOVED	Removed API; no core obligation
+REQ-MountDir-11	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-12	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-13	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-14	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-15	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-16	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-17	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-18	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-22	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-23	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountDir-27	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-MountMode-5	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-VfsBytes-3	REMOVED	Removed API; no core obligation
+REQ-VfsBytes-4	REMOVED	Removed API; no core obligation
+REQ-VfsBytes-5	REMOVED	Removed API; no core obligation
+REQ-VfsBytes-7	REMOVED	Removed API; no core obligation
+REQ-VfsBytes-12	REWRITE	os_access_test.dart::P09 invalid UTF8
+REQ-VfsCallbackFile-5	SURVIVES	callback_file_test.dart::REQ-VfsCallbackFile-5,6,7
+REQ-VfsCallbackFile-6	REWRITE	callback_file_test.dart::REQ-VfsCallbackFile-5,6,7
+REQ-VfsCallbackFile-7	REWRITE	callback_file_test.dart::REQ-VfsCallbackFile-5,6,7
+REQ-VfsCallbackFile-10	SURVIVES	callback_file_test.dart::REQ-VfsCallbackFile-10
+REQ-VfsCallbackFile-11	SURVIVES	callback_file_test.dart::SPEC6(c) write after
+REQ-VfsCallbackFile-13	SURVIVES	callback_file_test.dart::REQ-VfsCallbackFile-13
+REQ-VfsContent-5	REMOVED	Removed API; no core obligation
+REQ-VfsContent-6	REMOVED	Removed API; no core obligation
+REQ-VfsContent-8	REMOVED	Removed API; no core obligation
+REQ-VfsContent-11	REWRITE	os_access_test.dart::open $mode canonical
+REQ-VfsContent-12	REWRITE	os_access_test.dart::open $mode canonical
+REQ-VfsFile-5	SURVIVES	os_access_test.dart::REQ-VfsFile-5,7,8
+REQ-VfsFile-7	SURVIVES	os_access_test.dart::REQ-VfsFile-5,7,8
+REQ-VfsFile-8	SURVIVES	os_access_test.dart::REQ-VfsFile-5,7,8
+REQ-VfsFile-12	REWRITE	os_access_test.dart::relative seeds rootDir
+REQ-VfsFile-13	REWRITE	os_access_test.dart::relative seeds rootDir
+REQ-VfsFile-14	REWRITE	os_access_test.dart::relative seeds rootDir
+REQ-VfsFile-17	SURVIVES	os_access_test.dart::write binary=$binary
+REQ-VfsFile-18	SURVIVES	os_access_test.dart::write binary=$binary
+REQ-VfsFile-19	SURVIVES	os_access_test.dart::write binary=$binary
+REQ-VfsFile-20	REWRITE	os_access_test.dart::open $mode canonical
+REQ-VfsFile-21	REWRITE	os_access_test.dart::open $mode canonical
+REQ-VfsFile-22	REWRITE	os_access_test.dart::filename-less seed
+REQ-VfsReadCallback-7	SURVIVES	callback_file_test.dart::REQ-VfsReadCallback-7
+REQ-VfsReadCallback-10	SURVIVES	callback_file_test.dart::REQ-VfsReadCallback-10
+REQ-VfsText-4	REMOVED	Removed API; no core obligation
+REQ-VfsText-5	REMOVED	Removed API; no core obligation
+REQ-VfsText-8	REMOVED	Removed API; no core obligation
+REQ-VfsText-9	REMOVED	Removed API; no core obligation
+REQ-VfsText-10	REMOVED	Removed API; no core obligation
+REQ-VfsText-11	REMOVED	Removed API; no core obligation
+REQ-VfsText-12	REMOVED	Removed API; no core obligation
+REQ-VfsWriteCallback-4	REWRITE	callback_file_test.dart::REQ-VfsWriteCallback-4,7,8
+REQ-VfsWriteCallback-6	SURVIVES	callback_file_test.dart::SPEC6(c) write after
+REQ-VfsWriteCallback-7	SURVIVES	callback_file_test.dart::REQ-VfsWriteCallback-4,7,8
+REQ-VfsWriteCallback-8	SURVIVES	callback_file_test.dart::REQ-VfsWriteCallback-4,7,8
+REQ-VfsWriteCallback-10	SURVIVES	callback_file_test.dart::errors unchanged
+REQ-VfsWriteCallback-18	SURVIVES	callback_file_test.dart::SPEC6(c) write after
+REQ-memoryMountedOsHandler-3	REWRITE	os_access_test.dart::relative seeds rootDir
+REQ-memoryMountedOsHandler-4	REWRITE	os_access_test.dart::relative seeds rootDir
+REQ-memoryMountedOsHandler-5	REWRITE	os_access_test.dart::later seed replaces
+REQ-memoryMountedOsHandler-6	REWRITE	os_access_test.dart::whole namespace missing
+REQ-memoryMountedOsHandler-7	REWRITE	os_access_oracle_test.dart::upstream memory fs
+REQ-memoryMountedOsHandler-9	REWRITE	os_access_test.dart::environment and unknown dispatch
+REQ-memoryMountedOsHandler-10	REWRITE	os_access_test.dart::P09 missing rename
+REQ-memoryMountedOsHandler-12	SURVIVES	os_access_test.dart::write binary=$binary
+REQ-memoryMountedOsHandler-13	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-memoryMountedOsHandler-14	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-memoryMountedOsHandler-16	SURVIVES	callback_file_test.dart::SPEC6(c) write after
+REQ-memoryMountedOsHandler-17	SURVIVES	os_access_test.dart::whole namespace missing
+REQ-memoryMountedOsHandler-19	SURVIVES	os_access_test.dart::reads text bytes
+REQ-memoryMountedOsHandler-20	SURVIVES	os_access_test.dart::open default
+REQ-memoryMountedOsHandler-21	SURVIVES	os_access_test.dart::open $mode canonical
+REQ-memoryMountedOsHandler-24	SURVIVES	os_access_test.dart::new append and write
+REQ-memoryMountedOsHandler-25	SURVIVES	os_access_test.dart::write binary=$binary
+REQ-memoryMountedOsHandler-27	SURVIVES	stat_result_test.dart::P12 file stat exact
+REQ-memoryMountedOsHandler-28	REWRITE	os_access_test.dart::reads text bytes
+REQ-memoryMountedOsHandler-31	REWRITE	os_access_test.dart::filename-less seed
+REQ-memoryMountedOsHandler-36	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-memoryMountedOsHandler-42	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-memoryMountedOsHandler-46	REWRITE	os_access_test.dart::P09 invalid UTF8
+REQ-memoryMountedOsHandler-47	REWRITE	os_access_test.dart::P09 invalid open
+REQ-memoryMountedOsHandler-52	TO-DM	dm sandbox-cap work (M6F1 FS-caps)
+REQ-memoryMountedOsHandler-53	SURVIVES	callback_file_test.dart::SPEC6(c) write after
+REQ-resolveOpenCall-3	REMOVED	Removed API; no core obligation
+REQ-resolveOpenCall-5	REWRITE	os_access_test.dart::P09 invalid open
+REQ-resolveOpenCall-6	REWRITE	os_access_test.dart::$op rejects directory
+REQ-resolveOpenCall-7	REMOVED	Removed API; no core obligation
+REQ-resolveOpenCall-8	REMOVED	Removed API; no core obligation
+REQ-resolveOpenCall-9	REMOVED	Removed API; no core obligation
+REQ-resolveOpenCall-11	REMOVED	Removed API; no core obligation
+REQ-resolveOpenCall-15	REWRITE	os_access_test.dart::P09 invalid open
+REQ-resolveOpenCall-16	REMOVED	Removed API; no core obligation

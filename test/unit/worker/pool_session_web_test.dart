@@ -25,6 +25,7 @@ import '_config_cases.dart';
 import '_cwd_cases.dart';
 import '_host_cases.dart';
 import '_host_code_cases.dart';
+import '_memory_fs_cases.dart';
 import '_os_handler_cases.dart';
 import '_print_cases.dart';
 import '_restore_cases.dart';
@@ -64,6 +65,7 @@ external JSObject get _console;
 }
 
 void main() {
+  memoryFsSessionTests(_backend, startMonty);
   configOracleTests(
     _backend,
     () => startMonty(const PoolOptions(maxProcesses: 1)),
