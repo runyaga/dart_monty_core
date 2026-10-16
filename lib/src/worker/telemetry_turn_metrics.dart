@@ -77,17 +77,13 @@ final class TelemetryTurnMetrics {
   }
 }
 
-// R-3 requires fields before constructors, overriding the repository order.
-// ignore: member-ordering
 final class _Suspension {
+  _Suspension(this.kind, this.function, this.eagerId);
+
   final String kind;
   final String? function;
   final int? eagerId;
   final clock = Stopwatch()..start();
-
-  // Fields precede constructors per the R-3 member-order requirement.
-  // ignore: sort_constructors_first
-  _Suspension(this.kind, this.function, this.eagerId);
 }
 
 String _extOutcome(pb.ExtFunctionResult result) => switch (result.whichKind()) {

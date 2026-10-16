@@ -5,9 +5,10 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
 /// In-memory adapter with independently injectable signal failures.
-// R-3 requires fields before constructors, overriding the repository order.
-// ignore: member-ordering
 class RecordingAdapter implements MontyTelemetry {
+  /// Records all calls, optionally failing [failure].
+  RecordingAdapter({this.failure});
+
   /// Signal or context operation to fail.
   String? failure;
 
@@ -41,11 +42,6 @@ class RecordingAdapter implements MontyTelemetry {
 
   /// Separate counts expose attempts after a signal was disabled.
   final attempts = <String, int>{};
-
-  /// Records all calls, optionally failing [failure].
-  // Fields precede constructors per the R-3 member-order requirement.
-  // ignore: sort_constructors_first
-  RecordingAdapter({this.failure});
 
   /// Clears records, preserving installation and failure state.
   void clear() {

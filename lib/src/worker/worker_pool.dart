@@ -40,9 +40,14 @@ typedef OpenChannel = SpawnHandle Function();
 /// until the worker's own duration limit ends the run; an idle one exits
 /// when its stdin reaches end-of-file. There is no watchdog, as upstream
 /// has none.
-// R-3 requires fields before constructors, overriding the repository order.
-// ignore: member-ordering
 final class WorkerPool {
+  WorkerPool._(
+    this.options,
+    this.maxProcesses,
+    this.startupTimeout,
+    this._open,
+  );
+
   /// How long a starting worker may take to become ready before it is
   /// cancelled and fails as [MontyCrashedError].
   ///
@@ -65,15 +70,6 @@ final class WorkerPool {
   int _nextId = 1;
   bool _closed = false;
   Future<void>? _closing;
-
-  // Fields precede constructors per the R-3 member-order requirement.
-  // ignore: sort_constructors_first
-  WorkerPool._(
-    this.options,
-    this.maxProcesses,
-    this.startupTimeout,
-    this._open,
-  );
 
   /// Idle workers now. Diagnostics and tests: stale once returned.
   int get idleWorkers => _idleWorkers.length;
@@ -420,19 +416,15 @@ final class _Worker {
 ///
 /// Single use: [release] or [kill] gives the slot back exactly once,
 /// whichever comes first and however often either is called.
-// R-3 requires fields before constructors, overriding the repository order.
-// ignore: member-ordering
 final class WorkerLease {
+  WorkerLease._(this._pool, this._worker)
+    : _metrics = telemetryBridge == null ? null : SessionMetrics();
+
   final SessionMetrics? _metrics;
   final WorkerPool _pool;
   final _Worker _worker;
   bool _isReleased = false;
   Future<void>? _releasing;
-
-  // Fields precede constructors per the R-3 member-order requirement.
-  // ignore: sort_constructors_first
-  WorkerLease._(this._pool, this._worker)
-    : _metrics = telemetryBridge == null ? null : SessionMetrics();
 
   /// The worker's channel. Throws [StateError] once the lease has ended:
   /// the worker may then serve another lease.
@@ -488,10 +480,7 @@ final class WorkerLease {
       final reply = await worker.channel.turn(
         pb.ParentRequest(reset: pb.Reset()),
       );
-      final kind = reply.whichKind();
-      if (kind != pb.ChildEvent_Kind.ok) {
-        throw StateError('unexpected reply to Reset: $kind');
-      }
+      _checkReset(reply);
     } on Object {
       if (_isReleased) return;
       kill(reason: 'discarded', outcome: 'error');
@@ -504,6 +493,13 @@ final class WorkerLease {
     worker.served++;
     _pool._takeBack(worker);
     _metrics?.finish('ok');
+  }
+
+  void _checkReset(pb.ChildEvent reply) {
+    final kind = reply.whichKind();
+    if (kind != pb.ChildEvent_Kind.ok) {
+      throw StateError('unexpected reply to Reset: $kind');
+    }
   }
 }
 

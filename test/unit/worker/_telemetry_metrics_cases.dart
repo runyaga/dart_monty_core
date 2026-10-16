@@ -12,7 +12,7 @@ import '../telemetry/recording_adapter.dart';
 void telemetryMetricsTests(Future<Monty> Function() start) {
   final adapter = RecordingAdapter();
   setUpAll(() => instrumentTelemetry(adapter));
-  final oracle = jsonDecode(metricOracleJson) as Map<String, dynamic>;
+  final oracle = Map<String, Object>.from(jsonDecode(metricOracleJson) as Map);
   for (final MapEntry(key: scenario, value: expected) in oracle.entries) {
     test('raw metrics match upstream: $scenario', () async {
       adapter.clear();
@@ -34,7 +34,10 @@ void telemetryMetricsTests(Future<Monty> Function() start) {
         isTrue,
       );
       final normalized = actual.map(_normalize).toList();
-      expect(_canonical(normalized), _canonical(expected as List<dynamic>));
+      expect(
+        _canonical(normalized),
+        _canonical(List<Object>.from(expected as List)),
+      );
     });
   }
 }
@@ -53,19 +56,16 @@ Map<String, Object> _normalize(MetricRecord metric) => {
         },
 };
 
-List<String> _canonical(List<dynamic> records) {
-  final encoded = records.map((dynamic record) {
-    final map = Map<String, dynamic>.from(record as Map);
-    final attributes = Map<String, dynamic>.from(map['attributes'] as Map);
-    final keys = attributes.keys.toList()..sort();
-    map['attributes'] = {for (final key in keys) key: attributes[key]};
-    final fields = map.keys.toList()..sort();
+List<String> _canonical(List<Object> records) => records.map((record) {
+  final map = Map<String, Object?>.from(record as Map);
+  final {'attributes': rawAttributes as Map<Object?, Object?>} = map;
+  final attributes = Map<String, Object?>.from(rawAttributes);
+  final keys = attributes.keys.toList()..sort();
+  map['attributes'] = {for (final key in keys) key: attributes[key]};
+  final fields = map.keys.toList()..sort();
 
-    return jsonEncode({for (final key in fields) key: map[key]});
-  }).toList()..sort();
-
-  return encoded;
-}
+  return jsonEncode({for (final key in fields) key: map[key]});
+}).toList()..sort();
 
 Future<void> _scenario(
   String name,

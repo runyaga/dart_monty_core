@@ -4,8 +4,6 @@ library;
 import 'package:dart_monty_core/src/worker/telemetry.dart';
 
 /// FOSS instruments, excluding the hosted session-resumed counter.
-// R-3 requires fields before constructors, overriding the repository order.
-// ignore: member-ordering
 enum TelemetryMetrics {
   /// `monty.pool.workers.live`.
   live(
@@ -119,6 +117,8 @@ enum TelemetryMetrics {
     'Size of one protocol frame, by direction.',
   );
 
+  const TelemetryMetrics(this.name, this.kind, this.unit, this.description);
+
   /// Dotted upstream instrument name.
   final String name;
 
@@ -130,10 +130,6 @@ enum TelemetryMetrics {
 
   /// Verbatim upstream instrument description.
   final String description;
-
-  // Fields precede constructors per the R-3 member-order requirement.
-  // ignore: sort_constructors_first
-  const TelemetryMetrics(this.name, this.kind, this.unit, this.description);
 
   /// Delivers a raw measurement with the bridge's explicit empty context.
   void record(num value, [Map<String, Object> attributes = const {}]) =>

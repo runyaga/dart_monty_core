@@ -116,9 +116,13 @@ void lifecycleCases(RecordingAdapter adapter) {
     'single_use has no core transport: reusable channel remains pooled',
     () async {
       final subject = await pool();
+      // Each checkout must run to verify that release allows worker reuse.
+      // ignore: prefer-moving-to-variable
       final first = await subject.acquire();
       final id = first.workerId;
       await first.release();
+      // A fresh checkout is the behavior under test.
+      // ignore: prefer-moving-to-variable
       final second = await subject.acquire();
       expect(second.workerId, id);
       await second.release();
@@ -227,10 +231,11 @@ void failureLifecycleCases(RecordingAdapter adapter) {
     );
   });
   test('protocol failure discards a checked-out worker', () async {
+    final reply = ok();
     final subject = await pool(
       channel: ScriptedChannel([
-        answer([ok()]),
-        answer([ok()]),
+        answer([reply]),
+        answer([reply]),
       ]),
     );
     final lease = await subject.acquire();
