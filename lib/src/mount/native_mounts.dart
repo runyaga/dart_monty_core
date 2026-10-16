@@ -121,7 +121,8 @@ final class NativeMountRoot implements Finalizable {
 }
 
 /// One feed's overlay and budgets. The feed owner must close it in finally.
-final class NativeMountTable {
+/// Native finalization only backs up abandoned feeds and isolate shutdown.
+final class NativeMountTable implements Finalizable {
   /// Builds a fresh table, checking closed roots and overlap before execution.
   factory NativeMountTable(List<NativeMountRoot> roots) {
     for (final root in roots) {
@@ -138,18 +139,27 @@ final class NativeMountTable {
       for (final (index, root) in lease.roots.indexed) {
         ids[index] = root._id;
       }
-      final id = _bindings.beginFeed(ids, roots.length);
+      final bindings = _bindings;
+      final id = bindings.beginFeed(ids, roots.length);
       if (id < 0) {
         throw recordError(
-          RaisedRecord('ValueError', _lastError(_bindings), const []),
+          RaisedRecord('ValueError', _lastError(bindings), const []),
         );
       }
 
-      return NativeMountTable._(id);
+      return NativeMountTable._(bindings, id);
     });
   }
 
-  NativeMountTable._(this._id);
+  NativeMountTable._(this._serviceBindings, this._id) {
+    _serviceBindings.finalizer.attach(
+      this,
+      Pointer.fromAddress(_id),
+      detach: this,
+    );
+  }
+
+  final NativeMountBindings _serviceBindings;
   final int _id;
   bool _closed = false;
 
@@ -163,8 +173,9 @@ final class NativeMountTable {
 
       return _output(
         arena,
-        (out, length) => _bindings.call(_id, input, bytes.length, out, length),
-        _bindings,
+        (out, length) =>
+            _serviceBindings.call(_id, input, bytes.length, out, length),
+        _serviceBindings,
       );
     });
   }
@@ -172,7 +183,8 @@ final class NativeMountTable {
   /// Discards the table and all overlay data. Idempotent.
   void close() {
     if (_closed) return;
-    _bindings.endFeed(_id);
+    _serviceBindings.endFeed(_id);
+    _serviceBindings.finalizer.detach(this);
     _closed = true;
   }
 }

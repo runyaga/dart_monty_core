@@ -856,7 +856,8 @@ final class _FeedDrive implements SnapshotDriver {
         );
       } on Object {
         // A value the writer refuses is never answered: upstream discards
-        // the checkout.
+        // the checkout. No step() follows to release this feed's resources.
+        _host.dispose();
         _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
         rethrow;
       }
@@ -912,6 +913,8 @@ final class _FeedDrive implements SnapshotDriver {
         // upstream discards the checkout, and the error is rethrown.
         // ignore: avoid_catching_errors
       } on StateError {
+        // No step() follows this terminal failure, so end the feed here.
+        _host.dispose();
         _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
         rethrow;
       }

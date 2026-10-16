@@ -98,11 +98,15 @@ MUTANTS = [
          "final DynamicLibrary library = throw ArgumentError('skip route 2');"),
     ]),
     ("skip-root-finalizer", LOOKUP, "MountDir NativeFinalizer releases unclosed roots", [
-        (NATIVE, """    _serviceBindings.finalizer.attach(
+        (NATIVE, """    this.virtualPath,
+  ) {
+    _serviceBindings.finalizer.attach(
       this,
       Pointer.fromAddress(_id),
       detach: this,
-    );""", "    // mutant: root is never finalized"),
+    );""", """    this.virtualPath,
+  ) {
+    // mutant: root is never finalized"""),
     ]),
     ("skip-table-disposal", LIFE, "feed table releases capability on complete", [
         (HOST, "_mountTable?.close();", "// mutant: table is never closed"),

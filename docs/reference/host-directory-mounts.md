@@ -39,8 +39,11 @@ respectively. No usage counters are exposed.
 A nonempty `mount: List<MountDir>` creates a fresh table for each feed. The
 same mount may be reused by multiple feeds and sessions. Closing a mount
 prevents new tables from using it; an already-running feed retains its root.
-The table is released on completion, error or crash. `mount: []` behaves like
-an omitted mount list.
+The table is released on completion, error or crash, including terminal
+automatic-resume failures before another worker turn. An abandoned table also
+has a native finalizer backstop, including on isolate shutdown; normal feed
+cleanup closes it immediately and detaches that finalizer. `mount: []` behaves
+like an omitted mount list.
 
 ## Routing, snapshots and cwd
 
