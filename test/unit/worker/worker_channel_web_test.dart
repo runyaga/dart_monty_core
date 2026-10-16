@@ -474,12 +474,13 @@ void main() {
   test('a Worker the browser refuses fails spawn as MontyCrashedError '
       '($backend)', () async {
     const url = 'http://127.0.0.1:1/w.js';
+    String message(MontyCrashedError e) => e.toString();
     await expectLater(
       WorkerChannel.spawn(cache, workerUrl: url),
       throwsA(
         anyOf(
           isA<MontyCrashedError>().having(
-            (e) => e.toString(),
+            message,
             'message',
             startsWith('failed to spawn monty worker: Worker $url: '),
           ),
@@ -488,7 +489,7 @@ void main() {
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.vanished)
               .having(
-                (e) => e.toString(),
+                message,
                 'message',
                 contains('crashed while waiting for a reply'),
               ),
