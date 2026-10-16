@@ -397,11 +397,12 @@ release time a maintainer folds the fragments into `CHANGELOG.md` and deletes
 them: `dart tool/changelog_assemble.dart [--version X.Y.Z]`, in a PR labeled
 `changelog-assembly`.
 
-**Coverage baseline.** `tool/coverage-baseline.json` is not part of a PR. CI
+**Coverage baseline.** `tool/coverage-baseline.json` is not part of a feature PR. CI
 fails a PR only if a file's coverage, or lib-wide coverage, drops below the
 base branch's baseline; a rise needs no baseline edit. After a merge, a
-maintainer runs `bash tool/record_coverage_baseline.sh` on main to record the
-new baseline from main's CI coverage.
+maintainer refreshes the baseline once per release, in the release PR
+(`bash tool/record_coverage_baseline.sh --no-commit` on main records it from
+main's CI coverage); it is not recorded after every merge.
 
 Further contributor docs:
 [`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
