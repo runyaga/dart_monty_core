@@ -374,8 +374,12 @@ void main() {
         throwsA(
           isA<MontyCrashedError>()
               .having((e) => e.cause, 'cause', CrashCause.vanished)
-              // Chrome's text for a wasm stack overflow; CI runs Chrome.
-              .having((e) => e.detail, 'detail', contains('RangeError')),
+              // Chrome says RangeError, Firefox says "too much recursion".
+              .having(
+                (e) => e.detail,
+                'detail',
+                anyOf(contains('RangeError'), contains('too much recursion')),
+              ),
         ),
       );
       expect(ch.isAlive, isFalse);
@@ -473,11 +477,18 @@ void main() {
     await expectLater(
       WorkerChannel.spawn(cache, workerUrl: url),
       throwsA(
-        isA<MontyCrashedError>().having(
-          (e) => e.toString(),
-          'message',
-          startsWith('failed to spawn monty worker: Worker $url: '),
-        ),
+        predicate<Object>((e) {
+          if (e is! MontyCrashedError) return false;
+          final text = e.toString();
+          // Firefox's error event for a refused Worker carries no message,
+          // so the channel reports a plain vanished worker there.
+
+          return text.startsWith(
+                'failed to spawn monty worker: Worker $url: ',
+              ) ||
+              (e.cause == CrashCause.vanished &&
+                  text.contains('crashed while waiting for a reply'));
+        }, 'a spawn failure MontyCrashedError'),
       ),
     );
   });
