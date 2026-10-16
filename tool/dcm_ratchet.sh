@@ -246,7 +246,7 @@ if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
   DCM_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
   DCM_CI_ENV=(env CI=true)
 fi
-"${DCM_CI_ENV[@]}" dcm analyze lib test --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
+"${DCM_CI_ENV[@]}" dcm analyze lib test hook --reporter=json "${DCM_AUTH[@]}" > "$TMP" 2>"$ERR"
 DCM_RC=$?
 
 if [ ! -s "$TMP" ] || ! python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$TMP" 2>/dev/null; then

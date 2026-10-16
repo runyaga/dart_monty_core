@@ -209,7 +209,7 @@ if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
   DEEP_ENV=(env CI=true)
   DEEP_AUTH=(--ci-key="$DCM_CI_KEY" --email="$DCM_EMAIL")
 fi
-"${DEEP_ENV[@]}" dcm analyze lib test --reporter=json \
+"${DEEP_ENV[@]}" dcm analyze lib test hook --reporter=json \
   "${DEEP_AUTH[@]}" > "$REPORT" 2>/dev/null || true
 restore
 trap - EXIT INT TERM
