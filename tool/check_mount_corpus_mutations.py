@@ -12,7 +12,19 @@ from check_mount_mutations import ROOT, run_mutant
 TEST = 'test/unit/conformance/mount_fs_adjudicator_test.dart'
 JUDGE = 'packages/monty_conformance/lib/src/fixture_adjudicator.dart'
 HOST = 'lib/src/worker/host_answers.dart'
+RUNNER = 'packages/monty_conformance/lib/src/worker_fixture_runner.dart'
+MOUNT = 'packages/monty_conformance/lib/src/worker_fixture_mount_io.dart'
 MUTANTS = [
+    ('corpus-uses-simulation', TEST,
+     'corpus mount fixtures require the native library, with no simulation', [
+         (RUNNER,
+          "    if (dart.library.io) 'package:monty_conformance/src/worker_fixture_mount_io.dart';",
+          ';'),
+     ]),
+    ('corpus-corrupts-seed', 'test/corpus/corpus_worker_vm_test.dart',
+     'the upstream 1.1.0 corpus meets its directives, or is a listed divergence (native)', [
+         (MOUNT, "'hello.txt': 'hello world\\n',", "'hello.txt': 'wrong seed',"),
+     ]),
     ('adjudicator-without-mount', TEST,
      'mount_fs__ops.py default overlay meets the pinned upstream directives', [
          (HOST, '_mountTable = beginMountFeed(mount);', '_mountTable = null;'),

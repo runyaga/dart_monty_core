@@ -4,9 +4,10 @@
 // It follows upstream's datatest runner (`crates/monty-datatest/src/main.rs`):
 //
 //   * a plain fixture is one `feed`;
-//   * a `# call-external` or `# mount-fs` fixture is driven snapshot by
-//     snapshot (`run_iter_loop`, `run_mount_fs_iter_loop`), answering host
-//     calls from the registry in `worker_fixture_host.dart`;
+//   * a `# call-external` fixture is driven snapshot by snapshot, answering
+//     host calls from the registry in `worker_fixture_host.dart`;
+//   * a `# mount-fs` fixture gets the upstream directory tree at `/mnt` and
+//     the `root` binding, served by a native MountDir on the VM;
 //   * every fixture runs under a recursion limit of 50
 //     (`TEST_RECURSION_LIMIT`), with `# gc-interval=` and `# timezone=` as
 //     its directives say.
@@ -21,7 +22,10 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:monty_conformance/src/fixture_adjudicator.dart';
 import 'package:monty_conformance/src/fixture_corpus_v1.dart';
 import 'package:monty_conformance/src/fixture_parser.dart';
+import 'package:monty_conformance/src/worker_corpus_run.dart';
 import 'package:monty_conformance/src/worker_fixture_host.dart';
+import 'package:monty_conformance/src/worker_fixture_mount_web.dart'
+    if (dart.library.io) 'package:monty_conformance/src/worker_fixture_mount_io.dart';
 
 /// Upstream's `TEST_RECURSION_LIMIT`, applied to every fixture.
 const int workerFixtureRecursionLimit = 50;
@@ -79,32 +83,18 @@ Future<WorkerCorpusRun> runWorkerFixtureCorpus({
   return WorkerCorpusRun(executed, failures);
 }
 
-/// What a corpus run did: every fixture it ran, in order, and the reason for
-/// each one that failed.
-final class WorkerCorpusRun {
-  /// Creates a [WorkerCorpusRun].
-  const WorkerCorpusRun(this.executed, this.failures);
-
-  /// The fixture files run, each once, in corpus order.
-  final List<String> executed;
-
-  /// Why each failing fixture failed, by file.
-  final Map<String, String> failures;
-
-  /// How many of [executed] passed.
-  int get passed => executed.length - failures.length;
-}
-
 /// Runs one fixture; null when it met its expectation, else why not.
 Future<String?> _runOne(Monty pool, String name, String source) async {
-  final expectation = parseFixture(
-    source,
-    skipCallExternal: false,
-    skipMountFs: false,
-    skipRunAsync: false,
-  )!;
+  final expectation =
+      parseFixture(
+        source,
+        skipCallExternal: false,
+        skipMountFs: false,
+        skipRunAsync: false,
+      ) ??
+      (throw StateError('fixture must be adjudicated: $name'));
   final mount = fixtureMountsFs(source);
-  final iter = mount || fixtureIsCallExternal(source);
+  final iter = fixtureIsCallExternal(source);
   final timezone = fixtureTimezone(source);
 
   final MontySession session;
@@ -125,9 +115,11 @@ Future<String?> _runOne(Monty pool, String name, String source) async {
   try {
     FixtureOutcome outcome;
     try {
-      final value = iter
-          ? await _drive(session, source, mount: mount)
-          : await session.feedRun(source, printCallback: _discard);
+      final value = await switch ((mount, iter)) {
+        (true, _) => runMountFixture(session, source),
+        (false, true) => _drive(session, source),
+        (false, false) => session.feedRun(source, printCallback: _discard),
+      };
       outcome = FixtureOutcome(value: value, valueRepr: pyValueRepr(value));
     } on MontyCrashedError catch (e) {
       return 'the worker crashed: $e';
@@ -149,7 +141,10 @@ Future<String?> _runOne(Monty pool, String name, String source) async {
   }
 }
 
-void _discard(String stream, String text) {}
+// Corpus directives adjudicate outcomes, not printed output.
+void _discard(String stream, String text) {
+  return;
+}
 
 /// [traceback] with each fed snippet's frame file named [name].
 ///
@@ -166,14 +161,10 @@ String _named(String traceback, String name) =>
 /// compared by value instead.
 String? pyValueRepr(MontyValue value) {
   try {
-    return _repr(value, <Object>[]);
-  } on _Unsupported {
+    return _repr(value, []);
+  } on FormatException {
     return null;
   }
-}
-
-final class _Unsupported implements Exception {
-  const _Unsupported();
 }
 
 String _repr(MontyValue v, List<Object> open) {
@@ -182,9 +173,7 @@ String _repr(MontyValue v, List<Object> open) {
       return 'None';
     case MontyBool(:final value):
       return value ? 'True' : 'False';
-    case MontyInt(:final value):
-      return '$value';
-    case MontyBigInt(:final value):
+    case MontyInt(:final Object value) || MontyBigInt(:final Object value):
       return '$value';
     case MontyFloat(:final value):
       if (value.isNaN) return 'nan';
@@ -196,7 +185,9 @@ String _repr(MontyValue v, List<Object> open) {
         return '${value.toInt()}.0';
       }
       final text = '$value';
-      if (text.contains('e')) throw const _Unsupported();
+      if (text.contains('e')) {
+        throw const FormatException('value has no supported Python repr');
+      }
 
       return text;
     case MontyString(:final value):
@@ -209,7 +200,9 @@ String _repr(MontyValue v, List<Object> open) {
 
       return text;
     case MontyTuple(:final items):
-      if (open.any((o) => identical(o, v))) throw const _Unsupported();
+      if (open.any((o) => identical(o, v))) {
+        throw const FormatException('value has no supported Python repr');
+      }
       open.add(v);
       final inner = items.map((i) => _repr(i, open)).join(', ');
       open.removeLast();
@@ -226,41 +219,29 @@ String _repr(MontyValue v, List<Object> open) {
 
       return '{${entries.join(', ')}}';
     default:
-      throw const _Unsupported();
+      throw const FormatException('value has no supported Python repr');
   }
 }
 
-/// `run_iter_loop` and `run_mount_fs_iter_loop`: answers each suspension from
+/// `run_iter_loop`: answers each suspension from
 /// the host registry until the run completes (or raises).
 Future<MontyValue> _drive(
   MontySession session,
-  String source, {
-  required bool mount,
-}) async {
+  String source,
+) async {
   final registry = WorkerFixtureRegistry();
-  final os = mount ? WorkerFixtureOs.mounted() : WorkerFixtureOs.virtual();
+  final os = WorkerFixtureOs.virtual();
   final pending = <int, HostOutcome>{};
-
-  if (mount) {
-    // `exec.set_cwd("/mnt")`: the sandbox starts in the first mount.
-    await session.feedRun(
-      'import os\nos.chdir("/mnt")',
-      os: os.call,
-      printCallback: _discard,
-    );
-  }
 
   var snapshot = await session.feedStart(
     source,
-    externalLookup: mount
-        ? null
-        : {
-            for (final name in workerFixtureFunctions)
-              name: MontyHostFunction(
-                name,
-                (args, kwargs) => throw StateError('answered by $name'),
-              ),
-          },
+    externalLookup: {
+      for (final name in workerFixtureFunctions)
+        name: MontyHostFunction(
+          name,
+          (args, kwargs) => throw StateError('answered by $name'),
+        ),
+    },
     os: os.call,
     printCallback: _discard,
   );
@@ -286,14 +267,11 @@ Future<MontyValue> _drive(
         );
 
       case FunctionSnapshot() && final call:
-        if (mount) {
-          throw StateError('unexpected FunctionCall: ${call.functionName}');
-        }
         switch (registry.call(call.functionName, call.args, call.kwargs)) {
           case HostPending(:final settled):
             pending[call.callId] = settled;
             snapshot = await call.resume(const ExternalFuture());
-          case final HostOutcome outcome:
+          case final outcome:
             snapshot = await call.resume(_answer(outcome));
         }
 
@@ -315,17 +293,9 @@ Future<MontyValue> _drive(
         snapshot = await lookup.resumeAuto();
 
       case NameLookupSnapshot(:final variableName) && final lookup:
-        if (mount) {
-          snapshot = await lookup.resume(
-            value: variableName == 'root' ? MontyPath('/mnt') : null,
-          );
-        } else if (workerFixtureFunctions.contains(variableName)) {
-          snapshot = await lookup.resumeAuto();
-        } else {
-          snapshot = await lookup.resume(
-            value: workerFixtureConstants[variableName],
-          );
-        }
+        snapshot = workerFixtureFunctions.contains(variableName)
+            ? await lookup.resumeAuto()
+            : await lookup.resume(value: workerFixtureConstants[variableName]);
     }
   }
 }

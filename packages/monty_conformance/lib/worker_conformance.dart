@@ -5,5 +5,6 @@ library;
 
 export 'src/fixture_corpus_v1.dart';
 export 'src/worker_corpus_manifest.dart';
+export 'src/worker_corpus_run.dart';
 export 'src/worker_fixture_host.dart';
 export 'src/worker_fixture_runner.dart';

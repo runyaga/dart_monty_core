@@ -60,8 +60,8 @@ void main() {
         expect(await _judge(name, mount: [mount]), contains('PermissionError'));
       });
       test('closed control is reported as a harness failure', () async {
-        final mount = MountDir(hostPath: directory.path, virtualPath: '/mnt');
-        mount.close();
+        final mount = MountDir(hostPath: directory.path, virtualPath: '/mnt')
+          ..close();
         expect(
           await _judge(name, mount: [mount]),
           startsWith('harness error:'),
@@ -126,7 +126,7 @@ Future<String?> _judge(String name, {List<MountDir>? mount, OsHandler? os}) =>
             excType: error.exception.excType,
             message: error.exception.message,
           );
-        } on StateError catch (error) {
+        } on Object catch (error) {
           return 'harness error: $error';
         }
 
