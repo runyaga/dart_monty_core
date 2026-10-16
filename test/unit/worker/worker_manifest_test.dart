@@ -102,7 +102,7 @@ void main() {
     test('rejects an unsupported target key', () {
       _expectManifestError(
         '{"schema":1,"targets":{"fuchsia-x64":{}}}',
-        'targets.fuchsia-x64',
+        'targets.fuchsia-x64 is unsupported',
       );
     });
 
