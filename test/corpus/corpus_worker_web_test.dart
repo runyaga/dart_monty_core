@@ -77,6 +77,11 @@ void main() {
       workerUrl: workerScriptUrl(base),
     );
     jspi = probe.jspi;
+    // Chromium has JSPI: a failed probe there would put the corpus on the
+    // fallback judgement and hide the regression.
+    if (browserFamily(_userAgent) == BrowserFamily.chromium) {
+      expect(jspi, isTrue);
+    }
     final protocol = probe.protocol;
     probe.kill();
     // The record of which branch this run judges, with the browser.

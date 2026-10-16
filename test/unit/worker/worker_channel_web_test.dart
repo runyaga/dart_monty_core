@@ -350,6 +350,7 @@ void main() {
         final ch = await _spawn(cache, forceNoJspi: noJspi);
         addTearDown(ch.kill);
         if (_skipForMissingJspi(ch, noJspi: noJspi)) return;
+        expect(ch.jspi, !noJspi);
         await _open(ch);
         var count = 0;
         final gate = Completer<void>();

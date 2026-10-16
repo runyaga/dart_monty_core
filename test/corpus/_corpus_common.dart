@@ -314,11 +314,11 @@ List<String> recursionSetProblems(
     switch (value) {
       case RecursionOutcome.crashes:
         if (reason == null || !reason.startsWith('the worker crashed')) {
-          problems.add("$key: upstream's browser build crashes; got $reason");
+          problems.add('$key: expected the worker to crash; got $reason');
         }
       case RecursionOutcome.passes:
         if (reason != null) {
-          problems.add("$key: upstream's browser build passes; got $reason");
+          problems.add('$key: expected a pass; got $reason');
         }
     }
   }
