@@ -477,14 +477,21 @@ void main() {
     await expectLater(
       WorkerChannel.spawn(cache, workerUrl: url),
       throwsA(
-        isA<MontyCrashedError>().having(
-          (e) => e.toString(),
-          'message',
-          // Firefox's error event for a refused Worker carries no message.
-          anyOf(
+        anyOf(
+          isA<MontyCrashedError>().having(
+            (e) => e.toString(),
+            'message',
             startsWith('failed to spawn monty worker: Worker $url: '),
-            contains('crashed while waiting for a reply'),
           ),
+          // Firefox's error event for a refused Worker carries no message,
+          // so the channel reports a plain vanished worker there.
+          isA<MontyCrashedError>()
+              .having((e) => e.cause, 'cause', CrashCause.vanished)
+              .having(
+                (e) => e.toString(),
+                'message',
+                contains('crashed while waiting for a reply'),
+              ),
         ),
       ),
     );
