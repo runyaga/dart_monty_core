@@ -42,9 +42,11 @@ void _integers(RecordingAdapter adapter) {
       final expected = _integer(text, jsNumber: jsNumber, vmNumber: vmNumber);
       _recordInteger(arena);
       final attributes = adapter.spans.map((span) => span.attributes).toList();
-      expect(attributes[1]['output'], expected);
-      expect(attributes[2]['return_value'], expected);
-      expect(attributes[3]['value'], expected);
+      expect(attributes, hasLength(greaterThanOrEqualTo(4)));
+      final [_, output, returned, lookup, ...] = attributes;
+      expect(output['output'], expected);
+      expect(returned['return_value'], expected);
+      expect(lookup['value'], expected);
       expect(telemetryValue(arena, 0).cut, isFalse);
     });
   }
@@ -137,7 +139,12 @@ void _floatText(RecordingAdapter adapter) {
     });
     test('future results scalar text for $value matches OTel', () {
       _recordFuture(value);
-      expect(adapter.logs.single.attributes, {'results': '7: $expected'});
+      expect(
+        adapter.logs.map((log) => log.attributes),
+        [
+          {'results': '7: $expected'},
+        ],
+      );
     });
   }
 }
