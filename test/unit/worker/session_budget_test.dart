@@ -32,11 +32,12 @@ pb.ChildEvent _ok({int? suspensions, int? sleepMicros}) => pb.ChildEvent(
   maxTotalSleepMicros: sleepMicros == null ? null : Int64(sleepMicros),
 );
 
-pb.ChildEvent _error({int? suspensions}) => pb.ChildEvent(
+pb.ChildEvent _error({int? suspensions, int? feedMicros}) => pb.ChildEvent(
   error: pb.Error(
     exception: pb.RaisedException(excType: 'ValueError', message: 'bad dump'),
   ),
   maxSuspensions: suspensions == null ? null : Int64(suspensions),
+  feedExecutionMicros: feedMicros == null ? null : Int64(feedMicros),
 );
 
 SessionBudget _budget({int? maxSuspensions, Duration? maxTotalSleep}) =>
@@ -357,6 +358,24 @@ void main() {
         ..beginLoad()
         ..admit(reporting(_error(), feed: 5, turn: 5));
       expect(budgets(budget), (second, ms));
+    });
+
+    test('a rejected load restores its feed clock', () {
+      final budget = timed(feed: const Duration(seconds: 10));
+      final beforeLoad = _ok()..feedExecutionMicros = Int64(8000000);
+      final rejected = _error(feedMicros: 4000000);
+      budget
+        ..admit(beforeLoad)
+        ..beginLoad()
+        ..admit(rejected)
+        ..endLoad();
+
+      final used = (budget as dynamic).reportedFeedExecution as Duration;
+      expect(used, const Duration(seconds: 8));
+      expect(
+        const Duration(seconds: 10) - used + const Duration(seconds: 1),
+        const Duration(seconds: 3),
+      );
     });
 
     test("no reply at all: endLoad puts the session's back", () {
