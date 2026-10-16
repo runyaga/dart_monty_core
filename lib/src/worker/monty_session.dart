@@ -1288,9 +1288,7 @@ final class SessionBudget {
         _restore(saved);
       }
     }
-    final reported = Duration(
-      microseconds: event.feedExecutionMicros.toInt(),
-    );
+    final reported = _durationOfMicros(event.feedExecutionMicros);
     if (reported > _reportedFeedExecution) {
       _reportedFeedExecution = reported;
     }
