@@ -14,7 +14,9 @@ Future<void> main() async {
   final after = selfRelaunchAvailable();
   stdout.writeln('after=$after');
   try {
-    final launch = await locateWorker(isAot: true);
+    final launch = await locateWorker(
+      selfRelaunch: const SelfRelaunchOptions(isAot: true),
+    );
     throw StateError('unbundled process offered $launch');
   } on MontyCrashedError catch (error) {
     if (error.cause != CrashCause.spawn) rethrow;

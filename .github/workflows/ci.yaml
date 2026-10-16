@@ -814,6 +814,30 @@ jobs:
           if pgrep -f -- --dart-monty-core-worker; then
             echo "FAIL: a relaunched worker is still running"; exit 1
           fi
+      - name: A bundle without its worker library fails with a named path
+        working-directory: tool/aot_worker
+        run: |
+          set -euo pipefail
+          temporary_bundle=$(mktemp -d)
+          trap 'rm -rf "$temporary_bundle"' EXIT
+          cp -R build/aot/bundle "$temporary_bundle/bundle"
+          rm "$temporary_bundle/bundle/lib/libdart_monty_worker.so"
+          set +e
+          output=$(cd "$temporary_bundle/bundle" && \
+            bin/aot_worker s10_external_call.json 2>&1)
+          result=$?
+          set -e
+          if [ "$result" -eq 0 ]; then
+            echo "FAIL: bundle without worker library succeeded"; exit 1
+          fi
+          case "$output" in
+            *"lib/libdart_monty_worker.so"*) ;;
+            *) echo "FAIL: missing library path was not reported"; exit 1 ;;
+          esac
+          case "$output" in
+            *"exit status: 255"*)
+              echo "FAIL: opaque worker exit status was reported"; exit 1 ;;
+          esac
       # The hook builds the worker library with the opt-in set and nothing
       # without it. Run after the opted-in consumer above, which built the same
       # cdylib configuration into native/worker/target; the test links that

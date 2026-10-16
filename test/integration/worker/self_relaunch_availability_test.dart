@@ -5,61 +5,121 @@
 @TestOn('vm')
 library;
 
-import 'package:dart_monty_core/dart_monty_core.dart' show MontyCrashedError;
-import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
-import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('self-relaunch requires arming and a resolvable worker', () async {
+  test('diagnosis reports an app that did not arm self-relaunch', () {
     var resolutions = 0;
     void missingWorker() {
       resolutions++;
       throw ArgumentError('worker symbol is absent');
     }
 
-    final unarmed = selfRelaunchAvailable(resolveWorker: missingWorker);
-    expect(unarmed, isFalse);
+    final unarmed = diagnoseSelfRelaunch(resolveWorker: missingWorker);
+    expect(unarmed, isA<SelfRelaunchNotArmed>());
     expect(resolutions, 0, reason: 'unarmed apps must not load the library');
+  });
+
+  test('diagnosis names an absent bundled worker library for each host', () {
     runMontyWorkerIfChild(const ['--other']);
-    final armedWithoutWorker = selfRelaunchAvailable(
-      resolveWorker: missingWorker,
-    );
-    expect(armedWithoutWorker, isFalse);
-    expect(resolutions, 1);
-    await expectLater(
-      locateWorker(
-        isAot: true,
-        canSelfRelaunch: () =>
-            selfRelaunchAvailable(resolveWorker: missingWorker),
+    for (final (operatingSystem, executable, expected) in [
+      (
+        'macos',
+        '/bundle/bin/application',
+        '/bundle/lib/libdart_monty_worker.dylib',
       ),
-      throwsA(isA<MontyCrashedError>()),
+      (
+        'linux',
+        '/bundle/bin/application',
+        '/bundle/lib/libdart_monty_worker.so',
+      ),
+      (
+        'windows',
+        r'C:\bundle\bin\application.exe',
+        r'C:\bundle\lib\dart_monty_worker.dll',
+      ),
+    ]) {
+      final status = diagnoseSelfRelaunch(
+        executablePath: executable,
+        fileExists: (_) => false,
+        operatingSystem: operatingSystem,
+      );
+      expect(
+        status,
+        isA<SelfRelaunchLibraryMissing>().having(
+          (missing) => missing.path,
+          'path',
+          expected,
+        ),
+      );
+    }
+  });
+
+  test(
+    'diagnosis checks for the bundled library before resolving its symbol',
+    () {
+      var resolutions = 0;
+      final status = diagnoseSelfRelaunch(
+        executablePath: '/bundle/bin/application',
+        fileExists: (_) => false,
+        operatingSystem: 'linux',
+        resolveWorker: () {
+          resolutions++;
+          throw ArgumentError('worker symbol is absent');
+        },
+      );
+      expect(status, isA<SelfRelaunchLibraryMissing>());
+      expect(resolutions, 0);
+    },
+  );
+
+  test('diagnosis names an unloadable bundled worker library', () {
+    final status = diagnoseSelfRelaunch(
+      executablePath: '/bundle/bin/application',
+      fileExists: (_) => true,
+      operatingSystem: 'linux',
+      resolveWorker: () => throw ArgumentError('worker symbol is corrupt'),
     );
-
-    // The real resolver must answer, never throw: true when the code asset
-    // is bundled, false under plain `dart test`.
-    expect(selfRelaunchAvailable, returnsNormally);
-
-    var resolved = 0;
-    void resolvable() => resolved++;
-    expect(selfRelaunchAvailable(resolveWorker: resolvable), isTrue);
     expect(
-      await locateWorker(
-        isAot: true,
-        canSelfRelaunch: () => selfRelaunchAvailable(resolveWorker: resolvable),
-      ),
-      isA<SelfRelaunch>(),
+      status,
+      isA<SelfRelaunchLibraryUnloadable>()
+          .having(
+            (unloadable) => unloadable.path,
+            'path',
+            '/bundle/lib/libdart_monty_worker.so',
+          )
+          .having(
+            (unloadable) => unloadable.error,
+            'error',
+            contains('worker symbol is corrupt'),
+          ),
     );
-    expect(resolved, 2);
+  });
+
+  test('diagnosis reports a bundled and resolvable worker as ready', () {
+    expect(
+      diagnoseSelfRelaunch(
+        executablePath: '/bundle/bin/application',
+        fileExists: (_) => true,
+        operatingSystem: 'linux',
+        resolveWorker: _resolvable,
+      ),
+      isA<SelfRelaunchReady>(),
+    );
   });
 
   test('self-relaunch does not hide unrelated resolver failures', () {
-    runMontyWorkerIfChild(const []);
     final failure = StateError('resolver failed');
     expect(
-      () => selfRelaunchAvailable(resolveWorker: () => throw failure),
+      () => diagnoseSelfRelaunch(
+        executablePath: '/bundle/bin/application',
+        fileExists: (_) => true,
+        resolveWorker: () => throw failure,
+      ),
       throwsA(same(failure)),
     );
   });
 }
+
+void _resolvable() => Object();

@@ -15,7 +15,7 @@ void main() {
     const explicit = WorkerExecutable('/chosen/worker', args: ['subprocess']);
     final launch = await locateWorker(
       explicit: explicit,
-      isAot: true,
+      selfRelaunch: const SelfRelaunchOptions(isAot: true),
       canSelfRelaunch: () {
         eligibilityChecks++;
 
@@ -30,7 +30,7 @@ void main() {
     'REQ-runMontyWorkerIfChild-16: JIT never asks self-relaunch eligibility',
     () async {
       runMontyWorkerIfChild(const []);
-      expect(selfRelaunchAvailable(resolveWorker: _resolved), isTrue);
+      expect(selfRelaunchAvailable(resolveWorker: _resolved), isFalse);
       var eligibilityChecks = 0;
       final launch = await locateWorker(
         resolvePackageUri: (_) async => Uri.file(Platform.resolvedExecutable),

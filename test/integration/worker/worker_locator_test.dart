@@ -12,6 +12,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedError;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
@@ -39,6 +40,71 @@ void main() {
   });
 
   group('locateWorker', () {
+    for (final (
+          description,
+          status,
+          expected,
+        )
+        in <(String, SelfRelaunchStatus, List<String>)>[
+          (
+            'an app that did not arm itself',
+            const SelfRelaunchNotArmed(),
+            [
+              'runMontyWorkerIfChild(args)',
+              'first statement',
+              'WorkerExecutable',
+            ],
+          ),
+          (
+            'a missing bundled library',
+            const SelfRelaunchLibraryMissing(
+              '/bundle/lib/libdart_monty_worker.so',
+            ),
+            [
+              '/bundle/lib/libdart_monty_worker.so',
+              'ship the bundle',
+              'WorkerExecutable',
+            ],
+          ),
+          (
+            'an unloadable bundled library',
+            const SelfRelaunchLibraryUnloadable(
+              '/bundle/lib/libdart_monty_worker.so',
+              'invalid shared library',
+            ),
+            [
+              '/bundle/lib/libdart_monty_worker.so',
+              'invalid shared library',
+              'rebuild it for this platform',
+              'WorkerExecutable',
+            ],
+          ),
+        ]) {
+      test(
+        'reports $description with its remedy instead of status 255',
+        () async {
+          await expectLater(
+            locateWorker(
+              selfRelaunch: SelfRelaunchOptions(
+                isAot: true,
+                diagnose: () => status,
+              ),
+              canSelfRelaunch: () => false,
+            ),
+            throwsA(
+              isA<MontyCrashedError>().having(
+                (error) => error.toString(),
+                'message',
+                allOf(
+                  [...expected.map(contains), isNot(contains('255'))],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     test('an explicit launch wins', () async {
       const explicit = WorkerExecutable('/opt/monty', args: ['subprocess']);
       expect(await locateWorker(explicit: explicit), same(explicit));
@@ -285,7 +351,7 @@ void main() {
         expect(
           await locateWorker(
             abi: Abi.current(),
-            isAot: true,
+            selfRelaunch: const SelfRelaunchOptions(isAot: true),
             canSelfRelaunch: () => true,
             cache: WorkerCacheSource(
               environment: environment,

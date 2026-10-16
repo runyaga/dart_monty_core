@@ -25,6 +25,9 @@ import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as path;
+
+part 'self_relaunch_status.dart';
 
 /// The worker loop in the bundled worker library; the code asset the build
 /// hook emits for this library's URI. Runs on the calling thread, which it
@@ -35,6 +38,65 @@ external int _workerMain();
 
 bool _armed = false;
 
+/// The child exit status for a missing or unloadable bundled worker library.
+const int workerLibraryExitCode = 78;
+
+/// Diagnoses whether this executable can serve a self-relaunched worker.
+///
+/// The worker library lives beside an AOT executable in `../lib`. The optional
+/// arguments replace host operations in tests.
+SelfRelaunchStatus diagnoseSelfRelaunch({
+  @visibleForTesting void Function()? resolveWorker,
+  @visibleForTesting String? executablePath,
+  @visibleForTesting bool Function(String)? fileExists,
+  @visibleForTesting String? operatingSystem,
+}) {
+  if (!_armed) return const SelfRelaunchNotArmed();
+
+  final host = operatingSystem ?? Platform.operatingSystem;
+  final paths = _pathContext(host);
+  final library = paths.normalize(
+    paths.join(
+      paths.dirname(executablePath ?? Platform.resolvedExecutable),
+      '..',
+      'lib',
+      _workerLibraryName(host),
+    ),
+  );
+  final exists = fileExists ?? (candidate) => File(candidate).existsSync();
+  if (!exists(library)) return SelfRelaunchLibraryMissing(library);
+
+  try {
+    (resolveWorker ?? _resolveWorker)();
+
+    return const SelfRelaunchReady();
+    // An unresolvable @Native symbol throws ArgumentError. It is a worker
+    // library diagnosis, not an application failure.
+    // ignore: avoid_catching_errors
+  } on ArgumentError catch (error) {
+    return SelfRelaunchLibraryUnloadable(library, '$error');
+  }
+}
+
+/// Describes how to make a failed self-relaunch diagnosis usable.
+String selfRelaunchRemedy(SelfRelaunchStatus status) => switch (status) {
+  SelfRelaunchReady() => '',
+  SelfRelaunchNotArmed() =>
+    'runMontyWorkerIfChild(args) was not called as the first statement of '
+        'main: call runMontyWorkerIfChild(args) as the first statement of '
+        'main. Or pass a WorkerExecutable.',
+  SelfRelaunchLibraryMissing(:final path) =>
+    "the worker library $path is missing from the bundle: ship the bundle's "
+        'lib/ directory next to bin/ unchanged, or rebuild with dart build '
+        'cli. If the bundle has no lib/ directory, enable the root pubspec '
+        'opt-in (hooks: user_defines: dart_monty_core: build_worker: true). '
+        'Or pass a WorkerExecutable.',
+  SelfRelaunchLibraryUnloadable(:final path, :final error) =>
+    'the worker library $path exists but cannot be loaded: $error: rebuild '
+        'it for this platform (dart build cli) or replace the file. Or pass '
+        'a WorkerExecutable.',
+};
+
 /// Serves as the worker and exits when this process was relaunched as one;
 /// otherwise returns at once and enables [SelfRelaunch] for this process.
 ///
@@ -42,10 +104,19 @@ bool _armed = false;
 /// child's stdout carries the protocol, so nothing may be written to it
 /// before the worker starts.
 void runMontyWorkerIfChild(List<String> args) {
+  _armed = true;
   if (args.length == 1 && args.first == SelfRelaunch.flag) {
+    final status = diagnoseSelfRelaunch();
+    if (status
+        case SelfRelaunchLibraryMissing() || SelfRelaunchLibraryUnloadable()) {
+      stderr.writeln(
+        'dart_monty_core worker: dart_monty_worker_main: '
+        '${selfRelaunchRemedy(status)}',
+      );
+      exit(workerLibraryExitCode);
+    }
     exit(_workerMain());
   }
-  _armed = true;
 }
 
 /// Whether this process can relaunch itself as a worker: it called
@@ -57,19 +128,17 @@ void runMontyWorkerIfChild(List<String> args) {
 /// may already have loaded the library into the process.
 bool selfRelaunchAvailable({
   @visibleForTesting void Function()? resolveWorker,
-}) {
-  if (!_armed) return false;
-  try {
-    (resolveWorker ?? _resolveWorker)();
+}) => diagnoseSelfRelaunch(resolveWorker: resolveWorker) is SelfRelaunchReady;
 
-    return true;
-    // An unresolvable @Native symbol throws ArgumentError: the library is not
-    // bundled, which is the answer, not a bug.
-    // ignore: avoid_catching_errors
-  } on ArgumentError {
-    return false;
-  }
-}
+String _workerLibraryName(String operatingSystem) => switch (operatingSystem) {
+  'windows' => 'dart_monty_worker.dll',
+  'macos' => 'libdart_monty_worker.dylib',
+  _ => 'libdart_monty_worker.so',
+};
+
+path.Context _pathContext(String operatingSystem) => path.Context(
+  style: operatingSystem == 'windows' ? path.Style.windows : path.Style.posix,
+);
 
 void _resolveWorker() {
   Native.addressOf<NativeFunction<Int32 Function()>>(_workerMain);
