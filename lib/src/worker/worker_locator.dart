@@ -136,21 +136,20 @@ bool _cacheEntryIsAbsent(String cachePath) {
     return false;
   }
 
-  final cacheDirectory = File(cachePath).parent;
-  var directory = cacheDirectory;
-  while (FileSystemEntity.typeSync(directory.path, followLinks: false) ==
-      FileSystemEntityType.notFound) {
-    final parent = directory.parent;
-    if (parent.path == directory.path) return true;
-    directory = parent;
-  }
   try {
-    directory.listSync(followLinks: false);
+    File(cachePath).openSync().closeSync();
+
+    return false;
   } on FileSystemException catch (error) {
+    if (_isNotFoundError(error)) return true;
     throw _cacheAccessError(cachePath, error);
   }
+}
 
-  return true;
+bool _isNotFoundError(FileSystemException error) {
+  final code = error.osError?.errorCode;
+
+  return code == 2 || code == 3 || code == 20;
 }
 
 ({WorkerArtifact artifact, String cachePath})? _cacheLocation(

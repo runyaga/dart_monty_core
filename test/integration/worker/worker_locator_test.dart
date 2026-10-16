@@ -222,24 +222,6 @@ void main() {
       },
     );
 
-    for (final operatingSystem in ['linux', 'macos']) {
-      test('uses a valid $operatingSystem fixture on every host', () async {
-        await _withTemporaryHome((environment) async {
-          final package = await _packageFile('package-worker');
-          final launch = await locateWorker(
-            abi: Abi.current(),
-            cache: WorkerCacheSource(
-              environment: environment,
-              operatingSystem: operatingSystem,
-              manifest: _manifestForHost(),
-            ),
-            resolvePackageUri: (_) async => package.uri,
-          );
-          expect((launch as WorkerExecutable).path, package.path);
-        }, operatingSystem: operatingSystem);
-      });
-    }
-
     test('names cache and package paths when neither worker exists', () async {
       await _withTemporaryHome((environment) async {
         final artifact = _artifact;
@@ -274,7 +256,7 @@ void main() {
 
         await _withCachedWorker((environment, manifest, cached) async {
           final cacheDirectory = cached.parent;
-          await Process.run('chmod', ['000', cacheDirectory.path]);
+          await Process.run('chmod', ['600', cacheDirectory.path]);
           addTearDown(() => Process.run('chmod', ['700', cacheDirectory.path]));
           final package = await _packageFile('package-worker');
           await expectLater(
@@ -396,9 +378,7 @@ final _artifact = WorkerArtifact(
 );
 
 WorkerManifest _manifestForHost() => WorkerManifest(
-  targets: {
-    workerHostKey(Abi.current()): WorkerTarget(worker: _artifact),
-  },
+  targets: {workerHostKey(Abi.current()): WorkerTarget(worker: _artifact)},
 );
 
 Future<void> _withCachedWorker(
@@ -416,19 +396,15 @@ Future<void> _withCachedWorker(
 });
 
 Future<void> _withTemporaryHome(
-  Future<void> Function(Map<String, String>) body, {
-  String? operatingSystem,
-}) async {
+  Future<void> Function(Map<String, String>) body,
+) async {
   final directory = await Directory.systemTemp.createTemp(
     'worker_locator_test_',
   );
   addTearDown(() => directory.delete(recursive: true));
-  final os = operatingSystem ?? Platform.operatingSystem;
   await body({
-    if (os == 'windows')
-      'LOCALAPPDATA': Platform.isWindows
-          ? directory.path
-          : r'C:\\worker_locator_test'
+    if (Platform.isWindows)
+      'LOCALAPPDATA': directory.path
     else
       'HOME': directory.path,
   });

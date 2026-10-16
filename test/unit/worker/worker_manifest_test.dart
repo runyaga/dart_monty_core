@@ -1,6 +1,11 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:test/test.dart';
 
@@ -9,25 +14,55 @@ const _b64 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 void main() {
   group('WorkerManifest', () {
-    test('parses worker library and archive artifacts', () {
-      final manifest = WorkerManifest.fromJson('''
+    test(
+      'parses and verifies distinct worker, library, and archive artifacts',
+      () async {
+        const workerContents = 'worker';
+        const libraryContents = 'library-data';
+        const archiveContents = 'archive-content-data';
+        final workerDigest = sha256
+            .convert(utf8.encode(workerContents))
+            .toString();
+        final libraryDigest = sha256
+            .convert(utf8.encode(libraryContents))
+            .toString();
+        final archiveDigest = sha256
+            .convert(utf8.encode(archiveContents))
+            .toString();
+        final manifest = WorkerManifest.fromJson('''
         {"schema":1,"version":"v1.2.3","mirror":"https://x/{archive}",
-        "targets":{"macos-arm64":{"worker":{"file":"worker","bytes":12,
-        "sha256":"$_a64",
-        "archive":{"name":"worker.tar.gz","bytes":20,
-        "sha256":"$_b64"}},
-        "library":{"file":"library.dylib","bytes":10,
-        "sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}}}}
+        "targets":{"macos-arm64":{"worker":{"file":"worker","bytes":${utf8.encode(workerContents).length},
+        "sha256":"$workerDigest",
+        "archive":{"name":"worker.tar.gz","bytes":${utf8.encode(archiveContents).length},
+        "sha256":"$archiveDigest"}},
+        "library":{"file":"library.dylib","bytes":${utf8.encode(libraryContents).length},
+        "sha256":"$libraryDigest"}}}}
       ''');
 
-      final target = manifest.targetFor('macos-arm64');
-      final worker = target?.worker;
-      final library = target?.library;
-      expect(manifest.version, 'v1.2.3');
-      expect(manifest.mirror, 'https://x/{archive}');
-      expect(worker?.archive?.name, 'worker.tar.gz');
-      expect(library?.file, 'library.dylib');
-    });
+        final target = manifest.targetFor('macos-arm64');
+        final worker = target?.worker;
+        final library = target?.library;
+        expect(manifest.version, 'v1.2.3');
+        expect(manifest.mirror, 'https://x/{archive}');
+        expect(worker?.file, 'worker');
+        expect(worker?.bytes, utf8.encode(workerContents).length);
+        expect(worker?.sha256, workerDigest);
+        expect(worker?.archive?.name, 'worker.tar.gz');
+        expect(worker?.archive?.bytes, utf8.encode(archiveContents).length);
+        expect(worker?.archive?.sha256, archiveDigest);
+        expect(library?.file, 'library.dylib');
+        expect(library?.bytes, utf8.encode(libraryContents).length);
+        expect(library?.sha256, libraryDigest);
+
+        final temporary = await Directory.systemTemp.createTemp(
+          'worker_manifest_',
+        );
+        addTearDown(() => temporary.delete(recursive: true));
+        final workerFile = File('${temporary.path}/${worker!.file}');
+        await workerFile.writeAsString(workerContents);
+        await verifyWorkerFile(workerFile, worker);
+      },
+    );
 
     test('accepts empty targets', () {
       expect(
@@ -64,9 +99,7 @@ void main() {
 
     test('rejects non-string mirrors', () {
       expect(
-        () => WorkerManifest.fromJson(
-          '{"schema":1,"mirror":3,"targets":{}}',
-        ),
+        () => WorkerManifest.fromJson('{"schema":1,"mirror":3,"targets":{}}'),
         throwsA(isA<WorkerManifestError>()),
       );
     });
