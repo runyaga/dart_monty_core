@@ -147,6 +147,8 @@ Matcher _raised(String excType, [Object? message]) => isA<MontyRuntimeError>()
     .having((e) => e.exception.message, 'message', message ?? anything);
 
 final class _ThrowingLookup extends MapBase<String, MontyValue> {
+  const _ThrowingLookup();
+
   @override
   MontyValue? operator [](Object? key) =>
       throw const FormatException('lookup failed');
@@ -806,7 +808,8 @@ void main() {
 
   group('resumeAuto', () {
     test(
-      'a throwing external lookup becomes a Python exception and leaves the session usable',
+      'a throwing external lookup becomes a Python exception and leaves '
+      'the session usable',
       () async {
         final (s, ch) = await _session([
           answer([_call('f', 1)]),
@@ -819,12 +822,17 @@ void main() {
                   '    f()\n'
                   'except Exception:\n'
                   '    1',
-                  externalLookup: _ThrowingLookup(),
+                  externalLookup: const _ThrowingLookup(),
                 )
                 as FunctionSnapshot;
 
-        expect(await call.resumeAuto(), const MontyInt(1));
-        expect(_last(ch).resumeCall.result.hasError(), isTrue);
+        final done = await call.resumeAuto();
+        expect((done as MontyComplete).output, const MontyInt(1));
+        final error = _last(ch).resumeCall.result.error;
+        expect(
+          (error.excType, error.message),
+          ('Exception', 'FormatException: lookup failed'),
+        );
         expect(await s.feedRun('2'), const MontyInt(2));
       },
     );
