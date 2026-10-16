@@ -21,6 +21,7 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '_attribute_cases.dart';
+import '_boundary_cases.dart';
 import '_config_cases.dart';
 import '_cwd_cases.dart';
 import '_host_cases.dart';
@@ -66,6 +67,7 @@ external JSObject get _console;
 
 void main() {
   memoryFsSessionTests(_backend, startMonty);
+  boundarySessionTests(_backend, startMonty);
   configOracleTests(
     _backend,
     () => startMonty(const PoolOptions(maxProcesses: 1)),
