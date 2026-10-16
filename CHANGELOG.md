@@ -2,6 +2,113 @@
 
 ## Unreleased
 
+## 0.110.0-dev.2 - 2026-10-16
+
+### Breaking
+
+- Replace the mounted memory filesystem with upstream's callable `OSAccess`.
+  Pass it to `os:` on feeds; seed files with `String` or `Uint8List` content.
+  It serves the entire virtual namespace and exposes created files through
+  `files`. Files retain mutable permissions; callback reads and writes are
+  settable. Names remain final and deletion is observable through a getter.
+- Match upstream path normalization, binary open seeds, stat permissions and
+  timestamps, Unicode write counts, and filesystem error messages. File rename
+  preserves upstream's stale-path/unlink quirk; callback paths remain fixed at
+  construction, including writes after directory renames.
+- Migration table (old name → new name):
+
+| Old name | New name / replacement |
+| --- | --- |
+| `memoryMountedOsHandler` | `OSAccess` |
+| `MontyMemoryFile` | `MemoryFile` |
+| `MontyMemoryFile.withContent` | `MemoryFile(path, content)` |
+| `VfsFile` | `AbstractFile` (`readContent`, `writeContent`, `delete`) |
+| `VfsCallbackFile` | `CallbackFile` in `unsafe_callback_file.dart` |
+| `VfsReadCallback` | Inline `Object Function(String)` |
+| `VfsWriteCallback` | Inline `void Function(String, Object)` |
+| `VfsCallbackFile.content` | `readContent()` / `writeContent(content)` |
+| `VfsCallbackFile.seededPath` | Private construction path; no public replacement |
+| `VfsContent`, `VfsText`, `VfsBytes` | `Object`: `String` or `Uint8List` |
+| `MountDir` (memory-backed) | Removed; host-directory mounts follow in F-2 |
+| `MountMode` | Removed with memory mount policy |
+| `resolveOpenCall` | Private implementation inside `OSAccess` |
+| `mounts`, `fallthrough` | Whole namespace; compose handlers explicitly |
+| Memory `writeBytesLimit`, `memoryUsageLimit`, read-only mounts | Sandbox policy moves to dm |
+| Custom stat tuple construction | `StatResult.fileStat` / `StatResult.dirStat` |
+
+- Delete the internal VFS tree, path, accounting and limit types. The main
+  library has 65 exported names in the F-1 window; the unsafe library has one.
+  `PARITY_PIN` remains unchanged for the separate pin PR required after F-1.
+
+### Added
+
+- Native `MountDir` opens a host directory with overlay, read-only, or read-write access and per-feed write and memory budgets. `feedRun`, `feedStart`, and `loadSnapshot` accept `mount:`; mounts answer before the OS handler and retain their table through snapshot resumes. Browser construction throws `UnsupportedError`.
+- A fresh session defaults cwd to its first mount until a feed passes type checking. Session and snapshot restores preserve their saved cwd; invalid cwd is rejected before mount-table construction without consuming the default.
+
+- Add `MontyTelemetry` and `instrumentTelemetry` for host telemetry adapters on native and web: session, execution and suspension spans, logs, callback context, and `SuspendedSnapshot.traceContext()`. Installation lasts for the isolate; adapter failures disable only the failing signal and report once without interrupting execution.
+
+- Reject a queued worker completion when the process exits before its request
+  finishes flushing, including when process cleanup masks the pipe's write error.
+
+- Record the 14 upstream telemetry metrics through `MontyTelemetry`, including pool lifetimes, execution and host-call durations, suspensions, print and snapshot bytes, and complete wire-frame sizes. Measurements use an explicit empty context and preserve upstream instrument metadata and attribute vocabularies on native and browser workers.
+
+### Changed
+
+- The `OSAccess` and `checkout` doc comments say that an in-memory filesystem is one namespace (a `..` stays inside it) and that the type check runs under the feed duration limit, so set one for untrusted source.
+
+### Fixed
+
+- Release feed mount tables immediately when automatic name lookup or unresolved-future resumption terminates the session. Abandoned tables also have a native finalizer backstop, including on isolate shutdown.
+
+- Publish rebuilt native mount libraries atomically so existing mappings retain their bytes.
+
+- Match upstream OSAccess behavior for leading UTF-8 BOMs in text reads and appends, missing rename sources with relative paths, and directly dispatched NaN sleeps with a cap.
+
+- Browser workers deliver prints as they flush, await print callbacks before completing a turn, and apply a 4 MiB acknowledgement window when JSPI is available.
+- Browser memory limits no longer charge request frames during execution or retain a turn's printed output in wasm memory. Hard allocator breaches now report `MemoryError`, as on native workers.
+
+- Discard browser workers and release their pool slots when streamed print batches contain truncated or oversized frames.
+
+- Keep pool worker gauges balanced when `instrumentTelemetry` is installed after pools start or while sessions are checked out.
+
+- Deliver error, typing-error, and standalone-completion log timing attributes
+  as integers to telemetry adapters, matching upstream. Preserve unsigned
+  span attributes as decimal strings.
+
+- Preserve exact telemetry integers, using decimal strings beyond ±2^53 on dart2js, and match upstream float text in OS defaults and future results.
+
+- `MontyTime` equality and `hashCode` for aware times subtract each offset in whole seconds, as upstream does, instead of flooring it to whole minutes: `time(1, 0, 30, tzinfo=+00:00:30) == time(1, 0, 0, tzinfo=UTC)` is now true.
+- `FakeMontySession` raises `TypeError` when an OS call scripted with `eager: true` that is not `asyncio.sleep` or `system.async_sleep` is answered with a plain value, as the worker session does; only the sleeps accept it.
+
+### Internal
+
+- Session boundary tests on the VM, dart2js and dart2wasm pin outcomes recorded from upstream 1.1.0: aggregate and input memory limits, feed and turn limits, the type-check deadline, restore of dumps of another version and of modified bytes, the limits a dump carries, and the paths an OS handler receives, and idle dumps moving between upstream and core in both directions (`tool/generate_dump_oracle.py`). `tool/check_worker_wasm_layout.py` checks that the worker module places its stack first.
+
+- Add a native host-directory service backed by pinned upstream monty-fs 1.1.0, with per-feed overlays and budgets, capability lifetime management, and protobuf replies. Build and distribute its worker cdylib alongside the executable, resolving it through the bundled code asset or the package worker directory. No public API changes.
+
+- Accept Firefox's "too much recursion" text for the wasm stack-overflow crash detail in the worker channel web test.
+
+- Restore the strict VM mount-fixture adjudicator, including read-only, closed-mount and lying-handler controls. The native corpus now runs the pinned upstream mount fixtures through real host directories and `MountDir` overlays.
+
+- Raise the test-count floors at the M6 close: unit 3173, unit (web) 6212, worker 598, worker (web) 461.
+
+- Split native mount bindings and extend acquisition-failure, browser refusal, and platform-specific mount tests.
+
+- CI's `PARITY_PIN` moves to parity `ed4432a`: parity: host MountDir on the VM, refused on the web; mount cases; draft M6 target (P-F2) (#47)
+
+- CI's `PARITY_PIN` moves to parity `f944558`: P-F1: parity runner on core F-1 memory-fs names (#45)
+
+- Refactor telemetry rendering and callback state without changing the public API. Check adapter failure diagnostics across compilers and exercise host telemetry, lazy attributes, asynchronous methods, error encodings, and worker stream failures.
+
+- Keep streamed-print assertions in the shared telemetry test body, and separate native turn recording and crash classification to meet code metrics without changing runtime behaviour.
+
+- Spec tests for the codec: the arena writer and reader, Python key equality, the error family's frames and display text, structured exception payloads and the refusals a session makes before it sends.
+
+- Restore measured VM coverage for self-relaunch arming and symbol resolution,
+  and test the initial working directory of raw worker feed steps. Keep real
+  unbundled-library checks isolated from process-wide native mount symbols.
+
+
 ## 0.110.0-dev.1 - 2026-10-15
 
 This section gathers every change since 0.23.1 in the order it landed, including the internal groundwork that preceded the cutover. Where an earlier entry and a later one disagree, the later one and `### Breaking` describe this release. In particular: the web worker assets are `dart_monty_core_worker.{js,wasm}` (the `dart_monty_core_proto_worker` names and `tool/prebuild.sh --worker-only` belong to the groundwork); `complex` values, class types as values and file positions above 2^53 decode (no `UnsupportedError`); and an asynchronous OS handler that declines a call, `asyncio.sleep` included, raises `TypeError` in the sandbox, as upstream.
