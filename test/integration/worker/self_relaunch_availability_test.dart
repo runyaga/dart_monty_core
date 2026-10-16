@@ -5,10 +5,7 @@
 @TestOn('vm')
 library;
 
-import 'dart:io';
-
-import 'package:dart_monty_core/dart_monty_core.dart'
-    show MontyCrashedError, MountDir;
+import 'package:dart_monty_core/dart_monty_core.dart' show MontyCrashedError;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
@@ -40,13 +37,17 @@ void main() {
       throwsA(isA<MontyCrashedError>()),
     );
 
-    // Deliberately load the real library, so success is independent of the
-    // order in which other test isolates happen to open mounts.
-    final directory = Directory.systemTemp.createTempSync('self-relaunch-');
-    addTearDown(directory.deleteSync);
-    MountDir(hostPath: directory.path, virtualPath: '/mnt').close();
-    expect(selfRelaunchAvailable(), isTrue);
-    expect(await locateWorker(isAot: true), isA<SelfRelaunch>());
+    var resolved = 0;
+    void resolvable() => resolved++;
+    expect(selfRelaunchAvailable(resolveWorker: resolvable), isTrue);
+    expect(
+      await locateWorker(
+        isAot: true,
+        canSelfRelaunch: () => selfRelaunchAvailable(resolveWorker: resolvable),
+      ),
+      isA<SelfRelaunch>(),
+    );
+    expect(resolved, 2);
   });
 
   test('self-relaunch does not hide unrelated resolver failures', () {
