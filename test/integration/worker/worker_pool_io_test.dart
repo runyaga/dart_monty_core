@@ -155,10 +155,10 @@ void main() {
     );
     addTearDown(pool.close);
     expect(ProcessChannel.live, hasLength(1));
+    final acquire = pool.acquire;
 
     // Three checkouts on purpose, one after another: each is its own lease.
-    // ignore: prefer-moving-to-variable
-    final a = await pool.acquire();
+    final a = await acquire();
     final first = a.channel as ProcessChannel;
     final pid = first.pid;
     await first.turn(_configure);
@@ -166,8 +166,7 @@ void main() {
     await a.release();
 
     // The second checkout: the same worker, reset.
-    // ignore: prefer-moving-to-variable
-    final b = await pool.acquire();
+    final b = await acquire();
     final second = b.channel as ProcessChannel;
     expect(second.pid, pid, reason: 'reused');
     await second.turn(_configure);
@@ -183,8 +182,7 @@ void main() {
     expect(pool.liveWorkers, 0);
 
     // The third checkout: a new worker, since b's was killed.
-    // ignore: prefer-moving-to-variable
-    final c = await pool.acquire();
+    final c = await acquire();
     final third = c.channel as ProcessChannel;
     expect(third.pid, isNot(pid));
     await third.turn(_configure);
