@@ -4,9 +4,9 @@ import 'dart:async';
 import 'dart:collection';
 
 /// Timer and microtask scheduler for protocol boundary tests.
-final class SpecChannelClock {
+final class ChannelClock {
   final _microtasks = Queue<void Function()>();
-  final _timers = <_SpecTimer>[];
+  final _timers = <_ChannelTimer>[];
   Duration _now = Duration.zero;
 
   /// Run [body] with time advanced only by [elapse].
@@ -17,7 +17,10 @@ final class SpecChannelClock {
         _microtasks.add(zone.bindCallback(callback));
       },
       createTimer: (self, parent, zone, duration, callback) {
-        final timer = _SpecTimer(_now + duration, zone.bindCallback(callback));
+        final timer = _ChannelTimer(
+          _now + duration,
+          zone.bindCallback(callback),
+        );
         _timers.add(timer);
 
         return timer;
@@ -30,7 +33,10 @@ final class SpecChannelClock {
     body,
     zoneSpecification: ZoneSpecification(
       createTimer: (self, parent, zone, duration, callback) {
-        final timer = _SpecTimer(_now + duration, zone.bindCallback(callback));
+        final timer = _ChannelTimer(
+          _now + duration,
+          zone.bindCallback(callback),
+        );
         _timers.add(timer);
 
         return timer;
@@ -63,8 +69,8 @@ final class SpecChannelClock {
   }
 }
 
-final class _SpecTimer implements Timer {
-  _SpecTimer(this.at, this._callback);
+final class _ChannelTimer implements Timer {
+  _ChannelTimer(this.at, this._callback);
 
   final Duration at;
   final void Function() _callback;

@@ -7,7 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/channel_factory_web.dart';
 import 'package:test/test.dart';
 
-import '_spec_channel_browser.dart';
+import '_browser_channel_fixture.dart';
 
 const _flutterScript =
     'assets/packages/dart_monty_core/lib/assets/dart_monty_core_worker.js';
@@ -29,17 +29,17 @@ Future<void> _attempt() => expectLater(
 );
 
 void main() {
-  late SpecChannelBrowser browser;
+  late BrowserChannelFixture browser;
   setUpAll(() async {
-    browser = SpecChannelBrowser(servedScript: _flutterScript);
+    browser = BrowserChannelFixture(servedScript: _flutterScript);
     addTearDown(browser.restore);
     await _attempt();
     expect(browser.fetched, [_flutterScript, _flutterWasm]);
     expect(browser.workers, [_flutterScript]);
   });
 
-  for (final req in ['REQ-platforms-12', 'REQ-release-and-consumers-25']) {
-    test('$req: resolved asset base survives subsequent starts', () async {
+  for (final run in [1, 2]) {
+    test('resolved asset base survives subsequent starts (run $run)', () async {
       browser.fetched.clear();
       browser.workers.clear();
       await _attempt();

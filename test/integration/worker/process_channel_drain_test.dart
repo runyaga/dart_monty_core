@@ -9,16 +9,16 @@ import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_channel_support.dart';
+import '../../unit/worker/_channel_clock.dart';
 
 const int _miB = 1024 * 1024;
 
 void main() {
   for (final scenario in ['minimum', 'queued', 'in-flight']) {
     test(
-      'REQ-print-delivery-24: $scenario drain raises the threshold once',
+      '$scenario drain raises the threshold once',
       () {
-        final clock = SpecChannelClock();
+        final clock = ChannelClock();
         clock.run(() {
           final pipe = StreamController<List<int>>(sync: true);
           final queue = EventQueue(

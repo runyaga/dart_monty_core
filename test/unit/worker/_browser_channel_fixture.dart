@@ -23,8 +23,8 @@ extension type const _ConstructorProxy._(JSFunction _) implements JSFunction {
 /// Supplies a valid empty wasm module and records attempted Worker URLs.
 /// Construction deliberately throws after recording: no fake protocol replies
 /// can hide a factory URL error, and no asset server layout is required.
-final class SpecChannelBrowser {
-  SpecChannelBrowser({String? servedScript}) {
+final class BrowserChannelFixture {
+  BrowserChannelFixture({String? servedScript}) {
     _fetch = ((JSString url) {
       final path = url.toDart;
       fetched.add(path);

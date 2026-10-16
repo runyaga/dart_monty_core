@@ -21,35 +21,34 @@ import '../../unit/worker/_scripted_channel.dart';
 const int _fourMiB = 4 * 1024 * 1024;
 
 void main() {
-  for (final req in [
-    'REQ-platforms-17',
-    'REQ-platforms-18',
-    'REQ-wire-limits-24',
-  ]) {
-    test('$req: completed frames one byte below and above 4 MiB', () async {
-      for (final extra in [-1, 1]) {
-        final (session, process) = await _session();
-        final text = 'a' * (_fourMiB - 21 + extra);
-        final frame = _printFrame(text);
-        expect(frame.length, _fourMiB + extra);
-        process.output.add(frame);
-        // Exact-boundary behaviour at 4 MiB is not asserted.
-        _expectPaused(process, extra > 0, '4 MiB + $extra byte(s)');
-        final received = <String>[];
-        expect(
-          await session.feedRun(
-            'None',
-            printCallback: (_, value) => received.add(value),
-          ),
-          const MontyNone(),
-        );
-        expect(received, [text]);
-        _expectPaused(process, false, 'drained below 4 MiB');
-      }
-    });
+  for (final run in [1, 2, 3]) {
+    test(
+      'completed frames one byte below and above 4 MiB (run $run)',
+      () async {
+        for (final extra in [-1, 1]) {
+          final (session, process) = await _session();
+          final text = 'a' * (_fourMiB - 21 + extra);
+          final frame = _printFrame(text);
+          expect(frame.length, _fourMiB + extra);
+          process.output.add(frame);
+          // Exact-boundary behaviour at 4 MiB is not asserted.
+          _expectPaused(process, extra > 0, '4 MiB + $extra byte(s)');
+          final received = <String>[];
+          expect(
+            await session.feedRun(
+              'None',
+              printCallback: (_, value) => received.add(value),
+            ),
+            const MontyNone(),
+          );
+          expect(received, [text]);
+          _expectPaused(process, false, 'drained below 4 MiB');
+        }
+      },
+    );
   }
   test(
-    'REQ-platforms-17: pause above 4 MiB after the in-flight frame ends',
+    'pause above 4 MiB after the in-flight frame ends',
     () async {
       final (session, process) = await _session();
       final texts = _fill(process, inFlight: true);
@@ -65,7 +64,7 @@ void main() {
     },
   );
   test(
-    'REQ-platforms-17: completed frames pause immediately above 4 MiB',
+    'completed frames pause immediately above 4 MiB',
     () async {
       final (session, process) = await _session();
       final texts = _fill(process);
@@ -80,9 +79,9 @@ void main() {
       expect(received, texts);
     },
   );
-  for (final req in ['REQ-platforms-18', 'REQ-wire-limits-24']) {
+  for (final run in [1, 2]) {
     test(
-      '$req: frames between turns stay bounded and reach the next turn',
+      'frames between turns stay bounded and reach the next turn (run $run)',
       () async {
         final (session, process) = await _session();
         expect(await session.feedRun('None'), const MontyNone());
@@ -99,7 +98,7 @@ void main() {
       },
     );
     test(
-      '$req: a held snapshot retains bounded frames for its resume',
+      'a held snapshot retains bounded frames for its resume (run $run)',
       () async {
         final (session, process) = await _session(suspend: true);
         final received = <String>[];
@@ -119,7 +118,7 @@ void main() {
       },
     );
     test(
-      '$req: read-ahead stays bounded during a stalled print callback',
+      'read-ahead stays bounded during a stalled print callback (run $run)',
       () async {
         final (session, process) = await _session(stall: true);
         final entered = Completer<void>();

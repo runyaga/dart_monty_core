@@ -63,7 +63,7 @@ void main() {
     ),
   ]) {
     test(
-      'REQ-release-and-consumers-19: --print reports $directory '
+      '--print reports $directory '
       'without building',
       () async {
         final root = _fixture(host, arch);

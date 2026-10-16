@@ -1,7 +1,6 @@
-// Spec-requirement tests for the equality and hashing budget of MontyValue
-// graphs (T-values): 400 levels, 2^22 visits, the charge for variable-length
-// leaf payloads, and the memoised fallback that must not change a result.
-// Each test name starts with the REQ id it asserts.
+// Tests for the equality and hashing budget of MontyValue graphs: 400 levels,
+// 2^22 visits, the charge for variable-length leaf payloads, and the memoised
+// fallback that must not change a result.
 @Tags(['unit'])
 library;
 
@@ -9,7 +8,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/value_graph_budget.dart';
 import 'package:test/test.dart';
 
-import 'spec_values_support.dart';
+import '_monty_value_support.dart';
 
 int _n(int v) => v;
 String _s(String v) => v;
@@ -168,17 +167,17 @@ void _charge(
 
 void main() {
   group('depth limit of 400 levels', () {
-    test('REQ-MontyList-14: MontyList', () => _depthLimit('list'));
-    test('REQ-MontySet-16: MontySet', () => _depthLimit('set'));
+    test('MontyList', () => _depthLimit('list'));
+    test('MontySet', () => _depthLimit('set'));
     test(
-      'REQ-MontyFrozenSet-16: MontyFrozenSet',
+      'MontyFrozenSet',
       () => _depthLimit('frozenset'),
     );
-    test('REQ-MontyDict-19: MontyDict', () => _depthLimit('dict'));
-    test('REQ-MontyValue-20: every container kind', () {
+    test('MontyDict', () => _depthLimit('dict'));
+    test('every container kind', () {
       _kinds.keys.forEach(_depthLimit);
     });
-    test('REQ-values-and-equality-69: depth restarts keep the result', () {
+    test('depth restarts keep the result', () {
       _depthLimit('list');
       _depthLimit('dict');
       for (final kind in _kinds.keys) {
@@ -194,21 +193,21 @@ void main() {
   });
 
   group('visit limit of 2^22', () {
-    test('REQ-MontyList-14: MontyList visits', () {
+    test('MontyList visits', () {
       _visitLimit('list');
       _flatBoundary();
     });
-    test('REQ-MontySet-16: MontySet visits', () => _visitLimit('set'));
+    test('MontySet visits', () => _visitLimit('set'));
     test(
-      'REQ-MontyFrozenSet-16: MontyFrozenSet visits',
+      'MontyFrozenSet visits',
       () => _visitLimit('frozenset'),
     );
-    test('REQ-MontyDict-19: MontyDict visits', () => _visitLimit('dict'));
-    test('REQ-MontyValue-20: switches to the explicit-stack walk', () {
+    test('MontyDict visits', () => _visitLimit('dict'));
+    test('switches to the explicit-stack walk', () {
       _kinds.keys.forEach(_visitLimit);
       _flatBoundary();
     });
-    test('REQ-values-and-equality-69: both limits, same result', () {
+    test('both limits, same result', () {
       _visitLimit('list');
       _visitLimit('set');
       final forced = ValueGraphBudget(maxDepth: 0, maxVisits: 0);
@@ -270,7 +269,7 @@ void main() {
     MontyValue big(int n) => MontyBigInt(BigInt.one << (n * 8));
     MontyValue bytes(int n) => MontyBytes(List.filled(n, 1));
 
-    test('REQ-MontyBigInt-13: bitLength >> 9 per payload', () {
+    test('bitLength >> 9 per payload', () {
       // bitLength(1 << 8000) = 8001; 8001 >> 9 = 15.
       MontyValue leaf(int n) => MontyBigInt(BigInt.one << (n == 0 ? 0 : 8000));
       final hashDiff =
@@ -290,27 +289,27 @@ void main() {
       );
     });
     test(
-      'REQ-MontyBytes-13: bytes payload is charged in hashing and equality',
+      'bytes payload is charged in hashing and equality',
       () {
         _charge('list', bytes);
         _charge('set', bytes);
       },
     );
-    test('REQ-MontySet-17: set payloads count against the budget', () {
+    test('set payloads count against the budget', () {
       _charge('set', str);
       _charge('set', big);
       _charge('set', bytes);
     });
-    test('REQ-MontyList-14: list payloads count against the budget', () {
+    test('list payloads count against the budget', () {
       _charge('list', str);
     });
     test(
-      'REQ-MontyFrozenSet-16: frozenset payloads count against the budget',
+      'frozenset payloads count against the budget',
       () {
         _charge('frozenset', str);
       },
     );
-    test('REQ-MontyDict-19: dict payloads count against the budget', () {
+    test('dict payloads count against the budget', () {
       _charge('dict', str);
     });
   });

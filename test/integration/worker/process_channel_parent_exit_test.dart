@@ -13,7 +13,7 @@ import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
-const _path = 'test/integration/worker/spec_channel_parent_test.dart';
+const _path = 'test/integration/worker/process_channel_parent_exit_test.dart';
 
 Future<void> main([List<String> args = const []]) async {
   if (args.isNotEmpty) {
@@ -21,24 +21,21 @@ Future<void> main([List<String> args = const []]) async {
 
     return;
   }
-  for (final (req, mode, result) in [
+  for (final (mode, result) in [
     (
-      'REQ-pool-and-lifetimes-87',
       'keepalive',
       'parent retained until worker exit',
     ),
     (
-      'REQ-pool-and-lifetimes-88',
       'idle',
       'idle worker exited after parent death',
     ),
     (
-      'REQ-pool-and-lifetimes-89',
       'busy',
       'busy worker survived until duration limit',
     ),
   ]) {
-    test('$req: $result', () async {
+    test(result, () async {
       final probe = await _probe(mode);
       expect(probe.exitCode, 0, reason: '${probe.stdout}\n${probe.stderr}');
       expect(probe.stdout, '$result\n');

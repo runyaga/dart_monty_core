@@ -1,6 +1,4 @@
-// Spec-requirement tests for the date, time and structured members of the
-// MontyValue family (T-values). Each test name starts with the REQ id it
-// asserts.
+// Tests for the date, time and structured members of the MontyValue family.
 @Tags(['unit'])
 library;
 
@@ -10,7 +8,7 @@ import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
-import 'spec_values_support.dart';
+import '_monty_value_support.dart';
 
 MontyValue _roundTrip(MontyValue value) {
   final writer = ArenaWriter();
@@ -58,7 +56,7 @@ void main() {
     const date = MontyDate(year: 2024, month: 3, day: 5);
 
     test(
-      'REQ-MontyDate-6: equal on year, month and day; hash of the three',
+      'equal on year, month and day; hash of the three',
       () {
         final d = _date(2024, 3, 5);
         expect(d == _date(2024, 3, 5), isTrue);
@@ -84,7 +82,7 @@ void main() {
         );
       },
     );
-    test('REQ-MontyDate-7: unequal to datetimes and numeric wrappers', () {
+    test('unequal to datetimes and numeric wrappers', () {
       const midnight = MontyDateTime(
         year: 2024,
         month: 3,
@@ -109,12 +107,12 @@ void main() {
         expect(n == one, isFalse, reason: '$n');
       }
     });
-    test('REQ-MontyDate-10: fromDart returns an existing MontyDate', () {
+    test('fromDart returns an existing MontyDate', () {
       final v = _date(2024, 3, 5);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
     test(
-      'REQ-MontyDate-11: fromDart of its DateTime gives a MontyDateTime',
+      'fromDart of its DateTime gives a MontyDateTime',
       () {
         final back = MontyValue.fromDart(date.dartValue);
         expect(back, isA<MontyDateTime>());
@@ -126,13 +124,13 @@ void main() {
         expect(back == date, isFalse);
       },
     );
-    test('REQ-MontyDate-13: the constructor stores without validating', () {
+    test('the constructor stores without validating', () {
       const d = MontyDate(year: -5, month: 13, day: 99);
       expect((d.year, d.month, d.day), (-5, 13, 99));
       const z = MontyDate(year: 0, month: 0, day: 0);
       expect((z.year, z.month, z.day), (0, 0, 0));
     });
-    test('REQ-MontyDate-22: invalid components are refused when encoded', () {
+    test('invalid components are refused when encoded', () {
       for (final bad in [
         const MontyDate(year: 2024, month: 13, day: 1),
         const MontyDate(year: 2024, month: 0, day: 1),
@@ -152,14 +150,14 @@ void main() {
 
   group('MontyDateTime', () {
     test(
-      'REQ-MontyDateTime-12: fromDart returns an existing MontyDateTime',
+      'fromDart returns an existing MontyDateTime',
       () {
         final v = _dt(offsetSeconds: 3600);
         expect(identical(MontyValue.fromDart(v), v), isTrue);
       },
     );
     test(
-      'REQ-MontyDateTime-21: fields are stored without range validation',
+      'fields are stored without range validation',
       () {
         final v = _dt(
           year: 0,
@@ -179,7 +177,7 @@ void main() {
   });
 
   group('MontyTime', () {
-    test('REQ-MontyTime-18: fromDart returns an equal MontyTime', () {
+    test('fromDart returns an equal MontyTime', () {
       const t = MontyTime(
         hour: 1,
         minute: 2,
@@ -191,7 +189,7 @@ void main() {
       expect(back, isA<MontyTime>());
       expect(back == t, isTrue);
     });
-    test('REQ-MontyTime-19: naive rendering', () {
+    test('naive rendering', () {
       expect(
         const MontyTime(
           hour: 1,
@@ -220,7 +218,7 @@ void main() {
         'MontyTime(0:0:0.0)',
       );
     });
-    test('REQ-MontyTime-20: aware rendering with the offset suffix', () {
+    test('aware rendering with the offset suffix', () {
       expect(
         const MontyTime(
           hour: 1,
@@ -258,7 +256,7 @@ void main() {
     const td = MontyTimeDelta(days: 1, seconds: 2, microseconds: 3);
 
     test(
-      'REQ-MontyTimeDelta-6: equal on all three fields; hash of the three',
+      'equal on all three fields; hash of the three',
       () {
         final t = _td(1, 2, 3);
         expect(t == _td(1, 2, 3), isTrue);
@@ -286,11 +284,11 @@ void main() {
         );
       },
     );
-    test('REQ-MontyTimeDelta-12: fromDart preserves an existing timedelta', () {
+    test('fromDart preserves an existing timedelta', () {
       final v = _td(1, 2, 3);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
-    test('REQ-MontyTimeDelta-13: a Dart Duration is not a native input', () {
+    test('a Dart Duration is not a native input', () {
       expect(
         () => MontyValue.fromDart(const Duration(seconds: 1)),
         throwsArgumentError,
@@ -301,7 +299,7 @@ void main() {
       );
       expect(td.dartValue, isA<Duration>());
     });
-    test('REQ-MontyTimeDelta-14: rendering omits microseconds', () {
+    test('rendering omits microseconds', () {
       expect(td.toString(), 'MontyTimeDelta(days=1, seconds=2)');
       expect(
         const MontyTimeDelta(
@@ -315,7 +313,7 @@ void main() {
   });
 
   group('MontyTimeZone', () {
-    test('REQ-MontyTimeZone-8: dartValue map, with a null name key', () {
+    test('dartValue map, with a null name key', () {
       expect(const MontyTimeZone(offsetSeconds: 3600, name: 'CET').dartValue, {
         '__type': 'timezone',
         'offset_seconds': 3600,
@@ -331,7 +329,7 @@ void main() {
       expect(unnamed.keys.toSet(), {'__type', 'offset_seconds', 'name'});
     });
     test(
-      'REQ-MontyTimeZone-13: fromDart keeps it, and does not unwrap maps',
+      'fromDart keeps it, and does not unwrap maps',
       () {
         final v = MontyTimeZone(offsetSeconds: _id(5), name: 'x');
         expect(identical(MontyValue.fromDart(v), v), isTrue);
@@ -341,7 +339,7 @@ void main() {
         expect((back as MontyDict).pairs, hasLength(3));
       },
     );
-    test('REQ-MontyTimeZone-14: MontyTimeZone(offset=<o>, name=<n>)', () {
+    test('MontyTimeZone(offset=<o>, name=<n>)', () {
       expect(
         const MontyTimeZone(offsetSeconds: 3600, name: 'CET').toString(),
         'MontyTimeZone(offset=3600, name=CET)',
@@ -351,7 +349,7 @@ void main() {
         'MontyTimeZone(offset=-60, name=null)',
       );
     });
-    test('REQ-values-and-equality-37: date, time and timezone dartValue', () {
+    test('date, time and timezone dartValue', () {
       expect(
         const MontyDate(year: 2024, month: 3, day: 5).dartValue,
         DateTime(2024, 3, 5),
@@ -377,7 +375,7 @@ void main() {
 
   group('MontyFileHandle and MontyExceptionValue', () {
     test(
-      'REQ-MontyFileHandle-10: dartValue map with __type and three fields',
+      'dartValue map with __type and three fields',
       () {
         final h = MontyFileHandle('/a/b', 'r', position: BigInt.from(5));
         expect(h.dartValue, {
@@ -401,7 +399,7 @@ void main() {
       },
     );
     test(
-      'REQ-MontyFileHandle-13: toString is the upstream repr, path and mode '
+      'toString is the upstream repr, path and mode '
       'quoted, no position',
       () {
         expect(
@@ -420,7 +418,7 @@ void main() {
       },
     );
     test(
-      'REQ-MontyFileHandle-12: compares and hashes path, mode, position',
+      'compares and hashes path, mode, position',
       () {
         MontyFileHandle h(String p, String m, int pos) =>
             MontyFileHandle(p, m, position: BigInt.from(pos));
@@ -452,7 +450,7 @@ void main() {
         );
       },
     );
-    test('REQ-values-and-equality-28: exception and file-handle fields', () {
+    test('exception and file-handle fields', () {
       MontyExceptionValue e(
         String type,
         String? msg, [

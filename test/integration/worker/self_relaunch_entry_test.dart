@@ -18,7 +18,7 @@ import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:ffi/ffi.dart';
 import 'package:test/test.dart';
 
-const _path = 'test/integration/worker/spec_channel_relaunch_test.dart';
+const _path = 'test/integration/worker/self_relaunch_entry_test.dart';
 final Object _skipBundledTests = Platform.isWindows
     ? 'Windows has no LD_PRELOAD equivalent for this process lookup.'
     : false;
@@ -29,14 +29,10 @@ void main([List<String> args = const []]) {
 
     return;
   }
-  for (final req in [
-    'REQ-runMontyWorkerIfChild-10',
-    'REQ-runMontyWorkerIfChild-11',
-    'REQ-runMontyWorkerIfChild-18',
-  ]) {
+  for (final run in [1, 2, 3]) {
     for (final shutdown in [false, true]) {
-      test('$req: bundled entry point serves until '
-          '${shutdown ? 'Shutdown' : 'EOF'}', () async {
+      test('bundled entry point serves until '
+          '${shutdown ? 'Shutdown' : 'EOF'} (run $run)', () async {
         final process = await _start('bundled');
         final bytes = process.stdout.fold(
           <int>[],
@@ -69,7 +65,7 @@ void main([List<String> args = const []]) {
     }
   }
   test(
-    'REQ-runMontyWorkerIfChild-19: native return 4 is process exit 4',
+    'native return 4 is process exit 4',
     () async {
       final process = await _start('bundled');
       final bytes = process.stdout.fold(
@@ -99,7 +95,7 @@ void main([List<String> args = const []]) {
     skip: _skipBundledTests,
   );
   test(
-    'REQ-runMontyWorkerIfChild-20: unresolved entry point propagates '
+    'unresolved entry point propagates '
     'ArgumentError',
     () async {
       final result = await Process.run(Platform.resolvedExecutable, [

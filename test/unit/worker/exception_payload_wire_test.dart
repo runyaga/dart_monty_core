@@ -1,9 +1,8 @@
-// Spec tests for structured exception data on the wire: what the host sends
-// for an answered json.JSONDecodeError, what it reads from a worker's
-// Unicode and JSON payloads, the 64 KiB limits (measured in UTF-8 bytes), and
-// that a dropped payload keeps the raised type and message. Each test name
-// starts with the requirement id it asserts, so a mutation run can select it
-// with `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js and dart2wasm.
+// Tests for structured exception data on the wire: what the host sends for an
+// answered json.JSONDecodeError, what it reads from a worker's Unicode and JSON
+// payloads, the 64 KiB limits (measured in UTF-8 bytes), and that a dropped
+// payload keeps the raised type and message. Pure Dart: vm, dart2js and
+// dart2wasm.
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
@@ -16,7 +15,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
-import '_spec_codec_support.dart';
+import '_codec_support.dart';
 
 const int _limit = 64 * 1024;
 
@@ -90,7 +89,7 @@ String _rendered(MontyError error) => switch (error) {
 void main() {
   group('the host sends JSON error data only when every field is usable', () {
     test(
-      'REQ-ExternalException-14: missing, mistyped or surrogate: dropped',
+      'missing, mistyped or surrogate: dropped',
       () {
         expect(_host(_attrs()).hasData(), isTrue);
         final bad = <String, MontyValue?>{
@@ -129,7 +128,7 @@ void main() {
     );
 
     test(
-      'REQ-snapshots-and-futures-16: a surrogate in msg or doc: no payload',
+      'a surrogate in msg or doc: no payload',
       () {
         for (final key in ['msg', 'doc']) {
           for (final text in ['\uD800', 'a\uD83Dz', '\uDE00']) {
@@ -148,7 +147,7 @@ void main() {
       },
     );
 
-    test('REQ-snapshots-and-futures-15: the usable value types', () {
+    test('the usable value types', () {
       String pos(MontyValue v) {
         final raised = _host(_attrs(override: {'pos': v}));
 
@@ -185,7 +184,7 @@ void main() {
       );
     });
 
-    test('REQ-wire-limits-22: each required attribute decides alone', () {
+    test('each required attribute decides alone', () {
       for (final key in ['msg', 'doc', 'pos', 'lineno', 'colno']) {
         expect(
           _host(_attrs(override: {key: null})).hasData(),
@@ -213,7 +212,7 @@ void main() {
     });
 
     test(
-      'REQ-errors-and-tracebacks-47: a dropped payload keeps type, message',
+      'a dropped payload keeps type, message',
       () {
         final raised = _host(
           _attrs(override: {'colno': const MontyString('x')}),
@@ -238,7 +237,7 @@ void main() {
     );
 
     test(
-      'REQ-errors-and-tracebacks-34: an exception input carries no attributes',
+      'an exception input carries no attributes',
       () {
         final value = MontyExceptionValue('UnicodeEncodeError', 'boom', const {
           'encoding': MontyString('utf-8'),
@@ -273,7 +272,7 @@ void main() {
   group('the worker payload limits', () {
     const euro = '€'; // 3 bytes in UTF-8, 1 UTF-16 unit.
 
-    test('REQ-wire-limits-18: an object over 64 KiB drops the payload', () {
+    test('an object over 64 KiB drops the payload', () {
       // A byte object is measured in bytes: exactly 64 KiB is kept.
       expect(
         _kept(
@@ -325,7 +324,7 @@ void main() {
       );
     });
 
-    test('REQ-wire-limits-20: encoding or reason over 64 KiB drops it', () {
+    test('encoding or reason over 64 KiB drops it', () {
       final fits = euro * (_limit ~/ 3);
       final over = euro * (_limit ~/ 3 + 1);
       for (final field in ['encoding', 'reason']) {
@@ -358,7 +357,7 @@ void main() {
     });
 
     test(
-      'REQ-wire-limits-46: dropping oversized data keeps type and message',
+      'dropping oversized data keeps type and message',
       () {
         for (final (type, data) in [
           ('UnicodeEncodeError', _unicodeStr(object: 'a' * (_limit + 1))),
@@ -382,7 +381,7 @@ void main() {
       },
     );
 
-    test('REQ-wire-limits-17: a JSON error without its doc keeps the rest', () {
+    test('a JSON error without its doc keeps the rest', () {
       // The worker leaves out a document over 64 KiB (or one without a
       // UTF-8 form) and keeps the other fields.
       final error = _inbound(
@@ -407,7 +406,7 @@ void main() {
   });
 
   group('the Unicode payload attributes', () {
-    test('REQ-MontyExceptionValue-8: UnicodeEncodeError attributes', () {
+    test('UnicodeEncodeError attributes', () {
       final error = _inbound(
         'UnicodeEncodeError',
         _unicodeStr(
@@ -440,7 +439,7 @@ void main() {
       expect(value.attributes['object'], isString);
     });
 
-    test('REQ-errors-and-tracebacks-30: decode and encode errors', () {
+    test('decode and encode errors', () {
       final decode = _inbound(
         'UnicodeDecodeError',
         _unicodeBytes([0xff, 0xfe, 0x41], end: 2),
@@ -476,7 +475,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyError-5: unusable data exposes ValueError, render keeps type',
+      'unusable data exposes ValueError, render keeps type',
       () {
         final frame = pb.StackFrame(
           filename: 'main.py',

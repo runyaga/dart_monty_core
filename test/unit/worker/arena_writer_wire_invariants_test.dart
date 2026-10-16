@@ -1,8 +1,6 @@
-// Spec tests for the arena writer: wire invariants of the outbound encoder
-// (fresh leaves, shared containers, child order, hashability refusals, time
-// ranges). Each test name starts with the requirement id it asserts, so a
-// mutation run can select it with `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js
-// and dart2wasm.
+// Tests for the arena writer: wire invariants of the outbound encoder (fresh
+// leaves, shared containers, child order, hashability refusals, time ranges).
+// Pure Dart: vm, dart2js and dart2wasm.
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
@@ -104,24 +102,24 @@ void main() {
       expect(writer.arena.nodes, hasLength(2));
     }
 
-    test('REQ-MontyBigInt-20: a MontyBigInt', () {
+    test('a MontyBigInt', () {
       fresh(MontyBigInt(BigInt.one << 70), pb.MontyNode_Kind.bigint);
     });
 
-    test('REQ-MontyBytes-11: a MontyBytes', () {
+    test('a MontyBytes', () {
       fresh(const MontyBytes([1, 2]), pb.MontyNode_Kind.bytes);
     });
 
-    test('REQ-MontyEllipsis-11: a MontyEllipsis, equality unchanged', () {
+    test('a MontyEllipsis, equality unchanged', () {
       fresh(const MontyEllipsis(), pb.MontyNode_Kind.ellipsis);
       expect(const MontyEllipsis(), const MontyEllipsis());
     });
 
-    test('REQ-MontyFloat-28: a MontyFloat', () {
+    test('a MontyFloat', () {
       fresh(const MontyFloat(1.5), pb.MontyNode_Kind.float);
     });
 
-    test('REQ-MontyFileHandle-15: a MontyFileHandle, across containers', () {
+    test('a MontyFileHandle, across containers', () {
       final handle = MontyFileHandle('/f', 'r');
       fresh(handle, pb.MontyNode_Kind.fileHandle);
       final (nodes, roots) = _write([
@@ -146,7 +144,7 @@ void main() {
       for (final r in refs) _int(itemAt(arena.nodes, r)),
     ];
 
-    test('REQ-MontyList-4: a list node holds its items in sequence', () {
+    test('a list node holds its items in sequence', () {
       final writer = ArenaWriter();
       final root = writer.add(MontyList(ints));
       final node = itemAt(writer.arena.nodes, root);
@@ -154,7 +152,7 @@ void main() {
       expect(values(writer.arena, node.list.items), [10, 20, 30]);
     });
 
-    test('REQ-MontyTuple-4: a tuple node holds its items in order', () {
+    test('a tuple node holds its items in order', () {
       final writer = ArenaWriter();
       final root = writer.add(MontyTuple(ints));
       final node = itemAt(writer.arena.nodes, root);
@@ -162,7 +160,7 @@ void main() {
       expect(values(writer.arena, node.tuple.items), [10, 20, 30]);
     });
 
-    test('REQ-MontyDict-4: a dict node holds key and value in pairs order', () {
+    test('a dict node holds key and value in pairs order', () {
       final writer = ArenaWriter();
       final root = writer.add(
         const MontyDict([
@@ -187,7 +185,7 @@ void main() {
   });
 
   group('a container is one node per Dart object', () {
-    test('REQ-MontyNamedTuple-15: a repeated named tuple is shared', () {
+    test('a repeated named tuple is shared', () {
       final shared = _named([const MontyInt(7)]);
       final (nodes, _) = _write([
         MontyList([shared, shared]),
@@ -213,7 +211,7 @@ void main() {
     String keyIn(MontyValue member) =>
         _refusal(MontyDict([(member, const MontyInt(1))]));
 
-    test('REQ-MontyDict-29: tuple, named tuple and frozenset keys', () {
+    test('tuple, named tuple and frozenset keys', () {
       for (final (make, name)
           in <(MontyValue Function(List<MontyValue>), String)>[
             (MontyTuple.new, 'tuple'),
@@ -254,7 +252,7 @@ void main() {
       );
     });
 
-    test('REQ-MontyFrozenSet-14: a frozenset key needs hashable members', () {
+    test('a frozenset key needs hashable members', () {
       const inner = MontyTuple([MontyInt(1), _unhashableList]);
       expect(
         keyIn(const MontyFrozenSet([inner])),
@@ -283,7 +281,7 @@ void main() {
       );
     });
 
-    test('REQ-MontyFrozenSet-24: the message names the first offender', () {
+    test('the message names the first offender', () {
       expect(
         _refusal(const MontyFrozenSet([_unhashableDict, _unhashableList])),
         refusesDict,
@@ -298,7 +296,7 @@ void main() {
       );
     });
 
-    test('REQ-MontySet-24: set elements, recursively, in stored order', () {
+    test('set elements, recursively, in stored order', () {
       for (final make in <MontyValue Function(List<MontyValue>)>[
         MontyTuple.new,
         _named,
@@ -361,7 +359,7 @@ void main() {
       }
     });
 
-    test('REQ-MontyNamedTuple-23: a named tuple as key or element', () {
+    test('a named tuple as key or element', () {
       final bad = _named([const MontyInt(1), _unhashableList]);
       expect(keyIn(bad), refusesList);
       expect(_refusal(MontySet([bad])), refusesList);
@@ -388,7 +386,7 @@ void main() {
   group('time and zone fields', () {
     MontyTime? written(MontyTime t) => _roundTrip(t) as MontyTime?;
 
-    test('REQ-MontyTime-6: the valid field ranges', () {
+    test('the valid field ranges', () {
       final top = _time(
         hour: 23,
         minute: 59,
@@ -423,7 +421,7 @@ void main() {
       }
     });
 
-    test('REQ-MontyTime-22: the writer refuses before encoding', () {
+    test('the writer refuses before encoding', () {
       for (final bad in [
         _time(hour: 24),
         _time(minute: 60),
@@ -448,7 +446,7 @@ void main() {
       expect(_refusal(_time(fold: 2)), contains('Time.fold'));
     });
 
-    test('REQ-MontyTime-17: a surrogate zone name is dropped, offset kept', () {
+    test('a surrogate zone name is dropped, offset kept', () {
       for (final offset in [-3600, 3600, 0]) {
         final (nodes, _) = _write([_time(offset: offset, name: 'Z\uD800')]);
         final node = onlyItem(nodes).time;
@@ -463,7 +461,7 @@ void main() {
       expect(keptTime.offsetSeconds, -3600);
     });
 
-    test('REQ-MontyDateTime-13: fields map, empty name differs from none', () {
+    test('fields map, empty name differs from none', () {
       MontyDateTime make({int? offset, String? name}) => MontyDateTime(
         year: 2026,
         month: 10,
@@ -503,7 +501,7 @@ void main() {
   });
 
   group('strings and file handles', () {
-    test('REQ-MontyString-13: an output repr, cycle or function sends str', () {
+    test('an output repr, cycle or function sends str', () {
       for (final node in [
         pb.MontyNode(repr: '<object>'),
         pb.MontyNode(cycle: '[...]'),
@@ -519,7 +517,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyFileHandle-20: a surrogate path never reaches the arena',
+      'a surrogate path never reaches the arena',
       () {
         expect(() => MontyFileHandle('/a\uD800', 'r'), throwsArgumentError);
         expect(() => MontyFileHandle('\uDC00', 'rb'), throwsArgumentError);

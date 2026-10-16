@@ -1,9 +1,8 @@
-// Spec tests for the error family's frames and rendering: Frame fields and
-// identity, traceback order and stability, display() text for a multiline
-// syntax error and an invalid format, and that a rejected raised exception is
-// a MontyCrashedError caught by `on MontyError`. Each test name starts with
-// the requirement id it asserts, so a mutation run can select it with
-// `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js and dart2wasm.
+// Tests for the error family's frames and rendering: Frame fields and identity,
+// traceback order and stability, display() text for a multiline syntax error
+// and an invalid format, and that a rejected raised exception is a
+// MontyCrashedError caught by `on MontyError`. Pure Dart: vm, dart2js and
+// dart2wasm.
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -58,7 +57,7 @@ void main() {
   final runtime = isA<MontyRuntimeError>();
 
   group('Frame', () {
-    test('REQ-Frame-7: positions are non-nullable one-based ints', () {
+    test('positions are non-nullable one-based ints', () {
       final frame = _onlyFrame(_error('ValueError', [_frame(endLine: 4)]));
       // A list of `int` does not compile if a field is nullable.
       final positions = _ints([
@@ -77,7 +76,7 @@ void main() {
       );
     });
 
-    test('REQ-Frame-10: sourceLine is the optional preview', () {
+    test('sourceLine is the optional preview', () {
       final absent = _onlyFrame(_error('ValueError', [_frame()]));
       expect(absent.sourceLine, isNull);
       final present = _onlyFrame(
@@ -90,7 +89,7 @@ void main() {
       expect(empty.sourceLine, '');
     });
 
-    test('REQ-Frame-12: hashCode is the identity hash, not the fields', () {
+    test('hashCode is the identity hash, not the fields', () {
       final wire = _frame();
       final frames = [
         ..._traceback(_error('ValueError', [wire, wire])),
@@ -108,7 +107,7 @@ void main() {
       expect({...frames}, hasLength(3));
     });
 
-    test('REQ-Frame-13: repeated reads give the same frame objects', () {
+    test('repeated reads give the same frame objects', () {
       final wire = [_frame(), _frame(line: 4)];
       for (final error in [
         _error('ValueError', wire),
@@ -121,7 +120,7 @@ void main() {
     });
 
     test(
-      'REQ-Frame-22: a rejected frame is a MontyCrashedError, a MontyError',
+      'a rejected frame is a MontyCrashedError, a MontyError',
       () {
         final rejected = {
           'no start': [_noStart()],
@@ -164,7 +163,7 @@ void main() {
 
   group('a rejected raised exception', () {
     test(
-      'REQ-MontyRuntimeError-43: is a MontyCrashedError, so on MontyError',
+      'is a MontyCrashedError, so on MontyError',
       () {
         final rejected = [
           _error('NotARealException', const [], 'm'),
@@ -200,7 +199,7 @@ void main() {
       _frame(line: 30, name: null),
     ];
 
-    test('REQ-MontyRuntimeError-7: repeated reads return the same list', () {
+    test('repeated reads return the same list', () {
       final error = _error('ValueError', three()) as MontyRuntimeError;
       final first = error.traceback;
       expect(identical(first, error.traceback), isTrue);
@@ -209,7 +208,7 @@ void main() {
       expect(() => first.add(firstItem(first)), throwsUnsupportedError);
     });
 
-    test('REQ-MontySyntaxError-8: outermost frame first, in order', () {
+    test('outermost frame first, in order', () {
       final wire = three();
       final error = _error('SyntaxError', wire, 'bad') as MontySyntaxError;
       expect(error.traceback.map((f) => f.line), [10, 20, 30]);
@@ -222,7 +221,7 @@ void main() {
       expect(other.traceback.map((f) => f.line), [10, 20, 30]);
     });
 
-    test('REQ-MontySyntaxError-9: repeated reads give the same frames', () {
+    test('repeated reads give the same frames', () {
       final error = _error('SyntaxError', three(), 'bad') as MontySyntaxError;
       final first = error.traceback;
       expect(first, hasLength(3));
@@ -233,7 +232,7 @@ void main() {
 
   group('display()', () {
     test(
-      'REQ-MontySyntaxError-16: a multiline span prints its preview block',
+      'a multiline span prints its preview block',
       () {
         final error =
             _error(
@@ -287,7 +286,7 @@ void main() {
       },
     );
 
-    test('REQ-MontySyntaxError-19: an unsupported format is refused', () {
+    test('an unsupported format is refused', () {
       final error =
           _error('SyntaxError', [_frame()], 'bad') as MontySyntaxError;
       expect(

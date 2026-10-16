@@ -1,7 +1,6 @@
-// Spec tests for the arena reader: what a decoded value is (wrapper type,
-// identity, immutability, attribute filtering, field presence). Each test
-// name starts with the requirement id it asserts, so a mutation run can
-// select it with `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js and dart2wasm.
+// Tests for the arena reader: what a decoded value is (wrapper type, identity,
+// immutability, attribute filtering, field presence). Pure Dart: vm, dart2js
+// and dart2wasm.
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
@@ -11,7 +10,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '_arena_fixtures.dart';
-import '_spec_codec_support.dart';
+import '_codec_support.dart';
 
 /// The arena after a wire round trip, so field presence survives as it
 /// would from the worker.
@@ -53,7 +52,7 @@ void main() {
   final two53 = BigInt.one << 53;
 
   group('integers', () {
-    test('REQ-MontyBigInt-5: MontyInt up to 2^53, MontyBigInt above', () {
+    test('MontyInt up to 2^53, MontyBigInt above', () {
       for (final (value, big) in [
         (BigInt.zero, false),
         (BigInt.one, false),
@@ -83,7 +82,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyInt-7: a large integer decodes to its exact MontyBigInt',
+      'a large integer decodes to its exact MontyBigInt',
       () {
         final value = (BigInt.one << 60) + BigInt.from(12345);
         final decoded = _decode([_intArm(value)]);
@@ -106,7 +105,7 @@ void main() {
       },
     );
 
-    test('REQ-MontyInt-11: both wire arms decode to one numeric type', () {
+    test('both wire arms decode to one numeric type', () {
       for (final value in [
         BigInt.from(42),
         BigInt.from(-7),
@@ -125,7 +124,7 @@ void main() {
       }
     });
 
-    test('REQ-MontyBigInt-19: a repeated big integer node is one wrapper', () {
+    test('a repeated big integer node is one wrapper', () {
       final nodes = [
         _bigArm(BigInt.one << 70),
         list([0, 0]),
@@ -141,7 +140,7 @@ void main() {
       expect(identical(c, a), isTrue);
     });
 
-    test('REQ-MontyFloat-26: a repeated float node is one wrapper', () {
+    test('a repeated float node is one wrapper', () {
       final nodes = [
         n(1.5),
         n(double.nan),
@@ -158,7 +157,7 @@ void main() {
   });
 
   group('decoded containers are unmodifiable', () {
-    test('REQ-MontyBytes-6: decoded bytes', () {
+    test('decoded bytes', () {
       final bytes = _decode([
         pb.MontyNode(bytes: [1, 2, 3]),
       ]);
@@ -170,7 +169,7 @@ void main() {
       expect(value, [1, 2, 3]);
     });
 
-    test('REQ-MontyDict-6: decoded pairs', () {
+    test('decoded pairs', () {
       final decoded =
           _decode([
                 n('a'),
@@ -191,7 +190,7 @@ void main() {
       expect(decoded.pairs, hasOne);
     });
 
-    test('REQ-MontySet-6: decoded items', () {
+    test('decoded items', () {
       final set_ =
           _decode([
                 n(1),
@@ -205,7 +204,7 @@ void main() {
       expect(() => set_.items[0] = const MontyInt(9), throwsUnsupportedError);
     });
 
-    test('REQ-MontyFrozenSet-6: decoded items', () {
+    test('decoded items', () {
       final frozen_ =
           _decode([
                 n(1),
@@ -225,7 +224,7 @@ void main() {
       );
     });
 
-    test('REQ-MontyTuple-5: decoded items, in child order', () {
+    test('decoded items, in child order', () {
       final tuple_ =
           _decode([
                 n(3),
@@ -248,7 +247,7 @@ void main() {
       expect(tuple_.items, hasLength(3));
     });
 
-    test('REQ-MontyNamedTuple-5: decoded field names and values', () {
+    test('decoded field names and values', () {
       final named =
           _decode([
                 n(1),
@@ -280,7 +279,7 @@ void main() {
             ])
             as MontyNamedTuple;
 
-    test('REQ-MontyNamedTuple-19: only the last segment and fields', () {
+    test('only the last segment and fields', () {
       final one = n(1);
       // Any module prefix: it is never checked as an identifier.
       for (final type in [
@@ -390,7 +389,7 @@ void main() {
       ),
     ];
 
-    test('REQ-MontyClassProxy-6: instance and class attributes', () {
+    test('instance and class attributes', () {
       final decoded = _decode(nodes()) as MontyClassProxy;
       expect(decoded.attrs.keys, ['k']);
       expect(decoded.attrs['k'], const MontyString('v'));
@@ -399,7 +398,7 @@ void main() {
       expect(classAttrs['k'], const MontyString('v'));
     });
 
-    test('REQ-MontyClassTypeProxy-11: class attributes', () {
+    test('class attributes', () {
       final decoded = _decode(nodes(), 7) as MontyClassTypeProxy;
       expect(decoded.attrs.keys, ['k']);
       expect(decoded.attrs['k'], const MontyString('v'));
@@ -416,7 +415,7 @@ void main() {
   });
 
   group('field presence and identity', () {
-    test('REQ-MontyComplex-24: both parts missing report real', () {
+    test('both parts missing report real', () {
       final real = contains('Complex.real');
       final imag = contains('Complex.imag');
       final both = _formatMessage([pb.MontyNode(complex: pb.Complex())]);
@@ -426,13 +425,13 @@ void main() {
       expect(_formatMessage([complexNode(imag: 1)]), real);
     });
 
-    test('REQ-MontyEllipsis-9: the canonical const instance', () {
+    test('the canonical const instance', () {
       final decoded = _decode([pb.MontyNode(ellipsis: pb.Unit())]);
       expect(decoded, const MontyEllipsis());
       expect(identical(decoded, const MontyEllipsis()), isTrue);
     });
 
-    test('REQ-MontyTime-6: the reader enforces the same field ranges', () {
+    test('the reader enforces the same field ranges', () {
       pb.MontyNode at({
         int hour = 3,
         int minute = 4,
@@ -483,7 +482,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyTimeZone-10: offset and name, empty differs from absent',
+      'offset and name, empty differs from absent',
       () {
         final named = _decode([zone(-3600, 'CET')]) as MontyTimeZone;
         expect(named.offsetSeconds, -3600);
@@ -497,7 +496,7 @@ void main() {
       },
     );
 
-    test('REQ-MontyDateTime-13: the decoder keeps empty and absent names', () {
+    test('the decoder keeps empty and absent names', () {
       final empty = _decode([datetime(offset: 60, name: '')]) as MontyDateTime;
       expect(empty.timezoneName, '');
       expect(empty.offsetSeconds, 60);
@@ -514,7 +513,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyString-13: repr, cycle and function nodes decode to str',
+      'repr, cycle and function nodes decode to str',
       () {
         for (final (node, text) in [
           (pb.MontyNode(repr: '<obj>'), '<obj>'),

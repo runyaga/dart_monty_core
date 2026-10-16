@@ -1,4 +1,4 @@
-// Hook opt-out and manifest validation against an empty fixture root.
+// Explicit null and invalid build_worker settings at the real hook boundary.
 @Tags(['integration'])
 @TestOn('vm')
 library;
@@ -13,7 +13,7 @@ import 'package:test/test.dart';
 import '../../hook/build.dart' as hook;
 
 /// Runs the hook for this host with [packageRoot] and the `build_worker`
-/// user-define set to [buildWorker] (absent when null), and returns its
+/// user-define set to [buildWorker] (including explicit null), and returns its
 /// validated output.
 Future<BuildOutput> _runHook(
   Directory packageRoot, {
@@ -40,7 +40,7 @@ Future<BuildOutput> _runHook(
       outputDirectoryShared: outputShared,
       userDefines: PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(
-          defines: {'build_worker': ?buildWorker},
+          defines: {'build_worker': buildWorker},
           basePath: root,
         ),
       ),
@@ -66,46 +66,39 @@ Future<BuildOutput> _runHook(
 }
 
 Directory _emptyRoot() {
-  final root = Directory.systemTemp.createTempSync('spec_channel_hook_');
+  final root = Directory.systemTemp.createTempSync('worker_hook_');
   addTearDown(() => root.deleteSync(recursive: true));
 
   return root;
 }
 
 void main() {
-  test(
-    'REQ-runMontyWorkerIfChild-4: disabled code assets ignores invalid opt-in',
-    () async {
-      final output = await _runHook(
-        _emptyRoot(),
-        buildWorker: 'invalid',
-        codeAssets: false,
-      );
+  for (final run in [1, 2]) {
+    test('explicit null builds no worker library (run $run)', () async {
+      final output = await _runHook(_emptyRoot());
       expect(output.assets.code, isEmpty);
       expect(output.dependencies, isEmpty);
-    },
-  );
-
-  for (final setting in [null, false]) {
-    test(
-      'REQ-Monty-32: build_worker $setting emits no native assets',
-      () async {
-        final root = _emptyRoot();
-        final output = await _runHook(root, buildWorker: setting);
-        expect(output.assets.code, isEmpty);
-        expect(output.dependencies, isEmpty);
-        expect(Directory('${root.path}/native').existsSync(), isFalse);
-      },
-    );
+    });
   }
-  test(
-    'REQ-runMontyWorkerIfChild-23: true requires the worker manifest',
-    () async {
-      final root = _emptyRoot();
-      await expectLater(
-        _runHook(root, buildWorker: true),
-        throwsStateError,
+  for (final run in [1, 2]) {
+    for (final value in <Object>['yes', 1, 0]) {
+      test(
+        'rejects build_worker $value with its diagnostic (run $run)',
+        () async {
+          await expectLater(
+            _runHook(_emptyRoot(), buildWorker: value),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.message,
+                'message',
+                'dart_monty_core: the user_define build_worker must be '
+                    'true or false, '
+                    'got ${value.runtimeType} $value.',
+              ),
+            ),
+          );
+        },
       );
-    },
-  );
+    }
+  }
 }
