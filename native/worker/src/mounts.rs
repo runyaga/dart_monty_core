@@ -186,8 +186,11 @@ pub(crate) extern "C" fn dmfs_finalize(token: *mut c_void) {
     if let Ok(id) = i64::try_from(token as usize)
         && let Ok(mut state) = STATE.lock()
     {
-        // Release the descriptor (if still open) and the closed-root label.
+        // Roots and tables share one monotonically increasing ID space.
+        // Release an abandoned root (including its closed label) or table.
+        // Explicit table close detaches its finalizer; repeated release is safe.
         state.roots.remove(&id);
+        state.tables.remove(&id);
     }
 }
 

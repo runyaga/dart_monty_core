@@ -24,6 +24,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:meta/meta.dart';
 
 /// The worker loop in the bundled worker library; the code asset the build
 /// hook emits for this library's URI. Runs on the calling thread, which it
@@ -52,10 +53,14 @@ void runMontyWorkerIfChild(List<String> args) {
 ///
 /// Resolving the library loads it into this process; its entry point is not
 /// called.
-bool selfRelaunchAvailable() {
+/// [resolveWorker] replaces symbol resolution in tests, where other isolates
+/// may already have loaded the library into the process.
+bool selfRelaunchAvailable({
+  @visibleForTesting void Function()? resolveWorker,
+}) {
   if (!_armed) return false;
   try {
-    Native.addressOf<NativeFunction<Int32 Function()>>(_workerMain);
+    (resolveWorker ?? _resolveWorker)();
 
     return true;
     // An unresolvable @Native symbol throws ArgumentError: the library is not
@@ -64,4 +69,8 @@ bool selfRelaunchAvailable() {
   } on ArgumentError {
     return false;
   }
+}
+
+void _resolveWorker() {
+  Native.addressOf<NativeFunction<Int32 Function()>>(_workerMain);
 }

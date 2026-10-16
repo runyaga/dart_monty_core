@@ -20,6 +20,7 @@ library;
 // src/ stays internal until it is listed here.
 export 'src/mount/abstract_file.dart' show AbstractFile;
 export 'src/mount/memory_file.dart' show MemoryFile;
+export 'src/mount/mount_dir.dart' show MountDir;
 export 'src/mount/os_access.dart' show OSAccess;
 export 'src/mount/stat_result.dart' show StatResult;
 export 'src/platform/monty_value.dart'

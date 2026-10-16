@@ -11,7 +11,6 @@ import 'dart:io';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedError;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
-import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:test/test.dart';
 
@@ -42,14 +41,13 @@ void main() {
   });
 
   group('runMontyWorkerIfChild', () {
-    test('without the flag it returns, and arms nothing it cannot serve', () {
-      final beforeCall = selfRelaunchAvailable();
-      runMontyWorkerIfChild(const ['--other']);
-      final afterCall = selfRelaunchAvailable();
-      expect(beforeCall, isFalse, reason: 'not yet called');
-      // Called, but `dart test` builds no worker library (no opt-in).
-      expect(afterCall, isFalse);
-    });
+    test(
+      'without the flag it returns, and arms nothing it cannot serve',
+      () async {
+        final output = await _unbundled();
+        expect(output, contains('before=false\nafter=false\n'));
+      },
+    );
 
     test('a process started without the flag carries on as the app', () async {
       final r = await Process.run(Platform.resolvedExecutable, [_probe, 'x']);
@@ -123,8 +121,8 @@ void main() {
       expect(asked, isFalse);
     });
 
-    test('by default it asks this process, which is not ready', () {
-      expect(locateWorker(isAot: true), throwsA(isA<MontyCrashedError>()));
+    test('by default it asks this process, which is not ready', () async {
+      expect(await _unbundled(), contains('locator=spawn failure\n'));
     });
 
     test('under the JIT it never offers SelfRelaunch', () {
@@ -143,4 +141,16 @@ void main() {
       );
     });
   });
+}
+
+// Native mounts load the worker dylib into the test process. Its global
+// symbols can then satisfy @Native in any test isolate, so absence must be
+// measured in a fresh process, as F-0's route-2 lookup check does.
+Future<String> _unbundled() async {
+  final result = await Process.run(Platform.resolvedExecutable, [
+    'test/integration/worker/self_relaunch_unbundled_probe.dart',
+  ]);
+  expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+
+  return result.stdout as String;
 }

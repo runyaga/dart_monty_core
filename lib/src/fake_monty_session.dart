@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/src/fake_answers.dart';
 import 'package:dart_monty_core/src/fake_script.dart';
 import 'package:dart_monty_core/src/fake_worker.dart';
+import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
     show exceptionTypeNames;
@@ -292,6 +293,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
     Map<String, MontyValue>? inputs,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    List<MountDir>? mount,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
@@ -301,6 +303,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
       inputs: inputs,
       externalLookup: externalLookup,
       printCallback: printCallback,
+      mount: mount,
       cwd: cwd,
       os: os,
       skipTypeCheck: skipTypeCheck,
@@ -313,6 +316,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
     Map<String, MontyValue>? inputs,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    List<MountDir>? mount,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
@@ -322,6 +326,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
       inputs: inputs,
       externalLookup: externalLookup,
       printCallback: printCallback,
+      mount: mount,
       cwd: cwd,
       os: os,
       skipTypeCheck: skipTypeCheck,
@@ -345,6 +350,7 @@ final class FakeMontySession extends _FakeScripting implements MontySession {
   @override
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
+    List<MountDir>? mount,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,

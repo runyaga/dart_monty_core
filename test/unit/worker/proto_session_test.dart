@@ -1277,6 +1277,26 @@ void main() {
     const code = '1 + 1';
     final done = answer([completeNone()]);
 
+    test('raw step defaults cwd only until the first accepted feed', () async {
+      final ch = _configured([done, done, done]);
+      final session = await ProtoSession.open(ch);
+      addTearDown(session.close);
+      for (final cwd in [null, '/saved', null]) {
+        final event = await session.step(
+          pb.ParentRequest(
+            feed: pb.Feed(code: code, cwd: cwd),
+          ),
+        );
+        expect(event.whichKind(), pb.ChildEvent_Kind.complete);
+      }
+      expect(
+        ch.requests
+            .where((request) => request.hasFeed())
+            .map((request) => request.feed.cwd),
+        ['/', '/saved', ''],
+      );
+    });
+
     /// Feeds [code] [times] times, each completing.
     Future<void> feedTimes(ProtoSession s, int times) async {
       for (var i = 0; i < times; i++) {

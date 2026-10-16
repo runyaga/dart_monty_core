@@ -68,6 +68,26 @@ What limits cannot cover, the worker boundary does:
 - A worker whose allocator refuses an allocation over its hard limit exits;
   that too is `MontyCrashedError`.
 
+## Host filesystem service
+
+`MountDir` serves filesystem calls through upstream `monty-fs` in the Dart
+host process. The interpreter still runs only in the worker; Python sees
+virtual paths, while the mount service owns the host directory capabilities.
+Mount calls are synchronous FFI calls and can block the calling Dart isolate.
+Killing a worker does not preempt a host filesystem call already in progress.
+
+`MountDir.memoryUsageLimit` accounts for retained overlay data and transient
+filesystem results. It is separate from the worker interpreter's
+`ResourceLimits.maxMemory`. `writeBytesLimit` is cumulative within each feed
+and resets at the next feed. See [host directory mounts](host-directory-mounts.md).
+
+The worker cdylib also contains the mount service. Its allocator is separate
+from each worker process's allocator in this process-only architecture.
+Any future in-process interpreter must revisit that separation: mount
+allocations must not charge the interpreter's memory budget or share its
+process-fatal hard limit. The current mount packaging is not approval to
+combine them in one allocator domain.
+
 ## Costs
 
 - Each session holds one worker for its life. `maxProcesses` bounds the
