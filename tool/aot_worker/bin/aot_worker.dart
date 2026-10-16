@@ -91,7 +91,7 @@ Future<List<String>> _runSession(
       externalLookup: _externalLookup(calls, replies),
     );
     final got = _result(result.value, result.prints, calls);
-    final want = _expectedResult(expected, calls);
+    final want = _expectedResult(expected);
     stdout
       ..writeln('launch: $launch pid=${channel.pid} (parent pid=$pid)')
       ..writeln('got : ${jsonEncode(got)}')
@@ -118,13 +118,10 @@ Map<String, Object?> _result(
   'ext_calls': calls,
 };
 
-Map<String, Object?> _expectedResult(
-  Map<String, Object?> expected,
-  List<Object?> calls,
-) => {
+Map<String, Object?> _expectedResult(Map<String, Object?> expected) => {
   'value': expected['value'],
   'prints': expected['prints'],
-  'ext_calls': calls,
+  'ext_calls': expected['ext_calls'],
 };
 
 Future<void> _checkReset(ProtoSession session, List<String> failures) async {
