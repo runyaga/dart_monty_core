@@ -161,9 +161,26 @@ enum TelemetryMetrics {
   );
 }
 
-/// Worker removals shared by every pool path. Zero deltas are not samples.
+final _unrecordedWorkers = _WorkerCounts();
+
+final class _WorkerCounts {
+  int live = 0;
+  int idle = 0;
+}
+
+/// Seeds the isolate's existing workers once, after installing the bridge.
+/// Counts span all pools without retaining pools or replaying past lifecycles.
+void seedWorkerGauges() =>
+    workerDelta(_unrecordedWorkers.live, _unrecordedWorkers.idle);
+
+/// Worker changes shared by every pool path. Zero deltas are not samples.
 void workerDelta(int live, int idle) {
-  if (telemetryBridge == null) return;
+  if (telemetryBridge == null) {
+    _unrecordedWorkers.live += live;
+    _unrecordedWorkers.idle += idle;
+
+    return;
+  }
   if (live != 0) TelemetryMetrics.live.record(live);
   if (idle != 0) TelemetryMetrics.idle.record(idle);
 }

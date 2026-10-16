@@ -3,6 +3,8 @@ library;
 
 import 'dart:async';
 
+import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
+
 part 'monty_telemetry.dart';
 part 'telemetry_bridge.dart';
 part 'invocation.dart';
@@ -20,6 +22,7 @@ void instrumentTelemetry(MontyTelemetry telemetry) {
     throw StateError('Monty telemetry is already configured');
   }
   _installation.bridge = TelemetryBridge(telemetry, Zone.current);
+  seedWorkerGauges();
 }
 
 /// Internal installation, shared by all recorders and the metric boundary.
