@@ -5,10 +5,10 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
-
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_install.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '_worker_mirror.dart';
@@ -200,26 +200,23 @@ void main() {
       await mirror.directory.delete(recursive: true);
       await cache.delete(recursive: true);
     });
-    await expectLater(
-      installWorker(
-        WorkerInstallRequest(
-          artifact: mirror.artifact,
-          cacheRoot: cache.path,
-          archiveUrl: server.url,
-        ),
+    final install = installWorker(
+      WorkerInstallRequest(
+        artifact: mirror.artifact,
+        cacheRoot: cache.path,
+        archiveUrl: server.url,
       ),
-      throwsA(isA<WorkerInstallError>()),
     );
-    await expectLater(
-      installWorker(
-        WorkerInstallRequest(
-          artifact: mirror.artifact,
-          cacheRoot: cache.path,
-          archiveUrl: Uri.parse('ftp://mirror.invalid/worker.gz'),
-        ),
+    final installError = throwsA(isA<WorkerInstallError>());
+    await expectLater(install, installError);
+    final disallowedInstall = installWorker(
+      WorkerInstallRequest(
+        artifact: mirror.artifact,
+        cacheRoot: cache.path,
+        archiveUrl: Uri.parse('ftp://mirror.invalid/worker.gz'),
       ),
-      throwsA(isA<WorkerInstallError>()),
     );
+    await expectLater(disallowedInstall, installError);
   });
 
   test(
@@ -258,9 +255,8 @@ void main() {
       await mirror.directory.delete(recursive: true);
       await cache.delete(recursive: true);
     });
-    final lock = Directory(
-      '${cache.path}/.lock-${mirror.artifact.archive?.sha256}',
-    )..createSync();
+    final lockPath = '${cache.path}/.lock-${mirror.artifact.archive?.sha256}';
+    final lock = Directory(lockPath)..createSync();
     File('${lock.path}/owner').writeAsStringSync('999999999');
     await installWorker(
       WorkerInstallRequest(
@@ -269,12 +265,8 @@ void main() {
         archiveUrl: mirror.fileUrl,
       ),
     );
-    await Directory(
-      '${cache.path}/.lock-${mirror.artifact.archive?.sha256}',
-    ).create();
-    final live = Directory(
-      '${cache.path}/.lock-${mirror.artifact.archive?.sha256}',
-    );
+    await Directory(lockPath).create();
+    final live = Directory(lockPath);
     File('${live.path}/owner').writeAsStringSync('$pid');
     final different = _withDigest(mirror.artifact, 'b' * 64);
     await expectLater(
@@ -372,9 +364,7 @@ WorkerArtifact _withDigest(WorkerArtifact artifact, String digest) =>
 
 List<FileSystemEntity> _temporaryEntries(Directory directory) => directory
     .listSync()
-    .where(
-      (entry) => entry.path.split(Platform.pathSeparator).last.startsWith('.'),
-    )
+    .where((entry) => path.basename(entry.path).startsWith('.'))
     .toList();
 
 Future<WorkerInstall> Function() _isolateInstall(

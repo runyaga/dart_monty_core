@@ -7,7 +7,12 @@ import 'package:crypto/crypto.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 
 final class WorkerMirror {
-  WorkerMirror._(this.directory, this.artifact, this.archive, this.contents);
+  const WorkerMirror._(
+    this.directory,
+    this.artifact,
+    this.archive,
+    this.contents,
+  );
 
   final Directory directory;
   final WorkerArtifact artifact;
@@ -32,6 +37,7 @@ final class WorkerMirror {
         sha256: sha256.convert(archiveBytes).toString(),
       ),
     );
+
     return WorkerMirror._(directory, artifact, archive, contents);
   }
 }
@@ -57,6 +63,7 @@ final class WorkerHttpMirror {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final mirror = WorkerHttpMirror._(server, archive, status, throttle);
     unawaited(mirror._serve());
+
     return mirror;
   }
 

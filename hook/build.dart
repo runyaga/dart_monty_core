@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_install.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest_data.dart';
 import 'package:hooks/hooks.dart';
 
@@ -46,76 +47,134 @@ Future<bool> _installPrebuilt(
   BuildInput input,
   BuildOutputBuilder output,
 ) async {
-  final code = input.config.code;
-  final os = code.targetOS;
-  final arch = code.targetArchitecture;
-  if (os != OS.macOS && os != OS.linux && os != OS.windows) {
-    return false;
-  }
-  final target = hookWorkerHostKey(os.toString(), arch.toString());
-  final manifestTarget = bundledWorkerManifest.targetFor(target);
-  if (manifestTarget == null) return false;
+  final targetData = _prebuiltTarget(input);
+  if (targetData == null) return false;
   var root = '<unavailable>';
   var workerUrl = Uri.parse('<unavailable>');
   try {
     final override = _workerMirror(input);
     root = workerCacheRoot();
+    final manifestTarget = targetData.manifestTarget;
     workerUrl = workerArchiveUrl(
       manifest: bundledWorkerManifest,
-      target: target,
+      target: targetData.target,
       artifact: manifestTarget.worker,
       mirrorOverride: override,
     );
-    final worker = await installWorker(
-      WorkerInstallRequest(
-        artifact: manifestTarget.worker,
-        cacheRoot: root,
-        archiveUrl: workerUrl,
-      ),
+    final worker = await _installArtifact(
+      manifestTarget.worker,
+      root,
+      workerUrl,
     );
     _logInstall(worker);
-    if (!_wantsWorker(input) || manifestTarget.library == null) return false;
-    final library = manifestTarget.library;
-    if (library == null) return false;
-    final libraryUrl = workerArchiveUrl(
-      manifest: bundledWorkerManifest,
-      target: target,
-      artifact: library,
-      mirrorOverride: override,
+
+    return await _installLibraryIfWanted(
+      input,
+      output,
+      targetData,
+      root,
+      override,
     );
-    final installedLibrary = await installWorker(
-      WorkerInstallRequest(
-        artifact: library,
-        cacheRoot: root,
-        archiveUrl: libraryUrl,
-      ),
-    );
-    _logInstall(installedLibrary);
-    final outputFile = File.fromUri(
-      input.outputDirectoryShared.resolve('$arch/${library.file}'),
-    );
-    await copyVerifiedLibrary(
-      source: File(installedLibrary.path),
-      destination: outputFile,
-      artifact: library,
-    );
-    await verifyWorkerFile(outputFile, library);
-    output.assets.code.add(
-      CodeAsset(
-        package: input.packageName,
-        name: 'src/worker/self_relaunch.dart',
-        linkMode: DynamicLoadingBundled(),
-        file: outputFile.uri,
-      ),
-    );
-    return true;
   } on Object catch (error) {
     throw StateError(
-      'dart_monty_core: prebuilt worker install for $target from $workerUrl '
+      'dart_monty_core: prebuilt worker install for ${targetData.target} '
+      'from $workerUrl '
       'into $root failed: $error. Check the release asset, grant write access '
       'or set HOME, or configure worker_mirror.',
     );
   }
+}
+
+Future<bool> _installLibraryIfWanted(
+  BuildInput input,
+  BuildOutputBuilder output,
+  ({String target, Architecture arch, WorkerTarget manifestTarget}) targetData,
+  String cacheRoot,
+  String? mirrorOverride,
+) async {
+  final library = targetData.manifestTarget.library;
+  if (!_wantsWorker(input) || library == null) return false;
+  await _installPrebuiltLibrary(
+    input,
+    output,
+    installation: (
+      target: targetData.target,
+      arch: targetData.arch,
+      cacheRoot: cacheRoot,
+      mirrorOverride: mirrorOverride,
+    ),
+    library: library,
+  );
+
+  return true;
+}
+
+({String target, Architecture arch, WorkerTarget manifestTarget})?
+_prebuiltTarget(BuildInput input) {
+  final code = input.config.code;
+  final os = code.targetOS;
+  if (os != OS.macOS && os != OS.linux && os != OS.windows) return null;
+  final arch = code.targetArchitecture;
+  final target = hookWorkerHostKey(os.toString(), arch.toString());
+  final manifestTarget = bundledWorkerManifest.targetFor(target);
+  if (manifestTarget == null) return null;
+
+  return (target: target, arch: arch, manifestTarget: manifestTarget);
+}
+
+Future<WorkerInstall> _installArtifact(
+  WorkerArtifact artifact,
+  String cacheRoot,
+  Uri archiveUrl,
+) => installWorker(
+  WorkerInstallRequest(
+    artifact: artifact,
+    cacheRoot: cacheRoot,
+    archiveUrl: archiveUrl,
+  ),
+);
+
+Future<void> _installPrebuiltLibrary(
+  BuildInput input,
+  BuildOutputBuilder output, {
+  required ({
+    String target,
+    Architecture arch,
+    String cacheRoot,
+    String? mirrorOverride,
+  })
+  installation,
+  required WorkerArtifact library,
+}) async {
+  final libraryUrl = workerArchiveUrl(
+    manifest: bundledWorkerManifest,
+    target: installation.target,
+    artifact: library,
+    mirrorOverride: installation.mirrorOverride,
+  );
+  final installedLibrary = await _installArtifact(
+    library,
+    installation.cacheRoot,
+    libraryUrl,
+  );
+  _logInstall(installedLibrary);
+  final outputFile = File.fromUri(
+    input.outputDirectoryShared.resolve('${installation.arch}/${library.file}'),
+  );
+  await copyVerifiedLibrary(
+    source: File(installedLibrary.path),
+    destination: outputFile,
+    artifact: library,
+  );
+  await verifyWorkerFile(outputFile, library);
+  output.assets.code.add(
+    CodeAsset(
+      package: input.packageName,
+      name: 'src/worker/self_relaunch.dart',
+      linkMode: DynamicLoadingBundled(),
+      file: outputFile.uri,
+    ),
+  );
 }
 
 /// Reads the optional release-mirror override from the hook configuration.
@@ -178,6 +237,33 @@ Future<void> _buildWorker(
       '(build_worker: true) builds from source in the full repository.',
     );
   }
+  final built = await _buildWorkerLibrary(
+    workerDir,
+    os,
+    arch,
+    libName,
+    targetArgs,
+  );
+  final outFile = File.fromUri(
+    input.outputDirectoryShared.resolve('$arch/$libName'),
+  );
+  outFile.parent.createSync(recursive: true);
+  _publishAtomically(built, outFile);
+  _addWorkerAsset(input, output, outFile);
+  _declareWorkerInputs(
+    output,
+    workerDir,
+    toolchain: nativeDir.resolve('rust-toolchain.toml'),
+  );
+}
+
+Future<File> _buildWorkerLibrary(
+  Uri workerDir,
+  OS os,
+  Architecture arch,
+  String libName,
+  List<String> targetArgs,
+) async {
   // `--lib` builds the cdylib (and the rlib the executable links), with the
   // release profile the executable ships with. `--locked`:
   // native/worker/Cargo.lock is seeded from upstream's and a fresh resolve is
@@ -202,11 +288,15 @@ Future<void> _buildWorker(
       'cargo build succeeded but $libName not found in target directories.',
     );
   }
-  final outFile = File.fromUri(
-    input.outputDirectoryShared.resolve('$arch/$libName'),
-  );
-  outFile.parent.createSync(recursive: true);
-  _publishAtomically(built, outFile);
+
+  return built;
+}
+
+void _addWorkerAsset(
+  BuildInput input,
+  BuildOutputBuilder output,
+  File outFile,
+) {
   output.assets.code.add(
     CodeAsset(
       package: input.packageName,
@@ -214,11 +304,6 @@ Future<void> _buildWorker(
       linkMode: DynamicLoadingBundled(),
       file: outFile.uri,
     ),
-  );
-  _declareWorkerInputs(
-    output,
-    workerDir,
-    toolchain: nativeDir.resolve('rust-toolchain.toml'),
   );
 }
 
@@ -230,7 +315,7 @@ void _declareWorkerInputs(
   Uri workerDir, {
   required Uri toolchain,
 }) {
-  final deps = <Uri>[
+  final deps = [
     workerDir.resolve('Cargo.toml'),
     workerDir.resolve('Cargo.lock'),
     workerDir.resolve('build.rs'),

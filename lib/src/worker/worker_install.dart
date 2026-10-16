@@ -18,6 +18,7 @@ import 'worker_manifest.dart';
 typedef WorkerFetcher = Stream<List<int>> Function(Uri url);
 
 /// Describes one worker-cache installation.
+// ignore: prefer-match-file-name, reason: This file groups worker installation request and result types.
 final class WorkerInstallRequest {
   /// Creates an installation request.
   const WorkerInstallRequest({
@@ -95,6 +96,7 @@ final class WorkerInstallError implements Exception {
 Stream<List<int>> defaultWorkerFetcher(Uri url) async* {
   if (url.scheme == 'file') {
     yield* File.fromUri(url).openRead();
+
     return;
   }
   if (!_isAllowedRemoteUrl(url)) {
@@ -103,6 +105,11 @@ Stream<List<int>> defaultWorkerFetcher(Uri url) async* {
       'https:, or loopback http:.',
     );
   }
+
+  yield* _fetchRemoteArchive(url);
+}
+
+Stream<List<int>> _fetchRemoteArchive(Uri url) async* {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
   try {
     var current = url;
@@ -117,6 +124,7 @@ Stream<List<int>> defaultWorkerFetcher(Uri url) async* {
       final response = await request.close();
       if (response.statusCode == HttpStatus.ok) {
         yield* response;
+
         return;
       }
       if (!_redirectStatus(response.statusCode) || redirects == 5) {
@@ -148,65 +156,41 @@ Stream<List<int>> defaultWorkerFetcher(Uri url) async* {
 
 /// Installs [request]'s worker archive into its cache.
 Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
-  final archive = request.artifact.archive;
-  if (archive == null) {
-    throw WorkerInstallError(
-      'artifact ${request.artifact.file} has no archive; publish a gzip '
-      'archive in the worker manifest.',
-    );
-  }
+  final archive = _requiredArchive(request.artifact);
   await _createCacheRoot(request.cacheRoot);
   final installedPath = workerCacheFile(request.cacheRoot, request.artifact);
-  if (await _validFile(installedPath, request.artifact)) {
-    return WorkerInstall(
-      path: installedPath,
-      alreadyInstalled: true,
-      downloaded: false,
-    );
-  }
+  final existing = await _existingInstall(installedPath, request.artifact);
+  if (existing != null) return existing;
   await _sweepStaging(request.cacheRoot, request.staleAfter);
   Directory lock;
   try {
     lock = await _acquireLock(request, archive.sha256, installedPath);
   } on _InstalledWhileWaiting {
-    return WorkerInstall(
-      path: installedPath,
-      alreadyInstalled: true,
-      downloaded: false,
-    );
+    return _alreadyInstalled(installedPath);
   }
+
+  return _installWithLock(request, archive, installedPath, lock);
+}
+
+Future<WorkerInstall> _installWithLock(
+  WorkerInstallRequest request,
+  WorkerArchive archive,
+  String installedPath,
+  Directory lock,
+) async {
   Directory? staging;
   try {
     await request.onStage?.call('afterLock');
-    if (await _validFile(installedPath, request.artifact)) {
-      return WorkerInstall(
-        path: installedPath,
-        alreadyInstalled: true,
-        downloaded: false,
-      );
-    }
+    final existing = await _existingInstall(installedPath, request.artifact);
+    if (existing != null) return existing;
     staging = await _createStaging(request.cacheRoot);
-    final archiveBytes = await _downloadArchive(request, archive);
-    await request.onStage?.call('afterDownload');
-    final workerBytes = _unpackArchive(request.archiveUrl, archiveBytes);
-    _verifyBytes(
-      workerBytes,
-      request.artifact.bytes,
-      request.artifact.sha256,
-      request.archiveUrl,
-      'unpacked worker',
-    );
-    final stagedFile = File(path.join(staging.path, request.artifact.file));
-    await stagedFile.writeAsBytes(workerBytes, flush: true);
-    await _makeExecutable(stagedFile);
-    await _verifyInstalledFile(stagedFile, request.artifact);
+    await _stageWorker(request, archive, staging);
     await request.onStage?.call('beforePublish');
     final published = await _publishStaging(
       staging,
       request.cacheRoot,
       request.artifact,
     );
-    staging = null;
     if (!published) {
       return WorkerInstall(
         path: installedPath,
@@ -215,6 +199,7 @@ Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
       );
     }
     await _verifyInstalledFile(File(installedPath), request.artifact);
+
     return WorkerInstall(
       path: installedPath,
       alreadyInstalled: false,
@@ -233,6 +218,51 @@ Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
   }
 }
 
+WorkerArchive _requiredArchive(WorkerArtifact artifact) {
+  final archive = artifact.archive;
+  if (archive != null) return archive;
+  throw WorkerInstallError(
+    'artifact ${artifact.file} has no archive; publish a gzip archive in the '
+    'worker manifest.',
+  );
+}
+
+Future<WorkerInstall?> _existingInstall(
+  String installedPath,
+  WorkerArtifact artifact,
+) async {
+  if (!await _validFile(installedPath, artifact)) return null;
+
+  return _alreadyInstalled(installedPath);
+}
+
+WorkerInstall _alreadyInstalled(String installedPath) => WorkerInstall(
+  path: installedPath,
+  alreadyInstalled: true,
+  downloaded: false,
+);
+
+Future<void> _stageWorker(
+  WorkerInstallRequest request,
+  WorkerArchive archive,
+  Directory staging,
+) async {
+  final archiveBytes = await _downloadArchive(request, archive);
+  await request.onStage?.call('afterDownload');
+  final workerBytes = _unpackArchive(request.archiveUrl, archiveBytes);
+  _verifyBytes(
+    workerBytes,
+    request.artifact.bytes,
+    request.artifact.sha256,
+    request.archiveUrl,
+    'unpacked worker',
+  );
+  final stagedFile = File(path.join(staging.path, request.artifact.file));
+  await stagedFile.writeAsBytes(workerBytes, flush: true);
+  await _makeExecutable(stagedFile);
+  await _verifyInstalledFile(stagedFile, request.artifact);
+}
+
 /// Resolves an artifact archive URL from manifest and mirror settings.
 Uri workerArchiveUrl({
   required WorkerManifest manifest,
@@ -248,11 +278,6 @@ Uri workerArchiveUrl({
   }
   final mirror = mirrorOverride ?? manifest.mirror ?? _defaultWorkerMirror;
   final tag = manifest.version;
-  final values = <String, String>{
-    'tag': tag ?? '',
-    'target': target,
-    'archive': archive.name,
-  };
   if (mirror.contains('{tag}') && tag == null) {
     throw WorkerInstallError(
       'mirror $mirror requires a release tag; set manifest.version or use a '
@@ -260,9 +285,15 @@ Uri workerArchiveUrl({
     );
   }
   if (_containsTemplate(mirror)) {
+    final values = {
+      'tag': tag ?? '',
+      'target': target,
+      'archive': archive.name,
+    };
+
     return Uri.parse(_replaceTemplate(mirror, values));
   }
-  final encoded = <String>[
+  final encoded = [
     if (tag != null) _segment(tag),
     _segment(target),
     _segment(archive.name),
@@ -270,6 +301,7 @@ Uri workerArchiveUrl({
   final base = mirror.endsWith('/')
       ? mirror.substring(0, mirror.length - 1)
       : mirror;
+
   return Uri.parse('$base/${encoded.join('/')}');
 }
 
@@ -319,6 +351,7 @@ Future<bool> _validFile(String filePath, WorkerArtifact artifact) async {
   try {
     final file = File(filePath);
     await _verifyInstalledFile(file, artifact);
+
     return true;
   } on WorkerVerifyError {
     return false;
@@ -354,6 +387,7 @@ Future<Directory> _acquireLock(
       final owner = File(path.join(lock.path, 'owner'));
       await owner.create(exclusive: true);
       await owner.writeAsString('$pid', flush: true);
+
       return lock;
     } on FileSystemException {
       if (await _validFile(installedPath, request.artifact)) {
@@ -393,6 +427,7 @@ Future<void> _breakStaleLock(Directory lock, Duration staleAfter) async {
 bool _isStaleLock(Directory lock, Duration staleAfter) {
   final age = DateTime.now().difference(lock.statSync().modified);
   final owner = _lockOwner(lock);
+
   return age > staleAfter || (owner != null && !pidAlive(owner));
 }
 
@@ -409,6 +444,7 @@ Future<Directory> _createStaging(String root) async {
     path.join(root, '.staging-$pid-${DateTime.now().microsecondsSinceEpoch}'),
   );
   await staging.create();
+
   return staging;
 }
 
@@ -435,15 +471,15 @@ Future<List<int>> _downloadArchive(
       'the mirror and retry.',
     );
   }
-  final result = bytes;
   _verifyBytes(
-    result,
+    bytes,
     archive.bytes,
     archive.sha256,
     request.archiveUrl,
     'archive',
   );
-  return result;
+
+  return bytes;
 }
 
 List<int> _unpackArchive(Uri url, List<int> archive) {
@@ -507,12 +543,14 @@ Future<bool> _publishStaging(
   } on FileSystemException {
     if (await _validFile(workerCacheFile(root, artifact), artifact)) {
       await _deleteBestEffort(staging);
+
       return false;
     }
     rethrow;
   } finally {
     if (stale != null) await _deleteBestEffort(stale);
   }
+
   return true;
 }
 
@@ -531,6 +569,7 @@ bool _isSweepable(Directory directory) => RegExp(
 bool _isStale(Directory directory, Duration staleAfter) {
   final age = DateTime.now().difference(directory.statSync().modified);
   final owner = _directoryPid(directory);
+
   return age > staleAfter || owner == null || !pidAlive(owner);
 }
 
@@ -538,6 +577,7 @@ int? _directoryPid(Directory directory) {
   final match = RegExp(
     r'^\.(?:staging|stale)-([0-9]+)-',
   ).firstMatch(path.basename(directory.path));
+
   return match == null ? null : int.tryParse(match.group(1) ?? '');
 }
 
@@ -598,6 +638,7 @@ String _replaceTemplate(String template, Map<String, String> values) {
   for (final entry in values.entries) {
     result = result.replaceAll('{${entry.key}}', _segment(entry.value));
   }
+
   return result;
 }
 
@@ -607,6 +648,9 @@ final class _InstalledWhileWaiting implements Exception {
   const _InstalledWhileWaiting(this.path);
 
   final String path;
+
+  @override
+  String toString() => 'Worker installed while waiting: $path';
 }
 
 const _defaultWorkerMirror =
