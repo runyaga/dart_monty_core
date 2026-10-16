@@ -193,7 +193,6 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
                     result = command(['cargo', 'build', '--release', '--bin', 'dart_monty_worker', '--lib',
                                       '--message-format=json-render-diagnostics'], cwd=core / 'native/worker',
                                      env={'CARGO_TARGET_DIR': str(root_target / 'worker-build')})
-                    print(result.stdout, end='')
                     copy_worker(core, result.stdout)
                 elif stage == 'corpus':
                     result = command(['bash', 'tool/test_corpus_worker.sh', 'native'], cwd=core)
