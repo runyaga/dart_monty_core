@@ -7,11 +7,15 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/tz_names.g.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -19,6 +23,7 @@ import '../../_accessors.dart';
 import '_config_cases.dart';
 import '_config_oracle.g.dart';
 import '_scripted_channel.dart';
+import '_spec_proto_support.dart';
 
 /// The `Configure` [config] encodes to, as the worker receives it.
 Future<pb.Configure> _configure(SessionConfig config) async {
@@ -37,6 +42,30 @@ Matcher _refused(String message) => throwsA(
 );
 
 pb.OsPolicy _policy(OsPolicy policy) => policy.toProto();
+
+ResourceLimits _limitsVariant([int changed = -1]) => ResourceLimits(
+  maxFeedDuration: Duration(seconds: changed == 0 ? 8 : 1),
+  maxTurnDuration: Duration(seconds: changed == 1 ? 8 : 2),
+  maxMemory: changed == 2 ? 8 : 3,
+  gcInterval: changed == 3 ? 8 : 4,
+  maxRecursionDepth: changed == 4 ? 8 : 5,
+  maxSuspensions: changed == 5 ? 8 : 6,
+  maxTotalSleep: Duration(seconds: changed == 6 ? 8 : 7),
+);
+
+OsPolicy _policyVariant([int field = -1]) => OsPolicy(
+  datetime: field == 0 ? 'call_host' : 'system',
+  fixedDatetime: DateTime.utc(field == 1 ? 2021 : 2020),
+  timezone: field == 2 ? 'Europe/London' : 'utc',
+  fixedTimezone: TimeZone(field == 3 ? 1 : 0),
+  sleep: field == 4 ? 'zero' : 'system',
+  sleepSystemMax: Duration(seconds: field == 5 ? 2 : 1),
+  processTime: field == 6 ? 'elapsed' : 'zero',
+  randomStart: field == 7 ? 'call_host' : 'system',
+  randomSeed: RandomSeed.string(field == 8 ? 'b' : 'a'),
+);
+
+TimeZone _zoneOf(int offset, String name) => TimeZone(offset, name: name);
 
 void main() {
   group("upstream's refusals, as the oracle recorded them", () {
@@ -597,6 +626,129 @@ void main() {
       configure.typeCheckFormat,
       pb.TypeCheckFormat.TYPE_CHECK_FORMAT_GITHUB,
     );
+  });
+
+  group('ResourceLimits values and checkout', () {
+    test('all seven omitted fields store null', () {
+      const limits = ResourceLimits();
+      expect([
+        limits.maxFeedDuration,
+        limits.maxTurnDuration,
+        limits.maxMemory,
+        limits.gcInterval,
+        limits.maxRecursionDepth,
+        limits.maxSuspensions,
+        limits.maxTotalSleep,
+      ], List<Object?>.filled(7, null));
+    });
+
+    test(
+      'equality and hash include every stored field',
+      () {
+        final a = _limitsVariant();
+        final b = _limitsVariant();
+        expect(identical(a, b), isFalse);
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+        expect(
+          a.hashCode,
+          Object.hash(
+            const Duration(seconds: 1),
+            const Duration(seconds: 2),
+            3,
+            4,
+            5,
+            6,
+            const Duration(seconds: 7),
+          ),
+        );
+        for (var field = 0; field < 7; field++) {
+          final different = _limitsVariant(field);
+          expect(a == different, isFalse, reason: 'field $field');
+          expect(different == a, isFalse, reason: 'field $field');
+          expect(different.hashCode, isNot(a.hashCode), reason: 'field $field');
+        }
+      },
+    );
+
+    test(
+      'null limits are omitted and mandatory defaults remain',
+      () async {
+        final (_, channel) = await protoSession([]);
+        final limits = channel.requests.singleOrNull?.configure.limits;
+        expect(limits?.hasMaxFeedDurationMicros(), isFalse);
+        expect(limits?.hasMaxTurnDurationMicros(), isFalse);
+        expect(limits?.hasMaxMemoryBytes(), isFalse);
+        expect(limits?.hasMaxTotalSleepMicros(), isFalse);
+        expect(limits?.maxRecursionDepth.toInt(), 1000);
+        expect(limits?.maxSuspensions.toInt(), 1000);
+      },
+    );
+  });
+
+  group('OsPolicy and TimeZone values, offsets at checkout', () {
+    test('equality and hashing use all configured fields', () {
+      // Equality is defined even for values checkout would reject.
+      final a = _policyVariant();
+      final b = _policyVariant();
+      expect(identical(a, b), isFalse);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      for (var field = 0; field < 9; field++) {
+        final changed = _policyVariant(field);
+        expect(a == changed, isFalse, reason: 'field $field');
+        expect(changed == a, isFalse, reason: 'field $field');
+        expect(a.hashCode, isNot(changed.hashCode), reason: 'field $field');
+      }
+      expect(const OsPolicy(), isNot(const OsPolicy(datetime: 'system')));
+    });
+
+    test('distinct zones compare by offset and name', () {
+      final a = _zoneOf(3600, 'X');
+      final b = _zoneOf(3600, 'X');
+      expect(identical(a, b), isFalse);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      for (final different in [
+        const TimeZone(3601, name: 'X'),
+        const TimeZone(3600, name: 'Y'),
+        const TimeZone(3600),
+        const TimeZone(3600, name: ''),
+      ]) {
+        expect(a == different, isFalse);
+        expect(a.hashCode, isNot(different.hashCode));
+      }
+      expect(const TimeZone(0), isNot(const TimeZone(0, name: '')));
+    });
+
+    test('invalid offsets send no Configure', () async {
+      final channel = ScriptedChannel([]);
+      var spawns = 0;
+      final pool = await startMonty(
+        const PoolOptions(minProcesses: 0, maxProcesses: 1),
+        open: () {
+          spawns++;
+
+          return PendingSpawn((_) async => channel);
+        },
+      );
+      addTearDown(pool.close);
+      for (final offset in [-86400, 86400]) {
+        await expectLater(
+          pool.checkout(osPolicy: OsPolicy(fixedTimezone: TimeZone(offset))),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              'timezone offset_seconds must be within -86399..=86399, '
+                  'got $offset',
+            ),
+          ),
+        );
+        expect(spawns, 0);
+        expect(channel.requests, isEmpty);
+      }
+    });
   });
 }
 
