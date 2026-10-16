@@ -22,6 +22,9 @@ part 'os_access_defaults.dart';
 ///
 /// The namespace has no mounts or filesystem budgets. Compose this handler to
 /// customize individual operations. Seeded paths retain `..` and double roots.
+///
+/// It is one namespace, as upstream's is: a `..` in a path stays inside it, so
+/// a directory seeded under it is not a boundary between the files around it.
 final class OSAccess {
   /// Seeds files and environment; relative file paths use [rootDir].
   OSAccess({
