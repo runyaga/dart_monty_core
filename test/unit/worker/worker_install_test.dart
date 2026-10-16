@@ -321,7 +321,7 @@ void _downloadLimitTests() {
     );
     addTearDown(() async {
       await controller.close();
-      await install.then<void>((_) {}, onError: (Object _) {});
+      await _settle(install);
       await mirror.directory.delete(recursive: true);
       await cache.delete(recursive: true);
     });
@@ -1097,3 +1097,12 @@ Future<void> Function(String) _failOwnerMetadata(String target) =>
     (stage) => stage == target
     ? Future<void>.error(StateError('injected metadata failure'))
     : Future.value();
+
+/// Waits for [install] to finish, whether it succeeds or throws.
+Future<void> _settle(Future<Object?> install) async {
+  try {
+    await install;
+  } on WorkerInstallError {
+    return;
+  }
+}
