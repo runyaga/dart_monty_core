@@ -39,6 +39,7 @@ final class CorpusTarget {
     required this.startPool,
     this.jspi,
     this.startNoJspiPool,
+    this.recursionSet = workerRecursionSetNoJspi,
   });
 
   /// `native`, `dart2js` or `dart2wasm`, as printed.
@@ -52,6 +53,9 @@ final class CorpusTarget {
 
   /// The Worker's JSPI probe, for a browser; null on native.
   final bool? jspi;
+
+  /// The recursion set's expected outcomes when [jspi] is false.
+  final Map<String, RecursionOutcome> recursionSet;
 
   /// A pool whose Workers skip JSPI (the forced fallback), for a browser.
   final Future<Monty> Function()? startNoJspiPool;
@@ -86,6 +90,16 @@ void manifestTests() {
           if (e.value == RecursionOutcome.crashes) e.key: crashed,
       };
       expect(recursionSetProblems(recorded), isEmpty);
+      // Safari's measured set: every file passes, so a crash is a problem.
+      expect(recursionSetProblems({}, workerRecursionSetNoJspiSafari), isEmpty);
+      expect(
+        recursionSetProblems(recorded, workerRecursionSetNoJspiSafari),
+        hasLength(
+          workerRecursionSetNoJspi.values
+              .where((o) => o == RecursionOutcome.crashes)
+              .length,
+        ),
+      );
       // A file that should crash and passes, one that should pass and crashes,
       // and one that fails some other way: each is a problem.
       final [first, ...] = workerRecursionSetNoJspi.keys.toList();
@@ -113,13 +127,13 @@ Future<void> runCorpusChecks(CorpusTarget target) async {
     ...checkAgainstManifest(
       {
         for (final e in failures.entries)
-          if (!(noJspi && workerRecursionSetNoJspi.containsKey(e.key)))
+          if (!(noJspi && target.recursionSet.containsKey(e.key)))
             e.key: e.value,
       },
       target.profile,
       fixtureCorpusV1.keys,
     ),
-    if (noJspi) ...recursionSetProblems(failures),
+    if (noJspi) ...recursionSetProblems(failures, target.recursionSet),
   ];
   final listed = {
     for (final e in workerCorpusExpected)
@@ -286,21 +300,25 @@ Future<WorkerCorpusRun> _runAll(
   }
 }
 
-/// How [failures] differ from upstream's browser build on the recursion set,
-/// for a run whose JSPI probe failed.
+/// How [failures] differ from the expected outcomes [set] on the recursion
+/// set (by default upstream's browser build on Chrome), for a run whose JSPI
+/// probe failed.
 @visibleForTesting
-List<String> recursionSetProblems(Map<String, String> failures) {
+List<String> recursionSetProblems(
+  Map<String, String> failures, [
+  Map<String, RecursionOutcome> set = workerRecursionSetNoJspi,
+]) {
   final problems = <String>[];
-  for (final MapEntry(:key, :value) in workerRecursionSetNoJspi.entries) {
+  for (final MapEntry(:key, :value) in set.entries) {
     final reason = failures[key];
     switch (value) {
       case RecursionOutcome.crashes:
         if (reason == null || !reason.startsWith('the worker crashed')) {
-          problems.add("$key: upstream's browser build crashes; got $reason");
+          problems.add('$key: expected the worker to crash; got $reason');
         }
       case RecursionOutcome.passes:
         if (reason != null) {
-          problems.add("$key: upstream's browser build passes; got $reason");
+          problems.add('$key: expected a pass; got $reason');
         }
     }
   }

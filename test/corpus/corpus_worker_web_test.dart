@@ -7,7 +7,8 @@
 //
 // The recursion set is judged by the Worker's own JSPI probe, read here from
 // the first Worker started: with JSPI each file meets its directives, without
-// it each file equals upstream's browser build's recorded outcome.
+// it each file equals upstream's browser build's recorded outcome (Safari has
+// its own measured set).
 @TestOn('browser')
 @Tags(['worker', 'corpus-worker'])
 library;
@@ -25,6 +26,7 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:monty_conformance/worker_conformance.dart';
 import 'package:test/test.dart';
 
+import '../unit/worker/_browser_family.dart';
 import '_corpus_common.dart';
 import '_crash_recovery.dart';
 
@@ -75,6 +77,11 @@ void main() {
       workerUrl: workerScriptUrl(base),
     );
     jspi = probe.jspi;
+    // Chromium has JSPI: a failed probe there would put the corpus on the
+    // fallback judgement and hide the regression.
+    if (browserFamily(_userAgent) == BrowserFamily.chromium) {
+      expect(jspi, isTrue);
+    }
     final protocol = probe.protocol;
     probe.kill();
     // The record of which branch this run judges, with the browser.
@@ -91,6 +98,9 @@ void main() {
         label: _backend,
         profile: WorkerCorpusProfile.browser,
         jspi: jspi,
+        recursionSet: browserFamily(_userAgent) == BrowserFamily.safari
+            ? workerRecursionSetNoJspiSafari
+            : workerRecursionSetNoJspi,
         startPool: () async => startMonty(
           corpusPoolOptions,
           open: open(forceNoJspi: false),
@@ -156,7 +166,15 @@ void main() {
             config: const SessionConfig(),
             check: (crash) {
               expect(crash.cause, CrashCause.vanished);
-              expect(crash.detail, contains('unreachable'));
+              // V8 and SpiderMonkey say "unreachable"; JavaScriptCore says
+              // "Unreachable code should not be executed".
+              expect(
+                crash.detail,
+                anyOf(
+                  contains('unreachable'),
+                  contains('Unreachable code should not be executed'),
+                ),
+              );
             },
           ),
         ],
