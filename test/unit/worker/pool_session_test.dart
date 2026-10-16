@@ -822,9 +822,9 @@ void main() {
       ]);
       final pool = await _pool(Workers([first, second]));
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       var calls = 0;
       await expectLater(
         session.feedRun(
@@ -848,8 +848,7 @@ void main() {
       );
       await session.close();
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final next = await pool.checkout();
+      final next = await checkout();
       expect(
         await next.feedRun('3', printCallback: _ignore),
         const MontyInt(3),
@@ -1110,9 +1109,9 @@ void main() {
       ]);
       final pool = await _pool(Workers([first, second]));
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       await expectLater(
         session.feedRun(
           'print("a")\nboom()',
@@ -1123,8 +1122,7 @@ void main() {
       expect(pool.liveWorkers, 0);
       // The failed session is not closed: its slot must already be free.
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final next = await pool.checkout().timeout(const Duration(seconds: 5));
+      final next = await checkout().timeout(const Duration(seconds: 5));
       expect(
         await next.feedRun('9', printCallback: _ignore),
         const MontyInt(9),
@@ -1220,9 +1218,9 @@ void main() {
           requestTimeout: byClose ? null : _ms(40),
         );
         addTearDown(pool.close);
+        final checkout = pool.checkout;
         // Each checkout takes the slot anew, on purpose.
-        // ignore: prefer-moving-to-variable
-        final session = await pool.checkout();
+        final session = await checkout();
         final seen = <String>[];
         final entered = Completer<void>();
         final never = Completer<void>();
@@ -1245,8 +1243,7 @@ void main() {
         expect(stalled.kills, greaterThan(0));
         expect(pool.liveWorkers, 0);
         // Each checkout takes the slot anew, on purpose.
-        // ignore: prefer-moving-to-variable
-        final next = await pool.checkout().timeout(const Duration(seconds: 5));
+        final next = await checkout().timeout(const Duration(seconds: 5));
         expect(
           await next.feedRun('4', printCallback: _ignore),
           const MontyInt(4),
@@ -1273,9 +1270,9 @@ void main() {
       ]);
       final pool = await _pool(Workers([ch, fresh]));
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       await expectLater(
         session
             .feedRun('while True: pass', printCallback: _ignore)
@@ -1290,8 +1287,7 @@ void main() {
         throwsA(_finished),
       );
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final next = await pool.checkout();
+      final next = await checkout();
       expect(
         await next.feedRun('6', printCallback: _ignore),
         const MontyInt(6),
@@ -1313,9 +1309,9 @@ void main() {
       final workers = Workers([ch]);
       final pool = await _pool(workers);
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       final entered = Completer<void>();
       final run = session.feedRun(
         'never()',
@@ -1338,8 +1334,7 @@ void main() {
       expect(ch.kills, 0);
       expect(pool.idleWorkers, 1);
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final next = await pool.checkout();
+      final next = await checkout();
       expect(
         await next.feedRun('8', printCallback: _ignore),
         const MontyInt(8),
@@ -1354,9 +1349,9 @@ void main() {
       final fresh = ScriptedChannel([_configureOk, _resetOk, _configureOk]);
       final pool = await _pool(Workers([ch, fresh]));
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       final run = session.feedRun('while True: pass', printCallback: _ignore);
       final failed = expectLater(run, throwsA(_busyClosed));
       await pumpEventQueue();
@@ -1366,12 +1361,11 @@ void main() {
       expect(pool.liveWorkers, 0);
       // One slot (maxProcesses 1): a second release would admit two.
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final next = await pool.checkout();
+      final next = await checkout();
       var second = false;
       Future<MontySession> wait() async {
         // A further checkout on purpose: it must wait for the slot.
-        final waited = await pool.checkout();
+        final waited = await checkout();
         second = true;
 
         return waited;
@@ -1462,9 +1456,9 @@ void main() {
       ], frameLimit: frameLimit);
       final pool = await _pool(Workers([ch]));
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       await expectLater(
         session.feedRun(
           'g()\n3',
@@ -1475,8 +1469,9 @@ void main() {
       );
       // The answer never left: the worker still waits for it.
       // The last request so far: it changes as the test runs.
-      // ignore: prefer-moving-to-variable
-      expect(_lastKind(ch), pb.ParentRequest_Kind.resumeNameLookup);
+      pb.ParentRequest_Kind lastKind() => _lastKind(ch);
+      final pendingKind = lastKind;
+      expect(pendingKind(), pb.ParentRequest_Kind.resumeNameLookup);
       expect(ch.kills, 0);
       final refusedPending = throwsA(
         isA<StateError>().having(
@@ -1509,17 +1504,16 @@ void main() {
         refusedPending,
       );
       // The last request so far: it changes as the test runs.
-      // ignore: prefer-moving-to-variable
-      expect(_lastKind(ch), pb.ParentRequest_Kind.resumeNameLookup);
+      final retriedKind = lastKind;
+      expect(retriedKind(), pb.ParentRequest_Kind.resumeNameLookup);
       // close resets the worker, which serves the next checkout.
       await session.close();
       // The last request so far: it changes as the test runs.
-      // ignore: prefer-moving-to-variable
-      expect(_lastKind(ch), pb.ParentRequest_Kind.reset);
+      final resetKind = lastKind;
+      expect(resetKind(), pb.ParentRequest_Kind.reset);
       expect(pool.idleWorkers, 1);
       // Each checkout takes the slot anew, on purpose.
-      // ignore: prefer-moving-to-variable
-      final next = await pool.checkout();
+      final next = await checkout();
       expect(
         await next.feedRun('4', printCallback: _ignore),
         const MontyInt(4),
@@ -1541,9 +1535,9 @@ void main() {
       final workers = Workers([ch]);
       final pool = await _pool(workers);
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Two checkouts on purpose: the second must get this worker back.
-      // ignore: prefer-moving-to-variable
-      final first = await pool.checkout();
+      final first = await checkout();
       expect(
         await first.feedRun('1', printCallback: _ignore),
         const MontyInt(1),
@@ -1552,8 +1546,7 @@ void main() {
       expect(pool.idleWorkers, 1);
       expect(pool.liveWorkers, 1);
       // A second checkout on purpose: it must get the same worker back.
-      // ignore: prefer-moving-to-variable
-      final second = await pool.checkout();
+      final second = await checkout();
       expect(
         await second.feedRun('2', printCallback: _ignore),
         const MontyInt(2),
@@ -2513,9 +2506,9 @@ void main() {
       final workers = Workers([first, second]);
       final pool = await _pool(workers);
       addTearDown(pool.close);
+      final checkout = pool.checkout;
       // Two checkouts on purpose: the second gets a fresh worker.
-      // ignore: prefer-moving-to-variable
-      final session = await pool.checkout();
+      final session = await checkout();
       await expectLater(
         session.feedRun('x = [0] * 10**9', printCallback: _ignore),
         throwsA(
@@ -2533,8 +2526,7 @@ void main() {
       await session.close();
       expect(first.requests, hasLength(2));
       // The freed slot serves a fresh worker: a second checkout on purpose.
-      // ignore: prefer-moving-to-variable
-      await pool.checkout();
+      await checkout();
       expect(workers.started, [first, second]);
     });
 
