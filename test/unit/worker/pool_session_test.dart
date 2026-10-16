@@ -2713,6 +2713,86 @@ void main() {
       expect(ch.remaining, 0);
     });
 
+    test(
+      'a typing error on a session dump leaves the session usable',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          expecting(pb.ParentRequest_Kind.dump, [
+            pb.ChildEvent(
+              typingError: pb.TypingError(diagnostics: 'bad dump type'),
+            ),
+          ]),
+          expecting(pb.ParentRequest_Kind.feed, [_int(42)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+
+        await expectLater(
+          session.dump(),
+          throwsA(
+            isA<MontyTypingError>().having(
+              (e) => e.toString(),
+              'message',
+              'bad dump type',
+            ),
+          ),
+        );
+        expect(ch.kills, 0);
+        expect(
+          await session.feedRun('42', printCallback: _ignore),
+          const MontyInt(42),
+        );
+        expect(ch.remaining, 0);
+      },
+    );
+
+    test(
+      'a typing error on a snapshot dump leaves the session usable',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([_call('f')]),
+          expecting(pb.ParentRequest_Kind.dump, [
+            pb.ChildEvent(
+              typingError: pb.TypingError(diagnostics: 'bad snapshot type'),
+            ),
+          ]),
+          expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+          expecting(pb.ParentRequest_Kind.feed, [_int(3)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final snapshot =
+            await session.feedStart('f()', printCallback: _ignore)
+                as FunctionSnapshot;
+
+        await expectLater(
+          snapshot.dump(),
+          throwsA(
+            isA<MontyTypingError>().having(
+              (e) => e.toString(),
+              'message',
+              'bad snapshot type',
+            ),
+          ),
+        );
+        expect(ch.kills, 0);
+        await _refusedAsPending(session);
+        expect(
+          await snapshot.resume(const ExternalReturnValue(MontyInt(1))),
+          isA<MontyComplete>(),
+        );
+        expect(
+          await session.feedRun('3', printCallback: _ignore),
+          const MontyInt(3),
+        );
+        expect(ch.remaining, 0);
+      },
+    );
+
     test('a dump waits for the turn in flight, as upstream takes the '
         'session lock', () async {
       final release = Completer<void>();
