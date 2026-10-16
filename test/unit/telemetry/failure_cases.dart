@@ -66,10 +66,11 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
       expect(diagnostic, contains('Bad state: adapter-$failure'));
       expect(adapter.attempts[failure], 1);
       final logs = adapter.logs;
-      if (signal != 'logs') expect(logs, hasLength(2));
+      final twice = hasLength(2);
+      if (signal != 'logs') expect(logs, twice);
       if (signal != 'metrics') expect(adapter.metrics, [1, 1]);
       if (signal != 'spans') {
-        expect(adapter.spans.where((s) => s.name == 'run code'), hasLength(2));
+        expect(adapter.spans.where((s) => s.name == 'run code'), twice);
       } else {
         expect(logs.every((log) => log.span == null), isTrue);
       }

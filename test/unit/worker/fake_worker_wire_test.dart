@@ -62,8 +62,9 @@ void main() {
           ),
         ),
       );
-      expect(result.error.exception.excType, 'KeyError');
-      expect(result.error.exception.message, 'missing');
+      final exception = result.error.exception;
+      expect(exception.excType, 'KeyError');
+      expect(exception.message, 'missing');
     },
   );
   test('an await of an unscripted call explains the missing id', () async {
@@ -109,8 +110,9 @@ void main() {
       final result = await worker.turn(
         pb.ParentRequest(resumeCall: pb.ResumeCall()),
       );
-      expect(result.error.exception.excType, 'RuntimeError');
-      expect(result.error.exception.message, contains('not supported'));
+      final exception = result.error.exception;
+      expect(exception.excType, 'RuntimeError');
+      expect(exception.message, contains('not supported'));
     },
   );
   test(

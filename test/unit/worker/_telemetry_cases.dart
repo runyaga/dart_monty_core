@@ -29,12 +29,13 @@ void _lifecycle(
     () async {
       final pool = await start();
       addTearDown(pool.close);
+      final printed = <String>[];
       await runZoned(
         () => pool.withSession((session) async {
           expect(
             await session.feedRun(
               'print("hello")\n42',
-              printCallback: (stream, text) => expect(text, isNotEmpty),
+              printCallback: (stream, text) => printed.add(text),
             ),
             const MontyInt(42),
           );
@@ -50,6 +51,11 @@ void _lifecycle(
         }),
         zoneValues: {#telemetryContext: 'host'},
       );
+      // feedRun awaits streamed print delivery; withSession also awaits close.
+      // Check outside the callback, whose zone may outlive the test body.
+      expect(printed, isNotEmpty);
+      expect(printed, everyElement(isNotEmpty));
+      expect(printed.join(), 'hello\n');
       final root = requireRecord(adapter.spans.firstOrNull);
       expect(root.parent, 'host');
       expect(root.attributes['monty_version'], '1.1.0');
@@ -95,16 +101,16 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
       addTearDown(pool.close);
       final state = await pool.withSession((session) async {
         final call = await session.feedStart('ext(21)') as FunctionSnapshot;
-        final state = await call.dump();
+        final dumped = await call.dump();
         final dump = requireRecord(adapter.spans.lastOrNull);
         expect(dump.name, 'dump');
         expect(
           recordedContext(dump.parent).$2,
           same(adapter.spans.elementAtOrNull(2)),
         );
-        expect(dump.attributes['state_bytes'], state.length);
+        expect(dump.attributes['state_bytes'], dumped.length);
 
-        return state;
+        return dumped;
       });
       final restored = await pool.checkout();
       addTearDown(restored.close);
@@ -143,18 +149,20 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
       addTearDown(pool.close);
       await pool.withSession((session) async {
         final lookup = await session.feedStart('missing') as NameLookupSnapshot;
+        final lookupSpan = adapter.spans.lastOrNull;
         expect(
           recordedContext(lookup.traceContext()).$2,
-          same(adapter.spans.lastOrNull),
+          same(lookupSpan),
         );
         await lookup.resume(value: const MontyInt(1));
         expect(lookup.traceContext, throwsStateError);
         final call = await session.feedStart('await ext()') as FunctionSnapshot;
         final futures =
             await call.resume(const ExternalFuture()) as FutureSnapshot;
+        final futuresSpan = adapter.spans.lastOrNull;
         expect(
           recordedContext(futures.traceContext()).$2,
-          same(adapter.spans.lastOrNull),
+          same(futuresSpan),
         );
         await futures.resume({
           call.callId: const ExternalReturnValue(MontyInt(42)),

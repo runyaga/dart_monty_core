@@ -181,7 +181,7 @@ void main() {
     }
   });
   test('timezone and file representations preserve names and mode classes', () {
-    final cases = <(pb.MontyNode, String)>[
+    final cases = [
       (
         pb.MontyNode(timezone: pb.TimeZone(offsetSeconds: -3661, name: 'west')),
         "datetime.timezone(datetime.timedelta(days=-1, seconds=82739), 'west')",

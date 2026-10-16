@@ -168,39 +168,29 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
   }) async {
     _checkTurn(busy: _busy, closed: _closed, crash: _crash);
     final frame = Frame.encode(request);
-    final observer = recorder;
-    final recording = observer == null
-        ? null
-        : SentRecording(observer, request);
+    final turn = _ProcessTurn(this, request);
     _busy = true;
     try {
-      final stdin = _process.stdin;
       // The add is synchronous, so the frame is queued at once. Until it
       // is all written the request counts as unsent, as upstream sends a
       // request whole before it reads: a worker lost meanwhile was lost
       // while sending it.
       _unsent = true;
-      final written = () async {
-        final sent = await _written(isAlive, stdin, frame);
-        _unsent = !sent;
-        recording?.sent(success: sent);
-
-        return sent;
-      }();
+      final written = turn.write(frame);
       unawaited(_endOutputIfUnsent(written, _events));
       // Read while the request is still being written: a worker paused on
       // a full stdout reads no stdin until the parent reads again, so a
       // request larger than the pipe would otherwise never be sent. A
       // request that was not sent ends the turn as a crash, whatever was
       // read.
-      final event = await _readTurn(onPrint, recording);
+      final event = await turn.read(onPrint);
 
       // _flushed catches every failure, so nothing can go uncaught here.
       // ignore: avoid-uncaught-future-errors
       return await written ? event : throw await _crashed();
     } finally {
       _busy = false;
-      recording?.finish(dead: !isAlive);
+      turn.finish();
     }
   }
 
@@ -216,41 +206,6 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
     _events.cancel();
   }
 
-  /// Reads events up to the turn's end, handing each `Print` to [onPrint]
-  /// and awaiting it before reading on: while it waits, the read-ahead
-  /// fills to [readAheadLimit] and the worker then blocks on its write.
-  ///
-  /// An [onPrint] that throws does not desynchronise the stream: the rest
-  /// of the turn is still read, then its first error is rethrown.
-  Future<pb.ChildEvent> _readTurn(
-    PrintHandler? onPrint,
-    SentRecording? recording,
-  ) async {
-    (Object, StackTrace)? printFailure;
-    for (;;) {
-      final event = await _nextEvent(this);
-      if (event == null) throw await _crashed();
-      recording?.event(event);
-      final kind = event.whichKind();
-      if (kind == pb.ChildEvent_Kind.fatalError) {
-        throw await _crashed(fatal: event.fatalError.message);
-      }
-      if (kind != pb.ChildEvent_Kind.print) {
-        if (printFailure case (final error, final stack)) {
-          Error.throwWithStackTrace(error, stack);
-        }
-
-        return event;
-      }
-      if (onPrint == null) continue;
-      try {
-        await onPrint(event.print);
-      } on Object catch (error, stack) {
-        printFailure ??= (error, stack);
-      }
-    }
-  }
-
   /// The channel's crash, recorded once: the first cause seen wins.
   ///
   /// [fatal] is a `FatalError`'s message. Otherwise the worker's exit code
@@ -260,12 +215,7 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
     final recorded = _crash;
     if (recorded != null) return recorded;
     final code = await _exitWithin(fatalExitGrace);
-    final cause = switch ((fatal, code)) {
-      _ when _killed => CrashCause.killed,
-      (String _, _) => CrashCause.fatal,
-      (_, workerOomExitCode) => CrashCause.outOfMemory,
-      _ => CrashCause.vanished,
-    };
+    final cause = _crashCause(fatal, code, killed: _killed);
     await _stderr.drain(pipeDrainGrace);
     final tail = _stderr.text;
 
@@ -321,6 +271,74 @@ final class ProcessChannel with RecordedChannel implements MontyChannel {
     await _events.endWithin(pipeDrainGrace);
   }
 }
+
+/// A native turn's observation of the request write and concurrent replies.
+final class _ProcessTurn {
+  _ProcessTurn(this._channel, pb.ParentRequest request)
+    : _recording = switch (_channel.recorder) {
+        final observer? => SentRecording(observer, request),
+        null => null,
+      };
+
+  final ProcessChannel _channel;
+  final SentRecording? _recording;
+
+  Future<bool> write(List<int> frame) async {
+    final sent = await _written(
+      _channel.isAlive,
+      _channel._process.stdin,
+      frame,
+    );
+    _channel._unsent = !sent;
+    _recording?.sent(success: sent);
+
+    return sent;
+  }
+
+  void finish() => _recording?.finish(dead: !_channel.isAlive);
+
+  /// Reads events up to the turn's end, handing each `Print` to [onPrint]
+  /// and awaiting it before reading on: while it waits, the read-ahead
+  /// fills to [ProcessChannel.readAheadLimit] and the worker then blocks
+  /// on its write.
+  ///
+  /// An [onPrint] that throws does not desynchronise the stream: the rest
+  /// of the turn is still read, then its first error is rethrown.
+  Future<pb.ChildEvent> read(PrintHandler? onPrint) async {
+    (Object, StackTrace)? printFailure;
+    for (;;) {
+      final event = await _nextEvent(_channel);
+      if (event == null) throw await _channel._crashed();
+      _recording?.event(event);
+      final kind = event.whichKind();
+      if (kind == pb.ChildEvent_Kind.fatalError) {
+        throw await _channel._crashed(fatal: event.fatalError.message);
+      }
+      if (kind != pb.ChildEvent_Kind.print) {
+        if (printFailure case (final error, final stack)) {
+          Error.throwWithStackTrace(error, stack);
+        }
+
+        return event;
+      }
+      if (onPrint == null) continue;
+      try {
+        await onPrint(event.print);
+      } on Object catch (error, stack) {
+        printFailure ??= (error, stack);
+      }
+    }
+  }
+}
+
+/// A deliberate kill wins over the worker's fatal message and exit code.
+CrashCause _crashCause(String? fatal, int code, {required bool killed}) =>
+    switch ((fatal, code)) {
+      _ when killed => CrashCause.killed,
+      (String _, _) => CrashCause.fatal,
+      (_, workerOomExitCode) => CrashCause.outOfMemory,
+      _ => CrashCause.vanished,
+    };
 
 /// [channel]'s next event, or null once none can arrive. A whole frame
 /// that does not decode means the worker misbehaved, not that it died
