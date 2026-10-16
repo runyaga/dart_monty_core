@@ -482,6 +482,7 @@ void main() {
           final text = e.toString();
           // Firefox's error event for a refused Worker carries no message,
           // so the channel reports a plain vanished worker there.
+
           return text.startsWith(
                 'failed to spawn monty worker: Worker $url: ',
               ) ||
