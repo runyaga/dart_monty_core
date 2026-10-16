@@ -21,6 +21,7 @@ Future<void> main(List<String> args) async {
       (await Service.getInfo()).serverWebSocketUri ??
       (throw StateError('probe requires the VM service'));
   final service = await vmServiceConnectUri(uri.toString());
+  final profile = service.getAllocationProfile;
   final isolate =
       Service.getIsolateId(Isolate.current) ??
       (throw StateError('probe requires an isolate ID'));
@@ -29,8 +30,7 @@ Future<void> main(List<String> args) async {
     // Warm the library and the VM service before measuring descriptor counts.
     NativeMountRoot(hostPath: dir.path, virtualPath: '/warm').close();
     // A fresh GC request is needed at every measurement.
-    // ignore: prefer-moving-to-variable
-    await service.getAllocationProfile(isolate, gc: true);
+    await profile(isolate, gc: true);
     _openAndClose(dir.path);
     final before = _descriptors();
     final opened = _openAndDrop(dir.path);
@@ -38,8 +38,7 @@ Future<void> main(List<String> args) async {
     var after = opened;
     for (var i = 0; i < 100 && after > before + 4; i++) {
       // Each iteration must trigger another collection to observe finalization.
-      // ignore: prefer-moving-to-variable
-      await service.getAllocationProfile(isolate, gc: true);
+      await profile(isolate, gc: true);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       after = _descriptors();
     }

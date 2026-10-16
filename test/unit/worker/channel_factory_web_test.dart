@@ -27,9 +27,9 @@ void main() {
 
       return Future<JSAny?>.error(StateError('offline')).toJS;
     }).toJS;
+    const open = openChannel;
     // Two separate searches are the behaviour under test.
-    // ignore: prefer-moving-to-variable
-    final failedSearch = openChannel().ready;
+    final failedSearch = open().ready;
     await expectLater(
       failedSearch,
       throwsA(
@@ -46,8 +46,7 @@ void main() {
     // A cached failure would throw again. A fresh search finds the real
     // test-server assets and starts a channel that can shut down normally.
     // A second, separate search is the behaviour under test.
-    // ignore: prefer-moving-to-variable
-    final channel = await openChannel().ready;
+    final channel = await open().ready;
     addTearDown(channel.kill);
     expect(channel.isAlive, isTrue);
     await channel.close();

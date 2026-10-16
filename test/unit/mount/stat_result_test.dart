@@ -52,15 +52,17 @@ void main() {
   });
   test('default timestamps use the host clock', () {
     // Read the clock on both sides of the operation to bound its timestamp.
-    // ignore: prefer-moving-to-variable
-    final before = DateTime.now().millisecondsSinceEpoch / 1000;
+    final before = _epochSeconds(0);
     final stat = StatResult.fileStat(0);
     // The upper bound needs a fresh clock reading after stat construction.
-    // ignore: prefer-moving-to-variable
-    final after = DateTime.now().millisecondsSinceEpoch / 1000 + 0.001;
+    final after = _epochSeconds(0.001);
     expect(
       (stat.values.elementAtOrNull(8) as MontyFloat?)?.value,
       inInclusiveRange(before, after),
     );
   });
 }
+
+/// The host clock in seconds since the epoch, plus [slack].
+double _epochSeconds(double slack) =>
+    DateTime.now().millisecondsSinceEpoch / 1000 + slack;
