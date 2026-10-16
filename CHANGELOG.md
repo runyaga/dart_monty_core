@@ -29,16 +29,16 @@
 | `VfsCallbackFile.content` | `readContent()` / `writeContent(content)` |
 | `VfsCallbackFile.seededPath` | Private construction path; no public replacement |
 | `VfsContent`, `VfsText`, `VfsBytes` | `Object`: `String` or `Uint8List` |
-| `MountDir` (memory-backed) | Removed; host-directory mounts follow in F-2 |
+| `MountDir` (memory-backed) | Removed; the native host-directory `MountDir` (see Added) replaces it in this release |
 | `MountMode` | Removed with memory mount policy |
 | `resolveOpenCall` | Private implementation inside `OSAccess` |
 | `mounts`, `fallthrough` | Whole namespace; compose handlers explicitly |
 | Memory `writeBytesLimit`, `memoryUsageLimit`, read-only mounts | Sandbox policy moves to dm |
 | Custom stat tuple construction | `StatResult.fileStat` / `StatResult.dirStat` |
 
-- Delete the internal VFS tree, path, accounting and limit types. The main
-  library has 65 exported names in the F-1 window; the unsafe library has one.
-  `PARITY_PIN` remains unchanged for the separate pin PR required after F-1.
+- Delete the internal VFS tree, path, accounting and limit types. The unsafe
+  library exports one name. CI's `PARITY_PIN` was moved in separate pin PRs after
+  this change (see Internal; the final value is `ed4432a`).
 
 ### Added
 
@@ -96,7 +96,7 @@
 
 - CI's `PARITY_PIN` moves to parity `ed4432a`: parity: host MountDir on the VM, refused on the web; mount cases; draft M6 target (P-F2) (#47)
 
-- CI's `PARITY_PIN` moves to parity `f944558`: P-F1: parity runner on core F-1 memory-fs names (#45)
+- CI's `PARITY_PIN` moves to parity `f944558`: P-F1: parity runner on core F-1 memory-fs names (#45). The later move to `ed4432a` supersedes it.
 
 - Refactor telemetry rendering and callback state without changing the public API. Check adapter failure diagnostics across compilers and exercise host telemetry, lazy attributes, asynchronous methods, error encodings, and worker stream failures.
 
