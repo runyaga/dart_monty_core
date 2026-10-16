@@ -25,6 +25,11 @@ import 'package:meta/meta.dart';
 /// upstream's `OOM_EXIT_CODE`.
 const int workerOomExitCode = 65;
 
+/// Wraps an injected process so tests can order replies, flushes and exits.
+@visibleForTesting
+ProcessChannel processChannelForTesting(Process process) =>
+    ProcessChannel._(process);
+
 /// A [MontyChannel] over a worker process's stdio.
 ///
 /// Every channel is in [live] from spawn until its process has exited,
@@ -284,11 +289,15 @@ final class _ProcessTurn {
   final SentRecording? _recording;
 
   Future<bool> write(List<int> frame) async {
-    final sent = await _written(
+    final flushed = await _written(
       _channel.isAlive,
       _channel._process.stdin,
       frame,
     );
+    // Process exit destroys stdin. If that beats the pipe's write error,
+    // the socket's done event can resolve flush successfully with bytes
+    // still unsent. Only a flush observed before exit confirms the send.
+    final sent = flushed && !_channel._exited;
     _channel._unsent = !sent;
     _recording?.sent(success: sent);
 

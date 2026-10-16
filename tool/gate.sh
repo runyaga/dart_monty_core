@@ -260,7 +260,7 @@ s  dart_format   dart format --line-length=80 --output=none --set-exit-if-change
 # worker is missing or stale.
 unit_tests(){ bash tool/build_worker.sh --check &&
   dart test --exclude-tags=integration,ladder,example,worker --coverage="$OUT/cov"; }
-sf unit_tests 2815 unit_tests
+sf unit_tests 2820 unit_tests
 # The SAME pure-Dart suite on both web compilers. Not redundant with unit_tests:
 # dart2js has one number type, so `4.0 is int` is true and integral doubles
 # collapse to ints, while dart2wasm has real doubles. A numeric bug can pass on
