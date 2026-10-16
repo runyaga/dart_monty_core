@@ -47,6 +47,17 @@ runner leaves that platform untested. Do not edit the tree while
 `tool/gate.sh` runs: the web run can load half-written files, and the gate's
 `read_only_tree` step reports a change in `git status`.
 
+Host-mount changes also run the VM adjudicator directly:
+`dart test test/unit/conformance/mount_fs_adjudicator_test.dart -p vm`.
+It runs the two pinned `mount_fs__*.py` fixtures against a real `MountDir` at
+`/mnt`, with upstream's temporary host tree and default overlay, plus read-only,
+closed-mount and lying-handler negative controls. The native corpus uses the
+same host-mount route; its failing set must still equal
+`packages/monty_conformance/lib/src/worker_corpus_manifest.dart` in both
+directions. `python3 tool/check_mount_corpus_mutations.py` checks the
+adjudicator's controls; `python3 tool/check_mount_mutations.py` checks the
+mount/session transitions. Neither script rebuilds native code.
+
 Before writing a test, read `docs/contributor/testing-philosophy.md`; before
 trusting a green run, read `docs/contributor/testing-runbook.md`.
 

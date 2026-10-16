@@ -73,10 +73,10 @@ and the call fails with `MontyCrashedError` (`timedOut` is true).
 
 | | |
 |---|---|
-| `feedRun(code, {inputs, externalLookup, printCallback, cwd, os, skipTypeCheck})` | Run to the end and return the value of the last expression, or `MontyNone` |
+| `feedRun(code, {inputs, externalLookup, printCallback, mount, cwd, os, skipTypeCheck})` | Run to the end and return the value of the last expression, or `MontyNone` |
 | `feedStart(code, {…})` | Run to the first suspension and return a `MontySnapshot` |
 | `dump()` | The session as bytes, idle or suspended |
-| `loadSession(bytes)` / `loadSnapshot(bytes, {externalLookup, printCallback, os})` | Restore a dump into a fresh session |
+| `loadSession(bytes)` / `loadSnapshot(bytes, {mount, externalLookup, printCallback, os})` | Restore a dump into a fresh session |
 | `installDependencies(requirements)` | Empty list succeeds; any other throws `MontyRuntimeError` (core's worker is the pure-Monty sandbox, as upstream's) |
 | `workerPid` | The worker's process id (null on the web) |
 | `close()` | End the session; never throws |
@@ -117,8 +117,13 @@ exception; any other throw raises `Exception` with its text. `HostClass`
 describes a Dart class to `ClassInstance` and `ClassType`.
 
 `cwd` switches the sandbox's working directory (`os.getcwd()`, and what
-relative paths resolve against) before the code runs; it lasts across feeds
-until a feed switches it, and starts at `/`.
+relative paths resolve against) before the code runs. A fresh session defaults
+to its first mount's virtual path, or `/` without mounts. A feed accepted past
+type checking establishes cwd, even if it then raises a syntax or runtime error;
+a typing rejection leaves it unset. Later feeds keep cwd unless explicitly
+changed. Session and snapshot restores preserve the saved directory.
+Invalid cwd is rejected before mount-table construction, leaving the session
+usable and its default eligibility unchanged.
 
 `printCallback` gets each run of printed text as `(stream, text)`, with
 `stream` `'stdout'` or `'stderr'`. `CollectStreams` and `CollectString` are
@@ -196,6 +201,38 @@ custom handlers.
 
 The clock, time zone, sleeps and random seed a session sees are set by
 `checkout(osPolicy: OsPolicy(...))`.
+
+#### Host directories (native)
+
+`MountDir` opens a host directory and maps it into the sandbox through upstream
+`monty-fs`. Pass a list to `mount:` on `feedRun`, `feedStart`, or `loadSnapshot`:
+
+```dart
+final mount = MountDir(hostPath: '/host/data', virtualPath: '/data');
+try {
+  await session.feedRun("open('config.json').read()", mount: [mount]);
+} finally {
+  mount.close();
+}
+```
+
+The default `mode: 'overlay'` discards writes at feed completion. Choose
+`'read-only'` to reject writes or `'read-write'` to persist them on the host.
+Mounts answer before `os:`; a missing path inside a mount remains a mount error.
+An in-progress feed keeps its mount table across snapshot resumes. A restored
+snapshot needs `mount:` again and starts with a fresh overlay; dumps contain
+neither mounts nor overlay contents. `FunctionSnapshot.resumeAuto()` uses the
+captured mounts and handler, while `resume(result)` answers directly.
+
+`feedStart` surfaces both system sleep kinds for manual answering or dispatch
+through `resumeAuto()` and `os:`. `feedRun` handles system sleeps automatically.
+`FakeMontySession` uses the same host dispatch for its scripted calls.
+
+The constructor throws `UnsupportedError` on the web. Native consumers need
+the mount library built with `build_worker: true`; repository tests use
+`tool/build_worker.sh`, which builds it beside the worker executable.
+See [host directory mounts](docs/reference/host-directory-mounts.md) for
+lifetime, error, budget, discovery and routing details.
 
 #### Host-reaching virtual files
 
