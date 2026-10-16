@@ -623,10 +623,14 @@ Future<bool> pidAlive(int processId) async {
 }
 
 Future<bool> _windowsPidAlive(int processId) async {
-  final result = await Process.run('tasklist', _taskListArguments(processId));
+  try {
+    final result = await Process.run('tasklist', _taskListArguments(processId));
 
-  return result.exitCode != 0 ||
-      result.stdout.toString().contains('$processId');
+    return result.exitCode != 0 ||
+        result.stdout.toString().contains('$processId');
+  } on ProcessException {
+    return true;
+  }
 }
 
 List<String> _taskListArguments(int processId) => [
