@@ -77,11 +77,15 @@ final class _UnreadableAttributes
   const _UnreadableAttributes();
 
   @override
-  MontyValue? operator [](Object? key) => throw StateError('unreadable');
+  MontyValue? operator [](Object? key) =>
+      throw const FormatException('unreadable');
 
   @override
   Iterable<String> get keys => const [];
 }
+
+/// The failure [_UnreadableAttributes] raises.
+final Matcher _unreadable = isA<FormatException>();
 
 /// A feed on a session that was ended, not one left awaiting an answer.
 final Matcher _finished = throwsA(
@@ -394,7 +398,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
               printCallback: _ignore,
               externalLookup: {'f': _unanswerable('f')},
             ),
-            throwsStateError,
+            throwsA(_unreadable),
           );
           await expectLater(s.feedRun('1 + 1'), _finished);
         });
@@ -410,7 +414,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
                     externalLookup: {'f': _unanswerable('f')},
                   )
                   as FunctionSnapshot;
-          await expectLater(call.resumeAuto(), throwsStateError);
+          await expectLater(call.resumeAuto(), throwsA(_unreadable));
           await expectLater(s.feedRun('1 + 1'), _finished);
         });
       });
@@ -426,7 +430,7 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
                   )
                   as FunctionSnapshot;
           final waiting = await call.resumeAuto() as FutureSnapshot;
-          await expectLater(waiting.resumeAuto(), throwsStateError);
+          await expectLater(waiting.resumeAuto(), throwsA(_unreadable));
           await expectLater(s.feedRun('1 + 1'), _finished);
         });
       });
