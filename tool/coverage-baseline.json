@@ -297,8 +297,8 @@
       "pct": 99.51
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 229,
-      "hit": 229,
+      "found": 233,
+      "hit": 233,
       "pct": 100.0
     },
     "lib/src/worker/proto_session.dart": {
@@ -342,8 +342,8 @@
       "pct": 100.0
     },
     "lib/src/worker/telemetry.dart": {
-      "found": 6,
-      "hit": 6,
+      "found": 7,
+      "hit": 7,
       "pct": 100.0
     },
     "lib/src/worker/telemetry_attributes.dart": {
@@ -362,8 +362,8 @@
       "pct": 100.0
     },
     "lib/src/worker/telemetry_events.dart": {
-      "found": 97,
-      "hit": 97,
+      "found": 98,
+      "hit": 98,
       "pct": 100.0
     },
     "lib/src/worker/telemetry_json.dart": {
@@ -371,9 +371,24 @@
       "hit": 174,
       "pct": 100.0
     },
+    "lib/src/worker/telemetry_metric_events.dart": {
+      "found": 56,
+      "hit": 56,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_metric_requests.dart": {
+      "found": 51,
+      "hit": 49,
+      "pct": 96.08
+    },
+    "lib/src/worker/telemetry_metrics.dart": {
+      "found": 27,
+      "hit": 27,
+      "pct": 100.0
+    },
     "lib/src/worker/telemetry_recorder.dart": {
-      "found": 30,
-      "hit": 30,
+      "found": 31,
+      "hit": 31,
       "pct": 100.0
     },
     "lib/src/worker/telemetry_repr.dart": {
@@ -382,14 +397,19 @@
       "pct": 100.0
     },
     "lib/src/worker/telemetry_requests.dart": {
-      "found": 78,
-      "hit": 78,
+      "found": 79,
+      "hit": 79,
       "pct": 100.0
     },
     "lib/src/worker/telemetry_scalars.dart": {
       "found": 24,
       "hit": 19,
       "pct": 79.17
+    },
+    "lib/src/worker/telemetry_turn_metrics.dart": {
+      "found": 47,
+      "hit": 47,
+      "pct": 100.0
     },
     "lib/src/worker/telemetry_values.dart": {
       "found": 63,
@@ -412,8 +432,8 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_connection.dart": {
-      "found": 168,
-      "hit": 168,
+      "found": 178,
+      "hit": 178,
       "pct": 100.0
     },
     "lib/src/worker/worker_locator.dart": {
@@ -422,8 +442,8 @@
       "pct": 95.45
     },
     "lib/src/worker/worker_pool.dart": {
-      "found": 148,
-      "hit": 148,
+      "found": 179,
+      "hit": 179,
       "pct": 100.0
     },
     "lib/src/worker/zone_database.dart": {
@@ -448,8 +468,8 @@
     }
   },
   "total": {
-    "found": 7504,
-    "hit": 7426,
-    "pct": 98.96
+    "found": 7734,
+    "hit": 7654,
+    "pct": 98.97
   }
 }
