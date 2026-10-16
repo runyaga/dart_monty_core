@@ -31,6 +31,9 @@ Future<BuildOutput> _runHook(
     targetOS: os,
     macOS: os == OS.macOS ? MacOSCodeConfig(targetVersion: 13) : null,
     android: os == OS.android ? AndroidCodeConfig(targetNdkApi: 24) : null,
+    iOS: os == OS.iOS
+        ? IOSCodeConfig(targetSdk: IOSSdk.iPhoneOS, targetVersion: 13)
+        : null,
   );
   final builder = BuildInputBuilder()
     ..setupShared(
@@ -73,6 +76,21 @@ Directory _emptyRoot() {
 }
 
 void main() {
+  for (final os in [OS.android, OS.iOS]) {
+    test(
+      'unsupported mobile targets ignore invalid worker opt-in',
+      () async {
+        final output = await _runHook(
+          _emptyRoot(),
+          buildWorker: 'invalid',
+          targetOS: os,
+        );
+        expect(output.assets.code, isEmpty);
+        expect(output.dependencies, isEmpty);
+      },
+    );
+  }
+
   test(
     'disabled code assets ignores invalid opt-in',
     () async {
