@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:mirrors';
 
 import 'package:crypto/crypto.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
@@ -98,6 +99,53 @@ void main() {
       );
     });
 
+    test('rejects an unsupported target key', () {
+      _expectManifestError(
+        '{"schema":1,"targets":{"fuchsia-x64":{}}}',
+        'targets.fuchsia-x64 is unsupported',
+      );
+    });
+
+    test('rejects a worker that is not a map', () {
+      _expectManifestError(
+        '{"schema":1,"targets":{"linux-x64":{"worker":[]}}}',
+        'targets.linux-x64.worker',
+      );
+    });
+
+    test('rejects a library that is not a map', () {
+      _expectManifestError(
+        '{"schema":1,"targets":{"linux-x64":{"worker":'
+            '{"file":"worker","bytes":1,"sha256":"$_a64"},'
+            '"library":[]}}}',
+        'targets.linux-x64.library',
+      );
+    });
+
+    test('rejects malformed JSON', () {
+      _expectManifestError('{"schema":', 'JSON');
+    });
+
+    test('rejects a JSON root that is not an object', () {
+      _expectManifestError('[]', 'root');
+    });
+
+    test('rejects a nested map with a non-string key', () {
+      _expectStringMapError(
+        {1: 'worker'},
+        'targets.linux-x64.worker',
+        'targets.linux-x64.worker',
+      );
+    });
+
+    test('rejects a non-map nested value with its key', () {
+      _expectStringMapError(
+        const [],
+        'targets.linux-x64.worker',
+        'targets.linux-x64.worker',
+      );
+    });
+
     test('rejects non-string mirrors', () {
       expect(
         () => WorkerManifest.fromJson('{"schema":1,"mirror":3,"targets":{}}'),
@@ -181,4 +229,51 @@ void main() {
 String _withArtifact(String replacement) {
   return '{"schema":1,"targets":{"linux-x64":{"worker":'
       '{"file":"worker","bytes":1,"sha256":"$_a64",$replacement}}}}';
+}
+
+void _expectManifestError(String source, String key) {
+  expect(
+    () => WorkerManifest.fromJson(source),
+    throwsA(
+      isA<WorkerManifestError>().having(
+        (error) => error.toString(),
+        'message',
+        contains(key),
+      ),
+    ),
+  );
+}
+
+void _expectStringMapError(Object? value, String key, String messageKey) {
+  expect(
+    () => _stringMap(value, key),
+    throwsA(
+      isA<WorkerManifestError>().having(
+        (error) => error.toString(),
+        'message',
+        contains(messageKey),
+      ),
+    ),
+  );
+}
+
+Object? _stringMap(Object? value, String key) {
+  LibraryMirror? manifestLibrary;
+  for (final candidate in currentMirrorSystem().libraries.values) {
+    if (candidate.uri.path.endsWith('/src/worker/worker_manifest.dart')) {
+      manifestLibrary = candidate;
+      break;
+    }
+  }
+  if (manifestLibrary == null) {
+    fail('worker manifest library is not loaded');
+  }
+
+  return manifestLibrary.invoke(
+    MirrorSystem.getSymbol('_stringMap', manifestLibrary),
+    [
+      value,
+      key,
+    ],
+  ).reflectee;
 }

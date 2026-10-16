@@ -206,6 +206,34 @@ void main() {
       });
     });
 
+    test(
+      'treats a non-executable verified cache entry as a hard error',
+      () async {
+        if (Platform.isWindows) return;
+
+        await _withCachedWorker((environment, manifest, cached) async {
+          await Process.run('chmod', ['600', cached.path]);
+          addTearDown(() => Process.run('chmod', ['700', cached.path]));
+          await expectLater(
+            locateWorker(
+              abi: Abi.current(),
+              cache: WorkerCacheSource(
+                environment: environment,
+                manifest: manifest,
+              ),
+            ),
+            throwsA(
+              isA<MontyCrashedError>().having(
+                (error) => error.toString(),
+                'message',
+                allOf(contains(cached.path), contains('non-executable')),
+              ),
+            ),
+          );
+        });
+      },
+    );
+
     test('treats an unreadable cache entry as a hard error', () async {
       if (Platform.isWindows) return;
 
