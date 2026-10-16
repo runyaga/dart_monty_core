@@ -146,7 +146,11 @@ built_lib="$(printf '%s\n' "$built" | sed -n '2p')"
 
 mkdir -p "$(dirname "$dest")"
 cp "$built_exe" "$dest"
-cp "$built_lib" "$lib_dest"
+# A host may still map the previous inode. Never truncate it during rebuilds.
+lib_temp="$(mktemp "$lib_dest.tmp.XXXXXX")"
+trap 'rm -f "$lib_temp"' EXIT
+cp -p "$built_lib" "$lib_temp"
+mv -f "$lib_temp" "$lib_dest"
 chmod +x "$dest"
 stamp_line > "$stamp"
 printf 'build_worker: %s\n' "$dest" "$lib_dest"

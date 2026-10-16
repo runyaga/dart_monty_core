@@ -29,7 +29,13 @@ Future<void> main(List<String> args) async {
     exit(2);
   }
   _mountAssetSmoke();
-  final testCase = _map(jsonDecode(File(args.single).readAsStringSync()));
+  final testCase = _map(
+    jsonDecode(
+      File(
+        args.singleOrNull ?? (throw StateError('expected one input file')),
+      ).readAsStringSync(),
+    ),
+  );
   final expected = _map(testCase['expected']);
   final replies = [
     for (final reply in _list(_map(testCase['externals'])['fetch']))
@@ -101,8 +107,8 @@ Future<void> main(List<String> args) async {
 
 /// The parity suite's canonical form, for the value kinds s10 uses.
 Map<String, Object?> _canon(MontyValue value) => switch (value) {
-  MontyString(:final value) => {'t': 'str', 'v': value},
-  MontyInt(:final value) => {'t': 'int', 'v': '$value'},
+  MontyString(value: final text) => {'t': 'str', 'v': text},
+  MontyInt(value: final integer) => {'t': 'int', 'v': '$integer'},
   _ => throw UnsupportedError('no canonical form here for $value'),
 };
 
@@ -112,9 +118,12 @@ MontyValue _fromCanon(Object? json) => switch (_map(json)) {
   final other => throw UnsupportedError('no value here for $other'),
 };
 
-Map<String, Object?> _map(Object? json) => json! as Map<String, Object?>;
+Map<String, Object?> _map(Object? json) =>
+    (json ?? (throw const FormatException('expected an object')))
+        as Map<String, Object?>;
 
-List<Object?> _list(Object? json) => json! as List<Object?>;
+List<Object?> _list(Object? json) =>
+    (json ?? (throw const FormatException('expected a list'))) as List<Object?>;
 
 // F-0 is internal: exercise the capability that F-2's MountDir will own.
 // Checking the selected route prevents an in-checkout package library from
@@ -132,8 +141,9 @@ void _mountAssetSmoke() {
       try {
         final result = pb.ResumeCall.fromBuffer(
           table.call(
-            pb.OsCall(callId: 19, readText: '/m/hello').writeToBuffer(),
-          )!,
+                pb.OsCall(callId: 19, readText: '/m/hello').writeToBuffer(),
+              ) ??
+              (throw StateError('bundled mount service did not handle read')),
         );
         if (result.callId != 19 ||
             !result.result.hasReturnValue() ||

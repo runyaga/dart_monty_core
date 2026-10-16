@@ -10,14 +10,26 @@ import 'dart:isolate';
 import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
-Future<void> main() async {
-  final uri = (await Service.getInfo()).serverWebSocketUri!;
+Future<void> main(List<String> args) async {
+  if (args.contains('--lookup-only')) {
+    stdout.writeln('mount lookup: $nativeMountLookupRoute');
+
+    return;
+  }
+
+  final uri =
+      (await Service.getInfo()).serverWebSocketUri ??
+      (throw StateError('probe requires the VM service'));
   final service = await vmServiceConnectUri(uri.toString());
-  final isolate = Service.getIsolateId(Isolate.current)!;
+  final isolate =
+      Service.getIsolateId(Isolate.current) ??
+      (throw StateError('probe requires an isolate ID'));
   final dir = Directory.systemTemp.createTempSync('mount-finalizer-');
   try {
     // Warm the library and the VM service before measuring descriptor counts.
     NativeMountRoot(hostPath: dir.path, virtualPath: '/warm').close();
+    // A fresh GC request is needed at every measurement.
+    // ignore: prefer-moving-to-variable
     await service.getAllocationProfile(isolate, gc: true);
     _openAndClose(dir.path);
     final before = _descriptors();
@@ -25,6 +37,8 @@ Future<void> main() async {
     if (opened < before + 32) throw StateError('probe did not open 32 roots');
     var after = opened;
     for (var i = 0; i < 100 && after > before + 4; i++) {
+      // Each iteration must trigger another collection to observe finalization.
+      // ignore: prefer-moving-to-variable
       await service.getAllocationProfile(isolate, gc: true);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       after = _descriptors();
@@ -52,6 +66,7 @@ int _descriptors() {
   for (var fd = 0; fd < 4096; fd++) {
     if (_fcntl(fd, 1) != -1) count++;
   }
+
   return count;
 }
 
@@ -68,6 +83,7 @@ int _openAndDrop(String path) {
   if (roots.any((root) => root.virtualPath != '/m')) {
     throw StateError('unexpected mount path');
   }
+
   return opened;
 }
 

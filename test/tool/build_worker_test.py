@@ -85,6 +85,17 @@ sys.exit(int((root / 'cargo-exit').read_text()))
                 name.unlink()
                 self.run_script("--check", ok=False)
 
+    def test_publication_preserves_open_library_and_stamps_replacement(self):
+        self.run_script()
+        old_bytes = self.lib_dest.read_bytes()
+        with self.lib_dest.open("rb", buffering=0) as old_library:
+            self.lib.write_bytes(b"new library, deliberately a different size")
+            self.run_script()
+            self.assertEqual(old_library.read(), old_bytes)
+            self.assertEqual(self.lib_dest.read_bytes(), self.lib.read_bytes())
+            self.run_script("--check")
+        self.assertEqual(list(self.lib_dest.parent.glob(self.lib_dest.name + ".tmp.*")), [])
+
     def test_replacing_either_binary_is_stale(self):
         for name in (self.dest, self.lib_dest):
             with self.subTest(name=name.name):

@@ -7,16 +7,6 @@ import 'dart:isolate';
 
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 
-/// Borrowed UTF-8 string view used by the native ABI, with no NUL sentinel.
-final class MountString extends Struct {
-  /// First byte; borrowed for the duration of a call.
-  external Pointer<Uint8> data;
-
-  /// Number of bytes (not Unicode characters).
-  @UintPtr()
-  external int length;
-}
-
 const _asset = 'package:dart_monty_core/src/worker/self_relaunch.dart';
 
 @Native<
@@ -90,209 +80,41 @@ external void _free(Pointer<Uint8> bytes, int length);
 )
 external Pointer<MountString> _lastError();
 
-/// Cached bindings; @Native declarations are used only to obtain addresses.
-final class MountBindings {
-  MountBindings._(
-    this.route,
-    Pointer<
-      NativeFunction<
-        Int64 Function(
-          Pointer<MountString>,
-          Pointer<MountString>,
-          Pointer<MountString>,
-          Int64,
-          Uint64,
-        )
-      >
-    >
-    openPointer,
-    Pointer<
-      NativeFunction<
-        Int64 Function(Int64, Pointer<Pointer<Uint8>>, Pointer<UintPtr>)
-      >
-    >
-    rootInfoPointer,
-    Pointer<NativeFunction<Void Function(Int64)>> closePointer,
-    Pointer<NativeFunction<Void Function(Pointer<Void>)>> finalizePointer,
-    Pointer<NativeFunction<Int64 Function(Pointer<Int64>, UintPtr)>>
-    beginFeedPointer,
-    Pointer<
-      NativeFunction<
-        Int64 Function(
-          Int64,
-          Pointer<Uint8>,
-          UintPtr,
-          Pointer<Pointer<Uint8>>,
-          Pointer<UintPtr>,
-        )
-      >
-    >
-    callPointer,
-    Pointer<NativeFunction<Void Function(Int64)>> endFeedPointer,
-    Pointer<NativeFunction<Void Function(Pointer<Uint8>, UintPtr)>> freePointer,
-    Pointer<NativeFunction<Pointer<MountString> Function()>> lastErrorPointer,
-  ) : open = openPointer
-          .asFunction<
-            int Function(
-              Pointer<MountString>,
-              Pointer<MountString>,
-              Pointer<MountString>,
-              int,
-              int,
-            )
-          >(),
-      rootInfo = rootInfoPointer
-          .asFunction<
-            int Function(int, Pointer<Pointer<Uint8>>, Pointer<UintPtr>)
-          >(),
-      close = closePointer.asFunction<void Function(int)>(),
-      finalizer = NativeFinalizer(finalizePointer),
-      release = finalizePointer.asFunction<void Function(Pointer<Void>)>(),
-      beginFeed = beginFeedPointer
-          .asFunction<int Function(Pointer<Int64>, int)>(),
-      call = callPointer
-          .asFunction<
-            int Function(
-              int,
-              Pointer<Uint8>,
-              int,
-              Pointer<Pointer<Uint8>>,
-              Pointer<UintPtr>,
-            )
-          >(),
-      endFeed = endFeedPointer.asFunction<void Function(int)>(),
-      free = freePointer.asFunction<void Function(Pointer<Uint8>, int)>(),
-      lastError = lastErrorPointer
-          .asFunction<Pointer<MountString> Function()>();
+/// Cached native mount symbols, shared by the root and per-feed services.
+final class NativeMountBindings {
+  /// Converts a resolved symbol table to Dart calls without changing ownership.
+  NativeMountBindings.fromPointers(this.route, MountPointers pointers)
+    : open = pointers.open.asFunction(),
+      rootInfo = pointers.rootInfo.asFunction(),
+      close = pointers.close.asFunction(),
+      finalizer = NativeFinalizer(pointers.finalize),
+      release = pointers.finalize.asFunction(),
+      beginFeed = pointers.beginFeed.asFunction(),
+      call = pointers.call.asFunction(),
+      endFeed = pointers.endFeed.asFunction(),
+      free = pointers.free.asFunction(),
+      lastError = pointers.lastError.asFunction();
 
   /// Asset first; when absent, try beside the package's worker executable.
-  factory MountBindings.load() {
+  factory NativeMountBindings.load() => NativeMountBindings.resolve(
+    asset: _assetBindings,
+    resolvePackage: Isolate.resolvePackageUriSync,
+    openLibrary: DynamicLibrary.open,
+  );
+
+  /// Resolves symbols using explicit loaders, also used by packaging tests.
+  factory NativeMountBindings.resolve({
+    required NativeMountBindings Function() asset,
+    required Uri? Function(Uri) resolvePackage,
+    required DynamicLibrary Function(String) openLibrary,
+  }) {
     try {
-      return MountBindings._(
-        'asset',
-        Native.addressOf<
-          NativeFunction<
-            Int64 Function(
-              Pointer<MountString>,
-              Pointer<MountString>,
-              Pointer<MountString>,
-              Int64,
-              Uint64,
-            )
-          >
-        >(_open),
-        Native.addressOf<
-          NativeFunction<
-            Int64 Function(Int64, Pointer<Pointer<Uint8>>, Pointer<UintPtr>)
-          >
-        >(_rootInfo),
-        Native.addressOf<NativeFunction<Void Function(Int64)>>(_close),
-        Native.addressOf<NativeFunction<Void Function(Pointer<Void>)>>(
-          _finalize,
-        ),
-        Native.addressOf<
-          NativeFunction<Int64 Function(Pointer<Int64>, UintPtr)>
-        >(_beginFeed),
-        Native.addressOf<
-          NativeFunction<
-            Int64 Function(
-              Int64,
-              Pointer<Uint8>,
-              UintPtr,
-              Pointer<Pointer<Uint8>>,
-              Pointer<UintPtr>,
-            )
-          >
-        >(_call),
-        Native.addressOf<NativeFunction<Void Function(Int64)>>(_endFeed),
-        Native.addressOf<
-          NativeFunction<Void Function(Pointer<Uint8>, UintPtr)>
-        >(_free),
-        Native.addressOf<NativeFunction<Pointer<MountString> Function()>>(
-          _lastError,
-        ),
-      );
+      return asset();
       // An unresolved native asset throws ArgumentError, as self-relaunch does.
       // ignore: avoid_catching_errors
     } on ArgumentError {
-      return MountBindings._packageLibrary();
+      return _packageBindings(resolvePackage, openLibrary);
     }
-  }
-
-  factory MountBindings._packageLibrary() {
-    try {
-      final worker = Isolate.resolvePackageUriSync(
-        Uri.parse(
-          'package:dart_monty_core/${workerPackagePath(Abi.current())}',
-        ),
-      );
-      if (worker != null) {
-        final name = Platform.isWindows
-            ? 'dart_monty_worker.dll'
-            : Platform.isMacOS
-            ? 'libdart_monty_worker.dylib'
-            : 'libdart_monty_worker.so';
-        final library = DynamicLibrary.open(worker.resolve(name).toFilePath());
-        return MountBindings._(
-          'package',
-          library.lookup<
-            NativeFunction<
-              Int64 Function(
-                Pointer<MountString>,
-                Pointer<MountString>,
-                Pointer<MountString>,
-                Int64,
-                Uint64,
-              )
-            >
-          >('dmfs_open'),
-          library.lookup<
-            NativeFunction<
-              Int64 Function(Int64, Pointer<Pointer<Uint8>>, Pointer<UintPtr>)
-            >
-          >('dmfs_root_info'),
-          library.lookup<NativeFunction<Void Function(Int64)>>('dmfs_close'),
-          library.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
-            'dmfs_finalize',
-          ),
-          library
-              .lookup<NativeFunction<Int64 Function(Pointer<Int64>, UintPtr)>>(
-                'dmfs_begin_feed',
-              ),
-          library.lookup<
-            NativeFunction<
-              Int64 Function(
-                Int64,
-                Pointer<Uint8>,
-                UintPtr,
-                Pointer<Pointer<Uint8>>,
-                Pointer<UintPtr>,
-              )
-            >
-          >('dmfs_call'),
-          library.lookup<NativeFunction<Void Function(Int64)>>('dmfs_end_feed'),
-          library
-              .lookup<NativeFunction<Void Function(Pointer<Uint8>, UintPtr)>>(
-                'dmfs_free',
-              ),
-          library.lookup<NativeFunction<Pointer<MountString> Function()>>(
-            'dmfs_last_error',
-          ),
-        );
-      }
-      // DynamicLibrary.open/lookup use ArgumentError for absent libraries/symbols.
-      // ignore: avoid_catching_errors
-    } on ArgumentError {
-      // Fall through to the actionable refusal below.
-      // ignore: avoid_catching_errors
-    } on UnsupportedError {
-      // Package URIs need not resolve in an AOT runtime.
-    }
-    throw UnsupportedError(
-      'MountDir needs the native mount service. Set hooks: user_defines: '
-      'dart_monty_core: build_worker: true in the root pubspec, '
-      'or run tool/build_worker.sh for this package checkout.',
-    );
   }
 
   /// Lookup route used, for the independent JIT and AOT smoke checks.
@@ -342,3 +164,109 @@ final class MountBindings {
   /// dmfs_last_error ABI binding.
   final Pointer<MountString> Function() lastError;
 }
+
+/// Borrowed UTF-8 string view used by the native ABI, with no NUL sentinel.
+final class MountString extends Struct {
+  /// First byte; borrowed for the duration of a call.
+  external Pointer<Uint8> data;
+
+  /// Number of bytes (not Unicode characters).
+  @UintPtr()
+  external int length;
+}
+
+NativeMountBindings _assetBindings() => NativeMountBindings.fromPointers(
+  'asset',
+  (
+    open: Native.addressOf<NativeFunction<_Open>>(_open),
+    rootInfo: Native.addressOf<NativeFunction<_RootInfo>>(_rootInfo),
+    close: Native.addressOf<NativeFunction<_Close>>(_close),
+    finalize: Native.addressOf<NativeFunction<_Finalize>>(_finalize),
+    beginFeed: Native.addressOf<NativeFunction<_BeginFeed>>(_beginFeed),
+    call: Native.addressOf<NativeFunction<_Call>>(_call),
+    endFeed: Native.addressOf<NativeFunction<_Close>>(_endFeed),
+    free: Native.addressOf<NativeFunction<_Free>>(_free),
+    lastError: Native.addressOf<NativeFunction<_LastError>>(_lastError),
+  ),
+);
+
+NativeMountBindings _packageBindings(
+  Uri? Function(Uri) resolvePackage,
+  DynamicLibrary Function(String) openLibrary,
+) {
+  try {
+    final worker = resolvePackage(
+      Uri.parse('package:dart_monty_core/${workerPackagePath(Abi.current())}'),
+    );
+    if (worker != null) {
+      final name = switch (Platform.operatingSystem) {
+        'windows' => 'dart_monty_worker.dll',
+        'macos' => 'libdart_monty_worker.dylib',
+        _ => 'libdart_monty_worker.so',
+      };
+      final library = openLibrary(worker.resolve(name).toFilePath());
+
+      return NativeMountBindings.fromPointers('package', (
+        open: library.lookup('dmfs_open'),
+        rootInfo: library.lookup('dmfs_root_info'),
+        close: library.lookup('dmfs_close'),
+        finalize: library.lookup('dmfs_finalize'),
+        beginFeed: library.lookup('dmfs_begin_feed'),
+        call: library.lookup('dmfs_call'),
+        endFeed: library.lookup('dmfs_end_feed'),
+        free: library.lookup('dmfs_free'),
+        lastError: library.lookup('dmfs_last_error'),
+      ));
+    }
+    // DynamicLibrary.open/lookup use ArgumentError for absent libraries/symbols.
+    // ignore: avoid_catching_errors
+  } on ArgumentError {
+    // Fall through to the actionable refusal below.
+    // ignore: avoid_catching_errors
+  } on UnsupportedError {
+    // Package URIs need not resolve in an AOT runtime.
+  }
+
+  throw UnsupportedError(
+    'MountDir needs the native mount service. Set hooks: user_defines: '
+    'dart_monty_core: build_worker: true in the root pubspec, '
+    'or run tool/build_worker.sh for this package checkout.',
+  );
+}
+
+/// Resolved ABI addresses; keeping their native types checks every conversion.
+typedef MountPointers = ({
+  Pointer<NativeFunction<_Open>> open,
+  Pointer<NativeFunction<_RootInfo>> rootInfo,
+  Pointer<NativeFunction<_Close>> close,
+  Pointer<NativeFunction<_Finalize>> finalize,
+  Pointer<NativeFunction<_BeginFeed>> beginFeed,
+  Pointer<NativeFunction<_Call>> call,
+  Pointer<NativeFunction<_Close>> endFeed,
+  Pointer<NativeFunction<_Free>> free,
+  Pointer<NativeFunction<_LastError>> lastError,
+});
+
+typedef _Open =
+    Int64 Function(
+      Pointer<MountString>,
+      Pointer<MountString>,
+      Pointer<MountString>,
+      Int64,
+      Uint64,
+    );
+typedef _RootInfo =
+    Int64 Function(Int64, Pointer<Pointer<Uint8>>, Pointer<UintPtr>);
+typedef _Close = Void Function(Int64);
+typedef _Finalize = Void Function(Pointer<Void>);
+typedef _BeginFeed = Int64 Function(Pointer<Int64>, UintPtr);
+typedef _Call =
+    Int64 Function(
+      Int64,
+      Pointer<Uint8>,
+      UintPtr,
+      Pointer<Pointer<Uint8>>,
+      Pointer<UintPtr>,
+    );
+typedef _Free = Void Function(Pointer<Uint8>, UintPtr);
+typedef _LastError = Pointer<MountString> Function();

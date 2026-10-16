@@ -36,12 +36,14 @@ void main() {
       memoryUsageLimit: memory,
     );
     addTearDown(value.close);
+
     return value;
   }
 
   NativeMountTable table(List<NativeMountRoot> roots) {
     final value = NativeMountTable(roots);
     addTearDown(value.close);
+
     return value;
   }
 
@@ -84,8 +86,18 @@ void main() {
   });
   test('P01 rejects missing and file host paths', () {
     for (final (path, suffix) in [
-      ('${dir.path}/missing', 'No such file or directory (os error 2)'),
-      ('${dir.path}/a.txt', 'Not a directory (os error 20)'),
+      (
+        '${dir.path}/missing',
+        Platform.isWindows
+            ? 'The system cannot find the file specified. (os error 2)'
+            : 'No such file or directory (os error 2)',
+      ),
+      (
+        '${dir.path}/a.txt',
+        Platform.isWindows
+            ? 'The directory name is invalid. (os error 267)'
+            : 'Not a directory (os error 20)',
+      ),
     ]) {
       expect(
         () => root(host: path),
@@ -193,9 +205,17 @@ void main() {
   );
   test(
     'P07 route 2 handles reads and leaves outside and non-fs calls unhandled',
-    () {
+    () async {
       final feed = table([root()]);
-      expect(nativeMountLookupRoute, 'package');
+      // Other suites may have loaded global symbols already. Check discovery
+      // in a fresh VM so @Native's process fallback cannot mask route 2.
+      final lookup = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'test/unit/mount/native_mount_finalizer_probe.dart',
+        '--lookup-only',
+      ]);
+      expect(lookup.exitCode, 0, reason: '${lookup.stdout}\n${lookup.stderr}');
+      expect(lookup.stdout, contains('mount lookup: package'));
       expect(
         value(feed, pb.OsCall(readText: '/d/a.txt')),
         const MontyString('host'),
@@ -251,13 +271,14 @@ void main() {
   test('P05 write budget resets per table', () {
     final mount = root(writes: 10);
     final first = table([mount]);
-    expect(value(first, write('12345678')), const MontyInt(8));
+    final request = write('12345678');
+    expect(value(first, request), const MontyInt(8));
     expect(
-      error(first, write('12345678')),
+      error(first, request),
       'OSError: disk write limit of 10 bytes exceeded',
     );
     first.close();
-    expect(value(table([mount]), write('12345678')), const MontyInt(8));
+    expect(value(table([mount]), request), const MontyInt(8));
   });
   test('P05 transient reads obey memory budget in every mode', () {
     File('${dir.path}/a.txt').writeAsStringSync('a' * 5000);
@@ -335,7 +356,23 @@ void main() {
       value(table([mount]), pb.OsCall(readText: '/d/a.txt')),
       const MontyString('host'),
     );
-  });
+  }, skip: Platform.isWindows ? 'POSIX directory rename semantics' : false);
+  test('Windows refuses renaming a live directory capability', () {
+    final mount = root();
+    final feed = table([mount]);
+    final destination = '${dir.path}-renamed';
+    expect(
+      () => dir.renameSync(destination),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(
+      value(feed, pb.OsCall(readText: '/d/a.txt')),
+      const MontyString('host'),
+    );
+    feed.close();
+    mount.close();
+    dir = dir.renameSync(destination);
+  }, skip: !Platform.isWindows ? 'Windows sharing mode contract' : false);
   test('NativeFinalizer releases unclosed directory capabilities', () async {
     final result = await Process.run(Platform.resolvedExecutable, [
       '--enable-vm-service=0',
@@ -361,23 +398,33 @@ pb.OsCall write(String content) => pb.OsCall(
 
 pb.ResumeCall reply(NativeMountTable table, pb.OsCall call) {
   call.callId = 73;
-  final result = pb.ResumeCall.fromBuffer(table.call(call.writeToBuffer())!);
+  final bytes = table.call(call.writeToBuffer());
+  expect(bytes, isNotNull);
+  final result = pb.ResumeCall.fromBuffer(
+    bytes ?? (throw StateError('unhandled mount call')),
+  );
   expect(result.callId, 73);
+
   return result;
 }
 
 MontyValue value(NativeMountTable table, pb.OsCall call) {
-  final result = reply(table, call);
+  final replyValue = reply(table, call);
+  final result = replyValue.result;
+  final exception = result.error;
   expect(
-    result.result.whichKind(),
+    result.whichKind(),
     pb.ExtFunctionResult_Kind.returnValue,
-    reason: '${result.result.error.excType}: ${result.result.error.message}',
+    reason: '${exception.excType}: ${exception.message}',
   );
-  return ArenaReader(result.values)[result.result.returnValue];
+
+  return ArenaReader(replyValue.values)[result.returnValue];
 }
 
 String error(NativeMountTable table, pb.OsCall call) {
-  final result = reply(table, call);
-  expect(result.result.whichKind(), pb.ExtFunctionResult_Kind.error);
-  return '${result.result.error.excType}: ${result.result.error.message}';
+  final result = reply(table, call).result;
+  expect(result.whichKind(), pb.ExtFunctionResult_Kind.error);
+  final exception = result.error;
+
+  return '${exception.excType}: ${exception.message}';
 }
