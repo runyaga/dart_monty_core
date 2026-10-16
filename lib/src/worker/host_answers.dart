@@ -21,6 +21,7 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
     show ExternalException, unknownExcType;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// A host function Python can call by name.
 ///
@@ -326,8 +327,12 @@ final class HostAnswers {
     this.externalLookup = const {},
     this.os,
     this.systemSleepMax,
+    this.recorder,
     HostObjects? objects,
   }) : objects = objects ?? HostObjects();
+
+  /// Callback context for this checkout, absent without instrumentation.
+  final TelemetryRecorder? recorder;
 
   /// The session's host objects.
   final HostObjects objects;
@@ -409,11 +414,15 @@ final class HostAnswers {
       return function(args, _kwargs(reader, call.kwargs));
     }
 
+    final recording = recorder;
+    final callback = recording == null
+        ? invoke
+        : () => _invoke(recording, invoke);
     if (!isCoroutine(function)) {
-      return _resumeWith(call.callId, invoke, objects);
+      return _resumeWith(call.callId, callback, objects);
     }
 
-    return _coroutine(call.callId, call.allowEagerAwait, _started(invoke));
+    return _coroutine(call.callId, call.allowEagerAwait, _started(callback));
   }
 
   /// Answers a lookup of [name]: with [objectId], a lazy attribute of that
@@ -425,7 +434,13 @@ final class HostAnswers {
   /// Python refuses ([encodingInput]): upstream does not answer it, and
   /// discards the checkout. The caller ends the session.
   pb.ParentRequest lookup(String name, {String? objectId}) {
-    if (objectId != null) return _attribute(objects, objectId, name);
+    if (objectId != null) {
+      final recording = recorder;
+
+      return recording == null
+          ? _attribute(objects, objectId, name)
+          : _invoke3(recording, _attribute, objects, objectId, name);
+    }
     final entry = externalLookup[name];
     if (entry == null) {
       return pb.ParentRequest(
@@ -544,7 +559,10 @@ final class HostAnswers {
     final (name, args, kwargs) = parts;
     final callId = call.callId;
     try {
-      final answer = handler(name, args, kwargs);
+      final recording = recorder;
+      final answer = recording == null
+          ? handler(name, args, kwargs)
+          : _invoke3(recording, handler, name, args, kwargs);
       if (answer is MontyValue) {
         return resumeValue(callId, answer, objects: objects);
       }
@@ -640,12 +658,14 @@ Future<pb.ParentRequest> _methodCall(
   final FutureOr<Object> result;
   try {
     checkHostMethodName(call.functionName);
-    result = objects.callMethod(
-      uuidString(call.objectId.data),
-      call.functionName,
-      [for (final a in call.args) reader[a]],
-      _kwargs(reader, call.kwargs),
-    );
+    final id = uuidString(call.objectId.data);
+    final name = call.functionName;
+    final args = [for (final a in call.args) reader[a]];
+    final kwargs = _kwargs(reader, call.kwargs);
+    final recording = host.recorder;
+    result = recording == null
+        ? objects.callMethod(id, name, args, kwargs)
+        : _invoke4(recording, objects.callMethod, id, name, args, kwargs);
   } on Object catch (error) {
     return _failed(call.callId, error);
   }
@@ -1005,3 +1025,26 @@ pb.RaisedException _fallback(Object error) {
 /// with no argument: its `str()`, which is `'None'` for a `SyntaxError`
 /// (whose `msg` is None) and `''` for every other type.
 String _noArgText(String excType) => excType == 'SyntaxError' ? 'None' : '';
+
+/// All host callback entry points share the same exactly-once invoker.
+R _invoke<R>(TelemetryRecorder recorder, R Function() body) =>
+    recorder.invoke(body);
+
+// Called only with instrumentation: the uninstalled path allocates no
+// context wrapper closures or method tear-offs.
+R _invoke3<R, A, B, C>(
+  TelemetryRecorder recorder,
+  R Function(A, B, C) body,
+  A a,
+  B b,
+  C c,
+) => _invoke(recorder, () => body(a, b, c));
+
+R _invoke4<R, A, B, C, D>(
+  TelemetryRecorder recorder,
+  R Function(A, B, C, D) body,
+  A a,
+  B b,
+  C c,
+  D d,
+) => _invoke(recorder, () => body(a, b, c, d));

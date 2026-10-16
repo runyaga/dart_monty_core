@@ -91,3 +91,5 @@ export 'src/worker/resource_limits.dart' show ResourceLimits;
 export 'src/worker/self_relaunch_stub.dart'
     if (dart.library.ffi) 'src/worker/self_relaunch.dart'
     show runMontyWorkerIfChild;
+
+export 'src/worker/telemetry.dart' show MontyTelemetry, instrumentTelemetry;

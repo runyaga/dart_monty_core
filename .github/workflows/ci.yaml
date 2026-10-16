@@ -679,8 +679,8 @@ jobs:
           set -o pipefail
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          # F-0: 2727 observed on the VM, including 23 native mount tests.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 2730 unit
+          # Measured on main 81d96ec: 2592; with the T-values tests 2694.
+          bash tool/assert_test_count.sh /tmp/unit-test.log 2815 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -707,7 +707,7 @@ jobs:
             --exclude-tags=integration,ladder,example,vm-only,worker \
             -p chrome -c dart2js -c dart2wasm 2>&1 | tee /tmp/unit-web.log
           # Measured on main 81d96ec: 5154 over both compilers; with the T-values tests 5358.
-          bash tool/assert_test_count.sh /tmp/unit-web.log 5378 "unit (web)"
+          bash tool/assert_test_count.sh /tmp/unit-web.log 5564 "unit (web)"
 
       - name: Generate LCOV
         run: |
@@ -944,7 +944,7 @@ jobs:
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 469 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 479 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob

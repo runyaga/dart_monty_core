@@ -13,6 +13,8 @@ import 'package:dart_monty_core/src/worker/encoded_length.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 import '../../_accessors.dart';
 
@@ -20,7 +22,7 @@ import '../../_accessors.dart';
 typedef Reply = List<pb.ChildEvent> Function(pb.ParentRequest request);
 
 /// A scripted worker.
-final class ScriptedChannel implements MontyChannel {
+final class ScriptedChannel with RecordedChannel implements MontyChannel {
   /// Answers each turn with the next of [script]; a request whose body is
   /// over [frameLimit] bytes throws [FrameTooLargeException] instead.
   ScriptedChannel(Iterable<Reply> script, {this.frameLimit = Frame.maxLength})
@@ -61,6 +63,7 @@ final class ScriptedChannel implements MontyChannel {
     if (length > frameLimit) throw FrameTooLargeException(length, frameLimit);
     final sent = pb.ParentRequest.fromBuffer(request.writeToBuffer());
     requests.add(sent);
+    recorder?.beginTurn(sent);
     if (_remaining.isEmpty) {
       throw StateError('script exhausted at a ${sent.whichKind().name}');
     }
@@ -74,6 +77,7 @@ final class ScriptedChannel implements MontyChannel {
           pb.ChildEvent.fromBuffer(e.writeToBuffer()),
       ];
     } on _Crash catch (c) {
+      recorder?.close();
       _isAlive = false;
       throw crashedError(
         c.cause,
@@ -88,10 +92,13 @@ final class ScriptedChannel implements MontyChannel {
       if (e.whichKind() != pb.ChildEvent_Kind.print) {
         throw StateError('only Print may precede the turn end');
       }
+      recorder?.event(e);
       await onPrint?.call(e.print);
     }
     final end = itemAt(events, events.length - 1);
+    recorder?.event(end);
     if (end.whichKind() == pb.ChildEvent_Kind.fatalError) {
+      recorder?.close();
       _isAlive = false;
       throw crashedError(
         CrashCause.fatal,
@@ -104,14 +111,18 @@ final class ScriptedChannel implements MontyChannel {
 
   @override
   Future<void> close() async {
+    recorder?.close();
     closes++;
+    recorder?.close();
     _isAlive = false;
   }
 
   @override
   void kill() {
+    recorder?.close();
     kills++;
     if (!_killed.isCompleted) _killed.complete();
+    recorder?.close();
     _isAlive = false;
   }
 
@@ -123,6 +134,7 @@ final class ScriptedChannel implements MontyChannel {
   ) async {
     for (final p in prints) {
       if (_killed.isCompleted) break;
+      recorder?.event(p);
       await onPrint?.call(p.print);
       await Future<void>.delayed(Duration.zero);
     }

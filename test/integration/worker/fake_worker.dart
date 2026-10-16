@@ -49,6 +49,7 @@ Future<void> main(List<String> args) async {
   if (args case ['writer', final path, ...]) {
     return _writeAfterParentExits(path);
   }
+  if (scenario == 'complete-before-send') return _completeBeforeSend();
   final decoder = FrameDecoder();
   await for (final chunk in stdin) {
     for (final body in decoder.add(chunk)) {
@@ -59,6 +60,23 @@ Future<void> main(List<String> args) async {
   // Keeps running after stdin closes, as a wedged worker would. A pending
   // timer, not a bare Completer: an isolate with nothing scheduled exits.
   Timer(const Duration(hours: 1), () => exit(0));
+}
+
+/// Reads exactly the first request, without an async stdin subscription that
+/// could read ahead. The next request must remain in the parent's pipe.
+Future<void> _completeBeforeSend() async {
+  final decoder = FrameDecoder();
+  for (;;) {
+    final byte = stdin.readByteSync();
+    if (byte < 0) exit(2);
+    if (decoder.add([byte]).isNotEmpty) break;
+  }
+  await _send(pb.ChildEvent(ok: pb.Ok()));
+  await _send(pb.ChildEvent(complete: pb.Complete()));
+  // Let the next request fill the pipe before closing its read end. On
+  // Linux the write error and process-exit notification race each other.
+  await Future<void>.delayed(const Duration(milliseconds: 500));
+  exit(0);
 }
 
 /// Answers [request] as [scenario] says, and returns the scenario for the

@@ -9,20 +9,26 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
+import 'package:dart_monty_core/src/worker/byte_tail.dart';
 import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
 import 'package:meta/meta.dart';
 
 /// The worker's exit code when its allocator's hard limit is breached:
 /// upstream's `OOM_EXIT_CODE`.
 const int workerOomExitCode = 65;
+
+/// Wraps an injected process so tests can order replies, flushes and exits.
+@visibleForTesting
+ProcessChannel processChannelForTesting(Process process) =>
+    ProcessChannel._(process);
 
 /// A [MontyChannel] over a worker process's stdio.
 ///
@@ -30,7 +36,7 @@ const int workerOomExitCode = 65;
 /// because Dart has no kill-on-drop: a channel that is never closed keeps
 /// its worker running, and the worker's open pipes keep this process from
 /// exiting.
-final class ProcessChannel implements MontyChannel {
+final class ProcessChannel with RecordedChannel implements MontyChannel {
   ProcessChannel._(this._process)
     : _events = EventQueue(
         _process.stdout,
@@ -38,7 +44,7 @@ final class ProcessChannel implements MontyChannel {
         drainAllowance: drainAllowance,
         onDesync: () => _process.kill(ProcessSignal.sigkill),
       ),
-      _stderr = _ByteTail(_process.stderr, 4096) {
+      _stderr = ByteTail(_process.stderr, 4096) {
     _live.add(this);
     unawaited(_reapOnExit());
     unawaited(_absorbFailure(_process.stdin.done));
@@ -96,7 +102,7 @@ final class ProcessChannel implements MontyChannel {
 
   final Process _process;
   final EventQueue _events;
-  final _ByteTail _stderr;
+  final ByteTail _stderr;
   MontyCrashedError? _crash;
   bool _killed = false;
 
@@ -138,6 +144,9 @@ final class ProcessChannel implements MontyChannel {
   /// The worker's process id.
   int get pid => _process.pid;
 
+  @override
+  int get telemetryPid => pid;
+
   /// Completes with the worker's exit code.
   Future<int> get exitCode => _process.exitCode;
 
@@ -162,40 +171,31 @@ final class ProcessChannel implements MontyChannel {
     pb.ParentRequest request, {
     PrintHandler? onPrint,
   }) async {
-    if (_busy) {
-      throw StateError('ProcessChannel.turn: a turn is already in flight');
-    }
-    final crash = _crash;
-    if (crash != null) throw crash;
-    if (_closed) throw StateError('ProcessChannel.turn: channel is closed');
+    _checkTurn(busy: _busy, closed: _closed, crash: _crash);
     final frame = Frame.encode(request);
+    final turn = _ProcessTurn(this, request);
     _busy = true;
     try {
-      final stdin = _process.stdin;
       // The add is synchronous, so the frame is queued at once. Until it
       // is all written the request counts as unsent, as upstream sends a
       // request whole before it reads: a worker lost meanwhile was lost
       // while sending it.
       _unsent = true;
-      final written = () async {
-        final sent = await _written(isAlive, stdin, frame);
-        _unsent = !sent;
-
-        return sent;
-      }();
+      final written = turn.write(frame);
       unawaited(_endOutputIfUnsent(written, _events));
       // Read while the request is still being written: a worker paused on
       // a full stdout reads no stdin until the parent reads again, so a
       // request larger than the pipe would otherwise never be sent. A
       // request that was not sent ends the turn as a crash, whatever was
       // read.
-      final event = await _readTurn(onPrint);
+      final event = await turn.read(onPrint);
 
       // _flushed catches every failure, so nothing can go uncaught here.
       // ignore: avoid-uncaught-future-errors
       return await written ? event : throw await _crashed();
     } finally {
       _busy = false;
+      turn.finish();
     }
   }
 
@@ -204,41 +204,11 @@ final class ProcessChannel implements MontyChannel {
 
   @override
   void kill() {
+    recorder?.close();
     if (_killed) return;
     _killed = true;
     _process.kill(ProcessSignal.sigkill);
     _events.cancel();
-  }
-
-  /// Reads events up to the turn's end, handing each `Print` to [onPrint]
-  /// and awaiting it before reading on: while it waits, the read-ahead
-  /// fills to [readAheadLimit] and the worker then blocks on its write.
-  ///
-  /// An [onPrint] that throws does not desynchronise the stream: the rest
-  /// of the turn is still read, then its first error is rethrown.
-  Future<pb.ChildEvent> _readTurn(PrintHandler? onPrint) async {
-    (Object, StackTrace)? printFailure;
-    for (;;) {
-      final event = await _nextEvent(this);
-      if (event == null) throw await _crashed();
-      final kind = event.whichKind();
-      if (kind == pb.ChildEvent_Kind.fatalError) {
-        throw await _crashed(fatal: event.fatalError.message);
-      }
-      if (kind != pb.ChildEvent_Kind.print) {
-        if (printFailure case (final error, final stack)) {
-          Error.throwWithStackTrace(error, stack);
-        }
-
-        return event;
-      }
-      if (onPrint == null) continue;
-      try {
-        await onPrint(event.print);
-      } on Object catch (error, stack) {
-        printFailure ??= (error, stack);
-      }
-    }
   }
 
   /// The channel's crash, recorded once: the first cause seen wins.
@@ -246,15 +216,11 @@ final class ProcessChannel implements MontyChannel {
   /// [fatal] is a `FatalError`'s message. Otherwise the worker's exit code
   /// decides, read within [fatalExitGrace] before the worker is killed.
   Future<MontyCrashedError> _crashed({String? fatal}) async {
+    recorder?.close();
     final recorded = _crash;
     if (recorded != null) return recorded;
     final code = await _exitWithin(fatalExitGrace);
-    final cause = switch ((fatal, code)) {
-      _ when _killed => CrashCause.killed,
-      (String _, _) => CrashCause.fatal,
-      (_, workerOomExitCode) => CrashCause.outOfMemory,
-      _ => CrashCause.vanished,
-    };
+    final cause = _crashCause(fatal, code, killed: _killed);
     await _stderr.drain(pipeDrainGrace);
     final tail = _stderr.text;
 
@@ -279,6 +245,7 @@ final class ProcessChannel implements MontyChannel {
   );
 
   Future<void> _close() async {
+    recorder?.close();
     if (_busy) {
       kill();
       await _process.exitCode;
@@ -304,10 +271,83 @@ final class ProcessChannel implements MontyChannel {
   Future<void> _reapOnExit() async {
     await _process.exitCode;
     _exited = true;
+    if (!_busy) recorder?.close();
     _live.remove(this);
     await _events.endWithin(pipeDrainGrace);
   }
 }
+
+/// A native turn's observation of the request write and concurrent replies.
+final class _ProcessTurn {
+  _ProcessTurn(this._channel, pb.ParentRequest request)
+    : _recording = switch (_channel.recorder) {
+        final observer? => SentRecording(observer, request),
+        null => null,
+      };
+
+  final ProcessChannel _channel;
+  final SentRecording? _recording;
+
+  Future<bool> write(List<int> frame) async {
+    final flushed = await _written(
+      _channel.isAlive,
+      _channel._process.stdin,
+      frame,
+    );
+    // Process exit destroys stdin. If that beats the pipe's write error,
+    // the socket's done event can resolve flush successfully with bytes
+    // still unsent. Only a flush observed before exit confirms the send.
+    final sent = flushed && !_channel._exited;
+    _channel._unsent = !sent;
+    _recording?.sent(success: sent);
+
+    return sent;
+  }
+
+  void finish() => _recording?.finish(dead: !_channel.isAlive);
+
+  /// Reads events up to the turn's end, handing each `Print` to [onPrint]
+  /// and awaiting it before reading on: while it waits, the read-ahead
+  /// fills to [ProcessChannel.readAheadLimit] and the worker then blocks
+  /// on its write.
+  ///
+  /// An [onPrint] that throws does not desynchronise the stream: the rest
+  /// of the turn is still read, then its first error is rethrown.
+  Future<pb.ChildEvent> read(PrintHandler? onPrint) async {
+    (Object, StackTrace)? printFailure;
+    for (;;) {
+      final event = await _nextEvent(_channel);
+      if (event == null) throw await _channel._crashed();
+      _recording?.event(event);
+      final kind = event.whichKind();
+      if (kind == pb.ChildEvent_Kind.fatalError) {
+        throw await _channel._crashed(fatal: event.fatalError.message);
+      }
+      if (kind != pb.ChildEvent_Kind.print) {
+        if (printFailure case (final error, final stack)) {
+          Error.throwWithStackTrace(error, stack);
+        }
+
+        return event;
+      }
+      if (onPrint == null) continue;
+      try {
+        await onPrint(event.print);
+      } on Object catch (error, stack) {
+        printFailure ??= (error, stack);
+      }
+    }
+  }
+}
+
+/// A deliberate kill wins over the worker's fatal message and exit code.
+CrashCause _crashCause(String? fatal, int code, {required bool killed}) =>
+    switch ((fatal, code)) {
+      _ when killed => CrashCause.killed,
+      (String _, _) => CrashCause.fatal,
+      (_, workerOomExitCode) => CrashCause.outOfMemory,
+      _ => CrashCause.vanished,
+    };
 
 /// [channel]'s next event, or null once none can arrive. A whole frame
 /// that does not decode means the worker misbehaved, not that it died
@@ -666,54 +706,14 @@ final class EventQueue {
   }
 }
 
-/// The last [capacity] bytes of a byte stream, which it always drains: a
-/// worker blocks once its stderr pipe fills.
-final class _ByteTail {
-  _ByteTail(Stream<List<int>> bytes, this.capacity) {
-    _subscription = bytes.listen(
-      _add,
-      onDone: _end,
-      onError: (Object _) => _end(),
-    );
+void _checkTurn({
+  required bool busy,
+  required bool closed,
+  required MontyCrashedError? crash,
+}) {
+  if (busy) {
+    throw StateError('ProcessChannel.turn: a turn is already in flight');
   }
-
-  final int capacity;
-  final _chunks = ListQueue<List<int>>();
-  final _ended = Completer<void>();
-  StreamSubscription<List<int>>? _subscription;
-  int _length = 0;
-
-  /// Waits up to [grace] for the stream to end, then stops listening.
-  ///
-  /// The exit code can arrive before the last of the output, so a reader
-  /// waits; a process that inherited the pipe can hold it open forever, so
-  /// the wait is bounded, and the subscription is cancelled so it cannot
-  /// keep this process alive.
-  Future<void> drain(Duration grace) async {
-    await _ended.future.timeout(grace, onTimeout: () => null);
-    await _subscription?.cancel();
-    _subscription = null;
-  }
-
-  /// The tail as text, trimmed; a cut multi-byte character becomes U+FFFD.
-  String get text {
-    final bytes = [for (final chunk in _chunks) ...chunk];
-    final start = math.max(0, bytes.length - capacity);
-
-    return utf8.decode(bytes.sublist(start), allowMalformed: true).trim();
-  }
-
-  void _add(List<int> chunk) {
-    _chunks.add(chunk);
-    _length += chunk.length;
-    for (;;) {
-      final head = _chunks.firstOrNull;
-      if (head == null || _length - head.length < capacity) break;
-      _length -= _chunks.removeFirst().length;
-    }
-  }
-
-  void _end() {
-    if (!_ended.isCompleted) _ended.complete();
-  }
+  if (crash != null) throw crash;
+  if (closed) throw StateError('ProcessChannel.turn: channel is closed');
 }

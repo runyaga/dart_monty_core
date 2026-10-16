@@ -14,11 +14,13 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
 import 'package:meta/meta.dart';
 
 /// A [MontyChannel] over one Web Worker.
-final class WorkerChannel implements MontyChannel {
+final class WorkerChannel implements MontyChannel, TelemetryChannel {
   const WorkerChannel._(this._worker, this._connection);
 
   /// The default Worker script URL, resolved against the page.
@@ -26,6 +28,18 @@ final class WorkerChannel implements MontyChannel {
 
   final _Worker _worker;
   final WorkerConnection _connection;
+
+  @override
+  TelemetryRecorder? get recorder => _connection.recorder;
+
+  @override
+  set recorder(TelemetryRecorder? value) => _connection.recorder = value;
+
+  @override
+  int? get telemetryPid => _connection.telemetryPid;
+
+  @override
+  bool get isAlive => _connection.isAlive;
 
   /// Starts a Worker from [workerUrl], posts it [cache]'s module and waits
   /// for it to instantiate and run the JSPI probe.
@@ -88,9 +102,6 @@ final class WorkerChannel implements MontyChannel {
 
   /// `dmw_protocol_version()`, already checked against the driver's.
   int get protocol => _connection.protocol;
-
-  @override
-  bool get isAlive => _connection.isAlive;
 
   @override
   Future<pb.ChildEvent> turn(
