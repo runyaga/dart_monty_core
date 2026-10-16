@@ -27,8 +27,11 @@ void main() {
 
       return Future<JSAny?>.error(StateError('offline')).toJS;
     }).toJS;
+    // Two separate searches are the behaviour under test.
+    // ignore: prefer-moving-to-variable
+    final failedSearch = openChannel().ready;
     await expectLater(
-      openChannel().ready,
+      failedSearch,
       throwsA(
         isA<MontyCrashedError>().having(
           (e) => e.toString(),
@@ -42,6 +45,8 @@ void main() {
     _fetch = original;
     // A cached failure would throw again. A fresh search finds the real
     // test-server assets and starts a channel that can shut down normally.
+    // A second, separate search is the behaviour under test.
+    // ignore: prefer-moving-to-variable
     final channel = await openChannel().ready;
     addTearDown(channel.kill);
     expect(channel.isAlive, isTrue);

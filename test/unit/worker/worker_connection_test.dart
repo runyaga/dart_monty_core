@@ -127,12 +127,13 @@ void main() {
     test('R1 malformed streamed $name releases the pool slot', () async {
       final port = _FakePort();
       final c = _accept(port);
+      final ok = scripted.ok();
       final replacement = scripted.ScriptedChannel([
-        scripted.expecting(pb.ParentRequest_Kind.configure, [scripted.ok()]),
+        scripted.expecting(pb.ParentRequest_Kind.configure, [ok]),
         scripted.answer([
           scripted.complete([intNode(42)]),
         ]),
-        scripted.expecting(pb.ParentRequest_Kind.reset, [scripted.ok()]),
+        scripted.expecting(pb.ParentRequest_Kind.reset, [ok]),
       ]);
       var starts = 0;
       final pool = await startMonty(
@@ -151,9 +152,10 @@ void main() {
       final session = await checkout;
       addTearDown(session.close);
       var callbacks = 0;
+      final crashed = throwsA(_crashed(cause));
       final failed = expectLater(
         session.feedRun('print("x")', printCallback: (_, _) => callbacks++),
-        throwsA(_crashed(cause)),
+        crashed,
       );
       await pumpEventQueue();
       c.onMessage(_message(print: batch));
@@ -162,7 +164,7 @@ void main() {
       expect(c.isAlive, isFalse);
       expect(port.terminated, 1);
       expect(port.acknowledged, isEmpty);
-      await expectLater(c.turn(_feed), throwsA(_crashed(cause)));
+      await expectLater(c.turn(_feed), crashed);
       expect(pool.liveWorkers, 0);
       // Do not close the failed session before checkout: crash cleanup must
       // release its sole slot without help from the caller.
