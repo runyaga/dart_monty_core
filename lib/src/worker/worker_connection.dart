@@ -420,7 +420,16 @@ final class _PrintQueue {
     try {
       while (_batches.isNotEmpty && !pending.isCompleted) {
         final batch = _batches.removeFirst();
-        for (final body in Frame.split(batch)) {
+        final List<Uint8List> bodies;
+        try {
+          bodies = Frame.split(batch);
+        } on FrameException catch (e) {
+          throw crashedError(
+            CrashCause.vanished,
+            detail: 'unreadable streamed Print batch: $e',
+          );
+        }
+        for (final body in bodies) {
           final (event, _) = _decode(body);
           if (event == null || event.whichKind() != pb.ChildEvent_Kind.print) {
             throw crashedError(

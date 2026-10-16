@@ -6,15 +6,21 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:dart_monty_core/dart_monty_core.dart' show MontyInt;
 import 'package:dart_monty_core/src/worker/frame.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/spawn_handle.dart';
+import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
+import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_scripted_channel.dart' as scripted;
 
 /// Records what the connection sends and whether it terminated the Worker.
 final class _FakePort implements WorkerPort {
@@ -110,6 +116,89 @@ Future<pb.ChildEvent> _start(
 }) => c.turn(_feed, onPrint: onPrint);
 
 void main() {
+  // Framing failures match terminal replies: torn/oversized frames mean a
+  // vanished worker; a whole but invalid payload is a protocol violation.
+  for (final (name, batch, cause) in [
+    ('truncated', Uint8List.fromList([2, 0, 0, 0, 0x22]), CrashCause.vanished),
+    ('oversized', Uint8List.fromList([1, 0, 0, 16]), CrashCause.vanished),
+    ('invalid payload', Frame.wrap([0xff]), CrashCause.protocol),
+    ('non-Print payload', Frame.encode(_ok), CrashCause.protocol),
+  ]) {
+    test('R1 malformed streamed $name releases the pool slot', () async {
+      final port = _FakePort();
+      final c = _accept(port);
+      final replacement = scripted.ScriptedChannel([
+        scripted.expecting(pb.ParentRequest_Kind.configure, [scripted.ok()]),
+        scripted.answer([
+          scripted.complete([intNode(42)]),
+        ]),
+        scripted.expecting(pb.ParentRequest_Kind.reset, [scripted.ok()]),
+      ]);
+      var starts = 0;
+      final pool = await startMonty(
+        const PoolOptions(
+          minProcesses: 0,
+          maxProcesses: 1,
+          checkoutTimeout: Duration(seconds: 1),
+        ),
+        open: () => PendingSpawn((_) async => ++starts == 1 ? c : replacement),
+      );
+      addTearDown(pool.close);
+      final checkout = pool.checkout();
+      await pumpEventQueue();
+      expect(_onlyRequest(port).whichKind(), pb.ParentRequest_Kind.configure);
+      c.onReply(_frames([_ok]), outcomeContinue);
+      final session = await checkout;
+      addTearDown(session.close);
+      var callbacks = 0;
+      final failed = expectLater(
+        session.feedRun('print("x")', printCallback: (_, _) => callbacks++),
+        throwsA(_crashed(cause)),
+      );
+      await pumpEventQueue();
+      c.onMessage(_message(print: batch));
+      await failed;
+      expect(callbacks, 0);
+      expect(c.isAlive, isFalse);
+      expect(port.terminated, 1);
+      expect(port.acknowledged, isEmpty);
+      await expectLater(c.turn(_feed), throwsA(_crashed(cause)));
+      expect(pool.liveWorkers, 0);
+      // Do not close the failed session before checkout: crash cleanup must
+      // release its sole slot without help from the caller.
+      final next = await pool.checkout();
+      expect(starts, 2);
+      expect(
+        await next.feedRun('6 * 7', printCallback: (_, _) => callbacks++),
+        const MontyInt(42),
+      );
+      await next.close();
+    });
+  }
+
+  for (final error in <Exception>[
+    const FormatException('sink'),
+    const FrameTruncatedException(3),
+    const FrameTooLargeException(9, 8),
+  ]) {
+    test(
+      'R1 streamed callback preserves $error and kills the worker',
+      () async {
+        final port = _FakePort();
+        final c = _accept(port);
+        final failed = expectLater(
+          _start(c, onPrint: (_) => throw error),
+          throwsA(same(error)),
+        );
+        c.onMessage(_message(print: _frames([_print('a')])));
+        await failed;
+        expect(port.terminated, 1);
+        expect(port.acknowledged, isEmpty);
+        await expectLater(c.turn(_feed), _throwsKilled);
+      },
+    );
+  }
+
   test('R1 streamed batches settle in order before the reply', () async {
     final port = _FakePort();
     final c = _accept(port);
@@ -142,10 +231,12 @@ void main() {
     expect(seen, ['a']);
     expect(completed, isFalse);
     expect(port.acknowledged, isEmpty);
+    expect(c.pendingPrintBytes, a.length + b.length);
     gate.complete();
     await turn;
     expect(seen, ['a', 'b']);
     expect(port.acknowledged, [a.length, b.length]);
+    expect(c.pendingPrintBytes, 0);
     c.kill();
   });
 
@@ -178,6 +269,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(seen, ['a']);
       expect(port.acknowledged, isEmpty);
+      expect(c.pendingPrintBytes, 0);
     },
   );
 
