@@ -3,9 +3,71 @@ library;
 
 import 'dart:convert';
 
+/// Describes published worker artifacts.
+final class WorkerManifest {
+  /// Creates a manifest description.
+  WorkerManifest({
+    required Map<String, WorkerTarget> targets,
+    this.version,
+    this.mirror,
+  }) : targets = Map.unmodifiable(targets);
+
+  /// Parses a schema-1 manifest JSON string.
+  factory WorkerManifest.fromJson(String source) {
+    final decoded = _decode(source);
+    final schema = decoded['schema'];
+    if (schema != 1) {
+      throw const WorkerManifestError('schema must be 1.');
+    }
+    final version = _optionalString(decoded, 'version');
+    final mirror = _optionalString(decoded, 'mirror');
+    final rawTargets = decoded['targets'];
+    if (rawTargets is! Map) {
+      throw const WorkerManifestError('targets must be a map.');
+    }
+    final targets = <String, WorkerTarget>{};
+    for (final entry in rawTargets.entries) {
+      if (entry.key is! String) {
+        throw const WorkerManifestError('targets keys must be strings.');
+      }
+      final targetKey = entry.key as String;
+      if (!_supportedTargets.contains(targetKey)) {
+        throw WorkerManifestError('targets.$targetKey is unsupported.');
+      }
+      final target = _stringMap(entry.value, 'targets.$targetKey');
+      final worker = target['worker'];
+      if (worker is! Map) {
+        throw WorkerManifestError('targets.$targetKey.worker must be a map.');
+      }
+      final library = target['library'];
+      if (target.containsKey('library') && library is! Map) {
+        throw WorkerManifestError('targets.$targetKey.library must be a map.');
+      }
+      targets[targetKey] = WorkerTarget(
+        worker: _artifact(worker, 'targets.$targetKey.worker'),
+        library: !target.containsKey('library')
+            ? null
+            : _artifact(library, 'targets.$targetKey.library'),
+      );
+    }
+
+    return WorkerManifest(version: version, mirror: mirror, targets: targets);
+  }
+
+  /// Release tag, when a manifest provides one.
+  final String? version;
+
+  /// Mirror URL template, when a manifest provides one.
+  final String? mirror;
+
+  /// Artifacts by host target key.
+  final Map<String, WorkerTarget> targets;
+
+  /// Returns the target for [host], or null when none is published.
+  WorkerTarget? targetFor(String host) => targets[host];
+}
+
 /// A manifest validation failure.
-// This file groups manifest support types rather than one matching declaration.
-// ignore: prefer-match-file-name
 final class WorkerManifestError implements Exception {
   /// Creates a manifest validation failure with [message].
   const WorkerManifestError(this.message);
@@ -69,70 +131,6 @@ final class WorkerTarget {
 
   /// Optional host-library artifact.
   final WorkerArtifact? library;
-}
-
-/// Describes published worker artifacts.
-final class WorkerManifest {
-  /// Creates a manifest description.
-  WorkerManifest({
-    required Map<String, WorkerTarget> targets,
-    this.version,
-    this.mirror,
-  }) : targets = Map.unmodifiable(targets);
-
-  /// Parses a schema-1 manifest JSON string.
-  factory WorkerManifest.fromJson(String source) {
-    final decoded = _decode(source);
-    final schema = decoded['schema'];
-    if (schema != 1) {
-      throw const WorkerManifestError('schema must be 1.');
-    }
-    final version = _optionalString(decoded, 'version');
-    final mirror = _optionalString(decoded, 'mirror');
-    final rawTargets = decoded['targets'];
-    if (rawTargets is! Map) {
-      throw const WorkerManifestError('targets must be a map.');
-    }
-    final targets = <String, WorkerTarget>{};
-    for (final entry in rawTargets.entries) {
-      if (entry.key is! String) {
-        throw const WorkerManifestError('targets keys must be strings.');
-      }
-      final targetKey = entry.key as String;
-      if (!_supportedTargets.contains(targetKey)) {
-        throw WorkerManifestError('targets.$targetKey is unsupported.');
-      }
-      final target = _stringMap(entry.value, 'targets.$targetKey');
-      final worker = target['worker'];
-      if (worker is! Map) {
-        throw WorkerManifestError('targets.$targetKey.worker must be a map.');
-      }
-      final library = target['library'];
-      if (target.containsKey('library') && library is! Map) {
-        throw WorkerManifestError('targets.$targetKey.library must be a map.');
-      }
-      targets[targetKey] = WorkerTarget(
-        worker: _artifact(worker, 'targets.$targetKey.worker'),
-        library: !target.containsKey('library')
-            ? null
-            : _artifact(library, 'targets.$targetKey.library'),
-      );
-    }
-
-    return WorkerManifest(version: version, mirror: mirror, targets: targets);
-  }
-
-  /// Release tag, when a manifest provides one.
-  final String? version;
-
-  /// Mirror URL template, when a manifest provides one.
-  final String? mirror;
-
-  /// Artifacts by host target key.
-  final Map<String, WorkerTarget> targets;
-
-  /// Returns the target for [host], or null when none is published.
-  WorkerTarget? targetFor(String host) => targets[host];
 }
 
 const _supportedTargets = {
