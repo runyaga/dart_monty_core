@@ -3,8 +3,8 @@
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
-final _runtimeError = isA<MontyRuntimeError>();
-final _valueError = _runtimeError.having(
+final TypeMatcher<MontyRuntimeError> _runtimeError = isA<MontyRuntimeError>();
+final TypeMatcher<MontyRuntimeError> _valueError = _runtimeError.having(
   (e) => e.exception.excType,
   'type',
   'ValueError',

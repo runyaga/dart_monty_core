@@ -14,9 +14,9 @@ import 'package:test/test.dart';
 
 import '_scripted_channel.dart';
 
-final _runtimeError = isA<MontyRuntimeError>();
-final _ok = ok();
-final _none = completeNone();
+final TypeMatcher<MontyRuntimeError> _runtimeError = isA<MontyRuntimeError>();
+final pb.ChildEvent _ok = ok();
+final pb.ChildEvent _none = completeNone();
 
 // session-mount.md: ready/pending -> cwd validation -> mount table -> Feed.
 // Wire assertions distinguish an unset cwd from the worker merely staying at /.
@@ -188,7 +188,7 @@ void main() {
       await session.feedRun('later', mount: mounted ? [first] : null);
       expect(
         channel.requests.where((r) => r.hasFeed()).map((r) => r.feed.cwd),
-        ['/explicit', mounted ? '/second' : '/', ''],
+        ['/explicit', if (mounted) '/second' else '/', ''],
       );
     });
   }

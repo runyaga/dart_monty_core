@@ -108,8 +108,10 @@ MUTANTS = [
         (HOST, "_mountTable?.close();", "// mutant: table is never closed"),
     ]),
     ("leak-rejected-feed-table", LIFE, "feed table releases capability on input rejection", [
-        (SESSION, "      host.dispose();\n      if (identical(_feedHost, host))",
-         "      if (identical(_feedHost, host))"),
+        # An unowned table acquired during preflight leaks on input refusal.
+        (SESSION, "// Prepare inputs and cwd before opening a feed's mount table.",
+         "// mutant: acquire and forget a preflight table\n"
+         "        _hostFor(_proto, _config, externalLookup, os, mount);"),
     ]),
     ("forget-snapshot-mounts", IO, "P11 restore with mount=true starts fresh table", [
         (SESSION, "final host = _hostFor(_proto, _config, externalLookup, os, mount);",
@@ -117,7 +119,7 @@ MUTANTS = [
     ]),
     ("skip-first-mount-cwd", IO,
      "cwd mounted=true start=false first mount chooses cwd", [
-        (PROTO, "return firstMount ?? defaultCwd;", "return defaultCwd;"),
+        (PROTO, "request.feed.cwd = firstMount ?? defaultCwd;", "request.feed.cwd = defaultCwd;"),
     ]),
     ("reset-restored-cwd", IO,
      "cwd mounted=false start=false load snapshot preserves saved cwd", [
@@ -131,10 +133,10 @@ MUTANTS = [
     ]),
     ("mount-table-before-cwd", CWD,
      "invalid cwd precedes overlap and sends no Feed start=false", [
-        (SESSION, """        cwd: _proto.cwdForFeed(cwd, firstMount: mount?.firstOrNull?.virtualPath),
-        host: _hostFor(_proto, _config, externalLookup, os, mount),""",
-         """        host: _hostFor(_proto, _config, externalLookup, os, mount),
-        cwd: _proto.cwdForFeed(cwd, firstMount: mount?.firstOrNull?.virtualPath),"""),
+        (SESSION, "// Prepare inputs and cwd before opening a feed's mount table.",
+         "final host = _hostFor(_proto, _config, externalLookup, os, mount);"),
+        (SESSION, "host: _hostFor(_proto, _config, externalLookup, os, mount),",
+         "host: host,"),
     ]),
     ("do-not-establish-on-sent-error", IO,
      "cwd mounted=false start=false sent syntax error establishes cwd", [

@@ -75,10 +75,14 @@ import 'package:fixnum/fixnum.dart';
 /// runs: an absolute POSIX path, its trailing slashes trimmed, that
 /// `os.getcwd()` reports and relative paths resolve against. It lasts across
 /// feeds, `os.chdir` included, until a feed switches it; without one a feed
-/// keeps the current directory, `/` for the session's first. A relative path or
+/// keeps the current directory. Until cwd is established, it defaults to the
+/// first mount's virtual path, or `/` with no mounts. A typing rejection
+/// does not establish cwd; a sent syntax/runtime error does. A successful
+/// session or snapshot restore establishes the dump's cwd. A relative path or
 /// one with a NUL throws [MontyRuntimeError] (`ValueError`) before the code
-/// runs, and the session runs on; one with an unpaired surrogate throws
-/// [ArgumentError] (upstream's `UnicodeEncodeError`) before anything else.
+/// runs or a mount table is built, and the session runs on. An unpaired
+/// surrogate throws [ArgumentError] (upstream's `UnicodeEncodeError`) before
+/// anything else.
 /// Each feed's `mount` table is tried before its OS handler. Overlay data
 /// and write budgets are discarded when the feed ends. A closed mount throws
 /// [StateError]; overlapping mounts throw [MontyRuntimeError].
@@ -385,14 +389,22 @@ final class _LeasedSession implements MontySession {
     _hold.used = true;
 
     return _withTurn(
-      () => _drive(
-        code,
-        inputs: inputs,
-        cwd: cwd,
-        host: _hostFor(_proto, _config, externalLookup, os, mount),
-        printCallback: printCallback,
-        skipTypeCheck: skipTypeCheck,
-      ),
+      () {
+        // Prepare inputs and cwd before opening a feed's mount table.
+        final request = _proto.prepareFeed(
+          code,
+          inputs ?? const {},
+          cwd: cwd,
+          firstMount: mount?.firstOrNull?.virtualPath,
+          skipTypeCheck: skipTypeCheck,
+        );
+
+        return _drive(
+          request,
+          host: _hostFor(_proto, _config, externalLookup, os, mount),
+          printCallback: printCallback,
+        );
+      },
       feed: true,
     );
   });
@@ -413,12 +425,12 @@ final class _LeasedSession implements MontySession {
 
     return _withTurn(
       () {
-        final request = feedRequest(
+        final request = _proto.prepareFeed(
           code,
           inputs ?? const {},
           cwd: cwd,
+          firstMount: mount?.firstOrNull?.virtualPath,
           skipTypeCheck: skipTypeCheck,
-          objects: _proto.objects,
         );
         final drive = _FeedDrive(
           this,
@@ -625,12 +637,9 @@ final class _LeasedSession implements MontySession {
   }
 
   Future<MontyValue> _drive(
-    String code, {
-    required Map<String, MontyValue>? inputs,
-    required String? cwd,
+    pb.ParentRequest request, {
     required HostAnswers host,
     required ProtoPrintCallback? printCallback,
-    required bool skipTypeCheck,
   }) async {
     _feedHost = host;
     try {
@@ -639,21 +648,18 @@ final class _LeasedSession implements MontySession {
       // thrown by a host callback, or by the driver after it killed the
       // worker; either passes through as is.
       final result = await _proto.drive(
-        code,
+        request,
         host,
-        inputs: inputs ?? const {},
-        cwd: cwd,
         onPrint: _printingIn(this, printCallback ?? defaultPrint),
         options: FeedOptions(
           collectPrints: false,
-          skipTypeCheck: skipTypeCheck,
           abandoned: () => _hold.isFinished,
         ),
       );
 
       return result.value;
     } finally {
-      // Also covers input rejection before ProtoSession enters its drive loop.
+      // Also covers rejection before ProtoSession enters its drive loop.
       host.dispose();
       if (identical(_feedHost, host)) _feedHost = null;
     }

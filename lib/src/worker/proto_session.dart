@@ -74,9 +74,9 @@ final class ProtoSession {
   bool _busy = false;
 
   /// Whether the worker's working directory has been established: a feed
-  /// reached it and was not refused by the type check. Until then each feed
-  /// carries [defaultCwd]; afterwards none does, and the worker keeps its
-  /// directory, `os.chdir` included (upstream's `Checkout.cwd_set`).
+  /// reached it and was not refused by the type check. Until then, an omitted
+  /// cwd chooses the first mount or [defaultCwd]. Afterwards it sends none,
+  /// keeping the worker's directory, `os.chdir` included (Checkout.cwd_set).
   bool _cwdSet = false;
 
   /// Configures a session on [channel].
@@ -123,32 +123,31 @@ final class ProtoSession {
     OsHandler? onOsCall,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
-  }) => drive(
-    code,
-    HostAnswers(
-      externalLookup: externalLookup,
-      os: onOsCall,
-      systemSleepMax: options.systemSleepMax,
-      objects: objects,
-      recorder: recorder,
+  }) => Future.sync(
+    () => drive(
+      prepareFeed(code, inputs, skipTypeCheck: options.skipTypeCheck),
+      HostAnswers(
+        externalLookup: externalLookup,
+        os: onOsCall,
+        systemSleepMax: options.systemSleepMax,
+        objects: objects,
+        recorder: recorder,
+      ),
+      onPrint: onPrint,
+      options: options,
     ),
-    inputs: inputs,
-    onPrint: onPrint,
-    options: options,
   );
 
-  /// Runs [code] as [feed] does, its suspensions answered by [host], which
-  /// is disposed when the feed ends. [FeedOptions.systemSleepMax] is
-  /// [host]'s, not [options]'. [cwd] switches the working directory first
-  /// ([feedRequest]).
+  /// Runs a prepared [initial] feed, its suspensions answered by [host],
+  /// which is disposed when the feed ends. [FeedOptions.systemSleepMax] is
+  /// [host]'s, not [options]'. Preparing before constructing [host] checks
+  /// inputs and cwd before acquiring the feed's mount table.
   ///
   /// A name lookup [host] cannot answer (a value the writer refuses) throws
   /// its error and kills the worker, as upstream discards the checkout.
   Future<FeedResult> drive(
-    String code,
+    pb.ParentRequest initial,
     HostAnswers host, {
-    Map<String, MontyValue> inputs = const {},
-    String? cwd,
     ProtoPrintCallback? onPrint,
     FeedOptions options = const FeedOptions(),
   }) => _guard(() async {
@@ -157,13 +156,7 @@ final class ProtoSession {
       collect: options.collectPrints,
       abandoned: options.abandoned,
     );
-    var request = feedRequest(
-      code,
-      inputs,
-      cwd: cwd,
-      skipTypeCheck: options.skipTypeCheck,
-      objects: objects,
-    );
+    var request = initial;
     try {
       for (;;) {
         final event = _turnEnd(await _feedTurn(request, sink));
@@ -333,6 +326,34 @@ final class ProtoSession {
     _channel.kill();
     recorder?.close();
     throw protocolError(detail);
+  }
+}
+
+/// Preparing feeds without consuming the session's cwd default.
+extension ProtoSessionFeed on ProtoSession {
+  /// Encodes inputs, then validates explicit [cwd], before the caller builds
+  /// a mount table. An omitted cwd chooses [firstMount] or `/` only while
+  /// cwd is unestablished. The sent feed's non-typing reply commits the
+  /// choice; a successful load adopts its saved cwd independently of mounts.
+  pb.ParentRequest prepareFeed(
+    String code,
+    Map<String, MontyValue> inputs, {
+    String? cwd,
+    String? firstMount,
+    bool skipTypeCheck = false,
+  }) {
+    final request = feedRequest(
+      code,
+      inputs,
+      cwd: cwd,
+      skipTypeCheck: skipTypeCheck,
+      objects: objects,
+    );
+    if (cwd == null && !_cwdSet) {
+      request.feed.cwd = firstMount ?? defaultCwd;
+    }
+
+    return request;
   }
 }
 
@@ -669,7 +690,7 @@ Future<pb.ParentRequest?> _answer(
 }
 
 /// The working directory a session's first feed switches to: upstream's
-/// default with no mounts, which a worker session never has.
+/// default when that feed has no mounts.
 const String defaultCwd = '/';
 
 /// The `Feed` request running [code] with [inputs] bound first; a host
