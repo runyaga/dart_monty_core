@@ -1,0 +1,2 @@
+No lib/spec differences or incorrect findings were observed while resolving
+fix1. The browser suspension assertion is intentionally browser-only.

@@ -61,13 +61,6 @@ void main() {
       r'^maximum recursion depth exceeded$',
     ),
     (
-      'suspensions',
-      const ResourceLimits(maxSuspensions: 0),
-      'f()',
-      'RuntimeError',
-      r'^suspension limit 0 exceeded$',
-    ),
-    (
       'sleep',
       const ResourceLimits(maxTotalSleep: Duration.zero),
       'import time\ntime.sleep(1)',
@@ -80,6 +73,46 @@ void main() {
       () => _budget(limits, code, type, message),
     );
   }
+  test(
+    'REQ-budgets-and-limits-78: configured suspension budget aborts the '
+    'second host call',
+    () async {
+      var calls = 0;
+      await Monty.withPool(
+        (pool) => pool.withSession((session) async {
+          await expectLater(
+            session.feedRun(
+              'f(); f()',
+              externalLookup: {
+                'f': MontyHostFunction('f', (_, _) {
+                  calls++;
+
+                  return const MontyNone();
+                }),
+              },
+            ),
+            throwsA(
+              isA<MontyRuntimeError>()
+                  .having(
+                    (e) => e.exception.excType,
+                    'type',
+                    'RuntimeError',
+                  )
+                  .having(
+                    (e) => e.exception.message,
+                    'message',
+                    'suspension limit 1 exceeded',
+                  ),
+            ),
+          );
+        }, limits: const ResourceLimits(maxSuspensions: 1)),
+        maxProcesses: 1,
+        feedDurationLimitGrace: null,
+        turnDurationLimitGrace: null,
+      );
+      expect(calls, 1);
+    },
+  );
   test(
     'REQ-budgets-and-limits-83: timeout bounds buffered print followed by '
     'endless execution',
