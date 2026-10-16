@@ -238,20 +238,27 @@ def derive_flags(pin_version: str, candidate_version: str, mirror_red: bool,
     return flags
 
 
-def candidate_flags(core: Path, upstream: Path) -> list[str]:
+def mirrored_paths(core: Path) -> list[str]:
+    mirror = json.loads((core / 'tool/upstream/worker-mirror.json').read_text())
+    return [item['upstream'] for item in mirror['verbatim'] + mirror['watched']]
+
+
+def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list[str]:
+    """Flags for the commit at upstream HEAD, measured against `base` (the previous
+    last_good, or the pin when none is given), so one change raises one flag once."""
     pin = load_pin(core)
+    base = base or str(pin['commit'])
     sha = git(upstream, 'rev-parse', 'HEAD')
-    mirror = command(['python3', '-I', 'tool/check_worker_mirror.py', '--candidate', sha],
-                     cwd=core, check=False)
-    print(mirror.stdout, end='')
-    files = git(upstream, 'diff', '--name-only', str(pin['commit']), sha).splitlines()
+    changed = git(upstream, 'diff', '--name-only', base, sha).splitlines()
+    mirror_changed = any(path in changed for path in mirrored_paths(core))
     proto_changed = any(path.endswith('.proto') and path.startswith('crates/monty-proto/')
-                        or path.endswith('PROTOCOL_VERSION') for path in files)
-    wanted_tree = next(item['git_tree'] for item in pin['trees']
-                       if item['path'] == 'crates/monty/test_cases')
-    tree = git(upstream, 'rev-parse', f'{sha}:crates/monty/test_cases')
-    flags = derive_flags(str(pin['version']), workspace_version(upstream), mirror.returncode != 0,
-                         proto_changed, tree != wanted_tree)
+                        or path.endswith('PROTOCOL_VERSION') for path in changed)
+    tests = 'crates/monty/test_cases'
+    tests_changed = git(upstream, 'rev-parse', f'{base}:{tests}') != git(upstream, 'rev-parse', f'{sha}:{tests}')
+    base_text = git(upstream, 'show', f'{base}:Cargo.toml')
+    base_version = re.search(r'(?ms)^\[workspace\.package\]\s*$.*?^version\s*=\s*"([^"]+)"', base_text)
+    flags = derive_flags(base_version.group(1) if base_version else str(pin['version']),
+                         workspace_version(upstream), mirror_changed, proto_changed, tests_changed)
     for flag in flags:
         print(f'FLAG {flag}')
     if not flags:
@@ -347,7 +354,7 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
         subject = git(repo, 'show', '-s', '--format=%s', sha)
         began = time.monotonic()
         command(['git', '-C', str(repo), 'checkout', '--detach', '--quiet', sha])
-        flags = candidate_flags(core, repo)
+        flags = candidate_flags(core, repo, current)
         target = workdir / 'targets' / sha
         gate_cmd = [sys.executable, '-I', str(Path(__file__).resolve()), 'gate', '--core', str(core),
                     '--upstream', str(repo), '--target-dir', str(target)]
@@ -393,6 +400,7 @@ def main() -> int:
     flags_parser = sub.add_parser('flags')
     flags_parser.add_argument('--core', type=Path, required=True)
     flags_parser.add_argument('--upstream', type=Path, required=True)
+    flags_parser.add_argument('--base')
     run_parser = sub.add_parser('run')
     run_parser.add_argument('--core', type=Path, required=True)
     run_parser.add_argument('--workdir', type=Path, required=True)
@@ -409,7 +417,7 @@ def main() -> int:
                     selected_stages(args.stages, args.parity), args.target_dir,
                     args.stages is not None)
     if args.command == 'flags':
-        candidate_flags(args.core.resolve(), args.upstream.resolve())
+        candidate_flags(args.core.resolve(), args.upstream.resolve(), args.base)
         return 0
     return run_follow(args.core.resolve(), args.workdir.resolve(),
                       args.parity.resolve() if args.parity else None, args.max_commits,
