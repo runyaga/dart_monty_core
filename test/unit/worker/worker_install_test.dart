@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_install.dart';
@@ -31,7 +32,9 @@ void main() {
   _stagingSweepTest();
   _staleLockTest();
   _concurrentInstallTest();
+  _lockRaceTests();
   _verifiedCopyTest();
+  _artifactLockTest();
 }
 
 void _archiveUrlTests() {
@@ -79,6 +82,35 @@ void _archiveUrlTests() {
       );
     });
   });
+  _traversalSegmentTests();
+}
+
+void _traversalSegmentTests() {
+  for (final mirror in [
+    'https://mirror.invalid/{tag}/{target}/{archive}',
+    'https://mirror.invalid',
+  ]) {
+    test('rejects traversal segments for $mirror', () {
+      expect(
+        () => workerArchiveUrl(
+          manifest: WorkerManifest(version: '..', targets: const {}),
+          target: '.',
+          artifact: const WorkerArtifact(
+            file: 'worker',
+            bytes: 1,
+            sha256: _aDigest,
+            archive: WorkerArchive(
+              name: '..',
+              bytes: 1,
+              sha256: _bDigest,
+            ),
+          ),
+          mirrorOverride: mirror,
+        ),
+        throwsA(isA<WorkerInstallError>()),
+      );
+    });
+  }
 }
 
 void _platformTest() {
@@ -429,19 +461,20 @@ void _decompressionLimitTest() {
 
 void _stagingSweepTest() {
   test(
-    'sweeps dead and old staging while retaining a live fresh directory',
+    'retains a live old staging directory and sweeps dead staging',
     () async {
       final mirror = await WorkerMirror.create();
       final cache = await Directory.systemTemp.createTemp('worker_cache_');
       final old = Directory('${cache.path}/.staging-$pid-old')..createSync();
-      if (!Platform.isWindows) {
-        await Process.run('touch', ['-t', '200001010000', old.path]);
-      }
+      File('${old.path}/owner').writeAsStringSync('$pid staging-token');
       final dead = Directory('${cache.path}/.staging-999999999-dead')
         ..createSync();
+      File('${dead.path}/owner').writeAsStringSync('999999999 dead-token');
       final live = Directory('${cache.path}/.staging-$pid-live')..createSync();
+      File('${live.path}/owner').writeAsStringSync('$pid live-token');
       final staleLock = Directory('${cache.path}/.stale-lock-999999999-old')
         ..createSync();
+      await Future.wait([old, dead, live, staleLock].map(_backdate));
       addTearDown(() async {
         await mirror.directory.delete(recursive: true);
         await cache.delete(recursive: true);
@@ -453,20 +486,17 @@ void _stagingSweepTest() {
           archiveUrl: mirror.fileUrl,
         ),
       );
-      if (!Platform.isWindows) expect(old.existsSync(), isFalse);
+      expect(old.existsSync(), isTrue);
       expect(dead.existsSync(), isFalse);
       expect(staleLock.existsSync(), isFalse);
       expect(live.existsSync(), isTrue);
     },
-    skip: Platform.isWindows
-        ? 'dead-owner detection is age-based on Windows'
-        : false,
   );
 }
 
 void _staleLockTest() {
   test(
-    'breaks a stale lock and times out on a live lock',
+    'breaks a dead old lock and retains a live old lock',
     () async {
       final mirror = await WorkerMirror.create();
       final cache = await Directory.systemTemp.createTemp('worker_cache_');
@@ -474,9 +504,10 @@ void _staleLockTest() {
         await mirror.directory.delete(recursive: true);
         await cache.delete(recursive: true);
       });
-      final lockPath = '${cache.path}/.lock-${mirror.artifact.archive?.sha256}';
+      final lockPath = '${cache.path}/.lock-${mirror.artifact.sha256}';
       final lock = Directory(lockPath)..createSync();
-      File('${lock.path}/owner').writeAsStringSync('999999999');
+      File('${lock.path}/owner').writeAsStringSync('999999999 dead-token');
+      await _backdate(lock);
       await installWorker(
         WorkerInstallRequest(
           artifact: mirror.artifact,
@@ -486,7 +517,8 @@ void _staleLockTest() {
       );
       await Directory(lockPath).create();
       final live = Directory(lockPath);
-      File('${live.path}/owner').writeAsStringSync('$pid');
+      File('${live.path}/owner').writeAsStringSync('$pid live-token');
+      await _backdate(live);
       final different = _withDigest(mirror.artifact, 'b' * 64);
       await expectLater(
         installWorker(
@@ -500,9 +532,6 @@ void _staleLockTest() {
         throwsA(isA<WorkerInstallError>()),
       );
     },
-    skip: Platform.isWindows
-        ? 'dead-owner detection is age-based on Windows'
-        : false,
   );
 }
 
@@ -533,6 +562,78 @@ void _concurrentInstallTest() {
   );
 }
 
+void _lockRaceTests() {
+  _replacementLockReleaseTest();
+  _deadLockContenderTest();
+}
+
+void _replacementLockReleaseTest() {
+  test(
+    'release leaves a replacement lock owned by another acquisition',
+    () async {
+      final mirror = await WorkerMirror.create();
+      final cache = await Directory.systemTemp.createTemp('worker_cache_');
+      addTearDown(() async {
+        await mirror.directory.delete(recursive: true);
+        await cache.delete(recursive: true);
+      });
+      final lock = Directory('${cache.path}/.lock-${mirror.artifact.sha256}');
+
+      await installWorker(
+        WorkerInstallRequest(
+          artifact: mirror.artifact,
+          cacheRoot: cache.path,
+          archiveUrl: mirror.fileUrl,
+          onStage: (stage) async {
+            if (stage != 'afterLock') return;
+            await lock.delete(recursive: true);
+            await lock.create();
+            await File('${lock.path}/owner').writeAsString('$pid replacement');
+          },
+        ),
+      );
+
+      expect(lock.existsSync(), isTrue);
+      expect(File('${lock.path}/owner').readAsStringSync(), '$pid replacement');
+    },
+  );
+}
+
+void _deadLockContenderTest() {
+  test(
+    'two contenders replace one dead lock without losing the final entry',
+    () async {
+      final mirror = await WorkerMirror.create();
+      final cache = await Directory.systemTemp.createTemp('worker_cache_');
+      final lock = Directory('${cache.path}/.lock-${mirror.artifact.sha256}')
+        ..createSync();
+      File('${lock.path}/owner').writeAsStringSync('999999999 dead-token');
+      await _backdate(lock);
+      addTearDown(() async {
+        await mirror.directory.delete(recursive: true);
+        await cache.delete(recursive: true);
+      });
+
+      await Future.wait([
+        for (var index = 0; index < 2; index++)
+          installWorker(
+            WorkerInstallRequest(
+              artifact: mirror.artifact,
+              cacheRoot: cache.path,
+              archiveUrl: mirror.fileUrl,
+            ),
+          ),
+      ]);
+
+      await verifyWorkerFile(
+        File(workerCacheFile(cache.path, mirror.artifact)),
+        mirror.artifact,
+      );
+      expect(lock.existsSync(), isFalse);
+    },
+  );
+}
+
 void _verifiedCopyTest() {
   test(
     'copies only a verified library into a hook-style output path',
@@ -556,16 +657,96 @@ void _verifiedCopyTest() {
       expect(destination.existsSync(), isTrue);
     },
   );
+
+  test('keeps a valid destination when source verification fails', () async {
+    final output = await Directory.systemTemp.createTemp('worker_output_');
+    final destination = File('${output.path}/library.dylib')
+      ..writeAsBytesSync([1, 2, 3]);
+    final readDestination = destination.readAsBytes;
+    final before = await readDestination();
+    final source = File('${output.path}/invalid')..writeAsBytesSync([4]);
+    addTearDown(() => output.delete(recursive: true));
+
+    await expectLater(
+      copyVerifiedLibrary(
+        source: source,
+        destination: destination,
+        artifact: const WorkerArtifact(
+          file: 'library.dylib',
+          bytes: 2,
+          sha256: _aDigest,
+        ),
+      ),
+      throwsA(isA<WorkerInstallError>()),
+    );
+    final after = await readDestination();
+    expect(after, before);
+  });
 }
+
+void _artifactLockTest() {
+  test('uses one artifact lock for distinct gzip encodings', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    final alternate = File('${mirror.directory.path}/alternate.gz');
+    final bytes = await mirror.archive.readAsBytes();
+    final headerByte = bytes.elementAtOrNull(4) ?? 0;
+    bytes[4] = (headerByte + 1) % 255;
+    await alternate.writeAsBytes(bytes, flush: true);
+    final alternateArtifact = WorkerArtifact(
+      file: mirror.artifact.file,
+      bytes: mirror.artifact.bytes,
+      sha256: mirror.artifact.sha256,
+      archive: WorkerArchive(
+        name: 'alternate.gz',
+        bytes: bytes.length,
+        sha256: sha256.convert(bytes).toString(),
+      ),
+    );
+    final invalid = Directory(workerCacheDir(cache.path, mirror.artifact))
+      ..createSync(recursive: true);
+    File('${invalid.path}/${mirror.artifact.file}').writeAsStringSync('bad');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+
+    await Future.wait([
+      installWorker(
+        WorkerInstallRequest(
+          artifact: mirror.artifact,
+          cacheRoot: cache.path,
+          archiveUrl: mirror.fileUrl,
+        ),
+      ),
+      installWorker(
+        WorkerInstallRequest(
+          artifact: alternateArtifact,
+          cacheRoot: cache.path,
+          archiveUrl: alternate.uri,
+        ),
+      ),
+    ]);
+    await verifyWorkerFile(
+      File(workerCacheFile(cache.path, mirror.artifact)),
+      mirror.artifact,
+    );
+  });
+}
+
+const _aDigest =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _bDigest =
+    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 WorkerArtifact _artifact() => const WorkerArtifact(
   file: 'worker',
   bytes: 1,
-  sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  sha256: _aDigest,
   archive: WorkerArchive(
     name: 'worker.gz',
     bytes: 1,
-    sha256: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    sha256: _bDigest,
   ),
 );
 
@@ -603,6 +784,22 @@ Future<String> _inode(File file) async {
 
   return result.stdout.toString().trim();
 }
+
+Future<void> _backdate(Directory directory) async {
+  final result = Platform.isWindows
+      ? await Process.run('powershell', [
+          '-NoProfile',
+          '-Command',
+          _windowsBackdateCommand(directory.path),
+        ])
+      : await Process.run('touch', ['-t', '200001010000', directory.path]);
+  expect(result.exitCode, 0);
+}
+
+String _windowsBackdateCommand(String path) => [
+  "(Get-Item -LiteralPath '$path').LastWriteTime=",
+  "Get-Date '2000-01-01'",
+].join();
 
 final class _RedirectServer {
   _RedirectServer._(this.server, this.archive, this.redirects);

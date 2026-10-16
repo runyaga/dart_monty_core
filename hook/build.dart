@@ -6,14 +6,28 @@ import 'package:dart_monty_core/src/worker/worker_install.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest_data.dart';
 import 'package:hooks/hooks.dart';
+import 'package:meta/meta.dart';
 
 Future<void> main(List<String> args) async {
+  await runBuild(args);
+}
+
+/// Runs the hook with injectable release data for VM-level hook tests.
+@visibleForTesting
+Future<void> runBuild(
+  List<String> args, {
+  WorkerManifest? manifest,
+  Map<String, String>? environment,
+}) async {
+  final workerManifest = manifest ?? bundledWorkerManifest;
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
-    output.dependencies.add(
-      input.packageRoot.resolve('lib/src/worker/worker_manifest_data.dart'),
+    final prebuiltLibrary = await _installPrebuilt(
+      input,
+      output,
+      manifest: workerManifest,
+      environment: environment,
     );
-    final prebuiltLibrary = await _installPrebuilt(input, output);
     // The worker cdylib, for `dart build cli` self-relaunch. Built ONLY when
     // the root package opts in; every other consumer gets no native code from
     // this hook and runs the worker executable at `workerLocation`.
@@ -45,18 +59,21 @@ Future<void> main(List<String> args) async {
 /// Returns true when a prebuilt library replaces the contributor cargo build.
 Future<bool> _installPrebuilt(
   BuildInput input,
-  BuildOutputBuilder output,
-) async {
-  final targetData = _prebuiltTarget(input);
+  BuildOutputBuilder output, {
+  required WorkerManifest manifest,
+  Map<String, String>? environment,
+}) async {
+  final targetData = _prebuiltTarget(input, manifest);
   if (targetData == null) return false;
+  _declareManifestDependency(input, output);
   var root = '<unavailable>';
   var workerUrl = Uri.parse('<unavailable>');
   try {
     final override = _workerMirror(input);
-    root = workerCacheRoot();
+    root = workerCacheRoot(environment: environment);
     final manifestTarget = targetData.manifestTarget;
     workerUrl = workerArchiveUrl(
-      manifest: bundledWorkerManifest,
+      manifest: manifest,
       target: targetData.target,
       artifact: manifestTarget.worker,
       mirrorOverride: override,
@@ -74,6 +91,7 @@ Future<bool> _installPrebuilt(
       targetData,
       root,
       override,
+      manifest,
     );
   } on Object catch (error) {
     throw StateError(
@@ -85,12 +103,19 @@ Future<bool> _installPrebuilt(
   }
 }
 
+void _declareManifestDependency(BuildInput input, BuildOutputBuilder output) {
+  output.dependencies.add(
+    input.packageRoot.resolve('lib/src/worker/worker_manifest_data.dart'),
+  );
+}
+
 Future<bool> _installLibraryIfWanted(
   BuildInput input,
   BuildOutputBuilder output,
   ({String target, Architecture arch, WorkerTarget manifestTarget}) targetData,
   String cacheRoot,
   String? mirrorOverride,
+  WorkerManifest manifest,
 ) async {
   final library = targetData.manifestTarget.library;
   if (!_wantsWorker(input) || library == null) return false;
@@ -104,19 +129,20 @@ Future<bool> _installLibraryIfWanted(
       mirrorOverride: mirrorOverride,
     ),
     library: library,
+    manifest: manifest,
   );
 
   return true;
 }
 
 ({String target, Architecture arch, WorkerTarget manifestTarget})?
-_prebuiltTarget(BuildInput input) {
+_prebuiltTarget(BuildInput input, WorkerManifest manifest) {
   final code = input.config.code;
   final os = code.targetOS;
   if (os != OS.macOS && os != OS.linux && os != OS.windows) return null;
   final arch = code.targetArchitecture;
   final target = hookWorkerHostKey(os.toString(), arch.toString());
-  final manifestTarget = bundledWorkerManifest.targetFor(target);
+  final manifestTarget = manifest.targetFor(target);
   if (manifestTarget == null) return null;
 
   return (target: target, arch: arch, manifestTarget: manifestTarget);
@@ -145,9 +171,10 @@ Future<void> _installPrebuiltLibrary(
   })
   installation,
   required WorkerArtifact library,
+  required WorkerManifest manifest,
 }) async {
   final libraryUrl = workerArchiveUrl(
-    manifest: bundledWorkerManifest,
+    manifest: manifest,
     target: installation.target,
     artifact: library,
     mirrorOverride: installation.mirrorOverride,

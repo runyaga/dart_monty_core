@@ -3,7 +3,9 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 
@@ -163,9 +165,9 @@ Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
   final existing = await _existingInstall(installedPath, request.artifact);
   if (existing != null) return existing;
   await _sweepStaging(request.cacheRoot, request.staleAfter);
-  Directory lock;
+  _HeldLock lock;
   try {
-    lock = await _acquireLock(request, archive.sha256, installedPath);
+    lock = await _acquireLock(request, request.artifact.sha256, installedPath);
   } on _InstalledWhileWaiting {
     return _alreadyInstalled(installedPath);
   }
@@ -177,7 +179,7 @@ Future<WorkerInstall> _installWithLock(
   WorkerInstallRequest request,
   WorkerArchive archive,
   String installedPath,
-  Directory lock,
+  _HeldLock lock,
 ) async {
   Directory? staging;
   try {
@@ -333,7 +335,6 @@ Future<void> copyVerifiedLibrary({
     await verifyWorkerFile(destination, artifact);
   } on Object catch (error) {
     if (temporary.existsSync()) await _deleteFileBestEffort(temporary);
-    if (destination.existsSync()) await _deleteFileBestEffort(destination);
     if (error is WorkerInstallError) rethrow;
     throw WorkerInstallError(
       'library copy to ${destination.path} failed ($error); grant write '
@@ -380,7 +381,7 @@ Future<void> _verifyInstalledFile(File file, WorkerArtifact artifact) async {
 
 bool _isExecutable(File file) => file.statSync().mode & 0x49 != 0;
 
-Future<Directory> _acquireLock(
+Future<_HeldLock> _acquireLock(
   WorkerInstallRequest request,
   String digest,
   String installedPath,
@@ -391,10 +392,13 @@ Future<Directory> _acquireLock(
     try {
       await lock.create();
       final owner = File(path.join(lock.path, 'owner'));
+      final token = _lockToken();
       await owner.create(exclusive: true);
-      await owner.writeAsString('$pid', flush: true);
-
-      return lock;
+      await owner.writeAsString('$pid $token', flush: true);
+      if (_lockOwner(lock)?.token == token) return _HeldLock(lock, token);
+      // A contender moved this just-created directory before its owner file
+      // was published. It belongs to neither acquisition at this path.
+      continue;
     } on FileSystemException {
       if (await _validFile(installedPath, request.artifact)) {
         throw _InstalledWhileWaiting(installedPath);
@@ -418,28 +422,52 @@ Future<Directory> _acquireLock(
 }
 
 Future<void> _breakStaleLock(Directory lock, Duration staleAfter) async {
-  if (!lock.existsSync() || !_isStaleLock(lock, staleAfter)) return;
+  if (!lock.existsSync() || _lockIsFresh(lock, staleAfter)) return;
   final stale = Directory(
     '${lock.parent.path}/.stale-lock-$pid-${DateTime.now().microsecondsSinceEpoch}',
   );
   try {
     await lock.rename(stale.path);
-    await _deleteBestEffort(stale);
+    if (await _isStaleLock(stale, staleAfter)) {
+      await _deleteBestEffort(stale);
+    } else {
+      await _restoreLock(lock, stale);
+    }
   } on FileSystemException {
     // Another installer won the rename race.
   }
 }
 
-bool _isStaleLock(Directory lock, Duration staleAfter) {
+bool _lockIsFresh(Directory lock, Duration staleAfter) =>
+    DateTime.now().difference(lock.statSync().modified) <= staleAfter;
+
+Future<void> _restoreLock(Directory lock, Directory stolen) async {
+  if (lock.existsSync()) return;
+  try {
+    await stolen.rename(lock.path);
+  } on FileSystemException {
+    // A contender acquired the original name after the stale check.
+  }
+}
+
+Future<bool> _isStaleLock(Directory lock, Duration staleAfter) {
   final age = DateTime.now().difference(lock.statSync().modified);
   final owner = _lockOwner(lock);
 
-  return age > staleAfter || (owner != null && !pidAlive(owner));
+  return _ownerIsStale(owner, age, staleAfter);
 }
 
-int? _lockOwner(Directory lock) {
+_Owner? _lockOwner(Directory lock) {
+  return _ownerFile(File(path.join(lock.path, 'owner')));
+}
+
+_Owner? _ownerFile(File owner) {
   try {
-    return int.tryParse(File(path.join(lock.path, 'owner')).readAsStringSync());
+    final fields = owner.readAsStringSync().trim().split(RegExp(r'\s+'));
+    final processId = int.tryParse(fields.firstOrNull ?? '');
+    if (processId == null) return null;
+
+    return _Owner(processId, fields.elementAtOrNull(1));
   } on FileSystemException {
     return null;
   }
@@ -450,6 +478,7 @@ Future<Directory> _createStaging(String root) async {
     path.join(root, '.staging-$pid-${DateTime.now().microsecondsSinceEpoch}'),
   );
   await staging.create();
+  await File(path.join(staging.path, 'owner')).writeAsString('$pid staging');
 
   return staging;
 }
@@ -587,7 +616,7 @@ Future<void> _sweepStaging(String root, Duration staleAfter) async {
     final directory = Directory(root);
     await for (final child in directory.list(followLinks: false)) {
       if (child is! Directory || !_isSweepable(child)) continue;
-      if (_isStale(child, staleAfter)) await _deleteBestEffort(child);
+      if (await _isStale(child, staleAfter)) await _deleteBestEffort(child);
     }
   } on Object {
     // Sweeping abandoned entries is opportunistic and must not block installs.
@@ -598,31 +627,51 @@ bool _isSweepable(Directory directory) => RegExp(
   r'^\.(?:staging|stale|stale-lock)-\d+-',
 ).hasMatch(path.basename(directory.path));
 
-bool _isStale(Directory directory, Duration staleAfter) {
+Future<bool> _isStale(Directory directory, Duration staleAfter) {
   final age = DateTime.now().difference(directory.statSync().modified);
-  final owner = _directoryPid(directory);
+  final owner = _directoryOwner(directory);
 
-  return age > staleAfter || owner == null || !pidAlive(owner);
+  return _ownerIsStale(owner, age, staleAfter);
 }
 
-int? _directoryPid(Directory directory) {
-  final match = RegExp(
-    r'^\.(?:staging|stale|stale-lock)-([0-9]+)-',
-  ).firstMatch(path.basename(directory.path));
+_Owner? _directoryOwner(Directory directory) =>
+    _ownerFile(File(path.join(directory.path, 'owner')));
 
-  return match == null ? null : int.tryParse(match.group(1) ?? '');
+Future<bool> _ownerIsStale(
+  _Owner? owner,
+  Duration age,
+  Duration staleAfter,
+) async {
+  if (owner == null) return age > staleAfter;
+
+  return !await pidAlive(owner.processId);
 }
 
 /// Reports whether a process can still own an installation directory.
 ///
-/// Windows cannot probe another process this way, so it always returns true
-/// there and stale-owner cleanup is age-based.
-bool pidAlive(int processId) {
-  if (Platform.isWindows) return true;
+Future<bool> pidAlive(int processId) async {
+  if (Platform.isWindows) return _windowsPidAlive(processId);
   try {
     return Process.killPid(processId, ProcessSignal.sigcont);
   } on ProcessException {
     return false;
+  }
+}
+
+Future<bool> _windowsPidAlive(int processId) async {
+  try {
+    final result = await Process.run('tasklist', [
+      '/FI',
+      'PID eq $processId',
+      '/NH',
+      '/FO',
+      'CSV',
+    ]);
+    if (result.exitCode != 0) return true;
+
+    return result.stdout.toString().contains('$processId');
+  } on ProcessException {
+    return true;
   }
 }
 
@@ -634,11 +683,10 @@ Future<void> _deleteBestEffort(Directory directory) async {
   }
 }
 
-Future<void> _releaseLock(Directory lock) async {
-  final owner = File(path.join(lock.path, 'owner'));
+Future<void> _releaseLock(_HeldLock lock) async {
   try {
-    if (owner.existsSync()) await owner.delete();
-    if (lock.existsSync()) await lock.delete();
+    if (_lockOwner(lock.directory)?.token != lock.token) return;
+    await lock.directory.delete(recursive: true);
   } on FileSystemException {
     // A replacement lock belongs to another installer.
   }
@@ -677,7 +725,32 @@ String _replaceTemplate(String template, Map<String, String> values) {
   return result;
 }
 
-String _segment(String value) => Uri.encodeComponent(value);
+String _segment(String value) {
+  if (value.isEmpty || value == '.' || value == '..') {
+    throw WorkerInstallError('URL segment $value is not a valid path segment.');
+  }
+
+  return Uri.encodeComponent(value);
+}
+
+String _lockToken() => List.generate(
+  4,
+  (_) => Random.secure().nextInt(1 << 32).toRadixString(16),
+).join();
+
+final class _HeldLock {
+  const _HeldLock(this.directory, this.token);
+
+  final Directory directory;
+  final String token;
+}
+
+final class _Owner {
+  const _Owner(this.processId, this.token);
+
+  final int processId;
+  final String? token;
+}
 
 final class _InstalledWhileWaiting implements Exception {
   const _InstalledWhileWaiting(this.path);
