@@ -1051,6 +1051,21 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
+    'an awaited OS call that is not a sleep takes no plain value',
+    feeds: ["import os\nawait os.getenv('A')"],
+    script: (f) => f
+      ..willCallOs('os.getenv', args: [_str('A'), _none], eager: true)
+      ..willReturn(_none),
+    run: (s) => s.run(0, os: s.os((_, _, _) => _str('hello'))),
+    trace: [
+      'os os.getenv(MontyString("A"), MontyNone())',
+      "MontyRuntimeError TypeError: 'str' object can't be awaited | TypeError: 'str' object can't be awaited",
+    ],
+    answers: [
+      '0 value MontyString("hello")',
+    ],
+  ),
+  Scenario(
     'a futures batch naming an id the wait did not list',
     feeds: ['t = f()\nawait t'],
     script: (f) => f
