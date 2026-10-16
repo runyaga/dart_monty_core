@@ -9,6 +9,7 @@
 #   dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --update
 
 [dart_monty_core.dart]
+AbstractFile
 ClassInstance
 ClassType
 CollectStreams
@@ -22,6 +23,7 @@ Frame
 FunctionSnapshot
 FutureSnapshot
 HostClass
+MemoryFile
 Monty
 MontyBigInt
 MontyBool
@@ -43,7 +45,6 @@ MontyFrozenSet
 MontyHostFunction
 MontyInt
 MontyList
-MontyMemoryFile
 MontyNamedTuple
 MontyNone
 MontyNotImplemented
@@ -62,33 +63,25 @@ MontyTimeZone
 MontyTuple
 MontyTypingError
 MontyValue
-MountDir
-MountMode
 NameLookupSnapshot
+OSAccess
 OsCallNotHandledException
 OsHandler
 OsPolicy
 RandomSeed
 ResourceLimits
 SourceRange
+StatResult
 TimeZone
-VfsBytes
-VfsContent
-VfsFile
-VfsText
 coroutine
 instrumentTelemetry
-memoryMountedOsHandler
-resolveOpenCall
 runMontyWorkerIfChild
 
 [dart_monty_core_testing.dart]
 FakeMontySession
 
 [unsafe_callback_file.dart]
-VfsCallbackFile
-VfsReadCallback
-VfsWriteCallback
+CallbackFile
 
 [members: src/fake_answers.dart]
 typedef FakeAnswer = ({ExternalResult? answer, int? batch, int? callId})
@@ -119,82 +112,58 @@ abstract class _FakeScripting
   _FakeScripting.willRaise: method(String excType, {String? message, Map<String, MontyValue> attributes = const {}, int? line, int? column}) -> void
   _FakeScripting.willReturn: method(MontyValue value) -> void
 
-[members: src/mount/memory_mounted_os_handler.dart]
-memoryMountedOsHandler: function({required List<MountDir> mounts, required List<VfsFile> files, OsHandler? fallthrough}) -> OsHandler
+[members: src/mount/abstract_file.dart]
+abstract interface class AbstractFile
+  AbstractFile.delete: abstract method() -> void
+  AbstractFile.deleted: abstract getter -> bool
+  AbstractFile.name: abstract getter -> String
+  AbstractFile.new: constructor()
+  AbstractFile.path: abstract getter -> String
+  AbstractFile.path=: abstract setter(String value)
+  AbstractFile.permissions: abstract getter -> int
+  AbstractFile.readContent: abstract method() -> Object
+  AbstractFile.writeContent: abstract method(Object content) -> void
 
-[members: src/mount/monty_memory_file.dart]
-final class MontyMemoryFile implements VfsFile
-  MontyMemoryFile.content: settable field VfsContent
-  MontyMemoryFile.new: factory constructor(String path, Object content, {int permissions = 0x1A4})
-  MontyMemoryFile.path: settable field String
-  MontyMemoryFile.permissions: final field int
-  MontyMemoryFile.withContent: constructor(String path, VfsContent content, {int permissions = 0x1A4})
+[members: src/mount/callback_file.dart]
+final class CallbackFile implements AbstractFile
+  CallbackFile.delete: method() -> void
+  CallbackFile.deleted: getter -> bool
+  CallbackFile.name: final field String
+  CallbackFile.new: constructor(String path, Object Function(String) read, void Function(String, Object) write, {int permissions = 0x1A4})
+  CallbackFile.path: settable field String
+  CallbackFile.permissions: settable field int
+  CallbackFile.read: settable field Object Function(String)
+  CallbackFile.readContent: method() -> Object
+  CallbackFile.toString: method() -> String
+  CallbackFile.write: settable field void Function(String, Object)
+  CallbackFile.writeContent: method(Object content) -> void
 
-[members: src/mount/mount_dir.dart]
-class MountDir
-  MountDir.memoryUsageLimit: final field int?
-  MountDir.mode: final field MountMode
-  MountDir.new: const constructor({required String virtualPath, MountMode mode = MountMode.readWrite, int? writeBytesLimit, int? memoryUsageLimit = defaultMemoryUsageLimit (100000000)})
-  MountDir.virtualPath: final field String
-  MountDir.writeBytesLimit: final field int?
+[members: src/mount/memory_file.dart]
+final class MemoryFile implements AbstractFile
+  MemoryFile.content: getter -> Object
+  MemoryFile.content=: setter(Object value)
+  MemoryFile.delete: method() -> void
+  MemoryFile.deleted: getter -> bool
+  MemoryFile.name: final field String
+  MemoryFile.new: constructor(String path, Object content, {int permissions = 0x1A4})
+  MemoryFile.path: settable field String
+  MemoryFile.permissions: settable field int
+  MemoryFile.readContent: method() -> Object
+  MemoryFile.toString: method() -> String
+  MemoryFile.writeContent: method(Object content) -> void
 
-[members: src/mount/mount_mode.dart]
-enum MountMode
-  MountMode.readOnly: static const enum value #0 MountMode
-  MountMode.readWrite: static const enum value #1 MountMode
-  MountMode.values: static const field List<MountMode>
+[members: src/mount/os_access.dart]
+final class OSAccess
+  OSAccess.call: method(String name, List<MontyValue> args, Map<String, MontyValue> kwargs) -> FutureOr@dart:async<MontyValue>
+  OSAccess.environ: final field Map<String, String>
+  OSAccess.files: final field List<AbstractFile>
+  OSAccess.new: constructor({List<AbstractFile>? files, Map<String, String>? environ, String rootDir = '/', int maxUrandomBytes = 1048576, Duration? maxSleep = const Duration(seconds: 10)})
+  OSAccess.toString: method() -> String
 
-[members: src/mount/open_call.dart]
-resolveOpenCall: function(String path, String mode, {required bool Function(String) exists, required void Function(String) truncate, required void Function(String) createIfMissing, bool Function(String) isDirectory = _alwaysFalse, void Function(String)? ensureWritable}) -> MontyFileHandle
-
-[members: src/mount/vfs_callback_file.dart]
-final class VfsCallbackFile implements VfsFile
-  VfsCallbackFile.content: getter -> VfsContent
-  VfsCallbackFile.content=: setter(VfsContent value)
-  VfsCallbackFile.new: constructor(String path, {required VfsReadCallback read, required VfsWriteCallback write, int permissions = 0x1A4})
-  VfsCallbackFile.path: settable field String
-  VfsCallbackFile.permissions: final field int
-  VfsCallbackFile.read: final field VfsReadCallback
-  VfsCallbackFile.seededPath: final field String
-  VfsCallbackFile.write: final field VfsWriteCallback
-typedef VfsReadCallback = VfsContent Function(String)
-typedef VfsWriteCallback = void Function(String, VfsContent)
-
-[members: src/mount/vfs_content.dart]
-final class VfsBytes extends VfsContent
-  VfsBytes.==: operator(Object other) -> bool
-  VfsBytes.byteLength: getter -> int
-  VfsBytes.bytes: final field Uint8List@dart:typed_data
-  VfsBytes.hashCode: getter -> int
-  VfsBytes.new: const constructor(Uint8List@dart:typed_data bytes)
-  VfsBytes.text: getter -> String
-sealed class VfsContent
-  VfsContent.byteLength: abstract getter -> int
-  VfsContent.bytes: abstract getter -> Uint8List@dart:typed_data
-  VfsContent.new: const constructor()
-  VfsContent.text: abstract getter -> String
-  VfsContent: permits final class VfsBytes extends VfsContent
-  VfsContent: permits final class VfsText extends VfsContent
-final class VfsText extends VfsContent
-  VfsText.==: operator(Object other) -> bool
-  VfsText.byteLength: getter -> int
-  VfsText.bytes: getter -> Uint8List@dart:typed_data
-  VfsText.hashCode: getter -> int
-  VfsText.new: constructor(String text)
-  VfsText.text: final field String
-
-[members: src/mount/vfs_node.dart]
-abstract interface class VfsFile implements VfsNode
-  VfsFile.content: abstract getter -> VfsContent
-  VfsFile.content=: abstract setter(VfsContent value)
-  VfsFile.new: constructor()
-  VfsFile.path: abstract getter -> String
-  VfsFile.path=: abstract setter(String value)
-  VfsFile.permissions: abstract getter -> int
-sealed class VfsNode
-  VfsNode.new: constructor()
-  VfsNode: permits abstract interface class VfsFile implements VfsNode
-  VfsNode: permits final class VfsDir extends VfsNode
+[members: src/mount/stat_result.dart]
+abstract final class StatResult
+  StatResult.dirStat: static method([int mode = 0x1ED, double? mtime]) -> MontyNamedTuple
+  StatResult.fileStat: static method(int size, [int mode = 0x1A4, double? mtime]) -> MontyNamedTuple
 
 [members: src/platform/monty_value.dart]
 final class ClassInstance<T extends Object> extends MontyValue

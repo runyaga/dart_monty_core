@@ -176,25 +176,23 @@ The name is upstream's OS function name. Throwing `OsCallNotHandledException`
 synchronously declines the call, and the worker raises its default:
 `PermissionError` for a filesystem call, `RuntimeError` for the rest.
 
-`memoryMountedOsHandler` is a ready-made in-memory filesystem with
-mount-based sandboxing:
+`OSAccess` provides an in-memory filesystem for the entire virtual namespace:
 
 ```dart
-final os = memoryMountedOsHandler(
-  mounts: [
-    const MountDir(virtualPath: '/data', mode: MountMode.readOnly),
-    const MountDir(virtualPath: '/tmp'),
-  ],
-  files: [MontyMemoryFile('/data/config.json', '{"debug": true}')],
+final os = OSAccess(
+  files: [MemoryFile('/data/config.json', '{"debug": true}')],
+  environ: {'APP_ENV': 'test'},
 );
+await session.feedRun("open('/data/config.json').read()", os: os);
 ```
 
-The default mount mode is `readWrite` (upstream's default is `overlay`, which
-this package does not have). Mount state belongs to the handler, not to a
-feed: a fresh handler per feed discards writes at the end of each, as
-upstream does. `MountDir` has two budgets: `writeBytesLimit` (bytes written
-through the mount, never refunded) and `memoryUsageLimit` (bytes held now,
-100 MB by default, refunded on delete).
+Files contain a `String` or `Uint8List`. Writes update caller-held file objects,
+and `os.files` also includes files created by Python. The handler owns its state
+across feeds; create a new handler for a fresh filesystem. Memory filesystem
+mount prefixes, read-only modes and byte budgets are no longer provided.
+Customize an operation by wrapping the callable `OSAccess` and forwarding the
+remaining calls. `StatResult.fileStat` and `dirStat` build stat responses for
+custom handlers.
 
 The clock, time zone, sleeps and random seed a session sees are set by
 `checkout(osPolicy: OsPolicy(...))`.
@@ -202,11 +200,11 @@ The clock, time zone, sleeps and random seed a session sees are set by
 #### Host-reaching virtual files
 
 `package:dart_monty_core/unsafe_callback_file.dart` is a separate library on
-purpose. `VfsCallbackFile` backs a virtual file with host callbacks, which run
+purpose. `CallbackFile` backs a virtual file with host callbacks, which run
 on the host with full access to its filesystem and network; one that touches
 the real filesystem breaks the sandbox. Importing it is a security decision.
-The separation is a signal, not a boundary: `VfsFile` is an open interface,
-so audit every `VfsFile` that is not a `MontyMemoryFile`.
+The separation is a signal, not a boundary: `AbstractFile` is an open interface,
+so audit every `AbstractFile` that is not a `MemoryFile`.
 
 ### Resource limits and type checking
 

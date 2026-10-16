@@ -77,9 +77,12 @@ SOURCES = _export_closure('lib/dart_monty_core.dart')
 # Refuse rather than check a set that collapsed. If an `export` rename or a
 # moved file shrinks the closure, every entry point silently disappears and
 # this reports a clean pass over nothing.
-if len(SOURCES) < 20:
+# F-1 deliberately removes the memory mount/content export files. The
+# resulting closure has 17 files; the analyzer golden separately pins all
+# 65 main names and every member, so this guard only detects a broken walk.
+if len(SOURCES) < 17:
     print(f'FAIL: the public export closure is only {len(SOURCES)} file(s).')
-    print('  Expected 20+. A closure that stopped resolving would examine')
+    print('  Expected 17+. A closure that stopped resolving would examine')
     print('  almost nothing and still print PASS.')
     sys.exit(1)
 # A public method declaration at class-member indentation. `_private` and

@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 import '../../_accessors.dart';
 import '../../unit/worker/_config_cases.dart';
 import '../../unit/worker/_host_cases.dart';
+import '../../unit/worker/_memory_fs_cases.dart';
 import '../../unit/worker/_os_handler_cases.dart';
 import '../../unit/worker/_print_cases.dart';
 import '../../unit/worker/_restore_cases.dart';
@@ -98,6 +99,7 @@ Future<String> _workerPath() async =>
     ((await realWorker()) as WorkerExecutable).path;
 
 void main() {
+  memoryFsSessionTests('vm', startMonty);
   expectNoWorkersLeftAfterEachTest();
 
   configOracleTests(

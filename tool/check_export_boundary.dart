@@ -123,64 +123,6 @@ const _neverPublic = [
   '${_package}src/worker/encoded_length.dart',
 ];
 
-/// Which rule set a run applies: today's (no worker code public), or the
-/// post-cutover rule with its [allowlist].
-final class _Boundary {
-  const _Boundary() : allowlist = null;
-
-  const _Boundary.postCutover(Set<String> this.allowlist);
-
-  /// The names a worker declaration may be exported under; null before the
-  /// cutover, when none may.
-  final Set<String>? allowlist;
-
-  bool get postCutover => allowlist != null;
-
-  /// Whether [uri] may not be exported or named in a public signature.
-  bool forbids(Uri uri) {
-    final text = uri.toString();
-
-    return (postCutover ? _neverPublic : _forbidden).any(text.startsWith);
-  }
-
-  /// The forbidden file [element] is declared in, if any: its library, or a
-  /// part file of it, since a part under lib/src/worker/ can declare members
-  /// of a library that lives elsewhere.
-  Uri? sourceOf(Element element) =>
-      _sources(element).where(forbids).firstOrNull;
-
-  /// Why exporting [element] as [name] breaks rule 1', or null.
-  String? unlisted(Element element, String name) {
-    final names = allowlist;
-    if (names == null || names.contains(name)) return null;
-    final worker = _sources(
-      element,
-    ).where((uri) => uri.toString().startsWith('${_package}src/worker/'));
-
-    return worker.isEmpty
-        ? null
-        : 'exports $name, declared in ${worker.first}, which is not on '
-              'the allowlist (the names sections of $_goldenPath)';
-  }
-}
-
-/// The allowlist the post-cutover rule reads from [golden]'s text: every
-/// name in a public library's section.
-Set<String> _allowlist(String golden) => {
-  for (final MapEntry(:key, :value) in _parseGolden(golden).entries)
-    if (!key.startsWith('members: ') && !key.startsWith('exports: ')) ...value,
-};
-
-final _setterSuffix = RegExp(r'=$');
-
-List<Uri> _sources(Element element) => [
-  ?element.library?.uri,
-  for (final fragment in element.fragments)
-    ?fragment.libraryFragment?.source.uri,
-];
-
-bool _isOwn(Uri uri) => uri.toString().startsWith(_package);
-
 /// What one run of the check found: the report.
 final class _CheckExportBoundary {
   /// Exported names per public library, keyed by its path under lib/.
@@ -222,6 +164,64 @@ final class _CheckExportBoundary {
   /// The conditional-directive branches analysed besides the default.
   final List<String> conditions = [];
 }
+
+/// Which rule set a run applies: today's (no worker code public), or the
+/// post-cutover rule with its [allowlist].
+final class _Boundary {
+  const _Boundary() : allowlist = null;
+
+  const _Boundary.postCutover(Set<String> this.allowlist);
+
+  /// The names a worker declaration may be exported under; null before the
+  /// cutover, when none may.
+  final Set<String>? allowlist;
+
+  bool get postCutover => allowlist != null;
+
+  /// Whether [uri] may not be exported or named in a public signature.
+  bool forbids(Uri uri) {
+    final text = uri.toString();
+
+    return (postCutover ? _neverPublic : _forbidden).any(text.startsWith);
+  }
+
+  /// The forbidden file [element] is declared in, if any: its library, or a
+  /// part file of it, since a part under lib/src/worker/ can declare members
+  /// of a library that lives elsewhere.
+  Uri? sourceOf(Element element) =>
+      _sources(element).where(forbids).firstOrNull;
+
+  /// Why exporting [element] as [name] breaks rule 1', or null.
+  String? unlisted(Element element, String name) {
+    final names = allowlist;
+    if (names == null || names.contains(name)) return null;
+    final worker = _sources(
+      element,
+    ).where((uri) => uri.toString().startsWith('${_package}src/worker/'));
+
+    return worker.isEmpty
+        ? null
+        : 'exports $name, declared in ${worker.firstOrNull}, which is not on '
+              'the allowlist (the names sections of $_goldenPath)';
+  }
+}
+
+/// The allowlist the post-cutover rule reads from [golden]'s text: every
+/// name in a public library's section.
+Set<String> _allowlist(String golden) => {
+  for (final MapEntry(:key, :value) in _parseGolden(golden).entries)
+    if (!key.startsWith('members: ') && !key.startsWith('exports: ')) ...value,
+};
+
+final _setterSuffix = RegExp(r'=$');
+
+List<Uri> _sources(Element element) => [
+  ?element.library?.uri,
+  for (final fragment in element.fragments)
+    ?fragment.libraryFragment?.source.uri,
+];
+
+bool _isOwn(Uri uri) => uri.toString().startsWith(_package);
 
 Future<void> main(List<String> args) async {
   final root = File.fromUri(Platform.script).parent.parent.path;
@@ -274,14 +274,14 @@ Future<int> _run(
     post ? _Boundary.postCutover(_allowlist(committed)) : const _Boundary(),
   );
   _checkToolSource(_toolSource(root), report);
+  final sections = report.sections;
+  final rendered = _renderGolden(sections);
   if (update) {
-    golden.writeAsStringSync(_renderGolden(report.sections));
+    golden.writeAsStringSync(rendered);
     stdout.writeln('wrote $_goldenPath');
   }
-  final diff = _diffGolden(
-    golden.existsSync() ? golden.readAsStringSync() : '',
-    report.sections,
-  );
+  final expected = update ? rendered : committed;
+  final diff = _diffGolden(expected, sections);
   if (post) stdout.writeln('rule: post-cutover (--post-cutover)');
   _print(report, diff);
   final failed = report.violations.isNotEmpty || diff.isNotEmpty;
@@ -694,7 +694,11 @@ Map<String, List<String>> _printDeclarations(Set<Element> declarations) {
   _typeNames = _TypeNames(declarations);
   final byLibrary = SplayTreeMap<String, Map<String, Element>>();
   for (final element in declarations) {
-    final path = element.library!.uri.toString().substring(_package.length);
+    final path =
+        (element.library ?? (throw StateError('Declaration has no library')))
+            .uri
+            .toString()
+            .substring(_package.length);
     byLibrary.putIfAbsent('members: $path', () => {})[_sortKey(element)] =
         element;
   }
@@ -733,20 +737,6 @@ final class _TypeNames {
   /// the same name is qualified, so `T` is never both.
   final Set<String> _typeParameters = {};
 
-  void _collectTypeParameters(Element element) {
-    if (element is TypeParameterizedElement) {
-      _typeParameters.addAll(element.typeParameters.map(_nameOf));
-    }
-    final types = [for (final (type, _) in _typesOf(element)) type];
-    while (types.isNotEmpty) {
-      final type = types.removeLast();
-      if (type is FunctionType) {
-        _typeParameters.addAll(type.typeParameters.map(_nameOf));
-      }
-      types.addAll([...?type.alias?.typeArguments, ..._componentsOf(type)]);
-    }
-  }
-
   /// Whether more than one printed declaration is named [name].
   bool isAmbiguous(String name) => (_own[name] ?? 0) > 1;
 
@@ -770,6 +760,20 @@ final class _TypeNames {
 
     return fromCore == element && !shadowed ? name : '$name@${library.uri}';
   }
+
+  void _collectTypeParameters(Element element) {
+    if (element is TypeParameterizedElement) {
+      _typeParameters.addAll(element.typeParameters.map(_nameOf));
+    }
+    final types = [for (final (type, _) in _typesOf(element)) type];
+    while (types.isNotEmpty) {
+      final type = types.removeLast();
+      if (type is FunctionType) {
+        _typeParameters.addAll(type.typeParameters.map(_nameOf));
+      }
+      types.addAll([...?type.alias?.typeArguments, ..._componentsOf(type)]);
+    }
+  }
 }
 
 /// For each public library, the declaring library of every exported name
@@ -785,9 +789,14 @@ Map<String, List<String>> _printAmbiguousExports(
       final declaration = _declarationOf(value);
       if (declaration == null) continue;
       if (!_typeNames.isAmbiguous(_nameOf(declaration))) continue;
-      final path = declaration.library!.uri.toString().substring(
-        _package.length,
-      );
+      final path =
+          (declaration.library ??
+                  (throw StateError('Declaration has no library')))
+              .uri
+              .toString()
+              .substring(
+                _package.length,
+              );
       lines.add('${key.replaceFirst(_setterSuffix, '')}: $path');
     }
     if (lines.isNotEmpty) {
@@ -819,7 +828,7 @@ List<String> _printDeclaration(Element element) {
 /// than [sealed], transitively: a subtype can reach a public type through a
 /// private ancestor.
 Iterable<String> _ancestors(InterfaceElement element, ClassElement sealed) {
-  final seen = <InterfaceElement>{element, sealed};
+  final seen = {element, sealed};
   final pending = [element];
   final heads = <String>[];
   while (pending.isNotEmpty) {
@@ -972,7 +981,9 @@ String? _printMember(Element member) {
   final name = _nameOf(member);
 
   return switch (member) {
-    ConstructorElement(enclosingElement: EnumElement()) => null,
+    ConstructorElement(enclosingElement: EnumElement()) ||
+    FieldElement(isOriginGetterSetter: true) ||
+    PropertyAccessorElement(isOriginVariable: true) => null,
     ConstructorElement() => _words([
       if (member.isExternal) 'external',
       if (member.isConst) 'const',
@@ -980,7 +991,6 @@ String? _printMember(Element member) {
       'constructor${_parameters(member.formalParameters)}',
       if (member.redirectedConstructor != null) 'redirecting',
     ], prefix: '$name: '),
-    FieldElement(isOriginGetterSetter: true) => null,
     FieldElement() => _words([
       if (member.isStatic) 'static',
       if (member.isAbstract) 'abstract',
@@ -994,7 +1004,6 @@ String? _printMember(Element member) {
       _type(member.type),
       ?_constantValue(member),
     ], prefix: '$name: '),
-    PropertyAccessorElement(isOriginVariable: true) => null,
     ExecutableElement() => _printExecutable(member, name),
     _ => throw StateError(
       'no canonical form for member ${member.kind.displayName} $name',
@@ -1218,7 +1227,7 @@ List<String> _formatterReferences(String source) {
 final _formatter = RegExp('displaystring', caseSensitive: false);
 
 final class _IdentifierVisitor extends RecursiveAstVisitor<void> {
-  _IdentifierVisitor(this._onIdentifier);
+  const _IdentifierVisitor(this._onIdentifier);
 
   final void Function(SimpleIdentifier node) _onIdentifier;
 
@@ -1386,24 +1395,24 @@ const _nestedProbe =
 const _valueAnchor = 'sealed class MontyValue {\n';
 const _partAnchor = "part 'monty_value_scalars.dart';";
 
-const _memoryFile = 'lib/src/mount/monty_memory_file.dart';
-const _memoryAnchor = 'final class MontyMemoryFile implements VfsFile {\n';
+const _memoryFile = 'lib/src/mount/memory_file.dart';
+const _memoryAnchor = 'final class MemoryFile implements AbstractFile {\n';
 const _listSignature =
-    'static List<MontyMemoryFile> listFromJson(List<Object?> jsonList)';
-const _mountFile = 'lib/src/mount/mount_dir.dart';
+    'static List<MemoryFile> listFromJson(List<Object?> jsonList)';
+const String _mountFile = _memoryFile;
 
 /// A static method whose parameter's type a control changes, added to
-/// MontyMemoryFile.
+/// MemoryFile.
 String Function(String) _listProbe(String signature) =>
     _insertAfter(_memoryAnchor, '  $signature => const [];\n');
 
-/// A public method with a bounded type parameter, added to MontyMemoryFile.
+/// A public method with a bounded type parameter, added to MemoryFile.
 String Function(String) _boundProbe(String bound) => _insertAfter(
   _memoryAnchor,
   '  T boundaryProbe<T extends $bound>(T value) => value;\n',
 );
 
-/// MontyMemoryFile extending a private class, whose public members are
+/// MemoryFile extending a private class, whose public members are
 /// inherited: [members] is that class's body.
 String Function(String) _privateBase(String members) =>
     (s) => _replaceOnce(
@@ -1412,34 +1421,31 @@ String Function(String) _privateBase(String members) =>
       'abstract class _BoundaryProbeBase {\n'
       '  const _BoundaryProbeBase();\n'
       '$members}\n'
-      'final class MontyMemoryFile extends _BoundaryProbeBase '
-      'implements VfsFile {\n',
+      'final class MemoryFile extends _BoundaryProbeBase '
+      'implements AbstractFile {\n',
     );
 
-/// A private subtype of the sealed `VfsNode` with `VfsFile`'s members,
-/// declaring [implements].
+const _shapeFile = 'lib/boundary_probe_shapes.dart';
+const _shapeSource =
+    'sealed class BoundaryNode {}\n'
+    'abstract interface class BoundaryFile implements BoundaryNode {}\n'
+    'enum BoundaryMode { readOnly, readWrite }\n'
+    'const defaultLimit = 100;\n'
+    'class BoundaryMount { '
+    'const BoundaryMount({int limit = defaultLimit}); }\n';
+
 String _hiddenNode(String implements) =>
-    '\nfinal class _BoundaryProbeNode extends VfsNode$implements {\n'
-    "  @override String path = '';\n"
-    "  @override VfsContent content = VfsText('');\n"
-    '  @override int get permissions => 0;\n'
-    '}\n';
+    '\nfinal class _BoundaryProbeNode extends BoundaryNode$implements {}\n';
 
 /// Exports `Item` from [usual], or from [other] when the condition holds.
 String _swapExport(String usual, String other) =>
     "export 'src/boundary_probe_$usual.dart'\n"
     "    if (dart.library.boundary_c) 'src/boundary_probe_$other.dart';\n";
 
-/// A private subtype of the sealed `VfsNode` that reaches `VfsFile` only
-/// through a private ancestor, which declares [implements].
 String _hiddenAncestor(String implements) =>
-    '\nabstract class _BoundaryProbeBase$implements {\n'
-    "  String path = '';\n"
-    "  VfsContent content = VfsText('');\n"
-    '  int get permissions => 0;\n'
-    '}\n'
+    '\nabstract class _BoundaryProbeBase$implements {}\n'
     'final class _BoundaryProbeHidden extends _BoundaryProbeBase\n'
-    '    implements VfsNode {}\n';
+    '    implements BoundaryNode {}\n';
 
 /// Two declarations named `Item`, both in public signatures.
 final _sameNames = <String, String Function(String)>{
@@ -1638,7 +1644,7 @@ final _controls = [
         'package:dart_monty_core/src/worker/frame.dart',
     {
       'lib/dart_monty_core.dart': (s) =>
-          "${s}export 'src/mount/mount_mode.dart'\n"
+          "${s}export 'src/mount/abstract_file.dart'\n"
           "    if (dart.library.boundary_probe) 'src/worker/frame.dart';\n",
     },
   ),
@@ -1707,10 +1713,10 @@ final _controls = [
   _Control(
     'unlisted export',
     _Verdict.golden,
-    '+ VfsAccountant',
+    '+ checkedContent',
     {
       'lib/dart_monty_core.dart': (s) =>
-          "${s}export 'src/mount/vfs_accountant.dart';\n",
+          "${s}export 'src/mount/file_content.dart';\n",
     },
   ),
   _Control(
@@ -1728,7 +1734,7 @@ final _controls = [
   _Control(
     'public member added',
     _Verdict.golden,
-    '+ MontyMemoryFile.boundaryProbe: getter -> int',
+    '+ MemoryFile.boundaryProbe: getter -> int',
     {
       _memoryFile: _insertAfter(
         _memoryAnchor,
@@ -1739,7 +1745,7 @@ final _controls = [
   _Control(
     'public member removed',
     _Verdict.golden,
-    '- MontyMemoryFile.boundaryProbe: static const field int',
+    '- MemoryFile.boundaryProbe: static const field int',
     {_memoryFile: (s) => s},
     base: {
       _memoryFile: _insertAfter(
@@ -1751,39 +1757,39 @@ final _controls = [
   _Control(
     'constructor removed',
     _Verdict.golden,
-    '- MontyMemoryFile.new: factory constructor(String path, '
+    '- MemoryFile.new: constructor(String path, '
         'Object content, {int permissions = 0x1A4})',
     {
       _memoryFile: (s) => _replaceOnce(
         s,
-        '  factory MontyMemoryFile(',
-        '  static MontyMemoryFile create(',
+        '  MemoryFile(',
+        '  MemoryFile.create(',
       ),
     },
-    alsoMentions: ['+ MontyMemoryFile.create: static method('],
+    alsoMentions: ['+ MemoryFile.create: constructor('],
   ),
   _Control(
     'parameter renamed',
     _Verdict.golden,
-    '+ MontyMemoryFile.new: factory constructor(String path, '
+    '+ MemoryFile.new: constructor(String path, '
         'Object content, {int mode = 0x1A4})',
     {
       _memoryFile: (s) => _replaceOnce(
         s,
-        '    int permissions = 0x1A4,',
-        '    int mode = 0x1A4,',
+        'this.permissions = 0x1A4',
+        'int mode = 0x1A4',
       ),
     },
-    alsoMentions: ['- MontyMemoryFile.new: factory constructor('],
+    alsoMentions: ['- MemoryFile.new: constructor('],
   ),
   _Control(
     'parameter type changed',
     _Verdict.golden,
-    '+ MontyMemoryFile.listFromJson: '
-        'static method(Iterable<Object?> jsonList) -> List<MontyMemoryFile>',
+    '+ MemoryFile.listFromJson: '
+        'static method(Iterable<Object?> jsonList) -> List<MemoryFile>',
     {
       _memoryFile: _listProbe(
-        'static List<MontyMemoryFile> listFromJson(Iterable<Object?> jsonList)',
+        'static List<MemoryFile> listFromJson(Iterable<Object?> jsonList)',
       ),
     },
     base: {_memoryFile: _listProbe(_listSignature)},
@@ -1791,8 +1797,8 @@ final _controls = [
   _Control(
     'nullability of a type argument changed',
     _Verdict.golden,
-    '+ MontyMemoryFile.listFromJson: '
-        'static method(List<Object> jsonList) -> List<MontyMemoryFile>',
+    '+ MemoryFile.listFromJson: '
+        'static method(List<Object> jsonList) -> List<MemoryFile>',
     {
       _memoryFile: _listProbe(_listSignature.replaceFirst('Object?', 'Object')),
     },
@@ -1801,30 +1807,32 @@ final _controls = [
   _Control(
     'default value changed',
     _Verdict.golden,
-    '+ MontyMemoryFile.withContent: constructor(String path, '
-        'VfsContent content, {int permissions = 0x1ED})',
+    '+ MemoryFile.new: constructor(String path, '
+        'Object content, {int permissions = 0x1ED})',
     {
       _memoryFile: (s) => _replaceOnce(
         s,
-        '    this.permissions = 0x1A4,',
-        '    this.permissions = 0x1ED,',
+        'this.permissions = 0x1A4',
+        'this.permissions = 0x1ED',
       ),
     },
   ),
   _Control(
     'const dropped from a constructor',
     _Verdict.golden,
-    '+ MountDir.new: constructor({required String virtualPath,',
+    '+ BoundaryMount.new: constructor({int limit',
     {
-      _mountFile: (s) => _replaceOnce(s, '  const MountDir({', '  MountDir({'),
+      _shapeFile: (_) =>
+          _shapeSource.replaceFirst('const BoundaryMount', 'BoundaryMount'),
     },
-    alsoMentions: ['- MountDir.new: const constructor('],
+    base: {_shapeFile: (_) => _shapeSource},
+    alsoMentions: ['- BoundaryMount.new: const constructor('],
   ),
   _Control(
     'static member made an instance member',
     _Verdict.golden,
-    '+ MontyMemoryFile.listFromJson: '
-        'method(List<Object?> jsonList) -> List<MontyMemoryFile>',
+    '+ MemoryFile.listFromJson: '
+        'method(List<Object?> jsonList) -> List<MemoryFile>',
     {
       _memoryFile: _listProbe(_listSignature.replaceFirst('static ', '')),
     },
@@ -1833,24 +1841,24 @@ final _controls = [
   _Control(
     'final class made base',
     _Verdict.golden,
-    '+ base class MontyMemoryFile',
+    '+ base class MemoryFile',
     {
       _memoryFile: (s) => _replaceOnce(
         s,
         _memoryAnchor,
-        'base class MontyMemoryFile implements VfsFile {\n',
+        'base class MemoryFile implements AbstractFile {\n',
       ),
     },
-    alsoMentions: ['- final class MontyMemoryFile'],
+    alsoMentions: ['- final class MemoryFile'],
   ),
   _Control(
     'type parameter bound changed',
     _Verdict.golden,
-    '+ MontyMemoryFile.boundaryProbe: method<T extends int>(T value) -> T',
+    '+ MemoryFile.boundaryProbe: method<T extends int>(T value) -> T',
     {_memoryFile: _boundProbe('int')},
     base: {_memoryFile: _boundProbe('num')},
     alsoMentions: [
-      '- MontyMemoryFile.boundaryProbe: method<T extends num>(T value) -> T',
+      '- MemoryFile.boundaryProbe: method<T extends num>(T value) -> T',
     ],
   ),
   _Control(
@@ -1881,7 +1889,7 @@ final _controls = [
   _Control(
     'implicit setter removed',
     _Verdict.golden,
-    '- MontyMemoryFile.boundaryProbe: late final settable field int',
+    '- MemoryFile.boundaryProbe: late final settable field int',
     {
       _memoryFile: _insertAfter(
         _memoryAnchor,
@@ -1894,7 +1902,7 @@ final _controls = [
         '  late final int boundaryProbe;\n',
       ),
     },
-    alsoMentions: ['+ MontyMemoryFile.boundaryProbe: late final field int'],
+    alsoMentions: ['+ MemoryFile.boundaryProbe: late final field int'],
   ),
   _Control(
     'parameter switched between two types of one name',
@@ -1955,57 +1963,54 @@ final _controls = [
   _Control(
     'private subtype added to a sealed class',
     _Verdict.golden,
-    '+ VfsNode: permits final class _BoundaryProbeNode extends VfsNode',
-    {
-      'lib/src/mount/vfs_node.dart': (s) =>
-          '$s\nfinal class _BoundaryProbeNode extends VfsNode {}\n',
-    },
+    '+ BoundaryNode: permits final class _BoundaryProbeNode '
+        'extends BoundaryNode',
+    {_shapeFile: (_) => '$_shapeSource${_hiddenNode('')}'},
+    base: {_shapeFile: (_) => _shapeSource},
   ),
   _Control(
     'private subtype of a sealed class stops implementing a public one',
     _Verdict.golden,
-    '- VfsNode: permits final class _BoundaryProbeNode extends VfsNode '
-        'implements VfsFile',
-    {'lib/src/mount/vfs_node.dart': (s) => '$s${_hiddenNode('')}'},
+    '- BoundaryNode: permits final class _BoundaryProbeNode '
+        'extends BoundaryNode implements BoundaryFile',
+    {_shapeFile: (_) => '$_shapeSource${_hiddenNode('')}'},
     base: {
-      'lib/src/mount/vfs_node.dart': (s) =>
-          '$s${_hiddenNode(' implements VfsFile')}',
+      _shapeFile: (_) =>
+          '$_shapeSource${_hiddenNode(' implements BoundaryFile')}',
     },
   ),
   _Control(
     'private ancestor of a sealed subtype stops implementing a public type',
     _Verdict.golden,
-    '- VfsNode: permits via abstract class _BoundaryProbeBase '
-        'implements VfsFile',
-    {'lib/src/mount/vfs_node.dart': (s) => '$s${_hiddenAncestor('')}'},
+    '- BoundaryNode: permits via abstract class _BoundaryProbeBase '
+        'implements BoundaryFile',
+    {_shapeFile: (_) => '$_shapeSource${_hiddenAncestor('')}'},
     base: {
-      'lib/src/mount/vfs_node.dart': (s) =>
-          '$s${_hiddenAncestor(' implements VfsFile')}',
+      _shapeFile: (_) =>
+          '$_shapeSource${_hiddenAncestor(' implements BoundaryFile')}',
     },
   ),
   _Control(
     'enum values reordered',
     _Verdict.golden,
-    '+ MountMode.readWrite: static const enum value #0 MountMode',
+    '+ BoundaryMode.readWrite: static const enum value #0 BoundaryMode',
     {
-      'lib/src/mount/mount_mode.dart': (s) => _replaceOnce(
-        _replaceOnce(s, '  readOnly,\n', ''),
-        '  readWrite,\n',
-        '  readWrite,\n  readOnly,\n',
+      _shapeFile: (_) => _shapeSource.replaceFirst(
+        'readOnly, readWrite',
+        'readWrite, readOnly',
       ),
     },
+    base: {_shapeFile: (_) => _shapeSource},
   ),
   _Control(
     'constant named by a default value changed',
     _Verdict.golden,
-    'int? memoryUsageLimit = defaultMemoryUsageLimit (200000000)})',
+    'int limit = defaultLimit (200)',
     {
-      'lib/src/mount/vfs_limits.dart': (s) => _replaceOnce(
-        s,
-        'defaultMemoryUsageLimit = 100000000;',
-        'defaultMemoryUsageLimit = 200000000;',
-      ),
+      _shapeFile: (_) =>
+          _shapeSource.replaceFirst('defaultLimit = 100', 'defaultLimit = 200'),
     },
+    base: {_shapeFile: (_) => _shapeSource},
   ),
   _Control(
     'conditional exports swap two same-named types between libraries',
@@ -2170,8 +2175,10 @@ Future<int> _selfTest(
   var count = 1;
   if (shard.isNotEmpty) {
     final parts = shard.split('/');
-    final i = parts.length == 2 ? int.tryParse(parts[0]) : null;
-    final n = parts.length == 2 ? int.tryParse(parts[1]) : null;
+    final i = parts.length == 2 ? int.tryParse(parts.firstOrNull ?? '') : null;
+    final n = parts.length == 2
+        ? int.tryParse(parts.elementAtOrNull(1) ?? '')
+        : null;
     if (i == null ||
         n == null ||
         n < 1 ||

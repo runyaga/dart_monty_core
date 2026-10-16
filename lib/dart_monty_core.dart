@@ -18,15 +18,10 @@ library;
 
 // Every export line names what it exports, so a name added to a file under
 // src/ stays internal until it is listed here.
-export 'src/mount/memory_mounted_os_handler.dart' show memoryMountedOsHandler;
-export 'src/mount/monty_memory_file.dart' show MontyMemoryFile;
-export 'src/mount/mount_dir.dart' show MountDir;
-export 'src/mount/mount_mode.dart' show MountMode;
-export 'src/mount/open_call.dart' show resolveOpenCall;
-export 'src/mount/vfs_content.dart' show VfsBytes, VfsContent, VfsText;
-// `VfsAccountant` (src/mount/vfs_accountant.dart) is deliberately NOT
-// exported: it is the handler's internal bookkeeping.
-export 'src/mount/vfs_node.dart' show VfsFile;
+export 'src/mount/abstract_file.dart' show AbstractFile;
+export 'src/mount/memory_file.dart' show MemoryFile;
+export 'src/mount/os_access.dart' show OSAccess;
+export 'src/mount/stat_result.dart' show StatResult;
 export 'src/platform/monty_value.dart'
     show
         MontyBigInt,

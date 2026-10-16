@@ -427,6 +427,49 @@ void main() {
   });
 
   group('wrapper semantics', () {
+    test('calling a non-callable field reports its Python type', () {
+      // Python's callable-value TypeError names the value's type, not the
+      // holder's class or Dart's Monty wrapper type.
+      for (final (value, typeName) in <(Object, String)>[
+        (const MontyInt(7), 'int'),
+        (MontyBigInt(BigInt.one << 80), 'int'),
+        (const MontyFloat(1.5), 'float'),
+        (const MontyString('text'), 'str'),
+        (const MontyBool(true), 'bool'),
+        (const MontyNone(), 'NoneType'),
+        (const MontyList([]), 'list'),
+        (const MontyTuple([]), 'tuple'),
+        (const MontyDict([]), 'dict'),
+        (_box(2), 'Box'),
+        (ClassType(_boxClass), 'type'),
+      ]) {
+        final holder = ClassInstance(
+          _Box(1),
+          classType: ClassType(
+            HostClass('Holder', attributes: {'item': () => value}),
+          ),
+          policies: const (
+            eagerAttrs: null,
+            lazyAttrs: null,
+            allowedMethods: ['item'],
+          ),
+        );
+        expect(
+          () => holder.callMethod('item', const [], const {}),
+          throwsA(
+            isA<ExternalException>()
+                .having((e) => e.excType, 'excType', 'TypeError')
+                .having(
+                  (e) => e.message,
+                  'message',
+                  "'$typeName' object is not callable",
+                ),
+          ),
+          reason: typeName,
+        );
+      }
+    });
+
     test('a policy is copied: a later change to the list exposes nothing', () {
       final allowed = ['n'];
       final box = ClassInstance(
@@ -698,14 +741,23 @@ void main() {
         _constClass,
         policies: const (
           eagerAttrs: null,
-          lazyAttrs: ['KIND'],
+          lazyAttrs: ['KIND', 'OTHER'],
           allowedMethods: null,
         ),
       );
       expect(type.lookupLazyAttr('KIND'), const MontyString('box'));
       expect(
+        // Policy permission does not manufacture a missing class attribute.
         () => type.lookupLazyAttr('OTHER'),
-        throwsA(isA<ExternalException>()),
+        throwsA(
+          isA<ExternalException>()
+              .having((e) => e.excType, 'excType', 'AttributeError')
+              .having(
+                (e) => e.message,
+                'message',
+                "type object 'Box' has no attribute 'OTHER'",
+              ),
+        ),
       );
     });
 

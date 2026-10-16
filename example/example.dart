@@ -48,8 +48,12 @@ Future<void> main(List<String> args) async {
         externalLookup: {
           'shout': MontyHostFunction(
             'shout',
-            (args, _) =>
-                MontyString((args[0] as MontyString).value.toUpperCase()),
+            (values, _) => MontyString(
+              ((values.firstOrNull as MontyString?) ??
+                      (throw StateError('Missing shout argument')))
+                  .value
+                  .toUpperCase(),
+            ),
           ),
         },
       );
@@ -59,10 +63,15 @@ Future<void> main(List<String> args) async {
       final fetched = await session.feedRun(
         'fetch(1) + fetch(2)',
         externalLookup: {
-          'fetch': MontyHostFunction('fetch', (args, _) async {
+          'fetch': MontyHostFunction('fetch', (values, _) async {
             await Future<void>.delayed(const Duration(milliseconds: 1));
 
-            return MontyInt((args[0] as MontyInt).value * 10);
+            return MontyInt(
+              ((values.firstOrNull as MontyInt?) ??
+                          (throw StateError('Missing fetch argument')))
+                      .value *
+                  10,
+            );
           }),
         },
       );
@@ -81,19 +90,16 @@ Future<void> main(List<String> args) async {
       // ── 5. VFS: sandboxed in-memory filesystem ────────────────────────────
       // Writes update the very objects passed in, so Dart reads the result
       // with no serialisation.
-      final input = MontyMemoryFile('/data/input.txt', 'hello from Dart');
-      final output = MontyMemoryFile('/data/output.txt', '');
-      final handler = memoryMountedOsHandler(
-        mounts: const [MountDir(virtualPath: '/data')],
-        files: [input, output],
-      );
+      final input = MemoryFile('/data/input.txt', 'hello from Dart');
+      final output = MemoryFile('/data/output.txt', '');
+      final handler = OSAccess(files: [input, output]);
       await session.feedRun('''
 from pathlib import Path
 text = Path("/data/input.txt").read_text()
 Path("/data/output.txt").write_text(text.upper())
 ''', os: handler);
-      print(output.content.text);
-      _check(output.content.text == 'HELLO FROM DART', 'VFS write');
+      print(output.content);
+      _check(output.content == 'HELLO FROM DART', 'VFS write');
     });
   });
 }
