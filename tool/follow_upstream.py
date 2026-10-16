@@ -205,7 +205,7 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
                                           '--core', str(core), '--out', str(out)])
                         print(result.stdout, end='')
                         result = command(['python3', '-I', str(parity / 'tool/parity/score.py'), str(out),
-                                          '--json', str(out / 'score.json'), '--markdown', str(out / 'score.md'),
+                                          '--backends', 'vm', '--json', str(out / 'score.json'), '--markdown', str(out / 'score.md'),
                                           '--assert-current', str(parity / 'tool/parity/baseline-current.json')])
                         print(result.stdout, end='')
             except (OSError, ValueError, subprocess.CalledProcessError) as exc:
