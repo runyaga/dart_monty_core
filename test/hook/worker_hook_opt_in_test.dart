@@ -78,7 +78,7 @@ Directory _emptyRoot() {
 void main() {
   for (final os in [OS.android, OS.iOS]) {
     test(
-      'unsupported mobile targets ignore invalid worker opt-in',
+      '${os.name} target ignores invalid worker opt-in',
       () async {
         final output = await _runHook(
           _emptyRoot(),
