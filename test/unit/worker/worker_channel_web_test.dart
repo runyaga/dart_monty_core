@@ -480,7 +480,11 @@ void main() {
         isA<MontyCrashedError>().having(
           (e) => e.toString(),
           'message',
-          startsWith('failed to spawn monty worker: Worker $url: '),
+          // Firefox's error event for a refused Worker carries no message.
+          anyOf(
+            startsWith('failed to spawn monty worker: Worker $url: '),
+            contains('crashed while waiting for a reply'),
+          ),
         ),
       ),
     );
