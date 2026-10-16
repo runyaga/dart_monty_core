@@ -30,8 +30,8 @@
 # unloaded library — so this script refuses a tracefile that does not account
 # for every lib/**/*.dart.
 #
-# Baseline: tool/coverage-baseline.json, recorded on main after each merge by
-# tool/record_coverage_baseline.sh. A PR does NOT commit it when coverage rises:
+# Baseline: tool/coverage-baseline.json, refreshed once per release (in the
+# release PR) by tool/record_coverage_baseline.sh --no-commit. A PR does NOT commit it when coverage rises:
 # the check fails only on a decrease, measured against the base branch's copy.
 # =============================================================================
 set -uo pipefail
@@ -95,6 +95,16 @@ self_test() {
   reset; git -C "$repo" rm -q lib/src/a.dart; echo '// d' > "$repo/lib/src/d.dart"; commit
   trace lib/src/b.dart:2/4 lib/src/c.dart:1/4 lib/src/d.dart:0/8
   run "deletes a file, adds an untested one: TOTAL DECREASE" 1 "$base" "TOTAL DECREASE"
+  # The baseline still lists a file an earlier merge deleted (it is refreshed
+  # once per release): absent from the base ref, so DELETED, not VANISHED.
+  reset; git -C "$repo" rm -q lib/src/a.dart; commit
+  local base2; base2="$(git -C "$repo" rev-parse HEAD)"
+  echo '// b2' >> "$repo/lib/src/b.dart"; commit
+  trace lib/src/b.dart:2/4 lib/src/c.dart:1/4
+  run "baseline lists a file deleted before the base ref: passes" 0 "$base2" "DELETED"
+  run "the same without a base ref: VANISHED" 1 "" "VANISHED"
+  git -C "$repo" checkout -q -f "$base2" && git -C "$repo" clean -qfd; /bin/rm "$repo/lib/src/b.dart"; trace lib/src/c.dart:1/4
+  run "stale deletion does not hide a vanished file the base keeps" 1 "$base2" "VANISHED"
   reset; git -C "$repo" mv lib/src/a.dart lib/src/a2.dart; commit
   trace lib/src/a2.dart:4/4 lib/src/b.dart:2/4 lib/src/c.dart:1/4
   run "renames a file: the old path DELETED, the new one counted" 0 "$base" "DELETED"
@@ -223,7 +233,8 @@ if [ -n "${RATCHET_BASE_REF:-}" ] && [ "$UPDATE" = "0" ]; then
   fi
 fi
 
-BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" DELETED="$DELETED" python3 - <<'PY'
+BASELINE="$BASELINE" UPDATE="$UPDATE" TRACEFILE="$TRACEFILE" DELETED="$DELETED" \
+  BASE_REF="${RATCHET_BASE_REF:-}" python3 - <<'PY'
 import json, os, sys
 
 root = os.getcwd()
@@ -332,6 +343,22 @@ violations = []
 
 deleted = sorted(p for p in os.environ['DELETED'].splitlines()
                  if p in bf and not os.path.exists(p))
+# The baseline is refreshed once per release, so it can still list a file an
+# earlier, already merged change deleted. A baseline file that is absent from
+# the base ref's tree and from the working tree was deleted before this change:
+# DELETED as well, never VANISHED. Only with a base ref; without one every
+# absent baseline file stays VANISHED.
+base_ref = os.environ.get('BASE_REF', '')
+if base_ref and not update:
+    import subprocess
+    for p in sorted(bf):
+        if p in deleted or os.path.exists(p):
+            continue
+        r = subprocess.run(['git', 'cat-file', '-e', f'{base_ref}:{p}'],
+                           capture_output=True)
+        if r.returncode != 0:
+            deleted.append(p)
+    deleted.sort()
 # The base total over the baseline files this PR keeps (F3). Unchanged when
 # it deletes none, so every other PR is compared exactly as before.
 if deleted:
@@ -372,7 +399,7 @@ if deleted:
           f"excluded")
 for d in deleted:
     print(f"  DELETED       {d}: was {bf[d]['pct']}% "
-          f"({bf[d]['hit']}/{bf[d]['found']}), removed by this change")
+          f"({bf[d]['hit']}/{bf[d]['found']}), removed from lib/")
 for n in new_files:
     print(f"  new file: {n} at {by_file[n]['pct']}% "
           f"({by_file[n]['hit']}/{by_file[n]['found']})")

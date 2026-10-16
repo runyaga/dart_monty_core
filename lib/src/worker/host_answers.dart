@@ -400,7 +400,15 @@ final class HostAnswers {
     final reader = checkCallArgs(call, objects.lookup);
     if (call.hasObjectId()) return _methodCall(this, call, reader);
     final name = call.functionName;
-    final entry = externalLookup[name];
+    final MontyValue? entry;
+    try {
+      entry = externalLookup[name];
+    } on Object catch (error) {
+      return _resume(
+        call.callId,
+        pb.ExtFunctionResult(error: raisedFrom(error)),
+      );
+    }
     if (entry == null) {
       return _resume(call.callId, pb.ExtFunctionResult(notFound: name));
     }

@@ -31,14 +31,13 @@ Future<void> runBuild(
     // The worker cdylib, for `dart build cli` self-relaunch. Built ONLY when
     // the root package opts in; every other consumer gets no native code from
     // this hook and runs the worker executable at `workerLocation`.
-    if (!_wantsWorker(input)) return;
-    if (prebuiltLibrary) return;
-
     final code = input.config.code;
     final os = code.targetOS;
     final arch = code.targetArchitecture;
     // Graceful fallback for iOS/Android: no native assets.
     if (os != OS.macOS && os != OS.linux && os != OS.windows) return;
+    if (!_wantsWorker(input)) return;
+    if (prebuiltLibrary) return;
 
     final nativeDir = input.packageRoot.resolve('native/');
     final triple = _rustTriple(os, arch);

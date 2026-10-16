@@ -32,12 +32,31 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '_browser_family.dart';
 import '_display_cases.dart';
 import '_kind_round_trips.dart';
 
 /// The package's lib/ as the test server exposes it.
 const _assets = 'packages/dart_monty_core/assets';
 const _workerUrl = '$_assets/dart_monty_core_worker.js';
+
+@JS('navigator.userAgent')
+external String get _userAgent;
+
+/// True, after marking the test skipped, when [ch] runs without JSPI in a
+/// test of the JSPI dispatch. Chromium has JSPI, so there a missing probe
+/// stays a failure.
+bool _skipForMissingJspi(WorkerChannel ch, {required bool noJspi}) {
+  if (noJspi ||
+      ch.jspi ||
+      browserFamily(_userAgent) == BrowserFamily.chromium) {
+    return false;
+  }
+  ch.kill();
+  markTestSkipped('this browser has no JSPI');
+
+  return true;
+}
 
 /// Every channel a test opened. Each test must leave all of them dead.
 final _opened = <WorkerChannel>[];
@@ -185,9 +204,12 @@ void main() {
     return (ch.turn, ch.close);
   });
 
-  test('JSPI is detected on Chrome; protocol matches ($backend)', () async {
+  test('the Worker runs code and its protocol matches ($backend)', () async {
     final ch = await _spawn(cache);
-    expect(ch.jspi, isTrue);
+    // Chromium has JSPI; Firefox and Safari take the fallback dispatch.
+    if (browserFamily(_userAgent) == BrowserFamily.chromium) {
+      expect(ch.jspi, isTrue);
+    }
     expect(ch.protocol, workerProtocolVersion);
     await _open(ch);
     expect(await _evalInt(ch, '1 + 1'), 2);
@@ -327,6 +349,8 @@ void main() {
       test('R1 prints $size bytes ($mode, $backend)', () async {
         final ch = await _spawn(cache, forceNoJspi: noJspi);
         addTearDown(ch.kill);
+        if (_skipForMissingJspi(ch, noJspi: noJspi)) return;
+        expect(ch.jspi, !noJspi);
         await _open(ch);
         var count = 0;
         final gate = Completer<void>();
@@ -364,6 +388,7 @@ void main() {
     test('a wasm trap is crashedError(vanished); a replacement '
         'Worker works ($mode, $backend)', () async {
       final ch = await _spawn(cache, forceNoJspi: noJspi);
+      if (_skipForMissingJspi(ch, noJspi: noJspi)) return;
       expect(ch.jspi, !noJspi);
       await _open(
         ch,
@@ -401,6 +426,7 @@ void main() {
       const window = 4 * 1024 * 1024;
       final ch = await _spawn(cache);
       addTearDown(ch.kill);
+      if (_skipForMissingJspi(ch, noJspi: false)) return;
       expect(ch.jspi, isTrue);
       final config = _configure();
       config.configure.printFlushIntervalMs = 0;

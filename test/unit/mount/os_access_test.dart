@@ -524,7 +524,7 @@ void _defaultsCase1() {
 
 void _customFiles() {
   test(
-    'REQ-VfsFile-5,7,8 external implementation uses only AbstractFile',
+    'external implementation uses only AbstractFile',
     () async {
       final file = CustomFile();
       final fs = OSAccess(files: [file]);

@@ -13,9 +13,12 @@
 #   2. A PR does not edit CHANGELOG.md, unless it has the `changelog-assembly`
 #      label (the assembly or release PR). That label also allows removing
 #      fragments already on the base branch, and waives nothing else.
-#   3. A PR does not touch tool/coverage-baseline.json. Main records it after
-#      merge (tool/record_coverage_baseline.sh); a PR-edited floor could be
-#      lowered for the next PR or set above measured coverage.
+#   3. A PR does not touch tool/coverage-baseline.json, unless it has the
+#      `changelog-assembly` label (the release PR). The baseline is refreshed
+#      once per release, from main's own CI coverage
+#      (tool/record_coverage_baseline.sh --no-commit); a PR-edited floor could
+#      be lowered for the next PR or set above measured coverage, and the
+#      coverage ratchet still refuses a decrease in every PR.
 #   4. Every changes/*.md in the tree is well formed: it starts with a
 #      `### <Section>` header (Added, Changed, Fixed, Breaking, Removed,
 #      Deprecated, Security or Internal) and every section has a body.
@@ -125,10 +128,10 @@ check_pr() {
     echo "      assembly or release PR carries the changelog-assembly label.)"
     rc=1
   fi
-  if [ "$cov" = 1 ]; then
-    echo "FAIL: this PR edits tool/coverage-baseline.json. PRs do not touch it;"
-    echo "      the baseline is recorded on main after merge, and the coverage"
-    echo "      ratchet already passes when coverage rises."
+  if [ "$cov" = 1 ] && ! has_label changelog-assembly; then
+    echo "FAIL: this PR edits tool/coverage-baseline.json. Only the release PR"
+    echo "      (changelog-assembly label) refreshes it, once per release;"
+    echo "      the coverage ratchet already passes when coverage rises."
     rc=1
   fi
   if [ "$oldfrag" = 1 ] && ! has_label changelog-assembly; then
@@ -209,6 +212,7 @@ self_test() {
   run "hidden fragment: must FAIL" 1 '[]' ''
   reset; mkdir -p "$tmp/tool"; echo '{}' > "$tmp/tool/coverage-baseline.json"; commit
   run "adds/edits the coverage baseline: must FAIL" 1 '["no-changelog"]' ''
+  run "adds/edits the coverage baseline, assembly label" 0 '["changelog-assembly"]' ''
   reset; echo b >> "$tmp/lib/a.dart"; mkdir "$tmp/changes/sub"; printf '### Added\n\n- x\n' > "$tmp/changes/sub/n.md"; commit
   run "nested fragment: must FAIL" 1 '["no-changelog"]' ''
   # Fragments already on the base branch (a new base holding old.md).
