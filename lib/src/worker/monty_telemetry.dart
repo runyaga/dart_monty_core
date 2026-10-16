@@ -42,6 +42,10 @@ abstract interface class MontyTelemetry {
 
   /// Records a raw measurement; [context] is explicitly empty (null).
   /// The adapter must use its SDK's empty context, not the ambient span.
+  // The approved adapter shape mirrors upstream's metric record (name, kind,
+  // unit, description, value, attributes, context); bundling would add a
+  // public type the surface delta does not allow.
+  // ignore: number-of-parameters
   void recordMetric(
     String name,
     String kind,
