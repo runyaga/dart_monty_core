@@ -7,7 +7,8 @@ library;
 
 import 'dart:io';
 
-import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/dart_monty_core.dart'
+    show MontyCrashedError, MountDir;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
@@ -21,10 +22,14 @@ void main() {
       throw ArgumentError('worker symbol is absent');
     }
 
-    expect(selfRelaunchAvailable(resolveWorker: missingWorker), isFalse);
+    final unarmed = selfRelaunchAvailable(resolveWorker: missingWorker);
+    expect(unarmed, isFalse);
     expect(resolutions, 0, reason: 'unarmed apps must not load the library');
     runMontyWorkerIfChild(const ['--other']);
-    expect(selfRelaunchAvailable(resolveWorker: missingWorker), isFalse);
+    final armedWithoutWorker = selfRelaunchAvailable(
+      resolveWorker: missingWorker,
+    );
+    expect(armedWithoutWorker, isFalse);
     expect(resolutions, 1);
     await expectLater(
       locateWorker(
