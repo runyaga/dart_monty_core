@@ -4,8 +4,8 @@
   "assets": {
     "dart_monty_core_worker.wasm": {
       "bytes": 16374307,
-      "sha256": "0a2cfbc9c663fa9e316ca210002b364f68ffc7752eda4d1da811c213f1213609"
+      "sha256": "fca5a6676c638326ddb66e08eb2d8be6572e0794023155131600be3bf59da9dd"
     }
   },
-  "worker_source_sha256": "5c1fedab33ad3f4c33866d2ded9c65e09cd86221f1407f44093535089467fd72"
+  "worker_source_sha256": "a963e9f6a3d748d375eac058bd69fe4d3c6fd29857bc6cbf13d522cdf9e1beed"
 }
