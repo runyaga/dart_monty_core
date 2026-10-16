@@ -124,6 +124,14 @@ final class MontyDateTime extends MontyValue {
               : _instantSeconds == other._instantSeconds &&
                     microsecond == other.microsecond));
 
+  @override
+  String toString() =>
+      'MontyDateTime($year-${month.toString().padLeft(2, '0')}'
+      '-${day.toString().padLeft(2, '0')}T'
+      '${hour.toString().padLeft(2, '0')}:'
+      '${minute.toString().padLeft(2, '0')}:'
+      '${second.toString().padLeft(2, '0')})';
+
   bool _naiveEquals(MontyDateTime o) =>
       o.year == year &&
       o.month == month &&
@@ -147,14 +155,6 @@ final class MontyDateTime extends MontyValue {
   int get hashCode => offsetSeconds == null
       ? Object.hash(year, month, day, hour, minute, second, microsecond)
       : Object.hash(_instantSeconds, microsecond);
-
-  @override
-  String toString() =>
-      'MontyDateTime($year-${month.toString().padLeft(2, '0')}'
-      '-${day.toString().padLeft(2, '0')}T'
-      '${hour.toString().padLeft(2, '0')}:'
-      '${minute.toString().padLeft(2, '0')}:'
-      '${second.toString().padLeft(2, '0')})';
 
   @override
   Map<String, Object?> _toJson() => {
