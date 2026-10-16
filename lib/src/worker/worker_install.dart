@@ -58,6 +58,7 @@ Future<WorkerInstall> _installWithLock(
       staging,
       request.cacheRoot,
       request.artifact,
+      request.onStage,
     );
     if (!published) {
       return WorkerInstall(
@@ -132,6 +133,7 @@ Future<void> _stageWorker(
   );
   final stagedFile = File(path.join(staging.path, artifact.file));
   await stagedFile.writeAsBytes(workerBytes, flush: true);
+  await request.onStage?.call('beforeChmod');
   await _makeExecutable(stagedFile);
   await _verifyInstalledFile(stagedFile, artifact);
 }
@@ -259,7 +261,12 @@ Future<_HeldLock?> _acquireLock(
     if (await _validFile(installedPath, request.artifact)) {
       return null;
     }
-    await _breakStaleLock(lock, digest, request.lockStaleAfter);
+    await _breakStaleLock(
+      lock,
+      digest,
+      request.lockStaleAfter,
+      request.onStage,
+    );
     _checkLockDeadline(lock, deadline);
     await Future<void>.delayed(const Duration(milliseconds: 50));
   }
@@ -283,6 +290,7 @@ Future<_HeldLock?> _tryAcquireLock(
     () async => request.onStage?.call('beforeLockOwner'),
   );
   if (!ownsLock) return null;
+  await request.onStage?.call('afterLockOwner');
   if (_lockOwner(lock)?.token == token) {
     return (directory: lock, token: token);
   }
@@ -296,11 +304,13 @@ Future<void> _breakStaleLock(
   Directory lock,
   String digest,
   Duration staleAfter,
+  Future<void> Function(String stage)? onStage,
 ) async {
   final held = await _tryAcquireBreakLock(lock.parent, digest);
   if (held == null) return;
   try {
     if (!lock.existsSync() || !await _isStaleLock(lock, staleAfter)) return;
+    await onStage?.call('beforeMoveStaleLock');
     await _moveAndDeleteStaleLock(lock);
   } finally {
     await _releaseLock(held);
@@ -425,6 +435,7 @@ Future<Directory> _createStaging(WorkerInstallRequest request) async {
     () async => request.onStage?.call('beforeStagingOwner'),
   );
   if (!ownsStaging) {
+    await _deleteBestEffort(staging);
     throw WorkerInstallError(
       'cache $root already contains staging owner metadata; retry the '
       'installation.',
@@ -532,6 +543,7 @@ Future<bool> _publishStaging(
   Directory staging,
   String root,
   WorkerArtifact artifact,
+  Future<void> Function(String stage)? onStage,
 ) async {
   final finalDirectory = Directory(workerCacheDir(root, artifact));
   Directory? stale;
@@ -547,6 +559,7 @@ Future<bool> _publishStaging(
     await finalDirectory.rename(stale.path);
   }
   try {
+    await onStage?.call('beforePublishRename');
     await staging.rename(finalDirectory.path);
   } on FileSystemException {
     if (await _validFile(workerCacheFile(root, artifact), artifact)) {
@@ -610,21 +623,19 @@ Future<bool> pidAlive(int processId) async {
 }
 
 Future<bool> _windowsPidAlive(int processId) async {
-  try {
-    final result = await Process.run('tasklist', [
-      '/FI',
-      'PID eq $processId',
-      '/NH',
-      '/FO',
-      'CSV',
-    ]);
-    if (result.exitCode != 0) return true;
+  final result = await Process.run('tasklist', _taskListArguments(processId));
 
-    return result.stdout.toString().contains('$processId');
-  } on ProcessException {
-    return true;
-  }
+  return result.exitCode != 0 ||
+      result.stdout.toString().contains('$processId');
 }
+
+List<String> _taskListArguments(int processId) => [
+  '/FI',
+  'PID eq $processId',
+  '/NH',
+  '/FO',
+  'CSV',
+];
 
 Future<void> _deleteBestEffort(Directory directory) async {
   try {
