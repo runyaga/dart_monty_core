@@ -15,6 +15,9 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_core_dump_fixture.g.dart';
+import '_dump_oracle.g.dart';
+
 typedef _Start = Future<Monty> Function(PoolOptions);
 
 /// An idle dump's header: `MONTY\0` then the version, little-endian.
@@ -34,6 +37,7 @@ void boundarySessionTests(
   _dumpBytes(label, start);
   _dumpLimits(label, start);
   _osPaths(label, start);
+  _crossBinding(label, start);
 }
 
 Future<Monty> _pool(
@@ -399,5 +403,37 @@ void _osPaths(String label, _Start start) {
       await session.feedRun("Path('/data/..').exists()", os: fs.call),
       const MontyBool(true),
     );
+  });
+}
+
+Uint8List _unhex(String hex) => Uint8List.fromList([
+  for (var i = 0; i < hex.length; i += 2)
+    int.parse(hex.substring(i, i + 2), radix: 16),
+]);
+
+void _crossBinding(String label, _Start start) {
+  Future<MontyValue> continued(Monty pool, Uint8List dump) async {
+    final session = await _open(pool);
+    await session.loadSession(dump);
+
+    return session.feedRun(dumpContinuationCode);
+  }
+
+  // Same-version idle dumps move between bindings both ways: upstream's
+  // (recorded by tool/generate_dump_oracle.py) loads here, and the dump from
+  // core's worker (_core_dump_fixture.g.dart) loads in upstream
+  // (`generate_dump_oracle.py --check`) and here.
+  test('an idle dump made by upstream loads and continues; so does a dump '
+      'made by this worker ($label)', () async {
+    final pool = await _pool(start);
+    const expected = MontyString(dumpContinuationExpected);
+    expect(await continued(pool, _unhex(upstreamIdleDumpHex)), expected);
+    expect(await continued(pool, _unhex(coreIdleDumpHex)), expected);
+    final made = await _idleDump(pool);
+    expect(
+      made.sublist(0, _headerLength),
+      _unhex(upstreamIdleDumpHex).sublist(0, _headerLength),
+    );
+    expect(await continued(pool, made), expected);
   });
 }
