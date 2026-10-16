@@ -60,7 +60,10 @@ void _testChildHandoff() {
           reason: 'a failed child writes no stdout',
         );
         expect(result.stderrLines, hasLength(1));
-        expect(result.stderrLines.first, contains('dart_monty_worker_main'));
+        expect(
+          result.stderrLines,
+          everyElement(contains('dart_monty_worker_main')),
+        );
         expect(result.exitCodes, [workerLibraryExitCode]);
       });
     }
