@@ -474,26 +474,20 @@ void main() {
   test('a Worker the browser refuses fails spawn as MontyCrashedError '
       '($backend)', () async {
     const url = 'http://127.0.0.1:1/w.js';
-    String message(MontyCrashedError e) => e.toString();
     await expectLater(
       WorkerChannel.spawn(cache, workerUrl: url),
       throwsA(
-        anyOf(
-          isA<MontyCrashedError>().having(
-            message,
-            'message',
-            startsWith('failed to spawn monty worker: Worker $url: '),
-          ),
+        predicate<Object>((e) {
+          if (e is! MontyCrashedError) return false;
+          final text = e.toString();
           // Firefox's error event for a refused Worker carries no message,
           // so the channel reports a plain vanished worker there.
-          isA<MontyCrashedError>()
-              .having((e) => e.cause, 'cause', CrashCause.vanished)
-              .having(
-                message,
-                'message',
-                contains('crashed while waiting for a reply'),
-              ),
-        ),
+          return text.startsWith(
+                'failed to spawn monty worker: Worker $url: ',
+              ) ||
+              (e.cause == CrashCause.vanished &&
+                  text.contains('crashed while waiting for a reply'));
+        }, 'a spawn failure MontyCrashedError'),
       ),
     );
   });
