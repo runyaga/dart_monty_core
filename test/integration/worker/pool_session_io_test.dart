@@ -21,6 +21,7 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '../../unit/worker/_boundary_cases.dart';
 import '../../unit/worker/_config_cases.dart';
 import '../../unit/worker/_host_cases.dart';
 import '../../unit/worker/_memory_fs_cases.dart';
@@ -107,6 +108,7 @@ void main() {
     () => startMonty(const PoolOptions(maxProcesses: 1)),
   );
   restoreOracleTests('vm', startMonty);
+  boundarySessionTests('vm', startMonty);
   hostOracleTests('vm', startMonty);
   printOracleTests('vm', startMonty);
   osHandlerOracleTests('vm', startMonty);

@@ -43,3 +43,8 @@ if [ "$GZ" -gt "$BUDGET" ]; then
   exit 1
 fi
 echo "OK: $WASM is $GZ bytes gzip -9 ($RAW raw), budget $BUDGET."
+
+# The same module's linear-memory layout: the stack must come first, so an
+# overflow traps instead of writing over the data (tool/check_worker_wasm_layout.py).
+python3 -I test/tool/wasm_layout_test.py >/dev/null 2>&1 || { echo "FAIL: test/tool/wasm_layout_test.py"; exit 1; }
+python3 -I tool/check_worker_wasm_layout.py "$WASM" || exit 1

@@ -101,7 +101,9 @@ final class Monty {
   /// Dedicates a worker to a new session (upstream `checkout`): [scriptName]
   /// is the file name tracebacks report, [limits] the resource limits,
   /// [typeCheck] whether each snippet is type-checked first (with
-  /// [typeCheckStubs], [typeCheckFormat] and [typeCheckColor]),
+  /// [typeCheckStubs], [typeCheckFormat] and [typeCheckColor]); the check runs
+  /// in the worker under the limits' feed duration, so set one when the source
+  /// is untrusted,
   /// [assertMessageAnnotations] how many bytes of each operand an `assert`
   /// message shows, [printFlushInterval] how long the worker may hold
   /// printed text, and [osPolicy] the clock, zone, sleep and randomness the
