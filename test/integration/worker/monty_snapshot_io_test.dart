@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
@@ -51,6 +52,27 @@ Matcher _raised(String excType, [Object? message]) => isA<MontyRuntimeError>()
     .having((e) => e.exception.excType, 'excType', excType)
     .having((e) => e.exception.message, 'message', message ?? anything);
 
+/// An `externalLookup` that names `f` and throws when it is read.
+final class _ThrowingLookup extends MapBase<String, MontyValue> {
+  const _ThrowingLookup();
+
+  @override
+  MontyValue? operator [](Object? key) =>
+      throw const FormatException('lookup failed');
+
+  @override
+  void operator []=(String key, MontyValue value) => throw UnimplementedError();
+
+  @override
+  Iterable<String> get keys => const ['f'];
+
+  @override
+  void clear() => throw UnimplementedError();
+
+  @override
+  MontyValue? remove(Object? key) => throw UnimplementedError();
+}
+
 void main() {
   expectNoWorkersLeftAfterEachTest();
   attributeSessionTests('vm', _withSession);
@@ -67,6 +89,33 @@ void main() {
     'vm',
     (config, body) => _withSession(body, options: config),
   );
+
+  test('a throwing externalLookup read raises in the sandbox; the session '
+      'goes on', () async {
+    await _withSession((s) async {
+      final call =
+          await s.feedStart(
+                'try:\n'
+                '    f()\n'
+                'except Exception as e:\n'
+                '    r = "caught " + str(e)\n'
+                'r',
+                externalLookup: const _ThrowingLookup(),
+                printCallback: _ignore,
+              )
+              as FunctionSnapshot;
+
+      final done = await call.resumeAuto();
+      expect(
+        (done as MontyComplete).output,
+        const MontyString('caught FormatException: lookup failed'),
+      );
+      expect(
+        await s.feedRun('1 + 1', printCallback: _ignore),
+        const MontyInt(2),
+      );
+    });
+  });
 
   test('a host call: name, arguments, position; resumed', () async {
     await _withSession((s) async {
