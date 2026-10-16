@@ -51,6 +51,26 @@
       "hit": 0,
       "pct": 0.0
     },
+    "lib/src/mount/native_mount_bindings.dart": {
+      "found": 28,
+      "hit": 28,
+      "pct": 100.0
+    },
+    "lib/src/mount/native_mount_service.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
+    },
+    "lib/src/mount/native_mounts.dart": {
+      "found": 83,
+      "hit": 83,
+      "pct": 100.0
+    },
+    "lib/src/mount/native_mounts_web.dart": {
+      "found": 13,
+      "hit": 13,
+      "pct": 100.0
+    },
     "lib/src/mount/open_call.dart": {
       "found": 17,
       "hit": 17,
@@ -358,8 +378,8 @@
     }
   },
   "total": {
-    "found": 6577,
-    "hit": 6489,
-    "pct": 98.66
+    "found": 6701,
+    "hit": 6613,
+    "pct": 98.69
   }
 }
