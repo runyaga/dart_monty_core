@@ -14,11 +14,13 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
 import 'package:meta/meta.dart';
 
 /// A [MontyChannel] over one Web Worker.
-final class WorkerChannel implements MontyChannel {
+final class WorkerChannel implements MontyChannel, TelemetryChannel {
   const WorkerChannel._(this._worker, this._connection);
 
   /// The default Worker script URL, resolved against the page.
@@ -88,6 +90,16 @@ final class WorkerChannel implements MontyChannel {
 
   /// `dmw_protocol_version()`, already checked against the driver's.
   int get protocol => _connection.protocol;
+
+  @override
+  Recorder? get recorder => (_connection as TelemetryChannel).recorder;
+
+  @override
+  set recorder(Recorder? value) =>
+      (_connection as TelemetryChannel).recorder = value;
+
+  @override
+  int? get telemetryPid => (_connection as TelemetryChannel).telemetryPid;
 
   @override
   bool get isAlive => _connection.isAlive;

@@ -55,6 +55,7 @@ MontySnapshot
 MontyStdTypeProxy
 MontyString
 MontySyntaxError
+MontyTelemetry
 MontyTime
 MontyTimeDelta
 MontyTimeZone
@@ -76,6 +77,7 @@ VfsContent
 VfsFile
 VfsText
 coroutine
+instrumentTelemetry
 memoryMountedOsHandler
 resolveOpenCall
 runMontyWorkerIfChild
@@ -621,6 +623,7 @@ sealed class SuspendedSnapshot extends MontySnapshot
   SuspendedSnapshot.dump: method() -> Future<Uint8List@dart:typed_data>
   SuspendedSnapshot.position: final field SourceRange
   SuspendedSnapshot.scriptName: final field String
+  SuspendedSnapshot.traceContext: method() -> Object?
   SuspendedSnapshot: permits final class FunctionSnapshot extends SuspendedSnapshot
   SuspendedSnapshot: permits final class FutureSnapshot extends SuspendedSnapshot
   SuspendedSnapshot: permits final class NameLookupSnapshot extends SuspendedSnapshot
@@ -671,3 +674,15 @@ final class ResourceLimits
 
 [members: src/worker/self_relaunch_stub.dart]
 runMontyWorkerIfChild: function(List<String> args) -> void
+
+[members: src/worker/telemetry.dart]
+abstract interface class MontyTelemetry
+  MontyTelemetry.contextWithSpan: abstract method(Object? context, Object span) -> Object?
+  MontyTelemetry.currentContext: abstract method() -> Object?
+  MontyTelemetry.emitLog: abstract method(Object? span, String severity, String body, Map<String, Object> attributes, {required BigInt timestampUnixNanos, required int severityNumber}) -> void
+  MontyTelemetry.endSpan: abstract method(Object span, Map<String, Object> attributes, {required BigInt endTimeUnixNanos}) -> void
+  MontyTelemetry.new: constructor()
+  MontyTelemetry.recordMetric: abstract method(String name, String kind, String unit, String description, num value, Map<String, Object> attributes, {required Object? context}) -> void
+  MontyTelemetry.runInContext: abstract method<R>(Object? context, R Function() body) -> R
+  MontyTelemetry.startSpan: abstract method(String name, Object? parent, Map<String, Object> attributes, {required BigInt startTimeUnixNanos}) -> Object
+instrumentTelemetry: function(MontyTelemetry telemetry) -> void

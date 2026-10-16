@@ -25,6 +25,8 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 
@@ -684,6 +686,7 @@ HostAnswers _hostFor(
   os: os,
   systemSleepMax: config.systemSleepMax,
   objects: session.objects,
+  recorder: session.recorder,
 );
 
 /// Throws what a call refused its turn learns: the session is finished,
@@ -705,11 +708,13 @@ StateError _pendingError() =>
 /// where its prints go. It resumes the snapshots it hands out.
 final class _FeedDrive implements SnapshotDriver {
   _FeedDrive(this._session, this._host, this._print)
-    : _scriptName = _session._config.scriptName;
+    : _scriptName = _session._config.scriptName,
+      _traceEntry = _session._proto.recorder?.bridge.currentContext();
 
   final _LeasedSession _session;
   final HostAnswers _host;
   final ProtoPrintCallback _print;
+  final Object? _traceEntry;
 
   /// The script name the drive's snapshots report: the session's, or a
   /// restored dump's.
@@ -977,7 +982,7 @@ final class _FeedDrive implements SnapshotDriver {
   SuspendedSnapshot _suspension(pb.ChildEvent event) {
     final script = _scriptName;
 
-    return switch (event.whichKind()) {
+    final snapshot = switch (event.whichKind()) {
       pb.ChildEvent_Kind.functionCall => _callSnapshot(
         this,
         script,
@@ -1012,6 +1017,8 @@ final class _FeedDrive implements SnapshotDriver {
       _ => throw StateError('not a suspension: ${event.whichKind().name}'),
       // coverage:ignore-end
     };
+    return snapshot
+      ..capturedTraceContext = _session._proto.recorder?.context(_traceEntry);
   }
 }
 
@@ -1369,7 +1376,7 @@ pb.RaisedException _raised(String type, String message) =>
 /// each plus its grace (upstream's duration backstops). Past it the worker
 /// is killed and the turn fails with [MontyCrashedError]. Time spent in
 /// host callbacks is never counted: it falls between turns.
-final class _SessionChannel implements MontyChannel {
+final class _SessionChannel implements MontyChannel, TelemetryChannel {
   _SessionChannel(this._hold, this._options, SessionConfig config)
     : _budget = SessionBudget(config);
 
@@ -1403,6 +1410,17 @@ final class _SessionChannel implements MontyChannel {
   /// The checkout's suspension and sleep budgets, which a turn-ending event
   /// is admitted against.
   final SessionBudget _budget;
+
+  @override
+  Recorder? get recorder => (_hold.lease.channel as TelemetryChannel).recorder;
+
+  @override
+  set recorder(Recorder? value) =>
+      (_hold.lease.channel as TelemetryChannel).recorder = value;
+
+  @override
+  int? get telemetryPid =>
+      (_hold.lease.channel as TelemetryChannel).telemetryPid;
 
   @override
   bool get isAlive => !_hold.isFinished && _hold.lease.channel.isAlive;

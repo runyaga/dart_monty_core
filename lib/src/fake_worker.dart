@@ -11,7 +11,6 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:collection/collection.dart';
-
 import 'package:dart_monty_core/src/fake_answers.dart';
 import 'package:dart_monty_core/src/fake_script.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
@@ -24,6 +23,8 @@ import 'package:dart_monty_core/src/worker/host_answers.dart'
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/python_rules.dart' show pythonRepr;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// How far a call the feed made has got.
 sealed class _CallState {
@@ -59,7 +60,7 @@ final class _Failed extends _CallState {
 }
 
 /// A [MontyChannel] whose worker plays [FakeScript].
-final class FakeWorker implements MontyChannel {
+final class FakeWorker with RecordedChannel implements MontyChannel {
   /// A worker playing [_script].
   FakeWorker(this._script);
 
@@ -97,20 +98,33 @@ final class FakeWorker implements MontyChannel {
     }
     // Through the wire encoding, as a worker receives it.
     final sent = pb.ParentRequest.fromBuffer(request.writeToBuffer());
+    recorder?.beginTurn(sent);
     // A real turn is asynchronous; so is this one.
     await Future<void>.delayed(Duration.zero);
-    final event = await _reply(sent, onPrint);
+    final recording = recorder;
+    final event = await _reply(
+      sent,
+      recording == null
+          ? onPrint
+          : (print) {
+              recording.event(pb.ChildEvent(print: print));
+              return onPrint?.call(print);
+            },
+    );
+    recording?.event(event);
 
     return pb.ChildEvent.fromBuffer(event.writeToBuffer());
   }
 
   @override
   Future<void> close() async {
+    recorder?.close();
     _isAlive = false;
   }
 
   @override
   void kill() {
+    recorder?.close();
     _isAlive = false;
     if (!_killed.isCompleted) _killed.complete();
   }

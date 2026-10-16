@@ -18,6 +18,7 @@ import 'package:dart_monty_core/src/worker/frame.dart';
 import 'package:dart_monty_core/src/worker/frame_scan.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
 import 'package:meta/meta.dart';
 
 /// The worker's exit code when its allocator's hard limit is breached:
@@ -30,7 +31,7 @@ const int workerOomExitCode = 65;
 /// because Dart has no kill-on-drop: a channel that is never closed keeps
 /// its worker running, and the worker's open pipes keep this process from
 /// exiting.
-final class ProcessChannel implements MontyChannel {
+final class ProcessChannel with RecordedChannel implements MontyChannel {
   ProcessChannel._(this._process)
     : _events = EventQueue(
         _process.stdout,
@@ -138,6 +139,9 @@ final class ProcessChannel implements MontyChannel {
   /// The worker's process id.
   int get pid => _process.pid;
 
+  @override
+  late final int? telemetryPid = pid;
+
   /// Completes with the worker's exit code.
   Future<int> get exitCode => _process.exitCode;
 
@@ -169,6 +173,10 @@ final class ProcessChannel implements MontyChannel {
     if (crash != null) throw crash;
     if (_closed) throw StateError('ProcessChannel.turn: channel is closed');
     final frame = Frame.encode(request);
+    final observer = recorder;
+    final recording = observer == null
+        ? null
+        : SentRecording(observer, request);
     _busy = true;
     try {
       final stdin = _process.stdin;
@@ -180,6 +188,7 @@ final class ProcessChannel implements MontyChannel {
       final written = () async {
         final sent = await _written(isAlive, stdin, frame);
         _unsent = !sent;
+        recording?.sent(success: sent);
 
         return sent;
       }();
@@ -189,13 +198,14 @@ final class ProcessChannel implements MontyChannel {
       // request larger than the pipe would otherwise never be sent. A
       // request that was not sent ends the turn as a crash, whatever was
       // read.
-      final event = await _readTurn(onPrint);
+      final event = await _readTurn(onPrint, recording);
 
       // _flushed catches every failure, so nothing can go uncaught here.
       // ignore: avoid-uncaught-future-errors
       return await written ? event : throw await _crashed();
     } finally {
       _busy = false;
+      recording?.finish(dead: !isAlive);
     }
   }
 
@@ -204,6 +214,7 @@ final class ProcessChannel implements MontyChannel {
 
   @override
   void kill() {
+    recorder?.close();
     if (_killed) return;
     _killed = true;
     _process.kill(ProcessSignal.sigkill);
@@ -216,11 +227,15 @@ final class ProcessChannel implements MontyChannel {
   ///
   /// An [onPrint] that throws does not desynchronise the stream: the rest
   /// of the turn is still read, then its first error is rethrown.
-  Future<pb.ChildEvent> _readTurn(PrintHandler? onPrint) async {
+  Future<pb.ChildEvent> _readTurn(
+    PrintHandler? onPrint,
+    SentRecording? recording,
+  ) async {
     (Object, StackTrace)? printFailure;
     for (;;) {
       final event = await _nextEvent(this);
       if (event == null) throw await _crashed();
+      recording?.event(event);
       final kind = event.whichKind();
       if (kind == pb.ChildEvent_Kind.fatalError) {
         throw await _crashed(fatal: event.fatalError.message);
@@ -246,6 +261,7 @@ final class ProcessChannel implements MontyChannel {
   /// [fatal] is a `FatalError`'s message. Otherwise the worker's exit code
   /// decides, read within [fatalExitGrace] before the worker is killed.
   Future<MontyCrashedError> _crashed({String? fatal}) async {
+    recorder?.close();
     final recorded = _crash;
     if (recorded != null) return recorded;
     final code = await _exitWithin(fatalExitGrace);
@@ -279,6 +295,7 @@ final class ProcessChannel implements MontyChannel {
   );
 
   Future<void> _close() async {
+    recorder?.close();
     if (_busy) {
       kill();
       await _process.exitCode;
@@ -304,6 +321,7 @@ final class ProcessChannel implements MontyChannel {
   Future<void> _reapOnExit() async {
     await _process.exitCode;
     _exited = true;
+    if (!_busy) recorder?.close();
     _live.remove(this);
     await _events.endWithin(pipeDrainGrace);
   }

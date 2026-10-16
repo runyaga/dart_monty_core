@@ -18,6 +18,8 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// The protocol version this driver speaks: upstream monty-proto's
 /// `PROTOCOL_VERSION` at the pinned tag.
@@ -67,7 +69,7 @@ const int outcomeShutdown = 1;
 /// The binding feeds every Worker message to [onReply], [onTrap] or
 /// [onWorkerError]. A trap, a worker error, a `FatalError` or a torn reply
 /// kills the connection for good; a replacement is a new Worker.
-final class WorkerConnection implements MontyChannel {
+final class WorkerConnection with RecordedChannel implements MontyChannel {
   WorkerConnection._(
     WorkerPort port, {
     required this.jspi,
@@ -154,6 +156,7 @@ final class WorkerConnection implements MontyChannel {
       _onPrint = onPrint;
       final pending = _pending = Completer<pb.ChildEvent>();
       _port.post(frame);
+      recorder?.beginTurn(request);
 
       return await pending.future;
     } finally {
@@ -175,7 +178,10 @@ final class WorkerConnection implements MontyChannel {
       _prints.add(
         batch,
         pending,
-        (print) => delivery.deliver(print, _onPrint),
+        (print) {
+          recorder?.event(pb.ChildEvent(print: print));
+          return delivery.deliver(print, _onPrint);
+        },
         delivery.failed,
       );
     } else if (message.events case final events?) {
@@ -240,11 +246,13 @@ final class WorkerConnection implements MontyChannel {
 
   @override
   void kill() {
+    recorder?.close();
     if (_crash != null || _closed) return;
     _die(CrashCause.killed, null);
   }
 
   Future<void> _shutdown() async {
+    recorder?.close();
     final reply = _pending = Completer<pb.ChildEvent>();
     _port.post(Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown())));
     try {
@@ -288,6 +296,7 @@ final class WorkerConnection implements MontyChannel {
           'invalid payload from worker: ${unreadable?.reason}',
         );
       }
+      recorder?.event(event);
       switch (event.whichKind()) {
         case pb.ChildEvent_Kind.print:
           await _PrintDelivery(
@@ -318,6 +327,7 @@ final class WorkerConnection implements MontyChannel {
     String? stderr,
     Object? failure,
   }) {
+    recorder?.close();
     final crash = _crash ??= crashedError(
       cause,
       detail: message,

@@ -26,6 +26,9 @@ import 'package:dart_monty_core/src/worker/python_rules.dart'
     show surrogateEncodeError;
 import 'package:dart_monty_core/src/worker/raised_record.dart';
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
+import 'package:dart_monty_core/src/worker/telemetry.dart';
+import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 export 'package:dart_monty_core/src/worker/host_answers.dart'
     show OsHandler, ProtoExternalFunction, coroutine;
@@ -36,7 +39,7 @@ const int protocolVersion = 5;
 
 /// What the driver reports as its version in `Configure`. Informational
 /// only; the worker never checks it.
-const String _driverVersion = 'dart_monty_core';
+const String _driverVersion = '1.1.0';
 
 /// One Python session on one worker.
 ///
@@ -50,7 +53,18 @@ const String _driverVersion = 'dart_monty_core';
 ///
 /// [close] must be called: it is what ends the worker.
 final class ProtoSession {
-  ProtoSession._(this._channel, this._config);
+  ProtoSession._(this._channel, this._config) {
+    final bridge = telemetryBridge;
+    final channel = _channel;
+    if (bridge != null && channel is TelemetryChannel) {
+      final observed = channel as TelemetryChannel;
+      recorder = Recorder(bridge, observed.telemetryPid);
+      observed.recorder = recorder;
+    }
+  }
+
+  /// Parent-side recorder, absent without instrumentation.
+  Recorder? recorder;
 
   /// The host objects sent into this session, by id: the registry its
   /// inputs, answers and results resolve through. A load empties it.
@@ -117,6 +131,7 @@ final class ProtoSession {
       os: onOsCall,
       systemSleepMax: options.systemSleepMax,
       objects: objects,
+      recorder: recorder,
     ),
     inputs: inputs,
     onPrint: onPrint,
@@ -238,7 +253,10 @@ final class ProtoSession {
     if (feed && event.whichKind() != pb.ChildEvent_Kind.typingError) {
       _cwdSet = true;
     }
-    if (sink.failed && isSuspension(event)) _channel.kill();
+    if (sink.failed && isSuspension(event)) {
+      _channel.kill();
+      recorder?.close();
+    }
     sink.rethrowFailure();
 
     return event;
@@ -253,6 +271,7 @@ final class ProtoSession {
     // Raised as any error is (upstream's PoolError::Runtime); the failed
     // checkout discards the worker, as upstream's drop does.
     _channel.kill();
+    recorder?.close();
     _throwRaised(event.error);
   }
 
@@ -279,7 +298,10 @@ final class ProtoSession {
   Never _throwRaised(pb.Error event) {
     if (!event.hasException()) _violation('error event with no exception');
     final error = raisedError(event.exception);
-    if (error is MontyCrashedError) _channel.kill();
+    if (error is MontyCrashedError) {
+      _channel.kill();
+      recorder?.close();
+    }
     throw error;
   }
 
@@ -294,6 +316,7 @@ final class ProtoSession {
     try {
       return await body();
     } finally {
+      if (!_channel.isAlive) recorder?.close();
       _busy = false;
     }
   }
@@ -306,6 +329,7 @@ final class ProtoSession {
   /// kill it rather than guess (upstream's `protocol_violation`).
   Never _violation(String detail) {
     _channel.kill();
+    recorder?.close();
     throw protocolError(detail);
   }
 }
