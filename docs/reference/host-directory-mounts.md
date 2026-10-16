@@ -102,9 +102,9 @@ route supplies the library, construction throws `UnsupportedError` with the
 Bad paths or modes at construction raise `ArgumentError`, and negative limits
 raise `RangeError`; sandbox filesystem exceptions retain upstream types and
 messages. These Dart error families, the list-only `mount:` parameter and
-browser constructor refusal are the deliberate binding differences (D-094,
-D-095, D-097 and D-098). Memory-filesystem caps and the former `MountMode` enum are
-absent; host-directory budgets belong to `monty-fs`.
+browser constructor refusal are deliberate differences from upstream's binding.
+Memory-filesystem caps and the former `MountMode` enum are absent;
+host-directory budgets belong to `monty-fs`.
 
 See [execution model](execution-model.md) for synchronous host-call behavior
 and the separation of mount budgets from worker interpreter memory limits.
