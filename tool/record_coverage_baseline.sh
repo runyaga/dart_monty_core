@@ -20,19 +20,25 @@
 #   3. runs `coverage_ratchet.sh honest.info --update` (no base ref, so it writes);
 #   4. if the file changed, commits ONLY tool/coverage-baseline.json and pushes.
 #
-# Usage: bash tool/record_coverage_baseline.sh [--dry-run] [--run-id ID]
+# The baseline is refreshed once per release, in the release PR: run with
+# --no-commit on main, then carry the modified file into the release branch
+# (the `changelog-assembly` label lets that PR touch it). Step 4 is then skipped.
+#
+# Usage: bash tool/record_coverage_baseline.sh [--dry-run] [--no-commit] [--run-id ID]
 # Exit: 0 recorded or already current; 1 refused or failed.
 # =============================================================================
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 DRY=0
+NOCOMMIT=0
 RUN_ID=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
+    --no-commit) NOCOMMIT=1; shift ;;
     --run-id) RUN_ID="${2:-}"; shift 2 ;;
-    *) echo "usage: $0 [--dry-run] [--run-id ID]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--dry-run] [--no-commit] [--run-id ID]" >&2; exit 2 ;;
   esac
 done
 
@@ -94,6 +100,10 @@ if git diff --quiet -- tool/coverage-baseline.json; then
   exit 0
 fi
 git --no-pager diff --stat -- tool/coverage-baseline.json
+if [ "$NOCOMMIT" = "1" ]; then
+  echo "updated tool/coverage-baseline.json from ${HEAD_SHA:0:7}; not committed (--no-commit)"
+  exit 0
+fi
 if [ "$DRY" = "1" ]; then
   git checkout -- tool/coverage-baseline.json
   echo "dry run: not committed"

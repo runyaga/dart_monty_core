@@ -30,8 +30,8 @@
 # unloaded library — so this script refuses a tracefile that does not account
 # for every lib/**/*.dart.
 #
-# Baseline: tool/coverage-baseline.json, recorded on main after each merge by
-# tool/record_coverage_baseline.sh. A PR does NOT commit it when coverage rises:
+# Baseline: tool/coverage-baseline.json, refreshed once per release (in the
+# release PR) by tool/record_coverage_baseline.sh --no-commit. A PR does NOT commit it when coverage rises:
 # the check fails only on a decrease, measured against the base branch's copy.
 # =============================================================================
 set -uo pipefail
