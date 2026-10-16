@@ -19,6 +19,7 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
 import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 
 /// The protocol version this driver speaks: upstream monty-proto's
@@ -156,6 +157,7 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
       _onPrint = onPrint;
       final pending = _pending = Completer<pb.ChildEvent>();
       _port.post(frame);
+      TelemetryMetrics.frame.attribute(frame.length, 'direction', 'sent');
       recorder?.beginTurn(request);
 
       return await pending.future;
@@ -255,7 +257,9 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
   Future<void> _shutdown() async {
     recorder?.close();
     final reply = _pending = Completer<pb.ChildEvent>();
-    _port.post(Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown())));
+    final frame = Frame.encode(pb.ParentRequest(shutdown: pb.Shutdown()));
+    _port.post(frame);
+    TelemetryMetrics.frame.attribute(frame.length, 'direction', 'sent');
     try {
       await reply.future.timeout(_closeGrace);
     } on Object {
@@ -297,6 +301,11 @@ final class WorkerConnection with RecordedChannel implements MontyChannel {
           'invalid payload from worker: ${unreadable?.reason}',
         );
       }
+      TelemetryMetrics.frame.attribute(
+        Frame.prefixLength + body.length,
+        'direction',
+        'received',
+      );
       recorder?.event(event);
       switch (event.whichKind()) {
         case pb.ChildEvent_Kind.print:
@@ -441,14 +450,8 @@ final class _PrintQueue {
           );
         }
         for (final body in bodies) {
-          final (event, _) = _decode(body);
-          if (event == null || event.whichKind() != pb.ChildEvent_Kind.print) {
-            throw crashedError(
-              CrashCause.protocol,
-              detail: 'invalid streamed Print frame',
-            );
-          }
-          await deliver(event.print);
+          final printed = _streamedPrint(body);
+          await deliver(printed);
         }
         if (!pending.isCompleted) {
           pendingBytes -= batch.length;
@@ -511,4 +514,22 @@ final class OnceAsync<T> {
   } on FrameDecodeException catch (e) {
     return (null, e);
   }
+}
+
+/// Decode and charge each complete streamed frame before callback delivery.
+pb.Print _streamedPrint(Uint8List body) {
+  final (event, _) = _decode(body);
+  if (event == null || event.whichKind() != pb.ChildEvent_Kind.print) {
+    throw crashedError(
+      CrashCause.protocol,
+      detail: 'invalid streamed Print frame',
+    );
+  }
+  TelemetryMetrics.frame.attribute(
+    Frame.prefixLength + body.length,
+    'direction',
+    'received',
+  );
+
+  return event.print;
 }

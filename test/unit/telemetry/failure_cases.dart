@@ -24,6 +24,7 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
         ),
       );
       var calls = 0;
+      final printed = <String>[];
       for (var i = 0; i < 2; i++) {
         final fake = FakeMontySession()
           ..willCall('ext')
@@ -31,7 +32,7 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
           ..willReturn(const MontyInt(42));
         final result = await fake.feedRun(
           'ext()',
-          printCallback: (stream, text) => expect(text, isNotEmpty),
+          printCallback: (stream, text) => printed.add(text),
           externalLookup: {
             'ext': MontyHostFunction('ext', (args, kwargs) {
               calls++;
@@ -56,6 +57,7 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
         await fake.close();
       }
       expect(calls, 2);
+      expect(printed, ['hi', 'hi']);
       expect(diagnostics, hasLength(1));
       final signal = failure == 'logs' || failure == 'metrics'
           ? failure
@@ -68,7 +70,18 @@ void failureCase(String failure, {bool brokenDiagnostic = false}) {
       final logs = adapter.logs;
       final twice = hasLength(2);
       if (signal != 'logs') expect(logs, twice);
-      if (signal != 'metrics') expect(adapter.metrics, [1, 1]);
+      if (signal != 'metrics') {
+        expect(
+          adapter.measurements
+              .where((m) => m.name == 'test')
+              .map((m) => m.value),
+          [1, 1],
+        );
+        expect(measurements(adapter, 'print.bytes').map((m) => m.value), [
+          2,
+          2,
+        ]);
+      }
       if (signal != 'spans') {
         expect(adapter.spans.where((s) => s.name == 'run code'), twice);
       } else {

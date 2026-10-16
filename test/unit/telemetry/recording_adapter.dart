@@ -34,6 +34,9 @@ class RecordingAdapter implements MontyTelemetry {
   /// Measurements received at the adapter boundary.
   final metrics = <num>[];
 
+  /// Full raw measurements, before any SDK aggregation.
+  final measurements = <MetricRecord>[];
+
   /// Callback contexts, observed independently of the span tree.
   final contexts = <Object?>[];
 
@@ -45,6 +48,7 @@ class RecordingAdapter implements MontyTelemetry {
     spans.clear();
     logs.clear();
     metrics.clear();
+    measurements.clear();
     contexts.clear();
     attempts.clear();
   }
@@ -128,6 +132,15 @@ class RecordingAdapter implements MontyTelemetry {
   }) {
     _check('metrics');
     metrics.add(value);
+    measurements.add((
+      name: name,
+      kind: kind,
+      unit: unit,
+      description: description,
+      value: value,
+      attributes: Map.of(attributes),
+      context: context,
+    ));
   }
 
   @override
@@ -180,3 +193,18 @@ T requireRecord<T>(T? value) {
 
   return value;
 }
+
+/// Raw SDK boundary, including the deliberately empty metric context.
+typedef MetricRecord = ({
+  String name,
+  String kind,
+  String unit,
+  String description,
+  num value,
+  Map<String, Object> attributes,
+  Object? context,
+});
+
+/// Selects one instrument without discarding its raw increments.
+List<MetricRecord> measurements(RecordingAdapter adapter, String suffix) =>
+    adapter.measurements.where((m) => m.name == 'monty.$suffix').toList();

@@ -69,7 +69,7 @@ final class TelemetryBridge {
     );
   }
 
-  /// Raw metric boundary; R-3 supplies the pool's positive measurements.
+  /// Raw metric boundary, isolated from span and log failures.
   void recordMetric(
     String name,
     String kind,

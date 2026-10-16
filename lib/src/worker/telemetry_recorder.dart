@@ -6,6 +6,7 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry.dart';
 import 'package:dart_monty_core/src/worker/telemetry_attributes.dart';
 import 'package:dart_monty_core/src/worker/telemetry_scalars.dart';
+import 'package:dart_monty_core/src/worker/telemetry_turn_metrics.dart';
 import 'package:dart_monty_core/src/worker/telemetry_values.dart';
 
 part 'telemetry_requests.dart';
@@ -26,6 +27,9 @@ final class TelemetryRecorder {
   /// Checkout's captured host context.
   final Object? captured;
 
+  /// Metrics remain independent of the span signal and its failure state.
+  final metrics = TelemetryTurnMetrics();
+
   _Span? _session;
   _Span? _feed;
   _Span? _pending;
@@ -42,6 +46,7 @@ final class TelemetryRecorder {
 
   /// Reset, Shutdown and death close every open span, innermost first.
   void close() {
+    metrics.close();
     _endFeed();
     _end(_session);
     _session = null;

@@ -250,7 +250,7 @@ Future<MontySession> openPoolSession(
     );
     // A dead worker was mapped by the channel; any failure frees the slot.
   } on Object {
-    lease.kill();
+    lease.kill(reason: 'discarded', outcome: 'error');
     rethrow;
   }
 }
@@ -304,7 +304,7 @@ final class _Hold {
   /// The worker is gone: free its slot (once), and report [crash] as the
   /// call's error, a memory-limit exit as upstream's `MemoryError`.
   MontyError end(MontyCrashedError crash) {
-    lease.kill();
+    lease.kill(reason: 'discarded', outcome: 'error');
     if (crash.cause != CrashCause.outOfMemory) return crash;
 
     return recordError(
@@ -428,7 +428,7 @@ final class _LeasedSession implements MontySession {
     if (event != null) {
       // A worker restored to the wrong kind of dump cannot be trusted: the
       // session ends, as upstream discards it.
-      _hold.lease.kill();
+      _hold.lease.kill(reason: 'discarded', outcome: 'error');
       throw StateError(
         'this dump is a suspended snapshot — use load_snapshot() to resume it',
       );
@@ -831,7 +831,7 @@ final class _FeedDrive implements SnapshotDriver {
       } on Object {
         // A value the writer refuses is never answered: upstream discards
         // the checkout.
-        _session._hold.lease.kill();
+        _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
         rethrow;
       }
 
@@ -886,7 +886,7 @@ final class _FeedDrive implements SnapshotDriver {
         // upstream discards the checkout, and the error is rethrown.
         // ignore: avoid_catching_errors
       } on StateError {
-        _session._hold.lease.kill();
+        _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
         rethrow;
       }
 
@@ -921,7 +921,7 @@ final class _FeedDrive implements SnapshotDriver {
       final (event, scriptName) = await _session._proto.load(state);
       if (event == null) {
         // The wrong kind of dump: the session ends, as upstream discards it.
-        _session._hold.lease.kill();
+        _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
         throw StateError(
           'this dump is an idle session — use load_session() to restore it',
         );
@@ -1060,7 +1060,7 @@ FunctionSnapshot _callSnapshot(
   try {
     checkCallArgs(call, hosts);
   } on MontyCrashedError {
-    lease.kill();
+    lease.kill(reason: 'discarded', outcome: 'error');
     rethrow;
   }
 
@@ -1094,7 +1094,7 @@ FunctionSnapshot _osSnapshot(
   try {
     parts = osCallParts(call, hosts: hosts);
   } on FormatException catch (error) {
-    lease.kill();
+    lease.kill(reason: 'discarded', outcome: 'error');
     throw protocolError('invalid OS call payload: ${error.message}');
   }
   final (name, args, kwargs) = parts;
@@ -1491,7 +1491,7 @@ final class _SessionChannel implements MontyChannel, TelemetryChannel {
   Future<void> close() async => kill();
 
   @override
-  void kill() => _hold.lease.kill();
+  void kill() => _hold.lease.kill(reason: 'discarded', outcome: 'error');
 
   /// Takes the channel for [request], now free, and returns whether a
   /// suspension was pending.

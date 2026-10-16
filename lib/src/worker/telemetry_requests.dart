@@ -36,6 +36,7 @@ extension TelemetryRequests on TelemetryRecorder {
       case _:
         _resumeRequest(request);
     }
+    metrics.beginTurn(request);
   }
 
   void _install(pb.InstallDependencies install) {
