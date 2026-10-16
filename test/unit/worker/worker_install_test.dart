@@ -31,8 +31,10 @@ void main() {
   _decompressionLimitTest();
   _stagingSweepTest();
   _staleLockTest();
+  _ownerlessLockTest();
   _concurrentInstallTest();
   _lockRaceTests();
+  _initializerFailureTests();
   _verifiedCopyTest();
   _artifactLockTest();
 }
@@ -535,6 +537,42 @@ void _staleLockTest() {
   );
 }
 
+void _ownerlessLockTest() {
+  test('retains a fresh ownerless lock but breaks an old one', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    final lock = Directory('${cache.path}/.lock-${mirror.artifact.sha256}')
+      ..createSync();
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+
+    await expectLater(
+      installWorker(
+        WorkerInstallRequest(
+          artifact: mirror.artifact,
+          cacheRoot: cache.path,
+          archiveUrl: mirror.fileUrl,
+          lockWait: const Duration(milliseconds: 100),
+        ),
+      ),
+      throwsA(isA<WorkerInstallError>()),
+    );
+    expect(lock.existsSync(), isTrue);
+
+    await _backdate(lock);
+    await installWorker(
+      WorkerInstallRequest(
+        artifact: mirror.artifact,
+        cacheRoot: cache.path,
+        archiveUrl: mirror.fileUrl,
+      ),
+    );
+    expect(Directory(lock.path).existsSync(), isFalse);
+  });
+}
+
 void _concurrentInstallTest() {
   test(
     'concurrent cold installers download the loopback archive once',
@@ -565,6 +603,7 @@ void _concurrentInstallTest() {
 void _lockRaceTests() {
   _replacementLockReleaseTest();
   _deadLockContenderTest();
+  _liveLockContenderTest();
 }
 
 void _replacementLockReleaseTest() {
@@ -614,14 +653,12 @@ void _deadLockContenderTest() {
         await cache.delete(recursive: true);
       });
 
-      await Future.wait([
-        for (var index = 0; index < 2; index++)
-          installWorker(
-            WorkerInstallRequest(
-              artifact: mirror.artifact,
-              cacheRoot: cache.path,
-              archiveUrl: mirror.fileUrl,
-            ),
+      final server = await WorkerHttpMirror.start(mirror.archive);
+      addTearDown(server.close);
+      final installed = await Future.wait([
+        for (var index = 0; index < 6; index++)
+          Isolate.run(
+            _isolateInstall(mirror.artifact, cache.path, server.url),
           ),
       ]);
 
@@ -630,8 +667,105 @@ void _deadLockContenderTest() {
         mirror.artifact,
       );
       expect(lock.existsSync(), isFalse);
+      expect(server.requests, 1);
+      expect(installed.where((result) => result.downloaded), hasLength(1));
     },
   );
+}
+
+void _liveLockContenderTest() {
+  test('contenders retain an old lock owned by a live process', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    final lock = Directory('${cache.path}/.lock-${mirror.artifact.sha256}')
+      ..createSync();
+    File('${lock.path}/owner').writeAsStringSync('$pid live-token');
+    await _backdate(lock);
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+
+    final results = await Future.wait([
+      for (var index = 0; index < 6; index++)
+        Isolate.run(
+          _isolateInstallResult(
+            mirror.artifact,
+            cache.path,
+            mirror.fileUrl,
+          ),
+        ),
+    ]);
+
+    expect(results, everyElement(isFalse));
+    expect(lock.existsSync(), isTrue);
+    expect(File('${lock.path}/owner').readAsStringSync(), '$pid live-token');
+  });
+}
+
+void _initializerFailureTests() {
+  _lockOwnerMetadataFailureTest();
+  _stagingOwnerMetadataFailureTest();
+}
+
+void _lockOwnerMetadataFailureTest() {
+  test('removes a lock when writing its owner metadata fails', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+
+    await expectLater(
+      installWorker(
+        WorkerInstallRequest(
+          artifact: mirror.artifact,
+          cacheRoot: cache.path,
+          archiveUrl: mirror.fileUrl,
+          onStage: _failOwnerMetadata('beforeLockOwner'),
+        ),
+      ),
+      throwsA(
+        isA<WorkerInstallError>().having(
+          (error) => error.message,
+          'message',
+          contains(cache.path),
+        ),
+      ),
+    );
+    expect(_temporaryEntries(cache), isEmpty);
+  });
+}
+
+void _stagingOwnerMetadataFailureTest() {
+  test('removes staging when writing its owner metadata fails', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+
+    await expectLater(
+      installWorker(
+        WorkerInstallRequest(
+          artifact: mirror.artifact,
+          cacheRoot: cache.path,
+          archiveUrl: mirror.fileUrl,
+          onStage: _failOwnerMetadata('beforeStagingOwner'),
+        ),
+      ),
+      throwsA(
+        isA<WorkerInstallError>().having(
+          (error) => error.message,
+          'message',
+          contains(cache.path),
+        ),
+      ),
+    );
+    expect(_temporaryEntries(cache), isEmpty);
+  });
 }
 
 void _verifiedCopyTest() {
@@ -853,3 +987,29 @@ Future<WorkerInstall> Function() _isolateInstall(
         archiveUrl: archiveUrl,
       ),
     );
+
+Future<bool> Function() _isolateInstallResult(
+  WorkerArtifact artifact,
+  String cacheRoot,
+  Uri archiveUrl,
+) => () async {
+  try {
+    await installWorker(
+      WorkerInstallRequest(
+        artifact: artifact,
+        cacheRoot: cacheRoot,
+        archiveUrl: archiveUrl,
+        lockWait: const Duration(milliseconds: 300),
+      ),
+    );
+
+    return true;
+  } on WorkerInstallError {
+    return false;
+  }
+};
+
+Future<void> Function(String) _failOwnerMetadata(String target) =>
+    (stage) => stage == target
+    ? Future<void>.error(StateError('injected metadata failure'))
+    : Future.value();

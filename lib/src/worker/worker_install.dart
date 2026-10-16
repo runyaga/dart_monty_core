@@ -186,7 +186,7 @@ Future<WorkerInstall> _installWithLock(
     await request.onStage?.call('afterLock');
     final existing = await _existingInstall(installedPath, request.artifact);
     if (existing != null) return existing;
-    staging = await _createStaging(request.cacheRoot);
+    staging = await _createStaging(request);
     await _stageWorker(request, archive, staging);
     await request.onStage?.call('beforePublish');
     final published = await _publishStaging(
@@ -389,65 +389,98 @@ Future<_HeldLock> _acquireLock(
   final lock = Directory(path.join(request.cacheRoot, '.lock-$digest'));
   final deadline = DateTime.now().add(request.lockWait);
   while (true) {
-    try {
-      await lock.create();
-      final owner = File(path.join(lock.path, 'owner'));
-      final token = _lockToken();
-      await owner.create(exclusive: true);
-      await owner.writeAsString('$pid $token', flush: true);
-      if (_lockOwner(lock)?.token == token) return _HeldLock(lock, token);
-      // A contender moved this just-created directory before its owner file
-      // was published. It belongs to neither acquisition at this path.
-      continue;
-    } on FileSystemException {
-      if (await _validFile(installedPath, request.artifact)) {
-        throw _InstalledWhileWaiting(installedPath);
-      }
-      await _breakStaleLock(lock, request.lockStaleAfter);
-      if (DateTime.now().isAfter(deadline)) {
-        throw WorkerInstallError(
-          'lock directory ${lock.path} remained busy; wait for its owner or '
-          'remove it after confirming it is stale.',
-        );
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      continue;
-    } on Object catch (error) {
-      throw WorkerInstallError(
-        'lock directory ${lock.path} cannot be written ($error); grant write '
-        'access or set HOME.',
-      );
+    final held = await _tryAcquireLock(request, lock);
+    if (held != null) return held;
+    if (await _validFile(installedPath, request.artifact)) {
+      throw _InstalledWhileWaiting(installedPath);
     }
+    await _breakStaleLock(lock, digest, request.lockStaleAfter);
+    _checkLockDeadline(lock, deadline);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
   }
 }
 
-Future<void> _breakStaleLock(Directory lock, Duration staleAfter) async {
-  if (!lock.existsSync() || _lockIsFresh(lock, staleAfter)) return;
+Future<_HeldLock?> _tryAcquireLock(
+  WorkerInstallRequest request,
+  Directory lock,
+) async {
+  if (lock.existsSync()) return null;
+  try {
+    await lock.create();
+  } on FileSystemException {
+    return null;
+  }
+  final token = _lockToken();
+  final ownsLock = await _writeOwner(
+    lock,
+    token,
+    request.cacheRoot,
+    () async => request.onStage?.call('beforeLockOwner'),
+  );
+  if (!ownsLock) return null;
+  if (_lockOwner(lock)?.token == token) return _HeldLock(lock, token);
+  throw WorkerInstallError(
+    'cache ${request.cacheRoot} could not retain its installation lock; '
+    'retry the installation.',
+  );
+}
+
+Future<void> _breakStaleLock(
+  Directory lock,
+  String digest,
+  Duration staleAfter,
+) async {
+  final held = await _tryAcquireBreakLock(lock.parent, digest);
+  if (held == null) return;
+  try {
+    if (!lock.existsSync() || !await _isStaleLock(lock, staleAfter)) return;
+    await _moveAndDeleteStaleLock(lock);
+  } finally {
+    await _releaseLock(held);
+  }
+}
+
+Future<_HeldLock?> _tryAcquireBreakLock(Directory root, String digest) async {
+  final breaker = Directory(path.join(root.path, '.break-$digest'));
+  if (breaker.existsSync()) {
+    await _reclaimBreakLock(breaker);
+
+    return null;
+  }
+  try {
+    await breaker.create();
+  } on FileSystemException {
+    return null;
+  }
+  final token = _lockToken();
+  if (!await _writeOwner(breaker, token, root.path, null)) return null;
+
+  return _HeldLock(breaker, token);
+}
+
+Future<void> _reclaimBreakLock(Directory breaker) async {
+  if (!await _isStaleLock(breaker, _breakLockStaleAfter)) return;
+  await _moveAndDeleteStaleLock(breaker);
+}
+
+Future<void> _moveAndDeleteStaleLock(Directory lock) async {
   final stale = Directory(
     '${lock.parent.path}/.stale-lock-$pid-${DateTime.now().microsecondsSinceEpoch}',
   );
   try {
     await lock.rename(stale.path);
-    if (await _isStaleLock(stale, staleAfter)) {
-      await _deleteBestEffort(stale);
-    } else {
-      await _restoreLock(lock, stale);
-    }
+    await _deleteBestEffort(stale);
   } on FileSystemException {
-    // Another installer won the rename race.
+    // The lock was released or replaced while checking it.
   }
 }
 
-bool _lockIsFresh(Directory lock, Duration staleAfter) =>
-    DateTime.now().difference(lock.statSync().modified) <= staleAfter;
-
-Future<void> _restoreLock(Directory lock, Directory stolen) async {
-  if (lock.existsSync()) return;
-  try {
-    await stolen.rename(lock.path);
-  } on FileSystemException {
-    // A contender acquired the original name after the stale check.
-  }
+void _checkLockDeadline(Directory lock, DateTime deadline) {
+  if (!DateTime.now().isAfter(deadline)) return;
+  throw WorkerInstallError(
+    'lock directory ${lock.path} remained busy; wait for its owner or remove '
+    'it after confirming it is stale.',
+  );
 }
 
 Future<bool> _isStaleLock(Directory lock, Duration staleAfter) {
@@ -473,12 +506,63 @@ _Owner? _ownerFile(File owner) {
   }
 }
 
-Future<Directory> _createStaging(String root) async {
+Future<bool> _writeOwner(
+  Directory directory,
+  String token,
+  String cacheRoot,
+  Future<void> Function()? beforeWrite,
+) async {
+  try {
+    await beforeWrite?.call();
+    final owner = File(path.join(directory.path, 'owner'));
+    try {
+      await owner.create(exclusive: true);
+    } on PathExistsException {
+      return false;
+    }
+    await owner.writeAsString('$pid $token', flush: true);
+
+    return true;
+  } on Object catch (error) {
+    await _deleteOwnedDirectory(directory, token);
+    throw WorkerInstallError(
+      'cache $cacheRoot could not write owner metadata ($error); grant write '
+      'access or set HOME.',
+    );
+  }
+}
+
+Future<void> _deleteOwnedDirectory(Directory directory, String token) async {
+  final ownerToken = _lockOwner(directory)?.token;
+  if (ownerToken != null && ownerToken != token) return;
+  await _deleteBestEffort(directory);
+}
+
+Future<Directory> _createStaging(WorkerInstallRequest request) async {
+  final root = request.cacheRoot;
   final staging = Directory(
     path.join(root, '.staging-$pid-${DateTime.now().microsecondsSinceEpoch}'),
   );
-  await staging.create();
-  await File(path.join(staging.path, 'owner')).writeAsString('$pid staging');
+  try {
+    await staging.create();
+  } on Object catch (error) {
+    throw WorkerInstallError(
+      'cache $root could not create staging ($error); grant write access or '
+      'set HOME.',
+    );
+  }
+  final ownsStaging = await _writeOwner(
+    staging,
+    'staging',
+    root,
+    () async => request.onStage?.call('beforeStagingOwner'),
+  );
+  if (!ownsStaging) {
+    throw WorkerInstallError(
+      'cache $root already contains staging owner metadata; retry the '
+      'installation.',
+    );
+  }
 
   return staging;
 }
@@ -763,3 +847,5 @@ final class _InstalledWhileWaiting implements Exception {
 
 const _defaultWorkerMirror =
     'https://github.com/runyaga/dart_monty_core/releases/download/{tag}/{archive}';
+
+const _breakLockStaleAfter = Duration(seconds: 30);
