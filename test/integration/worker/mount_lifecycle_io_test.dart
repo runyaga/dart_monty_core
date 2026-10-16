@@ -170,6 +170,8 @@ Future<void> _isolated(String ending, Future<void> Function() body) async {
       'test/integration/worker/mount_lifecycle_io_test.dart',
       '-p',
       'vm',
+      '-r',
+      'expanded',
       '-N',
       'feed table releases capability on $ending',
     ],
