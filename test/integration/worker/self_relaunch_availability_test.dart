@@ -60,7 +60,7 @@ void _testChildHandoff() {
           reason: 'a failed child writes no stdout',
         );
         expect(result.stderrLines, hasLength(1));
-        expect(result.stderrLines.single, contains('dart_monty_worker_main'));
+        expect(result.stderrLines.first, contains('dart_monty_worker_main'));
         expect(result.exitCodes, [workerLibraryExitCode]);
       });
     }
@@ -224,7 +224,7 @@ _ChildResult _runResolvableChild() {
     writeStderr: stderrLines.add,
     resolveWorker: () => resolutions++,
     diagnose: ({resolveWorker}) {
-      resolveWorker!();
+      resolveWorker?.call();
 
       return const SelfRelaunchReady();
     },
