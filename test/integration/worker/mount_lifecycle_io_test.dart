@@ -50,7 +50,11 @@ void main() {
           case 'input rejection':
             fake.willReturn(const MontyNone());
             await expectLater(
-              fake.feedRun('invalid', cwd: 'relative', mount: [mount]),
+              fake.feedRun(
+                'invalid',
+                inputs: const {'bad': MontyString('\ud800')},
+                mount: [mount],
+              ),
               throwsA(isA<MontyRuntimeError>()),
             );
             expect(fake.feeds, isEmpty);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F-2 part A mutation checks. Each edit must fail a named VM test.
+"""F-2 parts A and B mutation checks. Each edit must fail a named VM test.
 
 Run from the repository root: python3 tool/check_mount_mutations.py
 No Rust, browser, baseline, or golden mutation. Originals are restored in
@@ -21,6 +21,8 @@ SESSION = "lib/src/worker/monty_session.dart"
 NATIVE = "lib/src/mount/native_mounts.dart"
 MOUNT = "lib/src/mount/mount_dir.dart"
 MOUNT_LOOKUP = "lib/src/mount/native_mount_lookup.dart"
+PROTO = "lib/src/worker/proto_session.dart"
+CWD = "test/unit/worker/mount_cwd_test.dart"
 BINDINGS = "lib/src/mount/native_mount_bindings.dart"
 
 MUTANTS = [
@@ -113,6 +115,33 @@ MUTANTS = [
         (SESSION, "final host = _hostFor(_proto, _config, externalLookup, os, mount);",
          "final host = _hostFor(_proto, _config, externalLookup, os, null);"),
     ]),
+    ("skip-first-mount-cwd", IO,
+     "cwd mounted=true start=false first mount chooses cwd", [
+        (PROTO, "return firstMount ?? defaultCwd;", "return defaultCwd;"),
+    ]),
+    ("reset-restored-cwd", IO,
+     "cwd mounted=false start=false load snapshot preserves saved cwd", [
+        (PROTO, "    _cwdSet = true;\n\n    return (",
+         "    _cwdSet = false;\n\n    return ("),
+    ]),
+    ("establish-cwd-on-typing-rejection", CWD,
+     "typing rejection retries default on wire mounted=false", [
+        (PROTO, "if (feed && event.whichKind() != pb.ChildEvent_Kind.typingError) {",
+         "if (feed) {"),
+    ]),
+    ("mount-table-before-cwd", CWD,
+     "invalid cwd precedes overlap and sends no Feed start=false", [
+        (SESSION, """        cwd: _proto.cwdForFeed(cwd, firstMount: mount?.firstOrNull?.virtualPath),
+        host: _hostFor(_proto, _config, externalLookup, os, mount),""",
+         """        host: _hostFor(_proto, _config, externalLookup, os, mount),
+        cwd: _proto.cwdForFeed(cwd, firstMount: mount?.firstOrNull?.virtualPath),"""),
+    ]),
+    ("do-not-establish-on-sent-error", IO,
+     "cwd mounted=false start=false sent syntax error establishes cwd", [
+        (PROTO, "if (feed && event.whichKind() != pb.ChildEvent_Kind.typingError) {",
+         "if (feed && event.whichKind() == pb.ChildEvent_Kind.complete) {"),
+    ]),
+
 ]
 
 

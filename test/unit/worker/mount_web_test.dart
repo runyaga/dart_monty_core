@@ -5,6 +5,7 @@ library;
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:test/test.dart';
 
+import '_mount_cwd_cases.dart';
 import '_mount_sleep_cases.dart';
 
 void main() {
@@ -31,4 +32,5 @@ void main() {
     }, maxProcesses: 1);
   });
   mountSleepTests();
+  mountCwdTests();
 }

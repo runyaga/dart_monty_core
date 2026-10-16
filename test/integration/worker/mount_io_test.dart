@@ -9,11 +9,12 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/dart_monty_core_testing.dart';
 import 'package:test/test.dart';
 
+import '../../unit/worker/_mount_cwd_cases.dart';
 import '../../unit/worker/_mount_sleep_cases.dart';
 import '_worker_harness.dart';
 
 // Expected values and error text: owner-approved P01-P08, P11/P11b, P14,
-// plus the two-path rename controls in parity.md. No cwd establishment here.
+// plus the two-path rename and cwd controls in parity.md.
 TypeMatcher<MontyRuntimeError> _raised(String type, Object message) =>
     isA<MontyRuntimeError>()
         .having((e) => e.exception.excType, 'type', type)
@@ -71,6 +72,9 @@ void main() {
 
   Future<MontyValue> run(String code, List<MountDir> mounts, {OsHandler? os}) =>
       session.feedRun('from pathlib import Path\n$code', mount: mounts, os: os);
+
+  mountCwdTests(mountsFor: (path) => [mount(path: path)]);
+  mountCwdTests();
 
   test('P01 construction canonical fields normalization repr and close', () {
     final alias = Link('${dir.path}/alias')..createSync(dir.path);
