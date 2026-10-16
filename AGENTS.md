@@ -150,6 +150,19 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
   the upstream version, tag and commit; `tool/check_upstream_pin.py` and
   `tool/check_worker_mirror.py --local` verify the worker crate mirrors it.
 
+### Upstream follow job
+
+The daily `upstream-follow.yaml` job tests first-parent commits from
+`pydantic/monty` main one at a time. It keeps `last_good.json` on the
+`upstream-follow-state` branch. It does not change
+`tool/upstream/upstream-pin.json`.
+
+Run it with `workflow_dispatch` to set a commit limit or accept a reviewed
+commit. A red or flagged result opens `Upstream follow: needs attention`.
+Review the reported commit, then dispatch the job with its SHA in `accept` to
+advance past it. Use `python3 -I tool/follow_upstream.py run --help` for the
+local command.
+
 ## 7. Common failures and fixes
 
 | Symptom | Fix |

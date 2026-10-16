@@ -232,6 +232,8 @@ jobs:
           # ...and its negative controls: path, git, [patch], [replace] and
           # cargo-config overrides of upstream crates must each fail it.
           run python3 -I tool/test_check_worker_mirror.py
+          # Offline controls for the per-commit upstream follow job.
+          run python3 -I tool/test_follow_upstream.py
           # The parent's IANA zone-name list against the jiff-tzdb version
           # native/worker/Cargo.lock pins (offline: version, checksum, hash).
           run python3 -I tool/generate_tz_names.py --check

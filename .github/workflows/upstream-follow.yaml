@@ -1,0 +1,140 @@
+name: Upstream follow
+
+# Tests each monty main commit in order and reports drift. This job never
+# changes tool/upstream/upstream-pin.json.
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      accept:
+        description: 'Reviewed commit SHA to accept without gating'
+        required: false
+        type: string
+      max_commits:
+        description: 'Maximum pending commits to test'
+        required: false
+        default: '10'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-follow
+  cancel-in-progress: false
+
+jobs:
+  follow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Read the parity pin
+        run: |
+          parity_pin=$(grep -E '^  PARITY_PIN: [0-9a-f]{40}$' .github/workflows/ci.yaml | awk '{print $2}')
+          [[ "$parity_pin" =~ ^[0-9a-f]{40}$ ]] || { echo 'PARITY_PIN must be a full commit SHA'; exit 1; }
+          echo "PARITY_PIN=$parity_pin" >> "$GITHUB_ENV"
+      - name: Check out the state branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! git clone --branch upstream-follow-state --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" .upstream-state; then
+            rm -rf .upstream-state
+            mkdir .upstream-state
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: runyaga/dart_monty_parity
+          ref: ${{ env.PARITY_PIN }}
+          path: .parity
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: native/worker
+          key: upstream-follow-${{ hashFiles('native/worker/Cargo.lock') }}
+      - run: dart pub get
+      - name: Follow monty main
+        id: follow
+        env:
+          ACCEPT: ${{ inputs.accept }}
+          MAX_COMMITS: ${{ inputs.max_commits || '10' }}
+        run: |
+          args=(run --core "$GITHUB_WORKSPACE" --workdir "$RUNNER_TEMP/upstream-follow" \
+            --parity "$GITHUB_WORKSPACE/.parity" --max-commits "$MAX_COMMITS" \
+            --state-file "$GITHUB_WORKSPACE/.upstream-state/last_good.json" --out result.json)
+          if [ -n "$ACCEPT" ]; then
+            args+=(--accept "$ACCEPT")
+          fi
+          python3 -I tool/follow_upstream.py "${args[@]}"
+      - name: Advance the state branch
+        if: always() && hashFiles('result.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          readarray -t state < <(python3 -I -c 'import json; r=json.load(open("result.json")); print(r["start"]); print(r["last_good"])')
+          if [ "${state[0]}" = "${state[1]}" ]; then
+            exit 0
+          fi
+          if ! git -C .upstream-state rev-parse --git-dir >/dev/null 2>&1; then
+            git -C .upstream-state init -q
+            git -C .upstream-state checkout -q --orphan upstream-follow-state
+            git -C .upstream-state remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          else
+            git -C .upstream-state remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          fi
+          git -C .upstream-state config user.name "$GITHUB_ACTOR"
+          git -C .upstream-state config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git -C .upstream-state add last_good.json
+          if ! git -C .upstream-state diff --cached --quiet; then
+            git -C .upstream-state commit -m 'chore: advance upstream follow state'
+            git -C .upstream-state push origin HEAD:upstream-follow-state
+          fi
+      - name: Report upstream drift
+        if: always() && hashFiles('result.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT_FILE: result.json
+          ISSUE_BODY: ${{ runner.temp }}/upstream-follow-issue.md
+        run: |
+          status=$(python3 -I -c 'import json, os; print(json.load(open(os.environ["RESULT_FILE"]))["status"])')
+          case "$status" in red|flagged|error) ;; *) exit 0 ;; esac
+          python3 -I - <<'PY' > "$ISSUE_BODY"
+          import json
+          import os
+
+          result = json.load(open(os.environ['RESULT_FILE']))
+          entry = result.get('commits', [])[-1] if result.get('commits') else {}
+          print('Upstream follow needs review.')
+          print()
+          print(f"Status: `{result['status']}`")
+          print(f"Commit: `{entry.get('sha', result.get('last_good', 'unknown'))}`")
+          print(f"Subject: {entry.get('subject', result.get('error', 'unknown'))}")
+          print(f"Stage: `{entry.get('stage', 'unknown')}`")
+          print(f"Flags: {', '.join(entry.get('flags', [])) or 'none'}")
+          PY
+          existing=$(gh issue list --search 'Upstream follow: needs attention in:title' --state open \
+            --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$ISSUE_BODY"
+          else
+            gh issue create --title 'Upstream follow: needs attention' --body-file "$ISSUE_BODY"
+          fi

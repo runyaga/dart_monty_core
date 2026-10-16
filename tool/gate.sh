@@ -160,6 +160,9 @@ s  worker_mirror python3 -I tool/check_worker_mirror.py --local
 # cargo-config override that swaps local code in for an upstream crate (at the
 # pinned version, or as salsa 0.28.5) must fail it. Temp-dir fixtures.
 s  worker_mirror_t python3 -I tool/test_check_worker_mirror.py
+# The per-commit upstream follow job's offline controls: state seeding,
+# version replacement, patch-table idempotence and its stop conditions.
+s  follow_upstream_t python3 -I tool/test_follow_upstream.py
 # Every tool/generate_*_oracle.py --check (found by glob): a committed oracle
 # .g.dart that no longer matches upstream's recorded outcomes. Needs uv or
 # python3.12 plus network once for the cached .venv-oracle; otherwise SKIP
