@@ -1,6 +1,5 @@
 // Runs on the VM as well as in Chrome: the browser stub has no JS interop,
 // so the VM measures its coverage directly.
-library;
 
 import 'package:dart_monty_core/src/mount/native_mounts_web.dart';
 import 'package:test/test.dart';
