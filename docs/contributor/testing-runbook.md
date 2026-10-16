@@ -42,7 +42,7 @@ dart test --exclude-tags=integration,ladder,example,worker
 
 **Verifies:** pure-Dart logic, and the session against fakes, with no worker
 process. **Cannot verify:** the protocol against a real worker. The gate runs
-this with a floor of 700 tests (`sf unit_tests 700`).
+this with a floor of 3173 tests (`sf unit_tests 3173`).
 
 ## 2. Unit tests: the same suite on both web compilers
 
@@ -53,7 +53,7 @@ dart test --exclude-tags=integration,ladder,example,vm-only,worker \
 
 **Not redundant with 1.** dart2js has one number type, so `4.0 is int` is
 true there, and a test that passes on the VM can fail on dart2js. The gate's
-floor is 1400 (`sf unit_web 1400`).
+floor is 6212 (`sf unit_web 6212`).
 
 ## 3. The worker on native
 
@@ -64,7 +64,7 @@ dart test test/integration/worker -p vm --tags=worker
 
 **Verifies:** pool, session, snapshots, host objects and crash recovery
 against the real worker executable in `lib/src/bin/<os>-<arch>/`. The gate's
-floor is 165 (`sf worker_vm 165`).
+floor is 598 (`sf worker_vm 598`).
 
 ## 4. The worker in the browser
 
@@ -74,7 +74,7 @@ bash tool/test_worker_web.sh
 
 **Verifies:** the same behaviour through a Web Worker, on dart2js and
 dart2wasm, driving the **committed** `lib/assets/dart_monty_core_worker.{js,wasm}`.
-The script asserts a floor of 230 tests per compiler. A feature needs both a
+The script asserts a floor of 461 tests per compiler. A feature needs both a
 VM runner (`test/integration/worker/*_io_test.dart`) and a web runner
 (`test/unit/worker/*_web_test.dart`) over a shared body; a missing runner
 leaves a platform untested.
