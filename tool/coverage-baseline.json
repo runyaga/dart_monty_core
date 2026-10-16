@@ -198,8 +198,8 @@
     },
     "lib/src/worker/channel_factory_stub.dart": {
       "found": 3,
-      "hit": 0,
-      "pct": 0.0
+      "hit": 1,
+      "pct": 33.33
     },
     "lib/src/worker/channel_factory_web.dart": {
       "found": 15,
@@ -469,7 +469,7 @@
   },
   "total": {
     "found": 7712,
-    "hit": 7657,
-    "pct": 99.29
+    "hit": 7658,
+    "pct": 99.3
   }
 }
