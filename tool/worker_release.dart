@@ -51,6 +51,8 @@ void _runWorkerReleaseCommand(String command, List<String> arguments) {
       verifyWorkerRelease(
         File(options.require('manifest')),
         Directory(options.require('assets')),
+        tag: options.value('tag'),
+        allowPartial: options.has('allow-partial'),
       );
     default:
       throw WorkerRelease('unknown command "$command".\n$_usage');
@@ -101,7 +103,12 @@ void writeWorkerReleaseManifest(
 }
 
 /// Verifies every archive described by [manifestFile] against [assets].
-void verifyWorkerRelease(File manifestFile, Directory assets) {
+void verifyWorkerRelease(
+  File manifestFile,
+  Directory assets, {
+  String? tag,
+  bool allowPartial = false,
+}) {
   if (!manifestFile.existsSync()) {
     throw WorkerRelease('manifest is missing: ${manifestFile.path}.');
   }
@@ -109,8 +116,11 @@ void verifyWorkerRelease(File manifestFile, Directory assets) {
     throw WorkerRelease('assets directory is missing: ${assets.path}.');
   }
   final manifest = WorkerManifest.fromJson(manifestFile.readAsStringSync());
-  final archives = _archivesFor(manifest);
-  _verifyNoExtraArchives(assets, archives.keys);
+  if (tag != null && manifest.version != tag) {
+    throw WorkerRelease('manifest version does not match tag "$tag".');
+  }
+  final archives = _archivesFor(manifest, allowPartial);
+  _verifyNoExtraFiles(assets, archives.keys);
   for (final name in archives.keys) {
     _verifyArchive(File(path.join(assets.path, name)), archives[name]!);
   }
@@ -148,8 +158,7 @@ Map<String, Object?> _packArtifact(
   Directory out,
   bool library,
 ) {
-  final prefix = library ? 'dart_monty_worker_library' : 'dart_monty_worker';
-  final archiveName = '$prefix-$target.gz';
+  final archiveName = _archiveName(target, library);
   final archive = GZipCodec().encode(contents);
   File(path.join(out.path, archiveName)).writeAsBytesSync(archive, flush: true);
 
@@ -210,14 +219,29 @@ Map<String, Object?> _jsonMap(String source, String file) {
   }
 }
 
-Map<String, _ArchivedArtifact> _archivesFor(WorkerManifest manifest) {
+Map<String, _ArchivedArtifact> _archivesFor(
+  WorkerManifest manifest,
+  bool allowPartial,
+) {
   final found = <String, _ArchivedArtifact>{};
   for (final target in _targets.keys) {
     final entry = manifest.targets[target];
-    if (entry == null) continue;
-    _addArchive(found, entry.worker);
+    if (entry == null) {
+      if (!allowPartial) {
+        throw WorkerRelease('manifest is missing target "$target".');
+      }
+      continue;
+    }
+    final names = _targets[target]!;
+    _addArchive(found, entry.worker, target, names.worker, false);
     final library = entry.library;
-    if (library != null) _addArchive(found, library);
+    if (library == null) {
+      if (!allowPartial) {
+        throw WorkerRelease('manifest is missing library for "$target".');
+      }
+      continue;
+    }
+    _addArchive(found, library, target, names.library, true);
   }
 
   return found;
@@ -226,10 +250,24 @@ Map<String, _ArchivedArtifact> _archivesFor(WorkerManifest manifest) {
 void _addArchive(
   Map<String, _ArchivedArtifact> found,
   WorkerArtifact artifact,
+  String target,
+  String expectedFile,
+  bool library,
 ) {
+  if (artifact.file != expectedFile) {
+    throw WorkerRelease(
+      '$target: artifact file must be "$expectedFile".',
+    );
+  }
   final archive = artifact.archive;
   if (archive == null) {
     throw WorkerRelease('${artifact.file}: archive is required.');
+  }
+  final expectedArchive = _archiveName(target, library);
+  if (archive.name != expectedArchive) {
+    throw WorkerRelease(
+      '$target: archive name must be "$expectedArchive".',
+    );
   }
   if (found.containsKey(archive.name)) {
     throw WorkerRelease(
@@ -239,13 +277,13 @@ void _addArchive(
   found[archive.name] = _ArchivedArtifact(artifact, archive);
 }
 
-void _verifyNoExtraArchives(Directory assets, Iterable<String> expected) {
-  final known = expected.toSet();
+void _verifyNoExtraFiles(Directory assets, Iterable<String> archives) {
+  final known = {...archives, 'worker-manifest.json'};
   final entries = assets.listSync().whereType<File>();
   for (final entry in entries) {
     final name = path.basename(entry.path);
-    if (name.endsWith('.gz') && !known.contains(name)) {
-      throw WorkerRelease('$name: archive is not listed in the manifest.');
+    if (!known.contains(name)) {
+      throw WorkerRelease('$name: file is not listed in the manifest.');
     }
   }
 }
@@ -290,6 +328,12 @@ void _checkValue(String name, String check, Object actual, Object expected) {
 
 String _digest(List<int> bytes) => sha256.convert(bytes).toString();
 
+String _archiveName(String target, bool library) {
+  final prefix = library ? 'dart_monty_worker_library' : 'dart_monty_worker';
+
+  return '$prefix-$target.gz';
+}
+
 void _writeJson(File file, Object value) =>
     _writeText(file, '${const JsonEncoder.withIndent('  ').convert(value)}\n');
 
@@ -327,9 +371,13 @@ final class _Options {
       if (name == 'allow-partial') {
         values[name] = null;
       } else if (!iterator.moveNext()) {
-        throw WorkerRelease('missing value for --$name.');
+        throw WorkerRelease('--$name needs a value.');
       } else {
-        values[name] = iterator.current;
+        final value = iterator.current;
+        if (value.startsWith('--')) {
+          throw WorkerRelease('--$name needs a value.');
+        }
+        values[name] = value;
       }
     }
 
@@ -339,6 +387,8 @@ final class _Options {
   final Map<String, String?> _values;
 
   bool has(String name) => _values.containsKey(name);
+
+  String? value(String name) => _values[name];
 
   String require(String name) {
     final value = _values[name];
@@ -354,7 +404,7 @@ const _usage =
     'usage:\n'
     '  dart run tool/worker_release.dart pack --target <key> --bin-dir <dir> --out <dir>\n'
     '  dart run tool/worker_release.dart manifest --tag <tag> --fragments <dir> --out <file> [--allow-partial]\n'
-    '  dart run tool/worker_release.dart verify --manifest <file> --assets <dir>';
+    '  dart run tool/worker_release.dart verify --manifest <file> --assets <dir> [--tag <tag>] [--allow-partial]';
 
 void main(List<String> arguments) {
   try {

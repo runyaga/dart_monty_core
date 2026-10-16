@@ -39,7 +39,7 @@ void main() {
         expect(library.existsSync(), isTrue);
         expect(
           File(
-            path.join(assetsPath, '$target.fragment.json'),
+            path.join(fixture.fragments.path, '$target.fragment.json'),
           ).existsSync(),
           isTrue,
         );
@@ -108,13 +108,13 @@ void main() {
         final fixture = await _Fixture.create();
         addTearDown(fixture.dispose);
         await File(
-          path.join(fixture.assets.path, 'windows-x64.fragment.json'),
+          path.join(fixture.fragments.path, 'windows-x64.fragment.json'),
         ).delete();
 
         await expectLater(
           () => writeWorkerReleaseManifest(
             'v1.2.3',
-            fixture.assets,
+            fixture.fragments,
             fixture.manifestFile,
             allowPartial: false,
           ),
@@ -128,7 +128,7 @@ void main() {
         );
         writeWorkerReleaseManifest(
           'v1.2.3',
-          fixture.assets,
+          fixture.fragments,
           fixture.manifestFile,
           allowPartial: true,
         );
@@ -174,6 +174,18 @@ void main() {
       await fixture.expectVerificationFailure('unexpected.gz');
     });
 
+    test('rejects a non-archive file that is not in the manifest', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await File(
+        path.join(fixture.assets.path, 'unexpected.txt'),
+      ).writeAsString(
+        'extra',
+      );
+
+      await fixture.expectVerificationFailure('unexpected.txt');
+    });
+
     test('rejects a wrong archive digest', () async {
       final fixture = await _Fixture.create();
       addTearDown(fixture.dispose);
@@ -195,6 +207,127 @@ void main() {
 
       await fixture.expectVerificationFailure('dart_monty_worker-linux-x64.gz');
     });
+
+    test('rejects a wrong worker digest', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.changeManifest((root) {
+        _worker(root, 'linux-x64')['sha256'] = '0' * 64;
+      });
+
+      await fixture.expectVerificationFailure('dart_monty_worker-linux-x64.gz');
+    });
+
+    test('rejects a wrong archive byte count', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.changeManifest((root) {
+        _archive(root, 'linux-x64')['bytes'] = 1;
+      });
+
+      await fixture.expectVerificationFailure('dart_monty_worker-linux-x64.gz');
+    });
+
+    test('rejects swapped worker and library archives', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      final worker = await fixture.workerArchive('linux-x64');
+      final library = await fixture.libraryArchive('linux-x64');
+      final workerBytes = await worker.readAsBytes();
+      final libraryBytes = await library.readAsBytes();
+      await worker.writeAsBytes(libraryBytes, flush: true);
+      await library.writeAsBytes(workerBytes, flush: true);
+
+      await fixture.expectVerificationFailure('dart_monty_worker-linux-x64.gz');
+    });
+
+    test('rejects a library-only manifest tamper', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.changeManifest((root) {
+        _library(root, 'linux-x64')['sha256'] = '0' * 64;
+      });
+
+      await fixture.expectVerificationFailure(
+        'dart_monty_worker_library-linux-x64.gz',
+      );
+    });
+
+    test(
+      'requires every target unless partial verification is allowed',
+      () async {
+        final fixture = await _Fixture.create();
+        addTearDown(fixture.dispose);
+        final worker = await fixture.workerArchive('windows-x64');
+        final library = await fixture.libraryArchive('windows-x64');
+        await fixture.changeManifest((root) {
+          _targetsMap(root).remove('windows-x64');
+        });
+
+        await fixture.expectVerificationFailure('windows-x64');
+        await worker.delete();
+        await library.delete();
+        verifyWorkerRelease(
+          fixture.manifestFile,
+          fixture.assets,
+          allowPartial: true,
+        );
+      },
+    );
+
+    test(
+      'requires a library for every target unless partial is allowed',
+      () async {
+        final fixture = await _Fixture.create();
+        addTearDown(fixture.dispose);
+        final library = await fixture.libraryArchive('linux-x64');
+        await fixture.changeManifest((root) {
+          _target(root, 'linux-x64').remove('library');
+        });
+
+        await fixture.expectVerificationFailure('linux-x64');
+        await library.delete();
+        verifyWorkerRelease(
+          fixture.manifestFile,
+          fixture.assets,
+          allowPartial: true,
+        );
+      },
+    );
+
+    test('requires the requested tag to match the manifest version', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      await fixture.expectVerificationFailure('version', tag: 'v9.9.9');
+    });
+
+    test('the CLI exits for good and tampered release assets', () async {
+      final fixture = await _Fixture.create();
+      addTearDown(fixture.dispose);
+      Future<void> expectCliExit(int expectedExitCode) async {
+        final result = await fixture.runVerifyCli();
+        expect(
+          result.exitCode,
+          expectedExitCode,
+          reason: result.stderr.toString(),
+        );
+      }
+
+      await expectCliExit(0);
+      final archive = await fixture.workerArchive('linux-x64');
+      final bytes = await archive.readAsBytes();
+      bytes[0] ^= 1;
+      await archive.writeAsBytes(bytes, flush: true);
+
+      await expectCliExit(1);
+    });
+  });
+
+  test('rejects an option value that starts another option', () {
+    expect(
+      () => runWorkerRelease(['verify', '--tag', '--manifest', 'manifest']),
+      throwsA(_releaseError('--tag needs a value')),
+    );
   });
 }
 
@@ -218,33 +351,56 @@ Map<String, Object?> _archive(Map<String, Object?> root, String target) {
   return archive;
 }
 
+Map<String, Object?> _library(Map<String, Object?> root, String target) {
+  final library = _target(root, target)['library'];
+  if (library is! Map<String, Object?>) throw StateError('library is missing');
+
+  return library;
+}
+
 Map<String, Object?> _target(Map<String, Object?> root, String target) {
-  final targets = root['targets'];
-  if (targets is! Map<String, Object?>) throw StateError('targets are missing');
+  final targets = _targetsMap(root);
   final entry = targets[target];
   if (entry is! Map<String, Object?>) throw StateError('target is missing');
 
   return entry;
 }
 
+Map<String, Object?> _targetsMap(Map<String, Object?> root) {
+  final targets = root['targets'];
+  if (targets is! Map<String, Object?>) throw StateError('targets are missing');
+
+  return targets;
+}
+
 final class _Fixture {
-  const _Fixture(this.root, this.assets, this.manifestFile);
+  const _Fixture(this.root, this.assets, this.fragments, this.manifestFile);
 
   final Directory root;
   final Directory assets;
+  final Directory fragments;
   final File manifestFile;
 
   static Future<_Fixture> create() async {
     final root = await Directory.systemTemp.createTemp('worker-release-');
     final assets = Directory(path.join(root.path, 'assets'));
+    final fragments = Directory(path.join(root.path, 'fragments'));
     final manifest = File(path.join(root.path, 'worker-manifest.json'));
-    final fixture = _Fixture(root, assets, manifest);
+    final fixture = _Fixture(root, assets, fragments, manifest);
     for (final target in _targets) {
       await fixture._pack(target);
     }
+    await fragments.create();
+    for (final target in _targets) {
+      final fragment = File(path.join(assets.path, '$target.fragment.json'));
+      await fragment.copy(
+        path.join(fragments.path, path.basename(fragment.path)),
+      );
+      await fragment.delete();
+    }
     writeWorkerReleaseManifest(
       'v1.2.3',
-      assets,
+      fragments,
       manifest,
       allowPartial: false,
     );
@@ -262,6 +418,13 @@ final class _Fixture {
     return File(path.join(assets.path, archive.name));
   }
 
+  Future<File> libraryArchive(String target) async {
+    final archive = (await manifest()).targets[target]?.library?.archive;
+    if (archive == null) fail('library archive is missing for $target');
+
+    return File(path.join(assets.path, archive.name));
+  }
+
   Future<void> changeManifest(
     void Function(Map<String, Object?>) change,
   ) async {
@@ -271,9 +434,9 @@ final class _Fixture {
     await manifestFile.writeAsString(jsonEncode(document));
   }
 
-  Future<void> expectVerificationFailure(String archive) async {
+  Future<void> expectVerificationFailure(String archive, {String? tag}) async {
     await expectLater(
-      () => verifyWorkerRelease(manifestFile, assets),
+      () => verifyWorkerRelease(manifestFile, assets, tag: tag),
       throwsA(
         isA<WorkerRelease>().having(
           (error) => error.message,
@@ -283,6 +446,21 @@ final class _Fixture {
       ),
     );
   }
+
+  Future<ProcessResult> runVerifyCli() => Process.run(
+    Platform.resolvedExecutable,
+    [
+      'run',
+      'tool/worker_release.dart',
+      'verify',
+      '--manifest',
+      manifestFile.path,
+      '--assets',
+      assets.path,
+      '--tag',
+      'v1.2.3',
+    ],
+  );
 
   Future<void> dispose() => root.delete(recursive: true);
 
