@@ -1,7 +1,6 @@
-// Spec-requirement tests for the collection members of the MontyValue family
-// (T-values). Each test name starts with the REQ id it asserts.
-// The ordering-operator test calls members that must not exist, so it calls
-// them on a `dynamic` target.
+// Tests for the collection members of the MontyValue family. The ordering-
+// operator test calls members that must not exist, so it calls them on a
+// `dynamic` target.
 // ignore_for_file: avoid_dynamic_calls
 @Tags(['unit'])
 library;
@@ -14,7 +13,7 @@ import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
-import 'spec_values_support.dart';
+import '_monty_value_support.dart';
 
 MontyValue _roundTrip(MontyValue value) {
   final writer = ArenaWriter();
@@ -42,19 +41,19 @@ MontyList _cyclicList() {
 
 void main() {
   group('MontyBytes', () {
-    test('REQ-MontyBytes-4: out-of-range ints are stored without error', () {
+    test('out-of-range ints are stored without error', () {
       const b = MontyBytes([300, -1, 0, 255, 256]);
       expect(b.value, [300, -1, 0, 255, 256]);
       expect(const MontyBytes([1 << 40]).value, [1 << 40]);
     });
-    test('REQ-MontyBytes-5: dartValue is the same list instance', () {
+    test('dartValue is the same list instance', () {
       final list = [1, 2, 3];
       final b = MontyBytes(list);
       expect(identical(b.dartValue, list), isTrue);
       expect(identical(b.value, list), isTrue);
     });
     test(
-      'REQ-MontyBytes-7: equal only for the same length, bytes and order',
+      'equal only for the same length, bytes and order',
       () {
         final (full, fullTwin) = twins(() => _bytes([1, 2, 3]));
         final (empty, emptyTwin) = twins(() => _bytes([]));
@@ -85,7 +84,7 @@ void main() {
         );
       },
     );
-    test('REQ-MontyBytes-9: no ordering operators and no compareTo', () {
+    test('no ordering operators and no compareTo', () {
       // The operators do not exist on the static type, so a call that must
       // raise NoSuchMethodError can only be written with a `dynamic` receiver.
       // ignore: avoid-dynamic
@@ -98,7 +97,7 @@ void main() {
       expect(() => b.compareTo(c), throwsNoSuchMethodError);
     });
     test(
-      'REQ-MontyBytes-14: caller mutation changes equality, hash, encoding',
+      'caller mutation changes equality, hash, encoding',
       () {
         final list = [1, 2, 3];
         final b = MontyBytes(list);
@@ -118,17 +117,17 @@ void main() {
         expectTrip(const MontyBytes([1, 9, 3, 4]));
       },
     );
-    test('REQ-MontyBytes-15: fromDart returns an existing MontyBytes', () {
+    test('fromDart returns an existing MontyBytes', () {
       final v = _bytes([1, 2]);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
-    test('REQ-MontyBytes-17: MontyBytes(N bytes)', () {
+    test('MontyBytes(N bytes)', () {
       expect(const MontyBytes([]).toString(), 'MontyBytes(0 bytes)');
       expect(const MontyBytes([1]).toString(), 'MontyBytes(1 bytes)');
       expect(MontyBytes(List.filled(37, 7)).toString(), 'MontyBytes(37 bytes)');
     });
     test(
-      'REQ-MontyBytes-25: invalid bytes are stored, refused on encoding',
+      'invalid bytes are stored, refused on encoding',
       () {
         const bad = MontyBytes([1, 256]);
         expect(bad.value, [1, 256]);
@@ -150,28 +149,28 @@ void main() {
   });
 
   group('constructors keep the supplied list', () {
-    test('REQ-MontyTuple-3: MontyTuple stores items', () {
+    test('MontyTuple stores items', () {
       final items = <MontyValue>[const MontyInt(1)];
       final t = MontyTuple(items);
       expect(identical(t.items, items), isTrue);
       items.add(const MontyInt(2));
       expect(t.items, hasLength(2));
     });
-    test('REQ-MontySet-3: MontySet stores items', () {
+    test('MontySet stores items', () {
       final items = <MontyValue>[const MontyInt(1)];
       final s = MontySet(items);
       expect(identical(s.items, items), isTrue);
       items.add(const MontyInt(2));
       expect(s.items, hasLength(2));
     });
-    test('REQ-MontyFrozenSet-3: MontyFrozenSet stores items', () {
+    test('MontyFrozenSet stores items', () {
       final items = <MontyValue>[const MontyInt(1)];
       final s = MontyFrozenSet(items);
       expect(identical(s.items, items), isTrue);
       items.add(const MontyInt(2));
       expect(s.items, hasLength(2));
     });
-    test('REQ-MontyNamedTuple-3: MontyNamedTuple stores its three members', () {
+    test('MontyNamedTuple stores its three members', () {
       final names = ['a', 'b'];
       final values = <MontyValue>[const MontyInt(1), const MontyInt(2)];
       final nt = MontyNamedTuple(
@@ -186,21 +185,21 @@ void main() {
   });
 
   group('toString', () {
-    test('REQ-MontyList-20: MontyList(N items)', () {
+    test('MontyList(N items)', () {
       expect(const MontyList([]).toString(), 'MontyList(0 items)');
       expect(
         const MontyList([MontyInt(1), MontyInt(2), MontyInt(3)]).toString(),
         'MontyList(3 items)',
       );
     });
-    test('REQ-MontyTuple-20: MontyTuple(N items)', () {
+    test('MontyTuple(N items)', () {
       expect(const MontyTuple([]).toString(), 'MontyTuple(0 items)');
       expect(
         const MontyTuple([MontyInt(1), MontyInt(2)]).toString(),
         'MontyTuple(2 items)',
       );
     });
-    test('REQ-MontyNamedTuple-17: MontyNamedTuple(T, N fields)', () {
+    test('MontyNamedTuple(T, N fields)', () {
       expect(
         const MontyNamedTuple(
           typeName: 'Point',
@@ -238,7 +237,7 @@ void main() {
   });
 
   group('fromDart identity', () {
-    test('REQ-MontyTuple-17: an existing MontyTuple is returned unchanged', () {
+    test('an existing MontyTuple is returned unchanged', () {
       final v = MontyTuple([MontyInt(_n(1))]);
       expect(identical(MontyValue.fromDart(v), v), isTrue);
     });
@@ -273,26 +272,26 @@ void main() {
       return t;
     }
 
-    test('REQ-MontyTuple-21: a cyclic tuple equals itself by identity', () {
+    test('a cyclic tuple equals itself by identity', () {
       final t = cyclicTuple();
       expect(t == t, isTrue);
       final [self] = t.items;
       expect(self == t, isTrue);
     });
-    test('REQ-MontyTuple-22: == and hashCode throw StateError on a cycle', () {
+    test('== and hashCode throw StateError on a cycle', () {
       final t = cyclicTuple();
       expect(() => t.hashCode, throwsStateError);
       expect(() => t == cyclicTuple(), throwsStateError);
       expect(() => MontyList([t]).hashCode, throwsStateError);
     });
-    test('REQ-MontyTuple-23: dartValue refuses a cyclic tuple', () {
+    test('dartValue refuses a cyclic tuple', () {
       final t = cyclicTuple();
       expect(() => t.dartValue, throwsStateError);
       expect(() => MontyList([t]).dartValue, throwsStateError);
       // Acyclic tuples still project.
       expect(const MontyTuple([MontyInt(1)]).dartValue, [1]);
     });
-    test('REQ-MontyNamedTuple-24: graph operations refuse cycles', () {
+    test('graph operations refuse cycles', () {
       final t = cyclicNamed();
       expect(t == t, isTrue);
       expect(() => t.hashCode, throwsStateError);
@@ -301,7 +300,7 @@ void main() {
       expect(() => t == cyclicNamed(), throwsStateError);
     });
     test(
-      'REQ-MontyFrozenSet-28: equality, hashing, projection refuse cycles',
+      'equality, hashing, projection refuse cycles',
       () {
         final t = cyclicFrozen();
         expect(t == t, isTrue);
@@ -315,7 +314,7 @@ void main() {
 
   group('MontySet', () {
     test(
-      'REQ-MontySet-28: a cycle refuses hashing, projection and a comparison '
+      'a cycle refuses hashing, projection and a comparison '
       'that reaches it; a shared cyclic element equals itself by identity',
       () {
         final c = _cyclicList();
@@ -336,7 +335,7 @@ void main() {
       },
     );
     test(
-      'REQ-MontySet-18: projections share objects; the writer shares roots',
+      'projections share objects; the writer shares roots',
       () {
         const inner = MontySet([MontyInt(1), MontyInt(2)]);
         const list = MontyList([inner, inner]);
@@ -415,7 +414,7 @@ void main() {
       },
     );
     test(
-      'REQ-MontyFrozenSet-36: exceptions and file handles compare by field',
+      'exceptions and file handles compare by field',
       () {
         MontyFrozenSet exc(String msg) => MontyFrozenSet([
           MontyExceptionValue('ValueError', msg, {'k': MontyInt(_n(1))}),
@@ -452,7 +451,7 @@ void main() {
     final cyclic = _cyclicList();
 
     test(
-      'REQ-MontyDict-16: all-string keys keep first position, last value',
+      'all-string keys keep first position, last value',
       () {
         const d = MontyDict([
           (MontyString('a'), MontyInt(1)),
@@ -486,7 +485,7 @@ void main() {
       },
     );
     test(
-      'REQ-MontyDict-17: a non-string key keeps every pair, duplicates too',
+      'a non-string key keeps every pair, duplicates too',
       () {
         const d = MontyDict([
           (MontyString('a'), MontyInt(1)),
@@ -513,7 +512,7 @@ void main() {
       },
     );
     test(
-      'REQ-MontyDict-34: dartValue throws StateError on an encountered cycle',
+      'dartValue throws StateError on an encountered cycle',
       () {
         expect(
           () => MontyDict([(const MontyString('k'), cyclic)]).dartValue,
@@ -537,7 +536,7 @@ void main() {
         );
       },
     );
-    test('REQ-MontyDict-43: distinct NaN keys compare equal', () {
+    test('distinct NaN keys compare equal', () {
       MontyDict d(int v) => MontyDict([(_nan(), MontyInt(v))]);
       final (one, oneTwin) = twins(() => d(1));
       final two = d(2);
@@ -549,7 +548,7 @@ void main() {
       ]);
       expect(twoNan == two, isTrue);
     });
-    test('REQ-MontyDict-21: fromDart keeps Python-equal keys apart', () {
+    test('fromDart keeps Python-equal keys apart', () {
       final shared = <Object?>[1, 2];
       final v =
           MontyValue.fromDart({true: 'a', 1: 'b', 'x': shared, 'y': shared})
@@ -572,7 +571,7 @@ void main() {
       final [shared0, shared1, ...] = m2.items;
       expect(identical(shared0, shared1), isTrue);
     });
-    test('REQ-MontyDict-36: fromDart refuses cycles and unsupported types', () {
+    test('fromDart refuses cycles and unsupported types', () {
       final list = <Object?>[];
       list.add(list);
       expect(() => MontyValue.fromDart(list), throwsArgumentError);
@@ -606,7 +605,7 @@ void main() {
   });
 
   group('MontyValue projections', () {
-    test('REQ-MontyValue-15: named-tuple children use the toJson form', () {
+    test('named-tuple children use the toJson form', () {
       const date = MontyDate(year: 2024, month: 3, day: 5);
       const nt = MontyNamedTuple(
         typeName: 'T',

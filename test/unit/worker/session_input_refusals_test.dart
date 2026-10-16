@@ -1,11 +1,9 @@
-// Spec tests for what the writer refuses when a value reaches a session: an
-// input or a manual answer holding a byte outside 0..255, a date or time
-// outside Python's range, a negative file position, or a cyclic attribute
-// container. The call throws before a frame is sent, the session stays
-// usable and a manual-resume snapshot stays pending for a retry. Each test
-// name starts with the requirement id it asserts, so a mutation run can
-// select it with `-N 'REQ-<id>:'`. Pure Dart over a scripted worker: vm,
-// dart2js and dart2wasm.
+// Tests for what the writer refuses when a value reaches a session: an input or
+// a manual answer holding a byte outside 0..255, a date or time outside
+// Python's range, a negative file position, or a cyclic attribute container.
+// The call throws before a frame is sent, the session stays usable and a
+// manual-resume snapshot stays pending for a retry. Pure Dart over a scripted
+// worker: vm, dart2js and dart2wasm.
 import 'dart:collection';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
@@ -102,7 +100,7 @@ final Map<String, MontyValue> _refused = {
 void main() {
   group('an input is refused before a frame is sent', () {
     for (final MapEntry(key: what, :value) in _refused.entries) {
-      test('REQ-session-turns-45: $what', () async {
+      test(what, () async {
         final (s, ch) = await _session([
           answer([_int(7)]),
         ]);
@@ -116,7 +114,7 @@ void main() {
       });
     }
 
-    test('REQ-MontyBytes-18: a byte outside 0..255 in an input', () async {
+    test('a byte outside 0..255 in an input', () async {
       final (s, ch) = await _session([
         answer([_int(1)]),
       ]);
@@ -151,7 +149,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyRuntimeError-34: a refused input leaves the session usable',
+      'a refused input leaves the session usable',
       () async {
         final (s, ch) = await _session([
           answer([_int(5)]),
@@ -168,7 +166,7 @@ void main() {
       },
     );
 
-    test('REQ-MontyRuntimeError-34: a negative file position', () {
+    test('a negative file position', () {
       expect(
         () => MontyFileHandle('/f', 'r', position: BigInt.from(-1)),
         throwsArgumentError,
@@ -190,7 +188,7 @@ void main() {
 
   group('a manual answer is refused, the snapshot stays pending', () {
     for (final MapEntry(key: what, :value) in _refused.entries) {
-      test('REQ-MontyRuntimeError-34: $what', () async {
+      test(what, () async {
         final (s, ch) = await _session([
           answer([_call('f', 1)]),
           answer([_int(1)]),
@@ -209,7 +207,7 @@ void main() {
       });
     }
 
-    test('REQ-MontyBytes-18: a manual answer holding a bad byte', () async {
+    test('a manual answer holding a bad byte', () async {
       final (s, ch) = await _session([
         answer([_call('f', 1)]),
         answer([_int(1)]),
@@ -232,7 +230,7 @@ void main() {
     });
 
     test(
-      'REQ-session-turns-45: the pending snapshot is kept for a retry',
+      'the pending snapshot is kept for a retry',
       () async {
         final (s, ch) = await _session([
           answer([_call('f', 1)]),
@@ -287,7 +285,7 @@ void main() {
           .having((e) => e.exception.excType, 'excType', 'ValueError'),
     );
 
-    test('REQ-MontyClassProxy-24: as an input', () async {
+    test('as an input', () async {
       final (s, ch) = await _session([
         answer([_int(1)]),
       ]);
@@ -307,7 +305,7 @@ void main() {
     });
 
     test(
-      'REQ-MontyClassProxy-24: as a manual answer, snapshot still pending',
+      'as a manual answer, snapshot still pending',
       () async {
         final (s, ch) = await _session([
           answer([_call('f', 1)]),
@@ -324,7 +322,7 @@ void main() {
     );
 
     test(
-      'REQ-MontyClassProxy-24: the class itself in its own attribute is fine',
+      'the class itself in its own attribute is fine',
       () {
         final attrs = <String, MontyValue>{};
         final self = montyClassTypeProxy(

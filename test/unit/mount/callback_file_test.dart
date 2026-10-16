@@ -14,7 +14,7 @@ void main() {
 }
 
 void _attributes() {
-  test('REQ-VfsCallbackFile-5,6,7 normalised construction and setters', () {
+  test('normalised construction and setters', () {
     final file = CallbackFile(
       'a//./../b',
       (_) => 'old',
@@ -43,7 +43,7 @@ void _attributes() {
     expect(representation, startsWith('CallbackFile(path=a/../b, read='));
     expect(representation, endsWith('permissions=384)'));
   });
-  test('REQ-VfsCallbackFile-10 REQ-VfsReadCallback-7 no caching', () {
+  test('no caching', () {
     var reads = 0;
     final writes = <Object>[];
     final file = CallbackFile(
@@ -60,7 +60,7 @@ void _attributes() {
     expect(file.readContent(), 2);
     expect(writes, ['not cached']);
   });
-  test('REQ-VfsWriteCallback-4,7,8 writes raw content synchronously', () async {
+  test('writes raw content synchronously', () async {
     final pending = Completer<void>();
     final seen = <Object>[];
     // This verifies that a synchronous write does not await an async callback.
@@ -124,7 +124,7 @@ void _renames() {
 }
 
 void _failures() {
-  test('REQ-VfsCallbackFile-13 REQ-VfsReadCallback-10 errors unchanged', () {
+  test('errors unchanged', () {
     final error = StateError('host');
     final file = CallbackFile('/f', (_) => throw error, (_, _) => throw error);
     final sameError = throwsA(same(error));

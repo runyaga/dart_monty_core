@@ -62,7 +62,7 @@ Future<void> _terminated(
 
 void main() {
   test(
-    'REQ-budgets-and-limits-22: request framing crosses the hard ceiling',
+    'request framing crosses the hard ceiling',
     () async {
       final (path, args) = launchCommand(await locateWorker());
       final process = await Process.start(path, args);
@@ -85,7 +85,7 @@ void main() {
   );
 
   test(
-    'REQ-budgets-and-limits-22: input decoding crosses the hard ceiling',
+    'input decoding crosses the hard ceiling',
     () async {
       final channel = await _channel();
       await _terminated(
@@ -107,7 +107,7 @@ void main() {
   );
 
   test(
-    'REQ-budgets-and-limits-22: snapshot loading crosses the hard ceiling',
+    'snapshot loading crosses the hard ceiling',
     () async {
       final pool = await Monty.start(maxProcesses: 1);
       addTearDown(pool.close);
@@ -122,7 +122,7 @@ void main() {
   );
 
   test(
-    'REQ-budgets-and-limits-22: type checking crosses the hard ceiling',
+    'type checking crosses the hard ceiling',
     () async {
       const limit = 32 * 1024 * 1024;
       final control = await _channel(maxMemory: limit);

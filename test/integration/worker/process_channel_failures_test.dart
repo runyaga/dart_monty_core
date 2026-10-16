@@ -19,7 +19,7 @@ import 'package:test/test.dart';
 
 const _fatalText = 'cannot announce the suspension';
 const _memoryText = 'the worker exceeded its memory limit and was terminated';
-const _path = 'test/integration/worker/spec_channel_failures_test.dart';
+const _path = 'test/integration/worker/process_channel_failures_test.dart';
 
 Future<void> main([List<String> args = const []]) async {
   if (args.isNotEmpty) {
@@ -27,14 +27,8 @@ Future<void> main([List<String> args = const []]) async {
 
     return;
   }
-  for (final req in [
-    'REQ-MontyCrashedError-25',
-    'REQ-MontyRuntimeError-30',
-    'REQ-ResourceLimits-46',
-    'REQ-budgets-and-limits-75',
-    'REQ-platforms-47',
-  ]) {
-    test('$req: FatalError wins over exit 65', () async {
+  for (final run in [1, 2, 3, 4, 5]) {
+    test('FatalError wins over exit 65 (run $run)', () async {
       final (pool, session, channel) = await _session('fatal');
       await expectLater(
         session.feedRun('1'),
@@ -49,8 +43,8 @@ Future<void> main([List<String> args = const []]) async {
       await _finished(pool, session, channel);
     });
   }
-  for (final req in ['REQ-ResourceLimits-45', 'REQ-budgets-and-limits-74']) {
-    test('$req: EOF with exit 65 reports the exact MemoryError', () async {
+  for (final run in [1, 2]) {
+    test('EOF with exit 65 reports the exact MemoryError (run $run)', () async {
       final (pool, session, channel) = await _session('oom');
       await expectLater(
         session.feedRun('1'),
@@ -67,7 +61,7 @@ Future<void> main([List<String> args = const []]) async {
   }
   for (final scenario in ['oversize', 'torn']) {
     test(
-      'REQ-wire-limits-36: $scenario discards the worker and session',
+      '$scenario discards the worker and session',
       () async {
         final (pool, session, channel) = await _session(scenario);
         await expectLater(

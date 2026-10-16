@@ -1,8 +1,7 @@
-// Spec tests for Python key equality as the reader applies it to dictionary
-// keys and set and frozenset members: which separately decoded nodes collapse
-// into one entry, which stay apart, and which are refused as unhashable. Each
-// test name starts with the requirement id it asserts, so a mutation run can
-// select it with `-N 'REQ-<id>:'`. Pure Dart: vm, dart2js and dart2wasm.
+// Tests for Python key equality as the reader applies it to dictionary keys and
+// set and frozenset members: which separately decoded nodes collapse into one
+// entry, which stay apart, and which are refused as unhashable. Pure Dart: vm,
+// dart2js and dart2wasm.
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -76,7 +75,7 @@ final String _set = _unhashable('set');
 
 void main() {
   group('complex keys', () {
-    test('REQ-MontyComplex-16: zero imag, incl. negative, is its real key', () {
+    test('zero imag, incl. negative, is its real key', () {
       // true, 1, 1 (bigint arm), 1.0, 1+0j, 1-0j: one Python key.
       final same = [
         n(true),
@@ -106,7 +105,7 @@ void main() {
       expect(_setSize([n(0), complexNode(real: 0, imag: -0), n(-0.0)]), 1);
     });
 
-    test('REQ-MontyComplex-16: otherwise component by component', () {
+    test('otherwise component by component', () {
       expect(
         _setSize([
           _c12,
@@ -156,7 +155,7 @@ void main() {
 
   group('NaN floats', () {
     // Node 0 and 1 are distinct NaN nodes; the same node twice is one key.
-    test('REQ-MontyFloat-12: dict, set and frozenset keys', () {
+    test('dict, set and frozenset keys', () {
       expect(_dictSize([_nan, _nan]), 2);
       expect(_setSize([_nan, _nan]), 2);
       expect(_frozenSize([_nan, _nan]), 2);
@@ -199,7 +198,7 @@ void main() {
       );
     });
 
-    test('REQ-MontyFrozenSet-10: separate NaN nodes stay, repeats merge', () {
+    test('separate NaN nodes stay, repeats merge', () {
       expect(_frozenSize([_nan, _nan]), 2);
       expect(_frozenSize([_nan, _nan, _nan]), 3);
       final merged =
@@ -222,7 +221,7 @@ void main() {
     ];
     final fileNodes = [_file, _file];
 
-    test('REQ-MontyExceptionValue-12: dictionary keys', () {
+    test('dictionary keys', () {
       // Two nodes equal in Dart: two Python keys.
       expect(
         MontyExceptionValue('ValueError', 'm'),
@@ -253,7 +252,7 @@ void main() {
       ]);
     });
 
-    test('REQ-MontyFileHandle-14: dict, set and frozenset members', () {
+    test('dict, set and frozenset members', () {
       expect(_dictSize(fileNodes), 2);
       expect(_setSize(fileNodes), 2);
       expect(_frozenSize(fileNodes), 2);
@@ -285,7 +284,7 @@ void main() {
       );
     });
 
-    test('REQ-MontyFrozenSet-11: frozenset elements', () {
+    test('frozenset elements', () {
       expect(_frozenSize(exceptionNodes), 2);
       expect(_frozenSize(fileNodes), 2);
       expect(_frozenSize([...exceptionNodes, ...fileNodes]), 4);
@@ -322,7 +321,7 @@ void main() {
       'frozenset': frozen,
     };
 
-    test('REQ-MontyDict-26: first unhashable member, stored order', () {
+    test('first unhashable member, stored order', () {
       for (final MapEntry(key: name, value: shape) in shapes.entries) {
         expect(
           _refusal(inSet(shape, [_one, list0, dict0])),
@@ -382,7 +381,7 @@ void main() {
     });
 
     test(
-      'REQ-MontySet-21: a recursively unhashable element refuses the set',
+      'a recursively unhashable element refuses the set',
       () {
         for (final MapEntry(key: name, value: shape) in shapes.entries) {
           expect(
@@ -431,7 +430,7 @@ void main() {
       },
     );
 
-    test('REQ-MontyFrozenSet-21: the message names the first member', () {
+    test('the message names the first member', () {
       expect(
         _refusal([
           dict0,
@@ -469,7 +468,7 @@ void main() {
       );
     });
 
-    test('REQ-MontyNamedTuple-11: a key equal to the tuple of its members', () {
+    test('a key equal to the tuple of its members', () {
       // tuple (1, 2), P(1, 2) and Q(x, y = 1, 2): one key.
       final decoded =
           _decode([

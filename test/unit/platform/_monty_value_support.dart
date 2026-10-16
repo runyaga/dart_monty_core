@@ -1,4 +1,4 @@
-// Shared helpers for the spec_values tests (not a test file).
+// Shared helpers for the MontyValue family tests (not a test file).
 
 /// Two separately built values from one constructor expression.
 ///

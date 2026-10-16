@@ -17,17 +17,17 @@ import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '../../unit/worker/_channel_clock.dart';
 import '../../unit/worker/_scripted_channel.dart';
-import '../../unit/worker/_spec_channel_support.dart';
 
 final _feed = pb.ParentRequest(feed: pb.Feed(code: '1'));
 const _millisecond = Duration(milliseconds: 1);
 
 void main() {
-  for (final req in ['REQ-pool-and-lifetimes-76', 'REQ-session-turns-61']) {
+  for (final run in [1, 2]) {
     for (final fatal in [true, false]) {
-      test('$req: ${fatal ? 'fatal' : 'EOF'} allows exactly 100 ms', () {
-        final clock = SpecChannelClock();
+      test('${fatal ? 'fatal' : 'EOF'} allows exactly 100 ms (run $run)', () {
+        final clock = ChannelClock();
         clock.run(() {
           final process = _Process();
           final channel = processChannelForTesting(process);
@@ -71,9 +71,9 @@ void main() {
 
 void _drainTests() {
   for (final failedSend in [false, true]) {
-    test('REQ-print-delivery-23: ${failedSend ? 'failed send' : 'exit'} '
+    test('${failedSend ? 'failed send' : 'exit'} '
         'drains for one second', () {
-      final clock = SpecChannelClock();
+      final clock = ChannelClock();
       clock.run(() {
         final process = _Process()..stdin.failSend = failedSend;
         final channel = processChannelForTesting(process);
@@ -99,9 +99,9 @@ void _drainTests() {
 }
 
 void _resetTests() {
-  for (final req in ['REQ-pool-and-lifetimes-29', 'REQ-session-turns-17']) {
-    test('$req: Reset retains the already queued next reply', () {
-      final clock = SpecChannelClock();
+  for (final run in [1, 2]) {
+    test('Reset retains the already queued next reply (run $run)', () {
+      final clock = ChannelClock();
       clock.run(() {
         final process = _Process();
         final channel = processChannelForTesting(process);
@@ -144,7 +144,7 @@ void _resetTests() {
 void _oversizeTests() {
   for (final status in [17, 65]) {
     test(
-      'REQ-session-turns-64: oversized inbound frame with exit $status',
+      'oversized inbound frame with exit $status',
       () async {
         final process = _Process()..killStatus = status;
         final channel = processChannelForTesting(process);
@@ -189,13 +189,9 @@ Future<void> _oversizeSession(
 }
 
 void _deadlineTests() {
-  for (final req in [
-    'REQ-MontySession-44',
-    'REQ-session-turns-66',
-    'REQ-session-turns-61',
-  ]) {
-    test('$req: deadline kills directly and wins over exit 65', () async {
-      final clock = SpecChannelClock();
+  for (final run in [1, 2, 3]) {
+    test('deadline kills directly and wins over exit 65 (run $run)', () async {
+      final clock = ChannelClock();
       final process = _Process()..killStatus = 65;
       final channel = processChannelForTesting(process);
       addTearDown(() async {
@@ -247,7 +243,7 @@ Future<void> _deadlineSession(
   await pool.close();
 }
 
-void _finish(SpecChannelClock clock, _Process process, ProcessChannel channel) {
+void _finish(ChannelClock clock, _Process process, ProcessChannel channel) {
   channel.kill();
   unawaited(channel.close());
   unawaited(process.dispose());

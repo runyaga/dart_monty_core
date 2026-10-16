@@ -13,7 +13,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('REQ-print-delivery-48: crash loses a buffered partial line', () async {
+  test('crash loses a buffered partial line', () async {
     final channel = await ProcessChannel.spawn(await locateWorker());
     addTearDown(channel.close);
     final configured = await channel.turn(
