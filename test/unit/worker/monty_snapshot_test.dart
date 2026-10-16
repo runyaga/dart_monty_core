@@ -146,6 +146,24 @@ Matcher _raised(String excType, [Object? message]) => isA<MontyRuntimeError>()
     .having((e) => e.exception.excType, 'excType', excType)
     .having((e) => e.exception.message, 'message', message ?? anything);
 
+final class _ThrowingLookup extends MapBase<String, MontyValue> {
+  @override
+  MontyValue? operator [](Object? key) =>
+      throw const FormatException('lookup failed');
+
+  @override
+  void operator []=(String key, MontyValue value) => throw UnimplementedError();
+
+  @override
+  Iterable<String> get keys => const ['f'];
+
+  @override
+  void clear() => throw UnimplementedError();
+
+  @override
+  MontyValue? remove(Object? key) => throw UnimplementedError();
+}
+
 void main() {
   group('feedStart', () {
     test('a host call is a FunctionSnapshot; resume completes', () async {
@@ -787,6 +805,30 @@ void main() {
   });
 
   group('resumeAuto', () {
+    test(
+      'a throwing external lookup becomes a Python exception and leaves the session usable',
+      () async {
+        final (s, ch) = await _session([
+          answer([_call('f', 1)]),
+          answer([_int(1)]),
+          answer([_int(2)]),
+        ]);
+        final call =
+            await s.feedStart(
+                  'try:\n'
+                  '    f()\n'
+                  'except Exception:\n'
+                  '    1',
+                  externalLookup: _ThrowingLookup(),
+                )
+                as FunctionSnapshot;
+
+        expect(await call.resumeAuto(), const MontyInt(1));
+        expect(_last(ch).resumeCall.result.hasError(), isTrue);
+        expect(await s.feedRun('2'), const MontyInt(2));
+      },
+    );
+
     test('a host function answers with its value; an unknown name is '
         'not found', () async {
       final (s, ch) = await _session([
