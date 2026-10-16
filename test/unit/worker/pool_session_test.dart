@@ -175,6 +175,30 @@ final Matcher _finished = isA<StateError>().having(
   contains('finished'),
 );
 
+/// A timer that waits for the test to fire or cancel it.
+final class _HeldTimer implements Timer {
+  _HeldTimer(this._callback);
+
+  final void Function() _callback;
+  bool _isActive = true;
+
+  /// Runs the callback now, unless cancelled or already run.
+  void fire() {
+    if (!_isActive) return;
+    _isActive = false;
+    _callback();
+  }
+
+  @override
+  void cancel() => _isActive = false;
+
+  @override
+  bool get isActive => _isActive;
+
+  @override
+  int get tick => _isActive ? 0 : 1;
+}
+
 /// Expects a feed on [session] to be refused: a suspension is pending.
 Future<void> _refusedAsPending(MontySession session) => expectLater(
   session.feedRun('1', printCallback: _ignore),
@@ -2713,6 +2737,86 @@ void main() {
       expect(ch.remaining, 0);
     });
 
+    test(
+      'a typing error on a session dump leaves the session usable',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          expecting(pb.ParentRequest_Kind.dump, [
+            pb.ChildEvent(
+              typingError: pb.TypingError(diagnostics: 'bad dump type'),
+            ),
+          ]),
+          expecting(pb.ParentRequest_Kind.feed, [_int(42)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+
+        await expectLater(
+          session.dump(),
+          throwsA(
+            isA<MontyTypingError>().having(
+              (e) => e.toString(),
+              'message',
+              'bad dump type',
+            ),
+          ),
+        );
+        expect(ch.kills, 0);
+        expect(
+          await session.feedRun('42', printCallback: _ignore),
+          const MontyInt(42),
+        );
+        expect(ch.remaining, 0);
+      },
+    );
+
+    test(
+      'a typing error on a snapshot dump leaves the session usable',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([_call('f')]),
+          expecting(pb.ParentRequest_Kind.dump, [
+            pb.ChildEvent(
+              typingError: pb.TypingError(diagnostics: 'bad snapshot type'),
+            ),
+          ]),
+          expecting(pb.ParentRequest_Kind.resumeCall, [_int(2)]),
+          expecting(pb.ParentRequest_Kind.feed, [_int(3)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final snapshot =
+            await session.feedStart('f()', printCallback: _ignore)
+                as FunctionSnapshot;
+
+        await expectLater(
+          snapshot.dump(),
+          throwsA(
+            isA<MontyTypingError>().having(
+              (e) => e.toString(),
+              'message',
+              'bad snapshot type',
+            ),
+          ),
+        );
+        expect(ch.kills, 0);
+        await _refusedAsPending(session);
+        expect(
+          await snapshot.resume(const ExternalReturnValue(MontyInt(1))),
+          isA<MontyComplete>(),
+        );
+        expect(
+          await session.feedRun('3', printCallback: _ignore),
+          const MontyInt(3),
+        );
+        expect(ch.remaining, 0);
+      },
+    );
+
     test('a dump waits for the turn in flight, as upstream takes the '
         'session lock', () async {
       final release = Completer<void>();
@@ -3132,6 +3236,54 @@ void main() {
         throwsA(_timedOut('30ms')),
       );
     }, timeout: const Timeout(Duration(seconds: 5)));
+
+    test('a restored feed clock replaces the earlier report', () async {
+      final deadlines = <Duration>[];
+      final loaded = _call('f', feedMicros: 4000000)
+        ..maxFeedDurationMicros = Int64(10000000);
+      final ch = ScriptedChannel([
+        expecting(pb.ParentRequest_Kind.configure, [
+          ok()..feedExecutionMicros = Int64(8000000),
+        ]),
+        expecting(pb.ParentRequest_Kind.load, [loaded]),
+        hangAfter([]),
+      ]);
+      final pool = await _pool(
+        Workers([ch]),
+      );
+      addTearDown(pool.close);
+
+      await runZoned(
+        () async {
+          final session = await pool.checkout();
+          final snapshot =
+              await session.loadSnapshot(state) as FunctionSnapshot;
+          final resuming = snapshot.resume(
+            const ExternalReturnValue(MontyNone()),
+          );
+          await pumpEventQueue();
+
+          expect(deadlines, contains(const Duration(seconds: 7)));
+
+          final failed = expectLater(
+            resuming,
+            throwsA(isA<MontyCrashedError>()),
+          );
+          await session.close();
+          await failed;
+        },
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+            if (duration == Duration.zero) {
+              return parent.createTimer(zone, duration, callback);
+            }
+            deadlines.add(duration);
+
+            return _HeldTimer(callback);
+          },
+        ),
+      );
+    });
 
     test("a load adopts the dump's turn budget, and none when the dump has "
         'none', () async {

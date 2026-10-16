@@ -435,6 +435,49 @@ void main() {
       });
     });
   });
+
+  group('launch selection', () {
+    test('explicit launch wins in AOT', () async {
+      var eligibilityChecks = 0;
+      const explicit = WorkerExecutable('/chosen/worker', args: ['subprocess']);
+      final launch = await locateWorker(
+        explicit: explicit,
+        selfRelaunch: const SelfRelaunchOptions(isAot: true),
+        canSelfRelaunch: () {
+          eligibilityChecks++;
+
+          return true;
+        },
+      );
+      expect(launch, same(explicit));
+      expect(eligibilityChecks, 0);
+    });
+
+    test(
+      'JIT never asks self-relaunch eligibility',
+      () async {
+        runMontyWorkerIfChild(const []);
+        expect(
+          diagnoseSelfRelaunch(
+            resolveWorker: _resolved,
+            fileExists: (_) => true,
+          ),
+          isA<SelfRelaunchReady>(),
+        );
+        var eligibilityChecks = 0;
+        final launch = await locateWorker(
+          resolvePackageUri: (_) async => Uri.file(Platform.resolvedExecutable),
+          canSelfRelaunch: () {
+            eligibilityChecks++;
+
+            return true;
+          },
+        );
+        expect((launch as WorkerExecutable).path, Platform.resolvedExecutable);
+        expect(eligibilityChecks, 0);
+      },
+    );
+  });
 }
 
 final _artifact = WorkerArtifact(
@@ -484,3 +527,6 @@ Future<File> _packageFile(String name) async {
 
   return File('${directory.path}/$name')..writeAsStringSync('package');
 }
+
+void _resolved() => _resolutions++;
+int _resolutions = 0;

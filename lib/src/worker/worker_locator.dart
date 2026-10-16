@@ -11,10 +11,15 @@ import 'dart:isolate';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
+import 'package:dart_monty_core/src/worker/self_relaunch_options.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
+import 'package:dart_monty_core/src/worker/worker_cache_source.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest_data.dart';
 import 'package:meta/meta.dart';
+
+export 'package:dart_monty_core/src/worker/self_relaunch_options.dart';
+export 'package:dart_monty_core/src/worker/worker_cache_source.dart';
 
 final _verifiedWorkers = <String>{};
 final _workerVerificationFutures = <String, Future<void>>{};
@@ -40,49 +45,6 @@ String workerHostKey(Abi abi) => abi.toString().replaceAll('_', '-');
 void resetVerifiedWorkersForTesting() {
   _verifiedWorkers.clear();
   _workerVerificationFutures.clear();
-}
-
-/// Test-only inputs for the per-user worker cache.
-@immutable
-@visibleForTesting
-// ignore: prefer-match-file-name, reason: This file groups locator support types.
-class WorkerCacheSource {
-  /// Creates test-only inputs for the per-user worker cache.
-  const WorkerCacheSource({
-    this.environment,
-    this.operatingSystem,
-    this.manifest,
-    this.verify,
-  });
-
-  /// Environment used to determine the cache root.
-  final Map<String, String>? environment;
-
-  /// Operating system used to determine the cache root and permissions.
-  final String? operatingSystem;
-
-  /// Manifest from which to select a cached worker artifact.
-  final WorkerManifest? manifest;
-
-  /// Verifies a cached worker artifact before it is launched.
-  final Future<void> Function(File, WorkerArtifact)? verify;
-}
-
-/// Test-only inputs for self-relaunch selection and diagnosis.
-@immutable
-@visibleForTesting
-class SelfRelaunchOptions {
-  /// Creates test-only inputs for self-relaunch selection and diagnosis.
-  const SelfRelaunchOptions({
-    this.isAot = const bool.fromEnvironment('dart.vm.product'),
-    this.diagnose,
-  });
-
-  /// Whether worker selection runs in an AOT executable.
-  final bool isAot;
-
-  /// Diagnoses why a self-relaunch cannot serve a worker.
-  final SelfRelaunchStatus Function()? diagnose;
 }
 
 /// The [WorkerLaunch] to use on this host.

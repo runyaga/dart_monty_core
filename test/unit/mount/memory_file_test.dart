@@ -8,7 +8,7 @@ import 'package:test/test.dart';
 // Expected values: memory-fs contract, P09 and D-099 (not the old VFS).
 void main() {
   test(
-    'REQ-MontyMemoryFile-7 PurePosixPath preserves dotdot and double root',
+    'PurePosixPath preserves dotdot and double root',
     () {
       final file = MemoryFile('//d//./a/../b', 'x');
       expect(file.path, '//d/a/../b');
@@ -17,13 +17,13 @@ void main() {
       expect(file.name, 'b');
     },
   );
-  test('REQ-MontyMemoryFile-8 default and settable permissions', () {
+  test('default and settable permissions', () {
     final file = MemoryFile('/a', 'x');
     expect(file.permissions, 420);
     file.permissions = 384;
     expect(file.permissions, 384);
   });
-  test('REQ-MontyMemoryFile-10 text and bytes stay distinct', () {
+  test('text and bytes stay distinct', () {
     final bytes = Uint8List.fromList([255]);
     final file = MemoryFile('/a', bytes);
     final sameBytes = same(bytes);

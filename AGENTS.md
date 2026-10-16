@@ -54,9 +54,9 @@ It runs the two pinned `mount_fs__*.py` fixtures against a real `MountDir` at
 closed-mount and lying-handler negative controls. The native corpus uses the
 same host-mount route; its failing set must still equal
 `packages/monty_conformance/lib/src/worker_corpus_manifest.dart` in both
-directions. `python3 tool/check_mount_corpus_mutations.py` checks the
-adjudicator's controls; `python3 tool/check_mount_mutations.py` checks the
-mount/session transitions. Neither script rebuilds native code.
+directions. Mutation checks of the adjudicator's controls and of the
+mount/session transitions are run by maintainers with an external mutation
+runner; no per-area runner ships in this repo.
 
 Before writing a test, read `docs/contributor/testing-philosophy.md`; before
 trusting a green run, read `docs/contributor/testing-runbook.md`.
@@ -108,7 +108,7 @@ pinned one.
 | `test/unit/worker/_display_fixtures.g.dart` | `python3 -I tool/generate_display_fixtures.py <parity checkout>` | same with `--check` |
 | `lib/src/bin/*/dart_monty_worker` | `bash tool/build_worker.sh` | `--check` |
 | `tool/export-golden.txt` | `dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --post-cutover --update` | same without `--update` |
-| `tool/coverage-baseline.json` | maintainer-run `tool/record_coverage_baseline.sh`, from main's successful CI artifact | never in a PR |
+| `tool/coverage-baseline.json` | maintainer-run `tool/record_coverage_baseline.sh --no-commit`, from main's successful CI artifact | once per release, in the release PR only |
 
 `PY` is a Python 3.12 with upstream's oracle installed from the hash-pinned
 lock. `bash tool/check_oracles.sh` builds a cached `.venv-oracle` (gitignored)
@@ -125,18 +125,21 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
 
 ## 6. Baselines, fragments, pins
 
-- **Do not edit** `tool/coverage-baseline.json` in a PR, under any label. Do
-  not edit `CHANGELOG.md` either, unless the PR carries the `changelog-assembly`
-  label (release assembly only; `no-changelog` exempts the fragment
-  requirement, not this). Record the
+- **Do not edit** `tool/coverage-baseline.json` or `CHANGELOG.md` in a PR,
+  unless the PR carries the `changelog-assembly` label (the release PR only;
+  `no-changelog` exempts the fragment requirement, not this). The coverage
+  baseline is refreshed once per release, in the release PR
+  (`bash tool/record_coverage_baseline.sh --no-commit` on main, then carry the
+  file into the release branch); it is not recorded after every merge. Record the
   change as `changes/<slug>.md` (format in `changes/README.md`;
   `dart tool/changelog_assemble.dart --dry-run` previews assembly). Editing the
   PR body re-runs the fragment check; a cancelled duplicate shows red until
   superseded, so edit the body before the last push.
 - **Coverage ratchet** (`tool/coverage_ratchet.sh`) fails on any per-file
   decrease and on a baseline file that vanished. A deleted file is accepted
-  only through the base-ref rule (`tool/ci_ratchet_base.sh`); there is no
-  override. Add tests for lines a deleted test used to cover.
+  only through the base-ref rule (`tool/ci_ratchet_base.sh`), which also covers
+  a baseline entry for a file an earlier merge already deleted (the baseline
+  is refreshed only once per release); there is no override. Add tests for lines a deleted test used to cover.
 - **Parity pin.** `PARITY_PIN` in `.github/workflows/ci.yaml` is a full SHA of
   the parity suite (`dart_monty_parity`). The `Parity` and `Parity E0` jobs
   fail when a PR renames an API the pinned suite uses. Order: change the

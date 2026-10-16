@@ -4,68 +4,15 @@ library;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:dart_monty_core/src/worker/worker_cache_error.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
+import 'package:dart_monty_core/src/worker/worker_verify_error.dart';
+import 'package:dart_monty_core/src/worker/worker_verify_reason.dart';
 import 'package:path/path.dart' as path;
 
-// This direct import keeps the hook-visible dependency graph self-contained.
-// ignore: always_use_package_imports
-import 'worker_manifest.dart';
-
-/// A worker-cache configuration failure.
-// This file groups cache support types rather than one matching declaration.
-// ignore: prefer-match-file-name
-final class WorkerCacheError implements Exception {
-  /// Creates a cache configuration failure.
-  const WorkerCacheError(this.message);
-
-  /// Explains the failure.
-  final String message;
-
-  @override
-  String toString() => 'Worker cache configuration error: $message';
-}
-
-/// Reasons a cached worker cannot be verified.
-enum WorkerVerifyReason {
-  /// The expected path does not exist.
-  missing,
-
-  /// The file length differs from the manifest.
-  size,
-
-  /// The streamed SHA-256 digest differs from the manifest.
-  digest,
-
-  /// The expected path is not a regular file.
-  notAFile,
-}
-
-/// A cached worker verification failure.
-final class WorkerVerifyError implements Exception {
-  /// Creates a verification failure.
-  const WorkerVerifyError({
-    required this.path,
-    required this.reason,
-    required this.expected,
-    required this.actual,
-  });
-
-  /// Path that failed verification.
-  final String path;
-
-  /// Verification check that failed.
-  final WorkerVerifyReason reason;
-
-  /// Expected value for the failed check.
-  final Object? expected;
-
-  /// Actual value for the failed check.
-  final Object? actual;
-
-  @override
-  String toString() =>
-      'Worker verification failed for $path: $reason; expected $expected, '
-      'actual $actual.';
-}
+export 'package:dart_monty_core/src/worker/worker_cache_error.dart';
+export 'package:dart_monty_core/src/worker/worker_verify_error.dart';
+export 'package:dart_monty_core/src/worker/worker_verify_reason.dart';
 
 /// Returns the per-user worker cache root for the current host.
 ///

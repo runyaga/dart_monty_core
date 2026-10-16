@@ -1,9 +1,7 @@
 /// Provides the manifest bundled with this package.
 library;
 
-// This direct import keeps the hook-visible dependency graph self-contained.
-// ignore: always_use_package_imports
-import 'worker_manifest.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 
 /// Bundled manifest JSON for releases that publish no worker yet.
 ///

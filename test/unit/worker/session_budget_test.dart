@@ -26,17 +26,20 @@ pb.ChildEvent _sleep(double seconds) => pb.ChildEvent(
 );
 
 /// An `Ok`, reporting the limits given (micros for the sleep limit).
-pb.ChildEvent _ok({int? suspensions, int? sleepMicros}) => pb.ChildEvent(
-  ok: pb.Ok(),
-  maxSuspensions: suspensions == null ? null : Int64(suspensions),
-  maxTotalSleepMicros: sleepMicros == null ? null : Int64(sleepMicros),
-);
+pb.ChildEvent _ok({int? suspensions, int? sleepMicros, int? feedMicros}) =>
+    pb.ChildEvent(
+      ok: pb.Ok(),
+      maxSuspensions: suspensions == null ? null : Int64(suspensions),
+      maxTotalSleepMicros: sleepMicros == null ? null : Int64(sleepMicros),
+      feedExecutionMicros: feedMicros == null ? null : Int64(feedMicros),
+    );
 
-pb.ChildEvent _error({int? suspensions}) => pb.ChildEvent(
+pb.ChildEvent _error({int? suspensions, int? feedMicros}) => pb.ChildEvent(
   error: pb.Error(
     exception: pb.RaisedException(excType: 'ValueError', message: 'bad dump'),
   ),
   maxSuspensions: suspensions == null ? null : Int64(suspensions),
+  feedExecutionMicros: feedMicros == null ? null : Int64(feedMicros),
 );
 
 SessionBudget _budget({int? maxSuspensions, Duration? maxTotalSleep}) =>
@@ -359,12 +362,51 @@ void main() {
       expect(budgets(budget), (second, ms));
     });
 
+    test('a rejected load restores its feed clock', () {
+      final budget = timed(feed: const Duration(seconds: 10));
+      final beforeLoad = _ok(feedMicros: 3000000);
+      final rejected = _error(feedMicros: 6000000);
+      budget
+        ..admit(beforeLoad)
+        ..beginLoad()
+        ..admit(rejected)
+        ..endLoad();
+
+      final used = budget.reportedFeedExecution;
+      expect(used, const Duration(seconds: 6));
+      expect(
+        const Duration(seconds: 10) - used + const Duration(seconds: 1),
+        const Duration(seconds: 5),
+      );
+    });
+
     test("no reply at all: endLoad puts the session's back", () {
       final budget = timed(feed: second)
-        ..beginLoad()
-        ..endLoad();
+        ..admit(_ok(feedMicros: 3000000))
+        ..beginLoad();
+      expect(budget.reportedFeedExecution, Duration.zero);
+      budget.endLoad();
       expect(budgets(budget), (second, null));
+      expect(budget.reportedFeedExecution, const Duration(seconds: 3));
     });
+
+    test('beginFeed zeroes the reported feed execution', () {
+      final budget = timed()
+        ..admit(_ok(feedMicros: 3000000))
+        ..beginFeed();
+      expect(budget.reportedFeedExecution, Duration.zero);
+    });
+
+    test(
+      'a u64 feed report at 2^63 saturates instead of becoming negative',
+      () {
+        final budget = timed()..admit(_ok(feedMicros: -9223372036854775808));
+        expect(
+          budget.reportedFeedExecution,
+          greaterThanOrEqualTo(const Duration(microseconds: 9000000000000000)),
+        );
+      },
+    );
 
     test('a reported u64 past what a Duration holds is a budget, not '
         'negative', () {
