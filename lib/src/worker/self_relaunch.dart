@@ -104,6 +104,13 @@ String selfRelaunchWorkerDiagnostic(SelfRelaunchStatus status) =>
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
+/// Returns the worker child's one-line failure diagnostic, if it has one.
+String? workerChildFailureLine(SelfRelaunchStatus status) => switch (status) {
+  SelfRelaunchLibraryMissing() ||
+  SelfRelaunchLibraryUnloadable() => selfRelaunchWorkerDiagnostic(status),
+  SelfRelaunchReady() || SelfRelaunchNotArmed() => null,
+};
+
 /// Serves as the worker and exits when this process was relaunched as one;
 /// otherwise returns at once and enables [SelfRelaunch] for this process.
 ///
@@ -114,9 +121,9 @@ void runMontyWorkerIfChild(List<String> args) {
   _armed = true;
   if (args.length == 1 && args.first == SelfRelaunch.flag) {
     final status = diagnoseSelfRelaunch();
-    if (status
-        case SelfRelaunchLibraryMissing() || SelfRelaunchLibraryUnloadable()) {
-      stderr.writeln(selfRelaunchWorkerDiagnostic(status));
+    final failureLine = workerChildFailureLine(status);
+    if (failureLine != null) {
+      stderr.writeln(failureLine);
       exit(workerLibraryExitCode);
     }
     exit(_workerMain());

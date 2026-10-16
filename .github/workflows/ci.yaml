@@ -860,6 +860,52 @@ jobs:
             echo "FAIL: worker child wrote to stdout"
             exit 1
           fi
+          cp -R build/aot/bundle "$temporary_bundle/corrupt-bundle"
+          printf 'not a shared library\n' \
+            >"$temporary_bundle/corrupt-bundle/lib/libdart_monty_worker.so"
+          corrupt_diagnose_code=0
+          (cd "$temporary_bundle/corrupt-bundle" && bin/aot_worker --diagnose \
+            >"$temporary_bundle/corrupt-diagnose.stdout" \
+            2>"$temporary_bundle/corrupt-diagnose.stderr") \
+            || corrupt_diagnose_code=$?
+          if [ "$corrupt_diagnose_code" -eq 0 ]; then
+            echo "FAIL: diagnostic mode accepted an unloadable worker library"
+            exit 1
+          fi
+          grep -Fq 'lib/libdart_monty_worker.so' \
+            "$temporary_bundle/corrupt-diagnose.stderr" || {
+              echo "FAIL: unloadable library path was not reported"; exit 1;
+            }
+          corrupt_child_code=0
+          (cd "$temporary_bundle/corrupt-bundle" && \
+            bin/aot_worker --dart-monty-core-worker \
+              >"$temporary_bundle/corrupt-child.stdout" \
+              2>"$temporary_bundle/corrupt-child.stderr") \
+            || corrupt_child_code=$?
+          if [ "$corrupt_child_code" -ne 78 ]; then
+            echo "FAIL: unloadable worker child exited $corrupt_child_code, expected 78"
+            exit 1
+          fi
+          if [ -s "$temporary_bundle/corrupt-child.stdout" ]; then
+            echo "FAIL: unloadable worker child wrote to stdout"
+            exit 1
+          fi
+          if [ "$(wc -l <"$temporary_bundle/corrupt-child.stderr")" -ne 1 ]; then
+            echo "FAIL: unloadable worker child wrote more than one stderr line"
+            exit 1
+          fi
+          grep -Fq 'lib/libdart_monty_worker.so' \
+            "$temporary_bundle/corrupt-child.stderr" || {
+              echo "FAIL: unloadable child did not name the library"; exit 1;
+            }
+          grep -Fq 'dart_monty_worker_main' \
+            "$temporary_bundle/corrupt-child.stderr" || {
+              echo "FAIL: unloadable child did not name its worker entry point"; exit 1;
+            }
+          grep -Fq 'cannot be loaded' \
+            "$temporary_bundle/corrupt-child.stderr" || {
+              echo "FAIL: unloadable child did not report a load failure"; exit 1;
+            }
       # The hook builds the worker library with the opt-in set and nothing
       # without it. Run after the opted-in consumer above, which built the same
       # cdylib configuration into native/worker/target; the test links that

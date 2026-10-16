@@ -56,22 +56,40 @@ void _testLaunchCommand() {
 
 void _testDiagnosticFormatting() {
   group('runMontyWorkerIfChild', () {
-    test('worker diagnostic collapses whitespace in an unloadable error', () {
-      final diagnostic = selfRelaunchWorkerDiagnostic(
-        const SelfRelaunchLibraryUnloadable(
-          '/bundle/lib/libdart_monty_worker.so',
-          'ArgumentError: bad library\n  trailing detail\n',
+    test('worker child failure line covers every self-relaunch status', () {
+      const library = '/bundle/lib/libdart_monty_worker.so';
+      final cases = <(SelfRelaunchStatus, String?)>[
+        (const SelfRelaunchReady(), null),
+        (const SelfRelaunchNotArmed(), null),
+        (const SelfRelaunchLibraryMissing(library), library),
+        (
+          const SelfRelaunchLibraryUnloadable(
+            library,
+            'ArgumentError: bad library\n  trailing detail\n',
+          ),
+          library,
         ),
-      );
+      ];
 
-      expect(
-        diagnostic,
-        'dart_monty_core worker: dart_monty_worker_main: the worker library '
-        '/bundle/lib/libdart_monty_worker.so exists but cannot be loaded: '
-        'ArgumentError: bad library trailing detail : rebuild it for this '
-        'platform (dart build cli) or replace the file. Or pass a '
-        'WorkerExecutable.',
-      );
+      for (final (status, failurePath) in cases) {
+        final line = workerChildFailureLine(status);
+        if (failurePath == null) {
+          expect(line, isNull, reason: '$status');
+          continue;
+        }
+
+        expect(
+          line,
+          allOf(
+            startsWith('dart_monty_core worker:'),
+            contains(failurePath),
+            contains('dart_monty_worker_main'),
+          ),
+          reason: '$status',
+        );
+        if (line == null) fail('missing child failure line for $status');
+        expect(line.split('\n'), hasLength(1), reason: '$status');
+      }
     });
   });
 }
