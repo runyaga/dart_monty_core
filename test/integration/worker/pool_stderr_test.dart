@@ -38,7 +38,7 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
   for (final stream in ['stdout', 'stderr']) {
     test(
-      'REQ-platforms-21: default $stream delivery awaits its flush',
+      'default $stream delivery awaits its flush',
       () async {
         final location = await realWorker() as WorkerExecutable;
         final pool = await Monty.start(

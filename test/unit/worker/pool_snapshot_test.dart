@@ -8,8 +8,8 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 Future<void> _memoryFailure({bool resume = false}) async {
   final channel = ScriptedChannel([
@@ -43,7 +43,7 @@ Future<void> _memoryFailure({bool resume = false}) async {
 
 void main() {
   test(
-    'REQ-FunctionSnapshot-17: auto consumes before a failing callback',
+    'auto consumes before a failing callback',
     () async {
       final channel = ScriptedChannel([
         configurePool,
@@ -87,7 +87,7 @@ void main() {
     },
   );
   test(
-    'REQ-FunctionSnapshot-19: invalid answer wins over already consumed',
+    'invalid answer wins over already consumed',
     () async {
       final channel = ScriptedChannel([
         configurePool,
@@ -116,7 +116,7 @@ void main() {
     },
   );
   test(
-    'REQ-FunctionSnapshot-30: close recovers an oversized manual answer',
+    'close recovers an oversized manual answer',
     () async {
       final channel = ScriptedChannel([
         configurePool,
@@ -162,7 +162,7 @@ void main() {
     },
   );
   test(
-    'REQ-FunctionSnapshot-37: resume deadline kills and finishes checkout',
+    'resume deadline kills and finishes checkout',
     () async {
       final timers = PoolTimers();
       await timers.run(() async {
@@ -200,18 +200,11 @@ void main() {
     },
   );
   test(
-    'REQ-FunctionSnapshot-38: exit 65 during resume finishes checkout',
+    'exit 65 during resume finishes checkout',
     () => _memoryFailure(resume: true),
   );
-  for (final id in [
-    'MontyCrashedError-24',
-    'MontyError-20',
-    'MontyRuntimeError-25',
-    'errors-and-tracebacks-68',
-  ]) {
-    test(
-      'REQ-$id: exit 65 has the exact MemoryError and finishes checkout',
-      _memoryFailure,
-    );
-  }
+  test(
+    'exit 65 has the exact MemoryError and finishes checkout',
+    _memoryFailure,
+  );
 }

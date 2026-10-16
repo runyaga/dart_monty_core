@@ -13,13 +13,13 @@ import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_support.dart';
+import '../../unit/worker/_pool_support.dart';
 import '_worker_harness.dart';
 
 void main() {
   expectNoWorkersLeftAfterEachTest();
   test(
-    'REQ-pool-and-lifetimes-77: deadline kills before any native exit grace',
+    'deadline kills before any native exit grace',
     () async {
       final channel = await ProcessChannel.spawn(await realWorker());
       final pool = await startMonty(

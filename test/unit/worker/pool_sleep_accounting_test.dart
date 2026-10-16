@@ -6,9 +6,9 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 Future<void> _capped(double seconds) async {
   final (session, _) = await poolB2Session(
@@ -144,28 +144,28 @@ void main() {
     ('out of range', 1e30),
   ]) {
     test(
-      'REQ-budgets-and-limits-40: $label charges the full ceiling',
+      '$label charges the full ceiling',
       () => _capped(seconds),
     );
   }
   for (final snapshot in [false, true]) {
     test(
-      'REQ-budgets-and-limits-35: restore retains parent sleep cap ($snapshot)',
+      'restore retains parent sleep cap ($snapshot)',
       () => _restoreCap(snapshot),
     );
   }
   test(
-    'REQ-budgets-and-limits-39: overlapping sleeps each charge their full '
+    'overlapping sleeps each charge their full '
     'delay',
     _overlapping,
   );
   test(
-    'REQ-budgets-and-limits-42: refused sleep installs no timer and '
+    'refused sleep installs no timer and '
     'retains accepted total',
     _refusedWithoutTimer,
   );
   test(
-    'REQ-budgets-and-limits-41: cumulative sleep saturates before comparison',
+    'cumulative sleep saturates before comparison',
     () async {
       final hugeSleep = poolB2Sleep((BigInt.one << 63).toDouble());
       final last = poolB2Sleep(1)..maxTotalSleepMicros = Int64(1);
@@ -196,7 +196,7 @@ void main() {
     },
   );
   test(
-    'REQ-budgets-and-limits-28: partial future waits count across feeds',
+    'partial future waits count across feeds',
     () async {
       final (session, _) = await poolB2Session(
         [
@@ -222,7 +222,7 @@ void main() {
     },
   );
   test(
-    'REQ-budgets-and-limits-56: aborted restored suspension keeps adopted '
+    'aborted restored suspension keeps adopted '
     'budget',
     () async {
       final restored = poolCall()..maxSuspensions = Int64.ZERO;

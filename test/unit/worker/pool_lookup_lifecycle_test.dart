@@ -3,9 +3,9 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 pb.ChildEvent _lookup() => pb.ChildEvent(nameLookup: pb.NameLookup(name: 'x'));
 
@@ -66,12 +66,12 @@ MontyList _cycle() {
 void main() {
   for (final closed in [false, true]) {
     test(
-      'REQ-NameLookupSnapshot-20: lifecycle rejects operations ($closed)',
+      'lifecycle rejects operations ($closed)',
       () => _lifecycle(closed),
     );
   }
   test(
-    'REQ-NameLookupSnapshot-21: bad value precedes spent state',
+    'bad value precedes spent state',
     () => _refusal(const MontyBytes([256]), throwsArgumentError, spent: true),
   );
   for (final (label, value, error) in [
@@ -93,7 +93,7 @@ void main() {
     ),
   ]) {
     test(
-      'REQ-NameLookupSnapshot-22: $label refusal permits retry',
+      '$label refusal permits retry',
       () => _refusal(value, error),
     );
   }
@@ -103,12 +103,12 @@ void main() {
     ('time', const MontyTime(hour: 24, minute: 0, second: 0, microsecond: 0)),
   ]) {
     test(
-      'REQ-NameLookupSnapshot-23: invalid $label permits retry',
+      'invalid $label permits retry',
       () => _refusal(value, throwsArgumentError),
     );
   }
   test(
-    'REQ-NameLookupSnapshot-34: caller value and state errors differ',
+    'caller value and state errors differ',
     () async {
       await _refusal(const MontyBytes([-1]), throwsArgumentError);
       await _lifecycle(false);
@@ -116,7 +116,7 @@ void main() {
     },
   );
   test(
-    'REQ-NameLookupSnapshot-30: oversized answer consumes snapshot',
+    'oversized answer consumes snapshot',
     () async {
       final (session, channel) = await poolB2Session([
         answer([_lookup()]),

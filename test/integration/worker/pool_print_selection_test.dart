@@ -63,7 +63,7 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
   for (final start in [false, true]) {
     test(
-      'REQ-print-delivery-3: omission resets native sink (start=$start)',
+      'omission resets native sink (start=$start)',
       () => _selection(start),
     );
   }

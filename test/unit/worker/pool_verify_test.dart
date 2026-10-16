@@ -5,8 +5,8 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:test/test.dart';
 
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 Future<Object> _outcome(Future<MontyValue> work) async {
   try {
@@ -18,7 +18,7 @@ Future<Object> _outcome(Future<MontyValue> work) async {
 
 void main() {
   test(
-    'REQ-session-turns-4: OS callback can await its own session dump',
+    'OS callback can await its own session dump',
     () async {
       final channel = ScriptedChannel([
         configurePool,

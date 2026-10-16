@@ -10,8 +10,8 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 const _seconds = Duration(seconds: 1);
 const _limits = ResourceLimits(
@@ -151,19 +151,19 @@ void main() {
       ('null graces disable backstops', null, null, null, null),
     ]) {
       test(
-        'REQ-pool-and-lifetimes-43: $kind $label',
+        '$kind $label',
         () => _deadline(kind, request, feedGrace, turnGrace, expected),
       );
     }
   }
   for (final kind in ['load', 'dump', 'reset']) {
     test(
-      'REQ-pool-and-lifetimes-44: $kind uses only requestTimeout',
+      '$kind uses only requestTimeout',
       () => _nonExecution(kind),
     );
   }
   test(
-    'REQ-pool-and-lifetimes-44: a new feed forgets previous execution time',
+    'a new feed forgets previous execution time',
     () async {
       final timers = PoolTimers();
       await timers.run(() async {
@@ -191,7 +191,7 @@ void main() {
     },
   );
   test(
-    'REQ-pool-and-lifetimes-15: capacity timeout excludes startup '
+    'capacity timeout excludes startup '
     'and Configure',
     () async {
       final timers = PoolTimers();

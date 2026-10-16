@@ -9,7 +9,7 @@ import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_support.dart';
+import '../../unit/worker/_pool_support.dart';
 import '_worker_harness.dart';
 
 Future<MontySession> _session({String sleep = 'call_host'}) async {
@@ -99,21 +99,19 @@ message
 
 void main() {
   expectNoWorkersLeftAfterEachTest();
-  for (final id in ['ExternalFuture-11', 'ExternalFuture-12']) {
-    for (final (operation, mode) in [
-      ('read(2)', 'r'),
-      ('seek(0, 2)', 'r'),
-      ("write('XY')", 'w'),
-    ]) {
-      test(
-        'REQ-$id: $operation discards effects and settles raw reply',
-        () => _fileEffect(operation, mode),
-      );
-    }
+  for (final (operation, mode) in [
+    ('read(2)', 'r'),
+    ('seek(0, 2)', 'r'),
+    ("write('XY')", 'w'),
+  ]) {
+    test(
+      '$operation discards effects and settles raw reply',
+      () => _fileEffect(operation, mode),
+    );
   }
   for (final sleep in ['system', 'call_host']) {
     test(
-      'REQ-ExternalFuture-13: $sleep future preserves sleep result',
+      '$sleep future preserves sleep result',
       () async {
         final session = await _session(sleep: sleep);
         final call =
@@ -137,23 +135,21 @@ void main() {
       },
     );
   }
-  for (final id in ['snapshots-and-futures-74']) {
-    for (final (expression, name) in [
-      ("os.listdir('/')", 'os.listdir'),
-      ("os.chdir('/')", 'os.chdir'),
-      ("list(Path('/').iterdir())", 'Path.iterdir'),
-      ('os.urandom(2)', 'os.urandom'),
-      ("open('/f')", 'open'),
-      ('time.sleep(0)', 'time.sleep'),
-    ]) {
-      test(
-        'REQ-$id: $name rejects future without registering it',
-        () => _rejected(expression, name),
-      );
-    }
+  for (final (expression, name) in [
+    ("os.listdir('/')", 'os.listdir'),
+    ("os.chdir('/')", 'os.chdir'),
+    ("list(Path('/').iterdir())", 'Path.iterdir'),
+    ('os.urandom(2)', 'os.urandom'),
+    ("open('/f')", 'open'),
+    ('time.sleep(0)', 'time.sleep'),
+  ]) {
+    test(
+      '$name rejects future without registering it',
+      () => _rejected(expression, name),
+    );
   }
   test(
-    'REQ-snapshots-and-futures-85: unresolved future rejects a second awaiter',
+    'unresolved future rejects a second awaiter',
     () async {
       final session = await _session();
       final call =

@@ -7,7 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_support.dart';
+import '../../unit/worker/_pool_support.dart';
 import '_worker_harness.dart';
 
 Future<Monty> _pool() async {
@@ -130,23 +130,23 @@ Future<void> _gcAdoption() async {
 void main() {
   expectNoWorkersLeftAfterEachTest();
   test(
-    'REQ-ResourceLimits-26: restored GC interval reclaims cycles',
+    'restored GC interval reclaims cycles',
     _gcAdoption,
   );
   for (final kind in ['memory', 'feed', 'turn']) {
     test(
-      'REQ-ResourceLimits-42: same session accepts feed after soft $kind error',
+      'same session accepts feed after soft $kind error',
       () => _softError(kind),
     );
   }
   for (final kind in ['memory', 'recursion']) {
     test(
-      'REQ-ResourceLimits-26: restored interpreter adopts $kind limit',
+      'restored interpreter adopts $kind limit',
       () => _adopt(kind),
     );
   }
   test(
-    'REQ-ResourceLimits-32: receiving memory limit bounds Load before adoption',
+    'receiving memory limit bounds Load before adoption',
     () async {
       final pool = await _pool();
       final checkout = pool.checkout;

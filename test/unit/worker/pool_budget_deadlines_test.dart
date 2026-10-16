@@ -9,9 +9,9 @@ import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 final Matcher _timeout = throwsA(
   isA<MontyCrashedError>().having((e) => e.timedOut, 'timedOut', isTrue),
@@ -111,31 +111,31 @@ Future<void> _ended(bool duration) async {
 void main() {
   for (final turn in [false, true]) {
     test(
-      'REQ-budgets-and-limits-45: default ${turn ? 'turn' : 'feed'} grace '
+      'default ${turn ? 'turn' : 'feed'} grace '
       'is one second',
       () => _backstop(turn: turn, used: 4000000),
     );
     test(
-      'REQ-budgets-and-limits-52: restore preserves feed use and starts '
+      'restore preserves feed use and starts '
       'fresh turn ($turn)',
       () => _backstop(turn: turn, used: 4000000, restore: true),
     );
   }
   for (final used in [10000000, 12000000]) {
     test(
-      'REQ-budgets-and-limits-46: exhausted feed use $used leaves only grace',
+      'exhausted feed use $used leaves only grace',
       () => _backstop(used: used),
     );
   }
   for (final duration in [false, true]) {
     test(
-      'REQ-budgets-and-limits-72: operations after '
+      'operations after '
       '${duration ? 'duration' : 'request'} expiry fail',
       () => _ended(duration),
     );
   }
   test(
-    'REQ-budgets-and-limits-48: omitted requestTimeout installs no turn '
+    'omitted requestTimeout installs no turn '
     'deadline',
     () async {
       final timers = PoolTimers();
@@ -153,7 +153,7 @@ void main() {
     },
   );
   test(
-    'REQ-budgets-and-limits-49: OS callback is outside requestTimeout',
+    'OS callback is outside requestTimeout',
     () async {
       final timers = PoolTimers();
       await timers.run(() async {
@@ -186,7 +186,7 @@ void main() {
     },
   );
   test(
-    'REQ-platforms-11: null checkout timeout schedules no capacity deadline',
+    'null checkout timeout schedules no capacity deadline',
     () async {
       final timers = PoolTimers();
       await timers.run(() async {

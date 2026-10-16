@@ -8,7 +8,7 @@ import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_support.dart';
+import '../../unit/worker/_pool_support.dart';
 import '_worker_harness.dart';
 
 Future<void> _withSession(Future<void> Function(MontySession) body) async {
@@ -27,7 +27,7 @@ Future<void> _withSession(Future<void> Function(MontySession) body) async {
 void main() {
   expectNoWorkersLeftAfterEachTest();
   test(
-    'REQ-FunctionSnapshot-11: declining non-filesystem OS call '
+    'declining non-filesystem OS call '
     'raises RuntimeError',
     () => _withSession((session) async {
       final call =
@@ -46,7 +46,7 @@ void main() {
     }),
   );
   test(
-    'REQ-FunctionSnapshot-33: rejected OS future is absent '
+    'rejected OS future is absent '
     'from pending futures',
     () => _withSession((session) async {
       final sleep =
@@ -79,7 +79,7 @@ message
     }),
   );
   test(
-    'REQ-FunctionSnapshot-34: rejected OS future consumes the snapshot',
+    'rejected OS future consumes the snapshot',
     () => _withSession((session) async {
       final call =
           await session.feedStart('import time\ntime.sleep(0)')
@@ -101,7 +101,7 @@ message
     }),
   );
   test(
-    'REQ-SourceRange-9: eval offsets exclude leading whitespace',
+    'eval offsets exclude leading whitespace',
     () => _withSession((session) async {
       final call =
           await session.feedStart("eval('  1 + fetch()')") as FunctionSnapshot;
@@ -116,7 +116,7 @@ message
     }),
   );
   test(
-    'REQ-SourceRange-12: earlier function points into its defining feed',
+    'earlier function points into its defining feed',
     () => _withSession((session) async {
       expect(
         await session.feedRun('def g():\n    return fetch()\n'),

@@ -3,9 +3,9 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 MontyList _cycle() {
   final values = <MontyValue>[];
@@ -48,36 +48,37 @@ Future<void> _repeated() async {
 }
 
 void main() {
-  for (final id in [
-    'ExternalSettledResult-12',
-    'ExternalSettledResult-21',
-    'ExternalSettledResult-15',
-  ]) {
+  for (final wasSpent in [false, true]) {
     for (final callId in [-1, 4294967296]) {
-      test('REQ-$id: call ID $callId is refused before consumption', () async {
-        final (session, channel) = await poolB2Session([
-          answer([poolB2Futures()]),
-          answer([completeNone()]),
-        ]);
-        final snapshot = await session.feedStart('await f()') as FutureSnapshot;
-        if (id == 'ExternalSettledResult-15') {
-          await snapshot.resume({1: poolB2Answer});
-        }
-        expect(
-          () => snapshot.resume({callId: poolB2Answer}),
-          throwsArgumentError,
-        );
-        expect(
-          channel.requests,
-          hasLength(id == 'ExternalSettledResult-15' ? 3 : 2),
-        );
-        if (id != 'ExternalSettledResult-15') {
-          expect(snapshot.isSpent, isFalse);
-          final done =
-              await snapshot.resume({1: poolB2Answer}) as MontyComplete;
-          expect(done.output, const MontyNone());
-        }
-      });
+      test(
+        'call ID $callId is refused '
+        '${wasSpent ? 'after settlement' : 'before consumption'}',
+        () async {
+          final (session, channel) = await poolB2Session([
+            answer([poolB2Futures()]),
+            answer([completeNone()]),
+          ]);
+          final snapshot =
+              await session.feedStart('await f()') as FutureSnapshot;
+          if (wasSpent) {
+            await snapshot.resume({1: poolB2Answer});
+          }
+          expect(
+            () => snapshot.resume({callId: poolB2Answer}),
+            throwsArgumentError,
+          );
+          expect(
+            channel.requests,
+            hasLength(wasSpent ? 3 : 2),
+          );
+          if (!wasSpent) {
+            expect(snapshot.isSpent, isFalse);
+            final done =
+                await snapshot.resume({1: poolB2Answer}) as MontyComplete;
+            expect(done.output, const MontyNone());
+          }
+        },
+      );
     }
   }
 
@@ -100,11 +101,11 @@ void main() {
     ),
   ]) {
     test(
-      'REQ-ExternalSettledResult-10: $label leaves the future pending',
+      '$label leaves the future pending',
       () => _refused(value, error),
     );
     test(
-      'REQ-ExternalSettledResult-15: $label precedes consumed state',
+      '$label precedes consumed state',
       () => _refused(value, error, spent: true),
     );
   }
@@ -114,20 +115,18 @@ void main() {
     ('time', const MontyTime(hour: 24, minute: 0, second: 0, microsecond: 0)),
   ]) {
     test(
-      'REQ-ExternalSettledResult-11: invalid $label permits corrected '
+      'invalid $label permits corrected '
       'settlement',
       () => _refused(value, throwsArgumentError),
     );
     test(
-      'REQ-ExternalSettledResult-15: invalid $label precedes consumed state',
+      'invalid $label precedes consumed state',
       () => _refused(value, throwsArgumentError, spent: true),
     );
   }
-  for (final id in ['ExternalSettledResult-14', 'ExternalSettledResult-22']) {
-    test('REQ-$id: a repeated valid settlement throws StateError', _repeated);
-  }
+  test('a repeated valid settlement throws StateError', _repeated);
   test(
-    'REQ-ExternalSettledResult-15: unknown exception precedes consumed state',
+    'unknown exception precedes consumed state',
     () async {
       final (session, channel) = await poolB2Session([
         answer([poolB2Futures()]),
@@ -143,7 +142,7 @@ void main() {
     },
   );
   test(
-    'REQ-ExternalSettledResult-16: oversized settlement spends without sending',
+    'oversized settlement spends without sending',
     () async {
       final (session, channel) = await poolB2Session([
         answer([poolB2Futures()]),

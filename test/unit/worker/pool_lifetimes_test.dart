@@ -7,8 +7,8 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 Future<void> _busyClose() async {
   final channel = HeldPoolChannel();
@@ -114,20 +114,10 @@ Future<void> _activeCallbackAfterClose() async {
 }
 
 void main() {
-  for (final id in ['MontyCrashedError-18', 'MontyCrashedError-19']) {
-    test(
-      'REQ-$id: busy close releases once before transport finishes',
-      _busyClose,
-    );
-  }
-  for (final id in ['pool-and-lifetimes-25', 'pool-and-lifetimes-42']) {
-    test(
-      'REQ-$id: OS callback awaits dump outside turn deadlines',
-      _osCallback,
-    );
-  }
+  test('busy close releases once before transport finishes', _busyClose);
+  test('OS callback awaits dump outside turn deadlines', _osCallback);
   test(
-    'REQ-pool-and-lifetimes-40: active turn and callback survive pool close',
+    'active turn and callback survive pool close',
     () async {
       final channel = HeldPoolChannel();
       final pool = await poolWith([channel]);
@@ -149,7 +139,7 @@ void main() {
     },
   );
   test(
-    'REQ-pool-and-lifetimes-31: recorded print failure wins over busy close',
+    'recorded print failure wins over busy close',
     () async {
       final channel = ScriptedChannel([
         configurePool,

@@ -7,9 +7,9 @@ import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 final class _Lookup extends MapBase<String, MontyValue> {
   const _Lookup(this.read);
@@ -79,11 +79,11 @@ Future<void> _futureOrder() async {
 
 void main() {
   test(
-    'REQ-snapshots-and-futures-8: automatic lookup consumes before map access',
+    'automatic lookup consumes before map access',
     _lookupOrder,
   );
   test(
-    'REQ-snapshots-and-futures-8: automatic future consumes before '
+    'automatic future consumes before '
     'host settles',
     _futureOrder,
   );

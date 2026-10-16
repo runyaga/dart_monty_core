@@ -10,8 +10,8 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
 
 @JS('console')
 external JSObject get _console;
@@ -54,7 +54,7 @@ Future<void> _selection(bool start) async {
 void main() {
   for (final start in [false, true]) {
     test(
-      'REQ-print-delivery-3: omission resets browser sink (start=$start)',
+      'omission resets browser sink (start=$start)',
       () => _selection(start),
     );
   }

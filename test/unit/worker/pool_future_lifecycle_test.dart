@@ -7,9 +7,9 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 Future<void> _noTasks(bool restored) async {
   final (session, channel) = await poolB2Session([
@@ -98,23 +98,23 @@ Future<void> _deadline() async {
 
 void main() {
   test(
-    'REQ-FutureSnapshot-30: settlement deadline kills and finishes',
+    'settlement deadline kills and finishes',
     _deadline,
   );
   for (final restored in [false, true]) {
     test(
-      'REQ-FutureSnapshot-15: no host tasks consumes and ends ($restored)',
+      'no host tasks consumes and ends ($restored)',
       () => _noTasks(restored),
     );
   }
   for (final closed in [false, true]) {
     test(
-      'REQ-FutureSnapshot-20: validation precedes lifecycle ($closed)',
+      'validation precedes lifecycle ($closed)',
       () => _lifecycle(closed),
     );
   }
   test(
-    'REQ-FutureSnapshot-7: pending future reports session script name',
+    'pending future reports session script name',
     () async {
       final (session, _) = await poolB2Session([
         answer([poolB2Futures()]),
@@ -124,7 +124,7 @@ void main() {
     },
   );
   test(
-    'REQ-FutureSnapshot-27: resumed SyntaxError keeps its type and text',
+    'resumed SyntaxError keeps its type and text',
     () async {
       final (session, _) = await poolB2Session([
         answer([poolB2Futures()]),
@@ -144,7 +144,7 @@ void main() {
     },
   );
   test(
-    'REQ-FutureSnapshot-29: exit 65 during settlement ends session',
+    'exit 65 during settlement ends session',
     () => _crash(
       crash(CrashCause.outOfMemory, 'I/O failed', 65),
       throwsA(
@@ -160,7 +160,7 @@ void main() {
     ('fatal', answer([fatal('worker failed')])),
   ]) {
     test(
-      'REQ-FutureSnapshot-30: $label during settlement ends session',
+      '$label during settlement ends session',
       () => _crash(
         reply,
         throwsA(

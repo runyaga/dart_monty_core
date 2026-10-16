@@ -9,8 +9,8 @@ import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 const _thirtySeconds = Duration(seconds: 30);
 final Matcher _startupCrash = throwsA(
@@ -181,36 +181,20 @@ Future<void> _combinedCapacity() async {
 
 void main() {
   test(
-    'REQ-pool-and-lifetimes-12: idle held and starting workers share the cap',
+    'idle held and starting workers share the cap',
     _combinedCapacity,
   );
-  for (final id in [
-    'MontyCrashedError-22',
-    'MontyCrashedError-5',
-    'MontyError-23',
-    'errors-and-tracebacks-66',
-    'pool-and-lifetimes-9',
-  ]) {
-    test(
-      'REQ-$id: readiness expires at thirty seconds and frees capacity',
-      _startup,
-    );
-  }
-  for (final id in ['pool-and-lifetimes-10', 'pool-and-lifetimes-12']) {
-    test(
-      'REQ-$id: a starting worker reserves the only slot',
-      _startingCapacity,
-    );
-  }
+  test('readiness expires at thirty seconds and frees capacity', _startup);
+  test('a starting worker reserves the only slot', _startingCapacity);
   test(
-    'REQ-pool-and-lifetimes-16: nested checkout needs spare capacity',
+    'nested checkout needs spare capacity',
     () async {
       await _nested(1);
       await _nested(2);
     },
   );
   test(
-    'REQ-pool-and-lifetimes-17: Future.timeout leaves acquisition running',
+    'Future.timeout leaves acquisition running',
     () async {
       final timers = PoolTimers();
       await timers.run(() async {
@@ -243,7 +227,7 @@ void main() {
     },
   );
   test(
-    'REQ-pool-and-lifetimes-18: successful withPool body is awaited and closed',
+    'successful withPool body is awaited and closed',
     () async {
       final body = Completer<int>();
       final entered = Completer<Monty>();
@@ -265,7 +249,7 @@ void main() {
     },
   );
   test(
-    'REQ-pool-and-lifetimes-6: null maximum is resolved before spawning',
+    'null maximum is resolved before spawning',
     () async {
       final min = defaultMaxProcesses() + 1;
       var starts = 0;
@@ -289,7 +273,7 @@ void main() {
     },
   );
   test(
-    'REQ-pool-and-lifetimes-5: null bounds retain the platform cap and reuse',
+    'null bounds retain the platform cap and reuse',
     () async {
       final timers = PoolTimers();
       await timers.run(() async {

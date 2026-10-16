@@ -1,4 +1,4 @@
-// Batch-two fixtures extend the existing pool fixtures without changing them.
+// Protocol fixtures extend the existing pool fixtures without changing them.
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -6,8 +6,8 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 const poolB2Answer = ExternalReturnValue(MontyNone());
 final Matcher poolB2Pending = throwsA(

@@ -7,7 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_support.dart';
+import '../../unit/worker/_pool_support.dart';
 import '_worker_harness.dart';
 
 Future<Monty> _pool({bool disableGraces = false}) async {
@@ -90,27 +90,21 @@ Future<void> _softError(String kind) async {
 
 void main() {
   expectNoWorkersLeftAfterEachTest();
-  for (final id in [
-    'ExternalSettledResult-13',
-    'ExternalSettledResult-8',
-    'MontySnapshot-9',
-  ]) {
-    test('REQ-$id: unknown pending call consumes the snapshot', _unknown);
-  }
+  test('unknown pending call consumes the snapshot', _unknown);
   for (final kind in ['memory', 'feed', 'turn']) {
     test(
-      'REQ-budgets-and-limits-67: worker reused after soft $kind error',
+      'worker reused after soft $kind error',
       () => _softError(kind),
     );
   }
   for (final kind in ['feed', 'turn']) {
     test(
-      'REQ-budgets-and-limits-45: null graces retain interpreter $kind limit',
+      'null graces retain interpreter $kind limit',
       () => _softError(kind),
     );
   }
   test(
-    'REQ-budgets-and-limits-43: call_host sleeps consume no total-sleep budget',
+    'call_host sleeps consume no total-sleep budget',
     () async {
       final pool = await _pool();
       final session = await pool.checkout(

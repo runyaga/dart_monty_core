@@ -8,9 +8,9 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 const _negative = Duration(microseconds: -1);
 final _invalid = {
@@ -133,19 +133,19 @@ Future<void> _sleep() async {
 void main() {
   for (final MapEntry(:key, :value) in _invalid.entries) {
     test(
-      'REQ-Monty-35: $key is refused before waiting on exhausted capacity',
+      '$key is refused before waiting on exhausted capacity',
       () => _invalidCheckout(value),
     );
   }
   for (final close in [false, true]) {
     test(
-      'REQ-session-turns-3: terminal waiters fail in FIFO order (close=$close)',
+      'terminal waiters fail in FIFO order (close=$close)',
       () => _fifo(close),
     );
   }
-  test('REQ-os-calls-20: system wait has no execution deadline', _sleep);
+  test('system wait has no execution deadline', _sleep);
   test(
-    'REQ-snapshots-and-futures-61: closed pool kills idle snapshot '
+    'closed pool kills idle snapshot '
     'without Reset',
     () async {
       final channel = ScriptedChannel([

@@ -69,12 +69,12 @@ void main() {
     ),
   ]) {
     test(
-      'REQ-budgets-and-limits-78: $kind budget has the shared backend outcome',
+      '$kind budget has the shared backend outcome',
       () => _budget(limits, code, type, message),
     );
   }
   test(
-    'REQ-budgets-and-limits-78: configured suspension budget aborts the '
+    'configured suspension budget aborts the '
     'second host call',
     () async {
       var calls = 0;
@@ -114,7 +114,7 @@ void main() {
     },
   );
   test(
-    'REQ-budgets-and-limits-83: timeout bounds buffered print followed by '
+    'timeout bounds buffered print followed by '
     'endless execution',
     () async {
       final pool = await Monty.start(

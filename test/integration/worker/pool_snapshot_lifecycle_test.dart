@@ -7,7 +7,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_support.dart';
+import '../../unit/worker/_pool_support.dart';
 import '_worker_harness.dart';
 
 Future<Monty> _pool() async {
@@ -84,7 +84,7 @@ Future<void> _cacheLookup() async {
 void main() {
   expectNoWorkersLeftAfterEachTest();
   test(
-    'REQ-NameLookupSnapshot-15: answered local is cached within its call',
+    'answered local is cached within its call',
     () async {
       final pool = await _pool();
       final session = await pool.checkout();
@@ -98,14 +98,9 @@ void main() {
       expect(done.output, const MontyInt(42));
     },
   );
-  for (final id in ['FutureSnapshot-16', 'MontySession-28']) {
-    test(
-      'REQ-$id: dumped futures remain resumable and restore manually',
-      _restoreFuture,
-    );
-  }
+  test('dumped futures remain resumable and restore manually', _restoreFuture);
   test(
-    'REQ-FutureSnapshot-6: position names the main await expression',
+    'position names the main await expression',
     () async {
       final pool = await _pool();
       final (_, _, future) = await _pending(pool);
@@ -116,7 +111,7 @@ void main() {
     },
   );
   test(
-    'REQ-FutureSnapshot-8: empty settlement returns the pending snapshot',
+    'empty settlement returns the pending snapshot',
     () async {
       final pool = await _pool();
       final (_, call, future) = await _pending(pool);
@@ -131,7 +126,7 @@ void main() {
     },
   );
   test(
-    'REQ-FutureSnapshot-23: unknown ID consumes but leaves session usable',
+    'unknown ID consumes but leaves session usable',
     () async {
       final pool = await _pool();
       final (session, call, future) = await _pending(pool);
@@ -155,7 +150,7 @@ void main() {
     },
   );
   test(
-    'REQ-NameLookupSnapshot-14: dump keeps original and restored lookup '
+    'dump keeps original and restored lookup '
     'pending',
     () async {
       final pool = await _pool();
@@ -177,16 +172,34 @@ void main() {
       expect(second.output, const MontyInt(10));
     },
   );
-  for (final id in ['NameLookupSnapshot-15', 'NameLookupSnapshot-16']) {
-    test(
-      'REQ-$id: answered global is cached within and across feeds',
-      _cacheLookup,
+  test('answered global is cached within and across feeds', _cacheLookup);
+  test('Dart null is undefined and MontyNone supplies None', _noneLookup);
+  test('idle restore adopts worker script name', () async {
+    final worker = await realWorker() as WorkerExecutable;
+    final pool = await Monty.start(
+      maxProcesses: 1,
+      workerLocation: worker.path,
     );
-  }
-  for (final id in ['NameLookupSnapshot-6', 'NameLookupSnapshot-32']) {
-    test(
-      'REQ-$id: Dart null is undefined and MontyNone supplies None',
-      _noneLookup,
+    addTearDown(pool.close);
+    final original = await pool.checkout(
+      scriptName: 'original.py',
+      typeCheck: true,
     );
-  }
+    final dump = await original.dump();
+    await original.close();
+    final restored = await pool.checkout(scriptName: 'restoring.py');
+    addTearDown(restored.close);
+    await restored.loadSession(dump);
+    await expectLater(
+      restored.feedRun('x: int = "bad"'),
+      throwsA(
+        isA<MontyTypingError>().having(
+          (e) =>
+              e.display().split('\n').where((line) => line.startsWith(' --> ')),
+          'diagnostic source',
+          [' --> original.py:1:10'],
+        ),
+      ),
+    );
+  });
 }

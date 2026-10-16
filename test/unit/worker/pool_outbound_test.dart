@@ -7,9 +7,9 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 Future<void> _oversizedLoad(bool snapshot) async {
   final timers = PoolTimers();
@@ -45,7 +45,7 @@ Future<void> _oversizedLoad(bool snapshot) async {
 
 void main() {
   test(
-    'REQ-CollectString-15: first overflow suppresses deliveries and drains',
+    'first overflow suppresses deliveries and drains',
     () async {
       final collector = CollectString(maxBytes: 3);
       final (session, channel) = await poolB2Session([
@@ -74,7 +74,7 @@ void main() {
     },
   );
   test(
-    'REQ-wire-limits-27: oversized feedStart inputs send nothing and '
+    'oversized feedStart inputs send nothing and '
     'permit retry',
     () async {
       final (session, channel) = await poolB2Session([
@@ -91,7 +91,7 @@ void main() {
     },
   );
   test(
-    'REQ-OsHandler-23: oversized OS answer stays pending until close',
+    'oversized OS answer stays pending until close',
     () async {
       final channel = ScriptedChannel([
         configurePool,
@@ -120,11 +120,11 @@ void main() {
   );
   for (final snapshot in [false, true]) {
     test(
-      'REQ-wire-limits-30: oversized load restores duration budget ($snapshot)',
+      'oversized load restores duration budget ($snapshot)',
       () => _oversizedLoad(snapshot),
     );
     test(
-      'REQ-wire-limits-30: oversized load leaves feeds usable ($snapshot)',
+      'oversized load leaves feeds usable ($snapshot)',
       () async {
         final (session, channel) = await poolB2Session([
           answer([completeNone()]),
@@ -139,7 +139,7 @@ void main() {
       },
     );
     test(
-      'REQ-wire-limits-44: oversized restored announcement consumes '
+      'oversized restored announcement consumes '
       'freshness ($snapshot)',
       () async {
         const message =

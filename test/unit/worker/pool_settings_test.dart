@@ -3,8 +3,8 @@ import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_support.dart';
 
 void main() {
   const formats = {
@@ -21,7 +21,7 @@ void main() {
   };
   for (final MapEntry(:key, :value) in formats.entries) {
     test(
-      'REQ-MontyTypingError-9: checkout accepts $key in either ASCII case',
+      'checkout accepts $key in either ASCII case',
       () async {
         for (final name in [key, key.toUpperCase()]) {
           final channel = ScriptedChannel([configurePool, resetPool]);

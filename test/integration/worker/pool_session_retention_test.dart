@@ -130,12 +130,12 @@ Future<void> main([List<String> args = const []]) async {
     return;
   }
   test(
-    'REQ-pool-and-lifetimes-21: finalization kills the worker '
+    'finalization kills the worker '
     'and frees capacity',
     () => _child('finalizer', ['finalized and killed']),
   );
   test(
-    'REQ-pool-and-lifetimes-23: snapshots and drives retain sessions across GC',
+    'snapshots and drives retain sessions across GC',
     () => _child('retention', [
       'retained snapshot',
       'retained turn',
@@ -155,7 +155,7 @@ Future<void> _child(String mode, List<String> expected) async {
   final location = await realWorker() as WorkerExecutable;
   final child = await Process.run(Platform.resolvedExecutable, [
     '--enable-vm-service=0',
-    'test/integration/worker/spec_pool_retention_test.dart',
+    'test/integration/worker/pool_session_retention_test.dart',
     'probe',
     location.path,
     mode,

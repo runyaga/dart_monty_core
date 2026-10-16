@@ -9,7 +9,7 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:test/test.dart';
 
-import '../../unit/worker/_spec_pool_b2_support.dart';
+import '../../unit/worker/_pool_protocol_support.dart';
 import '_worker_harness.dart';
 
 Future<FunctionSnapshot> _hostCall(MontySnapshot snapshot) async {
@@ -26,7 +26,7 @@ Future<FunctionSnapshot> _hostCall(MontySnapshot snapshot) async {
 void main() {
   expectNoWorkersLeftAfterEachTest();
   test(
-    'REQ-wire-limits-40: failed suspended dump retains call and feed mount',
+    'failed suspended dump retains call and feed mount',
     () async {
       final directory = Directory.systemTemp.createTempSync('pool-dump-');
       addTearDown(() => directory.deleteSync(recursive: true));

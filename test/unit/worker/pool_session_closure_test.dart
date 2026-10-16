@@ -8,9 +8,9 @@ import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_pool_protocol_support.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
-import '_spec_pool_b2_support.dart';
-import '_spec_pool_support.dart';
 
 Future<void> _closeCallback(bool closePool) async {
   final channel = ScriptedChannel([
@@ -106,13 +106,13 @@ Future<void> _printDeadline(Duration? request, bool turnFirst) async {
 void main() {
   for (final closePool in [false, true]) {
     test(
-      'REQ-MontySession-33: close during callback with pool closed=$closePool',
+      'close during callback with pool closed=$closePool',
       () => _closeCallback(closePool),
     );
   }
   for (final snapshot in [false, true]) {
     test(
-      'REQ-MontySession-41: oversized load consumes freshness ($snapshot)',
+      'oversized load consumes freshness ($snapshot)',
       () async {
         final (session, channel) = await poolB2Session([
           answer([completeNone()]),
@@ -136,7 +136,7 @@ void main() {
   ]) {
     for (final turnFirst in [false, true]) {
       test(
-        'REQ-print-delivery-37: print stall uses earliest deadline '
+        'print stall uses earliest deadline '
         '(request=$request, turnFirst=$turnFirst)',
         () => _printDeadline(request, turnFirst),
       );
