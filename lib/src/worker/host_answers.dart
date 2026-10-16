@@ -9,6 +9,8 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/src/mount/mount_dir.dart';
+import 'package:dart_monty_core/src/mount/native_mount_service.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart'
@@ -329,7 +331,9 @@ final class HostAnswers {
     this.systemSleepMax,
     this.recorder,
     HostObjects? objects,
-  }) : objects = objects ?? HostObjects();
+    List<MountDir>? mount,
+  }) : objects = objects ?? HostObjects(),
+       _mountTable = beginMountFeed(mount);
 
   /// Callback context for this checkout, absent without instrumentation.
   final TelemetryRecorder? recorder;
@@ -347,6 +351,9 @@ final class HostAnswers {
 
   /// The longest system sleep the parent waits; null declines system sleeps.
   final Duration? systemSleepMax;
+
+  /// This feed's overlay and budgets, retained across snapshot resumes.
+  final NativeMountTable? _mountTable;
 
   /// Coroutines started and not yet delivered, by call id.
   final Set<int> _running = {};
@@ -489,6 +496,10 @@ final class HostAnswers {
     final max = systemSleepMax;
     final slept = parentSleeps && max != null ? _systemSleep(call, max) : null;
     if (slept != null) return slept;
+    final mounted = _mountTable?.call(call.writeToBuffer());
+    if (mounted != null) {
+      return pb.ParentRequest(resumeCall: pb.ResumeCall.fromBuffer(mounted));
+    }
     final handler = os;
     if (handler == null) return _notHandled(call.callId);
     final OsCallParts parts;
@@ -522,11 +533,12 @@ final class HostAnswers {
     );
   }
 
-  /// Ends this feed's host side: every system sleep still waiting ends now,
-  /// so no timer outlives the feed (upstream drops its pending tasks with
+  /// Drops the feed's mount table and ends every system sleep still waiting,
+  /// so no table or timer outlives the feed (upstream drops pending tasks with
   /// the drive). A sleep the drive still awaits returns at once; one behind
   /// a pending future settles, unread.
   void dispose() {
+    _mountTable?.close();
     for (final (timer, done) in [..._sleeps]) {
       timer.cancel();
       if (!done.isCompleted) done.complete();

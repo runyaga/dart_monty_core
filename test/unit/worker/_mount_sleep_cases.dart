@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 void mountSleepTests({List<MountDir> Function()? mounts}) {
   for (final (name, code) in [
     ('system.sleep', 'import time\ntime.sleep(0)\n42'),
-    ('system.async_sleep', 'import asyncio\nawait asyncio.sleep(0)\n42'),
+    ('system.async_sleep', 'import asyncio\nawait asyncio.sleep(0.001)\n42'),
   ]) {
     for (final automatic in [true, false]) {
       test(
@@ -15,11 +15,12 @@ void mountSleepTests({List<MountDir> Function()? mounts}) {
             await pool.withSession((session) async {
               final seen = <String>[];
               MontyValue handler(
-                String name,
-                List<MontyValue> args,
-                Map<String, MontyValue> kwargs,
+                String called,
+                List<MontyValue> _,
+                Map<String, MontyValue> _,
               ) {
-                seen.add(name);
+                seen.add(called);
+
                 return const MontyNone();
               }
 
@@ -64,6 +65,7 @@ void mountSleepTests({List<MountDir> Function()? mounts}) {
               mount: mounts?.call(),
               os: (n, a, k) {
                 calls++;
+
                 return const MontyNone();
               },
             ),
@@ -101,13 +103,14 @@ void mountSleepTests({List<MountDir> Function()? mounts}) {
               code,
               os: (n, a, k) {
                 seen.add(n);
+
                 return const MontyNone();
               },
             ),
             const MontyInt(42),
           );
           expect(seen, [
-            name == 'system.sleep' ? 'time.sleep' : 'asyncio.sleep',
+            if (name == 'system.sleep') 'time.sleep' else 'asyncio.sleep',
           ]);
         }, osPolicy: const OsPolicy(sleep: 'call_host'));
       }, maxProcesses: 1);

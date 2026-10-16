@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'package:dart_monty_core/src/mount/mount_dir.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/worker/arena_nodes.dart';
 import 'package:dart_monty_core/src/worker/arena_reader.dart'
@@ -78,6 +79,9 @@ import 'package:fixnum/fixnum.dart';
 /// one with a NUL throws [MontyRuntimeError] (`ValueError`) before the code
 /// runs, and the session runs on; one with an unpaired surrogate throws
 /// [ArgumentError] (upstream's `UnicodeEncodeError`) before anything else.
+/// Each feed's `mount` table is tried before its OS handler. Overlay data
+/// and write budgets are discarded when the feed ends. A closed mount throws
+/// [StateError]; overlapping mounts throw [MontyRuntimeError].
 abstract interface class MontySession {
   /// Runs [code] to completion and returns its value: the last expression's,
   /// or [MontyNone].
@@ -123,6 +127,7 @@ abstract interface class MontySession {
     Map<String, MontyValue>? inputs,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    List<MountDir>? mount,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
@@ -144,6 +149,7 @@ abstract interface class MontySession {
     Map<String, MontyValue>? inputs,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    List<MountDir>? mount,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
@@ -167,7 +173,8 @@ abstract interface class MontySession {
 
   /// Restores [state], a dump taken mid-feed (by [dump] while a suspension
   /// waited, or by a snapshot's `dump`), and returns the suspension it
-  /// re-announces (upstream's `load_snapshot`). [externalLookup], [os] and
+  /// re-announces (upstream's `load_snapshot`). [mount] supplies fresh tables:
+  /// dumps carry neither mounts nor overlay data. [externalLookup], [os] and
   /// [printCallback] are [feedStart]'s, kept for the snapshots' `resumeAuto`
   /// (the dump carries its working directory);
   /// a restored [FutureSnapshot]'s coroutines are gone, so its `resumeAuto`
@@ -180,6 +187,7 @@ abstract interface class MontySession {
   /// limit of 0 it aborts the load with an in-sandbox `RuntimeError`.
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
+    List<MountDir>? mount,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
@@ -368,6 +376,7 @@ final class _LeasedSession implements MontySession {
     Map<String, MontyValue>? inputs,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    List<MountDir>? mount,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
@@ -380,7 +389,7 @@ final class _LeasedSession implements MontySession {
         code,
         inputs: inputs,
         cwd: cwd,
-        host: _hostFor(_proto, _config, externalLookup, os),
+        host: _hostFor(_proto, _config, externalLookup, os, mount),
         printCallback: printCallback,
         skipTypeCheck: skipTypeCheck,
       ),
@@ -394,29 +403,32 @@ final class _LeasedSession implements MontySession {
     Map<String, MontyValue>? inputs,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
+    List<MountDir>? mount,
     String? cwd,
     OsHandler? os,
     bool skipTypeCheck = false,
   }) => Future.sync(() {
     checkCwdText(cwd);
     _hold.used = true;
-    final drive = _FeedDrive(
-      this,
-      _hostFor(_proto, _config, externalLookup, os),
-      printCallback ?? defaultPrint,
-    );
-    _snapshots = drive;
 
     return _withTurn(
-      () => drive.step(
-        feedRequest(
+      () {
+        final request = feedRequest(
           code,
           inputs ?? const {},
           cwd: cwd,
           skipTypeCheck: skipTypeCheck,
           objects: _proto.objects,
-        ),
-      ),
+        );
+        final drive = _FeedDrive(
+          this,
+          _hostFor(_proto, _config, externalLookup, os, mount),
+          printCallback ?? defaultPrint,
+        );
+        _snapshots = drive;
+
+        return drive.step(request);
+      },
       feed: true,
     );
   });
@@ -438,20 +450,24 @@ final class _LeasedSession implements MontySession {
   @override
   Future<MontySnapshot> loadSnapshot(
     Uint8List state, {
+    List<MountDir>? mount,
     Map<String, MontyValue>? externalLookup,
     ProtoPrintCallback? printCallback,
     OsHandler? os,
-  }) => Future.sync(() {
-    _hold.claimFresh();
-    final drive = _FeedDrive(
-      this,
-      _hostFor(_proto, _config, externalLookup, os),
-      printCallback ?? defaultPrint,
-    );
+  }) => _withTurn(() {
+    // A refused mount must not consume the fresh session's restore slot.
+    final host = _hostFor(_proto, _config, externalLookup, os, mount);
+    try {
+      _hold.claimFresh();
+    } on Object {
+      host.dispose();
+      rethrow;
+    }
+    final drive = _FeedDrive(this, host, printCallback ?? defaultPrint);
     _snapshots = drive;
 
-    return _withTurn(() => drive.restore(state), feed: false);
-  });
+    return drive.restore(state);
+  }, feed: false);
 
   @override
   Future<Uint8List> dump() async {
@@ -637,6 +653,8 @@ final class _LeasedSession implements MontySession {
 
       return result.value;
     } finally {
+      // Also covers input rejection before ProtoSession enters its drive loop.
+      host.dispose();
       if (identical(_feedHost, host)) _feedHost = null;
     }
   }
@@ -681,9 +699,11 @@ HostAnswers _hostFor(
   SessionConfig config,
   Map<String, MontyValue>? externalLookup,
   OsHandler? os,
+  List<MountDir>? mount,
 ) => HostAnswers(
   externalLookup: externalLookup ?? const {},
   os: os,
+  mount: mount,
   systemSleepMax: config.systemSleepMax,
   objects: session.objects,
   recorder: session.recorder,

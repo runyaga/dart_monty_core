@@ -14,9 +14,10 @@ import '_worker_harness.dart';
 
 // Expected values and error text: owner-approved P01-P08, P11/P11b, P14,
 // plus the two-path rename controls in parity.md. No cwd establishment here.
-TypeMatcher<MontyRuntimeError> _raised(String type, Object message) => isA<MontyRuntimeError>()
-    .having((e) => e.exception.excType, 'type', type)
-    .having((e) => e.exception.message, 'message', message);
+TypeMatcher<MontyRuntimeError> _raised(String type, Object message) =>
+    isA<MontyRuntimeError>()
+        .having((e) => e.exception.excType, 'type', type)
+        .having((e) => e.exception.message, 'message', message);
 
 Future<MontyValue> _finish(MontySnapshot snapshot) async {
   var current = snapshot;
@@ -27,6 +28,7 @@ Future<MontyValue> _finish(MontySnapshot snapshot) async {
       _ => throw StateError('unexpected snapshot $current'),
     };
   }
+
   return current.output;
 }
 
@@ -63,6 +65,7 @@ void main() {
       memoryUsageLimit: memory,
     );
     addTearDown(result.close);
+
     return result;
   }
 
@@ -79,10 +82,16 @@ void main() {
     expect(value.memoryUsageLimit, 100000000);
     final repr =
         "MountDir(host_path='${value.hostPath}', virtual_path='/d', mode='overlay')";
-    expect(value.toString(), repr);
-    value.close();
-    value.close();
-    expect(value.toString(), repr);
+    final representation = isA<MountDir>().having(
+      (m) => m.toString(),
+      'repr',
+      repr,
+    );
+    expect(value, representation);
+    value
+      ..close()
+      ..close();
+    expect(value, representation);
     expect(mount(path: '/').virtualPath, '/');
   });
   test('P01 construction rejects paths mode and negative limits', () {
@@ -145,14 +154,15 @@ void main() {
           _raised(
             'ValueError',
             contains(
-              'mounts must have distinct virtual paths and disjoint host directories',
+              'mounts must have distinct virtual paths '
+              'and disjoint host directories',
             ),
           ).having((e) => e.traceback, 'traceback', isEmpty),
         ),
       );
-      expect(
-        await session.feedRun("'sent' in globals()"),
-        const MontyBool(false),
+      await expectLater(
+        session.feedRun('sent'),
+        throwsA(_raised('NameError', "name 'sent' is not defined")),
       );
       expect(await session.feedRun('2'), const MontyInt(2));
     });
@@ -188,9 +198,9 @@ void main() {
           ),
         ),
       );
-      expect(
-        await session.feedRun("'sent' in globals()"),
-        const MontyBool(false),
+      await expectLater(
+        session.feedRun('sent'),
+        throwsA(_raised('NameError', "name 'sent' is not defined")),
       );
       expect(await session.feedRun('3'), const MontyInt(3));
     });
@@ -300,10 +310,11 @@ void main() {
     final seen = <String>[];
     MontyValue handler(
       String name,
-      List<MontyValue> args,
-      Map<String, MontyValue> kwargs,
+      List<MontyValue> _,
+      Map<String, MontyValue> _,
     ) {
       seen.add(name);
+
       return const MontyString('from-os');
     }
 
@@ -333,15 +344,18 @@ void main() {
   });
   test('P07 declined outside and pathless default errors', () async {
     final value = mount();
+    final denied = throwsA(
+      _raised('PermissionError', "Permission denied: '/else/a.txt'"),
+    );
     await expectLater(
       run("Path('/else/a.txt').exists()", [
         value,
       ], os: (n, a, k) => throw const OsCallNotHandledException()),
-      throwsA(_raised('PermissionError', "Permission denied: '/else/a.txt'")),
+      denied,
     );
     await expectLater(
       run("Path('/else/a.txt').read_text()", [value]),
-      throwsA(_raised('PermissionError', "Permission denied: '/else/a.txt'")),
+      denied,
     );
     await expectLater(
       run("import os\nos.getenv('K')", [value]),
@@ -368,6 +382,7 @@ void main() {
           [mount(), mount(host: other.path, path: '/other')],
           os: (n, a, k) {
             calls++;
+
             return const MontyNone();
           },
         ),
@@ -390,6 +405,7 @@ void main() {
         [value],
         os: (n, a, k) {
           calls++;
+
           return const MontyNone();
         },
       ),
@@ -401,31 +417,58 @@ void main() {
       [value],
       os: (n, a, k) {
         calls++;
+
         return const MontyNone();
       },
     );
     expect(calls, 1);
   });
   for (final (label, dst, message) in [
-    ('length', '/${'x' * 4096}', 'path too long'),
-    ('NUL', '/bad\u0000dst', 'path contains null byte in dst'),
-    ('length before NUL', '/${'x' * 4096}\u0000', 'path too long'),
+    (
+      'length',
+      '/${'x' * 4096}',
+      "[Errno 36] File name too long: '/${'x' * 19}…${'x' * 20}'",
+    ),
+    ('NUL', '/bad\u0000dst', 'rename: embedded null character in dst'),
+    (
+      'length before NUL',
+      '/${'x' * 4096}\u0000',
+      "[Errno 36] File name too long: '/${'x' * 19}…${'x' * 19}\\x00'",
+    ),
   ]) {
     test('P08 rename invalid destination $label no fallback', () async {
       var calls = 0;
       final value = mount();
-      Future<MontyValue> rename(List<MountDir> mounts) => session.feedRun(
-        "from pathlib import Path\nPath('/else/a').rename(dst)",
-        inputs: {'dst': MontyString(dst)},
-        mount: mounts,
-        os: (n, a, k) {
-          calls++;
-          return const MontyNone();
-        },
-      );
+      // The interpreter rejects NUL before emitting an OS call. Exercise
+      // the host boundary with raw scripted paths to test table validation
+      // (mount_table.rs:188-206), including the no-table fallback control.
+      final fake = FakeMontySession();
+      addTearDown(fake.close);
+      Future<MontyValue> rename(List<MountDir> mounts) {
+        fake
+          ..willCallOs(
+            'Path.rename',
+            args: [
+              MontyPath('/else/a'),
+              MontyPath(dst),
+            ],
+          )
+          ..willReturn(const MontyNone());
+
+        return fake.feedRun(
+          'rename',
+          mount: mounts,
+          os: (n, a, k) {
+            calls++;
+
+            return const MontyNone();
+          },
+        );
+      }
+
       await expectLater(
         rename([value]),
-        throwsA(_raised('ValueError', message)),
+        throwsA(_raised(label == 'NUL' ? 'ValueError' : 'OSError', message)),
       );
       expect(calls, 0);
       await rename([]);
@@ -436,7 +479,7 @@ void main() {
     Link('${dir.path}/abs').createSync('${dir.path}/a.txt');
     Link('${dir.path}/rel').createSync('a.txt');
     Link('${dir.path}/escape').createSync('../outside');
-    final value = mount();
+    final value = mount(mode: 'read-write');
     expect(
       await run("Path('/d/rel').read_text()", [value]),
       const MontyString('A'),
@@ -474,10 +517,11 @@ void main() {
         "from pathlib import Path\nPath('/d/n.txt').write_text('ov')\nPath('/d/n.txt').read_text()",
         mount: [value],
       );
-      expect(snapshot, isA<FunctionSnapshot>());
+      final suspendedCall = isA<FunctionSnapshot>();
+      expect(snapshot, suspendedCall);
       value.close();
       snapshot = await (snapshot as FunctionSnapshot).resumeAuto();
-      expect(snapshot, isA<FunctionSnapshot>());
+      expect(snapshot, suspendedCall);
       expect(await _finish(snapshot), const MontyString('ov'));
       expect(File('${dir.path}/n.txt').existsSync(), isFalse);
     },
@@ -489,6 +533,7 @@ void main() {
       mount: [mount()],
       os: (n, a, k) {
         calls++;
+
         return const MontyString('handler');
       },
     );
@@ -513,6 +558,7 @@ void main() {
       mount: [mount()],
       os: (n, a, k) {
         calls++;
+
         return const MontyString('handler');
       },
     );
@@ -528,7 +574,9 @@ void main() {
       "from pathlib import Path\nPath('/d/n.txt').write_text('ov')\n"
       "ext()\n(Path('/d/n.txt').exists(), Path('/d/a.txt').read_text())",
       mount: [value],
-      externalLookup: {'ext': MontyHostFunction('ext', (a, k) => const MontyInt(1))},
+      externalLookup: {
+        'ext': MontyHostFunction('ext', (a, k) => const MontyInt(1)),
+      },
     );
     while (snapshot is! FunctionSnapshot || snapshot.isOsFunction) {
       snapshot = switch (snapshot) {
@@ -537,6 +585,7 @@ void main() {
         _ => throw StateError('expected suspension'),
       };
     }
+
     return snapshot.dump();
   }
 
@@ -549,7 +598,9 @@ void main() {
       final snapshot = await restored.loadSnapshot(
         state,
         mount: mounted ? [value] : null,
-        externalLookup: {'ext': MontyHostFunction('ext', (a, k) => const MontyInt(1))},
+        externalLookup: {
+          'ext': MontyHostFunction('ext', (a, k) => const MontyInt(1)),
+        },
       );
       if (mounted) {
         expect(
@@ -580,7 +631,9 @@ void main() {
       final snapshot = await restored.loadSnapshot(
         state,
         mount: [open],
-        externalLookup: {'ext': MontyHostFunction('ext', (a, k) => const MontyInt(1))},
+        externalLookup: {
+          'ext': MontyHostFunction('ext', (a, k) => const MontyInt(1)),
+        },
       );
       expect(
         await _finish(snapshot),
@@ -599,11 +652,12 @@ void main() {
       mount: [mount()],
       os: (n, a, k) {
         calls++;
+
         return const MontyString('wrong');
       },
     );
     expect(
-      fake.answers.single.answer,
+      fake.answers.singleOrNull?.answer,
       isA<ExternalReturnValue>().having(
         (a) => a.value,
         'value',
