@@ -405,14 +405,17 @@ jobs:
         run: |
           dart pub get
           python3 -I tool/generate_display_fixtures.py .parity --check
-      - name: Download the worker executable
+      - name: Download the worker executable and mount library
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dart_monty_worker-linux-x64
           path: lib/src/bin/linux-x64
       # Where tool/build_worker.sh puts it and worker_locator.dart looks.
       # Artifacts do not keep the executable bit.
-      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - run: |
+          chmod +x lib/src/bin/linux-x64/dart_monty_worker
+          test -x lib/src/bin/linux-x64/dart_monty_worker
+          test -s lib/src/bin/linux-x64/libdart_monty_worker.so
       - name: Run on the VM (worker process)
         run: python3 -I .parity/tool/parity/run.py vm --core . --out /tmp/parity
       - name: Run on dart2js
@@ -475,14 +478,17 @@ jobs:
           path: ~/.pub-cache
           key: pub-parity-${{ runner.os }}-${{ hashFiles('.parity/packages/monty_parity/pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
-      - name: Download the worker executable
+      - name: Download the worker executable and mount library
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dart_monty_worker-linux-x64
           path: lib/src/bin/linux-x64
       # Where tool/build_worker.sh puts it and worker_locator.dart looks.
       # Artifacts do not keep the executable bit.
-      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - run: |
+          chmod +x lib/src/bin/linux-x64/dart_monty_worker
+          test -x lib/src/bin/linux-x64/dart_monty_worker
+          test -s lib/src/bin/linux-x64/libdart_monty_worker.so
       - name: E0 on the VM (worker process) + crash tests
         run: python3 -I .parity/tool/parity/run.py vm --engine worker --core . --out /tmp/parity-e0
       - name: E0 on dart2js (Web Worker) + crash tests
@@ -611,12 +617,15 @@ jobs:
       # The executable worker-rust built, where tool/build_worker.sh puts it
       # and worker_locator.dart looks (as in test-worker-vm). Artifacts do not
       # keep the executable bit.
-      - name: Download the worker executable
+      - name: Download the worker executable and mount library
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dart_monty_worker-linux-x64
           path: lib/src/bin/linux-x64
-      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - run: |
+          chmod +x lib/src/bin/linux-x64/dart_monty_worker
+          test -x lib/src/bin/linux-x64/dart_monty_worker
+          test -s lib/src/bin/linux-x64/libdart_monty_worker.so
       # analyze, format and the source-only check_*.sh scripts that used to be
       # repeated here run in `gate`, which runs on every code OR docs change
       # (a superset of this job's trigger). This job is the tests.
@@ -670,8 +679,8 @@ jobs:
           set -o pipefail
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
-          # Measured on main 81d96ec: 2592; with the T-values tests 2694.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 2704 unit
+          # F-0: 2727 observed on the VM, including 23 native mount tests.
+          bash tool/assert_test_count.sh /tmp/unit-test.log 2730 unit
       - name: Test (web, unit only — dart2js + dart2wasm)
         # The SAME pure-Dart suite, on both web compilers. Not redundant with the
         # JIT step above: dart2js has a single number type, so `4.0 is int` is
@@ -853,6 +862,8 @@ jobs:
       # src/wasm.rs compiles only for wasm32, so the native pass never sees it.
       - name: cargo clippy (wasm32-wasip1)
         run: cargo clippy --locked --lib --target wasm32-wasip1 -- -D warnings
+      - name: Worker build and freshness contract
+        run: python3 ../../test/tool/build_worker_test.py
       - name: Build executable + cdylib
         run: cargo build --locked --release --lib --bins
       - name: Smoke test (Configure, Feed 1 + 1, Shutdown)
@@ -877,7 +888,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dart_monty_worker-linux-x64
-          path: native/worker/target/release/dart_monty_worker
+          path: |
+            native/worker/target/release/dart_monty_worker
+            native/worker/target/release/libdart_monty_worker.so
           if-no-files-found: error
           retention-days: 7
 
@@ -908,14 +921,17 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
-      - name: Download the worker executable
+      - name: Download the worker executable and mount library
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dart_monty_worker-linux-x64
           path: lib/src/bin/linux-x64
       # Where tool/build_worker.sh puts it and worker_locator.dart looks.
       # Artifacts do not keep the executable bit.
-      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - run: |
+          chmod +x lib/src/bin/linux-x64/dart_monty_worker
+          test -x lib/src/bin/linux-x64/dart_monty_worker
+          test -s lib/src/bin/linux-x64/libdart_monty_worker.so
       - name: Test (worker tag)
         # Floor under the 431 tests registered with the session-surface
         # oracle cases (C5-s); 177 once the session's failure
@@ -1051,14 +1067,17 @@ jobs:
           git -C "$up" fetch -q --depth 1 https://github.com/pydantic/monty "$commit"
           git -C "$up" checkout -q FETCH_HEAD
           dart tool/generate_fixture_corpus_v1.dart "$up" --check
-      - name: Download the worker executable
+      - name: Download the worker executable and mount library
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dart_monty_worker-linux-x64
           path: lib/src/bin/linux-x64
       # Where tool/build_worker.sh puts it and worker_locator.dart looks.
       # Artifacts do not keep the executable bit.
-      - run: chmod +x lib/src/bin/linux-x64/dart_monty_worker
+      - run: |
+          chmod +x lib/src/bin/linux-x64/dart_monty_worker
+          test -x lib/src/bin/linux-x64/dart_monty_worker
+          test -s lib/src/bin/linux-x64/libdart_monty_worker.so
       - name: Corpus and crash recovery (native)
         run: bash tool/test_corpus_worker.sh native
 

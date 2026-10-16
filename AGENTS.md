@@ -13,7 +13,9 @@ bash tool/build_worker.sh        # builds the worker binary; ~4 min cold. Needs 
 dart test --exclude-tags=integration,ladder,example,worker   # ~6 s
 ```
 
-- The worker binary lands in `lib/src/bin/<os>-<arch>/` (gitignored). Rebuild
+- The worker executable and host mount-service cdylib land in
+  `lib/src/bin/<os>-<arch>/` (gitignored): `dart_monty_worker` (Windows: `.exe`)
+  and `libdart_monty_worker.dylib` / `.so` / `dart_monty_worker.dll`. Rebuild
   it after any change under `native/worker/`; `bash tool/build_worker.sh --check`
   fails if it is stale.
 - Tools needed: Dart SDK (pinned, see section 8), Rust via rustup (the channel
@@ -55,7 +57,7 @@ break can silently shrink a suite, so every suite has a floor under its test
 count. Raise a floor when a suite grows (set it just below
 the observed count); never lower one to make a run pass. They live in:
 
-- `tool/gate.sh`: `sf unit_tests 700`, `sf unit_web 1400`, `sf worker_vm 430`;
+- `tool/gate.sh`: `sf unit_tests 2720`, `sf unit_web 5352`, `sf worker_vm 430`;
 - `tool/test_worker_web.sh`: `FLOOR=358` (per compiler);
 - `tool/test_corpus_worker.sh`: the `floor=` values per leg;
 - `.github/workflows/ci.yaml`: the `assert_test_count.sh` calls (same numbers).

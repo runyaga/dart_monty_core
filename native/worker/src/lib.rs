@@ -18,6 +18,8 @@ static ALLOC: monty_alloc::LimitedAllocator = monty_alloc::LimitedAllocator;
 #[path = "../upstream/subprocess.rs"]
 mod subprocess;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod mounts;
 pub mod turn;
 
 #[cfg(target_arch = "wasm32")]

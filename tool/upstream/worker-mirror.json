@@ -14,7 +14,8 @@
     "monty-proto": "f62ede58a8426cfcd96ef1a8222579980c771f54ee63b5c20dabcfa7d3d72f85",
     "monty-type-checking": "58e6efead36b18c3e8c859b28338d608fcd704a82d78b14c558985bf06aa9c51",
     "monty-types": "d80ebea7f98c1e7ad4075c111e03c59ef80d18abd813f1fad8984f8c4827d95d",
-    "monty-typeshed": "07a30851142ad0a76ea54df919514fc6a12571b963e1677853be22d4249a0781"
+    "monty-typeshed": "07a30851142ad0a76ea54df919514fc6a12571b963e1677853be22d4249a0781",
+    "monty-fs": "2e1edf72887e131762ef991f67d4a8fd126554460e0ea8b0dec8a068cf7cf167"
   },
   "verbatim": [
     {

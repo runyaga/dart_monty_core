@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# build_worker.sh — build the worker executable for this host.
+# build_worker.sh — build the worker executable and host mount-service cdylib.
 #
-# Builds native/worker's `dart_monty_worker` binary (release profile, the
-# shipped codegen) and copies it to
+# Builds native/worker's executable and cdylib in one Cargo invocation
+# (release profile, the shipped codegen) and copies both next to each other:
 #
 #   lib/src/bin/<os>-<arch>/dart_monty_worker[.exe]
+#   lib/src/bin/<os>-<arch>/libdart_monty_worker.{dylib,so} (Windows: .dll)
 #
 # which is where lib/src/worker/worker_locator.dart looks for it under
 # `dart test` and `dart run`. The directory is gitignored and pubignored: in
@@ -13,12 +14,12 @@
 # consumers receive.
 #
 #   bash tool/build_worker.sh            # build, then copy
-#   bash tool/build_worker.sh --print    # print the destination path only
+#   bash tool/build_worker.sh --print    # print both destination paths
 #   bash tool/build_worker.sh --check    # fail unless the copy is fresh
 #
 # Next to the executable it writes <exe>.stamp: a hash of every build input
 # (native/worker sources, manifest, lock, build script, toolchain file) and
-# of the executable itself. --check recomputes both, so the gate's worker_vm
+# of both binaries. --check recomputes all three, so the gate's worker_vm
 # step cannot pass against a stale build, or one whose source no longer
 # compiles, or a binary swapped in by hand.
 #
@@ -44,6 +45,12 @@ esac
 exe=dart_monty_worker
 [ "$os" = windows ] && exe=dart_monty_worker.exe
 dest="lib/src/bin/$os-$arch/$exe"
+case "$os" in
+  macos) library=libdart_monty_worker.dylib ;;
+  linux) library=libdart_monty_worker.so ;;
+  windows) library=dart_monty_worker.dll ;;
+esac
+lib_dest="lib/src/bin/$os-$arch/$library"
 
 stamp="$dest.stamp"
 
@@ -60,7 +67,7 @@ build_inputs() {
     find .cargo native/.cargo native/worker/.cargo -maxdepth 1 -type f \
       -name 'config*' -print 2>/dev/null || true
     printf '%s\n' native/worker/Cargo.toml native/worker/Cargo.lock \
-      native/worker/build.rs native/rust-toolchain.toml
+      native/worker/build.rs native/rust-toolchain.toml tool/build_worker.sh
   } | LC_ALL=C sort | while read -r f; do
     printf '%s %s\n' "$f" "$(sha < "$f")"
   done
@@ -81,25 +88,27 @@ build_inputs() {
 
 source_hash() { build_inputs | sha; }
 
-stamp_line() { printf 'source %s exe %s\n' "$(source_hash)" "$(sha < "$dest")"; }
+stamp_line() {
+  printf 'source %s exe %s lib %s\n' "$(source_hash)" "$(sha < "$dest")" "$(sha < "$lib_dest")"
+}
 
 case "${1:-}" in
   --print)
-    echo "$dest"
+    printf '%s\n' "$dest" "$lib_dest"
     exit 0
     ;;
   --check)
-    if [ ! -f "$dest" ] || [ ! -f "$stamp" ]; then
-      echo "build_worker: no worker at $dest. Run: bash tool/build_worker.sh" >&2
+    if [ ! -f "$dest" ] || [ ! -f "$lib_dest" ] || [ ! -f "$stamp" ]; then
+      echo "build_worker: missing worker, library or stamp at $(dirname "$dest"). Run: bash tool/build_worker.sh" >&2
       exit 1
     fi
     if [ "$(stamp_line)" != "$(cat "$stamp")" ]; then
       echo "build_worker: $dest is STALE: a build input (source, Cargo config," >&2
-      echo "  compiler, flags) changed, or the executable was replaced." >&2
+      echo "  compiler, flags) changed, or a binary was replaced." >&2
       echo "  Run: bash tool/build_worker.sh" >&2
       exit 1
     fi
-    echo "build_worker: $dest is fresh"
+    echo "build_worker: $dest and $lib_dest are fresh"
     exit 0
     ;;
   "") ;;
@@ -119,16 +128,29 @@ esac
 # <target>/<triple>/release/, and a guess would copy, and stamp as fresh, an
 # older binary.
 built="$(cd native/worker && CARGO_TARGET_DIR="$target_dir" \
-  cargo build --locked --release --bin dart_monty_worker \
+  cargo build --locked --release --bin dart_monty_worker --lib \
   --message-format=json-render-diagnostics |
   python3 -I -c 'import json, sys
-paths = [m["executable"] for m in map(json.loads, sys.stdin)
-         if m.get("reason") == "compiler-artifact" and m.get("executable")
-         and m["target"]["name"] == "dart_monty_worker"]
-sys.exit("build_worker: cargo reported no dart_monty_worker executable") if len(paths) != 1 else print(paths[0])')"
+messages = [m for m in map(json.loads, sys.stdin)
+            if m.get("reason") == "compiler-artifact"
+            and m["target"]["name"] == "dart_monty_worker"]
+exes = [m["executable"] for m in messages if m.get("executable")]
+libs = [p for m in messages if "cdylib" in m["target"]["crate_types"]
+        for p in m["filenames"] if p.endswith((".dylib", ".so", ".dll"))]
+if len(exes) != 1 or len(libs) != 1:
+    sys.exit("build_worker: expected exactly one executable and one cdylib")
+print(exes[0])
+print(libs[0])')"
+built_exe="$(printf '%s\n' "$built" | sed -n '1p')"
+built_lib="$(printf '%s\n' "$built" | sed -n '2p')"
 
 mkdir -p "$(dirname "$dest")"
-cp "$built" "$dest"
+cp "$built_exe" "$dest"
+# A host may still map the previous inode. Never truncate it during rebuilds.
+lib_temp="$(mktemp "$lib_dest.tmp.XXXXXX")"
+trap 'rm -f "$lib_temp"' EXIT
+cp -p "$built_lib" "$lib_temp"
+mv -f "$lib_temp" "$lib_dest"
 chmod +x "$dest"
 stamp_line > "$stamp"
-echo "build_worker: $dest"
+printf 'build_worker: %s\n' "$dest" "$lib_dest"
