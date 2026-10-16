@@ -13,8 +13,8 @@
     },
     "lib/src/fake_answers.dart": {
       "found": 38,
-      "hit": 37,
-      "pct": 97.37
+      "hit": 38,
+      "pct": 100.0
     },
     "lib/src/fake_monty_session.dart": {
       "found": 204,
@@ -27,9 +27,9 @@
       "pct": 100.0
     },
     "lib/src/fake_worker.dart": {
-      "found": 279,
-      "hit": 270,
-      "pct": 96.77
+      "found": 287,
+      "hit": 287,
+      "pct": 100.0
     },
     "lib/src/mount/memory_mounted_os_handler.dart": {
       "found": 282,
@@ -181,6 +181,11 @@
       "hit": 7,
       "pct": 100.0
     },
+    "lib/src/worker/byte_tail.dart": {
+      "found": 21,
+      "hit": 21,
+      "pct": 100.0
+    },
     "lib/src/worker/channel_factory.dart": {
       "found": 0,
       "hit": 0,
@@ -242,14 +247,19 @@
       "pct": 98.73
     },
     "lib/src/worker/host_answers.dart": {
-      "found": 335,
-      "hit": 335,
+      "found": 349,
+      "hit": 349,
       "pct": 100.0
     },
     "lib/src/worker/host_objects.dart": {
       "found": 37,
       "hit": 37,
       "pct": 100.0
+    },
+    "lib/src/worker/invocation.dart": {
+      "found": 13,
+      "hit": 12,
+      "pct": 92.31
     },
     "lib/src/worker/monty.dart": {
       "found": 29,
@@ -267,14 +277,19 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_session.dart": {
-      "found": 501,
-      "hit": 495,
-      "pct": 98.8
+      "found": 510,
+      "hit": 504,
+      "pct": 98.82
     },
     "lib/src/worker/monty_snapshot.dart": {
-      "found": 87,
-      "hit": 87,
+      "found": 91,
+      "hit": 91,
       "pct": 100.0
+    },
+    "lib/src/worker/monty_telemetry.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
     },
     "lib/src/worker/os_policy.dart": {
       "found": 204,
@@ -282,13 +297,13 @@
       "pct": 99.51
     },
     "lib/src/worker/process_channel.dart": {
-      "found": 231,
-      "hit": 225,
-      "pct": 97.4
+      "found": 229,
+      "hit": 229,
+      "pct": 100.0
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 228,
-      "hit": 228,
+      "found": 243,
+      "hit": 243,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -326,6 +341,61 @@
       "hit": 20,
       "pct": 100.0
     },
+    "lib/src/worker/telemetry.dart": {
+      "found": 6,
+      "hit": 6,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_attributes.dart": {
+      "found": 126,
+      "hit": 126,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_bridge.dart": {
+      "found": 40,
+      "hit": 40,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_channel.dart": {
+      "found": 16,
+      "hit": 16,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_events.dart": {
+      "found": 97,
+      "hit": 97,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_json.dart": {
+      "found": 174,
+      "hit": 174,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_recorder.dart": {
+      "found": 30,
+      "hit": 30,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_repr.dart": {
+      "found": 58,
+      "hit": 58,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_requests.dart": {
+      "found": 78,
+      "hit": 78,
+      "pct": 100.0
+    },
+    "lib/src/worker/telemetry_scalars.dart": {
+      "found": 24,
+      "hit": 19,
+      "pct": 79.17
+    },
+    "lib/src/worker/telemetry_values.dart": {
+      "found": 63,
+      "hit": 63,
+      "pct": 100.0
+    },
     "lib/src/worker/tz_names.g.dart": {
       "found": 0,
       "hit": 0,
@@ -337,13 +407,13 @@
       "pct": 100.0
     },
     "lib/src/worker/worker_channel.dart": {
-      "found": 90,
-      "hit": 90,
+      "found": 92,
+      "hit": 92,
       "pct": 100.0
     },
     "lib/src/worker/worker_connection.dart": {
-      "found": 161,
-      "hit": 161,
+      "found": 168,
+      "hit": 168,
       "pct": 100.0
     },
     "lib/src/worker/worker_locator.dart": {
@@ -378,8 +448,8 @@
     }
   },
   "total": {
-    "found": 6701,
-    "hit": 6613,
-    "pct": 98.69
+    "found": 7504,
+    "hit": 7426,
+    "pct": 98.96
   }
 }
