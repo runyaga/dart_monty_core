@@ -30,7 +30,8 @@ void main() {
     channel = processChannelForTesting(process);
     addTearDown(() async {
       channel.kill();
-      if (!process.stdin.flushed.isCompleted) process.stdin.flushed.complete();
+      final flushed = process.stdin.flushed;
+      if (!flushed.isCompleted) flushed.complete();
       await channel.close();
       await process.dispose();
       expect(ProcessChannel.live, isNot(contains(channel)));
@@ -112,7 +113,7 @@ final class _DelayedSink implements IOSink {
   final flushed = Completer<void>();
 
   @override
-  Future<void> get done => Future<void>.value();
+  Future<void> get done => Future.value();
 
   @override
   void add(List<int> data) => frames.add(data);
@@ -135,6 +136,8 @@ final class _TestProcess implements Process {
   final exit = Completer<int>();
 
   @override
+  // The fake sink only records writes and flushes; it has nothing to close.
+  // ignore: dispose-class-fields
   final _DelayedSink stdin = _DelayedSink();
 
   @override
