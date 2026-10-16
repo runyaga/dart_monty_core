@@ -137,8 +137,9 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
   superseded, so edit the body before the last push.
 - **Coverage ratchet** (`tool/coverage_ratchet.sh`) fails on any per-file
   decrease and on a baseline file that vanished. A deleted file is accepted
-  only through the base-ref rule (`tool/ci_ratchet_base.sh`); there is no
-  override. Add tests for lines a deleted test used to cover.
+  only through the base-ref rule (`tool/ci_ratchet_base.sh`), which also covers
+  a baseline entry for a file an earlier merge already deleted (the baseline
+  is refreshed only once per release); there is no override. Add tests for lines a deleted test used to cover.
 - **Parity pin.** `PARITY_PIN` in `.github/workflows/ci.yaml` is a full SHA of
   the parity suite (`dart_monty_parity`). The `Parity` and `Parity E0` jobs
   fail when a PR renames an API the pinned suite uses. Order: change the
