@@ -253,6 +253,9 @@ void main() {
           expect(count, 2);
         });
       },
+      skip: Platform.isWindows
+          ? 'change time is the creation time on Windows'
+          : false,
     );
 
     test(
@@ -364,41 +367,47 @@ void main() {
       });
     });
 
-    test('locator warm start catches an mtime-restored modification', () async {
-      resetVerifiedWorkersForTesting();
-      await _withCachedWorker((environment, manifest, cached) async {
-        writeWorkerFingerprint(cached, _fingerprint(cached, manifest));
-        final original = readWorkerFingerprint(cached);
-        if (original == null) fail('written fingerprint cannot be read');
-        cached
-          ..writeAsStringSync('evil')
-          ..setLastModifiedSync(
-            DateTime.fromMicrosecondsSinceEpoch(original.modifiedMicros),
-          );
-        var count = 0;
+    test(
+      'locator warm start catches an mtime-restored modification',
+      () async {
+        resetVerifiedWorkersForTesting();
+        await _withCachedWorker((environment, manifest, cached) async {
+          writeWorkerFingerprint(cached, _fingerprint(cached, manifest));
+          final original = readWorkerFingerprint(cached);
+          if (original == null) fail('written fingerprint cannot be read');
+          cached
+            ..writeAsStringSync('evil')
+            ..setLastModifiedSync(
+              DateTime.fromMicrosecondsSinceEpoch(original.modifiedMicros),
+            );
+          var count = 0;
 
-        await expectLater(
-          locateWorker(
-            abi: Abi.current(),
-            cache: WorkerCacheSource(
-              environment: environment,
-              manifest: manifest,
-              verify: (file, artifact) async {
-                count++;
-                throw WorkerVerifyError(
-                  path: file.path,
-                  reason: WorkerVerifyReason.digest,
-                  expected: artifact.sha256,
-                  actual: 'bad',
-                );
-              },
+          await expectLater(
+            locateWorker(
+              abi: Abi.current(),
+              cache: WorkerCacheSource(
+                environment: environment,
+                manifest: manifest,
+                verify: (file, artifact) async {
+                  count++;
+                  throw WorkerVerifyError(
+                    path: file.path,
+                    reason: WorkerVerifyReason.digest,
+                    expected: artifact.sha256,
+                    actual: 'bad',
+                  );
+                },
+              ),
             ),
-          ),
-          throwsA(isA<MontyCrashedError>()),
-        );
-        expect(count, 1);
-      });
-    });
+            throwsA(isA<MontyCrashedError>()),
+          );
+          expect(count, 1);
+        });
+      },
+      skip: Platform.isWindows
+          ? 'change time is the creation time on Windows'
+          : false,
+    );
 
     test('locator warm start accepts a forged current record', () async {
       resetVerifiedWorkersForTesting();
