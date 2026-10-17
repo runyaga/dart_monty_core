@@ -2,6 +2,72 @@
 
 ## Unreleased
 
+## 0.110.0-dev.3 - 2026-10-17
+
+### Added
+
+- The native build hook installs published worker release assets into the
+  per-user cache, verifies them, and publishes them atomically with an
+  installation lock and stale-staging sweep.
+
+### Changed
+
+- `MontyComplete.output` builds its value on every read, as upstream does, including the first. The structure of the value is still checked when the turn ends, so a malformed frame ends the session with `MontyCrashedError`. A value that fails to convert, such as a `timedelta` over 999999999 days, now throws from the `output` getter or `toString()` and leaves the session usable.
+
+- `OSAccess` handles its arguments as upstream's `OSAccess` does. A `MontyFileHandle` is a path only for `Path.read_text`, `Path.read_bytes`, `Path.write_text`, `Path.write_bytes`, `Path.append_text` and `Path.append_bytes`, and any other call refuses it with a `TypeError` (`Path.is_symlink` answers `False` without reading its argument). `Path.mkdir` raises `AssertionError` for more than two keywords and reads `parents` and `exist_ok` by Python truthiness. The write and append calls take text or bytes in either operation and keep the type they were given.
+
+- `dart_monty_core` now looks for a verified per-user worker cache before the
+  package-relative worker when running with JIT. The cache uses `HOME` on
+  macOS and Linux, `LOCALAPPDATA` on Windows, and verifies worker files with
+  SHA-256 before launch.
+
+- The `worker_mirror` user-define overrides the worker release mirror for
+  build-hook installations.
+
+A missing or unloadable bundled worker library now fails with the library path
+and a remedy. The self-relaunch child exits with status 78 and names the
+library.
+
+- The package embeds the manifest of the v0.110.0-dev.3 worker release assets.
+  On macOS arm64, Linux x64, Linux arm64 and Windows x64 the build hook
+  installs the verified worker from the GitHub release into the per-user cache.
+
+- Cached workers are hashed in full at installation, then later runs compare a
+  recorded size, mtime, and change time fingerprint and re-hash only on a
+  mismatch. On macOS and Linux, the change time additionally catches a
+  same-size modification with the mtime restored. On Windows,
+  `FileStat.changed` is the file creation time rather than the metadata change
+  time, so the fingerprint is size, mtime, and creation time. A same-size
+  Windows modification with the mtime restored is not detected until the next
+  full hash.
+
+### Removed
+
+- `SourceRange.unknown` is no longer public. A suspension from a worker that sent no position still reports an empty file name and an empty range at offset 0, and `==`, `hashCode` and `toString()` are unchanged.
+
+### Fixed
+
+- A failure while preparing a host answer to a suspended call, such as a host exception whose attributes cannot be read, discards the worker and finishes the session in `feedRun`, `FunctionSnapshot.resumeAuto` and `FutureSnapshot.resumeAuto`, as upstream does.
+
+- Dump operations now surface typing diagnostics without ending the session.
+
+- Build hooks skip unsupported mobile targets before evaluating the worker opt-in.
+
+- `OSAccess` raises `UnicodeEncodeError` for text with an unpaired UTF-16 surrogate when `Path.read_bytes`, `Path.append_bytes` or `Path.stat` needs its UTF-8 bytes, as upstream does. It no longer encodes the surrogate as U+FFFD.
+
+- Restored sessions now use the dump's reported feed execution when scheduling feed deadlines.
+
+- Convert failures while reading a called external lookup entry into Python exceptions.
+
+- Self-relaunched AOT worker children now report an unloadable bundled worker library before exiting.
+
+### Internal
+
+- The DCM analysis and metrics ratchets scan `hook/` as well as `lib/` and `test/`. `hook/build.dart` has one fewer type argument and `_buildWorker` is split so it is under the line limit.
+
+- Added a schema-1 worker artifact manifest for published worker releases.
+
+
 ## 0.110.0-dev.2 - 2026-10-16
 
 ### Breaking

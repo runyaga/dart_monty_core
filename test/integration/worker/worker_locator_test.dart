@@ -839,6 +839,7 @@ void main() {
       );
       var eligibilityChecks = 0;
       final launch = await locateWorker(
+        cache: WorkerCacheSource(manifest: WorkerManifest(targets: {})),
         resolvePackageUri: (_) async => Uri.file(Platform.resolvedExecutable),
         canSelfRelaunch: () {
           eligibilityChecks++;

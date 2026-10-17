@@ -19,6 +19,7 @@ import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
@@ -115,7 +116,9 @@ void main() {
   expectNoWorkersLeftAfterEachTest();
 
   test('locates the built worker for this host', () async {
-    final launch = await locateWorker();
+    final launch = await locateWorker(
+      cache: WorkerCacheSource(manifest: WorkerManifest(targets: {})),
+    );
     expect(
       launch,
       isA<WorkerExecutable>().having(

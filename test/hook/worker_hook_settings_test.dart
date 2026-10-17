@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:hooks/hooks.dart';
 import 'package:test/test.dart';
 
@@ -52,7 +53,10 @@ Future<BuildOutput> _runHook(
   if (codeAssets) expect(await extension.validateBuildInput(input), isEmpty);
   final inputFile = File.fromUri(root.resolve('input.json'))
     ..writeAsStringSync(jsonEncode(input.json));
-  await hook.main(['--config=${inputFile.path}']);
+  await hook.runBuild(
+    ['--config=${inputFile.path}'],
+    manifest: WorkerManifest(targets: {}),
+  );
   final output = BuildOutput(
     jsonDecode(File.fromUri(input.outputFile).readAsStringSync())
         as Map<String, Object?>,
