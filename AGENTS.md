@@ -68,7 +68,7 @@ break can silently shrink a suite, so every suite has a floor under its test
 count. Raise a floor when a suite grows (set it just below
 the observed count); never lower one to make a run pass. They live in:
 
-- `tool/gate.sh`: `sf unit_tests 3204`, `sf unit_web 6274`, `sf worker_vm 614`;
+- `tool/gate.sh`: `sf unit_tests 3211`, `sf unit_web 6288`, `sf worker_vm 614`;
 - `tool/test_worker_web.sh`: `FLOOR=566` (per compiler);
 - `tool/test_corpus_worker.sh`: the `floor=` values per leg;
 - `.github/workflows/ci.yaml`: the `assert_test_count.sh` calls (same numbers).
