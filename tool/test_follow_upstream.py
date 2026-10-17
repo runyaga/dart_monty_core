@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -22,16 +25,41 @@ class FollowUpstreamTest(unittest.TestCase):
     def test_failure_ids_parse_parity_and_corpus_fixtures(self) -> None:
         stages = {'upstream-tests': 'pass', 'worker-build': 'pass', 'parity': 'fail', 'corpus': 'fail'}
         output = {
-            'parity': 'FAIL current case list-basic (vm)\nFAIL current PRESENT aggregate\nFAIL current row os-path mismatch\n',
-            'corpus': ('  REGRESSION crates/monty/test_cases/a.py\n'
-                       "  - 'REGRESSION fstring__all.py: not an expected failure'\n"
-                       'REGRESSION b.py expected\n'
-                       'REGRESSION b.py repeated\n'),
+            'parity': (
+                'FAIL current case list-basic (row containers) on vm: measured MISMATCH, recorded MATCH\n'
+                'FAIL current row os-path on vm: measured 3/4, recorded 4/4 '
+                '(tool/parity/baseline-current.json)\n'
+                'FAIL current PRESENT on vm: 10/12, recorded 11/12\n'),
+            'corpus': 'REGRESSION a.py: not an expected failure\n',
         }
-        self.assertEqual(['parity:list-basic', 'parity:os-path mismatch',
-                          'corpus:crates/monty/test_cases/a.py', 'corpus:fstring__all.py',
-                          'corpus:b.py'],
+        self.assertEqual(['parity:list-basic', 'parity:os-path', 'parity:unparsed',
+                          'corpus:a.py'],
                          FOLLOW.failure_ids(stages, output))
+
+    def test_failure_ids_mark_unknown_parity_failure_unparsed(self) -> None:
+        self.assertEqual(['parity:unparsed'], FOLLOW.failure_ids(
+            {'parity': 'fail'}, {'parity': 'FAIL gate: x (row, stage) is ERROR on vm\n'}))
+
+    def test_failure_ids_mark_corpus_problem_words_unparsed(self) -> None:
+        for problem in ('CHANGED b.py: expected the failure changed',
+                        'MISSING b.py: expected failure is not in the corpus',
+                        'STALE b.py: listed as a failure but it now passes'):
+            with self.subTest(problem=problem):
+                self.assertEqual(['corpus:a.py', 'corpus:unparsed'], FOLLOW.failure_ids(
+                    {'corpus': 'fail'},
+                    {'corpus': f'REGRESSION a.py: not an expected failure\n{problem}\n'}))
+
+    def test_failure_ids_ignore_corpus_runner_exit_after_regression(self) -> None:
+        self.assertEqual(['corpus:a.py'], FOLLOW.failure_ids(
+            {'corpus': 'fail'},
+            {'corpus': ('REGRESSION a.py: not an expected failure\n'
+                        'FAIL: corpus-worker (native ) exited 1\n')}))
+
+    def test_failure_ids_mark_missing_corpus_scorecard_unparsed(self) -> None:
+        self.assertEqual(['corpus:a.py', 'corpus:unparsed'], FOLLOW.failure_ids(
+            {'corpus': 'fail'},
+            {'corpus': ("REGRESSION a.py: not an expected failure\n"
+                        "FAIL: corpus-worker (native ) printed no 'pass' scorecard line\n")}))
 
     def test_failure_ids_use_unparsed_when_needed(self) -> None:
         self.assertEqual(['parity:unparsed', 'corpus:unparsed'], FOLLOW.failure_ids(
@@ -57,10 +85,20 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('red', returned['kind'])
         self.assertEqual(['corpus:x.py'], returned['new'])
 
-    def test_first_failure_records_a_baseline(self) -> None:
+    def test_first_failure_is_red_and_does_not_record_a_baseline(self) -> None:
         verdict = FOLLOW.judge(None, ['parity:case'], set(), 'first')
-        self.assertEqual('baseline', verdict['kind'])
-        self.assertEqual({'parity:case': 'first'}, verdict['baseline'])
+        self.assertEqual('red', verdict['kind'])
+        self.assertEqual(['parity:case'], verdict['new'])
+        self.assertEqual({}, verdict['baseline'])
+
+    def test_clean_first_commit_then_a_failing_commit_is_red(self) -> None:
+        first = FOLLOW.judge(None, [], set(), 'first')
+        self.assertEqual('green', first['kind'])
+        self.assertEqual({}, first['baseline'])
+        later = FOLLOW.judge(first['baseline'], ['parity:case'], set(), 'later')
+        self.assertEqual('red', later['kind'])
+        self.assertEqual(['parity:case'], later['new'])
+        self.assertEqual({}, later['baseline'])
 
     def test_first_clean_commit_records_an_empty_baseline(self) -> None:
         verdict = FOLLOW.judge(None, [], set(), 'first')
@@ -94,7 +132,8 @@ class FollowUpstreamTest(unittest.TestCase):
         state = {'baseline': {'worker-build': 'old'},
                  'pending': {'sha': 'new', 'failures': ['corpus:x.py', 'gate:timeout'],
                              'fixed': ['worker-build']}}
-        self.assertEqual({'corpus:x.py': 'new'}, FOLLOW.accept_pending(state, 'new'))
+        self.assertEqual(({'corpus:x.py': 'new'}, ['gate:timeout']),
+                         FOLLOW.accept_pending(state, 'new'))
         self.assertNotIn('pending', state)
 
     def test_state_round_trip_keeps_baseline_and_pending(self) -> None:
@@ -106,7 +145,21 @@ class FollowUpstreamTest(unittest.TestCase):
             state = FOLLOW.read_state_or_seed(path, {'commit': 'pin'})
         self.assertEqual('later', state['sha'])
         self.assertEqual({'parity:case': 'old'}, state['baseline'])
-        self.assertEqual({'sha': 'red', 'failures': ['corpus:x.py'], 'fixed': []}, state['pending'])
+        self.assertEqual({'sha': 'red', 'failures': ['corpus:x.py'], 'fixed': [], 'flags': []},
+                         state['pending'])
+
+    def test_state_pending_flags_are_optional_and_must_be_strings(self) -> None:
+        state = FOLLOW.state_from_data(
+            {'sha': 'good', 'pending': {'sha': 'red', 'failures': [], 'fixed': []}},
+            {'commit': 'pin'})
+        self.assertEqual([], state['pending']['flags'])
+        for flags in ('PROTO', [1]):
+            with self.subTest(flags=flags):
+                with self.assertRaises(ValueError):
+                    FOLLOW.state_from_data(
+                        {'sha': 'good', 'pending': {
+                            'sha': 'red', 'failures': [], 'fixed': [], 'flags': flags,
+                        }}, {'commit': 'pin'})
 
     def test_evidence_line_is_appended(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -178,6 +231,71 @@ class FollowUpstreamTest(unittest.TestCase):
             report = FOLLOW.read_gate_report(path, 130, 'wanted')
         self.assertIn('gate:no-report', report['failures'])
 
+    @unittest.skipUnless(shutil.which('git') and shutil.which('cargo'),
+                         'git and cargo are required')
+    def test_gate_worker_build_leaves_core_tree_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            core = root / 'core'
+            upstream = root / 'upstream'
+            target = root / 'target'
+            report = root / 'gate.json'
+
+            for repository in (core, upstream):
+                repository.mkdir()
+                subprocess.run(['git', 'init', '-q', str(repository)], check=True)
+                subprocess.run(
+                    ['git', '-C', str(repository), 'config', 'user.name', 'Follow Test'],
+                    check=True)
+                subprocess.run(
+                    ['git', '-C', str(repository), 'config', 'user.email',
+                     'follow-test@example.com'], check=True)
+
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'native/worker').mkdir(parents=True)
+            (core / 'lib/src/worker').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(json.dumps({
+                'version': '1.1.0', 'commit': 'a' * 40, 'trees': [],
+            }) + '\n')
+            (core / 'native/worker/Cargo.toml').write_text(
+                '[package]\nname = "throwaway-worker"\nversion = "0.0.0"\n'
+                'edition = "2021"\n\n[dependencies]\nmonty = "=1.1.0"\n')
+            (core / 'native/worker/Cargo.lock').write_text('version = 4\n')
+            (core / 'lib/src/worker/worker_manifest_data.dart').write_text(
+                'const workerManifestJson = \'{"schema":1,"targets":{"x":{}}}\';\n')
+            subprocess.run(['git', '-C', str(core), 'add', '.'], check=True)
+            subprocess.run(
+                ['git', '-C', str(core), 'commit', '-q', '-m', 'core fixture'], check=True)
+
+            (upstream / 'Cargo.toml').write_text(
+                '[workspace]\nresolver = "2"\n\n[workspace.package]\nversion = "1.2.0"\n')
+            (upstream / 'Cargo.lock').write_text('version = 4\n')
+            subprocess.run(['git', '-C', str(upstream), 'add', '.'], check=True)
+            subprocess.run(
+                ['git', '-C', str(upstream), 'commit', '-q', '-m', 'upstream fixture'],
+                check=True)
+
+            watched = [
+                core / 'native/worker/Cargo.toml',
+                core / 'native/worker/Cargo.lock',
+                core / 'lib/src/worker/worker_manifest_data.dart',
+            ]
+            before = [path.read_bytes() for path in watched]
+            status = FOLLOW.gate(
+                core, upstream, None, ('worker-build',), target,
+                report_skips=True, json_out=report)
+
+            self.assertEqual(1, status)
+            self.assertEqual('fail', json.loads(report.read_text())['stages']['worker-build'])
+            self.assertEqual('', subprocess.run(
+                ['git', '-C', str(core), 'status', '--porcelain'], check=True,
+                text=True, stdout=subprocess.PIPE).stdout)
+            self.assertEqual(before, [path.read_bytes() for path in watched])
+            worktrees = subprocess.run(
+                ['git', '-C', str(core), 'worktree', 'list', '--porcelain'], check=True,
+                text=True, stdout=subprocess.PIPE).stdout
+            self.assertEqual(1, sum(line.startswith('worktree ') for line in worktrees.splitlines()))
+
     def test_unexpected_failure_still_writes_a_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             core = Path(temp) / 'core'
@@ -214,16 +332,13 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual(124, result.returncode)
         self.assertIn('GATE RED stage=timeout', result.stdout)
 
-    def test_flagged_entries_include_baselines_and_fixes(self) -> None:
+    def test_flagged_entries_include_fixes(self) -> None:
         commits = [
-            {'sha': 'b' * 40, 'subject': 'baseline', 'flags': [], 'verdict': 'baseline',
-             'new': ['corpus:x.py'], 'fixed': [], 'baseline': {'corpus:x.py': 'b' * 40}},
             {'sha': 'c' * 40, 'subject': 'fix', 'flags': [], 'verdict': 'green',
              'new': [], 'fixed': ['corpus:x.py'], 'baseline': {'corpus:x.py': 'b' * 40}},
         ]
         entries = FOLLOW.flagged_entries(commits, 'run')
-        self.assertIn('baseline recorded: 1 failures', entries[0]['reason'])
-        self.assertIn('introduced by ' + 'b' * 40, entries[1]['reason'])
+        self.assertIn('introduced by ' + 'b' * 40, entries[0]['reason'])
 
     def test_accept_records_evidence_and_flagged_entry(self) -> None:
         accepted = 'b' * 40
@@ -235,13 +350,18 @@ class FollowUpstreamTest(unittest.TestCase):
                 json.dumps({'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
             state = root / 'last_good.json'
             FOLLOW.write_state(state, 'a' * 40, 'pending', baseline={'parity:old': 'a' * 40}, pending={
-                'sha': accepted, 'failures': ['corpus:x.py'], 'fixed': ['parity:old'],
+                'sha': accepted, 'failures': ['corpus:x.py', 'gate:timeout'],
+                'fixed': ['parity:old'], 'flags': ['PROTO'],
             })
             original_command, original_git = FOLLOW.command, FOLLOW.git
             FOLLOW.command = self._follow_command
             FOLLOW.git = self._follow_git(accepted, [accepted])
             try:
-                status = FOLLOW.run_follow(core, root / 'work', None, 1, 1, accepted, state, root / 'result.json')
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    status = FOLLOW.run_follow(
+                        core, root / 'work', None, 1, 1, accepted, state,
+                        root / 'result.json')
             finally:
                 FOLLOW.command, FOLLOW.git = original_command, original_git
             result = json.loads((root / 'result.json').read_text())
@@ -249,12 +369,22 @@ class FollowUpstreamTest(unittest.TestCase):
             saved = json.loads(state.read_text())
         self.assertEqual(0, status)
         self.assertEqual('accepted', evidence['verdict'])
-        self.assertEqual(['corpus:x.py'], evidence['new'])
+        self.assertEqual(['corpus:x.py', 'gate:timeout'], evidence['new'])
         self.assertEqual(['parity:old'], evidence['fixed'])
+        self.assertEqual(['PROTO'], evidence['flags'])
+        self.assertEqual(['gate:timeout'], evidence['not_baselined'])
         self.assertEqual({'corpus:x.py': accepted}, saved['baseline'])
+        self.assertEqual(['gate:timeout'], result['not_baselined'])
+        self.assertEqual(['PROTO'], result['commits'][0]['flags'])
+        self.assertEqual(['gate:timeout'], result['commits'][0]['not_baselined'])
         self.assertTrue(result['flagged'])
         self.assertIn('corpus:x.py', result['flagged'][0]['reason'])
         self.assertIn(accepted, result['flagged'][0]['reason'])
+        self.assertIn('not baselined: gate:timeout', result['flagged'][0]['reason'])
+        self.assertIn(
+            f'WARNING accepted {accepted} with failures that are never baselined: gate:timeout',
+            stdout.getvalue())
+        self.assertIn('Not baselined on accept: gate:timeout', FOLLOW.summary(result))
 
     def test_successful_pending_retry_clears_it_and_advances(self) -> None:
         retry = 'b' * 40
