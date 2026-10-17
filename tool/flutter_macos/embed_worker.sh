@@ -26,8 +26,12 @@ fail() {
 usage() {
   cat <<'EOF'
 Usage:
-  embed_worker.sh --worker <path> --sha256 <64-hex> [--app <App.app>]
+  embed_worker.sh --worker <path> --sha256 <64-hex> [--app <App.app>] [--resign-app]
   embed_worker.sh --check <App.app>
+
+--resign-app seals the app again after the copy. Use it when the helper is
+added to an app that was already signed (a shell step after the build). An
+Xcode Run Script phase placed before the code-sign phase does not need it.
 
 Without --app, embedding reads BUILT_PRODUCTS_DIR and CONTENTS_FOLDER_PATH
 as supplied by Xcode's Run Script build phase.
@@ -74,6 +78,7 @@ mode=embed
 app=''
 worker=''
 expected_sha256=''
+resign=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -91,6 +96,10 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || fail '--sha256 needs a 64-hex digest'
       expected_sha256=$2
       shift 2
+      ;;
+    --resign-app)
+      resign=1
+      shift
       ;;
     --check)
       [ "$#" -ge 2 ] || fail '--check needs an App.app path'
@@ -159,5 +168,13 @@ else
 fi
 mv -f "$temporary" "$helper"
 trap - EXIT HUP INT TERM
+
+if [ "$resign" -eq 1 ]; then
+  if [ -n "$identity" ] && [ "$identity" != '-' ]; then
+    codesign --force --sign "$identity" --options runtime "$app"
+  else
+    codesign --force --sign - "$app"
+  fi
+fi
 
 printf '%s: embedded signed arm64 worker at %s\n' "$prefix" "$helper"

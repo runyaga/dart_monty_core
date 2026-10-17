@@ -158,7 +158,7 @@ else
 fi
 pass no-hook-worker 'Contents/Frameworks has no dart_monty worker library'
 
-if ! bash "$embed" --app "$app" --worker "$worker" --sha256 "$sha256"; then
+if ! bash "$embed" --app "$app" --worker "$worker" --sha256 "$sha256" --resign-app; then
   fail embed 'post-build embed failed'
 fi
 pass embed 'post-build Xcode-phase equivalent completed'
