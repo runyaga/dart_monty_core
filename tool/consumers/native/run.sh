@@ -157,6 +157,144 @@ aot_bundle() {
     "$temp/relocated/bin/aot_worker${EXE#dart_monty_worker}" "$input")
 }
 
+cache_probes() {
+  local base="$TEMP_ROOT" dist="$TEMP_ROOT/dist"
+  local core="$base/core-copy" consumer="$base/cache-consumer"
+  local home="$base/home" cache_root worker message_path message_root size
+  local log="$base/probe.log" output first start end value status i
+  local times=() ordered
+
+  mkdir -p "$base" "$home"
+  if (cd "$ROOT" &&
+    dart run tool/worker_release.dart pack --target "$OS-$ARCH" \
+      --bin-dir "lib/src/bin/$OS-$ARCH" --out "$dist" &&
+    dart run tool/worker_release.dart manifest --tag v0.0.0-probe \
+      --fragments "$dist" --out "$dist/worker-manifest.json" --allow-partial &&
+    dart run tool/consumers/native/cache_probe_setup.dart \
+      "$ROOT" "$HERE" "$core" "$consumer" "$dist/worker-manifest.json") \
+    >"$log" 2>&1; then
+    :
+  else
+    status=$?
+    output=$(flat <"$log")
+    for value in cache-cold cache-warm cache-mirror-down cache-corrupt \
+      cache-no-package-worker; do
+      printf 'PROBE %s fail exit=%s setup %s\n' "$value" "$status" "$output"
+    done
+    FAILED=1
+    return
+  fi
+
+  case "$OS" in
+    linux) cache_root="$home/.cache/dart_monty" ;;
+    macos) cache_root="$home/Library/Caches/dart_monty" ;;
+    windows) cache_root="$home/dart_monty/Cache" ;;
+    *) cache_root= ;;
+  esac
+  if (cd "$consumer" &&
+    consumer_environment "$home" dart pub get >"$log" 2>&1 &&
+    consumer_environment "$home" dart run bin/consumer.dart >>"$log" 2>&1); then
+    output=$(<"$log")
+    worker=$(find "$cache_root" -type f -name "$EXE" -print -quit 2>/dev/null)
+    if [[ "$output" == *'result=2'* ]] && [ -n "$worker" ]; then
+      size=$(wc -c <"$worker" | tr -d ' ')
+      printf 'PROBE cache-cold pass cache=%s bytes=%s\n' "$worker" "$size"
+    else
+      printf 'PROBE cache-cold fail result-or-cache-missing %s\n' "$(flat <"$log")"
+      FAILED=1
+    fi
+  else
+    status=$?
+    printf 'PROBE cache-cold fail exit=%s %s\n' "$status" "$(flat <"$log")"
+    FAILED=1
+  fi
+
+  status=0
+  for i in 1 2 3 4 5; do
+    start=$(now_ms) || { status=1; break; }
+    if (cd "$consumer" &&
+      consumer_environment "$home" dart run bin/consumer.dart >"$log" 2>&1); then
+      end=$(now_ms) || { status=1; break; }
+      output=$(<"$log")
+      if [[ "$output" != *'result=2'* ]]; then
+        status=1
+        break
+      fi
+      times+=("$((end - start))")
+    else
+      status=$?
+      break
+    fi
+  done
+  if [ "$status" -eq 0 ] && [ "${#times[@]}" -eq 5 ]; then
+    ordered=$(printf '%s\n' "${times[@]}" | sort -n)
+    set -- $ordered
+    printf 'PROBE cache-warm pass min-ms=%s median-ms=%s max-ms=%s\n' \
+      "$1" "$3" "$5"
+  else
+    printf 'PROBE cache-warm fail exit=%s %s\n' "$status" "$(flat <"$log")"
+    FAILED=1
+  fi
+
+  rm -rf "$dist" "$consumer/.dart_tool"
+  if (cd "$consumer" &&
+    consumer_environment "$home" dart pub get >"$log" 2>&1 &&
+    consumer_environment "$home" dart run bin/consumer.dart >>"$log" 2>&1); then
+    output=$(<"$log")
+    if [[ "$output" == *'result=2'* ]]; then
+      printf 'PROBE cache-mirror-down pass result=2\n'
+    else
+      printf 'PROBE cache-mirror-down fail result-missing %s\n' \
+        "$(flat <"$log")"
+      FAILED=1
+    fi
+  else
+    status=$?
+    printf 'PROBE cache-mirror-down fail exit=%s %s\n' \
+      "$status" "$(flat <"$log")"
+    FAILED=1
+  fi
+
+  worker=$(find "$cache_root" -type f -name "$EXE" -print -quit 2>/dev/null)
+  if [ -z "$worker" ] ||
+    ! (cd "$ROOT" && dart run tool/consumers/native/cache_probe_corrupt.dart \
+      "$worker" >"$log" 2>&1); then
+    printf 'PROBE cache-corrupt fail cache-or-corrupt-helper %s\n' \
+      "$(flat <"$log")"
+    FAILED=1
+  else
+    message_path=$worker
+    message_root=$cache_root
+    if [ "$OS" = windows ] && command -v cygpath >/dev/null 2>&1; then
+      message_path=$(cygpath -w "$worker")
+      message_root=$(cygpath -w "$cache_root")
+    fi
+    if (cd "$consumer" &&
+      consumer_environment "$home" dart run bin/consumer.dart >"$log" 2>&1); then
+      printf 'PROBE cache-corrupt fail corrupt-worker-accepted cache=%s\n' \
+        "$message_path"
+      FAILED=1
+    else
+      output=$(<"$log")
+      first=$(head -c 300 "$log" | tr '\r\n' ' ' | tr -s ' ')
+      if [[ "$output" == *"$message_path"* || "$output" == *"$message_root"* ]]; then
+        printf 'PROBE cache-corrupt pass cache=%s error=%s\n' \
+          "$message_path" "$first"
+      else
+        printf 'PROBE cache-corrupt fail cache-path-missing error=%s\n' "$first"
+        FAILED=1
+      fi
+    fi
+  fi
+
+  if [ ! -d "$core/lib/src/bin" ]; then
+    printf 'PROBE cache-no-package-worker pass package-bin-absent\n'
+  else
+    printf 'PROBE cache-no-package-worker fail package-bin-present\n'
+    FAILED=1
+  fi
+}
+
 exec_bit() {
   local mode
   if [ "$OS" = macos ]; then mode=$(stat -f '%Lp' "$WORKER"); else mode=$(stat -c '%a' "$WORKER"); fi
@@ -223,5 +361,6 @@ probe dart-run-other-cwd other_cwd
 probe aot-bundle aot_bundle
 if [ "$OS" != windows ]; then probe exec-bit exec_bit; fi
 probe size sizes
+cache_probes
 trust "$WORKER"
 exit "$FAILED"
