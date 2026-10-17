@@ -369,6 +369,62 @@ missing or corrupt, a field changes, or a different manifest entry selected the
 worker. On Windows, a same-size modification with the mtime restored is not
 detected until the next full hash.
 
+#### Flutter desktop (macOS)
+
+A Flutter macOS app has no package-relative worker, and the self-relaunch
+above is meant for `dart build cli` apps. Put the worker in the app bundle and
+pass its path:
+
+```dart
+final helper = '${File(Platform.resolvedExecutable).parent.parent.path}'
+    '/Helpers/dart_monty_worker';
+final monty = await Monty.start(workerLocation: helper);
+```
+
+`tool/flutter_macos/embed_worker.sh` places the worker at
+`Contents/Helpers/dart_monty_worker`. It refuses a worker whose SHA-256 does
+not match the `--sha256` you give it, signs the helper with the app's
+identity (`EXPANDED_CODE_SIGN_IDENTITY` in an Xcode Run Script phase, ad hoc
+otherwise) and refuses anything that is not a thin arm64 executable. Run it
+as a Run Script phase before the code-sign phase, or after the build with
+`--resign-app`. Only macOS arm64 workers are published in 0.110, and a
+universal Flutter release build is fine because the helper is not a build
+hook output. `tool/flutter_macos/probe.sh` builds a throwaway app and checks
+all of this without opening a window.
+
+#### Unsigned workers
+
+The 0.110 workers are not signed with a developer identity or notarised on
+any platform. On macOS the linker adds an ad-hoc signature and nothing more. The
+SHA-256 check is the integrity guarantee. The build hook checks the archive
+and the unpacked file against the manifest before it installs anything, and
+the runtime checks the cached file again before it starts it.
+
+What the operating systems did with a worker downloaded by Dart code, measured
+on GitHub-hosted runners with the probes in `tool/consumers/native/`:
+
+- **macOS.** A file written by `HttpClient` has no `com.apple.quarantine`
+  attribute, and the worker starts. The
+  worker carries only the linker's ad-hoc signature, and `spctl --assess`
+  rejects it. With the quarantine attribute added by hand, `Process.run`
+  still started it on the runner. That session had no desktop, so a Finder
+  launch, which can show the "cannot be opened" dialog, was not tried.
+- **Windows.** A file written by `HttpClient` has no Zone.Identifier stream
+  (Mark of the Web), so there is no mark for SmartScreen to read. A browser download does
+  carry one. With `ZoneId=3` added to a copy, `Process.run` (CreateProcess)
+  started it and exited 0, but `Start-Process`, which goes through
+  ShellExecute, failed with "The operation was canceled by the user". After
+  `Unblock-File` it started. The package starts the worker with `Process.start`. I measured
+  `Process.run`, which makes the same CreateProcess call. If you download a worker yourself with a browser, unblock it
+  first.
+- **Linux.** A downloaded worker started normally. I found no quarantine
+  mechanism to test.
+
+A build hook sees `HOME` and `PATH` on Linux and macOS and, on Windows, also
+`LOCALAPPDATA`, `USERPROFILE`, `SYSTEMROOT`, `TEMP` and `TMP`. That is why
+the cache root is derived from `HOME` or `LOCALAPPDATA` and never from
+`XDG_CACHE_HOME`.
+
 ### Web
 
 No toolchain and no setup: with no `workerLocation`, the pool finds the
