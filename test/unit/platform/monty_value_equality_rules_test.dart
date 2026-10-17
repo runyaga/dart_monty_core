@@ -251,26 +251,64 @@ void main() {
           attrs: {'x': MontyInt(x)},
         );
 
-    test('compare class name, dataclass flag and attributes', () {
-      // Upstream's MontyClassProxy.__eq__ (class_instance.rs:255-263): the
-      // instance id and the class id are not compared.
-      final [a, b] = List.generate(2, (_) => inst('1', 1));
-      expect(eqBothPaths(a, b), isTrue);
-      expect(eqBothPaths(a, inst('2', 1)), isTrue);
-      expect(eqBothPaths(a, inst('1', 2)), isFalse);
-      MontyClassTypeProxy type({String name = 'Point', bool dc = true}) =>
-          montyClassTypeProxy(
-            name: name,
-            id: 'q',
-            hostDefined: true,
-            isDataclass: dc,
-            attrs: const {},
-          );
-      final hostType = type();
-      expect(eqBothPaths(a, inst('1', 1, type: hostType)), isTrue);
-      expect(a.hashCode, inst('2', 1, type: hostType).hashCode);
-      expect(eqBothPaths(a, inst('1', 1, type: type(name: 'P'))), isFalse);
-      expect(eqBothPaths(a, inst('1', 1, type: type(dc: false))), isFalse);
+    test(
+      'class proxy equality uses class name, dataclass flag and attributes',
+      () {
+        // Upstream's MontyClassProxy.__eq__ (class_instance.rs:255-263): the
+        // instance id and the class id are not compared.
+        final [a, b] = List.generate(2, (_) => inst('1', 1));
+        expect(eqBothPaths(a, b), isTrue);
+        expect(eqBothPaths(a, inst('2', 1)), isTrue);
+        expect(eqBothPaths(a, inst('1', 2)), isFalse);
+        MontyClassTypeProxy type({String name = 'Point', bool dc = true}) =>
+            montyClassTypeProxy(
+              name: name,
+              id: 'q',
+              hostDefined: true,
+              isDataclass: dc,
+              attrs: const {},
+            );
+        final hostType = type();
+        expect(eqBothPaths(a, inst('1', 1, type: hostType)), isTrue);
+        expect(a.hashCode, inst('2', 1, type: hostType).hashCode);
+        expect(eqBothPaths(a, inst('1', 1, type: type(name: 'P'))), isFalse);
+        expect(eqBothPaths(a, inst('1', 1, type: type(dc: false))), isFalse);
+      },
+    );
+
+    test('class proxies sharing a nested NaN are equal', () {
+      MontyClassProxy nested() {
+        final nan = double.parse('NaN');
+
+        return montyClassProxy(
+          classType: point,
+          instanceId: 'nested',
+          attrs: {
+            'values': MontyTuple([MontyFloat(nan)]),
+          },
+        );
+      }
+
+      final left = nested();
+      final right = nested();
+      expect(left.attrs['values'], isNot(same(right.attrs['values'])));
+      expect(eqBothPaths(left, right), isTrue);
+    });
+
+    test('comparing distinct cyclic proxies throws StateError', () {
+      MontyClassProxy cyclic() {
+        final values = <MontyValue>[];
+        final loop = MontyList(values);
+        values.add(loop);
+
+        return montyClassProxy(
+          classType: point,
+          instanceId: 'cycle',
+          attrs: {'loop': loop},
+        );
+      }
+
+      expect(() => cyclic() == cyclic(), throwsA(isA<StateError>()));
     });
   });
 }

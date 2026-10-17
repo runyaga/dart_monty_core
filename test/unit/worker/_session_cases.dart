@@ -10,6 +10,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyClassTypeProxy;
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show CrashCause, crashedError;
 import 'package:test/test.dart';
@@ -82,6 +84,15 @@ MontyValue _cyclic() {
 
   return list;
 }
+
+/// A class type whose id the writer cannot encode as a UUID.
+final MontyClassTypeProxy _badClassType = montyClassTypeProxy(
+  name: 'Broken',
+  id: 'not-a-uuid',
+  hostDefined: false,
+  isDataclass: false,
+  attrs: const {},
+);
 
 /// The generator's `KINDS`: one value per host type.
 final Map<String, MontyValue> _kinds = {
@@ -452,6 +463,35 @@ void sessionSurfacePoolTests(String label, WithPool withPool) {
         expect(await next.feedRun('4'), const MontyInt(4));
         await next.close();
         await s.close();
+      });
+    });
+
+    test('a refused bare class type lookup cannot be caught and frees its '
+        'slot', () async {
+      await withPool((pool) async {
+        final session = await pool.checkout();
+        await expectLater(
+          session.feedRun(
+            'try:\n'
+            '  x\n'
+            'except BaseException:\n'
+            "  'caught'",
+            externalLookup: {'x': _badClassType},
+            printCallback: _ignore,
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              'id "not-a-uuid" is not a uuid',
+            ),
+          ),
+        );
+        await expectLater(session.feedRun('1'), _finished);
+        final next = await pool.checkout(scriptName: 'next.py');
+        expect(await next.feedRun('6 * 7'), const MontyInt(42));
+        await next.close();
+        await session.close();
       });
     });
 

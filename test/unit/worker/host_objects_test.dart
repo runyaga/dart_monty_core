@@ -3,6 +3,8 @@
 // writer's and reader's handling of the wrappers.
 // Pure Dart: vm, dart2js and dart2wasm.
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyClassProxy, montyClassTypeProxy;
 import 'package:dart_monty_core/src/worker/arena_reader.dart';
 import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
@@ -116,6 +118,25 @@ pb.FunctionCall _call(String name, String id) => pb.FunctionCall(
   objectId: _wire(id),
   values: pb.Arena(),
 );
+
+/// A decoded class instance whose eager attributes contain a cycle.
+MontyClassProxy _cyclicProxy() {
+  final items = <MontyValue>[];
+  final loop = MontyList(items);
+  items.add(loop);
+
+  return montyClassProxy(
+    classType: montyClassTypeProxy(
+      name: 'Loop',
+      id: _id(200),
+      hostDefined: false,
+      isDataclass: false,
+      attrs: const {},
+    ),
+    instanceId: _id(201),
+    attrs: {'loop': loop},
+  );
+}
 
 /// The exception [request] answers its call with.
 pb.RaisedException _raised(pb.ParentRequest request) =>
@@ -1117,6 +1138,40 @@ void main() {
       final answer = await _host(objects).call(_call('later', _id(4)));
       expect(answer.resumeCall.result.future, 1);
     });
+  });
+
+  group('automatic method answers', () {
+    test(
+      'a cyclic proxy result returns a ValueError through the call',
+      () async {
+        final returned = _cyclicProxy();
+        final hostClass = HostClass<_Box>(
+          'Box',
+          instance: (
+            fields: const {},
+            properties: const {},
+            methods: {
+              'loop': (box, args, kwargs) => returned,
+            },
+          ),
+        );
+        final instance = ClassInstance(
+          _Box(1),
+          classType: ClassType(hostClass),
+          id: _id(6),
+          policies: _all,
+        );
+        final objects = HostObjects();
+        ArenaWriter(objects: objects).add(instance);
+
+        final result = (await _host(
+          objects,
+        ).call(_call('loop', instance.id))).resumeCall.result;
+        expect(result.hasError(), isTrue);
+        expect(result.error.excType, 'ValueError');
+        expect(result.error.message, 'Circular reference detected');
+      },
+    );
   });
 
   group('the writer and the reader', () {

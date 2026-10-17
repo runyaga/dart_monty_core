@@ -412,6 +412,64 @@ void main() {
               as MontyClassTypeProxy;
       expect(none.attrs, isEmpty);
     });
+
+    test('a decoded instance keeps its metadata, id and attribute order', () {
+      final decoded =
+          _decode([
+                n('first'),
+                n(1),
+                n('second'),
+                n(2),
+                classType(
+                  'Point',
+                  id: uuid(1),
+                  dataclass: true,
+                  attrs: pairs([(0, 1), (2, 3)]),
+                ),
+                instance(4, id: uuid(2), attrs: pairs([(0, 1), (2, 3)])),
+              ])
+              as MontyClassProxy;
+      expect(decoded.instanceId, '02020202-0202-0202-0202-020202020202');
+      expect(decoded.classType.name, 'Point');
+      expect(decoded.classType.id, '01010101-0101-0101-0101-010101010101');
+      expect(decoded.classType.isDataclass, isTrue);
+      expect(decoded.attrs.entries.map((entry) => entry.key).toList(), [
+        'first',
+        'second',
+      ]);
+      expect(decoded.attrs, {
+        'first': const MontyInt(1),
+        'second': const MontyInt(2),
+      });
+    });
+
+    test('repeated attribute names retain their later values', () {
+      final decoded =
+          _decode([
+                n('first'),
+                n('old'),
+                n('second'),
+                n('kept'),
+                n('new'),
+                classType(
+                  'Point',
+                  id: uuid(1),
+                  attrs: pairs([(0, 1), (2, 3), (0, 4)]),
+                ),
+                instance(
+                  5,
+                  id: uuid(2),
+                  attrs: pairs([(0, 1), (2, 3), (0, 4)]),
+                ),
+              ])
+              as MontyClassProxy;
+      final expected = {
+        'first': const MontyString('new'),
+        'second': const MontyString('kept'),
+      };
+      expect(decoded.classType.attrs, expected);
+      expect(decoded.attrs, expected);
+    });
   });
 
   group('field presence and identity', () {

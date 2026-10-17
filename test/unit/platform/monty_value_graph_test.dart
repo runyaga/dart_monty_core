@@ -312,6 +312,80 @@ void main() {
       expect(() => i.dartAttrs, throwsStateError);
       expect(i.toString(), 'MontyClassProxy(C, 1 attrs)');
     });
+
+    test('non-identical cyclic instances refuse an in-progress comparison', () {
+      MontyClassProxy loop(String id) {
+        final attrs = <String, MontyValue>{};
+        final instance = montyClassProxy(
+          classType: listType2,
+          instanceId: id,
+          attrs: attrs,
+        );
+        attrs['self'] = instance;
+
+        return instance;
+      }
+
+      expect(() => loop('a') == loop('b'), throwsStateError);
+    });
+
+    test('a difference before a cyclic attribute decides equality', () {
+      MontyClassProxy loop(String id, int value) {
+        final attrs = <String, MontyValue>{'value': MontyInt(value)};
+        final instance = montyClassProxy(
+          classType: listType2,
+          instanceId: id,
+          attrs: attrs,
+        );
+        attrs['self'] = instance;
+
+        return instance;
+      }
+
+      expect(loop('a', 1) == loop('b', 2), isFalse);
+    });
+
+    test('a cyclic instance remains equal to itself', () {
+      final attrs = <String, MontyValue>{};
+      final instance = montyClassProxy(
+        classType: listType2,
+        instanceId: 'self',
+        attrs: attrs,
+      );
+      attrs['self'] = instance;
+
+      expect(instance == instance, isTrue);
+    });
+
+    test(
+      'a cyclic instance cannot project its attributes or class metadata',
+      () {
+        final directAttrs = <String, MontyValue>{};
+        final direct = montyClassProxy(
+          classType: listType2,
+          instanceId: 'direct',
+          attrs: directAttrs,
+        );
+        directAttrs['self'] = direct;
+        expect(() => direct.dartValue, throwsStateError);
+
+        final classAttrs = <String, MontyValue>{};
+        final classType = montyClassTypeProxy(
+          name: 'C',
+          id: 'metadata',
+          hostDefined: false,
+          isDataclass: false,
+          attrs: classAttrs,
+        );
+        final throughMetadata = montyClassProxy(
+          classType: classType,
+          instanceId: 'metadata',
+          attrs: const {},
+        );
+        classAttrs['instance'] = throughMetadata;
+        expect(() => throughMetadata.dartValue, throwsStateError);
+      },
+    );
   });
 
   group('colliding set elements, 5,000 levels deep', () {
@@ -446,6 +520,22 @@ void main() {
         _ => fail('expected an instance map, got $i0'),
       };
       expect(i1, containsPair('class_type', same(classType)));
+    });
+
+    test('a standalone class and its instance share the class_type map', () {
+      final instance = montyClassProxy(
+        classType: listType,
+        instanceId: 'i',
+        attrs: const {},
+      );
+      final [standalone, projectedInstance] = _jsonList(
+        MontyList([listType, instance]),
+      );
+      final classType = switch (projectedInstance) {
+        {'class_type': final value} => value,
+        _ => fail('expected an instance map, got $projectedInstance'),
+      };
+      expect(classType, same(standalone));
     });
 
     test('json.encode still expands the shared output into a tree', () {

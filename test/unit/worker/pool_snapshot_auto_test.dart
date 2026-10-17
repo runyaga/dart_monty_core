@@ -29,6 +29,18 @@ final class _Lookup extends MapBase<String, MontyValue> {
   MontyValue? remove(Object? key) => throw UnsupportedError('read only');
 }
 
+final Matcher _oversizedAnswer = isA<MontyRuntimeError>()
+    .having((e) => e.exception.excType, 'exception type', 'RuntimeError')
+    .having(
+      (e) => e.exception.message,
+      'message',
+      matches(
+        RegExp(
+          r'^request frame of \d+ bytes exceeds the maximum of 64 bytes$',
+        ),
+      ),
+    );
+
 Future<void> _lookupOrder() async {
   final (session, _) = await poolB2Session([
     answer([pb.ChildEvent(nameLookup: pb.NameLookup(name: 'x'))]),
@@ -77,14 +89,76 @@ Future<void> _futureOrder() async {
   expect(done.output, const MontyNone());
 }
 
+Future<void> _oversizedCallAnswer() async {
+  final channel = ScriptedChannel([
+    configurePool,
+    answer([poolCall()]),
+  ], frameLimit: 64);
+  final pool = await poolWith([channel]);
+  final session = await pool.checkout();
+  addTearDown(session.close);
+  final call =
+      await session.feedStart(
+            'f()',
+            externalLookup: {
+              'f': MontyHostFunction(
+                'f',
+                (_, _) => MontyString('x' * 100),
+              ),
+            },
+          )
+          as FunctionSnapshot;
+
+  await expectLater(call.resumeAuto(), throwsA(_oversizedAnswer));
+  expect(call.isSpent, isTrue);
+  expect(channel.requests, hasLength(2));
+  await expectLater(session.feedRun('1'), poolB2Pending);
+}
+
+Future<void> _oversizedFutureAnswer() async {
+  final channel = ScriptedChannel([
+    configurePool,
+    answer([poolCall()]),
+    answer([poolB2Futures()]),
+  ], frameLimit: 64);
+  final pool = await poolWith([channel]);
+  final session = await pool.checkout();
+  addTearDown(session.close);
+  final release = Completer<MontyValue>();
+  final call =
+      await session.feedStart(
+            'await f()',
+            externalLookup: {
+              'f': MontyHostFunction('f', coroutine((_, _) => release.future)),
+            },
+          )
+          as FunctionSnapshot;
+  final waiting = await call.resumeAuto() as FutureSnapshot;
+  release.complete(MontyString('x' * 100));
+
+  await expectLater(waiting.resumeAuto(), throwsA(_oversizedAnswer));
+  expect(waiting.isSpent, isTrue);
+  expect(channel.requests, hasLength(3));
+  await expectLater(session.feedRun('1'), poolB2Pending);
+}
+
 void main() {
-  test(
-    'automatic lookup consumes before map access',
-    _lookupOrder,
-  );
-  test(
-    'automatic future consumes before '
-    'host settles',
-    _futureOrder,
-  );
+  group('automatic host answers', () {
+    test(
+      'a lookup consumes before map access',
+      _lookupOrder,
+    );
+    test(
+      'a future consumes before host settles',
+      _futureOrder,
+    );
+    test(
+      'an oversized call answer leaves its suspension pending',
+      _oversizedCallAnswer,
+    );
+    test(
+      'an oversized future answer leaves its suspension pending',
+      _oversizedFutureAnswer,
+    );
+  });
 }
