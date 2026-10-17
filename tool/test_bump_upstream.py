@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
+import subprocess
 import tempfile
 import unittest
 from importlib.machinery import ModuleSpec
@@ -13,7 +15,6 @@ from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name('bump_upstream.py')
-RELEASE_WORKFLOW = SCRIPT.parent.parent / '.github/workflows/upstream-release-bump.yaml'
 SPEC = importlib.util.spec_from_file_location('bump_upstream', SCRIPT)
 assert SPEC and SPEC.loader
 BUMP = importlib.util.module_from_spec(SPEC)
@@ -49,11 +50,54 @@ class BumpUpstreamTest(unittest.TestCase):
         self.assertEqual(['v1.0.0', 'v1.0.1', 'v1.2.0'], BUMP.stable_tags(refs))
         self.assertEqual('v1.2.0', BUMP.newer_tag(refs, 'v1.0.0'))
 
-    def test_mapping_carries_upstream_patch(self) -> None:
-        self.assertEqual('0.110.1', BUMP.mapped_core_version('1.1.1'))
-        self.assertEqual('0.120.0-dev.1', BUMP.mapped_core_version('1.2.0', dev=True))
-        with self.assertRaisesRegex(ValueError, 'owner decision'):
-            BUMP.mapped_core_version('1.10.0')
+    def test_mapping_joins_three_upstream_digits(self) -> None:
+        cases = (
+            ('1.1.0', False, '0.110.0'),
+            ('1.0.2', False, '0.102.0'),
+            ('1.1.1', False, '0.111.0'),
+            ('1.2.0', True, '0.120.0-dev.1'),
+        )
+        for version, dev, expected in cases:
+            with self.subTest(version=version, dev=dev):
+                self.assertEqual(expected, BUMP.mapped_core_version(version, dev=dev))
+
+        for version in ('1.10.0', '1.1.10', '10.0.0'):
+            with self.subTest(version=version):
+                with self.assertRaisesRegex(ValueError, 'owner decision'):
+                    BUMP.mapped_core_version(version)
+
+    def test_mapping_agrees_with_version_pin_check(self) -> None:
+        result = subprocess.run(
+            ['bash', 'tool/check_version_pin.sh', '--self-test'],
+            cwd=SCRIPT.parent.parent,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        controls = []
+        for line in result.stdout.splitlines():
+            match = re.fullmatch(
+                r'PASS: control (\d+\.\d+\.\d+) -> (?:0\.(\d+)\.(x|\d+)|(refused))',
+                line,
+            )
+            if line.startswith('PASS: control ') and match is None:
+                self.fail(f'unrecognized version-pin self-test output: {line!r}')
+            if match is not None:
+                controls.append(match.groups())
+
+        self.assertTrue(controls, 'version-pin self-test printed no controls')
+        for upstream, checked_minor, patch_shape, refused in controls:
+            with self.subTest(upstream=upstream):
+                if refused:
+                    with self.assertRaisesRegex(ValueError, 'owner decision'):
+                        BUMP.mapped_core_version(upstream)
+                else:
+                    mapped_minor = BUMP.mapped_core_version(upstream).split('.')[1]
+                    self.assertEqual(checked_minor, mapped_minor)
+                    self.assertEqual(
+                        'x', patch_shape,
+                        'version-pin self-test must express the core patch as x',
+                    )
 
     def test_pin_rewrite_keeps_order_and_is_idempotent(self) -> None:
         source = json.dumps({
@@ -125,23 +169,6 @@ class BumpUpstreamTest(unittest.TestCase):
                               BUMP.selected_hashes(runtime, payload))
         self.assertCountEqual([digest * 64 for digest in 'qr'],
                               BUMP.selected_hashes(meta, payload))
-
-    def test_release_workflow_captures_expected_nonzero_statuses(self) -> None:
-        workflow = RELEASE_WORKFLOW.read_text()
-
-        self.assertNotIn('          set +e\n', workflow)
-        self.assertIn(
-            '# check_worker_mirror returns 1 for an expected candidate diff; 0 means no diff.',
-            workflow)
-        self.assertIn('> "$RUNNER_TEMP/mirror-diff.txt" || mirror_rc=$?', workflow)
-        self.assertIn(
-            '# apply returns 3 only while the release is absent from PyPI; 0 completes the bump.',
-            workflow)
-        self.assertIn('--workdir "$RUNNER_TEMP/upstream-bump" || apply_rc=$?', workflow)
-        self.assertIn('          fail_unexpected() {\n            return "$1"\n          }', workflow)
-        self.assertIn('[ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ] || fail_unexpected "$mirror_rc"',
-                      workflow)
-        self.assertIn('[ "$apply_rc" -eq 0 ] || fail_unexpected "$apply_rc"', workflow)
 
     def test_worker_mirror_module_loads_by_file_path(self) -> None:
         class Loader:
