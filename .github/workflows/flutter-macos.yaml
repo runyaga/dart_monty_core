@@ -46,7 +46,7 @@ jobs:
         run: |
           set -o pipefail
           worker=lib/src/bin/macos-arm64/dart_monty_worker
-          sha256=$(shasum -a 256 "$worker" | awk '{print $1}')
+          sha256=$(shasum -a 256 < "$worker" | awk '{print $1}')
           bash tool/flutter_macos/probe.sh --worker "$worker" --sha256 "$sha256" \
             2>&1 | tee flutter-macos-probe.log
       - name: Upload Flutter macOS probe log

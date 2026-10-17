@@ -30,6 +30,14 @@ Usage: probe.sh --worker <path> --sha256 <64-hex>
 EOF
 }
 
+sha256_of() {
+  shasum -a 256 < "$1" | awk '{print $1}'
+}
+
+yaml_escape() {
+  printf '%s' "$1" | sed 's/[\\"]/\\&/g'
+}
+
 worker=''
 sha256=''
 while [ "$#" -gt 0 ]; do
@@ -58,6 +66,11 @@ done
 [ -n "$sha256" ] || fail arguments '--sha256 is required'
 [ -f "$worker" ] || fail arguments "worker does not exist: $worker"
 [ -x "$embed" ] || fail arguments "embed script is not executable: $embed"
+sha256=$(printf '%s' "$sha256" | tr '[:upper:]' '[:lower:]')
+actual_sha256=$(sha256_of "$worker")
+if [ "$actual_sha256" != "$sha256" ]; then
+  fail arguments "worker SHA-256 mismatch: expected $sha256, actual $actual_sha256"
+fi
 
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/dart-monty-flutter-macos.XXXXXX")
 cleanup() {
@@ -66,6 +79,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 project="$temporary_root/monty_macos_probe"
+root_yaml=$(yaml_escape "$root")
 if ! flutter create --platforms=macos --empty \
   --project-name monty_macos_probe "$project"; then
   fail flutter-create 'flutter create failed'
@@ -82,7 +96,7 @@ environment:
 
 dependencies:
   dart_monty_core:
-    path: $root
+    path: "$root_yaml"
   flutter:
     sdk: flutter
 
@@ -223,9 +237,11 @@ EOF
 if ! headless_output=$(cd "$project" && dart run "$headless" "$app"); then
   fail headless 'plain Dart driver could not run the bundled helper'
 fi
-if [ "$headless_output" != result=2 ]; then
-  fail headless "expected result=2, got: $headless_output"
+headless_last_line=$(printf '%s\n' "$headless_output" | awk 'NF { line=$0 } END { print line }')
+if [ "$headless_last_line" != result=2 ]; then
+  printf 'PROBE headless stdout:\n%s\n' "$headless_output" >&2
+  fail headless "expected last non-empty stdout line to be result=2, got: $headless_last_line"
 fi
-pass headless "$headless_output"
+pass headless "$headless_last_line"
 
 pass complete 'Flutter macOS worker delivery probe completed'

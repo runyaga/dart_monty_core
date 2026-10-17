@@ -39,7 +39,7 @@ EOF
 }
 
 sha256_of() {
-  shasum -a 256 "$1" | awk '{print $1}'
+  shasum -a 256 < "$1" | awk '{print $1}'
 }
 
 app_from_xcode() {
@@ -79,6 +79,13 @@ app=''
 worker=''
 expected_sha256=''
 resign=0
+embed_option_seen=0
+
+embedding_option() {
+  [ "$mode" != check ] || \
+    fail '--check cannot be combined with embedding options'
+  embed_option_seen=1
+}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -89,20 +96,25 @@ while [ "$#" -gt 0 ]; do
       ;;
     --worker)
       [ "$#" -ge 2 ] || fail '--worker needs a path'
+      embedding_option
       worker=$2
       shift 2
       ;;
     --sha256)
       [ "$#" -ge 2 ] || fail '--sha256 needs a 64-hex digest'
+      embedding_option
       expected_sha256=$2
       shift 2
       ;;
     --resign-app)
+      embedding_option
       resign=1
       shift
       ;;
     --check)
       [ "$#" -ge 2 ] || fail '--check needs an App.app path'
+      [ "$embed_option_seen" -eq 0 ] || \
+        fail '--check cannot be combined with embedding options'
       [ "$mode" = embed ] || fail '--check cannot be combined with embedding options'
       mode=check
       app=$2
@@ -143,6 +155,12 @@ fi
 if [ "$architectures" != arm64 ]; then
   fail "worker must be a thin arm64 Mach-O: $worker has '$architectures'. A universal Flutter release build is fine because this helper is not a hook output."
 fi
+if ! mach_header=$(otool -hv "$worker" 2>&1); then
+  fail "worker Mach-O header could not be read: $worker ($mach_header)"
+fi
+if ! printf '%s\n' "$mach_header" | awk '$4 == "EXECUTE" { found = 1 } END { exit !found }'; then
+  fail "worker must be a Mach-O executable (file type EXECUTE), not a dylib or bundle: $worker"
+fi
 
 if [ -z "$app" ]; then
   app=$(app_from_xcode)
@@ -162,9 +180,10 @@ cp "$worker" "$temporary"
 chmod 755 "$temporary"
 identity=${EXPANDED_CODE_SIGN_IDENTITY:-}
 if [ -n "$identity" ] && [ "$identity" != '-' ]; then
-  codesign --force --sign "$identity" --options runtime "$temporary"
+  codesign --force --sign "$identity" --identifier io.dart-monty.worker \
+    --options runtime "$temporary"
 else
-  codesign --force --sign - "$temporary"
+  codesign --force --sign - --identifier io.dart-monty.worker "$temporary"
 fi
 mv -f "$temporary" "$helper"
 trap - EXIT HUP INT TERM
