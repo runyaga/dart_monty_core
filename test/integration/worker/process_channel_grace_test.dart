@@ -66,6 +66,7 @@ void main() {
   _drainTests();
   _resetTests();
   _oversizeTests();
+  _exitStatusTests();
   _deadlineTests();
 }
 
@@ -186,6 +187,38 @@ Future<void> _oversizeSession(
   await expectLater(session.feedRun('2'), throwsStateError);
   await session.close();
   await pool.close();
+}
+
+void _exitStatusTests() {
+  test('an exit status during fatal grace is preserved', () {
+    final clock = ChannelClock();
+    clock.run(() {
+      final process = _Process();
+      final channel = processChannelForTesting(process);
+      final checked = expectLater(
+        channel.turn(_feed),
+        throwsA(
+          isA<MontyCrashedError>()
+              .having((error) => error.cause, 'cause', CrashCause.fatal)
+              .having((error) => error.exitStatus, 'exitStatus', 65),
+        ),
+      );
+      unawaited(checked);
+      clock.flush();
+      process.output.add(
+        wire.Frame.encode(
+          pb.ChildEvent(fatalError: pb.FatalError(message: 'fatal')),
+        ),
+      );
+      clock
+        ..flush()
+        ..elapse(const Duration(milliseconds: 99));
+      process.exited.complete(65);
+      clock.flush();
+      expect(process.kills, 0);
+      _finish(clock, process, channel);
+    });
+  });
 }
 
 void _deadlineTests() {

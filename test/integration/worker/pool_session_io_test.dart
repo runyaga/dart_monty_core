@@ -829,9 +829,9 @@ void main() {
     timeout: _probeTimeout,
   );
 
-  group('workerPid and the finalizer (q2)', () {
-    test("workerPid is the worker process's id; null in a turn and once "
-        'closed', () async {
+  group('workerPid and finalization', () {
+    test('workerPid reports an attached process but not a turn or closed '
+        'session', () async {
       final pool = await startMonty(
         const PoolOptions(maxProcesses: 1),
       );

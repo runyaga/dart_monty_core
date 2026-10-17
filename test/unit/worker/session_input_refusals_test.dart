@@ -61,6 +61,8 @@ pb.ChildEvent _int(int n) => complete([intNode(n)]);
 pb.ChildEvent _lookup(String name) =>
     pb.ChildEvent(nameLookup: pb.NameLookup(name: name));
 
+pb.ChildEvent _string(String value) => complete([pb.MontyNode(str: value)]);
+
 /// A list that contains itself.
 MontyList _cyclic() {
   final items = <MontyValue>[];
@@ -113,6 +115,24 @@ final Map<String, MontyValue> _refused = {
     second: 60,
   ),
 };
+
+const _surrogateMessage =
+    "'utf-8' codec can't encode character "
+    r"'\ud800' in position 0: surrogates not allowed";
+
+const _surrogateDiagnostic = 'UnicodeEncodeError: $_surrogateMessage';
+
+/// Checks the error that an automatic host answer sends back to Python.
+Reply _automaticRefusal(String type, String text, List<pb.ChildEvent> reply) =>
+    (request) {
+      expect(request.whichKind(), pb.ParentRequest_Kind.resumeCall);
+      final result = request.resumeCall.result;
+      expect(result.whichKind(), pb.ExtFunctionResult_Kind.error);
+      expect(result.error.excType, type);
+      expect(result.error.message, text);
+
+      return reply;
+    };
 
 void main() {
   group('an input is refused before a frame is sent', () {
@@ -201,6 +221,71 @@ void main() {
         (BigInt.one << 64) - BigInt.one,
       );
     });
+
+    test('invalid byte and calendar inputs are ArgumentErrors', () async {
+      final (s, ch) = await _session([]);
+      for (final value in [
+        const MontyBytes([256]),
+        const MontyDate(year: 0, month: 1, day: 1),
+        const MontyTime(hour: 24, minute: 0, second: 0, microsecond: 0),
+      ]) {
+        await expectLater(
+          s.feedRun('x', inputs: {'x': value}),
+          throwsArgumentError,
+        );
+      }
+      expect(
+        () => MontyFileHandle('/f', 'r', position: BigInt.from(-1)),
+        throwsArgumentError,
+      );
+      expect(ch.requests, hasLength(1));
+    });
+
+    test(
+      'an unpaired string sends no request and leaves the session usable',
+      () async {
+        final (s, ch) = await _session([
+          answer([_int(3)]),
+        ]);
+        await expectLater(
+          s.feedRun('x', inputs: {'x': const MontyString('\uD800')}),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.toString(),
+              'diagnostic',
+              _surrogateDiagnostic,
+            ),
+          ),
+        );
+        expect(ch.requests, hasLength(1));
+        expect(await s.feedRun('3'), const MontyInt(3));
+      },
+    );
+
+    test('a self-referential list sends no request and leaves the session '
+        'usable', () async {
+      final (s, ch) = await _session([
+        answer([_int(4)]),
+      ]);
+      await expectLater(
+        s.feedRun('x', inputs: {'x': _cyclic()}),
+        throwsA(
+          isA<MontyRuntimeError>()
+              .having(
+                (e) => e.exception.excType,
+                'exception type',
+                'ValueError',
+              )
+              .having(
+                (e) => e.toString(),
+                'diagnostic',
+                'ValueError: Circular reference detected',
+              ),
+        ),
+      );
+      expect(ch.requests, hasLength(1));
+      expect(await s.feedRun('4'), const MontyInt(4));
+    });
   });
 
   group('a manual answer is refused, the snapshot stays pending', () {
@@ -269,6 +354,125 @@ void main() {
         await snap.resume(const ExternalReturnValue(MontyInt(2)));
       },
     );
+
+    test('a circular result leaves the snapshot pending for a corrected '
+        'retry', () async {
+      final (s, ch) = await _session([
+        answer([_call('f', 1)]),
+        answer([_int(5)]),
+      ]);
+      final snap = await s.feedStart('f()') as FunctionSnapshot;
+      final sent = ch.requests.length;
+      expect(
+        () => snap.resume(ExternalReturnValue(_cyclic())),
+        throwsA(
+          isA<MontyRuntimeError>().having(
+            (e) => e.toString(),
+            'diagnostic',
+            'ValueError: Circular reference detected',
+          ),
+        ),
+      );
+      expect(snap.isSpent, isFalse);
+      expect(ch.requests, hasLength(sent));
+      await snap.resume(const ExternalReturnValue(MontyInt(5)));
+    });
+  });
+
+  group('an automatic answer refusal is sent as the call error', () {
+    test(
+      'an unpaired string is catchable and an uncaught one ends the feed',
+      () async {
+        final (s, ch) = await _session([
+          answer([_call('f', 1)]),
+          _automaticRefusal('UnicodeEncodeError', _surrogateMessage, [
+            _int(1),
+          ]),
+          answer([_call('f', 2)]),
+          _automaticRefusal('UnicodeEncodeError', _surrogateMessage, [
+            raised('UnicodeEncodeError', _surrogateMessage),
+          ]),
+          answer([_int(2)]),
+        ]);
+        final host = {
+          'f': MontyHostFunction(
+            'f',
+            (_, _) => const MontyString('\uD800'),
+          ),
+        };
+        expect(
+          await s.feedRun(
+            'try:\n  f()\nexcept UnicodeEncodeError:\n  r = 1\nr',
+            externalLookup: host,
+          ),
+          const MontyInt(1),
+        );
+        await expectLater(
+          s.feedRun('f()', externalLookup: host),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.toString(),
+              'diagnostic',
+              _surrogateDiagnostic,
+            ),
+          ),
+        );
+        expect(await s.feedRun('2'), const MontyInt(2));
+        expect(ch.requests, hasLength(6));
+      },
+    );
+
+    test('a circular value is catchable as ValueError', () async {
+      final (s, _) = await _session([
+        answer([_call('f', 1)]),
+        _automaticRefusal('ValueError', 'Circular reference detected', [
+          _int(1),
+        ]),
+      ]);
+      expect(
+        await s.feedRun(
+          'try:\n  f()\nexcept ValueError:\n  r = 1\nr',
+          externalLookup: {
+            'f': MontyHostFunction('f', (_, _) => _cyclic()),
+          },
+        ),
+        const MontyInt(1),
+      );
+    });
+
+    for (final (value, text) in [
+      (
+        const MontyBytes([256]),
+        'Invalid argument (value): byte 256 at index 0 is outside 0..255: '
+            "Instance of 'MontyBytes'",
+      ),
+      (
+        const MontyDate(year: 0, month: 1, day: 1),
+        'Invalid argument (value): invalid value for Date.year: 0 is outside '
+            "the range 1..=9999: Instance of 'MontyDate'",
+      ),
+      (
+        const MontyTime(hour: 24, minute: 0, second: 0, microsecond: 0),
+        'Invalid argument (value): invalid value for Time.hour: 24 is outside '
+            "the range 0..=23: Instance of 'MontyTime'",
+      ),
+    ]) {
+      test('a $value is raised as its host throw', () async {
+        final (s, _) = await _session([
+          answer([_call('f', 1)]),
+          _automaticRefusal('Exception', text, [_string(text)]),
+        ]);
+        expect(
+          await s.feedRun(
+            'try:\n  f()\nexcept Exception as e:\n  r = str(e)\nr',
+            externalLookup: {
+              'f': MontyHostFunction('f', (_, _) => value),
+            },
+          ),
+          MontyString(text),
+        );
+      });
+    }
   });
 
   group('a cyclic attribute container', () {

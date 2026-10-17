@@ -33,6 +33,35 @@ MontyList _cyclic() {
   return list;
 }
 
+MontyList _cyclicLazyValue() {
+  final items = <MontyValue>[];
+  final value = MontyList(items);
+  items.add(value);
+
+  return value;
+}
+
+ClassInstance<Object> _lazyValueObject(MontyValue value) {
+  final classType = HostClass<Object>(
+    'LazyValue',
+    instance: (
+      fields: const {},
+      properties: {'value': (_) => value},
+      methods: const {},
+    ),
+  );
+
+  return ClassInstance(
+    Object(),
+    classType: ClassType(classType),
+    policies: const (
+      eagerAttrs: null,
+      lazyAttrs: ['value'],
+      allowedMethods: null,
+    ),
+  );
+}
+
 const String _surrogateText =
     r"'utf-8' codec can't encode character '\ud800' in position 0: "
     'surrogates not allowed';
@@ -78,6 +107,31 @@ Map<String, MontyValue> _attrs(MontyError e) => e.exception.attributes;
 /// The C3-4 cases, labelled with [label], each in a session [withSession]
 /// gives.
 void attributeSessionTests(String label, WithSession withSession) {
+  for (final (valueLabel, value) in [
+    ('cyclic', _cyclicLazyValue()),
+    ('surrogate', const MontyString('\ud800')),
+  ]) {
+    test(
+      'a refused lazy $valueLabel attribute leaves its $label checkout usable',
+      () async {
+        await withSession((s) async {
+          expect(
+            await s.feedRun(
+              'try:\n  o.value\nexcept ValueError:\n  result = 1\nresult',
+              inputs: {'o': _lazyValueObject(value)},
+              printCallback: _ignore,
+            ),
+            const MontyInt(1),
+          );
+          expect(
+            await s.feedRun('6 * 7', printCallback: _ignore),
+            const MontyInt(42),
+          );
+        });
+      },
+    );
+  }
+
   group('exception attributes ($label)', () {
     test('a decode error raised in the sandbox carries its data', () async {
       await withSession((s) async {

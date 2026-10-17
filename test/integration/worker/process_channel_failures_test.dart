@@ -64,12 +64,15 @@ Future<void> main([List<String> args = const []]) async {
       '$scenario discards the worker and session',
       () async {
         final (pool, session, channel) = await _session(scenario);
+        final crash = isA<MontyCrashedError>()
+            .having((e) => e.cause, 'cause', CrashCause.vanished)
+            .having((e) => e.timedOut, 'timedOut', isFalse);
         await expectLater(
           session.feedRun('1'),
           throwsA(
-            isA<MontyCrashedError>()
-                .having((e) => e.cause, 'cause', CrashCause.vanished)
-                .having((e) => e.timedOut, 'timedOut', isFalse),
+            scenario == 'oversize'
+                ? crash
+                : crash.having((e) => e.exitStatus, 'exitStatus', 0),
           ),
         );
         await _finished(pool, session, channel);
