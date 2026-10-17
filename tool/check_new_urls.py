@@ -8,13 +8,13 @@ import re
 import subprocess
 import sys
 from typing import Optional
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from docs_check_common import pages
 
 
-URL = re.compile(r'https?://[^\s)>\]]+')
+URL = re.compile(r'''https?://[^\s)>\]"'`]+''')
 USER_AGENT = 'dart_monty_core-doc-check'
 
 
@@ -44,17 +44,23 @@ def fetch(url: str, method: str = 'HEAD') -> int:
             return response.status
     except HTTPError as error:
         return error.code
-    except (URLError, OSError):
-        return 0
 
 
 def check_urls(urls: list[str]) -> list[str]:
     """Return URL findings, retrying a refused HEAD request with GET."""
     findings = []
     for url in urls:
-        status = fetch(url)
+        try:
+            status = fetch(url)
+        except Exception as error:
+            findings.append(f'{url}:1: URL unreachable: {type(error).__name__}: {error}')
+            continue
         if status in {405, 501}:
-            status = fetch(url, 'GET')
+            try:
+                status = fetch(url, 'GET')
+            except Exception as error:
+                findings.append(f'{url}:1: URL unreachable: {type(error).__name__}: {error}')
+                continue
         if not 200 <= status < 300:
             findings.append(f'{url}:1: URL returned HTTP {status}')
     return findings

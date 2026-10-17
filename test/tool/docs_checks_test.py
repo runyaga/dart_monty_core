@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,8 +16,10 @@ sys.path.insert(0, str(ROOT / 'tool'))
 
 import check_doc_links
 import check_doc_names
+import check_doc_snippets
 import check_docs_data
 import check_new_urls
+import docs_check_common
 import render_docs_data
 
 
@@ -24,6 +28,7 @@ Monty
 Changed
 NewName
 NewType
+runMontyWorkerIfChild
 
 [dart_monty_core_testing.dart]
 
@@ -64,11 +69,52 @@ class DocsChecksTest(unittest.TestCase):
         self.assertIn('linked file does not exist', findings[0])
         self.assertIn('anchor does not exist', findings[1])
 
+    def test_links_resolve_reference_forms_and_report_missing_labels(self) -> None:
+        (self.root / 'docs/target.md').write_text('# Same\n', encoding='utf-8')
+        (self.root / 'README.md').write_text(
+            '[text][target] [target][] [target]\n\n'
+            '[target]: docs/target.md#same\n',
+            encoding='utf-8',
+        )
+        self.assertEqual([], check_doc_links.check(self.root))
+        (self.root / 'README.md').write_text(
+            '[text][missing]\n\n[bad]: docs/missing.md\n', encoding='utf-8')
+        findings = check_doc_links.check(self.root)
+        self.assertEqual(2, len(findings))
+        self.assertTrue(any('reference label does not exist: missing' in item for item in findings))
+        self.assertTrue(any('linked file does not exist: docs/missing.md' in item for item in findings))
+
+    def test_heading_slugs_strip_formatting_and_avoid_existing_candidates(self) -> None:
+        (self.root / 'README.md').write_text(
+            '# *A* `word` [link](target.md) [again][ref] and name_value!\n'
+            '# A\n# A\n# A-1\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            {'a-word-link-again-and-name_value', 'a', 'a-1', 'a-1-1'},
+            docs_check_common.headings(self.root / 'README.md'),
+        )
+
     def test_names_accept_public_name_and_member(self) -> None:
         (self.root / 'README.md').write_text(
             '`Monty` and `Monty.start` and `Unknown`.\n', encoding='utf-8')
         findings = check_doc_names.check(self.root)
         self.assertEqual(['README.md:1: unknown API name: Unknown'], findings)
+
+    def test_names_check_calls_and_generics_but_not_plain_lowercase_words(self) -> None:
+        (self.root / 'README.md').write_text(
+            '`Monty()` `Monty.start()` `NewType<String>` '
+            '`runMontyWorkerIfChild(args)` `runMontyWorkerIfChild(List<String>())` '
+            '`close()` `plainword` `Unknown()` `unknownCall()`\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            [
+                'README.md:1: unknown API name: Unknown()',
+                'README.md:1: unknown API name: unknownCall()',
+            ],
+            check_doc_names.check(self.root),
+        )
 
     def test_readme_version_accepts_prerelease_and_rejects_mismatch(self) -> None:
         (self.root / 'pubspec.yaml').write_text('version: 0.110.0-dev.2\n', encoding='utf-8')
@@ -123,6 +169,53 @@ class DocsChecksTest(unittest.TestCase):
                              check_new_urls.check_urls(urls))
         finally:
             check_new_urls.fetch = original
+
+    def test_urls_stop_at_markdown_closers_and_keep_network_errors(self) -> None:
+        urls = check_new_urls.urls_from_text(
+            '`https://one.example/path` "https://two.example/path" '
+            "'https://three.example/path' https://four.example/path,"
+        )
+        self.assertEqual(
+            [
+                'https://one.example/path',
+                'https://two.example/path',
+                'https://three.example/path',
+                'https://four.example/path',
+            ],
+            urls,
+        )
+        original = check_new_urls.fetch
+        try:
+            def unavailable(url: str, method: str = 'HEAD') -> int:
+                raise RuntimeError('offline')
+
+            check_new_urls.fetch = unavailable
+            self.assertEqual(
+                ['https://one.example/path:1: URL unreachable: RuntimeError: offline'],
+                check_new_urls.check_urls(urls[:1]),
+            )
+        finally:
+            check_new_urls.fetch = original
+
+    def test_snippets_handle_analyzer_exit_status_and_output(self) -> None:
+        warning = subprocess.CompletedProcess(
+            [], 2, 'Analyzing snippets...\nwarning - note\n1 issue found.\n', '')
+        with patch.object(check_doc_snippets.subprocess, 'run', return_value=warning):
+            self.assertEqual([], check_doc_snippets.check(self.root))
+        error = subprocess.CompletedProcess(
+            [], 3, 'Analyzing snippets...\n  error - invalid code\n1 issue found.\n', '')
+        with patch.object(check_doc_snippets.subprocess, 'run', return_value=error):
+            self.assertTrue(check_doc_snippets.check(self.root))
+        startup = subprocess.CompletedProcess([], 255, 'startup failed\nmore detail\n', '')
+        with patch.object(check_doc_snippets.subprocess, 'run', return_value=startup):
+            findings = check_doc_snippets.check(self.root)
+        self.assertIn('dart analyze exited with status 255: startup failed\nmore detail', findings[0])
+        no_output = subprocess.CompletedProcess([], 0, '', '')
+        with patch.object(check_doc_snippets.subprocess, 'run', return_value=no_output):
+            self.assertEqual(
+                ['tool/check_doc_snippets.py:1: dart analyze produced no analyzer output'],
+                check_doc_snippets.check(self.root),
+            )
 
 
 if __name__ == '__main__':

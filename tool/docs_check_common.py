@@ -49,16 +49,21 @@ def inline_code(line: str) -> list[str]:
 
 def slug(text: str) -> str:
     """Build the GitHub-style heading slug used by this repository."""
+    text = re.sub(r'!?\[([^]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'!?\[([^]]*)\]\[[^]]*\]', r'\1', text)
+    text = text.replace('`', '').replace('*', '')
+    text = re.sub(r'(?<!\w)_{1,2}(?=\S)|(?<=\S)_{1,2}(?!\w)', '', text)
     clean = ''.join(
-        char for char in text.lower()
-        if char.isalnum() or char in ' -_'
+        char for index, char in enumerate(text.lower())
+        if char.isalnum() or char in ' -'
+        or (char == '_' and 0 < index < len(text) - 1
+            and text[index - 1].isalnum() and text[index + 1].isalnum())
     )
     return clean.replace(' ', '-')
 
 
 def headings(path: Path) -> set[str]:
     """Return numbered heading slugs for a Markdown file."""
-    seen: dict[str, int] = {}
     result = set()
     for _, line in visible_lines(path):
         match = re.match(r'^\s{0,3}#{1,6}\s+(.+?)\s*$', line)
@@ -66,9 +71,12 @@ def headings(path: Path) -> set[str]:
             continue
         text = re.sub(r'\s+#+\s*$', '', match.group(1))
         base = slug(text)
-        number = seen.get(base, 0)
-        seen[base] = number + 1
-        result.add(base if number == 0 else f'{base}-{number}')
+        number = 0
+        candidate = base
+        while candidate in result:
+            number += 1
+            candidate = f'{base}-{number}'
+        result.add(candidate)
     return result
 
 

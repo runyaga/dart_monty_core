@@ -78,12 +78,26 @@ def check(root: Path) -> list[str]:
         )
     except OSError as error:
         return findings + [f'tool/check_doc_snippets.py:1: dart analyze could not run: {error}']
-    errors = [line for line in (run.stdout + run.stderr).splitlines() if ' error - ' in line]
+    output = run.stdout + run.stderr
+    output_lines = output.splitlines()
+    errors = [line for line in output_lines if ' error - ' in line]
     for error in errors:
         match = re.search(r'(snippet_\d+\.dart)', error)
         page, line = locations.get(match.group(1) if match else '', ('tool/check_doc_snippets.py', 1))
         message = error.split(' error - ', 1)[1] if ' error - ' in error else error
         findings.append(f'{page}:{line}: Dart snippet error: {message}')
+    if run.returncode not in {0, 1, 2, 3}:
+        excerpt = '\n'.join(output_lines[:3]) or '(no output)'
+        findings.append(
+            'tool/check_doc_snippets.py:1: '
+            f'dart analyze exited with status {run.returncode}: {excerpt}'
+        )
+    if run.returncode == 3 and not errors:
+        findings.append('tool/check_doc_snippets.py:1: dart analyze reported errors that this check could not read')
+    has_analysis = re.search(r'^Analyzing\b', output, re.M)
+    has_summary = re.search(r'\b(?:No issues found!|\d+ issues? found\.)', output)
+    if not has_analysis and not has_summary:
+        findings.append('tool/check_doc_snippets.py:1: dart analyze produced no analyzer output')
     return findings
 
 

@@ -11,6 +11,28 @@ from docs_check_common import display, inline_code, pages, parse_exports, visibl
 
 
 NAME = re.compile(r'^[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$')
+LOWER_CALL = re.compile(r'^[a-z][A-Za-z0-9_]*$')
+CALL = re.compile(
+    r'^([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?(?:<.*>)?)\(.*\)$'
+)
+
+
+def api_name(span: str) -> str | None:
+    """Return a checkable API name from a supported inline-code form."""
+    candidate = span
+    called = False
+    call = CALL.fullmatch(candidate)
+    if call:
+        candidate = call.group(1)
+        called = True
+    generic = re.fullmatch(r'(.+)<.*>', candidate)
+    if generic:
+        candidate = generic.group(1)
+    if NAME.fullmatch(candidate):
+        return candidate
+    if called and LOWER_CALL.fullmatch(candidate):
+        return candidate
+    return None
 
 
 def allowed_names(path: Path) -> set[str]:
@@ -43,20 +65,30 @@ def check(root: Path) -> list[str]:
     public, members = parse_exports(root / 'tool/export-golden.txt')
     allowed = allowed_names(root / 'docs/data/names-allow.txt')
     historical = historical_names(root / 'docs/data/historical-names.txt')
+    member_names = {name.split('.', 1)[1] for name in members}
     findings = []
     for page in pages(root):
         page_name = display(root, page)
         page_allowed = historical.get(page_name, set())
         for number, line in visible_lines(page):
             for span in inline_code(line):
-                if not NAME.fullmatch(span):
+                name = api_name(span)
+                if name is None:
                     continue
-                valid = span in allowed or span in page_allowed
-                if '.' in span:
-                    type_name, _ = span.split('.', 1)
-                    valid = valid or (type_name in public and span in members)
+                if (
+                    LOWER_CALL.fullmatch(name)
+                    and name not in public
+                    and name not in allowed
+                    and name not in page_allowed
+                    and (name in member_names or name.islower())
+                ):
+                    continue
+                valid = name in allowed or name in page_allowed
+                if '.' in name:
+                    type_name, _ = name.split('.', 1)
+                    valid = valid or (type_name in public and name in members)
                 else:
-                    valid = valid or span in public
+                    valid = valid or name in public
                 if not valid:
                     findings.append(f'{page_name}:{number}: unknown API name: {span}')
     return findings
