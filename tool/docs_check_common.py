@@ -22,15 +22,26 @@ def pages(root: Path) -> list[Path]:
 def visible_lines(path: Path) -> list[tuple[int, str]]:
     """Return lines outside fenced code blocks."""
     result = []
-    fence = None
+    fence: tuple[str, int] | None = None
     for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-        match = re.match(r'^\s*(`{3,}|~{3,})', line)
-        if match:
-            marker = match.group(1)
-            if fence is None:
-                fence = marker[0]
-            elif marker[0] == fence:
+        if fence is not None:
+            match = re.match(r'^( {0,3})([`~]+)([ \t]*)$', line)
+            if (
+                match
+                and match.group(2)[0] == fence[0]
+                and len(match.group(2)) >= fence[1]
+            ):
                 fence = None
+            continue
+        match = re.match(r'^( {0,3})(`{3,}|~{3,})(.*)$', line)
+        if match:
+            marker = match.group(2)
+            # CommonMark does not permit a backtick fence's info string to
+            # contain backticks. A tilde fence has no equivalent restriction.
+            if marker[0] == '`' and '`' in match.group(3):
+                result.append((number, line))
+                continue
+            fence = (marker[0], len(marker))
             continue
         if fence is None:
             result.append((number, line))
