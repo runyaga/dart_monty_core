@@ -4,8 +4,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dart_monty_core/src/worker/worker_install.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
-import 'package:dart_monty_core/src/worker/worker_manifest_data.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -90,10 +90,13 @@ void main() {
           final worker = manifest.targets[target]?.worker;
           final archive = worker?.archive;
           if (archive == null) fail('worker archive is missing for $target');
-          final url = defaultWorkerMirrorTemplate
-              .replaceAll('{tag}', 'v1.2.3')
-              .replaceAll('{archive}', archive.name);
-          expect(path.basename(Uri.parse(url).path), archive.name);
+          final url = workerArchiveUrl(
+            manifest: manifest,
+            target: target,
+            artifact: worker!,
+          );
+          expect(url.pathSegments.last, archive.name);
+          expect(url.pathSegments, contains('v1.2.3'));
           expect(
             File(path.join(fixture.assets.path, archive.name)).existsSync(),
             isTrue,
