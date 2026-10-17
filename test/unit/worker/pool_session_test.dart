@@ -509,7 +509,7 @@ void main() {
         final first = Completer<void>();
         final second = Completer<void>();
         final run = session.feedRun(
-          'print()',
+          "import sys\nprint('first')\nprint('second', file=sys.stderr)\n1",
           printCallback: (stream, text) {
             callbacks.add(text);
 

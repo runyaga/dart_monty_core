@@ -38,14 +38,16 @@ void lifecycleCases(RecordingAdapter adapter) {
   test('pool emits raw empty-context gauges before close completes', () async {
     final subject = await pool();
     adapter.clear();
-    final lease = await subject.acquire();
-    await lease.release();
+    await runZoned(() async {
+      final lease = await subject.acquire();
+      await lease.release();
 
-    final closing = subject.close();
-    final idle = measurements(adapter, 'pool.workers.idle');
-    expect(idle.map((measurement) => measurement.value), [-1, 1, -1]);
-    expect(idle.every((measurement) => measurement.context == null), isTrue);
-    await closing;
+      final closing = subject.close();
+      final idle = measurements(adapter, 'pool.workers.idle');
+      expect(idle.map((measurement) => measurement.value), [-1, 1, -1]);
+      expect(idle.every((measurement) => measurement.context == null), isTrue);
+      await closing;
+    }, zoneValues: {#telemetryContext: 'ambient host span'});
   });
 
   test('closed workers balance live and idle increments', () async {

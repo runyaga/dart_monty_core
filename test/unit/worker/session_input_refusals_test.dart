@@ -61,6 +61,8 @@ pb.ChildEvent _int(int n) => complete([intNode(n)]);
 pb.ChildEvent _lookup(String name) =>
     pb.ChildEvent(nameLookup: pb.NameLookup(name: name));
 
+pb.ChildEvent _string(String value) => complete([pb.MontyNode(str: value)]);
+
 /// A list that contains itself.
 MontyList _cyclic() {
   final items = <MontyValue>[];
@@ -377,7 +379,7 @@ void main() {
     });
   });
 
-  group('an automatic answer refusal is raised in the sandbox', () {
+  group('an automatic answer refusal is sent as the call error', () {
     test(
       'an unpaired string is catchable and an uncaught one ends the feed',
       () async {
@@ -458,7 +460,7 @@ void main() {
       test('a $value is raised as its host throw', () async {
         final (s, _) = await _session([
           answer([_call('f', 1)]),
-          _automaticRefusal('Exception', text, [_int(1)]),
+          _automaticRefusal('Exception', text, [_string(text)]),
         ]);
         expect(
           await s.feedRun(
@@ -467,7 +469,7 @@ void main() {
               'f': MontyHostFunction('f', (_, _) => value),
             },
           ),
-          const MontyInt(1),
+          MontyString(text),
         );
       });
     }
