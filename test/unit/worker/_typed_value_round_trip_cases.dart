@@ -50,7 +50,7 @@ void typedValueRoundTripTests(
       () async {
         await withSession((session) async {
           final v = await session.feedRun(_dataclass);
-          expect(
+          await expectLater(
             session.feedRun(_probe, inputs: {'x': v}),
             throwsA(
               isA<MontyRuntimeError>().having(
@@ -114,9 +114,10 @@ void typedValueRoundTripTests(
       () async {
         await withSession((session) async {
           final v = await session.feedRun(_namedtuple);
-          final copy = Map<String, Object?>.of(
-            v.dartValue! as Map<String, Object?>,
-          );
+          final copy = switch (v.dartValue) {
+            final Map<String, Object?> m => Map<String, Object?>.of(m),
+            final other => throw StateError('not a map: $other'),
+          };
           final r = await session.feedRun(
             _probe,
             inputs: {'x': MontyValue.fromDart(copy)},

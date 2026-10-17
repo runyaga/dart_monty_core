@@ -1414,7 +1414,7 @@ final class _Projection {
         'attrs': _attrsJson(attrs),
       }, 'class_type'),
     MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
-      _structuredMap(<String, Object?>{
+      _structuredMap({
         '__type': 'class_instance',
         'class_type': _child(classType, toJson: true),
         'instance_id': instanceId,

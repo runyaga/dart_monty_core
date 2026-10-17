@@ -682,9 +682,10 @@ void main() {
       });
 
       test('a copy of the dartValue map of $name is a plain dict', () {
-        final copy = Map<String, Object?>.of(
-          value.dartValue! as Map<String, Object?>,
-        );
+        final copy = switch (value.dartValue) {
+          final Map<String, Object?> m => Map<String, Object?>.of(m),
+          final other => throw StateError('not a map: $other'),
+        };
         if (value is MontyClassProxy) {
           // The caller-built outer map must also contain a caller-built copy
           // of the nested class type map.
