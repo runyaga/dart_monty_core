@@ -13,3 +13,7 @@ This index lists every documentation page of the package.
 ## OS and files
 
 - [Host directory mounts](reference/host-directory-mounts.md): States how `MountDir` maps a host directory into the sandbox, with its modes, budgets, routing and platform limits.
+
+## Platforms
+
+- [Native worker](native-worker.md): States how native programs find, install, verify, and bundle worker executables.
