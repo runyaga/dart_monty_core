@@ -219,7 +219,7 @@ version = "1.2.0"
             'sha': 'c' * 40, 'subject': 'add thing', 'flags': ['PROTO'], 'verdict': 'green',
             'new_failures': ['web case'], 'fixed_failures': [],
         }], 'WATCHED x.rs changed')
-        self.assertIn('Core version: 0.110.1.', body)
+        self.assertIn('Core version: 0.111.0.', body)
         self.assertIn('`cccccccccccc` add thing. Flags: PROTO. Verdict: green.', body)
         self.assertIn('New failures: web case. Fixed failures: none.', body)
         self.assertIn('- [ ] Port watched files.', body)

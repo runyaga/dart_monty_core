@@ -9,6 +9,11 @@ on:
         description: 'Stable upstream tag to bump, such as v1.2.0'
         required: false
         type: string
+      dry_run:
+        description: 'Prepare and validate the bump without publishing it'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -18,25 +23,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  bump:
+  prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      actions: write
+      contents: read
+    outputs:
+      run: ${{ steps.detect.outputs.run }}
+      published: ${{ steps.prepare.outputs.published }}
+      tag: ${{ steps.detect.outputs.tag }}
+      branch: ${{ steps.detect.outputs.branch }}
+      dry_run: ${{ steps.detect.outputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
           persist-credentials: false
       - name: Detect a stable upstream tag
         id: detect
         env:
           TAG_INPUT: ${{ inputs.tag }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
+          dry_run="$DRY_RUN_INPUT"
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            dry_run=true
+          fi
+          [ "$dry_run" = true ] || dry_run=false
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+
           tag="$TAG_INPUT"
           if [ -z "$tag" ]; then
             tag="$(python3 -I tool/bump_upstream.py latest-tag --pin tool/upstream/upstream-pin.json)"
@@ -48,29 +63,31 @@ jobs:
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo '::error::tag must be a stable vN.N.N tag'; exit 1;
           }
-          branch="bump/upstream-$tag"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            echo "branch $branch already exists"
-            echo 'run=false' >> "$GITHUB_OUTPUT"
+          old_tag="$(python3 -I -c 'import json; print(json.load(open("tool/upstream/upstream-pin.json"))["tag"])')"
+          if [ "$tag" = "$old_tag" ]; then
+            echo "::notice::Upstream $tag is already pinned; no change needed."
+            printf 'run=false\ntag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          old_tag="$(python3 -I -c 'import json; print(json.load(open("tool/upstream/upstream-pin.json"))["tag"])')"
+          branch="bump/upstream-$tag"
+          public_repo="https://github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$public_repo" "$branch" >/dev/null 2>&1; then
+            echo "branch $branch already exists"
+            printf 'run=false\ntag=%s\nbranch=%s\n' "$tag" "$branch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           old_commit="$(python3 -I -c 'import json; print(json.load(open("tool/upstream/upstream-pin.json"))["commit"])')"
           old_cases_tree="$(python3 -I -c 'import json; p=json.load(open("tool/upstream/upstream-pin.json")); print(next(t["git_tree"] for t in p["trees"] if t["path"] == "crates/monty/test_cases"))')"
           printf 'run=true\ntag=%s\nbranch=%s\nold_tag=%s\nold_commit=%s\nold_cases_tree=%s\n' \
             "$tag" "$branch" "$old_tag" "$old_commit" "$old_cases_tree" >> "$GITHUB_OUTPUT"
       - name: Read follow evidence
         if: steps.detect.outputs.run == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           state_dir="$RUNNER_TEMP/upstream-follow-state"
-          if git ls-remote --exit-code --heads \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
-            upstream-follow-state >/dev/null 2>&1; then
-            git clone --depth 1 --branch upstream-follow-state \
-              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" "$state_dir"
+          public_repo="https://github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$public_repo" upstream-follow-state >/dev/null 2>&1; then
+            git clone --depth 1 --branch upstream-follow-state "$public_repo" "$state_dir"
           else
             mkdir -p "$state_dir"
           fi
@@ -97,7 +114,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
           targets: wasm32-wasip1
-      - name: Prepare and push the bump branch
+      - name: Prepare the bump artifact
         id: prepare
         if: steps.detect.outputs.run == 'true'
         env:
@@ -106,35 +123,17 @@ jobs:
           OLD_TAG: ${{ steps.detect.outputs.old_tag }}
           OLD_COMMIT: ${{ steps.detect.outputs.old_commit }}
           OLD_CASES_TREE: ${{ steps.detect.outputs.old_cases_tree }}
-          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ steps.detect.outputs.dry_run }}
         run: |
-          set -Eeuo pipefail
+          set -euo pipefail
           git switch -c "$BRANCH"
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          push_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-          failed() {
-            code=$?
-            step="${BASH_COMMAND:-unknown}"
-            printf 'Upstream bump %s failed.\n\nStep: `%s`\n\nCompare: https://github.com/%s/compare/main...%s\n' \
-              "$TAG" "$step" "$GITHUB_REPOSITORY" "$BRANCH" > "$RUNNER_TEMP/failure.md"
-            git add -A
-            if ! git diff --cached --quiet; then
-              git commit -m "chore: prepare upstream monty $TAG" || true
-            fi
-            git push "$push_url" HEAD:"$BRANCH" || true
-            gh issue create --title "Upstream bump: $TAG" --body-file "$RUNNER_TEMP/failure.md" || true
-            exit "$code"
-          }
-          trap failed ERR
-          fail_unexpected() {
-            return "$1"
-          }
           dart pub get
           mirror_rc=0
           # check_worker_mirror returns 1 for an expected candidate diff; 0 means no diff.
           python3 -I tool/check_worker_mirror.py --candidate "$TAG" > "$RUNNER_TEMP/mirror-diff.txt" || mirror_rc=$?
-          [ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ] || fail_unexpected "$mirror_rc"
+          if [ "$mirror_rc" -ne 0 ] && [ "$mirror_rc" -ne 1 ]; then
+            exit "$mirror_rc"
+          fi
           apply_rc=0
           # apply returns 3 only while the release is absent from PyPI; 0 completes the bump.
           python3 -I tool/bump_upstream.py apply --tag "$TAG" --core "$GITHUB_WORKSPACE" \
@@ -144,8 +143,10 @@ jobs:
             echo 'published=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          [ "$apply_rc" -eq 0 ] || fail_unexpected "$apply_rc"
-          cd native/worker && cargo update --workspace && cd ../..
+          if [ "$apply_rc" -ne 0 ]; then
+            exit "$apply_rc"
+          fi
+          (cd native/worker && cargo update --workspace)
           python3 -I tool/bump_upstream.py pin-lock --core "$GITHUB_WORKSPACE" \
             --version "${TAG#v}"
           bash tool/build_worker.sh
@@ -164,37 +165,98 @@ jobs:
           bash tool/check_version_pin.sh
           python3 -I tool/check_worker_mirror.py --local
           python3 -I tool/check_upstream_pin.py
-          git add -A
-          git commit -m "chore: prepare upstream monty $TAG"
-          git push "$push_url" HEAD:"$BRANCH"
-          echo 'published=true' >> "$GITHUB_OUTPUT"
-      - name: Dispatch full CI and open a draft pull request
-        if: steps.detect.outputs.run == 'true' && steps.prepare.outputs.published == 'true'
-        env:
-          TAG: ${{ steps.detect.outputs.tag }}
-          BRANCH: ${{ steps.detect.outputs.branch }}
-          OLD_TAG: ${{ steps.detect.outputs.old_tag }}
-          OLD_COMMIT: ${{ steps.detect.outputs.old_commit }}
-          MONTY_CHECKOUT: ${{ runner.temp }}/upstream-bump/monty
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
           body="$RUNNER_TEMP/pr-body.md"
-          failed() {
-            code=$?
-            printf 'Upstream bump %s failed.\n\nStep: `%s`\n\nCompare: https://github.com/%s/compare/main...%s\n' \
-              "$TAG" "${BASH_COMMAND:-unknown}" "$GITHUB_REPOSITORY" "$BRANCH" > "$body"
-            gh issue create --title "Upstream bump: $TAG" --body-file "$body" || true
-            exit "$code"
-          }
-          trap failed ERR
           python3 -I tool/bump_upstream.py body --core "$GITHUB_WORKSPACE" --tag "$TAG" \
             --old-commit "$OLD_COMMIT" --old-tag "$OLD_TAG" --evidence "$RUNNER_TEMP/evidence.jsonl" \
             --mirror-diff "$RUNNER_TEMP/mirror-diff.txt" --out "$body"
+          git add -A
+          git -c user.name=github-actions[bot] \
+            -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -m "chore: prepare upstream monty $TAG"
+          mkdir -p "$RUNNER_TEMP/bump"
+          git bundle create "$RUNNER_TEMP/bump/bump.bundle" HEAD
+          cp "$body" "$RUNNER_TEMP/bump/pr-body.md"
+          cp "$RUNNER_TEMP/mirror-diff.txt" "$RUNNER_TEMP/bump/mirror-diff.txt"
+          echo 'published=true' >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" = true ]; then
+            {
+              echo '## Prepared upstream bump (dry run)'
+              echo '```text'
+              git show --stat --oneline HEAD
+              echo '```'
+              echo
+              cat "$body"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: steps.prepare.outputs.published == 'true'
+        with:
+          name: upstream-bump
+          path: ${{ runner.temp }}/bump
+          if-no-files-found: error
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.published == 'true' && needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: upstream-bump
+          path: ${{ runner.temp }}/bump
+      - name: Publish the bump and open a draft pull request
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BRANCH: ${{ needs.prepare.outputs.branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/bump/bump.bundle"
+          body="$RUNNER_TEMP/bump/pr-body.md"
+          git bundle verify "$bundle"
+          git fetch "$bundle" HEAD:"refs/heads/$BRANCH"
+          parent="$(git rev-parse "$BRANCH^")"
+          if ! git merge-base --is-ancestor "$parent" origin/main; then
+            echo '::error::bundle commit parent is not origin/main or one of its ancestors'
+            exit 1
+          fi
+          push_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push "$push_url" "refs/heads/$BRANCH:refs/heads/$BRANCH"
           gh workflow run ci.yaml --ref "$BRANCH" -f force_all=true
           if ! gh pr create --draft --base main --head "$BRANCH" \
             --title "chore: bump upstream monty $TAG" --body-file "$body"; then
             printf '\nCompare: https://github.com/%s/compare/main...%s\n' \
               "$GITHUB_REPOSITORY" "$BRANCH" >> "$body"
             gh issue create --title "Upstream bump: $TAG" --body-file "$body"
+          fi
+
+  report-failure:
+    needs: prepare
+    if: failure() && needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Report preparation failure
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title="Upstream bump failed: $TAG"
+          body="Upstream bump failed. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          issue="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
           fi

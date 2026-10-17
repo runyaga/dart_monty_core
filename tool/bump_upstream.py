@@ -68,14 +68,14 @@ def newer_tag(ls_remote: str, current_tag: str) -> str | None:
 
 
 def mapped_core_version(version: str, dev: bool = False) -> str:
-    """Map upstream M.m.p to 0.Mm0.p, refusing ambiguous major/minor values."""
+    """Map upstream M.m.p to 0.Mmp.0, refusing non-single-digit values."""
     parsed = semver(f'v{version}')
     if parsed is None:
         raise ValueError(f'upstream version {version!r} is not M.m.p')
     major, minor, patch = parsed
-    if major > 9 or minor > 9:
+    if major > 9 or minor > 9 or patch > 9:
         raise ValueError(f'upstream version {version!r} needs an owner decision for version mapping')
-    value = f'0.{major}{minor}0.{patch}'
+    value = f'0.{major}{minor}{patch}.0'
     return value + '-dev.1' if dev else value
 
 

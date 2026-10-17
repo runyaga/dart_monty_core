@@ -163,10 +163,12 @@ The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
 Chrome. It never advances `last_good`; a failure fails the job and opens
 `Upstream follow: browser parity failed`.
 
-The daily `upstream-release-bump.yaml` job waits for the tagged release to
-reach PyPI. If `bump_upstream.py apply` exits 3, it logs that the release is
-not published, leaves no remote branch or issue, succeeds, and retries
-the newest tag on its next daily run.
+The daily `upstream-release-bump.yaml` job prepares and validates a release
+bump with read-only permissions, then passes a git bundle and generated PR body
+to a separate write-scoped publish job. If `bump_upstream.py apply` exits 3, it
+logs that the release is not published, leaves no remote branch or issue,
+succeeds, and retries the newest tag on its next daily run. Dispatches off main
+and dispatches with `dry_run` enabled prepare the bump without publishing it.
 
 ## 7. Common failures and fixes
 
@@ -242,15 +244,11 @@ pull requests only). `consumers.yaml` builds the two web consumer probes under
 
 ## 11. Versions and release
 
-- Version maps from upstream: `M.m.p` is package `0.<M><m>0.<p>` so upstream
-  `1.1.0` is `0.110.0`, `1.1.1` is `0.110.1`, and `1.2.0` is `0.120.0`.
-  The release patch equals the upstream patch, though a higher core patch is
-  allowed for core fixes. `tool/check_version_pin.sh` enforces the mapping,
-  reads `tool/upstream/upstream-pin.json`, and covers `pubspec.yaml` and
-  `native/worker/Cargo.toml`. Major and minor must each be one digit, so
-  `1.10.0` needs an owner decision.
-- A core release follows an upstream tag within 7 days. An upstream release
-  may be skipped when the next one is near.
+- Version maps from upstream: upstream `1.1.0` is package `0.110.x`; the patch
+  is our own fixes on one upstream pin. `tool/check_version_pin.sh` enforces
+  the mapping, reads `tool/upstream/upstream-pin.json`, covers
+  `native/worker/Cargo.toml`, and refuses an upstream version with a
+  component above 9 (the mapping joins three single digits).
 - `0.110.0-dev.N` is a pre-release. `publish.yaml` matches `v[0-9]+.[0-9]+.[0-9]+*`
   but excludes `v*-dev.*`; `check_workflows_valid.sh` fails if a dev tag would
   publish.
