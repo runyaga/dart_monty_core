@@ -487,6 +487,7 @@ maintainer refreshes the baseline once per release, in the release PR
 main's CI coverage); it is not recorded after every merge.
 
 Further contributor docs:
+[`docs/README.md`](docs/README.md) (the documentation index),
 [`docs/contributor/testing-philosophy.md`](docs/contributor/testing-philosophy.md)
 (whether a test is worth running),
 [`docs/contributor/testing-runbook.md`](docs/contributor/testing-runbook.md)

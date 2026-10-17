@@ -18,6 +18,7 @@ import check_doc_links
 import check_doc_names
 import check_doc_snippets
 import check_docs_data
+import check_docs_index
 import check_new_urls
 import docs_check_common
 import render_docs_data
@@ -157,6 +158,55 @@ class DocsChecksTest(unittest.TestCase):
             {'same', 'same-1', 'same-2'},
             docs_check_common.headings(self.root / 'README.md'),
         )
+
+    def write_docs_index(self, links: str) -> None:
+        (self.root / 'docs/README.md').write_text(
+            '# Documentation\n\nThis index lists every documentation page.\n\n'
+            f'{links}\n',
+            encoding='utf-8',
+        )
+
+    def write_index_page(self, name: str, text: str = 'Page purpose.') -> None:
+        path = self.root / f'docs/{name}.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'# {name}\n\n{text}\n', encoding='utf-8')
+
+    def test_docs_index_accepts_a_complete_index(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_index_page('deep-dives/two')
+        self.write_docs_index(
+            '- [One](reference/one.md): One purpose.\n'
+            '- [Two](deep-dives/two.md): Two purpose.'
+        )
+        self.assertEqual([], check_docs_index.check(self.root))
+
+    def test_docs_index_rejects_an_unlisted_page(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_docs_index('')
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('page is not linked' in item for item in findings))
+
+    def test_docs_index_rejects_a_doubled_page(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_docs_index(
+            '- [One](reference/one.md): One purpose.\n'
+            '- [One again](reference/one.md): Another purpose.'
+        )
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('linked more than once' in item for item in findings))
+
+    def test_docs_index_rejects_a_missing_file(self) -> None:
+        self.write_docs_index('- [Missing](reference/missing.md): Missing purpose.')
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('linked file does not exist' in item for item in findings))
+
+    def test_docs_index_rejects_two_h1s(self) -> None:
+        self.write_index_page('reference/one')
+        (self.root / 'docs/reference/one.md').write_text(
+            '# One\n\nPurpose.\n\n# Two\n', encoding='utf-8')
+        self.write_docs_index('- [One](reference/one.md): One purpose.')
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('exactly one H1' in item for item in findings))
 
     def test_names_accept_public_name_and_member(self) -> None:
         (self.root / 'README.md').write_text(
