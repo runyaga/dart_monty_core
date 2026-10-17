@@ -163,6 +163,13 @@ The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
 Chrome. It never advances `last_good`; a failure fails the job and opens
 `Upstream follow: browser parity failed`.
 
+The daily `upstream-release-bump.yaml` job prepares and validates a release
+bump with read-only permissions, then passes a git bundle and generated PR body
+to a separate write-scoped publish job. If `bump_upstream.py apply` exits 3, it
+logs that the release is not published, leaves no remote branch or issue,
+succeeds, and retries the newest tag on its next daily run. Dispatches off main
+and dispatches with `dry_run` enabled prepare the bump without publishing it.
+
 ## 7. Common failures and fixes
 
 | Symptom | Fix |
