@@ -1013,7 +1013,7 @@ jobs:
   # variant. The wasm is not rebuilt here: tests run the asset consumers get,
   # and tool/check_asset_freshness.sh (gate job) ties it to native/worker/.
   test-worker-web:
-    name: Worker channel (Chrome, dart2js + dart2wasm)
+    name: Worker channel (Chrome, dart2js)
     needs: [changes]
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -1031,10 +1031,10 @@ jobs:
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: pub-${{ runner.os }}-
       - run: dart pub get
-      # One run per compiler, each with its own test-count floor, and
-      # coverage from dart2js alone: tool/test_worker_web.sh says why.
-      - name: Worker channel tests (dart2js, then dart2wasm)
-        run: bash tool/test_worker_web.sh --coverage coverage-web
+      # Coverage comes from dart2js alone, and the dart2wasm run is its own job
+      # below: tool/test_worker_web.sh says why.
+      - name: Worker channel tests (dart2js)
+        run: bash tool/test_worker_web.sh --coverage coverage-web --compiler dart2js
       # The only measurement of lib/src/worker/worker_channel.dart, which the
       # VM cannot load. coverage-merge takes it with --browser, for that file
       # alone (tool/coverage_report.sh says why).
@@ -1050,6 +1050,28 @@ jobs:
           path: coverage-web/lcov.info
           if-no-files-found: error
           retention-days: 1
+
+  test-worker-web-wasm:
+    name: Worker channel (Chrome, dart2wasm)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: pub-${{ runner.os }}-
+      - run: dart pub get
+      - name: Worker channel tests (dart2wasm)
+        run: bash tool/test_worker_web.sh --compiler dart2wasm
 
   # ---------------------------------------------------------------------------
   # The upstream 1.1.0 corpus on the worker, and pool crash recovery

@@ -35,22 +35,33 @@
 # runs and in 4 of 14 local runs under CPU load, with every test passing;
 # with `-j 1`, 0 of 20 local runs under the same load.
 #
-# Usage: bash tool/test_worker_web.sh [--coverage DIR]
+# Usage: bash tool/test_worker_web.sh [--coverage DIR] [--compiler dart2js|dart2wasm]
+# --compiler runs one compiler (CI runs them as two jobs); the default runs both.
 # =============================================================================
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 FLOOR=461
 COV=()
-if [ "${1:-}" = "--coverage" ]; then
-  [ -n "${2:-}" ] || { echo "FAIL: --coverage needs a directory"; exit 2; }
-  COV=(--coverage="$2")
-fi
+COMPILERS=(dart2js dart2wasm)
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --coverage)
+      [ -n "${2:-}" ] || { echo "FAIL: --coverage needs a directory"; exit 2; }
+      COV=(--coverage="$2"); shift 2 ;;
+    --compiler)
+      case "${2:-}" in
+        dart2js|dart2wasm) COMPILERS=("$2"); shift 2 ;;
+        *) echo "FAIL: --compiler takes dart2js or dart2wasm"; exit 2 ;;
+      esac ;;
+    *) echo "FAIL: unknown argument $1"; exit 2 ;;
+  esac
+done
 
 LOG_DIR="$(mktemp -d)"
 trap '/bin/rm -rf "$LOG_DIR"' EXIT
 rc=0
-for compiler in dart2js dart2wasm; do
+for compiler in "${COMPILERS[@]}"; do
   extra=()
   [ "$compiler" = dart2js ] && [ "${#COV[@]}" -gt 0 ] && extra=(-j 1 "${COV[@]}")
   echo "=== worker (web, $compiler) ==="
