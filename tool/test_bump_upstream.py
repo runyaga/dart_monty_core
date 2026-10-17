@@ -20,6 +20,12 @@ assert SPEC and SPEC.loader
 BUMP = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BUMP)
 
+FOLLOW_SCRIPT = Path(__file__).with_name('follow_upstream.py')
+FOLLOW_SPEC = importlib.util.spec_from_file_location('follow_upstream', FOLLOW_SCRIPT)
+assert FOLLOW_SPEC and FOLLOW_SPEC.loader
+FOLLOW = importlib.util.module_from_spec(FOLLOW_SPEC)
+FOLLOW_SPEC.loader.exec_module(FOLLOW)
+
 
 def payload(name: str, version: str) -> dict:
     digest = ('a' if name == 'pydantic-monty' else 'b') * 64
@@ -217,12 +223,40 @@ version = "1.2.0"
     def test_body_lists_evidence_and_manual_work(self) -> None:
         body = BUMP.render_body('v1.1.0', 'v1.1.1', 'a' * 40, 'b' * 40, [{
             'sha': 'c' * 40, 'subject': 'add thing', 'flags': ['PROTO'], 'verdict': 'green',
-            'new_failures': ['web case'], 'fixed_failures': [],
+            'new': ['web case'], 'fixed': [],
         }], 'WATCHED x.rs changed')
         self.assertIn('Core version: 0.111.0.', body)
         self.assertIn('`cccccccccccc` add thing. Flags: PROTO. Verdict: green.', body)
         self.assertIn('New failures: web case. Fixed failures: none.', body)
         self.assertIn('- [ ] Port watched files.', body)
+
+    def test_body_reads_the_evidence_that_the_follow_job_writes(self) -> None:
+        red_sha = 'c' * 40
+        accepted_sha = 'd' * 40
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'last_good.json'
+            FOLLOW.append_evidence(state, {
+                'sha': red_sha, 'subject': 'break corpus', 'flags': [], 'verdict': 'red',
+                'new': ['corpus:a.py'], 'fixed': [],
+            })
+            FOLLOW.append_evidence(state, {
+                'sha': accepted_sha, 'subject': 'accept and fix', 'flags': [],
+                'verdict': 'accepted', 'new': [], 'fixed': ['parity:b'],
+                'not_baselined': ['gate:timeout'],
+            })
+            with mock.patch.object(BUMP, 'first_parent_commits', return_value=[
+                (red_sha, 'break corpus'), (accepted_sha, 'accept and fix'),
+            ]):
+                evidence = BUMP.evidence_lines(
+                    state.with_name('evidence.jsonl'), 'a' * 40, accepted_sha,
+                )
+
+        body = BUMP.render_body(
+            'v1.1.0', 'v1.1.1', 'a' * 40, accepted_sha, evidence, '',
+        )
+        self.assertIn('New failures: corpus:a.py', body)
+        self.assertIn('Fixed failures: parity:b', body)
+        self.assertIn('Not baselined: gate:timeout', body)
 
 
 if __name__ == '__main__':

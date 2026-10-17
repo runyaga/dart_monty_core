@@ -183,10 +183,14 @@ def render_body(old_tag: str, tag: str, old_commit: str, new_commit: str,
         subject = str(item.get('subject', 'not followed'))
         flags = ', '.join(map(str, item.get('flags', []))) or 'none'
         verdict = str(item.get('verdict', item.get('gate', 'not followed')))
-        new = ', '.join(map(str, item.get('new_failures', []))) or 'none'
-        fixed = ', '.join(map(str, item.get('fixed_failures', []))) or 'none'
-        lines.append(f'- `{sha[:12]}` {subject}. Flags: {flags}. Verdict: {verdict}. '
-                     f'New failures: {new}. Fixed failures: {fixed}.')
+        new = ', '.join(map(str, item.get('new', []))) or 'none'
+        fixed = ', '.join(map(str, item.get('fixed', []))) or 'none'
+        line = (f'- `{sha[:12]}` {subject}. Flags: {flags}. Verdict: {verdict}. '
+                f'New failures: {new}. Fixed failures: {fixed}.')
+        not_baselined = ', '.join(map(str, item.get('not_baselined', [])))
+        if not_baselined:
+            line += f' Not baselined: {not_baselined}.'
+        lines.append(line)
     lines.extend(['', '### Watched-file diff', ''])
     lines.append(mirror_diff.rstrip() if mirror_diff.strip() else 'No watched-file differences reported.')
     lines.extend([
@@ -195,7 +199,7 @@ def render_body(old_tag: str, tag: str, old_commit: str, new_commit: str,
         '- [ ] Make Dart changes for each new failure listed above.',
         '- [ ] Update the parity repository with expected outcomes regenerated on Linux, then update PARITY_PIN.',
         '- [ ] Update the dart_monty repository.',
-        '- [ ] Open the release PR and tag within 7 days of the upstream tag.',
+        '- [ ] Open the release PR and tag.',
         '',
     ])
     return '\n'.join(lines)
@@ -394,7 +398,7 @@ def evidence_lines(path: Path, old_commit: str, new_commit: str) -> list[dict[st
             rows.append(by_sha[sha])
         else:
             rows.append({'sha': sha, 'subject': subject, 'flags': [], 'verdict': 'not followed',
-                         'new_failures': [], 'fixed_failures': []})
+                         'new': [], 'fixed': []})
     return rows
 
 
