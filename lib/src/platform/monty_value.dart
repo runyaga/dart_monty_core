@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/double_text.dart';
@@ -46,6 +47,7 @@ sealed class MontyValue {
   /// - `null`, `bool`, `int`, `double`, `String`
   /// - `DateTime` (→ an aware [MontyDateTime] at its instant, to the
   ///   microsecond, with its UTC offset: zero for a UTC `DateTime`)
+  /// - `Uint8List` (→ [MontyBytes])
   /// - `List` (elements recursively converted)
   /// - `Map` (keys and values recursively converted)
   ///
@@ -67,7 +69,8 @@ sealed class MontyValue {
   ///
   /// Scalars return their primitive (`int`, `double`, `String`, etc.).
   /// Collections recursively unwrap to `List<Object?>` / `Map<String, Object?>`.
-  /// Typed wrappers return a tagged map.
+  /// Typed wrappers return a tagged map. That map is transport shape:
+  /// [MontyValue.fromDart] refuses it, so pass the [MontyValue] itself back.
   Object? get dartValue;
 
   /// What the identity-aware walk treats this value as. Containers and

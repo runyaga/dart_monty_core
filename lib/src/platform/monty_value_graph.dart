@@ -1428,6 +1428,7 @@ MontyValue? _fromDartScalar(Object? value) => switch (value) {
   final num n => _fromDartNumber(n),
   final String s => MontyString(s),
   final DateTime dt => _fromDartDateTime(dt),
+  final Uint8List bytes => MontyBytes(bytes),
   List<Object?>() || Map<dynamic, dynamic>() => null,
   _ => throw ArgumentError('Cannot convert ${value.runtimeType} to MontyValue'),
 };
@@ -1475,6 +1476,17 @@ final class _FromDart {
   final Map<Object, MontyValue> _done = Map.identity();
   final Set<Object> _open = Set.identity();
   final List<Object> _stack = [];
+
+  /// The `__type` values of the maps a typed wrapper's `dartValue` returns.
+  static const _wrapperTags = {
+    'complex',
+    'exception',
+    'timezone',
+    'filehandle',
+    'namedtuple',
+    'class_instance',
+    'class_type',
+  };
 
   MontyValue convert(Object? root) {
     if (root == null) return const MontyNone();
@@ -1542,11 +1554,27 @@ final class _FromDart {
     _stack.add(c);
   }
 
-  MontyValue _build(Object v) => v is List<Object?>
-      ? MontyList([for (final c in v) _value(c)])
-      : MontyDict([
-          for (final MapEntry(:key, :value)
-              in (v as Map<dynamic, dynamic>).entries)
-            (_value(key), _value(value)),
-        ]);
+  MontyValue _build(Object v) {
+    if (v is List<Object?>) return MontyList([for (final c in v) _value(c)]);
+    final map = v as Map<dynamic, dynamic>;
+    _refuseTaggedMap(map);
+
+    return MontyDict([
+      for (final MapEntry(:key, :value) in map.entries)
+        (_value(key), _value(value)),
+    ]);
+  }
+
+  /// A wrapper's `dartValue` map is transport shape. Converted, it would
+  /// reach the sandbox as a dict carrying the tag keys (and, for a class
+  /// instance, its UUIDs).
+  static void _refuseTaggedMap(Map<dynamic, dynamic> map) {
+    final tag = map['__type'];
+    if (tag is String && map.length > 1 && _wrapperTags.contains(tag)) {
+      throw ArgumentError(
+        'Cannot convert the tagged map of a $tag value; '
+        'pass the MontyValue itself instead of its dartValue',
+      );
+    }
+  }
 }
