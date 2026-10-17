@@ -174,7 +174,7 @@ jobs:
             -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
             commit -m "chore: prepare upstream monty $TAG"
           mkdir -p "$RUNNER_TEMP/bump"
-          git bundle create "$RUNNER_TEMP/bump/bump.bundle" HEAD
+          git bundle create "$RUNNER_TEMP/bump/bump.bundle" HEAD^..HEAD
           cp "$body" "$RUNNER_TEMP/bump/pr-body.md"
           cp "$RUNNER_TEMP/mirror-diff.txt" "$RUNNER_TEMP/bump/mirror-diff.txt"
           echo 'published=true' >> "$GITHUB_OUTPUT"
@@ -224,9 +224,10 @@ jobs:
           body="$RUNNER_TEMP/bump/pr-body.md"
           git bundle verify "$bundle"
           git fetch "$bundle" HEAD:"refs/heads/$BRANCH"
-          parent="$(git rev-parse "$BRANCH^")"
-          if ! git merge-base --is-ancestor "$parent" origin/main; then
-            echo '::error::bundle commit parent is not origin/main or one of its ancestors'
+          read -r -a commit_and_parents <<< "$(git rev-list --parents -n 1 "$BRANCH")"
+          main="$(git rev-parse origin/main)"
+          if [ "${#commit_and_parents[@]}" -ne 2 ] || [ "${commit_and_parents[1]:-}" != "$main" ]; then
+            echo '::error::the bump commit is not one commit on the current main. Rerun the workflow.'
             exit 1
           fi
           push_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
@@ -241,7 +242,7 @@ jobs:
 
   report-failure:
     needs: prepare
-    if: failure() && needs.prepare.outputs.dry_run != 'true'
+    if: failure() && github.ref == 'refs/heads/main' && needs.prepare.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -252,7 +253,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          title="Upstream bump failed: $TAG"
+          if [ -n "$TAG" ]; then
+            title="Upstream bump failed: $TAG"
+          else
+            title='Upstream bump failed: tag detection'
+          fi
           body="Upstream bump failed. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           issue="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$issue" ]; then
