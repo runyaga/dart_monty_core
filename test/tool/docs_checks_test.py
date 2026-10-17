@@ -87,7 +87,7 @@ class DocsChecksTest(unittest.TestCase):
     def test_links_resolve_multi_line_reference_definitions(self) -> None:
         (self.root / 'docs/target.md').write_text('# Target\n', encoding='utf-8')
         (self.root / 'README.md').write_text(
-            '[missing]:\n  docs/missing.md\n'
+            '[missing]:\ndocs/missing.md\n'
             '[existing]:\n  docs/target.md#target\n\n'
             '[bad][missing] [good][existing]\n',
             encoding='utf-8',
@@ -96,6 +96,22 @@ class DocsChecksTest(unittest.TestCase):
             [
                 'README.md:1: linked file does not exist: docs/missing.md',
                 'README.md:6: linked file does not exist: docs/missing.md',
+            ],
+            check_doc_links.check(self.root),
+        )
+
+    def test_multi_line_reference_destination_is_not_blank_or_a_definition(self) -> None:
+        (self.root / 'docs/target.md').write_text('# Target\n', encoding='utf-8')
+        (self.root / 'README.md').write_text(
+            '[blank]:\n\n'
+            '[first]:\n[second]: docs/target.md#target\n\n'
+            '[blank][blank] [first][first] [second]\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            [
+                'README.md:6: reference label does not exist: blank',
+                'README.md:6: reference label does not exist: first',
             ],
             check_doc_links.check(self.root),
         )
@@ -111,11 +127,27 @@ class DocsChecksTest(unittest.TestCase):
             docs_check_common.headings(self.root / 'README.md'),
         )
 
-    def test_heading_slugs_preserve_intra_word_and_double_underscores(self) -> None:
+    def test_heading_slugs_handle_code_emphasis_and_identifier_underscores(self) -> None:
         (self.root / 'README.md').write_text(
-            '# _Emphasis_\n# foo__bar\n# `__init__`\n', encoding='utf-8')
+            '# __Bold__\n'
+            '# _Emphasis_\n'
+            '# `_literal_`\n'
+            '# `__init__`\n'
+            '# foo__bar\n'
+            '# snake_case\n'
+            "# What's *new*?\n",
+            encoding='utf-8',
+        )
         self.assertEqual(
-            {'emphasis', 'foo__bar', '__init__'},
+            {
+                'bold',
+                'emphasis',
+                '_literal_',
+                '__init__',
+                'foo__bar',
+                'snake_case',
+                'whats-new',
+            },
             docs_check_common.headings(self.root / 'README.md'),
         )
 

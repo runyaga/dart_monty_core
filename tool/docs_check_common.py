@@ -49,18 +49,28 @@ def inline_code(line: str) -> list[str]:
 
 def slug(text: str) -> str:
     """Build the GitHub-style heading slug used by this repository."""
-    text = re.sub(r'!?\[([^]]*)\]\([^)]*\)', r'\1', text)
-    text = re.sub(r'!?\[([^]]*)\]\[[^]]*\]', r'\1', text)
-    text = text.replace('`', '')
-    for delimiter in ('_', '*'):
-        escaped = re.escape(delimiter)
-        text = re.sub(
-            rf'(?<![\w{escaped}]){escaped}(?!{escaped})'
-            rf'(\S(?:.*?\S)?)'
-            rf'(?<!{escaped}){escaped}(?![\w{escaped}])',
-            r'\1',
-            text,
-        )
+    pieces = re.split(r'(`[^`]*`)', text)
+    for index, piece in enumerate(pieces):
+        if index % 2:
+            # Keep code content literal: Markdown delimiters in a code span
+            # are ordinary characters, even when they are underscores.
+            pieces[index] = piece[1:-1]
+            continue
+        piece = re.sub(r'!?\[([^]]*)\]\([^)]*\)', r'\1', piece)
+        piece = re.sub(r'!?\[([^]]*)\]\[[^]]*\]', r'\1', piece)
+        # Strip only paired emphasis delimiters. The word boundaries leave
+        # identifier-style underscores such as snake_case and foo__bar alone.
+        delimiter = r'(\*\*|__|\*|_)'
+        previous = None
+        while piece != previous:
+            previous = piece
+            piece = re.sub(
+                rf'(?<!\w){delimiter}(?=\S)(.*?\S)\1(?!\w)',
+                r'\2',
+                piece,
+            )
+        pieces[index] = piece
+    text = ''.join(pieces)
     clean = ''.join(char for char in text.lower() if char.isalnum() or char in ' -_')
     return clean.replace(' ', '-')
 

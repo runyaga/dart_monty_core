@@ -13,7 +13,7 @@ from docs_check_common import display, headings, pages, visible_lines, without_i
 LINK = re.compile(r'!?\[[^]]*\]\(\s*(<[^>]*>|[^\s)]+)')
 DEFINITION = re.compile(r'^\s{0,3}\[([^]]+)\]:\s*(<[^>]*>|[^\s]+)')
 DEFINITION_START = re.compile(r'^\s{0,3}\[([^]]+)\]:\s*$')
-DEFINITION_DESTINATION = re.compile(r'^\s+(<[^>]*>|[^\s]+)')
+DEFINITION_DESTINATION = re.compile(r'^\s*(<[^>]*>|[^\s]+)')
 REFERENCE = re.compile(r'!?\[([^]]+)\]\[([^]]*)\]')
 SHORTCUT = re.compile(r'(?<!\])!?\[([^]]+)\](?![\[(])')
 
@@ -61,7 +61,11 @@ def check(root: Path) -> list[str]:
                     DEFINITION_DESTINATION.match(without_inline_code(destination_line))
                     if destination_number == number + 1 else None
                 )
-                if destination:
+                next_is_definition = (
+                    DEFINITION.match(without_inline_code(destination_line))
+                    or DEFINITION_START.match(without_inline_code(destination_line))
+                )
+                if destination and not next_is_definition:
                     target = destination.group(1)
                     definitions[label(start.group(1))] = target
                     definition_lines.update({number, destination_number})
