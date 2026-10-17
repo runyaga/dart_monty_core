@@ -25,12 +25,17 @@ ALL_STAGES = ('upstream-tests', 'worker-build', 'corpus', 'parity')
 
 
 def command(cmd: list[str], cwd: Path | None = None,
-            env: dict[str, str] | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+            env: dict[str, str] | None = None, check: bool = True,
+            timeout: float | None = None) -> subprocess.CompletedProcess[str]:
     merged = os.environ.copy()
     if env:
         merged.update(env)
-    return subprocess.run(cmd, cwd=cwd, env=merged, text=True, check=check,
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        return subprocess.run(cmd, cwd=cwd, env=merged, text=True, check=check, timeout=timeout,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout.decode(errors='replace') if isinstance(exc.stdout, bytes) else (exc.stdout or '')
+        return subprocess.CompletedProcess(cmd, 124, output + '\nGATE RED stage=timeout\n')
 
 
 def git(directory: Path, *args: str, check: bool = True) -> str:
@@ -185,7 +190,9 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
             try:
                 if stage == 'upstream-tests':
                     result = command(['cargo', 'test', '--locked', '-p', 'monty-fs', '-p', 'monty-alloc',
-                                      '-p', 'monty-types', '-p', 'monty-proto'], cwd=upstream,
+                                      '-p', 'monty-types', '-p', 'monty-proto',
+                                      '-p', 'monty-type-checking', '--features', 'monty-proto/worker'],
+                                     cwd=upstream,
                                      env={'CARGO_TARGET_DIR': str(root_target / 'upstream-tests')})
                     print(result.stdout, end='')
                 elif stage == 'worker-build':
@@ -359,7 +366,7 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
                     '--upstream', str(repo), '--target-dir', str(target)]
         if parity is not None:
             gate_cmd.extend(['--parity', str(parity)])
-        outcome = command(gate_cmd, check=False)
+        outcome = command(gate_cmd, check=False, timeout=max(60.0, deadline - time.monotonic()))
         print(outcome.stdout, end='')
         gate_ok = outcome.returncode == 0 and 'GATE GREEN' in outcome.stdout
         stage_match = re.search(r'GATE RED stage=([\w-]+)', outcome.stdout)

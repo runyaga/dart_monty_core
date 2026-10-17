@@ -59,6 +59,11 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('a' * 40, result['last_good'])
         self.assertIn('boom', result['error'])
 
+    def test_a_hung_command_is_a_red_timeout(self) -> None:
+        result = FOLLOW.command(['sleep', '5'], check=False, timeout=0.2)
+        self.assertEqual(124, result.returncode)
+        self.assertIn('GATE RED stage=timeout', result.stdout)
+
     def test_version_rewrite_changes_exact_requirements_only(self) -> None:
         source = 'monty = "=1.1.0"\nother = "=1.1.0"\n'
         self.assertEqual('monty = "=1.2.0"\nother = "=1.1.0"\n',
