@@ -30,7 +30,7 @@ hooks:
       build_worker: true
 ```
 
-The `worker_mirror` user define, when it is a string, overrides the manifest's release mirror for worker and worker-library archives.
+The `worker_mirror` user define, when it is a string, overrides the manifest's release mirror for worker and worker-library archives. A value that is neither absent, null nor a string makes the hook throw when it processes an eligible target.
 
 Source: `hook/build.dart`, `lib/src/worker/worker_install.dart`, `test/hook/worker_install_hook_test.dart`
 
@@ -52,7 +52,7 @@ Source: `lib/src/worker/self_relaunch.dart`, `test/integration/worker/self_relau
 
 The per-user cache root is `~/Library/Caches/dart_monty` on macOS, `~/.cache/dart_monty` on Linux, and `%LOCALAPPDATA%\dart_monty\Cache` on Windows. `HOME` on macOS and Linux and `LOCALAPPDATA` on Windows must be absolute paths. `XDG_CACHE_HOME` is ignored. An artifact path under the root is `worker-<sha256>/<filename>`.
 
-Installation verifies the complete worker file against the manifest SHA-256 and makes a best-effort fingerprint record containing its size, modification time, change time, and manifest-entry key. After a successful verification for the same path and entry key, cache lookup skips verification for the rest of the process. Otherwise, it requests SHA-256 verification when the current fingerprint is unavailable, its size differs from the manifest, or the stored and current fingerprints differ. A missing or non-file worker, or a size mismatch, fails before SHA-256 hashing. Only a regular file with the expected size reaches SHA-256 hashing. macOS and Linux use metadata change time in the fingerprint. Windows records file creation time in that field, so a same-size modification with a restored modification time reaches SHA-256 verification only when another condition requires it.
+Installation verifies the complete worker file against the manifest SHA-256 and makes a best-effort fingerprint record containing its size, modification time, change time, and manifest-entry key. After a successful verification for the same path and entry key, cache lookup skips verification for the rest of that isolate's lifetime. Otherwise, it requests SHA-256 verification when the current fingerprint is unavailable, its size differs from the manifest, or the stored and current fingerprints differ. A missing or non-file worker, or a size mismatch, fails before SHA-256 hashing. Only a regular file with the expected size reaches SHA-256 hashing. macOS and Linux use metadata change time in the fingerprint. Windows records file creation time in that field, so a same-size modification with a restored modification time reaches SHA-256 verification only when another condition requires it. On other hosts a cache entry must also be executable. The fingerprint detects ordinary changes and does not authenticate the file: a modified worker with a matching forged fingerprint file skips hashing. An explicit `workerLocation` and the package-relative executable are not verified against the manifest.
 
 Source: `lib/src/worker/worker_cache.dart`, `lib/src/worker/worker_fingerprint.dart`, `lib/src/worker/worker_install.dart`, `lib/src/worker/worker_locator.dart`, `test/unit/worker/worker_cache_test.dart`, `test/unit/worker/worker_fingerprint_test.dart`, `test/integration/worker/worker_locator_test.dart`
 
@@ -70,6 +70,6 @@ Source: `tool/build_worker.sh`, `lib/src/worker/worker_locator.dart`, `test/hook
 
 ## Flutter macOS
 
-A Flutter macOS app bundle has the worker at `<App>.app/Contents/Helpers/dart_monty_worker` after `embed_worker.sh` embeds it. The application passes that path as `workerLocation`, because the locator does not search `Contents/Helpers` automatically. In check mode, `embed_worker.sh` requires that helper to exist, be executable, and have a valid signature. In embed mode, it checks the supplied worker's SHA-256, requires a thin arm64 Mach-O executable, copies it to that path, and signs it.
+A Flutter macOS app bundle has the worker at `<App>.app/Contents/Helpers/dart_monty_worker` after `embed_worker.sh` embeds it. The application passes that path as `workerLocation`, because the locator does not search `Contents/Helpers` automatically. In check mode, `embed_worker.sh` requires that helper to exist, be executable, and have a valid signature. In embed mode, it checks the supplied worker's SHA-256, requires a thin arm64 Mach-O executable, copies it to that path, and signs it. Re-signing the containing app needs `--resign-app` when the app was signed before embedding. An Xcode phase that runs before app signing does not need it.
 
 Source: `tool/flutter_macos/embed_worker.sh`, `tool/flutter_macos/probe.sh`
