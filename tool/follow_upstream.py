@@ -235,26 +235,25 @@ def failure_ids(stages: dict[str, str], output: dict[str, str]) -> list[str]:
         failures.extend(dict.fromkeys(found) or ['parity:unparsed'])
     if stages.get('corpus') == 'fail':
         found = [f'corpus:{match.group(1)}' for line in output.get('corpus', '').splitlines()
-                 if (match := re.match(r'^REGRESSION\s+(\S+)', line))]
+                 if (match := re.search(r'REGRESSION\s+(\S+\.py)', line))]
         failures.extend(dict.fromkeys(found) or ['corpus:unparsed'])
     return failures
 
 
-def read_gate_report(path: Path, returncode: int, expected_head: str) -> dict[str, Any]:
+def read_gate_report(path: Path, returncode: int, expected_head: str,
+                     selected: tuple[str, ...] = ALL_STAGES) -> dict[str, Any]:
     """Read a gate's self-report, turning an unreliable run into a red failure."""
-    def failed(failure: str) -> dict[str, Any]:
+    def failed(*failures: str) -> dict[str, Any]:
         return {
             'head': expected_head,
             'stages': {**{stage: 'skipped' for stage in ALL_STAGES}, 'gate': 'fail'},
-            'failures': [failure],
+            'failures': list(dict.fromkeys(failures)),
         }
 
-    if returncode == 124:
-        return failed('gate:timeout')
     try:
         report = json.loads(path.read_text())
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return failed('gate:no-report')
+        return failed(*(('gate:timeout',) if returncode == 124 else ()), 'gate:no-report')
     if (not isinstance(report, dict) or report.get('head') != expected_head
             or not isinstance(report.get('stages'), dict)
             or not isinstance(report.get('failures'), list)
@@ -262,6 +261,17 @@ def read_gate_report(path: Path, returncode: int, expected_head: str) -> dict[st
             or any(report['stages'].get(stage) not in ('pass', 'fail', 'skipped')
                    for stage in ALL_STAGES)):
         return failed('gate:no-report')
+    stages = report['stages']
+    selected_failures = any(stages[stage] == 'fail' for stage in selected)
+    skipped_without_worker_failure = any(
+        stages[stage] == 'skipped'
+        and (stage not in ('parity', 'corpus') or stages['worker-build'] != 'fail')
+        for stage in selected
+    )
+    if (returncode not in (0, 1)
+            or returncode != (1 if selected_failures else 0)
+            or skipped_without_worker_failure):
+        report['failures'] = list(dict.fromkeys([*report['failures'], 'gate:no-report']))
     return report
 
 
@@ -461,7 +471,7 @@ def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[di
     """The commits that advance with flags, recorded failures, or fixes."""
     entries = []
     for commit in commits:
-        if commit['verdict'] == 'red' or not (commit['flags'] or commit['verdict'] == 'baseline'
+        if commit['verdict'] == 'red' or not (commit['flags'] or commit['verdict'] in ('accepted', 'baseline')
                                                or commit['fixed']):
             continue
         reasons = list(commit['flags'])
@@ -470,6 +480,10 @@ def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[di
             details = ', '.join(f'{failure} (introduced by {baseline[failure]})'
                                 for failure in commit['new'])
             reasons.append(f'baseline recorded: {len(commit["new"])} failures: {details}')
+        if commit['verdict'] == 'accepted':
+            details = ', '.join(f'{failure} (introduced by {baseline.get(failure, "unknown")})'
+                                for failure in commit['new'])
+            reasons.append(f'accepted failures: {details}')
         if commit['fixed']:
             details = ', '.join(f'{failure} (introduced by {baseline.get(failure, "unknown")})'
                                 for failure in commit['fixed'])
@@ -595,10 +609,31 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
                       'error': f'accepted SHA {accepted} is not pending on origin/main'}
             write_result(out, result)
             return 1
+        accepted_pending = {
+            'failures': pending['failures'].copy(),
+            'fixed': pending['fixed'].copy(),
+        }
+        introductions = dict(state.get('baseline', {}))
         accept_pending(state, accepted)
+        introductions.update({failure: accepted for failure in accepted_pending['failures']})
+        record = {
+            'sha': accepted,
+            'subject': git(repo, 'show', '-s', '--format=%s', accepted),
+            'flags': [],
+            'failures': accepted_pending['failures'],
+            'new': accepted_pending['failures'],
+            'fixed': accepted_pending['fixed'],
+            'verdict': 'accepted',
+            'baseline': introductions,
+            'stage': 'accepted',
+            'seconds': 0.0,
+        }
+        records.append(record)
+        append_evidence(state_file, record)
         state['sha'] = accepted
         write_state(state_file, accepted, 'accepted', baseline=state.get('baseline'), pending=None)
         commits = commits[accepted_index + 1:]
+        pending = None
 
     current = state['sha']
     advanced = current != start
@@ -622,7 +657,8 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
             gate_cmd.extend(['--parity', str(parity)])
         outcome = command(gate_cmd, check=False, timeout=max(60.0, deadline - time.monotonic()))
         print(outcome.stdout, end='')
-        report = read_gate_report(gate_report, outcome.returncode, sha)
+        report = read_gate_report(gate_report, outcome.returncode, sha,
+                                  selected_stages(None, parity))
         stage_status = report['stages']
         known = state.get('baseline')
         verdict = judge(known, report['failures'],
@@ -641,6 +677,10 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
             write_state(state_file, current, 'pending', baseline=state.get('baseline'), pending=state['pending'])
             stopped = 'red'
             break
+        if pending is not None and pending['sha'] == sha:
+            state.pop('pending', None)
+            pending = None
+            stopped = None
         state['baseline'] = verdict['baseline']
         current = sha
         advanced = True
@@ -653,8 +693,9 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
     result = {'pin': pin['commit'], 'start': start, 'last_good': current, 'head': head,
               'behind': len(remaining), 'commits': records, 'status': status,
               'flagged': flagged_entries(records, run_url()),
-              'new': records[-1]['new'] if records else (pending or {}).get('failures', []),
-              'pending': state.get('pending')}
+              'new': records[-1]['new'] if records else (pending or {}).get('failures', [])}
+    if state.get('pending') is not None:
+        result['pending'] = state['pending']
     write_result(out, result)
     return 0 if status in ('caught-up', 'advanced', 'budget') else 1
 

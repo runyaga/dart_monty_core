@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,10 +23,14 @@ class FollowUpstreamTest(unittest.TestCase):
         stages = {'upstream-tests': 'pass', 'worker-build': 'pass', 'parity': 'fail', 'corpus': 'fail'}
         output = {
             'parity': 'FAIL current case list-basic (vm)\nFAIL current PRESENT aggregate\nFAIL current row os-path mismatch\n',
-            'corpus': 'REGRESSION crates/monty/test_cases/a.py\nREGRESSION b.py expected\n',
+            'corpus': ('  REGRESSION crates/monty/test_cases/a.py\n'
+                       "  - 'REGRESSION fstring__all.py: not an expected failure'\n"
+                       'REGRESSION b.py expected\n'
+                       'REGRESSION b.py repeated\n'),
         }
         self.assertEqual(['parity:list-basic', 'parity:os-path mismatch',
-                          'corpus:crates/monty/test_cases/a.py', 'corpus:b.py'],
+                          'corpus:crates/monty/test_cases/a.py', 'corpus:fstring__all.py',
+                          'corpus:b.py'],
                          FOLLOW.failure_ids(stages, output))
 
     def test_failure_ids_use_unparsed_when_needed(self) -> None:
@@ -154,12 +159,24 @@ class FollowUpstreamTest(unittest.TestCase):
     def test_gate_report_rejects_timeout_missing_invalid_and_wrong_head(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'gate.json'
-            self.assertEqual(['gate:timeout'], FOLLOW.read_gate_report(path, 124, 'wanted')['failures'])
+            self.assertEqual(['gate:timeout', 'gate:no-report'],
+                             FOLLOW.read_gate_report(path, 124, 'wanted')['failures'])
             self.assertEqual(['gate:no-report'], FOLLOW.read_gate_report(path, 1, 'wanted')['failures'])
             path.write_text('{bad')
             self.assertEqual(['gate:no-report'], FOLLOW.read_gate_report(path, 1, 'wanted')['failures'])
             path.write_text(json.dumps({'head': 'other', 'stages': {}, 'failures': []}))
             self.assertEqual(['gate:no-report'], FOLLOW.read_gate_report(path, 1, 'wanted')['failures'])
+
+    def test_gate_report_rejects_interrupted_all_skipped_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'gate.json'
+            path.write_text(json.dumps({
+                'head': 'wanted',
+                'stages': {stage: 'skipped' for stage in FOLLOW.ALL_STAGES},
+                'failures': [],
+            }))
+            report = FOLLOW.read_gate_report(path, 130, 'wanted')
+        self.assertIn('gate:no-report', report['failures'])
 
     def test_unexpected_failure_still_writes_a_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -207,6 +224,85 @@ class FollowUpstreamTest(unittest.TestCase):
         entries = FOLLOW.flagged_entries(commits, 'run')
         self.assertIn('baseline recorded: 1 failures', entries[0]['reason'])
         self.assertIn('introduced by ' + 'b' * 40, entries[1]['reason'])
+
+    def test_accept_records_evidence_and_flagged_entry(self) -> None:
+        accepted = 'b' * 40
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            core = root / 'core'
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(
+                json.dumps({'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
+            state = root / 'last_good.json'
+            FOLLOW.write_state(state, 'a' * 40, 'pending', baseline={'parity:old': 'a' * 40}, pending={
+                'sha': accepted, 'failures': ['corpus:x.py'], 'fixed': ['parity:old'],
+            })
+            original_command, original_git = FOLLOW.command, FOLLOW.git
+            FOLLOW.command = self._follow_command
+            FOLLOW.git = self._follow_git(accepted, [accepted])
+            try:
+                status = FOLLOW.run_follow(core, root / 'work', None, 1, 1, accepted, state, root / 'result.json')
+            finally:
+                FOLLOW.command, FOLLOW.git = original_command, original_git
+            result = json.loads((root / 'result.json').read_text())
+            evidence = json.loads(state.with_name('evidence.jsonl').read_text())
+            saved = json.loads(state.read_text())
+        self.assertEqual(0, status)
+        self.assertEqual('accepted', evidence['verdict'])
+        self.assertEqual(['corpus:x.py'], evidence['new'])
+        self.assertEqual(['parity:old'], evidence['fixed'])
+        self.assertEqual({'corpus:x.py': accepted}, saved['baseline'])
+        self.assertTrue(result['flagged'])
+        self.assertIn('corpus:x.py', result['flagged'][0]['reason'])
+        self.assertIn(accepted, result['flagged'][0]['reason'])
+
+    def test_successful_pending_retry_clears_it_and_advances(self) -> None:
+        retry = 'b' * 40
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            core = root / 'core'
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(
+                json.dumps({'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
+            state = root / 'last_good.json'
+            FOLLOW.write_state(state, 'a' * 40, 'pending', baseline={}, pending={
+                'sha': retry, 'failures': ['corpus:x.py'], 'fixed': [],
+            })
+            original_command, original_git = FOLLOW.command, FOLLOW.git
+            original_flags, original_report = FOLLOW.candidate_flags, FOLLOW.read_gate_report
+            FOLLOW.command = self._follow_command
+            FOLLOW.git = self._follow_git(retry, [retry])
+            FOLLOW.candidate_flags = lambda *args: []
+            FOLLOW.read_gate_report = lambda *args: {
+                'stages': {stage: 'pass' for stage in FOLLOW.ALL_STAGES}, 'failures': [],
+            }
+            try:
+                status = FOLLOW.run_follow(core, root / 'work', None, 1, 1, None, state, root / 'result.json')
+            finally:
+                FOLLOW.command, FOLLOW.git = original_command, original_git
+                FOLLOW.candidate_flags, FOLLOW.read_gate_report = original_flags, original_report
+            result = json.loads((root / 'result.json').read_text())
+            saved = json.loads(state.read_text())
+        self.assertEqual(0, status)
+        self.assertIn(result['status'], ('advanced', 'caught-up'))
+        self.assertNotIn('pending', result)
+        self.assertNotIn('pending', saved)
+
+    @staticmethod
+    def _follow_command(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, '')
+
+    @staticmethod
+    def _follow_git(head, commits):
+        def fake_git(_directory, *args, **_kwargs):
+            if args[:2] == ('rev-parse', 'origin/main'):
+                return head
+            if args and args[0] == 'rev-list':
+                return '\n'.join(commits) if args[-1].startswith('a' * 40) else ''
+            if args[:3] == ('show', '-s', '--format=%s'):
+                return 'subject'
+            raise AssertionError(f'unexpected git call: {args}')
+        return fake_git
 
     def test_digest_formatting_and_weekly_merge(self) -> None:
         import datetime
