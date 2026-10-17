@@ -1428,7 +1428,7 @@ MontyValue? _fromDartScalar(Object? value) => switch (value) {
   final num n => _fromDartNumber(n),
   final String s => MontyString(s),
   final DateTime dt => _fromDartDateTime(dt),
-  final Uint8List bytes => MontyBytes(bytes),
+  final Uint8List bytes => MontyBytes(Uint8List.fromList(bytes)),
   List<Object?>() || Map<dynamic, dynamic>() => null,
   _ => throw ArgumentError('Cannot convert ${value.runtimeType} to MontyValue'),
 };
@@ -1477,15 +1477,17 @@ final class _FromDart {
   final Set<Object> _open = Set.identity();
   final List<Object> _stack = [];
 
-  /// The `__type` values of the maps a typed wrapper's `dartValue` returns.
-  static const _wrapperTags = {
-    'complex',
-    'exception',
-    'timezone',
-    'filehandle',
-    'namedtuple',
-    'class_instance',
-    'class_type',
+  /// The keys of each map a typed wrapper's `dartValue` returns, by `__type`.
+  static const _wrapperKeys = {
+    'complex': {'__type', 'real', 'imag'},
+    'exception': {'__type', 'exc_type', 'message'},
+    'timezone': {'__type', 'offset_seconds', 'name'},
+    'filehandle': {'__type', 'path', 'mode', 'position'},
+    'namedtuple': {'__type', 'type_name', 'field_names', 'values'},
+    'class_instance': {'__type', 'class_type', 'instance_id', 'attrs'},
+    'class_type': {
+      '__type', 'name', 'id', 'host_defined', 'is_dataclass', 'attrs', //
+    },
   };
 
   MontyValue convert(Object? root) {
@@ -1544,7 +1546,9 @@ final class _FromDart {
   }
 
   void _push(Object? c) {
-    if (c == null || (c is! List<Object?> && c is! Map<dynamic, dynamic>)) {
+    if (c == null ||
+        c is Uint8List ||
+        (c is! List<Object?> && c is! Map<dynamic, dynamic>)) {
       return;
     }
     if (_done.containsKey(c)) return;
@@ -1570,7 +1574,10 @@ final class _FromDart {
   /// instance, its UUIDs).
   static void _refuseTaggedMap(Map<dynamic, dynamic> map) {
     final tag = map['__type'];
-    if (tag is String && map.length > 1 && _wrapperTags.contains(tag)) {
+    final keys = tag is String ? _wrapperKeys[tag] : null;
+    if (keys != null &&
+        map.length == keys.length &&
+        map.keys.every(keys.contains)) {
       throw ArgumentError(
         'Cannot convert the tagged map of a $tag value; '
         'pass the MontyValue itself instead of its dartValue',

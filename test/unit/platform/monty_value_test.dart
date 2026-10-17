@@ -599,6 +599,32 @@ void main() {
       expect((got as MontyBytes).value, [0, 1, 255]);
     });
 
+    test('a Uint8List inside a list or dict becomes MontyBytes', () {
+      final got = MontyValue.fromDart({
+        'a': [
+          Uint8List.fromList([1]),
+        ],
+      });
+      expect(
+        got,
+        MontyDict([
+          (
+            const MontyString('a'),
+            MontyList([
+              MontyBytes(Uint8List.fromList([1])),
+            ]),
+          ),
+        ]),
+      );
+    });
+
+    test('the converted bytes do not alias the Uint8List', () {
+      final src = Uint8List.fromList([1, 2]);
+      final got = MontyValue.fromDart(src) as MontyBytes;
+      src[0] = 9;
+      expect(got.value, [1, 2]);
+    });
+
     // The tagged map a wrapper's dartValue returns is transport shape. Fed
     // back it would reach the sandbox as a plain dict carrying the tag keys,
     // so it is refused and the typed value is passed instead.
@@ -634,8 +660,12 @@ void main() {
     }
 
     test('a plain dict with a __type key of its own is still a dict', () {
-      final got = MontyValue.fromDart({'__type': 'mine', 'x': 1});
-      expect(got, isA<MontyDict>());
+      final mine = MontyValue.fromDart({'__type': 'mine', 'x': 1});
+      final collides = MontyValue.fromDart({
+        '__type': 'complex',
+        'label': 'example',
+      });
+      expect([mine, collides], everyElement(isA<MontyDict>()));
     });
 
     test('Dart List → MontyList with recursive conversion', () {
