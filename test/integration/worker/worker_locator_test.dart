@@ -53,7 +53,7 @@ void main() {
             [
               'runMontyWorkerIfChild(args)',
               'first statement',
-              'WorkerExecutable',
+              'workerLocation',
             ],
           ),
           (
@@ -64,7 +64,7 @@ void main() {
             [
               '/bundle/lib/libdart_monty_worker.so',
               'ship the bundle',
-              'WorkerExecutable',
+              'workerLocation',
             ],
           ),
           (
@@ -77,7 +77,7 @@ void main() {
               '/bundle/lib/libdart_monty_worker.so',
               'invalid shared library',
               'rebuild it for this platform',
-              'WorkerExecutable',
+              'workerLocation',
             ],
           ),
         ]) {
@@ -772,7 +772,7 @@ void main() {
               allOf(
                 contains(variable),
                 contains('set $variable to an absolute directory'),
-                contains('WorkerExecutable'),
+                contains('workerLocation'),
               ),
             ),
           ),

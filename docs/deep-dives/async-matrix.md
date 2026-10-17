@@ -74,9 +74,9 @@ reported again. An `ExternalException` there raises inside Python at the
 
 ## Sleeps
 
-`time.sleep` and `asyncio.sleep` are OS calls the session waits out itself,
-cut to the OS policy's system-sleep maximum (10 s by default, set with
-`OsPolicy`). An `asyncio.sleep` waits through the futures protocol, so
+`feedRun` waits out system sleeps, cut to the OS policy's system-sleep maximum
+(10 s by default, set with `OsPolicy`). A snapshot resume routes a system sleep
+to the OS handler. An `asyncio.sleep` waits through the futures protocol, so
 sibling tasks run meanwhile. A session's total sleep is bounded by
 `ResourceLimits.maxTotalSleep`.
 

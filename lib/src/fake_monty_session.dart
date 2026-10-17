@@ -265,12 +265,14 @@ class _ScriptedLink {
 /// that finds no complete segment throws [StateError]. Call ids count from
 /// 0 within a segment, as a worker numbers them within a feed.
 ///
-/// What it does not do: run Python, type-check, enforce limits, or keep a
-/// working directory (`cwd` is checked as a session checks it, and no
+/// What it does not do: run Python, type-check, take `ResourceLimits`, or
+/// keep a working directory (`cwd` is checked as a session checks it, and no
 /// Python reads it). [installDependencies] answers as the pure-Monty worker
 /// does: an empty list succeeds, any other is refused. [dump],
 /// [loadSession], [loadSnapshot] and a snapshot's `dump` throw
-/// [UnsupportedError]. [workerPid] is null.
+/// [UnsupportedError]. [workerPid] is null. It enforces the session driver's
+/// budget of 1000 suspensions, and a feed that exceeds it fails with
+/// `RuntimeError: suspension limit 1000 exceeded`.
 final class FakeMontySession extends _FakeScripting implements MontySession {
   /// A session with nothing scripted.
   FakeMontySession() : this._(FakeScript());
