@@ -125,16 +125,11 @@ jobs:
             gh issue comment "$issue" --body-file "$digest"
           fi
       - name: Advance the state branch
-        # After the digest: a failed digest leaves last_good unmoved, so the next run
-        # collects the same commits again (the digest dedupes by sha).
+        # A successful digest pushes every changed state branch file.
         if: always() && hashFiles('result.json') != '' && steps.digest.outcome != 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          readarray -t state < <(python3 -I -c 'import json; r=json.load(open("result.json")); print(r["start"]); print(r["last_good"])')
-          if [ "${state[0]}" = "${state[1]}" ]; then
-            exit 0
-          fi
           if ! git -C "$STATE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
             git -C "$STATE_DIR" init -q
             git -C "$STATE_DIR" checkout -q --orphan upstream-follow-state
@@ -144,7 +139,7 @@ jobs:
           fi
           git -C "$STATE_DIR" config user.name "$GITHUB_ACTOR"
           git -C "$STATE_DIR" config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          git -C "$STATE_DIR" add last_good.json
+          git -C "$STATE_DIR" add -A
           if ! git -C "$STATE_DIR" diff --cached --quiet; then
             git -C "$STATE_DIR" commit -m 'chore: advance upstream follow state'
             git -C "$STATE_DIR" push origin HEAD:upstream-follow-state
@@ -164,13 +159,18 @@ jobs:
 
           result = json.load(open(os.environ['RESULT_FILE']))
           entry = result.get('commits', [])[-1] if result.get('commits') else {}
+          pending = result.get('pending') or {}
+          sha = entry.get('sha', pending.get('sha', result.get('last_good', 'unknown')))
+          new = result.get('new', [])
           print('Upstream follow needs review.')
           print()
           print(f"Status: `{result['status']}`")
-          print(f"Commit: `{entry.get('sha', result.get('last_good', 'unknown'))}`")
+          print(f"Commit: `{sha}`")
           print(f"Subject: {entry.get('subject', result.get('error', 'unknown'))}")
           print(f"Stage: `{entry.get('stage', 'unknown')}`")
           print(f"Flags: {', '.join(entry.get('flags', [])) or 'none'}")
+          print(f"New failures: {', '.join(new) or 'none'}")
+          print(f"Introduced by: `{sha}`")
           PY
           existing=$(gh issue list --search 'Upstream follow: needs attention in:title' --state open \
             --json number --jq '.[0].number')

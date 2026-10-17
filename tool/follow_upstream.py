@@ -48,30 +48,60 @@ def load_pin(core: Path) -> dict[str, Any]:
     return json.loads((core / 'tool/upstream/upstream-pin.json').read_text())
 
 
-def read_state_or_seed(state_file: Path | None, pin: dict[str, Any]) -> dict[str, str]:
+def read_state_or_seed(state_file: Path | None, pin: dict[str, Any]) -> dict[str, Any]:
     """Read persistent state, or start at the immutable upstream pin."""
     data = json.loads(state_file.read_text()) if state_file is not None and state_file.is_file() else None
     return state_from_data(data, pin)
 
 
-def state_from_data(data: dict[str, Any] | None, pin: dict[str, Any]) -> dict[str, str]:
+def state_from_data(data: dict[str, Any] | None, pin: dict[str, Any]) -> dict[str, Any]:
     """Validate state data, or provide the immutable pin as its seed."""
     if data is None:
         return {'sha': str(pin['commit']), 'advanced': '', 'via': 'pin'}
     if not isinstance(data.get('sha'), str) or not data['sha']:
         raise ValueError('last_good state has no sha')
-    return {key: str(value) for key, value in data.items()}
+    state: dict[str, Any] = {
+        'sha': data['sha'],
+        'advanced': str(data.get('advanced', '')),
+        'via': str(data.get('via', '')),
+    }
+    baseline = data.get('baseline')
+    if isinstance(baseline, dict) and all(isinstance(key, str) and isinstance(value, str)
+                                          for key, value in baseline.items()):
+        state['baseline'] = baseline.copy()
+    pending = data.get('pending')
+    if (isinstance(pending, dict) and isinstance(pending.get('sha'), str)
+            and isinstance(pending.get('failures'), list)
+            and all(isinstance(item, str) for item in pending['failures'])):
+        state['pending'] = {'sha': pending['sha'], 'failures': pending['failures'].copy()}
+    return state
 
 
-def write_state(state_file: Path | None, sha: str, via: str) -> None:
+_UNSET = object()
+
+
+def write_state(state_file: Path | None, sha: str, via: str, *,
+                baseline: dict[str, str] | None | object = _UNSET,
+                pending: dict[str, Any] | None | object = _UNSET) -> None:
     if state_file is None:
         return
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps({
+    old = state_from_data(json.loads(state_file.read_text()), {'commit': sha}) \
+        if state_file.is_file() else {}
+    if baseline is _UNSET:
+        baseline = old.get('baseline')
+    if pending is _UNSET:
+        pending = old.get('pending')
+    data: dict[str, Any] = {
         'sha': sha,
         'advanced': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'via': via,
-    }, indent=2) + '\n')
+    }
+    if baseline is not None:
+        data['baseline'] = baseline
+    if pending is not None:
+        data['pending'] = pending
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(data, indent=2) + '\n')
 
 
 def selected_stages(value: str | None, parity: Path | None) -> tuple[str, ...]:
@@ -183,17 +213,45 @@ def prepare_wasm(core: Path, upstream: Path) -> None:
     command(['cargo', 'update', '--workspace'], cwd=core / 'native/worker')
 
 
+def failure_ids(stages: dict[str, str], output: dict[str, str]) -> list[str]:
+    """Extract stable failure identifiers from captured stage output."""
+    failures: list[str] = []
+    for stage in ('upstream-tests', 'worker-build'):
+        if stages.get(stage) == 'fail':
+            failures.append(stage)
+    if stages.get('parity') == 'fail':
+        found = []
+        for line in output.get('parity', '').splitlines():
+            match = re.match(r'^FAIL current case (.+?) \(', line)
+            if match is None:
+                match = re.match(r'^FAIL current row (.+?)(?: \(.*|:| \.\.\.|$)', line)
+            if match is not None and match.group(1) != 'PRESENT':
+                found.append(f'parity:{match.group(1)}')
+        failures.extend(dict.fromkeys(found) or ['parity:unparsed'])
+    if stages.get('corpus') == 'fail':
+        found = [f'corpus:{match.group(1)}' for line in output.get('corpus', '').splitlines()
+                 if (match := re.match(r'^REGRESSION\s+(\S+)', line))]
+        failures.extend(dict.fromkeys(found) or ['corpus:unparsed'])
+    return failures
+
+
 def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...],
-         target_dir: Path | None, report_skips: bool = False) -> int:
+         target_dir: Path | None, report_skips: bool = False,
+         json_out: Path | None = None) -> int:
     head = git(upstream, 'rev-parse', 'HEAD')
     print(f'UPSTREAM HEAD {head}')
     root_target = target_dir or Path(tempfile.mkdtemp(prefix='follow-upstream-target-'))
+    status = {name: 'skipped' for name in ALL_STAGES}
+    output = {name: '' for name in ALL_STAGES}
     try:
         stage_order = tuple(name for name in ALL_STAGES if parity is not None or name != 'parity')
         for stage in stage_order:
             if stage not in stages:
                 if report_skips:
                     print(f'GATE SKIP stage={stage}')
+                continue
+            if stage in ('parity', 'corpus') and status['worker-build'] != 'pass':
+                print(f'GATE SKIP stage={stage}')
                 continue
             print(f'GATE RUN stage={stage}')
             try:
@@ -203,15 +261,19 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
                                       '-p', 'monty-type-checking', '--features', 'monty-proto/worker'],
                                      cwd=upstream,
                                      env={'CARGO_TARGET_DIR': str(root_target / 'upstream-tests')})
+                    output[stage] += result.stdout
                     print(result.stdout, end='')
                 elif stage == 'worker-build':
                     prepare_worker(core, upstream)
                     result = command(['cargo', 'build', '--release', '--bin', 'dart_monty_worker', '--lib',
                                       '--message-format=json-render-diagnostics'], cwd=core / 'native/worker',
                                      env={'CARGO_TARGET_DIR': str(root_target / 'worker-build')})
+                    output[stage] += result.stdout
+                    print(result.stdout, end='')
                     copy_worker(core, result.stdout)
                 elif stage == 'corpus':
                     result = command(['bash', 'tool/test_corpus_worker.sh', 'native'], cwd=core)
+                    output[stage] += result.stdout
                     print(result.stdout, end='')
                 else:
                     assert parity is not None
@@ -219,22 +281,38 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
                         out = Path(temp)
                         result = command(['python3', '-I', str(parity / 'tool/parity/run.py'), 'vm',
                                           '--core', str(core), '--out', str(out)])
+                        output[stage] += result.stdout
                         print(result.stdout, end='')
                         result = command(['python3', '-I', str(parity / 'tool/parity/score.py'), str(out),
                                           '--backends', 'vm', '--json', str(out / 'score.json'), '--markdown', str(out / 'score.md'),
                                           '--assert-current', str(parity / 'tool/parity/baseline-current.json')])
+                        output[stage] += result.stdout
                         print(result.stdout, end='')
             except (OSError, ValueError, subprocess.CalledProcessError) as exc:
                 if isinstance(exc, subprocess.CalledProcessError) and exc.stdout:
+                    output[stage] += exc.stdout
                     print(exc.stdout, end='')
-                print(f'GATE RED stage={stage}')
-                return 1
+                status[stage] = 'fail'
+            else:
+                status[stage] = 'pass'
+        failures = failure_ids(status, output)
+        if failures:
+            first = next(stage for stage in stage_order if status[stage] == 'fail')
+            print(f'GATE RED stage={first}')
+            return 1
         if report_skips and set(stages) != set(stage_order):
             print('GATE INCOMPLETE')
             return 2
         print('GATE GREEN')
         return 0
     finally:
+        if json_out is not None:
+            json_out.parent.mkdir(parents=True, exist_ok=True)
+            json_out.write_text(json.dumps({
+                'head': head,
+                'stages': status,
+                'failures': failure_ids(status, output),
+            }, indent=2) + '\n')
         if target_dir is None:
             shutil.rmtree(root_target, ignore_errors=True)
 
@@ -289,29 +367,65 @@ def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list
     return flags
 
 
-def gate_verdict(gate_ok: bool, stage: str, drift: bool) -> str:
-    """`green`, `red` or `exempt`. A corpus failure while the upstream test cases differ
-    from the pinned ones is `exempt`: the pinned corpus is expected to differ, so it is
-    digested for review instead of stopping the job."""
-    if gate_ok:
-        return 'green'
-    return 'exempt' if stage == 'corpus' and drift else 'red'
+def failure_stage(failure: str) -> str:
+    return failure.split(':', 1)[0]
 
 
-def stop_reason(gate_ok: bool, stage: str, drift: bool) -> str | None:
-    """Only a red gate stops the loop. A flagged commit advances and is digested."""
-    return 'red' if gate_verdict(gate_ok, stage, drift) == 'red' else None
+def judge(known: dict[str, str] | None, failures: list[str], skipped_stages: set[str],
+          sha: str) -> dict[str, Any]:
+    """Judge a gate result against its recorded baseline."""
+    failures = list(dict.fromkeys(failures))
+    if known is None:
+        if not failures:
+            return {'kind': 'green', 'new': [], 'fixed': [], 'baseline': None}
+        return {'kind': 'baseline', 'new': failures, 'fixed': [],
+                'baseline': {failure: sha for failure in failures}}
+    new = [failure for failure in failures if failure not in known]
+    fixed = [failure for failure in known
+             if failure not in failures and failure_stage(failure) not in skipped_stages]
+    baseline = {failure: introduced for failure, introduced in known.items() if failure not in fixed}
+    return {'kind': 'red' if new else 'green', 'new': new, 'fixed': fixed, 'baseline': baseline}
+
+
+def accept_pending(state: dict[str, Any], sha: str) -> dict[str, str]:
+    """Record a reviewed pending failure set in the baseline."""
+    pending = state.get('pending')
+    if not isinstance(pending, dict) or pending.get('sha') != sha:
+        raise ValueError(f'accepted SHA {sha} is not the oldest pending commit')
+    baseline = dict(state.get('baseline', {}))
+    baseline.update({failure: sha for failure in pending['failures']})
+    state['baseline'] = baseline
+    state.pop('pending', None)
+    return baseline
+
+
+def append_evidence(state_file: Path | None, record: dict[str, Any]) -> None:
+    if state_file is None:
+        return
+    evidence = state_file.with_name('evidence.jsonl')
+    item = {key: record[key] for key in ('sha', 'subject', 'flags', 'verdict', 'new', 'fixed')}
+    item['date'] = datetime.now(timezone.utc).date().isoformat()
+    with evidence.open('a') as handle:
+        handle.write(json.dumps(item, separators=(',', ':')) + '\n')
 
 
 def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[dict[str, Any]]:
-    """The commits that advanced with a flag or an exempt corpus failure."""
+    """The commits that advance with flags, recorded failures, or fixes."""
     entries = []
     for commit in commits:
-        if commit['gate'] == 'red' or not (commit['flags'] or commit['gate'] == 'exempt'):
+        if commit['verdict'] == 'red' or not (commit['flags'] or commit['verdict'] == 'baseline'
+                                               or commit['fixed']):
             continue
         reasons = list(commit['flags'])
-        if commit['gate'] == 'exempt':
-            reasons.append('corpus differs from the pinned test cases')
+        baseline = commit.get('baseline', {})
+        if commit['verdict'] == 'baseline':
+            details = ', '.join(f'{failure} (introduced by {baseline[failure]})'
+                                for failure in commit['new'])
+            reasons.append(f'baseline recorded: {len(commit["new"])} failures: {details}')
+        if commit['fixed']:
+            details = ', '.join(f'{failure} (introduced by {baseline.get(failure, "unknown")})'
+                                for failure in commit['fixed'])
+            reasons.append(f'fixed: {details}')
         entries.append({'sha': commit['sha'], 'subject': commit['subject'], 'reason': ', '.join(reasons),
                         'url': f"https://github.com/pydantic/monty/commit/{commit['sha']}",
                         'evidence': run_url})
@@ -376,7 +490,7 @@ def summary(result: dict[str, Any]) -> str:
              f"- Head: `{result['head']}`", f"- Behind: {result['behind']}"]
     for item in result['commits']:
         flags = ', '.join(item['flags']) or 'none'
-        lines.append(f"- `{item['sha']}` {item['subject']} | {item['gate']} {item['stage']} | flags: {flags}")
+        lines.append(f"- `{item['sha']}` {item['subject']} | {item['verdict']} {item['stage']} | flags: {flags}")
     return '\n'.join(lines) + '\n'
 
 
@@ -413,21 +527,30 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         write_result(out, result)
         return 1
 
+    pending = state.get('pending')
+    pending_red = pending is not None and accept is None
     try:
-        accepted, commits = select_commits(commits, accept)
+        if pending is not None:
+            if accept is None or accept != pending['sha']:
+                accepted, commits = None, []
+            else:
+                accepted, commits = select_commits(commits, accept)
+        else:
+            accepted, commits = select_commits(commits, accept)
     except ValueError as exc:
         result = {'pin': pin['commit'], 'start': start, 'last_good': start, 'head': head,
                   'behind': len(commits), 'commits': [], 'status': 'error', 'error': str(exc)}
         write_result(out, result)
         return 1
     if accepted:
+        if pending is not None:
+            accept_pending(state, accepted)
         state['sha'] = accepted
-        write_state(state_file, accepted, 'accepted')
+        write_state(state_file, accepted, 'accepted', baseline=state.get('baseline'), pending=None)
 
     current = state['sha']
-    resume_start = current
     advanced = current != start
-    stopped: str | None = None
+    stopped: str | None = 'red' if pending_red else None
     deadline = time.monotonic() + time_budget_min * 60
     attempted = 0
     for sha in commits:
@@ -438,34 +561,47 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         began = time.monotonic()
         command(['git', '-C', str(repo), 'checkout', '--detach', '--quiet', sha])
         flags = candidate_flags(core, repo, current)
-        drift = testcases_drift(core, repo)
         target = workdir / 'targets'
+        gate_report = workdir / 'gate.json'
         gate_cmd = [sys.executable, '-I', str(Path(__file__).resolve()), 'gate', '--core', str(core),
-                    '--upstream', str(repo), '--target-dir', str(target)]
+                    '--upstream', str(repo), '--target-dir', str(target), '--json-out', str(gate_report)]
         if parity is not None:
             gate_cmd.extend(['--parity', str(parity)])
         outcome = command(gate_cmd, check=False, timeout=max(60.0, deadline - time.monotonic()))
         print(outcome.stdout, end='')
-        gate_ok = outcome.returncode == 0 and 'GATE GREEN' in outcome.stdout
-        stage_match = re.search(r'GATE RED stage=([\w-]+)', outcome.stdout)
-        stage = stage_match.group(1) if stage_match else ('all' if gate_ok else 'unknown')
-        records.append({'sha': sha, 'subject': subject, 'flags': flags,
-                        'gate': gate_verdict(gate_ok, stage, drift), 'stage': stage,
-                        'seconds': round(time.monotonic() - began, 3)})
-        stopped = stop_reason(gate_ok, stage, drift)
-        if stopped:
+        report = json.loads(gate_report.read_text())
+        stage_status = report['stages']
+        known = state.get('baseline')
+        verdict = judge(known, report['failures'],
+                        {stage for stage, value in stage_status.items() if value == 'skipped'}, sha)
+        failed = [stage for stage, value in stage_status.items() if value == 'fail']
+        introductions = dict(known or {})
+        introductions.update(verdict['baseline'] or {})
+        record = {'sha': sha, 'subject': subject, 'flags': flags, 'failures': report['failures'],
+                  'new': verdict['new'], 'fixed': verdict['fixed'], 'verdict': verdict['kind'],
+                  'baseline': introductions, 'stage': failed[0] if failed else 'all',
+                  'seconds': round(time.monotonic() - began, 3)}
+        records.append(record)
+        append_evidence(state_file, record)
+        if verdict['kind'] == 'red':
+            state['pending'] = {'sha': sha, 'failures': verdict['new']}
+            write_state(state_file, current, 'pending', baseline=state.get('baseline'), pending=state['pending'])
+            stopped = 'red'
             break
+        state['baseline'] = verdict['baseline']
         current = sha
         advanced = True
-        write_state(state_file, current, 'flagged' if flags or not gate_ok else 'green')
+        write_state(state_file, current, 'baseline' if verdict['kind'] == 'baseline' else 'green',
+                    baseline=state.get('baseline'), pending=None)
 
-    current = last_good_after(resume_start, records)
     remaining = git(repo, 'rev-list', '--first-parent', f'{current}..origin/main').splitlines()
     budget = stopped is None and bool(remaining)
     status = result_status(not remaining, advanced, stopped, budget)
     result = {'pin': pin['commit'], 'start': start, 'last_good': current, 'head': head,
               'behind': len(remaining), 'commits': records, 'status': status,
-              'flagged': flagged_entries(records, run_url())}
+              'flagged': flagged_entries(records, run_url()),
+              'new': records[-1]['new'] if records else (pending or {}).get('failures', []),
+              'pending': state.get('pending')}
     write_result(out, result)
     return 0 if status in ('caught-up', 'advanced', 'budget') else 1
 
@@ -503,6 +639,7 @@ def main() -> int:
     gate_parser.add_argument('--parity', type=Path)
     gate_parser.add_argument('--stages')
     gate_parser.add_argument('--target-dir', type=Path)
+    gate_parser.add_argument('--json-out', type=Path)
     flags_parser = sub.add_parser('flags')
     flags_parser.add_argument('--core', type=Path, required=True)
     flags_parser.add_argument('--upstream', type=Path, required=True)
@@ -529,7 +666,7 @@ def main() -> int:
         return gate(args.core.resolve(), args.upstream.resolve(),
                     args.parity.resolve() if args.parity else None,
                     selected_stages(args.stages, args.parity), args.target_dir,
-                    args.stages is not None)
+                    args.stages is not None, args.json_out)
     if args.command == 'digest':
         result = json.loads(args.result.read_text())
         week = args.week or week_label(date.today())

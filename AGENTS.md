@@ -152,20 +152,9 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
 
 ### Upstream follow job
 
-The daily `upstream-follow.yaml` job tests first-parent commits from
-`pydantic/monty` main one at a time. It keeps `last_good.json` on the
-`upstream-follow-state` branch. It does not change
-`tool/upstream/upstream-pin.json`.
+The daily `upstream-follow.yaml` job tests first-parent commits from `pydantic/monty` main one at a time and keeps `last_good.json` and `evidence.jsonl` on the `upstream-follow-state` branch without changing `tool/upstream/upstream-pin.json`.
 
-Run it with `workflow_dispatch` to set a commit limit or accept a reviewed
-commit. A red commit (worker build, upstream tests, corpus or parity failure)
-stops the job and opens or updates `Upstream follow: needs attention`. Review
-it, then dispatch with its SHA in `accept` to advance past it. A flagged commit
-(a changed worker mirror file, `.proto`, protocol constant, `test_cases` tree or
-workspace version, or a corpus failure on a `test_cases` change) does not stop
-the job: `last_good` moves past it and the commit is listed in the week's
-comment on the `Upstream follow: weekly digest` issue. Use
-`python3 -I tool/follow_upstream.py run --help` for the local command.
+Run it with `workflow_dispatch` to set a commit limit or accept a reviewed commit. The gate runs every selected stage and records parity and corpus failures by identifier. The first failing commit records a baseline and advances. A red commit adds a failure beyond that baseline, stops the job, and opens or updates `Upstream follow: needs attention`. Dispatch with its SHA in `accept` to record its new failures in the baseline and advance past it. A flagged commit changes a worker mirror file, `.proto`, protocol constant, `test_cases` tree, or workspace version and advances. The weekly digest names the commit that introduces each recorded failure. Use `python3 -I tool/follow_upstream.py run --help` for the local command.
 
 The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
 `last_good` and runs the browser corpus and browser parity on the runner's own
