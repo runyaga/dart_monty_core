@@ -36,7 +36,8 @@ once every task is blocked a `FutureSnapshot` lists the pending call ids.
 
 ## The futures loop
 
-```dart
+<!-- This block includes embedded Python imports and requires caller-provided session state. -->
+```dart skip
 Future<MontySnapshot> answer(MontySnapshot snapshot) async {
   final keys = <int, String>{};
   while (true) {

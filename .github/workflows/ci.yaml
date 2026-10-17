@@ -110,8 +110,6 @@ jobs:
             docs:
               - '**.md'
               - 'docs/**'
-              - 'mkdocs.yml'
-              - 'mkdocs_docs/**'
       # Release override. A PR labelled `release`, or a dispatch with
       # `force_all: true`, makes `code` true whatever the filter said, so the
       # Markdown-only TAG change runs every job (a skipped job is not green).
@@ -267,6 +265,27 @@ jobs:
           [ "$RAN" -eq 25 ] || { echo "FAIL: expected 25 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
+
+  docs-check:
+    name: Documentation checks
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - run: dart pub get
+      - run: python3 test/tool/docs_checks_test.py
+      - run: bash tool/check_docs.sh
+      - if: github.event_name == 'pull_request'
+        run: python3 tool/check_new_urls.py "origin/${{ github.base_ref }}"
 
   # ---------------------------------------------------------------------------
   # The export-boundary check's own controls, sharded

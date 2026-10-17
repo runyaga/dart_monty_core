@@ -346,6 +346,8 @@ The worker executable is not shipped on pub.dev. Either:
   ```
 
   ```dart
+  import 'package:dart_monty_core/dart_monty_core.dart';
+
   Future<void> main(List<String> args) async {
     runMontyWorkerIfChild(args);
     // ...
@@ -380,9 +382,15 @@ above is meant for `dart build cli` apps. Put the worker in the app bundle and
 pass its path:
 
 ```dart
-final helper = '${File(Platform.resolvedExecutable).parent.parent.path}'
-    '/Helpers/dart_monty_worker';
-final monty = await Monty.start(workerLocation: helper);
+import 'dart:io';
+
+import 'package:dart_monty_core/dart_monty_core.dart';
+
+Future<void> main() async {
+  final helper = '${File(Platform.resolvedExecutable).parent.parent.path}'
+      '/Helpers/dart_monty_worker';
+  final monty = await Monty.start(workerLocation: helper);
+}
 ```
 
 `tool/flutter_macos/embed_worker.sh` places the worker at
