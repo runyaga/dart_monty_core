@@ -1,6 +1,7 @@
 /// Defines test-only worker-cache inputs.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
@@ -27,5 +28,5 @@ class WorkerCacheSource {
   final WorkerManifest? manifest;
 
   /// Verifies a cached worker artifact before it is launched.
-  final Future<void> Function(File, WorkerArtifact)? verify;
+  final FutureOr<void> Function(File, WorkerArtifact)? verify;
 }

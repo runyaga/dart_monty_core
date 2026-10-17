@@ -8,6 +8,7 @@ import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
+import 'package:dart_monty_core/src/worker/worker_fingerprint.dart';
 import 'package:dart_monty_core/src/worker/worker_install_error.dart';
 import 'package:dart_monty_core/src/worker/worker_install_request.dart';
 import 'package:dart_monty_core/src/worker/worker_install_result.dart';
@@ -28,7 +29,11 @@ Future<WorkerInstall> installWorker(WorkerInstallRequest request) async {
   final archive = _requiredArchive(request.artifact);
   await _createCacheRoot(request.cacheRoot);
   final installedPath = workerCacheFile(request.cacheRoot, request.artifact);
-  final existing = await _existingInstall(installedPath, request.artifact);
+  final existing = await _existingInstall(
+    installedPath,
+    request.artifact,
+    request.manifestVersion,
+  );
   if (existing != null) return existing;
   await _sweepStaging(request.cacheRoot, request.staleAfter);
   final lock = await _acquireLock(
@@ -50,7 +55,11 @@ Future<WorkerInstall> _installWithLock(
   Directory? staging;
   try {
     await request.onStage?.call('afterLock');
-    final existing = await _existingInstall(installedPath, request.artifact);
+    final existing = await _existingInstall(
+      installedPath,
+      request.artifact,
+      request.manifestVersion,
+    );
     if (existing != null) return existing;
     staging = await _createStaging(request);
     await _stageWorker(request, archive, staging);
@@ -61,19 +70,12 @@ Future<WorkerInstall> _installWithLock(
       request.artifact,
       request.onStage,
     );
-    if (!published) {
-      return WorkerInstall(
-        path: installedPath,
-        alreadyInstalled: true,
-        downloaded: true,
-      );
-    }
-    await _verifyInstalledFile(File(installedPath), request.artifact);
 
-    return WorkerInstall(
-      path: installedPath,
-      alreadyInstalled: false,
-      downloaded: true,
+    return await _completeInstall(
+      installedPath,
+      request.artifact,
+      request.manifestVersion,
+      published,
     );
   } on WorkerInstallError {
     rethrow;
@@ -88,6 +90,27 @@ Future<WorkerInstall> _installWithLock(
   }
 }
 
+Future<WorkerInstall> _completeInstall(
+  String installedPath,
+  WorkerArtifact artifact,
+  String? manifestVersion,
+  bool published,
+) async {
+  final file = File(installedPath);
+  final observed = statWorkerFingerprint(
+    file,
+    workerEntryKey(artifact, version: manifestVersion),
+  );
+  await _verifyInstalledFile(file, artifact);
+  _writeFingerprintBestEffort(file, observed);
+
+  return WorkerInstall(
+    path: installedPath,
+    alreadyInstalled: !published,
+    downloaded: true,
+  );
+}
+
 WorkerArchive _requiredArchive(WorkerArtifact artifact) {
   final archive = artifact.archive;
   if (archive != null) return archive;
@@ -100,10 +123,29 @@ WorkerArchive _requiredArchive(WorkerArtifact artifact) {
 Future<WorkerInstall?> _existingInstall(
   String installedPath,
   WorkerArtifact artifact,
+  String? manifestVersion,
 ) async {
+  final file = File(installedPath);
+  final observed = statWorkerFingerprint(
+    file,
+    workerEntryKey(artifact, version: manifestVersion),
+  );
   if (!await _validFile(installedPath, artifact)) return null;
+  _writeFingerprintBestEffort(file, observed);
 
   return _alreadyInstalled(installedPath);
+}
+
+void _writeFingerprintBestEffort(
+  File file,
+  WorkerFingerprint? observed,
+) {
+  if (observed == null) return;
+  try {
+    writeWorkerFingerprint(file, observed);
+  } on FileSystemException {
+    // A verified worker remains usable when its cache is read-only.
+  }
 }
 
 WorkerInstall _alreadyInstalled(String installedPath) => WorkerInstall(
@@ -237,6 +279,21 @@ Future<bool> _validFile(String filePath, WorkerArtifact artifact) async {
   }
 }
 
+Future<({File file, WorkerFingerprint? observed})?> _validFingerprint(
+  String filePath,
+  WorkerArtifact artifact,
+  String? manifestVersion,
+) async {
+  final file = File(filePath);
+  final observed = statWorkerFingerprint(
+    file,
+    workerEntryKey(artifact, version: manifestVersion),
+  );
+  if (!await _validFile(filePath, artifact)) return null;
+
+  return (file: file, observed: observed);
+}
+
 Future<void> _verifyInstalledFile(File file, WorkerArtifact artifact) async {
   await verifyWorkerFile(file, artifact);
   if (!Platform.isWindows && !_isExecutable(file)) {
@@ -259,7 +316,14 @@ Future<_HeldLock?> _acquireLock(
   while (true) {
     final held = await _tryAcquireLock(request, lock);
     if (held != null) return held;
-    if (await _validFile(installedPath, request.artifact)) {
+    final verified = await _validFingerprint(
+      installedPath,
+      request.artifact,
+      request.manifestVersion,
+    );
+    if (verified != null) {
+      _writeFingerprintBestEffort(verified.file, verified.observed);
+
       return null;
     }
     await _breakStaleLock(

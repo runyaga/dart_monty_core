@@ -12,6 +12,7 @@ final class WorkerInstallRequest {
     this.staleAfter = const Duration(hours: 1),
     this.lockWait = const Duration(minutes: 2),
     this.lockStaleAfter = const Duration(minutes: 10),
+    this.manifestVersion,
     this.onStage,
   });
 
@@ -35,6 +36,9 @@ final class WorkerInstallRequest {
 
   /// Age at which an installation lock is considered stale.
   final Duration lockStaleAfter;
+
+  /// Manifest version that selected [artifact], when available.
+  final String? manifestVersion;
 
   /// Runs named test-only synchronization stages.
   final Future<void> Function(String stage)? onStage;
