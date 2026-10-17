@@ -24,6 +24,7 @@ void main() {
   _customFiles();
   _seedReplacement();
   _reads();
+  _unpairedSurrogates();
   _writes();
   _open();
   _directories();
@@ -560,5 +561,55 @@ void _seedReplacement() {
       const MontyString('replacement'),
     );
     expect(await call(fs, 'Path.exists', '/a/b'), const MontyBool(false));
+  });
+}
+
+void _unpairedSurrogates() {
+  const lone = '\ud800x';
+  final encodeError = raises(
+    'UnicodeEncodeError',
+    r"'utf-8' codec can't encode character '\ud800' in position 0: "
+        'surrogates not allowed',
+  );
+  OSAccess seeded() => OSAccess(files: [MemoryFile('/f', lone)]);
+
+  for (final (op, value) in <(String, MontyValue?)>[
+    ('Path.read_bytes', null),
+    ('Path.append_bytes', const MontyBytes([122])),
+    ('Path.stat', null),
+  ]) {
+    test('$op of text with an unpaired surrogate is a UnicodeEncodeError', () {
+      expect(call(seeded(), op, '/f', value), encodeError);
+    });
+  }
+
+  test('text with an unpaired surrogate reads and appends as text', () async {
+    final fs = seeded();
+    expect(
+      await call(fs, 'Path.read_text', '/f'),
+      const MontyString(lone),
+    );
+    expect(
+      await call(fs, 'Path.append_text', '/f', const MontyString('q')),
+      const MontyInt(1),
+    );
+    expect(
+      await call(fs, 'Path.read_text', '/f'),
+      const MontyString('${lone}q'),
+    );
+  });
+
+  test('a run of surrogates is reported as a range', () {
+    // A valid pair is one code point, so the run starts after it.
+    final run = String.fromCharCodes([0x61, 0x10000, 0xd800, 0xd800]);
+    final fs = OSAccess(files: [MemoryFile('/f', run)]);
+    expect(
+      call(fs, 'Path.read_bytes', '/f'),
+      raises(
+        'UnicodeEncodeError',
+        "'utf-8' codec can't encode characters in position 2-3: "
+            'surrogates not allowed',
+      ),
+    );
   });
 }

@@ -61,9 +61,20 @@ final class _OsAccessFiles {
 
 Uint8List _bytes(Object content) => switch (checkedContent(content)) {
   final Uint8List bytes => bytes,
-  final String text => Uint8List.fromList(utf8.encode(text)),
+  final String text => _encoded(text),
   _ => throw StateError('unreachable content'),
 };
+
+/// [text] as UTF-8, or Python's `UnicodeEncodeError` for an unpaired
+/// surrogate, which Dart would encode as U+FFFD.
+Uint8List _encoded(String text) {
+  if (surrogateEncodeError(text) case final message?) {
+    throw ExternalException('UnicodeEncodeError', message);
+  }
+
+  return Uint8List.fromList(utf8.encode(text));
+}
+
 String _text(Object content) {
   if (content is String) return content;
   final bytes = _bytes(content);
