@@ -127,23 +127,24 @@ jobs:
             exit "$code"
           }
           trap failed ERR
+          fail_unexpected() {
+            return "$1"
+          }
           dart pub get
-          set +e
-          python3 -I tool/check_worker_mirror.py --candidate "$TAG" > "$RUNNER_TEMP/mirror-diff.txt"
-          mirror_rc=$?
-          set -e
-          [ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ]
-          set +e
+          mirror_rc=0
+          # check_worker_mirror returns 1 for an expected candidate diff; 0 means no diff.
+          python3 -I tool/check_worker_mirror.py --candidate "$TAG" > "$RUNNER_TEMP/mirror-diff.txt" || mirror_rc=$?
+          [ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ] || fail_unexpected "$mirror_rc"
+          apply_rc=0
+          # apply returns 3 only while the release is absent from PyPI; 0 completes the bump.
           python3 -I tool/bump_upstream.py apply --tag "$TAG" --core "$GITHUB_WORKSPACE" \
-            --workdir "$RUNNER_TEMP/upstream-bump"
-          apply_rc=$?
-          set -e
+            --workdir "$RUNNER_TEMP/upstream-bump" || apply_rc=$?
           if [ "$apply_rc" -eq 3 ]; then
             echo "::notice::Upstream $TAG is not published on PyPI yet; retrying tomorrow."
             echo 'published=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          [ "$apply_rc" -eq 0 ] || exit "$apply_rc"
+          [ "$apply_rc" -eq 0 ] || fail_unexpected "$apply_rc"
           cd native/worker && cargo update --workspace && cd ../..
           python3 -I tool/bump_upstream.py pin-lock --core "$GITHUB_WORKSPACE" \
             --version "${TAG#v}"

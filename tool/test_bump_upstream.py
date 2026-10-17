@@ -13,6 +13,7 @@ from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name('bump_upstream.py')
+RELEASE_WORKFLOW = SCRIPT.parent.parent / '.github/workflows/upstream-release-bump.yaml'
 SPEC = importlib.util.spec_from_file_location('bump_upstream', SCRIPT)
 assert SPEC and SPEC.loader
 BUMP = importlib.util.module_from_spec(SPEC)
@@ -91,34 +92,56 @@ class BumpUpstreamTest(unittest.TestCase):
         client = 'pydantic-monty-client'
         runtime = 'pydantic-monty-runtime'
         meta = 'pydantic-monty'
+        client_filename = 'pydantic_monty_client'
+        runtime_filename = 'pydantic_monty_runtime'
+        meta_filename = 'pydantic_monty'
         files = [
-            artifact(f'{client}-{version}.tar.gz', 'a', 'sdist'),
-            artifact(f'{client}-{version}-cp312-cp312-manylinux_2_28_x86_64.whl', 'b'),
-            artifact(f'{client}-{version}-cp312-cp312-macosx_11_0_arm64.whl', 'c'),
-            artifact(f'{client}-{version}-cp313-cp313-manylinux_2_28_x86_64.whl', 'd'),
-            artifact(f'{client}-{version}-cp313-cp313-macosx_11_0_arm64.whl', 'e'),
-            artifact(f'{client}-{version}-cp314-cp314-manylinux_2_28_x86_64.whl', 'f'),
-            artifact(f'{client}-{version}-cp314-cp314-macosx_11_0_arm64.whl', 'g'),
-            artifact(f'{client}-{version}-cp314-cp314t-manylinux_2_28_x86_64.whl', 'h'),
-            artifact(f'{client}-{version}-cp314-cp314t-macosx_11_0_arm64.whl', 'i'),
-            artifact(f'{client}-{version}-cp314-cp314-manylinux_2_28_aarch64.whl', 'j'),
-            artifact(f'{client}-{version}-cp314-cp314-win_amd64.whl', 'k'),
-            artifact(f'{client}-{version}-cp314-cp314-musllinux_1_2_x86_64.whl', 'l'),
-            artifact(f'{runtime}-{version}.tar.gz', 'm', 'sdist'),
-            artifact(f'{runtime}-{version}-py3-none-manylinux_2_28_x86_64.whl', 'n'),
-            artifact(f'{runtime}-{version}-py3-none-macosx_11_0_arm64.whl', 'o'),
-            artifact(f'{runtime}-{version}-py3-none-any.whl', 'p'),
-            artifact(f'{meta}-{version}.tar.gz', 'q', 'sdist'),
-            artifact(f'{meta}-{version}-py3-none-any.whl', 'r'),
+            artifact(f'{client_filename}-{version}.tar.gz', 'a', 'sdist'),
+            artifact(f'{client_filename}-{version}-cp312-cp312-manylinux_2_28_x86_64.whl', 'b'),
+            artifact(f'{client_filename}-{version}-cp312-cp312-macosx_11_0_arm64.whl', 'c'),
+            artifact(f'{client_filename}-{version}-cp313-cp313-manylinux_2_28_x86_64.whl', 'd'),
+            artifact(f'{client_filename}-{version}-cp313-cp313-macosx_11_0_arm64.whl', 'e'),
+            artifact(f'{client_filename}-{version}-cp314-cp314-manylinux_2_28_x86_64.whl', 'f'),
+            artifact(f'{client_filename}-{version}-cp314-cp314-macosx_11_0_arm64.whl', 'g'),
+            artifact(f'{client_filename}-{version}-cp314-cp314t-manylinux_2_28_x86_64.whl', 'h'),
+            artifact(f'{client_filename}-{version}-cp314-cp314t-macosx_11_0_arm64.whl', 'i'),
+            artifact(f'{client_filename}-{version}-cp314-cp314-manylinux_2_28_aarch64.whl', 'j'),
+            artifact(f'{client_filename}-{version}-cp314-cp314-win_amd64.whl', 'k'),
+            artifact(f'{client_filename}-{version}-cp314-cp314-musllinux_1_2_x86_64.whl', 'l'),
+            artifact(f'{runtime_filename}-{version}.tar.gz', 'm', 'sdist'),
+            artifact(f'{runtime_filename}-{version}-py3-none-manylinux_2_28_x86_64.whl', 'n'),
+            artifact(f'{runtime_filename}-{version}-py3-none-macosx_11_0_arm64.whl', 'o'),
+            artifact(f'{runtime_filename}-{version}-py3-none-any.whl', 'p'),
+            artifact(f'{meta_filename}-{version}.tar.gz', 'q', 'sdist'),
+            artifact(f'{meta_filename}-{version}-py3-none-any.whl', 'r'),
         ]
         payload = {'info': {'version': version}, 'urls': files}
 
+        self.assertTrue(BUMP.accepted_pypi_file(
+            client, artifact(f'{client}-{version}-cp312-cp312-macosx_11_0_arm64.whl', 'z')))
         self.assertCountEqual([digest * 64 for digest in 'abcdefg'],
                               BUMP.selected_hashes(client, payload))
         self.assertCountEqual([digest * 64 for digest in 'mno'],
                               BUMP.selected_hashes(runtime, payload))
         self.assertCountEqual([digest * 64 for digest in 'qr'],
                               BUMP.selected_hashes(meta, payload))
+
+    def test_release_workflow_captures_expected_nonzero_statuses(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text()
+
+        self.assertNotIn('          set +e\n', workflow)
+        self.assertIn(
+            '# check_worker_mirror returns 1 for an expected candidate diff; 0 means no diff.',
+            workflow)
+        self.assertIn('> "$RUNNER_TEMP/mirror-diff.txt" || mirror_rc=$?', workflow)
+        self.assertIn(
+            '# apply returns 3 only while the release is absent from PyPI; 0 completes the bump.',
+            workflow)
+        self.assertIn('--workdir "$RUNNER_TEMP/upstream-bump" || apply_rc=$?', workflow)
+        self.assertIn('          fail_unexpected() {\n            return "$1"\n          }', workflow)
+        self.assertIn('[ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ] || fail_unexpected "$mirror_rc"',
+                      workflow)
+        self.assertIn('[ "$apply_rc" -eq 0 ] || fail_unexpected "$apply_rc"', workflow)
 
     def test_worker_mirror_module_loads_by_file_path(self) -> None:
         class Loader:

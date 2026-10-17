@@ -104,7 +104,12 @@ def rewrite_pin_text(text: str, *, version: str, commit: str,
 def accepted_pypi_file(name: str, file: dict[str, Any]) -> bool:
     """Whether a PyPI artifact is supported for one pinned distribution."""
     filename = str(file.get('filename', ''))
-    if not re.match(rf'^{re.escape(name)}-\d', filename):
+    match = re.match(r'^(.+)-\d', filename)
+    if not match:
+        return False
+    normalized_name = re.sub(r'[-.]', '_', name).lower()
+    normalized_filename_name = re.sub(r'[-.]', '_', match.group(1)).lower()
+    if normalized_filename_name != normalized_name:
         return False
     if file.get('packagetype') == 'sdist':
         return True
