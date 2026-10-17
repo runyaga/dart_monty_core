@@ -325,6 +325,24 @@ class FollowUpstreamTest(unittest.TestCase):
             once = FOLLOW.with_patch_table('[package]\nname = "x"\n', table)
         self.assertEqual(once, FOLLOW.with_patch_table(once, table))
 
+    def test_empty_manifest_targets_preserves_schema_and_version(self) -> None:
+        source = ('const workerManifestJson = '
+                  '\'{"schema":1,"version":"v0.110.0-dev.3","targets":'
+                  '{"macos-arm64":{"worker":{"file":"dart_monty_worker"}}}}\';\n')
+        emptied = FOLLOW.empty_manifest_targets(source)
+        self.assertEqual('const workerManifestJson = '
+                         '\'{"schema":1,"version":"v0.110.0-dev.3","targets":{}}\';\n', emptied)
+        self.assertIn('"schema":1', emptied)
+        self.assertIn('"version":"v0.110.0-dev.3"', emptied)
+
+    def test_empty_manifest_targets_rejects_missing_targets(self) -> None:
+        with self.assertRaisesRegex(ValueError, 'targets'):
+            FOLLOW.empty_manifest_targets('const workerManifestJson = \'{"schema":1}\';\n')
+
+    def test_empty_manifest_targets_is_idempotent(self) -> None:
+        source = 'const workerManifestJson = \'{"schema":1,"targets":{}}\';\n'
+        self.assertEqual(source, FOLLOW.empty_manifest_targets(FOLLOW.empty_manifest_targets(source)))
+
     def test_corpus_remains_last(self) -> None:
         self.assertEqual('corpus', FOLLOW.ALL_STAGES[-1])
         self.assertEqual(('upstream-tests', 'worker-build', 'corpus'), FOLLOW.selected_stages(None, None))

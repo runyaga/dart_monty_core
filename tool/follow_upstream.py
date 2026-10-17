@@ -160,16 +160,37 @@ def with_patch_table(text: str, table: str) -> str:
     return without.rstrip() + '\n\n' + table
 
 
+def empty_manifest_targets(text: str) -> str:
+    """Return a bundled-worker manifest source with its JSON targets map emptied."""
+    marker = '"targets":{'
+    start = text.find(marker)
+    if start == -1:
+        raise ValueError('worker manifest has no recognisable "targets" object')
+    opening = start + len(marker) - 1
+    depth = 0
+    for index in range(opening, len(text)):
+        char = text[index]
+        if char == '{':
+            depth += 1
+        elif char == '}':
+            depth -= 1
+            if depth == 0:
+                return text[:opening] + '{}' + text[index + 1:]
+    raise ValueError('worker manifest has an unbalanced "targets" object')
+
+
 def prepare_worker(core: Path, upstream: Path) -> str:
     """Seed the worker from an upstream checkout. This never touches the pin."""
     command(['git', '-C', str(core), 'checkout', '--', 'native/worker/Cargo.toml',
-             'native/worker/Cargo.lock'])
+             'native/worker/Cargo.lock', 'lib/src/worker/worker_manifest_data.dart'])
     pin = load_pin(core)
     version = workspace_version(upstream)
     manifest = core / 'native/worker/Cargo.toml'
     changed = rewrite_monty_versions(manifest.read_text(), str(pin['version']), version)
     manifest.write_text(with_patch_table(changed, patch_table(upstream)))
     shutil.copyfile(upstream / 'Cargo.lock', core / 'native/worker/Cargo.lock')
+    worker_manifest = core / 'lib/src/worker/worker_manifest_data.dart'
+    worker_manifest.write_text(empty_manifest_targets(worker_manifest.read_text()))
     print(f'UPSTREAM VERSION {version}')
     print('WORKER TREE patched from upstream lock and local crate paths')
     return version
@@ -346,6 +367,7 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
         print('GATE GREEN')
         return 0
     finally:
+        command(['git', '-C', str(core), 'checkout', '--', 'lib/src/worker/worker_manifest_data.dart'])
         if json_out is not None:
             json_out.parent.mkdir(parents=True, exist_ok=True)
             json_out.write_text(json.dumps({

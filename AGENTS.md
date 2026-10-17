@@ -154,6 +154,8 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
 
 The daily `upstream-follow.yaml` job tests first-parent commits from `pydantic/monty` main one at a time and keeps `last_good.json` and `evidence.jsonl` on the `upstream-follow-state` branch without changing `tool/upstream/upstream-pin.json`.
 
+The gate blanks the embedded worker manifest so the built worker is the one tested.
+
 Run it with `workflow_dispatch` to set a commit limit or accept the exact reviewed pending SHA. The gate runs every selected stage and records parity and corpus failures by identifier. A clean first commit records an empty baseline; the first ordinary failure records a baseline and advances. A red commit adds a failure beyond that baseline, stops the job, and opens or updates `Upstream follow: needs attention`. Dispatch with that pending SHA in `accept` to record its new failures and fixes, update the baseline, and advance past it; any other SHA is an error. Stage-level and incomplete gate-report failures are always red and are never baselined. A flagged commit changes a worker mirror file, `.proto`, protocol constant, `test_cases` tree, or workspace version and advances. The weekly digest names the commit that introduces each recorded failure. Use `python3 -I tool/follow_upstream.py run --help` for the local command.
 
 The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
