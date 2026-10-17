@@ -9,7 +9,7 @@ import subprocess
 import sys
 from typing import Optional
 from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+import urllib.request
 
 from docs_check_common import pages
 
@@ -38,9 +38,9 @@ def urls_from_diff(text: str) -> list[str]:
 
 def fetch(url: str, method: str = 'HEAD') -> int:
     """Fetch one URL and return its final HTTP status."""
-    request = Request(url, method=method, headers={'User-Agent': USER_AGENT})
+    request = urllib.request.Request(url, method=method, headers={'User-Agent': USER_AGENT})
     try:
-        with urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=20) as response:
             return response.status
     except HTTPError as error:
         return error.code

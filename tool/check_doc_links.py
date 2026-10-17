@@ -12,6 +12,8 @@ from docs_check_common import display, headings, pages, visible_lines, without_i
 
 LINK = re.compile(r'!?\[[^]]*\]\(\s*(<[^>]*>|[^\s)]+)')
 DEFINITION = re.compile(r'^\s{0,3}\[([^]]+)\]:\s*(<[^>]*>|[^\s]+)')
+DEFINITION_START = re.compile(r'^\s{0,3}\[([^]]+)\]:\s*$')
+DEFINITION_DESTINATION = re.compile(r'^\s+(<[^>]*>|[^\s]+)')
 REFERENCE = re.compile(r'!?\[([^]]+)\]\[([^]]*)\]')
 SHORTCUT = re.compile(r'(?<!\])!?\[([^]]+)\](?![\[(])')
 
@@ -42,12 +44,31 @@ def check(root: Path) -> list[str]:
         lines = visible_lines(page)
         definitions: dict[str, str] = {}
         definition_lines = set()
-        for number, line in lines:
+        index = 0
+        while index < len(lines):
+            number, line = lines[index]
             match = DEFINITION.match(without_inline_code(line))
             if match:
                 definitions[label(match.group(1))] = match.group(2)
                 definition_lines.add(number)
                 findings.extend(check_target(root, page, number, match.group(2)))
+                index += 1
+                continue
+            start = DEFINITION_START.match(without_inline_code(line))
+            if start and index + 1 < len(lines):
+                destination_number, destination_line = lines[index + 1]
+                destination = (
+                    DEFINITION_DESTINATION.match(without_inline_code(destination_line))
+                    if destination_number == number + 1 else None
+                )
+                if destination:
+                    target = destination.group(1)
+                    definitions[label(start.group(1))] = target
+                    definition_lines.update({number, destination_number})
+                    findings.extend(check_target(root, page, number, target))
+                    index += 2
+                    continue
+            index += 1
         for number, line in lines:
             text = without_inline_code(line)
             for raw in LINK.findall(text):

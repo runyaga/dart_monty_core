@@ -84,6 +84,22 @@ class DocsChecksTest(unittest.TestCase):
         self.assertTrue(any('reference label does not exist: missing' in item for item in findings))
         self.assertTrue(any('linked file does not exist: docs/missing.md' in item for item in findings))
 
+    def test_links_resolve_multi_line_reference_definitions(self) -> None:
+        (self.root / 'docs/target.md').write_text('# Target\n', encoding='utf-8')
+        (self.root / 'README.md').write_text(
+            '[missing]:\n  docs/missing.md\n'
+            '[existing]:\n  docs/target.md#target\n\n'
+            '[bad][missing] [good][existing]\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            [
+                'README.md:1: linked file does not exist: docs/missing.md',
+                'README.md:6: linked file does not exist: docs/missing.md',
+            ],
+            check_doc_links.check(self.root),
+        )
+
     def test_heading_slugs_strip_formatting_and_avoid_existing_candidates(self) -> None:
         (self.root / 'README.md').write_text(
             '# *A* `word` [link](target.md) [again][ref] and name_value!\n'
@@ -92,6 +108,21 @@ class DocsChecksTest(unittest.TestCase):
         )
         self.assertEqual(
             {'a-word-link-again-and-name_value', 'a', 'a-1', 'a-1-1'},
+            docs_check_common.headings(self.root / 'README.md'),
+        )
+
+    def test_heading_slugs_preserve_intra_word_and_double_underscores(self) -> None:
+        (self.root / 'README.md').write_text(
+            '# _Emphasis_\n# foo__bar\n# `__init__`\n', encoding='utf-8')
+        self.assertEqual(
+            {'emphasis', 'foo__bar', '__init__'},
+            docs_check_common.headings(self.root / 'README.md'),
+        )
+
+    def test_heading_collision_skips_an_already_used_suffix(self) -> None:
+        (self.root / 'README.md').write_text('# Same\n# Same-1\n# Same\n', encoding='utf-8')
+        self.assertEqual(
+            {'same', 'same-1', 'same-2'},
             docs_check_common.headings(self.root / 'README.md'),
         )
 
@@ -112,6 +143,19 @@ class DocsChecksTest(unittest.TestCase):
             [
                 'README.md:1: unknown API name: Unknown()',
                 'README.md:1: unknown API name: unknownCall()',
+            ],
+            check_doc_names.check(self.root),
+        )
+
+    def test_names_check_nested_generics(self) -> None:
+        (self.root / 'README.md').write_text(
+            '`Unknown<List<String>>` and `Unknown<List<String>>()`\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            [
+                'README.md:1: unknown API name: Unknown<List<String>>',
+                'README.md:1: unknown API name: Unknown<List<String>>()',
             ],
             check_doc_names.check(self.root),
         )
@@ -197,15 +241,29 @@ class DocsChecksTest(unittest.TestCase):
         finally:
             check_new_urls.fetch = original
 
+    def test_real_url_fetch_preserves_urlopen_error_text(self) -> None:
+        with patch.object(
+            check_new_urls.urllib.request,
+            'urlopen',
+            side_effect=OSError('network unavailable'),
+        ):
+            self.assertEqual(
+                ['https://example.test:1: URL unreachable: OSError: network unavailable'],
+                check_new_urls.check_urls(['https://example.test']),
+            )
+
     def test_snippets_handle_analyzer_exit_status_and_output(self) -> None:
-        warning = subprocess.CompletedProcess(
-            [], 2, 'Analyzing snippets...\nwarning - note\n1 issue found.\n', '')
-        with patch.object(check_doc_snippets.subprocess, 'run', return_value=warning):
+        accepted_error = subprocess.CompletedProcess(
+            [], 1, 'Analyzing snippets...\nwarning - note\n1 issue found.\n', '')
+        with patch.object(check_doc_snippets.subprocess, 'run', return_value=accepted_error):
             self.assertEqual([], check_doc_snippets.check(self.root))
-        error = subprocess.CompletedProcess(
-            [], 3, 'Analyzing snippets...\n  error - invalid code\n1 issue found.\n', '')
-        with patch.object(check_doc_snippets.subprocess, 'run', return_value=error):
-            self.assertTrue(check_doc_snippets.check(self.root))
+        unreadable_error = subprocess.CompletedProcess(
+            [], 3, 'Analyzing snippets...\n1 issue found.\n', '')
+        with patch.object(check_doc_snippets.subprocess, 'run', return_value=unreadable_error):
+            self.assertEqual(
+                ['tool/check_doc_snippets.py:1: dart analyze reported errors that this check could not read'],
+                check_doc_snippets.check(self.root),
+            )
         startup = subprocess.CompletedProcess([], 255, 'startup failed\nmore detail\n', '')
         with patch.object(check_doc_snippets.subprocess, 'run', return_value=startup):
             findings = check_doc_snippets.check(self.root)

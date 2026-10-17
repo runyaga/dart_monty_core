@@ -51,14 +51,17 @@ def slug(text: str) -> str:
     """Build the GitHub-style heading slug used by this repository."""
     text = re.sub(r'!?\[([^]]*)\]\([^)]*\)', r'\1', text)
     text = re.sub(r'!?\[([^]]*)\]\[[^]]*\]', r'\1', text)
-    text = text.replace('`', '').replace('*', '')
-    text = re.sub(r'(?<!\w)_{1,2}(?=\S)|(?<=\S)_{1,2}(?!\w)', '', text)
-    clean = ''.join(
-        char for index, char in enumerate(text.lower())
-        if char.isalnum() or char in ' -'
-        or (char == '_' and 0 < index < len(text) - 1
-            and text[index - 1].isalnum() and text[index + 1].isalnum())
-    )
+    text = text.replace('`', '')
+    for delimiter in ('_', '*'):
+        escaped = re.escape(delimiter)
+        text = re.sub(
+            rf'(?<![\w{escaped}]){escaped}(?!{escaped})'
+            rf'(\S(?:.*?\S)?)'
+            rf'(?<!{escaped}){escaped}(?![\w{escaped}])',
+            r'\1',
+            text,
+        )
+    clean = ''.join(char for char in text.lower() if char.isalnum() or char in ' -_')
     return clean.replace(' ', '-')
 
 

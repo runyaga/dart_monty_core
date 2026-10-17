@@ -17,6 +17,24 @@ CALL = re.compile(
 )
 
 
+def without_trailing_generics(candidate: str) -> str | None:
+    """Remove balanced trailing generic groups from an API reference."""
+    while candidate.endswith('>'):
+        depth = 0
+        for index in range(len(candidate) - 1, -1, -1):
+            char = candidate[index]
+            if char == '>':
+                depth += 1
+            elif char == '<':
+                depth -= 1
+                if depth == 0:
+                    candidate = candidate[:index]
+                    break
+        else:
+            return None
+    return candidate
+
+
 def api_name(span: str) -> str | None:
     """Return a checkable API name from a supported inline-code form."""
     candidate = span
@@ -25,9 +43,9 @@ def api_name(span: str) -> str | None:
     if call:
         candidate = call.group(1)
         called = True
-    generic = re.fullmatch(r'(.+)<.*>', candidate)
-    if generic:
-        candidate = generic.group(1)
+    candidate = without_trailing_generics(candidate)
+    if candidate is None:
+        return None
     if NAME.fullmatch(candidate):
         return candidate
     if called and LOWER_CALL.fullmatch(candidate):
