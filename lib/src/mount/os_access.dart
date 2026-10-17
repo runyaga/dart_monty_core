@@ -7,6 +7,7 @@ import 'package:dart_monty_core/src/mount/abstract_file.dart';
 import 'package:dart_monty_core/src/mount/file_content.dart';
 import 'package:dart_monty_core/src/mount/memory_file.dart';
 import 'package:dart_monty_core/src/mount/stat_result.dart';
+import 'package:dart_monty_core/src/platform/double_text.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart';
 import 'package:dart_monty_core/src/platform/os_call_not_handled_exception.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart'
@@ -17,6 +18,7 @@ part 'os_access_tree.dart';
 part 'os_access_files.dart';
 part 'os_access_directories.dart';
 part 'os_access_defaults.dart';
+part 'os_access_repr.dart';
 
 /// Upstream's memory filesystem and host OS defaults, callable as an OsHandler.
 ///
@@ -116,6 +118,18 @@ String _rootDir(String path) {
   return root;
 }
 
+/// The calls whose handler coerces a file handle with upstream's
+/// `path_from_arg`: the reads, writes and appends. Every other call takes a
+/// path only, except `Path.is_symlink`, which ignores its argument.
+const _handleCalls = {
+  'Path.read_text',
+  'Path.read_bytes',
+  'Path.write_text',
+  'Path.write_bytes',
+  'Path.append_text',
+  'Path.append_bytes',
+};
+
 const _queryCalls = {
   'Path.exists',
   'Path.is_file',
@@ -132,7 +146,10 @@ MontyValue _dispatchFile(
   List<MontyValue> args,
   Map<String, MontyValue> kwargs,
 ) {
-  final path = _path(args.firstOrNull);
+  // Upstream's `path_is_symlink` never looks at its argument.
+  if (op == 'Path.is_symlink') return const MontyBool(false);
+  if (op == 'Path.mkdir') _checkMkdirKeywords(kwargs);
+  final path = _path(args.firstOrNull, handleOk: _handleCalls.contains(op));
   final data = args.elementAtOrNull(1);
   if (_queryCalls.contains(op)) return _pathQuery(tree, op, path);
   if (op == 'open') {
@@ -152,7 +169,6 @@ MontyValue _pathQuery(_OsAccessTree tree, String op, String path) =>
       'Path.exists' => MontyBool(tree.lookup(path) != null),
       'Path.is_file' => MontyBool(tree.lookup(path) is AbstractFile),
       'Path.is_dir' => MontyBool(tree.lookup(path) is _Directory),
-      'Path.is_symlink' => const MontyBool(false),
       _ => MontyString(path.startsWith('/') ? path : purePosixPath('/$path')),
     };
 
@@ -169,10 +185,10 @@ MontyValue _readWrite(
   return switch (op) {
     'Path.read_text' => MontyString(_text(tree.file(path).readContent())),
     'Path.read_bytes' => MontyBytes(_bytes(tree.file(path).readContent())),
-    'Path.write_text' => files.write(path, _string(data)),
-    'Path.write_bytes' => files.write(path, _payloadBytes(data)),
-    'Path.append_text' => files.append(path, _string(data)),
-    'Path.append_bytes' => files.append(path, _payloadBytes(data)),
+    'Path.write_text' => files.write(path, _payload(data, 'a str')),
+    'Path.write_bytes' => files.write(path, _payload(data, 'bytes')),
+    'Path.append_text' => files.append(path, _payload(data, 'a str')),
+    'Path.append_bytes' => files.append(path, _payload(data, 'bytes')),
     'Path.stat' => files.stat(path),
     'Path.unlink' => files.unlink(path),
     _ => _directoryCall(tree, op, path, data, kwargs),
@@ -189,17 +205,35 @@ MontyValue _directoryCall(
   final dirs = _OsAccessDirectories(tree);
 
   return switch (op) {
-    'Path.mkdir' => dirs.mkdir(
-      path,
-      parents: kwargs['parents'] == const MontyBool(true),
-      existOk: kwargs['exist_ok'] == const MontyBool(true),
-    ),
+    'Path.mkdir' => _mkdir(dirs, path, kwargs),
     'Path.rmdir' => dirs.rmdir(path),
     'Path.iterdir' => dirs.iterdir(path),
     'Path.rename' => dirs.rename(path, _path(data)),
     _ => throw const OsCallNotHandledException(),
   };
 }
+
+/// Upstream's `Path.mkdir` dispatch asserts at most two keywords before it
+/// looks at the path.
+void _checkMkdirKeywords(Map<String, MontyValue> kwargs) {
+  if (kwargs.length > 2) {
+    throw ExternalException(
+      'AssertionError',
+      'Unexpected keyword arguments: ${_dictRepr(kwargs)}',
+    );
+  }
+}
+
+/// `parents` and `exist_ok` by Python truthiness.
+MontyValue _mkdir(
+  _OsAccessDirectories dirs,
+  String path,
+  Map<String, MontyValue> kwargs,
+) => dirs.mkdir(
+  path,
+  parents: _truthy(kwargs['parents']),
+  existOk: _truthy(kwargs['exist_ok']),
+);
 
 // The old public open helper is now private and owns its filesystem effects.
 MontyFileHandle _resolveOpenCall(
@@ -226,16 +260,60 @@ MontyFileHandle _resolveOpenCall(
   return handle;
 }
 
-String _path(MontyValue? arg) => purePosixPath(switch (arg) {
-  MontyPath(:final value) || MontyString(:final value) => value,
-  MontyFileHandle(:final path) => path,
-  _ => throw const ExternalException('TypeError', 'expected a path'),
-});
+String _path(MontyValue? arg, {bool handleOk = false}) =>
+    purePosixPath(switch (arg) {
+      MontyPath(:final value) || MontyString(:final value) => value,
+      MontyFileHandle(:final path) when handleOk => path,
+      MontyFileHandle() => throw const ExternalException(
+        'TypeError',
+        'argument should be a str or an os.PathLike object where __fspath__ '
+            "returns a str, not 'MontyFileHandle'",
+      ),
+      _ => throw const ExternalException('TypeError', 'expected a path'),
+    });
+
 String _string(MontyValue? arg) => switch (arg) {
   MontyString(:final value) => value,
   _ => throw const ExternalException('TypeError', 'expected a str'),
 };
-Uint8List _payloadBytes(MontyValue? arg) => switch (arg) {
+
+/// A write or append payload as upstream's `_write_file` and `_append` take
+/// it: text or bytes in either operation, kept as given. [expected] names
+/// the type the operation was meant for, in the message for any other value.
+Object _payload(MontyValue? arg, String expected) => switch (arg) {
+  MontyString(:final value) => value,
   MontyBytes(:final value) => Uint8List.fromList(value),
-  _ => throw const ExternalException('TypeError', 'expected bytes'),
+  _ => throw ExternalException('TypeError', 'expected $expected'),
+};
+
+/// Python truthiness of a keyword value.
+bool _truthy(MontyValue? arg) =>
+    _scalarTruth(arg) ?? _compoundTruth(arg) ?? _collectionTruth(arg) ?? true;
+
+bool? _scalarTruth(MontyValue? arg) => switch (arg) {
+  null || MontyNone() => false,
+  MontyBool(:final value) => value,
+  MontyInt(:final value) => value != 0,
+  MontyBigInt(:final value) => value != BigInt.zero,
+  MontyFloat(:final value) => value != 0.0,
+  _ => null,
+};
+
+bool? _compoundTruth(MontyValue? arg) => switch (arg) {
+  MontyComplex(:final real, :final imag) => real != 0 || imag != 0,
+  MontyTimeDelta(:final days, :final seconds, :final microseconds) =>
+    days != 0 || seconds != 0 || microseconds != 0,
+  _ => null,
+};
+
+bool? _collectionTruth(MontyValue? arg) => switch (arg) {
+  MontyString(:final value) => value.isNotEmpty,
+  MontyBytes(:final value) => value.isNotEmpty,
+  MontyList(:final items) ||
+  MontyTuple(:final items) ||
+  MontySet(:final items) ||
+  MontyFrozenSet(:final items) => items.isNotEmpty,
+  MontyNamedTuple(:final values) => values.isNotEmpty,
+  MontyDict(:final pairs) => pairs.isNotEmpty,
+  _ => null,
 };
