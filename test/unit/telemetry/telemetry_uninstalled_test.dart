@@ -6,24 +6,37 @@ import 'recording_adapter.dart';
 
 void main() {
   test(
-    'without installation feed is unchanged and snapshot context is null',
+    'telemetry begins only after adapter installation',
     () async {
-      final unused = RecordingAdapter();
-      final fake = FakeMontySession();
-      addTearDown(fake.close);
-      fake
+      final adapter = RecordingAdapter();
+      final beforeInstallation = FakeMontySession()
         ..willCall('ext')
         ..willReturn(const MontyInt(42));
-      final snapshot = await fake.feedStart('ext()') as FunctionSnapshot;
+      final snapshot =
+          await beforeInstallation.feedStart('ext()') as FunctionSnapshot;
       expect(snapshot.traceContext(), isNull);
       final result = await snapshot.resume(
         const ExternalReturnValue(MontyInt(42)),
       );
       expect((result as MontyComplete).output, const MontyInt(42));
       expect(snapshot.traceContext, throwsStateError);
-      expect(unused.spans, isEmpty);
-      expect(unused.logs, isEmpty);
-      expect(unused.metrics, isEmpty);
+      await beforeInstallation.close();
+      expect(adapter.spans, isEmpty);
+      expect(adapter.logs, isEmpty);
+      expect(adapter.metrics, isEmpty);
+
+      instrumentTelemetry(adapter);
+      final afterInstallation = FakeMontySession()
+        ..willReturn(const MontyInt(7));
+      addTearDown(afterInstallation.close);
+      expect(
+        await afterInstallation.feedRun('7'),
+        const MontyInt(7),
+      );
+      expect(adapter.spans.map((span) => span.name), [
+        'session {script_name}',
+        'run code',
+      ]);
     },
   );
 }

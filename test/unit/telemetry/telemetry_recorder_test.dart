@@ -1,6 +1,7 @@
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry.dart';
 import 'package:dart_monty_core/src/worker/telemetry_channel.dart';
+import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
 import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:fixnum/fixnum.dart';
@@ -84,6 +85,139 @@ void main() {
         9,
       );
       expect(adapter.logs, isEmpty); // Eager single result is a span attribute.
+    },
+  );
+
+  test(
+    'upstream telemetry declarations retain names keys types and omissions',
+    () {
+      // Expected values come from upstream 1.1.0 tracing.rs, tracing_json.rs
+      // and metrics.rs; no expected value is rendered by Dart production code.
+      final arena = pb.Arena(nodes: [intNode(42)]);
+      TelemetryRecorder(requireRecord(telemetryBridge), 7)
+        ..beginTurn(
+          pb.ParentRequest(
+            configure: pb.Configure(
+              montyVersion: '1.1.0',
+              limits: pb.ResourceLimits(
+                maxMemoryBytes: Int64(3),
+                gcInterval: Int64(4),
+                maxRecursionDepth: Int64(5),
+                maxSuspensions: Int64(6),
+                maxFeedDurationMicros: Int64(1),
+                maxTurnDurationMicros: Int64(2),
+              ),
+            ),
+          ),
+        )
+        ..beginTurn(pb.ParentRequest(feed: pb.Feed(code: 'ext()')))
+        ..event(
+          pb.ChildEvent(
+            totalExecutionMicros: Int64(8),
+            functionCall: pb.FunctionCall(
+              functionName: 'ext',
+              callId: 9,
+              values: arena,
+            ),
+          ),
+        )
+        ..beginTurn(
+          pb.ParentRequest(
+            resumeCall: pb.ResumeCall(
+              result: pb.ExtFunctionResult(returnValue: 0),
+              values: arena,
+            ),
+          ),
+        )
+        ..event(
+          pb.ChildEvent(
+            totalExecutionMicros: Int64(10),
+            complete: pb.Complete(value: 0, values: arena),
+          ),
+        )
+        ..event(
+          pb.ChildEvent(
+            osCall: pb.OsCall(
+              callId: 11,
+              urandom: pb.OsCall_Urandom(size: Int64(12)),
+            ),
+          ),
+        )
+        ..beginTurn(
+          pb.ParentRequest(
+            resumeCall: pb.ResumeCall(
+              result: pb.ExtFunctionResult(notHandled: pb.Unit()),
+            ),
+          ),
+        )
+        ..beginTurn(pb.ParentRequest(shutdown: pb.Shutdown()));
+      final spans = adapter.spans;
+      final session = requireRecord(spans.firstOrNull);
+      final feed = requireRecord(spans.elementAtOrNull(1));
+      final callback = requireRecord(spans.elementAtOrNull(2));
+      final osCall = requireRecord(spans.elementAtOrNull(3));
+      final feedAttributes = feed.attributes;
+      final callbackAttributes = callback.attributes;
+      final returnValue = callbackAttributes['return_value'];
+      final totalExecution = feedAttributes['total_execution_micros'];
+      final output = feedAttributes['output'];
+      final integer = isA<int>();
+      final integer42 = allOf(integer, equals(42));
+      expect(spans.map((span) => span.name), [
+        'session {script_name}',
+        'run code',
+        'call {function_name}',
+        'os call {function}',
+      ]);
+      expect(session.attributes, containsPair('max_memory_bytes', '3'));
+      expect(session.attributes['max_feed_duration_micros'], '1');
+      expect(session.attributes['worker_pid'], 7);
+      expect(callbackAttributes['call_id'], '9');
+      expect(callbackAttributes['total_execution_micros'], '8');
+      expect(osCall.attributes['call_id'], '11');
+      expect(osCall.attributes['args.size'], '12');
+      expect(returnValue, integer42);
+      expect(totalExecution, allOf(integer, equals(10)));
+      expect(output, integer42);
+      final forbidden = {
+        'busy_ns',
+        'code.file.path',
+        'code.line.number',
+        'code.module.name',
+        'idle_ns',
+        'baggage',
+        'resumed',
+        'traceparent',
+        'tracestate',
+        'thread.id',
+        'thread.name',
+      };
+      final keys = [
+        for (final span in spans) ...span.attributes.keys,
+        for (final log in adapter.logs) ...log.attributes.keys,
+      ];
+      expect(keys.where(forbidden.contains), isEmpty);
+      expect(
+        adapter.measurements.where(
+          (measurement) => measurement.name == 'monty.pool.session.resumed',
+        ),
+        isEmpty,
+      );
+      expect(keys.where((key) => key.startsWith('logfire.')), isEmpty);
+      expect(adapter.logs, isEmpty);
+      expect(session.end, isNotNull);
+      TelemetryMetrics.print.record(1, {'stream': 'stdout'});
+      final metric = requireRecord(adapter.measurements.lastOrNull);
+      expect(
+        (metric.name, metric.kind, metric.unit, metric.description),
+        (
+          'monty.print.bytes',
+          'counter',
+          'By',
+          'Bytes the sandbox printed, by stream.',
+        ),
+      );
+      expect(metric.attributes, {'stream': 'stdout'});
     },
   );
 

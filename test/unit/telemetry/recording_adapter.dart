@@ -40,8 +40,17 @@ class RecordingAdapter implements MontyTelemetry {
   /// Callback contexts, observed independently of the span tree.
   final contexts = <Object?>[];
 
+  /// Span tokens supplied while deriving callback contexts.
+  final contextSpans = <Object>[];
+
+  /// Span tokens supplied for completion.
+  final endedSpans = <Object>[];
+
   /// Separate counts expose attempts after a signal was disabled.
   final attempts = <String, int>{};
+
+  /// Adapter methods invoked by the bridge, in delivery order.
+  final methods = <String>[];
 
   /// Clears records, preserving installation and failure state.
   void clear() {
@@ -50,11 +59,15 @@ class RecordingAdapter implements MontyTelemetry {
     metrics.clear();
     measurements.clear();
     contexts.clear();
+    contextSpans.clear();
+    endedSpans.clear();
     attempts.clear();
+    methods.clear();
   }
 
   @override
   Object? currentContext() {
+    methods.add('currentContext');
     _check('currentContext');
 
     return Zone.current[#telemetryContext];
@@ -62,7 +75,9 @@ class RecordingAdapter implements MontyTelemetry {
 
   @override
   Object? contextWithSpan(Object? context, Object span) {
+    methods.add('contextWithSpan');
     _check('contextWithSpan');
+    contextSpans.add(span);
 
     return ignoreSpans ? context : (context, span);
   }
@@ -74,6 +89,7 @@ class RecordingAdapter implements MontyTelemetry {
     Map<String, Object> attributes, {
     required BigInt startTimeUnixNanos,
   }) {
+    methods.add('startSpan');
     _check('spans');
     if (ignoreSpans) return const Object();
     final span = RecordedSpan(
@@ -93,7 +109,9 @@ class RecordingAdapter implements MontyTelemetry {
     Map<String, Object> attributes, {
     required BigInt endTimeUnixNanos,
   }) {
+    methods.add('endSpan');
     _check('endSpan');
+    endedSpans.add(span);
     if (ignoreSpans) return;
     final record = span as RecordedSpan;
     record.attributes.addAll(attributes);
@@ -109,6 +127,7 @@ class RecordingAdapter implements MontyTelemetry {
     required BigInt timestampUnixNanos,
     required int severityNumber,
   }) {
+    methods.add('emitLog');
     _check('logs');
     logs.add((
       span: span,
@@ -130,6 +149,7 @@ class RecordingAdapter implements MontyTelemetry {
     Map<String, Object> attributes, {
     required Object? context,
   }) {
+    methods.add('recordMetric');
     _check('metrics');
     metrics.add(value);
     measurements.add((
@@ -145,12 +165,14 @@ class RecordingAdapter implements MontyTelemetry {
 
   @override
   R runInContext<R>(Object? context, R Function() body) {
+    methods.add('runInContext');
     _check('beforeCallback');
     contexts.add(context);
-    final result = runZoned(body, zoneValues: {#telemetryContext: context});
-    _check('afterCallback');
-
-    return result;
+    try {
+      return runZoned(body, zoneValues: {#telemetryContext: context});
+    } finally {
+      _check('afterCallback');
+    }
   }
 
   void _check(String signal) {

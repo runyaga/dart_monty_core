@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/telemetry.dart';
+import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
 import 'package:dart_monty_core/src/worker/telemetry_recorder.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
@@ -19,12 +20,37 @@ void main() {
   housekeepingCases(adapter);
   answerCases(adapter);
   unsignedClockCase(adapter);
+  instrumentCases(adapter);
 }
 
 TelemetryRecorder recorder() =>
     TelemetryRecorder(requireRecord(telemetryBridge), null);
 
 void printCases(RecordingAdapter adapter) {
+  test('metric delivery is immediate, raw, and context-free', () {
+    requireRecord(telemetryBridge)
+      ..recordMetric(
+        'first',
+        'counter',
+        '1',
+        'First raw measurement.',
+        1,
+        const {},
+      )
+      ..recordMetric(
+        'first',
+        'counter',
+        '1',
+        'First raw measurement.',
+        2,
+        const {},
+      );
+    expect(
+      adapter.measurements.map((metric) => (metric.value, metric.context)),
+      [(1, null), (2, null)],
+    );
+  });
+
   test('print bytes are exact UTF-8 totals per stream per event', () {
     runZoned(() {
       recorder()
@@ -364,4 +390,151 @@ void unsignedClockCase(RecordingAdapter adapter) {
       ]);
     },
   );
+}
+
+void instrumentCases(RecordingAdapter adapter) {
+  test('every metric uses an empty context', () {
+    final ambientContext = Object();
+    runZoned(
+      () {
+        for (final metric in TelemetryMetrics.values) {
+          metric.record(metric.unit == 's' ? 0.5 : 1);
+        }
+      },
+      zoneValues: {#telemetryContext: ambientContext},
+    );
+
+    expect(adapter.measurements, hasLength(TelemetryMetrics.values.length));
+    expect(
+      adapter.measurements.map((measurement) => measurement.context),
+      everyElement(isNull),
+    );
+  });
+
+  test('instrument schemas retain scalar categories', () {
+    final expected = {
+      'monty.pool.workers.live': ('up_down_counter', '{worker}'),
+      'monty.pool.workers.idle': ('up_down_counter', '{worker}'),
+      'monty.pool.workers.suspended': ('up_down_counter', '{worker}'),
+      'monty.pool.checkout.wait': ('histogram', 's'),
+      'monty.pool.worker.terminated': ('counter', '{worker}'),
+      'monty.pool.session.duration': ('histogram', 's'),
+      'monty.run.duration': ('histogram', 's'),
+      'monty.run.execution_time': ('histogram', 's'),
+      'monty.turn.duration': ('histogram', 's'),
+      'monty.run.suspensions': ('counter', '{suspension}'),
+      'monty.ext.call.duration': ('histogram', 's'),
+      'monty.snapshot.bytes': ('histogram', 'By'),
+      'monty.print.bytes': ('counter', 'By'),
+      'monty.wire.frame.bytes': ('histogram', 'By'),
+    };
+    expect(
+      {
+        for (final metric in TelemetryMetrics.values)
+          metric.name: (metric.kind, metric.unit),
+      },
+      expected,
+    );
+
+    for (final metric in TelemetryMetrics.values) {
+      metric.record(metric.unit == 's' ? 0.5 : 1);
+    }
+    expect(adapter.measurements, hasLength(TelemetryMetrics.values.length));
+    expect(
+      adapter.measurements
+          .where((measurement) => measurement.unit == 's')
+          .every((measurement) => measurement.value is double),
+      isTrue,
+    );
+    expect(
+      adapter.measurements
+          .where((measurement) => measurement.unit != 's')
+          .every((measurement) => measurement.value is int),
+      isTrue,
+    );
+  });
+
+  test('recorder attributes retain upstream metric labels', () {
+    recorder()
+      ..event(
+        pb.ChildEvent(
+          print: pb.Print(
+            segments: [
+              pb.PrintSegment(
+                stream: pb.PrintStream.PRINT_STREAM_STDOUT,
+                text: 'x',
+              ),
+            ],
+          ),
+        ),
+      )
+      ..close();
+    final printBytes = requireRecord(
+      measurements(adapter, 'print.bytes').singleOrNull,
+    );
+    expect(printBytes.attributes, {
+      'stream': 'stdout',
+    });
+
+    adapter.clear();
+    recorder()
+      ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+      ..event(pb.ChildEvent(osCall: pb.OsCall(readText: '/tmp/input')))
+      ..beginTurn(pb.ParentRequest(abortFeed: pb.AbortFeed()))
+      ..close();
+    final suspensions = requireRecord(
+      measurements(adapter, 'run.suspensions').singleOrNull,
+    );
+    final call = requireRecord(
+      measurements(adapter, 'ext.call.duration').singleOrNull,
+    );
+    expect(suspensions.attributes, {
+      'kind': 'os',
+    });
+    expect(call.attributes, {
+      'kind': 'os',
+      'function': 'read_text',
+      'outcome': 'aborted',
+    });
+
+    adapter.clear();
+    recorder()
+      ..beginTurn(pb.ParentRequest(configure: pb.Configure()))
+      ..event(pb.ChildEvent(ok: pb.Ok()))
+      ..close();
+    final turn = requireRecord(
+      measurements(adapter, 'turn.duration').singleOrNull,
+    );
+    expect(turn.attributes, {
+      'turn': 'configure',
+      'outcome': 'ok',
+    });
+
+    adapter.clear();
+    recorder()
+      ..beginTurn(pb.ParentRequest(feed: pb.Feed()))
+      ..event(pb.ChildEvent(nameLookup: pb.NameLookup()))
+      ..beginTurn(pb.ParentRequest(dump: pb.Dump()))
+      ..event(pb.ChildEvent(dumpResult: pb.DumpResult(state: [1])))
+      ..close();
+    final snapshot = requireRecord(
+      measurements(adapter, 'snapshot.bytes').singleOrNull,
+    );
+    expect(snapshot.attributes, {
+      'op': 'dump',
+    });
+
+    adapter.clear();
+    TelemetryMetrics.terminated.attribute(1, 'reason', 'closed');
+    TelemetryMetrics.frame.attribute(1, 'direction', 'sent');
+    expect(
+      measurements(adapter, 'pool.worker.terminated').singleOrNull?.attributes,
+      {
+        'reason': 'closed',
+      },
+    );
+    expect(measurements(adapter, 'wire.frame.bytes').singleOrNull?.attributes, {
+      'direction': 'sent',
+    });
+  });
 }

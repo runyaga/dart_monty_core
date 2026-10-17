@@ -120,6 +120,41 @@ Matcher _runtime(String excType, String message) => isA<MontyRuntimeError>()
 /// gives.
 void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
   group('host code ($label)', () {
+    test('feed retains chosen and fallback host exception types', () async {
+      await withSession(_plain, (s) async {
+        expect(
+          await s.feedRun(
+            _catchF,
+            printCallback: _ignore,
+            externalLookup: {
+              'f': MontyHostFunction(
+                'f',
+                (_, _) => throw const ExternalException('KeyError', 'chosen'),
+              ),
+            },
+          ),
+          _caught('KeyError', "KeyError('chosen')", ['chosen']),
+        );
+        expect(
+          await s.feedRun(
+            _catchF,
+            printCallback: _ignore,
+            externalLookup: {
+              'f': MontyHostFunction(
+                'f',
+                (_, _) => throw StateError('ordinary'),
+              ),
+            },
+          ),
+          _caught(
+            'Exception',
+            "Exception('Bad state: ordinary')",
+            ['Bad state: ordinary'],
+          ),
+        );
+      });
+    });
+
     test('an OS handler answers datetime.now with a MontyDateTime', () async {
       const now = MontyDateTime(
         year: 2024,

@@ -64,6 +64,48 @@ p = Path('/f')
 }
 
 void _callbackFailure(String label, _Start start) {
+  test(
+    'callback failures retain their host exception mapping ($label)',
+    () async {
+      final session = await _session(start);
+      final fs = OSAccess(
+        files: [
+          CallbackFile(
+            '/chosen',
+            (_) => throw const ExternalException('KeyError', 'chosen'),
+            (_, _) => fail('unexpected write'),
+          ),
+          CallbackFile(
+            '/ordinary',
+            (_) => throw StateError('ordinary'),
+            (_, _) => fail('unexpected write'),
+          ),
+        ],
+      );
+      final runtime = isA<MontyRuntimeError>();
+      await expectLater(
+        session.feedRun("open('/chosen').read()", os: fs),
+        throwsA(
+          runtime
+              .having((error) => error.exception.excType, 'type', 'KeyError')
+              .having((error) => error.exception.message, 'message', 'chosen'),
+        ),
+      );
+      await expectLater(
+        session.feedRun("open('/ordinary').read()", os: fs),
+        throwsA(
+          runtime
+              .having((error) => error.exception.excType, 'type', 'Exception')
+              .having(
+                (error) => error.exception.message,
+                'message',
+                'Bad state: ordinary',
+              ),
+        ),
+      );
+    },
+  );
+
   test('CallbackFile host failure reaches Python ($label)', () async {
     final session = await _session(start);
     final fs = OSAccess(
