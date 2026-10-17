@@ -125,7 +125,7 @@ other_cwd() {
 aot_bundle() {
   local temp="$TEMP_ROOT/aot" bundle home input executable pub_log pub_home status
   mkdir -p "$temp"
-  bundle="$temp/bundle"
+  bundle="$temp/out/bundle"
   input="$ROOT/tool/aot_worker/s10_external_call.json"
   pub_log="$temp/pub-get.log"
   pub_home="$temp/pub-get-home"
@@ -138,7 +138,7 @@ aot_bundle() {
     printf 'dart pub get failed exit=%s\n' "$status"
     return "$status"
   fi
-  (cd "$ROOT/tool/aot_worker" && consumer_environment "$pub_home" dart build cli -o "$bundle") || return 1
+  (cd "$ROOT/tool/aot_worker" && consumer_environment "$pub_home" dart build cli -o "$temp/out") || return 1
   if [ ! -d "$bundle" ]; then
     printf 'aot bundle directory missing: %s\n' "$bundle"
     return 1
