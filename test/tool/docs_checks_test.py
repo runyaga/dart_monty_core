@@ -18,6 +18,7 @@ import check_doc_links
 import check_doc_names
 import check_doc_snippets
 import check_docs_data
+import check_docs_index
 import check_new_urls
 import docs_check_common
 import render_docs_data
@@ -156,6 +157,139 @@ class DocsChecksTest(unittest.TestCase):
         self.assertEqual(
             {'same', 'same-1', 'same-2'},
             docs_check_common.headings(self.root / 'README.md'),
+        )
+
+    def write_docs_index(self, links: str) -> None:
+        (self.root / 'docs/README.md').write_text(
+            '# Documentation\n\nThis index lists every documentation page.\n\n'
+            f'{links}\n',
+            encoding='utf-8',
+        )
+
+    def write_index_page(self, name: str, text: str = 'Page purpose.') -> None:
+        path = self.root / f'docs/{name}.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'# {name}\n\n{text}\n', encoding='utf-8')
+
+    def test_docs_index_accepts_a_complete_index(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_index_page('deep-dives/two')
+        self.write_docs_index(
+            '- [One](reference/one.md): One purpose.\n'
+            '- [Two](deep-dives/two.md): Two purpose.'
+        )
+        self.assertEqual([], check_docs_index.check(self.root))
+
+    def test_docs_index_rejects_an_unlisted_page(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_docs_index('')
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('page is not linked' in item for item in findings))
+
+    def test_docs_index_rejects_a_doubled_page(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_docs_index(
+            '- [One](reference/one.md): One purpose.\n'
+            '- [One again](reference/one.md): Another purpose.'
+        )
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('linked more than once' in item for item in findings))
+
+    def test_docs_index_rejects_a_missing_file(self) -> None:
+        self.write_docs_index('- [Missing](reference/missing.md): Missing purpose.')
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('linked file does not exist' in item for item in findings))
+
+    def test_docs_index_rejects_two_h1s(self) -> None:
+        self.write_index_page('reference/one')
+        (self.root / 'docs/reference/one.md').write_text(
+            '# One\n\nPurpose.\n\n# Two\n', encoding='utf-8')
+        self.write_docs_index('- [One](reference/one.md): One purpose.')
+        findings = check_docs_index.check(self.root)
+        self.assertTrue(any('exactly one H1' in item for item in findings))
+
+    def test_docs_index_accepts_a_page_with_only_a_setext_h1(self) -> None:
+        page = self.root / 'docs/reference/one.md'
+        page.parent.mkdir(parents=True)
+        page.write_text('One\n===\n\nPurpose.\n', encoding='utf-8')
+        self.write_docs_index('- [One](reference/one.md): One purpose.')
+        self.assertEqual([], check_docs_index.check(self.root))
+
+    def test_docs_index_reference_links_enforce_listing_rules(self) -> None:
+        self.write_index_page('reference/one')
+        hidden = self.root / 'docs/contributor/hidden.md'
+        hidden.parent.mkdir(parents=True)
+        hidden.write_text('# Hidden\n\nHidden purpose.\n', encoding='utf-8')
+        self.write_docs_index(
+            '- [One][one] [one][] [one]\n'
+            '- [Missing][missing]\n'
+            '- [Hidden][hidden]\n\n'
+            '[one]: reference/one.md\n'
+            '[missing]: reference/missing.md\n'
+            '[hidden]: contributor/hidden.md'
+        )
+        findings = check_docs_index.check(self.root)
+        self.assertEqual(2, sum('linked more than once' in item for item in findings))
+        self.assertTrue(any('linked file does not exist: reference/missing.md' in item for item in findings))
+        self.assertTrue(any('index links an excluded page: contributor/hidden.md' in item for item in findings))
+
+    def test_docs_index_ignores_links_in_inline_code(self) -> None:
+        self.write_index_page('reference/one')
+        self.write_docs_index('- `[One](reference/one.md)` is an example, not a listing.')
+        findings = check_docs_index.check(self.root)
+        self.assertEqual(
+            ['docs/reference/one.md:1: page is not linked from docs/README.md'],
+            findings,
+        )
+
+    def test_docs_index_rejects_non_prose_as_the_first_paragraph(self) -> None:
+        cases = {
+            'comment': '<!-- explanatory comment -->',
+            'comment-block': '<!-- start\nstill a comment\n-->',
+            'indented-code': '    code()',
+            'atx-heading': '## Details',
+            'setext-heading': 'Details\n---',
+            'list': '- A list item',
+            'quote': '> A quotation',
+            'thematic-break': '---',
+            'table': '| Name | Value |\n| --- | --- |\n| one | two |',
+            'fence': '```dart\nprint(\'not prose\');\n```',
+        }
+        links = []
+        for name, body in cases.items():
+            path = self.root / f'docs/reference/{name}.md'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f'# {name}\n\n{body}\n', encoding='utf-8')
+            links.append(f'- [{name}](reference/{name}.md)')
+        self.write_docs_index('\n'.join(links))
+        findings = check_docs_index.check(self.root)
+        paragraph_findings = [item for item in findings if 'no first paragraph' in item]
+        self.assertEqual(len(cases), len(paragraph_findings))
+        self.assertFalse(any('exactly one H1' in item for item in findings))
+
+    def test_visible_lines_uses_commonmark_fence_closers(self) -> None:
+        page = self.root / 'docs/fences.md'
+        page.write_text(
+            'before\n'
+            '```dart\n'
+            'hidden in short fence\n'
+            '```` not a closer\n'
+            'still hidden in short fence\n'
+            '```\n'
+            'between\n'
+            '````\n'
+            'hidden in long fence\n'
+            '```\n'
+            'still hidden in long fence\n'
+            '~~~~\n'
+            'also hidden in long fence\n'
+            '`````   \n'
+            'after\n',
+            encoding='utf-8',
+        )
+        self.assertEqual(
+            [(1, 'before'), (7, 'between'), (15, 'after')],
+            docs_check_common.visible_lines(page),
         )
 
     def test_names_accept_public_name_and_member(self) -> None:
@@ -306,6 +440,15 @@ class DocsChecksTest(unittest.TestCase):
                 ['tool/check_doc_snippets.py:1: dart analyze produced no analyzer output'],
                 check_doc_snippets.check(self.root),
             )
+
+
+class FenceMarkerTest(unittest.TestCase):
+    def test_mixed_marker_line_does_not_close_a_fence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            page = Path(directory) / 'page.md'
+            page.write_text('```\ncode\n`~~\n[hidden](missing.md)\n```\n[shown](x.md)\n', encoding='utf-8')
+            lines = [text for _, text in docs_check_common.visible_lines(page)]
+        self.assertEqual(['[shown](x.md)'], lines)
 
 
 if __name__ == '__main__':
