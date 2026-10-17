@@ -1,0 +1,11 @@
+name: dart_monty_core_native_consumer
+description: Native consumer probe for package-relative dart_monty_core workers.
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  collection: ^1.18.0
+  dart_monty_core:
+    path: ../../..
