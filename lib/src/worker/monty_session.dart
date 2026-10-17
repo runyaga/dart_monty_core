@@ -1060,25 +1060,21 @@ final class _FeedDrive implements SnapshotDriver {
   }
 }
 
-/// The completion [complete] of a feed on [proto]: decoded now, so a value
-/// that does not decode is a protocol violation of this turn, and again on
-/// each later read of its output, as upstream converts it per access.
+/// The completion [complete] of a feed on [proto]: its structure is checked
+/// now, so an arena upstream rejects is a protocol violation of this turn,
+/// and the value is built on each read of its output, as upstream converts
+/// it per access. A value that fails to convert throws from the read and
+/// leaves the session as it was.
 ///
 /// It keeps the host-object lookup, not the session, so a completion held
 /// on to does not keep an abandoned session from its finalizer.
 MontyComplete _completion(ProtoSession proto, pb.Complete complete) {
-  MontyValue? first = proto.valueOf(complete);
+  proto.completeReader(complete);
   final hosts = proto.objects.lookup;
 
-  return Snapshots.complete(() {
-    final value = first;
-    if (value == null) {
-      return ArenaReader(complete.values, hosts: hosts)[complete.value];
-    }
-    first = null;
-
-    return value;
-  });
+  return Snapshots.complete(
+    () => ArenaReader(complete.values, hosts: hosts)[complete.value],
+  );
 }
 
 /// The snapshot of a host function [call], for [driver] under [script].
