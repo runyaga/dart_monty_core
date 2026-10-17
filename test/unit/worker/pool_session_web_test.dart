@@ -33,6 +33,7 @@ import '_os_handler_cases.dart';
 import '_print_cases.dart';
 import '_restore_cases.dart';
 import '_session_cases.dart';
+import '_typed_value_round_trip_cases.dart';
 
 const _backend = identical(1, 1.0) ? 'dart2js' : 'dart2wasm';
 
@@ -132,6 +133,13 @@ void main() {
     ),
   );
   classProxySessionTests(
+    _backend,
+    (body) => withMonty(
+      (pool) => pool.withSessionWith(body, _limits),
+      const PoolOptions(maxProcesses: 1),
+    ),
+  );
+  typedValueRoundTripTests(
     _backend,
     (body) => withMonty(
       (pool) => pool.withSessionWith(body, _limits),

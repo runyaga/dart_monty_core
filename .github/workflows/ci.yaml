@@ -701,7 +701,7 @@ jobs:
           dart test --exclude-tags=integration,ladder,worker \
             --coverage=coverage 2>&1 | tee /tmp/unit-test.log
           # Measured on main 81d96ec: 2592; with the T-values tests 2694.
-          bash tool/assert_test_count.sh /tmp/unit-test.log 3173 unit
+          bash tool/assert_test_count.sh /tmp/unit-test.log 3211 unit
       - name: Generate LCOV
         run: |
           # `dart test --coverage=coverage` writes coverage/test/**/*.json, NOT
@@ -788,9 +788,9 @@ jobs:
       matrix:
         include:
           - compiler: dart2js
-            floor: 3106
+            floor: 3144
           - compiler: dart2wasm
-            floor: 3106
+            floor: 3144
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -1087,7 +1087,7 @@ jobs:
           set -o pipefail
           dart test test/integration/worker -p vm --tags=worker \
             --coverage=coverage-worker 2>&1 | tee /tmp/worker-test.log
-          bash tool/assert_test_count.sh /tmp/worker-test.log 598 worker
+          bash tool/assert_test_count.sh /tmp/worker-test.log 614 worker
       - name: Generate worker LCOV
         run: |
           shopt -s globstar nullglob

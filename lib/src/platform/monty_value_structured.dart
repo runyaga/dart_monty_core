@@ -128,7 +128,7 @@ final class MontyFileHandle extends MontyValue {
   bool get writable => !readable;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue => _markDartValue(_toJson(), 'filehandle');
 
   @override
   bool operator ==(Object other) =>
@@ -208,7 +208,8 @@ final class MontyNamedTuple extends MontyValue {
   int get _graphKind => _kNamedTuple;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as Map<String, Object?>;
 
   /// As Python's: a named tuple is a tuple, equal to any [MontyTuple] or
   /// [MontyNamedTuple] with equal items, whatever the type and field names,
@@ -306,7 +307,8 @@ final class MontyClassTypeProxy extends MontyValue {
   int get _graphKind => _kClassType;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as Map<String, Object?>;
 
   /// The class name and the attribute count. The attributes themselves are
   /// not rendered: a shared or deeply nested value would make that unbounded.
@@ -375,7 +377,8 @@ final class MontyClassProxy extends MontyValue {
   int get _graphKind => _kInstance;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue =>
+      _MontyValueGraph.nodeDartValue(this) as Map<String, Object?>;
 
   /// The class name and the attribute count. The attributes themselves are
   /// not rendered: a shared or deeply nested value would make that unbounded.

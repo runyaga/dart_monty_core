@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/platform/double_text.dart';
@@ -46,6 +47,7 @@ sealed class MontyValue {
   /// - `null`, `bool`, `int`, `double`, `String`
   /// - `DateTime` (→ an aware [MontyDateTime] at its instant, to the
   ///   microsecond, with its UTC offset: zero for a UTC `DateTime`)
+  /// - `Uint8List` (→ [MontyBytes])
   /// - `List` (elements recursively converted)
   /// - `Map` (keys and values recursively converted)
   ///
@@ -56,6 +58,9 @@ sealed class MontyValue {
   /// The conversion does not recurse, so nesting depth is not limited by the
   /// stack. A `List` or `Map` reached twice becomes one value, shared in the
   /// result; one that contains itself is an [ArgumentError].
+  /// The map that a typed wrapper's `dartValue` returns is an [ArgumentError]:
+  /// pass the [MontyValue] itself. A map built by the caller is a dict,
+  /// whatever its keys.
   factory MontyValue.fromDart(Object? value) =>
       _MontyValueGraph.fromDart(value);
 
@@ -67,7 +72,8 @@ sealed class MontyValue {
   ///
   /// Scalars return their primitive (`int`, `double`, `String`, etc.).
   /// Collections recursively unwrap to `List<Object?>` / `Map<String, Object?>`.
-  /// Typed wrappers return a tagged map.
+  /// Typed wrappers return a tagged map. [MontyValue.fromDart] refuses that
+  /// map instance, so pass the [MontyValue] itself back.
   Object? get dartValue;
 
   /// What the identity-aware walk treats this value as. Containers and

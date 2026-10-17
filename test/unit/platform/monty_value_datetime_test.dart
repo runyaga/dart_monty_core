@@ -329,14 +329,17 @@ void main() {
       expect(unnamed.keys.toSet(), {'__type', 'offset_seconds', 'name'});
     });
     test(
-      'fromDart keeps it, and does not unwrap maps',
+      'fromDart keeps it and refuses its dartValue map',
       () {
         final v = MontyTimeZone(offsetSeconds: _id(5), name: 'x');
         expect(identical(MontyValue.fromDart(v), v), isTrue);
-        final back = MontyValue.fromDart(v.dartValue);
-        expect(back, isNot(isA<MontyTimeZone>()));
-        expect(back, isA<MontyDict>());
-        expect((back as MontyDict).pairs, hasLength(3));
+        expect(
+          () => MontyValue.fromDart(v.dartValue),
+          throwsA(isA<ArgumentError>()),
+        );
+        final copy = MontyValue.fromDart(Map.of(v.dartValue));
+        expect(copy, isA<MontyDict>());
+        expect((copy as MontyDict).pairs, hasLength(3));
       },
     );
     test('MontyTimeZone(offset=<o>, name=<n>)', () {

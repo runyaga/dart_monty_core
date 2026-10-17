@@ -251,7 +251,7 @@ final class MontyTimeZone extends MontyValue {
   final String? name;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue => _markDartValue(_toJson(), 'timezone');
 
   /// As Python's `timezone.__eq__`: by offset; the name is not compared.
   @override
