@@ -46,10 +46,6 @@ final class SourceRange {
 
   const SourceRange._unknown() : filename = '', start = 0, end = 0;
 
-  /// The range a worker that sent no position reports: an empty file name
-  /// and an empty range at offset 0 (upstream `SourceRange::unknown`).
-  static const SourceRange unknown = SourceRange._unknown();
-
   /// The source the range is in, named as a traceback frame names it:
   /// `<python-input-N>` for the session's N-th feed, `<string>` inside an
   /// `eval()` or `exec()` string.
@@ -76,6 +72,11 @@ final class SourceRange {
   String toString() =>
       "SourceRange(filename='$filename', start=$start, end=$end)";
 }
+
+/// The range a worker that sent no position reports: an empty file name and
+/// an empty range at offset 0 (upstream `SourceRange::unknown`). Not
+/// exported.
+const SourceRange unknownSourceRange = SourceRange._unknown();
 
 /// The largest offset a [SourceRange] holds: `u32::MAX`.
 const int _maxOffset = 0xFFFFFFFF;

@@ -101,7 +101,8 @@ MontyError.message
 MontyCrashedError.cause
 MontyCrashedError.detail
 MontyCrashedError.exitCode
-MontyCrashedError.stderrTail'
+MontyCrashedError.stderrTail
+SourceRange.unknown'
 
 {
   cat <<'DART'
