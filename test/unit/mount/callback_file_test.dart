@@ -14,6 +14,35 @@ void main() {
 }
 
 void _attributes() {
+  test('representation includes its callback closures', () {
+    Object read(String path) => 'content at $path';
+
+    void write(String path, Object content) =>
+        fail('unexpected write to $path with $content');
+
+    final file = CallbackFile('/file', read, write, permissions: 384);
+    expect(
+      file.toString(),
+      'CallbackFile(path=/file, read=$read, write=$write, permissions=384)',
+    );
+  });
+
+  test('double-root construction paths reach reads normalized', () {
+    final paths = <String>[];
+    final file = CallbackFile(
+      '//dir///./file',
+      (path) {
+        paths.add(path);
+
+        return 'content';
+      },
+      (_, _) => fail('unexpected write'),
+    );
+    expect(file.path, '//dir/file');
+    expect(file.readContent(), 'content');
+    expect(paths, ['//dir/file']);
+  });
+
   test('normalised construction and setters', () {
     final file = CallbackFile(
       'a//./../b',

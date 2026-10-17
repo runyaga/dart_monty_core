@@ -4,8 +4,10 @@ import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/dart_monty_core_testing.dart';
 import 'package:dart_monty_core/src/worker/frame.dart'
     show FrameTooLargeException;
+import 'package:dart_monty_core/src/worker/monty_error.dart' show CrashCause;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
+import 'package:dart_monty_core/src/worker/telemetry.dart' show telemetryBridge;
 import 'package:test/test.dart';
 
 import '../worker/_scripted_channel.dart';
@@ -27,6 +29,136 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('span starts retain supplied host details', () {
+    final parent = Object();
+    final bridge = requireRecord(telemetryBridge);
+    final span = requireRecord(
+      bridge.start('host request', parent, const {'request.id': 7}),
+    );
+    final record = span as RecordedSpan;
+    expect(record.name, 'host request');
+    expect(record.parent, same(parent));
+    expect(record.attributes, {'request.id': 7});
+  });
+
+  test('span-ignoring adapters receive their opaque token', () {
+    adapter.ignoreSpans = true;
+    addTearDown(() => adapter.ignoreSpans = false);
+    final bridge = requireRecord(telemetryBridge);
+    final parent = Object();
+    final token = requireRecord(bridge.start('ignored', parent, const {}));
+    final context = bridge.contextWithSpan(parent, token);
+    bridge
+      ..end(token, const {})
+      ..log(token, 'INFO', 'ignored span log', const {});
+    final contextSpan = requireRecord(adapter.contextSpans.singleOrNull);
+    final endedSpan = requireRecord(adapter.endedSpans.singleOrNull);
+    final log = requireRecord(adapter.logs.singleOrNull);
+    expect(context, same(parent));
+    expect((contextSpan, endedSpan, log.span), (token, token, token));
+  });
+
+  test('logs retain a supplied span and supported severities', () {
+    final bridge = requireRecord(telemetryBridge);
+    final span = requireRecord(bridge.start('host request', null, const {}));
+    bridge
+      ..log(span, 'INFO', 'ready', const {})
+      ..log(span, 'ERROR', 'failed', const {});
+    expect(
+      adapter.logs.map((log) => (log.span, log.severity, log.number)),
+      [(span, 'INFO', 9), (span, 'ERROR', 17)],
+    );
+  });
+
+  test('adapter delivery is synchronous and keeps scalar attributes', () {
+    final bridge = requireRecord(telemetryBridge);
+    final parent = bridge.currentContext();
+    final span = requireRecord(
+      bridge.start('host request', parent, const {'request.id': 7}),
+    );
+    final context = bridge.contextWithSpan(parent, span);
+    bridge
+      ..end(span, const {'response.ready': true})
+      ..log(
+        span,
+        'ERROR',
+        'failed',
+        const {'response.duration': 1.5},
+      )
+      ..recordMetric(
+        'host.requests',
+        'counter',
+        '1',
+        'Host requests.',
+        1,
+        const {'route': '/ready'},
+      )
+      ..recordMetric(
+        'host.requests',
+        'counter',
+        '1',
+        'Host requests.',
+        2,
+        const {'route': '/ready'},
+      );
+    var callbackRan = false;
+    final result = bridge.invoke(context, () {
+      callbackRan = true;
+
+      return 'complete';
+    });
+    final attributes = [
+      for (final record in adapter.spans) ...record.attributes.values,
+      for (final record in adapter.logs) ...record.attributes.values,
+      for (final record in adapter.measurements) ...record.attributes.values,
+    ];
+    final recordedSpan = requireRecord(adapter.spans.singleOrNull);
+    final recordedLog = requireRecord(adapter.logs.singleOrNull);
+    final afterEpoch = greaterThan(BigInt.zero);
+    expect(callbackRan, isTrue);
+    expect(result, 'complete');
+    expect(adapter.methods, [
+      'currentContext',
+      'startSpan',
+      'contextWithSpan',
+      'endSpan',
+      'emitLog',
+      'recordMetric',
+      'recordMetric',
+      'runInContext',
+    ]);
+    expect(
+      attributes.every(
+        (value) =>
+            value is String || value is int || value is double || value is bool,
+      ),
+      isTrue,
+    );
+    expect(recordedSpan.attributes, {
+      'request.id': 7,
+      'response.ready': true,
+    });
+    expect(recordedLog.attributes, {'response.duration': 1.5});
+    expect(
+      adapter.measurements.map((measurement) => measurement.attributes),
+      [
+        {'route': '/ready'},
+        {'route': '/ready'},
+      ],
+    );
+    expect(
+      recordedLog.number,
+      17,
+    );
+    expect(recordedSpan.start, afterEpoch);
+    expect(recordedSpan.end, afterEpoch);
+    expect(recordedLog.time, afterEpoch);
+    expect(adapter.measurements.map((measurement) => measurement.value), [
+      1,
+      2,
+    ]);
   });
 
   test(
@@ -114,6 +246,43 @@ void main() {
     expect(adapter.logs.singleOrNull?.body, 'error ValueError');
   });
 
+  test('reset, close, and worker death end their spans', () async {
+    Reply accepting(pb.ParentRequest_Kind kind) => expecting(kind, [ok()]);
+    final configure = accepting(pb.ParentRequest_Kind.configure);
+    final reset = accepting(pb.ParentRequest_Kind.reset);
+    final resetChannel = ScriptedChannel([
+      configure,
+      reset,
+      configure,
+    ]);
+    final resetSession = await ProtoSession.open(resetChannel);
+    final beforeReset = requireRecord(adapter.spans.singleOrNull);
+    await resetSession.reset();
+    expect(beforeReset.end, isNotNull);
+    expect(adapter.spans, hasLength(2));
+    final afterReset = requireRecord(adapter.spans.lastOrNull);
+    await resetSession.close();
+    expect(afterReset.end, isNotNull);
+    expect(resetChannel.remaining, 0);
+
+    adapter.clear();
+    final crashedChannel = ScriptedChannel([
+      configure,
+      crash(CrashCause.killed, 'worker exited'),
+    ]);
+    final crashedSession = await ProtoSession.open(crashedChannel);
+    await expectLater(
+      crashedSession.feed('1'),
+      throwsA(isA<MontyCrashedError>()),
+    );
+    final crashedSpans = adapter.spans;
+    expect(crashedSpans.map((span) => span.name), [
+      'session {script_name}',
+      'run code',
+    ]);
+    expect(crashedSpans.every((span) => span.end != null), isTrue);
+  });
+
   test(
     'empty install sends nothing; nonempty install records its span',
     () async {
@@ -131,9 +300,37 @@ void main() {
       );
       final span = requireRecord(adapter.spans.singleOrNull);
       expect(span.name, 'install dependencies');
+      expect(span.attributes['requirements'], '["example"]');
+    },
+  );
+
+  test(
+    'rejected install records the request span at the frame boundary',
+    () async {
+      final channel = ScriptedChannel([
+        answer([ok()]),
+        expecting(
+          pb.ParentRequest_Kind.installDependencies,
+          [raised('RuntimeError', 'rejected')],
+        ),
+      ]);
+      final session = await ProtoSession.open(channel);
+      addTearDown(session.close);
+      adapter.clear();
+      await expectLater(
+        session.installDependencies(['example']),
+        throwsA(isA<MontyRuntimeError>()),
+      );
+      final span = requireRecord(adapter.spans.singleOrNull);
+      expect(span.name, 'install dependencies');
       expect(
         span.attributes['requirements'],
         '["example"]',
+      );
+      expect(span.end, isNotNull);
+      expect(
+        channel.requests.lastOrNull?.whichKind(),
+        pb.ParentRequest_Kind.installDependencies,
       );
     },
   );

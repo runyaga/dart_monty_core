@@ -2,6 +2,7 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -59,6 +60,21 @@ void main() {
     expect(
       (stat.values.elementAtOrNull(8) as MontyFloat?)?.value,
       inInclusiveRange(before, after),
+    );
+  });
+  test('stat tuples pass through the normal value boundary checks', () {
+    final stat = StatResult.fileStat(1);
+    expect(ArenaWriter().add(stat), isA<int>());
+    stat.values.removeLast();
+    expect(
+      () => ArenaWriter().add(stat),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.message,
+          'message',
+          'NamedTuple field_names and values must have the same length',
+        ),
+      ),
     );
   });
 }

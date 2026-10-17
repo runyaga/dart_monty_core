@@ -39,6 +39,7 @@ void _construction() {
   _constructionCase2();
   _constructionCase3();
   _constructionCase4();
+  _constructionCase5();
 }
 
 void _constructionCase0() {
@@ -135,6 +136,25 @@ void _constructionCase4() {
   });
 }
 
+void _constructionCase5() {
+  test('exposed file list remains mutable', () {
+    final original = MemoryFile('/original', 'original');
+    final replacement = MemoryFile('/replacement', 'replacement');
+    final fs = OSAccess(files: [original]);
+    fs.files[0] = replacement;
+    expect(fs.files, [same(replacement)]);
+  });
+
+  test('exposed environment map remains mutable', () async {
+    final fs = OSAccess(environ: {'KEY': 'before'});
+    fs.environ['KEY'] = 'after';
+    expect(
+      await fs('os.getenv', [const MontyString('KEY')], {}),
+      const MontyString('after'),
+    );
+  });
+}
+
 void _reads() {
   _readsCase0();
   _readsCase1();
@@ -168,9 +188,19 @@ void _readsCase1() {
     final stat = await call(fs, 'Path.stat', '/f') as MontyNamedTuple;
     expect(stat.values.firstOrNull, const MontyInt(33152));
     expect(stat.values.elementAtOrNull(6), const MontyInt(2));
+    final modified = stat.values.elementAtOrNull(8);
+    if (modified is! MontyFloat) {
+      fail('stat mtime must be a MontyFloat');
+    }
+    final reference = DateTime.now();
+    final lower = reference.subtract(const Duration(hours: 1));
+    final upper = reference.add(const Duration(hours: 1));
     expect(
-      (stat.values.elementAtOrNull(8) as MontyFloat?)?.value,
-      greaterThan(0),
+      modified.value,
+      inInclusiveRange(
+        lower.microsecondsSinceEpoch / Duration.microsecondsPerSecond,
+        upper.microsecondsSinceEpoch / Duration.microsecondsPerSecond,
+      ),
     );
   });
 }
@@ -467,6 +497,8 @@ void _renames() {
 void _defaults() {
   _defaultsCase0();
   _defaultsCase1();
+  _defaultsCase2();
+  _defaultsCase3();
 }
 
 void _defaultsCase0() {
@@ -523,6 +555,71 @@ void _defaultsCase1() {
     }
   });
 }
+
+void _defaultsCase2() {
+  test('clock defaults use the host calendar and epoch', () async {
+    final fs = OSAccess();
+    final today = await fs('date.today', [], {}) as MontyDate;
+    final now = await fs('datetime.now', [], {}) as MontyDateTime;
+    final epoch = await fs('time.time', [], {});
+    final reference = DateTime.now();
+    final lower = reference.subtract(const Duration(hours: 1));
+    final upper = reference.add(const Duration(hours: 1));
+    final calendarBoundary = anyOf(
+      (lower.year, lower.month, lower.day),
+      (upper.year, upper.month, upper.day),
+    );
+    final returnedDate = (today.year, today.month, today.day);
+    expect(returnedDate, calendarBoundary);
+    expect((now.year, now.month, now.day), calendarBoundary);
+    expect(now.offsetSeconds, isNull);
+    expect(now.timezoneName, isNull);
+    expect(epoch, isA<MontyFloat>());
+    expect(
+      (epoch as MontyFloat).value,
+      inInclusiveRange(
+        lower.microsecondsSinceEpoch / Duration.microsecondsPerSecond,
+        upper.microsecondsSinceEpoch / Duration.microsecondsPerSecond,
+      ),
+    );
+  });
+}
+
+void _defaultsCase3() {
+  test('sleep caps a configured wait', () async {
+    final capped = OSAccess(maxSleep: const Duration(milliseconds: 50));
+    final waits = <Duration>[];
+    await _withRecordedSleeps(
+      waits,
+      () => capped('time.sleep', [const MontyInt(1)], {}),
+    );
+    expect(waits, [const Duration(milliseconds: 50)]);
+  });
+
+  test('sleep preserves an uncapped wait', () async {
+    final uncapped = OSAccess(maxSleep: null);
+    final waits = <Duration>[];
+    await _withRecordedSleeps(
+      waits,
+      () => uncapped('time.sleep', [const MontyInt(11)], {}),
+    );
+    expect(waits, [const Duration(seconds: 11)]);
+  });
+}
+
+Future<MontyValue> _withRecordedSleeps(
+  List<Duration> waits,
+  FutureOr<MontyValue> Function() body,
+) => runZoned(
+  () async => body(),
+  zoneSpecification: ZoneSpecification(
+    createTimer: (self, parent, zone, duration, callback) {
+      waits.add(duration);
+
+      return parent.createTimer(zone, Duration.zero, callback);
+    },
+  ),
+);
 
 void _customFiles() {
   test(
