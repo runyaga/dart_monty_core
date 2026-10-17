@@ -272,6 +272,15 @@ def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list
     return flags
 
 
+def stop_reason(gate_ok: bool, stage: str, flags: list[str]) -> str | None:
+    """Why the loop stops at a commit, or None to advance. A red gate outranks a flag,
+    except a corpus failure on a commit that changed the upstream test cases: the pinned
+    corpus is expected to differ there, so a human reviews it."""
+    if not gate_ok:
+        return 'flagged' if stage == 'corpus' and 'TESTCASES' in flags else 'red'
+    return 'flagged' if flags else None
+
+
 def result_status(at_head: bool, advanced: bool, stopped: str | None, budget: bool) -> str:
     if stopped is not None:
         return stopped
@@ -374,11 +383,8 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         records.append({'sha': sha, 'subject': subject, 'flags': flags,
                         'gate': 'green' if gate_ok else 'red', 'stage': stage,
                         'seconds': round(time.monotonic() - began, 3)})
-        if not gate_ok:
-            stopped = 'red'
-            break
-        if flags:
-            stopped = 'flagged'
+        stopped = stop_reason(gate_ok, stage, flags)
+        if stopped:
             break
         current = sha
         advanced = True

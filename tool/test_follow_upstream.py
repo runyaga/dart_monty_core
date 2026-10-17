@@ -59,6 +59,14 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('a' * 40, result['last_good'])
         self.assertIn('boom', result['error'])
 
+    def test_stop_reason_ranks_red_over_flags(self) -> None:
+        self.assertIsNone(FOLLOW.stop_reason(True, 'all', []))
+        self.assertEqual('flagged', FOLLOW.stop_reason(True, 'all', ['MIRROR']))
+        self.assertEqual('red', FOLLOW.stop_reason(False, 'upstream-tests', ['MIRROR']))
+        self.assertEqual('red', FOLLOW.stop_reason(False, 'corpus', []))
+        self.assertEqual('flagged', FOLLOW.stop_reason(False, 'corpus', ['TESTCASES']))
+        self.assertEqual('red', FOLLOW.stop_reason(False, 'worker-build', ['TESTCASES']))
+
     def test_a_hung_command_is_a_red_timeout(self) -> None:
         result = FOLLOW.command(['sleep', '5'], check=False, timeout=0.2)
         self.assertEqual(124, result.returncode)
