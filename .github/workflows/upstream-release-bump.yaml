@@ -98,6 +98,7 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-wasip1
       - name: Prepare and push the bump branch
+        id: prepare
         if: steps.detect.outputs.run == 'true'
         env:
           TAG: ${{ steps.detect.outputs.tag }}
@@ -132,9 +133,20 @@ jobs:
           mirror_rc=$?
           set -e
           [ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ]
+          set +e
           python3 -I tool/bump_upstream.py apply --tag "$TAG" --core "$GITHUB_WORKSPACE" \
             --workdir "$RUNNER_TEMP/upstream-bump"
+          apply_rc=$?
+          set -e
+          if [ "$apply_rc" -eq 3 ]; then
+            echo "::notice::Upstream $TAG is not published on PyPI yet; retrying tomorrow."
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$apply_rc" -eq 0 ] || exit "$apply_rc"
           cd native/worker && cargo update --workspace && cd ../..
+          python3 -I tool/bump_upstream.py pin-lock --core "$GITHUB_WORKSPACE" \
+            --version "${TAG#v}"
           bash tool/build_worker.sh
           bash tool/prebuild.sh
           bash tool/generate_proto.sh
@@ -154,8 +166,9 @@ jobs:
           git add -A
           git commit -m "chore: prepare upstream monty $TAG"
           git push "$push_url" HEAD:"$BRANCH"
+          echo 'published=true' >> "$GITHUB_OUTPUT"
       - name: Dispatch full CI and open a draft pull request
-        if: steps.detect.outputs.run == 'true'
+        if: steps.detect.outputs.run == 'true' && steps.prepare.outputs.published == 'true'
         env:
           TAG: ${{ steps.detect.outputs.tag }}
           BRANCH: ${{ steps.detect.outputs.branch }}

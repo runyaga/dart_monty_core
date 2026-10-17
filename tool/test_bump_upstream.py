@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import tempfile
 import unittest
+from importlib.machinery import ModuleSpec
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name('bump_upstream.py')
@@ -19,7 +22,7 @@ SPEC.loader.exec_module(BUMP)
 def payload(name: str, version: str) -> dict:
     digest = ('a' if name == 'pydantic-monty' else 'b') * 64
     return {
-        'info': {'version': version},
+        'info': {'name': name, 'version': version},
         'urls': [
             {'filename': f'{name}-{version}.tar.gz', 'packagetype': 'sdist',
              'digests': {'sha256': digest}},
@@ -78,6 +81,88 @@ class BumpUpstreamTest(unittest.TestCase):
         self.assertIn('pydantic-monty-client==1.1.1', rendered)
         self.assertIn('typing-extensions==4.0.0', rendered)
         self.assertNotIn('d' * 64, rendered)
+
+    def test_pypi_artifact_selection_is_distribution_specific(self) -> None:
+        version = '1.1.0'
+
+        def artifact(filename: str, digest: str, kind: str = 'bdist_wheel') -> dict:
+            return {'filename': filename, 'packagetype': kind, 'digests': {'sha256': digest * 64}}
+
+        client = 'pydantic-monty-client'
+        runtime = 'pydantic-monty-runtime'
+        meta = 'pydantic-monty'
+        files = [
+            artifact(f'{client}-{version}.tar.gz', 'a', 'sdist'),
+            artifact(f'{client}-{version}-cp312-cp312-manylinux_2_28_x86_64.whl', 'b'),
+            artifact(f'{client}-{version}-cp312-cp312-macosx_11_0_arm64.whl', 'c'),
+            artifact(f'{client}-{version}-cp313-cp313-manylinux_2_28_x86_64.whl', 'd'),
+            artifact(f'{client}-{version}-cp313-cp313-macosx_11_0_arm64.whl', 'e'),
+            artifact(f'{client}-{version}-cp314-cp314-manylinux_2_28_x86_64.whl', 'f'),
+            artifact(f'{client}-{version}-cp314-cp314-macosx_11_0_arm64.whl', 'g'),
+            artifact(f'{client}-{version}-cp314-cp314t-manylinux_2_28_x86_64.whl', 'h'),
+            artifact(f'{client}-{version}-cp314-cp314t-macosx_11_0_arm64.whl', 'i'),
+            artifact(f'{client}-{version}-cp314-cp314-manylinux_2_28_aarch64.whl', 'j'),
+            artifact(f'{client}-{version}-cp314-cp314-win_amd64.whl', 'k'),
+            artifact(f'{client}-{version}-cp314-cp314-musllinux_1_2_x86_64.whl', 'l'),
+            artifact(f'{runtime}-{version}.tar.gz', 'm', 'sdist'),
+            artifact(f'{runtime}-{version}-py3-none-manylinux_2_28_x86_64.whl', 'n'),
+            artifact(f'{runtime}-{version}-py3-none-macosx_11_0_arm64.whl', 'o'),
+            artifact(f'{runtime}-{version}-py3-none-any.whl', 'p'),
+            artifact(f'{meta}-{version}.tar.gz', 'q', 'sdist'),
+            artifact(f'{meta}-{version}-py3-none-any.whl', 'r'),
+        ]
+        payload = {'info': {'version': version}, 'urls': files}
+
+        self.assertCountEqual([digest * 64 for digest in 'abcdefg'],
+                              BUMP.selected_hashes(client, payload))
+        self.assertCountEqual([digest * 64 for digest in 'mno'],
+                              BUMP.selected_hashes(runtime, payload))
+        self.assertCountEqual([digest * 64 for digest in 'qr'],
+                              BUMP.selected_hashes(meta, payload))
+
+    def test_worker_mirror_module_loads_by_file_path(self) -> None:
+        class Loader:
+            def create_module(self, spec: ModuleSpec) -> None:
+                return None
+
+            def exec_module(self, module: object) -> None:
+                setattr(module, 'crates_io_checksum', object())
+
+        spec = ModuleSpec('check_worker_mirror', Loader())
+        with mock.patch.object(BUMP.importlib.util, 'spec_from_file_location',
+                               return_value=spec) as load:
+            mirror = BUMP.load_worker_mirror()
+
+        load.assert_called_once_with('check_worker_mirror', SCRIPT.with_name('check_worker_mirror.py'))
+        self.assertTrue(hasattr(mirror, 'crates_io_checksum'))
+
+    def test_pin_worker_lock_pins_only_monty_crates_present_in_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            core = Path(directory)
+            lock = core / 'native/worker/Cargo.lock'
+            lock.parent.mkdir(parents=True)
+            lock.write_text('''\
+[[package]]
+name = "monty"
+version = "1.2.0"
+
+[[package]]
+name = "monty-macros"
+version = "1.2.0"
+
+[[package]]
+name = "unrelated"
+version = "1.2.0"
+''')
+            with mock.patch.object(BUMP, 'run') as run:
+                BUMP.pin_worker_lock(core, '1.1.0')
+
+        self.assertEqual([
+            mock.call(['cargo', 'update', '-p', 'monty', '--precise', '1.1.0'],
+                      cwd=lock.parent),
+            mock.call(['cargo', 'update', '-p', 'monty-macros', '--precise', '1.1.0'],
+                      cwd=lock.parent),
+        ], run.call_args_list)
 
     def test_body_lists_evidence_and_manual_work(self) -> None:
         body = BUMP.render_body('v1.1.0', 'v1.1.1', 'a' * 40, 'b' * 40, [{

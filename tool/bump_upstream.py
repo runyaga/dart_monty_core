@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -29,6 +30,10 @@ MIRROR_PATH = Path('tool/upstream/worker-mirror.json')
 LOCK_PATH = Path('tool/upstream/requirements.lock')
 DIST_NAMES = ('pydantic-monty', 'pydantic-monty-client', 'pydantic-monty-runtime')
 TAG_RE = re.compile(r'^v(\d+)\.(\d+)\.(\d+)$')
+WORKSPACE_MONTY_CRATES = (
+    'monty', 'monty-type-checking', 'monty-macros', 'monty-typeshed',
+    'monty-proto', 'monty-types', 'monty-alloc', 'monty-fs',
+)
 
 
 def semver(tag: str) -> tuple[int, int, int] | None:
@@ -96,25 +101,31 @@ def rewrite_pin_text(text: str, *, version: str, commit: str,
     return json.dumps(pin, indent=2) + '\n'
 
 
-def accepted_pypi_file(file: dict[str, Any]) -> bool:
+def accepted_pypi_file(name: str, file: dict[str, Any]) -> bool:
+    """Whether a PyPI artifact is supported for one pinned distribution."""
     filename = str(file.get('filename', ''))
+    if not re.match(rf'^{re.escape(name)}-\d', filename):
+        return False
     if file.get('packagetype') == 'sdist':
         return True
     if not filename.endswith('.whl'):
         return False
-    if '-py3-none-any.whl' in filename:
-        return True
-    return bool(re.search(r'-(cp312|cp313|cp314)-[^-]+-'
+    if name == 'pydantic-monty':
+        return filename.endswith('-py3-none-any.whl')
+    if name == 'pydantic-monty-runtime':
+        return bool(re.search(r'-py3-none-'
+                              r'(manylinux_2_28_x86_64|macosx_11_0_arm64)\.whl$', filename))
+    return bool(re.search(r'-(cp312|cp313|cp314)-\1-'
                           r'(manylinux_2_28_x86_64|macosx_11_0_arm64)\.whl$', filename))
 
 
-def selected_hashes(payload: dict[str, Any]) -> list[str]:
+def selected_hashes(name: str, payload: dict[str, Any]) -> list[str]:
     """Return sorted eligible PyPI artifact hashes from one JSON response."""
     urls = payload.get('urls', [])
     selected: list[tuple[str, str]] = []
     for item in urls:
         digest = item.get('digests', {}).get('sha256')
-        if accepted_pypi_file(item) and isinstance(digest, str):
+        if accepted_pypi_file(name, item) and isinstance(digest, str):
             selected.append((str(item.get('filename', '')), digest))
     return [digest for _, digest in sorted(selected)]
 
@@ -147,7 +158,7 @@ def render_lock(old_text: str, version: str, pypi: dict[str, dict[str, Any]]) ->
         info_version = payload.get('info', {}).get('version')
         if info_version != version:
             raise ValueError(f'PyPI payload for {name} reports {info_version!r}, want {version!r}')
-        entries.append(render_requirement(name, version, selected_hashes(payload)))
+        entries.append(render_requirement(name, version, selected_hashes(name, payload)))
     return header + ''.join(entries) + typing
 
 
@@ -207,6 +218,29 @@ def fetch_pypi(name: str, version: str) -> dict[str, Any]:
         if error.code == 404:
             raise FileNotFoundError(f'{name}=={version} is not on PyPI yet. Rerun after publication.') from error
         raise
+
+
+def load_worker_mirror() -> Any:
+    """Load the sibling checker without relying on Python's import path."""
+    checker = Path(__file__).with_name('check_worker_mirror.py')
+    spec = importlib.util.spec_from_file_location('check_worker_mirror', checker)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'could not load {checker}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def pin_worker_lock(core: Path, version: str) -> None:
+    """Pin workspace monty crates that Cargo resolved from crates.io."""
+    if semver(f'v{version}') is None:
+        raise ValueError('--version must be M.N.P')
+    worker = core / 'native/worker'
+    present = set(re.findall(r'(?m)^name\s*=\s*"([^"]+)"$',
+                             (worker / 'Cargo.lock').read_text()))
+    for crate in WORKSPACE_MONTY_CRATES:
+        if crate in present:
+            run(['cargo', 'update', '-p', crate, '--precise', version], cwd=worker)
 
 
 def rewrite_versions(manifest: str, upstream_version: str, core_version: str) -> str:
@@ -279,7 +313,7 @@ def apply(tag: str, core: Path, workdir: Path, dry_run: bool) -> int:
         if 'local' in entry:
             write(core / entry['local'], fresh, dry_run)
     try:
-        import check_worker_mirror
+        check_worker_mirror = load_worker_mirror()
         for name in mirror['pinned_crates']:
             mirror['pinned_crates'][name] = check_worker_mirror.crates_io_checksum(name, version)
     except (OSError, ValueError) as error:
@@ -369,6 +403,11 @@ def command_body(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_pin_lock(args: argparse.Namespace) -> int:
+    pin_worker_lock(args.core, args.version)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -382,6 +421,10 @@ def main() -> int:
     change.add_argument('--workdir', required=True, type=Path)
     change.add_argument('--dry-run', action='store_true')
     change.set_defaults(func=lambda a: apply(a.tag, a.core, a.workdir, a.dry_run))
+    pin_lock = sub.add_parser('pin-lock')
+    pin_lock.add_argument('--core', required=True, type=Path)
+    pin_lock.add_argument('--version', required=True)
+    pin_lock.set_defaults(func=command_pin_lock)
     body = sub.add_parser('body')
     body.add_argument('--core', required=True)
     body.add_argument('--tag', required=True)
