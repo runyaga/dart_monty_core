@@ -7,6 +7,8 @@
 @Tags(['unit'])
 library;
 
+import 'dart:typed_data';
+
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
     show MontyValueInternal;
@@ -589,6 +591,51 @@ void main() {
       expect(mdt.minute, 30);
       expect(mdt.second, 45);
       expect(mdt.microsecond, 123);
+    });
+
+    test('a Uint8List becomes MontyBytes, not a list of ints', () {
+      final got = MontyValue.fromDart(Uint8List.fromList([0, 1, 255]));
+      expect(got, isA<MontyBytes>());
+      expect((got as MontyBytes).value, [0, 1, 255]);
+    });
+
+    // The tagged map a wrapper's dartValue returns is transport shape. Fed
+    // back it would reach the sandbox as a plain dict carrying the tag keys,
+    // so it is refused and the typed value is passed instead.
+    for (final (name, MontyValue value) in [
+      (
+        'MontyNamedTuple',
+        const MontyNamedTuple(
+          typeName: 'N',
+          fieldNames: ['a'],
+          values: [MontyInt(1)],
+        ),
+      ),
+      ('MontyTimeZone', const MontyTimeZone(offsetSeconds: 7200, name: 'X')),
+      ('MontyComplex', const MontyComplex(1, 2)),
+      ('MontyFileHandle', MontyFileHandle('/f', 'r')),
+      ('MontyExceptionValue', MontyExceptionValue('ValueError', 'bad')),
+    ]) {
+      test('the dartValue map of $name is refused', () {
+        final map = value.dartValue;
+        expect(map, isA<Map<String, Object?>>());
+        expect(
+          () => MontyValue.fromDart(map),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('pass the MontyValue'),
+            ),
+          ),
+        );
+        expect(MontyValue.fromDart(value), same(value));
+      });
+    }
+
+    test('a plain dict with a __type key of its own is still a dict', () {
+      final got = MontyValue.fromDart({'__type': 'mine', 'x': 1});
+      expect(got, isA<MontyDict>());
     });
 
     test('Dart List → MontyList with recursive conversion', () {
