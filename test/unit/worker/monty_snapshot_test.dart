@@ -26,6 +26,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_arena_fixtures.dart' show delta;
 import '_scripted_channel.dart';
 import '_worker_class_oracle.g.dart';
 
@@ -566,6 +567,70 @@ void main() {
       expect(a, isNot(SourceRange(filename: '<string>', start: 1, end: 3)));
       // Upstream's repr (exceptions.rs:613-620): the name as it is, quoted.
       expect('$a', "SourceRange(filename='<string>', start=1, end=2)");
+    });
+  });
+
+  group('MontyComplete.output', () {
+    test('converts on every read: each gives a value of its own', () async {
+      final (s, _) = await _session([
+        answer([
+          complete([
+            intNode(1),
+            pb.MontyNode(list: pb.Indexes(items: [0])),
+          ]),
+        ]),
+      ]);
+      final done = await s.feedStart('x') as MontyComplete;
+      final first = done.output;
+      expect(first, const MontyList([MontyInt(1)]));
+      expect(done.output, first);
+      expect(identical(done.output, first), isFalse);
+    });
+
+    test('a value that fails to convert raises from the getter and '
+        'toString, and the session goes on', () async {
+      final (s, ch) = await _session([
+        answer([
+          complete([delta(1000000000, 0, 0)]),
+        ]),
+        answer([
+          complete([intNode(2)]),
+        ]),
+      ]);
+      final done = await s.feedStart('x') as MontyComplete;
+      final overflow = isA<FormatException>().having(
+        (e) => e.message,
+        'message',
+        startsWith('OverflowError: days=1000000000'),
+      );
+      MontyValue read() => done.output;
+      final throwsOverflow = throwsA(overflow);
+      expect(read, throwsOverflow);
+      expect(read, throwsOverflow);
+      expect(done.toString, throwsOverflow);
+      expect(ch.isAlive, isTrue);
+      expect(await s.feedRun('1 + 1'), const MontyInt(2));
+    });
+
+    test('a malformed frame still ends the session at the turn', () async {
+      final (s, ch) = await _session([
+        answer([
+          complete([
+            pb.MontyNode(date: pb.Date(year: 2026, month: 13, day: 1)),
+          ]),
+        ]),
+      ]);
+      await expectLater(
+        s.feedStart('x'),
+        throwsA(
+          isA<MontyCrashedError>().having(
+            (e) => e.detail,
+            'detail',
+            startsWith('invalid payload from worker: invalid value for '),
+          ),
+        ),
+      );
+      expect(ch.isAlive, isFalse);
     });
   });
 

@@ -161,10 +161,14 @@ final class ProtoSession {
       for (;;) {
         final event = _turnEnd(await _feedTurn(request, sink));
         if (event.whichKind() == pb.ChildEvent_Kind.complete) {
-          return FeedResult(
-            valueOf(event.complete),
-            List.unmodifiable(sink.prints),
+          final complete = event.complete;
+          final value = _built(
+            completeReader(complete),
+            complete.value,
+            _violation,
           );
+
+          return FeedResult(value, List.unmodifiable(sink.prints));
         }
         // A ResolveFutures with no coroutine started is out of step with
         // this driver (upstream discards the checkout).
@@ -190,14 +194,13 @@ final class ProtoSession {
     return _turnEnd(await _feedTurn(request, sink));
   });
 
-  /// The value [complete] carries; one that does not decode is a protocol
-  /// violation (upstream's "invalid payload from worker").
-  MontyValue valueOf(pb.Complete complete) {
+  /// A reader over the value [complete] carries, its structure checked and
+  /// nothing built: an arena upstream rejects when the frame arrives is a
+  /// protocol violation (upstream's "invalid payload from worker").
+  ArenaReader completeReader(pb.Complete complete) {
     try {
-      return ArenaReader(
-        complete.values,
-        hosts: objects.lookup,
-      )[complete.value];
+      return ArenaReader(complete.values, hosts: objects.lookup)
+        ..checkRoots([complete.value]);
     } on FormatException catch (e) {
       _violation('invalid payload from worker: ${e.message}');
     }
@@ -669,6 +672,21 @@ final class FeedResult {
   /// Everything printed during the feed, in order, as (stream, text) where
   /// stream is `stdout` or `stderr`.
   final List<(String, String)> prints;
+}
+
+/// The value at [root] of [reader], whose structure is checked: one that does
+/// not build is a protocol violation, ended by [violation] (upstream's
+/// "invalid payload from worker").
+MontyValue _built(
+  ArenaReader reader,
+  int root,
+  Never Function(String detail) violation,
+) {
+  try {
+    return reader[root];
+  } on FormatException catch (e) {
+    violation('invalid payload from worker: ${e.message}');
+  }
 }
 
 /// [host]'s answer to the suspension [event]. A failure that escapes
