@@ -89,13 +89,15 @@ void main() {
         for (final target in _targets) {
           final worker = manifest.targets[target]?.worker;
           final archive = worker?.archive;
-          if (archive == null) fail('worker archive is missing for $target');
+          if (worker == null || archive == null) {
+            fail('worker archive is missing for $target');
+          }
           final url = workerArchiveUrl(
             manifest: manifest,
             target: target,
-            artifact: worker!,
+            artifact: worker,
           );
-          expect(url.pathSegments.last, archive.name);
+          expect(url.pathSegments.lastOrNull, archive.name);
           expect(url.pathSegments, contains('v1.2.3'));
           expect(
             File(path.join(fixture.assets.path, archive.name)).existsSync(),
