@@ -1,0 +1,206 @@
+# The manifest embedded in the package (lib/src/worker/worker_manifest_data.dart)
+# must hold these hashes before the package is published. Run this workflow on
+# the binary commit, then update the manifest in the following commit.
+name: Release worker assets
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to assemble
+        required: true
+        type: string
+      publish:
+        description: Create and fill a draft release
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - '.github/workflows/release-worker.yaml'
+      - 'tool/worker_release.dart'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: macos-arm64
+          - runner: ubuntu-24.04
+            target: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          - runner: windows-2025
+            target: windows-x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: native/worker
+          key: worker-release-${{ matrix.target }}-${{ hashFiles('native/worker/Cargo.lock') }}
+      - run: dart pub get
+      - name: Build worker files
+        shell: bash
+        run: bash tool/build_worker.sh
+      - name: Pack worker files
+        shell: bash
+        run: >-
+          dart run tool/worker_release.dart pack --target "${TARGET}"
+          --bin-dir "lib/src/bin/${TARGET}" --out dist
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: worker-${{ matrix.target }}
+          path: dist
+          if-no-files-found: error
+
+  assemble:
+    name: Assemble release assets
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || github.event_name == 'pull_request' && 'v0.0.0-dryrun' || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - run: dart pub get
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*$ ]]; then
+            echo "invalid release tag: $TAG" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            remote_tags="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+            if [[ -n "$remote_tags" ]]; then
+              remote_sha="$(awk -v tag="$TAG" '
+                $2 == "refs/tags/" tag "^{}" { peeled = $1 }
+                $2 == "refs/tags/" tag { direct = $1 }
+                END { print peeled != "" ? peeled : direct }
+              ' <<<"$remote_tags")"
+              if [[ "$remote_sha" != "$GITHUB_SHA" ]]; then
+                echo "remote tag $TAG does not point at $GITHUB_SHA; binaries must be built from the tagged commit." >&2
+                exit 1
+              fi
+            fi
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: worker-*
+          path: dist
+          merge-multiple: true
+      - name: Assemble and verify manifest
+        run: |
+          dart run tool/worker_release.dart manifest --tag "$TAG" --fragments dist --out dist/worker-manifest.json
+          rm dist/*.fragment.json
+          dart run tool/worker_release.dart verify --manifest dist/worker-manifest.json --assets dist --tag "$TAG" > archives.txt
+          {
+            echo '| Archive | Bytes | SHA-256 |'
+            echo '| --- | ---: | --- |'
+            while read -r name bytes digest; do
+              echo "| $name | $bytes | $digest |"
+            done < archives.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: dist-all
+          path: |
+            dist/*.gz
+            dist/worker-manifest.json
+          if-no-files-found: error
+
+  publish:
+    name: Create draft release
+    needs: assemble
+    if: ${{ github.event_name == 'push' || inputs.publish }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - run: dart pub get
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*$ ]]; then
+            echo "invalid release tag: $TAG" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            remote_tags="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+            if [[ -n "$remote_tags" ]]; then
+              remote_sha="$(awk -v tag="$TAG" '
+                $2 == "refs/tags/" tag "^{}" { peeled = $1 }
+                $2 == "refs/tags/" tag { direct = $1 }
+                END { print peeled != "" ? peeled : direct }
+              ' <<<"$remote_tags")"
+              if [[ "$remote_sha" != "$GITHUB_SHA" ]]; then
+                echo "remote tag $TAG does not point at $GITHUB_SHA; binaries must be built from the tagged commit." >&2
+                exit 1
+              fi
+            fi
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: dist-all
+          path: dist
+      - name: Create a draft when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          view_stdout="$(mktemp)"
+          view_stderr="$(mktemp)"
+          trap 'rm -f "$view_stdout" "$view_stderr"' EXIT
+          if gh release view "$TAG" --json isDraft --jq .isDraft >"$view_stdout" 2>"$view_stderr"; then
+            if [[ "$(<"$view_stdout")" != true ]]; then
+              echo "release $TAG is already published; refusing to upload assets." >&2
+              exit 1
+            fi
+          elif grep -Eiq 'release .* not found|release not found' "$view_stderr"; then
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "$TAG" --notes ""
+          else
+            cat "$view_stderr" >&2
+            exit 1
+          fi
+      - name: Upload release assets
+        run: gh release upload "$TAG" dist/*.gz dist/worker-manifest.json --clobber
+      - name: Verify downloaded release assets
+        run: |
+          mkdir served
+          gh release download "$TAG" --dir served --pattern '*'
+          dart run tool/worker_release.dart verify --manifest served/worker-manifest.json --assets served --tag "$TAG"
