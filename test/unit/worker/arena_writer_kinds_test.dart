@@ -701,6 +701,15 @@ void main() {
       );
     });
 
+    test('refuses an unknown builtin function before adding its node', () {
+      final writer = ArenaWriter();
+      expect(
+        () => writer.add(montyStdTypeProxy('function', 'not_a_builtin')),
+        _refused('unknown builtin function "not_a_builtin"'),
+      );
+      expect(writer.arena.nodes, isEmpty);
+    });
+
     test("a std type proxy's kind is 'function' or 'type'", () {
       for (final kind in ['builtin', 'repr', 'cycle', '']) {
         expect(
@@ -720,6 +729,13 @@ void main() {
           reason: kind,
         );
       }
+    });
+
+    test('a function proxy for type returns as a type proxy', () {
+      final original = montyStdTypeProxy('function', 'type');
+      final returned = _roundTrip(original);
+      expect(returned, montyStdTypeProxy('type', 'type'));
+      expect(returned, isNot(original));
     });
 
     test('file modes and positions', () {

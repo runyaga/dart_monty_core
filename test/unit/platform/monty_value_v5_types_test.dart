@@ -129,6 +129,51 @@ void main() {
     test('toString names the class and counts its attributes', () {
       expect(base.toString(), 'MontyClassTypeProxy(User, 0 attrs)');
     });
+
+    test('renders no attribute contents', () {
+      final type = variant(
+        attrs: const {
+          'secret': MontyString('nested value'),
+        },
+      );
+      final rendered = type.toString();
+
+      expect(rendered, 'MontyClassTypeProxy(User, 1 attrs)');
+      expect(rendered, isNot(contains('secret')));
+    });
+
+    test('toString does not walk a self-referential attribute', () {
+      final attrs = <String, MontyValue>{};
+      final type = montyClassTypeProxy(
+        name: 'Loop',
+        id: 'id-loop',
+        hostDefined: false,
+        isDataclass: false,
+        attrs: attrs,
+      );
+      attrs['self'] = type;
+
+      expect(type.toString(), 'MontyClassTypeProxy(Loop, 1 attrs)');
+    });
+
+    test('shares its projected map with an instance in the same graph', () {
+      final type = variant(attrs: const {'kind': MontyString('person')});
+      final instance = montyClassProxy(
+        classType: type,
+        instanceId: 'i-1',
+        attrs: const {},
+      );
+      final [standalone, projectedInstance] = MontyList([
+        type,
+        instance,
+      ]).dartValue;
+      switch (projectedInstance) {
+        case final Map<String, Object?> instanceMap:
+          expect(instanceMap['class_type'], same(standalone));
+        default:
+          fail('expected an instance map, got $projectedInstance');
+      }
+    });
   });
 
   group('MontyClassProxy', () {
@@ -141,6 +186,67 @@ void main() {
       final other = _instance(instanceId: 'a-different-instance');
       expect(a, other);
       expect(a.hashCode, other.hashCode);
+    });
+
+    test('equality ignores instance and non-header class metadata', () {
+      MontyClassProxy proxy({
+        required String instanceId,
+        required String classId,
+        required bool hostDefined,
+        required Map<String, MontyValue> classAttrs,
+      }) => montyClassProxy(
+        classType: montyClassTypeProxy(
+          name: 'User',
+          id: classId,
+          hostDefined: hostDefined,
+          isDataclass: true,
+          attrs: classAttrs,
+        ),
+        instanceId: instanceId,
+        attrs: const {'name': MontyString('Alice')},
+      );
+
+      final decoded = proxy(
+        instanceId: 'i-1',
+        classId: 'id-sandbox',
+        hostDefined: false,
+        classAttrs: const {},
+      );
+      final other = proxy(
+        instanceId: 'i-2',
+        classId: 'id-host',
+        hostDefined: true,
+        classAttrs: const {'role': MontyString('admin')},
+      );
+
+      expect(decoded, other);
+      expect(decoded.hashCode, other.hashCode);
+    });
+
+    test('compares and hashes nested attributes by their value graphs', () {
+      MontyClassProxy proxy(MontyValue value) => montyClassProxy(
+        classType: montyClassTypeProxy(
+          name: 'User',
+          id: 'id-1',
+          hostDefined: false,
+          isDataclass: true,
+          attrs: const {},
+        ),
+        instanceId: 'i',
+        attrs: {'details': value},
+      );
+      MontyValue details([int level = 3]) => MontyList([
+        MontyDict([(const MontyString('level'), MontyInt(level))]),
+      ]);
+
+      final decodedDetails = details();
+      final otherDetails = details();
+      final decoded = proxy(decodedDetails);
+      final other = proxy(otherDetails);
+
+      expect(decoded, other);
+      expect(decoded.hashCode, other.hashCode);
+      expect(decoded, isNot(proxy(details(4))));
     });
 
     test('class metadata is read through classType', () {

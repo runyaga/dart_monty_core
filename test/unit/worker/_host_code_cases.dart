@@ -63,6 +63,16 @@ const String _catchRead =
     '  r = (type(e).__name__, repr(e), e.args)\n'
     'r';
 
+/// Catches what `datetime.now()` raises, as [_catchF] does.
+const String _catchNow =
+    'r = None\n'
+    'import datetime\n'
+    'try:\n'
+    '  datetime.datetime.now()\n'
+    'except BaseException as e:\n'
+    '  r = (type(e).__name__, repr(e), e.args)\n'
+    'r';
+
 /// The tuple [_catchF] and [_catchRead] return.
 MontyTuple _caught(String type, String repr, List<String> args) => MontyTuple([
   MontyString(type),
@@ -106,6 +116,52 @@ MontyHostFunction _unanswerable(String name, {bool async = false}) {
       );
 
   return MontyHostFunction(name, async ? coroutine(fail) : fail);
+}
+
+Never _mustNotRun(List<MontyValue> args, Map<String, MontyValue> kwargs) =>
+    throw StateError('this host function should not be invoked');
+
+MontyValue _plainAnswer(
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+) => const MontyInt(3);
+
+final HostClass<Object> _lazyLookupClass = HostClass(
+  'Lookup',
+  instance: (
+    fields: const {},
+    properties: {
+      'boom': (value) => throw const ExternalException('KeyError', 'boom'),
+    },
+    methods: const {},
+  ),
+);
+
+final HostClass<Object> _syntaxClass = HostClass(
+  'Broken',
+  methods: {
+    'parse': (args, kwargs) =>
+        throw const ExternalException('SyntaxError', 'bad method'),
+  },
+);
+
+/// A class proxy whose attribute value is a cyclic container.
+MontyClassProxy _cyclicProxy() {
+  final values = <MontyValue>[];
+  final loop = MontyList(values);
+  values.add(loop);
+
+  return montyClassProxy(
+    classType: montyClassTypeProxy(
+      name: 'Loop',
+      id: '00000000-0000-4000-8000-000000000200',
+      hostDefined: false,
+      isDataclass: false,
+      attrs: const {},
+    ),
+    instanceId: '00000000-0000-4000-8000-000000000201',
+    attrs: {'loop': loop},
+  );
 }
 
 Never _decline(String name, List<MontyValue> a, Map<String, MontyValue> k) =>
@@ -154,7 +210,483 @@ void hostCodeSessionTests(String label, WithConfiguredSession withSession) {
         );
       });
     });
+    test('a lazy KeyError defeats hasattr and getattr defaults', () async {
+      final value = ClassInstance(
+        Object(),
+        classType: ClassType(_lazyLookupClass),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: 'all',
+          allowedMethods: null,
+        ),
+      );
+      await withSession(_plain, (s) async {
+        final output = await s.feedRun(
+          'try:\n'
+          "  hasattr(x, 'boom')\n"
+          'except BaseException as e:\n'
+          '  has = type(e).__name__\n'
+          'try:\n'
+          "  getattr(x, 'boom', 'default')\n"
+          'except BaseException as e:\n'
+          '  got = type(e).__name__\n'
+          '(has, got)',
+          inputs: {'x': value},
+          printCallback: _ignore,
+        );
+        expect(
+          output,
+          const MontyTuple([MontyString('KeyError'), MontyString('KeyError')]),
+        );
+      });
+    });
 
+    test('a class method SyntaxError surfaces as MontySyntaxError', () async {
+      final value = ClassType(
+        _syntaxClass,
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: 'all',
+        ),
+      );
+      await withSession(_plain, (s) async {
+        await expectLater(
+          s.feedRun(
+            'C.parse()',
+            inputs: {'C': value},
+            printCallback: _ignore,
+          ),
+          throwsA(
+            isA<MontySyntaxError>()
+                .having(
+                  (e) => e.exception.excType,
+                  'exception type',
+                  'SyntaxError',
+                )
+                .having(
+                  (e) => e.exception.message,
+                  'exception message',
+                  'bad method',
+                ),
+          ),
+        );
+      });
+    });
+
+    test('a host function crossing back is a named string', () async {
+      const function = MontyHostFunction('passed', _mustNotRun);
+      await withSession(_plain, (s) async {
+        expect(
+          await s.feedRun(
+            'f',
+            inputs: {'f': function},
+            printCallback: _ignore,
+          ),
+          const MontyString('passed'),
+        );
+
+        final snapshot =
+            await s.feedStart(
+                  'target(f)',
+                  inputs: {
+                    'f': function,
+                    'target': const MontyHostFunction('target', _mustNotRun),
+                  },
+                  printCallback: _ignore,
+                )
+                as FunctionSnapshot;
+        expect(snapshot.args, [const MontyString('passed')]);
+        await snapshot.resume(const ExternalReturnValue(MontyNone()));
+
+        final callbackArgs = <MontyValue>[];
+        expect(
+          await s.feedRun(
+            'callback(f)',
+            inputs: {'f': function},
+            externalLookup: {
+              'callback': MontyHostFunction('callback', (args, kwargs) {
+                callbackArgs.addAll(args);
+
+                return const MontyNone();
+              }),
+            },
+            printCallback: _ignore,
+          ),
+          const MontyNone(),
+        );
+        expect(callbackArgs, [const MontyString('passed')]);
+      });
+    });
+
+    test('a missing host dispatch name raises NameError without calling its '
+        'body', () async {
+      var calls = 0;
+      final function = MontyHostFunction('missing', (args, kwargs) {
+        calls++;
+
+        return const MontyNone();
+      });
+      await withSession(_plain, (s) async {
+        expect(
+          await s.feedRun(
+            'try:\n'
+            '  f()\n'
+            'except BaseException as e:\n'
+            '  caught = type(e).__name__\n'
+            'caught',
+            inputs: {'f': function},
+            printCallback: _ignore,
+          ),
+          const MontyString('NameError'),
+        );
+        await expectLater(
+          s.feedRun(
+            'f()',
+            inputs: {'f': function},
+            printCallback: _ignore,
+          ),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.exception.excType,
+              'exception type',
+              'NameError',
+            ),
+          ),
+        );
+        expect(calls, 0);
+      });
+    });
+
+    test('a host function dispatching to a value raises TypeError without '
+        'calling its body', () async {
+      var calls = 0;
+      final function = MontyHostFunction('value', (args, kwargs) {
+        calls++;
+
+        return const MontyNone();
+      });
+      await withSession(_plain, (s) async {
+        expect(
+          await s.feedRun(
+            'try:\n'
+            '  f()\n'
+            'except BaseException as e:\n'
+            '  caught = type(e).__name__\n'
+            'caught',
+            inputs: {
+              'f': function,
+            },
+            externalLookup: {'value': const MontyInt(1)},
+            printCallback: _ignore,
+          ),
+          const MontyString('TypeError'),
+        );
+        await expectLater(
+          s.feedRun(
+            'f()',
+            inputs: {'f': function},
+            externalLookup: {'value': const MontyInt(1)},
+            printCallback: _ignore,
+          ),
+          throwsA(
+            isA<MontyRuntimeError>().having(
+              (e) => e.exception.excType,
+              'exception type',
+              'TypeError',
+            ),
+          ),
+        );
+        expect(calls, 0);
+      });
+    });
+
+    group('host function results', () {
+      const plain = MontyInt(3);
+      final notAwaitable = _runtime(
+        'TypeError',
+        "'int' object can't be awaited",
+      );
+
+      test('awaiting a plain answer reports its Python type at every call '
+          'path', () async {
+        await withSession(_plain, (s) async {
+          for (final code in ['await f()', 'x = f()\nawait x']) {
+            await expectLater(
+              s.feedRun(
+                code,
+                externalLookup: {
+                  'f': const MontyHostFunction('f', _plainAnswer),
+                },
+                printCallback: _ignore,
+              ),
+              throwsA(notAwaitable),
+              reason: code,
+            );
+          }
+
+          final call =
+              await s.feedStart(
+                    'await f()',
+                    inputs: {
+                      'f': const MontyHostFunction('f', _mustNotRun),
+                    },
+                    printCallback: _ignore,
+                  )
+                  as FunctionSnapshot;
+          expect(call.allowEagerAwait, isTrue);
+          await expectLater(
+            call.resume(const ExternalReturnValue(plain)),
+            throwsA(notAwaitable),
+          );
+        });
+      });
+
+      test('an ordinary call accepts a plain answer', () async {
+        await withSession(_plain, (s) async {
+          expect(
+            await s.feedRun(
+              'f()',
+              externalLookup: {
+                'f': const MontyHostFunction('f', _plainAnswer),
+              },
+              printCallback: _ignore,
+            ),
+            plain,
+          );
+        });
+      });
+
+      test('gather rejects a plain answer as not awaitable', () async {
+        await withSession(_plain, (s) async {
+          await expectLater(
+            s.feedRun(
+              'import asyncio\nawait asyncio.gather(f())',
+              externalLookup: {
+                'f': const MontyHostFunction('f', _plainAnswer),
+              },
+              printCallback: _ignore,
+            ),
+            throwsA(
+              _runtime(
+                'TypeError',
+                'An asyncio.Future, a coroutine or an awaitable is required',
+              ),
+            ),
+          );
+        });
+      });
+    });
+
+    test('a host function cannot decline through the OS convention', () async {
+      await withSession(_plain, (s) async {
+        expect(
+          await s.feedRun(
+            _catchF,
+            externalLookup: {
+              'f': MontyHostFunction(
+                'f',
+                (args, kwargs) => throw const OsCallNotHandledException(),
+              ),
+            },
+            printCallback: _ignore,
+          ),
+          _caught(
+            'Exception',
+            "Exception('OsCallNotHandledException()')",
+            ['OsCallNotHandledException()'],
+          ),
+        );
+      });
+    });
+
+    test('host functions are explicit values in inputs, answers and '
+        'containers', () async {
+      const function = MontyHostFunction('passed', _mustNotRun);
+      expect(() => MontyValue.fromDart(_mustNotRun), throwsArgumentError);
+      await withSession(_plain, (s) async {
+        final call =
+            await s.feedStart(
+                  'target(f, functions[0])',
+                  inputs: {
+                    'f': function,
+                    'functions': const MontyList([function]),
+                  },
+                  printCallback: _ignore,
+                )
+                as FunctionSnapshot;
+        expect(
+          call.args,
+          [const MontyString('passed'), const MontyString('passed')],
+        );
+        final done =
+            await call.resume(const ExternalReturnValue(function))
+                as MontyComplete;
+        expect(done.output, const MontyString('passed'));
+      });
+    });
+
+    test(
+      'later calls use the current lookup entry for a host function',
+      () async {
+        var firstCalls = 0;
+        var replacementCalls = 0;
+        final lookup = <String, MontyValue>{};
+        lookup['f'] = MontyHostFunction('initial', (args, kwargs) {
+          firstCalls++;
+          lookup['f'] = MontyHostFunction(
+            'replacement',
+            (replacementArgs, replacementKwargs) {
+              replacementCalls++;
+
+              return const MontyInt(2);
+            },
+          );
+
+          return const MontyInt(1);
+        });
+        await withSession(_plain, (s) async {
+          expect(
+            await s.feedRun(
+              'first = f()\nsecond = f()\n(first, second)',
+              externalLookup: lookup,
+              printCallback: _ignore,
+            ),
+            const MontyTuple([MontyInt(1), MontyInt(2)]),
+          );
+          expect(firstCalls, 1);
+          expect(replacementCalls, 1);
+        });
+      },
+    );
+
+    test(
+      'a host function runs only from the dispatched lookup entry',
+      () async {
+        final calls = <String>[];
+        await withSession(_plain, (s) async {
+          expect(
+            await s.feedRun(
+              'f()',
+              externalLookup: {
+                'f': MontyHostFunction('other', (args, kwargs) {
+                  calls.add('dispatched');
+
+                  return const MontyInt(1);
+                }),
+                'other': MontyHostFunction('f', (args, kwargs) {
+                  calls.add('named');
+
+                  return const MontyInt(2);
+                }),
+              },
+              printCallback: _ignore,
+            ),
+            const MontyInt(1),
+          );
+          expect(calls, ['dispatched']);
+        });
+      },
+    );
+
+    test('rejects invalid builtin proxy inputs and manual answers', () async {
+      final invalid = montyStdTypeProxy('function', 'not_a_builtin');
+      await withSession(_plain, (s) async {
+        await expectLater(
+          s.feedRun('1', inputs: {'x': invalid}, printCallback: _ignore),
+          throwsArgumentError,
+        );
+        final snapshot =
+            await s.feedStart(
+                  'f()',
+                  inputs: {
+                    'f': const MontyHostFunction('f', _mustNotRun),
+                  },
+                  printCallback: _ignore,
+                )
+                as FunctionSnapshot;
+        expect(
+          () => snapshot.resume(ExternalReturnValue(invalid)),
+          throwsArgumentError,
+        );
+        expect(snapshot.isSpent, isFalse);
+      });
+    });
+
+    test(
+      'a cyclic proxy automatic answer is catchable as ValueError',
+      () async {
+        const error = "ValueError('Circular reference detected')";
+        await withSession(_callHost, (s) async {
+          expect(
+            await s.feedRun(
+              _catchF,
+              printCallback: _ignore,
+              externalLookup: {
+                'f': MontyHostFunction('f', (args, kwargs) => _cyclicProxy()),
+              },
+            ),
+            _caught('ValueError', error, ['Circular reference detected']),
+          );
+          expect(
+            await s.feedRun(
+              _catchNow,
+              printCallback: _ignore,
+              os: (name, args, kwargs) => _cyclicProxy(),
+            ),
+            _caught('ValueError', error, ['Circular reference detected']),
+          );
+        });
+      },
+    );
+
+    test(
+      'an uncaught cyclic proxy answer is a runtime error and the '
+      'session continues',
+      () async {
+        await withSession(_callHost, (s) async {
+          await expectLater(
+            s.feedRun(
+              'f()',
+              printCallback: _ignore,
+              externalLookup: {
+                'f': MontyHostFunction('f', (args, kwargs) => _cyclicProxy()),
+              },
+            ),
+            throwsA(_runtime('ValueError', 'Circular reference detected')),
+          );
+          expect(
+            await s.feedRun('6 * 7', printCallback: _ignore),
+            const MontyInt(42),
+          );
+        });
+      },
+    );
+
+    test(
+      'comparing distinct self-containing lists raises RecursionError',
+      () async {
+        await withSession(_plain, (s) async {
+          await expectLater(
+            s.feedRun(
+              'a = []\n'
+              'a.append(a)\n'
+              'b = []\n'
+              'b.append(b)\n'
+              'a == b',
+              printCallback: _ignore,
+            ),
+            throwsA(
+              isA<MontyRuntimeError>().having(
+                (e) => e.exception.excType,
+                'exception type',
+                'RecursionError',
+              ),
+            ),
+          );
+        });
+      },
+    );
     test('an OS handler answers datetime.now with a MontyDateTime', () async {
       const now = MontyDateTime(
         year: 2024,

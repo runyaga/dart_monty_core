@@ -4,6 +4,8 @@
 library;
 
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyClassTypeProxy;
 import 'package:test/test.dart';
 
 import '../../unit/worker/_spec_proto_support.dart';
@@ -43,6 +45,20 @@ Future<MontyValue> _answer(
     code,
     externalLookup: {'f': MontyHostFunction('f', (_, _) => value)},
     os: (_, _, _) => value,
+  );
+}
+
+MontyClassTypeProxy _cyclicClassType() {
+  final items = <MontyValue>[];
+  final loop = MontyList(items);
+  items.add(loop);
+
+  return montyClassTypeProxy(
+    name: 'P',
+    id: '0123abcd-0000-4000-8000-00000000cafe',
+    hostDefined: true,
+    isDataclass: true,
+    attrs: {'loop': loop},
   );
 }
 
@@ -109,4 +125,16 @@ void main() {
         "Instance of 'MontySet'",
   );
   _cycle('cyclic dict');
+  test(
+    'an uncaught cyclic class type answer fails but keeps the session',
+    () async {
+      final session = await protoRealSession();
+
+      await expectLater(
+        _answer(session, _cyclicClassType(), os: false, caught: false),
+        throwsA(protoRuntime('ValueError', 'Circular reference detected')),
+      );
+      expect(await session.feedRun('6 * 7'), const MontyInt(42));
+    },
+  );
 }

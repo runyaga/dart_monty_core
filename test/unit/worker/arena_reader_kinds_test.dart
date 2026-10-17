@@ -203,6 +203,56 @@ void main() {
       );
     });
 
+    test('every builtin function except type is a function proxy', () {
+      // Independently copied from upstream's `BuiltinsFunctions::from_str`.
+      // `type` is deliberately absent: it is a type object, tested above.
+      const builtinFunctionNames = [
+        'abs',
+        'all',
+        'any',
+        'bin',
+        'chr',
+        'divmod',
+        'enumerate',
+        'filter',
+        'getattr',
+        'hasattr',
+        'hash',
+        'hex',
+        'id',
+        'isinstance',
+        'len',
+        'map',
+        'max',
+        'min',
+        'next',
+        'oct',
+        'open',
+        'ord',
+        'pow',
+        'print',
+        'repr',
+        'reversed',
+        'round',
+        'setattr',
+        'sorted',
+        'sum',
+        'zip',
+        'object.__setattr__',
+        'format',
+        'eval',
+        'exec',
+        'locals',
+      ];
+      for (final name in builtinFunctionNames) {
+        expect(
+          _decode([pb.MontyNode(builtinFunction: name)]),
+          montyStdTypeProxy('function', name),
+          reason: name,
+        );
+      }
+    });
+
     test('repr, cycle and an output function are their text', () {
       expect(_decode([pb.MontyNode(repr: '<o>')]), const MontyString('<o>'));
       expect(
@@ -538,6 +588,25 @@ void main() {
           set([0, 1, 2, 3, 4]),
         ]),
         isA<MontySet>().having((s) => s.items, 'items', hasLength(4)),
+      );
+    });
+
+    test('normalizes builtin type function nodes in mappings and sets', () {
+      final type = montyStdTypeProxy('type', 'type');
+      expect(
+        _decode([
+          builtinType('type'),
+          pb.MontyNode(builtinFunction: 'type'),
+          n('first'),
+          n('last'),
+          dict([(0, 2), (1, 3)]),
+          set([0, 1]),
+          tuple([4, 5]),
+        ]),
+        MontyTuple([
+          MontyDict([(type, const MontyString('last'))]),
+          MontySet([type]),
+        ]),
       );
     });
   });

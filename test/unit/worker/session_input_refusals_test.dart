@@ -58,6 +58,9 @@ pb.ChildEvent _call(String name, int id) => pb.ChildEvent(
 
 pb.ChildEvent _int(int n) => complete([intNode(n)]);
 
+pb.ChildEvent _lookup(String name) =>
+    pb.ChildEvent(nameLookup: pb.NameLookup(name: name));
+
 /// A list that contains itself.
 MontyList _cyclic() {
   final items = <MontyValue>[];
@@ -65,6 +68,20 @@ MontyList _cyclic() {
   items.add(list);
 
   return list;
+}
+
+MontyClassTypeProxy _cyclicClassType() {
+  final loopItems = <MontyValue>[];
+  final loop = MontyList(loopItems);
+  loopItems.add(loop);
+
+  return montyClassTypeProxy(
+    name: 'P',
+    id: _classId,
+    hostDefined: true,
+    isDataclass: true,
+    attrs: {'loop': loop},
+  );
 }
 
 const _classId = '0123abcd-0000-4000-8000-00000000cafe';
@@ -285,7 +302,7 @@ void main() {
           .having((e) => e.exception.excType, 'excType', 'ValueError'),
     );
 
-    test('as an input', () async {
+    test('a cyclic proxy input leaves its session usable', () async {
       final (s, ch) = await _session([
         answer([_int(1)]),
       ]);
@@ -305,7 +322,7 @@ void main() {
     });
 
     test(
-      'as a manual answer, snapshot still pending',
+      'a cyclic proxy manual answer leaves its snapshot retryable',
       () async {
         final (s, ch) = await _session([
           answer([_call('f', 1)]),
@@ -334,6 +351,72 @@ void main() {
         );
         attrs['me'] = self;
         expect(() => ArenaWriter().add(self), returnsNormally);
+      },
+    );
+
+    test(
+      'a cyclic class type refuses inputs and manual answers locally',
+      () async {
+        final (s, ch) = await _session([
+          answer([_call('f', 1)]),
+          answer([_int(1)]),
+          answer([_int(2)]),
+        ]);
+        final classCycleError = throwsA(
+          isA<MontyRuntimeError>()
+              .having(
+                (e) => e.exception.excType,
+                'exception type',
+                'ValueError',
+              )
+              .having(
+                (e) => e.exception.message,
+                'exception message',
+                'Circular reference detected',
+              ),
+        );
+
+        await expectLater(
+          s.feedRun('x', inputs: {'x': _cyclicClassType()}),
+          classCycleError,
+        );
+        final snapshot = await s.feedStart('f()') as FunctionSnapshot;
+        expect(
+          () => snapshot.resume(ExternalReturnValue(_cyclicClassType())),
+          classCycleError,
+        );
+        expect(snapshot.isSpent, isFalse);
+        await snapshot.resume(const ExternalReturnValue(MontyInt(1)));
+        expect(await s.feedRun('2'), const MontyInt(2));
+        expect(ch.requests, hasLength(4));
+      },
+    );
+
+    test(
+      'a cyclic class type in an automatic lookup ends the session',
+      () async {
+        final (s, ch) = await _session([
+          answer([_lookup('type')]),
+        ]);
+
+        await expectLater(
+          s.feedRun('type', externalLookup: {'type': _cyclicClassType()}),
+          throwsA(
+            isA<MontyRuntimeError>()
+                .having(
+                  (e) => e.exception.excType,
+                  'exception type',
+                  'ValueError',
+                )
+                .having(
+                  (e) => e.exception.message,
+                  'exception message',
+                  'Circular reference detected',
+                ),
+          ),
+        );
+        expect(ch.requests, hasLength(2));
+        await expectLater(s.feedRun('1'), throwsStateError);
       },
     );
   });

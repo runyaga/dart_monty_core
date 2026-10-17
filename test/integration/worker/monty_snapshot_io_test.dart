@@ -11,6 +11,8 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyComplete, MontyError, MontySyntaxError, MontyTypingError;
+import 'package:dart_monty_core/src/platform/monty_value.dart'
+    show montyClassProxy, montyClassTypeProxy;
 import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/monty_snapshot.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
@@ -73,6 +75,19 @@ final class _ThrowingLookup extends MapBase<String, MontyValue> {
   MontyValue? remove(Object? key) => throw UnimplementedError();
 }
 
+/// A proxy whose instance id the arena writer refuses.
+final MontyClassProxy _badProxy = montyClassProxy(
+  classType: montyClassTypeProxy(
+    name: 'Box',
+    id: '00000000-0000-4000-8000-000000000001',
+    hostDefined: false,
+    isDataclass: false,
+    attrs: const {},
+  ),
+  instanceId: 'not-a-uuid',
+  attrs: const {},
+);
+
 void main() {
   expectNoWorkersLeftAfterEachTest();
   attributeSessionTests('vm', _withSession);
@@ -116,6 +131,47 @@ void main() {
       );
     });
   });
+
+  test(
+    'a refused bare class proxy lookup cannot be caught and frees its worker',
+    () async {
+      final location = await realWorker() as WorkerExecutable;
+      await withMonty(
+        (pool) async {
+          final session = await pool.checkoutWith(_limits);
+          await expectLater(
+            session.feedRun(
+              'try:\n'
+              '  x\n'
+              'except BaseException:\n'
+              "  'caught'",
+              externalLookup: {'x': _badProxy},
+              printCallback: _ignore,
+            ),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                'id "not-a-uuid" is not a uuid',
+              ),
+            ),
+          );
+          await expectLater(
+            session.feedRun('1', printCallback: _ignore),
+            throwsA(isA<StateError>()),
+          );
+          expect(
+            await pool.withSessionWith(
+              (next) => next.feedRun('6 * 7', printCallback: _ignore),
+              _limits,
+            ),
+            const MontyInt(42),
+          );
+        },
+        PoolOptions(maxProcesses: 1, workerLocation: location.path),
+      );
+    },
+  );
 
   test('a host call: name, arguments, position; resumed', () async {
     await _withSession((s) async {
