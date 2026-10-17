@@ -23,12 +23,13 @@ const _deepEq = DeepCollectionEquality();
 ///
 /// Each subclass corresponds to a Python type. Use pattern matching:
 /// ```dart
-/// switch (result.value) {
+/// final value = await session.feedRun(code);
+/// switch (value) {
 ///   case MontyInt(:final value): print('int: $value');
 ///   case MontyString(:final value): print('str: $value');
-///   case MontyDate(:final year, :final month, :final day): ...
-///   case MontyList(:final items): ...
-///   case null: print('no value');
+///   case MontyList(:final items): print('list of ${items.length}');
+///   case MontyNone(): print('None');
+///   default: print(value);
 /// }
 /// ```
 ///

@@ -256,10 +256,13 @@ final session = await monty.checkout(
 );
 ```
 
-Each limit is optional; null means upstream's default. A limit hit raises a
+Each limit is optional. Null means upstream's default. A limit hit raises a
 Python exception (`MemoryError`, `RecursionError`, `TimeoutError`) that
-arrives as `MontyRuntimeError`, and the session survives, except for a
-worker that ran out of memory and exited, which is `MontyCrashedError`.
+arrives as `MontyRuntimeError`, and the session survives. A worker that exits
+after its allocator refused an allocation over the hard limit raises
+`MontyRuntimeError` carrying `MemoryError` and ends the session. On dart2js
+and dart2wasm, a session that keeps the allocation which exhausted `maxMemory`
+raises `MemoryError` on every later feed until a feed drops that allocation.
 With `typeCheck: true` each snippet is type-checked first; one the check
 rejects throws `MontyTypingError` without running.
 
@@ -298,8 +301,9 @@ switch (value) {
 }
 ```
 
-Scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyString`, `MontyBool`,
-`MontyNone`, `MontyEllipsis`, `MontyNotImplemented`), collections
+Scalars (`MontyInt`, `MontyBigInt`, `MontyFloat`, `MontyComplex`,
+`MontyString`, `MontyBool`, `MontyNone`, `MontyEllipsis`,
+`MontyNotImplemented`), collections
 (`MontyList`, `MontyTuple`, `MontyDict`, `MontySet`, `MontyFrozenSet`,
 `MontyBytes`), date and time (`MontyDate`, `MontyDateTime`, `MontyTime`,
 `MontyTimeDelta`, `MontyTimeZone`), and structured values (`MontyPath`,

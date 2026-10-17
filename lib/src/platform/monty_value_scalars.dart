@@ -258,7 +258,7 @@ final class MontyString extends MontyValue {
   String _toJson() => value;
 }
 
-/// Represents a Python `int` too large for a Dart `int` (i.e. beyond i64).
+/// Represents a Python `int` with magnitude beyond `2^53`.
 ///
 /// Python integers are unbounded; JSON numbers and Dart `int`s are not. Such a
 /// value travels as `{"__type": "bigint", "value": "<digits>"}` — the digits as
@@ -269,9 +269,9 @@ final class MontyString extends MontyValue {
 /// depended on its MAGNITUDE: `2**62` was a [MontyInt] and `2**63` was a string
 /// (core#134). Nothing in the type system hinted that the boundary existed.
 ///
-/// Note this variant only appears BEYOND the i64 range. Values that fit stay
-/// [MontyInt], because widening every integer to [BigInt] would cost every
-/// consumer an unwrap for a case that almost never occurs.
+/// Note this variant only appears for a magnitude beyond `2^53`. Values that
+/// fit stay [MontyInt], because widening every integer to [BigInt] would cost
+/// every consumer an unwrap for a case that almost never occurs.
 @immutable
 final class MontyBigInt extends MontyValue {
   /// Creates a [MontyBigInt] with the given [value].

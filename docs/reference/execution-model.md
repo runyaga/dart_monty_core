@@ -11,10 +11,14 @@ in the browser. This page says what that boundary protects and what it costs.
 | **Native** (VM, AOT) | child process | yes | yes: the parent kills the process |
 | **Web** (dart2js, dart2wasm) | Web Worker | yes | yes: `terminate()` |
 
-A memory fault inside sandboxed Python (a stack-overflow abort, an allocator
-abort, a wasm trap) ends that worker, not your app. The call in flight fails
+A memory fault inside sandboxed Python (a stack-overflow abort, a wasm trap)
+ends that worker, not your app. The call in flight fails
 with `MontyCrashedError` and the session with it; the pool starts a new worker
 for the next checkout.
+
+A worker that exits because its allocator refused an allocation over the hard
+limit fails the call with `MontyRuntimeError` carrying `MemoryError`, and the
+session ends.
 
 ## Why a worker
 
@@ -55,6 +59,8 @@ final session = await monty.checkout(
 `maxFeedDuration` stops a non-terminating loop with `TimeoutError`,
 `maxRecursionDepth` turns runaway recursion into `RecursionError`, and
 `maxMemory` raises `MemoryError`; each arrives as `MontyRuntimeError`.
+On dart2js and dart2wasm, a session that keeps the allocation which exhausted
+`maxMemory` raises `MemoryError` on every later feed until a feed drops it.
 
 What limits cannot cover, the worker boundary does:
 
@@ -66,7 +72,8 @@ What limits cannot cover, the worker boundary does:
   the worker, for a worker that stops answering.
 - `MontySession.close()` during a turn kills the worker.
 - A worker whose allocator refuses an allocation over its hard limit exits;
-  that too is `MontyCrashedError`.
+  the call fails with `MontyRuntimeError` carrying `MemoryError` and the
+  session ends.
 
 ## Host filesystem service
 

@@ -5,7 +5,8 @@
 /// As upstream's binding splits its `MontyException`: every error has the
 /// inner exception, [MontyError.exception]; syntax and runtime errors also
 /// carry the traceback and `display()`; a typing error's `display()` is the
-/// worker's rendering. `message` and `toString()` are upstream's `__str__`.
+/// worker's rendering. `toString()` is upstream's `__str__`, and the inner
+/// exception's message is `exception.message`.
 ///
 /// Upstream's errors cannot be constructed from Python, so these have no
 /// public constructor: the session builds them from wire events through

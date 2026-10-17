@@ -173,7 +173,8 @@ String _cacheRoot(WorkerCacheSource? source) {
         : 'HOME';
     throw spawnError(
       'Published dart_monty_core worker cache is unusable: ${error.message}; '
-      'set $variable to an absolute directory, or pass a WorkerExecutable.',
+      'set $variable to an absolute directory, or set workerLocation to the '
+      'path of a worker executable.',
     );
   }
 }
@@ -192,7 +193,7 @@ WorkerLaunch _selfRelaunch(
     'relaunch itself as one, which needs runMontyWorkerIfChild(args) as '
     'the first statement of main and the worker library bundled (root '
     'pubspec: hooks: user_defines: dart_monty_core: build_worker: true). '
-    'Or pass a WorkerExecutable.',
+    'Or set workerLocation to the path of a worker executable.',
   );
 }
 
@@ -321,7 +322,8 @@ Future<WorkerLaunch> _packageExecutable(
   throw spawnError(
     'No dart_monty_core worker executable found. Tried: $tried. Build one '
     'with tool/build_worker.sh, run `dart run` again so the build hook can '
-    'install a published worker, or pass a WorkerExecutable.',
+    'install a published worker, or set workerLocation to the path of a '
+    'worker executable.',
   );
 }
 

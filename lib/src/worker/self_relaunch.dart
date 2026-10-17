@@ -90,17 +90,17 @@ String selfRelaunchRemedy(SelfRelaunchStatus status) => switch (status) {
   SelfRelaunchNotArmed() =>
     'runMontyWorkerIfChild(args) was not called as the first statement of '
         'main: call runMontyWorkerIfChild(args) as the first statement of '
-        'main. Or pass a WorkerExecutable.',
+        'main. Or set workerLocation to the path of a worker executable.',
   SelfRelaunchLibraryMissing(:final path) =>
     "the worker library $path is missing from the bundle: ship the bundle's "
         'lib/ directory next to bin/ unchanged, or rebuild with dart build '
         'cli. If the bundle has no lib/ directory, enable the root pubspec '
         'opt-in (hooks: user_defines: dart_monty_core: build_worker: true). '
-        'Or pass a WorkerExecutable.',
+        'Or set workerLocation to the path of a worker executable.',
   SelfRelaunchLibraryUnloadable(:final path, :final error) =>
     'the worker library $path exists but cannot be loaded: $error: rebuild '
-        'it for this platform (dart build cli) or replace the file. Or pass '
-        'a WorkerExecutable.',
+        'it for this platform (dart build cli) or replace the file. Or set '
+        'workerLocation to the path of a worker executable.',
 };
 
 /// Formats the one-line diagnostic written by a failed worker child.
