@@ -95,15 +95,21 @@ void main([List<String> args = const []]) {
     skip: _skipBundledTests,
   );
   test(
-    'unresolved entry point propagates '
-    'ArgumentError',
+    'unresolved entry point reports a missing bundled library',
     () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         _path,
         'missing',
       ]);
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      expect(result.stdout, 'ArgumentError\n');
+      expect(result.exitCode, workerLibraryExitCode);
+      expect(result.stdout, isEmpty);
+      expect(
+        result.stderr,
+        allOf(
+          startsWith('dart_monty_core worker: dart_monty_worker_main:'),
+          contains(_missingLibrarySuffix()),
+        ),
+      );
     },
   );
 }
@@ -135,13 +141,7 @@ void _child(String mode) {
   if (mode == 'bundled') {
     _serveBundled();
   } else {
-    try {
-      runMontyWorkerIfChild(const [SelfRelaunch.flag]);
-    } on Object catch (error) {
-      stdout.writeln(error is ArgumentError ? 'ArgumentError' : '$error');
-
-      return;
-    }
+    runMontyWorkerIfChild(const [SelfRelaunch.flag]);
   }
   stdout.writeln('application resumed');
   exit(99);
@@ -160,6 +160,12 @@ void _serveBundled() {
 
 bool get _requiresPreloadedBundledLibrary =>
     !Platform.isMacOS && !Platform.isWindows;
+
+String _missingLibrarySuffix() => switch (Platform.operatingSystem) {
+  'windows' => r'\lib\dart_monty_worker.dll',
+  'macos' => '/lib/libdart_monty_worker.dylib',
+  _ => '/lib/libdart_monty_worker.so',
+};
 
 String _bundledLibraryPath() {
   final uri = Uri.parse(

@@ -11,12 +11,14 @@ import 'dart:isolate';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
+import 'package:dart_monty_core/src/worker/self_relaunch_options.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_cache_source.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest_data.dart';
 import 'package:meta/meta.dart';
 
+export 'package:dart_monty_core/src/worker/self_relaunch_options.dart';
 export 'package:dart_monty_core/src/worker/worker_cache_source.dart';
 
 final _verifiedWorkers = <String>{};
@@ -52,8 +54,8 @@ void resetVerifiedWorkersForTesting() {
 /// 2. Under the JIT (`dart run`, `dart test`): a verified per-user cache
 ///    entry for [abi] when the bundled manifest publishes one.
 /// 3. In an AOT executable: [SelfRelaunch], if `runMontyWorkerIfChild` ran
-///    first in `main` and the worker library is bundled. Package URIs are
-///    not consulted there: an AOT executable resolves them against the
+///    first in `main` and the bundled worker library resolves. Package URIs
+///    are not consulted there: an AOT executable resolves them against the
 ///    package config of the machine that built it, when that file still
 ///    exists, and to null otherwise, depending on the working directory.
 /// 4. The package-relative executable for [abi], resolved through
@@ -64,14 +66,25 @@ void resetVerifiedWorkersForTesting() {
 Future<WorkerLaunch> locateWorker({
   WorkerLaunch? explicit,
   Abi? abi,
-  @visibleForTesting bool isAot = const bool.fromEnvironment('dart.vm.product'),
+  @visibleForTesting
+  SelfRelaunchOptions selfRelaunch = const SelfRelaunchOptions(),
   @visibleForTesting Future<Uri?> Function(Uri)? resolvePackageUri,
   @visibleForTesting bool Function()? canSelfRelaunch,
   @visibleForTesting WorkerCacheSource? cache,
 }) async {
   if (explicit != null) return explicit;
 
-  if (isAot) return _selfRelaunch(canSelfRelaunch ?? selfRelaunchAvailable);
+  if (selfRelaunch.isAot) {
+    final ready = canSelfRelaunch ?? selfRelaunchAvailable;
+    final diagnose =
+        selfRelaunch.diagnose ??
+        (canSelfRelaunch == null ? diagnoseSelfRelaunch : null);
+
+    return _selfRelaunch(
+      ready,
+      diagnose,
+    );
+  }
 
   final hostAbi = abi ?? Abi.current();
   final (cachedExecutable, cachePath) = await _cacheExecutable(hostAbi, cache);
@@ -160,9 +173,14 @@ String _cacheRoot(WorkerCacheSource? source) {
   }
 }
 
-/// Step 3: [SelfRelaunch] if [ready] says this process can serve it.
-WorkerLaunch _selfRelaunch(bool Function() ready) {
+/// Returns [SelfRelaunch] when [ready] says this process can serve it.
+WorkerLaunch _selfRelaunch(
+  bool Function() ready,
+  SelfRelaunchStatus Function()? diagnose,
+) {
   if (ready()) return const SelfRelaunch();
+
+  if (diagnose != null) throw spawnError(selfRelaunchRemedy(diagnose()));
 
   throw spawnError(
     'No dart_monty_core worker found. This AOT executable can only '

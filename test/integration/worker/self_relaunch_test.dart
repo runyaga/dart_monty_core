@@ -8,10 +8,13 @@ library;
 
 import 'dart:io';
 
+import 'package:collection/collection.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart'
     show MontyCrashedError;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
+import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 final String _probe = File(
@@ -19,6 +22,16 @@ final String _probe = File(
 ).absolute.path;
 
 void main() {
+  _testLaunchCommand();
+  _testDiagnosticFormatting();
+  _testUnflaggedWorker();
+  _testFlaggedWorker();
+  _testWorkerLibraryExitCode();
+  _testAotEligibility();
+  _testAotRoute();
+}
+
+void _testLaunchCommand() {
   group('launchCommand', () {
     test('SelfRelaunch runs this executable with the worker flag', () {
       final (path, args) = launchCommand(const SelfRelaunch());
@@ -39,7 +52,49 @@ void main() {
       expect(const SelfRelaunch().toString(), 'SelfRelaunch()');
     });
   });
+}
 
+void _testDiagnosticFormatting() {
+  group('runMontyWorkerIfChild', () {
+    test('worker child failure line covers every self-relaunch status', () {
+      const library = '/bundle/lib/libdart_monty_worker.so';
+      final cases = <(SelfRelaunchStatus, String?)>[
+        (const SelfRelaunchReady(), null),
+        (const SelfRelaunchNotArmed(), null),
+        (const SelfRelaunchLibraryMissing(library), library),
+        (
+          const SelfRelaunchLibraryUnloadable(
+            library,
+            'ArgumentError: bad library\n  trailing detail\n',
+          ),
+          library,
+        ),
+      ];
+
+      for (final (status, failurePath) in cases) {
+        final line = workerChildFailureLine(status);
+        if (failurePath == null) {
+          expect(line, isNull, reason: '$status');
+          continue;
+        }
+
+        expect(
+          line,
+          allOf(
+            startsWith('dart_monty_core worker:'),
+            contains(failurePath),
+            contains('dart_monty_worker_main'),
+          ),
+          reason: '$status',
+        );
+        if (line == null) fail('missing child failure line for $status');
+        expect(line.split('\n'), hasLength(1), reason: '$status');
+      }
+    });
+  });
+}
+
+void _testUnflaggedWorker() {
   group('runMontyWorkerIfChild', () {
     test(
       'without the flag it returns, and arms nothing it cannot serve',
@@ -54,19 +109,35 @@ void main() {
       expect(r.exitCode, 0, reason: '${r.stderr}');
       expect(r.stdout, 'available=false\nparent\n');
     });
+  });
+}
 
-    test('the flag hands the process to the worker library, which this '
-        'runtime does not have', () async {
-      final r = await Process.run(Platform.resolvedExecutable, [
-        _probe,
-        SelfRelaunch.flag,
-      ]);
-      // Never returned to main: nothing on stdout, and the failure names the
-      // missing entry point.
-      expect(r.stdout, isEmpty);
-      expect(r.exitCode, isNot(0));
-      expect(r.stderr, contains('dart_monty_worker_main'));
-    });
+void _testFlaggedWorker() {
+  group('runMontyWorkerIfChild', () {
+    test(
+      'the flag reports a missing bundled worker library and exits 78',
+      () async {
+        final r = await Process.run(Platform.resolvedExecutable, [
+          _probe,
+          SelfRelaunch.flag,
+        ]);
+        expect(r.stdout, isEmpty);
+        expect(r.exitCode, 78);
+        final lines = (r.stderr as String)
+            .split('\n')
+            .where((line) => line.isNotEmpty)
+            .toList();
+        expect(
+          lines.singleOrNull,
+          allOf(
+            startsWith('dart_monty_core worker:'),
+            contains('dart_monty_worker_main'),
+            contains(_expectedWorkerLibraryPath()),
+            isNot(contains('exit status: 255')),
+          ),
+        );
+      },
+    );
 
     test('the flag must be the only argument', () async {
       final r = await Process.run(Platform.resolvedExecutable, [
@@ -78,18 +149,32 @@ void main() {
       expect(r.stdout, 'available=false\nparent\n');
     });
   });
+}
 
+void _testWorkerLibraryExitCode() {
+  test('worker-library exit status is 78', () {
+    expect(workerLibraryExitCode, 78);
+  });
+}
+
+void _testAotEligibility() {
   group('locateWorker step 3 (AOT)', () {
     test('self-relaunch ready: SelfRelaunch', () {
       expect(
-        locateWorker(isAot: true, canSelfRelaunch: () => true),
+        locateWorker(
+          selfRelaunch: const SelfRelaunchOptions(isAot: true),
+          canSelfRelaunch: () => true,
+        ),
         completion(isA<SelfRelaunch>()),
       );
     });
 
     test('not ready: a spawn failure naming both requirements', () {
       expect(
-        locateWorker(isAot: true, canSelfRelaunch: () => false),
+        locateWorker(
+          selfRelaunch: const SelfRelaunchOptions(isAot: true),
+          canSelfRelaunch: () => false,
+        ),
         throwsA(
           isA<MontyCrashedError>().having(
             (e) => e.toString(),
@@ -103,12 +188,16 @@ void main() {
         ),
       );
     });
+  });
+}
 
+void _testAotRoute() {
+  group('locateWorker step 3 (AOT)', () {
     test('package URIs are not consulted, even where they resolve', () {
       var asked = false;
       expect(
         locateWorker(
-          isAot: true,
+          selfRelaunch: const SelfRelaunchOptions(isAot: true),
           resolvePackageUri: (uri) async {
             asked = true;
 
@@ -141,6 +230,18 @@ void main() {
       );
     });
   });
+}
+
+String _expectedWorkerLibraryPath() {
+  final name = switch (Platform.operatingSystem) {
+    'windows' => 'dart_monty_worker.dll',
+    'macos' => 'libdart_monty_worker.dylib',
+    _ => 'libdart_monty_worker.so',
+  };
+
+  return path.normalize(
+    path.join(path.dirname(Platform.resolvedExecutable), '..', 'lib', name),
+  );
 }
 
 // Native mounts load the worker dylib into the test process. Its global
