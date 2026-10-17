@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       accept:
-        description: 'Reviewed commit SHA to accept without gating'
+        description: 'Reviewed pending commit SHA to accept'
         required: false
         type: string
       max_commits:
@@ -91,7 +91,7 @@ jobs:
             --parity "$GITHUB_WORKSPACE/.parity" --max-commits "$MAX_COMMITS" \
             --state-file "$STATE_DIR/last_good.json" --out result.json)
           if [ -n "$ACCEPT" ]; then
-            args+=(--accept "$ACCEPT")
+            args+=("--accept=$ACCEPT")
           fi
           python3 -I tool/follow_upstream.py "${args[@]}"
       - name: Weekly digest of flagged commits
