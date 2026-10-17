@@ -34,6 +34,7 @@ void main() {
   _publishRenameRaceTest();
   _decompressionLimitTest();
   _stagingSweepTest();
+  _pidAliveTests();
   _staleLockTest();
   _ownerlessLockTest();
   _concurrentInstallTest();
@@ -42,6 +43,78 @@ void main() {
   _verifiedCopyTest();
   _artifactLockTest();
 }
+
+void _pidAliveTests() {
+  group('pidAlive', () {
+    test('finds a pid in tasklist output', () async {
+      final alive = await pidAlive(
+        123,
+        isWindows: true,
+        processRunner: (_, _) async => _processResult(stdout: '"task","123"'),
+      );
+
+      expect(alive, isTrue);
+    });
+
+    test('does not find an absent pid in tasklist output', () async {
+      final alive = await pidAlive(
+        123,
+        isWindows: true,
+        processRunner: (_, _) async => _processResult(stdout: '"task","456"'),
+      );
+
+      expect(alive, isFalse);
+    });
+
+    test('conservatively keeps a pid after a tasklist failure', () async {
+      final alive = await pidAlive(
+        123,
+        isWindows: true,
+        processRunner: (_, _) async => _processResult(exitCode: 1),
+      );
+
+      expect(alive, isTrue);
+    });
+
+    test('conservatively keeps a pid when tasklist cannot start', () async {
+      final alive = await pidAlive(
+        123,
+        isWindows: true,
+        processRunner: (_, _) => Future.error(
+          const ProcessException('tasklist', [], 'not available'),
+        ),
+      );
+
+      expect(alive, isTrue);
+    });
+
+    test('passes the pid filter and CSV arguments to tasklist', () async {
+      late String executable;
+      late List<String> arguments;
+
+      await pidAlive(
+        123,
+        isWindows: true,
+        processRunner: (command, values) async {
+          executable = command;
+          arguments = values;
+
+          return _processResult();
+        },
+      );
+
+      expect(executable, 'tasklist');
+      expect(arguments, ['/FI', 'PID eq 123', '/NH', '/FO', 'CSV']);
+    });
+
+    test('uses killPid for a dead process on POSIX', () async {
+      expect(await pidAlive(999999999, isWindows: false), isFalse);
+    });
+  });
+}
+
+ProcessResult _processResult({int exitCode = 0, String stdout = ''}) =>
+    ProcessResult(0, exitCode, stdout, '');
 
 void _archiveUrlTests() {
   group('workerArchiveUrl', () {

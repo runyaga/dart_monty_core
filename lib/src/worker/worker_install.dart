@@ -12,6 +12,7 @@ import 'package:dart_monty_core/src/worker/worker_install_error.dart';
 import 'package:dart_monty_core/src/worker/worker_install_request.dart';
 import 'package:dart_monty_core/src/worker/worker_install_result.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 
 export 'package:dart_monty_core/src/worker/worker_install_error.dart';
@@ -612,9 +613,16 @@ Future<bool> _ownerIsStale(
 }
 
 /// Reports whether a process can still own an installation directory.
-///
-Future<bool> pidAlive(int processId) async {
-  if (Platform.isWindows) return _windowsPidAlive(processId);
+Future<bool> pidAlive(
+  int processId, {
+  @visibleForTesting bool? isWindows,
+  @visibleForTesting
+  Future<ProcessResult> Function(String, List<String>) processRunner =
+      Process.run,
+}) async {
+  if (isWindows ?? Platform.isWindows) {
+    return _windowsPidAlive(processId, processRunner: processRunner);
+  }
   try {
     return Process.killPid(processId, ProcessSignal.sigcont);
   } on ProcessException {
@@ -622,9 +630,17 @@ Future<bool> pidAlive(int processId) async {
   }
 }
 
-Future<bool> _windowsPidAlive(int processId) async {
+Future<bool> _windowsPidAlive(
+  int processId, {
+  @visibleForTesting
+  Future<ProcessResult> Function(String, List<String>) processRunner =
+      Process.run,
+}) async {
   try {
-    final result = await Process.run('tasklist', _taskListArguments(processId));
+    final result = await processRunner(
+      'tasklist',
+      _taskListArguments(processId),
+    );
 
     return result.exitCode != 0 ||
         result.stdout.toString().contains('$processId');
