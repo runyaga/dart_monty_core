@@ -9,6 +9,9 @@ import 'package:dart_monty_core/src/worker/wire_scalars.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';
 import 'package:test/test.dart';
 
+import '_real_worker_location_stub.dart'
+    if (dart.library.io) '_real_worker_location_io.dart'
+    as local_worker;
 import '_scripted_channel.dart';
 
 /// A configured session whose subsequent replies are supplied by the test.
@@ -76,6 +79,7 @@ Future<MontySession> protoRealSession({
   final pool = await Monty.start(
     maxProcesses: 1,
     requestTimeout: const Duration(seconds: 9),
+    workerLocation: await local_worker.realWorkerLocation(),
   );
   addTearDown(pool.close);
   final session = await pool.checkout(limits: limits, osPolicy: osPolicy);
