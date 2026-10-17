@@ -8,6 +8,7 @@ import 'package:dart_monty_core/src/worker/arena_writer.dart';
 import 'package:dart_monty_core/src/worker/host_answers.dart';
 import 'package:dart_monty_core/src/worker/host_objects.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
+import 'package:meta/meta.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
@@ -17,6 +18,21 @@ final class _Box {
 
   int n;
 }
+
+@immutable
+final class _EqualBox {
+  const _EqualBox(this.n);
+
+  final int n;
+
+  @override
+  bool operator ==(Object other) => other is _EqualBox && other.n == n;
+
+  @override
+  int get hashCode => n.hashCode;
+}
+
+ClassType<_EqualBox> _equalBoxType() => ClassType(const HostClass('EqualBox'));
 
 /// Every host callback that ran, by name.
 final List<String> _ran = [];
@@ -345,6 +361,63 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('an equal but distinct wrapped object cannot reuse an id', () {
+      final value = _Box(1);
+      final first = _EqualBox(value.n);
+      final second = _EqualBox(value.n);
+      final type = _equalBoxType();
+      final objects = HostObjects()
+        ..register(ClassInstance(first, classType: type, id: _id(110)));
+
+      expect(first, second);
+      expect(
+        () => objects.register(
+          ClassInstance(second, classType: type, id: _id(110)),
+        ),
+        throwsA(
+          isA<PythonRefusal>().having(
+            (error) => error.excType,
+            'exception type',
+            'ValueError',
+          ),
+        ),
+      );
+    });
+
+    test('one session registry indexes its class and instance wrappers', () {
+      final objects = HostObjects();
+      final instance = _box(111);
+      final type = ClassType(_boxClass, id: _id(112));
+      objects
+        ..register(instance)
+        ..register(type);
+
+      expect(objects[instance.id.toUpperCase()], same(instance));
+      expect(objects[type.id.toUpperCase()], same(type));
+      final anotherSession = HostObjects();
+      expect(anotherSession[instance.id], isNull);
+      expect(anotherSession[type.id], isNull);
+    });
+
+    test('a replacement wrapper supplies the latest lazy policy', () {
+      final box = _Box(1);
+      final hidden = _box(
+        113,
+        value: box,
+        policies: (eagerAttrs: null, lazyAttrs: null, allowedMethods: null),
+      );
+      final exposed = _box(
+        113,
+        value: box,
+        policies: (eagerAttrs: null, lazyAttrs: ['n'], allowedMethods: null),
+      );
+      final objects = HostObjects()
+        ..register(hidden)
+        ..register(exposed);
+
+      expect(objects.lookupLazyAttr(exposed.id, 'n'), const MontyInt(1));
     });
 
     test('the class an instance implies never replaces a granted one', () {
@@ -781,6 +854,238 @@ void main() {
     });
   });
 
+  group('instance conversion', () {
+    test('the conversion receives an eager attribute name and value', () {
+      final seen = <(String, Object)>[];
+      final instance = ClassInstance(
+        _Box(3),
+        classType: ClassType(_boxClass),
+        policies: const (
+          eagerAttrs: ['n'],
+          lazyAttrs: null,
+          allowedMethods: null,
+        ),
+        convertValue: (name, value) {
+          seen.add((name, value));
+
+          return const MontyString('eager');
+        },
+      );
+
+      expect(instance.eagerAttributes(), {'n': const MontyString('eager')});
+      expect(seen, [('n', const MontyInt(3))]);
+    });
+
+    test('the conversion receives a lazy attribute name and value', () {
+      final seen = <(String, Object)>[];
+      final instance = ClassInstance(
+        _Box(4),
+        classType: ClassType(_boxClass),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: ['n'],
+          allowedMethods: null,
+        ),
+        convertValue: (name, value) {
+          seen.add((name, value));
+
+          return const MontyString('lazy');
+        },
+      );
+
+      expect(instance.lookupLazyAttr('n'), const MontyString('lazy'));
+      expect(seen, [('n', const MontyInt(4))]);
+    });
+
+    test('the conversion receives a method name and return value', () async {
+      final seen = <(String, Object)>[];
+      final instance = ClassInstance(
+        _Box(4),
+        classType: ClassType(_boxClass),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: ['bump'],
+        ),
+        convertValue: (name, value) {
+          seen.add((name, value));
+
+          return const MontyString('method');
+        },
+      );
+
+      expect(
+        await instance.callMethod('bump', const [], const {}),
+        const MontyString('method'),
+      );
+      expect(seen, [('bump', const MontyInt(5))]);
+    });
+
+    test(
+      'the conversion receives an awaited coroutine method result',
+      () async {
+        final seen = <(String, Object)>[];
+        final instance = ClassInstance(
+          _Box(1),
+          classType: ClassType(_slow),
+          policies: const (
+            eagerAttrs: null,
+            lazyAttrs: null,
+            allowedMethods: ['later'],
+          ),
+          convertValue: (name, value) {
+            seen.add((name, value));
+
+            return const MontyString('awaited');
+          },
+        );
+
+        final result = instance.callMethod('later', const [], const {});
+        expect(result, isA<Future<Object>>());
+        expect(seen, isEmpty);
+        expect(await result, const MontyString('awaited'));
+        expect(seen, [('later', const MontyInt(5))]);
+      },
+    );
+
+    test('the default conversion leaves a returned object unchanged', () {
+      final returned = _Box(9);
+      final hostClass = HostClass<_Box>(
+        'Box',
+        instance: (
+          fields: const {},
+          properties: const {},
+          methods: {'other': (_, _, _) => returned},
+        ),
+      );
+      final type = ClassType(hostClass);
+      final instance = ClassInstance(
+        _Box(1),
+        classType: type,
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: ['other'],
+        ),
+      );
+
+      final result = instance.callMethod('other', const [], const {});
+      expect(result, same(returned));
+      expect(result, isNot(isA<ClassInstance<Object>>()));
+    });
+  });
+
+  group('class conversion', () {
+    test(
+      'the conversion receives eager and lazy attribute names and values',
+      () {
+        final seen = <(String, Object)>[];
+        final type = ClassType(
+          HostClass(
+            'ConvertedClass',
+            attributes: {
+              'eager': () => const MontyInt(1),
+              'lazy': () => const MontyInt(2),
+            },
+          ),
+          policies: const (
+            eagerAttrs: ['eager'],
+            lazyAttrs: ['lazy'],
+            allowedMethods: null,
+          ),
+          convertValue: (name, value) {
+            seen.add((name, value));
+
+            return MontyString(name);
+          },
+        );
+
+        expect(type.eagerAttributes(), {'eager': const MontyString('eager')});
+        expect(type.lookupLazyAttr('lazy'), const MontyString('lazy'));
+        expect(seen, [
+          ('eager', const MontyInt(1)),
+          ('lazy', const MontyInt(2)),
+        ]);
+      },
+    );
+
+    test('the conversion receives a method name and return value', () async {
+      final seen = <(String, Object)>[];
+      final type = ClassType(
+        HostClass(
+          'ConvertedClass',
+          methods: {'describe': (_, _) => const MontyInt(3)},
+        ),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: ['describe'],
+        ),
+        convertValue: (name, value) {
+          seen.add((name, value));
+
+          return const MontyString('method');
+        },
+      );
+
+      expect(
+        await type.callMethod('describe', const [], const {}),
+        const MontyString('method'),
+      );
+      expect(seen, [('describe', const MontyInt(3))]);
+    });
+
+    test(
+      'the conversion receives an awaited coroutine method result',
+      () async {
+        final seen = <(String, Object)>[];
+        final type = ClassType(
+          HostClass(
+            'ConvertedClass',
+            methods: {
+              'later': (_, _) => Future<Object>.value(const MontyInt(4)),
+            },
+          ),
+          policies: const (
+            eagerAttrs: null,
+            lazyAttrs: null,
+            allowedMethods: ['later'],
+          ),
+          convertValue: (name, value) {
+            seen.add((name, value));
+
+            return const MontyString('awaited');
+          },
+        );
+
+        final result = type.callMethod('later', const [], const {});
+        expect(result, isA<Future<Object>>());
+        expect(seen, isEmpty);
+        expect(await result, const MontyString('awaited'));
+        expect(seen, [('later', const MontyInt(4))]);
+      },
+    );
+
+    test('the default conversion leaves a returned object unchanged', () {
+      final returned = _Box(9);
+      final type = ClassType(
+        HostClass(
+          'PlainClass',
+          methods: {'other': (_, _) => returned},
+        ),
+        policies: const (
+          eagerAttrs: null,
+          lazyAttrs: null,
+          allowedMethods: ['other'],
+        ),
+      );
+
+      final result = type.callMethod('other', const [], const {});
+      expect(result, same(returned));
+      expect(result, isNot(isA<ClassInstance<Object>>()));
+    });
+  });
+
   group('lazy attributes', () {
     test('a raise other than AttributeError reaches the sandbox', () {
       final objects = HostObjects();
@@ -815,6 +1120,61 @@ void main() {
   });
 
   group('the writer and the reader', () {
+    test('a failed eager attribute or conversion aborts instance encoding', () {
+      final eagerFailure = HostClass<_Box>(
+        'BrokenEager',
+        instance: (
+          fields: {
+            'n': (_) => throw const ExternalException('ValueError', 'eager'),
+          },
+          properties: const {},
+          methods: const {},
+        ),
+      );
+      final failures = [
+        ClassInstance(
+          _Box(1),
+          classType: ClassType(eagerFailure, id: _id(101)),
+          id: _id(102),
+          policies: const (
+            eagerAttrs: 'all',
+            lazyAttrs: null,
+            allowedMethods: null,
+          ),
+        ),
+        ClassInstance(
+          _Box(1),
+          classType: ClassType(_boxClass, id: _id(103)),
+          id: _id(104),
+          policies: const (
+            eagerAttrs: 'all',
+            lazyAttrs: null,
+            allowedMethods: null,
+          ),
+          convertValue: (_, _) =>
+              throw const ExternalException('ValueError', 'conversion'),
+        ),
+      ];
+
+      for (final instance in failures) {
+        final objects = HostObjects();
+        final writer = ArenaWriter(objects: objects);
+        expect(
+          () => writer.add(instance),
+          throwsA(
+            isA<PythonRefusal>().having(
+              (e) => e.excType,
+              'exception type',
+              'ValueError',
+            ),
+          ),
+        );
+        expect(writer.arena.nodes, isEmpty);
+        expect(objects[instance.id], isNull);
+        expect(objects[instance.classType.id], isNull);
+      }
+    });
+
     test('one wrapper is one node; its class is shared by id', () {
       final objects = HostObjects();
       final writer = ArenaWriter(objects: objects);

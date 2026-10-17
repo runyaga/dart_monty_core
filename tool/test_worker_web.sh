@@ -41,7 +41,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FLOOR=461
+FLOOR=525
 COV=()
 COMPILERS=(dart2js dart2wasm)
 while [ $# -gt 0 ]; do

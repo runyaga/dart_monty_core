@@ -22,10 +22,12 @@ import 'package:test/test.dart';
 
 import '_attribute_cases.dart';
 import '_boundary_cases.dart';
+import '_class_proxy_cases.dart';
 import '_config_cases.dart';
 import '_cwd_cases.dart';
 import '_host_cases.dart';
 import '_host_code_cases.dart';
+import '_host_function_value_cases.dart';
 import '_memory_fs_cases.dart';
 import '_os_handler_cases.dart';
 import '_print_cases.dart';
@@ -123,6 +125,20 @@ void main() {
     ),
   );
   sessionSurfaceTests(
+    _backend,
+    (body) => withMonty(
+      (pool) => pool.withSessionWith(body, _limits),
+      const PoolOptions(maxProcesses: 1),
+    ),
+  );
+  classProxySessionTests(
+    _backend,
+    (body) => withMonty(
+      (pool) => pool.withSessionWith(body, _limits),
+      const PoolOptions(maxProcesses: 1),
+    ),
+  );
+  hostFunctionValueTests(
     _backend,
     (body) => withMonty(
       (pool) => pool.withSessionWith(body, _limits),

@@ -209,6 +209,94 @@ void main() {
     );
   });
 
+  group('class proxy encoding', () {
+    test('a class type rejects a malformed identity', () {
+      final type = montyClassTypeProxy(
+        name: 'P',
+        id: 'not-a-uuid',
+        hostDefined: true,
+        isDataclass: false,
+        attrs: const {},
+      );
+
+      expect(() => ArenaWriter().add(type), throwsA(isA<ArgumentError>()));
+    });
+
+    test('accepts lower- and upper-case UUID identities', () {
+      final upper = montyClassProxy(
+        classType: montyClassTypeProxy(
+          name: 'P',
+          id: _classId.toUpperCase(),
+          hostDefined: true,
+          isDataclass: false,
+          attrs: const {},
+        ),
+        instanceId: 'ABCDEF01-2345-4ABC-8DEF-0123456789AB',
+        attrs: const {},
+      );
+
+      expect(
+        () => ArenaWriter().add(_instance(_class(), '01')),
+        returnsNormally,
+      );
+      expect(() => ArenaWriter().add(upper), returnsNormally);
+    });
+
+    test('rejects malformed instance and class identities', () {
+      final validClass = _class();
+      final invalidInstance = montyClassProxy(
+        classType: validClass,
+        instanceId: 'not-a-uuid',
+        attrs: const {},
+      );
+      final invalidClass = montyClassProxy(
+        classType: montyClassTypeProxy(
+          name: 'P',
+          id: 'not-a-uuid',
+          hostDefined: true,
+          isDataclass: false,
+          attrs: const {},
+        ),
+        instanceId: '00000000-0000-4000-8000-000000000001',
+        attrs: const {},
+      );
+
+      for (final value in [invalidInstance, invalidClass]) {
+        expect(() => ArenaWriter().add(value), throwsA(isA<ArgumentError>()));
+      }
+    });
+
+    test('Dart containers accept proxies that the writer refuses as keys', () {
+      final proxy = _instance(_class(), '01');
+      final tuple = MontyTuple([proxy]);
+      final namedTuple = MontyNamedTuple(
+        typeName: 'Pair',
+        fieldNames: const ['value'],
+        values: [proxy],
+      );
+      final frozenSet = MontyFrozenSet([proxy]);
+      final values = <MontyValue>[
+        MontyDict([(proxy, const MontyNone())]),
+        MontySet([proxy]),
+        MontyFrozenSet([proxy]),
+        MontyDict([(tuple, const MontyNone())]),
+        MontySet([namedTuple]),
+        MontyFrozenSet([frozenSet]),
+      ];
+
+      expect(
+        () => values.map((value) => value.hashCode).toList(),
+        returnsNormally,
+      );
+      for (final value in values) {
+        expect(
+          () => ArenaWriter().add(value),
+          _refused("TypeError: unhashable type: 'MontyClassProxy'"),
+        );
+      }
+    });
+  });
+
   group('sharing follows upstream encoder', () {
     test('containers are one node per object, across adds', () {
       const shared = MontyList([MontyInt(1)]);
