@@ -25,6 +25,7 @@ void main() {
   _seedReplacement();
   _reads();
   _unpairedSurrogates();
+  _upstreamArguments();
   _writes();
   _open();
   _directories();
@@ -614,5 +615,387 @@ void _unpairedSurrogates() {
             'surrogates not allowed',
       ),
     );
+  });
+}
+
+// Pinned to os_access.py's dispatch: probes in 1.1.0.
+void _upstreamArguments() {
+  const noPath =
+      'argument should be a str or an os.PathLike object where __fspath__ '
+      "returns a str, not 'MontyFileHandle'";
+  OSAccess seeded() => OSAccess(
+    files: [
+      MemoryFile('/t', 'héllo'),
+      MemoryFile('/b', Uint8List.fromList([97, 98])),
+    ],
+  );
+  final handle = MontyFileHandle('/t', 'r');
+  final notPath = raises('TypeError', noPath);
+
+  group('a file handle', () {
+    for (final (op, value) in <(String, MontyValue?)>[
+      ('Path.read_text', null),
+      ('Path.read_bytes', null),
+      ('Path.write_text', const MontyString('x')),
+      ('Path.write_bytes', const MontyBytes([120])),
+      ('Path.append_text', const MontyString('x')),
+      ('Path.append_bytes', const MontyBytes([120])),
+    ]) {
+      test('is the path of $op', () async {
+        final result = await seeded()(op, [handle, ?value], {});
+        expect(result, isNot(isA<MontyNone>()));
+      });
+    }
+
+    for (final op in [
+      'Path.exists',
+      'Path.is_file',
+      'Path.is_dir',
+      'Path.stat',
+      'Path.unlink',
+      'Path.rmdir',
+      'Path.iterdir',
+      'Path.resolve',
+      'Path.absolute',
+      'Path.mkdir',
+    ]) {
+      test('is not a path for $op', () {
+        expect(
+          Future.sync(() => seeded()(op, [handle], {})),
+          notPath,
+        );
+      });
+    }
+
+    test('is not a path for open or rename', () {
+      final fs = seeded();
+      expect(
+        Future.sync(() => fs('open', [handle, const MontyString('r')], {})),
+        notPath,
+      );
+      expect(
+        Future.sync(
+          () => fs('Path.rename', [handle, MontyPath('/z')], {}),
+        ),
+        notPath,
+      );
+    });
+
+    test('is not looked at by Path.is_symlink', () async {
+      expect(
+        await seeded()('Path.is_symlink', [handle], {}),
+        const MontyBool(false),
+      );
+    });
+  });
+
+  group('Path.mkdir keywords', () {
+    test('more than two are an AssertionError', () {
+      expect(
+        Future.sync(
+          () => OSAccess()(
+            'Path.mkdir',
+            [MontyPath('/d')],
+            {
+              'parents': const MontyBool(true),
+              'exist_ok': const MontyBool(true),
+              'x': const MontyInt(1),
+            },
+          ),
+        ),
+        raises(
+          'AssertionError',
+          "Unexpected keyword arguments: {'parents': True, 'exist_ok': True, "
+              "'x': 1}",
+        ),
+      );
+    });
+
+    final cycleItems = <MontyValue>[];
+    final cycle = MontyList(cycleItems);
+    cycleItems.add(cycle);
+    final tupleItems = <MontyValue>[];
+    final listOfTuple = MontyList(tupleItems);
+    final tupleCycle = MontyTuple([listOfTuple]);
+    tupleItems.add(tupleCycle);
+    final reprs = <(MontyValue, String)>[
+      // Kinds without a Python repr here show their Dart type.
+      (const MontyDate(year: 2026, month: 1, day: 2), '<MontyDate>'),
+      (const MontyDict([(MontyString('a'), MontyInt(1))]), "{'a': 1}"),
+      (const MontySet([MontyInt(1)]), '{1}'),
+      (const MontySet([]), 'set()'),
+      (const MontyFrozenSet([MontyInt(1)]), 'frozenset({1})'),
+      (const MontyFrozenSet([]), 'frozenset()'),
+      (const MontyBytes([0, 255, 92]), r"b'\x00\xff\\'"),
+      (tupleCycle, '([(...)],)'),
+      (const MontyComplex(1, 2), '(1+2j)'),
+      (const MontyComplex(0, 2), '2j'),
+      (const MontyComplex(1, -0.5), '(1-0.5j)'),
+      (MontyPath('/x'), "PurePosixPath('/x')"),
+      (const MontyBytes([104, 105, 10, 39]), 'b"hi\\n\'"'),
+      (const MontyDict([]), '{}'),
+      (const MontyFloat(1e-7), '1e-07'),
+      (const MontyFloat(10000000000000000), '1e+16'),
+      (const MontyFloat(-1.5e-10), '-1.5e-10'),
+      (const MontyFloat(2.5), '2.5'),
+      (const MontyTuple([MontyString('a')]), "('a',)"),
+      (const MontyString("it's"), '"it\'s"'),
+      (const MontyNone(), 'None'),
+      (
+        const MontyList([
+          MontyInt(1),
+          MontyTuple([MontyInt(2), MontyInt(3)]),
+          MontyDict([(MontyString('k'), MontyFloat(1))]),
+        ]),
+        "[1, (2, 3), {'k': 1.0}]",
+      ),
+      (cycle, '[[...]]'),
+    ];
+    for (final (value, text) in reprs) {
+      test('names an extra keyword ${value.runtimeType} as Python does', () {
+        expect(
+          Future.sync(
+            () => OSAccess()(
+              'Path.mkdir',
+              [MontyPath('/d')],
+              {
+                'parents': const MontyBool(true),
+                'exist_ok': const MontyBool(false),
+                'x': value,
+              },
+            ),
+          ),
+          raises(
+            'AssertionError',
+            "Unexpected keyword arguments: {'parents': True, "
+                "'exist_ok': False, 'x': $text}",
+          ),
+        );
+      });
+    }
+
+    test('are checked before the path', () {
+      expect(
+        Future.sync(
+          () => OSAccess()(
+            'Path.mkdir',
+            [handle],
+            {
+              'a': const MontyInt(1),
+              'b': const MontyInt(2),
+              'c': const MontyInt(3),
+            },
+          ),
+        ),
+        raises(
+          'AssertionError',
+          "Unexpected keyword arguments: {'a': 1, 'b': 2, 'c': 3}",
+        ),
+      );
+    });
+
+    test('two unknown keywords are ignored', () async {
+      final result = await OSAccess()(
+        'Path.mkdir',
+        [MontyPath('/d')],
+        {'x': const MontyInt(1), 'y': const MontyInt(2)},
+      );
+      expect(result, const MontyNone());
+    });
+
+    final truthy = <MontyValue>[
+      const MontyInt(1),
+      const MontyString('x'),
+      const MontyList([MontyInt(1)]),
+      const MontyFloat(2.5),
+    ];
+    final falsy = <MontyValue>[
+      const MontyInt(0),
+      const MontyString(''),
+      const MontyList([]),
+      const MontyNone(),
+    ];
+
+    // Python truthiness of the other kinds a keyword can hold.
+    final truthyKinds = <MontyValue>[
+      MontyBigInt(BigInt.two),
+      const MontyBool(true),
+      const MontyComplex(0, 1),
+      const MontyBytes([0]),
+      const MontyTuple([MontyNone()]),
+      const MontyDict([(MontyInt(1), MontyInt(2))]),
+      const MontySet([MontyInt(1)]),
+      const MontyFrozenSet([MontyInt(1)]),
+      const MontyNamedTuple(
+        typeName: 'T',
+        fieldNames: ['a'],
+        values: [MontyInt(0)],
+      ),
+      const MontyTimeDelta(days: 0, seconds: 0, microseconds: 1),
+      MontyPath('/x'),
+    ];
+    final falsyKinds = <MontyValue>[
+      MontyBigInt(BigInt.zero),
+      const MontyBool(false),
+      const MontyFloat(0),
+      const MontyComplex(0, 0),
+      const MontyBytes([]),
+      const MontyTuple([]),
+      const MontyDict([]),
+      const MontySet([]),
+      const MontyFrozenSet([]),
+      const MontyNamedTuple(typeName: 'T', fieldNames: [], values: []),
+      const MontyTimeDelta(days: 0, seconds: 0),
+    ];
+    for (final value in truthyKinds) {
+      test('exist_ok=$value is true', () async {
+        final fs = OSAccess();
+        await fs('Path.mkdir', [MontyPath('/d')], {});
+        final again = await fs(
+          'Path.mkdir',
+          [MontyPath('/d')],
+          {
+            'exist_ok': value,
+          },
+        );
+        expect(again, const MontyNone());
+      });
+    }
+
+    for (final value in falsyKinds) {
+      test('exist_ok=$value is false', () async {
+        final fs = OSAccess();
+        await fs('Path.mkdir', [MontyPath('/d')], {});
+        await expectLater(
+          Future.sync(
+            () => fs('Path.mkdir', [MontyPath('/d')], {'exist_ok': value}),
+          ),
+          raises('FileExistsError', "[Errno 17] File exists: '/d'"),
+        );
+      });
+    }
+
+    for (final value in truthy) {
+      test('exist_ok=$value is true and parents=$value is true', () async {
+        final fs = OSAccess();
+        await fs('Path.mkdir', [MontyPath('/d')], {});
+        final again = await fs(
+          'Path.mkdir',
+          [MontyPath('/d')],
+          {
+            'exist_ok': value,
+          },
+        );
+        expect(again, const MontyNone());
+        final nested = await fs(
+          'Path.mkdir',
+          [MontyPath('/p/q')],
+          {
+            'parents': value,
+          },
+        );
+        expect(nested, const MontyNone());
+      });
+    }
+
+    for (final value in falsy) {
+      test('exist_ok=$value is false and parents=$value is false', () async {
+        final fs = OSAccess();
+        await fs('Path.mkdir', [MontyPath('/d')], {});
+        await expectLater(
+          Future.sync(
+            () => fs('Path.mkdir', [MontyPath('/d')], {'exist_ok': value}),
+          ),
+          raises('FileExistsError', "[Errno 17] File exists: '/d'"),
+        );
+        await expectLater(
+          Future.sync(
+            () => fs('Path.mkdir', [MontyPath('/p/q')], {'parents': value}),
+          ),
+          raises(
+            'FileNotFoundError',
+            "[Errno 2] No such file or directory: '/p/q'",
+          ),
+        );
+      });
+    }
+  });
+
+  group('write and append payloads follow their type, not the operation', () {
+    for (final (op, text) in [
+      ('Path.write_text', 'a str'),
+      ('Path.write_bytes', 'bytes'),
+      ('Path.append_text', 'a str'),
+      ('Path.append_bytes', 'bytes'),
+    ]) {
+      test('$op refuses a payload that is neither text nor bytes', () {
+        expect(
+          Future.sync(
+            () => OSAccess()(op, [MontyPath('/n'), const MontyInt(1)], {}),
+          ),
+          raises('TypeError', 'expected $text'),
+        );
+      });
+    }
+
+    test('Path.write_text stores bytes and counts them', () async {
+      final fs = OSAccess();
+      expect(
+        await fs('Path.write_text', [
+          MontyPath('/n'),
+          const MontyBytes([97, 98, 99]),
+        ], {}),
+        const MontyInt(3),
+      );
+      expect(
+        await fs('Path.read_text', [MontyPath('/n')], {}),
+        const MontyString('abc'),
+      );
+    });
+
+    test('Path.write_bytes stores text and counts its characters', () async {
+      final fs = OSAccess();
+      expect(
+        await fs('Path.write_bytes', [
+          MontyPath('/n'),
+          const MontyString('é€'),
+        ], {}),
+        const MontyInt(2),
+      );
+      expect(
+        await fs('Path.read_bytes', [MontyPath('/n')], {}),
+        const MontyBytes([195, 169, 226, 130, 172]),
+      );
+    });
+
+    test('Path.append_bytes of text appends as text', () async {
+      final fs = seeded();
+      expect(
+        await fs('Path.append_bytes', [
+          MontyPath('/b'),
+          const MontyString('zz'),
+        ], {}),
+        const MontyInt(2),
+      );
+      expect(
+        await fs('Path.read_text', [MontyPath('/b')], {}),
+        const MontyString('abzz'),
+      );
+    });
+
+    test('Path.append_text of bytes appends as bytes', () async {
+      final fs = seeded();
+      expect(
+        await fs('Path.append_text', [
+          MontyPath('/t'),
+          const MontyBytes([122, 122]),
+        ], {}),
+        const MontyInt(2),
+      );
+      expect(
+        await fs('Path.read_bytes', [MontyPath('/t')], {}),
+        const MontyBytes([104, 195, 169, 108, 108, 111, 122, 122]),
+      );
+    });
   });
 }
