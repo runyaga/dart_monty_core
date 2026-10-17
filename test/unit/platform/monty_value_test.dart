@@ -11,7 +11,7 @@ import 'dart:typed_data';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show MontyValueInternal;
+    show MontyValueInternal, montyClassProxy, montyClassTypeProxy;
 import 'package:test/test.dart';
 
 void main() {
@@ -628,7 +628,19 @@ void main() {
     // The tagged map a wrapper's dartValue returns is transport shape. Fed
     // back it would reach the sandbox as a plain dict carrying the tag keys,
     // so it is refused and the typed value is passed instead.
-    for (final (name, MontyValue value) in [
+    final classType = montyClassTypeProxy(
+      name: 'Remote',
+      id: '0123abcd-0000-4000-8000-00000000cafe',
+      hostDefined: true,
+      isDataclass: false,
+      attrs: const {'source': MontyString('host')},
+    );
+    final classInstance = montyClassProxy(
+      classType: classType,
+      instanceId: 'fedcba98-7654-4000-8000-00000000face',
+      attrs: const {'value': MontyInt(7)},
+    );
+    for (final (name, MontyValue value, tag) in [
       (
         'MontyNamedTuple',
         const MontyNamedTuple(
@@ -636,11 +648,22 @@ void main() {
           fieldNames: ['a'],
           values: [MontyInt(1)],
         ),
+        'namedtuple',
       ),
-      ('MontyTimeZone', const MontyTimeZone(offsetSeconds: 7200, name: 'X')),
-      ('MontyComplex', const MontyComplex(1, 2)),
-      ('MontyFileHandle', MontyFileHandle('/f', 'r')),
-      ('MontyExceptionValue', MontyExceptionValue('ValueError', 'bad')),
+      (
+        'MontyTimeZone',
+        const MontyTimeZone(offsetSeconds: 7200, name: 'X'),
+        'timezone',
+      ),
+      ('MontyComplex', const MontyComplex(1, 2), 'complex'),
+      ('MontyFileHandle', MontyFileHandle('/f', 'r'), 'filehandle'),
+      (
+        'MontyExceptionValue',
+        MontyExceptionValue('ValueError', 'bad'),
+        'exception',
+      ),
+      ('MontyClassTypeProxy', classType, 'class_type'),
+      ('MontyClassProxy', classInstance, 'class_instance'),
     ]) {
       test('the dartValue map of $name is refused', () {
         final map = value.dartValue;
@@ -651,21 +674,81 @@ void main() {
             isA<ArgumentError>().having(
               (e) => e.message,
               'message',
-              contains('pass the MontyValue'),
+              allOf(contains('pass the MontyValue'), contains(tag)),
             ),
           ),
         );
         expect(MontyValue.fromDart(value), same(value));
       });
+
+      test('a copy of the dartValue map of $name is a plain dict', () {
+        final copy = Map<String, Object?>.of(
+          value.dartValue! as Map<String, Object?>,
+        );
+        if (value is MontyClassProxy) {
+          // The caller-built outer map must also contain a caller-built copy
+          // of the nested class type map.
+          copy['class_type'] = Map<String, Object?>.of(
+            copy['class_type']! as Map<String, Object?>,
+          );
+        }
+        expect(MontyValue.fromDart(copy), isA<MontyDict>());
+      });
     }
 
-    test('a plain dict with a __type key of its own is still a dict', () {
+    test('a class instance map is refused by its own mark', () {
+      final map = classInstance.dartValue;
+      map['class_type'] = Map<String, Object?>.of(
+        map['class_type']! as Map<String, Object?>,
+      );
+      expect(
+        () => MontyValue.fromDart(map),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('class_instance'),
+          ),
+        ),
+      );
+    });
+
+    test('a dartValue map nested in a list is refused', () {
+      expect(
+        () => MontyValue.fromDart([const MontyComplex(1, 2).dartValue]),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('complex'),
+          ),
+        ),
+      );
+    });
+
+    test('a copy nested in a list is a dict', () {
+      final copy = Map<String, Object?>.of(
+        const MontyComplex(1, 2).dartValue,
+      );
+      final converted = MontyValue.fromDart([copy]);
+      expect(converted, isA<MontyList>());
+      expect((converted as MontyList).items, [isA<MontyDict>()]);
+    });
+
+    test('caller-built maps with wrapper keys are still dicts', () {
       final mine = MontyValue.fromDart({'__type': 'mine', 'x': 1});
-      final collides = MontyValue.fromDart({
+      final complex = MontyValue.fromDart({
         '__type': 'complex',
-        'label': 'example',
+        'real': 1.0,
+        'imag': 2.0,
       });
-      expect([mine, collides], everyElement(isA<MontyDict>()));
+      final namedTuple = MontyValue.fromDart({
+        '__type': 'namedtuple',
+        'type_name': 'N',
+        'field_names': ['a'],
+        'values': [1],
+      });
+      expect([mine, complex, namedTuple], everyElement(isA<MontyDict>()));
     });
 
     test('Dart List → MontyList with recursive conversion', () {

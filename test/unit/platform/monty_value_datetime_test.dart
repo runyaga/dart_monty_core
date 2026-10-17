@@ -337,6 +337,9 @@ void main() {
           () => MontyValue.fromDart(v.dartValue),
           throwsA(isA<ArgumentError>()),
         );
+        final copy = MontyValue.fromDart(Map.of(v.dartValue));
+        expect(copy, isA<MontyDict>());
+        expect((copy as MontyDict).pairs, hasLength(3));
       },
     );
     test('MontyTimeZone(offset=<o>, name=<n>)', () {
