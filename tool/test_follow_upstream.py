@@ -59,6 +59,20 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('a' * 40, result['last_good'])
         self.assertIn('boom', result['error'])
 
+    def test_malformed_state_file_still_writes_a_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            core = Path(temp) / 'core'
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(json.dumps(
+                {'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
+            state = Path(temp) / 'last_good.json'
+            state.write_text('{not json')
+            out = Path(temp) / 'result.json'
+            status = FOLLOW.run_follow(core, Path(temp) / 'work', Path(temp) / 'parity', 1, 1, None, state, out)
+            result = json.loads(out.read_text())
+        self.assertEqual(1, status)
+        self.assertEqual('error', result['status'])
+
     def test_stop_reason_ranks_red_over_flags(self) -> None:
         self.assertIsNone(FOLLOW.stop_reason(True, 'all', []))
         self.assertEqual('flagged', FOLLOW.stop_reason(True, 'all', ['MIRROR']))

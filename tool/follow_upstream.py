@@ -405,13 +405,18 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
                out: Path) -> int:
     """Runs the loop; any unexpected failure still writes result.json, so the
     workflow keeps the greens already recorded and reports the error."""
-    pin = load_pin(core)
-    start = read_state_or_seed(state_file, pin)['sha']
+    pin_commit = start = ''
     try:
+        pin = load_pin(core)
+        pin_commit = str(pin['commit'])
+        start = read_state_or_seed(state_file, pin)['sha']
         return _run_follow(core, workdir, parity, max_commits, time_budget_min, accept, state_file, out)
     except Exception as exc:  # noqa: BLE001 - the report must be written whatever failed
-        result = {'pin': pin['commit'], 'start': start,
-                  'last_good': read_state_or_seed(state_file, pin)['sha'], 'head': '', 'behind': 0,
+        try:
+            last_good = read_state_or_seed(state_file, load_pin(core))['sha']
+        except Exception:  # noqa: BLE001 - a malformed state file is part of what is reported
+            last_good = start
+        result = {'pin': pin_commit, 'start': start, 'last_good': last_good, 'head': '', 'behind': 0,
                   'commits': [], 'status': 'error', 'error': f'{type(exc).__name__}: {exc}'}
         write_result(out, result)
         return 1
