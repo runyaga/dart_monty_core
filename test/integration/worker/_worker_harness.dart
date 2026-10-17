@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:test/test.dart';
 
 /// The fake worker running [scenario] (see fake_worker.dart).
@@ -23,7 +24,9 @@ WorkerExecutable fakeWorker(String scenario) => WorkerExecutable(
 /// Throws, failing the test rather than skipping it, when there is none: a
 /// smoke test that skips is a green that checked nothing. The StateError
 /// names the path tried and the command that builds it.
-Future<WorkerLaunch> realWorker() => locateWorker();
+Future<WorkerLaunch> realWorker() => locateWorker(
+  cache: WorkerCacheSource(manifest: WorkerManifest(targets: {})),
+);
 
 /// Registers a tearDown that fails the test if any worker process is still
 /// running once the test is over, after killing it so it cannot leak into

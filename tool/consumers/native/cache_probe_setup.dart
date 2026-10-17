@@ -141,11 +141,14 @@ Future<void> _sanitizeCorePubspec(File pubspec) async {
 
 Future<void> _replaceManifest(File manifestData, String manifest) async {
   final source = manifestData.readAsStringSync();
-  final matcher = RegExp('const workerManifestJson = [^;]+;');
+  final matcher = RegExp(r'const workerManifestJson =[\s\S]*?;');
   final replacement = 'const workerManifestJson = ${jsonEncode(manifest)};';
   final updated = source.replaceFirst(matcher, replacement);
   if (updated == source) {
-    throw StateError('workerManifestJson constant was not found');
+    throw StateError(
+      'could not replace workerManifestJson declaration: '
+      'no declaration matched',
+    );
   }
   await manifestData.writeAsString(updated, flush: true);
 }

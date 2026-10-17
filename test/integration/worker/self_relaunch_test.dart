@@ -14,6 +14,7 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
+import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -217,6 +218,7 @@ void _testAotRoute() {
     test('under the JIT it never offers SelfRelaunch', () {
       expect(
         locateWorker(
+          cache: WorkerCacheSource(manifest: WorkerManifest(targets: {})),
           resolvePackageUri: (_) async => null,
           canSelfRelaunch: () => true,
         ),
