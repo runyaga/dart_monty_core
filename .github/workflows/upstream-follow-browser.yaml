@@ -37,7 +37,13 @@ jobs:
           [[ "$parity_pin" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::PARITY_PIN must be a full commit SHA'; exit 1; }
           echo "PARITY_PIN=$parity_pin" >> "$GITHUB_ENV"
           url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-          if git ls-remote --exit-code --heads "$url" upstream-follow-state >/dev/null; then
+          rc=0
+          git ls-remote --exit-code --heads "$url" upstream-follow-state >/dev/null || rc=$?
+          if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+            echo '::error::cannot list the remote branches'
+            exit 1
+          fi
+          if [ "$rc" = 0 ]; then
             git clone --branch upstream-follow-state --depth 1 "$url" "$RUNNER_TEMP/state"
             last_good=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["sha"])' "$RUNNER_TEMP/state/last_good.json")
           else
@@ -72,10 +78,9 @@ jobs:
         run: python3 -I tool/follow_upstream.py prepare-wasm --core "$GITHUB_WORKSPACE" --upstream "$GITHUB_WORKSPACE/.monty"
       - name: Rebuild the wasm worker
         run: |
-          before=$(sha256sum lib/assets/dart_monty_core_worker.wasm | awk '{print $1}')
+          # The committed asset must not survive: a rebuild that writes nothing then fails here.
+          rm lib/assets/dart_monty_core_worker.wasm
           bash tool/prebuild.sh
-          after=$(sha256sum lib/assets/dart_monty_core_worker.wasm | awk '{print $1}')
-          echo "wasm asset before ${before} after ${after}"
           test -s lib/assets/dart_monty_core_worker.wasm
       - name: Browser corpus on dart2js
         run: bash tool/test_corpus_worker.sh chrome dart2js

@@ -64,6 +64,28 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('a' * 40, result['last_good'])
         self.assertIn('boom', result['error'])
 
+    def test_error_result_keeps_the_flagged_commits_already_advanced(self) -> None:
+        def fail_after_one(*args: object) -> int:
+            args[-1].append({'sha': 'f' * 40, 'subject': 'proto', 'flags': ['PROTO'],
+                             'gate': 'green', 'stage': 'all'})
+            raise OSError('boom')
+
+        with tempfile.TemporaryDirectory() as temp:
+            core = Path(temp) / 'core'
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(json.dumps(
+                {'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
+            out = Path(temp) / 'result.json'
+            original = FOLLOW._run_follow
+            FOLLOW._run_follow = fail_after_one
+            try:
+                FOLLOW.run_follow(core, Path(temp) / 'work', Path(temp) / 'parity', 1, 1,
+                                  None, Path(temp) / 'last_good.json', out)
+            finally:
+                FOLLOW._run_follow = original
+            result = json.loads(out.read_text())
+        self.assertEqual(['f' * 40], [entry['sha'] for entry in result['flagged']])
+
     def test_malformed_state_file_still_writes_a_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             core = Path(temp) / 'core'
@@ -79,14 +101,18 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('error', result['status'])
 
     def test_verdicts_separate_flagged_from_red(self) -> None:
-        self.assertEqual('green', FOLLOW.gate_verdict(True, 'all', ['MIRROR']))
-        self.assertEqual('red', FOLLOW.gate_verdict(False, 'upstream-tests', ['MIRROR']))
-        self.assertEqual('red', FOLLOW.gate_verdict(False, 'corpus', []))
-        self.assertEqual('exempt', FOLLOW.gate_verdict(False, 'corpus', ['TESTCASES']))
-        self.assertEqual('red', FOLLOW.gate_verdict(False, 'worker-build', ['TESTCASES']))
-        self.assertIsNone(FOLLOW.stop_reason(True, 'all', ['MIRROR']))
-        self.assertIsNone(FOLLOW.stop_reason(False, 'corpus', ['TESTCASES']))
-        self.assertEqual('red', FOLLOW.stop_reason(False, 'parity', ['TESTCASES']))
+        self.assertEqual('green', FOLLOW.gate_verdict(True, 'all', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'upstream-tests', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'corpus', False))
+        self.assertEqual('exempt', FOLLOW.gate_verdict(False, 'corpus', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'worker-build', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'parity', True))
+        self.assertIsNone(FOLLOW.stop_reason(False, 'corpus', True))
+        self.assertEqual('red', FOLLOW.stop_reason(False, 'parity', True))
+
+    def test_corpus_runs_after_every_stage_that_must_stay_red(self) -> None:
+        self.assertEqual('corpus', FOLLOW.ALL_STAGES[-1])
+        self.assertEqual(('upstream-tests', 'worker-build', 'corpus'), FOLLOW.selected_stages(None, None))
 
     def test_flagged_entries_skip_red_and_plain_green(self) -> None:
         commits = [

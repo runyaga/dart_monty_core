@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import json
 import os
 import re
@@ -13,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +21,9 @@ MONTY_CRATES = (
     'monty', 'monty-proto', 'monty-types', 'monty-alloc', 'monty-fs',
     'monty-macros', 'monty-type-checking', 'monty-typeshed',
 )
-ALL_STAGES = ('upstream-tests', 'worker-build', 'corpus', 'parity')
+# The corpus runs last: a corpus failure on a test_cases change is digested, so no
+# stage that must stay red may come after it.
+ALL_STAGES = ('upstream-tests', 'worker-build', 'parity', 'corpus')
 
 
 def command(cmd: list[str], cwd: Path | None = None,
@@ -75,7 +76,7 @@ def write_state(state_file: Path | None, sha: str, via: str) -> None:
 
 def selected_stages(value: str | None, parity: Path | None) -> tuple[str, ...]:
     if value is None:
-        return ALL_STAGES if parity is not None else ALL_STAGES[:-1]
+        return tuple(name for name in ALL_STAGES if parity is not None or name != 'parity')
     selected = tuple(item for item in value.split(',') if item)
     bad = set(selected) - set(ALL_STAGES)
     if bad:
@@ -188,7 +189,7 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
     print(f'UPSTREAM HEAD {head}')
     root_target = target_dir or Path(tempfile.mkdtemp(prefix='follow-upstream-target-'))
     try:
-        stage_order = ALL_STAGES if parity is not None else ALL_STAGES[:-1]
+        stage_order = tuple(name for name in ALL_STAGES if parity is not None or name != 'parity')
         for stage in stage_order:
             if stage not in stages:
                 if report_skips:
@@ -257,6 +258,14 @@ def mirrored_paths(core: Path) -> list[str]:
     return [item['upstream'] for item in mirror['verbatim'] + mirror['watched']]
 
 
+def testcases_drift(core: Path, upstream: Path) -> bool:
+    """True when the upstream test_cases tree at HEAD differs from the pinned tree,
+    which is the corpus core's own tests read."""
+    pin = load_pin(core)
+    wanted = next(item['git_tree'] for item in pin['trees'] if item['path'] == 'crates/monty/test_cases')
+    return git(upstream, 'rev-parse', 'HEAD:crates/monty/test_cases') != wanted
+
+
 def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list[str]:
     """Flags for the commit at upstream HEAD, measured against `base` (the previous
     last_good, or the pin when none is given), so one change raises one flag once."""
@@ -280,18 +289,18 @@ def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list
     return flags
 
 
-def gate_verdict(gate_ok: bool, stage: str, flags: list[str]) -> str:
-    """`green`, `red` or `exempt`. A corpus failure on a commit that changed the upstream
-    test cases is `exempt`: the pinned corpus is expected to differ there, so it is
+def gate_verdict(gate_ok: bool, stage: str, drift: bool) -> str:
+    """`green`, `red` or `exempt`. A corpus failure while the upstream test cases differ
+    from the pinned ones is `exempt`: the pinned corpus is expected to differ, so it is
     digested for review instead of stopping the job."""
     if gate_ok:
         return 'green'
-    return 'exempt' if stage == 'corpus' and 'TESTCASES' in flags else 'red'
+    return 'exempt' if stage == 'corpus' and drift else 'red'
 
 
-def stop_reason(gate_ok: bool, stage: str, flags: list[str]) -> str | None:
+def stop_reason(gate_ok: bool, stage: str, drift: bool) -> str | None:
     """Only a red gate stops the loop. A flagged commit advances and is digested."""
-    return 'red' if gate_verdict(gate_ok, stage, flags) == 'red' else None
+    return 'red' if gate_verdict(gate_ok, stage, drift) == 'red' else None
 
 
 def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[dict[str, Any]]:
@@ -314,7 +323,7 @@ def run_url() -> str:
     return f'{server}/{repo}/actions/runs/{run}' if server and repo and run else ''
 
 
-def week_label(day: datetime.date) -> str:
+def week_label(day: date) -> str:
     year, week, _ = day.isocalendar()
     return f'{year}-W{week:02d}'
 
@@ -381,7 +390,7 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
 
 def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
                time_budget_min: float, accept: str | None, state_file: Path | None,
-               out: Path) -> int:
+               out: Path, records: list[dict[str, Any]]) -> int:
     pin = load_pin(core)
     state = read_state_or_seed(state_file, pin)
     start = state['sha']
@@ -415,7 +424,6 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         state['sha'] = accepted
         write_state(state_file, accepted, 'accepted')
 
-    records: list[dict[str, Any]] = []
     current = state['sha']
     resume_start = current
     advanced = current != start
@@ -430,6 +438,7 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         began = time.monotonic()
         command(['git', '-C', str(repo), 'checkout', '--detach', '--quiet', sha])
         flags = candidate_flags(core, repo, current)
+        drift = testcases_drift(core, repo)
         target = workdir / 'targets'
         gate_cmd = [sys.executable, '-I', str(Path(__file__).resolve()), 'gate', '--core', str(core),
                     '--upstream', str(repo), '--target-dir', str(target)]
@@ -441,9 +450,9 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         stage_match = re.search(r'GATE RED stage=([\w-]+)', outcome.stdout)
         stage = stage_match.group(1) if stage_match else ('all' if gate_ok else 'unknown')
         records.append({'sha': sha, 'subject': subject, 'flags': flags,
-                        'gate': gate_verdict(gate_ok, stage, flags), 'stage': stage,
+                        'gate': gate_verdict(gate_ok, stage, drift), 'stage': stage,
                         'seconds': round(time.monotonic() - began, 3)})
-        stopped = stop_reason(gate_ok, stage, flags)
+        stopped = stop_reason(gate_ok, stage, drift)
         if stopped:
             break
         current = sha
@@ -467,18 +476,20 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
     """Runs the loop; any unexpected failure still writes result.json, so the
     workflow keeps the greens already recorded and reports the error."""
     pin_commit = start = ''
+    records: list[dict[str, Any]] = []
     try:
         pin = load_pin(core)
         pin_commit = str(pin['commit'])
         start = read_state_or_seed(state_file, pin)['sha']
-        return _run_follow(core, workdir, parity, max_commits, time_budget_min, accept, state_file, out)
+        return _run_follow(core, workdir, parity, max_commits, time_budget_min, accept, state_file, out, records)
     except Exception as exc:  # noqa: BLE001 - the report must be written whatever failed
         try:
             last_good = read_state_or_seed(state_file, load_pin(core))['sha']
         except Exception:  # noqa: BLE001 - a malformed state file is part of what is reported
             last_good = start
         result = {'pin': pin_commit, 'start': start, 'last_good': last_good, 'head': '', 'behind': 0,
-                  'commits': [], 'status': 'error', 'error': f'{type(exc).__name__}: {exc}'}
+                  'commits': records, 'status': 'error', 'error': f'{type(exc).__name__}: {exc}',
+                  'flagged': flagged_entries(records, run_url())}
         write_result(out, result)
         return 1
 
@@ -521,7 +532,7 @@ def main() -> int:
                     args.stages is not None)
     if args.command == 'digest':
         result = json.loads(args.result.read_text())
-        week = args.week or week_label(datetime.date.today())
+        week = args.week or week_label(date.today())
         existing = args.existing.read_text() if args.existing and args.existing.is_file() else None
         args.out.write_text(format_digest(week, result.get('flagged', []), existing))
         print(week)
