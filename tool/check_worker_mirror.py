@@ -79,6 +79,17 @@ def fetch(ref: str, path: str) -> bytes:
         return r.read()
 
 
+def crates_io_checksum(name: str, version: str) -> str:
+    """Return the crates.io sparse-index checksum for one published crate."""
+    prefix = {1: '1', 2: '2', 3: f'3/{name[0]}'}.get(len(name), f'{name[:2]}/{name[2:4]}')
+    with urllib.request.urlopen(INDEX.format(prefix=prefix, name=name), timeout=30) as response:
+        entries = [json.loads(line) for line in response.read().decode().splitlines() if line]
+    matches = [entry['cksum'] for entry in entries if entry.get('vers') == version]
+    if len(matches) != 1:
+        raise ValueError(f'crates.io {name} {version}: expected one entry, found {matches or "nothing"}')
+    return matches[0]
+
+
 def fatal(msg: str) -> None:
     print(f'FATAL: {msg}')
     sys.exit(2)
@@ -265,13 +276,13 @@ def online(mirror: dict, pin: dict, bad: list[str]) -> None:
             print(f'OK:   {f["upstream"]} @ {commit[:12]} {got[:12]}')
     version = pin['version']
     for name, checksum in sorted(mirror['pinned_crates'].items()):
-        prefix = {1: '1', 2: '2', 3: f'3/{name[0]}'}.get(len(name), f'{name[:2]}/{name[2:4]}')
-        url = INDEX.format(prefix=prefix, name=name)
-        with urllib.request.urlopen(url, timeout=30) as r:
-            lines = [json.loads(line) for line in r.read().decode().splitlines() if line]
-        published = [e['cksum'] for e in lines if e.get('vers') == version]
-        if published != [checksum]:
-            bad.append(f'crates.io {name} {version}: index has {published or "nothing"}, '
+        try:
+            published = crates_io_checksum(name, version)
+        except (OSError, ValueError) as e:
+            bad.append(str(e))
+            continue
+        if published != checksum:
+            bad.append(f'crates.io {name} {version}: index has {published[:12]}, '
                        f'pinned_crates records {checksum[:12]}')
         else:
             print(f'OK:   crates.io {name} {version} {checksum[:12]}')

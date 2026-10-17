@@ -232,6 +232,8 @@ jobs:
           run python3 -I tool/test_check_worker_mirror.py
           # Offline controls for the per-commit upstream follow job.
           run python3 -I tool/test_follow_upstream.py
+          # Offline controls for tag detection and scripted draft bump preparation.
+          run python3 -I tool/test_bump_upstream.py
           # The parent's IANA zone-name list against the jiff-tzdb version
           # native/worker/Cargo.lock pins (offline: version, checksum, hash).
           run python3 -I tool/generate_tz_names.py --check
@@ -262,7 +264,7 @@ jobs:
           # The gate's own skip-but-green guard. A renamed or deleted script must
           # be a RED, not a silently shorter list that still exits 0 -- which is
           # the exact shape this repo has been bitten by twice.
-          [ "$RAN" -eq 25 ] || { echo "FAIL: expected 25 checks, ran $RAN"; RC=1; }
+          [ "$RAN" -eq 26 ] || { echo "FAIL: expected 26 checks, ran $RAN"; RC=1; }
           echo "ran $RAN checks, rc=$RC"
           exit $RC
 

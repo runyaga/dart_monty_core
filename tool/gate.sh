@@ -163,6 +163,9 @@ s  worker_mirror_t python3 -I tool/test_check_worker_mirror.py
 # The per-commit upstream follow job's offline controls: state seeding,
 # version replacement, patch-table idempotence and its stop conditions.
 s  follow_upstream_t python3 -I tool/test_follow_upstream.py
+# Offline controls for stable-tag discovery, version mapping, pin and lock
+# rewrites, and the draft bump PR body.
+s  bump_upstream_t python3 -I tool/test_bump_upstream.py
 # Every tool/generate_*_oracle.py --check (found by glob): a committed oracle
 # .g.dart that no longer matches upstream's recorded outcomes. Needs uv or
 # python3.12 plus network once for the cached .venv-oracle; otherwise SKIP

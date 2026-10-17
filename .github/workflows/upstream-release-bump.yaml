@@ -1,0 +1,186 @@
+name: Upstream release bump
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Stable upstream tag to bump, such as v1.2.0'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-release-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Detect a stable upstream tag
+        id: detect
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$TAG_INPUT"
+          if [ -z "$tag" ]; then
+            tag="$(python3 -I tool/bump_upstream.py latest-tag --pin tool/upstream/upstream-pin.json)"
+          fi
+          if [ -z "$tag" ]; then
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo '::error::tag must be a stable vN.N.N tag'; exit 1;
+          }
+          branch="bump/upstream-$tag"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "branch $branch already exists"
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          old_tag="$(python3 -I -c 'import json; print(json.load(open("tool/upstream/upstream-pin.json"))["tag"])')"
+          old_commit="$(python3 -I -c 'import json; print(json.load(open("tool/upstream/upstream-pin.json"))["commit"])')"
+          old_cases_tree="$(python3 -I -c 'import json; p=json.load(open("tool/upstream/upstream-pin.json")); print(next(t["git_tree"] for t in p["trees"] if t["path"] == "crates/monty/test_cases"))')"
+          printf 'run=true\ntag=%s\nbranch=%s\nold_tag=%s\nold_commit=%s\nold_cases_tree=%s\n' \
+            "$tag" "$branch" "$old_tag" "$old_commit" "$old_cases_tree" >> "$GITHUB_OUTPUT"
+      - name: Read follow evidence
+        if: steps.detect.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state_dir="$RUNNER_TEMP/upstream-follow-state"
+          if git ls-remote --exit-code --heads \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
+            upstream-follow-state >/dev/null 2>&1; then
+            git clone --depth 1 --branch upstream-follow-state \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" "$state_dir"
+          else
+            mkdir -p "$state_dir"
+          fi
+          if [ -f "$state_dir/evidence.jsonl" ]; then
+            cp "$state_dir/evidence.jsonl" "$RUNNER_TEMP/evidence.jsonl"
+          else
+            : > "$RUNNER_TEMP/evidence.jsonl"
+          fi
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        if: steps.detect.outputs.run == 'true'
+        with:
+          sdk: 3.13.5
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        if: steps.detect.outputs.run == 'true'
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        if: steps.detect.outputs.run == 'true'
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        if: steps.detect.outputs.run == 'true'
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          targets: wasm32-wasip1
+      - name: Prepare and push the bump branch
+        if: steps.detect.outputs.run == 'true'
+        env:
+          TAG: ${{ steps.detect.outputs.tag }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+          OLD_TAG: ${{ steps.detect.outputs.old_tag }}
+          OLD_COMMIT: ${{ steps.detect.outputs.old_commit }}
+          OLD_CASES_TREE: ${{ steps.detect.outputs.old_cases_tree }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          git switch -c "$BRANCH"
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          push_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          failed() {
+            code=$?
+            step="${BASH_COMMAND:-unknown}"
+            printf 'Upstream bump %s failed.\n\nStep: `%s`\n\nCompare: https://github.com/%s/compare/main...%s\n' \
+              "$TAG" "$step" "$GITHUB_REPOSITORY" "$BRANCH" > "$RUNNER_TEMP/failure.md"
+            git add -A
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: prepare upstream monty $TAG" || true
+            fi
+            git push "$push_url" HEAD:"$BRANCH" || true
+            gh issue create --title "Upstream bump: $TAG" --body-file "$RUNNER_TEMP/failure.md" || true
+            exit "$code"
+          }
+          trap failed ERR
+          dart pub get
+          set +e
+          python3 -I tool/check_worker_mirror.py --candidate "$TAG" > "$RUNNER_TEMP/mirror-diff.txt"
+          mirror_rc=$?
+          set -e
+          [ "$mirror_rc" -eq 0 ] || [ "$mirror_rc" -eq 1 ]
+          python3 -I tool/bump_upstream.py apply --tag "$TAG" --core "$GITHUB_WORKSPACE" \
+            --workdir "$RUNNER_TEMP/upstream-bump"
+          cd native/worker && cargo update --workspace && cd ../..
+          bash tool/build_worker.sh
+          bash tool/prebuild.sh
+          bash tool/generate_proto.sh
+          python3 -m venv .venv-oracle
+          .venv-oracle/bin/python -m pip install -q --disable-pip-version-check --no-cache-dir \
+            --require-hashes --only-binary :all: --no-deps -r tool/upstream/requirements.lock
+          for generator in tool/generate_*_oracle.py; do
+            .venv-oracle/bin/python -I "$generator"
+          done
+          new_cases_tree="$(python3 -I -c 'import json; p=json.load(open("tool/upstream/upstream-pin.json")); print(next(t["git_tree"] for t in p["trees"] if t["path"] == "crates/monty/test_cases"))')"
+          if [ "$new_cases_tree" != "$OLD_CASES_TREE" ]; then
+            dart tool/generate_fixture_corpus_v1.dart "$RUNNER_TEMP/upstream-bump/monty"
+          fi
+          bash tool/check_version_pin.sh
+          python3 -I tool/check_worker_mirror.py --local
+          python3 -I tool/check_upstream_pin.py
+          git add -A
+          git commit -m "chore: prepare upstream monty $TAG"
+          git push "$push_url" HEAD:"$BRANCH"
+      - name: Dispatch full CI and open a draft pull request
+        if: steps.detect.outputs.run == 'true'
+        env:
+          TAG: ${{ steps.detect.outputs.tag }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+          OLD_TAG: ${{ steps.detect.outputs.old_tag }}
+          OLD_COMMIT: ${{ steps.detect.outputs.old_commit }}
+          MONTY_CHECKOUT: ${{ runner.temp }}/upstream-bump/monty
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          body="$RUNNER_TEMP/pr-body.md"
+          failed() {
+            code=$?
+            printf 'Upstream bump %s failed.\n\nStep: `%s`\n\nCompare: https://github.com/%s/compare/main...%s\n' \
+              "$TAG" "${BASH_COMMAND:-unknown}" "$GITHUB_REPOSITORY" "$BRANCH" > "$body"
+            gh issue create --title "Upstream bump: $TAG" --body-file "$body" || true
+            exit "$code"
+          }
+          trap failed ERR
+          python3 -I tool/bump_upstream.py body --core "$GITHUB_WORKSPACE" --tag "$TAG" \
+            --old-commit "$OLD_COMMIT" --old-tag "$OLD_TAG" --evidence "$RUNNER_TEMP/evidence.jsonl" \
+            --mirror-diff "$RUNNER_TEMP/mirror-diff.txt" --out "$body"
+          gh workflow run ci.yaml --ref "$BRANCH" -f force_all=true
+          if ! gh pr create --draft --base main --head "$BRANCH" \
+            --title "chore: bump upstream monty $TAG" --body-file "$body"; then
+            printf '\nCompare: https://github.com/%s/compare/main...%s\n' \
+              "$GITHUB_REPOSITORY" "$BRANCH" >> "$body"
+            gh issue create --title "Upstream bump: $TAG" --body-file "$body"
+          fi
