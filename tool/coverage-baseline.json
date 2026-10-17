@@ -82,8 +82,8 @@
       "pct": 100.0
     },
     "lib/src/mount/os_access.dart": {
-      "found": 79,
-      "hit": 79,
+      "found": 111,
+      "hit": 111,
       "pct": 100.0
     },
     "lib/src/mount/os_access_defaults.dart": {
@@ -97,9 +97,14 @@
       "pct": 100.0
     },
     "lib/src/mount/os_access_files.dart": {
-      "found": 87,
-      "hit": 82,
-      "pct": 94.25
+      "found": 91,
+      "hit": 86,
+      "pct": 94.51
+    },
+    "lib/src/mount/os_access_repr.dart": {
+      "found": 69,
+      "hit": 69,
+      "pct": 100.0
     },
     "lib/src/mount/os_access_tree.dart": {
       "found": 63,
@@ -247,8 +252,8 @@
       "pct": 98.73
     },
     "lib/src/worker/host_answers.dart": {
-      "found": 353,
-      "hit": 353,
+      "found": 356,
+      "hit": 356,
       "pct": 100.0
     },
     "lib/src/worker/host_objects.dart": {
@@ -277,9 +282,9 @@
       "pct": 100.0
     },
     "lib/src/worker/monty_session.dart": {
-      "found": 518,
-      "hit": 512,
-      "pct": 98.84
+      "found": 526,
+      "hit": 520,
+      "pct": 98.86
     },
     "lib/src/worker/monty_snapshot.dart": {
       "found": 91,
@@ -302,8 +307,8 @@
       "pct": 100.0
     },
     "lib/src/worker/proto_session.dart": {
-      "found": 247,
-      "hit": 247,
+      "found": 254,
+      "hit": 254,
       "pct": 100.0
     },
     "lib/src/worker/python_keys.dart": {
@@ -327,9 +332,19 @@
       "pct": 97.92
     },
     "lib/src/worker/self_relaunch.dart": {
-      "found": 7,
-      "hit": 6,
-      "pct": 85.71
+      "found": 45,
+      "hit": 45,
+      "pct": 100.0
+    },
+    "lib/src/worker/self_relaunch_options.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
+    "lib/src/worker/self_relaunch_status.dart": {
+      "found": 5,
+      "hit": 5,
+      "pct": 100.0
     },
     "lib/src/worker/self_relaunch_stub.dart": {
       "found": 2,
@@ -426,6 +441,21 @@
       "hit": 70,
       "pct": 100.0
     },
+    "lib/src/worker/worker_cache.dart": {
+      "found": 54,
+      "hit": 54,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_cache_error.dart": {
+      "found": 3,
+      "hit": 3,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_cache_source.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
     "lib/src/worker/worker_channel.dart": {
       "found": 92,
       "hit": 92,
@@ -436,15 +466,65 @@
       "hit": 178,
       "pct": 100.0
     },
+    "lib/src/worker/worker_fingerprint.dart": {
+      "found": 55,
+      "hit": 52,
+      "pct": 94.55
+    },
+    "lib/src/worker/worker_install.dart": {
+      "found": 311,
+      "hit": 308,
+      "pct": 99.04
+    },
+    "lib/src/worker/worker_install_error.dart": {
+      "found": 3,
+      "hit": 3,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_install_fetcher.dart": {
+      "found": 36,
+      "hit": 36,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_install_request.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_install_result.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
+    },
     "lib/src/worker/worker_locator.dart": {
-      "found": 22,
-      "hit": 21,
-      "pct": 95.45
+      "found": 100,
+      "hit": 99,
+      "pct": 99.0
+    },
+    "lib/src/worker/worker_manifest.dart": {
+      "found": 84,
+      "hit": 84,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_manifest_data.dart": {
+      "found": 1,
+      "hit": 1,
+      "pct": 100.0
     },
     "lib/src/worker/worker_pool.dart": {
       "found": 179,
       "hit": 179,
       "pct": 100.0
+    },
+    "lib/src/worker/worker_verify_error.dart": {
+      "found": 5,
+      "hit": 5,
+      "pct": 100.0
+    },
+    "lib/src/worker/worker_verify_reason.dart": {
+      "found": 0,
+      "hit": 0,
+      "pct": 0.0
     },
     "lib/src/worker/zone_database.dart": {
       "found": 0,
@@ -468,8 +548,8 @@
     }
   },
   "total": {
-    "found": 7712,
-    "hit": 7658,
-    "pct": 99.3
+    "found": 8512,
+    "hit": 8453,
+    "pct": 99.31
   }
 }
