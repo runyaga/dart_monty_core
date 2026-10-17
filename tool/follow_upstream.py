@@ -21,9 +21,11 @@ MONTY_CRATES = (
     'monty', 'monty-proto', 'monty-types', 'monty-alloc', 'monty-fs',
     'monty-macros', 'monty-type-checking', 'monty-typeshed',
 )
-# The corpus runs last: a corpus failure on a test_cases change is digested, so no
-# stage that must stay red may come after it.
 ALL_STAGES = ('upstream-tests', 'worker-build', 'parity', 'corpus')
+NEVER_BASELINE_FAILURES = frozenset((
+    'upstream-tests', 'worker-build', 'parity:unparsed', 'corpus:unparsed',
+    'gate:timeout', 'gate:no-report',
+))
 
 
 def command(cmd: list[str], cwd: Path | None = None,
@@ -48,30 +50,74 @@ def load_pin(core: Path) -> dict[str, Any]:
     return json.loads((core / 'tool/upstream/upstream-pin.json').read_text())
 
 
-def read_state_or_seed(state_file: Path | None, pin: dict[str, Any]) -> dict[str, str]:
+def read_state_or_seed(state_file: Path | None, pin: dict[str, Any]) -> dict[str, Any]:
     """Read persistent state, or start at the immutable upstream pin."""
     data = json.loads(state_file.read_text()) if state_file is not None and state_file.is_file() else None
     return state_from_data(data, pin)
 
 
-def state_from_data(data: dict[str, Any] | None, pin: dict[str, Any]) -> dict[str, str]:
+def state_from_data(data: dict[str, Any] | None, pin: dict[str, Any]) -> dict[str, Any]:
     """Validate state data, or provide the immutable pin as its seed."""
     if data is None:
         return {'sha': str(pin['commit']), 'advanced': '', 'via': 'pin'}
     if not isinstance(data.get('sha'), str) or not data['sha']:
         raise ValueError('last_good state has no sha')
-    return {key: str(value) for key, value in data.items()}
+    state: dict[str, Any] = {
+        'sha': data['sha'],
+        'advanced': str(data.get('advanced', '')),
+        'via': str(data.get('via', '')),
+    }
+    baseline = data.get('baseline')
+    if 'baseline' in data:
+        if not isinstance(baseline, dict) or not all(isinstance(key, str) and isinstance(value, str)
+                                                     for key, value in baseline.items()):
+            raise ValueError('last_good state has a malformed baseline')
+        state['baseline'] = baseline.copy()
+    pending = data.get('pending')
+    if 'pending' in data:
+        flags = pending.get('flags', []) if isinstance(pending, dict) else None
+        if (not isinstance(pending, dict) or not isinstance(pending.get('sha'), str) or not pending['sha']
+                or not isinstance(pending.get('failures'), list)
+                or not isinstance(pending.get('fixed'), list)
+                or not isinstance(flags, list)
+                or not all(isinstance(item, str) for item in pending['failures'])
+                or not all(isinstance(item, str) for item in pending['fixed'])
+                or not all(isinstance(item, str) for item in flags)):
+            raise ValueError('last_good state has a malformed pending record')
+        state['pending'] = {
+            'sha': pending['sha'],
+            'failures': pending['failures'].copy(),
+            'fixed': pending['fixed'].copy(),
+            'flags': flags.copy(),
+        }
+    return state
 
 
-def write_state(state_file: Path | None, sha: str, via: str) -> None:
+_UNSET = object()
+
+
+def write_state(state_file: Path | None, sha: str, via: str, *,
+                baseline: dict[str, str] | None | object = _UNSET,
+                pending: dict[str, Any] | None | object = _UNSET) -> None:
     if state_file is None:
         return
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps({
+    old = state_from_data(json.loads(state_file.read_text()), {'commit': sha}) \
+        if state_file.is_file() else {}
+    if baseline is _UNSET:
+        baseline = old.get('baseline')
+    if pending is _UNSET:
+        pending = old.get('pending')
+    data: dict[str, Any] = {
         'sha': sha,
         'advanced': datetime.now(timezone.utc).isoformat(timespec='seconds'),
         'via': via,
-    }, indent=2) + '\n')
+    }
+    if baseline is not None:
+        data['baseline'] = baseline
+    if pending is not None:
+        data['pending'] = pending
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(data, indent=2) + '\n')
 
 
 def selected_stages(value: str | None, parity: Path | None) -> tuple[str, ...]:
@@ -84,15 +130,6 @@ def selected_stages(value: str | None, parity: Path | None) -> tuple[str, ...]:
     if 'parity' in selected and parity is None:
         raise ValueError('parity selected without --parity')
     return selected
-
-
-def select_commits(pending: list[str], accept: str | None) -> tuple[str | None, list[str]]:
-    """Return an accepted commit and the commits that still need a gate."""
-    if accept is None:
-        return None, pending
-    if not pending or accept != pending[0]:
-        raise ValueError(f'accepted SHA {accept} is not the oldest pending commit')
-    return accept, pending[1:]
 
 
 def workspace_version(upstream: Path) -> str:
@@ -125,16 +162,35 @@ def with_patch_table(text: str, table: str) -> str:
     return without.rstrip() + '\n\n' + table
 
 
+def empty_manifest_targets(text: str) -> str:
+    """Return a bundled-worker manifest source with its JSON targets map emptied."""
+    marker = '"targets":{'
+    start = text.find(marker)
+    if start == -1:
+        raise ValueError('worker manifest has no recognisable "targets" object')
+    opening = start + len(marker) - 1
+    depth = 0
+    for index in range(opening, len(text)):
+        char = text[index]
+        if char == '{':
+            depth += 1
+        elif char == '}':
+            depth -= 1
+            if depth == 0:
+                return text[:opening] + '{}' + text[index + 1:]
+    raise ValueError('worker manifest has an unbalanced "targets" object')
+
+
 def prepare_worker(core: Path, upstream: Path) -> str:
     """Seed the worker from an upstream checkout. This never touches the pin."""
-    command(['git', '-C', str(core), 'checkout', '--', 'native/worker/Cargo.toml',
-             'native/worker/Cargo.lock'])
     pin = load_pin(core)
     version = workspace_version(upstream)
     manifest = core / 'native/worker/Cargo.toml'
     changed = rewrite_monty_versions(manifest.read_text(), str(pin['version']), version)
     manifest.write_text(with_patch_table(changed, patch_table(upstream)))
     shutil.copyfile(upstream / 'Cargo.lock', core / 'native/worker/Cargo.lock')
+    worker_manifest = core / 'lib/src/worker/worker_manifest_data.dart'
+    worker_manifest.write_text(empty_manifest_targets(worker_manifest.read_text()))
     print(f'UPSTREAM VERSION {version}')
     print('WORKER TREE patched from upstream lock and local crate paths')
     return version
@@ -183,17 +239,104 @@ def prepare_wasm(core: Path, upstream: Path) -> None:
     command(['cargo', 'update', '--workspace'], cwd=core / 'native/worker')
 
 
+def failure_ids(stages: dict[str, str], output: dict[str, str]) -> list[str]:
+    """Extract stable failure identifiers from captured stage output."""
+    failures: list[str] = []
+    for stage in ('upstream-tests', 'worker-build'):
+        if stages.get(stage) == 'fail':
+            failures.append(stage)
+    if stages.get('parity') == 'fail':
+        found: list[str] = []
+        unparsed = False
+        for line in output.get('parity', '').splitlines():
+            match = re.match(r'^FAIL current case (\S+) \(row ', line)
+            if match is None:
+                match = re.match(r'^FAIL current row (\S+) on \S+:', line)
+            if match is not None:
+                found.append(f'parity:{match.group(1)}')
+            elif line.startswith('FAIL '):
+                unparsed = True
+        failures.extend(dict.fromkeys(found))
+        if not found or unparsed:
+            failures.append('parity:unparsed')
+    if stages.get('corpus') == 'fail':
+        found: list[str] = []
+        unparsed = False
+        for line in output.get('corpus', '').splitlines():
+            match = re.search(r'\bREGRESSION\s+(\S+\.py)', line)
+            if match:
+                found.append(f'corpus:{match.group(1)}')
+            problem = re.search(r'\b([A-Z]{4,})\s+\S+\.py\b', line)
+            if ((problem and problem.group(1) != 'REGRESSION')
+                    or re.search(r'\b(?:CHANGED|MISSING|STALE)\s+\S+', line)
+                    or 'printed no' in line):
+                unparsed = True
+        failures.extend(dict.fromkeys(found))
+        if not found or unparsed:
+            failures.append('corpus:unparsed')
+    return list(dict.fromkeys(failures))
+
+
+def read_gate_report(path: Path, returncode: int, expected_head: str,
+                     selected: tuple[str, ...] = ALL_STAGES) -> dict[str, Any]:
+    """Read a gate's self-report, turning an unreliable run into a red failure."""
+    def failed(*failures: str) -> dict[str, Any]:
+        return {
+            'head': expected_head,
+            'stages': {**{stage: 'skipped' for stage in ALL_STAGES}, 'gate': 'fail'},
+            'failures': list(dict.fromkeys(failures)),
+        }
+
+    try:
+        report = json.loads(path.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return failed(*(('gate:timeout',) if returncode == 124 else ()), 'gate:no-report')
+    if (not isinstance(report, dict) or report.get('head') != expected_head
+            or not isinstance(report.get('stages'), dict)
+            or not isinstance(report.get('failures'), list)
+            or any(not isinstance(item, str) for item in report['failures'])
+            or any(report['stages'].get(stage) not in ('pass', 'fail', 'skipped')
+                   for stage in ALL_STAGES)):
+        return failed('gate:no-report')
+    stages = report['stages']
+    selected_failures = any(stages[stage] == 'fail' for stage in selected)
+    skipped_without_worker_failure = any(
+        stages[stage] == 'skipped'
+        and (stage not in ('parity', 'corpus') or stages['worker-build'] != 'fail')
+        for stage in selected
+    )
+    if (returncode not in (0, 1)
+            or returncode != (1 if selected_failures else 0)
+            or skipped_without_worker_failure):
+        report['failures'] = list(dict.fromkeys([*report['failures'], 'gate:no-report']))
+    return report
+
+
 def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...],
-         target_dir: Path | None, report_skips: bool = False) -> int:
+         target_dir: Path | None, report_skips: bool = False,
+         json_out: Path | None = None) -> int:
     head = git(upstream, 'rev-parse', 'HEAD')
     print(f'UPSTREAM HEAD {head}')
     root_target = target_dir or Path(tempfile.mkdtemp(prefix='follow-upstream-target-'))
+    temp_parent = Path(tempfile.mkdtemp(
+        prefix='follow-upstream-core-',
+        dir=str(target_dir.parent) if target_dir is not None else None))
+    worktree = temp_parent / 'core'
+    status = {name: 'skipped' for name in ALL_STAGES}
+    output = {name: '' for name in ALL_STAGES}
     try:
+        git(core, 'worktree', 'prune')
+        git(core, 'worktree', 'add', '--detach', str(worktree), 'HEAD')
+        if any(stage in stages for stage in ('parity', 'corpus')):
+            command(['dart', 'pub', 'get'], cwd=worktree)
         stage_order = tuple(name for name in ALL_STAGES if parity is not None or name != 'parity')
         for stage in stage_order:
             if stage not in stages:
                 if report_skips:
                     print(f'GATE SKIP stage={stage}')
+                continue
+            if stage in ('parity', 'corpus') and status['worker-build'] != 'pass':
+                print(f'GATE SKIP stage={stage}')
                 continue
             print(f'GATE RUN stage={stage}')
             try:
@@ -203,38 +346,61 @@ def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...
                                       '-p', 'monty-type-checking', '--features', 'monty-proto/worker'],
                                      cwd=upstream,
                                      env={'CARGO_TARGET_DIR': str(root_target / 'upstream-tests')})
+                    output[stage] += result.stdout
                     print(result.stdout, end='')
                 elif stage == 'worker-build':
-                    prepare_worker(core, upstream)
+                    prepare_worker(worktree, upstream)
                     result = command(['cargo', 'build', '--release', '--bin', 'dart_monty_worker', '--lib',
-                                      '--message-format=json-render-diagnostics'], cwd=core / 'native/worker',
+                                      '--message-format=json-render-diagnostics'], cwd=worktree / 'native/worker',
                                      env={'CARGO_TARGET_DIR': str(root_target / 'worker-build')})
-                    copy_worker(core, result.stdout)
+                    output[stage] += result.stdout
+                    print(result.stdout, end='')
+                    copy_worker(worktree, result.stdout)
                 elif stage == 'corpus':
-                    result = command(['bash', 'tool/test_corpus_worker.sh', 'native'], cwd=core)
+                    result = command(['bash', 'tool/test_corpus_worker.sh', 'native'], cwd=worktree)
+                    output[stage] += result.stdout
                     print(result.stdout, end='')
                 else:
                     assert parity is not None
                     with tempfile.TemporaryDirectory(prefix='follow-upstream-parity-') as temp:
                         out = Path(temp)
                         result = command(['python3', '-I', str(parity / 'tool/parity/run.py'), 'vm',
-                                          '--core', str(core), '--out', str(out)])
+                                          '--core', str(worktree), '--out', str(out)])
+                        output[stage] += result.stdout
                         print(result.stdout, end='')
                         result = command(['python3', '-I', str(parity / 'tool/parity/score.py'), str(out),
                                           '--backends', 'vm', '--json', str(out / 'score.json'), '--markdown', str(out / 'score.md'),
                                           '--assert-current', str(parity / 'tool/parity/baseline-current.json')])
+                        output[stage] += result.stdout
                         print(result.stdout, end='')
             except (OSError, ValueError, subprocess.CalledProcessError) as exc:
                 if isinstance(exc, subprocess.CalledProcessError) and exc.stdout:
+                    output[stage] += exc.stdout
                     print(exc.stdout, end='')
-                print(f'GATE RED stage={stage}')
-                return 1
+                status[stage] = 'fail'
+            else:
+                status[stage] = 'pass'
+        failures = failure_ids(status, output)
+        if failures:
+            first = next(stage for stage in stage_order if status[stage] == 'fail')
+            print(f'GATE RED stage={first}')
+            return 1
         if report_skips and set(stages) != set(stage_order):
             print('GATE INCOMPLETE')
             return 2
         print('GATE GREEN')
         return 0
     finally:
+        if json_out is not None:
+            json_out.parent.mkdir(parents=True, exist_ok=True)
+            json_out.write_text(json.dumps({
+                'head': head,
+                'stages': status,
+                'failures': failure_ids(status, output),
+            }, indent=2) + '\n')
+        command(['git', '-C', str(core), 'worktree', 'remove', '--force', str(worktree)], check=False)
+        shutil.rmtree(temp_parent, ignore_errors=True)
+        command(['git', '-C', str(core), 'worktree', 'prune'], check=False)
         if target_dir is None:
             shutil.rmtree(root_target, ignore_errors=True)
 
@@ -256,14 +422,6 @@ def derive_flags(pin_version: str, candidate_version: str, mirror_red: bool,
 def mirrored_paths(core: Path) -> list[str]:
     mirror = json.loads((core / 'tool/upstream/worker-mirror.json').read_text())
     return [item['upstream'] for item in mirror['verbatim'] + mirror['watched']]
-
-
-def testcases_drift(core: Path, upstream: Path) -> bool:
-    """True when the upstream test_cases tree at HEAD differs from the pinned tree,
-    which is the corpus core's own tests read."""
-    pin = load_pin(core)
-    wanted = next(item['git_tree'] for item in pin['trees'] if item['path'] == 'crates/monty/test_cases')
-    return git(upstream, 'rev-parse', 'HEAD:crates/monty/test_cases') != wanted
 
 
 def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list[str]:
@@ -289,29 +447,86 @@ def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list
     return flags
 
 
-def gate_verdict(gate_ok: bool, stage: str, drift: bool) -> str:
-    """`green`, `red` or `exempt`. A corpus failure while the upstream test cases differ
-    from the pinned ones is `exempt`: the pinned corpus is expected to differ, so it is
-    digested for review instead of stopping the job."""
-    if gate_ok:
-        return 'green'
-    return 'exempt' if stage == 'corpus' and drift else 'red'
+def failure_stage(failure: str) -> str:
+    return failure.split(':', 1)[0]
 
 
-def stop_reason(gate_ok: bool, stage: str, drift: bool) -> str | None:
-    """Only a red gate stops the loop. A flagged commit advances and is digested."""
-    return 'red' if gate_verdict(gate_ok, stage, drift) == 'red' else None
+def judge(known: dict[str, str] | None, failures: list[str], skipped_stages: set[str],
+          sha: str) -> dict[str, Any]:
+    """Judge a gate result against its recorded baseline."""
+    failures = list(dict.fromkeys(failures))
+    skipped_stages = set(skipped_stages)
+    if 'parity:unparsed' in failures:
+        skipped_stages.add('parity')
+    if 'corpus:unparsed' in failures:
+        skipped_stages.add('corpus')
+    if known is None:
+        return {'kind': 'red' if failures else 'green', 'new': failures,
+                'fixed': [], 'baseline': {}}
+    new = [failure for failure in failures
+           if failure in NEVER_BASELINE_FAILURES or failure not in known]
+    fixed = [failure for failure in known
+             if failure not in failures and failure_stage(failure) not in skipped_stages]
+    baseline = {failure: introduced for failure, introduced in known.items()
+                if failure not in fixed and failure not in NEVER_BASELINE_FAILURES}
+    return {'kind': 'red' if new else 'green', 'new': new, 'fixed': fixed, 'baseline': baseline}
+
+
+def require_pending_acceptance(state: dict[str, Any], sha: str) -> None:
+    """Ensure an acceptance names the exact commit awaiting review."""
+    pending = state.get('pending')
+    if not isinstance(pending, dict) or pending.get('sha') != sha:
+        raise ValueError(f'accepted SHA {sha} does not match the pending SHA')
+
+
+def accept_pending(state: dict[str, Any], sha: str) -> tuple[dict[str, str], list[str]]:
+    """Record a reviewed pending failure set in the baseline."""
+    require_pending_acceptance(state, sha)
+    pending = state['pending']
+    baseline = dict(state.get('baseline', {}))
+    for failure in pending['fixed']:
+        baseline.pop(failure, None)
+    baseline.update({failure: sha for failure in pending['failures']
+                     if failure not in NEVER_BASELINE_FAILURES})
+    not_baselined = [failure for failure in pending['failures']
+                     if failure in NEVER_BASELINE_FAILURES]
+    state['baseline'] = baseline
+    state.pop('pending', None)
+    return baseline, not_baselined
+
+
+def append_evidence(state_file: Path | None, record: dict[str, Any]) -> None:
+    if state_file is None:
+        return
+    evidence = state_file.with_name('evidence.jsonl')
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    item = {key: record[key] for key in ('sha', 'subject', 'flags', 'verdict', 'new', 'fixed')}
+    if 'not_baselined' in record:
+        item['not_baselined'] = record['not_baselined']
+    item['date'] = datetime.now(timezone.utc).date().isoformat()
+    with evidence.open('a') as handle:
+        handle.write(json.dumps(item, separators=(',', ':')) + '\n')
 
 
 def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[dict[str, Any]]:
-    """The commits that advanced with a flag or an exempt corpus failure."""
+    """The commits that advance with flags, recorded failures, or fixes."""
     entries = []
     for commit in commits:
-        if commit['gate'] == 'red' or not (commit['flags'] or commit['gate'] == 'exempt'):
+        if commit['verdict'] == 'red' or not (commit['flags'] or commit['verdict'] == 'accepted'
+                                               or commit['fixed']):
             continue
         reasons = list(commit['flags'])
-        if commit['gate'] == 'exempt':
-            reasons.append('corpus differs from the pinned test cases')
+        baseline = commit.get('baseline', {})
+        if commit['verdict'] == 'accepted':
+            details = ', '.join(f'{failure} (introduced by {baseline.get(failure, "unknown")})'
+                                for failure in commit['new'])
+            reasons.append(f'accepted failures: {details}')
+            if commit.get('not_baselined'):
+                reasons.append(f'not baselined: {", ".join(commit["not_baselined"])}')
+        if commit['fixed']:
+            details = ', '.join(f'{failure} (introduced by {baseline.get(failure, "unknown")})'
+                                for failure in commit['fixed'])
+            reasons.append(f'fixed: {details}')
         entries.append({'sha': commit['sha'], 'subject': commit['subject'], 'reason': ', '.join(reasons),
                         'url': f"https://github.com/pydantic/monty/commit/{commit['sha']}",
                         'evidence': run_url})
@@ -360,23 +575,15 @@ def result_status(at_head: bool, advanced: bool, stopped: str | None, budget: bo
     return 'advanced' if advanced else 'budget'
 
 
-def last_good_after(start: str, commits: list[dict[str, Any]]) -> str:
-    """Return the last eligible commit, stopping at the first red gate."""
-    last_good = start
-    for commit in commits:
-        if commit['gate'] == 'red':
-            break
-        last_good = str(commit['sha'])
-    return last_good
-
-
 def summary(result: dict[str, Any]) -> str:
     lines = [f"## Upstream follow: {result['status']}", '',
              f"- Start: `{result['start']}`", f"- Last good: `{result['last_good']}`",
              f"- Head: `{result['head']}`", f"- Behind: {result['behind']}"]
+    if result.get('not_baselined'):
+        lines.append(f"- Not baselined on accept: {', '.join(result['not_baselined'])}")
     for item in result['commits']:
         flags = ', '.join(item['flags']) or 'none'
-        lines.append(f"- `{item['sha']}` {item['subject']} | {item['gate']} {item['stage']} | flags: {flags}")
+        lines.append(f"- `{item['sha']}` {item['subject']} | {item['verdict']} {item['stage']} | flags: {flags}")
     return '\n'.join(lines) + '\n'
 
 
@@ -394,6 +601,14 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
     pin = load_pin(core)
     state = read_state_or_seed(state_file, pin)
     start = state['sha']
+    if accept is not None:
+        try:
+            require_pending_acceptance(state, accept)
+        except ValueError as exc:
+            result = {'pin': pin['commit'], 'start': start, 'last_good': start, 'head': '', 'behind': 0,
+                      'commits': [], 'status': 'error', 'error': str(exc)}
+            write_result(out, result)
+            return 1
     repo = workdir / 'monty'
     try:
         workdir.mkdir(parents=True, exist_ok=True)
@@ -413,21 +628,52 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         write_result(out, result)
         return 1
 
-    try:
-        accepted, commits = select_commits(commits, accept)
-    except ValueError as exc:
-        result = {'pin': pin['commit'], 'start': start, 'last_good': start, 'head': head,
-                  'behind': len(commits), 'commits': [], 'status': 'error', 'error': str(exc)}
-        write_result(out, result)
-        return 1
-    if accepted:
+    pending = state.get('pending')
+    pending_red = pending is not None and accept is None
+    if accept is not None:
+        accepted = accept
+        try:
+            accepted_index = commits.index(accepted)
+        except ValueError:
+            result = {'pin': pin['commit'], 'start': start, 'last_good': start, 'head': head,
+                      'behind': len(commits), 'commits': [], 'status': 'error',
+                      'error': f'accepted SHA {accepted} is not pending on origin/main'}
+            write_result(out, result)
+            return 1
+        accepted_pending = {
+            'failures': pending['failures'].copy(),
+            'fixed': pending['fixed'].copy(),
+            'flags': pending.get('flags', []).copy(),
+        }
+        introductions = dict(state.get('baseline', {}))
+        _, not_baselined = accept_pending(state, accepted)
+        introductions.update({failure: accepted for failure in accepted_pending['failures']})
+        record = {
+            'sha': accepted,
+            'subject': git(repo, 'show', '-s', '--format=%s', accepted),
+            'flags': accepted_pending['flags'],
+            'failures': accepted_pending['failures'],
+            'new': accepted_pending['failures'],
+            'fixed': accepted_pending['fixed'],
+            'verdict': 'accepted',
+            'baseline': introductions,
+            'stage': 'accepted',
+            'seconds': 0.0,
+            'not_baselined': not_baselined,
+        }
+        if not_baselined:
+            print(f'WARNING accepted {accepted} with failures that are never baselined: '
+                  f'{", ".join(not_baselined)}')
+        records.append(record)
+        append_evidence(state_file, record)
         state['sha'] = accepted
-        write_state(state_file, accepted, 'accepted')
+        write_state(state_file, accepted, 'accepted', baseline=state.get('baseline'), pending=None)
+        commits = commits[accepted_index + 1:]
+        pending = None
 
     current = state['sha']
-    resume_start = current
     advanced = current != start
-    stopped: str | None = None
+    stopped: str | None = 'red' if pending_red else None
     deadline = time.monotonic() + time_budget_min * 60
     attempted = 0
     for sha in commits:
@@ -438,34 +684,56 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         began = time.monotonic()
         command(['git', '-C', str(repo), 'checkout', '--detach', '--quiet', sha])
         flags = candidate_flags(core, repo, current)
-        drift = testcases_drift(core, repo)
         target = workdir / 'targets'
+        gate_report = workdir / 'gate.json'
+        gate_report.unlink(missing_ok=True)
         gate_cmd = [sys.executable, '-I', str(Path(__file__).resolve()), 'gate', '--core', str(core),
-                    '--upstream', str(repo), '--target-dir', str(target)]
+                    '--upstream', str(repo), '--target-dir', str(target), '--json-out', str(gate_report)]
         if parity is not None:
             gate_cmd.extend(['--parity', str(parity)])
         outcome = command(gate_cmd, check=False, timeout=max(60.0, deadline - time.monotonic()))
         print(outcome.stdout, end='')
-        gate_ok = outcome.returncode == 0 and 'GATE GREEN' in outcome.stdout
-        stage_match = re.search(r'GATE RED stage=([\w-]+)', outcome.stdout)
-        stage = stage_match.group(1) if stage_match else ('all' if gate_ok else 'unknown')
-        records.append({'sha': sha, 'subject': subject, 'flags': flags,
-                        'gate': gate_verdict(gate_ok, stage, drift), 'stage': stage,
-                        'seconds': round(time.monotonic() - began, 3)})
-        stopped = stop_reason(gate_ok, stage, drift)
-        if stopped:
+        report = read_gate_report(gate_report, outcome.returncode, sha,
+                                  selected_stages(None, parity))
+        stage_status = report['stages']
+        known = state.get('baseline')
+        verdict = judge(known, report['failures'],
+                        {stage for stage, value in stage_status.items() if value == 'skipped'}, sha)
+        failed = [stage for stage, value in stage_status.items() if value == 'fail']
+        introductions = dict(known or {})
+        introductions.update(verdict['baseline'] or {})
+        record = {'sha': sha, 'subject': subject, 'flags': flags, 'failures': report['failures'],
+                  'new': verdict['new'], 'fixed': verdict['fixed'], 'verdict': verdict['kind'],
+                  'baseline': introductions, 'stage': failed[0] if failed else 'all',
+                  'seconds': round(time.monotonic() - began, 3)}
+        records.append(record)
+        append_evidence(state_file, record)
+        if verdict['kind'] == 'red':
+            state['pending'] = {'sha': sha, 'failures': verdict['new'],
+                                'fixed': verdict['fixed'], 'flags': flags}
+            write_state(state_file, current, 'pending', baseline=state.get('baseline'), pending=state['pending'])
+            stopped = 'red'
             break
+        if pending is not None and pending['sha'] == sha:
+            state.pop('pending', None)
+            pending = None
+            stopped = None
+        state['baseline'] = verdict['baseline']
         current = sha
         advanced = True
-        write_state(state_file, current, 'flagged' if flags or not gate_ok else 'green')
+        write_state(state_file, current, 'green', baseline=state.get('baseline'), pending=None)
 
-    current = last_good_after(resume_start, records)
     remaining = git(repo, 'rev-list', '--first-parent', f'{current}..origin/main').splitlines()
     budget = stopped is None and bool(remaining)
     status = result_status(not remaining, advanced, stopped, budget)
     result = {'pin': pin['commit'], 'start': start, 'last_good': current, 'head': head,
               'behind': len(remaining), 'commits': records, 'status': status,
-              'flagged': flagged_entries(records, run_url())}
+              'flagged': flagged_entries(records, run_url()),
+              'new': records[-1]['new'] if records else (pending or {}).get('failures', [])}
+    if accept is not None:
+        result['not_baselined'] = not_baselined
+    if state.get('pending') is not None:
+        result['pending'] = state['pending']
     write_result(out, result)
     return 0 if status in ('caught-up', 'advanced', 'budget') else 1
 
@@ -503,6 +771,7 @@ def main() -> int:
     gate_parser.add_argument('--parity', type=Path)
     gate_parser.add_argument('--stages')
     gate_parser.add_argument('--target-dir', type=Path)
+    gate_parser.add_argument('--json-out', type=Path)
     flags_parser = sub.add_parser('flags')
     flags_parser.add_argument('--core', type=Path, required=True)
     flags_parser.add_argument('--upstream', type=Path, required=True)
@@ -529,7 +798,7 @@ def main() -> int:
         return gate(args.core.resolve(), args.upstream.resolve(),
                     args.parity.resolve() if args.parity else None,
                     selected_stages(args.stages, args.parity), args.target_dir,
-                    args.stages is not None)
+                    args.stages is not None, args.json_out)
     if args.command == 'digest':
         result = json.loads(args.result.read_text())
         week = args.week or week_label(date.today())

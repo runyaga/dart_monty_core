@@ -152,20 +152,11 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
 
 ### Upstream follow job
 
-The daily `upstream-follow.yaml` job tests first-parent commits from
-`pydantic/monty` main one at a time. It keeps `last_good.json` on the
-`upstream-follow-state` branch. It does not change
-`tool/upstream/upstream-pin.json`.
+The daily `upstream-follow.yaml` workflow tests first-parent commits from `pydantic/monty` main one at a time and keeps `last_good.json` and `evidence.jsonl` on the state branch without changing `tool/upstream/upstream-pin.json`. Its gate runs in a disposable worktree of core and never writes core's tree. Every selected stage runs and records failure ids. Any failure line the gate cannot parse is red as `parity:unparsed` or `corpus:unparsed`.
 
-Run it with `workflow_dispatch` to set a commit limit or accept a reviewed
-commit. A red commit (worker build, upstream tests, corpus or parity failure)
-stops the job and opens or updates `Upstream follow: needs attention`. Review
-it, then dispatch with its SHA in `accept` to advance past it. A flagged commit
-(a changed worker mirror file, `.proto`, protocol constant, `test_cases` tree or
-workspace version, or a corpus failure on a `test_cases` change) does not stop
-the job: `last_good` moves past it and the commit is listed in the week's
-comment on the `Upstream follow: weekly digest` issue. Use
-`python3 -I tool/follow_upstream.py run --help` for the local command.
+No failure enters the baseline without an explicit accept, so the first failure is red. Run `workflow_dispatch` with `accept` set to the exact pending SHA to baseline its ordinary failures and advance. The accept lists stage-level and unparsed failures as not baselined. A flagged commit changes a worker mirror file, `.proto`, protocol constant, `test_cases` tree, or workspace version. The weekly digest names flagged commits and fixes. Use `python3 -I tool/follow_upstream.py run --help` for the local command.
+
+The follow job runs with a read-only token. A separate publish job holds contents and issues write permission. A dispatch on a branch other than main uses `upstream-follow-state-test` and writes digest and report bodies to the job summary without writing issues.
 
 The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
 `last_good` and runs the browser corpus and browser parity on the runner's own
