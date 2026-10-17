@@ -14,9 +14,48 @@ void telemetryWorkerTests(
   final adapter = RecordingAdapter();
   setUpAll(() => instrumentTelemetry(adapter));
   setUp(adapter.clear);
+  test(
+    'telemetry rejects invalid checkout before opening a session span',
+    () async {
+      final pool = await start();
+      addTearDown(pool.close);
+
+      await expectLater(
+        pool.checkout(limits: const ResourceLimits(maxMemory: -1)),
+        throwsArgumentError,
+      );
+
+      expect(adapter.spans, isEmpty);
+    },
+  );
   _lifecycle(start, adapter, native: native);
+  _checkoutSpan(start, adapter);
   _snapshots(start, adapter);
   _callbacks(start, adapter);
+}
+
+void _checkoutSpan(Future<Monty> Function() start, RecordingAdapter adapter) {
+  test(
+    'session telemetry opens on Configure under its checkout context',
+    () async {
+      final pool = await start();
+      addTearDown(pool.close);
+      final session = await runZoned(
+        pool.checkout,
+        zoneValues: {#telemetryContext: 'checkout'},
+      );
+      addTearDown(session.close);
+
+      final span = requireRecord(adapter.spans.singleOrNull);
+      expect(span.name, 'session {script_name}');
+      expect(span.parent, 'checkout');
+      expect(span.attributes['monty_version'], '1.1.0');
+      expect(span.end, isNull);
+
+      await session.close();
+      expect(span.end, isNotNull);
+    },
+  );
 }
 
 void _lifecycle(
@@ -180,6 +219,30 @@ void _snapshots(Future<Monty> Function() start, RecordingAdapter adapter) {
 }
 
 void _callbacks(Future<Monty> Function() start, RecordingAdapter adapter) {
+  test('host callback sees the innermost open Monty span', () async {
+    final pool = await start();
+    addTearDown(pool.close);
+    await pool.withSession((session) async {
+      expect(
+        await session.feedRun(
+          'ext()',
+          externalLookup: {
+            'ext': MontyHostFunction('ext', (args, kwargs) {
+              final context = recordedContext(adapter.currentContext());
+              final span = requireRecord(adapter.spans.lastOrNull);
+
+              expect(context.$2, same(span));
+              expect(span.end, isNull);
+
+              return const MontyInt(42);
+            }),
+          },
+        ),
+        const MontyInt(42),
+      );
+    });
+  });
+
   test('telemetry callback context survives async continuation', () async {
     final pool = await start();
     addTearDown(pool.close);

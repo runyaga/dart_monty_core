@@ -1,5 +1,6 @@
 // NameLookupSnapshot validation must precede consumption and transmission.
 import 'package:dart_monty_core/dart_monty_core.dart';
+import 'package:dart_monty_core/src/worker/monty.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:test/test.dart';
 
@@ -61,6 +62,36 @@ MontyList _cycle() {
   items.add(value);
 
   return value;
+}
+
+Future<void> _bareLookupRefusalEndsCheckout() async {
+  final discarded = ScriptedChannel([
+    configurePool,
+    answer([_lookup()]),
+  ]);
+  final replacement = ScriptedChannel([
+    configurePool,
+    answer([completeNone()]),
+    resetPool,
+  ]);
+  final pool = await poolWith([discarded, replacement]);
+  final checkout = pool.checkout;
+  final session = await checkout();
+
+  await expectLater(
+    session.feedRun(
+      'try:\n  x\nexcept ValueError:\n  result = "caught"\nresult',
+      externalLookup: {'x': _cycle()},
+    ),
+    throwsA(runtimePool('ValueError', 'Circular reference detected')),
+  );
+  expect(discarded.kills, 1);
+  expect(pool.liveWorkers, 0);
+  await expectLater(session.feedRun('later'), finishedPool);
+
+  final retry = await checkout();
+  expect(await retry.feedRun('None'), const MontyNone());
+  await retry.close();
 }
 
 void main() {
@@ -131,5 +162,9 @@ void main() {
       expect(channel.requests, hasLength(2));
       await expectLater(session.feedRun('1'), poolB2Pending);
     },
+  );
+  test(
+    'a refused bare lookup ends its checkout outside the sandbox',
+    _bareLookupRefusalEndsCheckout,
   );
 }

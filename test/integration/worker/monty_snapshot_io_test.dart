@@ -88,6 +88,35 @@ final MontyClassProxy _badProxy = montyClassProxy(
   attrs: const {},
 );
 
+MontyList _cyclicLazyValue() {
+  final items = <MontyValue>[];
+  final value = MontyList(items);
+  items.add(value);
+
+  return value;
+}
+
+ClassInstance<Object> _lazyValueObject(MontyValue value) {
+  final classType = HostClass<Object>(
+    'LazyValue',
+    instance: (
+      fields: const {},
+      properties: {'value': (_) => value},
+      methods: const {},
+    ),
+  );
+
+  return ClassInstance(
+    Object(),
+    classType: ClassType(classType),
+    policies: const (
+      eagerAttrs: null,
+      lazyAttrs: ['value'],
+      allowedMethods: null,
+    ),
+  );
+}
+
 void main() {
   expectNoWorkersLeftAfterEachTest();
   attributeSessionTests('vm', _withSession);
@@ -172,6 +201,31 @@ void main() {
       );
     },
   );
+
+  for (final (label, value) in [
+    ('cyclic', _cyclicLazyValue()),
+    ('surrogate', const MontyString('\ud800')),
+  ]) {
+    test(
+      'a refused lazy $label attribute leaves its checkout usable',
+      () async {
+        await _withSession((s) async {
+          expect(
+            await s.feedRun(
+              'try:\n  o.value\nexcept ValueError:\n  result = 1\nresult',
+              inputs: {'o': _lazyValueObject(value)},
+              printCallback: _ignore,
+            ),
+            const MontyInt(1),
+          );
+          expect(
+            await s.feedRun('6 * 7', printCallback: _ignore),
+            const MontyInt(42),
+          );
+        });
+      },
+    );
+  }
 
   test('a host call: name, arguments, position; resumed', () async {
     await _withSession((s) async {

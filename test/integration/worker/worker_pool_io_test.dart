@@ -80,7 +80,7 @@ void main() {
     );
   });
 
-  test('Monty.start: a worker that cannot spawn is a MontyCrashedError', () {
+  test('Monty.start selects workerLocation before spawning', () {
     expect(
       Monty.start(workerLocation: _missingWorker),
       throwsA(
@@ -146,6 +146,24 @@ void main() {
 
   test('defaultMaxProcesses is the processor count', () {
     expect(defaultMaxProcesses(), Platform.numberOfProcessors);
+  });
+
+  test('Monty.start defaults its cap to the processor count', () async {
+    await expectLater(
+      Monty.start(minProcesses: Platform.numberOfProcessors + 1),
+      throwsArgumentError,
+    );
+  });
+
+  test('Monty.start creates its requested workers before returning', () async {
+    final worker = await realWorker() as WorkerExecutable;
+    final pool = await Monty.start(
+      minProcesses: 2,
+      maxProcesses: 2,
+      workerLocation: worker.path,
+    );
+    addTearDown(pool.close);
+    expect(ProcessChannel.live, hasLength(2));
   });
 
   test('a pool of real workers: reuse after Reset, a kill frees the slot, '

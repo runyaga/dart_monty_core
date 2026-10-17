@@ -6,6 +6,7 @@ library;
 
 import 'dart:io';
 
+import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/worker_connection.dart';
@@ -32,7 +33,7 @@ Future<void> main([List<String> args = const []]) async {
     ),
     (
       'busy',
-      'busy worker survived until duration limit',
+      'busy native session survived until duration limit',
     ),
   ]) {
     test(result, () async {
@@ -60,6 +61,11 @@ Future<ProcessResult> _probe(String mode) async {
 }
 
 Future<void> _parent(String mode) async {
+  if (mode == 'busy') {
+    await _busyParent();
+
+    return;
+  }
   final channel = await ProcessChannel.spawn(await locateWorker());
   final configured = await channel.turn(
     pb.ParentRequest(
@@ -76,21 +82,33 @@ Future<void> _parent(String mode) async {
   );
   if (configured.whichKind() != pb.ChildEvent_Kind.ok) exit(2);
   stdout.writeln(channel.pid);
-  if (mode != 'busy') return;
+
+  return;
+}
+
+Future<void> _busyParent() async {
+  final launch = await locateWorker();
+  if (launch is! WorkerExecutable) exit(2);
+  final pool = await Monty.start(
+    minProcesses: 0,
+    maxProcesses: 1,
+    feedDurationLimitGrace: null,
+    workerLocation: launch.path,
+  );
+  final session = await pool.checkout(
+    limits: const ResourceLimits(
+      maxMemory: 64 * 1024 * 1024,
+      maxFeedDuration: Duration(seconds: 5),
+    ),
+  );
+  final pid = session.workerPid;
+  if (pid == null) exit(2);
+  stdout.writeln(pid);
   await stdout.flush();
   if (stdin.readByteSync() != 1) exit(2);
-  await channel.turn(
-    pb.ParentRequest(
-      feed: pb.Feed(
-        code: 'print("running")\nwhile True:\n    pass',
-        cwd: '/',
-      ),
-    ),
-    onPrint: (event) {
-      for (final segment in event.segments) {
-        stdout.write(segment.text);
-      }
-    },
+  await session.feedRun(
+    'print("running")\nwhile True:\n    pass',
+    printCallback: (stream, text) => stdout.write(text),
   );
   exit(3);
 }
@@ -145,7 +163,7 @@ try:
         assert exited(10), 'orphan worker did not exit'
         if mode == 'busy':
             assert time.monotonic() - started >= 4, 'execution ended before its budget'
-            print('busy worker survived until duration limit')
+            print('busy native session survived until duration limit')
         else:
             print('idle worker exited after parent death')
         parent.wait(timeout=5)

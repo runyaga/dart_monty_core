@@ -249,6 +249,83 @@ void main() {
     },
   );
   test(
+    'withPool awaits its body and closes after success or failure',
+    () async {
+      final entered = Completer<Monty>();
+      final body = Completer<int>();
+      var settled = false;
+      final successful = _after(
+        Monty.withPool((pool) async {
+          final session = await pool.checkout();
+          await session.close();
+          entered.complete(pool);
+
+          return body.future;
+        }, minProcesses: 0),
+        () => settled = true,
+      );
+      final first = await entered.future;
+      await pumpEventQueue();
+      expect(settled, isFalse);
+      final stillOpen = await first.checkout();
+      await stillOpen.close();
+      body.complete(42);
+      expect(await successful, 42);
+      await expectLater(first.checkout(), throwsStateError);
+
+      final failed = Completer<Monty>();
+      final failedBody = Completer<void>();
+      final failure = Monty.withPool<void>((pool) async {
+        final session = await pool.checkout();
+        await session.close();
+        failed.complete(pool);
+        await failedBody.future;
+        throw StateError('body failed');
+      }, minProcesses: 0);
+      final closedAfterFailure = await failed.future;
+      final openUntilFailure = await closedAfterFailure.checkout();
+      await openUntilFailure.close();
+      failedBody.complete();
+      await expectLater(
+        failure,
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'body failed'),
+        ),
+      );
+      await expectLater(closedAfterFailure.checkout(), throwsStateError);
+    },
+  );
+  test('a checkout without a timeout waits for a released session', () async {
+    final timers = PoolTimers();
+    await timers.run(() async {
+      final channel = ScriptedChannel([
+        configurePool,
+        resetPool,
+        configurePool,
+        resetPool,
+      ]);
+      final pool = await poolWith([channel]);
+      final first = await pool.checkout();
+      var completed = false;
+      Future<MontySession> observe(Future<MontySession> checkout) async {
+        final session = await checkout;
+        completed = true;
+
+        return session;
+      }
+
+      final waitingCheckout = pool.checkout();
+      final waiting = observe(waitingCheckout);
+      await pumpEventQueue();
+      expect(timers.active, isEmpty);
+      expect(completed, isFalse);
+      await first.close();
+      final next = await waiting;
+      expect(completed, isTrue);
+      await next.close();
+    });
+  });
+  test(
     'null maximum is resolved before spawning',
     () async {
       final min = defaultMaxProcesses() + 1;
@@ -272,6 +349,104 @@ void main() {
       );
     },
   );
+  test('invalid public pool sizes fail before a worker starts', () async {
+    final defaultMaximum = defaultMaxProcesses();
+    final sizes = [
+      (min: -1, max: 1),
+      (min: 0, max: 0),
+      (min: 2, max: 1),
+      (min: defaultMaximum + 1, max: null),
+    ];
+    for (final size in sizes) {
+      var starts = 0;
+      await expectLater(
+        WorkerPool.start(
+          PoolOptions(minProcesses: size.min, maxProcesses: size.max),
+          () {
+            starts++;
+
+            return PendingSpawn((_) async => ScriptedChannel([]));
+          },
+        ),
+        throwsArgumentError,
+        reason: '$size WorkerPool.start',
+      );
+      expect(starts, 0, reason: '$size WorkerPool.start');
+      await expectLater(
+        Monty.start(minProcesses: size.min, maxProcesses: size.max),
+        throwsArgumentError,
+        reason: '$size Monty.start',
+      );
+      await expectLater(
+        Monty.withPool<void>(
+          (_) async => throw StateError('a worker was opened'),
+          minProcesses: size.min,
+          maxProcesses: size.max,
+        ),
+        throwsArgumentError,
+        reason: '$size Monty.withPool',
+      );
+    }
+  });
+  test('negative public timeouts reject before entering a pool body', () async {
+    const negative = Duration(microseconds: -1);
+    final starts = {
+      'checkout timeout': () => Monty.start(
+        checkoutTimeout: negative,
+        workerLocation: '/worker-must-not-start',
+      ),
+      'request timeout': () => Monty.start(
+        requestTimeout: negative,
+        workerLocation: '/worker-must-not-start',
+      ),
+      'feed duration grace': () => Monty.start(
+        feedDurationLimitGrace: negative,
+        workerLocation: '/worker-must-not-start',
+      ),
+      'turn duration grace': () => Monty.start(
+        turnDurationLimitGrace: negative,
+        workerLocation: '/worker-must-not-start',
+      ),
+    };
+    for (final entry in starts.entries) {
+      var entered = false;
+      Future<void> body(Monty _) {
+        entered = true;
+
+        return Future.value();
+      }
+
+      await expectLater(entry.value(), throwsArgumentError, reason: entry.key);
+      await expectLater(
+        switch (entry.key) {
+          'checkout timeout' => Monty.withPool<void>(
+            body,
+            checkoutTimeout: negative,
+            workerLocation: '/worker-must-not-start',
+          ),
+          'request timeout' => Monty.withPool<void>(
+            body,
+            requestTimeout: negative,
+            workerLocation: '/worker-must-not-start',
+          ),
+          'feed duration grace' => Monty.withPool<void>(
+            body,
+            feedDurationLimitGrace: negative,
+            workerLocation: '/worker-must-not-start',
+          ),
+          'turn duration grace' => Monty.withPool<void>(
+            body,
+            turnDurationLimitGrace: negative,
+            workerLocation: '/worker-must-not-start',
+          ),
+          _ => throw StateError('unknown timeout'),
+        },
+        throwsArgumentError,
+        reason: entry.key,
+      );
+      expect(entered, isFalse, reason: entry.key);
+    }
+  });
   test(
     'null bounds retain the platform cap and reuse',
     () async {

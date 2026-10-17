@@ -104,6 +104,30 @@ Future<void> _printDeadline(Duration? request, bool turnFirst) async {
 }
 
 void main() {
+  test('checkout replaces an idle worker that has died', () async {
+    final first = ScriptedChannel([
+      configurePool,
+      resetPool,
+    ]);
+    final replacement = ScriptedChannel([
+      configurePool,
+      resetPool,
+    ]);
+    final pool = await poolWith([first, replacement]);
+    final checkout = pool.checkout;
+    final initial = await checkout();
+    await initial.close();
+    first.kill();
+
+    final session = await checkout();
+    addTearDown(session.close);
+
+    expect(
+      replacement.requests.map((request) => request.whichKind()),
+      [pb.ParentRequest_Kind.configure],
+    );
+  });
+
   for (final closePool in [false, true]) {
     test(
       'close during callback with pool closed=$closePool',

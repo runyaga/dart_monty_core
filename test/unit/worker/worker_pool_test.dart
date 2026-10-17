@@ -447,6 +447,28 @@ void main() {
     });
 
     test(
+      'successful resets return then retire at the checkout limit',
+      () async {
+        final p = await pool(
+          const PoolOptions(maxProcesses: 1, maxCheckoutsPerWorker: 2),
+        );
+        final acquire = p.acquire;
+        final first = await acquire();
+        await first.release();
+        expect(p.idleWorkers, 1);
+        expect(p.liveWorkers, 1);
+
+        final second = await acquire();
+        expect(second.workerId, first.workerId);
+        await second.release();
+
+        expect(starts.at(0).channel.kills, 1);
+        expect(p.idleWorkers, 0);
+        expect(p.liveWorkers, 0);
+      },
+    );
+
+    test(
       'maxCheckoutsPerWorker 0 retires a worker at its first release',
       () async {
         final p = await pool(

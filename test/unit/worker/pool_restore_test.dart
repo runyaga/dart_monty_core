@@ -51,6 +51,46 @@ Future<void> _restoredSleep(String mode) async {
   });
 }
 
+Future<void> _wrongDumpKind(bool snapshot) async {
+  final response = snapshot
+      ? ok()
+      : pb.ChildEvent(nameLookup: pb.NameLookup(name: 'value'));
+  final discarded = ScriptedChannel([
+    configurePool,
+    answer([response]),
+  ]);
+  final replacement = ScriptedChannel([
+    configurePool,
+    answer([completeNone()]),
+    resetPool,
+  ]);
+  final pool = await poolWith([discarded, replacement]);
+  final checkout = pool.checkout;
+  final session = await checkout();
+  final state = Uint8List.fromList([1]);
+
+  await expectLater(
+    snapshot ? session.loadSnapshot(state) : session.loadSession(state),
+    throwsA(
+      isA<StateError>().having(
+        (e) => e.message,
+        'message',
+        snapshot
+            ? 'this dump is an idle session — use load_session() to restore it'
+            : 'this dump is a suspended snapshot — use load_snapshot() to '
+                  'resume it',
+      ),
+    ),
+  );
+  expect(discarded.kills, 1);
+  expect(pool.liveWorkers, 0);
+  await expectLater(session.feedRun('later'), finishedPool);
+
+  final retry = await checkout();
+  expect(await retry.feedRun('None'), const MontyNone());
+  await retry.close();
+}
+
 void main() {
   for (final mode in ['system', 'call_host', 'zero']) {
     test(
@@ -59,6 +99,10 @@ void main() {
     );
   }
   for (final snapshot in [false, true]) {
+    test(
+      'a wrong dump kind discards the checkout ($snapshot)',
+      () => _wrongDumpKind(snapshot),
+    );
     test(
       'runtime restore preserves used session '
       '($snapshot)',

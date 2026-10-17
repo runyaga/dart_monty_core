@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
 import 'package:dart_monty_core/src/worker/monty.dart';
+import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/os_policy.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
@@ -23,6 +24,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:test/test.dart';
 
 import '../../_accessors.dart';
+import '_pool_support.dart';
 import '_scripted_channel.dart';
 
 const pb.PrintStream _stdout = pb.PrintStream.PRINT_STREAM_STDOUT;
@@ -30,12 +32,12 @@ const pb.PrintStream _stderr = pb.PrintStream.PRINT_STREAM_STDERR;
 
 /// Workers for a pool: each start takes the next channel.
 final class Workers {
-  Workers(Iterable<ScriptedChannel> channels) : _next = Queue.of(channels);
+  Workers(Iterable<MontyChannel> channels) : _next = Queue.of(channels);
 
   /// Every channel handed out, in order.
-  final List<ScriptedChannel> started = [];
+  final List<MontyChannel> started = [];
 
-  final Queue<ScriptedChannel> _next;
+  final Queue<MontyChannel> _next;
 
   SpawnHandle open() => PendingSpawn((_) async {
     final channel = _next.removeFirst();
@@ -48,13 +50,14 @@ final class Workers {
 /// A pool over [workers], none started up front.
 Future<Monty> _pool(
   Workers workers, {
+  int minProcesses = 0,
   int maxProcesses = 1,
   Duration? requestTimeout,
   Duration? feedGrace = PoolOptions.defaultDurationLimitGrace,
   Duration? turnGrace = PoolOptions.defaultDurationLimitGrace,
 }) => startMonty(
   PoolOptions(
-    minProcesses: 0,
+    minProcesses: minProcesses,
     maxProcesses: maxProcesses,
     requestTimeout: requestTimeout,
     feedDurationLimitGrace: feedGrace,
@@ -223,6 +226,56 @@ final Matcher _pendingInstall = throwsA(
 
 void main() {
   group('checkout', () {
+    test('returns a session only after Configure succeeds', () async {
+      final channel = HeldPoolChannel(holdConfigure: true);
+      final pool = await _pool(Workers([channel]));
+      addTearDown(pool.close);
+      var returned = false;
+      Future<MontySession> observe(Future<MontySession> checkout) async {
+        final session = await checkout;
+        returned = true;
+
+        return session;
+      }
+
+      final checkout = observe(pool.checkout());
+
+      await channel.entered.future;
+      expect(channel.requests, [pb.ParentRequest_Kind.configure]);
+      // `entered` completes within turn. Give a checkout which failed to
+      // await Configure's reply a later event on which to return.
+      await pumpEventQueue();
+      expect(returned, isFalse);
+      channel.reply.complete(ok());
+      final session = await checkout;
+      expect(returned, isTrue);
+      await session.close();
+    });
+
+    test(
+      'a failed Configure kills its worker and makes capacity available',
+      () async {
+        final rejected = ScriptedChannel([
+          answer([completeNone()]),
+        ]);
+        final accepted = ScriptedChannel([_configureOk, _resetOk]);
+        final pool = await _pool(Workers([rejected, accepted]));
+        addTearDown(pool.close);
+
+        await expectLater(
+          pool.checkout(),
+          throwsA(_violation('unexpected reply to Configure: complete')),
+        );
+        expect(rejected.kills, 1);
+        expect(pool.liveWorkers, 0);
+
+        final replacement = await pool.checkout();
+        expect(replacement, isA<MontySession>());
+        expect(pool.liveWorkers, 1);
+        await replacement.close();
+      },
+    );
+
     test('sends Configure with the name, limits and knobs', () async {
       final ch = ScriptedChannel([_configureOk]);
       final pool = await _pool(Workers([ch]));
@@ -437,6 +490,49 @@ void main() {
         ],
       );
     });
+
+    test(
+      'a print callback keeps later feeds queued in delivery order',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([
+            printed([(_stdout, 'first'), (_stderr, 'second')]),
+            _int(1),
+          ]),
+          answer([_int(2)]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final callbacks = <String>[];
+        final first = Completer<void>();
+        final second = Completer<void>();
+        final run = session.feedRun(
+          'print()',
+          printCallback: (stream, text) {
+            callbacks.add(text);
+
+            return text == 'first' ? first.future : second.future;
+          },
+        );
+        final queued = session.feedRun('2', printCallback: _ignore);
+        final requests = ch.requests;
+        final hasTwoRequests = hasLength(2);
+
+        await pumpEventQueue();
+        expect(callbacks, ['first']);
+        expect(requests, hasTwoRequests);
+        first.complete();
+        await pumpEventQueue();
+        expect(callbacks, ['first', 'second']);
+        expect(requests, hasTwoRequests);
+        second.complete();
+
+        expect(await run, const MontyInt(1));
+        expect(await queued, const MontyInt(2));
+      },
+    );
 
     test('queued feeds keep their order against a new feed', () async {
       final ch = ScriptedChannel([
@@ -883,6 +979,110 @@ void main() {
     });
   });
 
+  group('recoverable error endings', () {
+    final endings = <(String, pb.ChildEvent, Matcher)>[
+      ('Error', raised('ValueError', 'bad value'), isA<MontyRuntimeError>()),
+      (
+        'TypingError',
+        pb.ChildEvent(typingError: pb.TypingError(diagnostics: 'bad type')),
+        isA<MontyTypingError>(),
+      ),
+    ];
+
+    for (final (name, ending, matcher) in endings) {
+      test(
+        'a print callback masking $name leaves a feed session usable',
+        () async {
+          final ch = ScriptedChannel([
+            _configureOk,
+            answer([
+              printed([(_stdout, 'text')]),
+              ending,
+            ]),
+            answer([_int(2)]),
+            _resetOk,
+          ]);
+          final pool = await _pool(Workers([ch]));
+          addTearDown(pool.close);
+          final session = await pool.checkout();
+
+          await expectLater(
+            session.feedRun(
+              'print("text")',
+              printCallback: (_, _) => throw StateError('sink'),
+            ),
+            throwsA(_printFailure('Exception', 'Bad state: sink')),
+          );
+
+          expect(
+            await session.feedRun('2', printCallback: _ignore),
+            const MontyInt(2),
+          );
+          expect(ch.kills, 0);
+          await session.close();
+        },
+      );
+
+      test(
+        'a print callback masking $name leaves a resumed session usable',
+        () async {
+          final ch = ScriptedChannel([
+            _configureOk,
+            answer([_call('f')]),
+            answer([
+              printed([(_stdout, 'text')]),
+              ending,
+            ]),
+            answer([_int(2)]),
+            _resetOk,
+          ]);
+          final pool = await _pool(Workers([ch]));
+          addTearDown(pool.close);
+          final session = await pool.checkout();
+          final snapshot =
+              await session.feedStart(
+                    'f()',
+                    printCallback: (_, _) => throw StateError('sink'),
+                  )
+                  as FunctionSnapshot;
+
+          await expectLater(
+            snapshot.resume(const ExternalReturnValue(MontyNone())),
+            throwsA(_printFailure('Exception', 'Bad state: sink')),
+          );
+
+          expect(
+            await session.feedRun('2', printCallback: _ignore),
+            const MontyInt(2),
+          );
+          expect(ch.kills, 0);
+          await session.close();
+        },
+      );
+
+      test('$name from a dump leaves the session usable', () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          expecting(pb.ParentRequest_Kind.dump, [ending]),
+          answer([_int(2)]),
+          _resetOk,
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+
+        await expectLater(session.dump(), throwsA(matcher));
+
+        expect(
+          await session.feedRun('2', printCallback: _ignore),
+          const MontyInt(2),
+        );
+        expect(ch.kills, 0);
+        await session.close();
+      });
+    }
+  });
+
   group('print failure classification', () {
     // The first print raises; the turn completes; the session runs on.
     Future<Object?> failWith(ProtoPrintCallback callback) async {
@@ -1260,7 +1460,49 @@ void main() {
     }
   });
 
-  group('close while busy (q8 gates)', () {
+  group('close while busy', () {
+    test(
+      'during a host callback: the pending call fails before Reset ends',
+      () async {
+        final ch = ScriptedChannel([
+          _configureOk,
+          answer([_lookup('never')]),
+          answer([_call('never')]),
+          hangAfter([]),
+        ]);
+        final pool = await _pool(Workers([ch]));
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final entered = Completer<void>();
+        final run = session.feedRun(
+          'never()',
+          externalLookup: {
+            'never': MontyHostFunction('never', (args, kwargs) {
+              entered.complete();
+
+              return Completer<MontyValue>().future;
+            }),
+          },
+          printCallback: _ignore,
+        );
+        await entered.future;
+        final failed = expectLater(run, throwsA(_finished));
+        var closed = false;
+        Future<void> close() async {
+          await session.close();
+          closed = true;
+        }
+
+        final closing = close();
+
+        await failed.timeout(const Duration(seconds: 5));
+        expect(closed, isFalse);
+
+        ch.kill();
+        await closing.timeout(const Duration(seconds: 5));
+      },
+    );
+
     test('during a turn, after feedRun(...).timeout: close ends it', () async {
       final ch = ScriptedChannel([_configureOk, hangAfter([])]);
       final fresh = ScriptedChannel([
@@ -1580,6 +1822,62 @@ void main() {
         throwsA(_finished),
       );
     });
+
+    test('a held snapshot is reset and cannot resume after close', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        answer([_call('f')]),
+        _resetOk,
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+      final snapshot = await session.feedStart('f()') as FunctionSnapshot;
+
+      await session.close();
+
+      expect(_lastKind(ch), pb.ParentRequest_Kind.reset);
+      expect(pool.idleWorkers, 1);
+      final finished = throwsA(_finished);
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        finished,
+      );
+      await expectLater(session.dump(), finished);
+      await expectLater(session.installDependencies([]), finished);
+      await expectLater(
+        snapshot.resume(const ExternalReturnValue(MontyNone())),
+        finished,
+      );
+    });
+
+    test(
+      'pool close reaps idle workers without waiting for its session',
+      () async {
+        final idle = ScriptedChannel([]);
+        final held = HeldPoolChannel();
+        final pool = await _pool(
+          Workers([idle, held]),
+          minProcesses: 2,
+          maxProcesses: 2,
+        );
+        addTearDown(pool.close);
+        final session = await pool.checkout();
+        final run = session.feedRun('blocked', printCallback: _ignore);
+        await held.entered.future;
+
+        final first = pool.close();
+        expect(pool.close(), same(first));
+        await first.timeout(const Duration(seconds: 5));
+
+        expect(idle.closes, 1);
+        expect(held.isAlive, isTrue);
+        expect(pool.liveWorkers, 1);
+        final failed = expectLater(run, throwsA(_busyClosed));
+        await session.close();
+        await failed;
+      },
+    );
 
     test('a failed Reset kills the worker; close does not throw', () async {
       final ch = ScriptedChannel([
@@ -2528,6 +2826,26 @@ void main() {
       // The freed slot serves a fresh worker: a second checkout on purpose.
       await checkout();
       expect(workers.started, [first, second]);
+    });
+
+    test('a worker exit and later close release its checkout once', () async {
+      final ch = ScriptedChannel([
+        _configureOk,
+        crash(CrashCause.vanished, 'worker exited'),
+      ]);
+      final pool = await _pool(Workers([ch]));
+      addTearDown(pool.close);
+      final session = await pool.checkout();
+
+      await expectLater(
+        session.feedRun('1', printCallback: _ignore),
+        throwsA(_crashed(CrashCause.vanished)),
+      );
+      await session.close();
+      await session.close();
+
+      expect(ch.kills, 1);
+      expect(pool.liveWorkers, 0);
     });
 
     test('a dead worker: its exit status, if the OS gave one', () async {
