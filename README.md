@@ -410,13 +410,14 @@ on GitHub-hosted runners with the probes in `tool/consumers/native/`:
   still started it on the runner. That session had no desktop, so a Finder
   launch, which can show the "cannot be opened" dialog, was not tried.
 - **Windows.** A file written by `HttpClient` has no Zone.Identifier stream
-  (Mark of the Web), so there is no mark for SmartScreen to read. A browser download does
-  carry one. With `ZoneId=3` added to a copy, `Process.run` (CreateProcess)
-  started it and exited 0, but `Start-Process`, which goes through
-  ShellExecute, failed with "The operation was canceled by the user". After
-  `Unblock-File` it started. The package starts the worker with `Process.start`. I measured
-  `Process.run`, which makes the same CreateProcess call. If you download a worker yourself with a browser, unblock it
-  first.
+  (Mark of the Web), so there is no mark for SmartScreen to read. A browser
+  download does carry one. With `ZoneId=3` added to a copy, `Process.run`
+  (CreateProcess) started it and exited 0, but `Start-Process`, which goes
+  through ShellExecute, failed with "The operation was canceled by the user".
+  After `Unblock-File` it started. The package starts the worker with
+  `Process.start`. I measured `Process.run`, which makes the same
+  CreateProcess call. A worker you copied out of a browser download and
+  start through the shell may need `Unblock-File` first.
 - **Linux.** A downloaded worker started normally. I found no quarantine
   mechanism to test.
 
