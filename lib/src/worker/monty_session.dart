@@ -809,9 +809,18 @@ final class _FeedDrive implements SnapshotDriver {
     // inside the session's call: a close meanwhile Resets the worker and
     // fails the resume at once, and the host's late answer is dropped.
     return _session._withTurn(() async {
-      final request = snapshot.isOsFunction
-          ? await _host.osCall(event.osCall, parentSleeps: false)
-          : await _host.call(event.functionCall);
+      final pb.ParentRequest request;
+      try {
+        request = snapshot.isOsFunction
+            ? await _host.osCall(event.osCall, parentSleeps: false)
+            : await _host.call(event.functionCall);
+      } on Object {
+        // The worker is left waiting on an answer that never comes:
+        // upstream discards the checkout. No step() follows to end the feed.
+        _host.dispose();
+        _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
+        rethrow;
+      }
 
       return step(request);
     }, feed: false);
@@ -909,11 +918,10 @@ final class _FeedDrive implements SnapshotDriver {
       final pb.ParentRequest request;
       try {
         request = await _host.settle();
-        // Nothing can settle the worker's wait: the session ends, as
-        // upstream discards the checkout, and the error is rethrown.
-        // ignore: avoid_catching_errors
-      } on StateError {
-        // No step() follows this terminal failure, so end the feed here.
+      } on Object {
+        // Nothing can settle the worker's wait, or the results cannot be
+        // prepared: the session ends, as upstream discards the checkout, and
+        // the error is rethrown. No step() follows, so end the feed here.
         _host.dispose();
         _session._hold.lease.kill(reason: 'discarded', outcome: 'error');
         rethrow;
