@@ -25,7 +25,7 @@ def visible_lines(path: Path) -> list[tuple[int, str]]:
     fence: tuple[str, int] | None = None
     for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
         if fence is not None:
-            match = re.match(r'^( {0,3})([`~]+)([ \t]*)$', line)
+            match = re.match(r'^( {0,3})(`+|~+)([ \t]*)$', line)
             if (
                 match
                 and match.group(2)[0] == fence[0]

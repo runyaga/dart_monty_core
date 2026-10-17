@@ -442,5 +442,14 @@ class DocsChecksTest(unittest.TestCase):
             )
 
 
+class FenceMarkerTest(unittest.TestCase):
+    def test_mixed_marker_line_does_not_close_a_fence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            page = Path(directory) / 'page.md'
+            page.write_text('```\ncode\n`~~\n[hidden](missing.md)\n```\n[shown](x.md)\n', encoding='utf-8')
+            lines = [text for _, text in docs_check_common.visible_lines(page)]
+        self.assertEqual(['[shown](x.md)'], lines)
+
+
 if __name__ == '__main__':
     unittest.main()
