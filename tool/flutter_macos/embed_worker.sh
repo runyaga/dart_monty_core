@@ -158,7 +158,7 @@ fi
 if ! mach_header=$(otool -hv "$worker" 2>&1); then
   fail "worker Mach-O header could not be read: $worker ($mach_header)"
 fi
-if ! printf '%s\n' "$mach_header" | awk '$4 == "EXECUTE" { found = 1 } END { exit !found }'; then
+if ! printf '%s\n' "$mach_header" | awk '$5 == "EXECUTE" { found = 1 } END { exit !found }'; then
   fail "worker must be a Mach-O executable (file type EXECUTE), not a dylib or bundle: $worker"
 fi
 
