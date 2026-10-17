@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -174,6 +175,13 @@ def copy_worker(core: Path, output: str) -> None:
     exe.chmod(exe.stat().st_mode | 0o111)
 
 
+def prepare_wasm(core: Path, upstream: Path) -> None:
+    """Patch core's worker crate to the upstream checkout and add the worker crate to the
+    reseeded lock, so `cargo build --locked` in tool/build_worker_wasm.sh resolves."""
+    print(prepare_worker(core, upstream))
+    command(['cargo', 'update', '--workspace'], cwd=core / 'native/worker')
+
+
 def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...],
          target_dir: Path | None, report_skips: bool = False) -> int:
     head = git(upstream, 'rev-parse', 'HEAD')
@@ -272,13 +280,65 @@ def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list
     return flags
 
 
+def gate_verdict(gate_ok: bool, stage: str, flags: list[str]) -> str:
+    """`green`, `red` or `exempt`. A corpus failure on a commit that changed the upstream
+    test cases is `exempt`: the pinned corpus is expected to differ there, so it is
+    digested for review instead of stopping the job."""
+    if gate_ok:
+        return 'green'
+    return 'exempt' if stage == 'corpus' and 'TESTCASES' in flags else 'red'
+
+
 def stop_reason(gate_ok: bool, stage: str, flags: list[str]) -> str | None:
-    """Why the loop stops at a commit, or None to advance. A red gate outranks a flag,
-    except a corpus failure on a commit that changed the upstream test cases: the pinned
-    corpus is expected to differ there, so a human reviews it."""
-    if not gate_ok:
-        return 'flagged' if stage == 'corpus' and 'TESTCASES' in flags else 'red'
-    return 'flagged' if flags else None
+    """Only a red gate stops the loop. A flagged commit advances and is digested."""
+    return 'red' if gate_verdict(gate_ok, stage, flags) == 'red' else None
+
+
+def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[dict[str, Any]]:
+    """The commits that advanced with a flag or an exempt corpus failure."""
+    entries = []
+    for commit in commits:
+        if commit['gate'] == 'red' or not (commit['flags'] or commit['gate'] == 'exempt'):
+            continue
+        reasons = list(commit['flags'])
+        if commit['gate'] == 'exempt':
+            reasons.append('corpus differs from the pinned test cases')
+        entries.append({'sha': commit['sha'], 'subject': commit['subject'], 'reason': ', '.join(reasons),
+                        'url': f"https://github.com/pydantic/monty/commit/{commit['sha']}",
+                        'evidence': run_url})
+    return entries
+
+
+def run_url() -> str:
+    server, repo, run = (os.environ.get(k, '') for k in ('GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID'))
+    return f'{server}/{repo}/actions/runs/{run}' if server and repo and run else ''
+
+
+def week_label(day: datetime.date) -> str:
+    year, week, _ = day.isocalendar()
+    return f'{year}-W{week:02d}'
+
+
+def digest_marker(week: str) -> str:
+    return f'<!-- upstream-follow-digest {week} -->'
+
+
+def format_digest(week: str, entries: list[dict[str, Any]], existing: str | None = None) -> str:
+    """The week's digest comment. Entries already in `existing` (by sha) are kept once."""
+    seen: dict[str, str] = {}
+    if existing:
+        for line in existing.splitlines():
+            found = re.match(r'- \[`([0-9a-f]{12})`\]', line)
+            if found:
+                seen[found.group(1)] = line
+    for entry in entries:
+        short = str(entry['sha'])[:12]
+        text = f"- [`{short}`]({entry['url']}) {entry['subject']}. Reason: {entry['reason']}."
+        if entry.get('evidence'):
+            text += f" Evidence: {entry['evidence']}"
+        seen[short] = text
+    lines = [digest_marker(week), f'Flagged upstream commits, week {week}', '', *seen.values()]
+    return '\n'.join(lines) + '\n'
 
 
 def result_status(at_head: bool, advanced: bool, stopped: str | None, budget: bool) -> str:
@@ -292,10 +352,10 @@ def result_status(at_head: bool, advanced: bool, stopped: str | None, budget: bo
 
 
 def last_good_after(start: str, commits: list[dict[str, Any]]) -> str:
-    """Return the last eligible commit, stopping at the first flag or red gate."""
+    """Return the last eligible commit, stopping at the first red gate."""
     last_good = start
     for commit in commits:
-        if commit['flags'] or commit['gate'] != 'green':
+        if commit['gate'] == 'red':
             break
         last_good = str(commit['sha'])
     return last_good
@@ -381,21 +441,22 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         stage_match = re.search(r'GATE RED stage=([\w-]+)', outcome.stdout)
         stage = stage_match.group(1) if stage_match else ('all' if gate_ok else 'unknown')
         records.append({'sha': sha, 'subject': subject, 'flags': flags,
-                        'gate': 'green' if gate_ok else 'red', 'stage': stage,
+                        'gate': gate_verdict(gate_ok, stage, flags), 'stage': stage,
                         'seconds': round(time.monotonic() - began, 3)})
         stopped = stop_reason(gate_ok, stage, flags)
         if stopped:
             break
         current = sha
         advanced = True
-        write_state(state_file, current, 'green')
+        write_state(state_file, current, 'flagged' if flags or not gate_ok else 'green')
 
     current = last_good_after(resume_start, records)
     remaining = git(repo, 'rev-list', '--first-parent', f'{current}..origin/main').splitlines()
     budget = stopped is None and bool(remaining)
     status = result_status(not remaining, advanced, stopped, budget)
     result = {'pin': pin['commit'], 'start': start, 'last_good': current, 'head': head,
-              'behind': len(remaining), 'commits': records, 'status': status}
+              'behind': len(remaining), 'commits': records, 'status': status,
+              'flagged': flagged_entries(records, run_url())}
     write_result(out, result)
     return 0 if status in ('caught-up', 'advanced', 'budget') else 1
 
@@ -435,6 +496,14 @@ def main() -> int:
     flags_parser.add_argument('--core', type=Path, required=True)
     flags_parser.add_argument('--upstream', type=Path, required=True)
     flags_parser.add_argument('--base')
+    digest_parser = sub.add_parser('digest')
+    digest_parser.add_argument('--result', type=Path, required=True)
+    digest_parser.add_argument('--existing', type=Path)
+    digest_parser.add_argument('--week')
+    digest_parser.add_argument('--out', type=Path, required=True)
+    wasm_parser = sub.add_parser('prepare-wasm')
+    wasm_parser.add_argument('--core', type=Path, required=True)
+    wasm_parser.add_argument('--upstream', type=Path, required=True)
     run_parser = sub.add_parser('run')
     run_parser.add_argument('--core', type=Path, required=True)
     run_parser.add_argument('--workdir', type=Path, required=True)
@@ -450,6 +519,16 @@ def main() -> int:
                     args.parity.resolve() if args.parity else None,
                     selected_stages(args.stages, args.parity), args.target_dir,
                     args.stages is not None)
+    if args.command == 'digest':
+        result = json.loads(args.result.read_text())
+        week = args.week or week_label(datetime.date.today())
+        existing = args.existing.read_text() if args.existing and args.existing.is_file() else None
+        args.out.write_text(format_digest(week, result.get('flagged', []), existing))
+        print(week)
+        return 0
+    if args.command == 'prepare-wasm':
+        prepare_wasm(args.core.resolve(), args.upstream.resolve())
+        return 0
     if args.command == 'flags':
         candidate_flags(args.core.resolve(), args.upstream.resolve(), args.base)
         return 0

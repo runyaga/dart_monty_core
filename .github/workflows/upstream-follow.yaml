@@ -125,7 +125,7 @@ jobs:
           ISSUE_BODY: ${{ runner.temp }}/upstream-follow-issue.md
         run: |
           status=$(python3 -I -c 'import json, os; print(json.load(open(os.environ["RESULT_FILE"]))["status"])')
-          case "$status" in red|flagged|error) ;; *) exit 0 ;; esac
+          case "$status" in red|error) ;; *) exit 0 ;; esac
           python3 -I - <<'PY' > "$ISSUE_BODY"
           import json
           import os
@@ -146,4 +146,33 @@ jobs:
             gh issue comment "$existing" --body-file "$ISSUE_BODY"
           else
             gh issue create --title 'Upstream follow: needs attention' --body-file "$ISSUE_BODY"
+          fi
+      - name: Weekly digest of flagged commits
+        if: always() && hashFiles('result.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count=$(python3 -I -c 'import json; print(len(json.load(open("result.json")).get("flagged", [])))')
+          if [ "$count" = 0 ]; then
+            exit 0
+          fi
+          digest="$RUNNER_TEMP/digest.md"
+          existing="$RUNNER_TEMP/digest-existing.md"
+          python3 -I tool/follow_upstream.py digest --result result.json --out "$digest" >/dev/null
+          marker=$(head -1 "$digest")
+          issue=$(gh issue list --search 'Upstream follow: weekly digest in:title' --state open \
+            --json number --jq '.[0].number')
+          if [ -z "$issue" ]; then
+            issue=$(gh issue create --title 'Upstream follow: weekly digest' \
+              --body 'One comment per week lists the upstream commits the follow job advanced past with a flag.' \
+              | grep -oE '[0-9]+$')
+          fi
+          comment=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue}/comments" --paginate \
+            --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -1)
+          if [ -n "$comment" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${comment}" --jq .body > "$existing"
+            python3 -I tool/follow_upstream.py digest --result result.json --existing "$existing" --out "$digest" >/dev/null
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment}" -F "body=@${digest}"
+          else
+            gh issue comment "$issue" --body-file "$digest"
           fi

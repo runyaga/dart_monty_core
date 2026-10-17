@@ -1,0 +1,106 @@
+name: Upstream follow browser parity
+
+# Weekly. Rebuilds the wasm worker against the upstream commit in last_good
+# (the daily job tests native only) and runs the browser corpus and browser
+# parity on GitHub runners with their own Chrome. A failure fails the job and
+# opens or updates one issue. This job never changes
+# tool/upstream/upstream-pin.json and never advances last_good.
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-follow-browser
+  cancel-in-progress: false
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Read last_good and the parity pin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          parity_pin=$(grep -E '^  PARITY_PIN: [0-9a-f]{40}$' .github/workflows/ci.yaml | awk '{print $2}')
+          [[ "$parity_pin" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::PARITY_PIN must be a full commit SHA'; exit 1; }
+          echo "PARITY_PIN=$parity_pin" >> "$GITHUB_ENV"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          if git ls-remote --exit-code --heads "$url" upstream-follow-state >/dev/null; then
+            git clone --branch upstream-follow-state --depth 1 "$url" "$RUNNER_TEMP/state"
+            last_good=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["sha"])' "$RUNNER_TEMP/state/last_good.json")
+          else
+            last_good=$(python3 -I -c 'import json; print(json.load(open("tool/upstream/upstream-pin.json"))["commit"])')
+          fi
+          [[ "$last_good" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::last_good is not a full SHA: $last_good"; exit 1; }
+          echo "LAST_GOOD=$last_good" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: runyaga/dart_monty_parity
+          ref: ${{ env.PARITY_PIN }}
+          path: .parity
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: pydantic/monty
+          ref: ${{ env.LAST_GOOD }}
+          path: .monty
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: 3.13.5
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+          targets: wasm32-wasip1
+      - run: dart pub get
+      - name: Patch the worker crate to last_good
+        run: python3 -I tool/follow_upstream.py prepare-wasm --core "$GITHUB_WORKSPACE" --upstream "$GITHUB_WORKSPACE/.monty"
+      - name: Rebuild the wasm worker
+        run: |
+          before=$(sha256sum lib/assets/dart_monty_core_worker.wasm | awk '{print $1}')
+          bash tool/prebuild.sh
+          after=$(sha256sum lib/assets/dart_monty_core_worker.wasm | awk '{print $1}')
+          echo "wasm asset before ${before} after ${after}"
+          test -s lib/assets/dart_monty_core_worker.wasm
+      - name: Browser corpus on dart2js
+        run: bash tool/test_corpus_worker.sh chrome dart2js
+      - name: Browser corpus on dart2wasm
+        run: bash tool/test_corpus_worker.sh chrome dart2wasm
+      - name: Browser parity on dart2js
+        run: python3 -I .parity/tool/parity/run.py dart2js --core . --out "$RUNNER_TEMP/parity"
+      - name: Browser parity on dart2wasm
+        run: python3 -I .parity/tool/parity/run.py dart2wasm --core . --out "$RUNNER_TEMP/parity"
+      - name: Score browser parity against the baseline
+        run: |
+          python3 -I .parity/tool/parity/score.py "$RUNNER_TEMP/parity" --backends dart2js,dart2wasm \
+            --json "$RUNNER_TEMP/parity/score.json" --markdown "$RUNNER_TEMP/parity/score.md" \
+            --assert-current .parity/tool/parity/baseline-current.json
+      - name: Report a browser failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf 'Browser parity failed at last_good `%s`.\n\nRun: %s\n' "$LAST_GOOD" "$RUN_URL" > "$RUNNER_TEMP/issue.md"
+          existing=$(gh issue list --search 'Upstream follow: browser parity failed in:title' --state open \
+            --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$RUNNER_TEMP/issue.md"
+          else
+            gh issue create --title 'Upstream follow: browser parity failed' --body-file "$RUNNER_TEMP/issue.md"
+          fi
