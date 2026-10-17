@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +21,9 @@ MONTY_CRATES = (
     'monty', 'monty-proto', 'monty-types', 'monty-alloc', 'monty-fs',
     'monty-macros', 'monty-type-checking', 'monty-typeshed',
 )
-ALL_STAGES = ('upstream-tests', 'worker-build', 'corpus', 'parity')
+# The corpus runs last: a corpus failure on a test_cases change is digested, so no
+# stage that must stay red may come after it.
+ALL_STAGES = ('upstream-tests', 'worker-build', 'parity', 'corpus')
 
 
 def command(cmd: list[str], cwd: Path | None = None,
@@ -74,7 +76,7 @@ def write_state(state_file: Path | None, sha: str, via: str) -> None:
 
 def selected_stages(value: str | None, parity: Path | None) -> tuple[str, ...]:
     if value is None:
-        return ALL_STAGES if parity is not None else ALL_STAGES[:-1]
+        return tuple(name for name in ALL_STAGES if parity is not None or name != 'parity')
     selected = tuple(item for item in value.split(',') if item)
     bad = set(selected) - set(ALL_STAGES)
     if bad:
@@ -174,13 +176,20 @@ def copy_worker(core: Path, output: str) -> None:
     exe.chmod(exe.stat().st_mode | 0o111)
 
 
+def prepare_wasm(core: Path, upstream: Path) -> None:
+    """Patch core's worker crate to the upstream checkout and add the worker crate to the
+    reseeded lock, so `cargo build --locked` in tool/build_worker_wasm.sh resolves."""
+    print(prepare_worker(core, upstream))
+    command(['cargo', 'update', '--workspace'], cwd=core / 'native/worker')
+
+
 def gate(core: Path, upstream: Path, parity: Path | None, stages: tuple[str, ...],
          target_dir: Path | None, report_skips: bool = False) -> int:
     head = git(upstream, 'rev-parse', 'HEAD')
     print(f'UPSTREAM HEAD {head}')
     root_target = target_dir or Path(tempfile.mkdtemp(prefix='follow-upstream-target-'))
     try:
-        stage_order = ALL_STAGES if parity is not None else ALL_STAGES[:-1]
+        stage_order = tuple(name for name in ALL_STAGES if parity is not None or name != 'parity')
         for stage in stage_order:
             if stage not in stages:
                 if report_skips:
@@ -249,6 +258,14 @@ def mirrored_paths(core: Path) -> list[str]:
     return [item['upstream'] for item in mirror['verbatim'] + mirror['watched']]
 
 
+def testcases_drift(core: Path, upstream: Path) -> bool:
+    """True when the upstream test_cases tree at HEAD differs from the pinned tree,
+    which is the corpus core's own tests read."""
+    pin = load_pin(core)
+    wanted = next(item['git_tree'] for item in pin['trees'] if item['path'] == 'crates/monty/test_cases')
+    return git(upstream, 'rev-parse', 'HEAD:crates/monty/test_cases') != wanted
+
+
 def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list[str]:
     """Flags for the commit at upstream HEAD, measured against `base` (the previous
     last_good, or the pin when none is given), so one change raises one flag once."""
@@ -272,13 +289,65 @@ def candidate_flags(core: Path, upstream: Path, base: str | None = None) -> list
     return flags
 
 
-def stop_reason(gate_ok: bool, stage: str, flags: list[str]) -> str | None:
-    """Why the loop stops at a commit, or None to advance. A red gate outranks a flag,
-    except a corpus failure on a commit that changed the upstream test cases: the pinned
-    corpus is expected to differ there, so a human reviews it."""
-    if not gate_ok:
-        return 'flagged' if stage == 'corpus' and 'TESTCASES' in flags else 'red'
-    return 'flagged' if flags else None
+def gate_verdict(gate_ok: bool, stage: str, drift: bool) -> str:
+    """`green`, `red` or `exempt`. A corpus failure while the upstream test cases differ
+    from the pinned ones is `exempt`: the pinned corpus is expected to differ, so it is
+    digested for review instead of stopping the job."""
+    if gate_ok:
+        return 'green'
+    return 'exempt' if stage == 'corpus' and drift else 'red'
+
+
+def stop_reason(gate_ok: bool, stage: str, drift: bool) -> str | None:
+    """Only a red gate stops the loop. A flagged commit advances and is digested."""
+    return 'red' if gate_verdict(gate_ok, stage, drift) == 'red' else None
+
+
+def flagged_entries(commits: list[dict[str, Any]], run_url: str = '') -> list[dict[str, Any]]:
+    """The commits that advanced with a flag or an exempt corpus failure."""
+    entries = []
+    for commit in commits:
+        if commit['gate'] == 'red' or not (commit['flags'] or commit['gate'] == 'exempt'):
+            continue
+        reasons = list(commit['flags'])
+        if commit['gate'] == 'exempt':
+            reasons.append('corpus differs from the pinned test cases')
+        entries.append({'sha': commit['sha'], 'subject': commit['subject'], 'reason': ', '.join(reasons),
+                        'url': f"https://github.com/pydantic/monty/commit/{commit['sha']}",
+                        'evidence': run_url})
+    return entries
+
+
+def run_url() -> str:
+    server, repo, run = (os.environ.get(k, '') for k in ('GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID'))
+    return f'{server}/{repo}/actions/runs/{run}' if server and repo and run else ''
+
+
+def week_label(day: date) -> str:
+    year, week, _ = day.isocalendar()
+    return f'{year}-W{week:02d}'
+
+
+def digest_marker(week: str) -> str:
+    return f'<!-- upstream-follow-digest {week} -->'
+
+
+def format_digest(week: str, entries: list[dict[str, Any]], existing: str | None = None) -> str:
+    """The week's digest comment. Entries already in `existing` (by sha) are kept once."""
+    seen: dict[str, str] = {}
+    if existing:
+        for line in existing.splitlines():
+            found = re.match(r'- \[`([0-9a-f]{12})`\]', line)
+            if found:
+                seen[found.group(1)] = line
+    for entry in entries:
+        short = str(entry['sha'])[:12]
+        text = f"- [`{short}`]({entry['url']}) {entry['subject']}. Reason: {entry['reason']}."
+        if entry.get('evidence'):
+            text += f" Evidence: {entry['evidence']}"
+        seen[short] = text
+    lines = [digest_marker(week), f'Flagged upstream commits, week {week}', '', *seen.values()]
+    return '\n'.join(lines) + '\n'
 
 
 def result_status(at_head: bool, advanced: bool, stopped: str | None, budget: bool) -> str:
@@ -292,10 +361,10 @@ def result_status(at_head: bool, advanced: bool, stopped: str | None, budget: bo
 
 
 def last_good_after(start: str, commits: list[dict[str, Any]]) -> str:
-    """Return the last eligible commit, stopping at the first flag or red gate."""
+    """Return the last eligible commit, stopping at the first red gate."""
     last_good = start
     for commit in commits:
-        if commit['flags'] or commit['gate'] != 'green':
+        if commit['gate'] == 'red':
             break
         last_good = str(commit['sha'])
     return last_good
@@ -321,7 +390,7 @@ def write_result(path: Path, result: dict[str, Any]) -> None:
 
 def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
                time_budget_min: float, accept: str | None, state_file: Path | None,
-               out: Path) -> int:
+               out: Path, records: list[dict[str, Any]]) -> int:
     pin = load_pin(core)
     state = read_state_or_seed(state_file, pin)
     start = state['sha']
@@ -355,7 +424,6 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         state['sha'] = accepted
         write_state(state_file, accepted, 'accepted')
 
-    records: list[dict[str, Any]] = []
     current = state['sha']
     resume_start = current
     advanced = current != start
@@ -370,6 +438,7 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         began = time.monotonic()
         command(['git', '-C', str(repo), 'checkout', '--detach', '--quiet', sha])
         flags = candidate_flags(core, repo, current)
+        drift = testcases_drift(core, repo)
         target = workdir / 'targets'
         gate_cmd = [sys.executable, '-I', str(Path(__file__).resolve()), 'gate', '--core', str(core),
                     '--upstream', str(repo), '--target-dir', str(target)]
@@ -381,21 +450,22 @@ def _run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int
         stage_match = re.search(r'GATE RED stage=([\w-]+)', outcome.stdout)
         stage = stage_match.group(1) if stage_match else ('all' if gate_ok else 'unknown')
         records.append({'sha': sha, 'subject': subject, 'flags': flags,
-                        'gate': 'green' if gate_ok else 'red', 'stage': stage,
+                        'gate': gate_verdict(gate_ok, stage, drift), 'stage': stage,
                         'seconds': round(time.monotonic() - began, 3)})
-        stopped = stop_reason(gate_ok, stage, flags)
+        stopped = stop_reason(gate_ok, stage, drift)
         if stopped:
             break
         current = sha
         advanced = True
-        write_state(state_file, current, 'green')
+        write_state(state_file, current, 'flagged' if flags or not gate_ok else 'green')
 
     current = last_good_after(resume_start, records)
     remaining = git(repo, 'rev-list', '--first-parent', f'{current}..origin/main').splitlines()
     budget = stopped is None and bool(remaining)
     status = result_status(not remaining, advanced, stopped, budget)
     result = {'pin': pin['commit'], 'start': start, 'last_good': current, 'head': head,
-              'behind': len(remaining), 'commits': records, 'status': status}
+              'behind': len(remaining), 'commits': records, 'status': status,
+              'flagged': flagged_entries(records, run_url())}
     write_result(out, result)
     return 0 if status in ('caught-up', 'advanced', 'budget') else 1
 
@@ -406,18 +476,20 @@ def run_follow(core: Path, workdir: Path, parity: Path | None, max_commits: int,
     """Runs the loop; any unexpected failure still writes result.json, so the
     workflow keeps the greens already recorded and reports the error."""
     pin_commit = start = ''
+    records: list[dict[str, Any]] = []
     try:
         pin = load_pin(core)
         pin_commit = str(pin['commit'])
         start = read_state_or_seed(state_file, pin)['sha']
-        return _run_follow(core, workdir, parity, max_commits, time_budget_min, accept, state_file, out)
+        return _run_follow(core, workdir, parity, max_commits, time_budget_min, accept, state_file, out, records)
     except Exception as exc:  # noqa: BLE001 - the report must be written whatever failed
         try:
             last_good = read_state_or_seed(state_file, load_pin(core))['sha']
         except Exception:  # noqa: BLE001 - a malformed state file is part of what is reported
             last_good = start
         result = {'pin': pin_commit, 'start': start, 'last_good': last_good, 'head': '', 'behind': 0,
-                  'commits': [], 'status': 'error', 'error': f'{type(exc).__name__}: {exc}'}
+                  'commits': records, 'status': 'error', 'error': f'{type(exc).__name__}: {exc}',
+                  'flagged': flagged_entries(records, run_url())}
         write_result(out, result)
         return 1
 
@@ -435,6 +507,14 @@ def main() -> int:
     flags_parser.add_argument('--core', type=Path, required=True)
     flags_parser.add_argument('--upstream', type=Path, required=True)
     flags_parser.add_argument('--base')
+    digest_parser = sub.add_parser('digest')
+    digest_parser.add_argument('--result', type=Path, required=True)
+    digest_parser.add_argument('--existing', type=Path)
+    digest_parser.add_argument('--week')
+    digest_parser.add_argument('--out', type=Path, required=True)
+    wasm_parser = sub.add_parser('prepare-wasm')
+    wasm_parser.add_argument('--core', type=Path, required=True)
+    wasm_parser.add_argument('--upstream', type=Path, required=True)
     run_parser = sub.add_parser('run')
     run_parser.add_argument('--core', type=Path, required=True)
     run_parser.add_argument('--workdir', type=Path, required=True)
@@ -450,6 +530,16 @@ def main() -> int:
                     args.parity.resolve() if args.parity else None,
                     selected_stages(args.stages, args.parity), args.target_dir,
                     args.stages is not None)
+    if args.command == 'digest':
+        result = json.loads(args.result.read_text())
+        week = args.week or week_label(date.today())
+        existing = args.existing.read_text() if args.existing and args.existing.is_file() else None
+        args.out.write_text(format_digest(week, result.get('flagged', []), existing))
+        print(week)
+        return 0
+    if args.command == 'prepare-wasm':
+        prepare_wasm(args.core.resolve(), args.upstream.resolve())
+        return 0
     if args.command == 'flags':
         candidate_flags(args.core.resolve(), args.upstream.resolve(), args.base)
         return 0

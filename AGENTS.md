@@ -158,10 +158,19 @@ The daily `upstream-follow.yaml` job tests first-parent commits from
 `tool/upstream/upstream-pin.json`.
 
 Run it with `workflow_dispatch` to set a commit limit or accept a reviewed
-commit. A red or flagged result opens `Upstream follow: needs attention`.
-Review the reported commit, then dispatch the job with its SHA in `accept` to
-advance past it. Use `python3 -I tool/follow_upstream.py run --help` for the
-local command.
+commit. A red commit (worker build, upstream tests, corpus or parity failure)
+stops the job and opens or updates `Upstream follow: needs attention`. Review
+it, then dispatch with its SHA in `accept` to advance past it. A flagged commit
+(a changed worker mirror file, `.proto`, protocol constant, `test_cases` tree or
+workspace version, or a corpus failure on a `test_cases` change) does not stop
+the job: `last_good` moves past it and the commit is listed in the week's
+comment on the `Upstream follow: weekly digest` issue. Use
+`python3 -I tool/follow_upstream.py run --help` for the local command.
+
+The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
+`last_good` and runs the browser corpus and browser parity on the runner's own
+Chrome. It never advances `last_good`; a failure fails the job and opens
+`Upstream follow: browser parity failed`.
 
 ## 7. Common failures and fixes
 

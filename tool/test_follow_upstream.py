@@ -26,10 +26,15 @@ class FollowUpstreamTest(unittest.TestCase):
         ]
         self.assertEqual('green', FOLLOW.last_good_after('old', commits))
 
-    def test_flagged_stops(self) -> None:
-        self.assertEqual('flagged', FOLLOW.result_status(False, True, 'flagged', False))
-        self.assertEqual('old', FOLLOW.last_good_after(
-            'old', [{'sha': 'flagged', 'flags': ['PROTO'], 'gate': 'green'}]))
+    def test_flagged_commit_advances_and_red_stops(self) -> None:
+        commits = [
+            {'sha': 'a', 'flags': ['PROTO'], 'gate': 'green'},
+            {'sha': 'b', 'flags': ['TESTCASES'], 'gate': 'exempt'},
+            {'sha': 'c', 'flags': [], 'gate': 'red'},
+            {'sha': 'd', 'flags': [], 'gate': 'green'},
+        ]
+        self.assertEqual('b', FOLLOW.last_good_after('old', commits))
+        self.assertEqual('red', FOLLOW.result_status(False, True, 'red', False))
 
     def test_accept_takes_only_the_oldest_pending_commit(self) -> None:
         pending = ['flagged', 'next']
@@ -59,6 +64,28 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual('a' * 40, result['last_good'])
         self.assertIn('boom', result['error'])
 
+    def test_error_result_keeps_the_flagged_commits_already_advanced(self) -> None:
+        def fail_after_one(*args: object) -> int:
+            args[-1].append({'sha': 'f' * 40, 'subject': 'proto', 'flags': ['PROTO'],
+                             'gate': 'green', 'stage': 'all'})
+            raise OSError('boom')
+
+        with tempfile.TemporaryDirectory() as temp:
+            core = Path(temp) / 'core'
+            (core / 'tool/upstream').mkdir(parents=True)
+            (core / 'tool/upstream/upstream-pin.json').write_text(json.dumps(
+                {'commit': 'a' * 40, 'version': '1.1.0', 'trees': []}))
+            out = Path(temp) / 'result.json'
+            original = FOLLOW._run_follow
+            FOLLOW._run_follow = fail_after_one
+            try:
+                FOLLOW.run_follow(core, Path(temp) / 'work', Path(temp) / 'parity', 1, 1,
+                                  None, Path(temp) / 'last_good.json', out)
+            finally:
+                FOLLOW._run_follow = original
+            result = json.loads(out.read_text())
+        self.assertEqual(['f' * 40], [entry['sha'] for entry in result['flagged']])
+
     def test_malformed_state_file_still_writes_a_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             core = Path(temp) / 'core'
@@ -73,13 +100,48 @@ class FollowUpstreamTest(unittest.TestCase):
         self.assertEqual(1, status)
         self.assertEqual('error', result['status'])
 
-    def test_stop_reason_ranks_red_over_flags(self) -> None:
-        self.assertIsNone(FOLLOW.stop_reason(True, 'all', []))
-        self.assertEqual('flagged', FOLLOW.stop_reason(True, 'all', ['MIRROR']))
-        self.assertEqual('red', FOLLOW.stop_reason(False, 'upstream-tests', ['MIRROR']))
-        self.assertEqual('red', FOLLOW.stop_reason(False, 'corpus', []))
-        self.assertEqual('flagged', FOLLOW.stop_reason(False, 'corpus', ['TESTCASES']))
-        self.assertEqual('red', FOLLOW.stop_reason(False, 'worker-build', ['TESTCASES']))
+    def test_verdicts_separate_flagged_from_red(self) -> None:
+        self.assertEqual('green', FOLLOW.gate_verdict(True, 'all', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'upstream-tests', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'corpus', False))
+        self.assertEqual('exempt', FOLLOW.gate_verdict(False, 'corpus', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'worker-build', True))
+        self.assertEqual('red', FOLLOW.gate_verdict(False, 'parity', True))
+        self.assertIsNone(FOLLOW.stop_reason(False, 'corpus', True))
+        self.assertEqual('red', FOLLOW.stop_reason(False, 'parity', True))
+
+    def test_corpus_runs_after_every_stage_that_must_stay_red(self) -> None:
+        self.assertEqual('corpus', FOLLOW.ALL_STAGES[-1])
+        self.assertEqual(('upstream-tests', 'worker-build', 'corpus'), FOLLOW.selected_stages(None, None))
+
+    def test_flagged_entries_skip_red_and_plain_green(self) -> None:
+        commits = [
+            {'sha': 'a' * 40, 'subject': 'plain', 'flags': [], 'gate': 'green'},
+            {'sha': 'b' * 40, 'subject': 'proto', 'flags': ['PROTO', 'VERSION'], 'gate': 'green'},
+            {'sha': 'c' * 40, 'subject': 'cases', 'flags': ['TESTCASES'], 'gate': 'exempt'},
+            {'sha': 'd' * 40, 'subject': 'broken', 'flags': ['PROTO'], 'gate': 'red'},
+        ]
+        entries = FOLLOW.flagged_entries(commits, 'https://example.test/run/1')
+        self.assertEqual(['b' * 40, 'c' * 40], [e['sha'] for e in entries])
+        self.assertEqual('PROTO, VERSION', entries[0]['reason'])
+        self.assertIn('corpus differs', entries[1]['reason'])
+        self.assertEqual('https://github.com/pydantic/monty/commit/' + 'b' * 40, entries[0]['url'])
+
+    def test_digest_formatting_and_weekly_merge(self) -> None:
+        import datetime
+        self.assertEqual('2026-W42', FOLLOW.week_label(datetime.date(2026, 10, 16)))
+        self.assertEqual('2027-W01', FOLLOW.week_label(datetime.date(2027, 1, 4)))
+        first = [{'sha': 'b' * 40, 'subject': 'proto', 'reason': 'PROTO', 'url': 'u1', 'evidence': 'run1'}]
+        body = FOLLOW.format_digest('2026-W42', first)
+        self.assertEqual('<!-- upstream-follow-digest 2026-W42 -->', body.splitlines()[0])
+        self.assertIn('- [`' + 'b' * 12 + '`](u1) proto. Reason: PROTO. Evidence: run1', body)
+        second = [{'sha': 'b' * 40, 'subject': 'proto', 'reason': 'PROTO', 'url': 'u1', 'evidence': 'run2'},
+                  {'sha': 'c' * 40, 'subject': 'cases', 'reason': 'TESTCASES', 'url': 'u2', 'evidence': ''}]
+        merged = FOLLOW.format_digest('2026-W42', second, body)
+        self.assertEqual(2, sum(line.startswith('- [') for line in merged.splitlines()))
+        self.assertIn('Evidence: run2', merged)
+        self.assertNotIn('Evidence: run1', merged)
+        self.assertEqual(FOLLOW.format_digest('2026-W42', second, merged), merged)
 
     def test_a_hung_command_is_a_red_timeout(self) -> None:
         result = FOLLOW.command(['sleep', '5'], check=False, timeout=0.2)
