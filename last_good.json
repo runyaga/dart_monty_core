@@ -1,5 +1,16 @@
 {
-  "sha": "591527397445bf734873252d1ee20c1b6308fe7f",
-  "advanced": "2026-10-17T00:00:00+00:00",
-  "via": "reset"
+  "sha": "e74249051f6bb3df88fe8a0178e022272e14c1c6",
+  "advanced": "2026-10-17T09:28:28+00:00",
+  "via": "pending",
+  "baseline": {
+    "corpus:fstring__all.py": "72df3e57defe4982184f792bb60b7c7de97ff8b7",
+    "corpus:str__format.py": "72df3e57defe4982184f792bb60b7c7de97ff8b7"
+  },
+  "pending": {
+    "sha": "ae5d3f03ae20b80677b1d9a8808653358fc21785",
+    "failures": [
+      "corpus:dataclass__options.py"
+    ],
+    "fixed": []
+  }
 }
