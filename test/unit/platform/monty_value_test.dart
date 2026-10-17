@@ -681,6 +681,10 @@ void main() {
         expect(MontyValue.fromDart(value), same(value));
       });
 
+      test('the toJson map of $name is unmarked and converts to a dict', () {
+        expect(MontyValue.fromDart(value.toJson()), isA<MontyDict>());
+      });
+
       test('a copy of the dartValue map of $name is a plain dict', () {
         final copy = switch (value.dartValue) {
           final Map<String, Object?> m => Map<String, Object?>.of(m),
