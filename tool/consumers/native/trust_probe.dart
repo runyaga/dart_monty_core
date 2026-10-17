@@ -25,7 +25,8 @@ Future<void> main(List<String> arguments) async {
   try {
     await _run(worker);
   } on Object catch (error, stackTrace) {
-    _fact('internal-error', '$error $stackTrace');
+    _unavailable('internal-error', '$error $stackTrace');
+    exitCode = 1;
   }
 }
 
@@ -37,7 +38,7 @@ Future<void> _run(File worker) async {
     _fact('download', 'bytes=${await downloaded.length()}');
     if (!Platform.isWindows) {
       final mode = await _process('chmod', ['755', downloaded.path]);
-      _fact('download-mode', _result(mode));
+      _factResult('download-mode', mode);
     }
     await switch (Platform.operatingSystem) {
       'windows' => _windows(downloaded, temp),
@@ -84,7 +85,11 @@ Future<void> _windows(File downloaded, Directory temp) async {
     '-Command',
     _listAdsCommand,
   ], environment: _environment({'WORKER': downloaded.path}));
-  _fact('windows-ads', 'zone=${_hasZone(before.text)} ${_result(before)}');
+  if (before.exitCode != 0) {
+    _unavailable('windows-ads', _result(before));
+  } else {
+    _fact('windows-ads', 'zone=${_hasZone(before.text)} ${_result(before)}');
+  }
   final zoned = File('${temp.path}/zoned.exe');
   await downloaded.copy(zoned.path);
   final add = await _process('powershell', [
@@ -92,33 +97,62 @@ Future<void> _windows(File downloaded, Directory temp) async {
     '-Command',
     _addZoneCommand,
   ], environment: _environment({'WORKER': zoned.path}));
+  if (add.exitCode != 0) {
+    _unavailable('windows-add-zone', _result(add));
+
+    return;
+  }
   _fact('windows-add-zone', _result(add));
+  final zone = await _process('powershell', [
+    '-NoProfile',
+    '-Command',
+    _readZoneCommand,
+  ], environment: _environment({'WORKER': zoned.path}));
+  if (zone.exitCode != 0) {
+    _unavailable('windows-zone-content', _result(zone));
+
+    return;
+  }
+  _fact('windows-zone-content', 'stream=${_flat(zone.text)}');
   await _workerRun('windows-zone-process', zoned);
   final started = await _process('powershell', [
     '-NoProfile',
     '-Command',
     _startProcessCommand,
   ], environment: _environment({'WORKER': zoned.path}));
-  _fact(
-    'windows-zone-start-process',
-    '${_result(started)} blocked=${_blocked(started.text)}',
-  );
+  if (started.exitCode != 0) {
+    _unavailable('windows-zone-start-process', _result(started));
+  } else {
+    _fact(
+      'windows-zone-start-process',
+      '${_result(started)} blocked=${_blocked(started.text)}',
+    );
+  }
   final unblock = await _process('powershell', [
     '-NoProfile',
     '-Command',
     r'Unblock-File -LiteralPath $env:WORKER',
   ], environment: _environment({'WORKER': zoned.path}));
+  if (unblock.exitCode != 0) {
+    _unavailable('windows-unblock', _result(unblock));
+
+    return;
+  }
   _fact('windows-unblock', _result(unblock));
   await _workerRun('windows-unblocked-process', zoned);
 }
 
 Future<void> _macos(File downloaded, Directory temp) async {
   final attributes = await _process('xattr', ['-l', downloaded.path]);
-  _fact(
-    'macos-download-xattr',
-    'quarantine=${attributes.text.contains('com.apple.quarantine')} '
-        '${_result(attributes)}',
-  );
+  if (attributes.exitCode != 0) {
+    _unavailable('macos-download-xattr', _result(attributes));
+  } else {
+    _fact(
+      'macos-download-xattr',
+      'quarantine=${attributes.text.contains('com.apple.quarantine')} '
+          '${_result(attributes)}',
+    );
+  }
   await _workerRun('macos-download-process', downloaded);
   final quarantined = File('${temp.path}/quarantined');
   await downloaded.copy(quarantined.path);
@@ -128,10 +162,15 @@ Future<void> _macos(File downloaded, Directory temp) async {
     '0081;00000000;Probe;',
     quarantined.path,
   ]);
+  if (write.exitCode != 0) {
+    _unavailable('macos-add-quarantine', _result(write));
+
+    return;
+  }
   _fact('macos-add-quarantine', _result(write));
   await _workerRun('macos-quarantine-process', quarantined);
   final signature = await _process('codesign', ['-dv', downloaded.path]);
-  _fact('macos-codesign', _result(signature));
+  _factResult('macos-codesign', signature);
   final assessment = await _process('spctl', [
     '--assess',
     '--type',
@@ -139,14 +178,14 @@ Future<void> _macos(File downloaded, Directory temp) async {
     '-vv',
     downloaded.path,
   ]);
-  _fact('macos-spctl', _result(assessment));
+  _factResult('macos-spctl', assessment);
 }
 
 Future<void> _linux(File downloaded) async {
   final available = await _process('sh', ['-c', 'command -v getfattr']);
   if (available.exitCode == 0) {
     final attributes = await _process('getfattr', ['-d', downloaded.path]);
-    _fact('linux-download-attributes', _result(attributes));
+    _factResult('linux-download-attributes', attributes);
   } else {
     _fact('linux-download-attributes', 'getfattr=unavailable');
   }
@@ -155,7 +194,11 @@ Future<void> _linux(File downloaded) async {
 
 Future<void> _workerRun(String name, File worker) async {
   final result = await _process(worker.path, const []);
-  _fact(name, '${_result(result)} blocked=${_blocked(result.text)}');
+  if (result.exitCode != 0) {
+    _unavailable(name, _result(result));
+  } else {
+    _fact(name, '${_result(result)} blocked=${_blocked(result.text)}');
+  }
 }
 
 Future<void> _hookEnvironment(Directory temp) async {
@@ -176,6 +219,11 @@ Future<void> _hookEnvironment(Directory temp) async {
         ], cwd: package.path)
       : get;
   final environment = File('${package.path}/hook-environment.txt');
+  if (build.exitCode != 0) {
+    _unavailable('hook-env', _result(build));
+
+    return;
+  }
   final detail = environment.existsSync()
       ? environment.readAsStringSync()
       : 'environment-file-missing';
@@ -227,6 +275,17 @@ bool _blocked(String text) {
 void _fact(String name, String detail) =>
     stdout.writeln('TRUST $name ${_flat(detail)}');
 
+void _unavailable(String name, String reason) =>
+    _fact(name, 'unavailable $reason');
+
+void _factResult(String name, ({int exitCode, String text}) result) {
+  if (result.exitCode != 0) {
+    _unavailable(name, _result(result));
+  } else {
+    _fact(name, _result(result));
+  }
+}
+
 String _flat(String value) => value.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 const _hookPubspec = '''
@@ -243,13 +302,16 @@ Get-Item -LiteralPath $env:WORKER -Stream * |
 Format-Table -HideTableHeaders Stream
 ''';
 
-const _addZoneCommand = r'''
-Set-Content -LiteralPath $env:WORKER -Stream Zone.Identifier
--Value "[ZoneTransfer]`nZoneId=3"
-''';
+const _addZoneCommand =
+    r'''$ErrorActionPreference = 'Stop'; Set-Content -LiteralPath $env:WORKER -Stream Zone.Identifier -Value "[ZoneTransfer]`nZoneId=3"; if (-not $?) { exit 1 }''';
+
+const _readZoneCommand =
+    r'''$ErrorActionPreference = 'Stop'; Get-Content -LiteralPath $env:WORKER -Stream Zone.Identifier''';
 
 const _startProcessCommand = r'''
+$ErrorActionPreference = 'Stop';
 $p = Start-Process -FilePath $env:WORKER -Wait -PassThru;
+if ($null -eq $p) { throw 'Start-Process returned no process' }
 Write-Output "exit=$($p.ExitCode)"
 ''';
 
