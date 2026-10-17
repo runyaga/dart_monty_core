@@ -22,9 +22,7 @@ lib/src/bin/
 # macOS
 .DS_Store
 
-# Local mkdocs build artefacts
 .venv-docs/
-site_mkdocs/
 
 # Assembled GitHub Pages site (build artifact; see deploy-pages.yml)
 site/

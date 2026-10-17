@@ -1,1 +1,0 @@
-../docs/contributor/testing-philosophy.md

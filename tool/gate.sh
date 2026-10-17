@@ -239,6 +239,7 @@ s  export_boundary  dart --packages=.dart_tool/package_config.json tool/check_ex
 # and a private member must not.
 s  export_boundary_selftest dart --packages=.dart_tool/package_config.json tool/check_export_boundary.dart --self-test
 s  dart_analyze  dart analyze --fatal-infos
+s  docs_check    bash tool/check_docs.sh
 # packages/ IS included, and was not until 2026-09-15. `dart analyze` walks
 # into the nested packages on its own (verified: a deliberate type error in
 # packages/monty_conformance/ fails the unscoped `dart analyze --fatal-infos`
@@ -392,7 +393,7 @@ fi
 # EXACT, not a floor. A floor would let steps disappear one at a time. Adding
 # or removing a step is a deliberate act, so it gets a deliberate edit here —
 # and the failure message says which direction moved.
-EXPECT_STEPS=42
+EXPECT_STEPS=43
 GOT_STEPS="$(grep -cE '^(PASS|SKIP|FAIL)  ' "$OUT/SUMMARY.txt")"
 if [ "$GOT_STEPS" != "$EXPECT_STEPS" ]; then
   {

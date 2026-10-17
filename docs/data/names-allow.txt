@@ -1,0 +1,36 @@
+# Upstream Python API names.
+AsyncMonty
+Exception
+MemoryError
+OSError
+PermissionError
+RecursionError
+RuntimeError
+TimeoutError
+TypeError
+
+# Dart SDK names.
+ArgumentError
+FileStat.changed
+Future
+HttpClient
+Process.run
+Process.start
+RangeError
+StateError
+String
+Uint8List
+UnsupportedError
+
+# Platform environment names and repository filenames.
+AGENTS.md
+CHANGELOG.md
+EXPANDED_CODE_SIGN_IDENTITY
+HOME
+LOCALAPPDATA
+PATH
+SYSTEMROOT
+TEMP
+TMP
+USERPROFILE
+XDG_CACHE_HOME

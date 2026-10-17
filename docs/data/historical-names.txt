@@ -1,0 +1,2 @@
+# Names that a page documents as removed package API.
+docs/reference/host-directory-mounts.md: MountMode

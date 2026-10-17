@@ -1,0 +1,34 @@
+name: Documentation URLs
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: urls
+        run: python3 tool/check_new_urls.py --all > /tmp/docs-url-check.txt
+        continue-on-error: true
+      - if: steps.urls.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue="$(gh issue list --state open --search 'Documentation links fail in:title' --json number,title --jq '.[] | select(.title == "Documentation links fail") | .number' | head -1)"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file /tmp/docs-url-check.txt
+          else
+            gh issue create --title 'Documentation links fail' --label documentation --body-file /tmp/docs-url-check.txt
+          fi
+          exit 1
