@@ -1202,6 +1202,19 @@ final class _MemoEquals {
 // Projections: toJson and dartValue
 // ---------------------------------------------------------------------------
 
+final Expando<String> _dartValueTags = Expando<String>();
+
+Map<String, T> _markDartValue<T>(
+  Map<String, T> map,
+  String tag,
+) {
+  _dartValueTags[map] = tag;
+
+  return map;
+}
+
+String? _dartValueTag(Object map) => _dartValueTags[map];
+
 /// Builds `toJson` or `dartValue` output.
 ///
 /// Each node is built once per projection, so a node shared in the value is
@@ -1213,6 +1226,7 @@ final class _Projection {
   final int _maxDepth =
       ValueGraphBudget.current?.maxDepth ?? ValueGraphBudget.defaultMaxDepth;
   int _depth = 0;
+  bool _projectingToJson = false;
 
   /// Whether children come from [_get] (the fallback) or [_recurse].
   bool _iterating = false;
@@ -1222,6 +1236,7 @@ final class _Projection {
     // An earlier run that gave up left its state behind.
     _depth = 0;
     _iterating = false;
+    _projectingToJson = toJson;
     try {
       return _recurse(root, toJson: toJson);
     } on _Abort {
@@ -1371,16 +1386,18 @@ final class _Projection {
         : entries;
   }
 
+  Object _structuredMap<T>(Map<String, T> map, String tag) =>
+      _projectingToJson ? map : _markDartValue(map, tag);
+
   /// Named tuples, class types and class instances: always toJson maps.
   Object _buildStructured(Object v) => switch (v) {
     MontyNamedTuple(:final typeName, :final fieldNames, :final values) =>
-      <String, Object?>{
+      _structuredMap(<String, Object?>{
         '__type': 'namedtuple',
         'type_name': typeName,
         'field_names': fieldNames,
         'values': [for (final c in values) _child(c, toJson: true)],
-      },
-    // Map<String, Object>, as the untyped literal it replaces inferred.
+      }, 'namedtuple'),
     MontyClassTypeProxy(
       :final name,
       :final id,
@@ -1388,21 +1405,21 @@ final class _Projection {
       :final isDataclass,
       :final attrs,
     ) =>
-      <String, Object>{
+      _structuredMap(<String, Object>{
         '__type': 'class_type',
         'name': name,
         'id': id,
         'host_defined': hostDefined,
         'is_dataclass': isDataclass,
         'attrs': _attrsJson(attrs),
-      },
+      }, 'class_type'),
     MontyClassProxy(:final classType, :final instanceId, :final attrs) =>
-      <String, Object?>{
+      _structuredMap(<String, Object?>{
         '__type': 'class_instance',
         'class_type': _child(classType, toJson: true),
         'instance_id': instanceId,
         'attrs': _attrsJson(attrs),
-      },
+      }, 'class_instance'),
     _ => throw _notANode(v),
   };
 
@@ -1477,21 +1494,9 @@ final class _FromDart {
   final Set<Object> _open = Set.identity();
   final List<Object> _stack = [];
 
-  /// The keys of each map a typed wrapper's `dartValue` returns, by `__type`.
-  static const _wrapperKeys = {
-    'complex': {'__type', 'real', 'imag'},
-    'exception': {'__type', 'exc_type', 'message'},
-    'timezone': {'__type', 'offset_seconds', 'name'},
-    'filehandle': {'__type', 'path', 'mode', 'position'},
-    'namedtuple': {'__type', 'type_name', 'field_names', 'values'},
-    'class_instance': {'__type', 'class_type', 'instance_id', 'attrs'},
-    'class_type': {
-      '__type', 'name', 'id', 'host_defined', 'is_dataclass', 'attrs', //
-    },
-  };
-
   MontyValue convert(Object? root) {
     if (root == null) return const MontyNone();
+    _refuseDartValueMap(root);
     _stack.add(root);
     for (var v = _stack.lastOrNull; v != null; v = _stack.lastOrNull) {
       if (_done.containsKey(v)) {
@@ -1552,6 +1557,7 @@ final class _FromDart {
       return;
     }
     if (_done.containsKey(c)) return;
+    _refuseDartValueMap(c);
     if (_open.contains(c)) {
       throw ArgumentError('Cannot convert a List or Map that contains itself');
     }
@@ -1561,7 +1567,6 @@ final class _FromDart {
   MontyValue _build(Object v) {
     if (v is List<Object?>) return MontyList([for (final c in v) _value(c)]);
     final map = v as Map<dynamic, dynamic>;
-    _refuseTaggedMap(map);
 
     return MontyDict([
       for (final MapEntry(:key, :value) in map.entries)
@@ -1569,17 +1574,12 @@ final class _FromDart {
     ]);
   }
 
-  /// A wrapper's `dartValue` map is transport shape. Converted, it would
-  /// reach the sandbox as a dict carrying the tag keys (and, for a class
-  /// instance, its UUIDs).
-  static void _refuseTaggedMap(Map<dynamic, dynamic> map) {
-    final tag = map['__type'];
-    final keys = tag is String ? _wrapperKeys[tag] : null;
-    if (keys != null &&
-        map.length == keys.length &&
-        map.keys.every(keys.contains)) {
+  static void _refuseDartValueMap(Object? value) {
+    if (value case final Map<dynamic, dynamic> map) {
+      final tag = _dartValueTag(map);
+      if (tag == null) return;
       throw ArgumentError(
-        'Cannot convert the tagged map of a $tag value; '
+        'Cannot convert the dartValue map of a $tag value; '
         'pass the MontyValue itself instead of its dartValue',
       );
     }

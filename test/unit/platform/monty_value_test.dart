@@ -726,6 +726,20 @@ void main() {
       );
     });
 
+    test('a typed value nested in a collection dartValue is refused', () {
+      for (final v in const <MontyValue>[
+        MontyList([MontyComplex(1, 2)]),
+        MontyDict([
+          (MontyString('k'), MontyTimeZone(offsetSeconds: 60, name: 'x')),
+        ]),
+      ]) {
+        expect(
+          () => MontyValue.fromDart(v.dartValue),
+          throwsA(isA<ArgumentError>()),
+        );
+      }
+    });
+
     test('a copy nested in a list is a dict', () {
       final copy = Map<String, Object?>.of(
         const MontyComplex(1, 2).dartValue,

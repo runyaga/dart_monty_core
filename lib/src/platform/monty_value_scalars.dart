@@ -203,7 +203,7 @@ final class MontyComplex extends MontyValue {
   int get _graphKind => _kFixed;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue => _markDartValue(_toJson(), 'complex');
 
   @override
   bool operator ==(Object other) =>
@@ -336,7 +336,7 @@ final class MontyExceptionValue extends MontyValue {
   final Map<String, MontyValue> attributes;
 
   @override
-  Map<String, Object?> get dartValue => _toJson();
+  Map<String, Object?> get dartValue => _markDartValue(_toJson(), 'exception');
 
   @override
   bool operator ==(Object other) =>

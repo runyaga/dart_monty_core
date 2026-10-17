@@ -1,4 +1,4 @@
-### Fixed
+### Breaking
 
-- `MontyValue.fromDart` converts a `Uint8List` to `MontyBytes`. It was converted to a list of ints, so bytes read through `dartValue` and handed back reached the sandbox as a `list`.
-- `MontyValue.fromDart` refuses the tagged map that `dartValue` returns for `MontyNamedTuple`, `MontyTimeZone`, `MontyComplex`, `MontyFileHandle`, `MontyExceptionValue`, `MontyClassProxy` and `MontyClassTypeProxy`. It raised no error and the map reached sandboxed Python as a dict with `__type` keys, and for a class instance with its instance and class UUIDs. Pass the `MontyValue` itself back. A plain dict that happens to carry a `__type` key is still a dict.
+- `MontyValue.fromDart` converts a `Uint8List` to `MontyBytes` (a copy), at the top level and nested. A `Uint8List` handed back from `dartValue` reaches the sandbox as `bytes`, not a `list` of ints.
+- `MontyValue.fromDart` throws an `ArgumentError` for the map that `dartValue` returns for `MontyNamedTuple`, `MontyTimeZone`, `MontyComplex`, `MontyFileHandle`, `MontyExceptionValue`, `MontyClassProxy` and `MontyClassTypeProxy`, at the top level or nested in a list or map. Pass the `MontyValue` itself. A map built by the caller converts to a dict whatever its keys, including a copy of such a map, as `pydantic_monty` converts every host dict.
