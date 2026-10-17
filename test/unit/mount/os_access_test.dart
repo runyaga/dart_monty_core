@@ -585,18 +585,13 @@ void _unpairedSurrogates() {
 
   test('text with an unpaired surrogate reads and appends as text', () async {
     final fs = seeded();
-    expect(
-      await call(fs, 'Path.read_text', '/f'),
-      const MontyString(lone),
-    );
+    Future<MontyValue> read() => call(fs, 'Path.read_text', '/f');
+    expect(await read(), const MontyString(lone));
     expect(
       await call(fs, 'Path.append_text', '/f', const MontyString('q')),
       const MontyInt(1),
     );
-    expect(
-      await call(fs, 'Path.read_text', '/f'),
-      const MontyString('${lone}q'),
-    );
+    expect(await read(), const MontyString('${lone}q'));
   });
 
   test('a run of surrogates is reported as a range', () {
