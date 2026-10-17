@@ -203,7 +203,7 @@ void main() {
         answer([_call('f', 1)]),
       ]);
       final snap = await s.feedStart('f()') as FunctionSnapshot;
-      expect(snap.position, SourceRange.unknown);
+      expect(snap.position, unknownSourceRange);
     });
 
     test('a name lookup resumes with a value or as undefined', () async {

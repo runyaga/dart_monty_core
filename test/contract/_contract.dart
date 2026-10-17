@@ -6,7 +6,7 @@
 // WHERE THE FAKE DOES NOT MATCH THE WORKER: the listed exceptions. Each is
 // left out of the comparison here, by name, never skipped silently.
 //  1. Positions. A snapshot's `position` is the worker's source range; the
-//     fake has none (`SourceRange.unknown`). showSnapshot leaves it out.
+//     fake has none (`unknownSourceRange`). showSnapshot leaves it out.
 //  2. Frames. A worker error carries its traceback with source lines and
 //     end positions; the fake's has none, or with `willRaise(line:)` one
 //     frame with no source line. Only filename, line, column and function

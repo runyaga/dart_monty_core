@@ -1148,10 +1148,10 @@ FunctionSnapshot _osSnapshot(
 
 /// [range] as a [SourceRange], its file name cut to 256 UTF-8 bytes as
 /// upstream's `SourceRange::new` cuts every suspension's position; an unset
-/// one (a worker that predates the field) is [SourceRange.unknown], as
+/// one (a worker that predates the field) is [unknownSourceRange], as
 /// upstream reads it.
 SourceRange _position(pb.SourceRange range) => range == pb.SourceRange()
-    ? SourceRange.unknown
+    ? unknownSourceRange
     : SourceRange(
         filename: cutSourceFilename(range.filename),
         start: range.start,

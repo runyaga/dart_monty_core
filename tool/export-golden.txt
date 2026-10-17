@@ -599,7 +599,6 @@ final class SourceRange
   SourceRange.new: constructor({required String filename, required int start, required int end})
   SourceRange.start: final field int
   SourceRange.toString: method() -> String
-  SourceRange.unknown: static const field SourceRange
 sealed class SuspendedSnapshot extends MontySnapshot
   SuspendedSnapshot.dump: method() -> Future<Uint8List@dart:typed_data>
   SuspendedSnapshot.position: final field SourceRange
