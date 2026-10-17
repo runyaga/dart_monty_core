@@ -81,6 +81,7 @@ Future<bool> _installPrebuilt(
       manifestTarget.worker,
       root,
       workerUrl,
+      manifest.version,
     );
     _logInstall(worker);
 
@@ -151,11 +152,13 @@ Future<WorkerInstall> _installArtifact(
   WorkerArtifact artifact,
   String cacheRoot,
   Uri archiveUrl,
+  String? manifestVersion,
 ) => installWorker(
   WorkerInstallRequest(
     artifact: artifact,
     cacheRoot: cacheRoot,
     archiveUrl: archiveUrl,
+    manifestVersion: manifestVersion,
   ),
 );
 
@@ -182,6 +185,7 @@ Future<void> _installPrebuiltLibrary(
     library,
     installation.cacheRoot,
     libraryUrl,
+    manifest.version,
   );
   _logInstall(installedLibrary);
   final outputFile = File.fromUri(

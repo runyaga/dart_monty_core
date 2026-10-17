@@ -14,6 +14,7 @@ import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch_options.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
 import 'package:dart_monty_core/src/worker/worker_cache_source.dart';
+import 'package:dart_monty_core/src/worker/worker_fingerprint.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest_data.dart';
 import 'package:meta/meta.dart';
@@ -112,6 +113,7 @@ Future<(WorkerExecutable?, String?)> _cacheExecutable(
   await _verifiedCacheExecutable(
     File(location.cachePath),
     location.artifact,
+    entry: workerEntryKey(location.artifact, version: location.version),
     operatingSystem: source?.operatingSystem,
     verify: source?.verify ?? verifyWorkerFile,
   );
@@ -142,18 +144,21 @@ bool _isNotFoundError(FileSystemException error) {
   return code == 2 || code == 3 || code == 20;
 }
 
-({WorkerArtifact artifact, String cachePath})? _cacheLocation(
+({WorkerArtifact artifact, String cachePath, String? version})? _cacheLocation(
   Abi abi,
   WorkerCacheSource? source,
 ) {
-  final artifact = (source?.manifest ?? bundledWorkerManifest)
-      .targetFor(workerHostKey(abi))
-      ?.worker;
+  final manifest = source?.manifest ?? bundledWorkerManifest;
+  final artifact = manifest.targetFor(workerHostKey(abi))?.worker;
   if (artifact == null) return null;
 
   final root = _cacheRoot(source);
 
-  return (artifact: artifact, cachePath: workerCacheFile(root, artifact));
+  return (
+    artifact: artifact,
+    cachePath: workerCacheFile(root, artifact),
+    version: manifest.version,
+  );
 }
 
 String _cacheRoot(WorkerCacheSource? source) {
@@ -195,10 +200,11 @@ WorkerLaunch _selfRelaunch(
 Future<void> _verifiedCacheExecutable(
   File file,
   WorkerArtifact artifact, {
+  required String entry,
   required String? operatingSystem,
-  required Future<void> Function(File, WorkerArtifact) verify,
+  required FutureOr<void> Function(File, WorkerArtifact) verify,
 }) async {
-  final verificationKey = '${file.path}|${artifact.sha256}';
+  final verificationKey = '${file.path}|$entry';
   if (_verifiedWorkers.contains(verificationKey)) return;
   final pending = _workerVerificationFutures[verificationKey];
   if (pending != null) {
@@ -209,6 +215,7 @@ Future<void> _verifiedCacheExecutable(
   final verification = _verifyCacheExecutable(
     file,
     artifact,
+    entry: entry,
     operatingSystem: operatingSystem,
     verify: verify,
   );
@@ -224,11 +231,17 @@ Future<void> _verifiedCacheExecutable(
 Future<void> _verifyCacheExecutable(
   File file,
   WorkerArtifact artifact, {
+  required String entry,
   required String? operatingSystem,
-  required Future<void> Function(File, WorkerArtifact) verify,
+  required FutureOr<void> Function(File, WorkerArtifact) verify,
 }) async {
   try {
-    await verify(file, artifact);
+    final fingerprintCheck = _needsFingerprintVerification(
+      file,
+      entry,
+      artifact.bytes,
+    );
+    if (fingerprintCheck.needsVerification) await verify(file, artifact);
     if ((operatingSystem ?? Platform.operatingSystem) != 'windows' &&
         !_isExecutable(file)) {
       throw WorkerVerifyError(
@@ -238,11 +251,31 @@ Future<void> _verifyCacheExecutable(
         actual: 'a non-executable file',
       );
     }
+    final observed = fingerprintCheck.observed;
+    if (fingerprintCheck.needsVerification && observed != null) {
+      try {
+        writeWorkerFingerprint(file, observed);
+      } on FileSystemException {
+        // A verified worker remains usable when its cache is read-only.
+      }
+    }
   } on WorkerVerifyError catch (error) {
     throw _invalidCacheError(file.path, error);
   } on FileSystemException catch (error) {
     throw _cacheAccessError(file.path, error);
   }
+}
+
+({bool needsVerification, WorkerFingerprint? observed})
+_needsFingerprintVerification(File file, String entry, int expectedSize) {
+  final current = statWorkerFingerprint(file, entry);
+  final stored = readWorkerFingerprint(file);
+
+  return (
+    needsVerification:
+        current == null || current.size != expectedSize || stored != current,
+    observed: current,
+  );
 }
 
 Never _invalidCacheError(String path, WorkerVerifyError error) {

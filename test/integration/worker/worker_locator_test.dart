@@ -14,6 +14,7 @@ import 'package:dart_monty_core/src/worker/monty_error.dart'
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/self_relaunch.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
+import 'package:dart_monty_core/src/worker/worker_fingerprint.dart';
 import 'package:dart_monty_core/src/worker/worker_locator.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:test/test.dart';
@@ -104,6 +105,343 @@ void main() {
         },
       );
     }
+
+    test(
+      'locator warm start skips a matching fingerprint verification',
+      () async {
+        resetVerifiedWorkersForTesting();
+        await _withCachedWorker((environment, manifest, cached) async {
+          writeWorkerFingerprint(
+            cached,
+            _fingerprint(cached, manifest),
+          );
+          var count = 0;
+          Future<void> verify(File _, WorkerArtifact _) {
+            count++;
+
+            return Future.value();
+          }
+
+          final launch = await locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+              verify: verify,
+            ),
+          );
+
+          expect((launch as WorkerExecutable).path, cached.path);
+          expect(count, 0);
+        });
+      },
+    );
+
+    test(
+      'locator warm start verifies once without a record then writes one',
+      () async {
+        resetVerifiedWorkersForTesting();
+        await _withCachedWorker((environment, manifest, cached) async {
+          var count = 0;
+          Future<void> verify(File _, WorkerArtifact _) {
+            count++;
+
+            return Future.value();
+          }
+
+          final source = WorkerCacheSource(
+            environment: environment,
+            manifest: manifest,
+            verify: verify,
+          );
+
+          Future<WorkerLaunch> locate() =>
+              locateWorker(abi: Abi.current(), cache: source);
+
+          for (var process = 0; process != 2; process++) {
+            await locate();
+            if (process == 0) {
+              expect(count, 1);
+              expect(
+                readWorkerFingerprint(cached),
+                statWorkerFingerprint(
+                  cached,
+                  workerEntryKey(_artifact, version: manifest.version),
+                ),
+              );
+              resetVerifiedWorkersForTesting();
+            }
+          }
+          expect(count, 1);
+        });
+      },
+    );
+
+    test(
+      'locator re-verifies for a different manifest entry in one process',
+      () async {
+        resetVerifiedWorkersForTesting();
+        await _withCachedWorker((environment, manifest, _) async {
+          var count = 0;
+          void verify(File _, WorkerArtifact _) => count++;
+          final source = WorkerCacheSource(
+            environment: environment,
+            manifest: manifest,
+            verify: verify,
+          );
+
+          await locateWorker(abi: Abi.current(), cache: source);
+          await locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: WorkerManifest(
+                version: 'another-version',
+                targets: manifest.targets,
+              ),
+              verify: verify,
+            ),
+          );
+
+          expect(count, 2);
+        });
+      },
+    );
+
+    test(
+      'locator retains its pre-hash fingerprint after a changed verify',
+      () async {
+        resetVerifiedWorkersForTesting();
+        await _withCachedWorker((environment, manifest, cached) async {
+          final entry = workerEntryKey(_artifact, version: manifest.version);
+          final before = statWorkerFingerprint(cached, entry);
+          if (before == null) fail('seeded worker cannot be fingerprinted');
+          var count = 0;
+          Future<void> verify(File file, WorkerArtifact artifact) async {
+            count++;
+            await verifyWorkerFile(file, artifact);
+            if (count == 1) {
+              final bytes = file.readAsBytesSync()..[0] ^= 1;
+              file
+                ..writeAsBytesSync(bytes)
+                ..setLastModifiedSync(
+                  DateTime.fromMicrosecondsSinceEpoch(before.modifiedMicros),
+                );
+            }
+          }
+
+          final source = WorkerCacheSource(
+            environment: environment,
+            manifest: manifest,
+            verify: verify,
+          );
+          await locateWorker(abi: Abi.current(), cache: source);
+          expect(
+            readWorkerFingerprint(cached),
+            isNot(
+              equals(
+                statWorkerFingerprint(cached, entry),
+              ),
+            ),
+          );
+
+          resetVerifiedWorkersForTesting();
+          await expectLater(
+            locateWorker(abi: Abi.current(), cache: source),
+            throwsA(isA<MontyCrashedError>()),
+          );
+          expect(count, 2);
+        });
+      },
+    );
+
+    test(
+      'locator warm start rehashes each changed fingerprint field',
+      () async {
+        await _withCachedWorker((environment, manifest, cached) async {
+          final entry = workerEntryKey(_artifact, version: manifest.version);
+          final original = statWorkerFingerprint(cached, entry);
+          if (original == null) fail('seeded worker cannot be fingerprinted');
+          final sources = [
+            WorkerFingerprint(
+              size: original.size + 1,
+              modifiedMicros: original.modifiedMicros,
+              changedMicros: original.changedMicros,
+              entry: original.entry,
+            ),
+            WorkerFingerprint(
+              size: original.size,
+              modifiedMicros: original.modifiedMicros + 1,
+              changedMicros: original.changedMicros,
+              entry: original.entry,
+            ),
+            WorkerFingerprint(
+              size: original.size,
+              modifiedMicros: original.modifiedMicros,
+              changedMicros: original.changedMicros + 1,
+              entry: original.entry,
+            ),
+            WorkerFingerprint(
+              size: original.size,
+              modifiedMicros: original.modifiedMicros,
+              changedMicros: original.changedMicros,
+              entry: workerEntryKey(_artifact, version: 'another-version'),
+            ),
+          ];
+          for (final record in sources) {
+            resetVerifiedWorkersForTesting();
+            File(
+              workerFingerprintPath(cached.path),
+            ).writeAsStringSync(jsonEncode(record.toJson()));
+            var count = 0;
+            await locateWorker(
+              abi: Abi.current(),
+              cache: WorkerCacheSource(
+                environment: environment,
+                manifest: manifest,
+                verify: (file, artifact) async => count++,
+              ),
+            );
+            expect(count, 1);
+          }
+        });
+      },
+    );
+
+    test('locator warm start rehashes absent and unusable records', () async {
+      await _withCachedWorker((environment, manifest, cached) async {
+        final record = File(workerFingerprintPath(cached.path));
+        for (final source in [null, 'garbage', '']) {
+          resetVerifiedWorkersForTesting();
+          if (source == null) {
+            if (record.existsSync()) record.deleteSync();
+          } else {
+            record.writeAsStringSync(source);
+          }
+          var count = 0;
+          await locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+              verify: (file, artifact) async => count++,
+            ),
+          );
+          expect(count, 1);
+        }
+      });
+    });
+
+    test('locator warm start fails closed after a corrupt record', () async {
+      resetVerifiedWorkersForTesting();
+      await _withCachedWorker((environment, manifest, cached) async {
+        File(workerFingerprintPath(cached.path)).writeAsStringSync('garbage');
+        await expectLater(
+          locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+              verify: (file, artifact) => Future.error(
+                WorkerVerifyError(
+                  path: file.path,
+                  reason: WorkerVerifyReason.digest,
+                  expected: artifact.sha256,
+                  actual: 'bad',
+                ),
+              ),
+            ),
+            resolvePackageUri: (_) async => Uri.file('/fallback'),
+          ),
+          throwsA(
+            isA<MontyCrashedError>().having(
+              (error) => error.toString(),
+              'message',
+              contains(cached.path),
+            ),
+          ),
+        );
+      });
+    });
+
+    test('locator warm start catches an mtime-restored modification', () async {
+      resetVerifiedWorkersForTesting();
+      await _withCachedWorker((environment, manifest, cached) async {
+        writeWorkerFingerprint(cached, _fingerprint(cached, manifest));
+        final original = readWorkerFingerprint(cached);
+        if (original == null) fail('written fingerprint cannot be read');
+        cached
+          ..writeAsStringSync('evil')
+          ..setLastModifiedSync(
+            DateTime.fromMicrosecondsSinceEpoch(original.modifiedMicros),
+          );
+        var count = 0;
+
+        await expectLater(
+          locateWorker(
+            abi: Abi.current(),
+            cache: WorkerCacheSource(
+              environment: environment,
+              manifest: manifest,
+              verify: (file, artifact) async {
+                count++;
+                throw WorkerVerifyError(
+                  path: file.path,
+                  reason: WorkerVerifyReason.digest,
+                  expected: artifact.sha256,
+                  actual: 'bad',
+                );
+              },
+            ),
+          ),
+          throwsA(isA<MontyCrashedError>()),
+        );
+        expect(count, 1);
+      });
+    });
+
+    test('locator warm start accepts a forged current record', () async {
+      resetVerifiedWorkersForTesting();
+      await _withCachedWorker((environment, manifest, cached) async {
+        cached.writeAsStringSync('evil');
+        writeWorkerFingerprint(
+          cached,
+          _fingerprint(cached, manifest),
+        );
+        var count = 0;
+
+        await locateWorker(
+          abi: Abi.current(),
+          cache: WorkerCacheSource(
+            environment: environment,
+            manifest: manifest,
+            verify: (file, artifact) async => count++,
+          ),
+        );
+        expect(count, 0);
+      });
+    });
+
+    test('locator warm start launches from a read-only cache', () async {
+      if (Platform.isWindows) return;
+      resetVerifiedWorkersForTesting();
+      await _withCachedWorker((environment, manifest, cached) async {
+        await Process.run('chmod', ['500', cached.parent.path]);
+        addTearDown(() => Process.run('chmod', ['700', cached.parent.path]));
+        var count = 0;
+
+        final launch = await locateWorker(
+          abi: Abi.current(),
+          cache: WorkerCacheSource(
+            environment: environment,
+            manifest: manifest,
+            verify: (file, artifact) async => count++,
+          ),
+        );
+        expect((launch as WorkerExecutable).path, cached.path);
+        expect(count, 1);
+      });
+    });
 
     test('an explicit launch wins', () async {
       const explicit = WorkerExecutable('/opt/monty', args: ['subprocess']);
@@ -481,30 +819,27 @@ void main() {
       expect(eligibilityChecks, 0);
     });
 
-    test(
-      'JIT never asks self-relaunch eligibility',
-      () async {
-        runMontyWorkerIfChild(const []);
-        expect(
-          diagnoseSelfRelaunch(
-            resolveWorker: _resolved,
-            fileExists: (_) => true,
-          ),
-          isA<SelfRelaunchReady>(),
-        );
-        var eligibilityChecks = 0;
-        final launch = await locateWorker(
-          resolvePackageUri: (_) async => Uri.file(Platform.resolvedExecutable),
-          canSelfRelaunch: () {
-            eligibilityChecks++;
+    test('JIT never asks self-relaunch eligibility', () async {
+      runMontyWorkerIfChild(const []);
+      expect(
+        diagnoseSelfRelaunch(
+          resolveWorker: _resolved,
+          fileExists: (_) => true,
+        ),
+        isA<SelfRelaunchReady>(),
+      );
+      var eligibilityChecks = 0;
+      final launch = await locateWorker(
+        resolvePackageUri: (_) async => Uri.file(Platform.resolvedExecutable),
+        canSelfRelaunch: () {
+          eligibilityChecks++;
 
-            return true;
-          },
-        );
-        expect((launch as WorkerExecutable).path, Platform.resolvedExecutable);
-        expect(eligibilityChecks, 0);
-      },
-    );
+          return true;
+        },
+      );
+      expect((launch as WorkerExecutable).path, Platform.resolvedExecutable);
+      expect(eligibilityChecks, 0);
+    });
   });
 }
 
@@ -558,3 +893,10 @@ Future<File> _packageFile(String name) async {
 
 void _resolved() => _resolutions++;
 int _resolutions = 0;
+
+WorkerFingerprint _fingerprint(File file, WorkerManifest manifest) =>
+    statWorkerFingerprint(
+      file,
+      workerEntryKey(_artifact, version: manifest.version),
+    ) ??
+    (throw StateError('test worker cannot be fingerprinted'));

@@ -356,6 +356,19 @@ The worker executable is not shipped on pub.dev. Either:
   `bash tool/build_worker.sh` builds one into `lib/src/bin/<os>-<arch>/`,
   where `dart run` and `dart test` find it without `workerLocation`.
 
+#### Worker integrity and warm start
+
+Published cached workers are unsigned. Installation verifies the worker's
+SHA-256 in full, which provides the integrity guarantee, then records its
+size, modification time, and change time beside it. On macOS and Linux, the
+change time additionally catches a same-size modification with the mtime
+restored. On Windows, `FileStat.changed` is the file creation time rather than
+the metadata change time, so the fingerprint is size, mtime, and creation time.
+Later runs compare that fingerprint and re-hash in full when the record is
+missing or corrupt, a field changes, or a different manifest entry selected the
+worker. On Windows, a same-size modification with the mtime restored is not
+detected until the next full hash.
+
 ### Web
 
 No toolchain and no setup: with no `workerLocation`, the pool finds the

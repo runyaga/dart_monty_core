@@ -8,6 +8,7 @@ import 'dart:isolate';
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dart_monty_core/src/worker/worker_cache.dart';
+import 'package:dart_monty_core/src/worker/worker_fingerprint.dart';
 import 'package:dart_monty_core/src/worker/worker_install.dart';
 import 'package:dart_monty_core/src/worker/worker_manifest.dart';
 import 'package:path/path.dart' as path;
@@ -22,6 +23,7 @@ void main() {
   _fileMirrorTest();
   _httpMirrorTest();
   _warmEntryTest();
+  _fingerprintTests();
   _unavailableMirrorTest();
   _badArchiveTest();
   _httpFailureTest();
@@ -550,11 +552,7 @@ void _traversalSegmentTests() {
             file: 'worker',
             bytes: 1,
             sha256: _aDigest,
-            archive: WorkerArchive(
-              name: '..',
-              bytes: 1,
-              sha256: _bDigest,
-            ),
+            archive: WorkerArchive(name: '..', bytes: 1, sha256: _bDigest),
           ),
           mirrorOverride: mirror,
         ),
@@ -646,6 +644,113 @@ void _warmEntryTest() {
     expect(second.alreadyInstalled, isTrue);
     expect(file.statSync().modified, before.modified);
   });
+}
+
+void _fingerprintTests() {
+  group('worker install fingerprint', () {
+    _coldInstallFingerprintTest();
+    _existingInstallFingerprintTest();
+    _failedInstallFingerprintTest();
+  });
+}
+
+void _coldInstallFingerprintTest() {
+  test('writes a matching record after a cold install', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+    final installed = await installWorker(_fingerprintRequest(mirror, cache));
+    final file = File(installed.path);
+
+    _expectFingerprint(file, mirror.artifact);
+  });
+}
+
+void _existingInstallFingerprintTest() {
+  test('refreshes a matching record after an existing install', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+    final request = _fingerprintRequest(mirror, cache);
+    Future<WorkerInstall> install() => installWorker(request);
+    File? installedFile;
+    for (var attempt = 0; attempt != 2; attempt++) {
+      final installed = await install();
+      final file = File(installed.path);
+      installedFile ??= file;
+      if (attempt == 0) {
+        File(workerFingerprintPath(file.path)).deleteSync();
+      }
+    }
+    if (installedFile == null) {
+      fail('worker installation did not return a file');
+    }
+    final file = installedFile;
+
+    _expectFingerprint(file, mirror.artifact);
+  });
+}
+
+void _failedInstallFingerprintTest() {
+  test('does not write a record after a failed install', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+    final archive = mirror.artifact.archive;
+    if (archive == null) fail('test mirror has no archive');
+    final artifact = WorkerArtifact(
+      file: mirror.artifact.file,
+      bytes: mirror.artifact.bytes,
+      sha256: mirror.artifact.sha256,
+      archive: WorkerArchive(
+        name: archive.name,
+        bytes: archive.bytes,
+        sha256: 'a' * 64,
+      ),
+    );
+
+    await expectLater(
+      installWorker(
+        WorkerInstallRequest(
+          artifact: artifact,
+          cacheRoot: cache.path,
+          archiveUrl: mirror.fileUrl,
+        ),
+      ),
+      throwsA(isA<WorkerInstallError>()),
+    );
+
+    expect(
+      readWorkerFingerprint(File(workerCacheFile(cache.path, artifact))),
+      isNull,
+    );
+  });
+}
+
+WorkerInstallRequest _fingerprintRequest(
+  WorkerMirror mirror,
+  Directory cache,
+) => WorkerInstallRequest(
+  artifact: mirror.artifact,
+  cacheRoot: cache.path,
+  archiveUrl: mirror.fileUrl,
+  manifestVersion: 'v1',
+);
+
+void _expectFingerprint(File file, WorkerArtifact artifact) {
+  expect(
+    readWorkerFingerprint(file),
+    statWorkerFingerprint(file, workerEntryKey(artifact, version: 'v1')),
+  );
 }
 
 void _unavailableMirrorTest() {
@@ -1140,44 +1245,41 @@ void _stagingSweepTest() {
 }
 
 void _staleLockTest() {
-  test(
-    'breaks a dead old lock and retains a live old lock',
-    () async {
-      final mirror = await WorkerMirror.create();
-      final cache = await Directory.systemTemp.createTemp('worker_cache_');
-      addTearDown(() async {
-        await mirror.directory.delete(recursive: true);
-        await cache.delete(recursive: true);
-      });
-      final lockPath = '${cache.path}/.lock-${mirror.artifact.sha256}';
-      final lock = Directory(lockPath)..createSync();
-      File('${lock.path}/owner').writeAsStringSync('999999999 dead-token');
-      await _backdate(lock);
-      await installWorker(
+  test('breaks a dead old lock and retains a live old lock', () async {
+    final mirror = await WorkerMirror.create();
+    final cache = await Directory.systemTemp.createTemp('worker_cache_');
+    addTearDown(() async {
+      await mirror.directory.delete(recursive: true);
+      await cache.delete(recursive: true);
+    });
+    final lockPath = '${cache.path}/.lock-${mirror.artifact.sha256}';
+    final lock = Directory(lockPath)..createSync();
+    File('${lock.path}/owner').writeAsStringSync('999999999 dead-token');
+    await _backdate(lock);
+    await installWorker(
+      WorkerInstallRequest(
+        artifact: mirror.artifact,
+        cacheRoot: cache.path,
+        archiveUrl: mirror.fileUrl,
+      ),
+    );
+    await Directory(lockPath).create();
+    final live = Directory(lockPath);
+    File('${live.path}/owner').writeAsStringSync('$pid live-token');
+    await _backdate(live);
+    final different = _withDigest(mirror.artifact, 'b' * 64);
+    await expectLater(
+      installWorker(
         WorkerInstallRequest(
-          artifact: mirror.artifact,
+          artifact: different,
           cacheRoot: cache.path,
           archiveUrl: mirror.fileUrl,
+          lockWait: const Duration(milliseconds: 100),
         ),
-      );
-      await Directory(lockPath).create();
-      final live = Directory(lockPath);
-      File('${live.path}/owner').writeAsStringSync('$pid live-token');
-      await _backdate(live);
-      final different = _withDigest(mirror.artifact, 'b' * 64);
-      await expectLater(
-        installWorker(
-          WorkerInstallRequest(
-            artifact: different,
-            cacheRoot: cache.path,
-            archiveUrl: mirror.fileUrl,
-            lockWait: const Duration(milliseconds: 100),
-          ),
-        ),
-        throwsA(isA<WorkerInstallError>()),
-      );
-    },
-  );
+      ),
+      throwsA(isA<WorkerInstallError>()),
+    );
+  });
 
   test('reclaims an abandoned breaker before removing a dead lock', () async {
     final mirror = await WorkerMirror.create();
@@ -1284,9 +1386,7 @@ void _concurrentInstallTest() {
       });
       await Future.wait([
         for (var index = 0; index < 4; index++)
-          Isolate.run(
-            _isolateInstall(mirror.artifact, cache.path, server.url),
-          ),
+          Isolate.run(_isolateInstall(mirror.artifact, cache.path, server.url)),
       ]);
       expect(server.requests, 1);
       await verifyWorkerFile(
@@ -1394,9 +1494,7 @@ void _deadLockContenderTest() {
       addTearDown(server.close);
       final installed = await Future.wait([
         for (var index = 0; index < 6; index++)
-          Isolate.run(
-            _isolateInstall(mirror.artifact, cache.path, server.url),
-          ),
+          Isolate.run(_isolateInstall(mirror.artifact, cache.path, server.url)),
       ]);
 
       await verifyWorkerFile(
@@ -1426,11 +1524,7 @@ void _liveLockContenderTest() {
     final results = await Future.wait([
       for (var index = 0; index < 6; index++)
         Isolate.run(
-          _isolateInstallResult(
-            mirror.artifact,
-            cache.path,
-            mirror.fileUrl,
-          ),
+          _isolateInstallResult(mirror.artifact, cache.path, mirror.fileUrl),
         ),
     ]);
 
@@ -1755,11 +1849,7 @@ WorkerArtifact _artifact() => const WorkerArtifact(
   file: 'worker',
   bytes: 1,
   sha256: _aDigest,
-  archive: WorkerArchive(
-    name: 'worker.gz',
-    bytes: 1,
-    sha256: _bDigest,
-  ),
+  archive: WorkerArchive(name: 'worker.gz', bytes: 1, sha256: _bDigest),
 );
 
 WorkerArtifact _withArchiveDigest(WorkerArtifact artifact, String digest) =>
