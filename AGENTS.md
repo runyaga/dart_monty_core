@@ -152,11 +152,11 @@ An oracle file's cases and the Dart runner (`_*_cases.dart`) change together.
 
 ### Upstream follow job
 
-The daily `upstream-follow.yaml` job tests first-parent commits from `pydantic/monty` main one at a time and keeps `last_good.json` and `evidence.jsonl` on the `upstream-follow-state` branch without changing `tool/upstream/upstream-pin.json`.
+The daily `upstream-follow.yaml` workflow tests first-parent commits from `pydantic/monty` main one at a time and keeps `last_good.json` and `evidence.jsonl` on the state branch without changing `tool/upstream/upstream-pin.json`. Its gate runs in a disposable worktree of core and never writes core's tree. Every selected stage runs and records failure ids. Any failure line the gate cannot parse is red as `parity:unparsed` or `corpus:unparsed`.
 
-The gate blanks the embedded worker manifest so the built worker is the one tested.
+No failure enters the baseline without an explicit accept, so the first failure is red. Run `workflow_dispatch` with `accept` set to the exact pending SHA to baseline its ordinary failures and advance. The accept lists stage-level and unparsed failures as not baselined. A flagged commit changes a worker mirror file, `.proto`, protocol constant, `test_cases` tree, or workspace version. The weekly digest names flagged commits and fixes. Use `python3 -I tool/follow_upstream.py run --help` for the local command.
 
-Run it with `workflow_dispatch` to set a commit limit or accept the exact reviewed pending SHA. The gate runs every selected stage and records parity and corpus failures by identifier. A clean first commit records an empty baseline; the first ordinary failure records a baseline and advances. A red commit adds a failure beyond that baseline, stops the job, and opens or updates `Upstream follow: needs attention`. Dispatch with that pending SHA in `accept` to record its new failures and fixes, update the baseline, and advance past it; any other SHA is an error. Stage-level and incomplete gate-report failures are always red and are never baselined. A flagged commit changes a worker mirror file, `.proto`, protocol constant, `test_cases` tree, or workspace version and advances. The weekly digest names the commit that introduces each recorded failure. Use `python3 -I tool/follow_upstream.py run --help` for the local command.
+The follow job runs with a read-only token. A separate publish job holds contents and issues write permission. A dispatch on a branch other than main uses `upstream-follow-state-test` and writes digest and report bodies to the job summary without writing issues.
 
 The weekly `upstream-follow-browser.yaml` job rebuilds the wasm worker against
 `last_good` and runs the browser corpus and browser parity on the runner's own

@@ -1,7 +1,5 @@
 name: Upstream follow
 
-# Tests each monty main commit in order and reports drift. This job never
-# changes tool/upstream/upstream-pin.json.
 on:
   schedule:
     - cron: '0 6 * * *'
@@ -24,13 +22,15 @@ concurrency:
   group: upstream-follow
   cancel-in-progress: false
 
+env:
+  STATE_BRANCH: ${{ github.ref == 'refs/heads/main' && 'upstream-follow-state' || 'upstream-follow-state-test' }}
+
 jobs:
   follow:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     permissions:
-      contents: write
-      issues: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -40,17 +40,14 @@ jobs:
           parity_pin=$(grep -E '^  PARITY_PIN: [0-9a-f]{40}$' .github/workflows/ci.yaml | awk '{print $2}')
           [[ "$parity_pin" =~ ^[0-9a-f]{40}$ ]] || { echo 'PARITY_PIN must be a full commit SHA'; exit 1; }
           echo "PARITY_PIN=$parity_pin" >> "$GITHUB_ENV"
-      - name: Check out the state branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the state branch
         run: |
           state_dir="$RUNNER_TEMP/upstream-state"
           echo "STATE_DIR=$state_dir" >> "$GITHUB_ENV"
-          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
           rc=0
-          git ls-remote --exit-code --heads "$url" upstream-follow-state >/dev/null || rc=$?
+          git ls-remote --exit-code --heads "https://github.com/${GITHUB_REPOSITORY}" "$STATE_BRANCH" >/dev/null || rc=$?
           if [ "$rc" = 0 ]; then
-            git clone --branch upstream-follow-state --depth 1 "$url" "$state_dir"
+            git clone --branch "$STATE_BRANCH" --depth 1 "https://github.com/${GITHUB_REPOSITORY}" "$state_dir"
           elif [ "$rc" = 2 ]; then
             mkdir "$state_dir"
           else
@@ -81,7 +78,6 @@ jobs:
           restore-keys: upstream-follow-targets-
       - run: dart pub get
       - name: Follow monty main
-        id: follow
         env:
           ACCEPT: ${{ inputs.accept }}
           MAX_COMMITS: ${{ inputs.max_commits || '10' }}
@@ -89,90 +85,134 @@ jobs:
           args=(run --core "$GITHUB_WORKSPACE" --workdir "$RUNNER_TEMP/upstream-follow" \
             --parity "$GITHUB_WORKSPACE/.parity" --max-commits "$MAX_COMMITS" \
             --state-file "$STATE_DIR/last_good.json" --out result.json)
-          if [ -n "$ACCEPT" ]; then
-            args+=("--accept=$ACCEPT")
-          fi
+          if [ -n "$ACCEPT" ]; then args+=("--accept=$ACCEPT"); fi
           python3 -I tool/follow_upstream.py "${args[@]}"
-      - name: Weekly digest of flagged commits
-        id: digest
-        if: always() && hashFiles('result.json') != ''
+      - name: Collect follow result
+        if: always()
+        run: |
+          artifact_dir="$RUNNER_TEMP/follow-result"
+          mkdir "$artifact_dir"
+          [ ! -f result.json ] || cp result.json "$artifact_dir/result.json"
+          [ ! -f "$STATE_DIR/last_good.json" ] || cp "$STATE_DIR/last_good.json" "$artifact_dir/last_good.json"
+          [ ! -f "$STATE_DIR/evidence.jsonl" ] || cp "$STATE_DIR/evidence.jsonl" "$artifact_dir/evidence.jsonl"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: follow-result
+          path: ${{ runner.temp }}/follow-result
+
+  publish:
+    needs: follow
+    if: always() && needs.follow.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        id: download
+        continue-on-error: true
+        with:
+          name: follow-result
+          path: follow-result
+      - name: Advance the state branch
+        if: steps.download.outcome == 'success' && hashFiles('follow-result/result.json') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          count=$(python3 -I -c 'import json; print(len(json.load(open("result.json")).get("flagged", [])))')
-          if [ "$count" = 0 ]; then
-            exit 0
+          state_dir="$RUNNER_TEMP/upstream-state"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          rc=0
+          git ls-remote --exit-code --heads "$url" "$STATE_BRANCH" >/dev/null || rc=$?
+          if [ "$rc" = 0 ]; then
+            git clone --branch "$STATE_BRANCH" --depth 1 "$url" "$state_dir"
+          elif [ "$rc" = 2 ]; then
+            mkdir "$state_dir"
+            git -C "$state_dir" init -q
+            git -C "$state_dir" checkout -q --orphan "$STATE_BRANCH"
+            git -C "$state_dir" remote add origin "$url"
+          else
+            echo "::error::cannot list the remote branches"
+            exit 1
           fi
+          for file in last_good.json evidence.jsonl; do
+            [ ! -f "follow-result/$file" ] || cp "follow-result/$file" "$state_dir/$file"
+          done
+          git -C "$state_dir" config user.name "$GITHUB_ACTOR"
+          git -C "$state_dir" config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git -C "$state_dir" add -A
+          if ! git -C "$state_dir" diff --cached --quiet; then
+            git -C "$state_dir" commit -m 'chore: advance upstream follow state'
+            git -C "$state_dir" push origin "HEAD:$STATE_BRANCH"
+          fi
+      - name: Weekly digest of flagged commits
+        if: steps.download.outcome == 'success' && hashFiles('follow-result/result.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          result=follow-result/result.json
+          count=$(python3 -I -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("flagged", [])))' "$result")
+          if [ "$count" = 0 ]; then exit 0; fi
           digest="$RUNNER_TEMP/digest.md"
           existing="$RUNNER_TEMP/digest-existing.md"
-          python3 -I tool/follow_upstream.py digest --result result.json --out "$digest" >/dev/null
-          marker=$(head -1 "$digest")
-          issue=$(gh issue list --search 'Upstream follow: weekly digest in:title' --state open \
-            --json number --jq '.[0].number')
-          if [ -z "$issue" ]; then
-            issue=$(gh issue create --title 'Upstream follow: weekly digest' \
-              --body 'One comment per week lists the upstream commits the follow job advanced past with a flag.' \
-              | grep -oE '[0-9]+$')
+          python3 -I tool/follow_upstream.py digest --result "$result" --out "$digest" >/dev/null
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            cat "$digest" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          comment=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue}/comments" --paginate \
-            --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -1)
+          marker=$(head -1 "$digest")
+          issue=$(gh issue list --search 'Upstream follow: weekly digest in:title' --state open --json number --jq '.[0].number')
+          if [ -z "$issue" ]; then
+            issue=$(gh issue create --title 'Upstream follow: weekly digest' --body 'One comment per week lists the upstream commits the follow job advanced past with a flag.' | grep -oE '[0-9]+$')
+          fi
+          comment=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue}/comments" --paginate --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | head -1)
           if [ -n "$comment" ]; then
             gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${comment}" --jq .body > "$existing"
-            python3 -I tool/follow_upstream.py digest --result result.json --existing "$existing" --out "$digest" >/dev/null
+            python3 -I tool/follow_upstream.py digest --result "$result" --existing "$existing" --out "$digest" >/dev/null
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment}" -F "body=@${digest}"
           else
             gh issue comment "$issue" --body-file "$digest"
           fi
-      - name: Advance the state branch
-        # A successful digest pushes every changed state branch file.
-        if: always() && hashFiles('result.json') != '' && steps.digest.outcome != 'failure'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if ! git -C "$STATE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-            git -C "$STATE_DIR" init -q
-            git -C "$STATE_DIR" checkout -q --orphan upstream-follow-state
-            git -C "$STATE_DIR" remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-          else
-            git -C "$STATE_DIR" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
-          fi
-          git -C "$STATE_DIR" config user.name "$GITHUB_ACTOR"
-          git -C "$STATE_DIR" config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          git -C "$STATE_DIR" add -A
-          if ! git -C "$STATE_DIR" diff --cached --quiet; then
-            git -C "$STATE_DIR" commit -m 'chore: advance upstream follow state'
-            git -C "$STATE_DIR" push origin HEAD:upstream-follow-state
-          fi
       - name: Report upstream drift
-        if: always() && hashFiles('result.json') != ''
+        if: steps.download.outcome == 'success' && hashFiles('follow-result/result.json') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RESULT_FILE: result.json
+          RESULT_FILE: follow-result/result.json
           ISSUE_BODY: ${{ runner.temp }}/upstream-follow-issue.md
         run: |
-          status=$(python3 -I -c 'import json, os; print(json.load(open(os.environ["RESULT_FILE"]))["status"])')
+          status=$(python3 -I -c 'import json,os; print(json.load(open(os.environ["RESULT_FILE"]))["status"])')
           case "$status" in red|error) ;; *) exit 0 ;; esac
           python3 -I - <<'PY' > "$ISSUE_BODY"
           import json
           import os
 
           result = json.load(open(os.environ['RESULT_FILE']))
-          entry = result.get('commits', [])[-1] if result.get('commits') else {}
-          pending = result.get('pending') or {}
-          sha = entry.get('sha', pending.get('sha', result.get('last_good', 'unknown')))
-          new = result.get('new', [])
           print('Upstream follow needs review.')
           print()
           print(f"Status: `{result['status']}`")
-          print(f"Commit: `{sha}`")
-          print(f"Subject: {entry.get('subject', result.get('error', 'unknown'))}")
-          print(f"Stage: `{entry.get('stage', 'unknown')}`")
-          print(f"Flags: {', '.join(entry.get('flags', [])) or 'none'}")
-          print(f"New failures: {', '.join(new) or 'none'}")
-          print(f"Introduced by: `{sha}`")
+          if result['status'] == 'error':
+              print(f"Error: {result['error']}")
+          else:
+              entry = result.get('commits', [])[-1] if result.get('commits') else {}
+              pending = result.get('pending') or {}
+              sha = entry.get('sha', pending.get('sha', 'unknown'))
+              print(f"Commit: `{sha}`")
+              print(f"Subject: {entry.get('subject', 'unknown')}")
+              print(f"Stage: `{entry.get('stage', 'unknown')}`")
+              print(f"Flags: {', '.join(entry.get('flags', [])) or 'none'}")
+              print(f"New failures: {', '.join(result.get('new', [])) or 'none'}")
+              print(f"Introduced by: `{sha}`")
+          if result.get('not_baselined'):
+              print(f"Not baselined: {', '.join(result['not_baselined'])}")
           PY
-          existing=$(gh issue list --search 'Upstream follow: needs attention in:title' --state open \
-            --json number --jq '.[0].number')
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            cat "$ISSUE_BODY" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          existing=$(gh issue list --search 'Upstream follow: needs attention in:title' --state open --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body-file "$ISSUE_BODY"
           else
