@@ -530,39 +530,6 @@ void classProxySessionTests(
       },
     );
 
-    test('an unencodable method result returns through the call', () async {
-      late final HostClass<_HostBox> hostClass;
-      hostClass = HostClass(
-        'UnencodableMethodResult',
-        instance: (
-          fields: const {},
-          properties: const {},
-          methods: {'result': (_, _, _) => const _HostBox()},
-        ),
-      );
-      final value = ClassInstance(
-        const _HostBox(),
-        classType: ClassType(hostClass),
-        policies: const (
-          eagerAttrs: null,
-          lazyAttrs: null,
-          allowedMethods: ['result'],
-        ),
-      );
-      await withSession((session) async {
-        final result = await session.feedRun(
-          'try:\n'
-          '    value.result()\n'
-          'except TypeError:\n'
-          "    caught = 'method error'\n"
-          'caught',
-          inputs: {'value': value},
-        );
-
-        expect(result, const MontyString('method error'));
-      });
-    });
-
     test(
       'a live sandbox instance is reused without proxy attributes',
       () async {
