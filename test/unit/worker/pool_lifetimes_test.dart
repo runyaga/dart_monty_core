@@ -103,7 +103,7 @@ Future<void> _callbackDump(bool os) async {
   final entered = Completer<void>();
   final release = Completer<MontyValue>();
   final run = session.feedRun(
-    os ? 'read' : 'f()',
+    os ? "from pathlib import Path\nPath('/f').read_text()\nNone" : 'f()\nNone',
     externalLookup: os
         ? null
         : {
