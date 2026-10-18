@@ -5,3 +5,4 @@
 {"sha":"c83caf523c21d71c0eb33f94b7eac7c9595c713d","subject":"Implement `os.path` (#1000)","flags":["TESTCASES"],"verdict":"green","new":[],"fixed":[],"date":"2026-10-17"}
 {"sha":"e74249051f6bb3df88fe8a0178e022272e14c1c6","subject":"Add a docs column to the branch diff and fix misclassified files (#1017)","flags":[],"verdict":"green","new":[],"fixed":[],"date":"2026-10-17"}
 {"sha":"ae5d3f03ae20b80677b1d9a8808653358fc21785","subject":"Support dataclasses `field()`, `default_factory` and `__post_init__` (#835)","flags":["TESTCASES"],"verdict":"red","new":["corpus:dataclass__options.py"],"fixed":[],"date":"2026-10-17"}
+{"sha":"72df3e57defe4982184f792bb60b7c7de97ff8b7","subject":"Cap float format precision at `INT_MAX - 1024` like CPython 3.14.8 (#1002)","flags":["TESTCASES"],"verdict":"red","new":["corpus:fstring__all.py","corpus:str__format.py"],"fixed":[],"date":"2026-10-18"}
