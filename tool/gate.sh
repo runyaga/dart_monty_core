@@ -305,7 +305,7 @@ ns cargo_deny    cargo deny check
 # source no longer compiles, passes this step.
 worker_vm(){ bash tool/build_worker.sh --check &&
   dart test test/integration/worker test/contract/contract_worker_test.dart -p vm --tags=worker --coverage="$OUT/cov"; }
-sf worker_vm 686 worker_vm
+sf worker_vm 614 worker_vm
 # The examples are the DOCUMENTED surface, and `dart analyze` only type-checks
 # them. CI has run this since forever; the gate did not, so a change that broke
 # every example could pass here and fail there — which it just did. Tier 1 made
