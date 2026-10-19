@@ -95,7 +95,22 @@ final class HostClass<T extends Object> {
 /// `==` and `hashCode` are identity, as a Python function's.
 final class MontyHostFunction extends MontyValue {
   /// The function [fn], called [name] in the sandbox, with [docstring].
-  const MontyHostFunction(this.name, this.fn, {this.docstring});
+  const MontyHostFunction(this.name, this.fn, {this.docstring})
+    : _parityFn = null;
+
+  /// The function [fn], called [name] in the sandbox, with [docstring],
+  /// whose returned value is converted by the session under Monty 1.1.0
+  /// parity rules.
+  MontyHostFunction.parity(
+    this.name,
+    FutureOr<Object?> Function(
+      List<MontyValue> args,
+      Map<String, MontyValue> kwargs,
+    )
+    fn, {
+    this.docstring,
+  }) : _parityFn = fn,
+       fn = _parityAdapter(fn);
 
   /// The name the sandbox calls it by.
   final String name;
@@ -109,6 +124,12 @@ final class MontyHostFunction extends MontyValue {
 
   /// Its `__doc__`, if any.
   final String? docstring;
+
+  final FutureOr<Object?> Function(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  )?
+  _parityFn;
 
   /// The function itself.
   @override
@@ -127,6 +148,27 @@ final class MontyHostFunction extends MontyValue {
     'docstring': docstring,
   };
 }
+
+FutureOr<MontyValue> Function(
+  List<MontyValue> args,
+  Map<String, MontyValue> kwargs,
+)
+_parityAdapter(
+  FutureOr<Object?> Function(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  )
+  fn,
+) => (args, kwargs) {
+  final result = fn(args, kwargs);
+
+  return result is Future<Object?>
+      ? _laterFromDart(result)
+      : MontyValue.fromDart(result);
+};
+
+Future<MontyValue> _laterFromDart(Future<Object?> result) async =>
+    MontyValue.fromDart(await result);
 
 /// A method read as an attribute, as `getattr` returns a bound method or a
 /// classmethod: callable from Dart, and sent into the sandbox as a function
@@ -693,4 +735,18 @@ extension ClassInstanceInternal<T extends Object> on ClassInstance<T> {
 
   /// [item] as it crosses for member [name].
   Object convertValue(String name, Object item) => _convertValue(name, item);
+}
+
+/// [MontyHostFunction]'s dispatch members, which the session calls. The
+/// public show list leaves this extension out.
+extension MontyHostFunctionInternal on MontyHostFunction {
+  /// Whether this host function uses Monty 1.1.0 parity return conversion.
+  bool get isParity => _parityFn != null;
+
+  /// The raw parity callback, or null for a legacy [MontyHostFunction].
+  FutureOr<Object?> Function(
+    List<MontyValue> args,
+    Map<String, MontyValue> kwargs,
+  )?
+  get parityFn => _parityFn;
 }
