@@ -1,7 +1,9 @@
 # Upstream Python API names.
 AsyncMonty
 Exception
+False
 MemoryError
+MontyError.display
 NameError
 OSError
 Opaque
@@ -10,6 +12,7 @@ RecursionError
 RuntimeError
 TimeoutError
 TypeError
+ValueError
 
 # Dart SDK names.
 ArgumentError

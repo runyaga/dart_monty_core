@@ -146,7 +146,7 @@ void main() {
       final python = relation.startsWith('eq');
       final dart = python || nanDivergence.contains((a, b));
       test('$a vs $b: ${dart ? 'equal' : 'unequal'}'
-          '${dart != python ? ' (NaN divergence)' : ''}', () {
+          '${dart != python ? ' (NaN divergence C-10)' : ''}', () {
         final x = build(valueSpecs[a]);
         final y = build(valueSpecs[b]);
         expect(eqBothPaths(x, y), dart, reason: '$a == $b');

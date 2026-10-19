@@ -161,7 +161,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'a call to a name missing from the external lookup',
+    'a call to a name missing from the external lookup (C-6)',
     feeds: ['f()'],
     script: (f) => f
       ..willCall('f')
@@ -1628,7 +1628,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'parity_opaque_return: parity opaque return uncaught',
+    'parity_opaque_return: parity opaque return uncaught (C-3)',
     feeds: ['f()'],
     script: (f) => f
       ..willCall('f')
@@ -1652,7 +1652,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'parity_opaque_return_caught: parity opaque return caught by except TypeError',
+    'parity_opaque_return_caught: parity opaque return caught by except TypeError (C-3)',
     feeds: [_caughtParityCode],
     script: (f) => f
       ..willCall('f')
@@ -1677,7 +1677,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'parity_null_return: parity returning null gives None',
+    'parity_null_return: parity returning null gives None (C-3)',
     feeds: ['f()'],
     script: (f) => f
       ..willCall('f')
@@ -1701,7 +1701,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'parity_coroutine_opaque_return: a parity coroutine returning an opaque value',
+    'parity_coroutine_opaque_return: a parity coroutine returning an opaque value (C-3)',
     feeds: ['await f()'],
     script: (f) => f
       ..willCall('f', eager: true)

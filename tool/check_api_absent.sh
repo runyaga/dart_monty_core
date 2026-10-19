@@ -40,6 +40,8 @@ PROBE="$PROBE_DIR/probe.dart"
 # Public names the cutover removed or renamed away, one per line.
 NAMES='assignmentPattern
 captureLastExpression
+ChainWireStatus
+CrashCause
 createPlatformMonty
 defaultMemoryUsageLimit
 entryMemoryUsage
@@ -97,6 +99,7 @@ Monty.exec
 Monty.typeCheck
 Monty.scriptName
 Monty.dispose
+MontyError.chainWireStatus
 MontyError.message
 MontyCrashedError.cause
 MontyCrashedError.detail

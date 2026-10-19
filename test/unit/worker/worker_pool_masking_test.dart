@@ -58,6 +58,22 @@ final class _FakeHandle implements SpawnHandle {
 Matcher _isStateError(String message) =>
     isA<StateError>().having((err) => err.message, 'message', message);
 
+/// A suppressed-failure entry at [stage] holding a StateError with [message],
+/// and, when [withStack], a non-empty stack.
+Matcher _suppressed(String stage, String message, {bool withStack = false}) {
+  final entry = isA<SuppressedFailure>()
+      .having((failure) => failure.stage, 'stage', stage)
+      .having((failure) => failure.error, 'error', _isStateError(message));
+
+  return withStack
+      ? entry.having(
+          (failure) => failure.stack.toString(),
+          'stack',
+          isNotEmpty,
+        )
+      : entry;
+}
+
 Matcher _isKilledCrash() => isA<MontyCrashedError>().having(
   (err) => err.cause,
   'cause',
@@ -139,8 +155,10 @@ void main() {
             () async {
               try {
                 channel0 = _FakeChannel(
-                  onClose: () =>
-                      Future<void>.error(StateError('close channel0 boom')),
+                  onClose: () => Future<void>.error(
+                    StateError('close channel0 boom'),
+                    StackTrace.current,
+                  ),
                 );
                 channel1 = _FakeChannel();
                 final primaryFailure = Completer<MontyChannel>();
@@ -212,24 +230,26 @@ void main() {
         final entries = SuppressedFailures.entries;
         expect(entries, hasLength(4));
         expect(
-          entries.map((entry) => entry.stack.toString()),
-          contains(isNotEmpty),
-        );
-        expect(
-          entries.map((entry) => entry.stage),
-          containsAll(<String>[
-            'worker_pool.start_cleanup.cancel',
-            'worker_pool.start_cleanup.sibling_start',
-            'worker_pool.start_cleanup.close',
-          ]),
-        );
-        expect(
-          entries.map((entry) => entry.error),
-          containsAll(<Matcher>[
-            _isStateError('cancel handle3 boom'),
-            _isStateError('losing sibling 3'),
-            _isStateError('losing sibling 4'),
-            _isStateError('close channel0 boom'),
+          entries,
+          unorderedMatches(<Matcher>[
+            _suppressed(
+              'worker_pool.start_cleanup.cancel',
+              'cancel handle3 boom',
+              withStack: true,
+            ),
+            _suppressed(
+              'worker_pool.start_cleanup.close',
+              'close channel0 boom',
+              withStack: true,
+            ),
+            _suppressed(
+              'worker_pool.start_cleanup.sibling_start',
+              'losing sibling 3',
+            ),
+            _suppressed(
+              'worker_pool.start_cleanup.sibling_start',
+              'losing sibling 4',
+            ),
           ]),
         );
       },

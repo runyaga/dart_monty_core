@@ -34,7 +34,7 @@ external JSObject get _console;
 
 void main() {
   test(
-    'stdout and stderr fragments remain separate console entries',
+    'stdout and stderr fragments remain separate console entries (C-8)',
     () async {
       final pool = await Monty.start(maxProcesses: 1);
       addTearDown(pool.close);
