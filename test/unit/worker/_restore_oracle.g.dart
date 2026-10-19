@@ -747,7 +747,8 @@ restoreOracle = {
           'b',
           'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)',
         ],
-        outcome: 'value: True',
+        outcome:
+            'MontyRuntimeError: TimeoutError: feed time limit exceeded: \u{2026} > 10ms',
       ),
     ],
   ),
@@ -774,7 +775,8 @@ restoreOracle = {
           'b',
           'n = 0\nfor i in range(30000000):\n    n += i\nrepr(n > 0)',
         ],
-        outcome: 'value: True',
+        outcome:
+            'MontyRuntimeError: TimeoutError: turn time limit exceeded: \u{2026} > 10ms',
       ),
     ],
   ),
