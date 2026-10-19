@@ -532,7 +532,7 @@ void main() {
 
     test(
       'a throwing parity callback keeps Python Exception, while an opaque '
-      'parity return gives TypeError',
+      'parity return gives TypeError (C-4)',
       () async {
         final host = HostAnswers(
           externalLookup: {
@@ -648,6 +648,36 @@ void main() {
             nullCoro.values.nodes,
             nullCoroResult.returnValue,
           ).hasNone(),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'isCoroutine reports coroutine marking and a legacy null ExternalAnswer '
+      'gives RuntimeError',
+      () {
+        MontyValue plain(List<MontyValue> args, Map<String, MontyValue> kw) =>
+            args.firstOrNull ?? kw['x'] ?? const MontyNone();
+        final marked = coroutine(plain);
+        expect(isCoroutine(plain), isFalse);
+        expect(isCoroutine(marked), isTrue);
+
+        final legacyNull = futuresRequest(const [
+          (1, ExternalAnswer.value(null)),
+        ]).resumeFutures;
+        expect(
+          onlyItem(legacyNull.results).result.error.excType,
+          'RuntimeError',
+        );
+
+        final parityNull = futuresRequest(const [
+          (1, ExternalAnswer.value(null, parity: true)),
+        ]).resumeFutures;
+        final parityResult = onlyItem(parityNull.results).result;
+        expect(parityResult.hasReturnValue(), isTrue);
+        expect(
+          itemAt(parityNull.values.nodes, parityResult.returnValue).hasNone(),
           isTrue,
         );
       },

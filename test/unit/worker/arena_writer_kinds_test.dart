@@ -843,5 +843,19 @@ void main() {
         _refused('is not a uuid'),
       );
     });
+
+    test('legacy add and tryAdd refuse null; parity writes None', () {
+      expect(() => ArenaWriter().add(null), throwsArgumentError);
+      final writer = ArenaWriter();
+      expect(() => writer.tryAdd(null), throwsArgumentError);
+      expect(writer.arena.nodes, isEmpty);
+
+      final parityWriter = ArenaWriter();
+      final parityNodes = parityWriter.arena.nodes;
+      final added = parityWriter.add(null, parity: true);
+      expect(itemAt(parityNodes, added).hasNone(), isTrue);
+      final tried = parityWriter.tryAdd(null, parity: true);
+      expect(itemAt(parityNodes, tried).hasNone(), isTrue);
+    });
   });
 }

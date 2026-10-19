@@ -1728,7 +1728,7 @@ final List<Scenario> scenarios = [
     ],
   ),
   Scenario(
-    'parity_mixed_coroutine_batch: legacy and parity coroutines settle together',
+    'parity_mixed_coroutine_batch: legacy and parity coroutines settle together (C-5)',
     feeds: [_mixedCoroutineBatchCode],
     script: (f) => f
       ..willCall('fa')

@@ -2,7 +2,9 @@
 AsyncMonty
 Exception
 MemoryError
+NameError
 OSError
+Opaque
 PermissionError
 RecursionError
 RuntimeError
@@ -13,9 +15,11 @@ TypeError
 ArgumentError
 FileStat.changed
 Future
+FutureOr
 HttpClient
 Isolate.resolvePackageUri
 List
+Object
 Process.run
 Process.start
 RangeError

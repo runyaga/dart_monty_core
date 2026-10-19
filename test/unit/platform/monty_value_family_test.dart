@@ -5,7 +5,11 @@
 // MontyTimeDelta.dartValue's refusal).
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/platform/monty_value.dart'
-    show HostClass, MontyValueInternal, montyClassTypeProxy;
+    show
+        ClassInstanceInternal,
+        HostClass,
+        MontyValueInternal,
+        montyClassTypeProxy;
 import 'package:test/test.dart';
 
 /// An exhaustive switch over the family: it compiles only while every
@@ -112,6 +116,59 @@ void main() {
         'docstring': 'Doubles.',
       });
     });
+
+    test(
+      'MontyHostFunction.parity adapts sync and Future results through fn',
+      () async {
+        final syncFn = MontyHostFunction.parity(
+          'sync_fn',
+          (args, kwargs) => 7,
+          docstring: 'Sync.',
+        );
+        expect(syncFn.name, 'sync_fn');
+        expect(syncFn.docstring, 'Sync.');
+        expect(syncFn.fn(const [], const {}), const MontyInt(7));
+
+        final asyncFn = MontyHostFunction.parity(
+          'async_fn',
+          (args, kwargs) => Future<Object?>.value('ok'),
+        );
+        expect(await asyncFn.fn(const [], const {}), const MontyString('ok'));
+      },
+    );
+
+    test(
+      'calling a non-callable host attribute outside the named types reports '
+      'its runtimeType',
+      () {
+        final holder = ClassInstance(
+          const _Point(1),
+          classType: ClassType(
+            HostClass(
+              'Holder',
+              attributes: {'item': () => const MontySet([])},
+            ),
+          ),
+          policies: const (
+            eagerAttrs: null,
+            lazyAttrs: null,
+            allowedMethods: ['item'],
+          ),
+        );
+        expect(
+          () => holder.callMethod('item', const [], const {}),
+          throwsA(
+            isA<ExternalException>()
+                .having((e) => e.excType, 'excType', 'TypeError')
+                .having(
+                  (e) => e.message,
+                  'message',
+                  "'${const MontySet([]).runtimeType}' object is not callable",
+                ),
+          ),
+        );
+      },
+    );
   });
 
   group('MontyDateTime.dartValue (SPEC2 Q48)', () {
