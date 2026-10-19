@@ -15,6 +15,7 @@ import 'package:dart_monty_core/src/worker/monty_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/resource_limits.dart';
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
+import 'package:dart_monty_core/src/worker/suppressed_failures.dart';
 import 'package:dart_monty_core/src/worker/telemetry.dart';
 import 'package:dart_monty_core/src/worker/telemetry_metrics.dart';
 import 'package:meta/meta.dart';
@@ -179,17 +180,21 @@ final class WorkerPool {
         if (failure == null) {
           ready.add(channel);
         } else {
-          closing.add(channel.close());
+          closing.add(_closeSafely(channel, 'worker_pool.start_cleanup.close'));
         }
       } on Object catch (error, stack) {
         waiting.remove(handle);
-        if (failure != null) return;
-        failure = (error, stack);
-        for (final other in [...waiting]) {
-          other.cancel();
+        if (failure != null) {
+          SuppressedFailures.record(
+            error,
+            stack,
+            'worker_pool.start_cleanup.sibling_start',
+          );
+
+          return;
         }
-        closing.addAll([for (final channel in ready) channel.close()]);
-        ready.clear();
+        failure = (error, stack);
+        _abortStartup(waiting, ready, closing);
       }
     }
 
@@ -218,7 +223,7 @@ final class WorkerPool {
   Future<MontyChannel> _ready(SpawnHandle handle) => handle.ready.timeout(
     startupTimeout,
     onTimeout: () {
-      handle.cancel();
+      _cancelSafely(handle, 'worker_pool.startup_timeout.cancel');
       throw crashedError(
         CrashCause.killed,
         detail: 'the worker was not ready within $startupTimeout',
@@ -394,12 +399,42 @@ List<SpawnHandle> _openEach(OpenChannel open, int count) {
     }
   } on Object {
     for (final handle in handles) {
-      handle.cancel();
+      _cancelSafely(handle, 'worker_pool.open_rollback.cancel');
     }
     rethrow;
   }
 
   return handles;
+}
+
+void _abortStartup(
+  Set<SpawnHandle> waiting,
+  List<MontyChannel> ready,
+  List<Future<void>> closing,
+) {
+  for (final other in [...waiting]) {
+    _cancelSafely(other, 'worker_pool.start_cleanup.cancel');
+  }
+  for (final channel in ready) {
+    closing.add(_closeSafely(channel, 'worker_pool.start_cleanup.close'));
+  }
+  ready.clear();
+}
+
+void _cancelSafely(SpawnHandle handle, String stage) {
+  try {
+    handle.cancel();
+  } on Object catch (error, stack) {
+    SuppressedFailures.record(error, stack, stage);
+  }
+}
+
+Future<void> _closeSafely(MontyChannel channel, String stage) async {
+  try {
+    await channel.close();
+  } on Object catch (error, stack) {
+    SuppressedFailures.record(error, stack, stage);
+  }
 }
 
 final class _Worker {
