@@ -107,7 +107,8 @@ const _forbidden = ['${_package}src/worker/', 'package:protobuf/'];
 
 /// Under --post-cutover, the URI prefixes that stay internal for good: the
 /// generated protobuf, the arena, the channels, the frame scanner and the
-/// wire helpers.
+/// wire helpers (`lib/src/worker/frame_errors.dart` is permitted as a public
+/// export source).
 const _neverPublic = [
   'package:protobuf/',
   '${_package}src/worker/proto/',

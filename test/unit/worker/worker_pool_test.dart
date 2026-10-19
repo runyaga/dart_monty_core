@@ -5,8 +5,6 @@ import 'dart:async';
 import 'package:dart_monty_core/src/worker/asset_base.dart';
 import 'package:dart_monty_core/src/worker/channel_factory.dart';
 import 'package:dart_monty_core/src/worker/monty_channel.dart';
-import 'package:dart_monty_core/src/worker/monty_error.dart'
-    show MontyCrashedError, MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
 import 'package:dart_monty_core/src/worker/worker_pool.dart';

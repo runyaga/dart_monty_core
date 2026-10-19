@@ -5,8 +5,6 @@
 // protocol on the VM, dart2js and dart2wasm without a worker.
 import 'package:dart_monty_core/dart_monty_core.dart'
     hide MontyError, MontySyntaxError, MontyTypingError;
-import 'package:dart_monty_core/src/worker/frame.dart'
-    show FrameTooLargeException;
 import 'package:dart_monty_core/src/worker/monty_error.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';

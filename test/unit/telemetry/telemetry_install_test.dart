@@ -2,9 +2,6 @@ import 'dart:async';
 
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/dart_monty_core_testing.dart';
-import 'package:dart_monty_core/src/worker/frame.dart'
-    show FrameTooLargeException;
-import 'package:dart_monty_core/src/worker/monty_error.dart' show CrashCause;
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/proto_session.dart';
 import 'package:dart_monty_core/src/worker/telemetry.dart' show telemetryBridge;

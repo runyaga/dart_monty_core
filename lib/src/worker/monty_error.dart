@@ -31,6 +31,10 @@ sealed class MontyError implements Exception {
   /// `''` when the worker sent none.
   final MontyExceptionValue exception;
 
+  /// Whether structured Python exception-chain records are carried on the wire.
+  ChainWireStatus get chainWireStatus =>
+      ChainWireStatus.unavailableOnPinnedWire;
+
   /// Upstream's `str()` of the error, which [toString] returns; see each
   /// subclass.
   final String _message;
@@ -115,6 +119,9 @@ final class MontyCrashedError extends MontyError {
   /// duration backstop.
   final bool timedOut;
 
+  /// Why the worker stopped answering.
+  CrashCause get cause => _cause;
+
   /// The worker's exit code, when the OS reported one; null for a signal
   /// death, on the web, and for a worker killed at a deadline.
   int? get exitStatus {
@@ -176,6 +183,12 @@ enum CrashCause {
   /// No worker could be started: none was found, or its process could not
   /// be launched (upstream's `PoolError::Spawn`).
   spawn,
+}
+
+/// Availability of structured Python exception-chain records on the wire.
+enum ChainWireStatus {
+  /// The pinned wire carries a single exception record without chain fields.
+  unavailableOnPinnedWire,
 }
 
 /// One traceback frame, read-only, as upstream's `Frame`.
