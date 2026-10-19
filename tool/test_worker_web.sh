@@ -41,7 +41,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FLOOR=566
+FLOOR=638
 COV=()
 COMPILERS=(dart2js dart2wasm)
 while [ $# -gt 0 ]; do
@@ -65,7 +65,7 @@ for compiler in "${COMPILERS[@]}"; do
   extra=()
   [ "$compiler" = dart2js ] && [ "${#COV[@]}" -gt 0 ] && extra=(-j 1 "${COV[@]}")
   echo "=== worker (web, $compiler) ==="
-  dart test test/unit/worker -p chrome -c "$compiler" \
+  dart test test/unit/worker test/contract -p chrome -c "$compiler" \
     --tags=worker --exclude-tags=vm-only \
     ${extra[@]+"${extra[@]}"} 2>&1 | tee "$LOG_DIR/$compiler.log"
   status=${PIPESTATUS[0]}
