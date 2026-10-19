@@ -10,12 +10,10 @@
 
 [dart_monty_core.dart]
 AbstractFile
-ChainWireStatus
 ClassInstance
 ClassType
 CollectStreams
 CollectString
-CrashCause
 ExternalException
 ExternalFuture
 ExternalResult
@@ -513,17 +511,6 @@ final class Monty
   Monty.withSession: method<T>(Future<T> Function(MontySession) body, {String scriptName = 'main.py', ResourceLimits? limits, bool typeCheck = false, String? typeCheckStubs, String? typeCheckFormat, bool typeCheckColor = false, int? assertMessageAnnotations, Duration? printFlushInterval, OsPolicy? osPolicy}) -> Future<T>
 
 [members: src/worker/monty_error.dart]
-enum ChainWireStatus
-  ChainWireStatus.unavailableOnPinnedWire: static const enum value #0 ChainWireStatus
-  ChainWireStatus.values: static const field List<ChainWireStatus>
-enum CrashCause
-  CrashCause.fatal: static const enum value #1 CrashCause
-  CrashCause.killed: static const enum value #3 CrashCause
-  CrashCause.outOfMemory: static const enum value #0 CrashCause
-  CrashCause.protocol: static const enum value #4 CrashCause
-  CrashCause.spawn: static const enum value #5 CrashCause
-  CrashCause.values: static const field List<CrashCause>
-  CrashCause.vanished: static const enum value #2 CrashCause
 final class Frame
   Frame.column: final field int
   Frame.endColumn: final field int
@@ -534,11 +521,9 @@ final class Frame
   Frame.sourceLine: final field String?
   Frame.toString: method() -> String
 final class MontyCrashedError extends MontyError
-  MontyCrashedError.cause: getter -> CrashCause
   MontyCrashedError.exitStatus: getter -> int?
   MontyCrashedError.timedOut: final field bool
 sealed class MontyError implements Exception
-  MontyError.chainWireStatus: getter -> ChainWireStatus
   MontyError.exception: final field MontyExceptionValue
   MontyError.toString: method() -> String
   MontyError: permits final class MontyCrashedError extends MontyError

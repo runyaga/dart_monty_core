@@ -64,8 +64,6 @@ export 'src/worker/host_objects.dart' show ClassInstance, ClassType, HostClass;
 export 'src/worker/monty.dart' show Monty;
 export 'src/worker/monty_error.dart'
     show
-        ChainWireStatus,
-        CrashCause,
         Frame,
         MontyCrashedError,
         MontyError,

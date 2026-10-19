@@ -5,13 +5,13 @@ String _classifyError(MontyError error) => switch (error) {
   MontyRuntimeError(:final traceback) => 'runtime:${traceback.length}',
   MontySyntaxError(:final traceback) => 'syntax:${traceback.length}',
   MontyTypingError() => 'typing:${error.display()}',
-  MontyCrashedError(:final cause) => 'crashed:${cause.name}',
+  MontyCrashedError(:final timedOut) => 'crashed:timedOut=$timedOut',
 };
 
 void main() {
   group('public errors surface', () {
-    test('names FrameTooLargeException, CrashCause, ChainWireStatus, Frame, '
-        'MontyExceptionValue and each MontyError subtype', () {
+    test('names FrameTooLargeException, Frame, MontyExceptionValue and each '
+        'MontyError subtype through the root import', () {
       const frameError = FrameTooLargeException(300, 256);
       expect(frameError.length, 300);
       expect(frameError.max, 256);
@@ -19,23 +19,6 @@ void main() {
         frameError.toString(),
         'FrameTooLargeException: frame of 300 bytes exceeds maximum of '
         '256 bytes',
-      );
-
-      expect(
-        CrashCause.values,
-        containsAll([
-          CrashCause.outOfMemory,
-          CrashCause.fatal,
-          CrashCause.vanished,
-          CrashCause.killed,
-          CrashCause.protocol,
-          CrashCause.spawn,
-        ]),
-      );
-
-      expect(
-        ChainWireStatus.values,
-        [ChainWireStatus.unavailableOnPinnedWire],
       );
 
       final excValue = MontyExceptionValue(
@@ -50,31 +33,22 @@ void main() {
       const emptyFrames = <Frame>[];
       expect(emptyFrames, isA<List<Frame>>());
       expect(_classifyError, isA<String Function(MontyError)>());
-      expect(MontyRuntimeError, isNotNull);
-      expect(MontySyntaxError, isNotNull);
-      expect(MontyTypingError, isNotNull);
-      expect(MontyCrashedError, isNotNull);
     });
 
-    test('spawn failure yields MontyCrashedError with CrashCause.spawn and '
-        'ChainWireStatus.unavailableOnPinnedWire', () async {
-      await expectLater(
-        Monty.start(workerLocation: '/nonexistent/dart_monty_worker_missing'),
-        throwsA(
-          isA<MontyCrashedError>()
-              .having((e) => e.cause, 'cause', CrashCause.spawn)
-              .having(
-                (e) => e.chainWireStatus,
-                'chainWireStatus',
-                ChainWireStatus.unavailableOnPinnedWire,
-              )
-              .having(
-                _classifyError,
-                'classified',
-                'crashed:spawn',
-              ),
-        ),
-      );
-    });
+    test(
+      'a spawn failure is a MontyCrashedError that did not time out',
+      () async {
+        await expectLater(
+          Monty.start(workerLocation: '/nonexistent/dart_monty_worker_missing'),
+          throwsA(
+            isA<MontyCrashedError>().having(
+              _classifyError,
+              'classified',
+              'crashed:timedOut=false',
+            ),
+          ),
+        );
+      },
+    );
   });
 }

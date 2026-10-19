@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:dart_monty_core/dart_monty_core.dart';
 import 'package:dart_monty_core/src/worker/frame.dart' as wire;
 import 'package:dart_monty_core/src/worker/monty.dart';
+import 'package:dart_monty_core/src/worker/monty_error.dart'
+    show CrashCause, MontyCrashedErrorInternal;
 import 'package:dart_monty_core/src/worker/process_channel.dart';
 import 'package:dart_monty_core/src/worker/proto/monty/v1/monty.pb.dart' as pb;
 import 'package:dart_monty_core/src/worker/spawn_handle.dart';
