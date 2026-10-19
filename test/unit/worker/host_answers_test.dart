@@ -517,6 +517,142 @@ void main() {
       expect(normalizeVirtualPath(key), value, reason: key);
     }
   });
+
+  group('MontyHostFunction.parity evaluation vs serialization', () {
+    pb.FunctionCall callTo(
+      String name, {
+      int id = 1,
+      bool eager = false,
+    }) => pb.FunctionCall(
+      callId: id,
+      functionName: name,
+      allowEagerAwait: eager,
+      values: pb.Arena(),
+    );
+
+    test(
+      'a throwing parity callback keeps Python Exception, while an opaque '
+      'parity return gives TypeError',
+      () async {
+        final host = HostAnswers(
+          externalLookup: {
+            'throws_state': MontyHostFunction.parity(
+              'throws_state',
+              (_, _) => throw StateError('from callback'),
+            ),
+            'throws_unsupported': MontyHostFunction.parity(
+              'throws_unsupported',
+              (_, _) => throw UnsupportedError('from callback'),
+            ),
+            'throws_coro': MontyHostFunction.parity(
+              'throws_coro',
+              parityCoroutine(
+                (_, _) async => throw UnsupportedError('from coroutine'),
+              ),
+            ),
+            'opaque_object': MontyHostFunction.parity(
+              'opaque_object',
+              (_, _) => Object(),
+            ),
+            'opaque_custom': MontyHostFunction.parity(
+              'opaque_custom',
+              (_, _) => const _Opaque(),
+            ),
+            'opaque_coro': MontyHostFunction.parity(
+              'opaque_coro',
+              parityCoroutine((_, _) async => Object()),
+            ),
+            'returns_null': MontyHostFunction.parity(
+              'returns_null',
+              (_, _) => null,
+            ),
+            'returns_null_coro': MontyHostFunction.parity(
+              'returns_null_coro',
+              parityCoroutine((_, _) async => null),
+            ),
+          },
+        );
+
+        final thrownState = (await host.call(
+          callTo('throws_state'),
+        )).resumeCall.result.error;
+        expect(thrownState.excType, 'Exception');
+        expect(thrownState.message, 'Bad state: from callback');
+
+        final thrownUnsupported = (await host.call(
+          callTo('throws_unsupported'),
+        )).resumeCall.result.error;
+        expect(thrownUnsupported.excType, 'Exception');
+        expect(
+          thrownUnsupported.message,
+          'Unsupported operation: from callback',
+        );
+
+        final thrownCoro = onlyItem(
+          (await host.call(
+            callTo('throws_coro', eager: true),
+          )).resumeFutures.results,
+        ).result.error;
+        expect(thrownCoro.excType, 'Exception');
+        expect(
+          thrownCoro.message,
+          'Unsupported operation: from coroutine',
+        );
+
+        final opaqueObject = (await host.call(
+          callTo('opaque_object'),
+        )).resumeCall.result.error;
+        expect(opaqueObject.excType, 'TypeError');
+        expect(
+          opaqueObject.message,
+          'Cannot convert builtins.object to Monty value — wrap class '
+          'instances in pydantic_monty.ClassInstance(...)',
+        );
+
+        final opaqueCustom = (await host.call(
+          callTo('opaque_custom'),
+        )).resumeCall.result.error;
+        expect(opaqueCustom.excType, 'TypeError');
+        expect(
+          opaqueCustom.message,
+          'Cannot convert ${const _Opaque().runtimeType} to Monty value — '
+          'wrap class instances in pydantic_monty.ClassInstance(...)',
+        );
+
+        final opaqueCoro = onlyItem(
+          (await host.call(
+            callTo('opaque_coro', eager: true),
+          )).resumeFutures.results,
+        ).result.error;
+        expect(opaqueCoro.excType, 'TypeError');
+        expect(
+          opaqueCoro.message,
+          'Cannot convert builtins.object to Monty value — wrap class '
+          'instances in pydantic_monty.ClassInstance(...)',
+        );
+
+        final nullSync = (await host.call(callTo('returns_null'))).resumeCall;
+        expect(nullSync.result.hasReturnValue(), isTrue);
+        expect(
+          itemAt(nullSync.values.nodes, nullSync.result.returnValue).hasNone(),
+          isTrue,
+        );
+
+        final nullCoro = (await host.call(
+          callTo('returns_null_coro', eager: true),
+        )).resumeFutures;
+        final nullCoroResult = onlyItem(nullCoro.results).result;
+        expect(nullCoroResult.hasReturnValue(), isTrue);
+        expect(
+          itemAt(
+            nullCoro.values.nodes,
+            nullCoroResult.returnValue,
+          ).hasNone(),
+          isTrue,
+        );
+      },
+    );
+  });
 }
 
 /// A timer that runs only when the test fires it.
@@ -549,4 +685,9 @@ final class _BadText implements Exception {
 
   @override
   String toString() => throw StateError('no text');
+}
+
+/// An unconvertible custom Dart object.
+final class _Opaque {
+  const _Opaque();
 }
