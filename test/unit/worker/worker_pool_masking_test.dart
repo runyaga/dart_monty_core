@@ -212,6 +212,10 @@ void main() {
         final entries = SuppressedFailures.entries;
         expect(entries, hasLength(4));
         expect(
+          entries.map((entry) => entry.stack.toString()),
+          contains(isNotEmpty),
+        );
+        expect(
           entries.map((entry) => entry.stage),
           containsAll(<String>[
             'worker_pool.start_cleanup.cancel',
