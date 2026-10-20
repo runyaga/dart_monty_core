@@ -392,6 +392,14 @@ extension ProtoSessionTransfer on ProtoSession {
   /// The dump carries the session's working directory. An error the worker
   /// reports in place of the load (bytes it cannot read) is thrown, and the
   /// session runs on as it was.
+  ///
+  /// The dump carries neither host objects nor the coroutines their answers
+  /// started. This session's registrations are cleared, so the caller
+  /// re-registers the objects the restored suspension names: an id left
+  /// unregistered decodes to a proxy, and a method call the sandbox makes on
+  /// one raises `RuntimeError`. And a suspension waiting on futures is
+  /// settled by the caller's own resume: the coroutines `resumeAuto` would
+  /// wait for belonged to the drive that dumped, and a dump carries none.
   Future<(pb.ChildEvent?, String?)> load(List<int> state) => _guard(() async {
     // Host objects are never part of a dump: a loaded session starts with
     // none (upstream's instance store starts empty).

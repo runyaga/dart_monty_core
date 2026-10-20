@@ -53,6 +53,12 @@ import 'package:fixnum/fixnum.dart';
 /// of the last four the session is finished: its slot is free, and every
 /// later call throws [StateError].
 ///
+/// A request too large to frame (over 256 MiB) never reaches the worker:
+/// it is refused before it is sent and the call throws [MontyRuntimeError]
+/// (`RuntimeError`). A reply that cannot be framed or decoded — over the
+/// limit, truncated, malformed — is a worker that cannot be trusted, and
+/// ends the session as a crash does.
+///
 /// A feed's `externalLookup` resolves the names the code leaves undefined,
 /// lazily, when the code reads one (upstream's `external_lookup`); a name in
 /// `inputs` too is served by the input. An entry is a [MontyValue]: a host
@@ -188,11 +194,12 @@ abstract interface class MontySession {
   /// Restores [state], a dump taken mid-feed (by [dump] while a suspension
   /// waited, or by a snapshot's `dump`), and returns the suspension it
   /// re-announces (upstream's `load_snapshot`). [mount] supplies fresh tables:
-  /// dumps carry neither mounts nor overlay data. [externalLookup], [os] and
-  /// [printCallback] are [feedStart]'s, kept for the snapshots' `resumeAuto`
-  /// (the dump carries its working directory);
+  /// dumps carry neither mounts nor overlay data, nor host objects — the
+  /// caller re-registers any the restored suspension names. [externalLookup],
+  /// [os] and [printCallback] are [feedStart]'s, kept for the snapshots'
+  /// `resumeAuto` (the dump carries its working directory);
   /// a restored [FutureSnapshot]'s coroutines are gone, so its `resumeAuto`
-  /// fails.
+  /// fails: settle it through `resume`.
   ///
   /// As [loadSession]: only for a fresh session, the same trust contract,
   /// and a dump taken between feeds throws [StateError] and finishes the
@@ -1016,6 +1023,12 @@ final class _FeedDrive implements SnapshotDriver {
   }
 
   /// Spends [snapshot] and sends [request], already built and checked.
+  ///
+  /// The spend comes first, so the transport's refusal of an oversized
+  /// request (nothing written, the worker waiting where it was) lands after
+  /// it: the resume throws its `MontyRuntimeError` with the snapshot spent
+  /// and the suspension still pending, and only closing the session
+  /// recovers the worker.
   Future<MontySnapshot> _resume(
     SuspendedSnapshot snapshot,
     pb.ParentRequest request,
@@ -1442,6 +1455,14 @@ pb.RaisedException _raised(String type, String message) =>
 /// each plus its grace (upstream's duration backstops). Past it the worker
 /// is killed and the turn fails with [MontyCrashedError]. Time spent in
 /// host callbacks is never counted: it falls between turns.
+///
+/// A frame failure is mapped here, at the transport, by direction. A
+/// request too large to frame is refused before a byte is written — the
+/// worker never sees it and waits where it was — and the turn throws
+/// [MontyRuntimeError] (`RuntimeError`), the session as it was. A reply
+/// that cannot be framed or decoded cannot be trusted: the worker is
+/// discarded and the turn fails with [MontyCrashedError], as any dead
+/// worker's does.
 final class _SessionChannel implements MontyChannel, TelemetryChannel {
   _SessionChannel(this._hold, this._options, SessionConfig config)
     : _budget = SessionBudget(config);

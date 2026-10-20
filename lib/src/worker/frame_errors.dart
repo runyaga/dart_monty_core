@@ -12,6 +12,11 @@ sealed class FrameException implements Exception {
 
 /// A length prefix, or a body about to be sent, exceeds the maximum.
 ///
+/// A session's caller never sees it. A request over the limit is refused
+/// before it is sent and reaches the caller as a `MontyRuntimeError`
+/// (`RuntimeError`); a reply over it desynchronises the stream, which ends
+/// the session with a `MontyCrashedError`.
+///
 /// Upstream's `FrameError::FrameTooLarge`.
 final class FrameTooLargeException extends FrameException {
   /// Creates the error for a frame of [length] bytes against [max].

@@ -19,7 +19,12 @@
 ///    names and lengths, timedeltas within 999999999 days
 ///    (`python_rules.dart`, `python_keys.dart`).
 ///
-/// A failure in any stage is a [FormatException].
+/// A failure in any stage is a [FormatException], remembered and thrown
+/// again by every later read. Values are built lazily — a session hands out
+/// a completion's output and a call's arguments before building any — so a
+/// stage-3 failure escapes the first read, not the turn that carried the
+/// frame. A [StateError] from a read is an internal inconsistency of this
+/// package, not a verdict on the worker's bytes.
 ///
 /// Every kind upstream emits decodes to the [MontyValue] class of the same
 /// meaning, mapped as upstream's Python host maps it: `repr`, `cycle` and an

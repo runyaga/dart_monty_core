@@ -19,8 +19,14 @@ import 'package:meta/meta.dart';
 ///
 /// A suspension is resumed at most once: a second resume throws
 /// [StateError]. A resume's answer is checked before the snapshot is spent,
-/// so a refused answer leaves it resumable. While a suspension is
-/// unanswered the session refuses a new feed.
+/// so a refused answer — an [ArgumentError] for a value Python cannot
+/// build or an exception type upstream does not know, a `MontyRuntimeError`
+/// for one Python refuses — leaves it resumable. An answer whose request
+/// frame is over the limit (256 MiB) is refused only at the send, after the
+/// snapshot is spent: the resume throws `MontyRuntimeError`, the suspension
+/// stays pending, every later feed throws [StateError], and only closing
+/// the session recovers the worker. While a suspension is unanswered the
+/// session refuses a new feed.
 sealed class MontySnapshot {
   const MontySnapshot();
 }
@@ -48,7 +54,10 @@ final class SourceRange {
 
   /// The source the range is in, named as a traceback frame names it:
   /// `<python-input-N>` for the session's N-th feed, `<string>` inside an
-  /// `eval()` or `exec()` string.
+  /// `eval()` or `exec()` string. That name is the worker's, generated per
+  /// feed — not the session's `scriptName`, which is another name entirely
+  /// and never appears in a position: snapshots, dumps and telemetry report
+  /// it instead ([SuspendedSnapshot.scriptName]).
   final String filename;
 
   /// The first byte, a UTF-8 offset into that source.
@@ -218,6 +227,9 @@ final class MontyComplete extends MontySnapshot {
   final MontyValue Function() _decode;
 
   /// The value of the snippet's last expression; `None` for a statement.
+  ///
+  /// Built on each read: a value the worker's arena cannot build throws
+  /// `FormatException` from the read, never the turn that completed it.
   MontyValue get output => _decode();
 
   /// Upstream's repr, with the value's own [toString] for its repr.
@@ -272,7 +284,10 @@ sealed class SuspendedSnapshot extends MontySnapshot {
   /// Where the suspending expression is in the source.
   final SourceRange position;
 
-  /// The session's script name.
+  /// The session's script name: the one `checkout` configured, or a
+  /// restored dump's. It names the session — snapshots, dumps and telemetry
+  /// report it — never a feed's source, which positions and traceback
+  /// frames name `<python-input-N>` ([SourceRange.filename]).
   final String scriptName;
 
   final SnapshotDriver _driver;
@@ -345,13 +360,16 @@ final class FunctionSnapshot extends SuspendedSnapshot {
   List<MontyValue>? _args;
   Map<String, MontyValue>? _kwargs;
 
-  /// The positional arguments, read on first use. Throws if the worker sent
-  /// a value this driver cannot read.
+  /// The positional arguments, read on first use: a value the worker's
+  /// arena cannot build throws `FormatException` from that first read (the
+  /// frame's arrival checked only its structure), and a `StateError` is an
+  /// internal inconsistency, not the worker's.
   List<MontyValue> get args => _args ??= List.unmodifiable(_arguments());
 
   /// The keyword arguments, in order, read on first use: the same mutable
-  /// map on every read, as upstream's dict. Changing it changes no answer:
-  /// [resumeAuto] calls with the arguments the worker sent.
+  /// map on every read, as upstream's dict, throwing as [args] does.
+  /// Changing it changes no answer: [resumeAuto] calls with the arguments
+  /// the worker sent.
   Map<String, MontyValue> get kwargs => _kwargs ??= Map.of(_keywords());
 
   /// Answers the call with [result] and runs to the next suspension or the
